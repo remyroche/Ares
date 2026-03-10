@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import logging
 import os
 import random
 from dataclasses import dataclass
@@ -21,6 +22,17 @@ from extreme_price_movements.data_store import (
 )
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.utils import tprint
+
+
+LOGGER = logging.getLogger(__name__)
+_LOGGED_FAILURE_COUNTS: Dict[str, int] = {}
+
+
+def _log_bounded_warning(key: str, msg: str, limit: int = 3) -> None:
+    c = _LOGGED_FAILURE_COUNTS.get(key, 0)
+    if c < limit:
+        LOGGER.warning(msg)
+    _LOGGED_FAILURE_COUNTS[key] = c + 1
 
 
 # =============================================================================
@@ -46,47 +58,75 @@ ALL_MODES = [
 
 @njit(cache=True)
 def rolling_max_index_nb(x: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
-    out_val = np.full(x.shape[0], np.nan, dtype=np.float32)
-    out_idx = np.zeros(x.shape[0], dtype=np.int32)
     n = x.shape[0]
+    out_val = np.full(n, np.nan, dtype=np.float32)
+    out_idx = np.zeros(n, dtype=np.int32)
+    if n == 0 or window <= 0:
+        return out_val, out_idx
+
+    deque_idx = np.zeros(n, dtype=np.int32)
+    head = 0
+    tail = 0
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        mx = -1e30
-        idx = -1
-        valid = False
-        for j in range(start, i + 1):
-            v = x[j]
-            if not np.isnan(v):
-                valid = True
-                if v > mx:
-                    mx = v
-                    idx = j
-        if valid:
-            out_val[i] = mx
+        left = i - window + 1
+        while head < tail and deque_idx[head] < left:
+            head += 1
+
+        v = x[i]
+        if not np.isnan(v):
+            while head < tail:
+                j = deque_idx[tail - 1]
+                vj = x[j]
+                if np.isnan(vj) or vj <= v:
+                    tail -= 1
+                else:
+                    break
+            deque_idx[tail] = i
+            tail += 1
+
+        if head < tail:
+            idx = deque_idx[head]
             out_idx[i] = idx
+            out_val[i] = x[idx]
+
     return out_val, out_idx
 
 
 @njit(cache=True)
 def rolling_min_index_nb(x: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
-    out_val = np.full(x.shape[0], np.nan, dtype=np.float32)
-    out_idx = np.zeros(x.shape[0], dtype=np.int32)
     n = x.shape[0]
+    out_val = np.full(n, np.nan, dtype=np.float32)
+    out_idx = np.zeros(n, dtype=np.int32)
+    if n == 0 or window <= 0:
+        return out_val, out_idx
+
+    deque_idx = np.zeros(n, dtype=np.int32)
+    head = 0
+    tail = 0
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        mn = 1e30
-        idx = -1
-        valid = False
-        for j in range(start, i + 1):
-            v = x[j]
-            if not np.isnan(v):
-                valid = True
-                if v < mn:
-                    mn = v
-                    idx = j
-        if valid:
-            out_val[i] = mn
+        left = i - window + 1
+        while head < tail and deque_idx[head] < left:
+            head += 1
+
+        v = x[i]
+        if not np.isnan(v):
+            while head < tail:
+                j = deque_idx[tail - 1]
+                vj = x[j]
+                if np.isnan(vj) or vj >= v:
+                    tail -= 1
+                else:
+                    break
+            deque_idx[tail] = i
+            tail += 1
+
+        if head < tail:
+            idx = deque_idx[head]
             out_idx[i] = idx
+            out_val[i] = x[idx]
+
     return out_val, out_idx
 
 
@@ -124,21 +164,29 @@ def rolling_std_nb(x: np.ndarray, window: int) -> np.ndarray:
 
 
 @njit(cache=True)
-def dilate_mask_nb(mask: np.ndarray, asset_ids: np.ndarray, duration_bars: int, n_symbols: int) -> np.ndarray:
-    n = mask.shape[0]
+def dilate_mask_by_groups_nb(mask: np.ndarray, group_indices: np.ndarray, duration_bars: int) -> np.ndarray:
     out = mask.copy()
     if duration_bars <= 1:
         return out
-    for i in range(n):
-        if mask[i]:
-            aid = asset_ids[i]
-            for j in range(1, duration_bars):
-                idx = i + j * n_symbols
-                if idx >= n:
-                    break
-                if asset_ids[idx] != aid:
-                    break
-                out[idx] = True
+
+    n_local = group_indices.shape[0]
+    for local_i in range(n_local):
+        gidx = group_indices[local_i]
+        if mask[gidx]:
+            end_local = min(n_local, local_i + duration_bars)
+            for local_j in range(local_i + 1, end_local):
+                out[group_indices[local_j]] = True
+    return out
+
+
+def dilate_mask_by_asset(mask: np.ndarray, asset_groups: Dict[int, np.ndarray], duration_bars: int) -> np.ndarray:
+    if duration_bars <= 1:
+        return mask.copy()
+    out = mask.copy()
+    for _, idxs in asset_groups.items():
+        if idxs.shape[0] == 0:
+            continue
+        out = dilate_mask_by_groups_nb(out, idxs.astype(np.int32), duration_bars)
     return out
 
 
@@ -163,6 +211,17 @@ def compute_impulse_coherence_nb(
     mono_dn = np.full(n, np.nan, dtype=np.float32)
     vol_exp = np.full(n, np.nan, dtype=np.float32)
 
+    pref_ret = np.zeros(n + 1, dtype=np.float32)
+    pref_abs = np.zeros(n + 1, dtype=np.float32)
+    for i in range(n):
+        r = returns[i]
+        if np.isnan(r):
+            pref_ret[i + 1] = pref_ret[i]
+            pref_abs[i + 1] = pref_abs[i]
+        else:
+            pref_ret[i + 1] = pref_ret[i] + r
+            pref_abs[i + 1] = pref_abs[i] + abs(r)
+
     for i in range(window, n):
         st = start_idx_local[i]
         st_px = start_px[i]
@@ -182,24 +241,16 @@ def compute_impulse_coherence_nb(
         speed_up[i] = imp_up / max(1.0, b_up)
         speed_dn[i] = imp_dn / max(1.0, b_dn)
 
-        dir_sum_up = 0.0
-        abs_sum_up = 0.0
-        for j in range(st + 1, peak_h + 1):
-            if j < n:
-                r = returns[j]
-                if not np.isnan(r):
-                    dir_sum_up += r
-                    abs_sum_up += abs(r)
+        up_left = min(max(st + 1, 0), n)
+        up_right = min(max(peak_h + 1, up_left), n)
+        dir_sum_up = pref_ret[up_right] - pref_ret[up_left]
+        abs_sum_up = pref_abs[up_right] - pref_abs[up_left]
         mono_up[i] = dir_sum_up / abs_sum_up if abs_sum_up > 1e-9 else 0.0
 
-        dir_sum_dn = 0.0
-        abs_sum_dn = 0.0
-        for j in range(st + 1, peak_l + 1):
-            if j < n:
-                r = returns[j]
-                if not np.isnan(r):
-                    dir_sum_dn += -r
-                    abs_sum_dn += abs(r)
+        dn_left = min(max(st + 1, 0), n)
+        dn_right = min(max(peak_l + 1, dn_left), n)
+        dir_sum_dn = -(pref_ret[dn_right] - pref_ret[dn_left])
+        abs_sum_dn = pref_abs[dn_right] - pref_abs[dn_left]
         mono_dn[i] = dir_sum_dn / abs_sum_dn if abs_sum_dn > 1e-9 else 0.0
 
         pre_vol = volatility[st]
@@ -461,26 +512,38 @@ def _build_temporal_folds(timestamps: np.ndarray, n_samples: int, n_splits: int 
         folds = list(cv.split(dummy))
         if folds:
             return [(tr.astype(np.int32), va.astype(np.int32)) for tr, va in folds]
-    except Exception:
-        pass
+    except Exception as e:
+        LOGGER.warning("PurgedKFold unavailable; using timestamp-group fallback: %s", e)
 
-    # Fallback to forward-chaining
     if n_samples < 10:
         return []
+
+    uniq_ts = np.unique(timestamps)
+    n_groups = uniq_ts.shape[0]
+    if n_groups < 2:
+        return []
+
     folds = []
-    chunk_size = n_samples // (n_splits + 1)
+    chunk_size = n_groups // (n_splits + 1)
     if chunk_size == 0:
-        chunk_size = max(1, n_samples // 2)
+        chunk_size = max(1, n_groups // 2)
         n_splits = 1
 
     for i in range(1, n_splits + 1):
-        tr_end = i * chunk_size
-        va_end = min(n_samples, (i + 1) * chunk_size)
+        tr_group_end = i * chunk_size
+        va_group_end = min(n_groups, (i + 1) * chunk_size)
         if i == n_splits:
-            va_end = n_samples
-        if tr_end >= va_end:
+            va_group_end = n_groups
+        if tr_group_end >= va_group_end:
             break
-        folds.append((np.arange(0, tr_end, dtype=np.int32), np.arange(tr_end, va_end, dtype=np.int32)))
+
+        tr_ts = uniq_ts[:tr_group_end]
+        va_ts = uniq_ts[tr_group_end:va_group_end]
+        tr = np.where(np.isin(timestamps, tr_ts))[0].astype(np.int32)
+        va = np.where(np.isin(timestamps, va_ts))[0].astype(np.int32)
+        if tr.shape[0] == 0 or va.shape[0] == 0:
+            continue
+        folds.append((tr, va))
 
     return folds
 
@@ -542,8 +605,8 @@ def _classifier_oof_auc(
         try:
             clf.fit(X_tr, y[tr])
             preds[va] = clf.predict_proba(X_va)[:, 1].astype(np.float32)
-        except Exception:
-            pass
+        except Exception as e:
+            _log_bounded_warning("classifier_fit", f"Classifier fold fit failed: {e}")
 
     valid_mask = np.isfinite(preds) & np.isfinite(y)
     if np.sum(valid_mask) == 0:
@@ -552,7 +615,8 @@ def _classifier_oof_auc(
         return 0.5
     try:
         return float(roc_auc_score(y[valid_mask], preds[valid_mask]))
-    except Exception:
+    except Exception as e:
+        _log_bounded_warning("roc_auc", f"AUC scoring failed: {e}")
         return 0.5
 
 
@@ -592,8 +656,8 @@ def _ridge_regression_oof_r2(
         try:
             reg.fit(X_tr, y_tr_clip)
             preds[va] = reg.predict(X_va).astype(np.float32)
-        except Exception:
-            pass
+        except Exception as e:
+            _log_bounded_warning("ridge_fit", f"Ridge fold fit failed: {e}")
 
     valid2 = np.isfinite(preds) & np.isfinite(y)
     if np.sum(valid2) < 10:
@@ -620,12 +684,15 @@ def _extract_learnability_features(feature_dict: Dict[str, np.ndarray], n_sample
         "vol_regime_shift",
         "bar_direction_entropy",
     ]
-    X = np.zeros((n_samples, len(keys)), dtype=np.float32)
+    X = np.full((n_samples, len(keys)), np.nan, dtype=np.float32)
     for i, k in enumerate(keys):
-        if k in feature_dict:
-            arr = np.asarray(feature_dict[k], dtype=np.float32)
-            arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-            X[:, i] = arr
+        if k not in feature_dict:
+            X[:, i] = 0.0
+            continue
+        arr = np.asarray(feature_dict[k], dtype=np.float32)
+        arr = arr.copy()
+        arr[np.isinf(arr)] = np.nan
+        X[:, i] = arr
     return X
 
 
@@ -660,11 +727,28 @@ def _sample_half_history_mask(day_ids: np.ndarray, seed: int = 42) -> np.ndarray
     return np.isin(day_ids, selected_days)
 
 
-def _infer_n_symbols_from_long(timestamp_ids: np.ndarray) -> int:
-    _, counts = np.unique(timestamp_ids, return_counts=True)
-    if counts.shape[0] == 0:
-        return 1
-    return int(np.max(counts))
+def _validate_long_panel_shape(
+    timestamps: np.ndarray,
+    symbols: np.ndarray,
+    require_rectangular: bool = False,
+) -> None:
+    if timestamps.shape[0] == 0:
+        return
+    if np.any(timestamps[1:] < timestamps[:-1]):
+        raise ValueError("Long panel must be sorted by timestamp ascending.")
+
+    uniq_ts, first_idx, counts = np.unique(timestamps, return_index=True, return_counts=True)
+    if require_rectangular and np.unique(counts).shape[0] > 1:
+        raise ValueError("Rectangular panel required, but per-timestamp row counts differ.")
+
+    ref_order = None
+    for pos, st in enumerate(first_idx):
+        c = counts[pos]
+        curr = symbols[st : st + c]
+        if ref_order is None:
+            ref_order = curr
+        elif require_rectangular and (c != ref_order.shape[0] or np.any(curr != ref_order)):
+            raise ValueError("Rectangular panel required, but symbol ordering differs by timestamp.")
 
 
 def _safe_param_to_string(param: Any) -> str:
@@ -699,8 +783,7 @@ def _generate_event_masks_fast(
     dn_move: np.ndarray,
     rolling_std_up: np.ndarray,
     rolling_std_dn: np.ndarray,
-    n_symbols: int,
-    asset_ids: Optional[np.ndarray],
+    asset_groups: Optional[Dict[int, np.ndarray]],
     duration_bars: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
     mask_h = np.zeros(up_move.shape[0], dtype=bool)
@@ -728,9 +811,9 @@ def _generate_event_masks_fast(
     else:
         raise ValueError(f"Unknown family: {family}")
 
-    if duration_bars > 1 and asset_ids is not None:
-        mask_h = dilate_mask_nb(mask_h, asset_ids.astype(np.int32), duration_bars, n_symbols)
-        mask_l = dilate_mask_nb(mask_l, asset_ids.astype(np.int32), duration_bars, n_symbols)
+    if duration_bars > 1 and asset_groups is not None:
+        mask_h = dilate_mask_by_asset(mask_h, asset_groups, duration_bars)
+        mask_l = dilate_mask_by_asset(mask_l, asset_groups, duration_bars)
 
     return mask_h, mask_l
 
@@ -789,6 +872,7 @@ def _build_shared_cache(
     close = np.asarray(data["close"].values, dtype=np.float32)
     timestamps = pd.to_datetime(data["timestamp"]).values
     symbols = np.asarray(data["symbol"].astype(str).values)
+    _validate_long_panel_shape(timestamps, symbols, require_rectangular=False)
 
     forward_returns = np.asarray(forward_returns, dtype=np.float32)
     atr = np.asarray(feature_dict.get("atr", np.ones_like(close, dtype=np.float32)), dtype=np.float32)
@@ -798,7 +882,6 @@ def _build_shared_cache(
     symbol_codes = symbol_codes.astype(np.int32)
     day_ids, n_days = _build_day_ids(timestamps)
     timestamp_ids, n_timestamps = _build_timestamp_ids(timestamps)
-    n_symbols = _infer_n_symbols_from_long(timestamp_ids)
     regime_source = np.asarray(feature_dict.get("vol_regime_z", np.zeros_like(close, dtype=np.float32)), dtype=np.float32)
     if regime_source.shape[0] != close.shape[0]:
         regime_source = np.zeros_like(close, dtype=np.float32)
@@ -956,7 +1039,6 @@ def _build_shared_cache(
         "n_days": n_days,
         "timestamp_ids": timestamp_ids,
         "n_timestamps": n_timestamps,
-        "n_symbols": n_symbols,
         "regime_ids": regime_ids,
         "folds": folds,
         "z_cache": z_cache,
@@ -1199,8 +1281,6 @@ def _run_mode_search(
     timestamps = shared["timestamps"]
     timestamp_ids = shared["timestamp_ids"]
     n_timestamps = shared["n_timestamps"]
-    n_symbols = shared["n_symbols"]
-    asset_ids = shared["symbol_codes"]
     day_ids = shared["day_ids"]
     n_days = shared["n_days"]
     folds = shared["folds"]
@@ -1210,6 +1290,7 @@ def _run_mode_search(
     ret_threshold = float(cfg.get("phase1_ret_threshold", 0.0))
     phase1_mask = _phase1_subsample_indices(shared, seed=42)
     candidate_grid = shared["candidate_grid"]
+    candidate_registry: Dict[str, Dict[str, Any]] = {}
 
     # cache by geometry key
     geom_cache_phase1: Dict[str, Dict[str, Any]] = {}
@@ -1238,10 +1319,19 @@ def _run_mode_search(
     phase1_timestamps = timestamps[phase1_mask]
     phase1_fwd_ret = forward_returns[phase1_mask]
 
+    global_to_phase1_local = np.full(forward_returns.shape[0], -1, dtype=np.int32)
+    global_to_phase1_local[phase1_global_idx] = np.arange(phase1_global_idx.shape[0], dtype=np.int32)
+    phase1_fold_val_locals: List[np.ndarray] = []
+    for _, va in folds:
+        loc = global_to_phase1_local[va]
+        loc = loc[loc >= 0].astype(np.int32)
+        phase1_fold_val_locals.append(loc)
+
     for z_hr, fam, param, d_hr in candidate_grid:
         z = int(z_hr * bph)
         duration_bars = int(d_hr * bph)
         key = CandidateKey(fam, int(z_hr), _safe_param_to_string(param), int(d_hr)).as_str()
+        candidate_registry[key] = {"family": fam, "z_hours": int(z_hr), "duration_hours": int(d_hr), "param": param}
 
         if key not in geom_cache_phase1:
             zc = z_cache[z]
@@ -1252,8 +1342,7 @@ def _run_mode_search(
                 dn_move=zc["dn"],
                 rolling_std_up=zc["std_up"],
                 rolling_std_dn=zc["std_dn"],
-                n_symbols=n_symbols,
-                asset_ids=asset_ids,
+                asset_groups=shared["asset_groups"],
                 duration_bars=duration_bars,
             )
             m_high = m_high_full[phase1_mask]
@@ -1289,9 +1378,7 @@ def _run_mode_search(
             ev_day_mean, ev_day_std = daily_event_stats_nb(side_mask, phase1_day_ids, phase1_n_days)
 
             fold_rates = []
-            for _, va in folds:
-                va_mask = np.isin(phase1_global_idx, va)
-                val_idx_local = np.where(va_mask)[0].astype(np.int32)
+            for val_idx_local in phase1_fold_val_locals:
                 if val_idx_local.shape[0] == 0:
                     continue
                 fold_rates.append(fold_base_rate_nb(side_mask, global_target[phase1_mask], val_idx_local))
@@ -1300,8 +1387,9 @@ def _run_mode_search(
             valid_fwd_p1 = np.isfinite(forward_returns[phase1_mask])
             global_target_p1 = global_target[phase1_mask]
 
-            if np.any(side_mask & valid_fwd_p1) and np.any(valid_fwd_p1):
-                basic_edge = float(np.nanmean(global_target_p1[side_mask & valid_fwd_p1]) - np.nanmean(global_target_p1[valid_fwd_p1]))
+            non_event = (~side_mask) & valid_fwd_p1
+            if np.any(side_mask & valid_fwd_p1) and np.any(non_event):
+                basic_edge = float(np.nanmean(global_target_p1[side_mask & valid_fwd_p1]) - np.nanmean(global_target_p1[non_event]))
             else:
                 basic_edge = 0.0
 
@@ -1316,8 +1404,6 @@ def _run_mode_search(
 
             stats = {
                 "rejected": False,
-                "m_high": m_high,
-                "m_low": m_low,
                 "total_events": int(total_events),
                 "active_days_fraction": float(active_days_frac),
                 "events_per_day_mean": float(ev_day_mean),
@@ -1328,7 +1414,7 @@ def _run_mode_search(
                 "impulse_shape_dispersion": float(coh["impulse_shape_dispersion"]),
                 "regime_distinctness_score": float(distinct),
                 "fold_base_rate_stability": float(fold_rate_std),
-                "basic_directionality_edge_over_baseline": float(basic_edge),
+                "basic_directionality_edge_event_vs_non_event": float(basic_edge),
                 "primary_predictability_gain": float(primary_gain),
             }
             geom_cache_phase1[key] = stats
@@ -1341,9 +1427,9 @@ def _run_mode_search(
             "name": key,
             "family": fam,
             "z_hours": z_hr,
-            "param": param,
+            "param": _safe_param_to_string(param),
             "duration_hours": d_hr,
-            **{k: v for k, v in stats.items() if k not in {"m_high", "m_low", "rejected"}},
+            **{k: v for k, v in stats.items() if k not in {"rejected"}},
         })
 
     if not phase1_rows:
@@ -1353,7 +1439,7 @@ def _run_mode_search(
     df1["phase1_proxy_score"] = (
         _zscore_np(df1["active_days_fraction"].values)
         + _zscore_np(df1["regime_distinctness_score"].values)
-        + _zscore_np(df1["basic_directionality_edge_over_baseline"].values)
+        + _zscore_np(df1["basic_directionality_edge_event_vs_non_event"].values)
         + _zscore_np(df1["primary_predictability_gain"].values)
         - _zscore_np(df1["impulse_shape_dispersion"].values)
         - _zscore_np(df1["fold_base_rate_stability"].values)
@@ -1371,14 +1457,16 @@ def _run_mode_search(
     candidate_masks: Dict[str, Dict[str, np.ndarray]] = {}
 
     for _, row in df1.iterrows():
-        fam = row["family"]
-        z_hr = int(row["z_hours"])
-        d_hr = int(row["duration_hours"])
-        param = row["param"]
+        name = row["name"]
+        reg = candidate_registry[name]
+        fam = reg["family"]
+        z_hr = int(reg["z_hours"])
+        d_hr = int(reg["duration_hours"])
+        param = reg["param"]
 
         z = int(z_hr * bph)
         duration_bars = int(d_hr * bph)
-        key = CandidateKey(fam, z_hr, _safe_param_to_string(param), d_hr).as_str()
+        key = name
 
         if key not in geom_cache_phase2:
             zc = z_cache[z]
@@ -1389,8 +1477,7 @@ def _run_mode_search(
                 dn_move=zc["dn"],
                 rolling_std_up=zc["std_up"],
                 rolling_std_dn=zc["std_dn"],
-                n_symbols=n_symbols,
-                asset_ids=asset_ids,
+                asset_groups=shared["asset_groups"],
                 duration_bars=duration_bars,
             )
             side_mask = _get_side_mask(mode, m_high, m_low)
@@ -1425,8 +1512,9 @@ def _run_mode_search(
             fold_rate_std = float(np.std(np.asarray(fold_rates, dtype=np.float32))) if fold_rates else 1.0
 
             valid_fwd_p2 = np.isfinite(forward_returns)
-            if np.any(side_mask & valid_fwd_p2) and np.any(valid_fwd_p2):
-                basic_edge = float(np.nanmean(global_target[side_mask & valid_fwd_p2]) - np.nanmean(global_target[valid_fwd_p2]))
+            non_event = (~side_mask) & valid_fwd_p2
+            if np.any(side_mask & valid_fwd_p2) and np.any(non_event):
+                basic_edge = float(np.nanmean(global_target[side_mask & valid_fwd_p2]) - np.nanmean(global_target[non_event]))
             else:
                 basic_edge = 0.0
 
@@ -1434,8 +1522,6 @@ def _run_mode_search(
 
             geom_cache_phase2[key] = {
                 "rejected": False,
-                "m_high": m_high,
-                "m_low": m_low,
                 "total_events": total_events,
                 "active_days_fraction": float(active_days_frac),
                 "events_per_day_mean": float(ev_day_mean),
@@ -1446,7 +1532,7 @@ def _run_mode_search(
                 "impulse_shape_dispersion": float(coh["impulse_shape_dispersion"]),
                 "regime_distinctness_score": float(distinct),
                 "fold_base_rate_stability": float(fold_rate_std),
-                "basic_directionality_edge_over_baseline": float(basic_edge),
+                "basic_directionality_edge_event_vs_non_event": float(basic_edge),
                 **full_metrics,
             }
 
@@ -1454,18 +1540,29 @@ def _run_mode_search(
         if stats.get("rejected", False):
             continue
 
+        zc = z_cache[z]
+        m_high, m_low = _generate_event_masks_fast(
+            family=fam,
+            param_val=param,
+            up_move=zc["up"],
+            dn_move=zc["dn"],
+            rolling_std_up=zc["std_up"],
+            rolling_std_dn=zc["std_dn"],
+            asset_groups=shared["asset_groups"],
+            duration_bars=duration_bars,
+        )
         candidate_masks[key] = {
-            "m_high": stats["m_high"],
-            "m_low": stats["m_low"],
+            "m_high": m_high,
+            "m_low": m_low,
         }
 
         phase2_rows.append({
             "name": key,
             "family": fam,
             "z_hours": z_hr,
-            "param": param,
+            "param": _safe_param_to_string(param),
             "duration_hours": d_hr,
-            **{k: v for k, v in stats.items() if k not in {"m_high", "m_low", "rejected"}},
+            **{k: v for k, v in stats.items() if k not in {"rejected"}},
         })
 
     if not phase2_rows:
@@ -1685,7 +1782,8 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
         if isinstance(df, pd.DataFrame):
             df_aligned = df.reindex(index=common_idx, columns=common_syms)
             arr = df_aligned.stack(dropna=False).to_numpy(dtype=np.float32)
-            feature_dict[k] = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+            arr[np.isinf(arr)] = np.nan
+            feature_dict[k] = arr.astype(np.float32)
 
     fwd_ret_stacked = (
         fwd_ret_wide.reindex(index=common_idx, columns=common_syms)

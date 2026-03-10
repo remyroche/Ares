@@ -69,22 +69,31 @@ def rolling_std_nb(x: np.ndarray, window: int) -> np.ndarray:
     n = len(x)
     if n == 0 or window <= 0:
         return out
+
+    sum_x = 0.0
+    sum_sq = 0.0
+    valid_count = 0
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        slice_x = x[start:i+1]
-        valid_count = 0
-        mean = 0.0
-        for val in slice_x:
-            if not np.isnan(val):
-                mean += val
-                valid_count += 1
+        val = x[i]
+        if not np.isnan(val):
+            sum_x += val
+            sum_sq += val * val
+            valid_count += 1
+
+        if i >= window:
+            old_val = x[i - window]
+            if not np.isnan(old_val):
+                sum_x -= old_val
+                sum_sq -= old_val * old_val
+                valid_count -= 1
+
         if valid_count > 1:
-            mean /= valid_count
-            var = 0.0
-            for val in slice_x:
-                if not np.isnan(val):
-                    var += (val - mean)**2
-            out[i] = np.sqrt(var / (valid_count - 1))
+            var = (sum_sq - (sum_x * sum_x) / valid_count) / (valid_count - 1)
+            if var > 0:
+                out[i] = np.sqrt(var)
+            else:
+                out[i] = 0.0
         elif valid_count == 1:
             out[i] = 0.0
     return out
@@ -750,7 +759,7 @@ def optimize_layer0_masks(
             # First row ret_1 remains 0.0
             ast_ret[1:] = (ast_close[1:] - ast_close[:-1]) / np.where(ast_close[:-1] > 1e-9, ast_close[:-1], 1.0)
         ret_1[idxs] = ast_ret
-        vol_g[idxs] = rolling_std_nb(ast_ret, 24 * bph).astype(np.float32)
+        vol_g[idxs] = rolling_std_nb(ast_ret, 30 * 24 * bph).astype(np.float32)
 
         # Safely compute alternation avoiding cross boundary roll
         ast_sign = np.sign(ast_ret)
@@ -856,8 +865,8 @@ def optimize_layer0_masks(
                 c_up_move[idxs] = um
                 c_dn_move[idxs] = dm
                 c_rng_move[idxs] = rm
-                c_roll_std_up[idxs] = rolling_std_nb(um, 24 * bph)
-                c_roll_std_dn[idxs] = rolling_std_nb(dm, 24 * bph)
+                c_roll_std_up[idxs] = rolling_std_nb(um, 30 * 24 * bph)
+                c_roll_std_dn[idxs] = rolling_std_nb(dm, 30 * 24 * bph)
 
                 c_bars_up[idxs] = b_u
                 c_bars_dn[idxs] = b_d
@@ -1054,8 +1063,8 @@ def optimize_layer0_masks(
 
                         zc["up"][idxs] = um
                         zc["dn"][idxs] = dm
-                        zc["std_up"][idxs] = rolling_std_nb(um, 24 * bph)
-                        zc["std_dn"][idxs] = rolling_std_nb(dm, 24 * bph)
+                        zc["std_up"][idxs] = rolling_std_nb(um, 30 * 24 * bph)
+                        zc["std_dn"][idxs] = rolling_std_nb(dm, 30 * 24 * bph)
                         # ... filling other zc keys if needed, but only "up" and "dn" and "std_*" are used in _generate_event_masks
             
             # Now generate the FULL mask

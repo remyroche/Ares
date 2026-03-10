@@ -82,6 +82,25 @@ def _read_best_params_csv(path: Path) -> Dict[str, Any]:
     return out
 
 
+
+
+def load_inference_candidate_mask_params_by_mode() -> Dict[str, Dict[str, Any]]:
+    """Load per-mode mask-optimiser parameters from mode-specific CSV outputs."""
+    mode_names = ["price_up_tf", "price_up_mr", "price_down_tf", "price_down_mr"]
+    out: Dict[str, Dict[str, Any]] = {}
+    for mode in mode_names:
+        path = REPORTS_DIR / f"inference_candidate_mask_best_params_{mode}.csv"
+        row = _read_best_params_csv(path)
+        if not row:
+            continue
+        params = {
+            k: row.get(k)
+            for k in ("family", "param", "z_hours", "conditioner_mode", "duration_hours")
+            if row.get(k) is not None
+        }
+        if params:
+            out[mode] = params
+    return out
 def load_tbm_geometry_grid() -> Dict[str, Any]:
     """Load the geometry grid saved by compare_tbm_parameters.py.
 
@@ -354,12 +373,27 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
             if key in cand and cand[key] is not None:
                 merged[key] = cand[key]
 
-    # Incorporate mask_optimiser output
+    # Incorporate mask_optimiser output (legacy single-file + new mode-specific files).
     mask_opt = _read_best_params_csv(INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV)
     if mask_opt:
         for key in ("family", "param", "z_hours", "conditioner_mode", "duration_hours"):
             if key in mask_opt and mask_opt[key] is not None:
                 merged[key] = mask_opt[key]
+
+    mode_params = load_inference_candidate_mask_params_by_mode()
+    if mode_params:
+        merged["candidate_mask_params_by_mode"] = mode_params
+        mode_to_bucket = {
+            "price_up_tf": "TF_long",
+            "price_up_mr": "MR_short",
+            "price_down_tf": "TF_short",
+            "price_down_mr": "MR_long",
+        }
+        merged["candidate_mask_params_by_bucket"] = {
+            mode_to_bucket[m]: v for m, v in mode_params.items() if m in mode_to_bucket
+        }
+        if "family" not in merged and "price_up_tf" in mode_params:
+            merged.update(mode_params["price_up_tf"])
 
     tbm = _read_best_params_csv(TBM_BEST_PARAMS_CSV)
     if tbm:

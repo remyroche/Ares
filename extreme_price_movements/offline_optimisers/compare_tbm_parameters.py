@@ -2213,12 +2213,14 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
         except Exception:
             return pd.DataFrame(True, index=c.index, columns=c.columns)
 
-    default_mask_cfg = {
-        "family": (cfg_runtime or {}).get("family", "top_movers"),
-        "param": (cfg_runtime or {}).get("param", 5.0),
-        "z_hours": (cfg_runtime or {}).get("z_hours", 12.0),
-    }
     mode_cfg = dict((cfg_runtime or {}).get("candidate_mask_params_by_mode", {}) or {})
+    required_modes = ["price_up_tf", "price_up_mr", "price_down_tf", "price_down_mr"]
+    missing_modes = [m for m in required_modes if m not in mode_cfg]
+    if missing_modes:
+        raise ValueError(
+            "Missing per-mode candidate mask params in cfg_runtime; refusing legacy fallback. "
+            f"missing={missing_modes}"
+        )
 
     # Split candidates by move direction using the deviation metric.
     if metric in feats:
@@ -2233,10 +2235,10 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
         up_zone = (ret > 0).astype(bool)
         down_zone = (ret <= 0).astype(bool)
 
-    m_tf_long = _build_candidate_filter_for(mode_cfg.get("price_up_tf", default_mask_cfg))
-    m_mr_short = _build_candidate_filter_for(mode_cfg.get("price_up_mr", default_mask_cfg))
-    m_tf_short = _build_candidate_filter_for(mode_cfg.get("price_down_tf", default_mask_cfg))
-    m_mr_long = _build_candidate_filter_for(mode_cfg.get("price_down_mr", default_mask_cfg))
+    m_tf_long = _build_candidate_filter_for(mode_cfg["price_up_tf"])
+    m_mr_short = _build_candidate_filter_for(mode_cfg["price_up_mr"])
+    m_tf_short = _build_candidate_filter_for(mode_cfg["price_down_tf"])
+    m_mr_long = _build_candidate_filter_for(mode_cfg["price_down_mr"])
 
     tf_long = up_zone & m_tf_long
     mr_short = up_zone & m_mr_short

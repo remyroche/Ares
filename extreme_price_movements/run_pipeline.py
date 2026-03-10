@@ -55,6 +55,7 @@ from extreme_price_movements.optimise import (
     Policy,
 )
 from extreme_price_movements.pipeline_steps import run_sizer_step
+from extreme_price_movements.offline_optimisers.params_store import apply_offline_optimizer_best_params
 
 # SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
 # Spot trading fees (default)
@@ -127,51 +128,10 @@ def _configure_report_roots(cfg: dict) -> None:
 
 
 def _load_mask_params_by_mode(cfg: dict) -> dict:
-    """Load per-mode mask optimiser params if mode-specific CSVs exist."""
-    from pathlib import Path
-
-    reports_root = Path(str(cfg.get("reports_root") or "reports"))
-    csv_dir = reports_root / "offline_optimisers" / "reports"
-    mode_to_bucket = {
-        "price_up_tf": "TF_long",
-        "price_up_mr": "MR_short",
-        "price_down_tf": "TF_short",
-        "price_down_mr": "MR_long",
-    }
-    out: dict = {}
-    for mode in mode_to_bucket:
-        path = csv_dir / f"inference_candidate_mask_best_params_{mode}.csv"
-        if not path.exists():
-            continue
-        try:
-            df = pd.read_csv(path)
-            if df.empty:
-                continue
-            row = df.iloc[-1].to_dict()
-            out[mode] = {
-                k: row.get(k)
-                for k in ("family", "param", "z_hours", "conditioner_mode", "duration_hours")
-                if k in row
-            }
-        except Exception as exc:
-            tprint(f"WARNING: failed loading mask params for {mode} from {path}: {exc}")
-
-    if out:
-        cfg["candidate_mask_params_by_mode"] = out
-        cfg["candidate_mask_params_by_bucket"] = {
-            mode_to_bucket[m]: v for m, v in out.items() if m in mode_to_bucket
-        }
-        if "family" not in cfg and "price_up_tf" in out:
-            cfg.update(
-                {
-                    k: out["price_up_tf"].get(k)
-                    for k in ("family", "param", "z_hours", "conditioner_mode", "duration_hours")
-                    if k in out["price_up_tf"]
-                }
-            )
-        tprint(f"Loaded per-bucket mask optimiser params for modes={sorted(out.keys())}")
-    return out
-
+    """Refresh cfg with persisted offline optimizer params (including mask params by mode)."""
+    merged = apply_offline_optimizer_best_params(dict(cfg))
+    cfg.update(merged)
+    return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
 
 
 def _downcast_numeric_frame(df: pd.DataFrame) -> pd.DataFrame:

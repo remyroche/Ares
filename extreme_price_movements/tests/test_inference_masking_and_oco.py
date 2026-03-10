@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from extreme_price_movements.inference.candidate_selector import select_candidates
 from extreme_price_movements.inference.run_inference import _evaluate_oco_policy
@@ -33,18 +34,42 @@ def test_select_candidates_uses_ret12h_move_and_vol_thresholds():
         "chop_score": pd.DataFrame(0.1, index=idx, columns=symbols),
     }
 
+    import extreme_price_movements.inference.candidate_selector as cs
+
+    cs._resolve_runtime_cfg = lambda: {
+        "candidate_mask_params_by_mode": {
+            "price_up_tf": {"family": "abs_move_threshold", "param": 7.0, "z_hours": 1.0, "duration_hours": 1.0},
+            "price_up_mr": {"family": "abs_move_threshold", "param": 999.0, "z_hours": 1.0, "duration_hours": 1.0},
+            "price_down_tf": {"family": "abs_move_threshold", "param": 7.0, "z_hours": 1.0, "duration_hours": 1.0},
+            "price_down_mr": {"family": "abs_move_threshold", "param": 999.0, "z_hours": 1.0, "duration_hours": 1.0},
+        }
+    }
+
     long_cands, short_cands = select_candidates(
         panel=panel,
         feats=feats,
-        extreme_pct=0.25,
-        min_move_12h_pct=0.05,
-        min_range_pct=None,
-        min_vol_zscore=1.5,
         metric="ret12h",
     )
 
     assert long_cands == ["A"]
     assert short_cands == ["D"]
+
+
+
+
+def test_select_candidates_rejects_legacy_threshold_overrides():
+    idx = pd.date_range("2026-03-01", periods=2, freq="1h", tz="UTC")
+    close = pd.DataFrame({"A": [100, 101], "B": [100, 99]}, index=idx)
+    panel = {"close": close, "high": close, "low": close, "open": close, "volume": close}
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    with pytest.raises(ValueError, match="Legacy threshold overrides"):
+        select_candidates(
+            panel=panel,
+            feats=feats,
+            extreme_pct=0.25,
+            metric="ret12h",
+        )
 
 
 def test_candidate_trade_mask_respects_side_specific_extremes():

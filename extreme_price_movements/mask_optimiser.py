@@ -658,14 +658,14 @@ def _build_candidate_grid(cfg: Dict[str, Any]) -> List[Tuple[int, str, Any, int]
         for fam in cfg.get("families", ["std_threshold", "abs_move_threshold", "std_plus_abs"]):
             for d_hr in duration_grid:
                 if fam == "std_threshold":
-                    for p in cfg.get("x_std_grid", [1.4, 1.6]):
+                    for p in cfg.get("x_std_grid", [1.4, 1.5, 1.6]):
                         grid.append((z_hr, fam, float(p), d_hr))
                 elif fam == "abs_move_threshold":
-                    for p in cfg.get("y_move_pct_grid", [4.0, 6.0]):
+                    for p in cfg.get("y_move_pct_grid", [4.0, 5.0, 6.0]):
                         grid.append((z_hr, fam, float(p), d_hr))
                 elif fam == "std_plus_abs":
-                    for s in cfg.get("std_plus_abs_std_grid", [1.4, 1.6]):
-                        for a in cfg.get("std_plus_abs_abs_grid", [4.0, 6.0]):
+                    for s in cfg.get("std_plus_abs_std_grid", [1.4, 1.5, 1.6]):
+                        for a in cfg.get("std_plus_abs_abs_grid", [4.0, 5.0, 6.0]):
                             grid.append((z_hr, fam, (float(s), float(a)), d_hr))
     return grid
 
@@ -1536,12 +1536,12 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
     cfg = deepcopy(CFG)
 
     # defaults aligned with requested optimization spec
-    cfg["z_hours_grid"] = [6, 10, 16]
-    cfg["duration_grid"] = [1, 2, 4]
-    cfg["x_std_grid"] = [1.4, 1.6]
-    cfg["y_move_pct_grid"] = [4.0, 6.0]
-    cfg["std_plus_abs_std_grid"] = [1.4, 1.6]
-    cfg["std_plus_abs_abs_grid"] = [4.0, 6.0]
+    cfg["z_hours_grid"] = [4, 6, 8, 10]
+    cfg["duration_grid"] = [1, 2, 3]
+    cfg["x_std_grid"] = [1.4, 1.5, 1.6]
+    cfg["y_move_pct_grid"] = [4.0, 5.0, 6.0, 7.0]
+    cfg["std_plus_abs_std_grid"] = [1.4, 1.5, 1.6]
+    cfg["std_plus_abs_abs_grid"] = [4.0, 5.0, 6.0]
     cfg["phase1_min_total_events"] = 5000
     cfg["phase2_min_total_events"] = 5000
     cfg["phase1_min_active_days_fraction"] = 0.80

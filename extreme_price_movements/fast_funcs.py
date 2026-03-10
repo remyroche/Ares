@@ -2833,3 +2833,71 @@ def numba_rolling_bars_since_extreme(df, window, mode="max"):
     if is_series:
         return res_df[res_df.columns[0]]
     return res_df
+
+@jit(nopython=True, nogil=True, cache=True)
+def _numba_rolling_rank_pct_1d(x, window):
+    """
+    Computes rolling percentile rank (causal).
+    Result is bounded in [0, 1].
+    """
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+
+    if window <= 0:
+        return out
+
+    for i in range(n):
+        val = x[i]
+        if np.isnan(val):
+            continue
+
+        start = max(0, i - window + 1)
+        end = i + 1
+
+        count_valid = 0
+        count_less = 0
+        count_equal = 0
+
+        for j in range(start, end):
+            v = x[j]
+            if not np.isnan(v):
+                count_valid += 1
+                if v < val:
+                    count_less += 1
+                elif v == val:
+                    count_equal += 1
+
+        if count_valid > 1:
+            # (count_less + 0.5 * (count_equal - 1)) / (count_valid - 1)
+            # Subtract 1 from valid because we are ranking against prior values + itself
+            out[i] = (count_less + 0.5 * (count_equal - 1)) / (count_valid - 1)
+            if out[i] < 0: out[i] = 0.0
+            if out[i] > 1: out[i] = 1.0
+        elif count_valid == 1:
+            out[i] = 0.5
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_rank_pct_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_rank_pct_1d(mat[:, j], window)
+
+    return out
+
+def numba_rolling_rank_pct(df, window):
+    """Wrapper for parallel rolling percentile rank."""
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_rank_pct_parallel(mat, window)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df

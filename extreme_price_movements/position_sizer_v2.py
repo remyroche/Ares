@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from extreme_price_movements.features import build_position_sizer_feature_frame, assemble_feature_matrix
 from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_CONFIG
+from extreme_price_movements.feature_views import get_feature_view
 from extreme_price_movements.elasticnet_feature_selection_v2 import select_features_via_elasticnet, select_features_via_staged_en_rfe
 from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
 
@@ -326,7 +327,7 @@ class LayerAPredictor:
             l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.15, 0.40, 0.70])
             inner_cv = fs_cfg.get("inner_n_splits_default", 3)
 
-        feature_names = POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"]
+        feature_names = get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear")
 
         for name, y_cand in candidates.items():
             oof_preds = np.full(len(X), np.nan)
@@ -441,7 +442,7 @@ class LayerAPredictor:
             l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.15, 0.40, 0.70])
             inner_cv = fs_cfg.get("inner_n_splits_default", 3)
 
-        feature_names = POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"]
+        feature_names = get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear")
 
         for tr_idx, val_idx in splits:
             w_tr = sample_weight[tr_idx] if sample_weight is not None else None
@@ -534,7 +535,7 @@ class LayerAPredictor:
             l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.15, 0.40, 0.70])
             inner_cv = fs_cfg.get("inner_n_splits_default", 3)
 
-        feature_names = POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"]
+        feature_names = get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear")
 
         for tr_idx, val_idx in splits:
             w_tr = w_res[tr_idx] if w_res is not None else None
@@ -585,23 +586,23 @@ class LayerAPredictor:
 
         # 0. Feature Diagnostics
         self.feature_coverage_report_ = {
-            "model1_requested": POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"],
-            "model2_requested": POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"],
-            "model3_requested": POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"],
+            "model1_requested": get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"),
+            "model2_requested": get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear"),
+            "model3_requested": get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear"),
             "available_in_dict": list(feature_dict.keys()),
         }
 
         def _get_missing(requested):
             return [k for k in requested if k not in feature_dict]
 
-        self.feature_coverage_report_["model1_missing"] = _get_missing(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"])
-        self.feature_coverage_report_["model2_missing"] = _get_missing(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"])
-        self.feature_coverage_report_["model3_missing"] = [k for k in POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"] if k not in feature_dict and k not in ["edge_pred", "downside_pred", "edge_minus_downside", "abs_edge_pred"]]
+        self.feature_coverage_report_["model1_missing"] = _get_missing(get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"))
+        self.feature_coverage_report_["model2_missing"] = _get_missing(get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear"))
+        self.feature_coverage_report_["model3_missing"] = [k for k in get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear") if k not in feature_dict and k not in ["edge_pred", "downside_pred", "edge_minus_downside", "abs_edge_pred"]]
 
 
         # 1. Assemble X1, X2
-        X1 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"])
-        X2 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"])
+        X1 = assemble_feature_matrix(feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"))
+        X2 = assemble_feature_matrix(feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear"))
 
         self.feature_coverage_report_["X1_shape"] = X1.shape
         self.feature_coverage_report_["X2_shape"] = X2.shape
@@ -631,7 +632,7 @@ class LayerAPredictor:
         fd3["edge_minus_downside"] = np.where(valid12, self.model1_oof_pred_ - self.lambda_downside * self.model2_oof_pred_, 0.0)
         fd3["abs_edge_pred"] = np.where(np.isfinite(self.model1_oof_pred_), np.abs(self.model1_oof_pred_), 0.0)
 
-        X3 = assemble_feature_matrix(fd3, POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"])
+        X3 = assemble_feature_matrix(fd3, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear"))
         self.feature_coverage_report_["X3_shape"] = X3.shape
 
         # e) fit final Model 3 on OOF residual target using the dimensionally accurate winning target
@@ -644,8 +645,8 @@ class LayerAPredictor:
         if not self.is_fitted:
             raise RuntimeError("LayerAPredictor not fitted")
 
-        X1 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"])
-        X2 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"])
+        X1 = assemble_feature_matrix(feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"))
+        X2 = assemble_feature_matrix(feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear"))
 
         edge_p = self.edge_model.predict(X1[:, self.final_selected_feature_idx_edge_])
         downside_p = self.downside_model.predict(X2[:, self.final_selected_feature_idx_downside_])
@@ -655,7 +656,7 @@ class LayerAPredictor:
         fd3["downside_pred"] = downside_p
         fd3["edge_minus_downside"] = edge_p - self.lambda_downside * downside_p
         fd3["abs_edge_pred"] = np.abs(edge_p)
-        X3 = assemble_feature_matrix(fd3, POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"])
+        X3 = assemble_feature_matrix(fd3, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear"))
 
         return {
             "edge": edge_p,

@@ -1,5 +1,5 @@
 bucket,config_id,rank_in_bucket,source,k_tp,sl_as_tp_pct,base_atr_window,tp_base_pct,tp_abs_lo_pct,sl_abs_lo_pct,tp_abs_hi_pct,sl_abs_hi_pct,tp_method,sl_method,mode,horizon_base,horizon_scaling,bucket_auc,bucket_auc_bound,bucket_tp_sep,bucket_ap_lift,bucket_tp_over_sl,bucket_timeout,bucket_bind,bucket_ece,bucket_brier,bucket_ic_std_time,bucket_ic_std_asset,bucket_stage2_score,learnability_score,saved_at
-MR_long,CFGD5A43DFB5A,99,per_bucket,0.760343,0.54,840,0.019302,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-06T00:33:38.128364+00:00
-MR_short,CFGD5A43DFB5A,99,per_bucket,0.760343,0.54,840,0.019302,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-06T00:33:38.133069+00:00
-TF_long,CFGD5A43DFB5A,99,per_bucket,0.760343,0.54,840,0.019302,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-06T00:33:38.137870+00:00
-TF_short,CFGD5A43DFB5A,99,per_bucket,0.760343,0.54,840,0.019302,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-06T00:33:38.142830+00:00
+MR_long,CFGBAA0B97605,99,per_bucket,1.102973,0.42,840,0.027196,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-09T23:52:43.847257+00:00
+MR_short,CFGBAA0B97605,99,per_bucket,1.102973,0.42,840,0.027196,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-09T23:52:43.852432+00:00
+TF_long,CFGBAA0B97605,99,per_bucket,1.102973,0.42,840,0.027196,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-09T23:52:43.857686+00:00
+TF_short,CFGBAA0B97605,99,per_bucket,1.102973,0.42,840,0.027196,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-09T23:52:43.862751+00:00

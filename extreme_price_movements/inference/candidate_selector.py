@@ -51,9 +51,11 @@ def select_candidates(
     param_val = float(cfg.get("param", 5.0))
     z_hr = float(cfg.get("z_hours", 12.0))
 
+    duration_hr = float(cfg.get("duration_hours", 1.0))
+
     tprint(
         f"Selecting candidates using mask_optimiser logic: family={family}, "
-        f"param={param_val}, z_hours={z_hr}"
+        f"param={param_val}, z_hours={z_hr}, duration_hours={duration_hr}"
     )
     
     try:
@@ -106,6 +108,27 @@ def select_candidates(
             y_move = param_val / 100.0
             mask_h_df = up_move >= y_move
             mask_l_df = dn_move >= y_move
+
+        elif family == "std_plus_abs":
+            # param_val can be a string "(std, abs)" from CSV or a tuple
+            if isinstance(param_val, str):
+                import ast as python_ast
+                std_v, abs_v = python_ast.literal_eval(param_val)
+            elif isinstance(param_val, (list, tuple)):
+                std_v, abs_v = param_val
+            else:
+                # Fallback if param_val is just a float (shouldn't happen with std_plus_abs)
+                std_v, abs_v = param_val, 6.0
+                
+            y_move = abs_v / 100.0
+            mask_h_df = (up_move >= (std_v * std_up)) & (up_move >= y_move)
+            mask_l_df = (dn_move >= (std_v * std_dn)) & (dn_move >= y_move)
+
+        # Apply duration dilation
+        if duration_hr > 1.0:
+            d_bars = int(duration_hr * 4)
+            mask_h_df = mask_h_df.rolling(d_bars, min_periods=1).max().astype(bool)
+            mask_l_df = mask_l_df.rolling(d_bars, min_periods=1).max().astype(bool)
 
         # Combine masks
         candidate_mask = mask_h_df | mask_l_df
@@ -220,6 +243,23 @@ def select_candidates_at_timestamp(
             y_move = param_val / 100.0
             mask_h_df = up_move >= y_move
             mask_l_df = dn_move >= y_move
+
+        elif family == "std_plus_abs":
+            if isinstance(param_val, str):
+                import ast as python_ast
+                std_v, abs_v = python_ast.literal_eval(param_val)
+            elif isinstance(param_val, (list, tuple)):
+                std_v, abs_v = param_val
+            else:
+                std_v, abs_v = param_val, 6.0
+            y_move = abs_v / 100.0
+            mask_h_df = (up_move >= (std_v * std_up)) & (up_move >= y_move)
+            mask_l_df = (dn_move >= (std_v * std_dn)) & (dn_move >= y_move)
+
+        if duration_hr > 1.0:
+            d_bars = int(duration_hr * 4)
+            mask_h_df = mask_h_df.rolling(d_bars, min_periods=1).max().astype(bool)
+            mask_l_df = mask_l_df.rolling(d_bars, min_periods=1).max().astype(bool)
 
         candidate_mask = mask_h_df | mask_l_df
 

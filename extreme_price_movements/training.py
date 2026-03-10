@@ -7730,6 +7730,25 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models, base_variant_m
         _out = np.where(_both & (_ret_h < 0.0), -float(_sl_pct), _out)
         return _out.astype(np.float32)
 
+    def _tbm_proxy_target_class(_ret_h, _mfe_h, _mae_h, _tp_pct, _sl_pct):
+        """Generate classification labels for TBM: 0=SL, 1=TO, 2=TP"""
+        _ret_h = np.asarray(_ret_h, dtype=float)
+        _mfe_h = np.asarray(_mfe_h, dtype=float)
+        _mae_h = np.asarray(_mae_h, dtype=float)
+        _hit_tp = _mfe_h >= float(_tp_pct)
+        _hit_sl = _mae_h >= float(_sl_pct)
+        _both = _hit_tp & _hit_sl
+
+        # 0 = SL hit (and not TP)
+        # 1 = Timeout (neither SL nor TP hit)
+        # 2 = TP hit (and not SL)
+        _out = np.ones(len(_ret_h), dtype=np.int8)  # Default to TO (1)
+        _out[_hit_sl & ~_hit_tp] = 0  # SL
+        _out[_hit_tp & ~_hit_sl] = 2  # TP
+        _out[_both & (_ret_h < 0.0)] = 0  # Both hit, negative return -> SL
+        _out[_both & (_ret_h >= 0.0)] = 2  # Both hit, positive return -> TP
+        return _out
+
     def _fit_aligned_meta_map_heads(
         *,
         side,
@@ -7804,6 +7823,47 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models, base_variant_m
             _m.selector_loss_override = "huber"
             return _m
 
+        def _configure_meta_clf(_head_name, _selector_cfg_key):
+            _m = MetaClassifierModel(reports_dir=reports_dir)
+            _m.strategy_name = _head_name
+            _m.candidate_mode = "xgb_parallel_forest"
+            _m.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", True))
+            _m.xgb_parallel_forest_params = {
+                "objective": "multi:softprob",
+                "num_class": 3,
+                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 8)),
+                "num_parallel_tree": int(cfg.get("meta_parallel_forest_num_parallel_tree", 160)),
+                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 6)),
+                "learning_rate": float(cfg.get("meta_parallel_forest_learning_rate", 0.05)),
+                "subsample": 0.75,
+                "colsample_bytree": 0.75,
+                "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
+                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 20.0)),
+                "min_child_weight": float(cfg.get("meta_parallel_forest_min_child_weight", 48.0)),
+                "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
+                "tree_method": "hist",
+                "random_state": 42,
+                "n_jobs": 3,
+                "verbosity": 0,
+                "eval_metric": "mlogloss",
+            }
+            _m.selector_cfg = dict(cfg.get(_selector_cfg_key, {}) or {})
+            _m.selector_report_dir = _fs_dir
+            _m.selector_prev_selected = _prev_selected(_head_name)
+            _m.selector_family_map = dict(cfg.get("selector_feature_family_map", {}) or {})
+            _sel_cfg = MetaClassifierSelectionConfig(
+                max_logloss=float(cfg.get("meta_clf_max_logloss", 1.10)),
+                dynamic_utility_from_realized=bool(cfg.get("meta_clf_dynamic_utility_from_realized", True)),
+                u_tp=float(cfg.get("meta_clf_u_tp", 1.0)),
+                u_to=float(cfg.get("meta_clf_u_to", 0.0)),
+                u_sl=float(cfg.get("meta_clf_u_sl", -3.0)),
+                top_frac=float(cfg.get("meta_clf_top_frac", 0.30)),
+                min_top_n=int(cfg.get("meta_clf_min_top_n", 50)),
+                min_lift_vs_baseline=float(cfg.get("meta_clf_min_lift_vs_baseline", 0.0)),
+                require_positive_oof_utility=bool(cfg.get("meta_clf_require_positive_oof_utility", True)),
+            )
+            return _m, _sel_cfg
+
         for _geom in cfg.get("meta_map_tbm_geometries", []):
             _g_name = str(_geom.get("name", "")).strip()
             _tp_pct = float(_geom.get("tp_pct", 0.005))
@@ -7814,27 +7874,44 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models, base_variant_m
                 _mae_col = f"__meta_raw__mae_{int(_h)}h"
                 if _mfe_col not in df.columns or _mae_col not in df.columns:
                     continue
-                _target = _tbm_proxy_target(
+                # Use classification target instead of regression
+                _target_class = _tbm_proxy_target_class(
                     _ret_h,
                     np.asarray(df[_mfe_col].values, dtype=np.float32),
                     np.asarray(df[_mae_col].values, dtype=np.float32),
                     _tp_pct,
                     _sl_pct,
                 )
-                _weights = _meta_map_weights(_target, df, trade_mask)
+                _weights = _meta_map_weights(_ret_h, df, trade_mask)
                 _head_name = f"{_bucket_key}_{_g_name}_h{int(_h)}"
-                _model = _configure_meta_reg(_head_name, "meta_selector_cfg")
+                _model, _sel_cfg = _configure_meta_clf(_head_name, "meta_selector_cfg")
+                # Get realized utility for classifier
+                _realized_u = (
+                    np.asarray(df["__u_policy_net__"].values, dtype=float)
+                    if "__u_policy_net__" in df.columns
+                    else np.log1p(np.clip(_ret_h, -0.999999, None))
+                )
+                _bp = (
+                    np.clip(np.asarray(df["__barrier_pct__"].values, dtype=np.float32), 1e-6, None)
+                    if "__barrier_pct__" in df.columns
+                    else np.full(len(df), 0.02, dtype=np.float32)
+                )
                 _model.fit(
                     X_meta_base,
-                    _target,
+                    _ret_h,  # Use returns for utility calculation
                     sample_weight=_weights,
                     groups=meta_groups,
-                    y_per_horizon=None,
+                    y_per_horizon={int(hh): np.asarray(ret_for_h(int(hh)), dtype=np.float64) for hh in CANON_HORIZONS},
+                    vol_proxy=_bp,
+                    realized_u_policy=_realized_u,
+                    selection_cfg=_sel_cfg,
+                    y_class_override=_target_class,
+                    trade_mask=np.asarray(trade_mask, dtype=bool),
                 )
                 meta_models[_head_name] = _model
-                _bucket_y_ret[_head_name] = np.asarray(_target, dtype=float)
+                _bucket_y_ret[_head_name] = _ret_h.copy()
                 _bucket_metadata[_head_name] = _md
-                tprint(f"Meta {_head_name}: fitted aligned TBM map head")
+                tprint(f"Meta {_head_name}: fitted aligned TBM classifier head")
 
         _bp = (
             np.clip(np.asarray(df["__barrier_pct__"].values, dtype=np.float32), 1e-6, None)
@@ -8422,15 +8499,15 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models, base_variant_m
                 )
                 y_ret_raw_main = np.where(_y_finite_mask, y_ret_raw_main, _y_fill)
 
-            # Sample weights: magnitude sigmoid (moderate top-30% upweight) + MFE/MAE quality
+            # Sample weights: magnitude sigmoid (very slight top-40% upweight) + MFE/MAE quality
             # Use main horizon for quality indicators
-            _alpha_w = float(cfg.get("meta_weight_sigmoid_alpha", 0.5))
+            _alpha_w = float(cfg.get("meta_weight_sigmoid_alpha", 0.2))
             _y_abs = np.abs(y_ret_raw_main)
             _fin_w = np.isfinite(_y_abs)
-            _q70 = float(np.percentile(_y_abs[_fin_w], 70))
+            _q60 = float(np.percentile(_y_abs[_fin_w], 60))
             _s_w = max(float(np.std(_y_abs[_fin_w])), 1e-9)
-            # sigmoid centered at p70: top-30% get ~1.25-1.5x, bottom-70% get ~1.0x
-            w_mag = 1.0 + _alpha_w * _sigmoid((_y_abs - _q70) / _s_w)
+            # sigmoid centered at p60: top-40% get ~1.1-1.2x, bottom-60% get ~1.0x
+            w_mag = 1.0 + _alpha_w * _sigmoid((_y_abs - _q60) / _s_w)
             w_mag = w_mag / max(float(np.mean(w_mag)), 1e-12)  # normalize to mean=1
 
             _mfe_col = f"__meta_raw__mfe_{_h_main}h"
@@ -8772,16 +8849,16 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models, base_variant_m
 
             # --- 2. Optional Meta Classifier Training ---
             if include_meta_clf:
-                # Magnitude sigmoid: moderate top-30% upweight (same alpha as regressors)
+                # Magnitude sigmoid: very slight top-40% upweight (same alpha as regressors)
                 # Each source normalized to mean=1 before combining so neither dominates.
-                _alpha_clf = float(cfg.get("meta_weight_sigmoid_alpha", 0.5))
+                _alpha_clf = float(cfg.get("meta_weight_sigmoid_alpha", 0.2))
                 _y_avg_abs = np.mean(
                     [np.abs(_y_per_h[h]) for h in _available_horizons], axis=0
                 )
                 _fin_w = np.isfinite(_y_avg_abs)
-                _q70_c = float(np.percentile(_y_avg_abs[_fin_w], 70))
+                _q60_c = float(np.percentile(_y_avg_abs[_fin_w], 60))
                 _s_c = max(float(np.std(_y_avg_abs[_fin_w])), 1e-9)
-                w_mag_clf = 1.0 + _alpha_clf * _sigmoid((_y_avg_abs - _q70_c) / _s_c)
+                w_mag_clf = 1.0 + _alpha_clf * _sigmoid((_y_avg_abs - _q60_c) / _s_c)
                 w_mag_clf = w_mag_clf / max(
                     float(np.mean(w_mag_clf)), 1e-12
                 )  # normalize to mean=1
@@ -9163,7 +9240,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models, base_variant_m
         _allowed_meta_suffixes.append("_clf")
     _allowed_meta_suffixes = tuple(_allowed_meta_suffixes)
     _aligned_map_pat = re.compile(
-        r".*_(tbm_50_25|tbm_100_50)_h[124]$|.*_(mae|mfe)_h[24]$"
+        r".*_(tbm_500_250|tbm_250_125)_h[124]$|.*_(mae|mfe)_h[24]$"
     )
 
     def _fill_nonfinite_oof_vector(values, neutral: float = 0.0):

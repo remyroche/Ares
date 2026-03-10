@@ -1591,7 +1591,7 @@ def align_artifacts(
     from joblib import Parallel, delayed
     start_ts = idx.min()
     end_ts = idx.max() + pd.Timedelta(hours=48)
-    allow_15m_download = bool(cfg.get("allow_15m_download", False))
+    allow_15m_download = bool(CFG.get("allow_15m_download", False))
     
     def _fetch(sym):
         return sym, _load_or_download_15m(
@@ -3044,9 +3044,22 @@ def evaluate_config(
                     
                     # Reindex downsampled bounds to 15m domain (fills NaNs for non-hour bars)
                     # Numba skips NaNs instantly, computing only valid 1h entries but tracking paths on 15m resolution.
-                    _tp_15m = _sampled_tp.reindex(_idx_15m)
-                    _sl_15m = _sampled_sl.reindex(_idx_15m)
-                    _dyn_h_15m = dyn_h.reindex(_idx_15m) if dyn_h is not None else None
+                    try:
+                        _tp_15m = _sampled_tp.reindex(_idx_15m)
+                        _sl_15m = _sampled_sl.reindex(_idx_15m)
+                        _dyn_h_15m = dyn_h.reindex(_idx_15m) if dyn_h is not None else None
+                    except Exception as e:
+                        if "duplicate labels" in str(e).lower():
+                            tprint(f"DIAGNOSTIC: Duplicate index found during reindex!")
+                            tprint(f" _sampled_tp unique: {_sampled_tp.index.is_unique}")
+                            tprint(f" _idx_15m unique: {_idx_15m.is_unique}")
+                            if not _sampled_tp.index.is_unique:
+                                dups = _sampled_tp.index[_sampled_tp.index.duplicated()].unique()
+                                tprint(f" _sampled_tp dups: {dups[:5].tolist()}")
+                            if not _idx_15m.is_unique:
+                                dups = _idx_15m[_idx_15m.duplicated()].unique()
+                                tprint(f" _idx_15m dups: {dups[:5].tolist()}")
+                        raise e
                     
                     lbl_15m, ret_15m, qual_15m = compute_triple_barrier_labels(
                         _panel_15m, _tp_15m, _sl_15m, h, side=side, return_outcomes=True, horizons_frame=_dyn_h_15m, resolve_conflicts=False
@@ -3066,9 +3079,19 @@ def evaluate_config(
                     )
                     
                     # Project perfectly computed outcomes back to 1h domain
-                    lbl = lbl_15m.reindex(_idx_1h).fillna(0)
-                    ret = ret_15m.reindex(_idx_1h).fillna(0)
-                    qual = qual_15m.reindex(_idx_1h).fillna(0)
+                    try:
+                        lbl = lbl_15m.reindex(_idx_1h).fillna(0)
+                        ret = ret_15m.reindex(_idx_1h).fillna(0)
+                        qual = qual_15m.reindex(_idx_1h).fillna(0)
+                    except Exception as e:
+                        if "duplicate labels" in str(e).lower():
+                            tprint(f"DIAGNOSTIC: Duplicate index found during 1h reindex!")
+                            tprint(f" lbl_15m unique: {lbl_15m.index.is_unique}")
+                            tprint(f" _idx_1h unique: {_idx_1h.is_unique}")
+                            if not lbl_15m.index.is_unique:
+                                dups = lbl_15m.index[lbl_15m.index.duplicated()].unique()
+                                tprint(f" lbl_15m dups: {dups[:5].tolist()}")
+                        raise e
                 else:
                     lbl, ret, qual = compute_triple_barrier_labels(
                         artifacts.panel, _sampled_tp, _sampled_sl, h, side=side, return_outcomes=True, horizons_frame=dyn_h

@@ -137,9 +137,7 @@ def compute_prod_aligned_tp_params(
                 tp_eff_targets["H8"] = float(tp_eff_h8)
                 tp_eff_bands["H8"] = [float(h2_lower) * (s8 / max(abs(s2), 1e-12)), float(h2_upper) * (s8 / max(abs(s2), 1e-12))]
             
-            scaling = {"s2": float(s2), "s4": float(s4)}
-            if s8 is not None:
-                scaling["s8"] = float(s8)
+            scaling = {"s2": float(s2), "s4": float(s4), **({"s8": float(s8)} if s8 is not None else {})}
             
             candidates.append(
                 {
@@ -184,7 +182,7 @@ def compute_prod_aligned_tp_params(
         "tp_base_candidates": candidates_u,
         "h2_band": [float(h2_lower), float(h2_upper)],
         "horizons": h_list,
-        "scaling": {"s2": float(s2), "s4": float(s4), "s8": float(s8)},
+        "scaling": {f"s{h}": float(v) for h, v in scales.items() if v is not None},
         "atr_quantiles": {"q50": quantile_vals.get(0.5, float('nan')), "q75": quantile_vals.get(0.75, float('nan')), "q90": quantile_vals.get(0.9, float('nan'))},
     }
 

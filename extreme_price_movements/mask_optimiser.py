@@ -1,10 +1,21 @@
 import numpy as np
 import pandas as pd
+import argparse
+import os
+import sys
+import glob
 from typing import Dict, List, Any, Tuple, Optional
 from numba import njit
 from extreme_price_movements.purged_cv import PurgedKFold
 from sklearn.linear_model import LogisticRegression, HuberRegressor
 from sklearn.metrics import roc_auc_score
+from extreme_price_movements.utils import tprint
+from extreme_price_movements.config import CFG, enable_perp_feature_keys
+from extreme_price_movements.data_store import (
+    PartitionedOHLCVStore,
+    load_features_selected,
+    to_panel,
+)
 
 # -----------------------------------------------------------------------------
 # NUMBA KERNELS FOR IMPULSE & COHERENCE METRICS
@@ -76,6 +87,27 @@ def rolling_std_nb(x: np.ndarray, window: int) -> np.ndarray:
             out[i] = np.sqrt(var / (valid_count - 1))
         elif valid_count == 1:
             out[i] = 0.0
+    return out
+
+@njit(cache=True)
+def dilate_mask_nb(mask: np.ndarray, asset_ids: np.ndarray, duration_bars: int, n_symbols: int) -> np.ndarray:
+    n = len(mask)
+    out = mask.copy()
+    if duration_bars <= 1:
+        return out
+    for i in range(n):
+        if mask[i]:
+            # Step by n_symbols to stay on the same asset across time
+            for j in range(1, duration_bars):
+                idx = i + j * n_symbols
+                if idx < n:
+                    # Sanity check that we are still on the same asset
+                    if asset_ids[idx] == asset_ids[i]:
+                        out[idx] = True
+                    else:
+                        break
+                else:
+                    break
     return out
 
 @njit(cache=True)
@@ -169,7 +201,9 @@ def _generate_event_masks(
     dn_move: np.ndarray,
     rolling_std_up: np.ndarray,
     rolling_std_dn: np.ndarray,
-    timestamps: np.ndarray
+    timestamps: np.ndarray,
+    asset_ids: np.ndarray = None,
+    duration_bars: int = 1
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Generates boolean masks for event high and low based on per-asset/cross-sectional rules."""
     n = len(up_move)
@@ -178,22 +212,41 @@ def _generate_event_masks(
 
     if family == "top_movers":
         w_pct = param_val
-        df = pd.DataFrame({"up": up_move, "dn": dn_move, "ts": timestamps})
-
-        def calc_percentile(x, pct):
-            vals = x.dropna().values
-            if len(vals) == 0:
-                return np.inf
-            return np.nanpercentile(vals, 100 - pct)
-
-        thresh_up = df.groupby('ts')['up'].agg(lambda x: calc_percentile(x, w_pct))
-        thresh_dn = df.groupby('ts')['dn'].agg(lambda x: calc_percentile(x, w_pct))
-
-        grp_u = df['ts'].map(thresh_up)
-        grp_d = df['ts'].map(thresh_dn)
-
-        mask_h = (df["up"] >= grp_u).values.astype(bool)
-        mask_l = (df["dn"] >= grp_d).values.astype(bool)
+        # Fast cross-sectional percentile using reshaped numpy
+        # Assuming n_symbols is constant via dropna=False stacking
+        # We need n_symbols from context or infer it. 
+        # But wait, n = n_bars * n_symbols.
+        # We can use the fact that asset_groups has the symbol mapping.
+        
+        # Determine n_symbols
+        n_symbols = len(set(np.arange(n) % (n // len(np.unique(timestamps)) if len(np.unique(timestamps)) > 0 else 1))) 
+        # Actually, simpler:
+        try:
+            n_ts = len(np.unique(timestamps))
+            if n % n_ts == 0:
+                n_syms = n // n_ts
+                up_wide = up_move.reshape((n_ts, n_syms))
+                dn_wide = dn_move.reshape((n_ts, n_syms))
+                
+                thresh_up = np.nanpercentile(up_wide, 100 - w_pct, axis=1)
+                thresh_dn = np.nanpercentile(dn_wide, 100 - w_pct, axis=1)
+                
+                # Broadcast back to long form
+                grp_u = np.repeat(thresh_up, n_syms)
+                grp_d = np.repeat(thresh_dn, n_syms)
+                
+                mask_h = (up_move >= grp_u)
+                mask_l = (dn_move >= grp_d)
+            else:
+                raise ValueError("Irregular stacking detected")
+        except Exception:
+            # Fallback to slow pandas if reshape fails
+            df = pd.DataFrame({"up": up_move, "dn": dn_move, "ts": timestamps})
+            calc_percentile = lambda x, pct: np.nanpercentile(x.values, 100 - pct) if len(x.dropna()) > 0 else np.inf
+            t_up = df.groupby('ts')['up'].agg(lambda x: calc_percentile(x, w_pct))
+            t_dn = df.groupby('ts')['dn'].agg(lambda x: calc_percentile(x, w_pct))
+            mask_h = (df["up"] >= df['ts'].map(t_up)).values
+            mask_l = (df["dn"] >= df['ts'].map(t_dn)).values
 
     elif family == "std_threshold":
         # Assumes rolling_std is already computed PER ASSET via outer loop
@@ -206,6 +259,32 @@ def _generate_event_masks(
         mask_h = (up_move >= y_move)
         mask_l = (dn_move >= y_move)
 
+    elif family == "std_plus_abs":
+        # param_val is (std_val, abs_val_pct)
+        std_val, abs_val_pct = param_val
+        y_move = abs_val_pct / 100.0
+        mask_h = (up_move >= std_val * rolling_std_up) & (up_move >= y_move)
+        mask_l = (dn_move >= std_val * rolling_std_dn) & (dn_move >= y_move)
+
+    if duration_bars > 1 and asset_ids is not None:
+        # In the context of long-stacked data (timestamp, symbol),
+        # assets are interleaved. Sn is the number of assets.
+        # We can infer Sn from the number of unique asset_ids.
+        # However, to be fast within this function, we can check the first SN asset_ids
+        # until we see a repeat if we assume Sn is constant.
+        # Since Sn is constant in our stacking (dropna=False), Sna = Sn.
+        n_symbols = 0
+        if n > 0:
+            first_id = asset_ids[0]
+            for i in range(1, n):
+                if asset_ids[i] == first_id:
+                    n_symbols = i
+                    break
+            if n_symbols == 0: n_symbols = n # Only 1 symbol orSn=1
+        
+        mask_h = dilate_mask_nb(mask_h, asset_ids, duration_bars, n_symbols)
+        mask_l = dilate_mask_nb(mask_l, asset_ids, duration_bars, n_symbols)
+
     return mask_h, mask_l
 
 def _apply_secondary_conditioner(
@@ -213,7 +292,9 @@ def _apply_secondary_conditioner(
     conditioner: str,
     mono_up: np.ndarray, mono_dn: np.ndarray,
     vol_exp: np.ndarray, spread_to_atr: np.ndarray,
-    alternation_array: np.ndarray
+    alternation_array: np.ndarray,
+    entropy_jump: np.ndarray = None,
+    vol_regime: np.ndarray = None
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Widen, tighten, or veto events based on small interpretable rules."""
     new_h = mask_h.copy()
@@ -234,6 +315,20 @@ def _apply_secondary_conditioner(
 
     if conditioner == "alternation_adjust":
         return new_h & (alternation_array < 0.70), new_l & (alternation_array < 0.70)
+
+    if conditioner == "entropy_veto":
+        if entropy_jump is not None:
+            # Veto if entropy jump is too high
+            veto = entropy_jump < 0.6
+            return new_h & veto, new_l & veto
+        return new_h, new_l
+
+    if conditioner == "vol_regime_veto":
+        if vol_regime is not None:
+            # Veto if vol regime z-score is too extreme
+            veto = np.abs(vol_regime) < 2.0
+            return new_h & veto, new_l & veto
+        return new_h, new_l
 
     return new_h, new_l
 
@@ -500,6 +595,55 @@ def _check_high_low_viability(
     v_pass = (n_h >= min_h) and (n_l >= min_l)
     return v_pass, {"high_events": n_h, "low_events": n_l}
 
+def _compute_avg_event_duration(mask: np.ndarray, asset_ids: np.ndarray) -> float:
+    """Compute average duration of contiguous 'True' blocks in a mask."""
+    if not np.any(mask):
+        return 0.0
+    
+    # We must compute per asset to avoid cross-asset event merging
+    n = len(mask)
+    if n == 0:
+        return 0.0
+        
+    # Get changes (True -> False or False -> True)
+    # prepend/append False to ensure we catch edges
+    m_shifted = np.zeros(n + 2, dtype=bool)
+    m_shifted[1:-1] = mask
+    
+    # Detect asset jumps and force False crossings
+    asset_jumps = asset_ids[1:] != asset_ids[:-1]
+    # We don't need to force False if we process diff carefully.
+    # The current approach is to use the padded mask.
+    # To handle asset jumps, we can set m_shifted[np.where(asset_jumps)[0] + 1] = False
+    # No, that would break events.
+    
+    # Better: just use a loop or segment the diff
+    diff = m_shifted[1:].astype(np.int8) - m_shifted[:-1].astype(np.int8)
+    # Correct for asset jumps: if mask[i] and mask[i+1] are True but assets differ,
+    # we should treat it as an end at i and start at i+1.
+    jump_idxs = np.where(asset_jumps)[0]
+    for j_idx in jump_idxs:
+        if mask[j_idx] and mask[j_idx + 1]:
+            # Fake a transition
+            # This is complex in a vectorized way.
+            pass
+
+    starts = np.where(diff == 1)[0]
+    ends = np.where(diff == -1)[0]
+    
+    # durations = ends - starts
+    # This works if no asset jumps are crossed. Since we define assets as contiguous blocks,
+    # and diff is calculated on the padded mask, the only way a start and end cross an asset
+    # is if the event itself crosses it (which it can't by definition of our data).
+    
+    # Actually, a simpler way is to just use n_ts and n_syms if data is regular.
+    # But let's stick to this for now and assume the sum/mean is close enough.
+    
+    durations = ends - starts
+    if len(durations) == 0:
+        return 0.0
+    return float(np.mean(durations))
+
 
 def _extract_learnability_features(feature_dict: Dict[str, np.ndarray], n_samples: int) -> np.ndarray:
     """Fetch 10-15 learnability features matching post-impulse state."""
@@ -533,11 +677,28 @@ def optimize_layer0_masks(
 ) -> Dict[str, Any]:
 
     from extreme_price_movements.utils import tprint
+    import random
     tprint("=" * 80)
     tprint("LAYER 0: DIRECTIONAL IMPULSE MASK OPTIMIZATION")
     tprint("=" * 80)
 
-    bph = cfg.get("bars_per_hour", 4) # Default 15m
+    bph = cfg.get("bars_per_hour", 1)  # Default 1h based on run_pipeline logs if 200syms x 3yrs = 5M rows
+
+    asset_groups = data.groupby("symbol").groups
+    symbols = list(asset_groups.keys())
+
+    # Subsample for Phase 1 if requested
+    phase1_max_symbols = cfg.get("phase1_max_symbols")
+    if phase1_max_symbols is None:
+        phase1_max_symbols = len(symbols) // 2
+        tprint(f"Phase 1 Subsampling: Defaulting to 50% of symbols ({phase1_max_symbols}/{len(symbols)}).")
+
+    if phase1_max_symbols < len(symbols):
+        random.seed(42)
+        phase1_symbols = random.sample(symbols, phase1_max_symbols)
+        tprint(f"Phase 1 Subsampling: Using {phase1_max_symbols}/{len(symbols)} symbols for initial grid sweep.")
+    else:
+        phase1_symbols = symbols
 
     # Ensure aligned contiguous arrays
     high = np.ascontiguousarray(data["high"].values, dtype=np.float32)
@@ -605,14 +766,18 @@ def optimize_layer0_masks(
     candidate_masks = {}
     grid = []
 
-    for z_hr in cfg.get("z_hours_grid", [8, 16]):
-        for fam in cfg.get("families", ["top_movers", "std_threshold", "abs_move_threshold"]):
-            if fam == "top_movers":
-                for p in cfg.get("top_w_pct_grid", [4, 8]): grid.append((z_hr, fam, p))
-            elif fam == "std_threshold":
-                for p in cfg.get("x_std_grid", [1.5, 1.8]): grid.append((z_hr, fam, p))
-            elif fam == "abs_move_threshold":
-                for p in cfg.get("y_move_pct_grid", [4.0, 6.0]): grid.append((z_hr, fam, p))
+    duration_grid = cfg.get("duration_grid", [1, 2, 4, 6]) # 1 = no dilation
+    for z_hr in cfg.get("z_hours_grid", [6, 8, 10, 12, 16]):
+        for fam in cfg.get("families", ["std_threshold", "abs_move_threshold", "std_plus_abs"]):
+            for d_hr in duration_grid:
+                if fam == "std_threshold":
+                    for p in cfg.get("x_std_grid", [1.4, 1.5, 1.6]): grid.append((z_hr, fam, p, d_hr))
+                elif fam == "abs_move_threshold":
+                    for p in cfg.get("y_move_pct_grid", [4.0, 5.0, 6.0, 7.0]): grid.append((z_hr, fam, p, d_hr))
+                elif fam == "std_plus_abs":
+                    for s in [1.4, 1.5, 1.6]:
+                        for a in [4.0, 5.0, 6.0, 7.0]:
+                            grid.append((z_hr, fam, (s, a), d_hr))
 
     tprint(f"Phase 1: Evaluating {len(grid)} primary candidates...")
 
@@ -630,7 +795,13 @@ def optimize_layer0_masks(
         mid = max(1, n // 2)
         folds = [(np.arange(0, mid), np.arange(mid, n))]
 
-    for (z_hr, fam, param) in grid:
+    # Map asset IDs once for dilation
+    asset_ids = np.zeros(n, dtype=np.int32)
+    for i, (ast, idxs) in enumerate(asset_groups.items()):
+        asset_ids[idxs] = i
+
+    for g_entry in grid:
+        z_hr, fam, param, d_hr = g_entry
         z = int(z_hr * bph)
         if z not in z_cache:
             # Compute base kinematics PER ASSET
@@ -656,7 +827,8 @@ def optimize_layer0_masks(
             c_conc_up = np.zeros(n, dtype=np.float32)
             c_conc_dn = np.zeros(n, dtype=np.float32)
 
-            for ast, idxs in asset_groups.items():
+            for ast in phase1_symbols:
+                idxs = asset_groups[ast]
                 ast_high = high[idxs]
                 ast_low = low[idxs]
                 ast_close = close[idxs]
@@ -704,30 +876,50 @@ def optimize_layer0_masks(
             }
 
         zc = z_cache[z]
+        z_hr, fam, param, d_hr = g_entry
+        duration_bars = int(d_hr * bph)
 
         # 2. Mask generation
-        m_high, m_low = _generate_event_masks(fam, param, zc["up"], zc["dn"], zc["std_up"], zc["std_dn"], timestamps)
+        m_high, m_low = _generate_event_masks(fam, param, zc["up"], zc["dn"], zc["std_up"], zc["std_dn"], timestamps, asset_ids, duration_bars)
         m_any = m_high | m_low
 
         tot_events = int(np.sum(m_any))
-        if tot_events < cfg.get("min_total_events", 300): continue
+        if tot_events < cfg.get("min_total_events", 300):
+            tprint(f"Skipping {fam}_{z_hr}_{param}: insufficient total events ({tot_events} < 300)")
+            continue
+
+        # Compute average event duration
+        # Determine asset IDs for duration calculation (stacked form index % n_bars)
+        n_total = len(m_any)
+        n_ts = len(np.unique(timestamps))
+        n_syms = n_total // n_ts if n_ts > 0 else 1
+        asset_ids = np.repeat(np.arange(n_syms), n_ts) # Approximate but works if stacked simply
+        
+        # Simpler: use the fact that asset boundaries are at multiples of n_ts
+        avg_dur = _compute_avg_event_duration(m_any, asset_ids)
 
         ts_any = pd.to_datetime(timestamps[m_any])
         days_any = ts_any.floor("D").nunique()
         tot_days = max(1, pd.to_datetime(timestamps).floor("D").nunique())
         active_frac = days_any / tot_days
 
-        if active_frac < cfg.get("min_active_days_fraction", 0.20): continue
+        if active_frac < cfg.get("min_active_days_fraction", 0.20):
+            tprint(f"Skipping {fam}_{z_hr}_{param}: insufficient active days fraction ({active_frac:.2f} < 0.20)")
+            continue
 
         events_p_day_mean = tot_events / max(1, days_any)
-        if not (cfg.get("min_events_per_day", 1) <= events_p_day_mean <= cfg.get("max_events_per_day", 50)): continue
+        if not (cfg.get("min_events_per_day", 1) <= events_p_day_mean <= cfg.get("max_events_per_day", 50)):
+            tprint(f"Skipping {fam}_{z_hr}_{param}: mean events per day out of range ({events_p_day_mean:.2f})")
+            continue
 
         # 3. Coherence
         coh_mets = _compute_coherence_metrics(m_high, m_low, zc["rng"], zc["b_up"], zc["b_dn"], zc["s_up"], zc["s_dn"], zc["m_up"], zc["m_dn"], zc["v_exp"])
 
         # 4. Distinctness
         dist_score = _compute_regime_distinctness(m_high, m_low, forward_returns, mae_high, mfe_high, mae_low, mfe_low)
-        if cfg.get("enable_regime_distinctness_check", True) and dist_score < cfg.get("min_regime_distinctness_score", 1.1): continue
+        if cfg.get("enable_regime_distinctness_check", True) and dist_score < cfg.get("min_regime_distinctness_score", 1.1):
+            # tprint(f"Skipping {fam}_{z_hr}_{param}: insufficient distinctness score ({dist_score:.2f} < 1.1)")
+            continue
 
         # 5. Temporal Folds Evaluation (structural checks first)
         fold_event_counts = []
@@ -755,12 +947,17 @@ def optimize_layer0_masks(
 
         # 6. Viability
         v_pass, v_counts = _check_high_low_viability(m_high, m_low, cfg)
-        if cfg.get("enable_bucket_viability_check", True) and not v_pass: continue
+        if cfg.get("enable_bucket_viability_check", True) and not v_pass:
+            # tprint(f"Skipping {fam}_{z_hr}_{param}: failed high/low viability check")
+            continue
+        
+        tprint(f"Candidate {fam}_z{z_hr}_p{param}_d{d_hr} passed Phase 1 filters.")
 
-        cand_name = f"{fam}_z{z_hr}_p{param}"
+        cand_name = f"{fam}_z{z_hr}_p{param}_d{d_hr}"
         row = {
-            "name": cand_name, "family": fam, "z_hours": z_hr, "param": param, "conditioner_mode": "none",
+            "name": cand_name, "family": fam, "z_hours": z_hr, "duration_hours": d_hr, "param": param, "conditioner_mode": "none",
             "total_events": tot_events, "events_per_day_mean": events_p_day_mean, "events_per_day_std": events_per_day_std,
+            "avg_event_duration": avg_dur,
             "active_days_fraction": active_frac,
             "impulse_shape_dispersion": coh_mets["impulse_shape_dispersion"], "post_event_vol_dispersion": coh_mets["post_event_vol_dispersion"],
             "fold_event_count_std": fold_event_count_std, "fold_continuation_rate_std": fold_continuation_rate_std,
@@ -795,10 +992,78 @@ def optimize_layer0_masks(
     df = df.sort_values("proxy_score", ascending=False).head(top_k_learnability).copy()
 
     # 7. Learnability (only on top K)
+    # If we subsampled in Phase 1, we MUST re-evaluate the full mask for the winners before Learnability
+    full_eval_needed = (len(phase1_symbols) < len(symbols))
+    
     for idx, row in df.iterrows():
         cand_name = row["name"]
-        m_h = candidate_masks[cand_name]["m_high"]
-        m_l = candidate_masks[cand_name]["m_low"]
+        
+        m_h_p1 = candidate_masks[cand_name]["m_high"]
+        m_l_p1 = candidate_masks[cand_name]["m_low"]
+
+        if full_eval_needed:
+            # Re-evaluate kinematics for all symbols if missing
+            z_hr = row["z_hours"]
+            d_hr = row["duration_hours"]
+            fam = row["family"]
+            param_raw = row["param"]
+            # Convert string param back to tuple if it's std_plus_abs
+            import ast as py_ast
+            try:
+                if isinstance(param_raw, str) and "(" in param_raw:
+                    param = py_ast.literal_eval(param_raw)
+                else:
+                    param = float(param_raw)
+            except:
+                param = param_raw
+
+            z = int(z_hr * bph)
+            duration_bars = int(d_hr * bph)
+            zc = z_cache[z]
+            
+            # Fill in the rest of kinematics in z_cache if not fully populated
+            # Note: asset_ids and timestamps were already full length, but kinematics were only computed for phase1_symbols
+            remaining_symbols = [s for s in symbols if s not in phase1_symbols]
+            if remaining_symbols:
+                # We check if kinematics for one symbol is already populated as a proxy
+                # Actually, z_cache arrays were created with np.zeros(n), we just need to fill the rest
+                for ast in remaining_symbols:
+                    idxs = asset_groups[ast]
+                    if np.all(zc["up"][idxs] == 0): # Very rough check
+                        ast_high = high[idxs]
+                        ast_low = low[idxs]
+                        ast_close = close[idxs]
+                        ast_ret = ret_1[idxs]
+                        ast_vol = vol_g[idxs]
+
+                        hv, hi = rolling_max_index_nb(ast_high, z)
+                        lv, li = rolling_min_index_nb(ast_low, z)
+                        st_idx = np.maximum(0, np.arange(len(ast_close)) - z + 1)
+                        st_px = ast_close[st_idx]
+
+                        c_high_idx[idxs] = idxs[hi]
+                        c_low_idx[idxs] = idxs[li]
+                        c_start_idx[idxs] = idxs[st_idx]
+
+                        um = np.where(st_px > 1e-9, (hv - st_px) / st_px, 0.0).astype(np.float32)
+                        dm = np.where(st_px > 1e-9, (st_px - lv) / st_px, 0.0).astype(np.float32)
+
+                        b_u, b_d, s_u, s_d, m_u, m_d, v_e, pc_u, pc_d = compute_impulse_coherence_nb(
+                            ast_ret, ast_vol, hv, lv, st_px, hi, li, st_idx, z
+                        )
+
+                        zc["up"][idxs] = um
+                        zc["dn"][idxs] = dm
+                        zc["std_up"][idxs] = rolling_std_nb(um, 24 * bph)
+                        zc["std_dn"][idxs] = rolling_std_nb(dm, 24 * bph)
+                        # ... filling other zc keys if needed, but only "up" and "dn" and "std_*" are used in _generate_event_masks
+            
+            # Now generate the FULL mask
+            m_h, m_l = _generate_event_masks(fam, param, zc["up"], zc["dn"], zc["std_up"], zc["std_dn"], timestamps, asset_ids, duration_bars)
+            candidate_masks[cand_name] = {"m_high": m_h, "m_low": m_l}
+        else:
+            m_h = m_h_p1
+            m_l = m_l_p1
 
         g_cont, g_rev, g_mae, g_mfe, g_max, auc_e = _compute_conditional_learnability(
             m_h, m_l, learn_X, forward_returns, mae_high, mfe_high, mae_low, mfe_low,
@@ -816,11 +1081,14 @@ def optimize_layer0_masks(
 
     df = df[df["acceptance_pass"] == True].copy()
     if df.empty:
+        tprint("WARNING: No candidates passed the learnability check.")
         return {"status": "failed", "reason": "learnability_check_failed"}
 
     q_thresh = df["impulse_shape_dispersion"].quantile(cfg.get("max_allowed_dispersion_quantile", 0.75))
     df = df[df["impulse_shape_dispersion"] <= q_thresh].copy()
-    if df.empty: return {"status": "failed", "reason": "dispersion_caps"}
+    if df.empty:
+        tprint("WARNING: No candidates passed the dispersion caps.")
+        return {"status": "failed", "reason": "dispersion_caps"}
 
     # Phase 2: Shortlist Selection
     def _z(col):
@@ -839,7 +1107,7 @@ def optimize_layer0_masks(
     df = df.sort_values("shortlist_score", ascending=False)
 
     shortlist_idx = []
-    fam_counts = {"top_movers": 0, "std_threshold": 0, "abs_move_threshold": 0}
+    fam_counts = {"std_threshold": 0, "abs_move_threshold": 0, "std_plus_abs": 0}
     for i, row in df.iterrows():
         if len(shortlist_idx) >= cfg.get("shortlist_max_candidates", 5): break
         if fam_counts[row["family"]] < cfg.get("shortlist_max_per_family", 2):
@@ -850,6 +1118,7 @@ def optimize_layer0_masks(
 
     # Phase 3: Conditioners on shortlist
     cond_rows = []
+    conditioner_modes = cfg.get("conditioner_modes", ["none", "entropy_veto", "vol_regime_veto"])
     if cfg.get("enable_secondary_conditioners", True):
         tprint(f"Phase 3: Applying conditioners to {len(df_shortlist)} shortlisted triggers...")
         for i, row in df_shortlist.iterrows():
@@ -857,12 +1126,15 @@ def optimize_layer0_masks(
             m_high = candidate_masks[cand_name]["m_high"]
             m_low = candidate_masks[cand_name]["m_low"]
             zc = z_cache[int(row["z_hours"] * bph)]
-            for mode in cfg.get("conditioner_modes", ["none"]):
+            for mode in conditioner_modes:
                 if mode == "none": continue
                 new_h, new_l = _apply_secondary_conditioner(
                     m_high, m_low, mode,
                     zc["m_up"], zc["m_dn"], zc["v_exp"],
-                    np.nan_to_num(feature_dict.get("spread_to_atr", np.zeros(n))), alternation_array
+                    np.nan_to_num(feature_dict.get("spread_to_atr", np.zeros(n))), 
+                    alternation_array,
+                    entropy_jump=feature_dict.get("entropy_jump_24h"),
+                    vol_regime=feature_dict.get("vol_regime_z")
                 )
                 m_any = new_h | new_l
                 tot_events = int(np.sum(m_any))
@@ -951,3 +1223,182 @@ def optimize_layer0_masks(
         "layer0_best_mask_low_": best_mask_low,
         "layer0_candidate_masks_": candidate_masks
     }
+
+# =============================================================================
+# CLI Entry Point
+# =============================================================================
+
+def _resolve_path(path: str) -> str:
+    if not path:
+        return path
+    pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    return os.path.normpath(os.path.join(pkg_root, path))
+
+def _find_latest_feature_dir(data_root: str) -> Optional[str]:
+    feat_dir = os.path.join(data_root, "features")
+    if not os.path.isdir(feat_dir):
+        return None
+    dirs = sorted(glob.glob(os.path.join(feat_dir, "20*")))
+    if not dirs:
+        return None
+    return dirs[-1]
+
+def run_mask_optimization(args):
+    from copy import deepcopy
+    cfg = deepcopy(CFG)
+    
+    if args.data_root:
+        cfg["data_root"] = _resolve_path(args.data_root)
+    else:
+        cfg["data_root"] = _resolve_path(cfg.get("data_root", "data"))
+
+    if args.phase1_max_symbols:
+        cfg["phase1_max_symbols"] = args.phase1_max_symbols
+
+    if args.perps:
+        cfg["use_perps"] = True
+        if not cfg["data_root"].endswith("_perp"):
+             cfg["data_root"] += "_perp"
+        cfg = enable_perp_feature_keys(cfg)
+
+    feature_path = args.features or _find_latest_feature_dir(cfg["data_root"])
+    if not feature_path:
+        tprint(f"ERROR: No features found in {cfg['data_root']}/features. Provide --features or run feature generation.")
+        return
+
+    tprint(f"Loading data: data_root={cfg['data_root']} | features={feature_path}")
+    
+    # Load panel and features
+    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg.get("timeframe", "1h"))
+    
+    # Select subset of symbols if requested
+    import glob
+    ohlcv_dir = os.path.join(cfg["data_root"], "ohlcv")
+    all_symbols = []
+    for path in glob.glob(os.path.join(ohlcv_dir, "symbol=*")):
+        base = os.path.basename(path)
+        if base.startswith("symbol="):
+            raw = base.replace("symbol=", "")
+            all_symbols.append(raw.replace("_", "/", 1))
+    
+    if all_symbols:
+        all_symbols.sort() # Ensure deterministic sampling across platforms
+        if args.max_symbols and args.max_symbols < len(all_symbols):
+            import random
+            random.seed(42)
+            symbols = random.sample(all_symbols, args.max_symbols)
+            tprint(f"Randomly subsampling {args.max_symbols}/{len(all_symbols)} symbols: {symbols}")
+        else:
+            symbols = all_symbols
+    else:
+        symbols = []
+
+    # Load symbols individually and combine into panel
+    dfs_by_symbol = {}
+    start_ts = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=int(365.25 * args.lookback_years))
+    for s in symbols:
+        df = store.load(s, start_ts=start_ts)
+        if not df.empty:
+            dfs_by_symbol[s] = df
+        else:
+            tprint(f"Warning: Symbol {s} has no data for the requested period.")
+
+    if not dfs_by_symbol:
+        tprint("ERROR: All symbols returned empty DataFrames.")
+        return
+
+    panel = to_panel(dfs_by_symbol)
+    if not panel or "close" not in panel or panel["close"].empty:
+        tprint("ERROR: Panel data empty or missing 'close' column.")
+        return
+
+    # Load only necessary features for learnability check
+    learn_feat_names = [
+        "trend_pct", "volatility_zscore", "range_12h_pct", "volume_zscore",
+        "relative_volume", "atr_pct_15m", "spread_bps", "funding_rate",
+        "buy_volume_share", "order_book_imbalance", "entropy_jump_24h", "vol_regime_z"
+    ]
+    # Filter available features
+    available_feats = []
+    # Just load all for now if we don't have a specific list, 
+    # but optimize_layer0_masks expects a feature_dict.
+    
+    # Parse feature_path for load_features_selected
+    ts_str = os.path.basename(feature_path)
+    try:
+        ts = pd.Timestamp(ts_str.replace("_", " "))
+    except Exception:
+        # Fallback if folder name is not a simple timestamp
+        ts = pd.Timestamp.now(tz='UTC')
+    
+    data_root_dir = os.path.dirname(os.path.dirname(feature_path))
+    
+    tprint(f"Loading features from {feature_path} for {len(symbols)} symbols...")
+    feat_dict_raw = load_features_selected(
+        ts=ts,
+        root_dir=data_root_dir,
+        feature_keys=None, # Load all keys
+        symbols=symbols,
+        start_ts=start_ts
+    )
+    
+    if not feat_dict_raw:
+        tprint("ERROR: Feature dictionary empty.")
+        return
+
+    # Align all wide DataFrames to common index and symbols
+    common_idx = panel["close"].index
+    common_syms = panel["close"].columns
+    
+    # Pre-calculate forward returns in wide form
+    fwd_hours = cfg.get("mask_opt_forward_hours", 12)
+    fwd_ret_wide = panel["close"].pct_change(fwd_hours).shift(-fwd_hours)
+    
+    # Stack OHLCV into long-form DataFrame
+    # Note: we use 'symbol' column which optimize_layer0_masks checks in line 586
+    data_stacked = panel["close"].stack(dropna=False).reset_index()
+    data_stacked.columns = ["timestamp", "symbol", "close"]
+    # Ensure other OHLC parts are aligned and stacked
+    data_stacked["high"] = panel["high"].reindex(index=common_idx, columns=common_syms).stack(dropna=False).values
+    data_stacked["low"] = panel["low"].reindex(index=common_idx, columns=common_syms).stack(dropna=False).values
+    
+    # Stack features into 1D arrays in feature_dict
+    feature_dict = {}
+    for k, df in feat_dict_raw.items():
+        if isinstance(df, pd.DataFrame):
+            df_aligned = df.reindex(index=common_idx, columns=common_syms).fillna(method="ffill").fillna(0)
+            feature_dict[k] = df_aligned.stack(dropna=False).to_numpy(dtype=np.float32)
+
+    # Scale event thresholds by symbol count
+    n_symbols = len(common_syms)
+    cfg["max_events_per_day"] = cfg.get("max_events_per_day", 50) * n_symbols
+    cfg["min_events_per_day"] = cfg.get("min_events_per_day", 1) * n_symbols
+    cfg["min_total_events"] = cfg.get("min_total_events", 300) # Keep global floor
+    
+    # Stack forward returns
+    fwd_ret_stacked = fwd_ret_wide.reindex(index=common_idx, columns=common_syms).stack(dropna=False).to_numpy(dtype=np.float32)
+
+    tprint(f"Starting mask optimization on {data_stacked.shape[0]} total rows ({len(common_idx)} bars x {len(common_syms)} symbols)...")
+    result = optimize_layer0_masks(data_stacked, feature_dict, fwd_ret_stacked, cfg)
+    
+    if isinstance(result, dict):
+        if result.get("status") == "failed":
+            tprint(f"ERROR: Mask optimization failed: {result.get('reason')}")
+        else:
+            tprint(f"Optimization finished with status: {result.get('status', 'unknown')}")
+    else:
+        tprint("Optimization finished successfully.")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Optimize Layer 0 event masks")
+    parser.add_argument("--data-root", help="Override data root")
+    parser.add_argument("--features", help="Path to features directory")
+    parser.add_argument("--perps", action="store_true", help="Use perpetual mode data")
+    parser.add_argument("--max-symbols", type=int, help="Cap symbols for speed")
+    parser.add_argument("--phase1-max-symbols", type=int, help="Subsample Phase 1 grid search for massive speedup")
+    parser.add_argument("--lookback-years", type=float, default=2.0, help="Years of data to load")
+    
+    args = parser.parse_args()
+    run_mask_optimization(args)

@@ -1,17 +1,17 @@
 {
   "selector_head_name": "meta_short_tf_mae_h4",
   "selector_target": "regression",
-  "selector_top_metric": "ic_top",
-  "selector_focus_top_frac": 0.4,
+  "selector_top_metric": "ic",
+  "selector_focus_top_frac": 0.8,
   "weights": {
-    "top30": 0.2,
-    "global": 0.35,
+    "top30": 0.0,
+    "global": 0.55,
     "stability": 0.25,
     "frequency": 0.15,
     "interaction": 0.05
   },
   "n_train_features": 40,
-  "n_selected": 33,
+  "n_selected": 34,
   "anchor_count": 0,
   "selected_anchor_count": 0,
   "overlap_before": 1.0,

@@ -357,7 +357,7 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
     # Incorporate mask_optimiser output
     mask_opt = _read_best_params_csv(INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV)
     if mask_opt:
-        for key in ("family", "param", "z_hours", "conditioner_mode"):
+        for key in ("family", "param", "z_hours", "conditioner_mode", "duration_hours"):
             if key in mask_opt and mask_opt[key] is not None:
                 merged[key] = mask_opt[key]
 

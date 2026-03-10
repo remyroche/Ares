@@ -1,11 +1,11 @@
 {
   "selector_head_name": "meta_long_tf_tbm_100_50_h4",
   "selector_target": "regression",
-  "selector_top_metric": "ic_top",
-  "selector_focus_top_frac": 0.3,
+  "selector_top_metric": "ic",
+  "selector_focus_top_frac": 0.8,
   "weights": {
-    "top30": 0.35,
-    "global": 0.2,
+    "top30": 0.0,
+    "global": 0.55,
     "stability": 0.25,
     "frequency": 0.15,
     "interaction": 0.05

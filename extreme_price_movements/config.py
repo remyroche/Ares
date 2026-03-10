@@ -306,9 +306,9 @@ CFG = {
     "mr_utility_horizon_bars": 8,
 
     # Meta model sample weighting
-    # Magnitude sigmoid: w = 1 + alpha * sigmoid((|ret| - q70) / std)
-    # alpha=0.5 gives top-30% ~1.25-1.5x upweight (moderate)
-    "meta_weight_sigmoid_alpha": 0.5,
+    # Magnitude sigmoid: w = 1 + alpha * sigmoid((|ret| - q60) / std)
+    # alpha=0.2 gives top-40% ~1.1-1.2x upweight (very slight emphasis)
+    "meta_weight_sigmoid_alpha": 0.2,
     # MFE/MAE quality: w_exc = 0.5 + 0.5 * clip(max(MFE/barrier, MAE/barrier) / tau, 0, 1)
     "meta_mfe_mae_tau": 1.0,
 
@@ -336,8 +336,8 @@ CFG = {
     "meta_parallel_forest_min_child_weight": 48.0,
     "meta_parallel_forest_gamma": 2.5,
     "meta_map_tbm_geometries": [
-        {"name": "tbm_50_25", "tp_pct": 0.0050, "sl_pct": 0.0025},
-        {"name": "tbm_100_50", "tp_pct": 0.0100, "sl_pct": 0.0050},
+        {"name": "tbm_500_250", "tp_pct": 0.05, "sl_pct": 0.025},
+        {"name": "tbm_250_125", "tp_pct": 0.025, "sl_pct": 0.0125},
     ],
     "meta_map_tbm_horizons": [1, 2, 4],
     "meta_map_mae_horizons": [2, 4],
@@ -1423,16 +1423,16 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
 
     # Primary families
     "families": [
-        "top_movers",
         "std_threshold",
         "abs_move_threshold",
+        "std_plus_abs",
     ],
 
     # Primary grid
-    "z_hours_grid": [8, 12, 16],
-    "top_w_pct_grid": [4, 6, 8],
-    "x_std_grid": [1.4, 1.6, 1.8],
-    "y_move_pct_grid": [4.0, 5.5, 7.0],
+    "z_hours_grid": [6, 8, 10, 12, 16],
+    "x_std_grid": [1.4, 1.5, 1.6],
+    "y_move_pct_grid": [4.0, 5.0, 6.0, 7.0],
+    "duration_grid": [1, 2, 4, 6],
 
     # Screening horizon
     "phase1_forward_horizon_bars": 12,

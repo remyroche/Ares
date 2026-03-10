@@ -2148,23 +2148,10 @@ def build_barriers(
 # Event extraction and scoring
 # ---------------------------
 def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | None = None) -> Dict[str, pd.DataFrame]:
-    """Build directional candidate masks matching training.py's _strategy_bucket_context.
-
-    The 4 pipelines (TF_long, MR_short, TF_short, MR_long) all draw from the same
-    candidate pool (top+bottom pct% by ret24h), split only by move direction:
-      - "up" movers (top pct%):   TF_long (long) + MR_short (short)
-      - "down" movers (bottom %): MR_long (long) + TF_short (short)
-
-    Since TF_long and MR_short share the same rows (both are up-movers), and
-    MR_long and TF_short share the same rows (both are down-movers), the bucket
-    assignment in evaluate_config uses side × direction to produce 4 exclusive labels.
-    This dict therefore exposes the directional split as "up" and "down" keys,
-    plus the full candidate mask, so evaluate_config can derive the 4 bucket labels.
-    """
+    """Build directional candidate masks matching training.py's _strategy_bucket_context."""
     c = artifacts.panel["close"]
     feats = artifacts.features
 
-    # Determine the deviation metric (same as training.py).
     metric = "ret24h"
     if cfg_runtime is not None:
         metric = cfg_runtime.get("trade_deviation_metric", "ret24h")
@@ -2174,17 +2161,16 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
                 metric = fallback
                 break
 
-    # Build the candidate filter using mask_optimiser logic and config parameters.
-    candidate_filter = pd.DataFrame(True, index=c.index, columns=c.columns)
-    if cfg_runtime is not None:
-        try:
-            family = cfg_runtime.get("family", "top_movers")
-            param_val = float(cfg_runtime.get("param", 5.0))
-            z_hr = float(cfg_runtime.get("z_hours", 12.0))
+    h_df = artifacts.panel["high"]
+    l_df = artifacts.panel["low"]
+    ast_ret = feats["ret15m"] if "ret15m" in feats else c.pct_change()
 
-            z_bars = int(z_hr * 4) # approx 15m bars
-            h_df = artifacts.panel["high"]
-            l_df = artifacts.panel["low"]
+    def _build_candidate_filter_for(mask_cfg: Dict[str, Any]) -> pd.DataFrame:
+        try:
+            family = str(mask_cfg.get("family", "top_movers"))
+            param_val = float(mask_cfg.get("param", 5.0))
+            z_hr = float(mask_cfg.get("z_hours", 12.0))
+            z_bars = int(z_hr * 4)
 
             roll_h = h_df.rolling(z_bars, min_periods=1).max()
             roll_l = l_df.rolling(z_bars, min_periods=1).min()
@@ -2192,11 +2178,6 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
 
             up_move = ((roll_h - st_px) / (st_px + 1e-9)).fillna(0.0)
             dn_move = ((st_px - roll_l) / (st_px + 1e-9)).fillna(0.0)
-
-            if "ret15m" not in feats:
-                ast_ret = c.pct_change()
-            else:
-                ast_ret = feats["ret15m"]
 
             std_up = ast_ret.rolling(24 * 4, min_periods=1).std().fillna(0.0)
             std_dn = std_up
@@ -2206,10 +2187,10 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
 
             if family == "top_movers":
                 for ts, row in up_move.iterrows():
-                    q = row.quantile(1.0 - param_val/100.0)
+                    q = row.quantile(1.0 - param_val / 100.0)
                     mask_h_df.loc[ts] = row >= q
                 for ts, row in dn_move.iterrows():
-                    q = row.quantile(1.0 - param_val/100.0)
+                    q = row.quantile(1.0 - param_val / 100.0)
                     mask_l_df.loc[ts] = row >= q
             elif family == "std_threshold":
                 mask_h_df = up_move >= (param_val * std_up)
@@ -2219,58 +2200,62 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
                 mask_h_df = up_move >= y_move
                 mask_l_df = dn_move >= y_move
 
-            cf_hi = mask_h_df | mask_l_df
-
-            if cf_hi is not None:
-                cf_hi = cf_hi.astype(bool)
-                # +12h time-window extension so entries can finish lifecycle.
-                finish_bars = _bars_for_hours((cfg_runtime or {}).get("timeframe", "15m"), 12.0)
-                time_gate = cf_hi.any(axis=1).rolling(finish_bars + 1, min_periods=1).max().astype(bool)
-
-                time_gate_df = pd.DataFrame(
-                    np.repeat(time_gate.values[:, None], len(cf_hi.columns), axis=1),
-                    index=cf_hi.index,
-                    columns=cf_hi.columns,
-                    dtype=bool,
-                )
-                candidate_filter = (cf_hi & time_gate_df).astype(bool)
+            cf_hi = (mask_h_df | mask_l_df).astype(bool)
+            finish_bars = _bars_for_hours((cfg_runtime or {}).get("timeframe", "15m"), 12.0)
+            time_gate = cf_hi.any(axis=1).rolling(finish_bars + 1, min_periods=1).max().astype(bool)
+            time_gate_df = pd.DataFrame(
+                np.repeat(time_gate.values[:, None], len(cf_hi.columns), axis=1),
+                index=cf_hi.index,
+                columns=cf_hi.columns,
+                dtype=bool,
+            )
+            return (cf_hi & time_gate_df).astype(bool)
         except Exception:
-            pass
+            return pd.DataFrame(True, index=c.index, columns=c.columns)
+
+    default_mask_cfg = {
+        "family": (cfg_runtime or {}).get("family", "top_movers"),
+        "param": (cfg_runtime or {}).get("param", 5.0),
+        "z_hours": (cfg_runtime or {}).get("z_hours", 12.0),
+    }
+    mode_cfg = dict((cfg_runtime or {}).get("candidate_mask_params_by_mode", {}) or {})
 
     # Split candidates by move direction using the deviation metric.
-    # "up" movers = top pct% (best performers): used by TF_long + MR_short
-    # "down" movers = bottom pct% (worst performers): used by MR_long + TF_short
     if metric in feats:
         df_metric = feats[metric]
         if int(df_metric.shape[1]) < 50:
             raise ValueError(f"Fast fail: not enough symbols for cross-sectional ranking (found {df_metric.shape[1]}, need >= 50).")
         ranks = df_metric.rank(axis=1, method="first", na_option="keep", pct=True)
-        up_zone   = (ranks > 0.5).fillna(False).astype(bool)
+        up_zone = (ranks > 0.5).fillna(False).astype(bool)
         down_zone = (ranks <= 0.5).fillna(False).astype(bool)
     else:
         ret = c.pct_change(24).fillna(0.0)
-        up_zone   = (ret > 0).astype(bool)
+        up_zone = (ret > 0).astype(bool)
         down_zone = (ret <= 0).astype(bool)
 
-    up_cands   = up_zone   & candidate_filter
-    down_cands = down_zone & candidate_filter
+    m_tf_long = _build_candidate_filter_for(mode_cfg.get("price_up_tf", default_mask_cfg))
+    m_mr_short = _build_candidate_filter_for(mode_cfg.get("price_up_mr", default_mask_cfg))
+    m_tf_short = _build_candidate_filter_for(mode_cfg.get("price_down_tf", default_mask_cfg))
+    m_mr_long = _build_candidate_filter_for(mode_cfg.get("price_down_mr", default_mask_cfg))
 
-    # Expose directional masks + full candidate mask.
-    # evaluate_config derives the 4 bucket labels from side × direction:
-    #   (long,  up)   → TF_long   (buy_momentum)
-    #   (short, up)   → MR_short  (sell_rips)
-    #   (long,  down) → MR_long   (buy_dips)
-    #   (short, down) → TF_short  (sell_weakness)
+    tf_long = up_zone & m_tf_long
+    mr_short = up_zone & m_mr_short
+    tf_short = down_zone & m_tf_short
+    mr_long = down_zone & m_mr_long
+
+    up_cands = tf_long | mr_short
+    down_cands = tf_short | mr_long
+    candidate_filter = (up_cands | down_cands).astype(bool)
+
     return {
-        "up":        up_cands,
-        "down":      down_cands,
-        "Candidate": candidate_filter.astype(bool),
-        "Global":    pd.DataFrame(True, index=c.index, columns=c.columns),
-        # Legacy aliases so any code still referencing TF_long/MR_long doesn't crash.
-        "TF_long":   up_cands,
-        "TF_short":  down_cands,
-        "MR_long":   down_cands,
-        "MR_short":  up_cands,
+        "up": up_cands,
+        "down": down_cands,
+        "Candidate": candidate_filter,
+        "Global": pd.DataFrame(True, index=c.index, columns=c.columns),
+        "TF_long": tf_long,
+        "TF_short": tf_short,
+        "MR_long": mr_long,
+        "MR_short": mr_short,
     }
 
 

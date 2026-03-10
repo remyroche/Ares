@@ -818,6 +818,34 @@ def _generate_event_masks_fast(
     return mask_h, mask_l
 
 
+def _generate_event_masks(
+    family: str,
+    param_val: Any,
+    up_move: np.ndarray,
+    dn_move: np.ndarray,
+    rolling_std_up: np.ndarray,
+    rolling_std_dn: np.ndarray,
+    asset_groups: Optional[Dict[int, np.ndarray]] = None,
+    duration_bars: int = 1,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Backward-compatible wrapper for event mask generation.
+
+    Several inference modules import ``_generate_event_masks`` directly.
+    Keep this stable alias so those modules continue to import successfully
+    after the fast path refactor.
+    """
+    return _generate_event_masks_fast(
+        family=family,
+        param_val=param_val,
+        up_move=up_move,
+        dn_move=dn_move,
+        rolling_std_up=rolling_std_up,
+        rolling_std_dn=rolling_std_dn,
+        asset_groups=asset_groups,
+        duration_bars=duration_bars,
+    )
+
+
 def _simple_score_for_mode(
     mode: str,
     feature_dict: Dict[str, np.ndarray],

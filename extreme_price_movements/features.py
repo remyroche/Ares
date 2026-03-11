@@ -902,7 +902,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     _impact = (_rng_sum_48 / np.maximum(_dv_sum_48, 1e-12)).astype(np.float32)
     _dv_log = np.log(np.maximum(_dollar_vol, 1e-12)).astype(np.float32)
     def _zscore(x: pd.DataFrame) -> pd.DataFrame:
-        return (x - x.mean()) / x.std()
+        return robust_zscore_rolling(x, 24 * 30, quantile=0.50)
 
     _liq_feats_temp = {}
     _liq_feats_temp["dv_z"] = _zscore(_dv_log).astype(np.float32)
@@ -911,8 +911,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     _liq_score = (_liq_feats_temp["dv_z"] - _liq_feats_temp["rng_z"] - _liq_feats_temp["impact_z"]).astype(np.float32)
     _liq_feats_temp["liq_score"] = _zscore(_liq_score).astype(np.float32)
 
-    # Global rank to simulate qcut
-    _liq_pct = _liq_feats_temp["liq_score"].rank(pct=True).fillna(0.5)
+    # Causal rank proxy to simulate qcut
+    _liq_pct = ff.numba_rolling_rank_pct(_liq_feats_temp["liq_score"], window=24 * 30).fillna(0.5)
     _liq_feats_temp["liq_state"] = np.floor(_liq_pct.clip(0, 0.9999) * 5).astype(np.float32)
 
     del h_raw, l_raw, _v_raw, _rng, _dollar_vol, _rng_sum_48, _dv_sum_48, _impact, _dv_log, _liq_score, _liq_pct
@@ -1935,7 +1935,15 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # --- Global Kalman Q/R tuner + Kalman features ---
     # Tune lambda(Q/R) on score monotonicity across deciles with mild turnover penalty.
-    kalman_lambda = tune_global_kalman_lambda(feats["S"], feats["ret1h"], grid_size=15)
+    # Exclude OOS period from tuning to prevent leakage
+    train_n_kalman = max(0, len(c.index) - int(24 * cfg.get("oos_holdout_days", 730)))
+    if train_n_kalman > 0:
+        feats_S_train = feats["S"].iloc[:train_n_kalman]
+        feats_ret1h_train = feats["ret1h"].iloc[:train_n_kalman]
+    else:
+        feats_S_train = feats["S"]
+        feats_ret1h_train = feats["ret1h"]
+    kalman_lambda = tune_global_kalman_lambda(feats_S_train, feats_ret1h_train, grid_size=15)
 
     score_rm24 = ff.numba_rolling_mean(feats["S"], 24).shift(1).astype(np.float32)
     vol_ratio_input = feats.get("liquidity_ratio", (v / (ff.numba_rolling_mean(v, 24 * 30).shift(1) + EPS)).astype(np.float32))
@@ -2026,10 +2034,17 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     periods = c.index.to_period("M")
     unique_periods = periods.unique()
     time_blocks = [(periods == p) for p in unique_periods]
-    # Train mask: Exclude last 8 hours (where forward target is invalid/0 due to shift)
+    # Train mask: Exclude OOS holdout period to prevent leakage
     train_mask_proxy = pd.Series(True, index=c.index)
+    oos_holdout_hours = int(24 * cfg.get("oos_holdout_days", 730))
+
+    # Always drop at least 8 hours for the forward target shift buffer
+    # If the holdout period is larger, drop that instead, but bound by array length
     if len(train_mask_proxy) > 8:
         train_mask_proxy.iloc[-8:] = False
+
+    if oos_holdout_hours > 8 and len(train_mask_proxy) > oos_holdout_hours:
+        train_mask_proxy.iloc[-oos_holdout_hours:] = False
 
     for w in gate_windows:
         for source_name, (source_panel, prefix) in gate_configs.items():

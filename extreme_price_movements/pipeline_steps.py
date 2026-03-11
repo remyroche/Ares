@@ -849,6 +849,32 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, horizons=horizons)
 
     for name, df in datasets.items():
+        if df is not None and not df.empty:
+            t_col = "ts" if "ts" in df.columns else ("__ts__" if "__ts__" in df.columns else None)
+            s_col = "symbol" if "symbol" in df.columns else ("__symbol__" if "__symbol__" in df.columns else None)
+
+            # Enforce deterministic order (Feature Pipeline Rule #8)
+            if t_col and s_col:
+                df = df.sort_values([t_col, s_col]).reset_index(drop=True)
+                datasets[name] = df
+
+            # Validation Checks (Leakage Prevention #6, Feature Pipeline Rule #13)
+            if t_col and s_col:
+                for sym, grp in df.groupby(s_col):
+                    if not grp[t_col].is_monotonic_increasing:
+                        raise ValueError(f"Dataset {name} violates timestamp monotonicity for symbol {sym}")
+
+            num_cols = df.select_dtypes(include=[np.number]).columns
+            inf_counts = np.isinf(df[num_cols]).sum()
+            if inf_counts.sum() > 0:
+                inf_cols = inf_counts[inf_counts > 0].index.tolist()
+                raise ValueError(f"Dataset {name} violates contract: contains infinite values in {inf_cols}")
+
+            nan_ratios = df.isna().mean()
+            high_nan = nan_ratios[nan_ratios > 0.5]
+            if not high_nan.empty:
+                tprint(f"WARNING: Dataset {name} has high NaN ratios (>50%): {high_nan.to_dict()}")
+
         save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
 
     try:

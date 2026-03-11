@@ -208,6 +208,60 @@ def dilate_mask_by_groups_nb(mask: np.ndarray, group_indices: np.ndarray, durati
     return out
 
 
+@njit(cache=True, fastmath=True)
+def tbm_outcomes_atr_nb(
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    atr: np.ndarray,
+    horizon: int,
+    tp_atr: float,
+    sl_atr: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    n = close.shape[0]
+    tp_first = np.zeros(n, dtype=np.int8)
+    sl_first = np.zeros(n, dtype=np.int8)
+    timeout = np.zeros(n, dtype=np.int8)
+
+    for i in range(n - horizon):
+        entry = close[i]
+        atr_i = max(atr[i], 1e-9)
+
+        tp_price = entry + tp_atr * atr_i
+        sl_price = entry - sl_atr * atr_i
+
+        for j in range(i + 1, i + horizon + 1):
+            hi = high[j]
+            lo = low[j]
+
+            hit_tp = hi >= tp_price
+            hit_sl = lo <= sl_price
+
+            if hit_tp and not hit_sl:
+                tp_first[i] = 1
+                break
+
+            if hit_sl and not hit_tp:
+                sl_first[i] = 1
+                break
+
+            if hit_tp and hit_sl:
+                median = 0.5 * (hi + lo)
+                d_tp = abs(median - tp_price)
+                d_sl = abs(median - sl_price)
+                if d_tp < d_sl:
+                    tp_first[i] = 1
+                elif d_sl < d_tp:
+                    sl_first[i] = 1
+                else:
+                    timeout[i] = 1
+                break
+        else:
+            timeout[i] = 1
+
+    return tp_first, sl_first, timeout
+
+
 def dilate_mask_by_asset(mask: np.ndarray, asset_groups: Dict[int, np.ndarray], duration_bars: int) -> np.ndarray:
     if duration_bars <= 1:
         return mask.copy()
@@ -1707,6 +1761,9 @@ def _build_shared_cache(
     mfe_high = np.zeros(n, dtype=np.float32)
     mae_low = np.zeros(n, dtype=np.float32)
     mfe_low = np.zeros(n, dtype=np.float32)
+    # NaN => no full forward horizon available for this row.
+    mfe_atr = np.full(n, np.nan, dtype=np.float32)
+    mae_atr = np.full(n, np.nan, dtype=np.float32)
 
     # compute by asset to avoid cross-asset leakage
     for aid, idxs in asset_groups.items():
@@ -1725,6 +1782,8 @@ def _build_shared_cache(
                 continue
             atr_i = max(a[i], 1e-9)
             c_i = c[i]
+            mfe_atr[idxs[i]] = (np.max(h_sl) - c_i) / atr_i
+            mae_atr[idxs[i]] = (c_i - np.min(l_sl)) / atr_i
             m1[i] = (c_i - np.min(l_sl)) / atr_i
             m2[i] = (np.max(h_sl) - c_i) / atr_i
             m3[i] = (np.max(h_sl) - c_i) / atr_i
@@ -1759,6 +1818,8 @@ def _build_shared_cache(
         "mfe_high": mfe_high,
         "mae_low": mae_low,
         "mfe_low": mfe_low,
+        "mfe_atr": mfe_atr,
+        "mae_atr": mae_atr,
         "learn_X": learn_X,
         "day_ids": day_ids,
         "n_days": n_days,
@@ -1839,6 +1900,201 @@ def _compute_primary_phase1_classifier_gain(
     auc_ne = _classifier_oof_auc(learn_X[idx_ne], y_global[idx_ne], timestamps[idx_ne], n_splits=n_splits)
     auc_e = _classifier_oof_auc(learn_X[idx_e], y_global[idx_e], timestamps[idx_e], n_splits=n_splits)
     return float(auc_e - auc_ne)
+
+
+def _compute_phase3_feature_learnability(
+    shared: Dict[str, Any],
+    feature_dict: Dict[str, np.ndarray],
+    side_mask: np.ndarray,
+    mode: str,
+    folds: List[Tuple[np.ndarray, np.ndarray]],
+    cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    min_pos_frac = float(cfg.get("min_feature_positive_fold_fraction", 0.60))
+    top_k = int(cfg.get("feature_learnability_top_k", 10))
+    y = _mode_primary_target(mode, shared["forward_returns"], float(cfg.get("phase1_ret_threshold", 0.0))).astype(np.int8)
+    n = y.shape[0]
+    regime = side_mask.astype(bool)
+
+    surviving_lifts: List[float] = []
+    surviving_pos_frac: List[float] = []
+    per_feature_top: List[Tuple[str, float]] = []
+
+    for fname, arr in feature_dict.items():
+        x = np.asarray(arr, dtype=np.float32)
+        if x.shape[0] != n:
+            continue
+        fold_lifts: List[float] = []
+        for _, va in folds:
+            m = regime[va] & np.isfinite(x[va])
+            if np.sum(m) < 20:
+                continue
+            yv = y[va][m]
+            if np.unique(yv).shape[0] < 2:
+                continue
+            xv = x[va][m]
+            try:
+                auc = float(roc_auc_score(yv, xv))
+            except Exception:
+                continue
+            fold_lifts.append(max(auc, 1.0 - auc) - 0.5)
+        if not fold_lifts:
+            continue
+        folds_arr = np.asarray(fold_lifts, dtype=np.float32)
+        mean_lift = float(np.mean(folds_arr))
+        pos_frac = float(np.mean(folds_arr > 0.0))
+        if mean_lift > 0.0 and pos_frac >= min_pos_frac:
+            surviving_lifts.append(mean_lift)
+            surviving_pos_frac.append(pos_frac)
+            per_feature_top.append((fname, mean_lift))
+
+    if surviving_lifts:
+        top_vals = np.sort(np.asarray(surviving_lifts, dtype=np.float32))[-top_k:]
+        gain = float(np.mean(top_vals))
+        top_pairs = sorted(per_feature_top, key=lambda t: t[1], reverse=True)[:top_k]
+    else:
+        gain = 0.0
+        top_pairs = []
+    return {
+        "feature_learnability_gain": np.float32(gain),
+        "top_feature_lifts": ";".join([f"{k}:{v:.6f}" for k, v in top_pairs]),
+        "feature_positive_fold_fraction": np.float32(float(np.mean(surviving_pos_frac)) if surviving_pos_frac else 0.0),
+    }
+
+
+def _compute_tbm_economic_gain(
+    shared: Dict[str, Any],
+    side_mask: np.ndarray,
+    mode: str,
+    folds: List[Tuple[np.ndarray, np.ndarray]],
+    cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    fee = float(cfg.get("round_trade_fee", 0.003))
+    horizon = int(cfg.get("phase1_forward_horizon_bars", 12))
+    close = np.asarray(shared["close"], dtype=np.float32)
+    high = np.asarray(shared["high"], dtype=np.float32)
+    low = np.asarray(shared["low"], dtype=np.float32)
+    atr = np.asarray(shared["atr"], dtype=np.float32)
+    mfe_atr = np.asarray(shared["mfe_atr"], dtype=np.float32)
+    mae_atr = np.asarray(shared["mae_atr"], dtype=np.float32)
+    eval_mask = (
+        np.isfinite(close)
+        & np.isfinite(high)
+        & np.isfinite(low)
+        & np.isfinite(atr)
+        & np.isfinite(mfe_atr)
+        & np.isfinite(mae_atr)
+    )
+    valid = side_mask.astype(bool) & eval_mask
+    baseline_mask = eval_mask & (~side_mask.astype(bool))
+
+    geometries = ((1.25, 0.50), (1.50, 0.60), (1.75, 0.70), (2.00, 0.90), (2.50, 1.10))
+    per_geometry_metrics: List[Dict[str, Any]] = []
+    geom_scores: List[float] = []
+    cov_weights: List[float] = []
+    cov_values: List[float] = []
+
+    for tp_atr, sl_atr in geometries:
+        n = close.shape[0]
+        tp_first = np.zeros(n, dtype=np.int8)
+        sl_first = np.zeros(n, dtype=np.int8)
+        timeout = np.zeros(n, dtype=np.int8)
+        for _, idxs in shared["asset_groups"].items():
+            if idxs.shape[0] <= horizon + 1:
+                continue
+            tp_l, sl_l, to_l = tbm_outcomes_atr_nb(close[idxs], high[idxs], low[idxs], atr[idxs], horizon, float(tp_atr), float(sl_atr))
+            tp_first[idxs] = tp_l
+            sl_first[idxs] = sl_l
+            timeout[idxs] = to_l
+
+        tp_rate_g = float(np.mean(tp_first[valid])) if np.any(valid) else 0.0
+        sl_rate_g = float(np.mean(sl_first[valid])) if np.any(valid) else 0.0
+        timeout_rate_g = float(np.mean(timeout[valid])) if np.any(valid) else 1.0
+        trade_rate_g = tp_rate_g + sl_rate_g
+        ev_event_g = tp_rate_g * tp_atr - sl_rate_g * sl_atr - trade_rate_g * fee
+        ev_trade_g = ev_event_g / max(trade_rate_g, 1e-9)
+        win_rate_g = tp_rate_g / max(trade_rate_g, 1e-9)
+        value_per_trade_g = ev_trade_g * win_rate_g
+
+        base_tp = float(np.mean(tp_first[baseline_mask])) if np.any(baseline_mask) else 0.0
+        base_sl = float(np.mean(sl_first[baseline_mask])) if np.any(baseline_mask) else 0.0
+        base_trade = base_tp + base_sl
+        base_ev_event = base_tp * tp_atr - base_sl * sl_atr - base_trade * fee
+        baseline_ev_trade = base_ev_event / max(base_trade, 1e-9)
+        lift_g = ev_trade_g - baseline_ev_trade
+
+        mfe_cov_g = float(np.mean(mfe_atr[valid] >= np.float32(tp_atr))) if np.any(valid) else 0.0
+        mae_pressure_g = float(np.mean(mae_atr[valid] >= np.float32(sl_atr))) if np.any(valid) else 1.0
+
+        fold_ev: List[float] = []
+        fold_lift: List[float] = []
+        fold_trade: List[float] = []
+        for _, va in folds:
+            vv = valid[va]
+            if not np.any(vv):
+                continue
+            tp_f = float(np.mean(tp_first[va][vv]))
+            sl_f = float(np.mean(sl_first[va][vv]))
+            tr_f = tp_f + sl_f
+            ev_f = (tp_f * tp_atr - sl_f * sl_atr - tr_f * fee) / max(tr_f, 1e-9)
+            base_v = baseline_mask[va]
+            btp_f = float(np.mean(tp_first[va][base_v])) if np.any(base_v) else 0.0
+            bsl_f = float(np.mean(sl_first[va][base_v])) if np.any(base_v) else 0.0
+            btr_f = btp_f + bsl_f
+            bev_f = (btp_f * tp_atr - bsl_f * sl_atr - btr_f * fee) / max(btr_f, 1e-9)
+            fold_ev.append(ev_f)
+            fold_lift.append(ev_f - bev_f)
+            fold_trade.append(tr_f)
+
+        fold_ev_arr = np.asarray(fold_ev, dtype=np.float32)
+        if fold_ev_arr.size > 0:
+            econ_stability_g = 0.5 * max(0.0, 1.0 - float(np.std(fold_ev_arr)) / (abs(float(np.mean(fold_ev_arr))) + 1e-9))
+            econ_stability_g += 0.5 * float(np.mean(fold_ev_arr > 0.0))
+        else:
+            econ_stability_g = 0.0
+        opportunity_adjustment_g = min(1.0, np.sqrt(trade_rate_g / 0.20)) if trade_rate_g > 0 else 0.0
+        geometry_score_g = (
+            (0.35 * value_per_trade_g)
+            + (0.25 * lift_g)
+            + (0.15 * trade_rate_g)
+            + (0.15 * max(0.0, mfe_cov_g - 0.25))
+            - (0.10 * mae_pressure_g)
+        ) * opportunity_adjustment_g * econ_stability_g
+
+        per_geometry_metrics.append({
+            "tp_atr": float(tp_atr), "sl_atr": float(sl_atr),
+            "tp_first_rate_g": tp_rate_g, "sl_first_rate_g": sl_rate_g, "timeout_rate_g": timeout_rate_g,
+            "trade_opportunity_rate_g": trade_rate_g, "ev_net_per_trade_g": ev_trade_g, "lift_g": lift_g,
+            "mfe_coverage_g": mfe_cov_g, "mae_breach_pressure_g": mae_pressure_g,
+            "econ_stability_g": econ_stability_g, "geometry_score_g": geometry_score_g,
+            "ev_net_per_trade_g_fold": fold_ev, "lift_g_fold": fold_lift, "trade_opportunity_rate_g_fold": fold_trade,
+        })
+        geom_scores.append(float(geometry_score_g))
+        cov_weights.append(max(trade_rate_g, 1e-9))
+        cov_values.append(mfe_cov_g)
+
+    top3 = np.sort(np.asarray(geom_scores, dtype=np.float32))[-3:]
+    economic_gain_r = 0.7 * float(np.mean(top3)) + 0.3 * float(np.min(top3)) if top3.size > 0 else 0.0
+    aggregate_mfe_coverage = float(np.average(np.asarray(cov_values, dtype=np.float32), weights=np.asarray(cov_weights, dtype=np.float32))) if cov_values else 0.0
+    return {
+        "economic_gain_r": np.float32(economic_gain_r),
+        "geometry_weighted_mfe_coverage": np.float32(aggregate_mfe_coverage),
+        "aggregate_mfe_coverage": np.float32(aggregate_mfe_coverage),
+        "per_geometry_metrics": per_geometry_metrics,
+    }
+
+
+def _compute_mfe_coverage(
+    shared: Dict[str, Any],
+    side_mask: np.ndarray,
+    cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    tp_atr = float(cfg.get("mfe_coverage_tp_atr", 1.25))
+    mfe_atr = np.asarray(shared["mfe_atr"], dtype=np.float32)
+    # fixed-threshold coverage uses only rows with full forward horizon (finite mfe_atr).
+    valid = side_mask.astype(bool) & np.isfinite(mfe_atr)
+    coverage = float(np.mean(mfe_atr[valid] >= np.float32(tp_atr))) if np.any(valid) else 0.0
+    return {"fixed_tp_mfe_coverage": np.float32(coverage)}
 
 
 def _compute_full_metrics_for_candidate(
@@ -2517,13 +2773,81 @@ def _run_mode_search(
         * np.maximum(df2["S_r"].astype(np.float32).values, 0.0)
         / (1.0 + df2["D_r"].astype(np.float32).values)
     ).astype(np.float32)
-    df2["shortlist_score"] = df2["score_r"].astype(np.float32)
+    df2["score_ml"] = df2["score_r"].astype(np.float32)
+
+    feature_gain_vals: List[np.float32] = []
+    feature_pos_vals: List[np.float32] = []
+    top_feature_lifts_vals: List[str] = []
+    econ_vals: List[np.float32] = []
+    agg_mfe_cov_vals: List[np.float32] = []
+    fixed_cov_vals: List[np.float32] = []
+    per_geom_vals: List[Any] = []
+    for _, row in df2.iterrows():
+        reg = candidate_registry[str(row["name"])]
+        z = int(int(reg["z_hours"]) * bph)
+        duration_bars = int(int(reg["duration_hours"]) * bph)
+        if z not in phase2_z_cache:
+            phase2_z_cache[z] = _compute_z_cache(
+                high=shared["high"],
+                low=shared["low"],
+                close=shared["close"],
+                ret_1=shared["ret_1"],
+                vol_g=shared["vol_g"],
+                asset_groups=shared["asset_groups"],
+                z=z,
+                bph=bph,
+            )
+        zc = phase2_z_cache[z]
+        m_high, m_low = _generate_event_masks_fast(
+            family=reg["family"],
+            param_val=reg["param"],
+            up_move=zc["up"],
+            dn_move=zc["dn"],
+            rolling_std_up=zc["std_up"],
+            rolling_std_dn=zc["std_dn"],
+            asset_groups=shared["asset_groups"],
+            duration_bars=duration_bars,
+        )
+        side_mask = _get_side_mask(mode, m_high, m_low)
+        feat_metrics = _compute_phase3_feature_learnability(shared, feature_dict, side_mask, mode, folds, cfg)
+        econ_metrics = _compute_tbm_economic_gain(shared, side_mask, mode, folds, cfg)
+        mfe_metrics = _compute_mfe_coverage(shared, side_mask, cfg)
+
+        feature_gain_vals.append(np.float32(feat_metrics["feature_learnability_gain"]))
+        feature_pos_vals.append(np.float32(feat_metrics["feature_positive_fold_fraction"]))
+        top_feature_lifts_vals.append(str(feat_metrics["top_feature_lifts"]))
+        econ_vals.append(np.float32(econ_metrics["economic_gain_r"]))
+        agg_mfe_cov_vals.append(np.float32(econ_metrics["geometry_weighted_mfe_coverage"]))
+        fixed_cov_vals.append(np.float32(mfe_metrics["fixed_tp_mfe_coverage"]))
+        per_geom_vals.append(econ_metrics["per_geometry_metrics"])
+
+    df2["feature_learnability_gain"] = np.asarray(feature_gain_vals, dtype=np.float32)
+    df2["feature_positive_fold_fraction"] = np.asarray(feature_pos_vals, dtype=np.float32)
+    df2["top_feature_lifts"] = top_feature_lifts_vals
+    df2["economic_gain_r"] = np.asarray(econ_vals, dtype=np.float32)
+    df2["geometry_weighted_mfe_coverage"] = np.asarray(agg_mfe_cov_vals, dtype=np.float32)
+    df2["fixed_tp_mfe_coverage"] = np.asarray(fixed_cov_vals, dtype=np.float32)
+    df2["aggregate_mfe_coverage"] = df2["geometry_weighted_mfe_coverage"].astype(np.float32)
+    df2["per_geometry_metrics"] = per_geom_vals
+    df2 = df2[df2["aggregate_mfe_coverage"] >= 0.25].copy()
+    if df2.empty:
+        return {"status": "failed", "reason": f"economic_coverage_filter_failed_{mode}", "layer0_candidate_table_": df2}
+    bounded_economic_term = np.tanh(5.0 * df2["economic_gain_r"].astype(np.float32).values).astype(np.float32)
+    df2["score_ml_trading"] = (
+        df2["score_ml"].astype(np.float32).values
+        * (1.0 + 10.0 * df2["feature_learnability_gain"].astype(np.float32).values)
+        * (1.0 + 8.0 * bounded_economic_term)
+    ).astype(np.float32)
+    df2["shortlist_score"] = df2["score_ml_trading"].astype(np.float32)
     df2["decision"] = "ranked"
     df2["regime_id"] = df2["name"].astype(str)
     df2["regime_definition"] = df2["name"].astype(str)
     df2["rationale"] = df2.apply(_build_regime_rationale, axis=1)
 
-    df2 = df2.sort_values("score_r", ascending=False)
+    df2 = df2.sort_values(
+        ["score_ml_trading", "economic_gain_r", "feature_learnability_gain", "delta_r", "total_events"],
+        ascending=[False, False, False, False, False],
+    )
     shortlist_max = int(cfg.get("shortlist_max_candidates", 4))
     df_short = df2.head(shortlist_max).copy()
     if df_short.empty:
@@ -2694,7 +3018,46 @@ def _run_mode_search(
             * np.maximum(df_short["S_r"].astype(np.float32).values, 0.0)
             / (1.0 + df_short["D_r"].astype(np.float32).values)
         ).astype(np.float32)
-        df_short["shortlist_score"] = df_short["score_r"].astype(np.float32)
+        cond_feature_gain: List[np.float32] = []
+        cond_feature_pos: List[np.float32] = []
+        cond_top_lifts: List[str] = []
+        cond_econ: List[np.float32] = []
+        cond_cov: List[np.float32] = []
+        cond_fixed_cov: List[np.float32] = []
+        cond_geom: List[Any] = []
+        for _, row in df_short.iterrows():
+            masks = candidate_masks[str(row["name"])]
+            side_mask = _get_side_mask(mode, masks["m_high"], masks["m_low"])
+            feat_metrics = _compute_phase3_feature_learnability(shared, feature_dict, side_mask, mode, folds, cfg)
+            econ_metrics = _compute_tbm_economic_gain(shared, side_mask, mode, folds, cfg)
+            mfe_metrics = _compute_mfe_coverage(shared, side_mask, cfg)
+            cond_feature_gain.append(np.float32(feat_metrics["feature_learnability_gain"]))
+            cond_feature_pos.append(np.float32(feat_metrics["feature_positive_fold_fraction"]))
+            cond_top_lifts.append(str(feat_metrics["top_feature_lifts"]))
+            cond_econ.append(np.float32(econ_metrics["economic_gain_r"]))
+            cond_cov.append(np.float32(econ_metrics["geometry_weighted_mfe_coverage"]))
+            cond_fixed_cov.append(np.float32(mfe_metrics["fixed_tp_mfe_coverage"]))
+            cond_geom.append(econ_metrics["per_geometry_metrics"])
+
+        df_short["feature_learnability_gain"] = np.asarray(cond_feature_gain, dtype=np.float32)
+        df_short["feature_positive_fold_fraction"] = np.asarray(cond_feature_pos, dtype=np.float32)
+        df_short["top_feature_lifts"] = cond_top_lifts
+        df_short["economic_gain_r"] = np.asarray(cond_econ, dtype=np.float32)
+        df_short["geometry_weighted_mfe_coverage"] = np.asarray(cond_cov, dtype=np.float32)
+        df_short["fixed_tp_mfe_coverage"] = np.asarray(cond_fixed_cov, dtype=np.float32)
+        df_short["aggregate_mfe_coverage"] = df_short["geometry_weighted_mfe_coverage"].astype(np.float32)
+        df_short["per_geometry_metrics"] = cond_geom
+        df_short = df_short[df_short["aggregate_mfe_coverage"] >= 0.25].copy()
+        if df_short.empty:
+            return {"status": "failed", "reason": f"no_shortlist_candidates_post_coverage_filter_{mode}", "layer0_candidate_table_": df2}
+        bounded_economic_term_short = np.tanh(5.0 * df_short["economic_gain_r"].astype(np.float32).values).astype(np.float32)
+        df_short["score_ml"] = df_short["score_r"].astype(np.float32)
+        df_short["score_ml_trading"] = (
+            df_short["score_ml"].astype(np.float32).values
+            * (1.0 + 10.0 * df_short["feature_learnability_gain"].astype(np.float32).values)
+            * (1.0 + 8.0 * bounded_economic_term_short)
+        ).astype(np.float32)
+        df_short["shortlist_score"] = df_short["score_ml_trading"].astype(np.float32)
         base_rows = df_short[df_short["conditioner_mode"] == "none"].set_index("name")
         keep_idx: List[int] = []
         for idx, row in df_short.iterrows():
@@ -2707,12 +3070,12 @@ def _run_mode_search(
                 continue
             base_row = base_rows.loc[base_name]
             if (
-                _metric_or_nan(row.get("score_r")) > _metric_or_nan(base_row.get("score_r"))
+                _metric_or_nan(row.get("score_ml_trading")) > _metric_or_nan(base_row.get("score_ml_trading"))
                 and _metric_or_nan(row.get("delta_r")) >= _metric_or_nan(base_row.get("delta_r"))
                 and _metric_or_nan(row.get("S_r")) >= _metric_or_nan(base_row.get("S_r"))
             ):
                 keep_idx.append(idx)
-        df_short = df_short.loc[keep_idx].sort_values("score_r", ascending=False).copy()
+        df_short = df_short.loc[keep_idx].sort_values("score_ml_trading", ascending=False).copy()
 
     final_diag_k = int(cfg.get("final_top_k_for_diagnostics", 3))
     df_diag_input = df_short.sort_values("shortlist_score", ascending=False).head(final_diag_k).copy()

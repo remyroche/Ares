@@ -205,13 +205,15 @@ class DataFetcher:
             raise
     
     def _resample_to_hourly(self, df_15m: pd.DataFrame) -> pd.DataFrame:
-        """Resample 15m to 1h with proper OHLC aggregation.
+        """Calculate rolling 1h aggregation over 15m data to produce overlapping 1h bars.
+
+        This retains the 15m timestamps but computes OHLCV over the preceding 60 minutes.
         
         Args:
             df_15m: DataFrame with 15m OHLCV data
             
         Returns:
-            DataFrame with 1h OHLCV data
+            DataFrame with 1h rolling OHLCV data on 15m timestamps
         """
         # Safely check df_15m
         try:
@@ -221,19 +223,22 @@ class DataFetcher:
         
         if is_empty:
             return df_15m.copy()
+
+        # Ensure we have a clean copy sorted by index
+        df_15m = df_15m.copy().sort_index()
         
-        # Floor timestamp to hour for proper alignment
-        df_15m = df_15m.copy()
-        df_15m.index = df_15m.index.floor("1h")
+        # We need a 60-minute rolling window, which is 4 bars for 15m data
+        # We use a time-based rolling window to be robust against missing data
+        # '1h' implies closing the window on the right and including the current row
+        rolling = df_15m.rolling('1h')
         
-        # Aggregate OHLCV
-        df_1h = df_15m.resample("1h").agg({
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum"
-        })
+        # Compute rolling OHLCV
+        df_1h = pd.DataFrame(index=df_15m.index)
+        df_1h['open'] = rolling['open'].apply(lambda x: x.iloc[0] if len(x) > 0 else np.nan, raw=False)
+        df_1h['high'] = rolling['high'].max()
+        df_1h['low'] = rolling['low'].min()
+        df_1h['close'] = rolling['close'].apply(lambda x: x.iloc[-1] if len(x) > 0 else np.nan, raw=False)
+        df_1h['volume'] = rolling['volume'].sum()
         
         # Drop rows with all NaN
         df_1h.dropna(how="all", inplace=True)

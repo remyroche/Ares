@@ -12,3 +12,6 @@ Action: Vectorize `_numba_apply_weights` across columns with `prange` into `_num
 ## 2026-03-04 - ProcessPoolExecutor for Independent Columns
 Learning: Functions like `hvn_lvn_features_ohlcv` process single-asset (column-wise) data using NumPy `sliding_window_view` and `np.digitize`. When applied sequentially across a wide panel, they create massive bottlenecks (e.g. 52 seconds for 50 cols). Because they don't share state and release the GIL effectively within NumPy, they are prime candidates for multiprocessing.
 Action: Used `concurrent.futures.ProcessPoolExecutor` to farm out column-level work. Using `min(8, multiprocessing.cpu_count())` workers yielded a 3.1x speedup (52.2s -> 16.7s).
+## 2026-03-04 - Vectorized On Balance Volume (OBV)
+Learning: Iterating over DataFrame rows sequentially using `for i in range(1, len(data)):` and `data['close'].iloc[i] > data['close'].iloc[i - 1]` to calculate running totals like On Balance Volume is extremely slow in Python (taking over 19 seconds for 100k rows).
+Action: Replaced the iterative loop with a fully vectorized approach using `np.sign(data['close'].diff())` to determine direction and `vol_adj.cumsum()` to accumulate. This reduced execution time to ~0.012 seconds (over 1500x speedup). Always prefer vectorized operations (`diff`, `sign`, `cumsum`) over sequential row iteration.

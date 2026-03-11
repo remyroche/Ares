@@ -418,17 +418,14 @@ class FeatureCalculator:
 
     @staticmethod
     def calculate_obv(data: pd.DataFrame) -> pd.Series:
-        """Calculate On Balance Volume."""
-        obv = pd.Series(index = data.index, dtype = float)
-        obv.iloc[0] = data['volume'].iloc[0]
-        for i in range(1, len(data)):
-            if data['close'].iloc[i] > data['close'].iloc[i - 1]:
-                obv.iloc[i] = obv.iloc[i - 1] + data['volume'].iloc[i]
-            elif data['close'].iloc[i] < data['close'].iloc[i - 1]:
-                obv.iloc[i] = obv.iloc[i - 1] - data['volume'].iloc[i]
-            else:
-                obv.iloc[i] = obv.iloc[i - 1]
-        return obv
+        """Calculate On Balance Volume (Vectorized)."""
+        if data.empty:
+            return pd.Series(dtype=float)
+
+        direction = np.sign(data['close'].diff()).fillna(0)
+        vol_adj = direction * data['volume']
+        vol_adj.iloc[0] = data['volume'].iloc[0]
+        return vol_adj.cumsum()
 
     @staticmethod
     def calculate_ad(data: pd.DataFrame) -> pd.Series:

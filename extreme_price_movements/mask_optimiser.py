@@ -1526,10 +1526,9 @@ def _cap_rows_for_optimization(
     if max_rows <= 0 or data.shape[0] <= max_rows:
         return data, feature_dict, forward_returns
 
-    tprint(f"Capping at {max_rows} rows (random sample)...")
-    rng = np.random.RandomState(seed)
-    indices = rng.choice(data.shape[0], max_rows, replace=False)
-    indices.sort()
+    tprint(f"Capping at {max_rows} rows (contiguous tail slice)...")
+    start_idx = max(0, data.shape[0] - max_rows)
+    indices = np.arange(start_idx, data.shape[0])
 
     data_capped = data.iloc[indices].reset_index(drop=True)
     forward_capped = forward_returns[indices]
@@ -2411,8 +2410,7 @@ def _run_mode_search(
     # cache by geometry key
     geom_cache_phase1: Dict[str, Dict[str, Any]] = {}
     geom_cache_phase2: Dict[str, Dict[str, Any]] = {}
-    phase1_z_cache: Dict[int, Dict[str, np.ndarray]] = {}
-    phase2_z_cache: Dict[int, Dict[str, np.ndarray]] = {}
+    global_z_cache: Dict[int, Dict[str, np.ndarray]] = {}
 
     phase1_rows: List[Dict[str, Any]] = []
 
@@ -2445,30 +2443,41 @@ def _run_mode_search(
         candidate_registry[key] = {"family": fam, "z_hours": int(z_hr), "duration_hours": int(d_hr), "param": param}
 
         if key not in geom_cache_phase1:
-            if z not in phase1_z_cache:
-                tprint(f"Precomputing Phase 1 rolling tensors for z={z} bars...")
-                phase1_z_cache[z] = _compute_z_cache(
-                    high=phase1_shared["high"],
-                    low=phase1_shared["low"],
-                    close=phase1_shared["close"],
-                    ret_1=phase1_shared["ret_1"],
-                    vol_g=phase1_shared["vol_g"],
-                    asset_groups=phase1_shared["asset_groups"],
+            if z not in global_z_cache:
+                tprint(f"Precomputing global rolling tensors for z={z} bars...")
+                global_z_cache[z] = _compute_z_cache(
+                    high=shared["high"],
+                    low=shared["low"],
+                    close=shared["close"],
+                    ret_1=shared["ret_1"],
+                    vol_g=shared["vol_g"],
+                    asset_groups=shared["asset_groups"],
                     z=z,
                     bph=bph,
                 )
-            zc = phase1_z_cache[z]
-            m_high, m_low = _generate_event_masks_fast(
+            zc_full = global_z_cache[z]
+            m_high_full, m_low_full = _generate_event_masks_fast(
                 family=fam,
                 param_val=param,
-                up_move=zc["up"],
-                dn_move=zc["dn"],
-                rolling_std_up=zc["std_up"],
-                rolling_std_dn=zc["std_dn"],
-                asset_groups=phase1_shared["asset_groups"],
+                up_move=zc_full["up"],
+                dn_move=zc_full["dn"],
+                rolling_std_up=zc_full["std_up"],
+                rolling_std_dn=zc_full["std_dn"],
+                asset_groups=shared["asset_groups"],
                 duration_bars=duration_bars,
             )
-            side_mask = _get_side_mask(mode, m_high, m_low)
+            side_mask_full = _get_side_mask(mode, m_high_full, m_low_full)
+
+            # Subsample for Phase 1 evaluations
+            side_mask = side_mask_full[phase1_mask]
+            zc_local = {
+                "b_up": zc_full["b_up"][phase1_mask],
+                "b_dn": zc_full["b_dn"][phase1_mask],
+                "s_up": zc_full["s_up"][phase1_mask],
+                "s_dn": zc_full["s_dn"][phase1_mask],
+                "m_up": zc_full["m_up"][phase1_mask],
+                "m_dn": zc_full["m_dn"][phase1_mask],
+            }
 
             total_events = simple_mask_count_safe(side_mask)
             if total_events < phase1_min_total_events:
@@ -2481,9 +2490,9 @@ def _run_mode_search(
                 continue
 
             if _mode_is_up(mode):
-                coh = _coherence_metrics_single_side(side_mask, zc["b_up"], zc["s_up"], zc["m_up"])
+                coh = _coherence_metrics_single_side(side_mask, zc_local["b_up"], zc_local["s_up"], zc_local["m_up"])
             else:
-                coh = _coherence_metrics_single_side(side_mask, zc["b_dn"], zc["s_dn"], zc["m_dn"])
+                coh = _coherence_metrics_single_side(side_mask, zc_local["b_dn"], zc_local["s_dn"], zc_local["m_dn"])
 
             distinct = _compute_regime_distinctness_single_side(
                 side_mask=side_mask,
@@ -2584,9 +2593,9 @@ def _run_mode_search(
         key = name
 
         if key not in geom_cache_phase2:
-            if z not in phase2_z_cache:
-                tprint(f"Precomputing Phase 2 rolling tensors for z={z} bars...")
-                phase2_z_cache[z] = _compute_z_cache(
+            if z not in global_z_cache:
+                tprint(f"Precomputing global rolling tensors for z={z} bars...")
+                global_z_cache[z] = _compute_z_cache(
                     high=shared["high"],
                     low=shared["low"],
                     close=shared["close"],
@@ -2596,7 +2605,7 @@ def _run_mode_search(
                     z=z,
                     bph=bph,
                 )
-            zc = phase2_z_cache[z]
+            zc = global_z_cache[z]
             m_high, m_low = _generate_event_masks_fast(
                 family=fam,
                 param_val=param,
@@ -2786,8 +2795,8 @@ def _run_mode_search(
         reg = candidate_registry[str(row["name"])]
         z = int(int(reg["z_hours"]) * bph)
         duration_bars = int(int(reg["duration_hours"]) * bph)
-        if z not in phase2_z_cache:
-            phase2_z_cache[z] = _compute_z_cache(
+        if z not in global_z_cache:
+            global_z_cache[z] = _compute_z_cache(
                 high=shared["high"],
                 low=shared["low"],
                 close=shared["close"],
@@ -2797,7 +2806,7 @@ def _run_mode_search(
                 z=z,
                 bph=bph,
             )
-        zc = phase2_z_cache[z]
+        zc = global_z_cache[z]
         m_high, m_low = _generate_event_masks_fast(
             family=reg["family"],
             param_val=reg["param"],
@@ -2859,9 +2868,9 @@ def _run_mode_search(
         reg = candidate_registry[name]
         z = int(int(reg["z_hours"]) * bph)
         duration_bars = int(int(reg["duration_hours"]) * bph)
-        if z not in phase2_z_cache:
-            tprint(f"Precomputing Phase 2 rolling tensors for z={z} bars...")
-            phase2_z_cache[z] = _compute_z_cache(
+        if z not in global_z_cache:
+            tprint(f"Precomputing global rolling tensors for z={z} bars...")
+            global_z_cache[z] = _compute_z_cache(
                 high=shared["high"],
                 low=shared["low"],
                 close=shared["close"],
@@ -2871,7 +2880,7 @@ def _run_mode_search(
                 z=z,
                 bph=bph,
             )
-        zc = phase2_z_cache[z]
+        zc = global_z_cache[z]
         m_high, m_low = _generate_event_masks_fast(
             family=reg["family"],
             param_val=reg["param"],
@@ -2897,7 +2906,7 @@ def _run_mode_search(
             cand_name = str(row["name"])
             reg = candidate_registry[cand_name]
             z = int(int(reg["z_hours"]) * bph)
-            zc = phase2_z_cache[z]
+            zc = global_z_cache[z]
             base_masks = candidate_masks[cand_name]
             for conditioner in cfg.get("conditioner_modes", ["none"]):
                 if conditioner == "none":

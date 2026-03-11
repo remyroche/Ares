@@ -12,40 +12,60 @@ is materially better suited (example: HuberRegressor for robust regression).
 
 from __future__ import annotations
 
-import logging
 import itertools
+import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-from extreme_price_movements.features import build_position_sizer_feature_frame, assemble_feature_matrix
-from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_CONFIG
-from extreme_price_movements.feature_views import get_feature_view
-from extreme_price_movements.elasticnet_feature_selection_v2 import select_features_via_elasticnet, select_features_via_staged_en_rfe
-from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
-
+from scipy.stats import spearmanr
 from sklearn.linear_model import HuberRegressor, Ridge
 from sklearn.preprocessing import StandardScaler
-from scipy.stats import spearmanr
 
-from extreme_price_movements.purged_cv import PurgedKFold
+from extreme_price_movements.config import (
+    POSITION_SIZER_V2_FEATURE_CONFIG,
+    POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG,
+)
+from extreme_price_movements.elasticnet_feature_selection_v2 import (
+    select_features_via_elasticnet,
+    select_features_via_staged_en_rfe,
+)
+from extreme_price_movements.feature_views import get_feature_view
+from extreme_price_movements.features import (
+    assemble_feature_matrix,
+    build_position_sizer_feature_frame,
+)
+from extreme_price_movements.label_policy_optimizer import (
+    LabelPolicy,
+    _simulate_policy_batch,
+)
+from extreme_price_movements.mask_optimiser import (
+    optimize_layer0_masks_by_mode as optimize_layer0_masks,
+)
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
-from extreme_price_movements.utils import tprint
-from extreme_price_movements.mask_optimiser import optimize_layer0_masks_by_mode as optimize_layer0_masks
-from extreme_price_movements.label_policy_optimizer import LabelPolicy, _simulate_policy_batch
+from extreme_price_movements.periods_symbols_management import (
+    EventSchema,
+    SlicePlanner,
+    SlicePlannerConfig,
+)
 from extreme_price_movements.position_sizer_v2_metrics import (
-    compute_top_slice_metrics,
     compute_bucket_monotonicity,
     compute_false_safe_rate,
-    compute_uncertainty_calibration
+    compute_top_slice_metrics,
+    compute_uncertainty_calibration,
 )
+from extreme_price_movements.purged_cv import PurgedKFold
+from extreme_price_movements.utils import tprint
 
 # ============================================================
 # Shared Configuration & Utilities
 # ============================================================
 logger = logging.getLogger(__name__)
 
+
 class PredictionScaler:
     """Scales predictions handling NaNs explicitly with train-fold medians."""
+
     def __init__(self):
         self.scaler = StandardScaler()
         self.medians_ = None
@@ -67,15 +87,69 @@ class PredictionScaler:
     def transform(self, X: np.ndarray) -> np.ndarray:
         return self.scaler.transform(self._clean(X, fit=False))
 
+
 def make_temporal_splits(
     timestamps: Optional[np.ndarray],
     n_samples: int,
     n_splits: int = 3,
     purge_units: int = 43200,
-    embargo_units: int = 43200
+    embargo_units: int = 43200,
 ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], int]:
+    """Build temporal splits via periods_symbols_management planner."""
     try:
-        cv = PurgedKFold(n_splits=n_splits, purge=purge_units, embargo=embargo_units, times=timestamps)
+        ts = pd.to_datetime(pd.Series(timestamps), unit="s", utc=True, errors="coerce")
+        if ts.isna().all():
+            ts = pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce")
+        ts = ts.ffill().bfill()
+        events = pd.DataFrame(
+            {
+                "event_id": np.arange(n_samples, dtype=np.int64),
+                "symbol": np.repeat("ALL", n_samples),
+                "t0": ts.to_numpy(),
+                "t1": (ts + pd.Timedelta(seconds=1)).to_numpy(),
+            }
+        )
+        cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+        cfg = cfg.__class__(
+            **{
+                **cfg.__dict__,
+                "preset": cfg.preset.__class__(
+                    preset_name=cfg.preset.preset_name,
+                    outer=cfg.preset.outer,
+                    inner=cfg.preset.inner.__class__(n_splits=max(1, int(n_splits))),
+                    sampling=cfg.preset.sampling,
+                    symbol_policy=cfg.preset.symbol_policy,
+                    purge_policy=cfg.preset.purge_policy,
+                ),
+                "silent": True,
+                "min_rows_per_fold": 1,
+                "min_symbols_per_fold": 1,
+            }
+        )
+        bundle = SlicePlanner(cfg).build(events)
+        plans = bundle["consumer_plans"]["ridge_sizer_fit"]
+        splits: List[Tuple[np.ndarray, np.ndarray]] = []
+        for plan in plans:
+            if plan.tag != "predict_outer_test":
+                continue
+            tr = np.asarray(plan.fit_idx, dtype=np.int64)
+            te = np.asarray(plan.predict_idx, dtype=np.int64)
+            if tr.size > 0 and te.size > 0:
+                splits.append((tr, te))
+        if splits:
+            return splits, len(splits)
+    except Exception as e:
+        logger.warning(
+            f"Planner temporal splits failed: {e}. Falling back to PurgedKFold."
+        )
+
+    try:
+        cv = PurgedKFold(
+            n_splits=n_splits,
+            purge=purge_units,
+            embargo=embargo_units,
+            times=timestamps,
+        )
         dummy_X = np.empty((n_samples, 1))
         splits = list(cv.split(dummy_X))
         if not splits:
@@ -86,19 +160,26 @@ def make_temporal_splits(
         mid = n_samples // 2
         return [(np.arange(mid), np.arange(mid, n_samples))], 1
 
+
 def build_log_clipped_target(returns: np.ndarray, clip_L: float = 0.02) -> np.ndarray:
     """T1 = log_clipped_winsorized_net"""
     clipped = np.clip(returns, -clip_L, clip_L)
     scale = np.std(clipped) if len(clipped) > 1 and np.std(clipped) > 1e-9 else 1.0
     return np.sign(clipped) * np.log1p(np.abs(clipped) / scale)
 
-def build_rank_target(returns: np.ndarray, timestamps: Optional[np.ndarray] = None, mode: str = "fold_local") -> np.ndarray:
+
+def build_rank_target(
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray] = None,
+    mode: str = "fold_local",
+) -> np.ndarray:
     """T2 = rank_style_target. Always rank over the provided vector."""
     returns = np.asarray(returns)
     order = np.argsort(returns)
     ranks = np.empty_like(returns, dtype=np.float32)
     ranks[order] = (np.arange(len(returns)) + 0.5) / max(1, len(returns))
     return (ranks * 2.0) - 1.0
+
 
 def _pad_series(series: np.ndarray, max_b: int) -> Tuple[np.ndarray, np.ndarray]:
     n = len(series)
@@ -111,7 +192,10 @@ def _pad_series(series: np.ndarray, max_b: int) -> Tuple[np.ndarray, np.ndarray]
             lens[i] = use
     return res, lens
 
-def _precompute_padded_paths(trade_outcomes: pd.DataFrame, max_b: int = 24) -> Dict[str, np.ndarray]:
+
+def _precompute_padded_paths(
+    trade_outcomes: pd.DataFrame, max_b: int = 24
+) -> Dict[str, np.ndarray]:
     opens, _ = _pad_series(trade_outcomes["future_opens"].values, max_b)
     highs, _ = _pad_series(trade_outcomes["future_highs"].values, max_b)
     lows, _ = _pad_series(trade_outcomes["future_lows"].values, max_b)
@@ -121,14 +205,14 @@ def _precompute_padded_paths(trade_outcomes: pd.DataFrame, max_b: int = 24) -> D
         "highs_2d": highs,
         "lows_2d": lows,
         "closes_2d": closes,
-        "path_lens": path_lens
+        "path_lens": path_lens,
     }
 
 
 def build_robust_utility_target(
     trade_outcomes: pd.DataFrame,
     cost_pct: float = 0.002,
-    padded_paths: Optional[Dict[str, np.ndarray]] = None
+    padded_paths: Optional[Dict[str, np.ndarray]] = None,
 ) -> np.ndarray:
     max_b = 24
     n = len(trade_outcomes)
@@ -159,10 +243,10 @@ def build_robust_utility_target(
             sl_atr_mult=sl,
             tp_sl_ratio=tp_ratio,
             max_hold_bars=max_b,
-            trail_activate_atr=1e9, # disabled
+            trail_activate_atr=1e9,  # disabled
             giveback_pct=0.0,
             early_exit_deadline_bars=0,
-            early_exit_mfe_atr=0.0
+            early_exit_mfe_atr=0.0,
         )
         u, _ = _simulate_policy_batch(
             entry_px, atr, is_long, opens, highs, lows, closes, path_lens, pol, cost_pct
@@ -171,7 +255,10 @@ def build_robust_utility_target(
 
     return u_acc / len(geometries)
 
-def build_volatility_normalized_target(returns: np.ndarray, atr_values: np.ndarray, entry_prices: np.ndarray) -> np.ndarray:
+
+def build_volatility_normalized_target(
+    returns: np.ndarray, atr_values: np.ndarray, entry_prices: np.ndarray
+) -> np.ndarray:
     """
     T4 = volatility_normalized_target
     raw_return / max(atr_like_scale, eps)
@@ -179,9 +266,11 @@ def build_volatility_normalized_target(returns: np.ndarray, atr_values: np.ndarr
     atr_pct = atr_values / np.maximum(entry_prices, 1e-9)
     return returns / np.maximum(atr_pct, 1e-6)
 
+
 # ============================================================
 # Layer A: Predictive models
 # ============================================================
+
 
 class Model1Edge:
     def __init__(self, target_name: str = "log_clipped_winsorized_net"):
@@ -191,7 +280,9 @@ class Model1Edge:
         self.is_fitted = False
         self.model_type_ = "Ridge"
 
-    def fit(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray] = None):
+    def fit(
+        self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray] = None
+    ):
         X_scaled = self.scaler.fit_transform(X)
         self.model.fit(X_scaled, y, sample_weight=sample_weight)
         self.is_fitted = True
@@ -211,7 +302,12 @@ class Model2Downside:
         self.model_type_ = "Ridge"
         self.target_transform_ = "log1p(abs(residuals))"
 
-    def fit(self, X: np.ndarray, y_mae_atr: np.ndarray, sample_weight: Optional[np.ndarray] = None):
+    def fit(
+        self,
+        X: np.ndarray,
+        y_mae_atr: np.ndarray,
+        sample_weight: Optional[np.ndarray] = None,
+    ):
         X_scaled = self.scaler.fit_transform(X)
         self.model.fit(X_scaled, y_mae_atr, sample_weight=sample_weight)
         self.is_fitted = True
@@ -231,7 +327,12 @@ class Model3Uncertainty:
         self.model_type_ = "Ridge"
         self.target_transform_ = "log1p(abs(residuals))"
 
-    def fit(self, X: np.ndarray, residuals: np.ndarray, sample_weight: Optional[np.ndarray] = None):
+    def fit(
+        self,
+        X: np.ndarray,
+        residuals: np.ndarray,
+        sample_weight: Optional[np.ndarray] = None,
+    ):
         y_target = np.log1p(np.abs(residuals))
         X_scaled = self.scaler.fit_transform(X)
         self.model.fit(X_scaled, y_target, sample_weight=sample_weight)
@@ -253,6 +354,7 @@ class LayerAPredictor:
     - Fits Uncertainty strictly on Model 1 OOF residuals.
     - Fits final models.
     """
+
     def __init__(self, lambda_downside: float = 0.5, eta_uncertainty: float = 0.5):
         self.edge_model = Model1Edge()
         self.downside_model = Model2Downside()
@@ -287,24 +389,26 @@ class LayerAPredictor:
         trade_outcomes: pd.DataFrame,
         raw_returns: np.ndarray,
         timestamps: Optional[np.ndarray],
-        sample_weight: Optional[np.ndarray]
+        sample_weight: Optional[np.ndarray],
     ):
         """Evaluates T1, T2, T3, T4. Picks winner via temporal OOF edge target score."""
-        splits, actual_n_splits = make_temporal_splits(timestamps, n_samples=len(X), n_splits=2)
+        splits, actual_n_splits = make_temporal_splits(
+            timestamps, n_samples=len(X), n_splits=2
+        )
 
         candidates = {
             "log_clipped_winsorized_net": build_log_clipped_target(raw_returns),
             "rank_style_target": build_rank_target(
-                raw_returns,
-                timestamps,
-                mode="fold_local"
+                raw_returns, timestamps, mode="fold_local"
             ),
-            "robust_utility_target": build_robust_utility_target(trade_outcomes, padded_paths=_precompute_padded_paths(trade_outcomes)),
+            "robust_utility_target": build_robust_utility_target(
+                trade_outcomes, padded_paths=_precompute_padded_paths(trade_outcomes)
+            ),
             "volatility_normalized_target": build_volatility_normalized_target(
                 raw_returns,
                 trade_outcomes["atr_12_15m"].values,
-                trade_outcomes["entry_price"].values
-            )
+                trade_outcomes["entry_price"].values,
+            ),
         }
 
         race_results = []
@@ -327,7 +431,9 @@ class LayerAPredictor:
             l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.15, 0.40, 0.70])
             inner_cv = fs_cfg.get("inner_n_splits_default", 3)
 
-        feature_names = get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear")
+        feature_names = get_feature_view(
+            POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"
+        )
 
         for name, y_cand in candidates.items():
             oof_preds = np.full(len(X), np.nan)
@@ -350,7 +456,9 @@ class LayerAPredictor:
                 preds_val = m.predict(X[val_idx][:, sel_idx])
                 oof_preds[val_idx] = preds_val
 
-                top_mets = compute_top_slice_metrics(preds_val, raw_returns[val_idx], top_fracs=(0.1, 0.2))
+                top_mets = compute_top_slice_metrics(
+                    preds_val, raw_returns[val_idx], top_fracs=(0.1, 0.2)
+                )
                 fold_nets_10.append(top_mets["top_10_mean_net"])
                 fold_nets_20.append(top_mets["top_20_mean_net"])
 
@@ -358,21 +466,35 @@ class LayerAPredictor:
             std_net = float(np.std(fold_nets_10)) if len(fold_nets_10) > 1 else 0.0
             score = mean_net - 0.5 * std_net
 
-            spear, _ = spearmanr(oof_preds[np.isfinite(oof_preds)], raw_returns[np.isfinite(oof_preds)], nan_policy="omit")
-            monot = compute_bucket_monotonicity(oof_preds[np.isfinite(oof_preds)], raw_returns[np.isfinite(oof_preds)])
+            spear, _ = spearmanr(
+                oof_preds[np.isfinite(oof_preds)],
+                raw_returns[np.isfinite(oof_preds)],
+                nan_policy="omit",
+            )
+            monot = compute_bucket_monotonicity(
+                oof_preds[np.isfinite(oof_preds)], raw_returns[np.isfinite(oof_preds)]
+            )
 
-            full_top = compute_top_slice_metrics(oof_preds[np.isfinite(oof_preds)], raw_returns[np.isfinite(oof_preds)], (0.1,))
+            full_top = compute_top_slice_metrics(
+                oof_preds[np.isfinite(oof_preds)],
+                raw_returns[np.isfinite(oof_preds)],
+                (0.1,),
+            )
 
-            race_results.append({
-                "target": name,
-                "score": score,
-                "spearman_ic_mean": float(spear) if pd.notna(spear) else 0.0,
-                "top_decile_realized_net_mean": mean_net,
-                "top_quintile_realized_net_mean": float(np.mean(fold_nets_20)) if fold_nets_20 else 0.0,
-                "top_decile_hit_rate_mean": full_top["top_10_hit_rate"],
-                "score_bucket_monotonicity": monot,
-                "fold_stability_std": std_net
-            })
+            race_results.append(
+                {
+                    "target": name,
+                    "score": score,
+                    "spearman_ic_mean": float(spear) if pd.notna(spear) else 0.0,
+                    "top_decile_realized_net_mean": mean_net,
+                    "top_quintile_realized_net_mean": float(np.mean(fold_nets_20))
+                    if fold_nets_20
+                    else 0.0,
+                    "top_decile_hit_rate_mean": full_top["top_10_hit_rate"],
+                    "score_bucket_monotonicity": monot,
+                    "fold_stability_std": std_net,
+                }
+            )
 
             if score > best_score:
                 best_score = score
@@ -408,8 +530,8 @@ class LayerAPredictor:
                 sample_weight_train=sample_weight,
                 inner_n_splits=inner_cv,
                 max_features_cap=fs_cfg["max_features_cap"]["edge"],
-                        min_features_floor=fs_cfg["min_features_floor"]["edge"],
-                        sparsity_penalty=fs_cfg["sparsity_penalty"]["edge"]
+                min_features_floor=fs_cfg["min_features_floor"]["edge"],
+                sparsity_penalty=fs_cfg["sparsity_penalty"]["edge"],
             )
             self.final_selected_feature_idx_edge_ = final_fs_res["selected_idx"]
             self.feature_selection_results_edge_ = final_fs_res
@@ -417,17 +539,21 @@ class LayerAPredictor:
             self.final_selected_feature_idx_edge_ = np.arange(X.shape[1])
             self.feature_selection_results_edge_ = None
 
-        self.edge_model.fit(X[:, self.final_selected_feature_idx_edge_], y_final, sample_weight)
+        self.edge_model.fit(
+            X[:, self.final_selected_feature_idx_edge_], y_final, sample_weight
+        )
 
     def _run_model2_oof_eval(
         self,
         X: np.ndarray,
         y_downside: np.ndarray,
         timestamps: Optional[np.ndarray],
-        sample_weight: Optional[np.ndarray]
+        sample_weight: Optional[np.ndarray],
     ):
         """OOF eval for Model 2 Downside."""
-        splits, actual_n_splits = make_temporal_splits(timestamps, n_samples=len(X), n_splits=2)
+        splits, actual_n_splits = make_temporal_splits(
+            timestamps, n_samples=len(X), n_splits=2
+        )
         oof_preds = np.full(len(X), np.nan)
 
         fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
@@ -442,11 +568,15 @@ class LayerAPredictor:
             l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.15, 0.40, 0.70])
             inner_cv = fs_cfg.get("inner_n_splits_default", 3)
 
-        feature_names = get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear")
+        feature_names = get_feature_view(
+            POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear"
+        )
 
         for tr_idx, val_idx in splits:
             w_tr = sample_weight[tr_idx] if sample_weight is not None else None
-            y_tr_down = np.clip(y_downside[tr_idx], 0.0, np.percentile(y_downside[tr_idx], 98))
+            y_tr_down = np.clip(
+                y_downside[tr_idx], 0.0, np.percentile(y_downside[tr_idx], 98)
+            )
 
             sel_idx = np.arange(X.shape[1])
 
@@ -458,7 +588,9 @@ class LayerAPredictor:
         if np.any(valid):
             mae = float(np.mean(np.abs(oof_preds[valid] - y_downside[valid])))
             monot = compute_bucket_monotonicity(oof_preds[valid], y_downside[valid])
-            fsr = compute_false_safe_rate(oof_preds[valid], y_downside[valid], low_q=0.2, high_q=0.8)
+            fsr = compute_false_safe_rate(
+                oof_preds[valid], y_downside[valid], low_q=0.2, high_q=0.8
+            )
 
             # Simple manual Huber eval
             err = np.abs(oof_preds[valid] - y_downside[valid])
@@ -473,7 +605,7 @@ class LayerAPredictor:
             "oof_mae": mae,
             "oof_huber_loss": hloss,
             "downside_decile_monotonicity": monot,
-            "false_safe_rate": fsr
+            "false_safe_rate": fsr,
         }
         self.model2_oof_pred_ = oof_preds
 
@@ -492,8 +624,8 @@ class LayerAPredictor:
                 sample_weight_train=sample_weight,
                 inner_n_splits=inner_cv,
                 max_features_cap=fs_cfg["max_features_cap"]["downside"],
-                    min_features_floor=fs_cfg["min_features_floor"]["downside"],
-                    sparsity_penalty=fs_cfg["sparsity_penalty"]["downside"]
+                min_features_floor=fs_cfg["min_features_floor"]["downside"],
+                sparsity_penalty=fs_cfg["sparsity_penalty"]["downside"],
             )
             self.final_selected_feature_idx_downside_ = final_fs_res["selected_idx"]
             self.feature_selection_results_downside_ = final_fs_res
@@ -501,14 +633,16 @@ class LayerAPredictor:
             self.final_selected_feature_idx_downside_ = np.arange(X.shape[1])
             self.feature_selection_results_downside_ = None
 
-        self.downside_model.fit(X[:, self.final_selected_feature_idx_downside_], y_final, sample_weight)
+        self.downside_model.fit(
+            X[:, self.final_selected_feature_idx_downside_], y_final, sample_weight
+        )
 
     def _run_model3_oof_eval(
         self,
         X: np.ndarray,
         y_winning_target: np.ndarray,
         timestamps: Optional[np.ndarray],
-        sample_weight: Optional[np.ndarray]
+        sample_weight: Optional[np.ndarray],
     ):
         """OOF eval for Uncertainty. Fits on Model 1 OOF residuals."""
         valid_oof = np.isfinite(self.model1_oof_pred_)
@@ -520,7 +654,11 @@ class LayerAPredictor:
         X_res = X[valid_oof]
         w_res = sample_weight[valid_oof] if sample_weight is not None else None
 
-        splits, actual_n_splits = make_temporal_splits(timestamps[valid_oof] if timestamps is not None else None, n_samples=len(X_res), n_splits=2)
+        splits, actual_n_splits = make_temporal_splits(
+            timestamps[valid_oof] if timestamps is not None else None,
+            n_samples=len(X_res),
+            n_splits=2,
+        )
         oof_preds = np.full(len(X_res), np.nan)
 
         fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
@@ -535,7 +673,10 @@ class LayerAPredictor:
             l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.15, 0.40, 0.70])
             inner_cv = fs_cfg.get("inner_n_splits_default", 3)
 
-        feature_names = get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear")
+        feature_names = get_feature_view(
+            POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"],
+            "X_linear",
+        )
 
         for tr_idx, val_idx in splits:
             w_tr = w_res[tr_idx] if w_res is not None else None
@@ -549,7 +690,9 @@ class LayerAPredictor:
         realized_abs = np.abs(residuals)
 
         if np.any(valid2):
-            calib = compute_uncertainty_calibration(oof_preds[valid2], realized_abs[valid2])
+            calib = compute_uncertainty_calibration(
+                oof_preds[valid2], realized_abs[valid2]
+            )
         else:
             calib = {}
 
@@ -561,7 +704,9 @@ class LayerAPredictor:
             final_fs_res = select_features_via_elasticnet(
                 X_train=X_res,
                 y_train=residuals,
-                timestamps_train=timestamps[valid_oof] if timestamps is not None else None,
+                timestamps_train=timestamps[valid_oof]
+                if timestamps is not None
+                else None,
                 model_kind="uncertainty",
                 feature_names=feature_names,
                 alpha_grid=alpha_grid,
@@ -569,8 +714,8 @@ class LayerAPredictor:
                 sample_weight_train=w_res,
                 inner_n_splits=inner_cv,
                 max_features_cap=fs_cfg["max_features_cap"]["uncertainty"],
-                    min_features_floor=fs_cfg["min_features_floor"]["uncertainty"],
-                    sparsity_penalty=fs_cfg["sparsity_penalty"]["uncertainty"]
+                min_features_floor=fs_cfg["min_features_floor"]["uncertainty"],
+                sparsity_penalty=fs_cfg["sparsity_penalty"]["uncertainty"],
             )
             self.final_selected_feature_idx_uncertainty_ = final_fs_res["selected_idx"]
             self.feature_selection_results_uncertainty_ = final_fs_res
@@ -578,31 +723,79 @@ class LayerAPredictor:
             self.final_selected_feature_idx_uncertainty_ = np.arange(X_res.shape[1])
             self.feature_selection_results_uncertainty_ = None
 
-        self.uncertainty_model.fit(X_res[:, self.final_selected_feature_idx_uncertainty_], residuals, w_res)
+        self.uncertainty_model.fit(
+            X_res[:, self.final_selected_feature_idx_uncertainty_], residuals, w_res
+        )
 
-    def fit(self, feature_dict: Dict[str, np.ndarray], trade_outcomes: pd.DataFrame, y_raw_net_return: np.ndarray, y_downside: np.ndarray,
-            timestamps: Optional[np.ndarray] = None,
-            sample_weight: Optional[np.ndarray] = None):
-
+    def fit(
+        self,
+        feature_dict: Dict[str, np.ndarray],
+        trade_outcomes: pd.DataFrame,
+        y_raw_net_return: np.ndarray,
+        y_downside: np.ndarray,
+        timestamps: Optional[np.ndarray] = None,
+        sample_weight: Optional[np.ndarray] = None,
+    ):
         # 0. Feature Diagnostics
         self.feature_coverage_report_ = {
-            "model1_requested": get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"),
-            "model2_requested": get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear"),
-            "model3_requested": get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear"),
+            "model1_requested": get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"
+            ),
+            "model2_requested": get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"],
+                "X_linear",
+            ),
+            "model3_requested": get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"],
+                "X_linear",
+            ),
             "available_in_dict": list(feature_dict.keys()),
         }
 
         def _get_missing(requested):
             return [k for k in requested if k not in feature_dict]
 
-        self.feature_coverage_report_["model1_missing"] = _get_missing(get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"))
-        self.feature_coverage_report_["model2_missing"] = _get_missing(get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear"))
-        self.feature_coverage_report_["model3_missing"] = [k for k in get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear") if k not in feature_dict and k not in ["edge_pred", "downside_pred", "edge_minus_downside", "abs_edge_pred"]]
-
+        self.feature_coverage_report_["model1_missing"] = _get_missing(
+            get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"
+            )
+        )
+        self.feature_coverage_report_["model2_missing"] = _get_missing(
+            get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"],
+                "X_linear",
+            )
+        )
+        self.feature_coverage_report_["model3_missing"] = [
+            k
+            for k in get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"],
+                "X_linear",
+            )
+            if k not in feature_dict
+            and k
+            not in [
+                "edge_pred",
+                "downside_pred",
+                "edge_minus_downside",
+                "abs_edge_pred",
+            ]
+        ]
 
         # 1. Assemble X1, X2
-        X1 = assemble_feature_matrix(feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"))
-        X2 = assemble_feature_matrix(feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear"))
+        X1 = assemble_feature_matrix(
+            feature_dict,
+            get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"
+            ),
+        )
+        X2 = assemble_feature_matrix(
+            feature_dict,
+            get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"],
+                "X_linear",
+            ),
+        )
 
         self.feature_coverage_report_["X1_shape"] = X1.shape
         self.feature_coverage_report_["X2_shape"] = X2.shape
@@ -619,7 +812,9 @@ class LayerAPredictor:
 
         # Orchestration steps as required:
         # a) run Model 1 target race with OOF preds, c) fits final model 1
-        self._run_model1_target_race(X1, trade_outcomes, y_raw_net_return, timestamps, sample_weight)
+        self._run_model1_target_race(
+            X1, trade_outcomes, y_raw_net_return, timestamps, sample_weight
+        )
 
         # b) run Model 2 OOF eval, d) fits final model 2
         self._run_model2_oof_eval(X2, y_downside, timestamps, sample_weight)
@@ -628,11 +823,25 @@ class LayerAPredictor:
         fd3 = feature_dict.copy()
         fd3["edge_pred"] = self.model1_oof_pred_
         fd3["downside_pred"] = self.model2_oof_pred_
-        valid12 = np.isfinite(self.model1_oof_pred_) & np.isfinite(self.model2_oof_pred_)
-        fd3["edge_minus_downside"] = np.where(valid12, self.model1_oof_pred_ - self.lambda_downside * self.model2_oof_pred_, 0.0)
-        fd3["abs_edge_pred"] = np.where(np.isfinite(self.model1_oof_pred_), np.abs(self.model1_oof_pred_), 0.0)
+        valid12 = np.isfinite(self.model1_oof_pred_) & np.isfinite(
+            self.model2_oof_pred_
+        )
+        fd3["edge_minus_downside"] = np.where(
+            valid12,
+            self.model1_oof_pred_ - self.lambda_downside * self.model2_oof_pred_,
+            0.0,
+        )
+        fd3["abs_edge_pred"] = np.where(
+            np.isfinite(self.model1_oof_pred_), np.abs(self.model1_oof_pred_), 0.0
+        )
 
-        X3 = assemble_feature_matrix(fd3, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear"))
+        X3 = assemble_feature_matrix(
+            fd3,
+            get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"],
+                "X_linear",
+            ),
+        )
         self.feature_coverage_report_["X3_shape"] = X3.shape
 
         # e) fit final Model 3 on OOF residual target using the dimensionally accurate winning target
@@ -641,34 +850,63 @@ class LayerAPredictor:
         self.is_fitted = True
         return self
 
-    def predict_components(self, feature_dict: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def predict_components(
+        self, feature_dict: Dict[str, np.ndarray]
+    ) -> Dict[str, np.ndarray]:
         if not self.is_fitted:
             raise RuntimeError("LayerAPredictor not fitted")
 
-        X1 = assemble_feature_matrix(feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"))
-        X2 = assemble_feature_matrix(feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"], "X_linear"))
+        X1 = assemble_feature_matrix(
+            feature_dict,
+            get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"
+            ),
+        )
+        X2 = assemble_feature_matrix(
+            feature_dict,
+            get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"],
+                "X_linear",
+            ),
+        )
 
         edge_p = self.edge_model.predict(X1[:, self.final_selected_feature_idx_edge_])
-        downside_p = self.downside_model.predict(X2[:, self.final_selected_feature_idx_downside_])
+        downside_p = self.downside_model.predict(
+            X2[:, self.final_selected_feature_idx_downside_]
+        )
 
         fd3 = feature_dict.copy()
         fd3["edge_pred"] = edge_p
         fd3["downside_pred"] = downside_p
         fd3["edge_minus_downside"] = edge_p - self.lambda_downside * downside_p
         fd3["abs_edge_pred"] = np.abs(edge_p)
-        X3 = assemble_feature_matrix(fd3, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"], "X_linear"))
+        X3 = assemble_feature_matrix(
+            fd3,
+            get_feature_view(
+                POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"],
+                "X_linear",
+            ),
+        )
 
         return {
             "edge": edge_p,
             "downside": downside_p,
-            "uncertainty": self.uncertainty_model.predict(X3[:, self.final_selected_feature_idx_uncertainty_])
+            "uncertainty": self.uncertainty_model.predict(
+                X3[:, self.final_selected_feature_idx_uncertainty_]
+            ),
         }
 
     def predict_score(self, feature_dict: Dict[str, np.ndarray]) -> np.ndarray:
         comps = self.predict_components(feature_dict)
-        return comps["edge"] - (self.lambda_downside * comps["downside"]) - (self.eta_uncertainty * comps["uncertainty"])
+        return (
+            comps["edge"]
+            - (self.lambda_downside * comps["downside"])
+            - (self.eta_uncertainty * comps["uncertainty"])
+        )
 
-    def initial_sizing(self, score: np.ndarray, threshold: float = 0.0, base_size: float = 0.05) -> np.ndarray:
+    def initial_sizing(
+        self, score: np.ndarray, threshold: float = 0.0, base_size: float = 0.05
+    ) -> np.ndarray:
         active = score > threshold
         sizes = np.zeros_like(score)
         if np.any(active):
@@ -680,9 +918,11 @@ class LayerAPredictor:
                 sizes[active] = base_size
         return np.clip(sizes, 0.0, 1.0)
 
+
 # ============================================================
 # Layer B: Policy Optimization
 # ============================================================
+
 
 def _standardize(x: np.ndarray) -> np.ndarray:
     x_arr = np.asarray(x, dtype=float)
@@ -702,16 +942,24 @@ class LayerBPolicyOptimizer:
     Standardized empty fold behavior:
     no active trades -> pnl_day = 0, sortino = 0, maxDD = 1, timeout_rate = 1
     """
-    def __init__(self, cost_pct: float = 0.002, lambda_penalty: float = 0.5, annualization_factor: Optional[float] = None):
+
+    def __init__(
+        self,
+        cost_pct: float = 0.002,
+        lambda_penalty: float = 0.5,
+        annualization_factor: Optional[float] = None,
+    ):
         self.cost_pct = cost_pct
         self.lambda_penalty = lambda_penalty
-        self.annualization_factor = annualization_factor if annualization_factor is not None else 1.0 # default no annualization
+        self.annualization_factor = (
+            annualization_factor if annualization_factor is not None else 1.0
+        )  # default no annualization
         self.best_policy = {}
         self.best_j = -1e9
 
-        self.obj_a = 1.0 # Sortino weight
-        self.obj_b = 1.0 # MaxDD weight
-        self.obj_c = 1.0 # Instability weight
+        self.obj_a = 1.0  # Sortino weight
+        self.obj_b = 1.0  # MaxDD weight
+        self.obj_c = 1.0  # Instability weight
 
         self.layer_b_candidate_table_ = None
         self.layer_b_selected_objective_components_ = None
@@ -724,7 +972,7 @@ class LayerBPolicyOptimizer:
         score_quantile_fraction: float,
         splits: List[Tuple[np.ndarray, np.ndarray]],
         timestamps: np.ndarray,
-        padded_paths: Optional[Dict[str, np.ndarray]] = None
+        padded_paths: Optional[Dict[str, np.ndarray]] = None,
     ) -> Dict[str, float]:
         """
         Evaluate a single LabelPolicy over temporal validation folds.
@@ -736,7 +984,9 @@ class LayerBPolicyOptimizer:
         fold_maxdds = []
         fold_timeout_rates = []
 
-        min_days_floor = 1.0 / 24.0 # Fix: lower floor for short intraday evaluation bounds
+        min_days_floor = (
+            1.0 / 24.0
+        )  # Fix: lower floor for short intraday evaluation bounds
 
         for _, val_idx in splits:
             if len(val_idx) == 0:
@@ -766,7 +1016,9 @@ class LayerBPolicyOptimizer:
                 closes_2d = padded_paths["closes_2d"][active_val_idx, :max_b]
                 path_lens = np.minimum(padded_paths["path_lens"][active_val_idx], max_b)
             else:
-                tmp_paths = _precompute_padded_paths(trade_outcomes.iloc[active_val_idx], max_b)
+                tmp_paths = _precompute_padded_paths(
+                    trade_outcomes.iloc[active_val_idx], max_b
+                )
                 opens_2d = tmp_paths["opens_2d"]
                 highs_2d = tmp_paths["highs_2d"]
                 lows_2d = tmp_paths["lows_2d"]
@@ -784,7 +1036,7 @@ class LayerBPolicyOptimizer:
                 closes_2d=closes_2d,
                 path_lengths=path_lens,
                 policy=pol,
-                cost_pct=self.cost_pct
+                cost_pct=self.cost_pct,
             )
 
             if len(u) == 0:
@@ -806,7 +1058,9 @@ class LayerBPolicyOptimizer:
             maxDD = float(np.max(dd)) if len(dd) > 0 else 1.0
 
             neg_rets = ret[ret < 0]
-            dd_dev = float(np.sqrt(np.mean(neg_rets**2))) if len(neg_rets) > 0 else 1e-3
+            dd_dev = (
+                float(np.sqrt(np.mean(neg_rets**2))) if len(neg_rets) > 0 else 1e-3
+            )
             sortino = float(np.mean(ret) / (dd_dev + 1e-9) * self.annualization_factor)
 
             fold_pnl_days.append(pnl_day)
@@ -822,7 +1076,7 @@ class LayerBPolicyOptimizer:
             "sortino": float(np.mean(fold_sortinos)),
             "maxDD": float(np.mean(fold_maxdds)),
             "instability": float(np.std(fold_pnl_days)),
-            "timeout_rate": float(np.mean(fold_timeout_rates))
+            "timeout_rate": float(np.mean(fold_timeout_rates)),
         }
 
     def _score_candidates(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -840,13 +1094,22 @@ class LayerBPolicyOptimizer:
         z_instab = _standardize(instab_arr)
 
         for i, r in enumerate(results):
-            u = z_pnl[i] + self.obj_a * z_sortino[i] - self.obj_b * z_maxdd[i] - self.obj_c * z_instab[i]
+            u = (
+                z_pnl[i]
+                + self.obj_a * z_sortino[i]
+                - self.obj_b * z_maxdd[i]
+                - self.obj_c * z_instab[i]
+            )
             r["utility"] = float(u)
 
         return sorted(results, key=lambda x: x["utility"], reverse=True)
 
-    def optimize(self, scores: np.ndarray, trade_outcomes: pd.DataFrame, timestamps: np.ndarray):
-        splits, actual_n_splits = make_temporal_splits(timestamps, n_samples=len(scores), n_splits=3)
+    def optimize(
+        self, scores: np.ndarray, trade_outcomes: pd.DataFrame, timestamps: np.ndarray
+    ):
+        splits, actual_n_splits = make_temporal_splits(
+            timestamps, n_samples=len(scores), n_splits=3
+        )
         candidate_table = []
 
         # --- Step 1: Exit Geometry (SL, Trailing, Giveback) ---
@@ -857,13 +1120,27 @@ class LayerBPolicyOptimizer:
 
         tprint("Layer B Step 1: Optimizing exit geometry over temporal folds...")
         step1_results = []
-        for sl, tp, trail, gb in itertools.product(sl_cands, tp_cands, trail_cands, giveback_cands):
+        for sl, tp, trail, gb in itertools.product(
+            sl_cands, tp_cands, trail_cands, giveback_cands
+        ):
             pol = LabelPolicy(
-                sl_atr_mult=sl, tp_sl_ratio=tp, max_hold_bars=24,
-                trail_activate_atr=trail, giveback_pct=gb,
-                early_exit_deadline_bars=0, early_exit_mfe_atr=0.0
+                sl_atr_mult=sl,
+                tp_sl_ratio=tp,
+                max_hold_bars=24,
+                trail_activate_atr=trail,
+                giveback_pct=gb,
+                early_exit_deadline_bars=0,
+                early_exit_mfe_atr=0.0,
             )
-            res = self._eval_policy_over_folds(pol, trade_outcomes, scores, score_quantile_fraction=0.60, splits=splits, timestamps=timestamps, padded_paths=padded_paths)
+            res = self._eval_policy_over_folds(
+                pol,
+                trade_outcomes,
+                scores,
+                score_quantile_fraction=0.60,
+                splits=splits,
+                timestamps=timestamps,
+                padded_paths=padded_paths,
+            )
             res["step"] = 1
             res["policy_obj"] = pol
             res["threshold_q"] = 0.60
@@ -882,12 +1159,19 @@ class LayerBPolicyOptimizer:
         for geom_cand in top_k_step1:
             best_geom_cand = geom_cand["policy_obj"]
             for q in [0.70, 0.50]:
-                res = self._eval_policy_over_folds(best_geom_cand, trade_outcomes, scores, score_quantile_fraction=q, splits=splits, timestamps=timestamps, padded_paths=padded_paths)
+                res = self._eval_policy_over_folds(
+                    best_geom_cand,
+                    trade_outcomes,
+                    scores,
+                    score_quantile_fraction=q,
+                    splits=splits,
+                    timestamps=timestamps,
+                    padded_paths=padded_paths,
+                )
                 res["step"] = 2
                 res["policy_obj"] = best_geom_cand
                 res["score_quantile_fraction"] = q
                 step2_results.append(res)
-
 
         step2_scored = self._score_candidates(step2_results)
         candidate_table.extend(step2_scored)
@@ -904,14 +1188,29 @@ class LayerBPolicyOptimizer:
         for cand2 in top_k_step2:
             best_geom2 = cand2["policy_obj"]
             best_q = cand2["score_quantile_fraction"]
-            for t_out, ed, em in itertools.product(timeout_cands, early_deadline_cands, early_mfe_cands):
-                if ed == 0: em = 0.0
+            for t_out, ed, em in itertools.product(
+                timeout_cands, early_deadline_cands, early_mfe_cands
+            ):
+                if ed == 0:
+                    em = 0.0
                 pol = LabelPolicy(
-                    sl_atr_mult=best_geom2.sl_atr_mult, tp_sl_ratio=best_geom2.tp_sl_ratio,
-                    max_hold_bars=t_out, trail_activate_atr=best_geom2.trail_activate_atr,
-                    giveback_pct=best_geom2.giveback_pct, early_exit_deadline_bars=ed, early_exit_mfe_atr=em
+                    sl_atr_mult=best_geom2.sl_atr_mult,
+                    tp_sl_ratio=best_geom2.tp_sl_ratio,
+                    max_hold_bars=t_out,
+                    trail_activate_atr=best_geom2.trail_activate_atr,
+                    giveback_pct=best_geom2.giveback_pct,
+                    early_exit_deadline_bars=ed,
+                    early_exit_mfe_atr=em,
                 )
-                res = self._eval_policy_over_folds(pol, trade_outcomes, scores, score_quantile_fraction=best_q, splits=splits, timestamps=timestamps, padded_paths=padded_paths)
+                res = self._eval_policy_over_folds(
+                    pol,
+                    trade_outcomes,
+                    scores,
+                    score_quantile_fraction=best_q,
+                    splits=splits,
+                    timestamps=timestamps,
+                    padded_paths=padded_paths,
+                )
                 res["step"] = 3
                 res["policy_obj"] = pol
                 res["score_quantile_fraction"] = best_q
@@ -922,22 +1221,29 @@ class LayerBPolicyOptimizer:
         best_pol = step3_scored[0]["policy_obj"]
 
         # Artifact storage ensuring fully reconstructable records
-        self.layer_b_candidate_table_ = pd.DataFrame([{
-            "step": r["step"],
-            "score_quantile_fraction": r.get("score_quantile_fraction", 0.0),
-            "sl_atr_mult": r["policy_obj"].sl_atr_mult,
-            "tp_sl_ratio": r["policy_obj"].tp_sl_ratio,
-            "trail_activate_atr": r["policy_obj"].trail_activate_atr,
-            "giveback_pct": r["policy_obj"].giveback_pct,
-            "max_hold_bars": r["policy_obj"].max_hold_bars,
-            "early_exit_deadline_bars": r["policy_obj"].early_exit_deadline_bars,
-            "early_exit_mfe_atr": r["policy_obj"].early_exit_mfe_atr,
-            "net_pnl_day": r["net_pnl_day"],
-            "sortino": r["sortino"],
-            "maxDD": r["maxDD"],
-            "instability": r["instability"],
-            "utility": r["utility"]
-        } for r in candidate_table])
+        self.layer_b_candidate_table_ = pd.DataFrame(
+            [
+                {
+                    "step": r["step"],
+                    "score_quantile_fraction": r.get("score_quantile_fraction", 0.0),
+                    "sl_atr_mult": r["policy_obj"].sl_atr_mult,
+                    "tp_sl_ratio": r["policy_obj"].tp_sl_ratio,
+                    "trail_activate_atr": r["policy_obj"].trail_activate_atr,
+                    "giveback_pct": r["policy_obj"].giveback_pct,
+                    "max_hold_bars": r["policy_obj"].max_hold_bars,
+                    "early_exit_deadline_bars": r[
+                        "policy_obj"
+                    ].early_exit_deadline_bars,
+                    "early_exit_mfe_atr": r["policy_obj"].early_exit_mfe_atr,
+                    "net_pnl_day": r["net_pnl_day"],
+                    "sortino": r["sortino"],
+                    "maxDD": r["maxDD"],
+                    "instability": r["instability"],
+                    "utility": r["utility"],
+                }
+                for r in candidate_table
+            ]
+        )
 
         self.layer_b_selected_objective_components_ = step3_scored[0]
         self.best_j = step3_scored[0]["utility"]
@@ -961,6 +1267,7 @@ class LayerBPolicyOptimizer:
 # Layer C: Execution Optimization
 # ============================================================
 
+
 def _apply_sizing_mode(s_val: np.ndarray, base_size: float, mode: str) -> np.ndarray:
     s_min, s_max = s_val.min(), s_val.max()
     sizes = np.full_like(s_val, base_size)
@@ -974,13 +1281,21 @@ def _apply_sizing_mode(s_val: np.ndarray, base_size: float, mode: str) -> np.nda
             sizes = base_size * (1.0 + np.sqrt(s_norm))
     return sizes
 
+
 class LayerCExecutionOptimizer:
     """
     Layer C: Sizing mapping and Ridge Limit offset optimizer.
     Limit offset semantic bounds: 0.0 to 5.0 explicitly in percentage points or ticks based on input.
     """
-    def __init__(self, start_equity: float = 100000.0,
-                 offset_min: float = 0.0, offset_max: float = 5.0, offset_unit: str = "ticks", annualization_factor: Optional[float] = None):
+
+    def __init__(
+        self,
+        start_equity: float = 100000.0,
+        offset_min: float = 0.0,
+        offset_max: float = 5.0,
+        offset_unit: str = "ticks",
+        annualization_factor: Optional[float] = None,
+    ):
         self.sizing_mode = "linear"
         self.limit_model = Ridge(alpha=1.0)
         self.scaler = PredictionScaler()
@@ -989,11 +1304,13 @@ class LayerCExecutionOptimizer:
         self.offset_min = offset_min
         self.offset_max = offset_max
         self.offset_unit = offset_unit
-        self.annualization_factor = annualization_factor if annualization_factor is not None else 1.0
+        self.annualization_factor = (
+            annualization_factor if annualization_factor is not None else 1.0
+        )
 
-        self.obj_a = 1.0 # Sortino
-        self.obj_b = 1.0 # MaxDD
-        self.obj_c = 1.0 # Instability
+        self.obj_a = 1.0  # Sortino
+        self.obj_b = 1.0  # MaxDD
+        self.obj_c = 1.0  # Instability
 
         self.layer_c_candidate_table_ = None
 
@@ -1006,7 +1323,12 @@ class LayerCExecutionOptimizer:
         z_instab = _standardize([r["instability"] for r in results])
 
         for i, r in enumerate(results):
-            u = z_pnl[i] + self.obj_a * z_sortino[i] - self.obj_b * z_maxdd[i] - self.obj_c * z_instab[i]
+            u = (
+                z_pnl[i]
+                + self.obj_a * z_sortino[i]
+                - self.obj_b * z_maxdd[i]
+                - self.obj_c * z_instab[i]
+            )
             r["utility"] = float(u)
         return sorted(results, key=lambda x: x["utility"], reverse=True)
 
@@ -1016,13 +1338,17 @@ class LayerCExecutionOptimizer:
         returns: np.ndarray,
         threshold: float,
         timestamps: np.ndarray,
-        base_size: float = 0.05
+        base_size: float = 0.05,
     ):
-        splits, actual_n_splits = make_temporal_splits(timestamps, n_samples=len(scores), n_splits=3)
+        splits, actual_n_splits = make_temporal_splits(
+            timestamps, n_samples=len(scores), n_splits=3
+        )
         modes = ["linear", "convex", "concave"]
-        mode_results = {m: {"fold_pnl_day": [], "fold_sortino": [], "fold_maxdd": []} for m in modes}
+        mode_results = {
+            m: {"fold_pnl_day": [], "fold_sortino": [], "fold_maxdd": []} for m in modes
+        }
 
-        min_days_floor = 1.0 / 24.0 # Fix floor logic
+        min_days_floor = 1.0 / 24.0  # Fix floor logic
 
         for _, val_idx in splits:
             if len(val_idx) == 0:
@@ -1042,7 +1368,9 @@ class LayerCExecutionOptimizer:
 
             s_act = s_val[active]
             r_act = r_val[active]
-            days = max((ts_val.max() - ts_val.min()).total_seconds() / 86400.0, min_days_floor)
+            days = max(
+                (ts_val.max() - ts_val.min()).total_seconds() / 86400.0, min_days_floor
+            )
 
             s_min, s_max = s_act.min(), s_act.max()
             s_norm = (s_act - s_min) / max(s_max - s_min, 1e-9)
@@ -1055,7 +1383,9 @@ class LayerCExecutionOptimizer:
 
                 neg = pnl_series[pnl_series < 0]
                 dd_dev = float(np.sqrt(np.mean(neg**2))) if len(neg) > 0 else 1e-3
-                sortino = float(np.mean(pnl_series) / (dd_dev + 1e-9) * self.annualization_factor)
+                sortino = float(
+                    np.mean(pnl_series) / (dd_dev + 1e-9) * self.annualization_factor
+                )
 
                 _, dd = _stable_equity_and_drawdown(pnl_series)
                 mdd = float(np.max(dd)) if len(dd) > 0 else 1.0
@@ -1067,25 +1397,36 @@ class LayerCExecutionOptimizer:
         eval_rows = []
         for m in modes:
             mr = mode_results[m]
-            eval_rows.append({
-                "mode": m,
-                "net_pnl_day": float(np.mean(mr["fold_pnl_day"])),
-                "sortino": float(np.mean(mr["fold_sortino"])),
-                "maxDD": float(np.mean(mr["fold_maxdd"])),
-                "instability": float(np.std(mr["fold_pnl_day"])),
-                "threshold": threshold,
-                "base_size": base_size
-            })
+            eval_rows.append(
+                {
+                    "mode": m,
+                    "net_pnl_day": float(np.mean(mr["fold_pnl_day"])),
+                    "sortino": float(np.mean(mr["fold_sortino"])),
+                    "maxDD": float(np.mean(mr["fold_maxdd"])),
+                    "instability": float(np.std(mr["fold_pnl_day"])),
+                    "threshold": threshold,
+                    "base_size": base_size,
+                }
+            )
 
         scored = self._score_candidates(eval_rows)
         self.layer_c_candidate_table_ = pd.DataFrame(scored)
         self.sizing_mode = scored[0]["mode"]
 
-        tprint(f"Layer C: Selected sizing mode '{self.sizing_mode}' with Utility={scored[0]['utility']:.4f}")
+        tprint(
+            f"Layer C: Selected sizing mode '{self.sizing_mode}' with Utility={scored[0]['utility']:.4f}"
+        )
         return self.sizing_mode
 
-    def fit_limit_offset(self, feature_dict: Dict[str, np.ndarray], y_offset: np.ndarray, sample_weight: Optional[np.ndarray] = None):
-        X = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"])
+    def fit_limit_offset(
+        self,
+        feature_dict: Dict[str, np.ndarray],
+        y_offset: np.ndarray,
+        sample_weight: Optional[np.ndarray] = None,
+    ):
+        X = assemble_feature_matrix(
+            feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]
+        )
         valid = np.isfinite(y_offset)
         if not np.any(valid):
             self.is_fitted = False
@@ -1102,8 +1443,16 @@ class LayerCExecutionOptimizer:
         self.offset_n_samples_ = len(y_train)
         return self
 
-    def predict_size_and_offset(self, feature_dict: Dict[str, np.ndarray], score: np.ndarray, threshold: float = 0.0, base_size: float = 0.05):
-        X = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"])
+    def predict_size_and_offset(
+        self,
+        feature_dict: Dict[str, np.ndarray],
+        score: np.ndarray,
+        threshold: float = 0.0,
+        base_size: float = 0.05,
+    ):
+        X = assemble_feature_matrix(
+            feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]
+        )
 
         offset = np.zeros_like(score)
         if self.is_fitted:
@@ -1128,7 +1477,7 @@ def run_experiment_comparison(
     v2_returns_no_offset: np.ndarray,
     v2_returns_with_offset: np.ndarray,
     start_equity: float = 100000.0,
-    timestamps: Optional[np.ndarray] = None
+    timestamps: Optional[np.ndarray] = None,
 ) -> pd.DataFrame:
     """
     Produce final comparison report between Original setup,
@@ -1147,19 +1496,37 @@ def run_experiment_comparison(
         pos = pnl_series[pnl_series > 0]
 
         dd_dev = float(np.sqrt(np.mean(neg**2))) if len(neg) > 0 else 1e-3
-        sortino = float(np.mean(pnl_series) / (dd_dev + 1e-9)) # Note: No annualization factor available here, default to basic sortino.
+        sortino = float(
+            np.mean(pnl_series) / (dd_dev + 1e-9)
+        )  # Note: No annualization factor available here, default to basic sortino.
 
         _, dd = _stable_equity_and_drawdown(pnl_series)
         mdd = float(np.max(dd)) if len(dd) > 0 else 1.0
 
         hit_rate = float(np.mean(pnl_series > 0)) if len(pnl_series) > 0 else 0.0
-        pf = float(np.sum(pos) / abs(np.sum(neg))) if len(neg) > 0 and abs(np.sum(neg)) > 1e-9 else float('inf') if len(pos) > 0 else 0.0
+        pf = (
+            float(np.sum(pos) / abs(np.sum(neg)))
+            if len(neg) > 0 and abs(np.sum(neg)) > 1e-9
+            else float("inf")
+            if len(pos) > 0
+            else 0.0
+        )
 
         avg_win = float(np.mean(pos)) if len(pos) > 0 else 0.0
         avg_loss = float(np.mean(neg)) if len(neg) > 0 else 0.0
 
         trades = np.sum(sz > 0)
-        days = max(1.0, (pd.to_datetime(timestamps).max() - pd.to_datetime(timestamps).min()).total_seconds() / 86400.0) if timestamps is not None else 1.0
+        days = (
+            max(
+                1.0,
+                (
+                    pd.to_datetime(timestamps).max() - pd.to_datetime(timestamps).min()
+                ).total_seconds()
+                / 86400.0,
+            )
+            if timestamps is not None
+            else 1.0
+        )
         trades_per_day = float(trades / days)
 
         row = {
@@ -1171,7 +1538,7 @@ def run_experiment_comparison(
             "profit_factor": pf,
             "avg_win": avg_win,
             "avg_loss": avg_loss,
-            "trades_per_day": trades_per_day
+            "trades_per_day": trades_per_day,
         }
         rows.append(row)
 
@@ -1185,18 +1552,27 @@ def run_experiment_comparison(
         tprint(f"    Avg Win/Loss:  ${avg_win:.2f} / ${avg_loss:.2f}")
 
     _eval(baseline_sizes, baseline_returns, "Baseline (Original)")
-    _eval(v2_sizes_no_offset, v2_returns_no_offset, "V2 (Layer A + Layer B policy + best Sizing)")
-    _eval(v2_sizes_with_offset, v2_returns_with_offset, "V2 (Full) + Limit Offset Optimizer")
+    _eval(
+        v2_sizes_no_offset,
+        v2_returns_no_offset,
+        "V2 (Layer A + Layer B policy + best Sizing)",
+    )
+    _eval(
+        v2_sizes_with_offset,
+        v2_returns_with_offset,
+        "V2 (Full) + Limit Offset Optimizer",
+    )
     tprint("=" * 80)
 
     return pd.DataFrame(rows)
+
 
 # Layer B reporting expansion
 def generate_layer_b_deliverables(
     best_policy: dict,
     j_score: float,
     trade_outcomes: pd.DataFrame,
-    start_equity: float = 100000.0
+    start_equity: float = 100000.0,
 ):
     tprint("=" * 80)
     tprint("LAYER B DELIVERABLES: POLICY OPTIMIZATION")
@@ -1210,6 +1586,7 @@ def generate_layer_b_deliverables(
 
     tprint(f"  Composite Objective (Utility): {j_score:.4f}")
     tprint("=" * 80)
+
 
 # Target race expansion helper
 def generate_target_race_report(
@@ -1251,9 +1628,11 @@ def generate_target_race_report(
 
     tprint("=" * 80)
 
+
 # ============================================================
 # Bucketed Orchestrator
 # ============================================================
+
 
 def run_bucketed_position_sizer_v2(
     feature_dict: Dict[str, np.ndarray],
@@ -1266,10 +1645,12 @@ def run_bucketed_position_sizer_v2(
     lambda_downside: float = 0.5,
     eta_uncertainty: float = 0.5,
     cost_pct: float = 0.002,
-    start_equity: float = 100000.0
+    start_equity: float = 100000.0,
 ) -> Dict[str, Any]:
-
-    from extreme_price_movements.config import POSITION_SIZER_V2_BUCKETS, POSITION_SIZER_V2_BUCKET_CONFIG
+    from extreme_price_movements.config import (
+        POSITION_SIZER_V2_BUCKET_CONFIG,
+        POSITION_SIZER_V2_BUCKETS,
+    )
 
     results = {}
     summary_rows = []
@@ -1281,19 +1662,28 @@ def run_bucketed_position_sizer_v2(
         tprint(f"PROCESSING BUCKET: {bucket}")
         tprint("=" * 80)
 
-        mask = (bucket_labels == bucket)
+        mask = bucket_labels == bucket
         n_bucket = int(np.sum(mask))
 
         if n_bucket < min_samples:
-            tprint(f"  Skipping bucket {bucket} due to insufficient samples ({n_bucket} < {min_samples})")
-            summary_rows.append({
-                "bucket": bucket,
-                "n_samples": n_bucket,
-                "status": "skipped_insufficient_samples",
-                "model1_n_features": 0, "model2_n_features": 0, "model3_n_features": 0,
-                "model1_feature_stability": 0.0, "model2_feature_stability": 0.0, "model3_feature_stability": 0.0,
-                "final_policy_utility": 0.0, "final_sizing_mode": "none"
-            })
+            tprint(
+                f"  Skipping bucket {bucket} due to insufficient samples ({n_bucket} < {min_samples})"
+            )
+            summary_rows.append(
+                {
+                    "bucket": bucket,
+                    "n_samples": n_bucket,
+                    "status": "skipped_insufficient_samples",
+                    "model1_n_features": 0,
+                    "model2_n_features": 0,
+                    "model3_n_features": 0,
+                    "model1_feature_stability": 0.0,
+                    "model2_feature_stability": 0.0,
+                    "model3_feature_stability": 0.0,
+                    "final_policy_utility": 0.0,
+                    "final_sizing_mode": "none",
+                }
+            )
             continue
 
         def _slice_dict(d, m):
@@ -1307,14 +1697,16 @@ def run_bucketed_position_sizer_v2(
         sw_bucket = sample_weight[mask] if sample_weight is not None else None
 
         # --- Layer A ---
-        predictor = LayerAPredictor(lambda_downside=lambda_downside, eta_uncertainty=eta_uncertainty)
+        predictor = LayerAPredictor(
+            lambda_downside=lambda_downside, eta_uncertainty=eta_uncertainty
+        )
         predictor.fit(
             feature_dict=fd_bucket,
             trade_outcomes=outcomes_bucket,
             y_raw_net_return=y_ret_bucket,
             y_downside=y_down_bucket,
             timestamps=ts_bucket,
-            sample_weight=sw_bucket
+            sample_weight=sw_bucket,
         )
 
         scores = predictor.predict_score(fd_bucket)
@@ -1331,33 +1723,52 @@ def run_bucketed_position_sizer_v2(
         # --- Layer C ---
         c_opt = LayerCExecutionOptimizer(start_equity=start_equity)
         sizing_mode = c_opt.optimize_sizing(
-            scores, y_ret_bucket,
+            scores,
+            y_ret_bucket,
             threshold=best_policy["score_threshold"],
-            timestamps=ts_bucket
+            timestamps=ts_bucket,
         )
 
         # For full implementation, limit offset regression requires its target.
         # Left as placeholder fit for orchestrator architecture mapping.
         c_opt.sizing_mode = sizing_mode
 
-        summary_rows.append({
-            "bucket": bucket,
-            "n_samples": n_bucket,
-            "status": "success",
-            "model1_n_features": len(predictor.final_selected_feature_idx_edge_) if fs1 else 0,
-            "model2_n_features": len(predictor.final_selected_feature_idx_downside_) if fs2 else 0,
-            "model3_n_features": len(predictor.final_selected_feature_idx_uncertainty_) if fs3 else 0,
-            "model1_feature_stability": float(fs1.get("stability_score", 0.0)) if isinstance(fs1, dict) else 0.0,
-            "model2_feature_stability": float(fs2.get("stability_score", 0.0)) if isinstance(fs2, dict) else 0.0,
-            "model3_feature_stability": float(fs3.get("stability_score", 0.0)) if isinstance(fs3, dict) else 0.0,
-            "model1_type": predictor.edge_model.model_type_,
-            "model2_type": predictor.downside_model.model_type_,
-            "model3_type": predictor.uncertainty_model.model_type_,
-            "model3_target_transform": getattr(predictor.uncertainty_model, "target_transform_", None),
-            "actual_n_splits_used": predictor.actual_n_splits_used_,
-            "final_policy_utility": float(b_opt.best_j),
-            "final_sizing_mode": str(sizing_mode)
-        })
+        summary_rows.append(
+            {
+                "bucket": bucket,
+                "n_samples": n_bucket,
+                "status": "success",
+                "model1_n_features": len(predictor.final_selected_feature_idx_edge_)
+                if fs1
+                else 0,
+                "model2_n_features": len(predictor.final_selected_feature_idx_downside_)
+                if fs2
+                else 0,
+                "model3_n_features": len(
+                    predictor.final_selected_feature_idx_uncertainty_
+                )
+                if fs3
+                else 0,
+                "model1_feature_stability": float(fs1.get("stability_score", 0.0))
+                if isinstance(fs1, dict)
+                else 0.0,
+                "model2_feature_stability": float(fs2.get("stability_score", 0.0))
+                if isinstance(fs2, dict)
+                else 0.0,
+                "model3_feature_stability": float(fs3.get("stability_score", 0.0))
+                if isinstance(fs3, dict)
+                else 0.0,
+                "model1_type": predictor.edge_model.model_type_,
+                "model2_type": predictor.downside_model.model_type_,
+                "model3_type": predictor.uncertainty_model.model_type_,
+                "model3_target_transform": getattr(
+                    predictor.uncertainty_model, "target_transform_", None
+                ),
+                "actual_n_splits_used": predictor.actual_n_splits_used_,
+                "final_policy_utility": float(b_opt.best_j),
+                "final_sizing_mode": str(sizing_mode),
+            }
+        )
 
         results[bucket] = {
             "layer_a": predictor,
@@ -1368,13 +1779,16 @@ def run_bucketed_position_sizer_v2(
             "feature_selection_results_edge": fs1,
             "feature_selection_results_downside": fs2,
             "feature_selection_results_uncertainty": fs3,
-            "final_selected_feature_names_edge": fs1.get("selected_names", []) if isinstance(fs1, dict) else [],
-            "final_selected_feature_names_downside": fs2.get("selected_names", []) if isinstance(fs2, dict) else [],
-            "final_selected_feature_names_uncertainty": fs3.get("selected_names", []) if isinstance(fs3, dict) else [],
+            "final_selected_feature_names_edge": fs1.get("selected_names", [])
+            if isinstance(fs1, dict)
+            else [],
+            "final_selected_feature_names_downside": fs2.get("selected_names", [])
+            if isinstance(fs2, dict)
+            else [],
+            "final_selected_feature_names_uncertainty": fs3.get("selected_names", [])
+            if isinstance(fs3, dict)
+            else [],
         }
 
     summary_df = pd.DataFrame(summary_rows)
-    return {
-        "bucket_results": results,
-        "bucket_summary_table_": summary_df
-    }
+    return {"bucket_results": results, "bucket_summary_table_": summary_df}

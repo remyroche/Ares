@@ -5,8 +5,8 @@ CLI entry point for extreme_price_movements pipeline.
 Usage:
     python3 extreme_price_movements/run_pipeline.py labels
 """
-import sys
 import os
+import sys
 import warnings
 
 # Avoid expensive/warning-prone Matplotlib cache initialization under read-only HOME.
@@ -32,41 +32,47 @@ if parent_dir not in sys.path:
 
 import argparse
 from typing import Optional
+
 import pandas as pd
 
 from extreme_price_movements.config import CFG, enable_perp_feature_keys
-from extreme_price_movements.utils import tprint
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
-    make_spot_exchange,
     make_perp_exchange,
+    make_spot_exchange,
 )
-from extreme_price_movements.universe import refresh_margin_universe_daily, build_fetch_universe
-from extreme_price_movements.pipeline_steps import (
-    run_label_generation_step_v2,
-    run_feature_generation_step,
-    run_training_step,
-    run_backtest_step,
-    run_risk_optimization_step,
+from extreme_price_movements.offline_optimisers.params_store import (
+    apply_offline_optimizer_best_params,
 )
 from extreme_price_movements.optimise import (
+    Policy,
     run_optimise_from_ridge_oof,
     run_optimise_step,
-    Policy,
 )
-from extreme_price_movements.pipeline_steps import run_sizer_step
-from extreme_price_movements.offline_optimisers.params_store import apply_offline_optimizer_best_params
+from extreme_price_movements.pipeline_steps import (
+    run_backtest_step,
+    run_feature_generation_step,
+    run_label_generation_step_v2,
+    run_risk_optimization_step,
+    run_sizer_step,
+    run_training_step,
+)
+from extreme_price_movements.universe import (
+    build_fetch_universe,
+    refresh_margin_universe_daily,
+)
+from extreme_price_movements.utils import tprint
 
 # SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
 # Spot trading fees (default)
 BASE_ROUND_TRIP_FEE_PCT = 0.3  # 0.3% round-trip = 0.15% per side (15 bps)
-# Perpetual trading fees (when --perps flag used)  
+# Perpetual trading fees (when --perps flag used)
 PERP_ROUND_TRIP_FEE_PCT = 0.1  # 0.1% round-trip = 0.05% per side (5 bps)
 
 # Market order fee per side (used when not using limit orders)
 MARKET_ORDER_FEE_BPS = 25.0  # 0.25% per side
 # Limit order fee per side (used when limit order fills)
-LIMIT_ORDER_FEE_BPS = 10.0   # 0.10% per side
+LIMIT_ORDER_FEE_BPS = 10.0  # 0.10% per side
 
 
 def _apply_fee_model(cfg: dict, round_trip_fee_pct: float) -> None:
@@ -80,13 +86,13 @@ def _apply_fee_model(cfg: dict, round_trip_fee_pct: float) -> None:
     cfg["optimiser_fee_pct"] = fee_dec
     cfg["ridge_cost_pct"] = fee_dec
     cfg["limit_fill_fee_bps"] = side_bps
-    
+
     # New fee structure for limit orders
     cfg["fee_bps_market"] = MARKET_ORDER_FEE_BPS
     cfg["fee_bps_limit_entry"] = LIMIT_ORDER_FEE_BPS
     cfg["fee_bps_limit_exit"] = LIMIT_ORDER_FEE_BPS
     cfg["fee_bps_market_exit"] = MARKET_ORDER_FEE_BPS
-    
+
     # Enable MAE/MFE-based limit offset estimation
     cfg["use_mae_mfe_limit_offset"] = True
     cfg["use_exit_limit_orders"] = True
@@ -115,16 +121,18 @@ def _normalize_cfg_paths(cfg: dict) -> None:
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     cfg["data_root"] = _resolve_path(project_root, str(cfg.get("data_root", "data")))
-    cfg["reports_root"] = _resolve_path(project_root, str(cfg.get("reports_root", "reports")))
-    cfg["hf_data_dir"] = _resolve_path(project_root, str(cfg.get("hf_data_dir", "15m_ohlcv")))
+    cfg["reports_root"] = _resolve_path(
+        project_root, str(cfg.get("reports_root", "reports"))
+    )
+    cfg["hf_data_dir"] = _resolve_path(
+        project_root, str(cfg.get("hf_data_dir", "15m_ohlcv"))
+    )
 
 
 def _configure_report_roots(cfg: dict) -> None:
     report_root = cfg.get("reports_root")
     if report_root:
         os.environ["EPM_REPORTS_DIR"] = str(report_root)
-
-
 
 
 def _load_mask_params_by_mode(cfg: dict) -> dict:
@@ -148,7 +156,11 @@ def _downcast_numeric_frame(df: pd.DataFrame) -> pd.DataFrame:
 def _resolve_ts_sig(cfg: dict, ts_override=None) -> pd.Timestamp:
     if ts_override:
         try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            _ts_str = (
+                str(ts_override).split("_v")[0]
+                if "_v" in str(ts_override)
+                else str(ts_override)
+            )
             ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
@@ -159,7 +171,9 @@ def _resolve_ts_sig(cfg: dict, ts_override=None) -> pd.Timestamp:
 
 def _find_latest_feature_ts(data_root):
     """Find the latest feature timestamp directory."""
-    import os, glob
+    import glob
+    import os
+
     feat_dir = os.path.join(data_root, "features")
     if not os.path.exists(feat_dir):
         return None
@@ -170,24 +184,37 @@ def _find_latest_feature_ts(data_root):
     return pd.to_datetime(latest, format="%Y%m%d_%H%M%S").tz_localize("UTC")
 
 
-
-
 def run_download(cfg):
     """Download OHLCV data from Binance for the full training universe."""
     cfg.setdefault("allow_15m_download", False)
     import time as _time
+
     from extreme_price_movements.hf_data_loader import sync_15m_ohlcv_range
 
     tprint("STEP: DOWNLOAD START")
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
     use_perps = bool(cfg.get("use_perps", False))
-    _check_complete = str(os.environ.get("EPM_DOWNLOAD_CHECK_COMPLETE", str(cfg.get("download_check_complete", True)))).strip().lower() in {"1", "true", "yes", "y", "on"}
-    _missing_lt_days = float(os.environ.get("EPM_DOWNLOAD_SKIP_LT_DAYS", cfg.get("download_skip_if_missing_lt_days", 3.0)) or 0.0)
+    _check_complete = str(
+        os.environ.get(
+            "EPM_DOWNLOAD_CHECK_COMPLETE", str(cfg.get("download_check_complete", True))
+        )
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
+    _missing_lt_days = float(
+        os.environ.get(
+            "EPM_DOWNLOAD_SKIP_LT_DAYS",
+            cfg.get("download_skip_if_missing_lt_days", 3.0),
+        )
+        or 0.0
+    )
 
     # --- Freshness check: skip download if data is < 6 days old ---
-    import glob as _glob, json as _json
+    import glob as _glob
+    import json as _json
+
     _FRESHNESS_DAYS = 6
-    _force_download = str(os.environ.get("EPM_DOWNLOAD_FORCE", str(cfg.get("download_force", False)))).strip().lower() in {"1", "true", "yes", "y", "on"}
+    _force_download = str(
+        os.environ.get("EPM_DOWNLOAD_FORCE", str(cfg.get("download_force", False)))
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
     _meta_dir = store.ohlcv_dir
     _meta_files = _glob.glob(os.path.join(_meta_dir, "*.meta.json"))
     if _meta_files and (not _force_download) and (not _check_complete):
@@ -204,7 +231,9 @@ def run_download(cfg):
             _age = pd.Timestamp.utcnow() - _latest_ts
             tprint(f"Data freshness: latest={_latest_ts}, age={_age}")
             if _age < pd.Timedelta(days=_FRESHNESS_DAYS):
-                tprint(f"Data is {_age.total_seconds()/3600:.1f}h old (< {_FRESHNESS_DAYS}d). Skipping download.")
+                tprint(
+                    f"Data is {_age.total_seconds()/3600:.1f}h old (< {_FRESHNESS_DAYS}d). Skipping download."
+                )
                 tprint("STEP: DOWNLOAD COMPLETE (fresh)")
                 return
     elif _force_download:
@@ -213,16 +242,57 @@ def run_download(cfg):
     ex = make_perp_exchange() if use_perps else make_spot_exchange()
 
     mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
-    fetch_syms = build_fetch_universe(mu.symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
+    fetch_syms = build_fetch_universe(
+        mu.symbols, cfg["market_basket"], cfg["fetch_symbols_M"]
+    )
     _base_n = len(fetch_syms)
 
     # Runtime overrides for parallel download orchestrations.
-    _order = str(os.environ.get("EPM_DOWNLOAD_SYMBOL_ORDER", cfg.get("download_symbol_order", "volume"))).strip().lower()
-    _stride = max(1, int(os.environ.get("EPM_DOWNLOAD_SYMBOL_STRIDE", cfg.get("download_symbol_stride", 1))))
-    _offset = max(0, int(os.environ.get("EPM_DOWNLOAD_SYMBOL_OFFSET", cfg.get("download_symbol_offset", 0))))
-    _max_symbols = int(os.environ.get("EPM_DOWNLOAD_MAX_SYMBOLS", cfg.get("download_max_symbols", 0)) or 0)
-    _part_count = max(1, int(os.environ.get("EPM_DOWNLOAD_PARTITION_COUNT", cfg.get("download_partition_count", 1))))
-    _part_id = max(0, int(os.environ.get("EPM_DOWNLOAD_PARTITION_ID", cfg.get("download_partition_id", 0))))
+    _order = (
+        str(
+            os.environ.get(
+                "EPM_DOWNLOAD_SYMBOL_ORDER", cfg.get("download_symbol_order", "volume")
+            )
+        )
+        .strip()
+        .lower()
+    )
+    _stride = max(
+        1,
+        int(
+            os.environ.get(
+                "EPM_DOWNLOAD_SYMBOL_STRIDE", cfg.get("download_symbol_stride", 1)
+            )
+        ),
+    )
+    _offset = max(
+        0,
+        int(
+            os.environ.get(
+                "EPM_DOWNLOAD_SYMBOL_OFFSET", cfg.get("download_symbol_offset", 0)
+            )
+        ),
+    )
+    _max_symbols = int(
+        os.environ.get("EPM_DOWNLOAD_MAX_SYMBOLS", cfg.get("download_max_symbols", 0))
+        or 0
+    )
+    _part_count = max(
+        1,
+        int(
+            os.environ.get(
+                "EPM_DOWNLOAD_PARTITION_COUNT", cfg.get("download_partition_count", 1)
+            )
+        ),
+    )
+    _part_id = max(
+        0,
+        int(
+            os.environ.get(
+                "EPM_DOWNLOAD_PARTITION_ID", cfg.get("download_partition_id", 0)
+            )
+        ),
+    )
     if _part_id >= _part_count:
         _part_id = _part_count - 1
 
@@ -263,10 +333,19 @@ def run_download(cfg):
     since_15m = since.floor("15min")
     now_15m = now_utc.floor("15min")
 
-    def _panel_complete(df: Optional[pd.DataFrame], start_ts: pd.Timestamp, end_ts: pd.Timestamp, freq: str) -> bool:
+    def _panel_complete(
+        df: Optional[pd.DataFrame],
+        start_ts: pd.Timestamp,
+        end_ts: pd.Timestamp,
+        freq: str,
+    ) -> bool:
         if df is None or df.empty:
             return False
-        idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(df.index)
+        idx = (
+            df.index
+            if isinstance(df.index, pd.DatetimeIndex)
+            else pd.to_datetime(df.index)
+        )
         if idx.tz is None:
             idx = idx.tz_localize("UTC")
         else:
@@ -275,15 +354,28 @@ def run_download(cfg):
         if len(window) == 0:
             return False
         expected = len(pd.date_range(start=start_ts, end=end_ts, freq=freq, tz="UTC"))
-        return (len(window) == expected) and (window.min() <= start_ts) and (window.max() >= end_ts)
+        return (
+            (len(window) == expected)
+            and (window.min() <= start_ts)
+            and (window.max() >= end_ts)
+        )
 
-    def _panel_missing_days(df: Optional[pd.DataFrame], start_ts: pd.Timestamp, end_ts: pd.Timestamp, freq: str) -> float:
+    def _panel_missing_days(
+        df: Optional[pd.DataFrame],
+        start_ts: pd.Timestamp,
+        end_ts: pd.Timestamp,
+        freq: str,
+    ) -> float:
         expected = len(pd.date_range(start=start_ts, end=end_ts, freq=freq, tz="UTC"))
         if expected <= 0:
             return 0.0
         if df is None or df.empty:
             return float((end_ts - start_ts) / pd.Timedelta(days=1))
-        idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(df.index)
+        idx = (
+            df.index
+            if isinstance(df.index, pd.DatetimeIndex)
+            else pd.to_datetime(df.index)
+        )
         if idx.tz is None:
             idx = idx.tz_localize("UTC")
         else:
@@ -307,6 +399,7 @@ def run_download(cfg):
     def _symbol_status_15m(sym: str) -> Tuple[bool, float]:
         try:
             from extreme_price_movements.hf_data_loader import _load_existing_data
+
             df_local = _load_existing_data(sym)
             return (
                 _panel_complete(df_local, since_15m, now_15m, "15min"),
@@ -387,21 +480,26 @@ def run_download(cfg):
 def _label_artifacts_ready(cfg, ts_sig):
     """Check whether core label artifacts exist for this run timestamp."""
     import os
+
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     horizons = cfg.get("label_horizons_hours", [])
     required = [
         "exhaustion_history",
     ]
     for h in horizons:
-        required.extend([
-            f"train_long_mr_{h}",
-            f"train_long_tf_{h}",
-            f"train_short_mr_{h}",
-            f"train_short_tf_{h}",
-        ])
+        required.extend(
+            [
+                f"train_long_mr_{h}",
+                f"train_long_tf_{h}",
+                f"train_short_mr_{h}",
+                f"train_short_tf_{h}",
+            ]
+        )
 
     for name in required:
-        fpath = os.path.join(cfg["data_root"], "artifacts", run_id, "labels", f"{name}.parquet")
+        fpath = os.path.join(
+            cfg["data_root"], "artifacts", run_id, "labels", f"{name}.parquet"
+        )
         if not os.path.exists(fpath):
             return False
     return True
@@ -419,12 +517,15 @@ def _gc_checkpoint(tag: str) -> int:
 def _cache_checkpoint(tag: str) -> None:
     """Clear known runtime cache directories only if memory is running low."""
     import shutil
+
     import psutil
 
     mem = psutil.virtual_memory()
     # Only blast cache if available memory is under 25% or we have less than 4GB free
     if mem.percent < 75.0 and mem.available > 4 * 1024 * 1024 * 1024:
-        tprint(f"CACHE[{tag}]: skipped cache wipe (mem_avail={mem.available/1e9:.1f}GB)")
+        tprint(
+            f"CACHE[{tag}]: skipped cache wipe (mem_avail={mem.available/1e9:.1f}GB)"
+        )
         return
 
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -446,6 +547,7 @@ def _maintenance_checkpoint(tag: str) -> None:
     _cache_checkpoint(tag)
     _gc_checkpoint(tag)
 
+
 def run_labels(cfg, horizons=None, ts_override=None, store=None):
     _maintenance_checkpoint("labels:start")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
@@ -457,7 +559,9 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
     _load_mask_params_by_mode(cfg)
 
     if store is None:
-        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+        store = PartitionedOHLCVStore(
+            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
+        )
 
     # No exchange needed — data already in store, features already on disk
     horizons = horizons or [2, 4, 8]
@@ -476,10 +580,14 @@ def run_features(cfg, ts_override=None, force_recompute: bool = False, store=Non
     _load_mask_params_by_mode(cfg)
 
     if store is None:
-        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+        store = PartitionedOHLCVStore(
+            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
+        )
 
     # Pass None for margin_symbols to trigger auto-refresh in universe logic
-    run_feature_generation_step(ts_sig, None, cfg, store, force_full_recompute=bool(force_recompute))
+    run_feature_generation_step(
+        ts_sig, None, cfg, store, force_full_recompute=bool(force_recompute)
+    )
 
     tprint("FEATURES PIPELINE COMPLETE")
     _maintenance_checkpoint("features:end")
@@ -494,14 +602,21 @@ def run_backtest(cfg, ts_override=None, store=None):
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
-    state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
+
+    state_file = os.path.join(
+        cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl"
+    )
     if not os.path.exists(state_file):
-        tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
+        tprint(
+            f"ERROR: Trained state not found at {state_file}. Run 'train' mode first."
+        )
         return
 
     tprint(f"Backtest mode. ts_sig={ts_sig}")
     if store is None:
-        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+        store = PartitionedOHLCVStore(
+            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
+        )
     run_backtest_step(ts_sig, None, cfg, store, state_file)
     tprint("BACKTEST PIPELINE COMPLETE")
     _maintenance_checkpoint("backtest:end")
@@ -520,24 +635,39 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
     # Check if labels already exist before refreshing to avoid unnecessary recomputation.
     if store is None:
-        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+        store = PartitionedOHLCVStore(
+            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
+        )
     if _label_artifacts_ready(cfg, ts_sig):
         tprint("Label artifacts already exist, skipping label refresh...")
     else:
         if meta_only:
-             tprint("ERROR: meta_only requested but labels are missing. Run labels mode first.")
-             return
-        tprint("Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)...")
+            tprint(
+                "ERROR: meta_only requested but labels are missing. Run labels mode first."
+            )
+            return
+        tprint(
+            "Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)..."
+        )
         run_label_generation_step_v2(ts_sig, None, cfg, store, None)
 
     if not _label_artifacts_ready(cfg, ts_sig):
-        tprint("ERROR: Label generation did not produce required artifacts. Aborting training.")
+        tprint(
+            "ERROR: Label generation did not produce required artifacts. Aborting training."
+        )
         return
 
-    state = run_training_step(ts_sig, cfg, store=store, margin_symbols=None, base_only=base_only, meta_only=meta_only)
+    state = run_training_step(
+        ts_sig,
+        cfg,
+        store=store,
+        margin_symbols=None,
+        base_only=base_only,
+        meta_only=meta_only,
+    )
     if state:
         tprint("TRAINING PIPELINE COMPLETE")
-        
+
         # Run breakdown diagnostics after base training
         try:
             run_breakdown_diagnostics_integration(cfg, ts_sig)
@@ -547,7 +677,10 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         tprint("TRAINING PIPELINE FAILED")
     _maintenance_checkpoint("train:end")
 
-def run_risk_opt(cfg, ts_override=None, parsed_ts_sig=None, skip_maintenance=False, store=None):
+
+def run_risk_opt(
+    cfg, ts_override=None, parsed_ts_sig=None, skip_maintenance=False, store=None
+):
     if not skip_maintenance:
         _maintenance_checkpoint("risk_opt:start")
 
@@ -555,7 +688,11 @@ def run_risk_opt(cfg, ts_override=None, parsed_ts_sig=None, skip_maintenance=Fal
         ts_sig = parsed_ts_sig
     elif ts_override:
         try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            _ts_str = (
+                str(ts_override).split("_v")[0]
+                if "_v" in str(ts_override)
+                else str(ts_override)
+            )
             ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
@@ -567,11 +704,16 @@ def run_risk_opt(cfg, ts_override=None, parsed_ts_sig=None, skip_maintenance=Fal
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
-    state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
+
+    state_file = os.path.join(
+        cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl"
+    )
 
     tprint(f"Risk Optimization mode. ts_sig={ts_sig}")
     if store is None:
-        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+        store = PartitionedOHLCVStore(
+            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
+        )
     run_risk_optimization_step(ts_sig, None, cfg, store, state_file)
     tprint("RISK OPTIMIZATION COMPLETE")
 
@@ -589,9 +731,14 @@ def run_sizer(cfg, ts_override=None, store=None):
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
-    state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
+
+    state_file = os.path.join(
+        cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl"
+    )
     if not os.path.exists(state_file):
-        tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
+        tprint(
+            f"ERROR: Trained state not found at {state_file}. Run 'train' mode first."
+        )
         return
 
     tprint(f"Sizer mode (ridge). ts_sig={ts_sig}")
@@ -605,13 +752,20 @@ def run_sizer(cfg, ts_override=None, store=None):
             try:
                 tprint("SIZER: running OOS backtest with updated sizer bundle...")
                 if store is None:
-                    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+                    store = PartitionedOHLCVStore(
+                        root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
+                    )
                 bt_cfg = dict(cfg)
                 bt_cfg["sizer_oos_mode"] = True
 
                 # We need to downcast the trades DataFrame to float32 before generating the backtest
                 # This is a memory optimization
-                trades_path = os.path.join(cfg["data_root"], "artifacts", ts_sig.strftime("%Y%m%d_%H%M%S"), "backtest_results.csv")
+                trades_path = os.path.join(
+                    cfg["data_root"],
+                    "artifacts",
+                    ts_sig.strftime("%Y%m%d_%H%M%S"),
+                    "backtest_results.csv",
+                )
                 if os.path.exists(trades_path):
                     trades = pd.read_csv(trades_path, low_memory=False)
                     trades = _downcast_numeric_frame(trades)
@@ -621,7 +775,7 @@ def run_sizer(cfg, ts_override=None, store=None):
                 tprint("SIZER: OOS backtest complete.")
             except Exception as e:
                 tprint(f"WARNING: sizer OOS backtest failed: {e}")
-        
+
         # Run breakdown diagnostics after ridge sizer
         try:
             run_breakdown_diagnostics_integration(cfg, ts_sig)
@@ -636,10 +790,9 @@ def run_sizer(cfg, ts_override=None, store=None):
         return False
 
 
-
 def run_all(cfg, ts_override=None):
     """Run download -> features -> train (includes labels) -> optimise (learn entry) -> sizer -> optimise (sizing) in order.
-    
+
     Note: 'train' already refreshes labels internally.
     Note: 'optimise' triggers backtest internally if backtest_results.csv is missing,
           then runs the tpsl_optimiser pipeline (TP/SL calibration, loss limiter,
@@ -688,7 +841,10 @@ def run_all(cfg, ts_override=None):
     if ts_sig:
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
         import os
-        res_path = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
+
+        res_path = os.path.join(
+            cfg["data_root"], "artifacts", run_id, "backtest_results.csv"
+        )
         if os.path.exists(res_path):
             tprint("\n=== FINAL PIPELINE SUMMARY ===")
             try:
@@ -696,7 +852,11 @@ def run_all(cfg, ts_override=None):
                 count = len(df)
 
                 # Gross vs net summary with explicit distinction.
-                gross_total = float(df["gross_ret"].sum()) if "gross_ret" in df.columns else float("nan")
+                gross_total = (
+                    float(df["gross_ret"].sum())
+                    if "gross_ret" in df.columns
+                    else float("nan")
+                )
                 if "net_ret_equity" in df.columns:
                     net_total = float(df["net_ret_equity"].sum())
                 elif "pnl" in df.columns:
@@ -705,12 +865,24 @@ def run_all(cfg, ts_override=None):
                 else:
                     net_total = float("nan")
 
-                positive_net_share = float((df["pnl"] > 0).mean()) if (count > 0 and "pnl" in df.columns) else float("nan")
-                avg_net_per_trade = (net_total / count) if count > 0 and pd.notna(net_total) else float("nan")
+                positive_net_share = (
+                    float((df["pnl"] > 0).mean())
+                    if (count > 0 and "pnl" in df.columns)
+                    else float("nan")
+                )
+                avg_net_per_trade = (
+                    (net_total / count)
+                    if count > 0 and pd.notna(net_total)
+                    else float("nan")
+                )
 
                 if pd.notna(gross_total):
                     tprint(f"Total Gross Return: {gross_total:.4f}")
-                tprint(f"Total Net Return: {net_total:.4f}" if pd.notna(net_total) else "Total Net Return: n/a")
+                tprint(
+                    f"Total Net Return: {net_total:.4f}"
+                    if pd.notna(net_total)
+                    else "Total Net Return: n/a"
+                )
                 tprint(f"Total Trades: {count}")
                 if pd.notna(positive_net_share):
                     tprint(f"Positive-Net Share: {positive_net_share:.2%}")
@@ -732,18 +904,27 @@ def run_train_meta(cfg, ts_override=None, store=None):
 
     _load_mask_params_by_mode(cfg)
     from extreme_price_movements.main import train_daily_meta
+
     if store is None:
-        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
-    
+        store = PartitionedOHLCVStore(
+            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
+        )
+
     # Verify that before training the meta model, we optimise the TP & SL values.
     tprint("Optimising TP:SL before meta-training...")
     run_risk_opt(cfg, parsed_ts_sig=ts_sig, skip_maintenance=True, store=store)
-    
-    ex = make_perp_exchange() if bool(cfg.get("use_perps", False)) else make_spot_exchange()
+
+    ex = (
+        make_perp_exchange()
+        if bool(cfg.get("use_perps", False))
+        else make_spot_exchange()
+    )
     result = train_daily_meta(ts_sig, None, cfg, store, ex)
     if result:
-        import joblib
         import gc
+
+        import joblib
+
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
         models_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
         os.makedirs(models_dir, exist_ok=True)
@@ -790,15 +971,24 @@ def run_optimise(cfg, ts_override=None, store=None):
         return True
 
     import os
-    state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
-    backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
+
+    state_file = os.path.join(
+        cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl"
+    )
+    backtest_file = os.path.join(
+        cfg["data_root"], "artifacts", run_id, "backtest_results.csv"
+    )
     if not os.path.exists(backtest_file):
-        tprint("Backtest results not found. Running backtest to generate trade data for optimiser...")
+        tprint(
+            "Backtest results not found. Running backtest to generate trade data for optimiser..."
+        )
         bt_cfg = dict(cfg)
         bt_cfg["offline_backtest_skip_universe_refresh"] = True
         run_backtest(bt_cfg, ts_override=ts_override, store=store)
         if not os.path.exists(backtest_file):
-            tprint(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
+            tprint(
+                f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise."
+            )
             return False
     trades = pd.read_csv(backtest_file, low_memory=False)
     trades = _downcast_numeric_frame(trades)
@@ -815,9 +1005,13 @@ def run_optimise(cfg, ts_override=None, store=None):
     else:
         atr_15m = pd.Series(0.01, index=trades.index)
 
-    params_path = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "bucket_params.json")
+    params_path = os.path.join(
+        cfg["data_root"], "artifacts", run_id, "models", "bucket_params.json"
+    )
     run_optimise_step(
-        trades=trades, atr_15m=atr_15m, output_path=params_path,
+        trades=trades,
+        atr_15m=atr_15m,
+        output_path=params_path,
         policy=Policy(mode="train_baseline", params_path=params_path),
         state_path=state_file if os.path.exists(state_file) else None,
         store_base_dir=cfg.get("data_root"),
@@ -826,22 +1020,24 @@ def run_optimise(cfg, ts_override=None, store=None):
         ohlcv_store=store,
     )
     tprint(f"OPTIMISE COMPLETE: {params_path}")
-    
+
     # Run breakdown diagnostics after optimization
     try:
         run_breakdown_diagnostics_integration(cfg, ts_sig)
     except Exception as e:
         tprint(f"WARNING: breakdown diagnostics failed: {e}")
-    
+
     try:
         from extreme_price_movements.reports.bucket_report import report_optimise
+
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-        rp = report_optimise(run_id, cfg["data_root"], base_dir=cfg.get('reports_root'))
+        rp = report_optimise(run_id, cfg["data_root"], base_dir=cfg.get("reports_root"))
         tprint(f"Optimise bucket report: {rp}")
     except Exception as _re:
         tprint(f"WARNING: optimise bucket report failed: {_re}")
     _maintenance_checkpoint("optimise:end")
     return True
+
 
 def clear_caches():
     """Force garbage collection and clear the on-disk caches before a run."""
@@ -857,9 +1053,9 @@ def clear_caches():
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cache_dirs = [
         os.path.join(project_root, "cache"),
-        os.path.join(project_root, "data_cache")
+        os.path.join(project_root, "data_cache"),
     ]
-    
+
     for cdir in cache_dirs:
         if os.path.exists(cdir):
             try:
@@ -875,18 +1071,21 @@ def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> No
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(cfg["data_root"], "artifacts", run_id)
-    
+
     # Check if OHLC data exists for diagnostics
     ohlc_path = os.path.join(run_dir, "ohlc.parquet")
     if not os.path.exists(ohlc_path):
         # Try to create OHLC from store if missing
         try:
-            store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+            store = PartitionedOHLCVStore(
+                root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
+            )
             # Get a representative symbol for OHLC extraction (store has no list_symbols API).
             symbols = []
             ohlcv_dir = getattr(store, "ohlcv_dir", None)
             if ohlcv_dir and os.path.isdir(ohlcv_dir):
                 import glob
+
                 for path in glob.glob(os.path.join(ohlcv_dir, "symbol=*")):
                     base = os.path.basename(path)
                     if not base.startswith("symbol="):
@@ -910,25 +1109,31 @@ def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> No
         except Exception as e:
             tprint(f"WARNING: Could not create OHLC data for diagnostics: {e}")
             return
-    
+
     # Configure breakdown diagnostics
     diag_cfg = {
         "ohlc_path": ohlc_path,
         "lookback_h": cfg.get("breakdown_lookback_h", 12),
         "baseline_trigger": cfg.get("breakdown_trigger", 0.08),
-        "trigger_sweep": cfg.get("breakdown_trigger_sweep", [0.06, 0.07, 0.08, 0.09, 0.10]),
+        "trigger_sweep": cfg.get(
+            "breakdown_trigger_sweep", [0.06, 0.07, 0.08, 0.09, 0.10]
+        ),
         "decluster_h": cfg.get("breakdown_decluster_h", 6),
         "max_event_h": cfg.get("breakdown_max_event_h", 72),
-        "entry_offsets_h": cfg.get("breakdown_entry_offsets", [-12, -6, -4, -2, -1, 0, 1, 2, 4, 6, 12]),
+        "entry_offsets_h": cfg.get(
+            "breakdown_entry_offsets", [-12, -6, -4, -2, -1, 0, 1, 2, 4, 6, 12]
+        ),
         "directions": cfg.get("breakdown_directions", ["follow", "fade"]),
-        "cost_stress_multipliers": cfg.get("breakdown_cost_stress", [1.0, 1.25, 1.5, 2.0]),
-        "optimise_run_dir": run_dir
+        "cost_stress_multipliers": cfg.get(
+            "breakdown_cost_stress", [1.0, 1.25, 1.5, 2.0]
+        ),
+        "optimise_run_dir": run_dir,
     }
-    
+
     try:
         tprint("Running breakdown diagnostics...")
         result = run_breakdown_diagnostics(diag_cfg, run_dir)
-        
+
         # Log key verdicts
         verdict = result.get("verdict", {})
         tprint("BREAKDOWN DIAGNOSTICS VERDICT:")
@@ -936,16 +1141,18 @@ def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> No
             if key == "recommendations":
                 continue
             tprint(f"  {key}: {value}")
-        
+
         recommendations = verdict.get("recommendations", {})
         if recommendations:
             tprint("RECOMMENDATIONS:")
             for key, rec in recommendations.items():
-                if verdict.get(key, False):  # Only show recommendations for failed checks
+                if verdict.get(
+                    key, False
+                ):  # Only show recommendations for failed checks
                     tprint(f"  {key}: {rec}")
-        
+
         tprint(f"Breakdown diagnostics saved to: {run_dir}/breakdown_diagnostics/")
-        
+
     except Exception as e:
         tprint(f"ERROR: breakdown diagnostics failed: {e}")
         raise
@@ -957,22 +1164,68 @@ def run_breakdown_diagnostics_standalone(cfg: dict, ts_override: str = None) -> 
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")
         return
-    
+
     tprint(f"Breakdown Diagnostics mode. ts_sig={ts_sig}")
     run_breakdown_diagnostics_integration(cfg, ts_sig)
     tprint("BREAKDOWN DIAGNOSTICS COMPLETE")
 
+
 def main():
     clear_caches()
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_base", "train_meta", "sizer", "optimise", "backtest", "run", "breakdown_diagnostics"],
-                        help="Pipeline mode to run")
-    parser.add_argument("-perps", "--perps", action="store_true", help="Run pipeline in perps mode (isolated *_perp roots)")
-    parser.add_argument("--force-feature-recompute", action="store_true", help="Force full recompute in features mode")
-    parser.add_argument("--horizons", type=int, nargs="+", default=[1, 2, 4], help="Horizons to use for labels/training")
-    parser.add_argument("--ts", dest="ts_override", help="Timestamp override (YYYYMMDD_HHMMSS)")
-    parser.add_argument("--base-only", action="store_true", help="Only train base models (alpha, spike, exh)")
-    parser.add_argument("--meta-only", action="store_true", help="Only train meta models (runs train_meta)")
+    parser.add_argument(
+        "mode",
+        choices=[
+            "download",
+            "labels",
+            "features",
+            "train",
+            "train_base",
+            "train_meta",
+            "sizer",
+            "optimise",
+            "backtest",
+            "run",
+            "breakdown_diagnostics",
+        ],
+        help="Pipeline mode to run",
+    )
+    parser.add_argument(
+        "-perps",
+        "--perps",
+        action="store_true",
+        help="Run pipeline in perps mode (isolated *_perp roots)",
+    )
+    parser.add_argument(
+        "--force-feature-recompute",
+        action="store_true",
+        help="Force full recompute in features mode",
+    )
+    parser.add_argument(
+        "--horizons",
+        type=int,
+        nargs="+",
+        default=[1, 2, 4],
+        help="Horizons to use for labels/training",
+    )
+    parser.add_argument(
+        "--ts", dest="ts_override", help="Timestamp override (YYYYMMDD_HHMMSS)"
+    )
+    parser.add_argument(
+        "--base-only",
+        action="store_true",
+        help="Only train base models (alpha, spike, exh)",
+    )
+    parser.add_argument(
+        "--meta-only",
+        action="store_true",
+        help="Only train meta models (runs train_meta)",
+    )
+    parser.add_argument(
+        "--robust-mode",
+        action="store_true",
+        help="Use robust planner mode (enables full inference retrain)",
+    )
     parser.add_argument(
         "--optimise-use-ridge-oof",
         action="store_true",
@@ -986,8 +1239,12 @@ def main():
     if args.perps:
         cfg["use_perps"] = True
         cfg["data_root"] = _append_suffix(cfg.get("data_root", "data"), "_perp")
-        cfg["reports_root"] = _append_suffix(cfg.get("reports_root", "reports"), "_perp")
-        cfg["hf_data_dir"] = _append_suffix(cfg.get("hf_data_dir", "15m_ohlcv"), "_perp")
+        cfg["reports_root"] = _append_suffix(
+            cfg.get("reports_root", "reports"), "_perp"
+        )
+        cfg["hf_data_dir"] = _append_suffix(
+            cfg.get("hf_data_dir", "15m_ohlcv"), "_perp"
+        )
         os.environ["EPM_HF_DATA_DIR"] = str(cfg["hf_data_dir"])
         cfg = enable_perp_feature_keys(cfg)
         # Perp-mode fee model: 0.10% round-trip (5 bps/side).
@@ -995,17 +1252,33 @@ def main():
 
     _configure_report_roots(cfg)
     cfg["optimise_use_ridge_oof"] = bool(args.optimise_use_ridge_oof)
+    cfg["slice_planner_preset"] = "robust" if bool(args.robust_mode) else "fast"
+    cfg["train_full_inference_models"] = bool(args.robust_mode)
 
-    tprint(f"Sizer policy: ridge offline optimizer (ev_decomposition_enabled={bool(cfg.get('ev_decomposition_enabled', cfg.get('position_sizer_enabled', False)))})")
+    tprint(
+        f"Planner preset: {cfg['slice_planner_preset']} (full_inference_retrain={cfg['train_full_inference_models']})"
+    )
+    tprint(
+        f"Sizer policy: ridge offline optimizer (ev_decomposition_enabled={bool(cfg.get('ev_decomposition_enabled', cfg.get('position_sizer_enabled', False)))})"
+    )
 
     if args.mode == "download":
         run_download(cfg)
     elif args.mode == "labels":
         run_labels(cfg, horizons=args.horizons, ts_override=args.ts_override)
     elif args.mode == "features":
-        run_features(cfg, ts_override=args.ts_override, force_recompute=bool(args.force_feature_recompute))
+        run_features(
+            cfg,
+            ts_override=args.ts_override,
+            force_recompute=bool(args.force_feature_recompute),
+        )
     elif args.mode == "train":
-        run_train(cfg, ts_override=args.ts_override, base_only=args.base_only, meta_only=args.meta_only)
+        run_train(
+            cfg,
+            ts_override=args.ts_override,
+            base_only=args.base_only,
+            meta_only=args.meta_only,
+        )
     elif args.mode == "train_base":
         run_train(cfg, ts_override=args.ts_override, base_only=True, meta_only=False)
     elif args.mode == "train_meta":

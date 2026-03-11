@@ -2517,13 +2517,26 @@ def _run_mode_search(
         * np.maximum(df2["S_r"].astype(np.float32).values, 0.0)
         / (1.0 + df2["D_r"].astype(np.float32).values)
     ).astype(np.float32)
-    df2["shortlist_score"] = df2["score_r"].astype(np.float32)
+
+    lambda_feature = 5.0
+    feature_learnability_gain = np.nan_to_num(df2["predictability_gain"].values, nan=0.0).astype(np.float32)
+    df2["feature_learnability_gain"] = feature_learnability_gain
+
+    df2["score_ml"] = (
+        df2["score_r"].astype(np.float32).values
+        * (1.0 + lambda_feature * feature_learnability_gain)
+    ).astype(np.float32)
+
+    df2["shortlist_score"] = df2["score_ml"].astype(np.float32)
     df2["decision"] = "ranked"
     df2["regime_id"] = df2["name"].astype(str)
     df2["regime_definition"] = df2["name"].astype(str)
     df2["rationale"] = df2.apply(_build_regime_rationale, axis=1)
 
-    df2 = df2.sort_values("score_r", ascending=False)
+    df2 = df2.sort_values(
+        ["score_ml", "feature_learnability_gain", "delta_r", "total_events"],
+        ascending=[False, False, False, False]
+    )
     shortlist_max = int(cfg.get("shortlist_max_candidates", 4))
     df_short = df2.head(shortlist_max).copy()
     if df_short.empty:
@@ -2677,6 +2690,8 @@ def _run_mode_search(
                 new_row["N_r"] = float(tot_events)
                 new_row["delta_r_shrunk"] = float(new_row["delta_r"] * (new_row["N_r"] / (new_row["N_r"] + 500.0)))
                 new_row["score_r"] = float("nan")
+                new_row["feature_learnability_gain"] = float("nan")
+                new_row["score_ml"] = float("nan")
                 cond_rows.append(new_row)
                 candidate_masks[new_name] = {"m_high": new_h, "m_low": new_l}
 
@@ -2694,7 +2709,15 @@ def _run_mode_search(
             * np.maximum(df_short["S_r"].astype(np.float32).values, 0.0)
             / (1.0 + df_short["D_r"].astype(np.float32).values)
         ).astype(np.float32)
-        df_short["shortlist_score"] = df_short["score_r"].astype(np.float32)
+
+        df_short["feature_learnability_gain"] = np.nan_to_num(df_short["predictability_gain"].values, nan=0.0).astype(np.float32)
+        df_short["score_ml"] = (
+            df_short["score_r"].astype(np.float32).values
+            * (1.0 + lambda_feature * df_short["feature_learnability_gain"].values)
+        ).astype(np.float32)
+
+        df_short["shortlist_score"] = df_short["score_ml"].astype(np.float32)
+
         base_rows = df_short[df_short["conditioner_mode"] == "none"].set_index("name")
         keep_idx: List[int] = []
         for idx, row in df_short.iterrows():
@@ -2707,12 +2730,14 @@ def _run_mode_search(
                 continue
             base_row = base_rows.loc[base_name]
             if (
-                _metric_or_nan(row.get("score_r")) > _metric_or_nan(base_row.get("score_r"))
-                and _metric_or_nan(row.get("delta_r")) >= _metric_or_nan(base_row.get("delta_r"))
-                and _metric_or_nan(row.get("S_r")) >= _metric_or_nan(base_row.get("S_r"))
+                _metric_or_nan(row.get("score_ml")) > _metric_or_nan(base_row.get("score_ml"))
+                and _metric_or_nan(row.get("feature_learnability_gain")) >= _metric_or_nan(base_row.get("feature_learnability_gain"))
             ):
                 keep_idx.append(idx)
-        df_short = df_short.loc[keep_idx].sort_values("score_r", ascending=False).copy()
+        df_short = df_short.loc[keep_idx].sort_values(
+            ["score_ml", "feature_learnability_gain", "delta_r", "total_events"],
+            ascending=[False, False, False, False]
+        ).copy()
 
     final_diag_k = int(cfg.get("final_top_k_for_diagnostics", 3))
     df_diag_input = df_short.sort_values("shortlist_score", ascending=False).head(final_diag_k).copy()

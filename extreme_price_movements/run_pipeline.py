@@ -34,7 +34,7 @@ import argparse
 from typing import Optional
 import pandas as pd
 
-from extreme_price_movements.config import CFG, enable_perp_feature_keys
+from extreme_price_movements.config import CFG, enable_perp_feature_keys, CANON_HORIZONS
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
@@ -460,7 +460,7 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
     # No exchange needed — data already in store, features already on disk
-    horizons = horizons or [2, 4, 8]
+    horizons = horizons or cfg.get("label_horizons_hours", CANON_HORIZONS)
     run_label_generation_step_v2(ts_sig, None, cfg, store, None, horizons=horizons)
 
     tprint("LABELS PIPELINE COMPLETE")

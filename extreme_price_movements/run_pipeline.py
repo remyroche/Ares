@@ -33,6 +33,7 @@ if parent_dir not in sys.path:
 import argparse
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
 from extreme_price_movements.config import CFG, enable_perp_feature_keys
@@ -622,6 +623,150 @@ def run_backtest(cfg, ts_override=None, store=None):
     _maintenance_checkpoint("backtest:end")
 
 
+def run_inference_backtest(cfg, ts_override=None, store=None):
+    """Run inference-aligned walk-forward backtest on unseen holdout periods."""
+    _maintenance_checkpoint("inference_backtest:start")
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found.")
+        return
+
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    import os
+
+    # Check for trained state
+    state_file = os.path.join(
+        cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl"
+    )
+    if not os.path.exists(state_file):
+        tprint(
+            f"ERROR: Trained state not found at {state_file}. Run 'train' mode first."
+        )
+        return
+
+    tprint(f"Inference backtest mode. ts_sig={ts_sig}")
+    
+    # Load trained state
+    import pickle
+    with open(state_file, "rb") as f:
+        state = pickle.load(f)
+    
+    # Extract necessary components
+    if store is None:
+        store = PartitionedOHLCVStore(
+            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
+        )
+    
+    # Load panel data
+    tprint("Loading panel data...")
+    panel, symbols = store.load_panel(
+        symbols=state.get("symbols", None),
+        start_ts=None,
+        end_ts=None,
+    )
+    if panel is None:
+        tprint("ERROR: Failed to load panel data.")
+        return
+    
+    # Load features
+    tprint("Loading features...")
+    from extreme_price_movements.data_store import load_features_selected
+    feats = load_features_selected(
+        root_dir=cfg["data_root"],
+        ts_sig=ts_sig,
+        symbols=symbols,
+    )
+    
+    # Load mask params by mode
+    tprint("Loading mask params by mode...")
+    from extreme_price_movements.offline_optimisers import apply_offline_optimizer_best_params
+    mask_params_by_mode = dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
+    if not mask_params_by_mode:
+        # Try to load from offline optimizer results
+        mask_params = apply_offline_optimizer_best_params(cfg)
+        mask_params_by_mode = dict(mask_params.get("candidate_mask_params_by_mode", {}) or {})
+    
+    # Load bucket exit params
+    bucket_exit_params = dict(cfg.get("bucket_exit_params", {}) or {})
+    
+    # Load trades from state or backtest results
+    tprint("Loading trade candidates...")
+    trades = state.get("trades")
+    if trades is None:
+        # Try to load from backtest results
+        backtest_file = os.path.join(
+            cfg["data_root"], "artifacts", run_id, "backtest_results.csv"
+        )
+        if os.path.exists(backtest_file):
+            import pandas as pd
+            trades = pd.read_csv(backtest_file)
+        else:
+            tprint("ERROR: No trades found in state or backtest_results.csv")
+            return
+    
+    # Run inference backtest
+    tprint("Running inference backtest...")
+    from extreme_price_movements.inference_backtest import (
+        InferenceBacktestConfig,
+        run_inference_backtest,
+    )
+    from extreme_price_movements.periods_symbols_management import SlicePlannerConfig
+    
+    # Configure inference backtest
+    ib_config = InferenceBacktestConfig(
+        fee_round_trip_pct=cfg.get("round_trip_fee_pct", 0.3),
+        top_fracs=tuple(cfg.get("inference_backtest_top_fracs", (0.10, 0.20, 0.30, 0.40))),
+        annual_days=365,
+        sizing_mode=cfg.get("inference_backtest_sizing_mode", "linear"),
+        base_position_size=cfg.get("inference_backtest_base_position_size", 1.0),
+        default_limit_offset_bps=cfg.get("inference_backtest_default_limit_offset_bps", 0.0),
+    )
+    
+    # Use SlicePlanner for unseen holdout periods
+    planner_cfg = SlicePlannerConfig.fast_defaults()
+    
+    results = run_inference_backtest(
+        trades=trades,
+        panel=panel,
+        feats=feats,
+        mask_params_by_mode=mask_params_by_mode,
+        bucket_exit_params=bucket_exit_params,
+        config=ib_config,
+        planner_cfg=planner_cfg,
+    )
+    
+    # Save results
+    tprint("Saving inference backtest results...")
+    reports_root = cfg.get("reports_root", "reports")
+    os.makedirs(reports_root, exist_ok=True)
+    output_file = os.path.join(reports_root, f"inference_backtest_{run_id}.json")
+    
+    import json
+    # Convert numpy types to serializable types
+    def convert_to_serializable(obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, dict):
+            return {k: convert_to_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [convert_to_serializable(item) for item in obj]
+        else:
+            return obj
+    
+    serializable_results = convert_to_serializable(results)
+    with open(output_file, "w") as f:
+        json.dump(serializable_results, f, indent=2)
+    
+    tprint(f"Inference backtest results saved to {output_file}")
+    tprint(f"Results: {json.dumps(serializable_results, indent=2)}")
+    tprint("INFERENCE BACKTEST PIPELINE COMPLETE")
+    _maintenance_checkpoint("inference_backtest:end")
+
+
 def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=None):
     _maintenance_checkpoint("train:start")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
@@ -1185,6 +1330,7 @@ def main():
             "sizer",
             "optimise",
             "backtest",
+            "inference_backtest",
             "run",
             "breakdown_diagnostics",
         ],
@@ -1289,6 +1435,8 @@ def main():
         run_optimise(cfg, ts_override=args.ts_override)
     elif args.mode == "backtest":
         run_backtest(cfg, ts_override=args.ts_override)
+    elif args.mode == "inference_backtest":
+        run_inference_backtest(cfg, ts_override=args.ts_override)
     elif args.mode == "breakdown_diagnostics":
         run_breakdown_diagnostics_standalone(cfg, ts_override=args.ts_override)
     elif args.mode == "run":

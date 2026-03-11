@@ -11,7 +11,7 @@
     "interaction": 0.05
   },
   "n_train_features": 40,
-  "n_selected": 35,
+  "n_selected": 33,
   "anchor_count": 0,
   "selected_anchor_count": 0,
   "overlap_before": 1.0,

@@ -7,7 +7,9 @@ from extreme_price_movements.mask_optimiser import (
     compute_impulse_coherence_nb,
     _classifier_oof_auc,
     _ridge_regression_oof_r2,
-    _build_temporal_folds
+    _build_temporal_folds,
+    _cap_rows_for_optimization,
+    _build_phase_local_shared,
 )
 import pytest
 
@@ -75,7 +77,7 @@ def test_build_temporal_folds_fallback():
     assert len(val_covered) >= 5 # covers a good chunk
 
 def test_phase1_subsample_equivalence():
-    from extreme_price_movements.mask_optimiser import _generate_event_masks_fast, _get_side_mask
+    from extreme_price_movements.mask_optimiser import _generate_event_masks_fast
     up_move = np.random.rand(100)
     dn_move = np.random.rand(100)
     rolling_std_up = np.random.rand(100)
@@ -99,6 +101,36 @@ def test_phase1_subsample_equivalence():
 
     assert m_h_sub.shape[0] == 50
     assert np.all(m_h_sub == m_h_f[:50])
+
+    shared = {
+        "high": np.ones(100, dtype=np.float32),
+        "low": np.ones(100, dtype=np.float32),
+        "close": np.ones(100, dtype=np.float32),
+        "ret_1": np.zeros(100, dtype=np.float32),
+        "vol_g": np.ones(100, dtype=np.float32),
+        "timestamps": np.arange(100),
+        "forward_returns": np.zeros(100, dtype=np.float32),
+        "mae_high": np.ones(100, dtype=np.float32),
+        "mfe_high": np.ones(100, dtype=np.float32),
+        "mae_low": np.ones(100, dtype=np.float32),
+        "mfe_low": np.ones(100, dtype=np.float32),
+        "learn_X": np.zeros((100, 2), dtype=np.float32),
+        "day_ids": np.arange(100, dtype=np.int32),
+        "symbol_codes": asset_ids,
+        "symbol_uniques": np.array(["A", "B"]),
+    }
+    phase1_shared = _build_phase_local_shared(shared, phase1_mask)
+    m_h_local, _ = _generate_event_masks_fast(
+        "std_threshold",
+        1.0,
+        up_move[phase1_mask],
+        dn_move[phase1_mask],
+        rolling_std_up[phase1_mask],
+        rolling_std_dn[phase1_mask],
+        phase1_shared["asset_groups"],
+        2,
+    )
+    assert np.array_equal(m_h_local, m_h_sub)
 
 def test_invalid_forward_row_exclusion():
     from extreme_price_movements.mask_optimiser import _compute_regime_distinctness_single_side
@@ -128,6 +160,29 @@ def test_dilate_mask_by_asset_handles_non_rectangular_rows():
     # asset 0: idx 0 -> idx 2; asset 1: idx 3 -> idx 4
     expected = np.array([True, False, True, True, True, False])
     assert np.array_equal(out, expected)
+
+
+def test_cap_rows_for_optimization_caps_all_inputs():
+    data = pd.DataFrame({
+        "timestamp": np.arange(20),
+        "symbol": ["A"] * 20,
+        "close": np.arange(20, dtype=np.float32),
+    })
+    feature_dict = {"f1": np.arange(20, dtype=np.float32), "f2": np.arange(20, dtype=np.float32) * 2}
+    forward_returns = np.arange(20, dtype=np.float32)
+
+    data_capped, feature_capped, forward_capped = _cap_rows_for_optimization(
+        data=data,
+        feature_dict=feature_dict,
+        forward_returns=forward_returns,
+        cfg={"mask_opt_max_rows": 7},
+        seed=42,
+    )
+
+    assert len(data_capped) == 7
+    assert forward_capped.shape[0] == 7
+    assert feature_capped["f1"].shape[0] == 7
+    assert feature_capped["f2"].shape[0] == 7
 
 
 def test_build_temporal_folds_fallback_uses_timestamp_groups():

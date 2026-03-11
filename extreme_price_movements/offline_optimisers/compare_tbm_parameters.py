@@ -842,7 +842,27 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
         if not dfs:
             tprint(f"Panel store load returned no usable symbols. store.ohlcv_dir={store.ohlcv_dir}")
             return None, []
-        return to_panel(dfs), train_syms
+        panel = to_panel(dfs)
+        # Cap processed rows at 300K per user request
+        close_frame = panel["close"]
+        n_total = int(close_frame.notna().sum().sum())
+        MAX_ROWS = 300_000
+        if n_total > MAX_ROWS:
+            tprint(f"Capping TBM panel at {MAX_ROWS} rows (random entry masking for different parts of history & symbols)...")
+            rng = np.random.RandomState(42)
+            rows, cols = np.where(close_frame.notna())
+            if len(rows) > MAX_ROWS:
+                keep_idx = rng.choice(len(rows), MAX_ROWS, replace=False)
+                mask_rows = rows[keep_idx]
+                mask_cols = cols[keep_idx]
+                keep_arr = np.zeros(close_frame.shape, dtype=bool)
+                keep_arr[mask_rows, mask_cols] = True
+                keep_df = pd.DataFrame(keep_arr, index=close_frame.index, columns=close_frame.columns)
+                for k in panel:
+                    if isinstance(panel[k], pd.DataFrame):
+                        panel[k] = panel[k].where(keep_df)
+        
+        return panel, train_syms
     except Exception as e:
         tprint(f"Failed to load panel from store: {e}")
         return None, []

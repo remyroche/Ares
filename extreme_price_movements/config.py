@@ -1440,6 +1440,24 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
     # Screening horizon
     "phase1_forward_horizon_bars": 12,
     "phase1_ret_threshold": 0.0,  # can later be ATR-normalized if needed
+    "mask_opt_max_rows": 10_000,
+    "mask_opt_isolate_modes": True,
+    "phase1_classifier_max_samples_per_class": 7_500,
+    "phase2_metric_max_samples_per_class": 25_000,
+    "phase1_classifier_n_splits": 2,
+    "phase2_classifier_n_splits": 3,
+    "phase2_metric_fold_splits": 3,
+    "incremental_information_n_splits": 3,
+    "stage1_symbol_fraction": 0.50,
+    "stage1_history_fraction": 0.50,
+    "top_k_for_learnability": 8,
+    "layer1_mask_opt_max_rows": 5_000,
+    "layer1_phase1_classifier_max_samples_per_class": 3_500,
+    "layer1_phase2_metric_max_samples_per_class": 12_500,
+    "layer1_phase1_classifier_n_splits": 2,
+    "layer1_phase2_classifier_n_splits": 3,
+    "layer1_phase2_metric_fold_splits": 3,
+    "layer1_incremental_information_n_splits": 3,
 
     # Shortlist
     "shortlist_max_candidates": 5,

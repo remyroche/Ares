@@ -47,7 +47,11 @@ from extreme_price_movements.reports.bucket_report import (
     report_ridge_sizer,
     report_optimise,
 )
-from extreme_price_movements.config import CANON_HORIZONS
+from extreme_price_movements.config import (
+    CANON_HORIZONS,
+    POSITION_SIZER_V2_FEATURE_CONFIG,
+    HELPER_BASE_FEATURES,
+)
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 
 # Priority order for quote-currency deduplication.
@@ -99,7 +103,6 @@ def _base_feature_keys_union(cfg) -> set[str]:
         "spike_feature_keys",
         "tf_feature_keys",
         "mr_feature_keys",
-        "test_feature_keys",
     ):
         vals = cfg.get(name, [])
         if isinstance(vals, (list, tuple)):
@@ -107,6 +110,40 @@ def _base_feature_keys_union(cfg) -> set[str]:
                 if isinstance(v, str) and v:
                     keys.add(v)
     return keys
+
+
+def _cap_panel_rows(panel: dict[str, pd.DataFrame], max_rows: int = 300_000) -> dict[str, pd.DataFrame]:
+    """Cap total non-NaN entries in panel to avoid OOM via random masking."""
+    if not isinstance(panel, dict) or "close" not in panel:
+        return panel
+    close = panel["close"]
+    if not isinstance(close, pd.DataFrame):
+        return panel
+    n_total = int(close.notna().sum().sum())
+    if n_total <= max_rows:
+        return panel
+    tprint(f"Capping panel at {max_rows} rows (random entry masking for different parts of history & symbols)...")
+    rng = np.random.RandomState(42)
+    rows, cols = np.where(close.notna())
+    if len(rows) > max_rows:
+        keep_idx = rng.choice(len(rows), max_rows, replace=False)
+        mask_rows = rows[keep_idx]
+        mask_cols = cols[keep_idx]
+        keep_arr = np.zeros(close.shape, dtype=bool)
+        keep_arr[mask_rows, mask_cols] = True
+        keep_df = pd.DataFrame(keep_arr, index=close.index, columns=close.columns)
+        for k in panel:
+            if isinstance(panel[k], pd.DataFrame):
+                panel[k] = panel[k].where(keep_df)
+    return panel
+
+
+def _cap_dataset_rows(df: pd.DataFrame | None, max_rows: int = 300_000) -> pd.DataFrame | None:
+    """Cap rows in a flat DataFrame via random sampling."""
+    if df is None or len(df) <= max_rows:
+        return df
+    tprint(f"Capping dataset at {max_rows} rows (random sample)...")
+    return df.sample(n=max_rows, random_state=42).sort_index()
 
 
 def _expected_feature_keys_from_cfg(cfg) -> set[str]:
@@ -123,8 +160,33 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
             for v in vals:
                 if isinstance(v, str) and v:
                     keys.add(v)
+    
+    # 1. Meta feature union
     keys.update(_meta_feature_keys_union(cfg))
-    # Core features that downstream logic assumes are present.
+
+    # 2. Position Sizer V2 features
+    sizer_cfg = POSITION_SIZER_V2_FEATURE_CONFIG
+    for sub_list in (
+        "shared_feature_keys",
+        "model1_edge_feature_keys",
+        "model2_downside_feature_keys",
+        "model3_uncertainty_feature_keys",
+    ):
+        for k in sizer_cfg.get(sub_list, []):
+            if isinstance(k, str) and k:
+                keys.add(k)
+
+    # 3. Helper base features (for candidacy/breadth)
+    keys.update(HELPER_BASE_FEATURES)
+
+    # 4. Causal columns from config
+    causal = cfg.get("causal_cols", [])
+    if isinstance(causal, (list, tuple)):
+        for k in causal:
+            if isinstance(k, str) and k:
+                keys.add(k)
+
+    # 5. Core features that downstream logic assumes are present.
     keys.update({"atr_pct", "ret1h", "ret24h"})
     return keys
 
@@ -728,6 +790,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         return
 
     panel = to_panel(dfs)
+    panel = _cap_panel_rows(panel, 300_000)
 
     # Data coverage diagnostics
     _close = panel["close"]
@@ -821,7 +884,7 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
         name = f"spike_anatomy_{mode}"
         df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df_spike is not None:
-            datasets[name] = df_spike
+            datasets[name] = _cap_dataset_rows(df_spike, 300_000)
         else:
             missing_spike.append(mode)
 
@@ -890,32 +953,32 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
                 name = f"train_{side}_{k}_{H}"
                 df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
                 if df is not None:
-                    datasets[name] = df
+                    datasets[name] = _cap_dataset_rows(df, 300_000)
                     found_count += 1
-                    tprint(f"  Loaded {name}: {len(df)} rows")
+                    tprint(f"  Loaded {name}: {len(datasets[name])} rows")
                 for variant in base_geometry_archetypes:
                     if variant == "balanced":
                         continue
                     vname = f"train_{side}_{k}_{H}_{variant}"
                     df_v = load_artifact_df(cfg["data_root"], run_id, "labels", vname)
                     if df_v is not None:
-                        datasets[vname] = df_v
-                        tprint(f"  Loaded {vname}: {len(df_v)} rows")
+                        datasets[vname] = _cap_dataset_rows(df_v, 300_000)
+                        tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
 
     # Exhaustion models
     for d in ["up", "down"]:
         name = f"exh_{d}"
         df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df is not None:
-            datasets[name] = df
-            tprint(f"  Loaded {name}: {len(df)} rows")
+            datasets[name] = _cap_dataset_rows(df, 300_000)
+            tprint(f"  Loaded {name}: {len(datasets[name])} rows")
 
     # Specialist models
     for name in ["trap_model", "gamma_model"]:
         df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df is not None:
-            datasets[name] = df
-            tprint(f"  Loaded {name}: {len(df)} rows")
+            datasets[name] = _cap_dataset_rows(df, 300_000)
+            tprint(f"  Loaded {name}: {len(datasets[name])} rows")
 
     if not found_count:
         tprint("ERROR: No alpha label datasets found. Run 'labels' mode first.")
@@ -3045,6 +3108,7 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
     # 3. Compute Features (Panel)
     tprint("Constructing Panel...")
     panel = to_panel(dfs)
+    panel = _cap_panel_rows(panel, 300_000)
     panel_close_ref = panel["close"].copy() if "close" in panel else None
     panel_symbols = list(panel["close"].columns) if "close" in panel else list(loaded_syms)
 
@@ -3064,21 +3128,26 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
     if use_chunked_backfill:
         import gc
 
-        backfill_set = set(backfill_keys)
-        tail_cutoffs, tail_stats = _build_tail_only_backfill_cutoffs(
-            ts_sig=ts_sig,
-            data_root=cfg["data_root"],
-            panel_close=panel["close"],
-            backfill_keys=backfill_keys,
-        )
-        tprint(
-            "Tail-only backfill cutoffs: "
-            f"eligible={tail_stats['eligible_tail_only']} "
-            f"missing_file={tail_stats['missing_symbol_file']} "
-            f"missing_cols={tail_stats['missing_backfill_columns']} "
-            f"structural_or_interior={tail_stats['structural_or_interior']} "
-            f"already_covered={tail_stats['already_covered']}"
-        )
+        backfill_set = set(backfill_keys) if backfill_keys else set()
+        if backfill_keys and not force_full_recompute:
+            tail_cutoffs, tail_stats = _build_tail_only_backfill_cutoffs(
+                ts_sig=ts_sig,
+                data_root=cfg["data_root"],
+                panel_close=panel["close"],
+                backfill_keys=backfill_keys,
+            )
+            tprint(
+                "Tail-only backfill cutoffs: "
+                f"eligible={tail_stats['eligible_tail_only']} "
+                f"missing_file={tail_stats['missing_symbol_file']} "
+                f"missing_cols={tail_stats['missing_backfill_columns']} "
+                f"structural_or_interior={tail_stats['structural_or_interior']} "
+                f"already_covered={tail_stats['already_covered']}"
+            )
+        else:
+            tail_cutoffs = {}
+            tprint("Chunked processing: Full recompute mode (no tail cutoffs)")
+
         all_syms = list(panel["close"].columns)
         total_chunks = (len(all_syms) + chunk_size - 1) // chunk_size
         unresolved_union: set[str] = set()

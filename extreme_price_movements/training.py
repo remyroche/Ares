@@ -1443,27 +1443,30 @@ def save_quality_gate_artifacts(
     with open(gate_path, "w", encoding="utf-8") as f:
         json.dump(report_payload, f, indent=2)
 
-    if base_quality_rows:
-        pd.json_normalize(base_quality_rows).to_csv(
-            os.path.join(out_dir, "base_model_detailed_metrics.csv"),
-            index=False,
-        )
-        pd.json_normalize(base_quality_rows).to_json(
-            os.path.join(out_dir, "base_model_detailed_metrics.json"),
-            orient="records",
-            indent=2,
-        )
+    def _safe_normalize(rows, filename):
+        if not rows:
+            return
+        try:
+            # Use json_normalize which handles nested dicts by creating dot-separated columns
+            df = pd.json_normalize(rows)
+            # Find any columns that contain un-flattened lists/arrays (can cause ValueError on CSV save)
+            for col in df.columns:
+                if df[col].apply(lambda x: isinstance(x, (list, np.ndarray))).any():
+                    df[col] = df[col].apply(lambda x: str(x) if isinstance(x, (list, np.ndarray)) else x)
+            df.to_csv(os.path.join(out_dir, filename), index=False)
+            
+            json_filename = filename.replace(".csv", ".json")
+            df.to_json(os.path.join(out_dir, json_filename), orient="records", indent=2)
+        except Exception as exc:
+            tprint(f"WARNING: Comprehensive artifact saving failed for {filename}: {exc}. Falling back to basic DataFrame.")
+            try:
+                # Fallback: simple DataFrame constructor (may still fail if columns are inconsistent)
+                pd.DataFrame(rows).to_csv(os.path.join(out_dir, filename), index=False)
+            except Exception as exc2:
+                tprint(f"ERROR: Fallback artifact saving also failed for {filename}: {exc2}")
 
-    if meta_quality_rows:
-        pd.json_normalize(meta_quality_rows).to_csv(
-            os.path.join(out_dir, "meta_model_detailed_metrics.csv"),
-            index=False,
-        )
-        pd.json_normalize(meta_quality_rows).to_json(
-            os.path.join(out_dir, "meta_model_detailed_metrics.json"),
-            orient="records",
-            indent=2,
-        )
+    _safe_normalize(base_quality_rows, "base_model_detailed_metrics.csv")
+    _safe_normalize(meta_quality_rows, "meta_model_detailed_metrics.csv")
 
     return gate_path
 

@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import glob
 import logging
+import multiprocessing as mp
 import os
 import random
+import traceback
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -50,6 +52,33 @@ ALL_MODES = [
     MODE_PRICE_DOWN_MR,
     MODE_PRICE_DOWN_TF,
 ]
+
+
+# Priority order for quote-currency deduplication.
+_QUOTE_PRIORITY: list[str] = ["USDT", "USDC", "BUSD", "EUR"]
+
+
+def _dedup_universe_by_base(symbols: list[str]) -> list[str]:
+    """Return at most one symbol per base asset, preferring the highest-priority quote."""
+    _KNOWN_QUOTES = set(_QUOTE_PRIORITY)
+
+    def _parse(sym: str) -> tuple[str, str]:
+        """Return (base, quote) parsed from any separator format."""
+        clean = sym.replace("/", "").replace("_", "").upper()
+        for q in sorted(_KNOWN_QUOTES, key=len, reverse=True):
+            if clean.endswith(q) and len(clean) > len(q):
+                return clean[: -len(q)], q
+        return clean, ""  # unknown quote — treat as unique
+
+    best: dict[str, tuple[int, str]] = {}  # base -> (priority_rank, original_sym)
+    for sym in symbols:
+        base, quote = _parse(sym)
+        rank = _QUOTE_PRIORITY.index(quote) if quote in _QUOTE_PRIORITY else len(_QUOTE_PRIORITY)
+        if base not in best or rank < best[base][0]:
+            best[base] = (rank, sym)
+
+    deduped = sorted(v for _, v in best.values())
+    return deduped
 
 
 # =============================================================================
@@ -260,6 +289,139 @@ def compute_impulse_coherence_nb(
     return bars_to_peak_up, bars_to_peak_dn, speed_up, speed_dn, mono_up, mono_dn, vol_exp
 
 
+def rolling_max_index_safe(x: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
+    n = x.shape[0]
+    out_val = np.full(n, np.nan, dtype=np.float32)
+    out_idx = np.zeros(n, dtype=np.int32)
+    if n == 0 or window <= 0:
+        return out_val, out_idx
+    for i in range(n):
+        left = max(0, i - window + 1)
+        sl = x[left : i + 1]
+        valid_local = np.where(~np.isnan(sl))[0]
+        if valid_local.shape[0] == 0:
+            continue
+        best_local = valid_local[int(np.argmax(sl[valid_local]))]
+        best_idx = left + best_local
+        out_idx[i] = best_idx
+        out_val[i] = x[best_idx]
+    return out_val, out_idx
+
+
+def rolling_min_index_safe(x: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
+    n = x.shape[0]
+    out_val = np.full(n, np.nan, dtype=np.float32)
+    out_idx = np.zeros(n, dtype=np.int32)
+    if n == 0 or window <= 0:
+        return out_val, out_idx
+    for i in range(n):
+        left = max(0, i - window + 1)
+        sl = x[left : i + 1]
+        valid_local = np.where(~np.isnan(sl))[0]
+        if valid_local.shape[0] == 0:
+            continue
+        best_local = valid_local[int(np.argmin(sl[valid_local]))]
+        best_idx = left + best_local
+        out_idx[i] = best_idx
+        out_val[i] = x[best_idx]
+    return out_val, out_idx
+
+
+def rolling_std_safe(x: np.ndarray, window: int) -> np.ndarray:
+    n = x.shape[0]
+    out = np.full(n, np.nan, dtype=np.float32)
+    if n == 0 or window <= 0:
+        return out
+    for i in range(n):
+        left = max(0, i - window + 1)
+        sl = x[left : i + 1]
+        sl = sl[np.isfinite(sl)]
+        if sl.shape[0] > 1:
+            out[i] = np.float32(np.std(sl, ddof=1))
+        elif sl.shape[0] == 1:
+            out[i] = 0.0
+    return out
+
+
+def compute_impulse_coherence_safe(
+    returns: np.ndarray,
+    volatility: np.ndarray,
+    high_val: np.ndarray,
+    low_val: np.ndarray,
+    start_px: np.ndarray,
+    high_idx_local: np.ndarray,
+    low_idx_local: np.ndarray,
+    start_idx_local: np.ndarray,
+    window: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    n = returns.shape[0]
+    bars_to_peak_up = np.full(n, np.nan, dtype=np.float32)
+    bars_to_peak_dn = np.full(n, np.nan, dtype=np.float32)
+    speed_up = np.full(n, np.nan, dtype=np.float32)
+    speed_dn = np.full(n, np.nan, dtype=np.float32)
+    mono_up = np.full(n, np.nan, dtype=np.float32)
+    mono_dn = np.full(n, np.nan, dtype=np.float32)
+    vol_exp = np.full(n, np.nan, dtype=np.float32)
+
+    pref_ret = np.zeros(n + 1, dtype=np.float32)
+    pref_abs = np.zeros(n + 1, dtype=np.float32)
+    for i in range(n):
+        r = returns[i]
+        if np.isnan(r):
+            pref_ret[i + 1] = pref_ret[i]
+            pref_abs[i + 1] = pref_abs[i]
+        else:
+            pref_ret[i + 1] = pref_ret[i] + r
+            pref_abs[i + 1] = pref_abs[i] + abs(r)
+
+    for i in range(window, n):
+        st = int(start_idx_local[i])
+        st_px = float(start_px[i])
+        peak_h = int(high_idx_local[i])
+        peak_l = int(low_idx_local[i])
+        b_up = peak_h - st
+        b_dn = peak_l - st
+        bars_to_peak_up[i] = b_up
+        bars_to_peak_dn[i] = b_dn
+
+        imp_up = (high_val[i] - st_px) / st_px if st_px > 1e-9 else 0.0
+        imp_dn = (st_px - low_val[i]) / st_px if st_px > 1e-9 else 0.0
+        speed_up[i] = imp_up / max(1.0, float(b_up))
+        speed_dn[i] = imp_dn / max(1.0, float(b_dn))
+
+        up_left = min(max(st + 1, 0), n)
+        up_right = min(max(peak_h + 1, up_left), n)
+        dir_sum_up = pref_ret[up_right] - pref_ret[up_left]
+        abs_sum_up = pref_abs[up_right] - pref_abs[up_left]
+        mono_up[i] = dir_sum_up / abs_sum_up if abs_sum_up > 1e-9 else 0.0
+
+        dn_left = min(max(st + 1, 0), n)
+        dn_right = min(max(peak_l + 1, dn_left), n)
+        dir_sum_dn = -(pref_ret[dn_right] - pref_ret[dn_left])
+        abs_sum_dn = pref_abs[dn_right] - pref_abs[dn_left]
+        mono_dn[i] = dir_sum_dn / abs_sum_dn if abs_sum_dn > 1e-9 else 0.0
+
+        pre_vol = volatility[st]
+        post_vol = volatility[i]
+        vol_exp[i] = post_vol / pre_vol if pre_vol > 1e-9 else 1.0
+
+    return bars_to_peak_up, bars_to_peak_dn, speed_up, speed_dn, mono_up, mono_dn, vol_exp
+
+
+def dilate_mask_by_asset_safe(mask: np.ndarray, asset_groups: Dict[int, np.ndarray], duration_bars: int) -> np.ndarray:
+    if duration_bars <= 1:
+        return mask.copy()
+    out = mask.copy()
+    for idxs in asset_groups.values():
+        if idxs.shape[0] == 0:
+            continue
+        local_hits = np.where(mask[idxs])[0]
+        for local_i in local_hits:
+            end_local = min(idxs.shape[0], local_i + duration_bars)
+            out[idxs[local_i + 1 : end_local]] = True
+    return out
+
+
 @njit(cache=True)
 def active_days_fraction_nb(mask: np.ndarray, day_ids: np.ndarray, n_days: int) -> float:
     if n_days <= 0:
@@ -313,6 +475,38 @@ def fold_base_rate_nb(mask: np.ndarray, target: np.ndarray, val_idx: np.ndarray)
 
 @njit(cache=True)
 def simple_mask_count_nb(mask: np.ndarray) -> int:
+    return int(np.sum(mask))
+
+
+def active_days_fraction_safe(mask: np.ndarray, day_ids: np.ndarray, n_days: int) -> float:
+    if n_days <= 0:
+        return 0.0
+    if mask.shape[0] == 0:
+        return 0.0
+    active_days = np.unique(day_ids[mask])
+    return float(active_days.shape[0]) / float(n_days)
+
+
+def daily_event_stats_safe(mask: np.ndarray, day_ids: np.ndarray, n_days: int) -> Tuple[float, float]:
+    if n_days <= 0:
+        return 0.0, 0.0
+    counts = np.zeros(n_days, dtype=np.int32)
+    if np.any(mask):
+        vals, freqs = np.unique(day_ids[mask], return_counts=True)
+        counts[vals.astype(np.int32)] = freqs.astype(np.int32)
+    return float(np.mean(counts)), float(np.std(counts))
+
+
+def fold_base_rate_safe(mask: np.ndarray, target: np.ndarray, val_idx: np.ndarray) -> float:
+    if val_idx.shape[0] == 0:
+        return 0.0
+    valid = mask[val_idx] & np.isfinite(target[val_idx])
+    if not np.any(valid):
+        return 0.0
+    return float(np.mean(target[val_idx][valid]))
+
+
+def simple_mask_count_safe(mask: np.ndarray) -> int:
     return int(np.sum(mask))
 
 
@@ -422,6 +616,18 @@ def _rng_sample_half(items: List[Any], seed: int = 42) -> List[Any]:
     return rng.sample(items, k)
 
 
+def _rng_sample_fraction(items: List[Any], frac: float, seed: int = 42) -> List[Any]:
+    if len(items) <= 1:
+        return items[:]
+    frac = min(max(float(frac), 0.0), 1.0)
+    if frac >= 0.999:
+        return items[:]
+    rng = random.Random(seed)
+    k = max(1, int(round(len(items) * frac)))
+    k = min(k, len(items))
+    return rng.sample(items, k)
+
+
 def _zscore_np(x: np.ndarray) -> np.ndarray:
     x = np.asarray(x, dtype=np.float32)
     if x.size == 0:
@@ -431,6 +637,16 @@ def _zscore_np(x: np.ndarray) -> np.ndarray:
     if not np.isfinite(s) or s < 1e-9:
         return np.zeros_like(x, dtype=np.float32)
     return ((x - m) / s).astype(np.float32)
+
+
+def _metric_or_nan(value: Any) -> float:
+    if value is None:
+        return float("nan")
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+    return out if np.isfinite(out) else float("nan")
 
 
 def _coherence_metrics_single_side(
@@ -620,6 +836,279 @@ def _classifier_oof_auc(
         return 0.5
 
 
+def _classifier_oof_auc_from_folds(
+    X: np.ndarray,
+    y: np.ndarray,
+    folds: List[Tuple[np.ndarray, np.ndarray]],
+) -> float:
+    if X.shape[0] < 20 or np.unique(y[np.isfinite(y)]).shape[0] < 2:
+        return 0.5
+    if not folds:
+        return 0.5
+
+    preds = np.full(X.shape[0], np.nan, dtype=np.float32)
+    for tr, va in folds:
+        if tr.shape[0] == 0 or va.shape[0] == 0:
+            continue
+        if np.unique(y[tr][np.isfinite(y[tr])]).shape[0] < 2:
+            continue
+        X_tr, X_va = _impute_and_scale_train_valid(X[tr], X[va])
+        clf = LogisticRegression(solver="liblinear", max_iter=100)
+        try:
+            clf.fit(X_tr, y[tr])
+            preds[va] = clf.predict_proba(X_va)[:, 1].astype(np.float32)
+        except Exception as e:
+            _log_bounded_warning("classifier_fit", f"Classifier fold fit failed: {e}")
+
+    valid_mask = np.isfinite(preds) & np.isfinite(y)
+    if np.sum(valid_mask) == 0:
+        return 0.5
+    if np.unique(y[valid_mask]).shape[0] < 2 or np.unique(preds[valid_mask]).shape[0] < 2:
+        return 0.5
+    try:
+        return float(roc_auc_score(y[valid_mask], preds[valid_mask]))
+    except Exception as e:
+        _log_bounded_warning("roc_auc", f"AUC scoring failed: {e}")
+        return 0.5
+
+
+def _incremental_information_metrics(
+    learn_X: np.ndarray,
+    side_mask: np.ndarray,
+    y_primary: np.ndarray,
+    timestamps: np.ndarray,
+    idx_e: np.ndarray,
+    idx_ne: np.ndarray,
+    n_splits: int = 3,
+) -> Dict[str, float]:
+    metrics = {
+        "incremental_information_delta_auc": float("nan"),
+        "incremental_information_positive_fold_fraction": float("nan"),
+        "incremental_information_positive_fold_count": float("nan"),
+        "incremental_information_fold_count": float("nan"),
+    }
+
+    idx_all = np.sort(np.concatenate([idx_e, idx_ne]).astype(np.int32))
+    if idx_all.shape[0] < 100:
+        return metrics
+
+    y_all = y_primary[idx_all]
+    ts_all = timestamps[idx_all]
+    event_feature = side_mask[idx_all].astype(np.float32).reshape(-1, 1)
+    X_base = learn_X[idx_all]
+    X_aug = np.concatenate([X_base, event_feature], axis=1).astype(np.float32, copy=False)
+    folds = _build_temporal_folds(ts_all, idx_all.shape[0], n_splits=n_splits)
+    if not folds:
+        return metrics
+
+    auc_base = _classifier_oof_auc_from_folds(X_base, y_all, folds)
+    auc_aug = _classifier_oof_auc_from_folds(X_aug, y_all, folds)
+    metrics["incremental_information_delta_auc"] = float(auc_aug - auc_base)
+
+    positive_fold_count = 0
+    evaluated_fold_count = 0
+    for tr, va in folds:
+        if tr.shape[0] == 0 or va.shape[0] == 0:
+            continue
+        y_tr = y_all[tr]
+        y_va = y_all[va]
+        if np.unique(y_tr[np.isfinite(y_tr)]).shape[0] < 2 or np.unique(y_va[np.isfinite(y_va)]).shape[0] < 2:
+            continue
+        auc_base_fold = _classifier_oof_auc_from_folds(X_base, y_all, [(tr, va)])
+        auc_aug_fold = _classifier_oof_auc_from_folds(X_aug, y_all, [(tr, va)])
+        evaluated_fold_count += 1
+        if (auc_aug_fold - auc_base_fold) > 0:
+            positive_fold_count += 1
+
+    if evaluated_fold_count > 0:
+        metrics["incremental_information_positive_fold_fraction"] = float(
+            positive_fold_count / float(evaluated_fold_count)
+        )
+        metrics["incremental_information_positive_fold_count"] = float(positive_fold_count)
+        metrics["incremental_information_fold_count"] = float(evaluated_fold_count)
+
+    return metrics
+
+
+def _stability_from_fold_deltas(delta_folds: np.ndarray) -> Dict[str, float]:
+    delta_folds = np.asarray(delta_folds, dtype=np.float32)
+    delta_folds = delta_folds[np.isfinite(delta_folds)]
+    if delta_folds.size == 0:
+        return {
+            "delta_fold_mean": float("nan"),
+            "delta_fold_std": float("nan"),
+            "positive_fold_fraction": float("nan"),
+            "stability_score": float("nan"),
+            "fold_count": 0.0,
+        }
+
+    mean_delta = float(np.mean(delta_folds))
+    std_delta = float(np.std(delta_folds))
+    positive_fold_fraction = float(np.mean(delta_folds > 0))
+    stability_score = 0.5 * max(0.0, 1.0 - std_delta / (abs(mean_delta) + 1e-9)) + 0.5 * positive_fold_fraction
+    return {
+        "delta_fold_mean": mean_delta,
+        "delta_fold_std": std_delta,
+        "positive_fold_fraction": positive_fold_fraction,
+        "stability_score": float(stability_score),
+        "fold_count": float(delta_folds.size),
+    }
+
+
+def _build_regime_rationale(row: pd.Series) -> str:
+    reasons: List[str] = []
+    delta_r = _metric_or_nan(row.get("delta_r"))
+    s_r = _metric_or_nan(row.get("S_r"))
+    d_r = _metric_or_nan(row.get("D_r"))
+    positive_fraction = _metric_or_nan(row.get("positive_fold_fraction_r"))
+    metric_name = str(row.get("selected_delta_metric", ""))
+    incr_delta = _metric_or_nan(row.get("incremental_information_delta_auc"))
+    incr_positive = _metric_or_nan(row.get("incremental_information_positive_fold_fraction"))
+    disp_edge = _metric_or_nan(row.get("dispersion_to_edge_ratio"))
+    primary_nan = _metric_or_nan(row.get("primary_predictability_gain_is_nan"))
+
+    if np.isfinite(delta_r) and delta_r > 0:
+        reasons.append(f"positive OOS magnitude learnability via {metric_name}={delta_r:.4f}")
+    if np.isfinite(s_r):
+        reasons.append(f"stability={s_r:.3f}")
+    if np.isfinite(positive_fraction):
+        reasons.append(f"positive-fold fraction={positive_fraction:.3f}")
+    if np.isfinite(incr_delta):
+        reasons.append(f"delta-auc={incr_delta:.4f}")
+    if np.isfinite(incr_positive):
+        reasons.append(f"delta-auc positive folds={incr_positive:.3f}")
+    if np.isfinite(disp_edge):
+        reasons.append(f"dispersion/edge={disp_edge:.3f}")
+    if np.isfinite(primary_nan) and primary_nan > 0.5:
+        reasons.append("primary directional gain unavailable")
+    if np.isfinite(d_r):
+        reasons.append(f"dispersion={d_r:.3f}")
+    return "; ".join(reasons)
+
+
+def _predictability_gain_from_metrics(metrics: Dict[str, Any]) -> float:
+    vals = [
+        _metric_or_nan(metrics.get("continuation_predictability_gain")),
+        _metric_or_nan(metrics.get("reversal_predictability_gain")),
+        _metric_or_nan(metrics.get("MAE_predictability_gain")),
+        _metric_or_nan(metrics.get("MFE_predictability_gain")),
+    ]
+    vals = [v for v in vals if np.isfinite(v)]
+    if not vals:
+        return float("nan")
+    return float(max(vals))
+
+
+def _mode_primary_predictability_col(mode: str) -> str:
+    return "continuation_predictability_gain" if _mode_is_tf(mode) else "reversal_predictability_gain"
+
+
+def _mode_predictability_gain_from_metrics(mode: str, metrics: Dict[str, Any]) -> float:
+    vals = [
+        _metric_or_nan(metrics.get(_mode_primary_predictability_col(mode))),
+        _metric_or_nan(metrics.get("MAE_predictability_gain")),
+        _metric_or_nan(metrics.get("MFE_predictability_gain")),
+    ]
+    vals = [v for v in vals if np.isfinite(v)]
+    if not vals:
+        return float("nan")
+    return float(max(vals))
+
+
+def _compute_legacy_conditional_learnability(
+    mode: str,
+    side_mask: np.ndarray,
+    shared: Dict[str, Any],
+    cfg: Dict[str, Any],
+) -> Dict[str, float]:
+    ret_threshold = float(cfg.get("phase1_ret_threshold", 0.0))
+    learn_X = shared["learn_X"]
+    forward_returns = shared["forward_returns"]
+    timestamps = shared["timestamps"]
+    valid = np.isfinite(forward_returns)
+
+    idx_g = np.where(valid)[0].astype(np.int32)
+    idx_e = np.where(valid & side_mask)[0].astype(np.int32)
+
+    out = {
+        "continuation_predictability_gain": float("nan"),
+        "reversal_predictability_gain": float("nan"),
+        "MAE_predictability_gain": float("nan"),
+        "MFE_predictability_gain": float("nan"),
+        "predictability_gain": float("nan"),
+    }
+    if idx_e.shape[0] < 50 or idx_g.shape[0] < 100:
+        return out
+
+    max_global = int(cfg.get("phase2_metric_max_samples_per_class", 25_000))
+    if max_global > 0 and idx_g.shape[0] > max_global:
+        rng = np.random.RandomState(123)
+        idx_g = np.sort(rng.choice(idx_g, max_global, replace=False).astype(np.int32))
+    max_event = int(cfg.get("legacy_stage2_event_max_samples", cfg.get("phase2_metric_max_samples_per_class", 25_000)))
+    if max_event > 0 and idx_e.shape[0] > max_event:
+        rng = np.random.RandomState(456)
+        idx_e = np.sort(rng.choice(idx_e, max_event, replace=False).astype(np.int32))
+
+    n_splits = int(cfg.get("phase2_classifier_n_splits", 3))
+    y_cont = _mode_primary_target(mode, forward_returns, ret_threshold)
+    y_rev = np.full(y_cont.shape[0], np.nan, dtype=np.float32)
+    valid_y = np.isfinite(y_cont)
+    y_rev[valid_y] = 1.0 - y_cont[valid_y]
+
+    auc_cont_g = _classifier_oof_auc(learn_X[idx_g], y_cont[idx_g], timestamps[idx_g], n_splits=n_splits)
+    auc_cont_e = _classifier_oof_auc(learn_X[idx_e], y_cont[idx_e], timestamps[idx_e], n_splits=n_splits)
+    out["continuation_predictability_gain"] = float(auc_cont_e - auc_cont_g)
+
+    auc_rev_g = _classifier_oof_auc(learn_X[idx_g], y_rev[idx_g], timestamps[idx_g], n_splits=n_splits)
+    auc_rev_e = _classifier_oof_auc(learn_X[idx_e], y_rev[idx_e], timestamps[idx_e], n_splits=n_splits)
+    out["reversal_predictability_gain"] = float(auc_rev_e - auc_rev_g)
+
+    if mode in (MODE_PRICE_UP_TF, MODE_PRICE_UP_MR):
+        mae_arr = shared["mae_high"]
+        mfe_arr = shared["mfe_high"]
+    else:
+        mae_arr = shared["mae_low"]
+        mfe_arr = shared["mfe_low"]
+
+    r2_mae_g = _ridge_regression_oof_r2(learn_X[idx_g], mae_arr[idx_g], timestamps[idx_g], clip_q=0.98, n_splits=n_splits)
+    r2_mae_e = _ridge_regression_oof_r2(learn_X[idx_e], mae_arr[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=n_splits)
+    out["MAE_predictability_gain"] = float(r2_mae_e - r2_mae_g)
+
+    r2_mfe_g = _ridge_regression_oof_r2(learn_X[idx_g], mfe_arr[idx_g], timestamps[idx_g], clip_q=0.98, n_splits=n_splits)
+    r2_mfe_e = _ridge_regression_oof_r2(learn_X[idx_e], mfe_arr[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=n_splits)
+    out["MFE_predictability_gain"] = float(r2_mfe_e - r2_mfe_g)
+
+    out["predictability_gain"] = _mode_predictability_gain_from_metrics(mode, out)
+    return out
+
+
+def _apply_secondary_conditioner(
+    mask_h: np.ndarray,
+    mask_l: np.ndarray,
+    conditioner: str,
+    mono_up: np.ndarray,
+    mono_dn: np.ndarray,
+    vol_exp: np.ndarray,
+    spread_to_atr: np.ndarray,
+    alternation_array: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    new_h = mask_h.copy()
+    new_l = mask_l.copy()
+
+    if conditioner == "none":
+        return new_h, new_l
+    if conditioner == "liquidity_veto":
+        safe_liq = spread_to_atr < 0.25
+        return new_h & safe_liq, new_l & safe_liq
+    if conditioner == "monotonicity_adjust":
+        return new_h & (mono_up > 0.25), new_l & (mono_dn > 0.25)
+    if conditioner == "volatility_adjust":
+        return new_h & (vol_exp < 5.0), new_l & (vol_exp < 5.0)
+    if conditioner == "alternation_adjust":
+        return new_h & (alternation_array < 0.70), new_l & (alternation_array < 0.70)
+    return new_h, new_l
+
+
 def _ridge_regression_oof_r2(
     X: np.ndarray,
     y: np.ndarray,
@@ -669,8 +1158,75 @@ def _ridge_regression_oof_r2(
     return float(1.0 - ssr / sst)
 
 
+def _ridge_regression_fold_r2s(
+    X: np.ndarray,
+    y: np.ndarray,
+    timestamps: np.ndarray,
+    clip_q: float = 0.98,
+    n_splits: int = 3,
+) -> np.ndarray:
+    valid = np.isfinite(y)
+    if np.sum(valid) < 20:
+        return np.asarray([], dtype=np.float32)
+
+    y = y.astype(np.float32, copy=True)
+    folds = _build_temporal_folds(timestamps, X.shape[0], n_splits=n_splits)
+    if not folds:
+        return np.asarray([], dtype=np.float32)
+
+    scores: List[float] = []
+    for tr, va in folds:
+        if tr.shape[0] == 0 or va.shape[0] == 0:
+            continue
+
+        tr_valid = tr[np.isfinite(y[tr])]
+        va_valid = va[np.isfinite(y[va])]
+        if tr_valid.shape[0] < 10 or va_valid.shape[0] < 10:
+            continue
+
+        y_tr = y[tr_valid]
+        hi = np.quantile(y_tr, clip_q).astype(np.float32)
+        lo = np.quantile(y_tr, 1.0 - clip_q).astype(np.float32) if np.any(y_tr < 0) else 0.0
+        y_tr_clip = np.clip(y_tr, lo, hi).astype(np.float32)
+
+        X_tr, X_va = _impute_and_scale_train_valid(X[tr_valid], X[va_valid])
+        reg = Ridge(alpha=1.0)
+        try:
+            reg.fit(X_tr, y_tr_clip)
+            preds = reg.predict(X_va).astype(np.float32)
+        except Exception as e:
+            _log_bounded_warning("ridge_fit", f"Ridge fold fit failed: {e}")
+            continue
+
+        y_va = y[va_valid]
+        sst = float(np.sum((y_va - np.mean(y_va)) ** 2))
+        if sst < 1e-9:
+            continue
+        ssr = float(np.sum((y_va - preds) ** 2))
+        scores.append(float(1.0 - ssr / sst))
+
+    return np.asarray(scores, dtype=np.float32)
+
+
 def _extract_learnability_features(feature_dict: Dict[str, np.ndarray], n_samples: int) -> np.ndarray:
-    keys = [
+    keys = list(_required_feature_keys())
+    learnability_keys = [k for k in keys if k not in {"atr", "vol_regime_z"}]
+    X = np.full((n_samples, len(learnability_keys)), np.nan, dtype=np.float32)
+    for i, k in enumerate(learnability_keys):
+        if k not in feature_dict:
+            X[:, i] = 0.0
+            continue
+        arr = np.asarray(feature_dict[k], dtype=np.float32)
+        arr = arr.copy()
+        arr[np.isinf(arr)] = np.nan
+        X[:, i] = arr
+    return X
+
+
+def _required_feature_keys() -> Tuple[str, ...]:
+    return (
+        "atr",
+        "vol_regime_z",
         "range_1_atr",
         "close_location_in_bar",
         "rv_ratio_6_24",
@@ -683,17 +1239,11 @@ def _extract_learnability_features(feature_dict: Dict[str, np.ndarray], n_sample
         "rejection_volume_ratio",
         "vol_regime_shift",
         "bar_direction_entropy",
-    ]
-    X = np.full((n_samples, len(keys)), np.nan, dtype=np.float32)
-    for i, k in enumerate(keys):
-        if k not in feature_dict:
-            X[:, i] = 0.0
-            continue
-        arr = np.asarray(feature_dict[k], dtype=np.float32)
-        arr = arr.copy()
-        arr[np.isinf(arr)] = np.nan
-        X[:, i] = arr
-    return X
+    )
+
+
+def _flatten_wide_frame(df: pd.DataFrame, index: pd.Index, columns: pd.Index) -> np.ndarray:
+    return df.reindex(index=index, columns=columns).to_numpy(dtype=np.float32, copy=False).reshape(-1)
 
 
 def _build_day_ids(timestamps: np.ndarray) -> Tuple[np.ndarray, int]:
@@ -724,6 +1274,12 @@ def _build_vol_regime_ids(vol_feature: np.ndarray) -> np.ndarray:
 def _sample_half_history_mask(day_ids: np.ndarray, seed: int = 42) -> np.ndarray:
     uniq_days = np.unique(day_ids)
     selected_days = list(set(_rng_sample_half(uniq_days.tolist(), seed=seed)))
+    return np.isin(day_ids, selected_days)
+
+
+def _sample_history_fraction_mask(day_ids: np.ndarray, frac: float, seed: int = 42) -> np.ndarray:
+    uniq_days = np.unique(day_ids)
+    selected_days = list(set(_rng_sample_fraction(uniq_days.tolist(), frac=frac, seed=seed)))
     return np.isin(day_ids, selected_days)
 
 
@@ -776,6 +1332,171 @@ def _build_candidate_grid(cfg: Dict[str, Any]) -> List[Tuple[int, str, Any, int]
     return grid
 
 
+def _build_asset_groups_from_codes(
+    symbol_codes: np.ndarray,
+    n_symbols: int,
+) -> Dict[int, np.ndarray]:
+    asset_groups: Dict[int, np.ndarray] = {}
+    for aid in range(n_symbols):
+        idxs = np.where(symbol_codes == aid)[0].astype(np.int32)
+        if idxs.shape[0] > 0:
+            asset_groups[int(aid)] = idxs
+    return asset_groups
+
+
+def _compute_z_cache(
+    high: np.ndarray,
+    low: np.ndarray,
+    close: np.ndarray,
+    ret_1: np.ndarray,
+    vol_g: np.ndarray,
+    asset_groups: Dict[int, np.ndarray],
+    z: int,
+    bph: int,
+) -> Dict[str, np.ndarray]:
+    n = close.shape[0]
+    cache = {
+        "up": np.zeros(n, dtype=np.float32),
+        "dn": np.zeros(n, dtype=np.float32),
+        "rng": np.zeros(n, dtype=np.float32),
+        "std_up": np.zeros(n, dtype=np.float32),
+        "std_dn": np.zeros(n, dtype=np.float32),
+        "b_up": np.zeros(n, dtype=np.float32),
+        "b_dn": np.zeros(n, dtype=np.float32),
+        "s_up": np.zeros(n, dtype=np.float32),
+        "s_dn": np.zeros(n, dtype=np.float32),
+        "m_up": np.zeros(n, dtype=np.float32),
+        "m_dn": np.zeros(n, dtype=np.float32),
+        "v_exp": np.zeros(n, dtype=np.float32),
+    }
+
+    for _, idxs in asset_groups.items():
+        ast_high = high[idxs]
+        ast_low = low[idxs]
+        ast_close = close[idxs]
+        ast_ret = ret_1[idxs]
+        ast_vol = vol_g[idxs]
+
+        hv, hi = rolling_max_index_safe(ast_high, z)
+        lv, li = rolling_min_index_safe(ast_low, z)
+        st_idx = np.maximum(0, np.arange(ast_close.shape[0], dtype=np.int32) - z + 1)
+        st_px = ast_close[st_idx]
+
+        um = np.where(st_px > 1e-9, (hv - st_px) / st_px, 0.0).astype(np.float32)
+        dm = np.where(st_px > 1e-9, (st_px - lv) / st_px, 0.0).astype(np.float32)
+        rm = np.where(st_px > 1e-9, (hv - lv) / st_px, 0.0).astype(np.float32)
+
+        b_u, b_d, s_u, s_d, m_u, m_d, v_e = compute_impulse_coherence_safe(
+            ast_ret, ast_vol, hv, lv, st_px, hi, li, st_idx, z
+        )
+
+        cache["up"][idxs] = um
+        cache["dn"][idxs] = dm
+        cache["rng"][idxs] = rm
+        cache["std_up"][idxs] = rolling_std_safe(um, 30 * 24 * bph).astype(np.float32)
+        cache["std_dn"][idxs] = rolling_std_safe(dm, 30 * 24 * bph).astype(np.float32)
+        cache["b_up"][idxs] = b_u
+        cache["b_dn"][idxs] = b_d
+        cache["s_up"][idxs] = s_u
+        cache["s_dn"][idxs] = s_d
+        cache["m_up"][idxs] = m_u
+        cache["m_dn"][idxs] = m_d
+        cache["v_exp"][idxs] = v_e
+
+    return cache
+
+
+def _balanced_sample_indices(
+    idx_a: np.ndarray,
+    idx_b: np.ndarray,
+    max_each: int,
+    seed: int = 42,
+) -> Tuple[np.ndarray, np.ndarray]:
+    if max_each <= 0:
+        return idx_a, idx_b
+
+    rng = np.random.RandomState(seed)
+
+    def _sample(idx: np.ndarray) -> np.ndarray:
+        if idx.shape[0] <= max_each:
+            return idx
+        sampled = rng.choice(idx, max_each, replace=False)
+        sampled.sort()
+        return sampled.astype(np.int32)
+
+    return _sample(idx_a), _sample(idx_b)
+
+
+def _cap_rows_for_optimization(
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    forward_returns: np.ndarray,
+    cfg: Dict[str, Any],
+    seed: int = 42,
+) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray]:
+    max_rows = int(cfg.get("mask_opt_max_rows", 10_000))
+    if max_rows <= 0 or data.shape[0] <= max_rows:
+        return data, feature_dict, forward_returns
+
+    tprint(f"Capping at {max_rows} rows (random sample)...")
+    rng = np.random.RandomState(seed)
+    indices = rng.choice(data.shape[0], max_rows, replace=False)
+    indices.sort()
+
+    data_capped = data.iloc[indices].reset_index(drop=True)
+    forward_capped = forward_returns[indices]
+    feature_dict_capped = {k: v[indices] for k, v in feature_dict.items()}
+    return data_capped, feature_dict_capped, forward_capped
+
+
+def _materialize_layer_runtime_cfg(cfg: Dict[str, Any], layer_name: str) -> Dict[str, Any]:
+    runtime_cfg = dict(cfg)
+    if layer_name == "layer1":
+        runtime_cfg["mask_opt_max_rows"] = int(cfg.get("layer1_mask_opt_max_rows", cfg.get("mask_opt_max_rows", 10_000)))
+        runtime_cfg["phase1_classifier_max_samples_per_class"] = int(
+            cfg.get("layer1_phase1_classifier_max_samples_per_class", cfg.get("phase1_classifier_max_samples_per_class", 15_000))
+        )
+        runtime_cfg["phase2_metric_max_samples_per_class"] = int(
+            cfg.get("layer1_phase2_metric_max_samples_per_class", cfg.get("phase2_metric_max_samples_per_class", 25_000))
+        )
+        runtime_cfg["phase1_classifier_n_splits"] = int(cfg.get("layer1_phase1_classifier_n_splits", 2))
+        runtime_cfg["phase2_classifier_n_splits"] = int(cfg.get("layer1_phase2_classifier_n_splits", 2))
+        runtime_cfg["phase2_metric_fold_splits"] = int(cfg.get("layer1_phase2_metric_fold_splits", 2))
+        runtime_cfg["incremental_information_n_splits"] = int(cfg.get("layer1_incremental_information_n_splits", 2))
+    else:
+        runtime_cfg["phase1_classifier_n_splits"] = int(cfg.get("phase1_classifier_n_splits", 2))
+        runtime_cfg["phase2_classifier_n_splits"] = int(cfg.get("phase2_classifier_n_splits", 2))
+        runtime_cfg["phase2_metric_fold_splits"] = int(cfg.get("phase2_metric_fold_splits", 3))
+        runtime_cfg["incremental_information_n_splits"] = int(cfg.get("incremental_information_n_splits", 3))
+    runtime_cfg["regime_score_layer"] = layer_name
+    return runtime_cfg
+
+
+def _rescale_mode_gates_for_sample_size(cfg: Dict[str, Any], n_rows: int) -> Dict[str, Any]:
+    runtime_cfg = dict(cfg)
+    if n_rows <= 0:
+        return runtime_cfg
+
+    # Per-bucket masks are sparse on capped samples; fixed 5k-event gates are too high.
+    target_event_density = float(runtime_cfg.get("mask_opt_target_event_density", 0.025))
+    min_events_floor = int(runtime_cfg.get("mask_opt_min_events_floor", 150))
+    scaled_min_events = max(min_events_floor, int(round(n_rows * target_event_density)))
+
+    base_active = float(runtime_cfg.get("phase2_min_active_days_fraction", 0.80))
+    active_days_floor = float(runtime_cfg.get("mask_opt_min_active_days_floor", 0.25))
+    scaled_active_days = min(base_active, max(active_days_floor, base_active * np.sqrt(n_rows / 300_000.0)))
+
+    runtime_cfg["phase1_min_total_events"] = scaled_min_events
+    runtime_cfg["phase2_min_total_events"] = scaled_min_events
+    runtime_cfg["phase1_min_active_days_fraction"] = scaled_active_days
+    runtime_cfg["phase2_min_active_days_fraction"] = scaled_active_days
+    tprint(
+        "Rescaled per-bucket gates for capped sample: "
+        f"rows={n_rows}, min_events={scaled_min_events}, min_active_days_fraction={scaled_active_days:.3f}"
+    )
+    return runtime_cfg
+
+
 def _generate_event_masks_fast(
     family: str,
     param_val: Any,
@@ -812,8 +1533,8 @@ def _generate_event_masks_fast(
         raise ValueError(f"Unknown family: {family}")
 
     if duration_bars > 1 and asset_groups is not None:
-        mask_h = dilate_mask_by_asset(mask_h, asset_groups, duration_bars)
-        mask_l = dilate_mask_by_asset(mask_l, asset_groups, duration_bars)
+        mask_h = dilate_mask_by_asset_safe(mask_h, asset_groups, duration_bars)
+        mask_l = dilate_mask_by_asset_safe(mask_l, asset_groups, duration_bars)
 
     return mask_h, mask_l
 
@@ -916,9 +1637,7 @@ def _build_shared_cache(
     regime_ids = _build_vol_regime_ids(regime_source)
 
     # per-asset groups
-    asset_groups: Dict[int, np.ndarray] = {}
-    for aid in range(symbol_uniques.shape[0]):
-        asset_groups[int(aid)] = np.where(symbol_codes == aid)[0].astype(np.int32)
+    asset_groups = _build_asset_groups_from_codes(symbol_codes, symbol_uniques.shape[0])
 
     # returns / vol / alternation
     ret_1 = np.zeros(close.shape[0], dtype=np.float32)
@@ -932,7 +1651,7 @@ def _build_shared_cache(
             prev = np.where(c[:-1] > 1e-9, c[:-1], 1.0)
             r[1:] = ((c[1:] - c[:-1]) / prev).astype(np.float32)
         ret_1[idxs] = r
-        vol_g[idxs] = rolling_std_nb(r, 30 * 24 * bph).astype(np.float32)
+        vol_g[idxs] = rolling_std_safe(r, 30 * 24 * bph).astype(np.float32)
 
         sign = np.sign(r).astype(np.float32)
         prev_sign = np.zeros_like(sign)
@@ -987,62 +1706,6 @@ def _build_shared_cache(
     # full folds
     folds = _build_temporal_folds(timestamps, n, n_splits=2)
 
-    # precompute rolling tensors by z
-    z_grid = sorted(set(int(z * bph) for z in cfg.get("z_hours_grid", [6, 10, 16])))
-    z_cache: Dict[int, Dict[str, np.ndarray]] = {}
-
-    for z in z_grid:
-        tprint(f"Precomputing rolling tensors for z={z} bars...")
-        cache = {
-            "up": np.zeros(n, dtype=np.float32),
-            "dn": np.zeros(n, dtype=np.float32),
-            "rng": np.zeros(n, dtype=np.float32),
-            "std_up": np.zeros(n, dtype=np.float32),
-            "std_dn": np.zeros(n, dtype=np.float32),
-            "b_up": np.zeros(n, dtype=np.float32),
-            "b_dn": np.zeros(n, dtype=np.float32),
-            "s_up": np.zeros(n, dtype=np.float32),
-            "s_dn": np.zeros(n, dtype=np.float32),
-            "m_up": np.zeros(n, dtype=np.float32),
-            "m_dn": np.zeros(n, dtype=np.float32),
-            "v_exp": np.zeros(n, dtype=np.float32),
-        }
-
-        for aid, idxs in asset_groups.items():
-            ast_high = high[idxs]
-            ast_low = low[idxs]
-            ast_close = close[idxs]
-            ast_ret = ret_1[idxs]
-            ast_vol = vol_g[idxs]
-
-            hv, hi = rolling_max_index_nb(ast_high, z)
-            lv, li = rolling_min_index_nb(ast_low, z)
-            st_idx = np.maximum(0, np.arange(ast_close.shape[0], dtype=np.int32) - z + 1)
-            st_px = ast_close[st_idx]
-
-            um = np.where(st_px > 1e-9, (hv - st_px) / st_px, 0.0).astype(np.float32)
-            dm = np.where(st_px > 1e-9, (st_px - lv) / st_px, 0.0).astype(np.float32)
-            rm = np.where(st_px > 1e-9, (hv - lv) / st_px, 0.0).astype(np.float32)
-
-            b_u, b_d, s_u, s_d, m_u, m_d, v_e = compute_impulse_coherence_nb(
-                ast_ret, ast_vol, hv, lv, st_px, hi, li, st_idx, z
-            )
-
-            cache["up"][idxs] = um
-            cache["dn"][idxs] = dm
-            cache["rng"][idxs] = rm
-            cache["std_up"][idxs] = rolling_std_nb(um, 30 * 24 * bph).astype(np.float32)
-            cache["std_dn"][idxs] = rolling_std_nb(dm, 30 * 24 * bph).astype(np.float32)
-            cache["b_up"][idxs] = b_u
-            cache["b_dn"][idxs] = b_d
-            cache["s_up"][idxs] = s_u
-            cache["s_dn"][idxs] = s_d
-            cache["m_up"][idxs] = m_u
-            cache["m_dn"][idxs] = m_d
-            cache["v_exp"][idxs] = v_e
-
-        z_cache[z] = cache
-
     return {
         "bph": bph,
         "high": high,
@@ -1069,7 +1732,7 @@ def _build_shared_cache(
         "n_timestamps": n_timestamps,
         "regime_ids": regime_ids,
         "folds": folds,
-        "z_cache": z_cache,
+        "z_grid": sorted(set(int(z * bph) for z in cfg.get("z_hours_grid", [6, 10, 16]))),
         "candidate_grid": _build_candidate_grid(cfg),
     }
 
@@ -1078,16 +1741,46 @@ def _build_shared_cache(
 # PHASE 1 + PHASE 2
 # =============================================================================
 
-def _phase1_subsample_indices(shared: Dict[str, Any], seed: int = 42) -> np.ndarray:
+def _phase1_subsample_indices(shared: Dict[str, Any], cfg: Dict[str, Any], seed: int = 42) -> np.ndarray:
     symbol_uniques = shared["symbol_uniques"]
     symbol_codes = shared["symbol_codes"]
     day_ids = shared["day_ids"]
 
-    selected_symbols = _rng_sample_half(list(range(symbol_uniques.shape[0])), seed=seed)
+    symbol_frac = float(cfg.get("stage1_symbol_fraction", 0.35))
+    history_frac = float(cfg.get("stage1_history_fraction", 0.35))
+    selected_symbols = _rng_sample_fraction(list(range(symbol_uniques.shape[0])), frac=symbol_frac, seed=seed)
     symbol_mask = np.isin(symbol_codes, np.asarray(selected_symbols, dtype=np.int32))
 
-    history_mask = _sample_half_history_mask(day_ids, seed=seed)
+    history_mask = _sample_history_fraction_mask(day_ids, frac=history_frac, seed=seed)
     return symbol_mask & history_mask
+
+
+def _build_phase_local_shared(
+    shared: Dict[str, Any],
+    subset_mask: np.ndarray,
+) -> Dict[str, Any]:
+    symbol_codes_local = shared["symbol_codes"][subset_mask]
+    day_ids_local_raw = shared["day_ids"][subset_mask]
+    _, day_ids_local = np.unique(day_ids_local_raw, return_inverse=True)
+    phase_local = {
+        "high": shared["high"][subset_mask],
+        "low": shared["low"][subset_mask],
+        "close": shared["close"][subset_mask],
+        "ret_1": shared["ret_1"][subset_mask],
+        "vol_g": shared["vol_g"][subset_mask],
+        "timestamps": shared["timestamps"][subset_mask],
+        "forward_returns": shared["forward_returns"][subset_mask],
+        "mae_high": shared["mae_high"][subset_mask],
+        "mfe_high": shared["mfe_high"][subset_mask],
+        "mae_low": shared["mae_low"][subset_mask],
+        "mfe_low": shared["mfe_low"][subset_mask],
+        "learn_X": shared["learn_X"][subset_mask],
+        "day_ids": day_ids_local.astype(np.int32),
+        "symbol_codes": symbol_codes_local,
+        "asset_groups": _build_asset_groups_from_codes(symbol_codes_local, shared["symbol_uniques"].shape[0]),
+    }
+    phase_local["n_days"] = int(np.max(phase_local["day_ids"]) + 1) if phase_local["day_ids"].shape[0] > 0 else 0
+    return phase_local
 
 
 def _compute_primary_phase1_classifier_gain(
@@ -1097,6 +1790,8 @@ def _compute_primary_phase1_classifier_gain(
     forward_returns: np.ndarray,
     timestamps: np.ndarray,
     ret_threshold: float,
+    max_samples_per_class: int = 0,
+    n_splits: int = 2,
 ) -> float:
     y_global = _mode_primary_target(mode, forward_returns, ret_threshold)
     valid = np.isfinite(forward_returns)
@@ -1104,10 +1799,11 @@ def _compute_primary_phase1_classifier_gain(
     idx_e = np.where(valid & side_mask)[0].astype(np.int32)
 
     if idx_e.shape[0] < 50 or idx_ne.shape[0] < 50:
-        return 0.0
+        return float("nan")
 
-    auc_ne = _classifier_oof_auc(learn_X[idx_ne], y_global[idx_ne], timestamps[idx_ne], n_splits=2)
-    auc_e = _classifier_oof_auc(learn_X[idx_e], y_global[idx_e], timestamps[idx_e], n_splits=2)
+    idx_e, idx_ne = _balanced_sample_indices(idx_e, idx_ne, max_samples_per_class, seed=42)
+    auc_ne = _classifier_oof_auc(learn_X[idx_ne], y_global[idx_ne], timestamps[idx_ne], n_splits=n_splits)
+    auc_e = _classifier_oof_auc(learn_X[idx_e], y_global[idx_e], timestamps[idx_e], n_splits=n_splits)
     return float(auc_e - auc_ne)
 
 
@@ -1117,6 +1813,8 @@ def _compute_full_metrics_for_candidate(
     shared: Dict[str, Any],
     feature_dict: Dict[str, np.ndarray],
     cfg: Dict[str, Any],
+    impulse_shape_dispersion: float,
+    basic_directionality_edge: float,
 ) -> Dict[str, float]:
     ret_threshold = float(cfg.get("phase1_ret_threshold", 0.0))
     learn_X = shared["learn_X"]
@@ -1129,28 +1827,76 @@ def _compute_full_metrics_for_candidate(
     idx_e = np.where(valid & side_mask)[0].astype(np.int32)
 
     metrics: Dict[str, float] = {
-        "primary_predictability_gain": 0.0,
-        "continuation_predictability_gain": 0.0,
-        "reversal_predictability_gain": 0.0,
-        "MAE_predictability_gain": 0.0,
-        "MFE_predictability_gain": 0.0,
-        "reversal_utility_gain": 0.0,
+        "primary_predictability_gain": float("nan"),
+        "continuation_predictability_gain": float("nan"),
+        "reversal_predictability_gain": float("nan"),
+        "MAE_predictability_gain": float("nan"),
+        "MFE_predictability_gain": float("nan"),
+        "reversal_utility_gain": float("nan"),
+        "mae_event_oos_r2": float("nan"),
+        "mfe_event_oos_r2": float("nan"),
+        "magnitude_delta_r": float("nan"),
+        "magnitude_positive_fold_fraction": float("nan"),
+        "magnitude_stability_score": float("nan"),
+        "magnitude_fold_count": float("nan"),
+        "magnitude_delta_fold_mean": float("nan"),
+        "magnitude_delta_fold_std": float("nan"),
+        "selected_delta_metric": "",
+        "incremental_information_delta_auc": float("nan"),
+        "incremental_information_positive_fold_fraction": float("nan"),
+        "incremental_information_positive_fold_count": float("nan"),
+        "incremental_information_fold_count": float("nan"),
+        "dispersion_to_edge_ratio": float("nan"),
+        "edge_to_dispersion_ratio": float("nan"),
+        "primary_predictability_gain_is_nan": 1.0,
     }
 
     if idx_e.shape[0] < 50 or idx_ne.shape[0] < 50:
+        if np.isfinite(impulse_shape_dispersion) and np.isfinite(basic_directionality_edge):
+            metrics["dispersion_to_edge_ratio"] = float(
+                impulse_shape_dispersion / max(abs(basic_directionality_edge), 1e-6)
+            )
+            metrics["edge_to_dispersion_ratio"] = float(
+                abs(basic_directionality_edge) / max(impulse_shape_dispersion, 1e-6)
+            )
         return metrics
 
+    max_samples_per_class = int(cfg.get("phase2_metric_max_samples_per_class", 25_000))
+    classifier_n_splits = int(cfg.get("phase2_classifier_n_splits", 2))
+    metric_fold_splits = int(cfg.get("phase2_metric_fold_splits", 3))
+    incremental_info_n_splits = int(cfg.get("incremental_information_n_splits", 3))
+    idx_e, idx_ne = _balanced_sample_indices(idx_e, idx_ne, max_samples_per_class, seed=123)
+
     # primary classifier
-    auc_ne = _classifier_oof_auc(learn_X[idx_ne], y_primary[idx_ne], timestamps[idx_ne], n_splits=2)
-    auc_e = _classifier_oof_auc(learn_X[idx_e], y_primary[idx_e], timestamps[idx_e], n_splits=2)
+    auc_ne = _classifier_oof_auc(learn_X[idx_ne], y_primary[idx_ne], timestamps[idx_ne], n_splits=classifier_n_splits)
+    auc_e = _classifier_oof_auc(learn_X[idx_e], y_primary[idx_e], timestamps[idx_e], n_splits=classifier_n_splits)
     primary_gain = float(auc_e - auc_ne)
     metrics["primary_predictability_gain"] = primary_gain
+    metrics["primary_predictability_gain_is_nan"] = 0.0
 
     # classify it into continuation/reversal labels for reporting
     if _mode_is_tf(mode):
         metrics["continuation_predictability_gain"] = primary_gain
     else:
         metrics["reversal_predictability_gain"] = primary_gain
+
+    metrics.update(
+        _incremental_information_metrics(
+            learn_X=learn_X,
+            side_mask=side_mask,
+            y_primary=y_primary,
+            timestamps=timestamps,
+            idx_e=idx_e,
+            idx_ne=idx_ne,
+            n_splits=incremental_info_n_splits,
+        )
+    )
+    metrics["dispersion_to_edge_ratio"] = float(
+        impulse_shape_dispersion / max(abs(basic_directionality_edge), 1e-6)
+    )
+    metrics["edge_to_dispersion_ratio"] = float(
+        abs(basic_directionality_edge) / max(impulse_shape_dispersion, 1e-6)
+    )
 
     # regression targets
     if mode == MODE_PRICE_UP_TF:
@@ -1170,17 +1916,56 @@ def _compute_full_metrics_for_candidate(
         mfe_arr = shared["mfe_low"]
         reversal_utility = _signed_mode_return(mode, forward_returns)
 
-    mae_ne = _ridge_regression_oof_r2(learn_X[idx_ne], mae_arr[idx_ne], timestamps[idx_ne], clip_q=0.98, n_splits=2)
-    mae_e = _ridge_regression_oof_r2(learn_X[idx_e], mae_arr[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=2)
+    mae_ne = _ridge_regression_oof_r2(
+        learn_X[idx_ne], mae_arr[idx_ne], timestamps[idx_ne], clip_q=0.98, n_splits=classifier_n_splits
+    )
+    mae_e = _ridge_regression_oof_r2(
+        learn_X[idx_e], mae_arr[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=classifier_n_splits
+    )
     metrics["MAE_predictability_gain"] = float(mae_e - mae_ne)
+    metrics["mae_event_oos_r2"] = float(mae_e)
 
-    mfe_ne = _ridge_regression_oof_r2(learn_X[idx_ne], mfe_arr[idx_ne], timestamps[idx_ne], clip_q=0.98, n_splits=2)
-    mfe_e = _ridge_regression_oof_r2(learn_X[idx_e], mfe_arr[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=2)
+    mfe_ne = _ridge_regression_oof_r2(
+        learn_X[idx_ne], mfe_arr[idx_ne], timestamps[idx_ne], clip_q=0.98, n_splits=classifier_n_splits
+    )
+    mfe_e = _ridge_regression_oof_r2(
+        learn_X[idx_e], mfe_arr[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=classifier_n_splits
+    )
     metrics["MFE_predictability_gain"] = float(mfe_e - mfe_ne)
+    metrics["mfe_event_oos_r2"] = float(mfe_e)
 
-    rev_ne = _ridge_regression_oof_r2(learn_X[idx_ne], reversal_utility[idx_ne], timestamps[idx_ne], clip_q=0.98, n_splits=2)
-    rev_e = _ridge_regression_oof_r2(learn_X[idx_e], reversal_utility[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=2)
+    rev_ne = _ridge_regression_oof_r2(
+        learn_X[idx_ne], reversal_utility[idx_ne], timestamps[idx_ne], clip_q=0.98, n_splits=classifier_n_splits
+    )
+    rev_e = _ridge_regression_oof_r2(
+        learn_X[idx_e], reversal_utility[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=classifier_n_splits
+    )
     metrics["reversal_utility_gain"] = float(rev_e - rev_ne)
+
+    mae_folds = _ridge_regression_fold_r2s(
+        learn_X[idx_e], mae_arr[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=metric_fold_splits
+    )
+    mfe_folds = _ridge_regression_fold_r2s(
+        learn_X[idx_e], mfe_arr[idx_e], timestamps[idx_e], clip_q=0.98, n_splits=metric_fold_splits
+    )
+
+    if np.isfinite(metrics["mfe_event_oos_r2"]) and (
+        not np.isfinite(metrics["mae_event_oos_r2"]) or metrics["mfe_event_oos_r2"] >= metrics["mae_event_oos_r2"]
+    ):
+        selected_folds = mfe_folds
+        metrics["magnitude_delta_r"] = float(metrics["mfe_event_oos_r2"])
+        metrics["selected_delta_metric"] = "mfe_event_oos_r2"
+    else:
+        selected_folds = mae_folds
+        metrics["magnitude_delta_r"] = float(metrics["mae_event_oos_r2"])
+        metrics["selected_delta_metric"] = "mae_event_oos_r2"
+
+    stability = _stability_from_fold_deltas(selected_folds)
+    metrics["magnitude_positive_fold_fraction"] = float(stability["positive_fold_fraction"])
+    metrics["magnitude_stability_score"] = float(stability["stability_score"])
+    metrics["magnitude_fold_count"] = float(stability["fold_count"])
+    metrics["magnitude_delta_fold_mean"] = float(stability["delta_fold_mean"])
+    metrics["magnitude_delta_fold_std"] = float(stability["delta_fold_std"])
 
     return metrics
 
@@ -1307,22 +2092,22 @@ def _run_mode_search(
 
     bph = shared["bph"]
     timestamps = shared["timestamps"]
-    timestamp_ids = shared["timestamp_ids"]
-    n_timestamps = shared["n_timestamps"]
     day_ids = shared["day_ids"]
     n_days = shared["n_days"]
     folds = shared["folds"]
-    z_cache = shared["z_cache"]
     forward_returns = shared["forward_returns"]
 
     ret_threshold = float(cfg.get("phase1_ret_threshold", 0.0))
-    phase1_mask = _phase1_subsample_indices(shared, seed=42)
+    phase1_mask = _phase1_subsample_indices(shared, cfg, seed=42)
+    phase1_shared = _build_phase_local_shared(shared, phase1_mask)
     candidate_grid = shared["candidate_grid"]
     candidate_registry: Dict[str, Dict[str, Any]] = {}
 
     # cache by geometry key
     geom_cache_phase1: Dict[str, Dict[str, Any]] = {}
     geom_cache_phase2: Dict[str, Dict[str, Any]] = {}
+    phase1_z_cache: Dict[int, Dict[str, np.ndarray]] = {}
+    phase2_z_cache: Dict[int, Dict[str, np.ndarray]] = {}
 
     phase1_rows: List[Dict[str, Any]] = []
 
@@ -1333,19 +2118,12 @@ def _run_mode_search(
 
     global_target = _mode_primary_target(mode, forward_returns, ret_threshold)
     phase1_global_idx = np.where(phase1_mask)[0]
+    phase1_global_target = global_target[phase1_mask]
+    phase1_valid_fwd = np.isfinite(phase1_shared["forward_returns"])
+    phase1_n_assets = max(1, len(phase1_shared["asset_groups"]))
 
     phase1_ratio = float(np.sum(phase1_mask)) / float(phase1_mask.shape[0]) if phase1_mask.shape[0] > 0 else 1.0
     phase1_min_total_events = max(10, int(cfg.get("phase1_min_total_events", 5000) * phase1_ratio))
-
-    phase1_day_ids = day_ids[phase1_mask]
-    phase1_n_days = int(np.unique(phase1_day_ids).shape[0])
-    phase1_mae_high = shared["mae_high"][phase1_mask]
-    phase1_mfe_high = shared["mfe_high"][phase1_mask]
-    phase1_mae_low = shared["mae_low"][phase1_mask]
-    phase1_mfe_low = shared["mfe_low"][phase1_mask]
-    phase1_learn_X = shared["learn_X"][phase1_mask]
-    phase1_timestamps = timestamps[phase1_mask]
-    phase1_fwd_ret = forward_returns[phase1_mask]
 
     global_to_phase1_local = np.full(forward_returns.shape[0], -1, dtype=np.int32)
     global_to_phase1_local[phase1_global_idx] = np.arange(phase1_global_idx.shape[0], dtype=np.int32)
@@ -1362,73 +2140,76 @@ def _run_mode_search(
         candidate_registry[key] = {"family": fam, "z_hours": int(z_hr), "duration_hours": int(d_hr), "param": param}
 
         if key not in geom_cache_phase1:
-            zc = z_cache[z]
-            m_high_full, m_low_full = _generate_event_masks_fast(
+            if z not in phase1_z_cache:
+                tprint(f"Precomputing Phase 1 rolling tensors for z={z} bars...")
+                phase1_z_cache[z] = _compute_z_cache(
+                    high=phase1_shared["high"],
+                    low=phase1_shared["low"],
+                    close=phase1_shared["close"],
+                    ret_1=phase1_shared["ret_1"],
+                    vol_g=phase1_shared["vol_g"],
+                    asset_groups=phase1_shared["asset_groups"],
+                    z=z,
+                    bph=bph,
+                )
+            zc = phase1_z_cache[z]
+            m_high, m_low = _generate_event_masks_fast(
                 family=fam,
                 param_val=param,
                 up_move=zc["up"],
                 dn_move=zc["dn"],
                 rolling_std_up=zc["std_up"],
                 rolling_std_dn=zc["std_dn"],
-                asset_groups=shared["asset_groups"],
+                asset_groups=phase1_shared["asset_groups"],
                 duration_bars=duration_bars,
             )
-            m_high = m_high_full[phase1_mask]
-            m_low = m_low_full[phase1_mask]
-
             side_mask = _get_side_mask(mode, m_high, m_low)
 
-            total_events = simple_mask_count_nb(side_mask)
+            total_events = simple_mask_count_safe(side_mask)
             if total_events < phase1_min_total_events:
                 geom_cache_phase1[key] = {"rejected": True}
                 continue
 
-            active_days_frac = active_days_fraction_nb(side_mask, phase1_day_ids, phase1_n_days)
+            active_days_frac = active_days_fraction_safe(side_mask, phase1_shared["day_ids"], phase1_shared["n_days"])
             if active_days_frac < float(cfg.get("phase1_min_active_days_fraction", 0.80)):
                 geom_cache_phase1[key] = {"rejected": True}
                 continue
 
             if _mode_is_up(mode):
-                coh = _coherence_metrics_single_side(side_mask, zc["b_up"][phase1_mask], zc["s_up"][phase1_mask], zc["m_up"][phase1_mask])
+                coh = _coherence_metrics_single_side(side_mask, zc["b_up"], zc["s_up"], zc["m_up"])
             else:
-                coh = _coherence_metrics_single_side(side_mask, zc["b_dn"][phase1_mask], zc["s_dn"][phase1_mask], zc["m_dn"][phase1_mask])
+                coh = _coherence_metrics_single_side(side_mask, zc["b_dn"], zc["s_dn"], zc["m_dn"])
 
             distinct = _compute_regime_distinctness_single_side(
                 side_mask=side_mask,
                 mode=mode,
-                forward_returns=phase1_fwd_ret,
-                mae_high=phase1_mae_high,
-                mfe_high=phase1_mfe_high,
-                mae_low=phase1_mae_low,
-                mfe_low=phase1_mfe_low,
+                forward_returns=phase1_shared["forward_returns"],
+                mae_high=phase1_shared["mae_high"],
+                mfe_high=phase1_shared["mfe_high"],
+                mae_low=phase1_shared["mae_low"],
+                mfe_low=phase1_shared["mfe_low"],
             )
 
-            ev_day_mean, ev_day_std = daily_event_stats_nb(side_mask, phase1_day_ids, phase1_n_days)
+            ev_day_mean, ev_day_std = daily_event_stats_safe(side_mask, phase1_shared["day_ids"], phase1_shared["n_days"])
+            ev_day_per_asset = float(total_events) / float(max(1, phase1_shared["n_days"] * phase1_n_assets))
 
             fold_rates = []
+            fold_event_counts = []
             for val_idx_local in phase1_fold_val_locals:
                 if val_idx_local.shape[0] == 0:
                     continue
-                fold_rates.append(fold_base_rate_nb(side_mask, global_target[phase1_mask], val_idx_local))
+                fold_event_counts.append(float(np.sum(side_mask[val_idx_local])))
+                fold_rates.append(fold_base_rate_safe(side_mask, phase1_global_target, val_idx_local))
             fold_rate_std = float(np.std(np.asarray(fold_rates, dtype=np.float32))) if fold_rates else 1.0
+            fold_event_count_std = float(np.std(np.asarray(fold_event_counts, dtype=np.float32))) if fold_event_counts else 1.0
 
-            valid_fwd_p1 = np.isfinite(forward_returns[phase1_mask])
-            global_target_p1 = global_target[phase1_mask]
-
-            non_event = (~side_mask) & valid_fwd_p1
-            if np.any(side_mask & valid_fwd_p1) and np.any(non_event):
-                basic_edge = float(np.nanmean(global_target_p1[side_mask & valid_fwd_p1]) - np.nanmean(global_target_p1[non_event]))
+            non_event = (~side_mask) & phase1_valid_fwd
+            if np.any(side_mask & phase1_valid_fwd) and np.any(non_event):
+                basic_edge = float(
+                    np.nanmean(phase1_global_target[side_mask & phase1_valid_fwd]) - np.nanmean(phase1_global_target[non_event])
+                )
             else:
                 basic_edge = 0.0
-
-            primary_gain = _compute_primary_phase1_classifier_gain(
-                mode=mode,
-                side_mask=side_mask,
-                learn_X=phase1_learn_X,
-                forward_returns=phase1_fwd_ret,
-                timestamps=phase1_timestamps,
-                ret_threshold=ret_threshold,
-            )
 
             stats = {
                 "rejected": False,
@@ -1436,14 +2217,16 @@ def _run_mode_search(
                 "active_days_fraction": float(active_days_frac),
                 "events_per_day_mean": float(ev_day_mean),
                 "events_per_day_std": float(ev_day_std),
+                "events_per_day_per_asset": float(ev_day_per_asset),
                 "bars_to_peak_dispersion": float(coh["bars_to_peak_dispersion"]),
                 "speed_dispersion": float(coh["speed_dispersion"]),
                 "monotonicity_dispersion": float(coh["monotonicity_dispersion"]),
                 "impulse_shape_dispersion": float(coh["impulse_shape_dispersion"]),
                 "regime_distinctness_score": float(distinct),
                 "fold_base_rate_stability": float(fold_rate_std),
+                "fold_continuation_rate_std": float(fold_rate_std),
+                "fold_event_count_std": float(fold_event_count_std),
                 "basic_directionality_edge_event_vs_non_event": float(basic_edge),
-                "primary_predictability_gain": float(primary_gain),
             }
             geom_cache_phase1[key] = stats
 
@@ -1467,14 +2250,12 @@ def _run_mode_search(
     df1["phase1_proxy_score"] = (
         _zscore_np(df1["active_days_fraction"].values)
         + _zscore_np(df1["regime_distinctness_score"].values)
-        + _zscore_np(df1["basic_directionality_edge_event_vs_non_event"].values)
-        + _zscore_np(df1["primary_predictability_gain"].values)
         - _zscore_np(df1["impulse_shape_dispersion"].values)
-        - _zscore_np(df1["fold_base_rate_stability"].values)
-        - _zscore_np(df1["events_per_day_std"].values)
+        - _zscore_np(df1["fold_continuation_rate_std"].values)
+        - _zscore_np(df1["fold_event_count_std"].values)
     )
 
-    df1 = df1.sort_values("phase1_proxy_score", ascending=False).head(15).copy()
+    df1 = df1.sort_values("phase1_proxy_score", ascending=False).head(int(cfg.get("top_k_for_learnability", 8))).copy()
 
     # -------------------------------------------------------------------------
     # Phase 2: full symbols & history + full metrics, only top phase1 candidates
@@ -1482,7 +2263,7 @@ def _run_mode_search(
     tprint(f"Phase 2 ({mode}): full symbols/history for top {len(df1)} candidates...")
 
     phase2_rows: List[Dict[str, Any]] = []
-    candidate_masks: Dict[str, Dict[str, np.ndarray]] = {}
+    phase2_n_assets = max(1, len(shared["asset_groups"]))
 
     for _, row in df1.iterrows():
         name = row["name"]
@@ -1497,7 +2278,19 @@ def _run_mode_search(
         key = name
 
         if key not in geom_cache_phase2:
-            zc = z_cache[z]
+            if z not in phase2_z_cache:
+                tprint(f"Precomputing Phase 2 rolling tensors for z={z} bars...")
+                phase2_z_cache[z] = _compute_z_cache(
+                    high=shared["high"],
+                    low=shared["low"],
+                    close=shared["close"],
+                    ret_1=shared["ret_1"],
+                    vol_g=shared["vol_g"],
+                    asset_groups=shared["asset_groups"],
+                    z=z,
+                    bph=bph,
+                )
+            zc = phase2_z_cache[z]
             m_high, m_low = _generate_event_masks_fast(
                 family=fam,
                 param_val=param,
@@ -1514,7 +2307,7 @@ def _run_mode_search(
                 geom_cache_phase2[key] = {"rejected": True}
                 continue
 
-            active_days_frac = active_days_fraction_nb(side_mask, day_ids, n_days)
+            active_days_frac = active_days_fraction_safe(side_mask, day_ids, n_days)
             if active_days_frac < float(cfg.get("phase2_min_active_days_fraction", 0.80)):
                 geom_cache_phase2[key] = {"rejected": True}
                 continue
@@ -1534,10 +2327,16 @@ def _run_mode_search(
                 mfe_low=shared["mfe_low"],
             )
 
-            ev_day_mean, ev_day_std = daily_event_stats_nb(side_mask, day_ids, n_days)
+            ev_day_mean, ev_day_std = daily_event_stats_safe(side_mask, day_ids, n_days)
+            ev_day_per_asset = float(total_events) / float(max(1, n_days * phase2_n_assets))
+            side_vol_exp = zc["v_exp"][side_mask & np.isfinite(zc["v_exp"])]
+            post_event_vol_dispersion = float(np.std(side_vol_exp)) if side_vol_exp.shape[0] > 1 else 0.0
 
-            fold_rates = [fold_base_rate_nb(side_mask, global_target, va) for _, va in folds]
+            fold_rates = [fold_base_rate_safe(side_mask, global_target, va) for _, va in folds]
+            fold_event_counts = [float(np.sum(side_mask[va])) for _, va in folds]
             fold_rate_std = float(np.std(np.asarray(fold_rates, dtype=np.float32))) if fold_rates else 1.0
+            fold_continuation_rate_std = fold_rate_std
+            fold_event_count_std = float(np.std(np.asarray(fold_event_counts, dtype=np.float32))) if fold_event_counts else 1.0
 
             valid_fwd_p2 = np.isfinite(forward_returns)
             non_event = (~side_mask) & valid_fwd_p2
@@ -1546,7 +2345,16 @@ def _run_mode_search(
             else:
                 basic_edge = 0.0
 
-            full_metrics = _compute_full_metrics_for_candidate(mode, side_mask, shared, feature_dict, cfg)
+            full_metrics = _compute_full_metrics_for_candidate(
+                mode,
+                side_mask,
+                shared,
+                feature_dict,
+                cfg,
+                float(coh["impulse_shape_dispersion"]),
+                float(basic_edge),
+            )
+            legacy_metrics = _compute_legacy_conditional_learnability(mode, side_mask, shared, cfg)
 
             geom_cache_phase2[key] = {
                 "rejected": False,
@@ -1554,35 +2362,24 @@ def _run_mode_search(
                 "active_days_fraction": float(active_days_frac),
                 "events_per_day_mean": float(ev_day_mean),
                 "events_per_day_std": float(ev_day_std),
+                "events_per_day_per_asset": float(ev_day_per_asset),
                 "bars_to_peak_dispersion": float(coh["bars_to_peak_dispersion"]),
                 "speed_dispersion": float(coh["speed_dispersion"]),
                 "monotonicity_dispersion": float(coh["monotonicity_dispersion"]),
                 "impulse_shape_dispersion": float(coh["impulse_shape_dispersion"]),
+                "post_event_vol_dispersion": float(post_event_vol_dispersion),
                 "regime_distinctness_score": float(distinct),
                 "fold_base_rate_stability": float(fold_rate_std),
+                "fold_continuation_rate_std": float(fold_continuation_rate_std),
+                "fold_event_count_std": float(fold_event_count_std),
                 "basic_directionality_edge_event_vs_non_event": float(basic_edge),
                 **full_metrics,
+                **legacy_metrics,
             }
 
         stats = geom_cache_phase2[key]
         if stats.get("rejected", False):
             continue
-
-        zc = z_cache[z]
-        m_high, m_low = _generate_event_masks_fast(
-            family=fam,
-            param_val=param,
-            up_move=zc["up"],
-            dn_move=zc["dn"],
-            rolling_std_up=zc["std_up"],
-            rolling_std_dn=zc["std_dn"],
-            asset_groups=shared["asset_groups"],
-            duration_bars=duration_bars,
-        )
-        candidate_masks[key] = {
-            "m_high": m_high,
-            "m_low": m_low,
-        }
 
         phase2_rows.append({
             "name": key,
@@ -1590,6 +2387,7 @@ def _run_mode_search(
             "z_hours": z_hr,
             "param": _safe_param_to_string(param),
             "duration_hours": d_hr,
+            "conditioner_mode": "none",
             **{k: v for k, v in stats.items() if k not in {"rejected"}},
         })
 
@@ -1597,26 +2395,204 @@ def _run_mode_search(
         return {"status": "failed", "reason": f"no_phase2_candidates_{mode}"}
 
     df2 = pd.DataFrame(phase2_rows)
+    df2["D_r"] = (
+        0.35 * _zscore_np(df2["impulse_shape_dispersion"].values)
+        + 0.35 * _zscore_np(df2["bars_to_peak_dispersion"].values)
+        + 0.10 * _zscore_np(df2["speed_dispersion"].values)
+        + 0.20 * _zscore_np(df2["monotonicity_dispersion"].values)
+    )
+    df2["N_r"] = df2["total_events"].astype(np.float32)
+    df2["delta_r"] = df2["magnitude_delta_r"].astype(np.float32)
+    df2["S_r"] = df2["magnitude_stability_score"].astype(np.float32)
+    df2["positive_fold_fraction_r"] = df2["magnitude_positive_fold_fraction"].astype(np.float32)
+    df2["selected_delta_metric"] = df2["selected_delta_metric"].astype(str)
+    primary_col = _mode_primary_predictability_col(mode)
+    df2["bucket_primary_predictability_gain"] = df2[primary_col].astype(np.float32)
+    df2["predictability_gain"] = [
+        _mode_predictability_gain_from_metrics(mode, row.to_dict()) for _, row in df2.iterrows()
+    ]
+    df2["acceptance_pass"] = True
+    min_predictability_gain = float(cfg.get("min_predictability_gain", 0.0))
+    min_positive_fold_fraction = float(cfg.get("min_positive_fold_fraction", 0.0))
+    if bool(cfg.get("enable_learnability_check", True)):
+        primary_gain = df2["bucket_primary_predictability_gain"].values
+        incr_gain = df2["incremental_information_delta_auc"].values
+        incr_pos_frac = df2["incremental_information_positive_fold_fraction"].values
+        primary_ok = np.isfinite(primary_gain) & (primary_gain > min_predictability_gain)
+        incr_ok = np.isfinite(incr_gain) & (incr_gain > 0.0)
+        if min_positive_fold_fraction > 0.0:
+            incr_ok = incr_ok & np.isfinite(incr_pos_frac) & (incr_pos_frac >= min_positive_fold_fraction)
+        df2.loc[~(primary_ok | incr_ok), "acceptance_pass"] = False
+    df2 = df2[df2["acceptance_pass"] == True].copy()
+    if df2.empty:
+        return {"status": "failed", "reason": f"learnability_check_failed_{mode}", "layer0_candidate_table_": df2}
 
-    # shortlist score
-    if _mode_is_tf(mode):
-        primary_col = "continuation_predictability_gain"
-    else:
-        primary_col = "reversal_predictability_gain"
+    disp_q = float(cfg.get("max_allowed_dispersion_quantile", 0.75))
+    q_thresh = float(df2["impulse_shape_dispersion"].quantile(disp_q))
+    df2 = df2[df2["impulse_shape_dispersion"] <= q_thresh].copy()
+    if df2.empty:
+        return {"status": "failed", "reason": f"dispersion_caps_{mode}", "layer0_candidate_table_": df2}
 
     df2["shortlist_score"] = (
         _zscore_np(df2["active_days_fraction"].values)
-        + _zscore_np(df2["regime_distinctness_score"].values)
-        + _zscore_np(df2[primary_col].values)
-        + 0.3 * _zscore_np(df2["MFE_predictability_gain"].values)
-        + 0.2 * _zscore_np(df2["reversal_utility_gain"].values)
-        - _zscore_np(df2["impulse_shape_dispersion"].values)
-        - _zscore_np(df2["fold_base_rate_stability"].values)
+        + _zscore_np(df2["events_per_day_mean"].values)
         - _zscore_np(df2["events_per_day_std"].values)
+        - _zscore_np(df2["impulse_shape_dispersion"].values)
+        - _zscore_np(df2["post_event_vol_dispersion"].values)
+        - _zscore_np(df2["fold_continuation_rate_std"].values)
+        + _zscore_np(df2["bucket_primary_predictability_gain"].values)
+        + 0.30 * _zscore_np(df2["MFE_predictability_gain"].values)
+        + 0.20 * _zscore_np(df2["reversal_utility_gain"].values)
+        + _zscore_np(df2["regime_distinctness_score"].values)
     )
+    df2["score_r"] = df2["shortlist_score"].astype(np.float32)
+    df2["decision"] = "ranked"
+    df2["regime_id"] = df2["name"].astype(str)
+    df2["regime_definition"] = df2["name"].astype(str)
+    df2["rationale"] = df2.apply(_build_regime_rationale, axis=1)
 
+    df2 = df2.sort_values("shortlist_score", ascending=False)
+    shortlist_idx: List[int] = []
     shortlist_max = int(cfg.get("shortlist_max_candidates", 4))
-    df_short = df2.sort_values("shortlist_score", ascending=False).head(shortlist_max).copy()
+    shortlist_max_per_family = int(cfg.get("shortlist_max_per_family", 2))
+    fam_counts: Dict[str, int] = {}
+    for idx, row in df2.iterrows():
+        fam = str(row["family"])
+        if len(shortlist_idx) >= shortlist_max:
+            break
+        if fam_counts.get(fam, 0) < shortlist_max_per_family:
+            fam_counts[fam] = fam_counts.get(fam, 0) + 1
+            shortlist_idx.append(idx)
+    df_short = df2.loc[shortlist_idx].copy()
+    if df_short.empty:
+        return {"status": "failed", "reason": f"no_shortlist_candidates_{mode}", "layer0_candidate_table_": df2}
+
+    candidate_masks: Dict[str, Dict[str, np.ndarray]] = {}
+    for _, row in df_short.iterrows():
+        name = row["name"]
+        reg = candidate_registry[name]
+        z = int(int(reg["z_hours"]) * bph)
+        duration_bars = int(int(reg["duration_hours"]) * bph)
+        if z not in phase2_z_cache:
+            tprint(f"Precomputing Phase 2 rolling tensors for z={z} bars...")
+            phase2_z_cache[z] = _compute_z_cache(
+                high=shared["high"],
+                low=shared["low"],
+                close=shared["close"],
+                ret_1=shared["ret_1"],
+                vol_g=shared["vol_g"],
+                asset_groups=shared["asset_groups"],
+                z=z,
+                bph=bph,
+            )
+        zc = phase2_z_cache[z]
+        m_high, m_low = _generate_event_masks_fast(
+            family=reg["family"],
+            param_val=reg["param"],
+            up_move=zc["up"],
+            dn_move=zc["dn"],
+            rolling_std_up=zc["std_up"],
+            rolling_std_dn=zc["std_dn"],
+            asset_groups=shared["asset_groups"],
+            duration_bars=duration_bars,
+        )
+        candidate_masks[name] = {"m_high": m_high, "m_low": m_low}
+
+    cond_rows: List[pd.Series] = []
+    if bool(cfg.get("enable_secondary_conditioners", True)):
+        spread_to_atr = np.nan_to_num(
+            np.asarray(feature_dict.get("spread_to_atr", np.zeros_like(shared["close"], dtype=np.float32)), dtype=np.float32),
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        alternation_array = np.asarray(shared.get("alternation", np.zeros_like(shared["close"], dtype=np.float32)), dtype=np.float32)
+        for _, row in df_short.iterrows():
+            cand_name = str(row["name"])
+            reg = candidate_registry[cand_name]
+            z = int(int(reg["z_hours"]) * bph)
+            zc = phase2_z_cache[z]
+            base_masks = candidate_masks[cand_name]
+            for conditioner in cfg.get("conditioner_modes", ["none"]):
+                if conditioner == "none":
+                    continue
+                new_h, new_l = _apply_secondary_conditioner(
+                    base_masks["m_high"],
+                    base_masks["m_low"],
+                    conditioner,
+                    zc["m_up"],
+                    zc["m_dn"],
+                    zc["v_exp"],
+                    spread_to_atr,
+                    alternation_array,
+                )
+                new_side_mask = _get_side_mask(mode, new_h, new_l)
+                tot_events = int(np.sum(new_side_mask))
+                if tot_events < int(cfg.get("phase2_min_total_events", 5000)):
+                    continue
+                coh = (
+                    _coherence_metrics_single_side(new_side_mask, zc["b_up"], zc["s_up"], zc["m_up"])
+                    if _mode_is_up(mode)
+                    else _coherence_metrics_single_side(new_side_mask, zc["b_dn"], zc["s_dn"], zc["m_dn"])
+                )
+                new_fold_rates = [fold_base_rate_safe(new_side_mask, global_target, va) for _, va in folds]
+                new_fold_cont_std = float(np.std(np.asarray(new_fold_rates, dtype=np.float32))) if new_fold_rates else 1.0
+                base_disp = float(row.get("impulse_shape_dispersion", 1e9))
+                base_f_cont = float(row.get("fold_continuation_rate_std", 1e9))
+                improved = (
+                    coh["impulse_shape_dispersion"] < base_disp * 0.95
+                    or new_fold_cont_std < base_f_cont * 0.95
+                )
+                if not improved:
+                    continue
+                valid_new = np.isfinite(forward_returns)
+                non_event_new = (~new_side_mask) & valid_new
+                if np.any(new_side_mask & valid_new) and np.any(non_event_new):
+                    basic_edge_new = float(
+                        np.nanmean(global_target[new_side_mask & valid_new]) - np.nanmean(global_target[non_event_new])
+                    )
+                else:
+                    basic_edge_new = 0.0
+                new_metrics = _compute_full_metrics_for_candidate(
+                    mode,
+                    new_side_mask,
+                    shared,
+                    feature_dict,
+                    cfg,
+                    float(coh["impulse_shape_dispersion"]),
+                    float(basic_edge_new),
+                )
+                gain_max = _mode_predictability_gain_from_metrics(mode, new_metrics)
+                new_row = row.copy()
+                new_name = cand_name + f"_{conditioner}"
+                new_row["name"] = new_name
+                new_row["conditioner_mode"] = conditioner
+                new_row["total_events"] = tot_events
+                new_row["impulse_shape_dispersion"] = float(coh["impulse_shape_dispersion"])
+                new_row["fold_continuation_rate_std"] = float(new_fold_cont_std)
+                new_row["predictability_gain"] = float(gain_max)
+                new_row["bucket_primary_predictability_gain"] = float(new_metrics.get(primary_col, np.nan))
+                new_row["continuation_predictability_gain"] = new_metrics.get("continuation_predictability_gain", np.nan)
+                new_row["reversal_predictability_gain"] = new_metrics.get("reversal_predictability_gain", np.nan)
+                new_row["MAE_predictability_gain"] = new_metrics.get("MAE_predictability_gain", np.nan)
+                new_row["MFE_predictability_gain"] = new_metrics.get("MFE_predictability_gain", np.nan)
+                new_row["incremental_information_delta_auc"] = new_metrics.get("incremental_information_delta_auc", np.nan)
+                new_row["incremental_information_positive_fold_fraction"] = new_metrics.get("incremental_information_positive_fold_fraction", np.nan)
+                new_row["incremental_information_positive_fold_count"] = new_metrics.get("incremental_information_positive_fold_count", np.nan)
+                new_row["incremental_information_fold_count"] = new_metrics.get("incremental_information_fold_count", np.nan)
+                new_row["dispersion_to_edge_ratio"] = new_metrics.get("dispersion_to_edge_ratio", np.nan)
+                new_row["edge_to_dispersion_ratio"] = new_metrics.get("edge_to_dispersion_ratio", np.nan)
+                new_row["primary_predictability_gain_is_nan"] = new_metrics.get("primary_predictability_gain_is_nan", 1.0)
+                cond_rows.append(new_row)
+                candidate_masks[new_name] = {"m_high": new_h, "m_low": new_l}
+
+    if cond_rows:
+        df_short = pd.concat([df_short, pd.DataFrame(cond_rows)], ignore_index=True)
+        df_short["shortlist_score"] = (
+            df_short["shortlist_score"].astype(np.float32)
+            + 0.5 * _zscore_np(df_short["bucket_primary_predictability_gain"].values)
+        )
+        df_short = df_short.sort_values("shortlist_score", ascending=False).copy()
 
     final_diag_k = int(cfg.get("final_top_k_for_diagnostics", 3))
     df_diag_input = df_short.sort_values("shortlist_score", ascending=False).head(final_diag_k).copy()
@@ -1639,6 +2615,63 @@ def _run_mode_search(
     }
 
 
+def _mode_worker(
+    conn: Any,
+    mode: str,
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    forward_returns: np.ndarray,
+    cfg: Dict[str, Any],
+) -> None:
+    try:
+        shared = _build_shared_cache(data, feature_dict, forward_returns, cfg)
+        res = _run_mode_search(mode, shared, feature_dict, cfg)
+        conn.send(("ok", res))
+    except Exception:
+        conn.send(("error", traceback.format_exc()))
+    finally:
+        conn.close()
+
+
+def _run_mode_search_isolated(
+    mode: str,
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    forward_returns: np.ndarray,
+    cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    ctx = mp.get_context("spawn")
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
+    proc = ctx.Process(
+        target=_mode_worker,
+        args=(child_conn, mode, data, feature_dict, forward_returns, cfg),
+    )
+    proc.start()
+    child_conn.close()
+    payload: Optional[Tuple[str, Any]] = None
+    timeout_seconds = float(cfg.get("mask_opt_mode_timeout_seconds", 0.0))
+    if timeout_seconds > 0:
+        if parent_conn.poll(timeout_seconds):
+            payload = parent_conn.recv()
+    else:
+        payload = parent_conn.recv()
+    if payload is None:
+        proc.join(timeout=1.0)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join()
+            return {"status": "failed", "reason": f"mode_timeout_{mode}"}
+        return {"status": "failed", "reason": f"mode_crashed_{mode}_exit_{proc.exitcode}"}
+    proc.join(timeout=5.0)
+    if proc.is_alive():
+        proc.terminate()
+        proc.join()
+    status, body = payload
+    if status == "ok":
+        return body
+    return {"status": "failed", "reason": f"mode_exception_{mode}", "traceback": body}
+
+
 # =============================================================================
 # PUBLIC ORCHESTRATOR
 # =============================================================================
@@ -1650,44 +2683,101 @@ def optimize_layer0_masks_by_mode(
     cfg: Dict[str, Any],
     modes: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    return optimize_layer_masks_by_mode(data, feature_dict, forward_returns, cfg, modes=modes, layer_name="layer0")
+
+
+def optimize_layer_masks_by_mode(
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    forward_returns: np.ndarray,
+    cfg: Dict[str, Any],
+    modes: Optional[List[str]] = None,
+    layer_name: str = "layer0",
+) -> Dict[str, Any]:
     if modes is None:
         modes = ALL_MODES[:]
 
-    shared = _build_shared_cache(data, feature_dict, forward_returns, cfg)
+    runtime_cfg = _materialize_layer_runtime_cfg(cfg, layer_name)
+    data, feature_dict, forward_returns = _cap_rows_for_optimization(
+        data=data,
+        feature_dict=feature_dict,
+        forward_returns=np.asarray(forward_returns, dtype=np.float32),
+        cfg=runtime_cfg,
+        seed=42,
+    )
+    runtime_cfg = _rescale_mode_gates_for_sample_size(runtime_cfg, int(data.shape[0]))
 
     mode_results: Dict[str, Any] = {}
     summary_rows: List[Dict[str, Any]] = []
+    isolate_modes = bool(runtime_cfg.get("mask_opt_isolate_modes", True)) and len(modes) > 1
+    shared: Optional[Dict[str, Any]] = None
+    if not isolate_modes:
+        shared = _build_shared_cache(data, feature_dict, forward_returns, runtime_cfg)
 
     for mode in modes:
-        res = _run_mode_search(mode, shared, feature_dict, cfg)
+        if isolate_modes:
+            tprint(f"Running mode {mode} in isolated subprocess...")
+            res = _run_mode_search_isolated(mode, data, feature_dict, forward_returns, runtime_cfg)
+        else:
+            assert shared is not None
+            res = _run_mode_search(mode, shared, feature_dict, runtime_cfg)
         mode_results[mode] = res
 
         if res.get("status") == "ok":
             best = res["layer0_best_config_"]
+            primary_col = _mode_primary_predictability_col(mode)
             summary_rows.append({
                 "mode": mode,
                 "status": "ok",
+                "best_name": str(best.get("name", "")),
                 "candidate_count": len(res["layer0_candidate_table_"]),
                 "shortlist_count": len(res["layer0_shortlist_"]),
                 "best_shortlist_score": float(best.get("shortlist_score", 0.0)),
+                "score_r": float(best.get("score_r", best.get("shortlist_score", 0.0))),
+                "delta_r": _metric_or_nan(best.get("delta_r")),
+                "N_r": float(best.get("N_r", best.get("total_events", 0.0))),
+                "S_r": _metric_or_nan(best.get("S_r")),
+                "D_r": _metric_or_nan(best.get("D_r")),
                 "event_count": int(best.get("total_events", 0)),
                 "active_days_fraction": float(best.get("active_days_fraction", 0.0)),
-                "primary_gain": float(
-                    best.get("continuation_predictability_gain", 0.0)
-                    if _mode_is_tf(mode)
-                    else best.get("reversal_predictability_gain", 0.0)
-                ),
+                "events_per_day_mean": _metric_or_nan(best.get("events_per_day_mean")),
+                "events_per_day_std": _metric_or_nan(best.get("events_per_day_std")),
+                "events_per_day_per_asset": _metric_or_nan(best.get("events_per_day_per_asset")),
+                "primary_gain": _metric_or_nan(best.get(primary_col)),
+                "primary_gain_is_nan": _metric_or_nan(best.get("primary_predictability_gain_is_nan")),
+                "incremental_information_delta_auc": _metric_or_nan(best.get("incremental_information_delta_auc")),
+                "incremental_information_positive_fold_fraction": _metric_or_nan(best.get("incremental_information_positive_fold_fraction")),
+                "dispersion_to_edge_ratio": _metric_or_nan(best.get("dispersion_to_edge_ratio")),
+                "selected_delta_metric": str(best.get("selected_delta_metric", "")),
+                "decision": str(best.get("decision", "ranked")),
+                "rationale": str(best.get("rationale", "")),
             })
         else:
             summary_rows.append({
                 "mode": mode,
                 "status": res.get("reason", "failed"),
+                "best_name": "",
                 "candidate_count": 0,
                 "shortlist_count": 0,
                 "best_shortlist_score": 0.0,
+                "score_r": float("nan"),
+                "delta_r": float("nan"),
+                "N_r": 0.0,
+                "S_r": float("nan"),
+                "D_r": float("nan"),
                 "event_count": 0,
                 "active_days_fraction": 0.0,
+                "events_per_day_mean": float("nan"),
+                "events_per_day_std": float("nan"),
+                "events_per_day_per_asset": float("nan"),
                 "primary_gain": 0.0,
+                "primary_gain_is_nan": float("nan"),
+                "incremental_information_delta_auc": float("nan"),
+                "incremental_information_positive_fold_fraction": float("nan"),
+                "dispersion_to_edge_ratio": float("nan"),
+                "selected_delta_metric": "",
+                "decision": "failed",
+                "rationale": "",
             })
 
     return {
@@ -1717,8 +2807,15 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
     cfg["phase2_min_total_events"] = 5000
     cfg["phase1_min_active_days_fraction"] = 0.80
     cfg["phase2_min_active_days_fraction"] = 0.80
+    cfg["mask_opt_target_event_density"] = 0.025
+    cfg["mask_opt_min_events_floor"] = 150
+    cfg["mask_opt_min_active_days_floor"] = 0.25
+    cfg["min_positive_fold_fraction"] = 0.60
     cfg["shortlist_max_candidates"] = 4
     cfg["final_top_k_for_diagnostics"] = 3
+    cfg["mask_opt_max_rows"] = 30_000
+    cfg["phase1_classifier_max_samples_per_class"] = int(cfg.get("phase1_classifier_max_samples_per_class", 15_000))
+    cfg["phase2_metric_max_samples_per_class"] = int(cfg.get("phase2_metric_max_samples_per_class", 25_000))
 
     if args.data_root:
         cfg["data_root"] = _resolve_path(args.data_root)
@@ -1752,12 +2849,16 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
             raw = base.replace("symbol=", "")
             all_symbols.append(raw.replace("_", "/", 1))
     all_symbols.sort()
+    
+    # Apply deduplication (only use symbols passed on by universe)
+    all_symbols = _dedup_universe_by_base(all_symbols)
+    tprint(f"Symbols after deduplication: {len(all_symbols)}")
 
-    if args.max_symbols and args.max_symbols < len(all_symbols):
-        rng = random.Random(42)
-        symbols = rng.sample(all_symbols, args.max_symbols)
-    else:
-        symbols = all_symbols
+    # Then subsample to 50%
+    rng = random.Random(42)
+    k = max(1, len(all_symbols) // 2)
+    symbols = rng.sample(all_symbols, k)
+    tprint(f"Selected {len(symbols)} symbols (50%% subsample)")
 
     start_ts = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=int(365.25 * args.lookback_years))
 
@@ -1786,7 +2887,7 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
     feat_dict_raw = load_features_selected(
         ts=ts,
         root_dir=data_root_dir,
-        feature_keys=None,
+        feature_keys=list(_required_feature_keys()),
         symbols=symbols,
         start_ts=start_ts,
     )
@@ -1798,25 +2899,34 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
     common_syms = panel["close"].columns
 
     fwd_hours = int(cfg.get("mask_opt_forward_hours", 12))
-    fwd_ret_wide = panel["close"].pct_change(fwd_hours).shift(-fwd_hours)
+    fwd_ret_wide = panel["close"].pct_change(fwd_hours, fill_method=None).shift(-fwd_hours)
 
-    data_stacked = panel["close"].stack(dropna=False).reset_index()
-    data_stacked.columns = ["timestamp", "symbol", "close"]
-    data_stacked["high"] = panel["high"].reindex(index=common_idx, columns=common_syms).stack(dropna=False).values
-    data_stacked["low"] = panel["low"].reindex(index=common_idx, columns=common_syms).stack(dropna=False).values
+    n_timestamps = len(common_idx)
+    n_symbols = len(common_syms)
+    data_stacked = pd.DataFrame({
+        "timestamp": np.repeat(common_idx.to_numpy(), n_symbols),
+        "symbol": np.tile(common_syms.to_numpy(dtype=object), n_timestamps),
+        "close": _flatten_wide_frame(panel["close"], common_idx, common_syms),
+        "high": _flatten_wide_frame(panel["high"], common_idx, common_syms),
+        "low": _flatten_wide_frame(panel["low"], common_idx, common_syms),
+    })
 
     feature_dict: Dict[str, np.ndarray] = {}
     for k, df in feat_dict_raw.items():
         if isinstance(df, pd.DataFrame):
-            df_aligned = df.reindex(index=common_idx, columns=common_syms)
-            arr = df_aligned.stack(dropna=False).to_numpy(dtype=np.float32)
+            arr = _flatten_wide_frame(df, common_idx, common_syms)
             arr[np.isinf(arr)] = np.nan
             feature_dict[k] = arr.astype(np.float32)
 
-    fwd_ret_stacked = (
-        fwd_ret_wide.reindex(index=common_idx, columns=common_syms)
-        .stack(dropna=False)
-        .to_numpy(dtype=np.float32)
+    fwd_ret_stacked = _flatten_wide_frame(fwd_ret_wide, common_idx, common_syms)
+
+    tprint(f"Total rows available before capping: {data_stacked.shape[0]}")
+    data_stacked, feature_dict, fwd_ret_stacked = _cap_rows_for_optimization(
+        data=data_stacked,
+        feature_dict=feature_dict,
+        forward_returns=fwd_ret_stacked,
+        cfg=cfg,
+        seed=42,
     )
 
     if args.mode == "all":
@@ -1841,15 +2951,30 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
         from extreme_price_movements.offline_optimisers.params_store import (
             save_best_params_csv,
             INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV,
+            REPORTS_DIR,
         )
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        summary_path = REPORTS_DIR / "inference_candidate_mask_mode_summary.csv"
+        result["mode_summary_table_"].to_csv(summary_path, index=False)
         for mode in modes:
             mode_res = result["mode_results"].get(mode, {})
+            candidate_table = mode_res.get("layer0_candidate_table_")
+            shortlist_table = mode_res.get("layer0_shortlist_")
+            if isinstance(candidate_table, pd.DataFrame):
+                candidate_path = REPORTS_DIR / f"layer0_candidate_table_{mode}.csv"
+                candidate_table.to_csv(candidate_path, index=False)
+            if isinstance(shortlist_table, pd.DataFrame):
+                shortlist_path = REPORTS_DIR / f"layer0_shortlist_{mode}.csv"
+                shortlist_table.to_csv(shortlist_path, index=False)
             if mode_res.get("status") == "ok":
                 best = mode_res["layer0_best_config_"]
                 out = dict(best)
                 out["mode"] = mode
+                out_path = INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV.with_name(
+                    f"{INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV.stem}_{mode}{INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV.suffix}"
+                )
                 save_best_params_csv(
-                    INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV.replace(".csv", f"_{mode}.csv"),
+                    out_path,
                     out,
                     metadata={"source": "mask_optimiser_4mode"},
                 )

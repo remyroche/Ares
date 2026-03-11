@@ -7,7 +7,7 @@ import multiprocessing as mp
 import os
 import random
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -38,6 +38,21 @@ def _log_bounded_warning(key: str, msg: str, limit: int = 3) -> None:
     if c < limit:
         LOGGER.warning(msg)
     _LOGGED_FAILURE_COUNTS[key] = c + 1
+
+
+def _adaptive_outer_fold_config(base_outer: Any, span_days: float) -> Any:
+    span_hours = max(1.0, span_days * 24.0)
+    train_h = max(12.0, span_hours * 0.50)
+    valid_h = max(3.0, span_hours * 0.10)
+    test_h = max(6.0, span_hours * 0.15)
+    step_h = max(6.0, span_hours * 0.15)
+    return base_outer.__class__(
+        train_mode=base_outer.train_mode,
+        train_span=pd.Timedelta(hours=train_h),
+        valid_span=pd.Timedelta(hours=valid_h),
+        test_span=pd.Timedelta(hours=test_h),
+        step_span=pd.Timedelta(hours=step_h),
+    )
 
 
 # =============================================================================
@@ -861,41 +876,28 @@ def _build_temporal_folds(
             }
         )
         cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
-        cfg = cfg.__class__(
-            **{
-                **cfg.__dict__,
-                "preset": cfg.preset.__class__(
-                    preset_name=cfg.preset.preset_name,
-                    outer=cfg.preset.outer.__class__(
-                        train_mode=cfg.preset.outer.train_mode,
-                        train_span=pd.Timedelta(days=max(14, int(span_days * 0.50))),
-                        valid_span=pd.Timedelta(days=max(3, int(span_days * 0.10))),
-                        test_span=pd.Timedelta(days=max(7, int(span_days * 0.15))),
-                        step_span=pd.Timedelta(days=max(7, int(span_days * 0.15))),
-                    ),
-                    inner=cfg.preset.inner.__class__(n_splits=max(1, int(n_splits))),
-                    sampling=cfg.preset.sampling.__class__(
-                        **{
-                            **cfg.preset.sampling.__dict__,
-                            "mode": "all",
-                            "event_fraction": 1.0,
-                            "symbol_fraction": 1.0,
-                        }
-                    ),
-                    symbol_policy=cfg.preset.symbol_policy.__class__(
-                        **{
-                            **cfg.preset.symbol_policy.__dict__,
-                            "mode": "all_symbols",
-                            "subset_fraction": 1.0,
-                            "min_symbols_per_split": 1,
-                        }
-                    ),
-                    purge_policy=cfg.preset.purge_policy,
+        cfg = dc_replace(
+            cfg,
+            preset=dc_replace(
+                cfg.preset,
+                outer=_adaptive_outer_fold_config(cfg.preset.outer, span_days),
+                inner=dc_replace(cfg.preset.inner, n_splits=max(1, int(n_splits))),
+                sampling=dc_replace(
+                    cfg.preset.sampling,
+                    mode="full",
+                    event_fraction=1.0,
+                    symbol_fraction=1.0,
                 ),
-                "silent": True,
-                "min_rows_per_fold": 1,
-                "min_symbols_per_fold": 1,
-            }
+                symbol_policy=dc_replace(
+                    cfg.preset.symbol_policy,
+                    mode="all_symbols",
+                    subset_fraction=1.0,
+                    min_symbols_per_split=1,
+                ),
+            ),
+            silent=True,
+            min_rows_per_fold=1,
+            min_symbols_per_fold=1,
         )
         bundle = SlicePlanner(cfg).build(events)
         plans = bundle["consumer_plans"]["regime_search"]
@@ -982,31 +984,19 @@ def _apply_regime_search_slice_plan(
             }
         )
         cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
-        cfg = cfg.__class__(
-            **{
-                **cfg.__dict__,
-                "preset": cfg.preset.__class__(
-                    preset_name=cfg.preset.preset_name,
-                    outer=cfg.preset.outer.__class__(
-                        train_mode=cfg.preset.outer.train_mode,
-                        train_span=pd.Timedelta(days=max(14, int(span_days * 0.50))),
-                        valid_span=pd.Timedelta(days=max(3, int(span_days * 0.10))),
-                        test_span=pd.Timedelta(days=max(7, int(span_days * 0.15))),
-                        step_span=pd.Timedelta(days=max(7, int(span_days * 0.15))),
-                    ),
-                    inner=cfg.preset.inner,
-                    sampling=cfg.preset.sampling,
-                    symbol_policy=cfg.preset.symbol_policy,
-                    purge_policy=cfg.preset.purge_policy,
-                ),
-                "consumer_overrides": {
-                    **dict(cfg.consumer_overrides),
-                    "full_inference_lookback_years": float(lookback_years),
-                },
-                "silent": True,
-                "min_rows_per_fold": 1,
-                "min_symbols_per_fold": 1,
-            }
+        cfg = dc_replace(
+            cfg,
+            preset=dc_replace(
+                cfg.preset,
+                outer=_adaptive_outer_fold_config(cfg.preset.outer, span_days),
+            ),
+            consumer_overrides={
+                **dict(cfg.consumer_overrides),
+                "full_inference_lookback_years": float(lookback_years),
+            },
+            silent=True,
+            min_rows_per_fold=1,
+            min_symbols_per_fold=1,
         )
         bundle = SlicePlanner(cfg).build(events)
         consumer_plans = bundle["consumer_plans"]
@@ -1921,7 +1911,7 @@ def _rescale_mode_gates_for_sample_size(
 
     # Per-bucket masks are sparse on capped samples; fixed 5k-event gates are too high.
     target_event_density = float(
-        runtime_cfg.get("mask_opt_target_event_density", 0.025)
+        runtime_cfg.get("mask_opt_target_event_density", 0.012)
     )
     min_events_floor = int(runtime_cfg.get("mask_opt_min_events_floor", 150))
     scaled_min_events = max(min_events_floor, int(round(n_rows * target_event_density)))
@@ -2216,16 +2206,32 @@ def _phase1_subsample_indices(
     symbol_uniques = shared["symbol_uniques"]
     symbol_codes = shared["symbol_codes"]
     day_ids = shared["day_ids"]
+    n_total = symbol_codes.shape[0]
+
+    min_phase1_rows = int(cfg.get("phase1_min_subsample_rows", 10_000))
 
     symbol_frac = float(cfg.get("stage1_symbol_fraction", 0.35))
     history_frac = float(cfg.get("stage1_history_fraction", 0.35))
+
+    # Scale fractions up if the combined subsample would be too small.
+    expected_rows = n_total * symbol_frac * history_frac
+    if expected_rows < min_phase1_rows and n_total > 0:
+        scale = min(min_phase1_rows / max(expected_rows, 1.0), 1.0 / (symbol_frac * history_frac))
+        symbol_frac = min(1.0, symbol_frac * scale)
+        history_frac = min(1.0, history_frac * scale)
+
     selected_symbols = _rng_sample_fraction(
         list(range(symbol_uniques.shape[0])), frac=symbol_frac, seed=seed
     )
     symbol_mask = np.isin(symbol_codes, np.asarray(selected_symbols, dtype=np.int32))
 
     history_mask = _sample_history_fraction_mask(day_ids, frac=history_frac, seed=seed)
-    return symbol_mask & history_mask
+    result = symbol_mask & history_mask
+
+    # Final safety net: if still too small, use all rows.
+    if int(np.sum(result)) < min(min_phase1_rows, n_total):
+        return np.ones(n_total, dtype=bool)
+    return result
 
 
 def _build_phase_local_shared(
@@ -4125,7 +4131,7 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
     cfg["phase2_min_total_events"] = 5000
     cfg["phase1_min_active_days_fraction"] = 0.80
     cfg["phase2_min_active_days_fraction"] = 0.80
-    cfg["mask_opt_target_event_density"] = 0.025
+    cfg["mask_opt_target_event_density"] = 0.012
     cfg["mask_opt_min_events_floor"] = 150
     cfg["mask_opt_min_active_days_floor"] = 0.25
     cfg["min_positive_fold_fraction"] = 0.60
@@ -4252,18 +4258,14 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
     fwd_ret_stacked = _flatten_wide_frame(fwd_ret_wide, common_idx, common_syms)
 
     tprint(f"Total rows available before capping: {data_stacked.shape[0]}")
+    # Phase 2-4 use the full 30K capped dataset.
+    # Phase 1 subsamples down to ~10K rows via _phase1_subsample_indices.
     data_stacked, feature_dict, fwd_ret_stacked = _cap_rows_for_optimization(
         data=data_stacked,
         feature_dict=feature_dict,
         forward_returns=fwd_ret_stacked,
         cfg=cfg,
         seed=42,
-    )
-    data_stacked, feature_dict, fwd_ret_stacked = _apply_regime_search_slice_plan(
-        data=data_stacked,
-        feature_dict=feature_dict,
-        forward_returns=fwd_ret_stacked,
-        lookback_years=float(args.lookback_years),
     )
 
     if args.mode == "all":

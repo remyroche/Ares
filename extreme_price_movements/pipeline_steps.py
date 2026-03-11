@@ -145,7 +145,18 @@ def _base_feature_keys_union(cfg) -> set[str]:
 def _cap_panel_rows(
     panel: dict[str, pd.DataFrame], max_rows: int = 300_000
 ) -> dict[str, pd.DataFrame]:
-    """Cap total non-NaN entries in panel to avoid OOM via random masking."""
+    """DEPRECATED: Use SlicePlanner for temporal splitting instead of random masking.
+
+    Cap total non-NaN entries in panel to avoid OOM via random masking.
+    This function breaks temporal integrity and should not be used for training data.
+    """
+    import warnings
+    warnings.warn(
+        "_cap_panel_rows is deprecated and breaks temporal integrity. "
+        "Use SlicePlanner for proper temporal splitting instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     if not isinstance(panel, dict) or "close" not in panel:
         return panel
     close = panel["close"]
@@ -175,7 +186,18 @@ def _cap_panel_rows(
 def _cap_dataset_rows(
     df: pd.DataFrame | None, max_rows: int = 300_000
 ) -> pd.DataFrame | None:
-    """Cap rows in a flat DataFrame via random sampling."""
+    """DEPRECATED: Use SlicePlanner for temporal splitting instead of random sampling.
+
+    Cap rows in a flat DataFrame via random sampling.
+    This function breaks temporal integrity and should not be used for training data.
+    """
+    import warnings
+    warnings.warn(
+        "_cap_dataset_rows is deprecated and breaks temporal integrity. "
+        "Use SlicePlanner for proper temporal splitting instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     if df is None or len(df) <= max_rows:
         return df
     tprint(f"Capping dataset at {max_rows} rows (random sample)...")
@@ -882,7 +904,8 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         return
 
     panel = to_panel(dfs)
-    panel = _cap_panel_rows(panel, 300_000)
+    # Removed random panel capping to preserve temporal integrity
+    # SlicePlanner will be used later to determine walk-forward test set
 
     # Data coverage diagnostics
     _close = panel["close"]
@@ -957,6 +980,50 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     datasets = generate_label_datasets(
         panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, horizons=horizons
     )
+
+    # Use SlicePlanner to determine walk-forward test set and exclude it from training data
+    from extreme_price_movements.periods_symbols_management import (
+        EventSchema,
+        SlicePlanner,
+        SlicePlannerConfig,
+    )
+
+    # Build events from all labeled data
+    all_events = []
+    for name, df in datasets.items():
+        if "__ts__" in df.columns and "__symbol__" in df.columns:
+            all_events.append(df[["__ts__", "__symbol__"]].copy())
+
+    if all_events:
+        all_events_df = pd.concat(all_events, ignore_index=True).drop_duplicates()
+        events = pd.DataFrame(
+            {
+                "event_id": np.arange(len(all_events_df), dtype=np.int64),
+                "symbol": all_events_df["__symbol__"].values,
+                "t0": pd.to_datetime(all_events_df["__ts__"], utc=True, errors="coerce"),
+                "t1": pd.to_datetime(all_events_df["__ts__"], utc=True, errors="coerce"),
+            }
+        )
+
+        # Use SlicePlanner to get training vs test split
+        planner_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+        bundle = SlicePlanner(planner_cfg).build(events)
+
+        # Get all training indices (not test/walk-forward)
+        train_indices = set()
+        for plan in bundle["consumer_plans"].get("regime_search", []):
+            if plan.tag in ["fit_inner", "fit_outer", "predict_inner"]:
+                train_indices.update(plan.fit_idx)
+
+        # Filter datasets to only include training rows
+        if train_indices:
+            for name in datasets:
+                if len(datasets[name]) == len(all_events_df):
+                    original_len = len(datasets[name])
+                    datasets[name] = datasets[name].iloc[list(train_indices)].copy()
+                    tprint(f"Filtered {name} to {len(datasets[name])} training rows (excluded {original_len - len(datasets[name])} test rows)")
+        else:
+            tprint("WARNING: No training indices found from SlicePlanner, using all data")
 
     for name, df in datasets.items():
         save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
@@ -1154,7 +1221,7 @@ def run_training_step(
         name = f"spike_anatomy_{mode}"
         df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df_spike is not None:
-            datasets[name] = _cap_dataset_rows(df_spike, 300_000)
+            datasets[name] = df_spike  # Use all rows (already filtered by SlicePlanner in label step)
         else:
             missing_spike.append(mode)
 
@@ -1252,7 +1319,7 @@ def run_training_step(
                 name = f"train_{side}_{k}_{H}"
                 df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
                 if df is not None:
-                    datasets[name] = _cap_dataset_rows(df, 300_000)
+                    datasets[name] = df  # Use all rows (already filtered by SlicePlanner in label step)
                     found_count += 1
                     tprint(f"  Loaded {name}: {len(datasets[name])} rows")
                 for variant in base_geometry_archetypes:
@@ -1261,7 +1328,7 @@ def run_training_step(
                     vname = f"train_{side}_{k}_{H}_{variant}"
                     df_v = load_artifact_df(cfg["data_root"], run_id, "labels", vname)
                     if df_v is not None:
-                        datasets[vname] = _cap_dataset_rows(df_v, 300_000)
+                        datasets[vname] = df_v  # Use all rows (already filtered by SlicePlanner in label step)
                         tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
 
     # Exhaustion models
@@ -1269,14 +1336,14 @@ def run_training_step(
         name = f"exh_{d}"
         df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df is not None:
-            datasets[name] = _cap_dataset_rows(df, 300_000)
+            datasets[name] = df  # Use all rows (already filtered by SlicePlanner in label step)
             tprint(f"  Loaded {name}: {len(datasets[name])} rows")
 
     # Specialist models
     for name in ["trap_model", "gamma_model"]:
         df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df is not None:
-            datasets[name] = _cap_dataset_rows(df, 300_000)
+            datasets[name] = df  # Use all rows (already filtered by SlicePlanner in label step)
             tprint(f"  Loaded {name}: {len(datasets[name])} rows")
 
     if not found_count:

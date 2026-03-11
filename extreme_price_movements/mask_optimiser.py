@@ -883,6 +883,8 @@ def _incremental_information_metrics(
 ) -> Dict[str, float]:
     metrics = {
         "incremental_information_delta_auc": float("nan"),
+        "incremental_information_delta_auc_fold_mean": float("nan"),
+        "incremental_information_delta_auc_fold_std": float("nan"),
         "incremental_information_positive_fold_fraction": float("nan"),
         "incremental_information_positive_fold_count": float("nan"),
         "incremental_information_fold_count": float("nan"),
@@ -907,6 +909,7 @@ def _incremental_information_metrics(
 
     positive_fold_count = 0
     evaluated_fold_count = 0
+    fold_deltas: List[float] = []
     for tr, va in folds:
         if tr.shape[0] == 0 or va.shape[0] == 0:
             continue
@@ -916,11 +919,15 @@ def _incremental_information_metrics(
             continue
         auc_base_fold = _classifier_oof_auc_from_folds(X_base, y_all, [(tr, va)])
         auc_aug_fold = _classifier_oof_auc_from_folds(X_aug, y_all, [(tr, va)])
+        delta_fold = float(auc_aug_fold - auc_base_fold)
+        fold_deltas.append(delta_fold)
         evaluated_fold_count += 1
-        if (auc_aug_fold - auc_base_fold) > 0:
+        if delta_fold > 0:
             positive_fold_count += 1
 
     if evaluated_fold_count > 0:
+        metrics["incremental_information_delta_auc_fold_mean"] = float(np.mean(np.asarray(fold_deltas, dtype=np.float32)))
+        metrics["incremental_information_delta_auc_fold_std"] = float(np.std(np.asarray(fold_deltas, dtype=np.float32)))
         metrics["incremental_information_positive_fold_fraction"] = float(
             positive_fold_count / float(evaluated_fold_count)
         )
@@ -928,6 +935,30 @@ def _incremental_information_metrics(
         metrics["incremental_information_fold_count"] = float(evaluated_fold_count)
 
     return metrics
+
+
+def _primary_gain_fold_deltas(
+    learn_X: np.ndarray,
+    y_primary: np.ndarray,
+    timestamps: np.ndarray,
+    idx_e: np.ndarray,
+    idx_ne: np.ndarray,
+    n_splits: int = 3,
+) -> np.ndarray:
+    if idx_e.shape[0] < 50 or idx_ne.shape[0] < 50:
+        return np.asarray([], dtype=np.float32)
+
+    folds_e = _build_temporal_folds(timestamps[idx_e], idx_e.shape[0], n_splits=n_splits)
+    folds_ne = _build_temporal_folds(timestamps[idx_ne], idx_ne.shape[0], n_splits=n_splits)
+    if not folds_e or not folds_ne:
+        return np.asarray([], dtype=np.float32)
+
+    out: List[float] = []
+    for (tr_e, va_e), (tr_ne, va_ne) in zip(folds_e, folds_ne):
+        auc_e = _classifier_oof_auc_from_folds(learn_X[idx_e], y_primary[idx_e], [(tr_e, va_e)])
+        auc_ne = _classifier_oof_auc_from_folds(learn_X[idx_ne], y_primary[idx_ne], [(tr_ne, va_ne)])
+        out.append(float(auc_e - auc_ne))
+    return np.asarray(out, dtype=np.float32)
 
 
 def _stability_from_fold_deltas(delta_folds: np.ndarray) -> Dict[str, float]:
@@ -958,6 +989,7 @@ def _stability_from_fold_deltas(delta_folds: np.ndarray) -> Dict[str, float]:
 def _build_regime_rationale(row: pd.Series) -> str:
     reasons: List[str] = []
     delta_r = _metric_or_nan(row.get("delta_r"))
+    delta_r_shrunk = _metric_or_nan(row.get("delta_r_shrunk"))
     s_r = _metric_or_nan(row.get("S_r"))
     d_r = _metric_or_nan(row.get("D_r"))
     positive_fraction = _metric_or_nan(row.get("positive_fold_fraction_r"))
@@ -968,7 +1000,9 @@ def _build_regime_rationale(row: pd.Series) -> str:
     primary_nan = _metric_or_nan(row.get("primary_predictability_gain_is_nan"))
 
     if np.isfinite(delta_r) and delta_r > 0:
-        reasons.append(f"positive OOS magnitude learnability via {metric_name}={delta_r:.4f}")
+        reasons.append(f"positive bucket OOS delta_r={delta_r:.4f}")
+    if np.isfinite(delta_r_shrunk):
+        reasons.append(f"shrunk delta={delta_r_shrunk:.4f}")
     if np.isfinite(s_r):
         reasons.append(f"stability={s_r:.3f}")
     if np.isfinite(positive_fraction):
@@ -1830,6 +1864,9 @@ def _compute_full_metrics_for_candidate(
         "primary_predictability_gain": float("nan"),
         "continuation_predictability_gain": float("nan"),
         "reversal_predictability_gain": float("nan"),
+        "bucket_primary_delta_fold_mean": float("nan"),
+        "bucket_primary_delta_fold_std": float("nan"),
+        "bucket_primary_delta_fold_count": float("nan"),
         "MAE_predictability_gain": float("nan"),
         "MFE_predictability_gain": float("nan"),
         "reversal_utility_gain": float("nan"),
@@ -1873,6 +1910,18 @@ def _compute_full_metrics_for_candidate(
     primary_gain = float(auc_e - auc_ne)
     metrics["primary_predictability_gain"] = primary_gain
     metrics["primary_predictability_gain_is_nan"] = 0.0
+    primary_delta_folds = _primary_gain_fold_deltas(
+        learn_X=learn_X,
+        y_primary=y_primary,
+        timestamps=timestamps,
+        idx_e=idx_e,
+        idx_ne=idx_ne,
+        n_splits=classifier_n_splits,
+    )
+    if primary_delta_folds.size > 0:
+        metrics["bucket_primary_delta_fold_mean"] = float(np.mean(primary_delta_folds))
+        metrics["bucket_primary_delta_fold_std"] = float(np.std(primary_delta_folds))
+        metrics["bucket_primary_delta_fold_count"] = float(primary_delta_folds.size)
 
     # classify it into continuation/reversal labels for reporting
     if _mode_is_tf(mode):
@@ -2249,10 +2298,11 @@ def _run_mode_search(
     df1 = pd.DataFrame(phase1_rows)
     df1["phase1_proxy_score"] = (
         _zscore_np(df1["active_days_fraction"].values)
-        + _zscore_np(df1["regime_distinctness_score"].values)
+        + 0.5 * _zscore_np(df1["regime_distinctness_score"].values)
+        + 0.5 * _zscore_np(np.log1p(df1["total_events"].values.astype(np.float32)))
         - _zscore_np(df1["impulse_shape_dispersion"].values)
-        - _zscore_np(df1["fold_continuation_rate_std"].values)
-        - _zscore_np(df1["fold_event_count_std"].values)
+        - 0.5 * _zscore_np(df1["fold_continuation_rate_std"].values)
+        - 0.5 * _zscore_np(df1["fold_event_count_std"].values)
     )
 
     df1 = df1.sort_values("phase1_proxy_score", ascending=False).head(int(cfg.get("top_k_for_learnability", 8))).copy()
@@ -2397,20 +2447,54 @@ def _run_mode_search(
     df2 = pd.DataFrame(phase2_rows)
     df2["D_r"] = (
         0.35 * _zscore_np(df2["impulse_shape_dispersion"].values)
-        + 0.35 * _zscore_np(df2["bars_to_peak_dispersion"].values)
-        + 0.10 * _zscore_np(df2["speed_dispersion"].values)
-        + 0.20 * _zscore_np(df2["monotonicity_dispersion"].values)
+        + 0.35 * _zscore_np(df2["post_event_vol_dispersion"].values)
+        + 0.15 * _zscore_np(df2["fold_continuation_rate_std"].values)
+        + 0.15 * _zscore_np(df2["fold_event_count_std"].values)
     )
     df2["N_r"] = df2["total_events"].astype(np.float32)
-    df2["delta_r"] = df2["magnitude_delta_r"].astype(np.float32)
-    df2["S_r"] = df2["magnitude_stability_score"].astype(np.float32)
-    df2["positive_fold_fraction_r"] = df2["magnitude_positive_fold_fraction"].astype(np.float32)
     df2["selected_delta_metric"] = df2["selected_delta_metric"].astype(str)
     primary_col = _mode_primary_predictability_col(mode)
     df2["bucket_primary_predictability_gain"] = df2[primary_col].astype(np.float32)
     df2["predictability_gain"] = [
         _mode_predictability_gain_from_metrics(mode, row.to_dict()) for _, row in df2.iterrows()
     ]
+    df2["delta_r_raw"] = df2["bucket_primary_predictability_gain"].astype(np.float32)
+    df2["delta_r_fallback"] = (0.5 * df2["incremental_information_delta_auc"].astype(np.float32)).astype(np.float32)
+    df2["delta_r"] = np.maximum(
+        np.nan_to_num(df2["delta_r_raw"].values, nan=-np.inf),
+        np.nan_to_num(df2["delta_r_fallback"].values, nan=-np.inf),
+    ).astype(np.float32)
+    use_primary = np.nan_to_num(df2["delta_r_raw"].values, nan=-np.inf) >= np.nan_to_num(df2["delta_r_fallback"].values, nan=-np.inf)
+    df2["selected_delta_metric"] = np.where(use_primary, primary_col, "0.5*incremental_information_delta_auc")
+    selected_fold_mean = np.where(
+        use_primary,
+        df2["bucket_primary_delta_fold_mean"].astype(np.float32).values,
+        (0.5 * df2["incremental_information_delta_auc_fold_mean"].astype(np.float32).values),
+    )
+    selected_fold_std = np.where(
+        use_primary,
+        df2["bucket_primary_delta_fold_std"].astype(np.float32).values,
+        (0.5 * df2["incremental_information_delta_auc_fold_std"].astype(np.float32).values),
+    )
+    df2["delta_r_fold_mean"] = selected_fold_mean.astype(np.float32)
+    df2["delta_r_fold_std"] = selected_fold_std.astype(np.float32)
+    df2["positive_fold_fraction_r"] = df2["incremental_information_positive_fold_fraction"].astype(np.float32)
+    df2["S_r"] = (
+        0.5
+        * np.maximum(
+            0.0,
+            1.0
+            - (
+                np.nan_to_num(df2["delta_r_fold_std"].values, nan=np.inf)
+                / (np.abs(np.nan_to_num(df2["delta_r_fold_mean"].values, nan=0.0)) + 1e-9)
+            ),
+        )
+        + 0.5 * np.nan_to_num(df2["incremental_information_positive_fold_fraction"].values, nan=0.0)
+    ).astype(np.float32)
+    df2["delta_r_shrunk"] = (
+        df2["delta_r"].astype(np.float32).values
+        * (df2["N_r"].astype(np.float32).values / (df2["N_r"].astype(np.float32).values + 500.0))
+    ).astype(np.float32)
     df2["acceptance_pass"] = True
     min_predictability_gain = float(cfg.get("min_predictability_gain", 0.0))
     min_positive_fold_fraction = float(cfg.get("min_positive_fold_fraction", 0.0))
@@ -2427,43 +2511,21 @@ def _run_mode_search(
     if df2.empty:
         return {"status": "failed", "reason": f"learnability_check_failed_{mode}", "layer0_candidate_table_": df2}
 
-    disp_q = float(cfg.get("max_allowed_dispersion_quantile", 0.75))
-    q_thresh = float(df2["impulse_shape_dispersion"].quantile(disp_q))
-    df2 = df2[df2["impulse_shape_dispersion"] <= q_thresh].copy()
-    if df2.empty:
-        return {"status": "failed", "reason": f"dispersion_caps_{mode}", "layer0_candidate_table_": df2}
-
-    df2["shortlist_score"] = (
-        _zscore_np(df2["active_days_fraction"].values)
-        + _zscore_np(df2["events_per_day_mean"].values)
-        - _zscore_np(df2["events_per_day_std"].values)
-        - _zscore_np(df2["impulse_shape_dispersion"].values)
-        - _zscore_np(df2["post_event_vol_dispersion"].values)
-        - _zscore_np(df2["fold_continuation_rate_std"].values)
-        + _zscore_np(df2["bucket_primary_predictability_gain"].values)
-        + 0.30 * _zscore_np(df2["MFE_predictability_gain"].values)
-        + 0.20 * _zscore_np(df2["reversal_utility_gain"].values)
-        + _zscore_np(df2["regime_distinctness_score"].values)
-    )
-    df2["score_r"] = df2["shortlist_score"].astype(np.float32)
+    df2["score_r"] = (
+        df2["delta_r_shrunk"].astype(np.float32).values
+        * np.sqrt(np.maximum(df2["N_r"].astype(np.float32).values, 0.0))
+        * np.maximum(df2["S_r"].astype(np.float32).values, 0.0)
+        / (1.0 + df2["D_r"].astype(np.float32).values)
+    ).astype(np.float32)
+    df2["shortlist_score"] = df2["score_r"].astype(np.float32)
     df2["decision"] = "ranked"
     df2["regime_id"] = df2["name"].astype(str)
     df2["regime_definition"] = df2["name"].astype(str)
     df2["rationale"] = df2.apply(_build_regime_rationale, axis=1)
 
-    df2 = df2.sort_values("shortlist_score", ascending=False)
-    shortlist_idx: List[int] = []
+    df2 = df2.sort_values("score_r", ascending=False)
     shortlist_max = int(cfg.get("shortlist_max_candidates", 4))
-    shortlist_max_per_family = int(cfg.get("shortlist_max_per_family", 2))
-    fam_counts: Dict[str, int] = {}
-    for idx, row in df2.iterrows():
-        fam = str(row["family"])
-        if len(shortlist_idx) >= shortlist_max:
-            break
-        if fam_counts.get(fam, 0) < shortlist_max_per_family:
-            fam_counts[fam] = fam_counts.get(fam, 0) + 1
-            shortlist_idx.append(idx)
-    df_short = df2.loc[shortlist_idx].copy()
+    df_short = df2.head(shortlist_max).copy()
     if df_short.empty:
         return {"status": "failed", "reason": f"no_shortlist_candidates_{mode}", "layer0_candidate_table_": df2}
 
@@ -2580,19 +2642,77 @@ def _run_mode_search(
                 new_row["incremental_information_positive_fold_fraction"] = new_metrics.get("incremental_information_positive_fold_fraction", np.nan)
                 new_row["incremental_information_positive_fold_count"] = new_metrics.get("incremental_information_positive_fold_count", np.nan)
                 new_row["incremental_information_fold_count"] = new_metrics.get("incremental_information_fold_count", np.nan)
+                new_row["incremental_information_delta_auc_fold_mean"] = new_metrics.get("incremental_information_delta_auc_fold_mean", np.nan)
+                new_row["incremental_information_delta_auc_fold_std"] = new_metrics.get("incremental_information_delta_auc_fold_std", np.nan)
+                new_row["bucket_primary_delta_fold_mean"] = new_metrics.get("bucket_primary_delta_fold_mean", np.nan)
+                new_row["bucket_primary_delta_fold_std"] = new_metrics.get("bucket_primary_delta_fold_std", np.nan)
                 new_row["dispersion_to_edge_ratio"] = new_metrics.get("dispersion_to_edge_ratio", np.nan)
                 new_row["edge_to_dispersion_ratio"] = new_metrics.get("edge_to_dispersion_ratio", np.nan)
                 new_row["primary_predictability_gain_is_nan"] = new_metrics.get("primary_predictability_gain_is_nan", 1.0)
+                new_row["post_event_vol_dispersion"] = float(np.std(zc["v_exp"][new_side_mask & np.isfinite(zc["v_exp"])])) if np.any(new_side_mask & np.isfinite(zc["v_exp"])) else 0.0
+                new_row["fold_event_count_std"] = float(np.std(np.asarray([float(np.sum(new_side_mask[va])) for _, va in folds], dtype=np.float32)))
+                new_row["delta_r_raw"] = float(new_row["bucket_primary_predictability_gain"])
+                new_row["delta_r_fallback"] = float(0.5 * new_row["incremental_information_delta_auc"]) if np.isfinite(new_row["incremental_information_delta_auc"]) else float("nan")
+                raw_val = _metric_or_nan(new_row["delta_r_raw"])
+                fb_val = _metric_or_nan(new_row["delta_r_fallback"])
+                use_primary_new = raw_val >= fb_val
+                new_row["delta_r"] = float(max(raw_val, fb_val))
+                new_row["selected_delta_metric"] = primary_col if use_primary_new else "0.5*incremental_information_delta_auc"
+                new_row["delta_r_fold_mean"] = float(
+                    new_row["bucket_primary_delta_fold_mean"] if use_primary_new else 0.5 * _metric_or_nan(new_row["incremental_information_delta_auc_fold_mean"])
+                )
+                new_row["delta_r_fold_std"] = float(
+                    new_row["bucket_primary_delta_fold_std"] if use_primary_new else 0.5 * _metric_or_nan(new_row["incremental_information_delta_auc_fold_std"])
+                )
+                new_row["positive_fold_fraction_r"] = float(_metric_or_nan(new_row["incremental_information_positive_fold_fraction"]))
+                new_row["S_r"] = float(
+                    0.5
+                    * max(
+                        0.0,
+                        1.0 - _metric_or_nan(new_row["delta_r_fold_std"]) / (abs(_metric_or_nan(new_row["delta_r_fold_mean"])) + 1e-9),
+                    )
+                    + 0.5 * max(0.0, _metric_or_nan(new_row["incremental_information_positive_fold_fraction"]))
+                )
+                new_row["D_r"] = float("nan")
+                new_row["N_r"] = float(tot_events)
+                new_row["delta_r_shrunk"] = float(new_row["delta_r"] * (new_row["N_r"] / (new_row["N_r"] + 500.0)))
+                new_row["score_r"] = float("nan")
                 cond_rows.append(new_row)
                 candidate_masks[new_name] = {"m_high": new_h, "m_low": new_l}
 
     if cond_rows:
         df_short = pd.concat([df_short, pd.DataFrame(cond_rows)], ignore_index=True)
-        df_short["shortlist_score"] = (
-            df_short["shortlist_score"].astype(np.float32)
-            + 0.5 * _zscore_np(df_short["bucket_primary_predictability_gain"].values)
+        df_short["D_r"] = (
+            0.35 * _zscore_np(df_short["impulse_shape_dispersion"].values)
+            + 0.35 * _zscore_np(df_short["post_event_vol_dispersion"].values)
+            + 0.15 * _zscore_np(df_short["fold_continuation_rate_std"].values)
+            + 0.15 * _zscore_np(df_short["fold_event_count_std"].values)
         )
-        df_short = df_short.sort_values("shortlist_score", ascending=False).copy()
+        df_short["score_r"] = (
+            df_short["delta_r_shrunk"].astype(np.float32).values
+            * np.sqrt(np.maximum(df_short["N_r"].astype(np.float32).values, 0.0))
+            * np.maximum(df_short["S_r"].astype(np.float32).values, 0.0)
+            / (1.0 + df_short["D_r"].astype(np.float32).values)
+        ).astype(np.float32)
+        df_short["shortlist_score"] = df_short["score_r"].astype(np.float32)
+        base_rows = df_short[df_short["conditioner_mode"] == "none"].set_index("name")
+        keep_idx: List[int] = []
+        for idx, row in df_short.iterrows():
+            cond_mode = str(row.get("conditioner_mode", "none"))
+            if cond_mode == "none":
+                keep_idx.append(idx)
+                continue
+            base_name = str(row["name"]).rsplit("_", 1)[0]
+            if base_name not in base_rows.index:
+                continue
+            base_row = base_rows.loc[base_name]
+            if (
+                _metric_or_nan(row.get("score_r")) > _metric_or_nan(base_row.get("score_r"))
+                and _metric_or_nan(row.get("delta_r")) >= _metric_or_nan(base_row.get("delta_r"))
+                and _metric_or_nan(row.get("S_r")) >= _metric_or_nan(base_row.get("S_r"))
+            ):
+                keep_idx.append(idx)
+        df_short = df_short.loc[keep_idx].sort_values("score_r", ascending=False).copy()
 
     final_diag_k = int(cfg.get("final_top_k_for_diagnostics", 3))
     df_diag_input = df_short.sort_values("shortlist_score", ascending=False).head(final_diag_k).copy()

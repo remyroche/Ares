@@ -58,6 +58,14 @@ ALL_MODES = [
 _QUOTE_PRIORITY: list[str] = ["USDT", "USDC", "BUSD", "EUR"]
 
 
+TBM_GEOMETRIES = [
+    (1.25, 0.50),
+    (1.50, 0.60),
+    (1.75, 0.70),
+    (2.00, 0.90),
+    (2.50, 1.10),
+]
+
 def _dedup_universe_by_base(symbols: list[str]) -> list[str]:
     """Return at most one symbol per base asset, preferring the highest-priority quote."""
     _KNOWN_QUOTES = set(_QUOTE_PRIORITY)
@@ -84,6 +92,72 @@ def _dedup_universe_by_base(symbols: list[str]) -> list[str]:
 # =============================================================================
 # NUMBA KERNELS
 # =============================================================================
+
+@njit(cache=True)
+def tbm_outcomes_atr_nb(
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    atr: np.ndarray,
+    horizon: int,
+    tp_atr: float,
+    sl_atr: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    n = close.shape[0]
+
+    tp_first = np.zeros(n, dtype=np.int8)
+    sl_first = np.zeros(n, dtype=np.int8)
+    timeout = np.zeros(n, dtype=np.int8)
+
+    for i in range(n - horizon - 1):
+
+        entry = close[i]
+        atr_i = max(atr[i], 1e-9)
+
+        tp_price = entry + tp_atr * atr_i
+        sl_price = entry - sl_atr * atr_i
+
+        outcome = 0
+
+        for j in range(i + 1, i + horizon + 1):
+
+            hi = high[j]
+            lo = low[j]
+
+            hit_tp = hi >= tp_price
+            hit_sl = lo <= sl_price
+
+            if hit_tp and not hit_sl:
+                tp_first[i] = 1
+                outcome = 1
+                break
+
+            if hit_sl and not hit_tp:
+                sl_first[i] = 1
+                outcome = -1
+                break
+
+            if hit_tp and hit_sl:
+                median = 0.5 * (hi + lo)
+
+                d_tp = abs(median - tp_price)
+                d_sl = abs(median - sl_price)
+
+                if d_tp < d_sl:
+                    tp_first[i] = 1
+                elif d_sl < d_tp:
+                    sl_first[i] = 1
+                else:
+                    timeout[i] = 1
+
+                outcome = 2
+                break
+
+        if outcome == 0:
+            timeout[i] = 1
+
+    return tp_first, sl_first, timeout
+
 
 @njit(cache=True)
 def rolling_max_index_nb(x: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -1734,6 +1808,36 @@ def _build_shared_cache(
         mae_low[idxs] = m3
         mfe_low[idxs] = m4
 
+    mfe_atr = np.zeros(n, dtype=np.float32)
+    mae_atr = np.zeros(n, dtype=np.float32)
+
+    for aid, idxs in asset_groups.items():
+        h = high[idxs]
+        l = low[idxs]
+        c = close[idxs]
+        a = atr[idxs]
+
+        for i in range(max(0, idxs.shape[0] - horizon)):
+            h_sl = h[i + 1 : i + horizon + 1]
+            l_sl = l[i + 1 : i + horizon + 1]
+
+            if h_sl.shape[0] == 0:
+                continue
+
+            atr_i = max(a[i], 1e-9)
+            c_i = c[i]
+
+            mfe_atr[idxs[i]] = (np.max(h_sl) - c_i) / atr_i
+            mae_atr[idxs[i]] = (c_i - np.min(l_sl)) / atr_i
+
+    tbm_baselines_cache = {}
+    for tp, sl in TBM_GEOMETRIES:
+        tp_first, sl_first, to = tbm_outcomes_atr_nb(close, high, low, atr, horizon, float(tp), float(sl))
+        tbm_baselines_cache[f"{tp}_{sl}"] = {
+            "tp_first": tp_first,
+            "sl_first": sl_first,
+        }
+
     # learnability features
     learn_X = _extract_learnability_features(feature_dict, n)
 
@@ -1759,6 +1863,9 @@ def _build_shared_cache(
         "mfe_high": mfe_high,
         "mae_low": mae_low,
         "mfe_low": mfe_low,
+        "mfe_atr": mfe_atr,
+        "mae_atr": mae_atr,
+        "tbm_baselines_cache": tbm_baselines_cache,
         "learn_X": learn_X,
         "day_ids": day_ids,
         "n_days": n_days,
@@ -1808,6 +1915,9 @@ def _build_phase_local_shared(
         "mfe_high": shared["mfe_high"][subset_mask],
         "mae_low": shared["mae_low"][subset_mask],
         "mfe_low": shared["mfe_low"][subset_mask],
+        "mfe_atr": shared["mfe_atr"][subset_mask],
+        "mae_atr": shared["mae_atr"][subset_mask],
+        "tbm_baselines_cache": {k: {"tp_first": v["tp_first"][subset_mask], "sl_first": v["sl_first"][subset_mask]} for k, v in shared["tbm_baselines_cache"].items()},
         "learn_X": shared["learn_X"][subset_mask],
         "day_ids": day_ids_local.astype(np.int32),
         "symbol_codes": symbol_codes_local,
@@ -1815,6 +1925,48 @@ def _build_phase_local_shared(
     }
     phase_local["n_days"] = int(np.max(phase_local["day_ids"]) + 1) if phase_local["day_ids"].shape[0] > 0 else 0
     return phase_local
+
+
+def _compute_tbm_economic_gain(shared: Dict[str, Any], side_mask: np.ndarray, horizon: int = 12) -> float:
+    if not np.any(side_mask):
+        return 0.0
+    scores = []
+
+    for tp, sl in TBM_GEOMETRIES:
+        tp_first_global = shared["tbm_baselines_cache"][f"{tp}_{sl}"]["tp_first"]
+        sl_first_global = shared["tbm_baselines_cache"][f"{tp}_{sl}"]["sl_first"]
+
+        valid_global = np.isfinite(shared["close"])
+        baseline_tp_rate = np.mean(tp_first_global[valid_global]) if np.any(valid_global) else 0.0
+
+        tp_rate_e = np.mean(tp_first_global[side_mask])
+        sl_rate_e = np.mean(sl_first_global[side_mask])
+
+        economic_gain_g = tp_rate_e - baseline_tp_rate
+        ev_proxy_g = tp_rate_e * tp - sl_rate_e * sl
+        normalized_ev_proxy_g = ev_proxy_g / tp
+
+        mfe_coverage_g = np.mean(shared["mfe_atr"][side_mask] >= tp)
+
+        geometry_score_g = economic_gain_g + 0.50 * normalized_ev_proxy_g + 0.35 * max(0.0, mfe_coverage_g - 0.25)
+        scores.append(geometry_score_g)
+
+    scores_arr = np.array(scores, dtype=np.float32)
+    top_k = np.sort(scores_arr)[-3:]
+    return float(np.mean(top_k))
+
+
+def _compute_mfe_coverage(shared: Dict[str, Any], side_mask: np.ndarray) -> float:
+    if not np.any(side_mask):
+        return 0.0
+    mfe = shared["mfe_atr"][side_mask]
+
+    coverages = []
+    weights = [1.0, 1.0, 1.0, 0.75, 0.50]
+    for i, (tp, sl) in enumerate(TBM_GEOMETRIES):
+        coverages.append(np.mean(mfe >= tp) * weights[i])
+
+    return float(np.sum(coverages) / np.sum(weights))
 
 
 def _compute_primary_phase1_classifier_gain(
@@ -2527,15 +2679,50 @@ def _run_mode_search(
         * (1.0 + lambda_feature * feature_learnability_gain)
     ).astype(np.float32)
 
-    df2["shortlist_score"] = df2["score_ml"].astype(np.float32)
+    economic_gains = []
+    mfe_coverages = []
+    for _, row in df2.iterrows():
+        name = row["name"]
+        if name in geom_cache_phase2:
+            m_high, m_low = _generate_event_masks_fast(
+                family=candidate_registry[name]["family"],
+                param_val=candidate_registry[name]["param"],
+                up_move=phase2_z_cache[int(candidate_registry[name]["z_hours"] * bph)]["up"],
+                dn_move=phase2_z_cache[int(candidate_registry[name]["z_hours"] * bph)]["dn"],
+                rolling_std_up=phase2_z_cache[int(candidate_registry[name]["z_hours"] * bph)]["std_up"],
+                rolling_std_dn=phase2_z_cache[int(candidate_registry[name]["z_hours"] * bph)]["std_dn"],
+                asset_groups=shared["asset_groups"],
+                duration_bars=int(candidate_registry[name]["duration_hours"] * bph),
+            )
+            side_mask = _get_side_mask(mode, m_high, m_low)
+            economic_gains.append(_compute_tbm_economic_gain(shared, side_mask))
+            mfe_coverages.append(_compute_mfe_coverage(shared, side_mask))
+        else:
+            economic_gains.append(0.0)
+            mfe_coverages.append(0.0)
+
+    df2["economic_gain_r"] = np.array(economic_gains, dtype=np.float32)
+    df2["mfe_coverage"] = np.array(mfe_coverages, dtype=np.float32)
+
+    lambda_economic = 8.0
+    df2["score_ml_trading"] = (
+        df2["score_ml"].astype(np.float32).values
+        * (1.0 + lambda_economic * df2["economic_gain_r"].values)
+    ).astype(np.float32)
+
+    df2 = df2[df2["mfe_coverage"] >= 0.25].copy()
+    if df2.empty:
+        return {"status": "failed", "reason": f"mfe_coverage_failed_{mode}", "layer0_candidate_table_": df2}
+
+    df2["shortlist_score"] = df2["score_ml_trading"]
     df2["decision"] = "ranked"
     df2["regime_id"] = df2["name"].astype(str)
     df2["regime_definition"] = df2["name"].astype(str)
     df2["rationale"] = df2.apply(_build_regime_rationale, axis=1)
 
     df2 = df2.sort_values(
-        ["score_ml", "feature_learnability_gain", "delta_r", "total_events"],
-        ascending=[False, False, False, False]
+        ["score_ml_trading", "economic_gain_r", "feature_learnability_gain", "delta_r", "total_events"],
+        ascending=[False, False, False, False, False]
     )
     shortlist_max = int(cfg.get("shortlist_max_candidates", 4))
     df_short = df2.head(shortlist_max).copy()
@@ -2716,7 +2903,15 @@ def _run_mode_search(
             * (1.0 + lambda_feature * df_short["feature_learnability_gain"].values)
         ).astype(np.float32)
 
-        df_short["shortlist_score"] = df_short["score_ml"].astype(np.float32)
+        df_short["economic_gain_r"] = np.array([_compute_tbm_economic_gain(shared, _get_side_mask(mode, candidate_masks[row["name"]]["m_high"], candidate_masks[row["name"]]["m_low"])) for _, row in df_short.iterrows()], dtype=np.float32)
+        df_short["mfe_coverage"] = np.array([_compute_mfe_coverage(shared, _get_side_mask(mode, candidate_masks[row["name"]]["m_high"], candidate_masks[row["name"]]["m_low"])) for _, row in df_short.iterrows()], dtype=np.float32)
+
+        df_short["score_ml_trading"] = (
+            df_short["score_ml"].astype(np.float32).values
+            * (1.0 + lambda_economic * df_short["economic_gain_r"].values)
+        ).astype(np.float32)
+
+        df_short["shortlist_score"] = df_short["score_ml_trading"].astype(np.float32)
 
         base_rows = df_short[df_short["conditioner_mode"] == "none"].set_index("name")
         keep_idx: List[int] = []
@@ -2730,13 +2925,13 @@ def _run_mode_search(
                 continue
             base_row = base_rows.loc[base_name]
             if (
-                _metric_or_nan(row.get("score_ml")) > _metric_or_nan(base_row.get("score_ml"))
-                and _metric_or_nan(row.get("feature_learnability_gain")) >= _metric_or_nan(base_row.get("feature_learnability_gain"))
+                _metric_or_nan(row.get("score_ml_trading")) > _metric_or_nan(base_row.get("score_ml_trading"))
+                and _metric_or_nan(row.get("economic_gain_r")) >= _metric_or_nan(base_row.get("economic_gain_r"))
             ):
                 keep_idx.append(idx)
         df_short = df_short.loc[keep_idx].sort_values(
-            ["score_ml", "feature_learnability_gain", "delta_r", "total_events"],
-            ascending=[False, False, False, False]
+            ["score_ml_trading", "economic_gain_r", "feature_learnability_gain", "delta_r", "total_events"],
+            ascending=[False, False, False, False, False]
         ).copy()
 
     final_diag_k = int(cfg.get("final_top_k_for_diagnostics", 3))

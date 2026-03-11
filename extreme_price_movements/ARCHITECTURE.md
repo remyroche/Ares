@@ -14,10 +14,66 @@ The end-to-end research and modeling pipeline is divided into distinct, loosely 
 
 1. **Data Ingestion & Preprocessing:** Fetching raw market data, handling missing values, and standardizing inputs into contiguous memory structures.
 2. **Feature Generation:** Computing mathematically dense, stationary feature matrices (e.g., fractional differentiation, microstructural signals) without lookahead bias.
-3. **Event / Regime Generation:** Defining directional impulses, volatility states, or temporal masks that trigger model evaluation. This is where continuous time is downsampled into discrete, tradable events.
+3. **Event / Regime Generation:** Defining directional impulses, volatility states, and candidate masks that trigger model evaluation. This is where continuous time is downsampled into discrete, tradable events.
 4. **Model Training:** Fitting machine learning estimators to event-filtered data using strict out-of-fold temporal cross-validation.
 5. **Economic Evaluation:** Translating statistical predictions into economic reality via path-dependent simulations (e.g., Triple-Barrier Method) to calculate risk-adjusted metrics (Sortino, MaxDD, Win Rate).
 6. **Reporting / Exports:** Summarizing model metrics, regime diagnostics, and strategy weights into actionable artifacts.
+
+## Runtime Module Map (Current Implementation)
+
+The architecture above is implemented by the following concrete runtime components.
+
+### Pipeline entrypoint
+- `extreme_price_movements/run_pipeline.py` is the orchestrator for batch/offline flows.
+- Canonical CLI modes are:
+  - `download`
+  - `labels`
+  - `features`
+  - `train`
+  - `train_base`
+  - `train_meta`
+  - `sizer`
+  - `optimise`
+  - `backtest`
+  - `run`
+  - `breakdown_diagnostics`
+
+### Stage mapping to code
+1. **Labels (`labels`)**
+   - `run_pipeline.py: run_labels(...)` delegates to `pipeline_steps.run_label_generation_step_v2(...)`.
+   - Per-bucket report emitted via `reports.bucket_report.report_labels(...)`.
+
+2. **Features (`features`)**
+   - `run_pipeline.py: run_features(...)` delegates to `pipeline_steps.run_feature_generation_step(...)`.
+
+3. **Base training (`train`)**
+   - `run_pipeline.py: run_train(...)` delegates to `pipeline_steps.run_training_step(...)`.
+   - Detailed per-bucket/per-model reporting is emitted through `reports.bucket_report.report_base_training(...)`.
+
+4. **Meta training (`train_meta`)**
+   - `run_pipeline.py: run_train_meta(...)` delegates to `train_daily_meta(...)`.
+   - Detailed reporting is emitted through `reports.bucket_report.report_meta_training(...)`.
+
+5. **Position sizing (`sizer`)**
+   - The active CLI mode is `sizer` (not `position_sizer_v2`).
+   - `run_pipeline.py: run_sizer(...)` delegates to `pipeline_steps.run_sizer_step(...)` -> `run_ridge_sizer_step(...)`.
+   - Detailed per-bucket reporting is emitted through `reports.bucket_report.report_ridge_sizer(...)`.
+   - `position_sizer_v2.py` exists and is used by the broader sizing stack, but is not exposed as a direct `run_pipeline.py` mode string.
+
+6. **Optimization (`optimise`)**
+   - `run_pipeline.py: run_optimise(...)` drives optimization from backtest outputs or ridge OOF mode.
+   - Per-bucket detailed reporting is emitted through `reports.bucket_report.report_optimise(...)`.
+
+### Offline optimizers and candidate-mask stack
+- `extreme_price_movements/mask_optimiser.py` is an active module in the candidate-mask optimization workflow.
+- `extreme_price_movements/offline_optimisers/compare_tbm_parameters.py` is an active TBM optimizer/compare entrypoint.
+  - Typical invocation:
+    - `python3 extreme_price_movements/offline_optimisers/compare_tbm_parameters.py --data-root data --output reports/tbm_comparison.csv`
+
+### Inference runtime
+- Inference is implemented under `extreme_price_movements/inference/`.
+- Primary entrypoint: `extreme_price_movements/inference/run_inference.py`.
+- Inference is intentionally separate from `run_pipeline.py` CLI modes.
 
 ## Core Architectural Principles
 
@@ -75,4 +131,4 @@ When extending the architecture, follow these conceptual boundaries:
 
 ## What This Document Is Not
 - **It is not a coding style guide:** Refer to `AGENTS.md` for specific rules regarding syntax, linting, formatting, and required PR structures.
-- **It is not a repository map:** This document deliberately omits specific file names, folder structures, or module imports, as those will evolve. It defines the *conceptual* architecture that the codebase must embody.
+- **It is not a frozen repository manifest:** module names and folders may evolve, but the stage boundaries and validation principles in this document must remain stable.

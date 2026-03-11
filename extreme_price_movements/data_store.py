@@ -397,7 +397,7 @@ class PartitionedOHLCVStore:
             fpath = os.path.join(part_dir, fname)
 
             write_df = group.drop(columns=["year"])
-            write_df.to_parquet(fpath, index=False)
+            write_df.to_parquet(fpath, index=False, engine="pyarrow", compression="zstd")
 
             if not defer_compact:
                 self.compact_partition(symbol, year)
@@ -436,7 +436,7 @@ class PartitionedOHLCVStore:
 
         try:
             # Atomic write pattern
-            merged.to_parquet(temp_fpath, index=False)
+            merged.to_parquet(temp_fpath, index=False, engine="pyarrow", compression="zstd")
             os.replace(temp_fpath, new_fpath)
             
             # Log cumulative stats
@@ -622,7 +622,7 @@ def _feature_lock_path(parquet_path: str) -> str:
 
 def _atomic_write_parquet(df: pd.DataFrame, parquet_path: str):
     tmp_path = parquet_path + ".tmp"
-    df.to_parquet(tmp_path)
+    df.to_parquet(tmp_path, engine="pyarrow", compression="zstd")
     os.replace(tmp_path, parquet_path)
 
 
@@ -1301,7 +1301,7 @@ def save_artifact_df(df: pd.DataFrame, root_dir: str, run_id: str, category: str
     os.makedirs(out_dir, exist_ok=True)
     fpath = os.path.join(out_dir, f"{name}.parquet")
     tprint(f"Saving artifact: {fpath}")
-    df.to_parquet(fpath)
+    df.to_parquet(fpath, engine="pyarrow", compression="zstd")
 
 def load_artifact_df(root_dir: str, run_id: str, category: str, name: str) -> pd.DataFrame:
     """

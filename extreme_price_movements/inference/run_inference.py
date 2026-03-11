@@ -497,7 +497,7 @@ def main():
     parser.add_argument("--live", action="store_true", help="Run live trading mode")
     parser.add_argument("--shadow", action="store_true", default=True, help="Run shadow trading mode (default)")
     parser.add_argument("--symbols", nargs="+", default=None, help="Symbols to trade")
-    parser.add_argument("--inference-interval", type=int, default=3600, help="Inference interval in seconds (default: 3600 = 1 hour)")
+    parser.add_argument("--inference-interval", type=int, default=900, help="Inference interval in seconds (default: 900 = 15 minutes)")
     parser.add_argument("--challenger-interval", type=int, default=300, help="Challenger check interval in seconds (default: 300 = 5 min)")
     parser.add_argument("--lookback-hours", type=int, default=24 * 60, help="Lookback hours for features")
     args = parser.parse_args()
@@ -544,11 +544,11 @@ def main():
         )
         challenger_thread.start()
     
-    # Main inference loop - run hourly
+    # Main inference loop - run every 15m
     while True:
         try:
-            current_hour = pd.Timestamp.now(tz="UTC").floor("1h")
-            print(f"\n=== Running hourly inference at {current_hour} ===")
+            current_time = pd.Timestamp.now(tz="UTC").floor("15min")
+            print(f"\n=== Running 15m inference at {current_time} ===")
             
             # Fetch latest data (incremental)
             for symbol in symbols:
@@ -572,7 +572,7 @@ def main():
                 cooldown_hours = float(executor.get_cooldown_hours(bucket_key)) if hasattr(executor, "get_cooldown_hours") else 0.0
                 if _is_symbol_cooldown_blocked(
                     symbol,
-                    now=current_hour,
+                    now=current_time,
                     logger=logger,
                     executor=executor,
                     cooldown_hours=cooldown_hours,
@@ -598,9 +598,9 @@ def main():
                     # Log with full details
                     logger.log_trade(result, orchestrator.get_last_results(), market_data, {**config, "mode": executor.mode, **thresholds})
             
-            # Sleep until next hour
-            next_hour = current_hour + pd.Timedelta(hours=1)
-            sleep_seconds = (next_hour - pd.Timestamp.now(tz="UTC")).total_seconds()
+            # Sleep until next 15-minute interval
+            next_interval = current_time + pd.Timedelta(minutes=15)
+            sleep_seconds = (next_interval - pd.Timestamp.now(tz="UTC")).total_seconds()
             if sleep_seconds > 0:
                 time.sleep(sleep_seconds)
                 

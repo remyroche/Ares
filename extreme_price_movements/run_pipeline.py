@@ -965,7 +965,7 @@ def run_breakdown_diagnostics_standalone(cfg: dict, ts_override: str = None) -> 
 def main():
     clear_caches()
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_meta", "sizer", "backtest", "optimize_risk", "optimise", "run", "breakdown_diagnostics"],
+    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_base", "train_meta", "sizer", "optimise", "backtest", "run", "breakdown_diagnostics"],
                         help="Pipeline mode to run")
     parser.add_argument("-perps", "--perps", action="store_true", help="Run pipeline in perps mode (isolated *_perp roots)")
     parser.add_argument("--force-feature-recompute", action="store_true", help="Force full recompute in features mode")
@@ -1006,16 +1006,16 @@ def main():
         run_features(cfg, ts_override=args.ts_override, force_recompute=bool(args.force_feature_recompute))
     elif args.mode == "train":
         run_train(cfg, ts_override=args.ts_override, base_only=args.base_only, meta_only=args.meta_only)
+    elif args.mode == "train_base":
+        run_train(cfg, ts_override=args.ts_override, base_only=True, meta_only=False)
     elif args.mode == "train_meta":
         run_train_meta(cfg, ts_override=args.ts_override)
     elif args.mode == "sizer":
         run_sizer(cfg, ts_override=args.ts_override)
-    elif args.mode == "backtest":
-        run_backtest(cfg, ts_override=args.ts_override)
-    elif args.mode == "optimize_risk":
-        run_risk_opt(cfg, ts_override=args.ts_override)
     elif args.mode == "optimise":
         run_optimise(cfg, ts_override=args.ts_override)
+    elif args.mode == "backtest":
+        run_backtest(cfg, ts_override=args.ts_override)
     elif args.mode == "breakdown_diagnostics":
         run_breakdown_diagnostics_standalone(cfg, ts_override=args.ts_override)
     elif args.mode == "run":

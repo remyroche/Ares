@@ -54,7 +54,6 @@ from extreme_price_movements.position_sizer_v2_metrics import (
     compute_top_slice_metrics,
     compute_uncertainty_calibration,
 )
-from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.utils import tprint
 
 # ============================================================
@@ -138,27 +137,11 @@ def make_temporal_splits(
                 splits.append((tr, te))
         if splits:
             return splits, len(splits)
-    except Exception as e:
-        logger.warning(
-            f"Planner temporal splits failed: {e}. Falling back to PurgedKFold."
-        )
 
-    try:
-        cv = PurgedKFold(
-            n_splits=n_splits,
-            purge=purge_units,
-            embargo=embargo_units,
-            times=timestamps,
-        )
-        dummy_X = np.empty((n_samples, 1))
-        splits = list(cv.split(dummy_X))
-        if not splits:
-            raise ValueError("No splits generated")
-        return splits, len(splits)
-    except Exception as e:
-        logger.warning(f"PurgedKFold failed: {e}. Falling back to sequential holdout.")
-        mid = n_samples // 2
-        return [(np.arange(mid), np.arange(mid, n_samples))], 1
+    raise ValueError(
+        f"SlicePlanner failed to generate {n_splits} temporal splits for ridge sizer. "
+        "Ensure timestamps are valid and sufficient data exists."
+    )
 
 
 def build_log_clipped_target(returns: np.ndarray, clip_L: float = 0.02) -> np.ndarray:

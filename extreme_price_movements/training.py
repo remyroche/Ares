@@ -2889,19 +2889,52 @@ def _optimize_training_sample_weights(
         X_np_test = np.asarray(X_frame_test, dtype=np.float32)
 
         # We need a robust time-split for OOF predictions to prevent leakage
-        from .purged_cv import IntervalPurgedKFold
+        from extreme_price_movements.periods_symbols_management import (
+            EventSchema,
+            SlicePlanner,
+            SlicePlannerConfig,
+        )
 
         n_splits_ridge = int(cfg.get("sample_weight_opt_n_splits", 5))
         embargo_bars = int(cfg.get("sample_weight_opt_embargo_bars", 10))
 
-        label_intervals_ridge = np.column_stack(
-            [
-                pd.to_datetime(label_times["t_start"]).values.astype("datetime64[ns]"),
-                pd.to_datetime(label_times["t_end"]).values.astype("datetime64[ns]"),
-            ]
+        # Build events for SlicePlanner
+        events = pd.DataFrame(
+            {
+                "event_id": np.arange(n, dtype=np.int64),
+                "symbol": np.repeat("ALL", n),
+                "t0": pd.to_datetime(label_times["t_start"], utc=True, errors="coerce"),
+                "t1": pd.to_datetime(label_times["t_end"], utc=True, errors="coerce"),
+            }
         )
+        p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+        p_cfg = p_cfg.__class__(
+            **{
+                **p_cfg.__dict__,
+                "preset": p_cfg.preset.__class__(
+                    preset_name=p_cfg.preset.preset_name,
+                    outer=p_cfg.preset.outer,
+                    inner=p_cfg.preset.inner.__class__(n_splits=n_splits_ridge),
+                    sampling=p_cfg.preset.sampling,
+                    symbol_policy=p_cfg.preset.symbol_policy,
+                    purge_policy=p_cfg.preset.purge_policy,
+                ),
+                "silent": True,
+                "min_rows_per_fold": 1,
+                "min_symbols_per_fold": 1,
+            }
+        )
+        bundle = SlicePlanner(p_cfg).build(events)
+        splits = [
+            (plan.fit_idx, plan.predict_idx)
+            for plan in bundle["consumer_plans"]["ridge_sizer_fit"]
+            if plan.tag == "predict_outer_test"
+            and plan.fit_idx.size > 0
+            and plan.predict_idx.size > 0
+        ]
+        if not splits:
+            raise ValueError("SlicePlanner failed to generate ridge sizer splits")
 
-        cv = IntervalPurgedKFold(n_splits=n_splits_ridge, embargo_bars=embargo_bars)
         ridge_preds = np.full(n, 0.5, dtype=np.float32)
 
         # Standardize features locally for Ridge to ensure rapid and stable convergence
@@ -2912,9 +2945,7 @@ def _optimize_training_sample_weights(
         X_np_std -= mean
         X_np_std /= std
 
-        for train_idx, test_idx in cv.split(
-            X_np_std, qual_vals, label_intervals=label_intervals_ridge
-        ):
+        for train_idx, test_idx in splits:
             if len(train_idx) < 100 or len(test_idx) == 0:
                 continue
             from sklearn.linear_model import (  # Import Ridge here to avoid circular dependency if it's in the top-level import block
@@ -6251,6 +6282,7 @@ def train_meta_models_from_artifacts(
         y_mae,
         y_mfe,
         trade_mask,
+        timestamps,
         cv_embargo_bars=12,
         bucket_id: str | None = None,
         data_root: str = "data",
@@ -6262,8 +6294,11 @@ def train_meta_models_from_artifacts(
         Missing labels are handled via placeholder target + zero sample_weight (no semantic fallback).
         """
         from sklearn.ensemble import ExtraTreesRegressor
-
-        from .purged_cv import PurgedKFold as _PKF
+        from extreme_price_movements.periods_symbols_management import (
+            EventSchema,
+            SlicePlanner,
+            SlicePlannerConfig,
+        )
 
         try:
             from lightgbm import LGBMRegressor
@@ -6331,10 +6366,43 @@ def train_meta_models_from_artifacts(
             )
         )
 
-        _pkf_shared = _PKF(
-            n_splits=3, purge=int(cv_embargo_bars), embargo=int(cv_embargo_bars)
+        # Use SlicePlanner for temporal CV
+        events = pd.DataFrame(
+            {
+                "event_id": np.arange(n, dtype=np.int64),
+                "symbol": np.repeat("ALL", n),
+                "t0": pd.to_datetime(timestamps, utc=True, errors="coerce"),
+                "t1": pd.to_datetime(timestamps, utc=True, errors="coerce")
+                + pd.Timedelta(seconds=cv_embargo_bars),
+            }
         )
-        _splits_shared = list(_pkf_shared.split(Xv))
+        p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+        p_cfg = p_cfg.__class__(
+            **{
+                **p_cfg.__dict__,
+                "preset": p_cfg.preset.__class__(
+                    preset_name=p_cfg.preset.preset_name,
+                    outer=p_cfg.preset.outer,
+                    inner=p_cfg.preset.inner.__class__(n_splits=3),
+                    sampling=p_cfg.preset.sampling,
+                    symbol_policy=p_cfg.preset.symbol_policy,
+                    purge_policy=p_cfg.preset.purge_policy,
+                ),
+                "silent": True,
+                "min_rows_per_fold": 1,
+                "min_symbols_per_fold": 1,
+            }
+        )
+        bundle = SlicePlanner(p_cfg).build(events)
+        _splits_shared = [
+            (plan.fit_idx, plan.predict_idx)
+            for plan in bundle["consumer_plans"]["ridge_sizer_fit"]
+            if plan.tag == "predict_outer_test"
+            and plan.fit_idx.size > 0
+            and plan.predict_idx.size > 0
+        ]
+        if not _splits_shared:
+            raise ValueError("SlicePlanner failed to generate auxiliary head splits")
 
         # keep selector simple/robust: all numeric features
         idx_q = np.arange(Xv.shape[1], dtype=int)
@@ -8981,6 +9049,7 @@ def train_meta_models_from_artifacts(
                     y_mae=_y_mae,
                     y_mfe=_y_mfe,
                     trade_mask=_trade_mask,
+                    timestamps=df["__ts__"].values,
                     cv_embargo_bars=int(cfg.get("cv_embargo_bars", 12)),
                     bucket_id=f"{side}_{k}",
                     data_root=str(cfg.get("data_root", "data")),
@@ -9262,8 +9331,11 @@ def train_meta_models_from_artifacts(
             if "__early_inval__" in df.columns:
                 try:
                     from sklearn.linear_model import LogisticRegression
-
-                    from .purged_cv import PurgedKFold as _PKF
+                    from extreme_price_movements.periods_symbols_management import (
+                        EventSchema,
+                        SlicePlanner,
+                        SlicePlannerConfig,
+                    )
 
                     _y_ei = np.asarray(df["__early_inval__"].values, dtype=int)
                     _X_ei = (
@@ -9272,12 +9344,47 @@ def train_meta_models_from_artifacts(
                         .to_numpy(dtype=float)
                     )
                     _oof_ei = np.full(len(_y_ei), 0.5, dtype=float)
-                    _pkf = _PKF(
-                        n_splits=3,
-                        purge=int(cfg.get("cv_embargo_bars", 12)),
-                        embargo=int(cfg.get("cv_embargo_bars", 12)),
+                    
+                    # Use SlicePlanner for temporal CV
+                    n_ei = len(_y_ei)
+                    events = pd.DataFrame(
+                        {
+                            "event_id": np.arange(n_ei, dtype=np.int64),
+                            "symbol": np.repeat("ALL", n_ei),
+                            "t0": pd.to_datetime(df["__ts__"], utc=True, errors="coerce"),
+                            "t1": pd.to_datetime(df["__ts__"], utc=True, errors="coerce")
+                            + pd.Timedelta(seconds=int(cfg.get("cv_embargo_bars", 12))),
+                        }
                     )
-                    for _tr, _va in _pkf.split(_X_ei):
+                    p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+                    p_cfg = p_cfg.__class__(
+                        **{
+                            **p_cfg.__dict__,
+                            "preset": p_cfg.preset.__class__(
+                                preset_name=p_cfg.preset.preset_name,
+                                outer=p_cfg.preset.outer,
+                                inner=p_cfg.preset.inner.__class__(n_splits=3),
+                                sampling=p_cfg.preset.sampling,
+                                symbol_policy=p_cfg.preset.symbol_policy,
+                                purge_policy=p_cfg.preset.purge_policy,
+                            ),
+                            "silent": True,
+                            "min_rows_per_fold": 1,
+                            "min_symbols_per_fold": 1,
+                        }
+                    )
+                    bundle = SlicePlanner(p_cfg).build(events)
+                    splits = [
+                        (plan.fit_idx, plan.predict_idx)
+                        for plan in bundle["consumer_plans"]["ridge_sizer_fit"]
+                        if plan.tag == "predict_outer_test"
+                        and plan.fit_idx.size > 0
+                        and plan.predict_idx.size > 0
+                    ]
+                    if not splits:
+                        raise ValueError("SlicePlanner failed to generate early invalidation splits")
+                    
+                    for _tr, _va in splits:
                         if len(np.unique(_y_ei[_tr])) < 2:
                             continue
                         _m_ei = LogisticRegression(

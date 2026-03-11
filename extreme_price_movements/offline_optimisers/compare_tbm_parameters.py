@@ -135,7 +135,6 @@ from extreme_price_movements.production_sl_tp_policy import (
     SLTPPolicy,
     expand_configs_wide_sl_tp_additive_superiority,
 )
-from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.sample_weights import (
     NegMassRenormCfg,
     compute_cell_weights_neg_mass_renorm,
@@ -2118,9 +2117,6 @@ def _strict_walk_forward_probe_auc(
     min_train = int(cfg.get("stage2_probe_min_train_rows", 200))
     min_val = int(cfg.get("stage2_probe_min_val_rows", 120))
 
-    # Convert timestamps to float seconds for PurgedKFold
-    ts_seconds = pd.DatetimeIndex(ts).asi8 / 1e9
-
     # Base horizon logic
     horizon = int(cfg.get("horizon_base", 4))
     purge_seconds = horizon * 3600  # Default 1h bars * horizon
@@ -2154,25 +2150,6 @@ def _strict_walk_forward_probe_auc(
         if not cand:
             raise ValueError("No planner barrier_search splits")
         train_idx, val_idx = cand[-1].fit_idx, cand[-1].predict_idx
-    except Exception:
-        try:
-            pkf = PurgedKFold(
-                n_splits=3,
-                purge=purge_seconds,
-                embargo=embargo_seconds,
-                times=ts_seconds,
-            )
-            splits = list(pkf.split(X))
-            if not splits:
-                raise ValueError("No splits generated")
-            train_idx, val_idx = splits[-1]
-        except Exception:
-            n = len(y)
-            train_frac = float(cfg.get("stage2_probe_train_fraction", 0.7))
-            cut = max(1, min(n - 1, int(n * train_frac)))
-            p_idx = 10
-            train_idx = np.arange(0, max(0, cut - p_idx))
-            val_idx = np.arange(cut, n)
 
     n_tr = len(train_idx)
     n_va = len(val_idx)
@@ -2818,7 +2795,7 @@ def _ridge_predict_oof_with_cache(
     if len(unique_ts_int) < n_folds + 5:
         n_folds = max(2, len(unique_ts_int) // 5)
 
-    # Convert to seconds for PurgedKFold
+    # Convert to seconds for SlicePlanner
     ts_seconds = ts_int / 1e9
 
     # Extract horizon if present in kwargs/cfg, else default
@@ -2852,28 +2829,6 @@ def _ridge_predict_oof_with_cache(
                 splits.append((plan.fit_idx, plan.predict_idx))
         if not splits:
             raise ValueError("No planner barrier_search splits")
-    except Exception:
-        try:
-            pkf = PurgedKFold(
-                n_splits=n_folds,
-                purge=purge_seconds,
-                embargo=embargo_seconds,
-                times=ts_seconds,
-            )
-            splits = list(pkf.split(X))
-            if not splits:
-                raise ValueError("No splits generated")
-        except Exception:
-            splits = []
-            chunks = np.array_split(unique_ts_int, n_folds)
-            for test_ts_chunk in chunks:
-                if len(test_ts_chunk) == 0:
-                    continue
-                test_mask = np.isin(ts_int, test_ts_chunk)
-                train_mask = ~test_mask
-                test_indices = np.where(test_mask)[0]
-                train_indices = np.where(train_mask)[0]
-                splits.append((train_indices, test_indices))
 
     for train_indices, test_indices in splits:
         if len(train_indices) < 100 or len(test_indices) == 0:

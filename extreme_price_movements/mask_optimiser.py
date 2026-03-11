@@ -27,7 +27,6 @@ from extreme_price_movements.periods_symbols_management import (
     SlicePlanner,
     SlicePlannerConfig,
 )
-from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.utils import tprint
 
 LOGGER = logging.getLogger(__name__)
@@ -847,6 +846,12 @@ def _build_temporal_folds(
         if ts.isna().all():
             ts = pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce")
         ts = ts.ffill().bfill()
+        span_days = max(
+            1.0,
+            float((ts.max() - ts.min()) / pd.Timedelta(days=1))
+            if ts.notna().any()
+            else 1.0,
+        )
         events = pd.DataFrame(
             {
                 "event_id": np.arange(n_samples, dtype=np.int64),
@@ -861,10 +866,30 @@ def _build_temporal_folds(
                 **cfg.__dict__,
                 "preset": cfg.preset.__class__(
                     preset_name=cfg.preset.preset_name,
-                    outer=cfg.preset.outer,
+                    outer=cfg.preset.outer.__class__(
+                        train_mode=cfg.preset.outer.train_mode,
+                        train_span=pd.Timedelta(days=max(14, int(span_days * 0.50))),
+                        valid_span=pd.Timedelta(days=max(3, int(span_days * 0.10))),
+                        test_span=pd.Timedelta(days=max(7, int(span_days * 0.15))),
+                        step_span=pd.Timedelta(days=max(7, int(span_days * 0.15))),
+                    ),
                     inner=cfg.preset.inner.__class__(n_splits=max(1, int(n_splits))),
-                    sampling=cfg.preset.sampling,
-                    symbol_policy=cfg.preset.symbol_policy,
+                    sampling=cfg.preset.sampling.__class__(
+                        **{
+                            **cfg.preset.sampling.__dict__,
+                            "mode": "all",
+                            "event_fraction": 1.0,
+                            "symbol_fraction": 1.0,
+                        }
+                    ),
+                    symbol_policy=cfg.preset.symbol_policy.__class__(
+                        **{
+                            **cfg.preset.symbol_policy.__dict__,
+                            "mode": "all_symbols",
+                            "subset_fraction": 1.0,
+                            "min_symbols_per_split": 1,
+                        }
+                    ),
                     purge_policy=cfg.preset.purge_policy,
                 ),
                 "silent": True,
@@ -882,11 +907,16 @@ def _build_temporal_folds(
                 folds.append((tr, va))
         if folds:
             return folds
-    except Exception as e:
-        LOGGER.warning(
-            "Planner fold delegation failed; falling back to PurgedKFold: %s", e
+        raise ValueError(
+            f"SlicePlanner failed to generate {n_splits} temporal folds from {n_samples} samples. "
+            "Ensure timestamps are valid and sufficient data exists."
         )
-
+    except Exception as e:
+        _log_bounded_warning(
+            "planner_fold_fallback",
+            f"Planner fold delegation failed; falling back to PurgedKFold: {e}",
+            limit=10,
+        )
     try:
         cv = PurgedKFold(
             n_splits=n_splits, purge=43200, embargo=43200, times=timestamps
@@ -898,14 +928,114 @@ def _build_temporal_folds(
     except Exception:
         if n_samples < 2:
             return []
-        mid = n_samples // 2
+        uniq_ts = np.unique(np.asarray(timestamps))
+        if uniq_ts.shape[0] < 2:
+            return []
+        mid_ts = uniq_ts.shape[0] // 2
+        train_mask = np.isin(timestamps, uniq_ts[:mid_ts])
+        valid_mask = np.isin(timestamps, uniq_ts[mid_ts:])
         return [
-            (np.arange(mid, dtype=np.int32), np.arange(mid, n_samples, dtype=np.int32))
+            (
+                np.flatnonzero(train_mask).astype(np.int32),
+                np.flatnonzero(valid_mask).astype(np.int32),
+            )
         ]
     if n_samples < 2:
         return []
-    mid = n_samples // 2
-    return [(np.arange(mid, dtype=np.int32), np.arange(mid, n_samples, dtype=np.int32))]
+    uniq_ts = np.unique(np.asarray(timestamps))
+    if uniq_ts.shape[0] < 2:
+        return []
+    mid_ts = uniq_ts.shape[0] // 2
+    train_mask = np.isin(timestamps, uniq_ts[:mid_ts])
+    valid_mask = np.isin(timestamps, uniq_ts[mid_ts:])
+    return [
+        (
+            np.flatnonzero(train_mask).astype(np.int32),
+            np.flatnonzero(valid_mask).astype(np.int32),
+        )
+    ]
+
+
+def _apply_regime_search_slice_plan(
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    forward_returns: np.ndarray,
+    lookback_years: float,
+) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray]:
+    """Use periods_symbols_management regime_search plans to define the optimizer sample."""
+    if data.empty:
+        return data, feature_dict, forward_returns
+    try:
+        ts = pd.to_datetime(data["timestamp"], utc=True, errors="coerce")
+        span_days = max(
+            1.0,
+            float((ts.max() - ts.min()) / pd.Timedelta(days=1))
+            if ts.notna().any()
+            else 1.0,
+        )
+        events = pd.DataFrame(
+            {
+                "event_id": np.arange(data.shape[0], dtype=np.int64),
+                "symbol": data["symbol"].astype(str).values,
+                "t0": ts.to_numpy(),
+                "t1": (ts + pd.Timedelta(seconds=1)).to_numpy(),
+            }
+        )
+        cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+        cfg = cfg.__class__(
+            **{
+                **cfg.__dict__,
+                "preset": cfg.preset.__class__(
+                    preset_name=cfg.preset.preset_name,
+                    outer=cfg.preset.outer.__class__(
+                        train_mode=cfg.preset.outer.train_mode,
+                        train_span=pd.Timedelta(days=max(14, int(span_days * 0.50))),
+                        valid_span=pd.Timedelta(days=max(3, int(span_days * 0.10))),
+                        test_span=pd.Timedelta(days=max(7, int(span_days * 0.15))),
+                        step_span=pd.Timedelta(days=max(7, int(span_days * 0.15))),
+                    ),
+                    inner=cfg.preset.inner,
+                    sampling=cfg.preset.sampling,
+                    symbol_policy=cfg.preset.symbol_policy,
+                    purge_policy=cfg.preset.purge_policy,
+                ),
+                "consumer_overrides": {
+                    **dict(cfg.consumer_overrides),
+                    "full_inference_lookback_years": float(lookback_years),
+                },
+                "silent": True,
+                "min_rows_per_fold": 1,
+                "min_symbols_per_fold": 1,
+            }
+        )
+        bundle = SlicePlanner(cfg).build(events)
+        consumer_plans = bundle["consumer_plans"]
+        plans = consumer_plans.get("regime_search", [])
+        idx_parts: List[np.ndarray] = []
+        for plan in plans:
+            if plan.fit_idx.size > 0:
+                idx_parts.append(np.asarray(plan.fit_idx, dtype=np.int64))
+            if plan.predict_idx.size > 0:
+                idx_parts.append(np.asarray(plan.predict_idx, dtype=np.int64))
+        if not idx_parts:
+            tprint("periods/symbols regime_search slice plan produced no rows; using capped sample")
+            return data, feature_dict, forward_returns
+        idx = np.unique(np.concatenate(idx_parts)).astype(np.int64)
+        idx.sort()
+        tprint(
+            "Applied periods/symbols regime_search slice plan: "
+            f"rows={idx.size}/{data.shape[0]} symbols={data.iloc[idx]['symbol'].nunique()}"
+        )
+        data_out = data.iloc[idx].reset_index(drop=True)
+        feat_out = {k: np.asarray(v)[idx] for k, v in feature_dict.items()}
+        fwd_out = np.asarray(forward_returns)[idx]
+        return data_out, feat_out, fwd_out
+    except Exception as e:
+        tprint(f"periods/symbols regime_search slice plan failed; using capped sample ({e})")
+        LOGGER.warning(
+            "regime_search slice-plan delegation failed; using raw sample: %s", e
+        )
+        return data, feature_dict, forward_returns
 
 
 def _impute_and_scale_train_valid(
@@ -2172,9 +2302,10 @@ def _compute_phase3_feature_learnability(
 ) -> Dict[str, Any]:
     min_pos_frac = float(cfg.get("min_feature_positive_fold_fraction", 0.60))
     top_k = int(cfg.get("feature_learnability_top_k", 10))
-    y = _mode_primary_target(
+    y_raw = _mode_primary_target(
         mode, shared["forward_returns"], float(cfg.get("phase1_ret_threshold", 0.0))
-    ).astype(np.int8)
+    )
+    y = np.nan_to_num(y_raw, nan=0.0).astype(np.int8)
     n = y.shape[0]
     regime = side_mask.astype(bool)
 
@@ -4047,11 +4178,12 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
     all_symbols = _dedup_universe_by_base(all_symbols)
     tprint(f"Symbols after deduplication: {len(all_symbols)}")
 
-    # Then subsample to 50%
-    rng = random.Random(42)
-    k = max(1, len(all_symbols) // 2)
-    symbols = rng.sample(all_symbols, k)
-    tprint(f"Selected {len(symbols)} symbols (50%% subsample)")
+    symbols = list(all_symbols)
+    if args.max_symbols is not None:
+        symbols = symbols[: max(1, int(args.max_symbols))]
+        tprint(f"Selected {len(symbols)} symbols via --max-symbols")
+    else:
+        tprint(f"Selected {len(symbols)} deduplicated symbols")
 
     start_ts = pd.Timestamp.now(tz="UTC") - pd.Timedelta(
         days=int(365.25 * args.lookback_years)
@@ -4126,6 +4258,12 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
         forward_returns=fwd_ret_stacked,
         cfg=cfg,
         seed=42,
+    )
+    data_stacked, feature_dict, fwd_ret_stacked = _apply_regime_search_slice_plan(
+        data=data_stacked,
+        feature_dict=feature_dict,
+        forward_returns=fwd_ret_stacked,
+        lookback_years=float(args.lookback_years),
     )
 
     if args.mode == "all":

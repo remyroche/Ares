@@ -2592,6 +2592,8 @@ def _compute_full_metrics_for_candidate(
         "magnitude_delta_fold_std": float("nan"),
         "selected_delta_metric": "",
         "incremental_information_delta_auc": float("nan"),
+        "incremental_information_delta_auc_fold_mean": float("nan"),
+        "incremental_information_delta_auc_fold_std": float("nan"),
         "incremental_information_positive_fold_fraction": float("nan"),
         "incremental_information_positive_fold_count": float("nan"),
         "incremental_information_fold_count": float("nan"),

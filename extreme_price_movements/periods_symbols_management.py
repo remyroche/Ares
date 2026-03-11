@@ -1495,6 +1495,34 @@ def build_consumer_slice_plan(
                 },
             )
 
+    # Summary log: total rows sent to this consumer
+    if plans:
+        total_fit_rows = sum(int(p.fit_idx.size) for p in plans)
+        total_pred_rows = sum(int(p.predict_idx.size) for p in plans)
+        all_symbols = set()
+        for p in plans:
+            all_symbols.update(p.symbols_fit)
+            all_symbols.update(p.symbols_predict)
+        
+        # Calculate overall period
+        all_fit_starts = [p.metadata.get("fit_actual_start") for p in plans if p.metadata.get("fit_actual_start")]
+        all_fit_ends = [p.metadata.get("fit_actual_end") for p in plans if p.metadata.get("fit_actual_end")]
+        all_pred_starts = [p.metadata.get("predict_actual_start") for p in plans if p.metadata.get("predict_actual_start")]
+        all_pred_ends = [p.metadata.get("predict_actual_end") for p in plans if p.metadata.get("predict_actual_end")]
+        
+        overall_start = min(all_fit_starts + all_pred_starts) if (all_fit_starts + all_pred_starts) else None
+        overall_end = max(all_fit_ends + all_pred_ends) if (all_fit_ends + all_pred_ends) else None
+        
+        log(
+            f"[slice_planner] SUMMARY for consumer={consumer_role}: "
+            f"period={overall_start} to {overall_end}, "
+            f"symbols={len(all_symbols)}, "
+            f"total_fit_rows={total_fit_rows}, "
+            f"total_pred_rows={total_pred_rows}, "
+            f"total_rows={total_fit_rows + total_pred_rows}, "
+            f"n_plans={len(plans)}"
+        )
+
     return plans
 
 
@@ -1522,6 +1550,17 @@ class SlicePlanner:
             )
             for role in CONSUMER_ROLES
         }
+
+        # Overall summary across all consumers
+        self._log(
+            f"[slice_planner] OVERALL SUMMARY: "
+            f"preset={self.config.preset.preset_name}, "
+            f"n_events={clean.shape[0]}, "
+            f"n_symbols={clean[self.config.schema.symbol_col].nunique()}, "
+            f"n_outer_folds={len(outer)}, "
+            f"n_outer_active={sum(0 if of.skipped else 1 for of in outer)}, "
+            f"n_consumers={len(CONSUMER_ROLES)}"
+        )
 
         return {
             "events": clean,

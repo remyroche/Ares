@@ -221,3 +221,10 @@ over Python loops.
 
 Exception: loops inside Numba kernels.
 
+# Agent Research Protocols
+
+Agents must follow the research methodology defined in:
+
+agents/
+
+start with agents/README.md

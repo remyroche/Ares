@@ -1,0 +1,1 @@
+{"version": 1, "roll_window": 10, "winsor_qt": 0.05, "sigma_k": 1.6448536269514722, "rows": 100, "cols": ["a", "b"], "first_ts": "0", "last_ts": "99"}

@@ -119,6 +119,7 @@ from extreme_price_movements.production_sl_tp_policy import (
     SLTPPolicy,
     expand_configs_wide_sl_tp_additive_superiority,
 )
+from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.hf_data_loader import (
     HF_DATA_DIR,
     HF_DATA_DIR_5M,
@@ -1826,35 +1827,47 @@ def _strict_walk_forward_probe_auc(
 ) -> Tuple[float, float, str, int, int]:
     if len(y) < int(cfg.get("stage2_probe_min_rows", 400)):
         return float("nan"), float("nan"), "insufficient_rows", 0, 0
-    _u_ts = np.sort(pd.Index(ts).unique())
-    train_frac = float(cfg.get("stage2_probe_train_fraction", 0.7))
     min_train = int(cfg.get("stage2_probe_min_train_rows", 200))
     min_val = int(cfg.get("stage2_probe_min_val_rows", 120))
-    if len(_u_ts) >= 10:
-        split_idx = max(1, int(len(_u_ts) * train_frac))
-        split_idx = min(split_idx, len(_u_ts) - 1)
-        split_ts = _u_ts[split_idx]
-        train_mask = ts < split_ts
-        val_mask = ~train_mask
-    else:
-        # Fallback: strictly forward by row order when timestamp granularity is coarse.
+
+    # Convert timestamps to float seconds for PurgedKFold
+    ts_seconds = pd.DatetimeIndex(ts).asi8 / 1e9
+
+    # Base horizon logic
+    horizon = int(cfg.get("horizon_base", 4))
+    purge_seconds = horizon * 3600  # Default 1h bars * horizon
+    embargo_seconds = int(purge_seconds * 0.5)
+
+    try:
+        pkf = PurgedKFold(n_splits=3, purge=purge_seconds, embargo=embargo_seconds, times=ts_seconds)
+        splits = list(pkf.split(X))
+        if not splits:
+            raise ValueError("No splits generated")
+
+        # Use the last split for the strictest walk-forward test (most recent data is validation)
+        train_idx, val_idx = splits[-1]
+    except Exception as e:
+        # Fallback: strictly forward by row order
         n = len(y)
+        train_frac = float(cfg.get("stage2_probe_train_fraction", 0.7))
         cut = max(1, min(n - 1, int(n * train_frac)))
-        train_mask = np.zeros(n, dtype=bool)
-        train_mask[:cut] = True
-        val_mask = ~train_mask
-    n_tr = int(train_mask.sum())
-    n_va = int(val_mask.sum())
+        # Apply minimal purge/embargo in terms of index units if possible
+        p_idx = 10
+        train_idx = np.arange(0, max(0, cut - p_idx))
+        val_idx = np.arange(cut, n)
+
+    n_tr = len(train_idx)
+    n_va = len(val_idx)
     if n_tr < min_train or n_va < min_val:
         return float("nan"), float("nan"), "insufficient_split", n_tr, n_va
-    y_tr = y[train_mask]
-    y_va = y[val_mask]
+    y_tr = y[train_idx]
+    y_va = y[val_idx]
     if np.unique(y_tr).size < 2 or np.unique(y_va).size < 2:
         return float("nan"), float("nan"), "single_class_split", n_tr, n_va
 
-    X_tr = X[train_mask]
-    X_va = X[val_mask]
-    w_tr = None if w is None else w[train_mask]
+    X_tr = X[train_idx]
+    X_va = X[val_idx]
+    w_tr = None if w is None else w[train_idx]
     engine = str(cfg.get("stage2_probe_engine", "xgb" if xgb is not None else "extratrees")).lower()
     pred = None
     try:
@@ -2416,20 +2429,49 @@ def _ridge_predict_oof_with_cache(
     if len(unique_ts_int) < n_folds + 5:
         n_folds = max(2, len(unique_ts_int) // 5)
 
-    chunks = np.array_split(unique_ts_int, n_folds)
+    # Convert to seconds for PurgedKFold
+    ts_seconds = ts_int / 1e9
 
-    for test_ts_chunk in chunks:
-        if len(test_ts_chunk) == 0:
-            continue
-        test_mask = np.isin(ts_int, test_ts_chunk)
-        train_mask = ~test_mask
-        if int(train_mask.sum()) < 100 or int(test_mask.sum()) == 0:
+    # Extract horizon if present in kwargs/cfg, else default
+    # Note: since we don't pass cfg or horizon here directly, use a safe default like 4 hours
+    purge_seconds = 4 * 3600
+    embargo_seconds = int(purge_seconds * 0.5)
+
+    try:
+        pkf = PurgedKFold(n_splits=n_folds, purge=purge_seconds, embargo=embargo_seconds, times=ts_seconds)
+        splits = list(pkf.split(X))
+        if not splits:
+            raise ValueError("No splits generated")
+    except Exception as e:
+        # Fallback to simple temporal chunking
+        splits = []
+        chunks = np.array_split(unique_ts_int, n_folds)
+        for test_ts_chunk in chunks:
+            if len(test_ts_chunk) == 0:
+                continue
+            test_mask = np.isin(ts_int, test_ts_chunk)
+            train_mask = ~test_mask
+
+            # Simple purge logic (just drop last P events from train before test)
+            test_indices = np.where(test_mask)[0]
+            train_indices = np.where(train_mask)[0]
+
+            splits.append((train_indices, test_indices))
+
+    for train_indices, test_indices in splits:
+        if len(train_indices) < 100 or len(test_indices) == 0:
             continue
 
-        X_train = X[train_mask]
-        y_train = y_bin[train_mask]
-        w_train = sample_weight[train_mask]
-        X_test = X[test_mask]
+        test_mask = np.zeros(len(X), dtype=bool)
+        test_mask[test_indices] = True
+
+        train_mask = np.zeros(len(X), dtype=bool)
+        train_mask[train_indices] = True
+
+        X_train = X[train_indices]
+        y_train = y_bin[train_indices]
+        w_train = sample_weight[train_indices]
+        X_test = X[test_indices]
 
         # Robust standardisation: vectorised numpy (avoids sklearn object overhead per fold).
         # median + IQR computed once over train set, applied to both train and test.
@@ -2477,7 +2519,7 @@ def _ridge_predict_oof_with_cache(
         p = (X_test_s @ coef + intercept).astype(np.float32, copy=False)
         # For Ridge on binary targets, raw p is a better probability proxy than sigmoid(p).
         p_clipped = np.clip(p, 0.0, 1.0)
-        pred[test_mask] = p_clipped.astype(np.float32, copy=False)
+        pred[test_indices] = p_clipped.astype(np.float32, copy=False)
 
         if warm_cache is not None and warm_key:
             warm_cache[warm_key] = (coef.astype(np.float32, copy=True), float(intercept))

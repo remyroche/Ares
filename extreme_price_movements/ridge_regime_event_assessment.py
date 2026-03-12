@@ -75,6 +75,16 @@ RIDGE_FEATURE_META = {
     "dist_ma100_atr": {"family": "stretch", "type": "continuous"},
     "volatility_ratio_short_long": {"family": "volatility", "type": "continuous"},
     "volume_percentile": {"family": "liquidity", "type": "continuous"},
+    
+    # User-requested technical regimes (v17)
+    "range_atr": {"family": "context", "type": "continuous"},
+    "body_ratio": {"family": "path_structure", "type": "continuous"},
+    "upper_wick_ratio": {"family": "liquidity", "type": "continuous"},
+    "lower_wick_ratio": {"family": "liquidity", "type": "continuous"},
+    "ema20_slope_5h": {"family": "trend", "type": "continuous"},
+    "pullback_depth": {"family": "trend", "type": "continuous"},
+    "atr_compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
+    "acceleration_norm": {"family": "context", "type": "continuous"},
 }
 
 RIDGE_FEATURE_COLS = list(RIDGE_FEATURE_META.keys())
@@ -136,6 +146,11 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     if not np.issubdtype(df["timestamp"].dtype, np.datetime64):
         df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    # Ensure numeric columns are actually numeric
+    for col in ["high", "low", "close", "volume", "open"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').astype(np.float32)
 
     # -----------------------------
     # Trend
@@ -335,6 +350,28 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df["volatility_ratio_short_long"] = df["rolling_std_4h"] / df["realized_volatility_24h"].replace(0, np.nan)
 
     df["volume_percentile"] = rolling_percentile_rank(df["volume"], 168)
+
+    # -----------------------------
+    # v17: Technical Regime Additions
+    # -----------------------------
+    df["range_atr"] = (df["high"] - df["low"]) / df["atr14"].replace(0, np.nan)
+    df["body_ratio"] = (df["close"] - df["open"]).abs() / (df["high"] - df["low"]).replace(0, np.nan)
+    
+    # Clearer wick definitions
+    df["upper_wick_ratio"] = (df["high"] - df[["open", "close"]].max(axis=1)) / (df["high"] - df["low"]).replace(0, np.nan)
+    df["lower_wick_ratio"] = (df[["open", "close"]].min(axis=1) - df["low"]) / (df["high"] - df["low"]).replace(0, np.nan)
+    
+    # Specific slopes and depths
+    df["ema20_slope_5h"] = (df["ema20"] - df["ema20"].shift(5)) / df["atr14"].replace(0, np.nan)
+    df["pullback_depth"] = (df["ema20"] - df["low"]) / df["atr14"].replace(0, np.nan)
+    
+    # ATR-based compression
+    df["atr_long"] = true_range(df).rolling(200).mean()
+    df["atr_compression_ratio"] = df["atr14"] / df["atr_long"].replace(0, np.nan)
+    
+    # Normalized second-order acceleration
+    # accel = close - 2*close[-1] + close[-2]
+    df["acceleration_norm"] = (df["close"] - 2*df["close"].shift(1) + df["close"].shift(2)) / df["atr14"].replace(0, np.nan)
 
     return df
 
@@ -549,22 +586,32 @@ def fit_ridge_regime_scan(
     model.fit(X, y)
     full_ridge = model.named_steps["ridge"]
     best_alpha = full_ridge.alpha_
+    
+    # Preprocessor might drop columns if they are all NaN
+    # We need to get the actual feature names passed to the ridge model
+    try:
+        # scikit-learn >= 1.2
+        used_features = model.named_steps["prep"].get_feature_names_out()
+        # strip the prefix 'num__'
+        used_features = [f.replace("num__", "") for f in used_features]
+    except:
+        used_features = feature_cols
 
     coef_df = pd.DataFrame(
         {
-            "feature": feature_cols,
+            "feature": used_features,
             "coef": full_ridge.coef_,
         }
     )
 
-    fold_coef_df = pd.DataFrame(fold_coefs, columns=feature_cols)
+    fold_coef_df = pd.DataFrame(fold_coefs, columns=used_features)
 
     signs = np.sign(fold_coef_df)
     sign_cons = signs.sum(axis=0).abs() / n_splits
 
     coef_stability = pd.DataFrame(
         {
-            "feature": feature_cols,
+            "feature": used_features,
             "coef_mean": fold_coef_df.mean(axis=0).values,
             "coef_std": fold_coef_df.std(axis=0).values,
             "coef_abs_mean": fold_coef_df.abs().mean(axis=0).values,

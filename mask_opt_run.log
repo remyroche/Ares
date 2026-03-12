@@ -1,0 +1,51 @@
+[2026-03-12 19:11:32 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-12 19:11:32 UTC] Loading data: data_root=/Users/remyroche/Documents/Ares/data | features=/Users/remyroche/Documents/Ares/data/features/20260214_190000
+[2026-03-12 19:11:32 UTC] Symbols after deduplication: 529
+[2026-03-12 19:11:32 UTC] Selected 2 symbols via --max-symbols
+[2026-03-12 19:11:32 UTC] Found 2 feature files in /Users/remyroche/Documents/Ares/data/features/20260214_190000. Selective load: keys=14, symbols=2
+[2026-03-12 19:11:32 UTC] Selective feature load progress: 2/2 files (100.0%) in 0.1s
+[2026-03-12 19:11:32 UTC] Loaded raw arrays for 2 features. Returning LazyFeatureDict proxy.
+[2026-03-12 19:11:32 UTC] Lazy-assembling DataFrame for 'vol_regime_z'...
+[2026-03-12 19:11:32 UTC] Lazy-assembling DataFrame for 'rv_ratio_6_24'...
+[2026-03-12 19:11:32 UTC] Total rows available before SlicePlanner: 3036
+[2026-03-12 19:11:32 UTC] periods/symbols regime_search slice plan failed; using capped sample (Cannot take a larger sample than population when replace is False)
+regime_search slice-plan delegation failed; using raw sample: Cannot take a larger sample than population when replace is False
+[2026-03-12 19:11:32 UTC] SlicePlanner gave 3036 structured rows for Phase 3+4.
+[2026-03-12 19:11:32 UTC] Starting 4-mode Layer 0 optimization (deep=3036, cap=50000, p1_floor=20000)...
+[2026-03-12 19:11:32 UTC] Rescaled per-bucket gates for capped sample: rows=3036, min_events=150, min_active_days_fraction=0.250
+[2026-03-12 19:11:32 UTC] Running mode price_up_mr in isolated subprocess...
+[2026-03-12 19:11:35 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-12 19:11:35 UTC] Building shared cache...
+[2026-03-12 19:11:35 UTC] ================================================================================
+[2026-03-12 19:11:35 UTC] LAYER 0 MODE SEARCH: price_up_mr
+[2026-03-12 19:11:35 UTC] ================================================================================
+[2026-03-12 19:11:35 UTC] Phase 1 (price_up_mr): evaluating 216 candidates on 50% symbols + 50% history...
+[2026-03-12 19:11:36 UTC] Running mode price_up_tf in isolated subprocess...
+[2026-03-12 19:11:38 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-12 19:11:38 UTC] Building shared cache...
+[2026-03-12 19:11:38 UTC] ================================================================================
+[2026-03-12 19:11:38 UTC] LAYER 0 MODE SEARCH: price_up_tf
+[2026-03-12 19:11:38 UTC] ================================================================================
+[2026-03-12 19:11:38 UTC] Phase 1 (price_up_tf): evaluating 216 candidates on 50% symbols + 50% history...
+[2026-03-12 19:11:39 UTC] Running mode price_down_mr in isolated subprocess...
+[2026-03-12 19:11:42 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-12 19:11:42 UTC] Building shared cache...
+[2026-03-12 19:11:42 UTC] ================================================================================
+[2026-03-12 19:11:42 UTC] LAYER 0 MODE SEARCH: price_down_mr
+[2026-03-12 19:11:42 UTC] ================================================================================
+[2026-03-12 19:11:42 UTC] Phase 1 (price_down_mr): evaluating 216 candidates on 50% symbols + 50% history...
+[2026-03-12 19:11:42 UTC] Running mode price_down_tf in isolated subprocess...
+[2026-03-12 19:11:45 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-12 19:11:45 UTC] Building shared cache...
+[2026-03-12 19:11:45 UTC] ================================================================================
+[2026-03-12 19:11:45 UTC] LAYER 0 MODE SEARCH: price_down_tf
+[2026-03-12 19:11:45 UTC] ================================================================================
+[2026-03-12 19:11:45 UTC] Phase 1 (price_down_tf): evaluating 216 candidates on 50% symbols + 50% history...
+[2026-03-12 19:11:46 UTC] ================================================================================
+[2026-03-12 19:11:46 UTC] MODE SUMMARY
+[2026-03-12 19:11:46 UTC] ================================================================================
+[2026-03-12 19:11:46 UTC]          mode                       status best_name  candidate_count  shortlist_count  best_shortlist_score  score_r  delta_r  N_r  S_r  D_r  event_count  active_days_fraction  events_per_day_mean  events_per_day_std  events_per_day_per_asset  primary_gain  primary_gain_is_nan  incremental_information_delta_auc  incremental_information_positive_fold_fraction  dispersion_to_edge_ratio selected_delta_metric decision rationale
+  price_up_mr   mode_exception_price_up_mr                          0                0                   0.0      NaN      NaN  0.0  NaN  NaN            0                   0.0                  NaN                 NaN                       NaN           0.0                  NaN                                NaN                                             NaN                       NaN                         failed          
+  price_up_tf   mode_exception_price_up_tf                          0                0                   0.0      NaN      NaN  0.0  NaN  NaN            0                   0.0                  NaN                 NaN                       NaN           0.0                  NaN                                NaN                                             NaN                       NaN                         failed          
+price_down_mr mode_exception_price_down_mr                          0                0                   0.0      NaN      NaN  0.0  NaN  NaN            0                   0.0                  NaN                 NaN                       NaN           0.0                  NaN                                NaN                                             NaN                       NaN                         failed          
+price_down_tf mode_exception_price_down_tf                          0                0                   0.0      NaN      NaN  0.0  NaN  NaN            0                   0.0                  NaN                 NaN                       NaN           0.0                  NaN                                NaN                                             NaN                       NaN                         failed          

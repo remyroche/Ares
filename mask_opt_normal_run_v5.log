@@ -1,0 +1,117 @@
+[2026-03-12 20:42:30 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-12 20:42:30 UTC] ================================================================================
+[2026-03-12 20:42:30 UTC] MASK OPTIMIZATION 4-MODES: STARTING
+[2026-03-12 20:42:30 UTC] ================================================================================
+[2026-03-12 20:42:30 UTC] Configuration loaded, data_root=/Users/remyroche/Documents/Ares/data
+[2026-03-12 20:42:30 UTC] Feature directory: /Users/remyroche/Documents/Ares/data/features/20260214_190000
+[2026-03-12 20:42:30 UTC] Loading data: data_root=/Users/remyroche/Documents/Ares/data | features=/Users/remyroche/Documents/Ares/data/features/20260214_190000
+[2026-03-12 20:42:30 UTC] Found 1457 symbols in OHLCV directory
+[2026-03-12 20:42:30 UTC] Symbols after deduplication: 529
+[2026-03-12 20:42:30 UTC] Selected 529 deduplicated symbols
+[2026-03-12 20:42:30 UTC] Loading OHLCV data from 2024-03-12 20:42:30.337405+00:00...
+[2026-03-12 20:42:38 UTC] Loaded data for 529/529 symbols
+[2026-03-12 20:42:38 UTC] Building panel from loaded data...
+[2026-03-12 20:42:42 UTC] Loading features from /Users/remyroche/Documents/Ares/data...
+[2026-03-12 20:42:42 UTC] Found 423 feature files in /Users/remyroche/Documents/Ares/data/features/20260214_190000. Selective load: keys=14, symbols=529
+[2026-03-12 20:42:43 UTC] Selective feature load progress: 25/423 files (5.9%) in 0.7s
+[2026-03-12 20:42:44 UTC] Selective feature load progress: 50/423 files (11.8%) in 1.4s
+[2026-03-12 20:42:44 UTC] Selective feature load progress: 75/423 files (17.7%) in 2.1s
+[2026-03-12 20:42:45 UTC] Selective feature load progress: 100/423 files (23.6%) in 2.7s
+[2026-03-12 20:42:46 UTC] Selective feature load progress: 125/423 files (29.6%) in 3.4s
+[2026-03-12 20:42:46 UTC] Selective feature load progress: 150/423 files (35.5%) in 4.1s
+[2026-03-12 20:42:47 UTC] Selective feature load progress: 175/423 files (41.4%) in 4.8s
+[2026-03-12 20:42:48 UTC] Selective feature load progress: 200/423 files (47.3%) in 5.5s
+[2026-03-12 20:42:49 UTC] Selective feature load progress: 225/423 files (53.2%) in 6.2s
+[2026-03-12 20:42:49 UTC] Selective feature load progress: 250/423 files (59.1%) in 6.9s
+[2026-03-12 20:42:50 UTC] Selective feature load progress: 275/423 files (65.0%) in 7.6s
+[2026-03-12 20:42:51 UTC] Selective feature load progress: 300/423 files (70.9%) in 8.3s
+[2026-03-12 20:42:51 UTC] Selective feature load progress: 325/423 files (76.8%) in 9.0s
+[2026-03-12 20:42:52 UTC] Selective feature load progress: 350/423 files (82.7%) in 9.6s
+[2026-03-12 20:42:53 UTC] Selective feature load progress: 375/423 files (88.7%) in 10.3s
+[2026-03-12 20:42:53 UTC] Selective feature load progress: 400/423 files (94.6%) in 11.0s
+[2026-03-12 20:42:54 UTC] Selective feature load progress: 423/423 files (100.0%) in 11.7s
+[2026-03-12 20:42:54 UTC] Loaded raw arrays for 2 features. Returning LazyFeatureDict proxy.
+[2026-03-12 20:42:54 UTC] Loaded 2 features
+[2026-03-12 20:42:58 UTC] Lazy-assembling DataFrame for 'rv_ratio_6_24'...
+[2026-03-12 20:42:58 UTC] Lazy-assembling DataFrame for 'vol_regime_z'...
+[2026-03-12 20:42:58 UTC] Processed 2 features into stacked arrays
+[2026-03-12 20:42:58 UTC] Total rows available before SlicePlanner: 9210948
+[2026-03-12 20:42:58 UTC] Capped pre-SlicePlanner rows to 1000000 for mask optimization.
+[2026-03-12 20:42:58 UTC] Applying regime_search slice plan...
+[2026-03-12 20:43:04 UTC] Applied periods/symbols regime_search slice plan: rows=66339/1000000 symbols=175
+[2026-03-12 20:43:04 UTC] SlicePlanner gave 66339 structured rows for Phase 3+4.
+[2026-03-12 20:43:04 UTC] Optimization modes: ['long', 'short']
+[2026-03-12 20:43:04 UTC] Starting 4-mode Layer 0 optimization (deep=66339, cap=50000, p1_floor=20000)...
+[2026-03-12 20:43:04 UTC] ================================================================================
+[2026-03-12 20:43:04 UTC] LAYER LAYER0 OPTIMIZATION: ['long', 'short']
+[2026-03-12 20:43:04 UTC] ================================================================================
+[2026-03-12 20:43:04 UTC] Capping rows for optimization...
+[2026-03-12 20:43:04 UTC] Capping at 50000 rows (contiguous tail slice)...
+[2026-03-12 20:43:04 UTC] Data shape after capping: 50000 rows
+[2026-03-12 20:43:04 UTC] Rescaled per-bucket gates for capped sample: rows=50000, min_events=600, min_active_days_fraction=0.327
+[2026-03-12 20:43:04 UTC] 
+================================================================================
+[2026-03-12 20:43:04 UTC] Processing mode 1/2: long
+[2026-03-12 20:43:04 UTC] ================================================================================
+
+[2026-03-12 20:43:04 UTC] Running mode long in isolated subprocess...
+[2026-03-12 20:43:07 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-12 20:43:08 UTC] Building shared cache...
+[2026-03-12 20:43:08 UTC]   - Converting data to numpy arrays...
+[2026-03-12 20:43:08 UTC]   - Building IDs (symbol, day, timestamp, regime)...
+[2026-03-12 20:43:08 UTC]   - Building asset groups for 175 symbols...
+[2026-03-12 20:43:08 UTC]   - Computing returns, volatility, and alternation per asset...
+[2026-03-12 20:43:08 UTC]   - Computing MAE/MFE statistics per asset...
+[2026-03-12 20:43:09 UTC] ================================================================================
+[2026-03-12 20:43:09 UTC] LAYER 0 MODE SEARCH: long
+[2026-03-12 20:43:09 UTC] ================================================================================
+[2026-03-12 20:43:09 UTC] Phase 1 (long): evaluating 216 candidates on 50% symbols + 50% history...
+[2026-03-12 20:43:09 UTC] Precomputing Phase 1 rolling tensors for z=4 bars...
+[2026-03-12 20:43:13 UTC] DEBUG Phase 1 (long): Candidate volatility_expansion|z=4|p=hl_range_gt_1.4 rejected. events=0/150
+[2026-03-12 20:43:13 UTC] DEBUG Phase 1 (long): Candidate volatility_expansion|z=4|p=hl_range_gt_1.6 rejected. events=0/150
+[2026-03-12 20:43:13 UTC] DEBUG Phase 1 (long): Candidate volatility_expansion|z=4|p=hl_range_gt_1.8 rejected. events=0/150
+[2026-03-12 20:43:13 UTC] DEBUG Phase 1 (long): Candidate volatility_expansion|z=4|p=hl_range_gt_2.0 rejected. events=0/150
+[2026-03-12 20:43:13 UTC] Precomputing Phase 1 rolling tensors for z=8 bars...
+[2026-03-12 20:43:13 UTC] DEBUG Phase 1 (long): Candidate volatility_expansion|z=8|p=hl_range_gt_1.4 rejected. events=0/150
+[2026-03-12 20:43:13 UTC] Precomputing Phase 1 rolling tensors for z=12 bars...
+[2026-03-12 20:43:13 UTC] Mode long failed: no_phase1_candidates_long
+[2026-03-12 20:43:13 UTC] 
+================================================================================
+[2026-03-12 20:43:13 UTC] Processing mode 2/2: short
+[2026-03-12 20:43:13 UTC] ================================================================================
+
+[2026-03-12 20:43:13 UTC] Running mode short in isolated subprocess...
+[2026-03-12 20:43:17 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-12 20:43:17 UTC] Building shared cache...
+[2026-03-12 20:43:17 UTC]   - Converting data to numpy arrays...
+[2026-03-12 20:43:17 UTC]   - Building IDs (symbol, day, timestamp, regime)...
+[2026-03-12 20:43:17 UTC]   - Building asset groups for 175 symbols...
+[2026-03-12 20:43:17 UTC]   - Computing returns, volatility, and alternation per asset...
+[2026-03-12 20:43:17 UTC]   - Computing MAE/MFE statistics per asset...
+[2026-03-12 20:43:18 UTC] ================================================================================
+[2026-03-12 20:43:18 UTC] LAYER 0 MODE SEARCH: short
+[2026-03-12 20:43:18 UTC] ================================================================================
+[2026-03-12 20:43:18 UTC] Phase 1 (short): evaluating 216 candidates on 50% symbols + 50% history...
+[2026-03-12 20:43:18 UTC] Precomputing Phase 1 rolling tensors for z=4 bars...
+[2026-03-12 20:43:20 UTC] DEBUG Phase 1 (short): Candidate volatility_expansion|z=4|p=hl_range_gt_1.4 rejected. events=0/150
+[2026-03-12 20:43:20 UTC] DEBUG Phase 1 (short): Candidate volatility_expansion|z=4|p=hl_range_gt_1.6 rejected. events=0/150
+[2026-03-12 20:43:20 UTC] DEBUG Phase 1 (short): Candidate volatility_expansion|z=4|p=hl_range_gt_1.8 rejected. events=0/150
+[2026-03-12 20:43:20 UTC] DEBUG Phase 1 (short): Candidate volatility_expansion|z=4|p=hl_range_gt_2.0 rejected. events=0/150
+[2026-03-12 20:43:20 UTC] Precomputing Phase 1 rolling tensors for z=8 bars...
+[2026-03-12 20:43:20 UTC] DEBUG Phase 1 (short): Candidate volatility_expansion|z=8|p=hl_range_gt_1.4 rejected. events=0/150
+[2026-03-12 20:43:20 UTC] Precomputing Phase 1 rolling tensors for z=12 bars...
+[2026-03-12 20:43:21 UTC] Mode short failed: no_phase1_candidates_short
+[2026-03-12 20:43:21 UTC] 
+================================================================================
+[2026-03-12 20:43:21 UTC] LAYER LAYER0 OPTIMIZATION COMPLETE
+[2026-03-12 20:43:21 UTC] ================================================================================
+
+[2026-03-12 20:43:21 UTC] ================================================================================
+[2026-03-12 20:43:21 UTC] MODE SUMMARY
+[2026-03-12 20:43:21 UTC] ================================================================================
+[2026-03-12 20:43:21 UTC]  mode                     status best_name  candidate_count  shortlist_count  best_shortlist_score  score_r  delta_r  N_r  S_r  D_r  event_count  active_days_fraction  events_per_day_mean  events_per_day_std  events_per_day_per_asset  primary_gain  primary_gain_is_nan  incremental_information_delta_auc  incremental_information_positive_fold_fraction  dispersion_to_edge_ratio selected_delta_metric decision rationale
+ long  no_phase1_candidates_long                          0                0                   0.0      NaN      NaN  0.0  NaN  NaN            0                   0.0                  NaN                 NaN                       NaN           0.0                  NaN                                NaN                                             NaN                       NaN                         failed          
+short no_phase1_candidates_short                          0                0                   0.0      NaN      NaN  0.0  NaN  NaN            0                   0.0                  NaN                 NaN                       NaN           0.0                  NaN                                NaN                                             NaN                       NaN                         failed          
+[2026-03-12 20:43:21 UTC] ================================================================================
+[2026-03-12 20:43:21 UTC] MASK OPTIMIZATION 4-MODES: COMPLETE
+[2026-03-12 20:43:21 UTC] ================================================================================

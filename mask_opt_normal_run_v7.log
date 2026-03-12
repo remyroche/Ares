@@ -1,0 +1,40 @@
+[2026-03-12 21:52:23 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-12 21:52:23 UTC] ================================================================================
+[2026-03-12 21:52:23 UTC] MASK OPTIMIZATION 4-MODES: STARTING
+[2026-03-12 21:52:23 UTC] ================================================================================
+[2026-03-12 21:52:23 UTC] Configuration loaded, data_root=/Users/remyroche/Documents/Ares/data
+[2026-03-12 21:52:23 UTC] Feature directory: /Users/remyroche/Documents/Ares/data/features/20260214_190000
+[2026-03-12 21:52:23 UTC] Loading data: data_root=/Users/remyroche/Documents/Ares/data | features=/Users/remyroche/Documents/Ares/data/features/20260214_190000
+[2026-03-12 21:52:23 UTC] Found 1457 symbols in OHLCV directory
+[2026-03-12 21:52:23 UTC] Symbols after deduplication: 529
+[2026-03-12 21:52:23 UTC] Selected 529 deduplicated symbols
+[2026-03-12 21:52:23 UTC] Loading OHLCV data from 2024-03-12 21:52:23.898863+00:00...
+[2026-03-12 21:52:33 UTC] Loaded data for 529/529 symbols
+[2026-03-12 21:52:33 UTC] Building panel from loaded data...
+[2026-03-12 21:52:39 UTC] Loading features from /Users/remyroche/Documents/Ares/data...
+[2026-03-12 21:52:39 UTC] Found 423 feature files in /Users/remyroche/Documents/Ares/data/features/20260214_190000. Selective load: keys=14, symbols=529
+[2026-03-12 21:52:39 UTC] Selective feature load progress: 25/423 files (5.9%) in 0.8s
+[2026-03-12 21:52:40 UTC] Selective feature load progress: 50/423 files (11.8%) in 1.5s
+[2026-03-12 21:52:41 UTC] Selective feature load progress: 75/423 files (17.7%) in 2.3s
+[2026-03-12 21:52:42 UTC] Selective feature load progress: 100/423 files (23.6%) in 3.0s
+[2026-03-12 21:52:42 UTC] Selective feature load progress: 125/423 files (29.6%) in 3.8s
+[2026-03-12 21:52:43 UTC] Selective feature load progress: 150/423 files (35.5%) in 4.5s
+[2026-03-12 21:52:44 UTC] Selective feature load progress: 175/423 files (41.4%) in 5.3s
+[2026-03-12 21:52:45 UTC] Selective feature load progress: 200/423 files (47.3%) in 6.0s
+[2026-03-12 21:52:45 UTC] Selective feature load progress: 225/423 files (53.2%) in 6.7s
+[2026-03-12 21:52:46 UTC] Selective feature load progress: 250/423 files (59.1%) in 7.5s
+[2026-03-12 21:52:47 UTC] Selective feature load progress: 275/423 files (65.0%) in 8.2s
+[2026-03-12 21:52:48 UTC] Selective feature load progress: 300/423 files (70.9%) in 8.9s
+[2026-03-12 21:52:48 UTC] Selective feature load progress: 325/423 files (76.8%) in 9.6s
+[2026-03-12 21:52:49 UTC] Selective feature load progress: 350/423 files (82.7%) in 10.4s
+[2026-03-12 21:52:50 UTC] Selective feature load progress: 375/423 files (88.7%) in 11.1s
+[2026-03-12 21:52:51 UTC] Selective feature load progress: 400/423 files (94.6%) in 12.5s
+[2026-03-12 21:52:52 UTC] Selective feature load progress: 423/423 files (100.0%) in 13.7s
+[2026-03-12 21:52:52 UTC] Loaded raw arrays for 2 features. Returning LazyFeatureDict proxy.
+[2026-03-12 21:52:52 UTC] Loaded 2 features
+[2026-03-12 21:52:56 UTC] Lazy-assembling DataFrame for 'vol_regime_z'...
+[2026-03-12 21:52:57 UTC] Lazy-assembling DataFrame for 'rv_ratio_6_24'...
+[2026-03-12 21:52:57 UTC] Processed 2 features into stacked arrays
+[2026-03-12 21:52:57 UTC] Total rows available before SlicePlanner: 9210419
+[2026-03-12 21:52:57 UTC] Capped pre-SlicePlanner rows to 1000000 for mask optimization.
+[2026-03-12 21:52:57 UTC] Applying regime_search slice plan...

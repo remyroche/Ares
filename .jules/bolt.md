@@ -15,3 +15,7 @@ Action: Used `concurrent.futures.ProcessPoolExecutor` to farm out column-level w
 ## 2026-03-04 - Vectorized On Balance Volume (OBV)
 Learning: Iterating over DataFrame rows sequentially using `for i in range(1, len(data)):` and `data['close'].iloc[i] > data['close'].iloc[i - 1]` to calculate running totals like On Balance Volume is extremely slow in Python (taking over 19 seconds for 100k rows).
 Action: Replaced the iterative loop with a fully vectorized approach using `np.sign(data['close'].diff())` to determine direction and `vol_adj.cumsum()` to accumulate. This reduced execution time to ~0.012 seconds (over 1500x speedup). Always prefer vectorized operations (`diff`, `sign`, `cumsum`) over sequential row iteration.
+
+## 2026-03-04 - Parallelizing Numba Rolling Functions (Mean, Std)
+Learning: Even when using a fast 1D Numba JIT compiled function via `apply_to_matrix(df, func)`, looping sequentially over each column sequentially in Python adds considerable overhead for large DataFrames.
+Action: Rewrote core rolling window functions (`_numba_rolling_std_nan_safe` and `_numba_rolling_mean_nan_safe`) as 2D functions running natively across all columns simultaneously using Numba's `@jit(parallel=True)` and `prange`. Updating `apply_to_frame` to intercept and delegate to this new parallel approach provided a transparent optimization with massive speedup for feature generation pipelines without altering any logic in features.py.

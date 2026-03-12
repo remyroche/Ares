@@ -680,3 +680,70 @@ def _numba_rolling_bars_since_extreme_parallel(mat, window, mode):
             out[i, j] = float(length - 1 - best_idx)
 
     return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_mean_nan_safe_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        current_sum = 0.0
+        current_count = 0
+
+        for i in range(n_rows):
+            # Entering element
+            val_in = mat[i, j]
+            if not np.isnan(val_in):
+                current_sum += val_in
+                current_count += 1
+
+            # Leaving element
+            if i >= window:
+                val_out = mat[i - window, j]
+                if not np.isnan(val_out):
+                    current_sum -= val_out
+                    current_count -= 1
+
+            # Output logic
+            if current_count > 0:
+                out[i, j] = current_sum / current_count
+            else:
+                out[i, j] = np.nan
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_std_nan_safe_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        sum_val = 0.0
+        sum_sq = 0.0
+        count = 0
+
+        for i in range(n_rows):
+            # Entering
+            val_in = mat[i, j]
+            if not np.isnan(val_in):
+                sum_val += val_in
+                sum_sq += val_in * val_in
+                count += 1
+
+            # Leaving
+            if i >= window:
+                val_out = mat[i - window, j]
+                if not np.isnan(val_out):
+                    sum_val -= val_out
+                    sum_sq -= val_out * val_out
+                    count -= 1
+
+            # Output logic
+            if count > 1:
+                var_num = sum_sq - (sum_val * sum_val) / count
+                if var_num < 1e-12:
+                    out[i, j] = 0.0
+                else:
+                    out[i, j] = np.sqrt(var_num / (count - 1))
+            else:
+                out[i, j] = np.nan
+    return out

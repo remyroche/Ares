@@ -4,7 +4,7 @@ from numba import jit, prange
 
 # Local duplicated functions for self-contained module
 try:
-    from .src_utils_numba_funcs import (
+    from extreme_price_movements.src_utils_numba_funcs import (
         _numba_rolling_mean_nan_safe,
         _numba_rolling_std_nan_safe,
         _numba_ewma,
@@ -328,9 +328,14 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     Returns a DataFrame with float32 dtype.
     Handles pd.Series by converting to DataFrame and returning Series.
     """
+    from extreme_price_movements.src_utils_numba_funcs import _numba_rolling_std_nan_safe, _numba_rolling_std_nan_safe_parallel, _numba_rolling_mean_nan_safe, _numba_rolling_mean_nan_safe_parallel
+    if func == _numba_rolling_std_nan_safe:
+        return apply_to_matrix_parallel(df, _numba_rolling_std_nan_safe_parallel, *args)
+    elif func == _numba_rolling_mean_nan_safe:
+        return apply_to_matrix_parallel(df, _numba_rolling_mean_nan_safe_parallel, *args)
+
     # tprint(f"Entering function: apply_to_frame in fast_funcs.py")
     return apply_to_matrix(df, func, *args)
-
 def apply_to_matrix_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> pd.DataFrame:
     """
     Applies a function taking two arrays (col1, col2) -> out_array.
@@ -2953,4 +2958,29 @@ def numba_rolling_rank_pct(df, window):
     res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
     if is_series:
         return res_df[res_df.columns[0]]
+    return res_df
+
+def apply_to_matrix_parallel(df: pd.DataFrame, func_parallel, *args) -> pd.DataFrame:
+    """
+    Applies a 2D parallel Numba function to a DataFrame.
+    Returns a DataFrame with float32 dtype.
+    Handles pd.Series by converting to DataFrame and returning Series.
+    Optimized to completely avoid Python level iteration over columns.
+    """
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    # Convert to numpy float32 array (copy=False if possible)
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+
+    # Execute 2D parallel Numba function
+    out_mat = func_parallel(mat, *args)
+
+    # Construct resulting DataFrame
+    res_df = pd.DataFrame(out_mat, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
     return res_df

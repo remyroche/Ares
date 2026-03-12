@@ -17,7 +17,7 @@ from numba import njit
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import roc_auc_score
 
-from extreme_price_movements.config import CFG, enable_perp_feature_keys
+from extreme_price_movements.config import CFG, enable_perp_feature_keys, TEST_FEATURE_KEYS
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
     load_features_selected,
@@ -2121,26 +2121,64 @@ def _safe_param_to_string(param: Any) -> str:
     )
 
 
-def _build_candidate_grid(cfg: Dict[str, Any]) -> List[Tuple[int, str, Any, int]]:
-    grid: List[Tuple[int, str, Any, int]] = []
-    duration_grid = cfg.get("duration_grid", [1, 2, 4])
-    for z_hr in cfg.get("z_hours_grid", [6, 10, 16]):
-        for fam in cfg.get(
-            "families", ["std_threshold", "abs_move_threshold", "std_plus_abs"]
-        ):
-            for d_hr in duration_grid:
-                if fam == "std_threshold":
-                    for p in cfg.get("x_std_grid", [1.4, 1.5, 1.6]):
-                        grid.append((z_hr, fam, float(p), d_hr))
-                elif fam == "abs_move_threshold":
-                    for p in cfg.get("y_move_pct_grid", [4.0, 5.0, 6.0]):
-                        grid.append((z_hr, fam, float(p), d_hr))
-                elif fam == "std_plus_abs":
-                    for s in cfg.get("std_plus_abs_std_grid", [1.4, 1.5, 1.6]):
-                        for a in cfg.get("std_plus_abs_abs_grid", [4.0, 5.0, 6.0]):
-                            grid.append((z_hr, fam, (float(s), float(a)), d_hr))
-    return grid
+def _build_candidate_grid(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Builds the candidate grid using robust-z feature thresholds.
+    Replaces old lookback/abs/duration grids.
+    """
+    lookbacks_h = [2, 4, 6]
+    thresholds = [1.4, 1.6, 1.8, 2.0]
 
+    # Define features and their families + directions
+    feature_specs = [
+        # Volatility / Range (positive magnitude)
+        ("hl_range", "volatility", "magnitude_positive_only"),
+        ("intrabar_range_atr", "volatility", "magnitude_positive_only"),
+        ("compression_expansion_transition", "volatility", "magnitude_positive_only"),
+
+        # Volume (positive magnitude)
+        ("volume_robust_z", "volume", "magnitude_positive_only"),
+
+        # Breakout / Structure
+        ("breakout_distance_up_atr", "structure", "magnitude_positive_only"), # We treat up/down as separate but positive-thresholded
+        ("breakout_distance_down_atr", "structure", "magnitude_positive_only"),
+
+        # Momentum
+        ("atr_normalized_trailing_return", "momentum", "directional_two_sided"),
+        ("short_minus_long_momentum", "momentum", "directional_two_sided"),
+        ("slope_change", "momentum", "directional_two_sided"),
+
+        # Path Structure
+        ("path_efficiency_ratio", "path_structure", "directional_two_sided"),
+    ]
+
+    candidates = []
+    for f_base, family, d_type in feature_specs:
+        for lb in lookbacks_h:
+            fname = f"{f_base}_{lb}h"
+
+            for th in thresholds:
+                if d_type in ("magnitude_positive_only", "directional_two_sided"):
+                    candidates.append({
+                        "feature_base": f_base,
+                        "lookback_h": lb,
+                        "feature_name": fname,
+                        "family": family,
+                        "direction": "gt",
+                        "threshold": th
+                    })
+
+                if d_type == "directional_two_sided":
+                    candidates.append({
+                        "feature_base": f_base,
+                        "lookback_h": lb,
+                        "feature_name": fname,
+                        "family": family,
+                        "direction": "lt",
+                        "threshold": -th
+                    })
+
+    return candidates
 
 def _build_asset_groups_from_codes(
     symbol_codes: np.ndarray,
@@ -2154,6 +2192,27 @@ def _build_asset_groups_from_codes(
     return asset_groups
 
 
+
+@njit
+def _rolling_robust_z_1d(x: np.ndarray, window: int) -> np.ndarray:
+    n = x.shape[0]
+    out = np.full_like(x, np.nan)
+    for i in range(window - 1, n):
+        w = x[i - window + 1: i + 1]
+        valid = w[np.isfinite(w)]
+        if len(valid) > 0:
+            med = np.median(valid)
+            mad = np.median(np.abs(valid - med))
+            eps = 1e-6
+            out[i] = (x[i] - med) / (1.4826 * mad + eps)
+    return out
+
+def compute_robust_z_for_groups(x: np.ndarray, asset_groups: Dict[int, np.ndarray], window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    for _, idxs in asset_groups.items():
+        out[idxs] = _rolling_robust_z_1d(x[idxs], window)
+    return out
+
 def _compute_z_cache(
     high: np.ndarray,
     low: np.ndarray,
@@ -2163,6 +2222,7 @@ def _compute_z_cache(
     asset_groups: Dict[int, np.ndarray],
     z: int,
     bph: int,
+    volume: Optional[np.ndarray] = None,
 ) -> Dict[str, np.ndarray]:
     n = close.shape[0]
     cache = {
@@ -2178,6 +2238,18 @@ def _compute_z_cache(
         "m_up": np.zeros(n, dtype=np.float32),
         "m_dn": np.zeros(n, dtype=np.float32),
         "v_exp": np.zeros(n, dtype=np.float32),
+
+        # New features
+        "hl_range": np.zeros(n, dtype=np.float32),
+        "intrabar_range_atr": np.zeros(n, dtype=np.float32),
+        "compression_expansion_transition": np.zeros(n, dtype=np.float32),
+        "volume_robust_z": np.zeros(n, dtype=np.float32),
+        "breakout_distance_up_atr": np.zeros(n, dtype=np.float32),
+        "breakout_distance_down_atr": np.zeros(n, dtype=np.float32),
+        "atr_normalized_trailing_return": np.zeros(n, dtype=np.float32),
+        "short_minus_long_momentum": np.zeros(n, dtype=np.float32),
+        "slope_change": np.zeros(n, dtype=np.float32),
+        "path_efficiency_ratio": np.zeros(n, dtype=np.float32),
     }
 
     for _, idxs in asset_groups.items():
@@ -2212,6 +2284,65 @@ def _compute_z_cache(
         cache["m_up"][idxs] = m_u
         cache["m_dn"][idxs] = m_d
         cache["v_exp"][idxs] = v_e
+
+        # --- New Features ---
+        window_14d = 14 * 24 * bph
+
+        # 1. Volatility / Range
+        ast_hl_range = ast_high - ast_low
+        cache["hl_range"][idxs] = _rolling_robust_z_1d(ast_hl_range, window_14d)
+
+        # Use ast_vol (which is approx ATR percent) or calculate explicitly if needed.
+        # Vol_g is the 14-day ATR pct. So intrabar_range_atr can be approximated.
+        ast_intrabar_range_atr = np.where(ast_vol > 1e-6, (ast_high - ast_low) / (ast_close * ast_vol), 0.0)
+        cache["intrabar_range_atr"][idxs] = _rolling_robust_z_1d(ast_intrabar_range_atr, window_14d)
+
+        ast_bollinger_width = rolling_std_safe(ast_close, 20) / np.maximum(ast_close, 1e-6)
+        ast_range_spike = ast_intrabar_range_atr
+        # For simplicity, compression_expansion_transition is just range_spike / (bollinger_width + eps)
+        ast_comp_exp = ast_range_spike / np.maximum(ast_bollinger_width, 1e-6)
+        cache["compression_expansion_transition"][idxs] = _rolling_robust_z_1d(ast_comp_exp, window_14d)
+
+        # 2. Volume
+        if volume is not None:
+            ast_vol_raw = volume[idxs]
+        else:
+            ast_vol_raw = np.ones_like(ast_close)
+        cache["volume_robust_z"][idxs] = _rolling_robust_z_1d(ast_vol_raw, window_14d)
+
+        # 3. Breakout / Structure
+        # distance from trailing max high
+        ast_trailing_high, _ = rolling_max_index_safe(ast_high, z)
+        ast_breakout_up = (ast_close - np.roll(ast_trailing_high, 1)) / np.maximum(ast_close * ast_vol, 1e-6)
+        cache["breakout_distance_up_atr"][idxs] = _rolling_robust_z_1d(ast_breakout_up, window_14d)
+
+        ast_trailing_low, _ = rolling_min_index_safe(ast_low, z)
+        ast_breakout_dn = (np.roll(ast_trailing_low, 1) - ast_close) / np.maximum(ast_close * ast_vol, 1e-6)
+        cache["breakout_distance_down_atr"][idxs] = _rolling_robust_z_1d(ast_breakout_dn, window_14d)
+
+        # 4. Momentum
+        ast_trailing_ret = (ast_close - np.roll(ast_close, z)) / np.maximum(np.roll(ast_close, z), 1e-6)
+        ast_atr_norm_ret = ast_trailing_ret / np.maximum(ast_vol, 1e-6)
+        cache["atr_normalized_trailing_return"][idxs] = _rolling_robust_z_1d(ast_atr_norm_ret, window_14d)
+
+        # Short minus long
+        short_ret = (ast_close - np.roll(ast_close, max(1, z//3))) / np.maximum(np.roll(ast_close, max(1, z//3)), 1e-6)
+        cache["short_minus_long_momentum"][idxs] = _rolling_robust_z_1d(short_ret - ast_trailing_ret, window_14d)
+
+        # Slope change (diff of rolling return)
+        ast_slope_change = ast_trailing_ret - np.roll(ast_trailing_ret, 1)
+        cache["slope_change"][idxs] = _rolling_robust_z_1d(ast_slope_change, window_14d)
+
+        # 5. Path Structure
+        # path efficiency = net move / sum of abs moves
+        ast_abs_moves = np.abs(ast_close - np.roll(ast_close, 1))
+        # We need a rolling sum for path efficiency. Safe rolling sum:
+        rolling_abs_moves = np.convolve(ast_abs_moves, np.ones(z, dtype=int), 'valid')
+        rolling_abs_moves = np.concatenate([np.full(z-1, np.nan), rolling_abs_moves])
+
+        ast_path_eff = np.where(rolling_abs_moves > 1e-6, (ast_close - np.roll(ast_close, z)) / rolling_abs_moves, 0.0)
+        cache["path_efficiency_ratio"][idxs] = _rolling_robust_z_1d(ast_path_eff, window_14d)
+
 
     return cache
 
@@ -2339,43 +2470,56 @@ def _rescale_mode_gates_for_sample_size(
 
 
 def _generate_event_masks_fast(
-    family: str,
-    param_val: Any,
-    up_move: np.ndarray,
-    dn_move: np.ndarray,
-    rolling_std_up: np.ndarray,
-    rolling_std_dn: np.ndarray,
+    candidate: Dict[str, Any],
+    zc: Dict[str, np.ndarray],
     asset_groups: Optional[Dict[int, np.ndarray]],
-    duration_bars: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    mask_h = np.zeros(up_move.shape[0], dtype=bool)
-    mask_l = np.zeros(dn_move.shape[0], dtype=bool)
 
-    std_up_floored = np.maximum(rolling_std_up, 1e-6)
-    std_dn_floored = np.maximum(rolling_std_dn, 1e-6)
+    f_base = candidate["feature_base"]
+    direction = candidate["direction"]
+    threshold = candidate["threshold"]
 
-    if family == "std_threshold":
-        x_std = float(param_val)
-        mask_h = up_move >= (x_std * std_up_floored)
-        mask_l = dn_move >= (x_std * std_dn_floored)
+    if f_base not in zc:
+        raise ValueError(f"Feature {f_base} not found in zc cache!")
 
-    elif family == "abs_move_threshold":
-        y_move = float(param_val) / 100.0
-        mask_h = up_move >= y_move
-        mask_l = dn_move >= y_move
+    feature_vals = zc[f_base]
 
-    elif family == "std_plus_abs":
-        std_val, abs_val_pct = param_val
-        y_move = float(abs_val_pct) / 100.0
-        mask_h = (up_move >= float(std_val) * std_up_floored) & (up_move >= y_move)
-        mask_l = (dn_move >= float(std_val) * std_dn_floored) & (dn_move >= y_move)
+    mask_h = np.zeros(feature_vals.shape[0], dtype=bool)
+    mask_l = np.zeros(feature_vals.shape[0], dtype=bool)
 
-    else:
-        raise ValueError(f"Unknown family: {family}")
+    # We evaluate directions depending on the prompt logic.
+    # Note: "directional_two_sided" tests both positive and negative bounds independently in separate candidates!
+    # But mask_h and mask_l usually denote "Price Up" and "Price Down" events.
+    # For a feature like `atr_normalized_trailing_return` > 1.6:
+    # Does this mean price went UP? Yes. So it goes to mask_h.
+    # For `atr_normalized_trailing_return` < -1.6:
+    # It means price went DOWN. It goes to mask_l.
 
-    if duration_bars > 1 and asset_groups is not None:
-        mask_h = dilate_mask_by_asset_safe(mask_h, asset_groups, duration_bars)
-        mask_l = dilate_mask_by_asset_safe(mask_l, asset_groups, duration_bars)
+    valid_mask = np.isfinite(feature_vals)
+
+    if candidate["family"] in ("volatility", "volume", "path_structure"):
+        # These are magnitude / expansion indicators. They don't have inherent up/down logic themselves.
+        # But we must populate both mask_h and mask_l, because the caller filters by `_get_side_mask(mode, mask_h, mask_l)`.
+        # So an expansion trigger > 1.8 applies to BOTH up and down modes!
+        if direction == "gt":
+            trigger = valid_mask & (feature_vals >= threshold)
+            mask_h = trigger
+            mask_l = trigger
+
+    elif candidate["family"] == "structure":
+        # breakout_distance_up_atr > 1.4 -> price went UP -> mask_h
+        # breakout_distance_down_atr > 1.4 (since it's computed as roll(low) - close) -> price went DOWN -> mask_l
+        if f_base == "breakout_distance_up_atr" and direction == "gt":
+            mask_h = valid_mask & (feature_vals >= threshold)
+        elif f_base == "breakout_distance_down_atr" and direction == "gt":
+            mask_l = valid_mask & (feature_vals >= threshold)
+
+    elif candidate["family"] == "momentum":
+        # Directional two-sided
+        if direction == "gt":
+            mask_h = valid_mask & (feature_vals >= threshold)
+        elif direction == "lt":
+            mask_l = valid_mask & (feature_vals <= threshold)
 
     return mask_h, mask_l
 
@@ -2598,6 +2742,7 @@ def _build_shared_cache(
             set(int(z * bph) for z in cfg.get("z_hours_grid", [6, 10, 16]))
         ),
         "candidate_grid": _build_candidate_grid(cfg),
+        "volume": data["volume"].values if "volume" in data.columns else None,
     }
 
 
@@ -3787,9 +3932,8 @@ def _run_mode_search(
         0.20 * _zscore_np(df1["active_days_fraction"].values)
         + 0.15 * _zscore_np(df1["regime_distinctness_score"].values)
         + 0.15 * _zscore_np(np.log1p(df1["total_events"].values.astype(np.float32)))
-        + 0.75 * _zscore_np(df1["basic_directionality_edge_event_vs_non_event"].values)
-        - 0.35 * _zscore_np(df1["impulse_shape_dispersion"].values)
-        - 0.20
+        + 0.30 * _zscore_np(df1["basic_directionality_edge_event_vs_non_event"].values)
+        - 0.30
         * _zscore_np(
             np.nan_to_num(
                 df1["dispersion_to_edge_ratio"].values.astype(np.float32), nan=1e6
@@ -3814,11 +3958,28 @@ def _run_mode_search(
         ],
     )
 
-    df1 = (
-        df1.sort_values("phase1_proxy_score", ascending=False)
-        .head(int(cfg.get("top_k_for_learnability", 8)))
-        .copy()
-    )
+    # -------------------------------------------------------------------------
+    # Stage A/B/C Diversity Filter (Phase 1)
+    # -------------------------------------------------------------------------
+    df1 = df1.sort_values("phase1_proxy_score", ascending=False)
+
+    # Extract feature base and family for group logic
+    df1["feature_base"] = df1["name"].apply(lambda x: candidate_registry[x].get("feature_base", x))
+    df1["family"] = df1["name"].apply(lambda x: candidate_registry[x].get("family", "unknown"))
+
+    # 1. Top 1 config per feature
+    df1 = df1.drop_duplicates(subset=["feature_base"], keep="first")
+
+    # 2. Keep top features per family (Stage 1/2 rule: at least 2 stable per family)
+    # We will just select top 2 per family, then pad with global tops if needed.
+    top_per_fam = df1.groupby("family").head(2)
+
+    # Keep global top K as well
+    top_k_global = df1.head(int(cfg.get("top_k_for_learnability", 8)))
+
+    # Union and deduplicate
+    df1 = pd.concat([top_per_fam, top_k_global]).drop_duplicates(subset=["name"]).sort_values("phase1_proxy_score", ascending=False).copy()
+
 
     # -------------------------------------------------------------------------
     # Phase 2: full symbols & history + full metrics, only top phase1 candidates
@@ -4167,17 +4328,13 @@ def _run_mode_search(
                 asset_groups=shared["asset_groups"],
                 z=z,
                 bph=bph,
+                volume=shared.get("volume", None),
             )
         zc = global_z_cache[z]
         m_high, m_low = _generate_event_masks_fast(
-            family=reg["family"],
-            param_val=reg["param"],
-            up_move=zc["up"],
-            dn_move=zc["dn"],
-            rolling_std_up=zc["std_up"],
-            rolling_std_dn=zc["std_dn"],
+            candidate=reg,
+            zc=zc,
             asset_groups=shared["asset_groups"],
-            duration_bars=duration_bars,
         )
         side_mask = _get_side_mask(mode, m_high, m_low)
 
@@ -4249,17 +4406,13 @@ def _run_mode_search(
                 asset_groups=shared["asset_groups"],
                 z=z,
                 bph=bph,
+                volume=shared.get("volume", None),
             )
         zc = global_z_cache[z]
         m_high, m_low = _generate_event_masks_fast(
-            family=reg["family"],
-            param_val=reg["param"],
-            up_move=zc["up"],
-            dn_move=zc["dn"],
-            rolling_std_up=zc["std_up"],
-            rolling_std_dn=zc["std_dn"],
+            candidate=reg,
+            zc=zc,
             asset_groups=shared["asset_groups"],
-            duration_bars=duration_bars,
         )
         side_mask = _get_side_mask(mode, m_high, m_low)
         feat_metrics = _compute_phase3_feature_learnability(
@@ -4473,16 +4626,51 @@ def _run_mode_search(
         ],
         ascending=[False, False, False, False, False],
     )
-    shortlist_max = int(cfg.get("shortlist_max_candidates", 4))
-    df_short = df2.head(shortlist_max).copy()
-    df_short["tier"] = 0
-    df_short["conditioner_mode"] = "none"
-    if df_short.empty:
+
+    df2["feature_base"] = df2["name"].apply(lambda x: candidate_registry[str(x)].get("feature_base", str(x)))
+    df2["family"] = df2["name"].apply(lambda x: candidate_registry[str(x)].get("family", "unknown"))
+
+    # Stage 2.5/3 diversity: global top + at least 1 stable per family, max 3 per family
+    df2 = df2.drop_duplicates(subset=["feature_base"], keep="first")
+
+    stage3_max = int(cfg.get("stage3_max_candidates", 10))
+    shortlist_max = int(cfg.get("shortlist_max_candidates", stage3_max))
+
+    # Keep at least 1 per family
+    top_1_fam = df2.groupby("family").head(1)
+
+    # Pad with global top, but enforce max 3 per family
+    df_short_list = []
+    fam_counts = {fam: 0 for fam in df2["family"].unique()}
+
+    # First add the guaranteed 1 per family
+    for _, row in top_1_fam.iterrows():
+        df_short_list.append(row)
+        fam_counts[row["family"]] += 1
+
+    # Then add from global list until we hit shortlist_max
+    for _, row in df2.iterrows():
+        if len(df_short_list) >= shortlist_max:
+            break
+        if fam_counts[row["family"]] < 3:
+            # Check if not already added
+            if not any(r["name"] == row["name"] for r in df_short_list):
+                df_short_list.append(row)
+                fam_counts[row["family"]] += 1
+
+    if not df_short_list:
         return {
             "status": "failed",
             "reason": f"no_shortlist_candidates_{mode}",
             "layer0_candidate_table_": df2,
         }
+
+    df_short = pd.DataFrame(df_short_list)
+    # Ensure at least 10 if viable
+    # If df_short < 10, we could add more, but we are capped by shortlist_max.
+
+    df_short["tier"] = 0
+    df_short["conditioner_mode"] = "none"
 
     candidate_masks: Dict[str, Dict[str, np.ndarray]] = {}
     for _, row in df_short.iterrows():
@@ -4501,17 +4689,13 @@ def _run_mode_search(
                 asset_groups=shared["asset_groups"],
                 z=z,
                 bph=bph,
+                volume=shared.get("volume", None),
             )
         zc = global_z_cache[z]
         m_high, m_low = _generate_event_masks_fast(
-            family=reg["family"],
-            param_val=reg["param"],
-            up_move=zc["up"],
-            dn_move=zc["dn"],
-            rolling_std_up=zc["std_up"],
-            rolling_std_dn=zc["std_dn"],
+            candidate=reg,
+            zc=zc,
             asset_groups=shared["asset_groups"],
-            duration_bars=duration_bars,
         )
         candidate_masks[name] = {"m_high": m_high, "m_low": m_low}
 
@@ -5110,11 +5294,40 @@ def _run_mode_search(
     )
 
     final_diag_k = int(cfg.get("final_top_k_for_diagnostics", 3))
-    df_diag_input = (
-        df_short.sort_values("shortlist_score", ascending=False)
-        .head(final_diag_k)
-        .copy()
-    )
+
+    # Jaccard diversity selection
+    df_short = df_short.sort_values("shortlist_score", ascending=False).reset_index(drop=True)
+    selected_idx = []
+    selected_masks = []
+
+    for idx, row in df_short.iterrows():
+        if len(selected_idx) >= final_diag_k:
+            break
+
+        m_info = candidate_masks.get(str(row["name"]), {})
+        if not m_info:
+            continue
+
+        side_mask = _get_side_mask(mode, m_info.get("m_high", np.array([])), m_info.get("m_low", np.array([])))
+
+        # Check Jaccard similarity against already selected
+        is_diverse = True
+        for sel_mask in selected_masks:
+            intersection = np.sum(side_mask & sel_mask)
+            union = np.sum(side_mask | sel_mask)
+            jaccard = intersection / max(union, 1)
+            if jaccard > 0.80:  # Too similar
+                is_diverse = False
+                break
+
+        if is_diverse:
+            selected_idx.append(idx)
+            selected_masks.append(side_mask)
+
+    if not selected_idx and not df_short.empty:
+        selected_idx = [0]
+
+    df_diag_input = df_short.loc[selected_idx].copy()
     df_diag = _final_topk_diagnostics(
         mode, df_diag_input, candidate_masks, shared, feature_dict, cfg
     )

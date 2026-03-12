@@ -60,6 +60,7 @@ from .optimise_tpsl_ratio import (
     scaled_atr_pct,
 )
 from .path_utils import resolve_reports_dir
+from .strategy_registry import get_strategies
 from .policy_ml import (
     MetaClassifierSelectionConfig,
     build_base_tp_vs_sl,
@@ -2132,26 +2133,39 @@ def compute_weights_logic(df, cfg, model_kind):
         return compute_tf_weights(df, cfg)
 
 
-def _strategy_bucket_context(trade_side: str, model_kind: str) -> tuple:
-    """Return (candidate_bucket, move_bucket, strategy_label) for (trade_side, model_kind)."""
-    # Determine candidate filter based on side and kind
-    if trade_side == "long":
-        cand_filter = "worst" if model_kind == "mr" else "best"
+def _strategy_bucket_context(trade_side: str, model_kind: str, cfg: dict | None = None) -> tuple:
+    """Return (candidate_bucket, move_bucket, strategy_label) for (trade_side, model_kind).
+
+    Strategy definitions (cfg['strategies']) are authoritative; legacy 4-way mapping is fallback.
+    """
+    side = str(trade_side).lower()
+    kind = str(model_kind).lower()
+
+    for strat in get_strategies(cfg or {}):
+        s_side = str(strat.get("trade_side", "")).lower()
+        mode = str(strat.get("base_event_trigger", "")).lower()
+        if s_side != side:
+            continue
+        is_tf = mode.endswith("_tf")
+        is_mr = mode.endswith("_mr")
+        if (kind == "tf" and is_tf) or (kind == "mr" and is_mr):
+            move_bucket = "up" if "price_up" in mode else "down"
+            cand_filter = "best" if move_bucket == "up" else "worst"
+            return cand_filter, move_bucket, str(strat.get("strategy_id", mode))
+
+    # Legacy fallback
+    if side == "long":
+        cand_filter = "worst" if kind == "mr" else "best"
     else:
-        cand_filter = "best" if model_kind == "mr" else "worst"
-
-    # Move bucket follows the cand_filter
+        cand_filter = "best" if kind == "mr" else "worst"
     move_bucket = "up" if cand_filter == "best" else "down"
-
-    # Strategy labels - explicit returns for clarity
-    if trade_side == "long" and model_kind == "mr":
-        return cand_filter, move_bucket, "buy_dips"
-    elif trade_side == "long" and model_kind == "tf":
-        return cand_filter, move_bucket, "buy_momentum"
-    elif trade_side == "short" and model_kind == "mr":
-        return cand_filter, move_bucket, "sell_rips"
-    else:  # short and tf
-        return cand_filter, move_bucket, "sell_weakness"
+    label_map = {
+        ("long", "mr"): "buy_dips",
+        ("long", "tf"): "buy_momentum",
+        ("short", "mr"): "sell_rips",
+        ("short", "tf"): "sell_weakness",
+    }
+    return cand_filter, move_bucket, label_map.get((side, kind), f"{side}_{kind}")
 
 
 def _trend_direction_keep_mask(trend_vals, trend_filter: str) -> np.ndarray:
@@ -5671,7 +5685,7 @@ def generate_label_datasets(
         entry_ts = event_ts + pd.Timedelta(hours=1)
 
         if "trend_pct" in feats:
-            cand_filter, move_bucket, _ = _strategy_bucket_context(_side, _kind)
+            cand_filter, move_bucket, _ = _strategy_bucket_context(_side, _kind, cfg)
             del cand_filter
             trend_vals = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
             keep = _trend_direction_keep_mask(trend_vals, move_bucket)

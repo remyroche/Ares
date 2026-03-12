@@ -45,21 +45,21 @@ class InferenceBacktestConfig:
     limit_offset_col: str = "limit_offset_oof"
     side_col: str = "side"
     regime_col: str = "regime_kind"
-    bucket_col: str = "bucket"
+    strategy_col: str = "strategy"
 
 
 class _BacktestPolicyExecutor:
     """Minimal executor adapter for ``_evaluate_oco_policy`` replay."""
 
-    def __init__(self, bucket_params: Dict[str, Dict[str, Any]]) -> None:
-        self._bucket_params = bucket_params
+    def __init__(self, strategy_params: Dict[str, Dict[str, Any]]) -> None:
+        self._strategy_params = strategy_params
         self.closed = False
         self.exit_price = np.nan
         self.exit_reason = ""
         self._latest_state: Dict[str, Any] = {}
 
     def get_bucket_params(self, bucket_key: str) -> Dict[str, Any]:
-        return dict(self._bucket_params.get(bucket_key, {}))
+        return dict(self._strategy_params.get(bucket_key, {}))
 
     def close_position(self, symbol: str, price: float, reason: str) -> None:
         _ = symbol
@@ -233,7 +233,7 @@ def run_inference_backtest(
     panel: Dict[str, pd.DataFrame],
     feats: Dict[str, pd.DataFrame],
     mask_params_by_mode: Dict[str, Dict[str, Any]],
-    bucket_exit_params: Dict[str, Dict[str, Any]],
+    strategy_exit_params: Dict[str, Dict[str, Any]],
     *,
     config: Optional[InferenceBacktestConfig] = None,
     planner_cfg: Optional[SlicePlannerConfig] = None,
@@ -243,7 +243,7 @@ def run_inference_backtest(
     Required columns in ``trades``:
     - ``event_id``, ``symbol``, ``t0``, ``t1``, ``entry_price``
     - score column (default ``trading_score_oof``)
-    - optional ``limit_offset_oof``, ``regime_kind``, ``bucket``, ``side``
+    - optional ``limit_offset_oof``, ``regime_kind``, ``strategy``, ``side``
 
     Notes:
     - If no OCO exit is triggered before holdout end, exit uses holdout close.
@@ -263,8 +263,8 @@ def run_inference_backtest(
         df[cfg.side_col] = "long"
     if cfg.regime_col not in df.columns:
         df[cfg.regime_col] = "tf"
-    if cfg.bucket_col not in df.columns:
-        df[cfg.bucket_col] = "default"
+    if cfg.strategy_col not in df.columns:
+        df[cfg.strategy_col] = "default"
     if cfg.limit_offset_col not in df.columns:
         df[cfg.limit_offset_col] = cfg.default_limit_offset_bps
 
@@ -335,8 +335,8 @@ def run_inference_backtest(
         if bars.empty:
             continue
 
-        bkey = str(getattr(row, cfg.bucket_col))
-        params = dict(bucket_exit_params.get(bkey, {}))
+        bkey = str(getattr(row, cfg.strategy_col))
+        params = dict(strategy_exit_params.get(bkey, {}))
         sl = float(params.get("sl_atr_mult", 0.01))
         tp_ratio = float(params.get("tp_sl_ratio", 2.0))
         if is_long:
@@ -349,14 +349,14 @@ def run_inference_backtest(
         state = {
             "side": "long" if is_long else "short",
             "entry_price": float(entry_exec),
-            "bucket_key": bkey,
+            "strategy_key": bkey,
             "stop_price": float(stop_px),
             "limit_price": float(limit_px),
             "peak_price": float(entry_exec),
             "mfe": 0.0,
             "last_5m_eval_ts": None,
         }
-        ex = _BacktestPolicyExecutor(bucket_exit_params)
+        ex = _BacktestPolicyExecutor(strategy_exit_params)
         _evaluate_oco_policy(symbol, state, bars, ex)
 
         exit_px = (

@@ -3985,7 +3985,7 @@ def _run_mode_search(
         + 0.15 * _zscore_np(df1["regime_distinctness_score"].values)
         + 0.15 * _zscore_np(np.log1p(df1["total_events"].values.astype(np.float32)))
         + 0.30 * _zscore_np(df1["basic_directionality_edge_event_vs_non_event"].values)
-        - 0.30
+        - 0.10
         * _zscore_np(
             np.nan_to_num(
                 df1["dispersion_to_edge_ratio"].values.astype(np.float32), nan=1e6
@@ -4198,7 +4198,7 @@ def _run_mode_search(
         return {"status": "failed", "reason": f"no_phase2_candidates_{mode}"}
 
     df2 = pd.DataFrame(phase2_rows)
-    df2["D_r"] = (
+    df2["D_r"] = 0.25 * (
         0.35 * _zscore_np(df2["impulse_shape_dispersion"].values)
         + 0.35 * _zscore_np(df2["post_event_vol_dispersion"].values)
         + 0.15 * _zscore_np(df2["fold_continuation_rate_std"].values)
@@ -4274,7 +4274,7 @@ def _run_mode_search(
     ).astype(np.float32)
     df2["noise_penalty"] = (
         1.0
-        + np.log1p(
+        + 0.25 * np.log1p(
             np.maximum(
                 np.nan_to_num(
                     df2["dispersion_to_edge_ratio"].astype(np.float32).values,
@@ -5040,7 +5040,7 @@ def _run_mode_search(
 
     if cond_rows:
         df_short = pd.concat([df_short, pd.DataFrame(cond_rows)], ignore_index=True)
-        df_short["D_r"] = (
+        df_short["D_r"] = 0.25 * (
             0.35 * _zscore_np(df_short["impulse_shape_dispersion"].values)
             + 0.35 * _zscore_np(df_short["post_event_vol_dispersion"].values)
             + 0.15 * _zscore_np(df_short["fold_continuation_rate_std"].values)
@@ -5208,7 +5208,7 @@ def _run_mode_search(
         ).astype(np.float32)
         df_short["noise_penalty"] = (
             1.0
-            + np.log1p(
+            + 0.25 * np.log1p(
                 np.maximum(
                     np.nan_to_num(
                         df_short["dispersion_to_edge_ratio"].astype(np.float32).values,

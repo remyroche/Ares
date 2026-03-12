@@ -1176,7 +1176,7 @@ def _lgbm_subset_auc_and_lift(
     tr_idx: np.ndarray,
     va_idx: np.ndarray,
 ) -> Tuple[float, float]:
-    if tr_idx.shape[0] < 40 or va_idx.shape[0] < 40:
+    if tr_idx.shape[0] < 3000 or va_idx.shape[0] < 40:
         return float("nan"), float("nan")
 
     y_tr = y[tr_idx]
@@ -1247,7 +1247,7 @@ def _lgbm_subset_cv_metrics(
         "lift_folds": np.asarray([], dtype=np.float32),
     }
     idx = _cap_index_count(idx_subset, max_subset)
-    if idx.shape[0] < 40:
+    if idx.shape[0] < 3000:
         return out
 
     folds_local = _build_temporal_folds(
@@ -1561,7 +1561,11 @@ def quick_ridge_auc(
     if len(np.unique(y_event)) < 2:
         return 0.5
 
-    X_event = features_df[event_mask].copy()
+    # Filter features to just those in TEST_FEATURE_KEYS if they exist
+    valid_cols = [c for c in TEST_FEATURE_KEYS if c in features_df.columns]
+    if len(valid_cols) == 0:
+        valid_cols = features_df.columns
+    X_event = features_df[valid_cols][event_mask].copy()
     # Replace inf and impute nan
     X_event = X_event.replace([np.inf, -np.inf], np.nan)
     X_event = X_event.fillna(X_event.median())
@@ -2740,6 +2744,14 @@ def _build_shared_cache(
     # learnability features
     learn_X = _extract_learnability_features(feature_dict, n)
 
+    # test features
+    test_keys = [k for k in TEST_FEATURE_KEYS if k in feature_dict]
+    test_X = np.full((n, len(test_keys)), np.nan, dtype=np.float32)
+    for i, k in enumerate(test_keys):
+        arr = np.asarray(feature_dict[k], dtype=np.float32).copy()
+        arr[np.isinf(arr)] = np.nan
+        test_X[:, i] = arr
+
     # full folds
     folds = _build_temporal_folds(timestamps, n, n_splits=2)
 
@@ -2765,6 +2777,7 @@ def _build_shared_cache(
         "mfe_atr": mfe_atr,
         "mae_atr": mae_atr,
         "learn_X": learn_X,
+        "test_X": test_X,
         "day_ids": day_ids,
         "n_days": n_days,
         "timestamp_ids": timestamp_ids,
@@ -2845,6 +2858,8 @@ def _build_phase_local_shared(
             symbol_codes_local, shared["symbol_uniques"].shape[0]
         ),
     }
+    if "test_X" in shared:
+        phase_local["test_X"] = shared["test_X"][subset_mask]
     phase_local["n_days"] = (
         int(np.max(phase_local["day_ids"]) + 1)
         if phase_local["day_ids"].shape[0] > 0
@@ -3243,7 +3258,10 @@ def _compute_phase4_tbm_lgbm_metrics(
     if not per_geometry_metrics:
         return out
 
-    X = np.asarray(shared["learn_X"], dtype=np.float32)
+    if "test_X" in shared:
+        X = np.asarray(shared["test_X"], dtype=np.float32)
+    else:
+        X = np.asarray(shared["learn_X"], dtype=np.float32)
     close = np.asarray(shared["close"], dtype=np.float32)
     high = np.asarray(shared["high"], dtype=np.float32)
     low = np.asarray(shared["low"], dtype=np.float32)
@@ -4336,6 +4354,9 @@ def _run_mode_search(
     regime_features_df = build_regime_features(full_df)
 
     # Identify which features are binary vs continuous
+    # RIDGE_FEATURE_COLS comes from ridge_regime_event_assessment
+    from extreme_price_movements.ridge_regime_event_assessment import RIDGE_FEATURE_COLS, build_regime_features, fit_ridge_regime_scan
+
     feature_types = {}
     for c in RIDGE_FEATURE_COLS:
         if c in regime_features_df.columns:

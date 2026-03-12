@@ -4344,9 +4344,10 @@ def _run_mode_search(
                 feature_types[c] = "continuous"
 
     dynamic_conditioners: Dict[str, List[Dict[str, Any]]] = {}
+    candidate_side_masks: Dict[str, np.ndarray] = {}
 
-    for _, row in df2.iterrows():
-        base_name = str(row["name"])
+    for row in df2.itertuples():
+        base_name = str(getattr(row, "name"))
         reg = candidate_registry[base_name]
         z = int(int(reg["z_hours"]) * bph)
         duration_bars = int(int(reg["duration_hours"]) * bph)
@@ -4369,6 +4370,7 @@ def _run_mode_search(
             asset_groups=shared["asset_groups"],
         )
         side_mask = _get_side_mask(mode, m_high, m_low)
+        candidate_side_masks[base_name] = side_mask
 
         fwd_2h_bars = int(2 * bph)
         if "close" in full_df:
@@ -4393,7 +4395,6 @@ def _run_mode_search(
         cond_features = []
         if res is not None:
             seeds = res.get("phase3_conditioner_seeds", [])
-            # We already have seeds outputted from the updated function
             for seed in seeds:
                 cond_features.append({
                     "feature": seed.feature,
@@ -4405,48 +4406,12 @@ def _run_mode_search(
 
         dynamic_conditioners[base_name] = cond_features
 
-    feature_gain_vals: List[np.float32] = []
-    feature_pos_vals: List[np.float32] = []
-    top_feature_lifts_vals: List[str] = []
-    cond_gain_vals: List[np.float32] = []
-    cond_pos_vals: List[np.float32] = []
-    cond_regime_r2_vals: List[np.float32] = []
-    cond_base_r2_vals: List[np.float32] = []
-    cond_spread_vals: List[np.float32] = []
-    econ_vals: List[np.float32] = []
-    agg_mfe_cov_vals: List[np.float32] = []
-    fixed_cov_vals: List[np.float32] = []
-    per_geom_vals: List[Any] = []
-    tbm_auc_regime_vals: List[np.float32] = []
-    tbm_auc_base_vals: List[np.float32] = []
-    tbm_auc_lift_vals: List[np.float32] = []
-    tbm_top_lift_vals: List[np.float32] = []
-    tbm_pos_vals: List[np.float32] = []
-    tbm_stability_vals: List[np.float32] = []
-    tbm_geom_name_vals: List[str] = []
-    for _, row in df2.iterrows():
-        reg = candidate_registry[str(row["name"])]
-        z = int(int(reg["z_hours"]) * bph)
-        duration_bars = int(int(reg["duration_hours"]) * bph)
-        if z not in global_z_cache:
-            global_z_cache[z] = _compute_z_cache(
-                high=shared["high"],
-                low=shared["low"],
-                close=shared["close"],
-                ret_1=shared["ret_1"],
-                vol_g=shared["vol_g"],
-                asset_groups=shared["asset_groups"],
-                z=z,
-                bph=bph,
-                volume=shared.get("volume", None),
-            )
-        zc = global_z_cache[z]
-        m_high, m_low = _generate_event_masks_fast(
-            candidate=reg,
-            zc=zc,
-            asset_groups=shared["asset_groups"],
-        )
-        side_mask = _get_side_mask(mode, m_high, m_low)
+    metrics_list = []
+
+    for row in df2.itertuples():
+        base_name = str(getattr(row, "name"))
+        side_mask = candidate_side_masks[base_name]
+
         feat_metrics = _compute_phase3_feature_learnability(
             shared, feature_dict, side_mask, mode, folds, cfg
         )
@@ -4463,92 +4428,40 @@ def _run_mode_search(
             econ_metrics["per_geometry_metrics"],
         )
 
-        feature_gain_vals.append(np.float32(feat_metrics["feature_learnability_gain"]))
-        feature_pos_vals.append(
-            np.float32(feat_metrics["feature_positive_fold_fraction"])
-        )
-        top_feature_lifts_vals.append(str(feat_metrics["top_feature_lifts"]))
-        cond_gain_vals.append(
-            np.float32(cond_metrics["conditional_predictability_gain"])
-        )
-        cond_pos_vals.append(
-            np.float32(cond_metrics["conditional_predictability_positive_fold_fraction"])
-        )
-        cond_regime_r2_vals.append(
-            np.float32(cond_metrics["conditional_predictability_regime_r2"])
-        )
-        cond_base_r2_vals.append(
-            np.float32(cond_metrics["conditional_predictability_baseline_r2"])
-        )
-        cond_spread_vals.append(np.float32(cond_metrics["feature_conditioned_spread"]))
-        econ_vals.append(np.float32(econ_metrics["economic_gain_r"]))
-        agg_mfe_cov_vals.append(
-            np.float32(econ_metrics["geometry_weighted_mfe_coverage"])
-        )
-        fixed_cov_vals.append(np.float32(mfe_metrics["fixed_tp_mfe_coverage"]))
-        per_geom_vals.append(econ_metrics["per_geometry_metrics"])
-        tbm_auc_regime_vals.append(
-            np.float32(tbm_lgbm_metrics["tbm_lgbm_auc_regime"])
-        )
-        tbm_auc_base_vals.append(
-            np.float32(tbm_lgbm_metrics["tbm_lgbm_auc_baseline"])
-        )
-        tbm_auc_lift_vals.append(
-            np.float32(tbm_lgbm_metrics["tbm_lgbm_auc_lift_vs_baseline"])
-        )
-        tbm_top_lift_vals.append(
-            np.float32(tbm_lgbm_metrics["tbm_lgbm_top_bucket_lift_vs_baseline"])
-        )
-        tbm_pos_vals.append(
-            np.float32(tbm_lgbm_metrics["tbm_lgbm_positive_fold_fraction"])
-        )
-        tbm_stability_vals.append(
-            np.float32(tbm_lgbm_metrics["tbm_lgbm_stability"])
-        )
-        tbm_geom_name_vals.append(str(tbm_lgbm_metrics["tbm_lgbm_selected_geometry"]))
+        metrics_list.append({
+            "feature_learnability_gain": np.float32(feat_metrics["feature_learnability_gain"]),
+            "feature_positive_fold_fraction": np.float32(feat_metrics["feature_positive_fold_fraction"]),
+            "top_feature_lifts": str(feat_metrics["top_feature_lifts"]),
+            "conditional_predictability_gain": np.float32(cond_metrics["conditional_predictability_gain"]),
+            "conditional_predictability_positive_fold_fraction": np.float32(cond_metrics["conditional_predictability_positive_fold_fraction"]),
+            "conditional_predictability_regime_r2": np.float32(cond_metrics["conditional_predictability_regime_r2"]),
+            "conditional_predictability_baseline_r2": np.float32(cond_metrics["conditional_predictability_baseline_r2"]),
+            "feature_conditioned_spread": np.float32(cond_metrics["feature_conditioned_spread"]),
+            "economic_gain_r": np.float32(econ_metrics["economic_gain_r"]),
+            "geometry_weighted_mfe_coverage": np.float32(econ_metrics["geometry_weighted_mfe_coverage"]),
+            "fixed_tp_mfe_coverage": np.float32(mfe_metrics["fixed_tp_mfe_coverage"]),
+            "aggregate_mfe_coverage": np.float32(econ_metrics["geometry_weighted_mfe_coverage"]),
+            "per_geometry_metrics": econ_metrics["per_geometry_metrics"],
+            "tbm_lgbm_auc_regime": np.float32(tbm_lgbm_metrics["tbm_lgbm_auc_regime"]),
+            "tbm_lgbm_auc_baseline": np.float32(tbm_lgbm_metrics["tbm_lgbm_auc_baseline"]),
+            "tbm_lgbm_auc_lift_vs_baseline": np.float32(tbm_lgbm_metrics["tbm_lgbm_auc_lift_vs_baseline"]),
+            "tbm_lgbm_top_bucket_lift_vs_baseline": np.float32(tbm_lgbm_metrics["tbm_lgbm_top_bucket_lift_vs_baseline"]),
+            "tbm_lgbm_positive_fold_fraction": np.float32(tbm_lgbm_metrics["tbm_lgbm_positive_fold_fraction"]),
+            "tbm_lgbm_stability": np.float32(tbm_lgbm_metrics["tbm_lgbm_stability"]),
+            "tbm_lgbm_selected_geometry": str(tbm_lgbm_metrics["tbm_lgbm_selected_geometry"])
+        })
 
-    df2["feature_learnability_gain"] = np.asarray(feature_gain_vals, dtype=np.float32)
-    df2["feature_positive_fold_fraction"] = np.asarray(
-        feature_pos_vals, dtype=np.float32
-    )
-    df2["top_feature_lifts"] = top_feature_lifts_vals
-    df2["conditional_predictability_gain"] = np.asarray(
-        cond_gain_vals, dtype=np.float32
-    )
-    df2["conditional_predictability_positive_fold_fraction"] = np.asarray(
-        cond_pos_vals, dtype=np.float32
-    )
-    df2["conditional_predictability_regime_r2"] = np.asarray(
-        cond_regime_r2_vals, dtype=np.float32
-    )
-    df2["conditional_predictability_baseline_r2"] = np.asarray(
-        cond_base_r2_vals, dtype=np.float32
-    )
-    df2["feature_conditioned_spread"] = np.asarray(
-        cond_spread_vals, dtype=np.float32
-    )
-    df2["economic_gain_r"] = np.asarray(econ_vals, dtype=np.float32)
-    df2["geometry_weighted_mfe_coverage"] = np.asarray(
-        agg_mfe_cov_vals, dtype=np.float32
-    )
-    df2["fixed_tp_mfe_coverage"] = np.asarray(fixed_cov_vals, dtype=np.float32)
-    df2["aggregate_mfe_coverage"] = df2["geometry_weighted_mfe_coverage"].astype(
-        np.float32
-    )
-    df2["per_geometry_metrics"] = per_geom_vals
-    df2["tbm_lgbm_auc_regime"] = np.asarray(tbm_auc_regime_vals, dtype=np.float32)
-    df2["tbm_lgbm_auc_baseline"] = np.asarray(tbm_auc_base_vals, dtype=np.float32)
-    df2["tbm_lgbm_auc_lift_vs_baseline"] = np.asarray(
-        tbm_auc_lift_vals, dtype=np.float32
-    )
-    df2["tbm_lgbm_top_bucket_lift_vs_baseline"] = np.asarray(
-        tbm_top_lift_vals, dtype=np.float32
-    )
-    df2["tbm_lgbm_positive_fold_fraction"] = np.asarray(
-        tbm_pos_vals, dtype=np.float32
-    )
-    df2["tbm_lgbm_stability"] = np.asarray(tbm_stability_vals, dtype=np.float32)
-    df2["tbm_lgbm_selected_geometry"] = tbm_geom_name_vals
+    metrics_df = pd.DataFrame(metrics_list, index=df2.index, columns=[
+        "feature_learnability_gain", "feature_positive_fold_fraction", "top_feature_lifts",
+        "conditional_predictability_gain", "conditional_predictability_positive_fold_fraction",
+        "conditional_predictability_regime_r2", "conditional_predictability_baseline_r2",
+        "feature_conditioned_spread", "economic_gain_r", "geometry_weighted_mfe_coverage",
+        "fixed_tp_mfe_coverage", "aggregate_mfe_coverage", "per_geometry_metrics",
+        "tbm_lgbm_auc_regime", "tbm_lgbm_auc_baseline", "tbm_lgbm_auc_lift_vs_baseline",
+        "tbm_lgbm_top_bucket_lift_vs_baseline", "tbm_lgbm_positive_fold_fraction",
+        "tbm_lgbm_stability", "tbm_lgbm_selected_geometry"
+    ])
+    df2 = pd.concat([df2, metrics_df], axis=1)
     min_mfe_cov = float(cfg.get("mask_opt_min_mfe_coverage", 0.02))
     _log_stage_snapshot(
         mode,
@@ -4676,12 +4589,12 @@ def _run_mode_search(
     fam_counts = {fam: 0 for fam in df2["family"].unique()}
 
     # First add the guaranteed 1 per family
-    for _, row in top_1_fam.iterrows():
+    for row in top_1_fam.to_dict("records"):
         df_short_list.append(row)
         fam_counts[row["family"]] += 1
 
     # Then add from global list until we hit shortlist_max
-    for _, row in df2.iterrows():
+    for row in df2.to_dict("records"):
         if len(df_short_list) >= shortlist_max:
             break
         if fam_counts[row["family"]] < 3:

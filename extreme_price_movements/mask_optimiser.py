@@ -17,7 +17,7 @@ from numba import njit
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import roc_auc_score
 
-from extreme_price_movements.config import CFG, enable_perp_feature_keys
+from extreme_price_movements.config import CFG, enable_perp_feature_keys, TEST_FEATURE_KEYS
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
     load_features_selected,
@@ -1448,6 +1448,176 @@ def _build_regime_rationale(row: pd.Series) -> str:
     return "; ".join(reasons)
 
 
+
+def dispersion_to_edge(returns: np.ndarray) -> float:
+    """
+    DER = sigma / |mu|
+    """
+    mu = np.mean(returns)
+    sigma = np.std(returns)
+
+    if abs(mu) < 1e-12:
+        return np.inf
+
+    return float(sigma / abs(mu))
+
+
+def fold_stability(delta_r_folds: np.ndarray) -> float:
+    """
+    S_r = |mean(delta_r)| / std(delta_r)
+    """
+    mean = np.mean(delta_r_folds)
+    std = np.std(delta_r_folds)
+
+    if std < 1e-12:
+        return 0.0
+
+    return float(abs(mean) / std)
+
+
+def label_entropy(labels: np.ndarray) -> float:
+    """
+    Shannon entropy of discrete labels.
+    """
+    if len(labels) == 0:
+        return 0.0
+    values, counts = np.unique(labels, return_counts=True)
+    p = counts / counts.sum()
+
+    return float(-(p * np.log(p + 1e-12)).sum())
+
+
+def compute_net_regime_value(
+    returns_E: np.ndarray,
+    returns_ER: np.ndarray,
+    delta_r_folds_E: np.ndarray,
+    delta_r_folds_ER: np.ndarray,
+    labels_E: np.ndarray,
+    labels_ER: np.ndarray,
+    auc_E: float,
+    auc_ER: float,
+) -> Tuple[float, Dict[str, float]]:
+    """
+    Compute the NetRegimeValue score.
+    """
+    # coverage
+    coverage_ratio = len(returns_ER) / max(len(returns_E), 1)
+    coverage_term = np.sqrt(coverage_ratio)
+
+    # dispersion-to-edge
+    der_E = dispersion_to_edge(returns_E)
+    der_ER = dispersion_to_edge(returns_ER)
+    der_ratio = der_E / der_ER if der_ER > 0 else 0
+    der_ratio = float(np.clip(der_ratio, 0.5, 3.0))
+
+    # fold stability
+    sr_E = fold_stability(delta_r_folds_E)
+    sr_ER = fold_stability(delta_r_folds_ER)
+    sr_ratio = sr_ER / sr_E if sr_E > 0 else 1.0
+    sr_ratio = float(np.clip(sr_ratio, 0.5, 3.0))
+
+    # entropy reduction
+    H_E = label_entropy(labels_E)
+    H_ER = label_entropy(labels_ER)
+    entropy_term = float(np.exp(np.clip(H_E - H_ER, -0.5, 0.5)))
+
+    # AUC improvement
+    auc_gain = float(np.clip(max(0.0, auc_ER - auc_E), 0.0, 0.1))
+    auc_term = 1.0 + auc_gain
+
+    score = float(coverage_term * der_ratio * sr_ratio * entropy_term * auc_term)
+
+    diagnostics = {
+        "coverage_ratio": coverage_ratio,
+        "DER_E": der_E,
+        "DER_ER": der_ER,
+        "DER_ratio": der_ratio,
+        "S_r_E": sr_E,
+        "S_r_ER": sr_ER,
+        "S_r_ratio": sr_ratio,
+        "entropy_E": H_E,
+        "entropy_ER": H_ER,
+        "auc_E": auc_E,
+        "auc_ER": auc_ER,
+        "net_regime_value": score,
+    }
+
+    return score, diagnostics
+
+
+def quick_ridge_auc(
+    features_df: pd.DataFrame,
+    labels: np.ndarray,
+    event_mask: np.ndarray,
+    folds: List[Tuple[np.ndarray, np.ndarray]]
+) -> float:
+    """
+    Computes a quick out-of-sample AUC using Ridge classification logic.
+    """
+    if np.sum(event_mask) < 20:
+        return 0.5
+
+    y_event = labels[event_mask]
+    if len(np.unique(y_event)) < 2:
+        return 0.5
+
+    X_event = features_df[event_mask].copy()
+    # Replace inf and impute nan
+    X_event = X_event.replace([np.inf, -np.inf], np.nan)
+    X_event = X_event.fillna(X_event.median())
+    X_event = X_event.fillna(0.0) # Fallback
+
+    # Scale features
+    from sklearn.preprocessing import StandardScaler
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_event)
+
+    # Mapping global indices to event indices
+    global_to_local = np.full(len(event_mask), -1, dtype=np.int32)
+    global_to_local[event_mask] = np.arange(np.sum(event_mask))
+
+    oof_preds = np.full(len(y_event), np.nan, dtype=np.float32)
+
+    for tr, va in folds:
+        # Get event-only indices
+        tr_local = global_to_local[tr]
+        tr_local = tr_local[tr_local >= 0]
+
+        va_local = global_to_local[va]
+        va_local = va_local[va_local >= 0]
+
+        if len(tr_local) < 5 or len(va_local) < 2:
+            continue
+
+        X_tr = X_scaled[tr_local]
+        y_tr = y_event[tr_local]
+        X_va = X_scaled[va_local]
+
+        if len(np.unique(y_tr)) < 2:
+            # Can't fit on single class
+            # Just predict the mean rate of this fold
+            oof_preds[va_local] = np.mean(y_tr)
+            continue
+
+        from sklearn.linear_model import RidgeClassifier
+        clf = RidgeClassifier(alpha=1.0)
+        clf.fit(X_tr, y_tr)
+
+        # RidgeClassifier's decision_function returns distance to hyperplane
+        preds = clf.decision_function(X_va)
+        oof_preds[va_local] = preds
+
+    valid_oof = np.isfinite(oof_preds)
+    if np.sum(valid_oof) < 10 or len(np.unique(y_event[valid_oof])) < 2:
+        return 0.5
+
+    try:
+        from sklearn.metrics import roc_auc_score
+        return float(roc_auc_score(y_event[valid_oof], oof_preds[valid_oof]))
+    except Exception:
+        return 0.5
+
+
 def _predictability_gain_from_metrics(metrics: Dict[str, Any]) -> float:
     vals = [
         _metric_or_nan(metrics.get("continuation_predictability_gain")),
@@ -1951,26 +2121,70 @@ def _safe_param_to_string(param: Any) -> str:
     )
 
 
-def _build_candidate_grid(cfg: Dict[str, Any]) -> List[Tuple[int, str, Any, int]]:
-    grid: List[Tuple[int, str, Any, int]] = []
-    duration_grid = cfg.get("duration_grid", [1, 2, 4])
-    for z_hr in cfg.get("z_hours_grid", [6, 10, 16]):
-        for fam in cfg.get(
-            "families", ["std_threshold", "abs_move_threshold", "std_plus_abs"]
-        ):
-            for d_hr in duration_grid:
-                if fam == "std_threshold":
-                    for p in cfg.get("x_std_grid", [1.4, 1.5, 1.6]):
-                        grid.append((z_hr, fam, float(p), d_hr))
-                elif fam == "abs_move_threshold":
-                    for p in cfg.get("y_move_pct_grid", [4.0, 5.0, 6.0]):
-                        grid.append((z_hr, fam, float(p), d_hr))
-                elif fam == "std_plus_abs":
-                    for s in cfg.get("std_plus_abs_std_grid", [1.4, 1.5, 1.6]):
-                        for a in cfg.get("std_plus_abs_abs_grid", [4.0, 5.0, 6.0]):
-                            grid.append((z_hr, fam, (float(s), float(a)), d_hr))
-    return grid
+def _build_candidate_grid(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Builds the candidate grid using robust-z feature thresholds.
+    Replaces old lookback/abs/duration grids.
+    """
+    lookbacks_h = [4, 8, 12]
+    thresholds = [1.4, 1.6, 1.8, 2.0]
 
+    # Define features and their families + directions
+    feature_specs = [
+        # Volatility Expansion (positive magnitude)
+        ("hl_range", "volatility_expansion", "magnitude_positive_only"),
+        ("intrabar_range_atr", "volatility_expansion", "magnitude_positive_only"),
+
+        # Compression Transition
+        ("compression_expansion_transition", "compression_transition", "magnitude_positive_only"),
+
+        # Volume (positive magnitude)
+        ("volume_robust_z", "volume", "magnitude_positive_only"),
+
+        # Breakout / Structure
+        ("breakout_distance_up_atr", "structure", "magnitude_positive_only"),
+        ("breakout_distance_down_atr", "structure", "magnitude_positive_only"),
+
+        # Stretch Location
+        ("distance_from_ema_atr", "stretch_location", "directional_two_sided"),
+        ("distance_from_vwap_atr", "stretch_location", "directional_two_sided"),
+
+        # Momentum
+        ("atr_normalized_trailing_return", "momentum", "directional_two_sided"),
+        ("short_minus_long_momentum", "momentum", "directional_two_sided"),
+        ("slope_change", "momentum", "directional_two_sided"),
+
+        # Path Structure
+        ("path_efficiency_ratio", "path_structure", "directional_two_sided"),
+    ]
+
+    candidates = []
+    for f_base, family, d_type in feature_specs:
+        for lb in lookbacks_h:
+            fname = f"{f_base}_{lb}h"
+
+            for th in thresholds:
+                if d_type in ("magnitude_positive_only", "directional_two_sided"):
+                    candidates.append({
+                        "feature_base": f_base,
+                        "lookback_h": lb,
+                        "feature_name": fname,
+                        "family": family,
+                        "direction": "gt",
+                        "threshold": th
+                    })
+
+                if d_type == "directional_two_sided":
+                    candidates.append({
+                        "feature_base": f_base,
+                        "lookback_h": lb,
+                        "feature_name": fname,
+                        "family": family,
+                        "direction": "lt",
+                        "threshold": -th
+                    })
+
+    return candidates
 
 def _build_asset_groups_from_codes(
     symbol_codes: np.ndarray,
@@ -1984,6 +2198,27 @@ def _build_asset_groups_from_codes(
     return asset_groups
 
 
+
+@njit
+def _rolling_robust_z_1d(x: np.ndarray, window: int) -> np.ndarray:
+    n = x.shape[0]
+    out = np.full_like(x, np.nan)
+    for i in range(window - 1, n):
+        w = x[i - window + 1: i + 1]
+        valid = w[np.isfinite(w)]
+        if len(valid) > 0:
+            med = np.median(valid)
+            mad = np.median(np.abs(valid - med))
+            eps = 1e-6
+            out[i] = (x[i] - med) / (1.4826 * mad + eps)
+    return out
+
+def compute_robust_z_for_groups(x: np.ndarray, asset_groups: Dict[int, np.ndarray], window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    for _, idxs in asset_groups.items():
+        out[idxs] = _rolling_robust_z_1d(x[idxs], window)
+    return out
+
 def _compute_z_cache(
     high: np.ndarray,
     low: np.ndarray,
@@ -1993,6 +2228,7 @@ def _compute_z_cache(
     asset_groups: Dict[int, np.ndarray],
     z: int,
     bph: int,
+    volume: Optional[np.ndarray] = None,
 ) -> Dict[str, np.ndarray]:
     n = close.shape[0]
     cache = {
@@ -2008,6 +2244,20 @@ def _compute_z_cache(
         "m_up": np.zeros(n, dtype=np.float32),
         "m_dn": np.zeros(n, dtype=np.float32),
         "v_exp": np.zeros(n, dtype=np.float32),
+
+        # New features
+        "hl_range": np.zeros(n, dtype=np.float32),
+        "intrabar_range_atr": np.zeros(n, dtype=np.float32),
+        "compression_expansion_transition": np.zeros(n, dtype=np.float32),
+        "volume_robust_z": np.zeros(n, dtype=np.float32),
+        "breakout_distance_up_atr": np.zeros(n, dtype=np.float32),
+        "breakout_distance_down_atr": np.zeros(n, dtype=np.float32),
+        "distance_from_ema_atr": np.zeros(n, dtype=np.float32),
+        "distance_from_vwap_atr": np.zeros(n, dtype=np.float32),
+        "atr_normalized_trailing_return": np.zeros(n, dtype=np.float32),
+        "short_minus_long_momentum": np.zeros(n, dtype=np.float32),
+        "slope_change": np.zeros(n, dtype=np.float32),
+        "path_efficiency_ratio": np.zeros(n, dtype=np.float32),
     }
 
     for _, idxs in asset_groups.items():
@@ -2042,6 +2292,91 @@ def _compute_z_cache(
         cache["m_up"][idxs] = m_u
         cache["m_dn"][idxs] = m_d
         cache["v_exp"][idxs] = v_e
+
+        # --- New Features ---
+        window_14d = 14 * 24 * bph
+
+        # 1. Volatility / Range
+        ast_hl_range = ast_high - ast_low
+        cache["hl_range"][idxs] = _rolling_robust_z_1d(ast_hl_range, window_14d)
+
+        # Use ast_vol (which is approx ATR percent) or calculate explicitly if needed.
+        # Vol_g is the 14-day ATR pct. So intrabar_range_atr can be approximated.
+        ast_intrabar_range_atr = np.where(ast_vol > 1e-6, (ast_high - ast_low) / (ast_close * ast_vol), 0.0)
+        cache["intrabar_range_atr"][idxs] = _rolling_robust_z_1d(ast_intrabar_range_atr, window_14d)
+
+        ast_bollinger_width = rolling_std_safe(ast_close, 20) / np.maximum(ast_close, 1e-6)
+        ast_range_spike = ast_intrabar_range_atr
+        # For simplicity, compression_expansion_transition is just range_spike / (bollinger_width + eps)
+        ast_comp_exp = ast_range_spike / np.maximum(ast_bollinger_width, 1e-6)
+        cache["compression_expansion_transition"][idxs] = _rolling_robust_z_1d(ast_comp_exp, window_14d)
+
+        # 2. Volume
+        if volume is not None:
+            ast_vol_raw = volume[idxs]
+        else:
+            ast_vol_raw = np.ones_like(ast_close)
+        cache["volume_robust_z"][idxs] = _rolling_robust_z_1d(ast_vol_raw, window_14d)
+
+        # 3. Breakout / Structure
+        # distance from trailing max high
+        ast_trailing_high, _ = rolling_max_index_safe(ast_high, z)
+        ast_breakout_up = (ast_close - np.roll(ast_trailing_high, 1)) / np.maximum(ast_close * ast_vol, 1e-6)
+        cache["breakout_distance_up_atr"][idxs] = _rolling_robust_z_1d(ast_breakout_up, window_14d)
+
+        ast_trailing_low, _ = rolling_min_index_safe(ast_low, z)
+        ast_breakout_dn = (np.roll(ast_trailing_low, 1) - ast_close) / np.maximum(ast_close * ast_vol, 1e-6)
+        cache["breakout_distance_down_atr"][idxs] = _rolling_robust_z_1d(ast_breakout_dn, window_14d)
+
+        # 3.5 Stretch Location
+        # distance_from_ema_atr
+        # EMA over z bars. Simple SMA proxy if EMA is too slow inside numba, or we can use convolve.
+        # Let's use SMA as a robust proxy for EMA over 'z' window to keep it vectorized here.
+        sma_z = np.convolve(ast_close, np.ones(z)/z, mode='valid')
+        sma_z = np.concatenate([np.full(z-1, np.nan), sma_z])
+        ast_dist_ema = (ast_close - sma_z) / np.maximum(ast_close * ast_vol, 1e-6)
+        cache["distance_from_ema_atr"][idxs] = _rolling_robust_z_1d(ast_dist_ema, window_14d)
+
+        # distance_from_vwap_atr
+        # VWAP over z bars = sum(close * volume) / sum(volume)
+        if volume is not None:
+            vol_w = volume[idxs]
+        else:
+            vol_w = np.ones_like(ast_close)
+
+        sum_vol_z = np.convolve(vol_w, np.ones(z), mode='valid')
+        sum_vol_z = np.concatenate([np.full(z-1, np.nan), sum_vol_z])
+
+        sum_pv_z = np.convolve(ast_close * vol_w, np.ones(z), mode='valid')
+        sum_pv_z = np.concatenate([np.full(z-1, np.nan), sum_pv_z])
+
+        vwap_z = sum_pv_z / np.maximum(sum_vol_z, 1e-6)
+        ast_dist_vwap = (ast_close - vwap_z) / np.maximum(ast_close * ast_vol, 1e-6)
+        cache["distance_from_vwap_atr"][idxs] = _rolling_robust_z_1d(ast_dist_vwap, window_14d)
+
+        # 4. Momentum
+        ast_trailing_ret = (ast_close - np.roll(ast_close, z)) / np.maximum(np.roll(ast_close, z), 1e-6)
+        ast_atr_norm_ret = ast_trailing_ret / np.maximum(ast_vol, 1e-6)
+        cache["atr_normalized_trailing_return"][idxs] = _rolling_robust_z_1d(ast_atr_norm_ret, window_14d)
+
+        # Short minus long
+        short_ret = (ast_close - np.roll(ast_close, max(1, z//3))) / np.maximum(np.roll(ast_close, max(1, z//3)), 1e-6)
+        cache["short_minus_long_momentum"][idxs] = _rolling_robust_z_1d(short_ret - ast_trailing_ret, window_14d)
+
+        # Slope change (diff of rolling return)
+        ast_slope_change = ast_trailing_ret - np.roll(ast_trailing_ret, 1)
+        cache["slope_change"][idxs] = _rolling_robust_z_1d(ast_slope_change, window_14d)
+
+        # 5. Path Structure
+        # path efficiency = net move / sum of abs moves
+        ast_abs_moves = np.abs(ast_close - np.roll(ast_close, 1))
+        # We need a rolling sum for path efficiency. Safe rolling sum:
+        rolling_abs_moves = np.convolve(ast_abs_moves, np.ones(z, dtype=int), 'valid')
+        rolling_abs_moves = np.concatenate([np.full(z-1, np.nan), rolling_abs_moves])
+
+        ast_path_eff = np.where(rolling_abs_moves > 1e-6, (ast_close - np.roll(ast_close, z)) / rolling_abs_moves, 0.0)
+        cache["path_efficiency_ratio"][idxs] = _rolling_robust_z_1d(ast_path_eff, window_14d)
+
 
     return cache
 
@@ -2169,43 +2504,56 @@ def _rescale_mode_gates_for_sample_size(
 
 
 def _generate_event_masks_fast(
-    family: str,
-    param_val: Any,
-    up_move: np.ndarray,
-    dn_move: np.ndarray,
-    rolling_std_up: np.ndarray,
-    rolling_std_dn: np.ndarray,
+    candidate: Dict[str, Any],
+    zc: Dict[str, np.ndarray],
     asset_groups: Optional[Dict[int, np.ndarray]],
-    duration_bars: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    mask_h = np.zeros(up_move.shape[0], dtype=bool)
-    mask_l = np.zeros(dn_move.shape[0], dtype=bool)
 
-    std_up_floored = np.maximum(rolling_std_up, 1e-6)
-    std_dn_floored = np.maximum(rolling_std_dn, 1e-6)
+    f_base = candidate["feature_base"]
+    direction = candidate["direction"]
+    threshold = candidate["threshold"]
 
-    if family == "std_threshold":
-        x_std = float(param_val)
-        mask_h = up_move >= (x_std * std_up_floored)
-        mask_l = dn_move >= (x_std * std_dn_floored)
+    if f_base not in zc:
+        raise ValueError(f"Feature {f_base} not found in zc cache!")
 
-    elif family == "abs_move_threshold":
-        y_move = float(param_val) / 100.0
-        mask_h = up_move >= y_move
-        mask_l = dn_move >= y_move
+    feature_vals = zc[f_base]
 
-    elif family == "std_plus_abs":
-        std_val, abs_val_pct = param_val
-        y_move = float(abs_val_pct) / 100.0
-        mask_h = (up_move >= float(std_val) * std_up_floored) & (up_move >= y_move)
-        mask_l = (dn_move >= float(std_val) * std_dn_floored) & (dn_move >= y_move)
+    mask_h = np.zeros(feature_vals.shape[0], dtype=bool)
+    mask_l = np.zeros(feature_vals.shape[0], dtype=bool)
 
-    else:
-        raise ValueError(f"Unknown family: {family}")
+    # We evaluate directions depending on the prompt logic.
+    # Note: "directional_two_sided" tests both positive and negative bounds independently in separate candidates!
+    # But mask_h and mask_l usually denote "Price Up" and "Price Down" events.
+    # For a feature like `atr_normalized_trailing_return` > 1.6:
+    # Does this mean price went UP? Yes. So it goes to mask_h.
+    # For `atr_normalized_trailing_return` < -1.6:
+    # It means price went DOWN. It goes to mask_l.
 
-    if duration_bars > 1 and asset_groups is not None:
-        mask_h = dilate_mask_by_asset_safe(mask_h, asset_groups, duration_bars)
-        mask_l = dilate_mask_by_asset_safe(mask_l, asset_groups, duration_bars)
+    valid_mask = np.isfinite(feature_vals)
+
+    if candidate["family"] in ("volatility_expansion", "compression_transition", "volume"):
+        # These are magnitude / expansion indicators. They don't have inherent up/down logic themselves.
+        # But we must populate both mask_h and mask_l, because the caller filters by `_get_side_mask(mode, mask_h, mask_l)`.
+        # So an expansion trigger > 1.8 applies to BOTH up and down modes!
+        if direction == "gt":
+            trigger = valid_mask & (feature_vals >= threshold)
+            mask_h = trigger
+            mask_l = trigger
+
+    elif candidate["family"] == "structure":
+        # breakout_distance_up_atr > 1.4 -> price went UP -> mask_h
+        # breakout_distance_down_atr > 1.4 (since it's computed as roll(low) - close) -> price went DOWN -> mask_l
+        if f_base == "breakout_distance_up_atr" and direction == "gt":
+            mask_h = valid_mask & (feature_vals >= threshold)
+        elif f_base == "breakout_distance_down_atr" and direction == "gt":
+            mask_l = valid_mask & (feature_vals >= threshold)
+
+    elif candidate["family"] in ("momentum", "stretch_location", "path_structure"):
+        # Directional two-sided
+        if direction == "gt":
+            mask_h = valid_mask & (feature_vals >= threshold)
+        elif direction == "lt":
+            mask_l = valid_mask & (feature_vals <= threshold)
 
     return mask_h, mask_l
 
@@ -2428,6 +2776,7 @@ def _build_shared_cache(
             set(int(z * bph) for z in cfg.get("z_hours_grid", [6, 10, 16]))
         ),
         "candidate_grid": _build_candidate_grid(cfg),
+        "volume": data["volume"].values if "volume" in data.columns else None,
     }
 
 
@@ -3617,9 +3966,8 @@ def _run_mode_search(
         0.20 * _zscore_np(df1["active_days_fraction"].values)
         + 0.15 * _zscore_np(df1["regime_distinctness_score"].values)
         + 0.15 * _zscore_np(np.log1p(df1["total_events"].values.astype(np.float32)))
-        + 0.75 * _zscore_np(df1["basic_directionality_edge_event_vs_non_event"].values)
-        - 0.35 * _zscore_np(df1["impulse_shape_dispersion"].values)
-        - 0.20
+        + 0.30 * _zscore_np(df1["basic_directionality_edge_event_vs_non_event"].values)
+        - 0.30
         * _zscore_np(
             np.nan_to_num(
                 df1["dispersion_to_edge_ratio"].values.astype(np.float32), nan=1e6
@@ -3644,11 +3992,28 @@ def _run_mode_search(
         ],
     )
 
-    df1 = (
-        df1.sort_values("phase1_proxy_score", ascending=False)
-        .head(int(cfg.get("top_k_for_learnability", 8)))
-        .copy()
-    )
+    # -------------------------------------------------------------------------
+    # Stage A/B/C Diversity Filter (Phase 1)
+    # -------------------------------------------------------------------------
+    df1 = df1.sort_values("phase1_proxy_score", ascending=False)
+
+    # Extract feature base and family for group logic
+    df1["feature_base"] = df1["name"].apply(lambda x: candidate_registry[x].get("feature_base", x))
+    df1["family"] = df1["name"].apply(lambda x: candidate_registry[x].get("family", "unknown"))
+
+    # 1. Top 1 config per feature
+    df1 = df1.drop_duplicates(subset=["feature_base"], keep="first")
+
+    # 2. Keep top features per family (Stage 1/2 rule: at least 2 stable per family)
+    # We will just select top 2 per family, then pad with global tops if needed.
+    top_per_fam = df1.groupby("family").head(2)
+
+    # Keep global top K as well
+    top_k_global = df1.head(int(cfg.get("top_k_for_learnability", 8)))
+
+    # Union and deduplicate
+    df1 = pd.concat([top_per_fam, top_k_global]).drop_duplicates(subset=["name"]).sort_values("phase1_proxy_score", ascending=False).copy()
+
 
     # -------------------------------------------------------------------------
     # Phase 2: full symbols & history + full metrics, only top phase1 candidates
@@ -3950,6 +4315,98 @@ def _run_mode_search(
         ],
     )
 
+
+    # -------------------------------------------------------------------------
+    # Phase 2.5: Ridge regime attribution
+    # -------------------------------------------------------------------------
+    tprint(f"Phase 2.5 ({mode}): Ridge regime attribution for top {len(df2)} candidates...")
+
+    full_df_dict = {
+        "timestamp": shared["timestamps"],
+        "high": shared["high"],
+        "low": shared["low"],
+        "close": shared["close"],
+    }
+    if "open" in shared:
+        full_df_dict["open"] = shared["open"]
+    if "volume" in shared:
+        full_df_dict["volume"] = shared["volume"]
+
+    full_df = pd.DataFrame(full_df_dict)
+    regime_features_df = build_regime_features(full_df)
+
+    # Identify which features are binary vs continuous
+    feature_types = {}
+    for c in RIDGE_FEATURE_COLS:
+        if c in regime_features_df.columns:
+            u_vals = regime_features_df[c].dropna().unique()
+            if len(u_vals) <= 2 and set(u_vals).issubset({0.0, 1.0, 0, 1}):
+                feature_types[c] = "binary"
+            else:
+                feature_types[c] = "continuous"
+
+    dynamic_conditioners: Dict[str, List[Dict[str, Any]]] = {}
+
+    for _, row in df2.iterrows():
+        base_name = str(row["name"])
+        reg = candidate_registry[base_name]
+        z = int(int(reg["z_hours"]) * bph)
+        duration_bars = int(int(reg["duration_hours"]) * bph)
+        if z not in global_z_cache:
+            global_z_cache[z] = _compute_z_cache(
+                high=shared["high"],
+                low=shared["low"],
+                close=shared["close"],
+                ret_1=shared["ret_1"],
+                vol_g=shared["vol_g"],
+                asset_groups=shared["asset_groups"],
+                z=z,
+                bph=bph,
+                volume=shared.get("volume", None),
+            )
+        zc = global_z_cache[z]
+        m_high, m_low = _generate_event_masks_fast(
+            candidate=reg,
+            zc=zc,
+            asset_groups=shared["asset_groups"],
+        )
+        side_mask = _get_side_mask(mode, m_high, m_low)
+
+        fwd_2h_bars = int(2 * bph)
+        if "close" in full_df:
+            fwd_ret = full_df["close"].shift(-fwd_2h_bars) / full_df["close"] - 1.0
+        else:
+            fwd_ret = pd.Series(np.zeros(len(full_df)))
+
+        ridge_df = regime_features_df.copy()
+        ridge_df["event_mask"] = side_mask.astype(int)
+        ridge_df["target_fwd_return"] = fwd_ret
+
+        valid_feature_cols = [c for c in RIDGE_FEATURE_COLS if c in ridge_df.columns]
+
+        res = fit_ridge_regime_scan(
+            ridge_df,
+            valid_feature_cols,
+            "event_mask",
+            "target_fwd_return",
+            n_splits=max(2, len(folds))
+        )
+
+        cond_features = []
+        if res is not None:
+            seeds = res.get("phase3_conditioner_seeds", [])
+            # We already have seeds outputted from the updated function
+            for seed in seeds:
+                cond_features.append({
+                    "feature": seed.feature,
+                    "coef": seed.coefficient,
+                    "abs_signed_importance": seed.abs_signed_importance,
+                    "type": seed.feature_type,
+                    "thresholds": seed.thresholds
+                })
+
+        dynamic_conditioners[base_name] = cond_features
+
     feature_gain_vals: List[np.float32] = []
     feature_pos_vals: List[np.float32] = []
     top_feature_lifts_vals: List[str] = []
@@ -3983,17 +4440,13 @@ def _run_mode_search(
                 asset_groups=shared["asset_groups"],
                 z=z,
                 bph=bph,
+                volume=shared.get("volume", None),
             )
         zc = global_z_cache[z]
         m_high, m_low = _generate_event_masks_fast(
-            family=reg["family"],
-            param_val=reg["param"],
-            up_move=zc["up"],
-            dn_move=zc["dn"],
-            rolling_std_up=zc["std_up"],
-            rolling_std_dn=zc["std_dn"],
+            candidate=reg,
+            zc=zc,
             asset_groups=shared["asset_groups"],
-            duration_bars=duration_bars,
         )
         side_mask = _get_side_mask(mode, m_high, m_low)
         feat_metrics = _compute_phase3_feature_learnability(
@@ -4207,14 +4660,51 @@ def _run_mode_search(
         ],
         ascending=[False, False, False, False, False],
     )
-    shortlist_max = int(cfg.get("shortlist_max_candidates", 4))
-    df_short = df2.head(shortlist_max).copy()
-    if df_short.empty:
+
+    df2["feature_base"] = df2["name"].apply(lambda x: candidate_registry[str(x)].get("feature_base", str(x)))
+    df2["family"] = df2["name"].apply(lambda x: candidate_registry[str(x)].get("family", "unknown"))
+
+    # Stage 2.5/3 diversity: global top + at least 1 stable per family, max 3 per family
+    df2 = df2.drop_duplicates(subset=["feature_base"], keep="first")
+
+    stage3_max = int(cfg.get("stage3_max_candidates", 10))
+    shortlist_max = int(cfg.get("shortlist_max_candidates", stage3_max))
+
+    # Keep at least 1 per family
+    top_1_fam = df2.groupby("family").head(1)
+
+    # Pad with global top, but enforce max 3 per family
+    df_short_list = []
+    fam_counts = {fam: 0 for fam in df2["family"].unique()}
+
+    # First add the guaranteed 1 per family
+    for _, row in top_1_fam.iterrows():
+        df_short_list.append(row)
+        fam_counts[row["family"]] += 1
+
+    # Then add from global list until we hit shortlist_max
+    for _, row in df2.iterrows():
+        if len(df_short_list) >= shortlist_max:
+            break
+        if fam_counts[row["family"]] < 3:
+            # Check if not already added
+            if not any(r["name"] == row["name"] for r in df_short_list):
+                df_short_list.append(row)
+                fam_counts[row["family"]] += 1
+
+    if not df_short_list:
         return {
             "status": "failed",
             "reason": f"no_shortlist_candidates_{mode}",
             "layer0_candidate_table_": df2,
         }
+
+    df_short = pd.DataFrame(df_short_list)
+    # Ensure at least 10 if viable
+    # If df_short < 10, we could add more, but we are capped by shortlist_max.
+
+    df_short["tier"] = 0
+    df_short["conditioner_mode"] = "none"
 
     candidate_masks: Dict[str, Dict[str, np.ndarray]] = {}
     for _, row in df_short.iterrows():
@@ -4233,95 +4723,113 @@ def _run_mode_search(
                 asset_groups=shared["asset_groups"],
                 z=z,
                 bph=bph,
+                volume=shared.get("volume", None),
             )
         zc = global_z_cache[z]
         m_high, m_low = _generate_event_masks_fast(
-            family=reg["family"],
-            param_val=reg["param"],
-            up_move=zc["up"],
-            dn_move=zc["dn"],
-            rolling_std_up=zc["std_up"],
-            rolling_std_dn=zc["std_dn"],
+            candidate=reg,
+            zc=zc,
             asset_groups=shared["asset_groups"],
-            duration_bars=duration_bars,
         )
         candidate_masks[name] = {"m_high": m_high, "m_low": m_low}
 
     cond_rows: List[pd.Series] = []
     if bool(cfg.get("enable_secondary_conditioners", True)):
-        spread_to_atr = np.nan_to_num(
-            np.asarray(
-                feature_dict.get(
-                    "spread_to_atr", np.zeros_like(shared["close"], dtype=np.float32)
-                ),
-                dtype=np.float32,
-            ),
-            nan=0.0,
-            posinf=0.0,
-            neginf=0.0,
-        )
-        alternation_array = np.asarray(
-            shared.get("alternation", np.zeros_like(shared["close"], dtype=np.float32)),
-            dtype=np.float32,
-        )
+        # Configurable limits
+        min_events = int(cfg.get("phase3_min_conditioned_event_count", 2000))
+        min_fraction = float(cfg.get("phase3_min_event_fraction_of_base", 0.10))
+        tier2_min_fraction = float(cfg.get("phase3_tier2_min_event_fraction", 0.05))
+        max_singles = int(cfg.get("phase3_max_single_candidates_per_base", 4))
+        max_pairs = int(cfg.get("phase3_max_pair_candidates", 10))
+
         for _, row in df_short.iterrows():
             cand_name = str(row["name"])
             reg = candidate_registry[cand_name]
             z = int(int(reg["z_hours"]) * bph)
             zc = global_z_cache[z]
             base_masks = candidate_masks[cand_name]
-            for conditioner in cfg.get("conditioner_modes", ["none"]):
-                if conditioner == "none":
+            base_side_mask = _get_side_mask(mode, base_masks["m_high"], base_masks["m_low"])
+            base_event_count = int(np.sum(base_side_mask))
+
+            # ---------------------------------------------------------
+            # 3A. Generate Single-Regime Candidates (Tier-1)
+            # ---------------------------------------------------------
+            tier1_candidates = []
+            top_vars = dynamic_conditioners.get(cand_name, [])
+
+            for var_info in top_vars:
+                var_name = var_info["feature"]
+                coef = var_info["coef"]
+                v_type = var_info["type"]
+                family = var_info.get("family", "unknown")
+
+                if var_name not in regime_features_df.columns:
                     continue
-                new_h, new_l = _apply_secondary_conditioner(
-                    base_masks["m_high"],
-                    base_masks["m_low"],
-                    conditioner,
-                    zc["m_up"],
-                    zc["m_dn"],
-                    zc["v_exp"],
-                    spread_to_atr,
-                    alternation_array,
-                )
-                new_side_mask = _get_side_mask(mode, new_h, new_l)
-                tot_events = int(np.sum(new_side_mask))
-                if tot_events < int(cfg.get("phase2_min_total_events", 5000)):
+
+                feature_vals = regime_features_df[var_name].values
+                valid_mask = np.isfinite(feature_vals)
+                active_valid = base_side_mask & valid_mask
+                if np.sum(active_valid) < 50:
                     continue
-                coh = (
-                    _coherence_metrics_single_side(
-                        new_side_mask, zc["b_up"], zc["s_up"], zc["m_up"]
-                    )
-                    if _mode_is_up(mode)
-                    else _coherence_metrics_single_side(
-                        new_side_mask, zc["b_dn"], zc["s_dn"], zc["m_dn"]
-                    )
-                )
-                new_fold_rates = [
-                    fold_base_rate_safe(new_side_mask, global_target, va)
-                    for _, va in folds
-                ]
-                new_fold_cont_std = (
-                    float(np.std(np.asarray(new_fold_rates, dtype=np.float32)))
-                    if new_fold_rates
-                    else 1.0
-                )
-                base_disp = float(row.get("impulse_shape_dispersion", 1e9))
-                base_f_cont = float(row.get("fold_continuation_rate_std", 1e9))
-                improved = (
-                    coh["impulse_shape_dispersion"] < base_disp * 0.95
-                    or new_fold_cont_std < base_f_cont * 0.95
-                )
-                if not improved:
-                    continue
-                valid_new = np.isfinite(forward_returns)
-                non_event_new = (~new_side_mask) & valid_new
-                if np.any(new_side_mask & valid_new) and np.any(non_event_new):
-                    basic_edge_new = float(
-                        np.nanmean(global_signed_returns[new_side_mask & valid_new])
-                        - np.nanmean(global_signed_returns[non_event_new])
-                    )
+
+                if v_type == "binary":
+                    target_val = 1 if coef > 0 else 0
+                    cond_mask = valid_mask & (feature_vals == target_val)
+                    tier1_candidates.append({
+                        "name": f"{cand_name}_{var_name}_is_{target_val}",
+                        "desc": f"{var_name} == {target_val}",
+                        "mask": cond_mask,
+                        "features": [var_name],
+                        "families": [family]
+                    })
                 else:
-                    basic_edge_new = 0.0
+                    direction = "gt" if coef > 0 else "lt"
+                    thresholds_dict = var_info.get("thresholds")
+                    if not thresholds_dict:
+                        continue
+
+                    quantiles_to_check = ["q50", "q60", "q70", "q80"] if coef > 0 else ["q50", "q40", "q30", "q20"]
+                    for q_key in quantiles_to_check:
+                        if q_key in thresholds_dict:
+                            threshold = thresholds_dict[q_key]
+                            if direction == "gt":
+                                cond_mask = valid_mask & (feature_vals > threshold)
+                                desc = f"{var_name} > {q_key}"
+                            else:
+                                cond_mask = valid_mask & (feature_vals < threshold)
+                                desc = f"{var_name} < {q_key}"
+
+                            tier1_candidates.append({
+                                "name": f"{cand_name}_{var_name}_{desc.replace(' ', '').replace('>', 'gt').replace('<', 'lt')}",
+                                "desc": desc,
+                                "mask": cond_mask,
+                                "features": [var_name],
+                                "families": [family]
+                            })
+
+            # Base Evaluation Closure
+            def eval_candidate(c_info, tier, parent_res=None):
+                new_side_mask = base_side_mask & c_info["mask"]
+                tot_events = int(np.sum(new_side_mask))
+
+                req_fraction = min_fraction if tier == 1 else tier2_min_fraction
+                if tot_events < min_events or (tot_events / base_event_count) < req_fraction:
+                    return None
+
+                coh = (
+                    _coherence_metrics_single_side(new_side_mask, zc["b_up"], zc["s_up"], zc["m_up"])
+                    if _mode_is_up(mode)
+                    else _coherence_metrics_single_side(new_side_mask, zc["b_dn"], zc["s_dn"], zc["m_dn"])
+                )
+
+                valid_fwd_new = np.isfinite(global_signed_returns)
+                non_event_new = (~new_side_mask) & valid_fwd_new
+                basic_edge_new = (
+                    float(np.nanmean(global_signed_returns[new_side_mask & valid_fwd_new]) - np.nanmean(global_signed_returns[non_event_new]))
+                    if np.any(new_side_mask & valid_fwd_new) and np.any(non_event_new)
+                    else 0.0
+                )
+
                 new_metrics = _compute_full_metrics_for_candidate(
                     mode,
                     new_side_mask,
@@ -4331,149 +4839,159 @@ def _run_mode_search(
                     float(coh["impulse_shape_dispersion"]),
                     float(basic_edge_new),
                 )
-                gain_max = _mode_predictability_gain_from_metrics(mode, new_metrics)
+
+                econ_metrics = _compute_tbm_economic_gain(shared, new_side_mask, mode, folds, cfg)
+                mfe_metrics = _compute_mfe_coverage(shared, new_side_mask, cfg)
+                new_econ = _metric_or_nan(econ_metrics.get("economic_gain_r"))
+                new_mfe = _metric_or_nan(mfe_metrics.get("fixed_tp_mfe_coverage"))
+
+                # In order to do base comparison, we need base_econ. If row doesn't have it, we must compute it.
+                if "economic_gain_r" not in row:
+                    base_econ_metrics = _compute_tbm_economic_gain(shared, base_side_mask, mode, folds, cfg)
+                    base_econ = _metric_or_nan(base_econ_metrics.get("economic_gain_r"))
+                    row["economic_gain_r"] = base_econ
+
+                    base_mfe_metrics = _compute_mfe_coverage(shared, base_side_mask, cfg)
+                    base_mfe = _metric_or_nan(base_mfe_metrics.get("fixed_tp_mfe_coverage"))
+                    row["aggregate_mfe_coverage"] = base_mfe
+                else:
+                    base_econ = _metric_or_nan(row.get("economic_gain_r"))
+                    base_mfe = _metric_or_nan(row.get("aggregate_mfe_coverage"))
+
+                improves_econ = (new_econ > base_econ * 1.05)
+                improves_mfe = (new_mfe > base_mfe * 1.05)
+
+                # Check net regime value
+                best_geom = econ_metrics.get("per_geometry_metrics", [{}])[0]
+                labels_ER = best_geom.get("labels", np.array([]))
+
+                base_best_geom = _compute_tbm_economic_gain(shared, base_side_mask, mode, folds, cfg).get("per_geometry_metrics", [{}])[0]
+                labels_E = base_best_geom.get("labels", np.array([]))
+
+                auc_ER = quick_ridge_auc(regime_features_df, labels_ER, new_side_mask, folds)
+                auc_E = quick_ridge_auc(regime_features_df, labels_E, base_side_mask, folds)
+
+                fwd_ret_ER = global_signed_returns[new_side_mask & valid_fwd_new]
+                fwd_ret_E = global_signed_returns[base_side_mask & valid_fwd_new]
+
+                nrv_score, nrv_diags = compute_net_regime_value(
+                    returns_E=fwd_ret_E,
+                    returns_ER=fwd_ret_ER,
+                    delta_r_folds_E=np.array([float(np.nanmean(global_signed_returns[(base_side_mask & valid_fwd_new) & va])) for _, va in folds]),
+                    delta_r_folds_ER=np.array([float(np.nanmean(global_signed_returns[(new_side_mask & valid_fwd_new) & va])) for _, va in folds]),
+                    labels_E=labels_E[base_side_mask] if len(labels_E) == len(base_side_mask) else np.array([]),
+                    labels_ER=labels_ER[new_side_mask] if len(labels_ER) == len(new_side_mask) else np.array([]),
+                    auc_E=auc_E,
+                    auc_ER=auc_ER,
+                )
+
+                new_metrics["net_regime_value"] = nrv_score
+
+                # Stronger acceptance rules based on prompt
+                der_ratio = nrv_diags["DER_ratio"]
+                sr_ratio = nrv_diags["S_r_ratio"]
+
+                # Check for deterioration
+                is_stability_worse = (sr_ratio < 0.90)
+                is_dispersion_worse = (der_ratio < 0.90)
+
+                if tier == 1:
+                    if not (improves_econ or improves_mfe or nrv_score > 1.05):
+                        return None
+                    if is_stability_worse or is_dispersion_worse:
+                        return None
+
+                if tier == 2:
+                    # Compare against BEST single parent if provided
+                    if parent_res is not None:
+                        parent_econ = _metric_or_nan(parent_res.get("economic_gain_r"))
+                        parent_mfe = _metric_or_nan(parent_res.get("aggregate_mfe_coverage"))
+                        parent_nrv = _metric_or_nan(parent_res.get("net_regime_value"))
+
+                        if not (new_econ > parent_econ * 1.05 or new_mfe > parent_mfe * 1.05 or nrv_score > parent_nrv * 1.05):
+                            return None
+                    else:
+                        if not (new_econ > base_econ * 1.1 or new_mfe > base_mfe * 1.1 or nrv_score > 1.1):
+                            return None
+                    if is_stability_worse or is_dispersion_worse:
+                        return None
+
+                # Build row
                 new_row = row.copy()
-                new_name = cand_name + f"_{conditioner}"
-                new_row["name"] = new_name
-                new_row["conditioner_mode"] = conditioner
+                new_row["name"] = c_info["name"]
+                new_row["conditioner_mode"] = c_info["desc"]
+                new_row["tier"] = tier
                 new_row["total_events"] = tot_events
-                new_row["impulse_shape_dispersion"] = float(
-                    coh["impulse_shape_dispersion"]
-                )
-                new_row["fold_continuation_rate_std"] = float(new_fold_cont_std)
-                new_row["predictability_gain"] = float(gain_max)
-                new_row["bucket_primary_predictability_gain"] = float(
-                    new_metrics.get(primary_col, np.nan)
-                )
-                new_row["continuation_predictability_gain"] = new_metrics.get(
-                    "continuation_predictability_gain", np.nan
-                )
-                new_row["reversal_predictability_gain"] = new_metrics.get(
-                    "reversal_predictability_gain", np.nan
-                )
-                new_row["MAE_predictability_gain"] = new_metrics.get(
-                    "MAE_predictability_gain", np.nan
-                )
-                new_row["MFE_predictability_gain"] = new_metrics.get(
-                    "MFE_predictability_gain", np.nan
-                )
-                new_row["incremental_information_delta_auc"] = new_metrics.get(
-                    "incremental_information_delta_auc", np.nan
-                )
-                new_row[
-                    "incremental_information_positive_fold_fraction"
-                ] = new_metrics.get(
-                    "incremental_information_positive_fold_fraction", np.nan
-                )
-                new_row[
-                    "incremental_information_positive_fold_count"
-                ] = new_metrics.get(
-                    "incremental_information_positive_fold_count", np.nan
-                )
-                new_row["incremental_information_fold_count"] = new_metrics.get(
-                    "incremental_information_fold_count", np.nan
-                )
-                new_row[
-                    "incremental_information_delta_auc_fold_mean"
-                ] = new_metrics.get(
-                    "incremental_information_delta_auc_fold_mean", np.nan
-                )
-                new_row["incremental_information_delta_auc_fold_std"] = new_metrics.get(
-                    "incremental_information_delta_auc_fold_std", np.nan
-                )
-                new_row["bucket_primary_delta_fold_mean"] = new_metrics.get(
-                    "bucket_primary_delta_fold_mean", np.nan
-                )
-                new_row["bucket_primary_delta_fold_std"] = new_metrics.get(
-                    "bucket_primary_delta_fold_std", np.nan
-                )
-                new_row["bucket_primary_delta_fold_min"] = new_metrics.get(
-                    "bucket_primary_delta_fold_min", np.nan
-                )
-                new_row["dispersion_to_edge_ratio"] = new_metrics.get(
-                    "dispersion_to_edge_ratio", np.nan
-                )
-                new_row["edge_to_dispersion_ratio"] = new_metrics.get(
-                    "edge_to_dispersion_ratio", np.nan
-                )
-                new_row["primary_predictability_gain_is_nan"] = new_metrics.get(
-                    "primary_predictability_gain_is_nan", 1.0
-                )
-                new_row["post_event_vol_dispersion"] = (
-                    float(np.std(zc["v_exp"][new_side_mask & np.isfinite(zc["v_exp"])]))
-                    if np.any(new_side_mask & np.isfinite(zc["v_exp"]))
-                    else 0.0
-                )
-                new_row["fold_event_count_std"] = float(
-                    np.std(
-                        np.asarray(
-                            [float(np.sum(new_side_mask[va])) for _, va in folds],
-                            dtype=np.float32,
-                        )
-                    )
-                )
+                new_row["impulse_shape_dispersion"] = float(coh["impulse_shape_dispersion"])
+
+                for k, v in new_metrics.items():
+                    new_row[k] = v
+
                 new_row["delta_r_raw"] = float(basic_edge_new)
                 new_row["delta_r_fallback"] = (
                     float(0.5 * new_row["incremental_information_delta_auc"])
-                    if np.isfinite(new_row["incremental_information_delta_auc"])
+                    if np.isfinite(new_row.get("incremental_information_delta_auc", np.nan))
                     else float("nan")
                 )
                 raw_val = _metric_or_nan(new_row["delta_r_raw"])
                 new_row["delta_r"] = float(raw_val)
-                new_row["selected_delta_metric"] = primary_col
-                new_row["delta_r_fold_mean"] = float(
-                    new_row["bucket_primary_delta_fold_mean"]
-                )
-                new_row["delta_r_fold_std"] = float(
-                    new_row["bucket_primary_delta_fold_std"]
-                )
-                new_row["positive_fold_fraction_r"] = float(
-                    _metric_or_nan(
-                        new_row["incremental_information_positive_fold_fraction"]
-                    )
-                )
-                new_row["S_r"] = float(
-                    0.5
-                    * max(
-                        0.0,
-                        1.0
-                        - _metric_or_nan(new_row["delta_r_fold_std"])
-                        / (abs(_metric_or_nan(new_row["delta_r_fold_mean"])) + 1e-9),
-                    )
-                    + 0.5
-                    * max(
-                        0.0,
-                        _metric_or_nan(
-                            new_row["incremental_information_positive_fold_fraction"]
-                        ),
-                    )
-                )
-                new_row["D_r"] = float("nan")
-                new_row["N_r"] = float(tot_events)
-                new_row["delta_r_shrunk"] = float(
-                    new_row["delta_r"] * (new_row["N_r"] / (new_row["N_r"] + 500.0))
-                )
-                new_row["score_r"] = float("nan")
-                cond_metrics = _compute_conditional_predictability_metrics(
-                    shared, new_side_mask, mode, folds, cfg
-                )
-                new_row["conditional_predictability_gain"] = float(
-                    cond_metrics["conditional_predictability_gain"]
-                )
-                new_row["conditional_predictability_positive_fold_fraction"] = float(
-                    cond_metrics["conditional_predictability_positive_fold_fraction"]
-                )
-                new_row["conditional_predictability_regime_r2"] = float(
-                    cond_metrics["conditional_predictability_regime_r2"]
-                )
-                new_row["conditional_predictability_baseline_r2"] = float(
-                    cond_metrics["conditional_predictability_baseline_r2"]
-                )
-                new_row["feature_conditioned_spread"] = float(
-                    cond_metrics["feature_conditioned_spread"]
-                )
-                cond_rows.append(new_row)
-                candidate_masks[new_name] = {"m_high": new_h, "m_low": new_l}
+
+                return new_row
+
+            # Evaluate Tier-1
+            surviving_tier1 = []
+            for c_info in tier1_candidates:
+                eval_res = eval_candidate(c_info, tier=1)
+                if eval_res is not None:
+                    surviving_tier1.append((c_info, eval_res))
+
+            # ---------------------------------------------------------
+            # 3B. Select Top Single Regimes
+            # ---------------------------------------------------------
+            surviving_tier1.sort(key=lambda x: x[1].get("net_regime_value", 0.0), reverse=True)
+            top_tier1 = surviving_tier1[:max_singles]
+
+            for c_info, eval_res in top_tier1:
+                cond_rows.append(eval_res)
+
+            # ---------------------------------------------------------
+            # 3C. Generate Two-Regime Candidates (Tier-2)
+            # ---------------------------------------------------------
+            tier2_candidates = []
+
+            for i in range(len(top_tier1)):
+                for j in range(i + 1, len(top_tier1)):
+                    if len(tier2_candidates) >= max_pairs:
+                        break
+                    c1_info, r1 = top_tier1[i]
+                    c2_info, r2 = top_tier1[j]
+
+                    # Avoid redundant pairs (same feature)
+                    if set(c1_info["features"]).intersection(set(c2_info["features"])):
+                        continue
+
+                    # Prefer cross-family combinations (skip if same family)
+                    if set(c1_info["families"]).intersection(set(c2_info["families"])):
+                        continue
+
+                    combined_mask = c1_info["mask"] & c2_info["mask"]
+                    # Determine best parent for relative comparison
+                    best_parent_res = r1 if r1.get("net_regime_value", 0) > r2.get("net_regime_value", 0) else r2
+
+                    tier2_candidates.append({
+                        "name": f"{c1_info['name']}_AND_{c2_info['name'].replace(cand_name + '_', '')}",
+                        "desc": f"{c1_info['desc']} AND {c2_info['desc']}",
+                        "mask": combined_mask,
+                        "features": c1_info["features"] + c2_info["features"],
+                        "families": c1_info["families"] + c2_info["families"],
+                        "best_parent_res": best_parent_res
+                    })
+
+            for c_info in tier2_candidates:
+                parent_res = c_info.pop("best_parent_res")
+                eval_res = eval_candidate(c_info, tier=2, parent_res=parent_res)
+                if eval_res is not None:
+                    cond_rows.append(eval_res)
 
     if cond_rows:
         df_short = pd.concat([df_short, pd.DataFrame(cond_rows)], ignore_index=True)
@@ -4727,26 +5245,63 @@ def _run_mode_search(
             * df_short["coverage_multiplier"].astype(np.float32).values
         ).astype(np.float32)
         df_short["shortlist_score"] = df_short["score_ml_trading"].astype(np.float32)
-        base_rows = df_short[df_short["conditioner_mode"] == "none"].set_index("name")
+        # Apply complexity penalties
+        phase4_single_regime_penalty = float(cfg.get("phase4_single_regime_penalty", 0.95))
+        phase4_two_regime_penalty = float(cfg.get("phase4_two_regime_penalty", 0.85))
+
+        penalties = []
+        for _, row in df_short.iterrows():
+            tier = row.get("tier", 0)
+            if tier == 1:
+                penalties.append(phase4_single_regime_penalty)
+            elif tier == 2:
+                penalties.append(phase4_two_regime_penalty)
+            else:
+                penalties.append(1.0)
+
+        df_short["complexity_multiplier"] = np.array(penalties, dtype=np.float32)
+        df_short["score_ml_trading"] = df_short["score_ml_trading"].astype(np.float32).values * df_short["complexity_multiplier"].astype(np.float32).values
+        df_short["shortlist_score"] = df_short["score_ml_trading"].astype(np.float32)
+
+        # Dominance Pruning
+        base_rows = df_short[df_short["tier"] == 0].copy()
+
         keep_idx: List[int] = []
+        tolerance = float(cfg.get("phase4_dominance_tolerance", 0.90))
+
+        # We process each candidate and see if a simpler candidate strictly dominates it
         for idx, row in df_short.iterrows():
-            cond_mode = str(row.get("conditioner_mode", "none"))
-            if cond_mode == "none":
+            tier = row.get("tier", 0)
+            if tier == 0:
                 keep_idx.append(idx)
                 continue
-            base_name = str(row["name"]).rsplit("_", 1)[0]
-            if base_name not in base_rows.index:
-                continue
-            base_row = base_rows.loc[base_name]
-            if (
-                _metric_or_nan(row.get("score_ml_trading"))
-                > _metric_or_nan(base_row.get("score_ml_trading"))
-                and _metric_or_nan(row.get("delta_r"))
-                >= _metric_or_nan(base_row.get("delta_r"))
-                and _metric_or_nan(row.get("S_r"))
-                >= _metric_or_nan(base_row.get("S_r"))
-            ):
+
+            base_name = str(row["name"]).split("_" + row["conditioner_mode"].replace(" ", "").replace(">", "gt").replace("<", "lt"))[0]
+            if "AND" in str(row["name"]):
+                base_name = str(row["name"]).split("_AND_")[0].rsplit("_", 1)[0]
+
+            dominated = False
+            # Compare against all simpler candidates of the same base
+            simpler_cands = df_short[(df_short["tier"] < tier)]
+
+            for _, s_row in simpler_cands.iterrows():
+                # Rough check if they share the same base name (ignoring conditioner suffixes)
+                if not str(s_row["name"]).startswith(base_name):
+                    continue
+
+                # A dominates B if:
+                if (
+                    _metric_or_nan(s_row.get("score_ml_trading")) >= _metric_or_nan(row.get("score_ml_trading")) and
+                    _metric_or_nan(s_row.get("economic_gain_r")) >= _metric_or_nan(row.get("economic_gain_r")) and
+                    _metric_or_nan(s_row.get("S_r")) >= _metric_or_nan(row.get("S_r")) and
+                    _metric_or_nan(s_row.get("total_events")) >= _metric_or_nan(row.get("total_events")) * tolerance
+                ):
+                    dominated = True
+                    break
+
+            if not dominated:
                 keep_idx.append(idx)
+
         df_short = (
             df_short.loc[keep_idx]
             .sort_values("score_ml_trading", ascending=False)
@@ -4773,11 +5328,40 @@ def _run_mode_search(
     )
 
     final_diag_k = int(cfg.get("final_top_k_for_diagnostics", 3))
-    df_diag_input = (
-        df_short.sort_values("shortlist_score", ascending=False)
-        .head(final_diag_k)
-        .copy()
-    )
+
+    # Jaccard diversity selection
+    df_short = df_short.sort_values("shortlist_score", ascending=False).reset_index(drop=True)
+    selected_idx = []
+    selected_masks = []
+
+    for idx, row in df_short.iterrows():
+        if len(selected_idx) >= final_diag_k:
+            break
+
+        m_info = candidate_masks.get(str(row["name"]), {})
+        if not m_info:
+            continue
+
+        side_mask = _get_side_mask(mode, m_info.get("m_high", np.array([])), m_info.get("m_low", np.array([])))
+
+        # Check Jaccard similarity against already selected
+        is_diverse = True
+        for sel_mask in selected_masks:
+            intersection = np.sum(side_mask & sel_mask)
+            union = np.sum(side_mask | sel_mask)
+            jaccard = intersection / max(union, 1)
+            if jaccard > 0.80:  # Too similar
+                is_diverse = False
+                break
+
+        if is_diverse:
+            selected_idx.append(idx)
+            selected_masks.append(side_mask)
+
+    if not selected_idx and not df_short.empty:
+        selected_idx = [0]
+
+    df_diag_input = df_short.loc[selected_idx].copy()
     df_diag = _final_topk_diagnostics(
         mode, df_diag_input, candidate_masks, shared, feature_dict, cfg
     )

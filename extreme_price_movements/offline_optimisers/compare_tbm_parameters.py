@@ -122,6 +122,7 @@ from extreme_price_movements.offline_optimisers.params_store import (
 )
 from extreme_price_movements.periods_symbols_management import (
     EventSchema,
+    SamplingPolicy,
     SlicePlanner,
     SlicePlannerConfig,
 )
@@ -2151,75 +2152,77 @@ def _strict_walk_forward_probe_auc(
             raise ValueError("No planner barrier_search splits")
         train_idx, val_idx = cand[-1].fit_idx, cand[-1].predict_idx
 
-    n_tr = len(train_idx)
-    n_va = len(val_idx)
-    if n_tr < min_train or n_va < min_val:
-        return float("nan"), float("nan"), "insufficient_split", n_tr, n_va
-    y_tr = y[train_idx]
-    y_va = y[val_idx]
-    if np.unique(y_tr).size < 2 or np.unique(y_va).size < 2:
-        return float("nan"), float("nan"), "single_class_split", n_tr, n_va
+        n_tr = len(train_idx)
+        n_va = len(val_idx)
+        if n_tr < min_train or n_va < min_val:
+            return float("nan"), float("nan"), "insufficient_split", n_tr, n_va
+        y_tr = y[train_idx]
+        y_va = y[val_idx]
+        if np.unique(y_tr).size < 2 or np.unique(y_va).size < 2:
+            return float("nan"), float("nan"), "single_class_split", n_tr, n_va
 
-    X_tr = X[train_idx]
-    X_va = X[val_idx]
-    w_tr = None if w is None else w[train_idx]
-    engine = str(
-        cfg.get("stage2_probe_engine", "xgb" if xgb is not None else "extratrees")
-    ).lower()
-    pred = None
-    try:
-        if engine == "xgb" and xgb is not None:
-            probe = xgb.XGBRegressor(
-                objective="reg:squarederror",
-                n_estimators=int(
-                    cfg.get(
-                        "stage2_probe_xgb_n_estimators", 400 if not fast_mode else 150
-                    )
-                ),
-                max_depth=int(cfg.get("stage2_probe_xgb_max_depth", 3)),
-                min_child_weight=float(
-                    cfg.get("stage2_probe_xgb_min_child_weight", 40.0)
-                ),
-                gamma=float(cfg.get("stage2_probe_xgb_gamma", 4.0)),
-                subsample=float(cfg.get("stage2_probe_xgb_subsample", 0.7)),
-                colsample_bytree=float(
-                    cfg.get("stage2_probe_xgb_colsample_bytree", 0.7)
-                ),
-                reg_alpha=float(cfg.get("stage2_probe_xgb_reg_alpha", 2.0)),
-                reg_lambda=float(cfg.get("stage2_probe_xgb_reg_lambda", 15.0)),
-                learning_rate=float(cfg.get("stage2_probe_xgb_eta", 0.05)),
-                tree_method="hist",
-                random_state=42,
-                n_jobs=1,
-            )
-            probe.fit(X_tr, y_tr, sample_weight=w_tr)
-            pred = probe.predict(X_va)
-        else:
-            probe = ExtraTreesRegressor(
-                n_estimators=int(
-                    cfg.get(
-                        "stage2_probe_et_n_estimators", 500 if not fast_mode else 200
-                    )
-                ),
-                min_samples_leaf=int(cfg.get("stage2_probe_et_min_samples_leaf", 80)),
-                min_samples_split=int(
-                    cfg.get("stage2_probe_et_min_samples_split", 400)
-                ),
-                max_features=float(cfg.get("stage2_probe_et_max_features", 0.35)),
-                bootstrap=True,
-                max_samples=float(cfg.get("stage2_probe_et_max_samples", 0.7)),
-                random_state=42,
-                n_jobs=1,
-            )
-            probe.fit(X_tr, y_tr, sample_weight=w_tr)
-            pred = probe.predict(X_va)
+        X_tr = X[train_idx]
+        X_va = X[val_idx]
+        w_tr = None if w is None else w[train_idx]
+        engine = str(
+            cfg.get("stage2_probe_engine", "xgb" if xgb is not None else "extratrees")
+        ).lower()
+        pred = None
+        try:
+            if engine == "xgb" and xgb is not None:
+                probe = xgb.XGBRegressor(
+                    objective="reg:squarederror",
+                    n_estimators=int(
+                        cfg.get(
+                            "stage2_probe_xgb_n_estimators", 400 if not fast_mode else 150
+                        )
+                    ),
+                    max_depth=int(cfg.get("stage2_probe_xgb_max_depth", 3)),
+                    min_child_weight=float(
+                        cfg.get("stage2_probe_xgb_min_child_weight", 40.0)
+                    ),
+                    gamma=float(cfg.get("stage2_probe_xgb_gamma", 4.0)),
+                    subsample=float(cfg.get("stage2_probe_xgb_subsample", 0.7)),
+                    colsample_bytree=float(
+                        cfg.get("stage2_probe_xgb_colsample_bytree", 0.7)
+                    ),
+                    reg_alpha=float(cfg.get("stage2_probe_xgb_reg_alpha", 2.0)),
+                    reg_lambda=float(cfg.get("stage2_probe_xgb_reg_lambda", 15.0)),
+                    learning_rate=float(cfg.get("stage2_probe_xgb_eta", 0.05)),
+                    tree_method="hist",
+                    random_state=42,
+                    n_jobs=1,
+                )
+                probe.fit(X_tr, y_tr, sample_weight=w_tr)
+                pred = probe.predict(X_va)
+            else:
+                probe = ExtraTreesRegressor(
+                    n_estimators=int(
+                        cfg.get(
+                            "stage2_probe_et_n_estimators", 500 if not fast_mode else 200
+                        )
+                    ),
+                    min_samples_leaf=int(cfg.get("stage2_probe_et_min_samples_leaf", 80)),
+                    min_samples_split=int(
+                        cfg.get("stage2_probe_et_min_samples_split", 400)
+                    ),
+                    max_features=float(cfg.get("stage2_probe_et_max_features", 0.35)),
+                    bootstrap=True,
+                    max_samples=float(cfg.get("stage2_probe_et_max_samples", 0.7)),
+                    random_state=42,
+                    n_jobs=1,
+                )
+                probe.fit(X_tr, y_tr, sample_weight=w_tr)
+                pred = probe.predict(X_va)
+        except Exception:
+            return float("nan"), float("nan"), "fit_failed", n_tr, n_va
+
+        pred = np.asarray(pred, dtype=np.float32)
+        auc = _fast_auc_binary(y_va.astype(np.float32), pred)
+        auc_b = _auc_lower_bound(float(auc), int(val_mask.sum()))
+        return float(auc), float(auc_b), "ok", n_tr, n_va
     except Exception:
-        return float("nan"), float("nan"), "fit_failed", n_tr, n_va
-
-    pred = np.asarray(pred, dtype=np.float32)
-    auc = _fast_auc_binary(y_va.astype(np.float32), pred)
-    auc_b = _auc_lower_bound(float(auc), int(val_mask.sum()))
-    return float(auc), float(auc_b), "ok", n_tr, n_va
+        return float("nan"), float("nan"), "planner_failed", 0, 0
 
 
 def _horizon_consistency_penalty(
@@ -2830,76 +2833,77 @@ def _ridge_predict_oof_with_cache(
         if not splits:
             raise ValueError("No planner barrier_search splits")
 
-    for train_indices, test_indices in splits:
-        if len(train_indices) < 100 or len(test_indices) == 0:
-            continue
+        for train_indices, test_indices in splits:
+            if len(train_indices) < 100 or len(test_indices) == 0:
+                continue
 
-        test_mask = np.zeros(len(X), dtype=bool)
-        test_mask[test_indices] = True
+            test_mask = np.zeros(len(X), dtype=bool)
+            test_mask[test_indices] = True
 
-        train_mask = np.zeros(len(X), dtype=bool)
-        train_mask[train_indices] = True
+            train_mask = np.zeros(len(X), dtype=bool)
+            train_mask[train_indices] = True
 
-        X_train = X[train_indices]
-        y_train = y_bin[train_indices]
-        w_train = sample_weight[train_indices]
-        X_test = X[test_indices]
+            X_train = X[train_indices]
+            y_train = y_bin[train_indices]
+            w_train = sample_weight[train_indices]
+            X_test = X[test_indices]
 
-        # Robust standardisation: vectorised numpy (avoids sklearn object overhead per fold).
-        # median + IQR computed once over train set, applied to both train and test.
-        q25 = np.percentile(X_train, 25, axis=0).astype(np.float32)
-        q75 = np.percentile(X_train, 75, axis=0).astype(np.float32)
-        iqr = np.where(q75 - q25 > 1e-8, q75 - q25, 1.0).astype(np.float32)
-        med = np.median(X_train, axis=0).astype(np.float32)
-        X_train_s = ((X_train - med) / iqr).astype(np.float32)
-        X_test_s = ((X_test - med) / iqr).astype(np.float32)
+            # Robust standardisation: vectorised numpy (avoids sklearn object overhead per fold).
+            # median + IQR computed once over train set, applied to both train and test.
+            q25 = np.percentile(X_train, 25, axis=0).astype(np.float32)
+            q75 = np.percentile(X_train, 75, axis=0).astype(np.float32)
+            iqr = np.where(q75 - q25 > 1e-8, q75 - q25, 1.0).astype(np.float32)
+            med = np.median(X_train, axis=0).astype(np.float32)
+            X_train_s = ((X_train - med) / iqr).astype(np.float32)
+            X_test_s = ((X_test - med) / iqr).astype(np.float32)
 
-        # Higher alpha (3.0) for increased regularization/stability in noisy financial data.
-        alpha = 3.0
+            # Higher alpha (3.0) for increased regularization/stability in noisy financial data.
+            alpha = 3.0
 
-        # P2 FIX: warm-cache — reuse coef/intercept from a previously solved similar fold
-        # to skip the expensive linalg.solve when a warm solution exists.
-        if warm_cache is not None and warm_key and warm_key in warm_cache:
-            coef_w, intercept_w = warm_cache[warm_key]
-            p = (X_test_s @ coef_w + intercept_w).astype(np.float32, copy=False)
-            pred[test_mask] = np.clip(p, 0.0, 1.0)
-            continue
+            # P2 FIX: warm-cache — reuse coef/intercept from a previously solved similar fold
+            # to skip the expensive linalg.solve when a warm solution exists.
+            if warm_cache is not None and warm_key and warm_key in warm_cache:
+                coef_w, intercept_w = warm_cache[warm_key]
+                p = (X_test_s @ coef_w + intercept_w).astype(np.float32, copy=False)
+                pred[test_mask] = np.clip(p, 0.0, 1.0)
+                continue
 
-        # Fast closed-form Ridge Regression
-        sw_sum = np.sum(w_train)
-        X_mean = (w_train @ X_train_s) / sw_sum
-        y_mean = np.dot(w_train, y_train) / sw_sum
+            # Compute weighted mean and covariance
+            y_mean = np.average(y_train, weights=w_train)
+            X_mean = np.average(X_train_s, axis=0, weights=w_train)
+            X_centered = X_train_s - X_mean
+            y_centered = y_train - y_mean
 
-        X_c = X_train_s - X_mean
-        y_c = y_train - y_mean
-
-        WX_c = X_c * w_train[:, np.newaxis]
-
-        A = X_c.T @ WX_c
-        # Add Ridge penalty
-        A.flat[:: X_train_s.shape[1] + 1] += alpha
-        b = WX_c.T @ y_c
-
-        try:
-            coef = np.linalg.solve(A, b)
-        except np.linalg.LinAlgError:
-            # Fallback for singular matrix
-            coef = np.linalg.lstsq(A, b, rcond=None)[0]
-
-        intercept = y_mean - np.dot(X_mean, coef)
-
-        p = (X_test_s @ coef + intercept).astype(np.float32, copy=False)
-        # For Ridge on binary targets, raw p is a better probability proxy than sigmoid(p).
-        p_clipped = np.clip(p, 0.0, 1.0)
-        pred[test_indices] = p_clipped.astype(np.float32, copy=False)
-
-        if warm_cache is not None and warm_key:
-            warm_cache[warm_key] = (
-                coef.astype(np.float32, copy=True),
-                float(intercept),
+            # Weighted covariance: X^T W X + lambda I
+            # Using robust regularisation (alpha * I) to handle multicollinearity
+            W_diag = w_train
+            A = (X_centered.T * W_diag) @ X_centered + alpha * np.eye(
+                X_train_s.shape[1], dtype=np.float32
             )
+            b = (X_centered.T * W_diag) @ y_centered
 
-    return pred
+            try:
+                coef = np.linalg.solve(A, b)
+            except np.linalg.LinAlgError:
+                # Fallback for singular matrix
+                coef = np.linalg.lstsq(A, b, rcond=None)[0]
+
+            intercept = y_mean - np.dot(X_mean, coef)
+
+            p = (X_test_s @ coef + intercept).astype(np.float32, copy=False)
+            # For Ridge on binary targets, raw p is a better probability proxy than sigmoid(p).
+            p_clipped = np.clip(p, 0.0, 1.0)
+            pred[test_indices] = p_clipped.astype(np.float32, copy=False)
+
+            if warm_cache is not None and warm_key:
+                warm_cache[warm_key] = (
+                    coef.astype(np.float32, copy=True),
+                    float(intercept),
+                )
+
+        return pred
+    except Exception:
+        return np.full(len(X), 0.5, dtype=np.float32)
 
 
 def _stage1_pr_auc_lift(
@@ -3501,15 +3505,72 @@ def evaluate_config(
             )
 
             if key2 not in layer2_cache:
+                # ── Event Subsampling (from periods_symbols_management SamplingPolicy) ──
+                # Use SamplingPolicy to control the number of events processed
+                # This dramatically reduces computation time by subsampling before heavy labeling
+                event_fraction = float(cfg.get("tbm_event_fraction", 0.2))
+                if event_fraction < 1.0:
+                    # Subsample the panel by selecting a fraction of timestamps
+                    # Use time-block sampling to preserve temporal structure
+                    panel_for_labeling = {}
+                    n_rows = len(artifacts.panel["close"])
+                    target_rows = max(1, int(np.ceil(n_rows * event_fraction)))
+                    # Time-block sampling: divide into blocks and sample evenly
+                    n_blocks = min(100, target_rows)
+                    block_size = n_rows // n_blocks
+                    rows_per_block = target_rows // n_blocks
+                    keep_indices = []
+                    rng = np.random.default_rng(42)
+                    for i in range(n_blocks):
+                        start = i * block_size
+                        end = min((i + 1) * block_size, n_rows)
+                        block_indices = np.arange(start, end)
+                        if len(block_indices) > 0:
+                            sampled = rng.choice(
+                                block_indices,
+                                size=min(rows_per_block, len(block_indices)),
+                                replace=False
+                            )
+                            keep_indices.extend(sampled)
+                    # Sort to maintain chronological order
+                    keep_indices = np.sort(keep_indices)
+                    keep_index = artifacts.panel["close"].index[keep_indices]
+                    for k, df in artifacts.panel.items():
+                        panel_for_labeling[k] = df.loc[keep_index]
+                    # Also subsample bucket_map to match
+                    bucket_map_subsampled = {}
+                    for bname, bmask in bucket_map.items():
+                        bucket_map_subsampled[bname] = bmask[keep_indices]
+                    # Subsample tp_df and sl_df
+                    tp_df_subsampled = tp_df.loc[keep_index]
+                    sl_df_subsampled = sl_df.loc[keep_index]
+                    # Subsample 15m panel if it exists
+                    panel_15m_for_labeling = None
+                    if getattr(artifacts, "panel_15m", None) is not None:
+                        panel_15m_for_labeling = {}
+                        for k, df in artifacts.panel_15m.items():
+                            # Reindex to 1h timestamps to match subsampling
+                            panel_15m_for_labeling[k] = df.reindex(keep_index)
+                    tprint(
+                        f"[eval:{cfg_id}] Subsampled panel from {n_rows} to {len(keep_indices)} rows "
+                        f"(event_fraction={event_fraction})"
+                    )
+                else:
+                    panel_for_labeling = artifacts.panel
+                    bucket_map_subsampled = bucket_map
+                    tp_df_subsampled = tp_df
+                    sl_df_subsampled = sl_df
+                    panel_15m_for_labeling = getattr(artifacts, "panel_15m", None)
+
                 # ── Fast Targeting: Find Valid TP Hits First ──
                 # 1. Run the ultra-fast Numba labeler without 15m refinement.
                 # 2. Identify all `TP` hits across the 5-year history.
                 # 3. Sample exactly 2000 of them (and proportional negatives).
                 # 4. Only run the slow 15m refinement on this tiny subset.
                 lbl_fast, _, _ = compute_triple_barrier_labels(
-                    artifacts.panel,
-                    tp_df,
-                    sl_df,
+                    panel_for_labeling,
+                    tp_df_subsampled,
+                    sl_df_subsampled,
                     h,
                     side=side,
                     return_outcomes=True,
@@ -3519,8 +3580,8 @@ def evaluate_config(
 
                 # Active candidates for all directions (we subsample across ALL, not just one side)
                 # This guarantees both TF and MR buckets always have event representation.
-                up_cand_mask = bucket_map["up"]
-                down_cand_mask = bucket_map["down"]
+                up_cand_mask = bucket_map_subsampled["up"]
+                down_cand_mask = bucket_map_subsampled["down"]
                 all_cand_mask = up_cand_mask | down_cand_mask
 
                 lbl_arr = lbl_fast.to_numpy(dtype=np.int8).ravel()
@@ -3558,9 +3619,9 @@ def evaluate_config(
                     tight_mask_arr = np.zeros(lbl_arr.shape[0], dtype=bool)
                     tight_mask_arr[keep_global] = True
                     tight_mask_df = pd.DataFrame(
-                        tight_mask_arr.reshape(tp_df.shape),
-                        index=tp_df.index,
-                        columns=tp_df.columns,
+                        tight_mask_arr.reshape(tp_df_subsampled.shape),
+                        index=tp_df_subsampled.index,
+                        columns=tp_df_subsampled.columns,
                     )
 
                     # Log the cross-asset spread for the final subsample
@@ -3573,12 +3634,12 @@ def evaluate_config(
                         f"[eval:{cfg_id}] subsampled {len(keep_global):,} events (2x stratified) spread across {unique_assets_hit} unique assets"
                     )
 
-                    _sampled_tp = tp_df.where(tight_mask_df, np.nan)
-                    _sampled_sl = sl_df.where(tight_mask_df, np.nan)
+                    _sampled_tp = tp_df_subsampled.where(tight_mask_df, np.nan)
+                    _sampled_sl = sl_df_subsampled.where(tight_mask_df, np.nan)
                 else:
                     # No candidates at all — return early
-                    _sampled_tp = tp_df
-                    _sampled_sl = sl_df
+                    _sampled_tp = tp_df_subsampled
+                    _sampled_sl = sl_df_subsampled
                     tprint(
                         f"[eval:{cfg_id}] WARNING: no TP candidates found in any bucket stratum, using full array"
                     )
@@ -3586,10 +3647,10 @@ def evaluate_config(
                 # ── Final Compute ──
                 # Use the heavily downsampled TP/SL barriers to compute the final label array.
                 # If the 15m panel is available, we pass it natively into Numba (bypassing slow Python refinement).
-                if getattr(artifacts, "panel_15m", None) is not None:
-                    _panel_15m = artifacts.panel_15m
+                if panel_15m_for_labeling is not None:
+                    _panel_15m = panel_15m_for_labeling
                     _idx_15m = _panel_15m["close"].index
-                    _idx_1h = artifacts.panel["close"].index
+                    _idx_1h = panel_for_labeling["close"].index
 
                     # Reindex downsampled bounds to 15m domain (fills NaNs for non-hour bars)
                     # Numba skips NaNs instantly, computing only valid 1h entries but tracking paths on 15m resolution.
@@ -3687,7 +3748,7 @@ def evaluate_config(
                         raise e
                 else:
                     lbl, ret, qual = compute_triple_barrier_labels(
-                        artifacts.panel,
+                        panel_for_labeling,
                         _sampled_tp,
                         _sampled_sl,
                         h,
@@ -3696,7 +3757,7 @@ def evaluate_config(
                         horizons_frame=dyn_h,
                     )
                     lbl, ret, qual = _refine_ambiguous_labels_with_15m(
-                        artifacts.panel,
+                        panel_for_labeling,
                         _sampled_tp,
                         _sampled_sl,
                         lbl,

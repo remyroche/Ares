@@ -686,8 +686,8 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
         mask_params = apply_offline_optimizer_best_params(cfg)
         mask_params_by_mode = dict(mask_params.get("candidate_mask_params_by_mode", {}) or {})
     
-    # Load bucket exit params
-    bucket_exit_params = dict(cfg.get("bucket_exit_params", {}) or {})
+    # Load strategy exit params
+    strategy_exit_params = dict(cfg.get("strategy_exit_params", cfg.get("bucket_exit_params", {})) or {})
     
     # Load trades from state or backtest results
     tprint("Loading trade candidates...")
@@ -730,7 +730,7 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
         panel=panel,
         feats=feats,
         mask_params_by_mode=mask_params_by_mode,
-        bucket_exit_params=bucket_exit_params,
+        strategy_exit_params=strategy_exit_params,
         config=ib_config,
         planner_cfg=planner_cfg,
     )
@@ -1151,7 +1151,7 @@ def run_optimise(cfg, ts_override=None, store=None):
         atr_15m = pd.Series(0.01, index=trades.index)
 
     params_path = os.path.join(
-        cfg["data_root"], "artifacts", run_id, "models", "bucket_params.json"
+        cfg["data_root"], "artifacts", run_id, "models", "strategy_params.json"
     )
     run_optimise_step(
         trades=trades,
@@ -1177,9 +1177,9 @@ def run_optimise(cfg, ts_override=None, store=None):
 
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
         rp = report_optimise(run_id, cfg["data_root"], base_dir=cfg.get("reports_root"))
-        tprint(f"Optimise bucket report: {rp}")
+        tprint(f"Optimise strategy report: {rp}")
     except Exception as _re:
-        tprint(f"WARNING: optimise bucket report failed: {_re}")
+        tprint(f"WARNING: optimise strategy report failed: {_re}")
     _maintenance_checkpoint("optimise:end")
     return True
 

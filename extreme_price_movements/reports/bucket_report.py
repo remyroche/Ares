@@ -231,90 +231,49 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
 
     rows_data = []
     table_rows = []
-    headers = ["Bucket", "H", "Variant", "Model", "Winner?", "AUC", "IC", "Prec@10", "Prec@30", "N features"]
+    headers = ["Bucket", "H", "Winner algo", "AUC (raw)", "AUC (weighted)", "IC", "Prec@10", "Prec@30", "N features"]
 
-    # We extract data from quality_gate_report to capture variants properly
-    qgr = bundle.get("quality_gate_report", {}) if bundle else {}
-    base_rows = qgr.get("base_models", []) if isinstance(qgr, dict) else []
-
-    # We will build rows_data from base_rows
-    if base_rows:
-        for r in base_rows:
-            model_key = r.get("model", "")
-            # model_key format is typically side_kind_H:model_name or side_kind_H_variant:model_name
-            # For variants, we might not have a clear format, so parse carefully.
-            parts = model_key.split(":")
-            prefix = parts[0]
-            model_algo = parts[1] if len(parts) > 1 else ""
-
-            p_parts = prefix.split("_")
-            if len(p_parts) >= 3:
-                side = p_parts[0]
-                kind = p_parts[1]
-                h_part = p_parts[2]
-                h_str = h_part.replace("H", "")
-                variant = p_parts[3] if len(p_parts) > 3 else "default"
-                bkt_label = f"{'MR' if kind == 'mr' else 'TF'}_{'long' if side == 'long' else 'short'}"
-
-                m = r.get("metrics", {})
-                winner = "Yes" if r.get("is_winner") else "No"
-                auc = _fmt(m.get("auc", float("nan")))
+    for side in sides:
+        for kind in kinds:
+            bkt_label = f"{'MR' if kind == 'mr' else 'TF'}_{'long' if side == 'long' else 'short'}"
+            side_models = alpha_models.get(side, {})
+            kind_model = side_models.get(kind, {})
+            for H in horizons:
+                cell_key = f"{bkt_label}_H{H}"
+                # Alpha metrics are keyed by (side, kind, H)
+                m_key = f"{side}/{kind}/H={H}"
+                m = alpha_metrics.get(m_key, {})
+                winner = m.get("winner", kind_model.get("winner_algo", "—"))
+                auc_raw = _fmt(m.get("auc_raw", float("nan")))
+                auc_w = _fmt(m.get("auc_weighted", float("nan")))
                 ic = _fmt(m.get("ic", float("nan")))
-                prec10 = _fmt(m.get("prec10", m.get("prec_at_10pct", float("nan"))))
-                prec30 = _fmt(m.get("prec30", m.get("prec_at_30pct", float("nan"))))
+                prec10 = _fmt(m.get("prec_at_10", float("nan")))
+                prec30 = _fmt(m.get("prec_at_30", float("nan")))
+                n_feats = m.get("n_features", kind_model.get("n_features", "—"))
+                table_rows.append([bkt_label, H, winner, auc_raw, auc_w, ic, prec10, prec30, n_feats])
+                rows_data.append({"bucket": bkt_label, "H": H, "winner": winner,
+                                   "auc_raw": m.get("auc_raw"), "auc_weighted": m.get("auc_weighted"),
+                                   "ic": m.get("ic"), "prec_at_10": m.get("prec_at_10"), "prec_at_30": m.get("prec_at_30")})
 
-                # Fetch n_features from alpha_models if possible
-                n_feats = "—"
-                try:
-                    conf = alpha_models.get(side, {}).get(kind, {})
-                    if variant == "default" and "feat_cols" in conf:
-                        n_feats = len(conf["feat_cols"])
-                except Exception:
-                    pass
-
-                table_rows.append([bkt_label, h_str, variant, model_algo, winner, auc, ic, prec10, prec30, n_feats])
-                rows_data.append({
-                    "bucket": bkt_label, "H": h_str, "variant": variant, "model_algo": model_algo, "is_winner": r.get("is_winner"),
-                    "auc": m.get("auc"), "ic": m.get("ic"), "prec_at_10": m.get("prec10", m.get("prec_at_10pct")),
-                    "prec_at_30": m.get("prec30", m.get("prec_at_30pct"))
-                })
-    else:
-        # Fallback to legacy loop if quality_gate_report isn't available
-        for side in sides:
-            for kind in kinds:
-                bkt_label = f"{'MR' if kind == 'mr' else 'TF'}_{'long' if side == 'long' else 'short'}"
-                side_models = alpha_models.get(side, {})
-                kind_model = side_models.get(kind, {})
-                for H in horizons:
-                    cell_key = f"{bkt_label}_H{H}"
-                    m_key = f"{side}/{kind}/H={H}"
-                    m = alpha_metrics.get(m_key, {})
-                    winner = m.get("winner", kind_model.get("winner_algo", "—"))
-                    auc_raw = _fmt(m.get("auc_raw", float("nan")))
-                    ic = _fmt(m.get("ic", float("nan")))
-                    prec10 = _fmt(m.get("prec_at_10", float("nan")))
-                    prec30 = _fmt(m.get("prec_at_30", float("nan")))
-                    n_feats = m.get("n_features", kind_model.get("n_features", "—"))
-                    table_rows.append([bkt_label, H, "default", winner, "Yes", auc_raw, ic, prec10, prec30, n_feats])
-                    rows_data.append({"bucket": bkt_label, "H": H, "variant": "default", "model_algo": winner, "is_winner": True,
-                                       "auc": m.get("auc_raw"), "ic": m.get("ic"), "prec_at_10": m.get("prec_at_10"), "prec_at_30": m.get("prec_at_30")})
-
-    lines.append("## Alpha Model Performance per (Bucket, Horizon, Variant, Candidate)")
+    lines.append("## Alpha Model Performance per (Bucket, Horizon)")
     lines.extend(_md_table(headers, table_rows))
     lines.append("")
 
     # Per-bucket summary
-    lines.append("## Per-Bucket Summary (median across horizons and variants)")
-    bkt_headers = ["Bucket", "Models Evaluated", "Median AUC", "Median IC"]
+    lines.append("## Per-Bucket Summary (median across horizons)")
+    bkt_headers = ["Bucket", "Deployed Hs", "Primary H", "Median AUC (weighted)", "Median IC"]
     bkt_rows = []
     _bucket_map = {"MR_long": ("long", "mr"), "MR_short": ("short", "mr"),
                    "TF_long": ("long", "tf"), "TF_short": ("short", "tf")}
     for bkt, (s, k) in _bucket_map.items():
-        bkt_data = [r for r in rows_data if r["bucket"] == bkt and r["auc"] is not None]
-        n_models = len(bkt_data)
-        med_auc = _fmt(float(np.median([r["auc"] for r in bkt_data if r["auc"] is not None and not math.isnan(r["auc"])]))) if bkt_data else "—"
-        med_ic = _fmt(float(np.median([r["ic"] for r in bkt_data if r["ic"] is not None and not math.isnan(r["ic"])]))) if bkt_data else "—"
-        bkt_rows.append([bkt, str(n_models), med_auc, med_ic])
+        side_models = alpha_models.get(s, {})
+        kind_model = side_models.get(k, {})
+        deployed = kind_model.get("deployed_horizons", horizons)
+        primary_h = kind_model.get("H", "—")
+        bkt_data = [r for r in rows_data if r["bucket"] == bkt and r["auc_weighted"] is not None]
+        med_auc = _fmt(float(np.median([r["auc_weighted"] for r in bkt_data]))) if bkt_data else "—"
+        med_ic = _fmt(float(np.median([r["ic"] for r in bkt_data if r["ic"] is not None]))) if bkt_data else "—"
+        bkt_rows.append([bkt, str(deployed), str(primary_h), med_auc, med_ic])
     lines.extend(_md_table(bkt_headers, bkt_rows))
     lines.append("")
 

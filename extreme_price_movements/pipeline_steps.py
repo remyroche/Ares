@@ -1565,13 +1565,13 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     import json as _json
 
     from extreme_price_movements.run_ridge_sizer import (
-        load_meta_oof_predictions as load_bucket_oofs,
+        load_meta_oof_predictions as load_strategy_oofs,
     )
     from extreme_price_movements.run_ridge_sizer import load_trade_outcomes
 
     _tpsl_params = {}
     _bp_path = os.path.join(
-        data_root, "artifacts", run_id, "models", "bucket_params.json"
+        data_root, "artifacts", run_id, "models", "strategy_params.json"
     )
     if os.path.exists(_bp_path):
         try:
@@ -1597,7 +1597,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
             )
             for _prev_id in _prev_runs:
                 _prev_bp = os.path.join(
-                    _art_dir, _prev_id, "models", "bucket_params.json"
+                    _art_dir, _prev_id, "models", "strategy_params.json"
                 )
                 if os.path.exists(_prev_bp):
                     try:
@@ -1622,7 +1622,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
             _pred_cols = [c for c in _mdf.columns if c not in {"timestamp", "symbol"}]
             if {"timestamp", "symbol"}.issubset(_mdf.columns) and _pred_cols:
                 _use = _pred_cols[0]
-                bucket_oofs = {
+                strategy_oofs = {
                     "long_mr": _mdf[["timestamp", "symbol", _use]].rename(
                         columns={_use: "oof_u_hat"}
                     )
@@ -1631,9 +1631,9 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
                     f"Ridge sizer using consolidated meta OOF dataframe: {_meta_all}"
                 )
             else:
-                bucket_oofs = load_bucket_oofs(data_root, run_id)
+                strategy_oofs = load_strategy_oofs(data_root, run_id)
         else:
-            bucket_oofs = load_bucket_oofs(data_root, run_id)
+            strategy_oofs = load_strategy_oofs(data_root, run_id)
     except FileNotFoundError as e:
         tprint(f"WARNING: {e}")
         tprint("Skipping ridge sizer step - no meta OOF predictions found.")
@@ -1663,7 +1663,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
         "exit_code",
     }
     direction_groups = {"long": {}, "short": {}}
-    for bucket_name, oof_preds in bucket_oofs.items():
+    for bucket_name, oof_preds in strategy_oofs.items():
         direction = "long" if bucket_name.startswith("long") else "short"
         direction_groups[direction][bucket_name] = oof_preds
 
@@ -1832,7 +1832,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
                 {
                     "direction": direction,
                     "weights": dir_weights,
-                    "params_per_bucket": dir_params,
+                    "params_per_strategy": dir_params,
                     "buckets": list(dir_buckets.keys()),
                     "run_id": run_id,
                     "timestamp": _dt.now(_tz.utc).isoformat(),
@@ -1867,7 +1867,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
         json.dump(
             {
                 "weights": all_weights,
-                "params_per_bucket": all_params,
+                "params_per_strategy": all_params,
                 "directions": {
                     d: {"buckets": r["buckets"], "params": r["params"]}
                     for d, r in all_direction_results.items()
@@ -1886,7 +1886,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
             state = pickle.load(f)
         state["ridge_sizer"] = {
             "weights": all_weights,
-            "params_per_bucket": all_params,
+            "params_per_strategy": all_params,
             "metrics": all_metrics,
             "directions": {d: r["buckets"] for d, r in all_direction_results.items()},
         }
@@ -1897,7 +1897,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     # Persist consolidated ridge input/OOF dataframe for downstream layer chaining.
     try:
         _frames = []
-        for _bn, _df in bucket_oofs.items():
+        for _bn, _df in strategy_oofs.items():
             if (
                 _df is None
                 or len(_df) == 0
@@ -1944,21 +1944,21 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
 
     _ridge_result = {
         "weights": all_weights,
-        "params_per_bucket": all_params,
+        "params_per_strategy": all_params,
         "metrics": all_metrics,
         "directions": {d: r["buckets"] for d, r in all_direction_results.items()},
     }
     try:
         rp = report_ridge_sizer(run_id, _ridge_result, base_dir=cfg.get("reports_root"))
-        tprint(f"Ridge sizer bucket report: {rp}")
+        tprint(f"Ridge sizer strategy report: {rp}")
     except Exception as _re:
-        tprint(f"WARNING: ridge sizer bucket report failed: {_re}")
+        tprint(f"WARNING: ridge sizer strategy report failed: {_re}")
     tprint(
-        f"STEP: RIDGE POSITION SIZER COMPLETE — {len(all_direction_results)} directions, {len(all_params)} buckets"
+        f"STEP: RIDGE POSITION SIZER COMPLETE — {len(all_direction_results)} directions, {len(all_params)} strategies"
     )
     return {
         "weights": all_weights,
-        "params_per_bucket": all_params,
+        "params_per_strategy": all_params,
         "metrics": all_metrics,
         "directions": {d: r["buckets"] for d, r in all_direction_results.items()},
     }

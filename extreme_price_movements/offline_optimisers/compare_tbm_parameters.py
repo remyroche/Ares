@@ -2530,12 +2530,14 @@ def build_barriers(
 # ---------------------------
 # Event extraction and scoring
 # ---------------------------
-def build_bucket_masks(
+def build_strategy_masks(
     artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | None = None
 ) -> Dict[str, pd.DataFrame]:
-    """Build directional candidate masks matching training.py's _strategy_bucket_context."""
+    """Build strategy masks from full strategy definitions (base trigger + all filters)."""
     c = artifacts.panel["close"]
     feats = artifacts.features
+
+    from extreme_price_movements.strategy_registry import get_strategies
 
     metric = "ret24h"
     if cfg_runtime is not None:
@@ -2643,7 +2645,14 @@ def build_bucket_masks(
     down_cands = tf_short | mr_long
     candidate_filter = (up_cands | down_cands).astype(bool)
 
-    return {
+    mode_masks = {
+        "price_up_tf": tf_long,
+        "price_up_mr": mr_short,
+        "price_down_tf": tf_short,
+        "price_down_mr": mr_long,
+    }
+
+    out = {
         "up": up_cands,
         "down": down_cands,
         "Candidate": candidate_filter,
@@ -2653,6 +2662,20 @@ def build_bucket_masks(
         "MR_long": mr_long,
         "MR_short": mr_short,
     }
+    for strat in get_strategies(cfg_runtime or {}):
+        sid = str(strat.get("strategy_id"))
+        base = str(strat.get("base_event_trigger", "")).strip()
+        if not base:
+            continue
+        mask = mode_masks.get(base)
+        if mask is None:
+            continue
+        for f in strat.get("regime_filters", []) or []:
+            fm = mode_masks.get(str(f).strip())
+            if fm is not None:
+                mask = mask & fm
+        out[sid] = mask.astype(bool)
+    return out
 
 
 def make_quantile_basis(artifacts: RunArtifacts, basis: str) -> pd.DataFrame:
@@ -8134,7 +8157,7 @@ def run(args: argparse.Namespace) -> None:
     # train_min_range_pct, train_min_vol_zscore) from CANDIDATE_BEST_PARAMS_CSV into runtime_cfg
     # so build_bucket_masks uses the optimised values, not hardcoded defaults.
     runtime_cfg = apply_offline_optimizer_best_params(dict(runtime_cfg))
-    bucket_masks = build_bucket_masks(artifacts, cfg_runtime=runtime_cfg)
+    bucket_masks = build_strategy_masks(artifacts, cfg_runtime=runtime_cfg)
     tprint(
         f"Artifacts + buckets ready: bars={len(artifacts.panel['close'])}, symbols={len(artifacts.panel['close'].columns)} "
         f"bucket_masks={list(bucket_masks.keys())} mem_peak_mb={_memory_snapshot_mb():.1f}"
@@ -9624,3 +9647,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 if __name__ == "__main__":
     run(parse_args())
+
+
+# Backward compatibility
+def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | None = None) -> Dict[str, pd.DataFrame]:
+    return build_strategy_masks(artifacts, cfg_runtime=cfg_runtime)

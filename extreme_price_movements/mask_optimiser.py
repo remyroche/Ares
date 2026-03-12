@@ -3950,6 +3950,104 @@ def _run_mode_search(
         ],
     )
 
+
+    # -------------------------------------------------------------------------
+    # Phase 2.5: Ridge regime attribution
+    # -------------------------------------------------------------------------
+    tprint(f"Phase 2.5 ({mode}): Ridge regime attribution for top {len(df2)} candidates...")
+
+    full_df_dict = {
+        "timestamp": shared["timestamps"],
+        "high": shared["high"],
+        "low": shared["low"],
+        "close": shared["close"],
+    }
+    if "open" in shared:
+        full_df_dict["open"] = shared["open"]
+    if "volume" in shared:
+        full_df_dict["volume"] = shared["volume"]
+
+    full_df = pd.DataFrame(full_df_dict)
+    regime_features_df = build_regime_features(full_df)
+
+    # Identify which features are binary vs continuous
+    feature_types = {}
+    for c in RIDGE_FEATURE_COLS:
+        if c in regime_features_df.columns:
+            u_vals = regime_features_df[c].dropna().unique()
+            if len(u_vals) <= 2 and set(u_vals).issubset({0.0, 1.0, 0, 1}):
+                feature_types[c] = "binary"
+            else:
+                feature_types[c] = "continuous"
+
+    dynamic_conditioners: Dict[str, List[Dict[str, Any]]] = {}
+
+    for _, row in df2.iterrows():
+        base_name = str(row["name"])
+        reg = candidate_registry[base_name]
+        z = int(int(reg["z_hours"]) * bph)
+        duration_bars = int(int(reg["duration_hours"]) * bph)
+        if z not in global_z_cache:
+            global_z_cache[z] = _compute_z_cache(
+                high=shared["high"],
+                low=shared["low"],
+                close=shared["close"],
+                ret_1=shared["ret_1"],
+                vol_g=shared["vol_g"],
+                asset_groups=shared["asset_groups"],
+                z=z,
+                bph=bph,
+            )
+        zc = global_z_cache[z]
+        m_high, m_low = _generate_event_masks_fast(
+            family=reg["family"],
+            param_val=reg["param"],
+            up_move=zc["up"],
+            dn_move=zc["dn"],
+            rolling_std_up=zc["std_up"],
+            rolling_std_dn=zc["std_dn"],
+            asset_groups=shared["asset_groups"],
+            duration_bars=duration_bars,
+        )
+        side_mask = _get_side_mask(mode, m_high, m_low)
+
+        fwd_2h_bars = int(2 * bph)
+        if "close" in full_df:
+            fwd_ret = full_df["close"].shift(-fwd_2h_bars) / full_df["close"] - 1.0
+        else:
+            fwd_ret = pd.Series(np.zeros(len(full_df)))
+
+        ridge_df = regime_features_df.copy()
+        ridge_df["event_mask"] = side_mask.astype(int)
+        ridge_df["target_fwd_return"] = fwd_ret
+
+        valid_feature_cols = [c for c in RIDGE_FEATURE_COLS if c in ridge_df.columns]
+
+        res = fit_ridge_regime_scan(
+            ridge_df,
+            valid_feature_cols,
+            "event_mask",
+            "target_fwd_return",
+            n_splits=max(2, len(folds))
+        )
+
+        cond_features = []
+        if res is not None:
+            ranked_features = res["ranked_features"]
+            # Keep top max single features, e.g. 4
+            max_vars = int(cfg.get("phase3_max_single_features", 4))
+            top_vars = ranked_features.head(max_vars)
+            for _, v_row in top_vars.iterrows():
+                f_name = v_row["feature"]
+                cond_features.append({
+                    "feature": f_name,
+                    "coef": v_row["coef"],
+                    "abs_signed_importance": v_row["abs_signed_importance"],
+                    "type": feature_types.get(f_name, "continuous")
+                })
+
+        dynamic_conditioners[base_name] = cond_features
+
     feature_gain_vals: List[np.float32] = []
     feature_pos_vals: List[np.float32] = []
     top_feature_lifts_vals: List[str] = []
@@ -4209,6 +4307,8 @@ def _run_mode_search(
     )
     shortlist_max = int(cfg.get("shortlist_max_candidates", 4))
     df_short = df2.head(shortlist_max).copy()
+    df_short["tier"] = 0
+    df_short["conditioner_mode"] = "none"
     if df_short.empty:
         return {
             "status": "failed",
@@ -4249,79 +4349,92 @@ def _run_mode_search(
 
     cond_rows: List[pd.Series] = []
     if bool(cfg.get("enable_secondary_conditioners", True)):
-        spread_to_atr = np.nan_to_num(
-            np.asarray(
-                feature_dict.get(
-                    "spread_to_atr", np.zeros_like(shared["close"], dtype=np.float32)
-                ),
-                dtype=np.float32,
-            ),
-            nan=0.0,
-            posinf=0.0,
-            neginf=0.0,
-        )
-        alternation_array = np.asarray(
-            shared.get("alternation", np.zeros_like(shared["close"], dtype=np.float32)),
-            dtype=np.float32,
-        )
+        # Base limits
+        min_events = int(cfg.get("phase3_min_conditioned_event_count", 2000))
+        min_fraction = float(cfg.get("phase3_min_event_fraction_of_base", 0.10))
+        tier2_min_fraction = float(cfg.get("phase3_tier2_min_event_fraction", 0.05))
+
         for _, row in df_short.iterrows():
             cand_name = str(row["name"])
             reg = candidate_registry[cand_name]
             z = int(int(reg["z_hours"]) * bph)
             zc = global_z_cache[z]
             base_masks = candidate_masks[cand_name]
-            for conditioner in cfg.get("conditioner_modes", ["none"]):
-                if conditioner == "none":
+            base_side_mask = _get_side_mask(mode, base_masks["m_high"], base_masks["m_low"])
+            base_event_count = int(np.sum(base_side_mask))
+
+            # Identify Tier-1 candidates
+            tier1_candidates = []
+            top_vars = dynamic_conditioners.get(cand_name, [])
+
+            for var_info in top_vars:
+                var_name = var_info["feature"]
+                coef = var_info["coef"]
+                v_type = var_info["type"]
+
+                if var_name not in regime_features_df.columns:
                     continue
-                new_h, new_l = _apply_secondary_conditioner(
-                    base_masks["m_high"],
-                    base_masks["m_low"],
-                    conditioner,
-                    zc["m_up"],
-                    zc["m_dn"],
-                    zc["v_exp"],
-                    spread_to_atr,
-                    alternation_array,
-                )
-                new_side_mask = _get_side_mask(mode, new_h, new_l)
-                tot_events = int(np.sum(new_side_mask))
-                if tot_events < int(cfg.get("phase2_min_total_events", 5000)):
+
+                feature_vals = regime_features_df[var_name].values
+                valid_mask = np.isfinite(feature_vals)
+                active_valid = base_side_mask & valid_mask
+                if np.sum(active_valid) < 50:
                     continue
-                coh = (
-                    _coherence_metrics_single_side(
-                        new_side_mask, zc["b_up"], zc["s_up"], zc["m_up"]
-                    )
-                    if _mode_is_up(mode)
-                    else _coherence_metrics_single_side(
-                        new_side_mask, zc["b_dn"], zc["s_dn"], zc["m_dn"]
-                    )
-                )
-                new_fold_rates = [
-                    fold_base_rate_safe(new_side_mask, global_target, va)
-                    for _, va in folds
-                ]
-                new_fold_cont_std = (
-                    float(np.std(np.asarray(new_fold_rates, dtype=np.float32)))
-                    if new_fold_rates
-                    else 1.0
-                )
-                base_disp = float(row.get("impulse_shape_dispersion", 1e9))
-                base_f_cont = float(row.get("fold_continuation_rate_std", 1e9))
-                improved = (
-                    coh["impulse_shape_dispersion"] < base_disp * 0.95
-                    or new_fold_cont_std < base_f_cont * 0.95
-                )
-                if not improved:
-                    continue
-                valid_new = np.isfinite(forward_returns)
-                non_event_new = (~new_side_mask) & valid_new
-                if np.any(new_side_mask & valid_new) and np.any(non_event_new):
-                    basic_edge_new = float(
-                        np.nanmean(global_signed_returns[new_side_mask & valid_new])
-                        - np.nanmean(global_signed_returns[non_event_new])
-                    )
+
+                if v_type == "binary":
+                    target_val = 1 if coef > 0 else 0
+                    cond_mask = valid_mask & (feature_vals == target_val)
+                    tier1_candidates.append({
+                        "name": f"{cand_name}_{var_name}_is_{target_val}",
+                        "desc": f"{var_name} == {target_val}",
+                        "mask": cond_mask,
+                        "features": [var_name]
+                    })
                 else:
-                    basic_edge_new = 0.0
+                    quantiles = [0.5, 0.6, 0.7, 0.8] if coef > 0 else [0.5, 0.4, 0.3, 0.2]
+                    direction = "gt" if coef > 0 else "lt"
+                    for q in quantiles:
+                        threshold = np.nanpercentile(feature_vals[active_valid], q * 100)
+                        if direction == "gt":
+                            cond_mask = valid_mask & (feature_vals > threshold)
+                            desc = f"{var_name} > p{int(q*100)}"
+                        else:
+                            cond_mask = valid_mask & (feature_vals < threshold)
+                            desc = f"{var_name} < p{int(q*100)}"
+
+                        tier1_candidates.append({
+                            "name": f"{cand_name}_{var_name}_{desc.replace(' ', '').replace('>', 'gt').replace('<', 'lt')}",
+                            "desc": desc,
+                            "mask": cond_mask,
+                            "features": [var_name]
+                        })
+
+            # Evaluate Tier-1
+            surviving_tier1 = []
+
+            def eval_candidate(c_info, tier):
+                new_side_mask = base_side_mask & c_info["mask"]
+                tot_events = int(np.sum(new_side_mask))
+
+                req_fraction = min_fraction if tier == 1 else tier2_min_fraction
+                if tot_events < min_events or (tot_events / base_event_count) < req_fraction:
+                    return None
+
+                # Full evaluation
+                coh = (
+                    _coherence_metrics_single_side(new_side_mask, zc["b_up"], zc["s_up"], zc["m_up"])
+                    if _mode_is_up(mode)
+                    else _coherence_metrics_single_side(new_side_mask, zc["b_dn"], zc["s_dn"], zc["m_dn"])
+                )
+
+                valid_fwd_new = np.isfinite(global_signed_returns)
+                non_event_new = (~new_side_mask) & valid_fwd_new
+                basic_edge_new = (
+                    float(np.nanmean(global_signed_returns[new_side_mask & valid_fwd_new]) - np.nanmean(global_signed_returns[non_event_new]))
+                    if np.any(new_side_mask & valid_fwd_new) and np.any(non_event_new)
+                    else 0.0
+                )
+
                 new_metrics = _compute_full_metrics_for_candidate(
                     mode,
                     new_side_mask,
@@ -4331,149 +4444,76 @@ def _run_mode_search(
                     float(coh["impulse_shape_dispersion"]),
                     float(basic_edge_new),
                 )
-                gain_max = _mode_predictability_gain_from_metrics(mode, new_metrics)
+
+                # Check acceptance rules
+                base_econ = _metric_or_nan(row.get("economic_gain_r"))
+                base_mfe = _metric_or_nan(row.get("aggregate_mfe_coverage"))
+                new_econ = _metric_or_nan(new_metrics.get("economic_gain_r"))
+                new_mfe = _metric_or_nan(new_metrics.get("aggregate_mfe_coverage"))
+
+                improves_econ = (new_econ > base_econ * 1.05)
+                improves_mfe = (new_mfe > base_mfe * 1.05)
+
+                if tier == 1 and not (improves_econ or improves_mfe):
+                    return None
+                if tier == 2 and not (new_econ > base_econ * 1.1 or new_mfe > base_mfe * 1.1):
+                    return None
+
+                # Build row
                 new_row = row.copy()
-                new_name = cand_name + f"_{conditioner}"
-                new_row["name"] = new_name
-                new_row["conditioner_mode"] = conditioner
+                new_row["name"] = c_info["name"]
+                new_row["conditioner_mode"] = c_info["desc"]
+                new_row["tier"] = tier
                 new_row["total_events"] = tot_events
-                new_row["impulse_shape_dispersion"] = float(
-                    coh["impulse_shape_dispersion"]
-                )
-                new_row["fold_continuation_rate_std"] = float(new_fold_cont_std)
-                new_row["predictability_gain"] = float(gain_max)
-                new_row["bucket_primary_predictability_gain"] = float(
-                    new_metrics.get(primary_col, np.nan)
-                )
-                new_row["continuation_predictability_gain"] = new_metrics.get(
-                    "continuation_predictability_gain", np.nan
-                )
-                new_row["reversal_predictability_gain"] = new_metrics.get(
-                    "reversal_predictability_gain", np.nan
-                )
-                new_row["MAE_predictability_gain"] = new_metrics.get(
-                    "MAE_predictability_gain", np.nan
-                )
-                new_row["MFE_predictability_gain"] = new_metrics.get(
-                    "MFE_predictability_gain", np.nan
-                )
-                new_row["incremental_information_delta_auc"] = new_metrics.get(
-                    "incremental_information_delta_auc", np.nan
-                )
-                new_row[
-                    "incremental_information_positive_fold_fraction"
-                ] = new_metrics.get(
-                    "incremental_information_positive_fold_fraction", np.nan
-                )
-                new_row[
-                    "incremental_information_positive_fold_count"
-                ] = new_metrics.get(
-                    "incremental_information_positive_fold_count", np.nan
-                )
-                new_row["incremental_information_fold_count"] = new_metrics.get(
-                    "incremental_information_fold_count", np.nan
-                )
-                new_row[
-                    "incremental_information_delta_auc_fold_mean"
-                ] = new_metrics.get(
-                    "incremental_information_delta_auc_fold_mean", np.nan
-                )
-                new_row["incremental_information_delta_auc_fold_std"] = new_metrics.get(
-                    "incremental_information_delta_auc_fold_std", np.nan
-                )
-                new_row["bucket_primary_delta_fold_mean"] = new_metrics.get(
-                    "bucket_primary_delta_fold_mean", np.nan
-                )
-                new_row["bucket_primary_delta_fold_std"] = new_metrics.get(
-                    "bucket_primary_delta_fold_std", np.nan
-                )
-                new_row["bucket_primary_delta_fold_min"] = new_metrics.get(
-                    "bucket_primary_delta_fold_min", np.nan
-                )
-                new_row["dispersion_to_edge_ratio"] = new_metrics.get(
-                    "dispersion_to_edge_ratio", np.nan
-                )
-                new_row["edge_to_dispersion_ratio"] = new_metrics.get(
-                    "edge_to_dispersion_ratio", np.nan
-                )
-                new_row["primary_predictability_gain_is_nan"] = new_metrics.get(
-                    "primary_predictability_gain_is_nan", 1.0
-                )
-                new_row["post_event_vol_dispersion"] = (
-                    float(np.std(zc["v_exp"][new_side_mask & np.isfinite(zc["v_exp"])]))
-                    if np.any(new_side_mask & np.isfinite(zc["v_exp"]))
-                    else 0.0
-                )
-                new_row["fold_event_count_std"] = float(
-                    np.std(
-                        np.asarray(
-                            [float(np.sum(new_side_mask[va])) for _, va in folds],
-                            dtype=np.float32,
-                        )
-                    )
-                )
+                new_row["impulse_shape_dispersion"] = float(coh["impulse_shape_dispersion"])
+
+                for k, v in new_metrics.items():
+                    new_row[k] = v
+
                 new_row["delta_r_raw"] = float(basic_edge_new)
                 new_row["delta_r_fallback"] = (
                     float(0.5 * new_row["incremental_information_delta_auc"])
-                    if np.isfinite(new_row["incremental_information_delta_auc"])
+                    if np.isfinite(new_row.get("incremental_information_delta_auc", np.nan))
                     else float("nan")
                 )
                 raw_val = _metric_or_nan(new_row["delta_r_raw"])
                 new_row["delta_r"] = float(raw_val)
-                new_row["selected_delta_metric"] = primary_col
-                new_row["delta_r_fold_mean"] = float(
-                    new_row["bucket_primary_delta_fold_mean"]
-                )
-                new_row["delta_r_fold_std"] = float(
-                    new_row["bucket_primary_delta_fold_std"]
-                )
-                new_row["positive_fold_fraction_r"] = float(
-                    _metric_or_nan(
-                        new_row["incremental_information_positive_fold_fraction"]
-                    )
-                )
-                new_row["S_r"] = float(
-                    0.5
-                    * max(
-                        0.0,
-                        1.0
-                        - _metric_or_nan(new_row["delta_r_fold_std"])
-                        / (abs(_metric_or_nan(new_row["delta_r_fold_mean"])) + 1e-9),
-                    )
-                    + 0.5
-                    * max(
-                        0.0,
-                        _metric_or_nan(
-                            new_row["incremental_information_positive_fold_fraction"]
-                        ),
-                    )
-                )
-                new_row["D_r"] = float("nan")
-                new_row["N_r"] = float(tot_events)
-                new_row["delta_r_shrunk"] = float(
-                    new_row["delta_r"] * (new_row["N_r"] / (new_row["N_r"] + 500.0))
-                )
-                new_row["score_r"] = float("nan")
-                cond_metrics = _compute_conditional_predictability_metrics(
-                    shared, new_side_mask, mode, folds, cfg
-                )
-                new_row["conditional_predictability_gain"] = float(
-                    cond_metrics["conditional_predictability_gain"]
-                )
-                new_row["conditional_predictability_positive_fold_fraction"] = float(
-                    cond_metrics["conditional_predictability_positive_fold_fraction"]
-                )
-                new_row["conditional_predictability_regime_r2"] = float(
-                    cond_metrics["conditional_predictability_regime_r2"]
-                )
-                new_row["conditional_predictability_baseline_r2"] = float(
-                    cond_metrics["conditional_predictability_baseline_r2"]
-                )
-                new_row["feature_conditioned_spread"] = float(
-                    cond_metrics["feature_conditioned_spread"]
-                )
-                cond_rows.append(new_row)
-                candidate_masks[new_name] = {"m_high": new_h, "m_low": new_l}
+
+                return new_row
+
+            for c_info in tier1_candidates:
+                eval_res = eval_candidate(c_info, tier=1)
+                if eval_res is not None:
+                    surviving_tier1.append((c_info, eval_res))
+                    cond_rows.append(eval_res)
+
+            # Tier-2 Generation
+            max_pairs = int(cfg.get("phase3_max_pair_candidates", 10))
+            tier2_candidates = []
+
+            for i in range(len(surviving_tier1)):
+                for j in range(i + 1, len(surviving_tier1)):
+                    if len(tier2_candidates) >= max_pairs:
+                        break
+                    c1_info, _ = surviving_tier1[i]
+                    c2_info, _ = surviving_tier1[j]
+
+                    # Avoid redundant pairs (same feature)
+                    if set(c1_info["features"]).intersection(set(c2_info["features"])):
+                        continue
+
+                    combined_mask = c1_info["mask"] & c2_info["mask"]
+                    tier2_candidates.append({
+                        "name": f"{c1_info['name']}_AND_{c2_info['name'].replace(cand_name + '_', '')}",
+                        "desc": f"{c1_info['desc']} AND {c2_info['desc']}",
+                        "mask": combined_mask,
+                        "features": c1_info["features"] + c2_info["features"]
+                    })
+
+            for c_info in tier2_candidates:
+                eval_res = eval_candidate(c_info, tier=2)
+                if eval_res is not None:
+                    cond_rows.append(eval_res)
 
     if cond_rows:
         df_short = pd.concat([df_short, pd.DataFrame(cond_rows)], ignore_index=True)
@@ -4727,26 +4767,63 @@ def _run_mode_search(
             * df_short["coverage_multiplier"].astype(np.float32).values
         ).astype(np.float32)
         df_short["shortlist_score"] = df_short["score_ml_trading"].astype(np.float32)
-        base_rows = df_short[df_short["conditioner_mode"] == "none"].set_index("name")
+        # Apply complexity penalties
+        phase4_single_regime_penalty = float(cfg.get("phase4_single_regime_penalty", 0.95))
+        phase4_two_regime_penalty = float(cfg.get("phase4_two_regime_penalty", 0.85))
+
+        penalties = []
+        for _, row in df_short.iterrows():
+            tier = row.get("tier", 0)
+            if tier == 1:
+                penalties.append(phase4_single_regime_penalty)
+            elif tier == 2:
+                penalties.append(phase4_two_regime_penalty)
+            else:
+                penalties.append(1.0)
+
+        df_short["complexity_multiplier"] = np.array(penalties, dtype=np.float32)
+        df_short["score_ml_trading"] = df_short["score_ml_trading"].astype(np.float32).values * df_short["complexity_multiplier"].astype(np.float32).values
+        df_short["shortlist_score"] = df_short["score_ml_trading"].astype(np.float32)
+
+        # Dominance Pruning
+        base_rows = df_short[df_short["tier"] == 0].copy()
+
         keep_idx: List[int] = []
+        tolerance = float(cfg.get("phase4_dominance_tolerance", 0.90))
+
+        # We process each candidate and see if a simpler candidate strictly dominates it
         for idx, row in df_short.iterrows():
-            cond_mode = str(row.get("conditioner_mode", "none"))
-            if cond_mode == "none":
+            tier = row.get("tier", 0)
+            if tier == 0:
                 keep_idx.append(idx)
                 continue
-            base_name = str(row["name"]).rsplit("_", 1)[0]
-            if base_name not in base_rows.index:
-                continue
-            base_row = base_rows.loc[base_name]
-            if (
-                _metric_or_nan(row.get("score_ml_trading"))
-                > _metric_or_nan(base_row.get("score_ml_trading"))
-                and _metric_or_nan(row.get("delta_r"))
-                >= _metric_or_nan(base_row.get("delta_r"))
-                and _metric_or_nan(row.get("S_r"))
-                >= _metric_or_nan(base_row.get("S_r"))
-            ):
+
+            base_name = str(row["name"]).split("_" + row["conditioner_mode"].replace(" ", "").replace(">", "gt").replace("<", "lt"))[0]
+            if "AND" in str(row["name"]):
+                base_name = str(row["name"]).split("_AND_")[0].rsplit("_", 1)[0]
+
+            dominated = False
+            # Compare against all simpler candidates of the same base
+            simpler_cands = df_short[(df_short["tier"] < tier)]
+
+            for _, s_row in simpler_cands.iterrows():
+                # Rough check if they share the same base name (ignoring conditioner suffixes)
+                if not str(s_row["name"]).startswith(base_name):
+                    continue
+
+                # A dominates B if:
+                if (
+                    _metric_or_nan(s_row.get("score_ml_trading")) >= _metric_or_nan(row.get("score_ml_trading")) and
+                    _metric_or_nan(s_row.get("economic_gain_r")) >= _metric_or_nan(row.get("economic_gain_r")) and
+                    _metric_or_nan(s_row.get("S_r")) >= _metric_or_nan(row.get("S_r")) and
+                    _metric_or_nan(s_row.get("total_events")) >= _metric_or_nan(row.get("total_events")) * tolerance
+                ):
+                    dominated = True
+                    break
+
+            if not dominated:
                 keep_idx.append(idx)
+
         df_short = (
             df_short.loc[keep_idx]
             .sort_values("score_ml_trading", ascending=False)

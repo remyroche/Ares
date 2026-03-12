@@ -919,9 +919,6 @@ def _build_temporal_folds(
                     min_symbols_per_split=1,
                 ),
             ),
-            silent=True,
-            min_rows_per_fold=1,
-            min_symbols_per_fold=1,
         )
         bundle = SlicePlanner(cfg).build(events)
         plans = bundle["consumer_plans"]["regime_search"]
@@ -1015,7 +1012,7 @@ def _apply_regime_search_slice_plan(
                 outer=_adaptive_outer_fold_config(cfg.preset.outer, span_days),
                 sampling=dc_replace(
                     cfg.preset.sampling,
-                    max_symbols=50,
+                    max_symbols=100,
                     symbol_fraction=1.0,
                 ),
                 symbol_policy=dc_replace(

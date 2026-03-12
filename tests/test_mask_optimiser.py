@@ -78,10 +78,7 @@ def test_build_temporal_folds_fallback():
 
 def test_phase1_subsample_equivalence():
     from extreme_price_movements.mask_optimiser import _generate_event_masks_fast
-    up_move = np.random.rand(100)
-    dn_move = np.random.rand(100)
-    rolling_std_up = np.random.rand(100)
-    rolling_std_dn = np.random.rand(100)
+
     asset_ids = np.zeros(100, dtype=np.int32)
     asset_ids[50:] = 1
     asset_groups = {
@@ -89,13 +86,29 @@ def test_phase1_subsample_equivalence():
         1: np.where(asset_ids == 1)[0].astype(np.int32),
     }
 
+    # Setup dummy features and z-cache
+    feature_vals = np.random.rand(100)
+    zc_full = {
+        "dummy_feat": feature_vals,
+        "up": np.random.rand(100),
+        "dn": np.random.rand(100)
+    }
+
+    candidate = {
+        "feature_base": "dummy_feat",
+        "family": "momentum",
+        "direction": "gt",
+        "threshold": 0.5
+    }
+
     # Phase 1 mask: only take 1 asset
     phase1_mask = asset_ids == 0
 
     # Generate full then slice
     m_h_f, m_l_f = _generate_event_masks_fast(
-        "std_threshold", 1.0, up_move, dn_move,
-        rolling_std_up, rolling_std_dn, asset_groups, 2
+        candidate=candidate,
+        zc=zc_full,
+        asset_groups=asset_groups
     )
     m_h_sub = m_h_f[phase1_mask]
 
@@ -120,15 +133,17 @@ def test_phase1_subsample_equivalence():
         "symbol_uniques": np.array(["A", "B"]),
     }
     phase1_shared = _build_phase_local_shared(shared, phase1_mask)
+
+    zc_local = {
+        "dummy_feat": zc_full["dummy_feat"][phase1_mask],
+        "up": zc_full["up"][phase1_mask],
+        "dn": zc_full["dn"][phase1_mask]
+    }
+
     m_h_local, _ = _generate_event_masks_fast(
-        "std_threshold",
-        1.0,
-        up_move[phase1_mask],
-        dn_move[phase1_mask],
-        rolling_std_up[phase1_mask],
-        rolling_std_dn[phase1_mask],
-        phase1_shared["asset_groups"],
-        2,
+        candidate=candidate,
+        zc=zc_local,
+        asset_groups=phase1_shared["asset_groups"]
     )
     assert np.array_equal(m_h_local, m_h_sub)
 

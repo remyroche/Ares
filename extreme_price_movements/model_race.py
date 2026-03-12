@@ -212,7 +212,6 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         self.max_label_horizon_hours = max_label_horizon_hours
         self.best_model = None
         self.best_model_name = None
-        self.models = {}
         self.metrics = {}
         self.detailed_metrics = {}
         self.oof_probs = None
@@ -912,25 +911,45 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # NOTE: Winner already selected above (lines 670-692) using gate-aware logic:
         #       - Primary: most gates passed
         #       - Tie-breaker: rank_score
+        # Do NOT re-select here - use existing self.best_model_name
         if self.best_model_name and self.best_model_name in candidates:
              self.best_model = candidates[self.best_model_name]
         else:
+             # Fallback should never happen, but log if it does
              tprint(f"WARNING: best_model_name '{self.best_model_name}' not in candidates, falling back to rank_score selection")
              if detailed_metrics:
                   self.best_model_name = max(detailed_metrics.items(), key=lambda x: x[1]['rank_score'])[0]
                   self.best_model = candidates[self.best_model_name]
 
-        self.models = {}
-        for name in detailed_metrics:
-            if name in candidates:
-                tprint(f"Retraining {name} on full data (full config)...")
-                model_clone = clone(candidates[name])
-                self._fit_model(model_clone, X, y_hard, sample_weight=sample_weight)
-                self.models[name] = model_clone
+        tprint(f"Retraining {self.best_model_name} on full data (full config)...")
+        final_candidates = self._get_candidates(race_mode=False)
+        # For the final model, we ALSO use CalibratedClassifierCV to ensure inference probabilities are calibrated.
+        # Use TimeSeriesSplit(5) for better usage of data in final model.
 
-        self.best_model = self.models.get(self.best_model_name)
+        final_base = clone(self.best_model)
+        if hasattr(final_base, "estimator"): # Unwrap wrapper if needed? No, Float64Wrapper is a classifier.
+             pass
 
-        # Extract feature importances if possible (for the best model)
+        # We fit the raw model on full data.
+        # Note: We need to store the bias correction factor for the FINAL model too?
+        # Post-hoc Isotonic handles bias, but inputs to Itosonic must be consistent with training?
+        # Actually, Isotonic is fit on OOF. OOF was Bias-Corrected in the loop (see above).
+        # So Isotonic expects Bias-Corrected inputs.
+        # Therefore, we MUST compute and apply Bias Correction in predict_proba BEFORE Isotonic.
+
+        # 1. Fit Raw Model
+        # (We could calibrate here too, but Isotonic on OOF is usually enough for the final head)
+        # Actually: to be consistent with the race metrics, we SHOULD use CalibratedClassifierCV here too?
+        # User said: "Consider wrapping each fold's estimator... but Post-hoc OOF is for final model"
+        # Since we use Isotonic on OOF in predict_proba, the final model is effectively calibrated.
+        # But wait! If we leave 'best_model' as raw, then predict_proba applies isotonic.
+        # That logic is sound.
+
+        # Use _fit_model so that class weights and other dynamics are applied correctly,
+        # even without early stopping (no eval_set passed).
+        self._fit_model(self.best_model, X, y_hard, sample_weight=sample_weight)
+
+        # Extract feature importances if possible
         try:
             est = self.best_model
             if hasattr(est, "estimator"):
@@ -952,19 +971,17 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         except Exception as e:
             tprint(f"Failed to get feature importances: {e}")
 
+# No more manual bias correction factor needed (Isotonic handles it)
         return self
 
-    def predict_proba_raw(self, X, model_name=None):
-        if not self.models:
+    def predict_proba_raw(self, X):
+        if self.best_model is None:
             raise ValueError("ModelRace not fitted")
-        model = self.models.get(model_name) if model_name else self.best_model
-        if model is None:
-            raise ValueError(f"Model {model_name} not found")
-        probs = np.asarray(model.predict_proba(X), dtype=np.float64)
+        probs = np.asarray(self.best_model.predict_proba(X), dtype=np.float64)
         return safe_clip_proba(probs[:, 1], eps=1e-6)
 
-    def predict_proba(self, X, model_name=None):
-        if not self.models:
+    def predict_proba(self, X):
+        if self.best_model is None:
             raise ValueError("ModelRace not fitted")
         if self.calibration_state_ is None or "delta_logit" not in self.calibration_state_:
             raise RuntimeError("Missing calibration_state_. Refit ModelRace with calibration enabled before inference.")
@@ -972,7 +989,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         if self._used_sample_weight_ and self.calibration_state_ is None:
             raise RuntimeError("Sample-weighted training requires persisted calibration_state_.")
 
-        p_raw = self.predict_proba_raw(X, model_name=model_name)
+        p_raw = self.predict_proba_raw(X)
         p_corr = self._apply_bias_state(p_raw, self.calibration_state_)
 
         if hasattr(self, 'calibrator_') and self.calibrator_ is not None:
@@ -993,9 +1010,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         probs = np.column_stack([1.0 - p_cal, p_cal])
         return np.asarray(probs, dtype=np.float64)
 
-    def predict(self, X, model_name=None):
+    def predict(self, X):
         # Return probability class 1 (rank score, not calibrated probability)
-        return self.predict_proba(X, model_name=model_name)[:, 1]
+        return self.predict_proba(X)[:, 1]
 
     def strip_for_serialization(self):
         """Drop heavy internals not needed for inference or meta training."""

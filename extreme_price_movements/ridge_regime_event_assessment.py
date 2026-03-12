@@ -140,21 +140,21 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # -----------------------------
     # Trend
     # -----------------------------
-    df["ema20"] = ema(df["close"], 20)
-    df["ema50"] = ema(df["close"], 50)
-    df["ema200"] = ema(df["close"], 200)
+    df["ema20"] = ema(df["close"], 40)
+    df["ema50"] = ema(df["close"], 100)
+    df["ema200"] = ema(df["close"], 400)
 
     df["ema20_gt_ema50"] = (df["ema20"] > df["ema50"]).astype(int)
     df["ema50_gt_ema200"] = (df["ema50"] > df["ema200"]).astype(int)
     df["price_gt_ema50"] = (df["close"] > df["ema50"]).astype(int)
     df["price_lt_ema200"] = (df["close"] < df["ema200"]).astype(int)
 
-    df["ema20_slope"] = rolling_slope(df["ema20"], 20)
-    df["ema50_slope"] = rolling_slope(df["ema50"], 50)
-    df["ema200_slope"] = rolling_slope(df["ema200"], 200)
+    df["ema20_slope"] = rolling_slope(df["ema20"], 40)
+    df["ema50_slope"] = rolling_slope(df["ema50"], 100)
+    df["ema200_slope"] = rolling_slope(df["ema200"], 400)
 
     # Fixed: rolling percentile
-    df["trend_strength_percentile"] = rolling_percentile_rank(df["ema50_slope"], 84)
+    df["trend_strength_percentile"] = rolling_percentile_rank(df["ema50_slope"], 168)
 
     # Fixed: bars_since_trend_flip
     trend_sign = np.sign(df["ema20_slope"])
@@ -165,15 +165,15 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # -----------------------------
     # Volatility
     # -----------------------------
-    df["rolling_std_4h"] = df["close"].rolling(16).std()
-    df["realized_volatility_24h"] = df["close"].pct_change().rolling(96).std()
+    df["rolling_std_4h"] = df["close"].rolling(32).std()
+    df["realized_volatility_24h"] = df["close"].pct_change().rolling(192).std()
 
-    df["atr14"] = atr(df, 14)
+    df["atr14"] = atr(df, 28)
     df["atr_change_rate"] = df["atr14"].pct_change()
 
     df["true_range"] = true_range(df)
     # Fixed: rolling percentile
-    df["true_range_percentile"] = rolling_percentile_rank(df["true_range"], 84)
+    df["true_range_percentile"] = rolling_percentile_rank(df["true_range"], 168)
 
     # -----------------------------
     # Stretch / distance
@@ -182,8 +182,8 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df["dist_ema50_atr"] = (df["close"] - df["ema50"]) / df["atr14"].replace(0, np.nan)
     df["dist_ema200_atr"] = (df["close"] - df["ema200"]) / df["atr14"].replace(0, np.nan)
 
-    df["zscore_price_50"] = rolling_zscore(df["close"], 50)
-    df["zscore_price_200"] = rolling_zscore(df["close"], 200)
+    df["zscore_price_50"] = rolling_zscore(df["close"], 100)
+    df["zscore_price_200"] = rolling_zscore(df["close"], 400)
 
     # -----------------------------
     # VWAP
@@ -207,13 +207,13 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # -----------------------------
     # Compression / expansion
     # -----------------------------
-    df["bollinger_mid"] = df["close"].rolling(20).mean()
-    df["bollinger_std"] = df["close"].rolling(20).std()
+    df["bollinger_mid"] = df["close"].rolling(40).mean()
+    df["bollinger_std"] = df["close"].rolling(40).std()
     df["bollinger_band_width"] = 2.0 * df["bollinger_std"] / df["bollinger_mid"].replace(0, np.nan)
 
-    df["rolling_range_20"] = df["high"].rolling(20).max() - df["low"].rolling(20).min()
+    df["rolling_range_20"] = df["high"].rolling(40).max() - df["low"].rolling(40).min()
     # Fixed: rolling percentile
-    df["atr_percentile"] = rolling_percentile_rank(df["atr14"], 84)
+    df["atr_percentile"] = rolling_percentile_rank(df["atr14"], 168)
 
     # -----------------------------
     # Structure location
@@ -228,10 +228,10 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df["dist_prior_day_low"] = df["close"] - df["prior_day_low"]
 
     # Fixed: Rename to rolling_7d_high
-    df["rolling_7d_high"] = df["high"].rolling(7 * 96).max()
+    df["rolling_7d_high"] = df["high"].rolling(7 * 192).max()
     df["dist_rolling_7d_high"] = df["close"] - df["rolling_7d_high"]
 
-    df["local_swing_high"] = df["high"].rolling(20).max()
+    df["local_swing_high"] = df["high"].rolling(40).max()
     df["dist_local_swing"] = df["close"] - df["local_swing_high"]
 
     # -----------------------------
@@ -247,7 +247,7 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df["candle_range"] = df["high"] - df["low"]
     df["wick_to_range"] = df["wick_length"] / df["candle_range"].replace(0, np.nan)
 
-    df["volume_ma20"] = df["volume"].rolling(20).mean()
+    df["volume_ma20"] = df["volume"].rolling(40).mean()
     df["volume_spike"] = df["volume"] / df["volume_ma20"].replace(0, np.nan)
 
     df["orderflow_imbalance"] = (
@@ -262,29 +262,29 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     gain = delta.clip(lower=0.0)
     loss = -delta.clip(upper=0.0)
 
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
+    avg_gain = gain.rolling(28).mean()
+    avg_loss = loss.rolling(28).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
     df["RSI"] = 100.0 - (100.0 / (1.0 + rs))
 
-    ema12 = ema(df["close"], 12)
-    ema26 = ema(df["close"], 26)
+    ema12 = ema(df["close"], 24)
+    ema26 = ema(df["close"], 52)
     macd = ema12 - ema26
-    signal = ema(macd, 9)
+    signal = ema(macd, 18)
     df["MACD_histogram"] = macd - signal
 
-    df["rate_of_change"] = df["close"].pct_change(12)
-    df["momentum_zscore"] = rolling_zscore(df["rate_of_change"], 50)
+    df["rate_of_change"] = df["close"].pct_change(24)
+    df["momentum_zscore"] = rolling_zscore(df["rate_of_change"], 100)
 
     # -----------------------------
     # Prior move context
     # -----------------------------
-    df["prior_return_1h"] = df["close"].pct_change(4)
-    df["prior_return_4h"] = df["close"].pct_change(16)
-    df["prior_return_12h"] = df["close"].pct_change(48)
+    df["prior_return_1h"] = df["close"].pct_change(8)
+    df["prior_return_4h"] = df["close"].pct_change(32)
+    df["prior_return_12h"] = df["close"].pct_change(96)
 
-    df["prior_range"] = df["high"].rolling(16).max() - df["low"].rolling(16).min()
-    df["prior_volatility"] = df["close"].pct_change().rolling(16).std()
+    df["prior_range"] = df["high"].rolling(32).max() - df["low"].rolling(32).min()
+    df["prior_volatility"] = df["close"].pct_change().rolling(32).std()
 
     df["acceleration_of_move"] = df["close"].pct_change().diff()
 
@@ -292,18 +292,18 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # Micro-regimes / Short Timeframe
     # -----------------------------
     # Path Structure
-    net_move_20 = (df["close"] - df["close"].shift(20)).abs()
-    abs_moves_20 = df["close"].diff().abs().rolling(20).sum()
+    net_move_20 = (df["close"] - df["close"].shift(40)).abs()
+    abs_moves_20 = df["close"].diff().abs().rolling(40).sum()
     df["efficiency_ratio_20"] = net_move_20 / abs_moves_20.replace(0, np.nan)
 
-    atr_sum_20 = df["true_range"].rolling(20).sum()
-    range_20 = df["high"].rolling(20).max() - df["low"].rolling(20).min()
-    # 100 * log10( sum(ATR(1), 20) / (highest(20) - lowest(20)) ) / log10(20)
+    atr_sum_20 = df["true_range"].rolling(40).sum()
+    range_20 = df["high"].rolling(40).max() - df["low"].rolling(40).min()
+    # 100 * log10( sum(ATR(1), 40) / (highest(40) - lowest(40)) ) / log10(40)
     # Clip to avoid log(0) or log(<0)
     chop_ratio = (atr_sum_20 / range_20.replace(0, np.nan)).clip(lower=1e-6)
-    df["choppiness_index_20"] = 100.0 * np.log10(chop_ratio) / np.log10(20)
+    df["choppiness_index_20"] = 100.0 * np.log10(chop_ratio) / np.log10(40)
 
-    # Direction Entropy 20: entropy of up/down signs over 20 bars
+    # Direction Entropy 20: entropy of up/down signs over 40 bars
     def _entropy(x):
         if len(x) == 0:
             return np.nan
@@ -314,27 +314,27 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
         if p_dn > 0: e -= p_dn * np.log2(p_dn)
         return e
 
-    df["direction_entropy_20"] = df["close"].diff().rolling(20).apply(_entropy, raw=True)
+    df["direction_entropy_20"] = df["close"].diff().rolling(40).apply(_entropy, raw=True)
 
     # Volatility Term Structure
-    std_20 = df["close"].pct_change().rolling(20).std()
-    std_100 = df["close"].pct_change().rolling(100).std()
+    std_20 = df["close"].pct_change().rolling(40).std()
+    std_100 = df["close"].pct_change().rolling(200).std()
     df["compression_ratio"] = std_20 / std_100.replace(0, np.nan)
 
     df["range_expansion_ratio"] = df["true_range"] / df["atr14"].replace(0, np.nan)
 
     # Extra pre-existing family additions
-    highest_20 = df["high"].rolling(20).max()
-    lowest_20 = df["low"].rolling(20).min()
+    highest_20 = df["high"].rolling(40).max()
+    lowest_20 = df["low"].rolling(40).min()
     range_mid_20 = (highest_20 + lowest_20) / 2.0
     df["dist_range_mid_atr"] = (df["close"] - range_mid_20) / df["atr14"].replace(0, np.nan)
 
-    ema100 = ema(df["close"], 100)
+    ema100 = ema(df["close"], 200)
     df["dist_ma100_atr"] = (df["close"] - ema100) / df["atr14"].replace(0, np.nan)
 
     df["volatility_ratio_short_long"] = df["rolling_std_4h"] / df["realized_volatility_24h"].replace(0, np.nan)
 
-    df["volume_percentile"] = rolling_percentile_rank(df["volume"], 84)
+    df["volume_percentile"] = rolling_percentile_rank(df["volume"], 168)
 
     return df
 

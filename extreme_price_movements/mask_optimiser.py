@@ -1448,6 +1448,176 @@ def _build_regime_rationale(row: pd.Series) -> str:
     return "; ".join(reasons)
 
 
+
+def dispersion_to_edge(returns: np.ndarray) -> float:
+    """
+    DER = sigma / |mu|
+    """
+    mu = np.mean(returns)
+    sigma = np.std(returns)
+
+    if abs(mu) < 1e-12:
+        return np.inf
+
+    return float(sigma / abs(mu))
+
+
+def fold_stability(delta_r_folds: np.ndarray) -> float:
+    """
+    S_r = |mean(delta_r)| / std(delta_r)
+    """
+    mean = np.mean(delta_r_folds)
+    std = np.std(delta_r_folds)
+
+    if std < 1e-12:
+        return 0.0
+
+    return float(abs(mean) / std)
+
+
+def label_entropy(labels: np.ndarray) -> float:
+    """
+    Shannon entropy of discrete labels.
+    """
+    if len(labels) == 0:
+        return 0.0
+    values, counts = np.unique(labels, return_counts=True)
+    p = counts / counts.sum()
+
+    return float(-(p * np.log(p + 1e-12)).sum())
+
+
+def compute_net_regime_value(
+    returns_E: np.ndarray,
+    returns_ER: np.ndarray,
+    delta_r_folds_E: np.ndarray,
+    delta_r_folds_ER: np.ndarray,
+    labels_E: np.ndarray,
+    labels_ER: np.ndarray,
+    auc_E: float,
+    auc_ER: float,
+) -> Tuple[float, Dict[str, float]]:
+    """
+    Compute the NetRegimeValue score.
+    """
+    # coverage
+    coverage_ratio = len(returns_ER) / max(len(returns_E), 1)
+    coverage_term = np.sqrt(coverage_ratio)
+
+    # dispersion-to-edge
+    der_E = dispersion_to_edge(returns_E)
+    der_ER = dispersion_to_edge(returns_ER)
+    der_ratio = der_E / der_ER if der_ER > 0 else 0
+    der_ratio = float(np.clip(der_ratio, 0.5, 3.0))
+
+    # fold stability
+    sr_E = fold_stability(delta_r_folds_E)
+    sr_ER = fold_stability(delta_r_folds_ER)
+    sr_ratio = sr_ER / sr_E if sr_E > 0 else 1.0
+    sr_ratio = float(np.clip(sr_ratio, 0.5, 3.0))
+
+    # entropy reduction
+    H_E = label_entropy(labels_E)
+    H_ER = label_entropy(labels_ER)
+    entropy_term = float(np.exp(np.clip(H_E - H_ER, -0.5, 0.5)))
+
+    # AUC improvement
+    auc_gain = float(np.clip(max(0.0, auc_ER - auc_E), 0.0, 0.1))
+    auc_term = 1.0 + auc_gain
+
+    score = float(coverage_term * der_ratio * sr_ratio * entropy_term * auc_term)
+
+    diagnostics = {
+        "coverage_ratio": coverage_ratio,
+        "DER_E": der_E,
+        "DER_ER": der_ER,
+        "DER_ratio": der_ratio,
+        "S_r_E": sr_E,
+        "S_r_ER": sr_ER,
+        "S_r_ratio": sr_ratio,
+        "entropy_E": H_E,
+        "entropy_ER": H_ER,
+        "auc_E": auc_E,
+        "auc_ER": auc_ER,
+        "net_regime_value": score,
+    }
+
+    return score, diagnostics
+
+
+def quick_ridge_auc(
+    features_df: pd.DataFrame,
+    labels: np.ndarray,
+    event_mask: np.ndarray,
+    folds: List[Tuple[np.ndarray, np.ndarray]]
+) -> float:
+    """
+    Computes a quick out-of-sample AUC using Ridge classification logic.
+    """
+    if np.sum(event_mask) < 20:
+        return 0.5
+
+    y_event = labels[event_mask]
+    if len(np.unique(y_event)) < 2:
+        return 0.5
+
+    X_event = features_df[event_mask].copy()
+    # Replace inf and impute nan
+    X_event = X_event.replace([np.inf, -np.inf], np.nan)
+    X_event = X_event.fillna(X_event.median())
+    X_event = X_event.fillna(0.0) # Fallback
+
+    # Scale features
+    from sklearn.preprocessing import StandardScaler
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_event)
+
+    # Mapping global indices to event indices
+    global_to_local = np.full(len(event_mask), -1, dtype=np.int32)
+    global_to_local[event_mask] = np.arange(np.sum(event_mask))
+
+    oof_preds = np.full(len(y_event), np.nan, dtype=np.float32)
+
+    for tr, va in folds:
+        # Get event-only indices
+        tr_local = global_to_local[tr]
+        tr_local = tr_local[tr_local >= 0]
+
+        va_local = global_to_local[va]
+        va_local = va_local[va_local >= 0]
+
+        if len(tr_local) < 5 or len(va_local) < 2:
+            continue
+
+        X_tr = X_scaled[tr_local]
+        y_tr = y_event[tr_local]
+        X_va = X_scaled[va_local]
+
+        if len(np.unique(y_tr)) < 2:
+            # Can't fit on single class
+            # Just predict the mean rate of this fold
+            oof_preds[va_local] = np.mean(y_tr)
+            continue
+
+        from sklearn.linear_model import RidgeClassifier
+        clf = RidgeClassifier(alpha=1.0)
+        clf.fit(X_tr, y_tr)
+
+        # RidgeClassifier's decision_function returns distance to hyperplane
+        preds = clf.decision_function(X_va)
+        oof_preds[va_local] = preds
+
+    valid_oof = np.isfinite(oof_preds)
+    if np.sum(valid_oof) < 10 or len(np.unique(y_event[valid_oof])) < 2:
+        return 0.5
+
+    try:
+        from sklearn.metrics import roc_auc_score
+        return float(roc_auc_score(y_event[valid_oof], oof_preds[valid_oof]))
+    except Exception:
+        return 0.5
+
+
 def _predictability_gain_from_metrics(metrics: Dict[str, Any]) -> float:
     vals = [
         _metric_or_nan(metrics.get("continuation_predictability_gain")),
@@ -4443,19 +4613,72 @@ def _run_mode_search(
                     float(basic_edge_new),
                 )
 
-                # Check acceptance rules
-                base_econ = _metric_or_nan(row.get("economic_gain_r"))
-                base_mfe = _metric_or_nan(row.get("aggregate_mfe_coverage"))
-                new_econ = _metric_or_nan(new_metrics.get("economic_gain_r"))
-                new_mfe = _metric_or_nan(new_metrics.get("aggregate_mfe_coverage"))
+                econ_metrics = _compute_tbm_economic_gain(shared, new_side_mask, mode, folds, cfg)
+                mfe_metrics = _compute_mfe_coverage(shared, new_side_mask, cfg)
+                new_econ = _metric_or_nan(econ_metrics.get("economic_gain_r"))
+                new_mfe = _metric_or_nan(mfe_metrics.get("fixed_tp_mfe_coverage"))
+
+                # In order to do base comparison, we need base_econ. If row doesn't have it, we must compute it.
+                if "economic_gain_r" not in row:
+                    base_econ_metrics = _compute_tbm_economic_gain(shared, base_side_mask, mode, folds, cfg)
+                    base_econ = _metric_or_nan(base_econ_metrics.get("economic_gain_r"))
+                    row["economic_gain_r"] = base_econ
+
+                    base_mfe_metrics = _compute_mfe_coverage(shared, base_side_mask, cfg)
+                    base_mfe = _metric_or_nan(base_mfe_metrics.get("fixed_tp_mfe_coverage"))
+                    row["aggregate_mfe_coverage"] = base_mfe
+                else:
+                    base_econ = _metric_or_nan(row.get("economic_gain_r"))
+                    base_mfe = _metric_or_nan(row.get("aggregate_mfe_coverage"))
 
                 improves_econ = (new_econ > base_econ * 1.05)
                 improves_mfe = (new_mfe > base_mfe * 1.05)
 
-                if tier == 1 and not (improves_econ or improves_mfe):
-                    return None
-                if tier == 2 and not (new_econ > base_econ * 1.1 or new_mfe > base_mfe * 1.1):
-                    return None
+                # Check net regime value
+                best_geom = econ_metrics.get("per_geometry_metrics", [{}])[0]
+                labels_ER = best_geom.get("labels", np.array([]))
+
+                base_best_geom = _compute_tbm_economic_gain(shared, base_side_mask, mode, folds, cfg).get("per_geometry_metrics", [{}])[0]
+                labels_E = base_best_geom.get("labels", np.array([]))
+
+                auc_ER = quick_ridge_auc(regime_features_df, labels_ER, new_side_mask, folds)
+                auc_E = quick_ridge_auc(regime_features_df, labels_E, base_side_mask, folds)
+
+                fwd_ret_ER = global_signed_returns[new_side_mask & valid_fwd_new]
+                fwd_ret_E = global_signed_returns[base_side_mask & valid_fwd_new]
+
+                nrv_score, nrv_diags = compute_net_regime_value(
+                    returns_E=fwd_ret_E,
+                    returns_ER=fwd_ret_ER,
+                    delta_r_folds_E=np.array([float(np.nanmean(global_signed_returns[(base_side_mask & valid_fwd_new) & va])) for _, va in folds]),
+                    delta_r_folds_ER=np.array([float(np.nanmean(global_signed_returns[(new_side_mask & valid_fwd_new) & va])) for _, va in folds]),
+                    labels_E=labels_E[base_side_mask] if len(labels_E) == len(base_side_mask) else np.array([]),
+                    labels_ER=labels_ER[new_side_mask] if len(labels_ER) == len(new_side_mask) else np.array([]),
+                    auc_E=auc_E,
+                    auc_ER=auc_ER,
+                )
+
+                new_metrics["net_regime_value"] = nrv_score
+
+                # Stronger acceptance rules based on prompt
+                der_ratio = nrv_diags["DER_ratio"]
+                sr_ratio = nrv_diags["S_r_ratio"]
+
+                # Check for deterioration
+                is_stability_worse = (sr_ratio < 0.90)
+                is_dispersion_worse = (der_ratio < 0.90)
+
+                if tier == 1:
+                    if not (improves_econ or improves_mfe or nrv_score > 1.05):
+                        return None
+                    if is_stability_worse or is_dispersion_worse:
+                        return None
+
+                if tier == 2:
+                    if not (new_econ > base_econ * 1.1 or new_mfe > base_mfe * 1.1 or nrv_score > 1.1):
+                        return None
+                    if is_stability_worse or is_dispersion_worse:
+                        return None
 
                 # Build row
                 new_row = row.copy()

@@ -4807,6 +4807,30 @@ def _run_mode_search(
                                 "families": [family]
                             })
 
+                    # Add middle band 30-70
+                    if "q30" in thresholds_dict and "q70" in thresholds_dict:
+                        cond_mask = valid_mask & (feature_vals > thresholds_dict["q30"]) & (feature_vals < thresholds_dict["q70"])
+                        desc = f"{var_name} > q30 AND {var_name} < q70"
+                        tier1_candidates.append({
+                            "name": f"{cand_name}_{var_name}_gt_q30_lt_q70",
+                            "desc": desc,
+                            "mask": cond_mask,
+                            "features": [var_name],
+                            "families": [family]
+                        })
+
+                    # Add broad exclusion rule 20-80
+                    if "q20" in thresholds_dict and "q80" in thresholds_dict:
+                        cond_mask = valid_mask & (feature_vals > thresholds_dict["q20"]) & (feature_vals < thresholds_dict["q80"])
+                        desc = f"{var_name} > q20 AND {var_name} < q80"
+                        tier1_candidates.append({
+                            "name": f"{cand_name}_{var_name}_gt_q20_lt_q80",
+                            "desc": desc,
+                            "mask": cond_mask,
+                            "features": [var_name],
+                            "families": [family]
+                        })
+
             # Base Evaluation Closure
             def eval_candidate(c_info, tier, parent_res=None):
                 new_side_mask = base_side_mask & c_info["mask"]

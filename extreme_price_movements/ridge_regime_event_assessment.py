@@ -154,7 +154,7 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df["ema200_slope"] = rolling_slope(df["ema200"], 200)
 
     # Fixed: rolling percentile
-    df["trend_strength_percentile"] = rolling_percentile_rank(df["ema50_slope"], 252)
+    df["trend_strength_percentile"] = rolling_percentile_rank(df["ema50_slope"], 84)
 
     # Fixed: bars_since_trend_flip
     trend_sign = np.sign(df["ema20_slope"])
@@ -165,15 +165,15 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # -----------------------------
     # Volatility
     # -----------------------------
-    df["rolling_std_4h"] = df["close"].rolling(48).std()
-    df["realized_volatility_24h"] = df["close"].pct_change().rolling(288).std()
+    df["rolling_std_4h"] = df["close"].rolling(16).std()
+    df["realized_volatility_24h"] = df["close"].pct_change().rolling(96).std()
 
     df["atr14"] = atr(df, 14)
     df["atr_change_rate"] = df["atr14"].pct_change()
 
     df["true_range"] = true_range(df)
     # Fixed: rolling percentile
-    df["true_range_percentile"] = rolling_percentile_rank(df["true_range"], 252)
+    df["true_range_percentile"] = rolling_percentile_rank(df["true_range"], 84)
 
     # -----------------------------
     # Stretch / distance
@@ -213,7 +213,7 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
 
     df["rolling_range_20"] = df["high"].rolling(20).max() - df["low"].rolling(20).min()
     # Fixed: rolling percentile
-    df["atr_percentile"] = rolling_percentile_rank(df["atr14"], 252)
+    df["atr_percentile"] = rolling_percentile_rank(df["atr14"], 84)
 
     # -----------------------------
     # Structure location
@@ -228,7 +228,7 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df["dist_prior_day_low"] = df["close"] - df["prior_day_low"]
 
     # Fixed: Rename to rolling_7d_high
-    df["rolling_7d_high"] = df["high"].rolling(7 * 288).max()
+    df["rolling_7d_high"] = df["high"].rolling(7 * 96).max()
     df["dist_rolling_7d_high"] = df["close"] - df["rolling_7d_high"]
 
     df["local_swing_high"] = df["high"].rolling(20).max()
@@ -279,12 +279,12 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # -----------------------------
     # Prior move context
     # -----------------------------
-    df["prior_return_1h"] = df["close"].pct_change(12)
-    df["prior_return_4h"] = df["close"].pct_change(48)
-    df["prior_return_12h"] = df["close"].pct_change(144)
+    df["prior_return_1h"] = df["close"].pct_change(4)
+    df["prior_return_4h"] = df["close"].pct_change(16)
+    df["prior_return_12h"] = df["close"].pct_change(48)
 
-    df["prior_range"] = df["high"].rolling(48).max() - df["low"].rolling(48).min()
-    df["prior_volatility"] = df["close"].pct_change().rolling(48).std()
+    df["prior_range"] = df["high"].rolling(16).max() - df["low"].rolling(16).min()
+    df["prior_volatility"] = df["close"].pct_change().rolling(16).std()
 
     df["acceleration_of_move"] = df["close"].pct_change().diff()
 
@@ -334,7 +334,7 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
 
     df["volatility_ratio_short_long"] = df["rolling_std_4h"] / df["realized_volatility_24h"].replace(0, np.nan)
 
-    df["volume_percentile"] = rolling_percentile_rank(df["volume"], 252)
+    df["volume_percentile"] = rolling_percentile_rank(df["volume"], 84)
 
     return df
 

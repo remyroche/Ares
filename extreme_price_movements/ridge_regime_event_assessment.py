@@ -62,6 +62,19 @@ RIDGE_FEATURE_META = {
     "prior_range": {"family": "context", "type": "continuous"},
     "prior_volatility": {"family": "context", "type": "continuous"},
     "acceleration_of_move": {"family": "context", "type": "continuous"},
+
+    # Micro-regime updates
+    "efficiency_ratio_20": {"family": "path_structure", "type": "continuous"},
+    "choppiness_index_20": {"family": "path_structure", "type": "continuous"},
+    "direction_entropy_20": {"family": "path_structure", "type": "continuous"},
+
+    "compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
+    "range_expansion_ratio": {"family": "volatility_term_structure", "type": "continuous"},
+
+    "dist_range_mid_atr": {"family": "structure", "type": "continuous"},
+    "dist_ma100_atr": {"family": "stretch", "type": "continuous"},
+    "volatility_ratio_short_long": {"family": "volatility", "type": "continuous"},
+    "volume_percentile": {"family": "liquidity", "type": "continuous"},
 }
 
 RIDGE_FEATURE_COLS = list(RIDGE_FEATURE_META.keys())
@@ -274,6 +287,54 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df["prior_volatility"] = df["close"].pct_change().rolling(48).std()
 
     df["acceleration_of_move"] = df["close"].pct_change().diff()
+
+    # -----------------------------
+    # Micro-regimes / Short Timeframe
+    # -----------------------------
+    # Path Structure
+    net_move_20 = (df["close"] - df["close"].shift(20)).abs()
+    abs_moves_20 = df["close"].diff().abs().rolling(20).sum()
+    df["efficiency_ratio_20"] = net_move_20 / abs_moves_20.replace(0, np.nan)
+
+    atr_sum_20 = df["true_range"].rolling(20).sum()
+    range_20 = df["high"].rolling(20).max() - df["low"].rolling(20).min()
+    # 100 * log10( sum(ATR(1), 20) / (highest(20) - lowest(20)) ) / log10(20)
+    # Clip to avoid log(0) or log(<0)
+    chop_ratio = (atr_sum_20 / range_20.replace(0, np.nan)).clip(lower=1e-6)
+    df["choppiness_index_20"] = 100.0 * np.log10(chop_ratio) / np.log10(20)
+
+    # Direction Entropy 20: entropy of up/down signs over 20 bars
+    def _entropy(x):
+        if len(x) == 0:
+            return np.nan
+        p_up = (x > 0).sum() / len(x)
+        p_dn = (x < 0).sum() / len(x)
+        e = 0.0
+        if p_up > 0: e -= p_up * np.log2(p_up)
+        if p_dn > 0: e -= p_dn * np.log2(p_dn)
+        return e
+
+    df["direction_entropy_20"] = df["close"].diff().rolling(20).apply(_entropy, raw=True)
+
+    # Volatility Term Structure
+    std_20 = df["close"].pct_change().rolling(20).std()
+    std_100 = df["close"].pct_change().rolling(100).std()
+    df["compression_ratio"] = std_20 / std_100.replace(0, np.nan)
+
+    df["range_expansion_ratio"] = df["true_range"] / df["atr14"].replace(0, np.nan)
+
+    # Extra pre-existing family additions
+    highest_20 = df["high"].rolling(20).max()
+    lowest_20 = df["low"].rolling(20).min()
+    range_mid_20 = (highest_20 + lowest_20) / 2.0
+    df["dist_range_mid_atr"] = (df["close"] - range_mid_20) / df["atr14"].replace(0, np.nan)
+
+    ema100 = ema(df["close"], 100)
+    df["dist_ma100_atr"] = (df["close"] - ema100) / df["atr14"].replace(0, np.nan)
+
+    df["volatility_ratio_short_long"] = df["rolling_std_4h"] / df["realized_volatility_24h"].replace(0, np.nan)
+
+    df["volume_percentile"] = rolling_percentile_rank(df["volume"], 252)
 
     return df
 

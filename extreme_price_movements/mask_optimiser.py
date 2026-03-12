@@ -2126,22 +2126,28 @@ def _build_candidate_grid(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     Builds the candidate grid using robust-z feature thresholds.
     Replaces old lookback/abs/duration grids.
     """
-    lookbacks_h = [2, 4, 6]
+    lookbacks_h = [4, 8, 12]
     thresholds = [1.4, 1.6, 1.8, 2.0]
 
     # Define features and their families + directions
     feature_specs = [
-        # Volatility / Range (positive magnitude)
-        ("hl_range", "volatility", "magnitude_positive_only"),
-        ("intrabar_range_atr", "volatility", "magnitude_positive_only"),
-        ("compression_expansion_transition", "volatility", "magnitude_positive_only"),
+        # Volatility Expansion (positive magnitude)
+        ("hl_range", "volatility_expansion", "magnitude_positive_only"),
+        ("intrabar_range_atr", "volatility_expansion", "magnitude_positive_only"),
+
+        # Compression Transition
+        ("compression_expansion_transition", "compression_transition", "magnitude_positive_only"),
 
         # Volume (positive magnitude)
         ("volume_robust_z", "volume", "magnitude_positive_only"),
 
         # Breakout / Structure
-        ("breakout_distance_up_atr", "structure", "magnitude_positive_only"), # We treat up/down as separate but positive-thresholded
+        ("breakout_distance_up_atr", "structure", "magnitude_positive_only"),
         ("breakout_distance_down_atr", "structure", "magnitude_positive_only"),
+
+        # Stretch Location
+        ("distance_from_ema_atr", "stretch_location", "directional_two_sided"),
+        ("distance_from_vwap_atr", "stretch_location", "directional_two_sided"),
 
         # Momentum
         ("atr_normalized_trailing_return", "momentum", "directional_two_sided"),
@@ -2246,6 +2252,8 @@ def _compute_z_cache(
         "volume_robust_z": np.zeros(n, dtype=np.float32),
         "breakout_distance_up_atr": np.zeros(n, dtype=np.float32),
         "breakout_distance_down_atr": np.zeros(n, dtype=np.float32),
+        "distance_from_ema_atr": np.zeros(n, dtype=np.float32),
+        "distance_from_vwap_atr": np.zeros(n, dtype=np.float32),
         "atr_normalized_trailing_return": np.zeros(n, dtype=np.float32),
         "short_minus_long_momentum": np.zeros(n, dtype=np.float32),
         "slope_change": np.zeros(n, dtype=np.float32),
@@ -2319,6 +2327,32 @@ def _compute_z_cache(
         ast_trailing_low, _ = rolling_min_index_safe(ast_low, z)
         ast_breakout_dn = (np.roll(ast_trailing_low, 1) - ast_close) / np.maximum(ast_close * ast_vol, 1e-6)
         cache["breakout_distance_down_atr"][idxs] = _rolling_robust_z_1d(ast_breakout_dn, window_14d)
+
+        # 3.5 Stretch Location
+        # distance_from_ema_atr
+        # EMA over z bars. Simple SMA proxy if EMA is too slow inside numba, or we can use convolve.
+        # Let's use SMA as a robust proxy for EMA over 'z' window to keep it vectorized here.
+        sma_z = np.convolve(ast_close, np.ones(z)/z, mode='valid')
+        sma_z = np.concatenate([np.full(z-1, np.nan), sma_z])
+        ast_dist_ema = (ast_close - sma_z) / np.maximum(ast_close * ast_vol, 1e-6)
+        cache["distance_from_ema_atr"][idxs] = _rolling_robust_z_1d(ast_dist_ema, window_14d)
+
+        # distance_from_vwap_atr
+        # VWAP over z bars = sum(close * volume) / sum(volume)
+        if volume is not None:
+            vol_w = volume[idxs]
+        else:
+            vol_w = np.ones_like(ast_close)
+
+        sum_vol_z = np.convolve(vol_w, np.ones(z), mode='valid')
+        sum_vol_z = np.concatenate([np.full(z-1, np.nan), sum_vol_z])
+
+        sum_pv_z = np.convolve(ast_close * vol_w, np.ones(z), mode='valid')
+        sum_pv_z = np.concatenate([np.full(z-1, np.nan), sum_pv_z])
+
+        vwap_z = sum_pv_z / np.maximum(sum_vol_z, 1e-6)
+        ast_dist_vwap = (ast_close - vwap_z) / np.maximum(ast_close * ast_vol, 1e-6)
+        cache["distance_from_vwap_atr"][idxs] = _rolling_robust_z_1d(ast_dist_vwap, window_14d)
 
         # 4. Momentum
         ast_trailing_ret = (ast_close - np.roll(ast_close, z)) / np.maximum(np.roll(ast_close, z), 1e-6)
@@ -2497,7 +2531,7 @@ def _generate_event_masks_fast(
 
     valid_mask = np.isfinite(feature_vals)
 
-    if candidate["family"] in ("volatility", "volume", "path_structure"):
+    if candidate["family"] in ("volatility_expansion", "compression_transition", "volume"):
         # These are magnitude / expansion indicators. They don't have inherent up/down logic themselves.
         # But we must populate both mask_h and mask_l, because the caller filters by `_get_side_mask(mode, mask_h, mask_l)`.
         # So an expansion trigger > 1.8 applies to BOTH up and down modes!
@@ -2514,7 +2548,7 @@ def _generate_event_masks_fast(
         elif f_base == "breakout_distance_down_atr" and direction == "gt":
             mask_l = valid_mask & (feature_vals >= threshold)
 
-    elif candidate["family"] == "momentum":
+    elif candidate["family"] in ("momentum", "stretch_location", "path_structure"):
         # Directional two-sided
         if direction == "gt":
             mask_h = valid_mask & (feature_vals >= threshold)

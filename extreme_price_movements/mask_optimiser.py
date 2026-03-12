@@ -4517,10 +4517,12 @@ def _run_mode_search(
 
     cond_rows: List[pd.Series] = []
     if bool(cfg.get("enable_secondary_conditioners", True)):
-        # Base limits
+        # Configurable limits
         min_events = int(cfg.get("phase3_min_conditioned_event_count", 2000))
         min_fraction = float(cfg.get("phase3_min_event_fraction_of_base", 0.10))
         tier2_min_fraction = float(cfg.get("phase3_tier2_min_event_fraction", 0.05))
+        max_singles = int(cfg.get("phase3_max_single_candidates_per_base", 4))
+        max_pairs = int(cfg.get("phase3_max_pair_candidates", 10))
 
         for _, row in df_short.iterrows():
             cand_name = str(row["name"])
@@ -4531,7 +4533,9 @@ def _run_mode_search(
             base_side_mask = _get_side_mask(mode, base_masks["m_high"], base_masks["m_low"])
             base_event_count = int(np.sum(base_side_mask))
 
-            # Identify Tier-1 candidates
+            # ---------------------------------------------------------
+            # 3A. Generate Single-Regime Candidates (Tier-1)
+            # ---------------------------------------------------------
             tier1_candidates = []
             top_vars = dynamic_conditioners.get(cand_name, [])
 
@@ -4539,6 +4543,7 @@ def _run_mode_search(
                 var_name = var_info["feature"]
                 coef = var_info["coef"]
                 v_type = var_info["type"]
+                family = var_info.get("family", "unknown")
 
                 if var_name not in regime_features_df.columns:
                     continue
@@ -4556,31 +4561,36 @@ def _run_mode_search(
                         "name": f"{cand_name}_{var_name}_is_{target_val}",
                         "desc": f"{var_name} == {target_val}",
                         "mask": cond_mask,
-                        "features": [var_name]
+                        "features": [var_name],
+                        "families": [family]
                     })
                 else:
-                    quantiles = [0.5, 0.6, 0.7, 0.8] if coef > 0 else [0.5, 0.4, 0.3, 0.2]
                     direction = "gt" if coef > 0 else "lt"
-                    for q in quantiles:
-                        threshold = np.nanpercentile(feature_vals[active_valid], q * 100)
-                        if direction == "gt":
-                            cond_mask = valid_mask & (feature_vals > threshold)
-                            desc = f"{var_name} > p{int(q*100)}"
-                        else:
-                            cond_mask = valid_mask & (feature_vals < threshold)
-                            desc = f"{var_name} < p{int(q*100)}"
+                    thresholds_dict = var_info.get("thresholds")
+                    if not thresholds_dict:
+                        continue
 
-                        tier1_candidates.append({
-                            "name": f"{cand_name}_{var_name}_{desc.replace(' ', '').replace('>', 'gt').replace('<', 'lt')}",
-                            "desc": desc,
-                            "mask": cond_mask,
-                            "features": [var_name]
-                        })
+                    quantiles_to_check = ["q50", "q60", "q70", "q80"] if coef > 0 else ["q50", "q40", "q30", "q20"]
+                    for q_key in quantiles_to_check:
+                        if q_key in thresholds_dict:
+                            threshold = thresholds_dict[q_key]
+                            if direction == "gt":
+                                cond_mask = valid_mask & (feature_vals > threshold)
+                                desc = f"{var_name} > {q_key}"
+                            else:
+                                cond_mask = valid_mask & (feature_vals < threshold)
+                                desc = f"{var_name} < {q_key}"
 
-            # Evaluate Tier-1
-            surviving_tier1 = []
+                            tier1_candidates.append({
+                                "name": f"{cand_name}_{var_name}_{desc.replace(' ', '').replace('>', 'gt').replace('<', 'lt')}",
+                                "desc": desc,
+                                "mask": cond_mask,
+                                "features": [var_name],
+                                "families": [family]
+                            })
 
-            def eval_candidate(c_info, tier):
+            # Base Evaluation Closure
+            def eval_candidate(c_info, tier, parent_res=None):
                 new_side_mask = base_side_mask & c_info["mask"]
                 tot_events = int(np.sum(new_side_mask))
 
@@ -4588,7 +4598,6 @@ def _run_mode_search(
                 if tot_events < min_events or (tot_events / base_event_count) < req_fraction:
                     return None
 
-                # Full evaluation
                 coh = (
                     _coherence_metrics_single_side(new_side_mask, zc["b_up"], zc["s_up"], zc["m_up"])
                     if _mode_is_up(mode)
@@ -4675,8 +4684,17 @@ def _run_mode_search(
                         return None
 
                 if tier == 2:
-                    if not (new_econ > base_econ * 1.1 or new_mfe > base_mfe * 1.1 or nrv_score > 1.1):
-                        return None
+                    # Compare against BEST single parent if provided
+                    if parent_res is not None:
+                        parent_econ = _metric_or_nan(parent_res.get("economic_gain_r"))
+                        parent_mfe = _metric_or_nan(parent_res.get("aggregate_mfe_coverage"))
+                        parent_nrv = _metric_or_nan(parent_res.get("net_regime_value"))
+
+                        if not (new_econ > parent_econ * 1.05 or new_mfe > parent_mfe * 1.05 or nrv_score > parent_nrv * 1.05):
+                            return None
+                    else:
+                        if not (new_econ > base_econ * 1.1 or new_mfe > base_mfe * 1.1 or nrv_score > 1.1):
+                            return None
                     if is_stability_worse or is_dispersion_worse:
                         return None
 
@@ -4702,37 +4720,58 @@ def _run_mode_search(
 
                 return new_row
 
+            # Evaluate Tier-1
+            surviving_tier1 = []
             for c_info in tier1_candidates:
                 eval_res = eval_candidate(c_info, tier=1)
                 if eval_res is not None:
                     surviving_tier1.append((c_info, eval_res))
-                    cond_rows.append(eval_res)
 
-            # Tier-2 Generation
-            max_pairs = int(cfg.get("phase3_max_pair_candidates", 10))
+            # ---------------------------------------------------------
+            # 3B. Select Top Single Regimes
+            # ---------------------------------------------------------
+            surviving_tier1.sort(key=lambda x: x[1].get("net_regime_value", 0.0), reverse=True)
+            top_tier1 = surviving_tier1[:max_singles]
+
+            for c_info, eval_res in top_tier1:
+                cond_rows.append(eval_res)
+
+            # ---------------------------------------------------------
+            # 3C. Generate Two-Regime Candidates (Tier-2)
+            # ---------------------------------------------------------
             tier2_candidates = []
 
-            for i in range(len(surviving_tier1)):
-                for j in range(i + 1, len(surviving_tier1)):
+            for i in range(len(top_tier1)):
+                for j in range(i + 1, len(top_tier1)):
                     if len(tier2_candidates) >= max_pairs:
                         break
-                    c1_info, _ = surviving_tier1[i]
-                    c2_info, _ = surviving_tier1[j]
+                    c1_info, r1 = top_tier1[i]
+                    c2_info, r2 = top_tier1[j]
 
                     # Avoid redundant pairs (same feature)
                     if set(c1_info["features"]).intersection(set(c2_info["features"])):
                         continue
 
+                    # Prefer cross-family combinations (skip if same family)
+                    if set(c1_info["families"]).intersection(set(c2_info["families"])):
+                        continue
+
                     combined_mask = c1_info["mask"] & c2_info["mask"]
+                    # Determine best parent for relative comparison
+                    best_parent_res = r1 if r1.get("net_regime_value", 0) > r2.get("net_regime_value", 0) else r2
+
                     tier2_candidates.append({
                         "name": f"{c1_info['name']}_AND_{c2_info['name'].replace(cand_name + '_', '')}",
                         "desc": f"{c1_info['desc']} AND {c2_info['desc']}",
                         "mask": combined_mask,
-                        "features": c1_info["features"] + c2_info["features"]
+                        "features": c1_info["features"] + c2_info["features"],
+                        "families": c1_info["families"] + c2_info["families"],
+                        "best_parent_res": best_parent_res
                     })
 
             for c_info in tier2_candidates:
-                eval_res = eval_candidate(c_info, tier=2)
+                parent_res = c_info.pop("best_parent_res")
+                eval_res = eval_candidate(c_info, tier=2, parent_res=parent_res)
                 if eval_res is not None:
                     cond_rows.append(eval_res)
 

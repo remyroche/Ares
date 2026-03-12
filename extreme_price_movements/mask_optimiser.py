@@ -4033,17 +4033,15 @@ def _run_mode_search(
 
         cond_features = []
         if res is not None:
-            ranked_features = res["ranked_features"]
-            # Keep top max single features, e.g. 4
-            max_vars = int(cfg.get("phase3_max_single_features", 4))
-            top_vars = ranked_features.head(max_vars)
-            for _, v_row in top_vars.iterrows():
-                f_name = v_row["feature"]
+            seeds = res.get("phase3_conditioner_seeds", [])
+            # We already have seeds outputted from the updated function
+            for seed in seeds:
                 cond_features.append({
-                    "feature": f_name,
-                    "coef": v_row["coef"],
-                    "abs_signed_importance": v_row["abs_signed_importance"],
-                    "type": feature_types.get(f_name, "continuous")
+                    "feature": seed.feature,
+                    "coef": seed.coefficient,
+                    "abs_signed_importance": seed.abs_signed_importance,
+                    "type": seed.feature_type,
+                    "thresholds": seed.thresholds
                 })
 
         dynamic_conditioners[base_name] = cond_features

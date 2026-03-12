@@ -1176,7 +1176,7 @@ def _lgbm_subset_auc_and_lift(
     tr_idx: np.ndarray,
     va_idx: np.ndarray,
 ) -> Tuple[float, float]:
-    if tr_idx.shape[0] < 3000 or va_idx.shape[0] < 40:
+    if tr_idx.shape[0] < 40 or va_idx.shape[0] < 40:
         return float("nan"), float("nan")
 
     y_tr = y[tr_idx]
@@ -1247,7 +1247,7 @@ def _lgbm_subset_cv_metrics(
         "lift_folds": np.asarray([], dtype=np.float32),
     }
     idx = _cap_index_count(idx_subset, max_subset)
-    if idx.shape[0] < 3000:
+    if idx.shape[0] < 40:
         return out
 
     folds_local = _build_temporal_folds(
@@ -1561,26 +1561,16 @@ def quick_ridge_auc(
     if len(np.unique(y_event)) < 2:
         return 0.5
 
-    # Filter features to just those in TEST_FEATURE_KEYS if they exist
-    valid_cols = [c for c in TEST_FEATURE_KEYS if c in features_df.columns]
-    if len(valid_cols) == 0:
-        valid_cols = features_df.columns
-    X_event = features_df[valid_cols][event_mask].copy()
-    # Replace inf and impute nan
-    X_event = X_event.replace([np.inf, -np.inf], np.nan)
-    X_event = X_event.fillna(X_event.median())
-    X_event = X_event.fillna(0.0) # Fallback
-
-    # Scale features
-    from sklearn.preprocessing import StandardScaler
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_event)
-
+    # We extract unscaled data first to avoid temporal leakage
+    X_event_raw = features_df[event_mask].copy().replace([np.inf, -np.inf], np.nan)
     # Mapping global indices to event indices
     global_to_local = np.full(len(event_mask), -1, dtype=np.int32)
     global_to_local[event_mask] = np.arange(np.sum(event_mask))
 
     oof_preds = np.full(len(y_event), np.nan, dtype=np.float32)
+
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.linear_model import RidgeClassifier
 
     for tr, va in folds:
         # Get event-only indices
@@ -1593,9 +1583,19 @@ def quick_ridge_auc(
         if len(tr_local) < 5 or len(va_local) < 2:
             continue
 
-        X_tr = X_scaled[tr_local]
+        # Impute and scale *inside* the fold using only training data
+        X_tr_df = X_event_raw.iloc[tr_local].copy()
+        X_va_df = X_event_raw.iloc[va_local].copy()
+
+        tr_median = X_tr_df.median()
+        X_tr_df = X_tr_df.fillna(tr_median).fillna(0.0)
+        X_va_df = X_va_df.fillna(tr_median).fillna(0.0)
+
+        scaler = StandardScaler()
+        X_tr = scaler.fit_transform(X_tr_df)
+        X_va = scaler.transform(X_va_df)
+
         y_tr = y_event[tr_local]
-        X_va = X_scaled[va_local]
 
         if len(np.unique(y_tr)) < 2:
             # Can't fit on single class
@@ -1603,7 +1603,6 @@ def quick_ridge_auc(
             oof_preds[va_local] = np.mean(y_tr)
             continue
 
-        from sklearn.linear_model import RidgeClassifier
         clf = RidgeClassifier(alpha=1.0)
         clf.fit(X_tr, y_tr)
 
@@ -2213,8 +2212,20 @@ def _rolling_robust_z_1d(x: np.ndarray, window: int) -> np.ndarray:
         if len(valid) > 0:
             med = np.median(valid)
             mad = np.median(np.abs(valid - med))
-            eps = 1e-6
-            out[i] = (x[i] - med) / (1.4826 * mad + eps)
+
+            if mad < 1e-12:
+                # Fallback to standard deviation if MAD is extremely small (constant area)
+                if len(valid) > 1:
+                    std = np.std(valid)
+                    denom = std if std > 1e-12 else 1e-6
+                else:
+                    denom = 1e-6
+            else:
+                denom = 1.4826 * mad + 1e-6
+
+            z = (x[i] - med) / denom
+            # Clamp to prevent explosion
+            out[i] = max(min(z, 10.0), -10.0)
     return out
 
 def compute_robust_z_for_groups(x: np.ndarray, asset_groups: Dict[int, np.ndarray], window: int) -> np.ndarray:
@@ -2537,12 +2548,13 @@ def _generate_event_masks_fast(
 
     if candidate["family"] in ("volatility_expansion", "compression_transition", "volume"):
         # These are magnitude / expansion indicators. They don't have inherent up/down logic themselves.
-        # But we must populate both mask_h and mask_l, because the caller filters by `_get_side_mask(mode, mask_h, mask_l)`.
-        # So an expansion trigger > 1.8 applies to BOTH up and down modes!
+        # We route them to mask_h or mask_l based on the concurrent price action direction.
         if direction == "gt":
             trigger = valid_mask & (feature_vals >= threshold)
-            mask_h = trigger
-            mask_l = trigger
+            up_move = zc.get("up", np.zeros_like(feature_vals))
+            dn_move = zc.get("dn", np.zeros_like(feature_vals))
+            mask_h = trigger & (up_move >= dn_move)
+            mask_l = trigger & (dn_move >= up_move)
 
     elif candidate["family"] == "structure":
         # breakout_distance_up_atr > 1.4 -> price went UP -> mask_h
@@ -2744,14 +2756,6 @@ def _build_shared_cache(
     # learnability features
     learn_X = _extract_learnability_features(feature_dict, n)
 
-    # test features
-    test_keys = [k for k in TEST_FEATURE_KEYS if k in feature_dict]
-    test_X = np.full((n, len(test_keys)), np.nan, dtype=np.float32)
-    for i, k in enumerate(test_keys):
-        arr = np.asarray(feature_dict[k], dtype=np.float32).copy()
-        arr[np.isinf(arr)] = np.nan
-        test_X[:, i] = arr
-
     # full folds
     folds = _build_temporal_folds(timestamps, n, n_splits=2)
 
@@ -2777,7 +2781,6 @@ def _build_shared_cache(
         "mfe_atr": mfe_atr,
         "mae_atr": mae_atr,
         "learn_X": learn_X,
-        "test_X": test_X,
         "day_ids": day_ids,
         "n_days": n_days,
         "timestamp_ids": timestamp_ids,
@@ -2801,34 +2804,18 @@ def _build_shared_cache(
 def _phase1_subsample_indices(
     shared: Dict[str, Any], cfg: Dict[str, Any], seed: int = 42
 ) -> np.ndarray:
-    symbol_uniques = shared["symbol_uniques"]
     symbol_codes = shared["symbol_codes"]
-    day_ids = shared["day_ids"]
     n_total = symbol_codes.shape[0]
 
-    min_phase1_rows = int(cfg.get("phase1_min_subsample_rows", 20_000))
+    max_phase1_rows = int(cfg.get("phase1_max_subsample_rows", 20_000))
 
-    symbol_frac = float(cfg.get("stage1_symbol_fraction", 0.35))
-    history_frac = float(cfg.get("stage1_history_fraction", 0.35))
-
-    # Scale fractions up if the combined subsample would be too small.
-    expected_rows = n_total * symbol_frac * history_frac
-    if expected_rows < min_phase1_rows and n_total > 0:
-        scale = min(min_phase1_rows / max(expected_rows, 1.0), 1.0 / (symbol_frac * history_frac))
-        symbol_frac = min(1.0, symbol_frac * scale)
-        history_frac = min(1.0, history_frac * scale)
-
-    selected_symbols = _rng_sample_fraction(
-        list(range(symbol_uniques.shape[0])), frac=symbol_frac, seed=seed
-    )
-    symbol_mask = np.isin(symbol_codes, np.asarray(selected_symbols, dtype=np.int32))
-
-    history_mask = _sample_history_fraction_mask(day_ids, frac=history_frac, seed=seed)
-    result = symbol_mask & history_mask
-
-    # Final safety net: if still too small, use all rows.
-    if int(np.sum(result)) < min(min_phase1_rows, n_total):
+    if n_total <= max_phase1_rows:
         return np.ones(n_total, dtype=bool)
+
+    rng = np.random.RandomState(seed)
+    indices = rng.choice(n_total, size=max_phase1_rows, replace=False)
+    result = np.zeros(n_total, dtype=bool)
+    result[indices] = True
     return result
 
 
@@ -2858,8 +2845,6 @@ def _build_phase_local_shared(
             symbol_codes_local, shared["symbol_uniques"].shape[0]
         ),
     }
-    if "test_X" in shared:
-        phase_local["test_X"] = shared["test_X"][subset_mask]
     phase_local["n_days"] = (
         int(np.max(phase_local["day_ids"]) + 1)
         if phase_local["day_ids"].shape[0] > 0
@@ -3258,10 +3243,7 @@ def _compute_phase4_tbm_lgbm_metrics(
     if not per_geometry_metrics:
         return out
 
-    if "test_X" in shared:
-        X = np.asarray(shared["test_X"], dtype=np.float32)
-    else:
-        X = np.asarray(shared["learn_X"], dtype=np.float32)
+    X = np.asarray(shared["learn_X"], dtype=np.float32)
     close = np.asarray(shared["close"], dtype=np.float32)
     high = np.asarray(shared["high"], dtype=np.float32)
     low = np.asarray(shared["low"], dtype=np.float32)
@@ -3980,17 +3962,15 @@ def _run_mode_search(
         return {"status": "failed", "reason": f"no_phase1_candidates_{mode}"}
 
     df1 = pd.DataFrame(phase1_rows)
+    disp_edge_z = _zscore_np(df1["dispersion_to_edge_ratio"].values.astype(np.float32))
+    disp_edge_z[np.isnan(disp_edge_z)] = 3.0  # Assign heavy penalty to missing/infinite dispersion
+
     df1["phase1_proxy_score"] = (
         0.20 * _zscore_np(df1["active_days_fraction"].values)
         + 0.15 * _zscore_np(df1["regime_distinctness_score"].values)
         + 0.15 * _zscore_np(np.log1p(df1["total_events"].values.astype(np.float32)))
         + 0.30 * _zscore_np(df1["basic_directionality_edge_event_vs_non_event"].values)
-        - 0.30
-        * _zscore_np(
-            np.nan_to_num(
-                df1["dispersion_to_edge_ratio"].values.astype(np.float32), nan=1e6
-            )
-        )
+        - 0.30 * disp_edge_z
         - 0.15 * _zscore_np(df1["fold_continuation_rate_std"].values)
         - 0.10 * _zscore_np(df1["fold_event_count_std"].values)
     )
@@ -4278,7 +4258,7 @@ def _run_mode_search(
             np.maximum(
                 np.nan_to_num(
                     df2["dispersion_to_edge_ratio"].astype(np.float32).values,
-                    nan=1e6,
+                    nan=100.0,
                 ),
                 0.0,
             )
@@ -4354,9 +4334,6 @@ def _run_mode_search(
     regime_features_df = build_regime_features(full_df)
 
     # Identify which features are binary vs continuous
-    # RIDGE_FEATURE_COLS comes from ridge_regime_event_assessment
-    from extreme_price_movements.ridge_regime_event_assessment import RIDGE_FEATURE_COLS, build_regime_features, fit_ridge_regime_scan
-
     feature_types = {}
     for c in RIDGE_FEATURE_COLS:
         if c in regime_features_df.columns:
@@ -5212,7 +5189,7 @@ def _run_mode_search(
                 np.maximum(
                     np.nan_to_num(
                         df_short["dispersion_to_edge_ratio"].astype(np.float32).values,
-                        nan=1e6,
+                        nan=100.0,
                     ),
                     0.0,
                 )

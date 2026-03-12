@@ -10941,13 +10941,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         )
                         alpha_diag.update(oof_metrics)
 
-                    # Economic gate logging (we no longer filter out models)
+                    # Economic gate: positive realized expectancy on top-k OOF selection
                     _econ_ok = True
                     _econ_mean = float("nan")
                     _econ_top_frac = float(
                         cfg.get("base_oof_expectancy_top_frac", 0.30)
                     )
-                    if race.oof_probs is not None:
+                    if race.oof_probs is not None and bool(
+                        cfg.get("base_require_positive_oof_expectancy", True)
+                    ):
                         _k_top = max(
                             1, int(np.ceil(_econ_top_frac * len(race.oof_probs)))
                         )
@@ -10957,12 +10959,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         )
                         _econ_ok = bool(_econ_mean > 0.0)
                         tprint(
-                            f"  Base economic top{int(_econ_top_frac*100)} mean_ret={_econ_mean:.6f}"
+                            f"  Base economic gate ({side}/{k}/H={H}): top{int(_econ_top_frac*100)} mean_ret={_econ_mean:.6f} pass={_econ_ok}"
                         )
 
-                    # Always update best_ic and best_m based on score, don't filter
-                    if score > best_ic:
-                        best_ic = score
+                    _score_for_select = score if _econ_ok else -1e12
+                    if _score_for_select > best_ic:
+                        best_ic = _score_for_select
                         best_m = {
                             "model": race,
                             "H": H,

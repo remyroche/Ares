@@ -76,6 +76,76 @@ def test_build_temporal_folds_fallback():
         val_covered.update(va.tolist())
     assert len(val_covered) >= 5 # covers a good chunk
 
+def test_phase1_subsample_equivalence():
+    from extreme_price_movements.mask_optimiser import _generate_event_masks_fast
+
+    asset_ids = np.zeros(100, dtype=np.int32)
+    asset_ids[50:] = 1
+    asset_groups = {
+        0: np.where(asset_ids == 0)[0].astype(np.int32),
+        1: np.where(asset_ids == 1)[0].astype(np.int32),
+    }
+
+    # Setup dummy features and z-cache
+    feature_vals = np.random.rand(100)
+    zc_full = {
+        "dummy_feat": feature_vals,
+        "up": np.random.rand(100),
+        "dn": np.random.rand(100)
+    }
+
+    candidate = {
+        "feature_base": "dummy_feat",
+        "family": "momentum",
+        "direction": "gt",
+        "threshold": 0.5
+    }
+
+    # Phase 1 mask: only take 1 asset
+    phase1_mask = asset_ids == 0
+
+    # Generate full then slice
+    m_h_f, m_l_f = _generate_event_masks_fast(
+        candidate=candidate,
+        zc=zc_full,
+        asset_groups=asset_groups
+    )
+    m_h_sub = m_h_f[phase1_mask]
+
+    assert m_h_sub.shape[0] == 50
+    assert np.all(m_h_sub == m_h_f[:50])
+
+    shared = {
+        "high": np.ones(100, dtype=np.float32),
+        "low": np.ones(100, dtype=np.float32),
+        "close": np.ones(100, dtype=np.float32),
+        "ret_1": np.zeros(100, dtype=np.float32),
+        "vol_g": np.ones(100, dtype=np.float32),
+        "timestamps": np.arange(100),
+        "forward_returns": np.zeros(100, dtype=np.float32),
+        "mae_high": np.ones(100, dtype=np.float32),
+        "mfe_high": np.ones(100, dtype=np.float32),
+        "mae_low": np.ones(100, dtype=np.float32),
+        "mfe_low": np.ones(100, dtype=np.float32),
+        "learn_X": np.zeros((100, 2), dtype=np.float32),
+        "day_ids": np.arange(100, dtype=np.int32),
+        "symbol_codes": asset_ids,
+        "symbol_uniques": np.array(["A", "B"]),
+    }
+    phase1_shared = _build_phase_local_shared(shared, phase1_mask)
+
+    zc_local = {
+        "dummy_feat": zc_full["dummy_feat"][phase1_mask],
+        "up": zc_full["up"][phase1_mask],
+        "dn": zc_full["dn"][phase1_mask]
+    }
+
+    m_h_local, _ = _generate_event_masks_fast(
+        candidate=candidate,
+        zc=zc_local,
+        asset_groups=phase1_shared["asset_groups"]
+    )
+    assert np.array_equal(m_h_local, m_h_sub)
 
 def test_invalid_forward_row_exclusion():
     from extreme_price_movements.mask_optimiser import _compute_regime_distinctness_single_side

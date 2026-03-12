@@ -4034,18 +4034,6 @@ def _run_mode_search(
         key = name
 
         if key not in geom_cache_phase2:
-            if z not in global_z_cache:
-                tprint(f"Precomputing global rolling tensors for z={z} bars...")
-                global_z_cache[z] = _compute_z_cache(
-                    high=shared["high"],
-                    low=shared["low"],
-                    close=shared["close"],
-                    ret_1=shared["ret_1"],
-                    vol_g=shared["vol_g"],
-                    asset_groups=shared["asset_groups"],
-                    z=z,
-                    bph=bph,
-                )
             zc = global_z_cache[z]
             m_high, m_low = _generate_event_masks_fast(
                 family=fam,
@@ -4063,7 +4051,7 @@ def _run_mode_search(
                 geom_cache_phase2[key] = {"rejected": True}
                 continue
 
-            active_days_frac = active_days_fraction_safe(side_mask, day_ids, n_days)
+            active_days_frac = active_days_fraction_nb(side_mask, day_ids, n_days)
             if active_days_frac < float(
                 cfg.get("phase2_min_active_days_fraction", 0.80)
             ):
@@ -4089,7 +4077,7 @@ def _run_mode_search(
                 mfe_low=shared["mfe_low"],
             )
 
-            ev_day_mean, ev_day_std = daily_event_stats_safe(side_mask, day_ids, n_days)
+            ev_day_mean, ev_day_std = daily_event_stats_nb(side_mask, day_ids, n_days)
             ev_day_per_asset = float(total_events) / float(
                 max(1, n_days * phase2_n_assets)
             )
@@ -4099,7 +4087,7 @@ def _run_mode_search(
             )
 
             fold_rates = [
-                fold_base_rate_safe(side_mask, global_target, va) for _, va in folds
+                fold_base_rate_nb(side_mask, global_target, va) for _, va in folds
             ]
             fold_event_counts = [float(np.sum(side_mask[va])) for _, va in folds]
             fold_rate_std = (
@@ -4188,10 +4176,9 @@ def _run_mode_search(
     df2["selected_delta_metric"] = df2["selected_delta_metric"].astype(str)
     primary_col = _mode_primary_predictability_col(mode)
     df2["bucket_primary_predictability_gain"] = df2[primary_col].astype(np.float32)
-    df2["predictability_gain"] = [
-        _mode_predictability_gain_from_metrics(mode, row.to_dict())
-        for _, row in df2.iterrows()
-    ]
+    df2["predictability_gain"] = df2[
+        [primary_col, "MAE_predictability_gain", "MFE_predictability_gain"]
+    ].max(axis=1).astype(np.float32)
     df2["delta_r_raw"] = df2["return_uplift"].astype(np.float32)
     df2["delta_r_fallback"] = (
         0.5 * df2["incremental_information_delta_auc"].astype(np.float32)

@@ -2282,8 +2282,8 @@ def _compute_z_cache(
         ast_ret = ret_1[idxs]
         ast_vol = vol_g[idxs]
 
-        hv, hi = rolling_max_index_safe(ast_high, z)
-        lv, li = rolling_min_index_safe(ast_low, z)
+        hv, hi = rolling_max_index_nb(ast_high, z)
+        lv, li = rolling_min_index_nb(ast_low, z)
         st_idx = np.maximum(0, np.arange(ast_close.shape[0], dtype=np.int32) - z + 1)
         st_px = ast_close[st_idx]
 
@@ -2291,15 +2291,15 @@ def _compute_z_cache(
         dm = np.where(st_px > 1e-9, (st_px - lv) / st_px, 0.0).astype(np.float32)
         rm = np.where(st_px > 1e-9, (hv - lv) / st_px, 0.0).astype(np.float32)
 
-        b_u, b_d, s_u, s_d, m_u, m_d, v_e = compute_impulse_coherence_safe(
+        b_u, b_d, s_u, s_d, m_u, m_d, v_e = compute_impulse_coherence_nb(
             ast_ret, ast_vol, hv, lv, st_px, hi, li, st_idx, z
         )
 
         cache["up"][idxs] = um
         cache["dn"][idxs] = dm
         cache["rng"][idxs] = rm
-        cache["std_up"][idxs] = rolling_std_safe(um, 30 * 24 * bph).astype(np.float32)
-        cache["std_dn"][idxs] = rolling_std_safe(dm, 30 * 24 * bph).astype(np.float32)
+        cache["std_up"][idxs] = rolling_std_nb(um, 30 * 24 * bph).astype(np.float32)
+        cache["std_dn"][idxs] = rolling_std_nb(dm, 30 * 24 * bph).astype(np.float32)
         cache["b_up"][idxs] = b_u
         cache["b_dn"][idxs] = b_d
         cache["s_up"][idxs] = s_u
@@ -2320,7 +2320,7 @@ def _compute_z_cache(
         ast_intrabar_range_atr = np.where(ast_vol > 1e-6, (ast_high - ast_low) / (ast_close * ast_vol), 0.0)
         cache["intrabar_range_atr"][idxs] = _rolling_robust_z_1d(ast_intrabar_range_atr, window_14d)
 
-        ast_bollinger_width = rolling_std_safe(ast_close, 20) / np.maximum(ast_close, 1e-6)
+        ast_bollinger_width = rolling_std_nb(ast_close, 20) / np.maximum(ast_close, 1e-6)
         ast_range_spike = ast_intrabar_range_atr
         # For simplicity, compression_expansion_transition is just range_spike / (bollinger_width + eps)
         ast_comp_exp = ast_range_spike / np.maximum(ast_bollinger_width, 1e-6)
@@ -2335,11 +2335,11 @@ def _compute_z_cache(
 
         # 3. Breakout / Structure
         # distance from trailing max high
-        ast_trailing_high, _ = rolling_max_index_safe(ast_high, z)
+        ast_trailing_high, _ = rolling_max_index_nb(ast_high, z)
         ast_breakout_up = (ast_close - np.roll(ast_trailing_high, 1)) / np.maximum(ast_close * ast_vol, 1e-6)
         cache["breakout_distance_up_atr"][idxs] = _rolling_robust_z_1d(ast_breakout_up, window_14d)
 
-        ast_trailing_low, _ = rolling_min_index_safe(ast_low, z)
+        ast_trailing_low, _ = rolling_min_index_nb(ast_low, z)
         ast_breakout_dn = (np.roll(ast_trailing_low, 1) - ast_close) / np.maximum(ast_close * ast_vol, 1e-6)
         cache["breakout_distance_down_atr"][idxs] = _rolling_robust_z_1d(ast_breakout_dn, window_14d)
 
@@ -2699,7 +2699,7 @@ def _build_shared_cache(
             prev = np.where(c[:-1] > 1e-9, c[:-1], 1.0)
             r[1:] = ((c[1:] - c[:-1]) / prev).astype(np.float32)
         ret_1[idxs] = r
-        vol_g[idxs] = rolling_std_safe(r, 30 * 24 * bph).astype(np.float32)
+        vol_g[idxs] = rolling_std_nb(r, 30 * 24 * bph).astype(np.float32)
 
         sign = np.sign(r).astype(np.float32)
         prev_sign = np.zeros_like(sign)
@@ -3851,12 +3851,12 @@ def _run_mode_search(
                 "m_dn": zc_full["m_dn"][phase1_mask],
             }
 
-            total_events = simple_mask_count_safe(side_mask)
+            total_events = simple_mask_count_nb(side_mask)
             if total_events < phase1_min_total_events:
                 geom_cache_phase1[key] = {"rejected": True}
                 continue
 
-            active_days_frac = active_days_fraction_safe(
+            active_days_frac = active_days_fraction_nb(
                 side_mask, phase1_shared["day_ids"], phase1_shared["n_days"]
             )
             if active_days_frac < float(
@@ -3884,7 +3884,7 @@ def _run_mode_search(
                 mfe_low=phase1_shared["mfe_low"],
             )
 
-            ev_day_mean, ev_day_std = daily_event_stats_safe(
+            ev_day_mean, ev_day_std = daily_event_stats_nb(
                 side_mask, phase1_shared["day_ids"], phase1_shared["n_days"]
             )
             ev_day_per_asset = float(total_events) / float(
@@ -3898,7 +3898,7 @@ def _run_mode_search(
                     continue
                 fold_event_counts.append(float(np.sum(side_mask[val_idx_local])))
                 fold_rates.append(
-                    fold_base_rate_safe(side_mask, phase1_global_target, val_idx_local)
+                    fold_base_rate_nb(side_mask, phase1_global_target, val_idx_local)
                 )
             fold_rate_std = (
                 float(np.std(np.asarray(fold_rates, dtype=np.float32)))
@@ -4063,7 +4063,7 @@ def _run_mode_search(
                 geom_cache_phase2[key] = {"rejected": True}
                 continue
 
-            active_days_frac = active_days_fraction_safe(side_mask, day_ids, n_days)
+            active_days_frac = active_days_fraction_nb(side_mask, day_ids, n_days)
             if active_days_frac < float(
                 cfg.get("phase2_min_active_days_fraction", 0.80)
             ):
@@ -4089,7 +4089,7 @@ def _run_mode_search(
                 mfe_low=shared["mfe_low"],
             )
 
-            ev_day_mean, ev_day_std = daily_event_stats_safe(side_mask, day_ids, n_days)
+            ev_day_mean, ev_day_std = daily_event_stats_nb(side_mask, day_ids, n_days)
             ev_day_per_asset = float(total_events) / float(
                 max(1, n_days * phase2_n_assets)
             )
@@ -4099,7 +4099,7 @@ def _run_mode_search(
             )
 
             fold_rates = [
-                fold_base_rate_safe(side_mask, global_target, va) for _, va in folds
+                fold_base_rate_nb(side_mask, global_target, va) for _, va in folds
             ]
             fold_event_counts = [float(np.sum(side_mask[va])) for _, va in folds]
             fold_rate_std = (

@@ -3694,8 +3694,8 @@ def _final_topk_diagnostics(
     min_asset_events = int(cfg.get("diag_min_asset_events", 30))
     min_regime_events = int(cfg.get("diag_min_regime_events", 50))
 
-    for _, row in contenders.iterrows():
-        name = row["name"]
+    for row in contenders.itertuples():
+        name = row.name
         masks = candidate_masks[name]
         side_mask = _get_side_mask(mode, masks["m_high"], masks["m_low"])
 
@@ -3770,7 +3770,7 @@ def _final_topk_diagnostics(
             {
                 "mode": mode,
                 "contender_name": name,
-                "final_shortlist_score": float(row.get("shortlist_score", 0.0)),
+                "final_shortlist_score": float(getattr(row, "shortlist_score", 0.0)),
                 "n_assets_evaluated": n_assets_eval,
                 "median_asset_predictability": median_asset_pred,
                 "mean_asset_predictability": mean_asset_pred,
@@ -4089,8 +4089,8 @@ def _run_mode_search(
     phase2_accepted = 0
     phase2_rejected = 0
 
-    for _, row in df1.iterrows():
-        name = row["name"]
+    for row in df1.itertuples():
+        name = row.name
         reg = candidate_registry[name]
         fam = reg["family"]
         z_hr = int(reg["lookback_h"])
@@ -4778,8 +4778,8 @@ def _run_mode_search(
     df_short["tier"] = 0
     df_short["conditioner_mode"] = "none"
 
-    for _, row in df_short.iterrows():
-        _get_candidate_masks(str(row["name"]))
+    for row in df_short.itertuples():
+        _get_candidate_masks(str(row.name))
 
     keep_z_values = {
         int(int(candidate_registry[str(name)]["z_hours"]) * bph)
@@ -4796,8 +4796,8 @@ def _run_mode_search(
         max_singles = int(cfg.get("phase3_max_single_candidates_per_base", 4))
         max_pairs = int(cfg.get("phase3_max_pair_candidates", 10))
 
-        for _, row in df_short.iterrows():
-            cand_name = str(row["name"])
+        for row in df_short.itertuples():
+            cand_name = str(row.name)
             reg = candidate_registry[cand_name]
             z = int(int(reg["z_hours"]) * bph)
             zc = global_z_cache[z]
@@ -4994,7 +4994,9 @@ def _run_mode_search(
                         return None
 
                 # Build row
-                new_row = row.copy()
+                # Since row is a namedtuple, we convert it to a dict for modification
+                new_row = row._asdict()
+                new_row.pop("Index", None) # Remove Index
                 new_row["name"] = c_info["name"]
                 new_row["conditioner_mode"] = c_info["desc"]
                 new_row["tier"] = tier
@@ -5111,8 +5113,8 @@ def _run_mode_search(
         cond_tbm_pos: List[np.float32] = []
         cond_tbm_stability: List[np.float32] = []
         cond_tbm_geom_name: List[str] = []
-        for _, row in df_short.iterrows():
-            name = str(row["name"])
+        for row in df_short.itertuples():
+            name = str(row.name)
             masks = candidate_masks[name]
             side_mask = masks.get("side_mask")
             if side_mask is None:
@@ -5325,8 +5327,8 @@ def _run_mode_search(
         phase4_two_regime_penalty = float(cfg.get("phase4_two_regime_penalty", 0.85))
 
         penalties = []
-        for _, row in df_short.iterrows():
-            tier = row.get("tier", 0)
+        for row in df_short.itertuples():
+            tier = getattr(row, "tier", 0)
             if tier == 1:
                 penalties.append(phase4_single_regime_penalty)
             elif tier == 2:
@@ -5345,31 +5347,32 @@ def _run_mode_search(
         tolerance = float(cfg.get("phase4_dominance_tolerance", 0.90))
 
         # We process each candidate and see if a simpler candidate strictly dominates it
-        for idx, row in df_short.iterrows():
-            tier = row.get("tier", 0)
+        for row in df_short.itertuples():
+            idx = row.Index
+            tier = getattr(row, "tier", 0)
             if tier == 0:
                 keep_idx.append(idx)
                 continue
 
-            base_name = str(row["name"]).split("_" + row["conditioner_mode"].replace(" ", "").replace(">", "gt").replace("<", "lt"))[0]
-            if "AND" in str(row["name"]):
-                base_name = str(row["name"]).split("_AND_")[0].rsplit("_", 1)[0]
+            base_name = str(row.name).split("_" + getattr(row, "conditioner_mode", "").replace(" ", "").replace(">", "gt").replace("<", "lt"))[0]
+            if "AND" in str(row.name):
+                base_name = str(row.name).split("_AND_")[0].rsplit("_", 1)[0]
 
             dominated = False
             # Compare against all simpler candidates of the same base
             simpler_cands = df_short[(df_short["tier"] < tier)]
 
-            for _, s_row in simpler_cands.iterrows():
+            for s_row in simpler_cands.itertuples():
                 # Rough check if they share the same base name (ignoring conditioner suffixes)
-                if not str(s_row["name"]).startswith(base_name):
+                if not str(s_row.name).startswith(base_name):
                     continue
 
                 # A dominates B if:
                 if (
-                    _metric_or_nan(s_row.get("score_ml_trading")) >= _metric_or_nan(row.get("score_ml_trading")) and
-                    _metric_or_nan(s_row.get("economic_gain_r")) >= _metric_or_nan(row.get("economic_gain_r")) and
-                    _metric_or_nan(s_row.get("S_r")) >= _metric_or_nan(row.get("S_r")) and
-                    _metric_or_nan(s_row.get("total_events")) >= _metric_or_nan(row.get("total_events")) * tolerance
+                    _metric_or_nan(getattr(s_row, "score_ml_trading", np.nan)) >= _metric_or_nan(getattr(row, "score_ml_trading", np.nan)) and
+                    _metric_or_nan(getattr(s_row, "economic_gain_r", np.nan)) >= _metric_or_nan(getattr(row, "economic_gain_r", np.nan)) and
+                    _metric_or_nan(getattr(s_row, "S_r", np.nan)) >= _metric_or_nan(getattr(row, "S_r", np.nan)) and
+                    _metric_or_nan(getattr(s_row, "total_events", np.nan)) >= _metric_or_nan(getattr(row, "total_events", np.nan)) * tolerance
                 ):
                     dominated = True
                     break
@@ -5409,11 +5412,12 @@ def _run_mode_search(
     selected_idx = []
     selected_masks = []
 
-    for idx, row in df_short.iterrows():
+    for row in df_short.itertuples():
+        idx = row.Index
         if len(selected_idx) >= final_diag_k:
             break
 
-        m_info = candidate_masks.get(str(row["name"]), {})
+        m_info = candidate_masks.get(str(row.name), {})
         if not m_info:
             continue
 
@@ -5949,8 +5953,7 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
                 
                 # Add top 3 regime features for each winner
                 winners_detailed = []
-                for _, row in winners_df.iterrows():
-                    w_dict = row.to_dict()
+                for w_dict in winners_df.to_dict('records'):
                     c_name = str(w_dict.get("name"))
                     c_mode = str(w_dict.get("mode"))
                     
@@ -5966,9 +5969,9 @@ def run_mask_optimization_4modes(args: argparse.Namespace) -> None:
                         top_regimes = c_impact.sort_values("abs_coef", ascending=False).head(3)
                         
                         regime_list = []
-                        for _, r_row in top_regimes.iterrows():
-                            sign = "+" if r_row["coef"] > 0 else "-"
-                            regime_list.append(f"{r_row['feature']}({sign})")
+                        for r_dict in top_regimes.to_dict('records'):
+                            sign = "+" if r_dict["coef"] > 0 else "-"
+                            regime_list.append(f"{r_dict['feature']}({sign})")
                         
                         w_dict["top_regime_drivers"] = ", ".join(regime_list)
                     else:

@@ -17,14 +17,14 @@ def test_invalid_forward_returns():
     forward_returns = np.array([0.05, -0.05, np.nan, np.inf])
 
     # primary target
-    target_up_tf = _mode_primary_target("price_up_tf", forward_returns, 0.0)
+    target_up_tf = _mode_primary_target("long", forward_returns, 0.0)
     assert np.isnan(target_up_tf[2]) and np.isnan(target_up_tf[3])
 
-    target_up_mr = _mode_primary_target("price_up_mr", forward_returns, 0.0)
+    target_up_mr = _mode_primary_target("short", forward_returns, 0.0)
     assert np.isnan(target_up_mr[2]) and np.isnan(target_up_mr[3])
 
     # signed return
-    signed_ret = _signed_mode_return("price_up_tf", forward_returns)
+    signed_ret = _signed_mode_return("long", forward_returns)
     assert np.isnan(signed_ret[2]) and np.isnan(signed_ret[3])
 
 def test_fold_base_rate_nb():
@@ -149,7 +149,7 @@ def test_phase1_subsample_equivalence():
 
 def test_invalid_forward_row_exclusion():
     from extreme_price_movements.mask_optimiser import _compute_regime_distinctness_single_side
-    mode = "price_up_tf"
+    mode = "long"
     forward_returns = np.array([0.05, -0.05, np.nan, 0.10, np.nan, 0.0])
     side_mask = np.array([True, False, True, True, False, False])
 

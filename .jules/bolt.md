@@ -19,3 +19,7 @@ Action: Replaced the iterative loop with a fully vectorized approach using `np.s
 ## 2026-03-04 - Parallelizing Numba Rolling Functions (Mean, Std)
 Learning: Even when using a fast 1D Numba JIT compiled function via `apply_to_matrix(df, func)`, looping sequentially over each column sequentially in Python adds considerable overhead for large DataFrames.
 Action: Rewrote core rolling window functions (`_numba_rolling_std_nan_safe` and `_numba_rolling_mean_nan_safe`) as 2D functions running natively across all columns simultaneously using Numba's `@jit(parallel=True)` and `prange`. Updating `apply_to_frame` to intercept and delegate to this new parallel approach provided a transparent optimization with massive speedup for feature generation pipelines without altering any logic in features.py.
+
+## 2026-03-04 - Iterating DataFrames safely using itertuples
+Learning: Pandas `.iterrows()` is known to be significantly slower than `.itertuples()` for iterating over DataFrame rows, due to the overhead of boxing rows into Series objects on every iteration.
+Action: Replaced `.iterrows()` with `.itertuples()` in `extreme_price_movements/inference/run_inference.py` during OCO policy evaluation, which speeds up sequential traversal of bar data. Note that attributes are accessed via `row.column_name` instead of `row["column_name"]`.

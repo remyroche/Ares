@@ -1,0 +1,10 @@
+--- extreme_price_movements/inference/run_inference.py
++++ extreme_price_movements/inference/run_inference.py
+@@ -753,7 +753,6 @@
+         last_bar_ts = bars.index[-1]
+
+         for row in bars.itertuples():
+-            bar_open = float(row.open)
+             bar_high = float(row.high)
+             bar_low = float(row.low)
+             bar_close = float(row.close)

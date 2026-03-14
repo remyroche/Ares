@@ -752,11 +752,10 @@ def _evaluate_oco_policy(symbol: str, position_state: Dict[str, Any], ohlcv_5m: 
         mfe_threshold = float(params.get("mfe_early_exit_threshold", 0.02))
         last_bar_ts = bars.index[-1]
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        for row in bars.itertuples():
+            bar_high = float(row.high)
+            bar_low = float(row.low)
+            bar_close = float(row.close)
 
             if side == "long":
                 mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))

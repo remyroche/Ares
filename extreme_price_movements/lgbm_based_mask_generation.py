@@ -144,9 +144,10 @@ class FeatureProcessor:
         if active_groups is None:
             active_groups = ("trigger", "location", "regime")
 
-        cs_weight = float(cfg.get("regime_cs_weight", 0.5))
-
         def _add_continuous_features_as_booleans(sources, group_name):
+            # Fetch group-specific CS weight (e.g. "trigger_cs_weight", "location_cs_weight", "regime_cs_weight")
+            cs_weight = float(cfg.get(f"{group_name}_cs_weight", 0.5))
+
             for src in sources:
                 if src in feature_dict:
                     raw_arr = feature_dict[src]

@@ -435,6 +435,12 @@ class FeatureProcessor:
 # =============================================================================
 
 class InteractionModel:
+    """
+    LightGBM is trained without strict interaction constraints.
+    Structural validity of rule paths is enforced in:
+        RuleExtractor._is_path_valid()
+    using interaction_group metadata.
+    """
     def __init__(
         self, 
         metadata: List[FeatureMetadata], 
@@ -457,9 +463,9 @@ class InteractionModel:
 
         constraints = []
         
-        # Remove explicit interaction constraints to allow interactions across families
-        # and different groups according to the extractor rules.
-        return None
+        # Training is permissive; structural validity is enforced post-hoc
+        # in RuleExtractor._is_path_valid().
+        return []
 
     def _verify_constraints(self, constraints, trigger_idxs, location_idxs, regime_idxs):
         """
@@ -480,39 +486,33 @@ class InteractionModel:
         tprint(f"Constraints built: T-L={t_l}, T-R={t_r}, L-R={l_r}, Singletons={len(self.metadata)}")
 
     def get_constraint_summary(self) -> Dict[str, Any]:
-        """
-        Returns a dictionary summarizing the interaction constraints.
-        """
-        # Map actual group names in constraints
-        summary = collections.defaultdict(int)
-        for c in self.constraints:
-            if len(c) == 1:
-                continue
-            elif len(c) == 2:
-                g1 = self.metadata[c[0]].group
-                g2 = self.metadata[c[1]].group
-                pair = tuple(sorted([g1, g2]))
-                summary[f"{pair[0]}_{pair[1]}_pairs"] += 1
-            elif len(c) == 3:
-                g1 = self.metadata[c[0]].group
-                g2 = self.metadata[c[1]].group
-                g3 = self.metadata[c[2]].group
-                triplet = tuple(sorted([g1, g2, g3]))
-                summary[f"{triplet[0]}_{triplet[1]}_{triplet[2]}_triplets"] += 1
-            else:
-                groups_in_c = set(self.metadata[idx].group for idx in c)
-                groups_str = "_".join(sorted(groups_in_c))
-                summary[f"multi_group_{groups_str}"] += 1
-        
+        import collections
         result = {
-            'total_singletons': len(self.metadata),
-            'total_constraints': len(self.constraints)
+            "total_singletons": len(self.metadata),
+            "total_constraints": len(self.constraints) if self.constraints is not None else 0,
         }
-        # Add group counts
+
         groups = set(m.group for m in self.metadata)
         for g in groups:
             result[f"num_{g}"] = sum(1 for m in self.metadata if m.group == g)
-        
+
+        if not self.constraints:
+            return result
+
+        summary = collections.defaultdict(int)
+        for c in self.constraints:
+            if len(c) == 1:
+                summary["singleton"] += 1
+                m = self.metadata[c[0]]
+                summary[f"singleton_{m.group}"] += 1
+            else:
+                groups = set(self.metadata[i].group for i in c)
+                if groups == {"regime"}:
+                    summary["regime_cluster"] += 1
+                elif groups == {"location"}:
+                    summary["location_cluster"] += 1
+                else:
+                    summary["mixed_cluster"] += 1
         result.update(summary)
         return result
 
@@ -767,30 +767,28 @@ class RuleExtractor:
         if not conditions:
             return False, "empty_path"
 
-        interaction_groups = set()
+        seen_groups = {}
+        seen_features = {}
+
         for c in conditions:
             m = self.metadata_lookup.get(c.feature_index)
-            if not m:
+            if m is None:
                 continue
-            
-            # Check if there's already a different feature from the same interaction group
-            for existing_c in conditions:
-                if existing_c.feature_index == c.feature_index:
-                    continue
 
-                existing_m = self.metadata_lookup.get(existing_c.feature_index)
-                if existing_m and existing_m.interaction_group == m.interaction_group:
-                    return False, f"interaction_group_violation_{m.interaction_group}"
+            ig = m.interaction_group
 
-        
-        # Contradiction check (Normalized)
-        feat_map = {}
-        for c in conditions:
-            if c.feature_index in feat_map:
-                if feat_map[c.feature_index] != c.normalized_value:
-                    return False, f"contradiction_{c.feature_name}"
-            feat_map[c.feature_index] = c.normalized_value
-        
+            prev_feat = seen_groups.get(ig)
+            if prev_feat is not None and prev_feat != c.feature_index:
+                return False, f"interaction_group_violation_{ig}"
+
+            seen_groups[ig] = c.feature_index
+
+            prev_val = seen_features.get(c.feature_index)
+            if prev_val is not None and prev_val != c.normalized_value:
+                return False, f"contradiction_{c.feature_name}"
+
+            seen_features[c.feature_index] = c.normalized_value
+
         # Polarity Check: reject only all-negative paths
         # A path is all-negative if NO condition has normalized_value == 1
         if not any(c.normalized_value == 1 for c in conditions):
@@ -887,9 +885,12 @@ def extract_feature_names_from_key(canonical_key: str) -> List[str]:
     for part in iter_primitive_keys(canonical_key):
         for slot in part.split("|"):
             slot_value = slot.strip("()")
-            if slot_value == "*" or "==" not in slot_value:
+            if slot_value == "*":
                 continue
-            names.append(slot_value.split("==")[0])
+            for cond_str in slot_value.split("&"):
+                if "==" not in cond_str:
+                    continue
+                names.append(cond_str.split("==")[0])
     return sorted(set(names))
 
 
@@ -1077,6 +1078,8 @@ class CanonicalRuleMaskResolver:
         ctx_name = self.parent_key_to_context_name.get(parent_key)
         if ctx_name is None:
             return None
+        if not ctx_name.startswith("ctx__"):
+            raise ValueError(f"Unexpected unresolved feature in canonical key: {ctx_name}")
         return self._slice_mask(self.context_lookup[ctx_name], indices)
 
     def get_mask(self, canonical_key: str, indices: Optional[np.ndarray] = None) -> np.ndarray:
@@ -2101,7 +2104,7 @@ class EconomicRuleConsolidator:
                     [key_a, key_b],
                     "accepted_composite",
                     1,
-                    {"decision_reason": diag["accept_merge_reason"]}
+                    {"decision_reason": diag["decision_reason"]}
                 )
 
                 # We must build a new profile for the newly created child to allow future merges
@@ -2130,7 +2133,7 @@ class EconomicRuleConsolidator:
                         [key_a, key_b],
                         "rejected_pair",
                         1,
-                        {"decision_reason": diag["accept_merge_reason"]}
+                        {"decision_reason": diag["decision_reason"]}
                     )
 
         active = active.drop_duplicates(subset=["canonical_key"], keep="first")
@@ -3721,9 +3724,12 @@ class MaskAssessor:
         mask = np.ones(X.shape[0], dtype=bool)
         for p in parts:
             p = p.strip('()')
-            if p == '*': continue
-            if '==' in p:
-                fname, val_part = p.split('==')
+            if p == '*':
+                continue
+            for cond_str in p.split("&"):
+                if '==' not in cond_str:
+                    continue
+                fname, val_part = cond_str.split('==')
                 val = int(val_part)
                 # Find matching metadata for feature index
                 f_idx = next(m.feature_index for m in self.metadata if m.feature_name == fname)

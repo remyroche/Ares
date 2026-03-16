@@ -20,7 +20,6 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
-from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 from numba import njit, prange
 
@@ -171,6 +170,12 @@ class FeatureProcessor:
             for src in regime_sources:
                 if src in feature_dict:
                     raw_arr = feature_dict[src]
+
+                    if np.isnan(raw_arr).any():
+                        tprint(f"WARNING: Feature {src} contains NaNs. Filling with median.")
+                        median_val = np.nanmedian(raw_arr)
+                        raw_arr = np.nan_to_num(raw_arr, nan=median_val)
+
                     cs_ranks = self._compute_cs_ranks(raw_arr, timestamps)
                     ts_ranks = self._compute_ts_ranks(raw_arr, symbol_codes)
                     blended_ranks = (cs_weight * cs_ranks) + ((1.0 - cs_weight) * ts_ranks)
@@ -274,16 +279,15 @@ class FeatureProcessor:
         """
         Cross-sectional ranking using pandas for vectorization speed.
         """
-        s = pd.Series(arr)
-        return s.groupby(timestamps, sort=False).rank(pct=True).values
+        s = pd.Series(arr, index=timestamps)
+        return s.groupby(level=0, sort=False).rank(pct=True).values
 
     def _compute_ts_ranks(self, arr: np.ndarray, symbol_codes: np.ndarray) -> np.ndarray:
         """
         Time-series ranking using pandas for vectorization speed.
         """
-        from extreme_price_movements.utils import tprint
-        s = pd.Series(arr)
-        return s.groupby(symbol_codes, sort=False).rank(pct=True).values
+        s = pd.Series(arr, index=symbol_codes)
+        return s.groupby(level=0, sort=False).rank(pct=True).values
 
     def _run_feature_quality_checks(self, X: np.ndarray, names: List[str], cfg: Dict[str, Any]) -> Tuple[np.ndarray, List[str], pd.DataFrame]:
         """
@@ -478,6 +482,9 @@ class InteractionModel:
             "random_state": seed,
             "extra_trees": self.cfg.get("extra_trees", True),
             "n_jobs": max(1, min(3, int(self.cfg.get("lgbm_n_jobs", 3)))),
+            "bagging_fraction": 0.8,
+            "bagging_freq": 1,
+            "feature_fraction": 0.8,
         }
 
         model = LGBMRegressor(**params)
@@ -553,6 +560,9 @@ class RuleExtractor:
             return None
 
         # Standard LGBM boolean split is at 0.5
+        if abs(threshold - 0.5) > 1e-4:
+            tprint(f"WARNING: Unexpected split threshold {threshold} in boolean feature.")
+
         # Direction 1: Left (<= 0.5) -> Feature is 0
         if direction == 1:
             return (0, '<=', threshold)
@@ -1271,10 +1281,27 @@ class RuleScorer:
         audits: List[Dict[str, Any]] = []
         seen: set[str] = set()
 
-        for key in keys:
+        # Fast path scoring using NumbaRuleInferenceEngine if we have simple non-composite keys
+        # and our resolver supports giving us the underlying X array.
+        fast_path = False
+        try:
+            if isinstance(resolver, CanonicalRuleMaskResolver):
+                fast_registry = pd.DataFrame({'canonical_key': keys})
+                engine = NumbaRuleInferenceEngine(fast_registry, resolver.metadata)
+                mask_matrix = engine.apply(resolver.X)
+                fast_path = True
+        except KeyError:
+            fast_path = False
+
+        for idx, key in enumerate(keys):
             if key in seen:
                 continue
             seen.add(key)
+
+            if fast_path and "Composite" not in key:
+                # Override the mask in the resolver dynamically
+                resolver.context_lookup[key] = mask_matrix[:, idx]
+
             summary, fold_records = self.score_key_oos(
                 canonical_key=key,
                 fwd_ret=fwd_ret,
@@ -2214,7 +2241,7 @@ def run_mining_stage(
     all_extracted_rules = []
     all_rejection_audit = []
     all_split_usage = []
-    seeds = cfg.get("seeds", [42, 123, 999])
+    seeds = cfg.get("seeds", [42])
 
     for fold_id, (tr_idx, va_idx) in enumerate(folds):
         X_tr, X_va = X[tr_idx], X[va_idx]
@@ -3006,9 +3033,12 @@ class NumbaRuleInferenceEngine:
         for p in parts:
             p = p.strip('()')
             if p == '*': continue
+            if '==' not in p: continue
             name, val = p.split('==')
             if name in self.name_to_idx:
                 parsed.append((self.name_to_idx[name], int(val)))
+            else:
+                raise KeyError(f"Feature {name} not found in metadata.")
         return parsed
 
     def apply(self, X: np.ndarray) -> np.ndarray:

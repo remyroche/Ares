@@ -3241,6 +3241,34 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             rsi_14 = c_log.apply(lambda x: pd.Series(rsi(x.to_frame(), 14)[x.name], index=x.index), axis=0)
             feats["RSI"] = rsi_14.astype(np.float32)
 
+        if _needs_feature("trend_persistence"):
+            up_bars = (c_raw > c_raw.shift(1)).astype(np.float32)
+            feats["trend_persistence"] = ff.numba_rolling_mean(up_bars, 50).astype(np.float32)
+
+        if _needs_feature("volume_zscore_48h"):
+            feats["volume_zscore_48h"] = zscore_rolling(v, 48, winsorize=False)
+
+        if _needs_feature("trend_ratio"):
+            abs_ret_sum = ff.numba_rolling_sum(c_log.diff(1).abs(), 10)
+            ret_n = c_log.diff(10).abs()
+            feats["trend_ratio"] = (ret_n / (abs_ret_sum + 1e-12)).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("compression_score"):
+            rolling_std_short = ff.numba_rolling_std(c_raw, 10)
+            rolling_std_long = ff.numba_rolling_std(c_raw, 48)
+            feats["compression_score"] = (rolling_std_short / (rolling_std_long + 1e-12)).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("return_autocorr_48"):
+            # Compute 48-period autocorrelation of returns
+            def rolling_autocorr(series: pd.Series, window: int) -> pd.Series:
+                return series.rolling(window, min_periods=max(2, window//2)).apply(lambda x: pd.Series(x).autocorr(lag=1) if len(x) > 2 else np.nan, raw=True)
+            feats["return_autocorr_48"] = feats["ret1h"].apply(lambda col: rolling_autocorr(col, 48), axis=0).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("variance_ratio_10_48"):
+            var_10 = ff.numba_rolling_std(c_raw, 10) ** 2
+            var_48 = ff.numba_rolling_std(c_raw, 48) ** 2
+            feats["variance_ratio_10_48"] = (var_10 / (var_48 + 1e-12)).fillna(0.0).astype(np.float32)
+
         if _needs_feature("dist_local_swing"):
             dist_to_high = (high_12 - c_raw).abs()
             dist_to_low = (c_raw - low_12).abs()

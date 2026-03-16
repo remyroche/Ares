@@ -178,17 +178,8 @@ RIDGE_FEATURE_META = {
     "volume_spike": {"family": "liquidity", "type": "continuous"},
     "orderflow_imbalance": {"family": "liquidity", "type": "continuous"},
 
-    "RSI": {"family": "momentum", "type": "continuous"},
-    "MACD_histogram": {"family": "momentum", "type": "continuous"},
-    "rate_of_change": {"family": "momentum", "type": "continuous"},
-    "momentum_zscore": {"family": "momentum", "type": "continuous"},
-
-    "prior_return_1h": {"family": "context", "type": "continuous"},
-    "prior_return_4h": {"family": "context", "type": "continuous"},
-    "prior_return_12h": {"family": "context", "type": "continuous"},
     "prior_range": {"family": "context", "type": "continuous"},
     "prior_volatility": {"family": "context", "type": "continuous"},
-    "acceleration_of_move": {"family": "context", "type": "continuous"},
 
     # Micro-regime updates
     "efficiency_ratio_20": {"family": "path_structure", "type": "continuous"},
@@ -204,23 +195,49 @@ RIDGE_FEATURE_META = {
     "volume_percentile": {"family": "liquidity", "type": "continuous"},
     
     # User-requested technical regimes (v17)
-    "range_atr": {"family": "context", "type": "continuous"},
-    "body_ratio": {"family": "path_structure", "type": "continuous"},
-    "upper_wick": {"family": "liquidity", "type": "continuous"},
-    "lower_wick": {"family": "liquidity", "type": "continuous"},
-    "upper_wick_ratio": {"family": "liquidity", "type": "continuous"},
-    "lower_wick_ratio": {"family": "liquidity", "type": "continuous"},
     "ema20_slope_5h": {"family": "trend", "type": "continuous"},
     "ema_slope_norm": {"family": "trend", "type": "continuous"},
     "ema_slope": {"family": "trend", "type": "continuous"},
-    "pullback_depth": {"family": "trend", "type": "continuous"},
     "atr_compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-    "acceleration": {"family": "context", "type": "continuous"},
-    "acceleration_norm": {"family": "context", "type": "continuous"},
-    "distance_to_ema": {"family": "stretch", "type": "continuous"},
+    "trend_persistence": {"family": "trend", "type": "continuous"},
+    "volume_zscore_48h": {"family": "liquidity", "type": "continuous"},
+    "trend_ratio": {"family": "trend", "type": "continuous"},
+    "compression_score": {"family": "volatility_term_structure", "type": "continuous"},
+    "return_autocorr_48": {"family": "momentum", "type": "continuous"},
+    "variance_ratio_10_48": {"family": "volatility", "type": "continuous"},
 }
 
 RIDGE_FEATURE_COLS = list(RIDGE_FEATURE_META.keys())
+
+CONTINUOUS_TRIGGER_COLS = [
+    "range_atr",
+    "body_ratio",
+    "upper_wick",
+    "lower_wick",
+    "upper_wick_ratio",
+    "lower_wick_ratio",
+    "wick_to_range",
+    "acceleration_of_move",
+    "acceleration",
+    "acceleration_norm",
+]
+
+CONTINUOUS_LOCATION_COLS = [
+    "dist_ema20_atr",
+    "dist_ema50_atr",
+    "dist_ema200_atr",
+    "dist_vwap_atr",
+    "dist_weekly_vwap",
+    "dist_prior_day_high",
+    "dist_prior_day_low",
+    "dist_rolling_7d_high",
+    "dist_local_swing",
+    "dist_range_mid_atr",
+    "dist_ma100_atr",
+    "distance_to_ema",
+    "pullback_depth",
+]
+
 
 # Helper/base features produced in features.py that should remain selectable by model heads.
 # This increases candidate breadth before MDI pruning.

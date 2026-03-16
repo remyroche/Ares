@@ -30,6 +30,8 @@ from extreme_price_movements.config import (
     CFG,
     RIDGE_FEATURE_COLS,
     TEST_FEATURE_KEYS,
+    CONTINUOUS_TRIGGER_COLS,
+    CONTINUOUS_LOCATION_COLS,
 )
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
@@ -143,46 +145,24 @@ class FeatureProcessor:
         if active_groups is None:
             active_groups = ("trigger", "location", "regime")
 
-        # 1. Trigger Features (already boolean)
-        if "trigger" in active_groups:
-            for col in INTRADAY_TRIGGER_COLUMNS:
-                if col in feature_dict:
-                    arr = feature_dict[col].astype(np.float32)
-                    family = col.split('_')[0] if '_' in col else 'trigger'
-                    self._add_metadata(col, 'trigger', 'boolean', source_name=col, source_family=family)
-                    raw_cols.append(arr)
-                    raw_names.append(col)
+        cs_weight = float(cfg.get("regime_cs_weight", 0.5))
 
-        # 2. Location Features (already boolean)
-        if "location" in active_groups:
-            for col in LOCATION_FILTER_COLUMNS:
-                if col in feature_dict:
-                    arr = feature_dict[col].astype(np.float32)
-                    family = col.split('_')[0] if '_' in col else 'location'
-                    self._add_metadata(col, 'location', 'boolean', source_name=col, source_family=family)
-                    raw_cols.append(arr)
-                    raw_names.append(col)
-
-        # 3. Regime Features (continuous -> hybrid booleanize)
-        if "regime" in active_groups:
-            cs_weight = float(cfg.get("regime_cs_weight", 0.5))
-            regime_sources = sorted(list(set(RIDGE_FEATURE_COLS) | set(TEST_FEATURE_KEYS)))
-            
-            for src in regime_sources:
+        def _add_continuous_features_as_booleans(sources, group_name):
+            for src in sources:
                 if src in feature_dict:
                     raw_arr = feature_dict[src]
                     cs_ranks = self._compute_cs_ranks(raw_arr, timestamps)
                     ts_ranks = self._compute_ts_ranks(raw_arr, symbol_codes)
                     blended_ranks = (cs_weight * cs_ranks) + ((1.0 - cs_weight) * ts_ranks)
                     
-                    family = src.split('_')[0] if '_' in src else 'regime'
+                    family = src.split('_')[0] if '_' in src else group_name
                     
                     for q in [0.2, 0.4, 0.6, 0.8]:
-                        bool_name = f"reg_{src}_hybrid_top{int(q*100)}"
+                        bool_name = f"{group_name[:3]}_{src}_hybrid_top{int(q*100)}"
                         bool_arr = (blended_ranks >= (1.0 - q)).astype(np.float32)
                         
                         self._add_metadata(
-                            bool_name, 'regime', 'boolean', 
+                            bool_name, group_name, 'boolean',
                             source_name=src, 
                             source_family=family,
                             booleanization_method='hybrid_cs_ts_rank',
@@ -193,13 +173,13 @@ class FeatureProcessor:
                         raw_cols.append(bool_arr)
                         raw_names.append(bool_name)
 
-                    band_name = f"reg_{src}_hybrid_band30_70"
+                    band_name = f"{group_name[:3]}_{src}_hybrid_band30_70"
                     band_arr = (
                         (blended_ranks >= 0.30) & (blended_ranks <= 0.70)
                     ).astype(np.float32)
                     self._add_metadata(
                         band_name,
-                        "regime",
+                        group_name,
                         "boolean",
                         source_name=src,
                         source_family=family,
@@ -210,6 +190,37 @@ class FeatureProcessor:
                     )
                     raw_cols.append(band_arr)
                     raw_names.append(band_name)
+
+        # 1. Trigger Features
+        if "trigger" in active_groups:
+            # Discrete booleans
+            for col in INTRADAY_TRIGGER_COLUMNS:
+                if col in feature_dict:
+                    arr = feature_dict[col].astype(np.float32)
+                    family = col.split('_')[0] if '_' in col else 'trigger'
+                    self._add_metadata(col, 'trigger', 'boolean', source_name=col, source_family=family)
+                    raw_cols.append(arr)
+                    raw_names.append(col)
+            # Continuous booleans
+            _add_continuous_features_as_booleans(CONTINUOUS_TRIGGER_COLS, "trigger")
+
+        # 2. Location Features
+        if "location" in active_groups:
+            # Discrete booleans
+            for col in LOCATION_FILTER_COLUMNS:
+                if col in feature_dict:
+                    arr = feature_dict[col].astype(np.float32)
+                    family = col.split('_')[0] if '_' in col else 'location'
+                    self._add_metadata(col, 'location', 'boolean', source_name=col, source_family=family)
+                    raw_cols.append(arr)
+                    raw_names.append(col)
+            # Continuous booleans
+            _add_continuous_features_as_booleans(CONTINUOUS_LOCATION_COLS, "location")
+
+        # 3. Regime Features (continuous -> hybrid booleanize)
+        if "regime" in active_groups:
+            regime_sources = sorted(list(set(RIDGE_FEATURE_COLS) | set(TEST_FEATURE_KEYS)))
+            _add_continuous_features_as_booleans(regime_sources, "regime")
 
         # 4. Extra Binary Features (e.g. Stage A Contexts)
         if extra_binary_features:

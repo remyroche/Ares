@@ -385,13 +385,14 @@ class InteractionModel:
                         constraints.append([t, r])
                         constraints.append([l, r])
         else:
-            # Build pairwise constraints from allowed group pairs
+            # Build constraints from allowed group pairs
+            # Instead of pairwise combinations, we combine the groups so that
+            # features within these groups can interact with each other.
             for g1, g2 in self.allowed_group_pairs:
                 idx1_list = group_map.get(g1, [])
                 idx2_list = group_map.get(g2, [])
-                for i in idx1_list:
-                    for j in idx2_list:
-                        constraints.append([i, j])
+                if idx1_list and idx2_list:
+                    constraints.append(idx1_list + idx2_list)
 
         # Also add singletons to allow 1-way splits
         for i in range(len(self.metadata)):
@@ -424,7 +425,9 @@ class InteractionModel:
         # Map actual group names in constraints
         summary = collections.defaultdict(int)
         for c in self.constraints:
-            if len(c) == 2:
+            if len(c) == 1:
+                continue
+            elif len(c) == 2:
                 g1 = self.metadata[c[0]].group
                 g2 = self.metadata[c[1]].group
                 pair = tuple(sorted([g1, g2]))
@@ -435,6 +438,10 @@ class InteractionModel:
                 g3 = self.metadata[c[2]].group
                 triplet = tuple(sorted([g1, g2, g3]))
                 summary[f"{triplet[0]}_{triplet[1]}_{triplet[2]}_triplets"] += 1
+            else:
+                groups_in_c = set(self.metadata[idx].group for idx in c)
+                groups_str = "_".join(sorted(groups_in_c))
+                summary[f"multi_group_{groups_str}"] += 1
         
         result = {
             'total_singletons': len(self.metadata),

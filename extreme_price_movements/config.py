@@ -144,67 +144,37 @@ MODEL_FEATURES = [
 RIDGE_FEATURE_META = {
     "ema20_gt_ema50": {"family": "trend", "type": "binary"},
     "ema50_gt_ema200": {"family": "trend", "type": "binary"},
-    "price_gt_ema50": {"family": "trend", "type": "binary"},
     "price_lt_ema200": {"family": "trend", "type": "binary"},
-    "ema20_slope": {"family": "trend", "type": "continuous"},
     "ema50_slope": {"family": "trend", "type": "continuous"},
-    "ema200_slope": {"family": "trend", "type": "continuous"},
     "trend_strength_percentile": {"family": "trend", "type": "continuous"},
-    "bars_since_trend_flip": {"family": "trend", "type": "continuous"},
-
-    "rolling_std_4h": {"family": "volatility", "type": "continuous"},
-    "realized_volatility_24h": {"family": "volatility", "type": "continuous"},
-    "atr_change_rate": {"family": "volatility", "type": "continuous"},
-    "true_range_percentile": {"family": "volatility", "type": "continuous"},
-
-    "dist_ema20_atr": {"family": "stretch", "type": "continuous"},
-    "dist_ema50_atr": {"family": "stretch", "type": "continuous"},
-    "dist_ema200_atr": {"family": "stretch", "type": "continuous"},
-    "zscore_price_50": {"family": "stretch", "type": "continuous"},
-    "zscore_price_200": {"family": "stretch", "type": "continuous"},
-    "dist_vwap_atr": {"family": "stretch", "type": "continuous"},
-    "dist_weekly_vwap": {"family": "stretch", "type": "continuous"},
-
-    "bollinger_band_width": {"family": "compression", "type": "continuous"},
-    "rolling_range_20": {"family": "compression", "type": "continuous"},
-    "atr_percentile": {"family": "compression", "type": "continuous"},
-
-    "dist_prior_day_high": {"family": "structure", "type": "continuous"},
-    "dist_prior_day_low": {"family": "structure", "type": "continuous"},
-    "dist_rolling_7d_high": {"family": "structure", "type": "continuous"},
-    "dist_local_swing": {"family": "structure", "type": "continuous"},
-
-    "wick_to_range": {"family": "liquidity", "type": "continuous"},
-    "volume_spike": {"family": "liquidity", "type": "continuous"},
-    "orderflow_imbalance": {"family": "liquidity", "type": "continuous"},
-
-    "prior_range": {"family": "context", "type": "continuous"},
-    "prior_volatility": {"family": "context", "type": "continuous"},
-
-    # Micro-regime updates
+    "ema20_slope_5h": {"family": "trend", "type": "continuous"},
+    "ema_slope_norm": {"family": "trend", "type": "continuous"},
+    "trend_persistence": {"family": "trend", "type": "continuous"},
+    "trend_ratio": {"family": "trend", "type": "continuous"},
+    "trend_acceleration": {"family": "trend", "type": "continuous"},
+    "return_autocorr_48": {"family": "trend", "type": "continuous"},
+    "variance_ratio_10_48": {"family": "trend", "type": "continuous"},
+    "rolling_std_4h": {"family": "volatility_level", "type": "continuous"},
+    "realized_volatility_24h": {"family": "volatility_level", "type": "continuous"},
+    "true_range_percentile": {"family": "volatility_level", "type": "continuous"},
+    "atr_percentile": {"family": "volatility_level", "type": "continuous"},
+    "rolling_range_20": {"family": "volatility_level", "type": "continuous"},
+    "volatility_of_volatility_48": {"family": "volatility_level", "type": "continuous"},
+    "volatility_autocorr_48": {"family": "volatility_level", "type": "continuous"},
+    "atr_change_rate": {"family": "volatility_change", "type": "continuous"},
+    "compression_ratio": {"family": "volatility_change", "type": "continuous"},
+    "range_expansion_ratio": {"family": "volatility_change", "type": "continuous"},
+    "compression_score": {"family": "volatility_change", "type": "continuous"},
+    "atr_compression_ratio": {"family": "volatility_change", "type": "continuous"},
+    "volatility_ratio_short_long": {"family": "volatility_change", "type": "continuous"},
+    "bollinger_band_width": {"family": "volatility_change", "type": "continuous"},
     "efficiency_ratio_20": {"family": "path_structure", "type": "continuous"},
     "choppiness_index_20": {"family": "path_structure", "type": "continuous"},
     "direction_entropy_20": {"family": "path_structure", "type": "continuous"},
-
-    "compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-    "range_expansion_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-
-    "dist_range_mid_atr": {"family": "structure", "type": "continuous"},
-    "dist_ma100_atr": {"family": "stretch", "type": "continuous"},
-    "volatility_ratio_short_long": {"family": "volatility", "type": "continuous"},
     "volume_percentile": {"family": "liquidity", "type": "continuous"},
-    
-    # User-requested technical regimes (v17)
-    "ema20_slope_5h": {"family": "trend", "type": "continuous"},
-    "ema_slope_norm": {"family": "trend", "type": "continuous"},
-    "ema_slope": {"family": "trend", "type": "continuous"},
-    "atr_compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-    "trend_persistence": {"family": "trend", "type": "continuous"},
     "volume_zscore_48h": {"family": "liquidity", "type": "continuous"},
-    "trend_ratio": {"family": "trend", "type": "continuous"},
-    "compression_score": {"family": "volatility_term_structure", "type": "continuous"},
-    "return_autocorr_48": {"family": "momentum", "type": "continuous"},
-    "variance_ratio_10_48": {"family": "volatility", "type": "continuous"},
+    "volume_trend_48": {"family": "liquidity", "type": "continuous"},
+    "volume_autocorr_48": {"family": "liquidity", "type": "continuous"},
 }
 
 RIDGE_FEATURE_COLS = list(RIDGE_FEATURE_META.keys())
@@ -220,6 +190,10 @@ CONTINUOUS_TRIGGER_COLS = [
     "acceleration_of_move",
     "acceleration",
     "acceleration_norm",
+    "volume_spike",
+    "orderflow_imbalance",
+    "prior_range",
+    "prior_volatility",
 ]
 
 CONTINUOUS_LOCATION_COLS = [
@@ -236,6 +210,8 @@ CONTINUOUS_LOCATION_COLS = [
     "dist_ma100_atr",
     "distance_to_ema",
     "pullback_depth",
+    "zscore_price_50",
+    "zscore_price_200",
 ]
 
 

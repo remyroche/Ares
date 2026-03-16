@@ -3,6 +3,11 @@
 import logging
 from typing import Dict, Set
 
+from extreme_price_movements.intraday_crypto_library import (
+    LOCATION_FILTER_COLUMNS,
+    INTRADAY_TRIGGER_COLUMNS,
+)
+
 logger = logging.getLogger(__name__)
 
 class FeatureFamily:
@@ -47,7 +52,10 @@ FEATURE_FAMILY_REGISTRY: Dict[str, Set[str]] = {
         "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
         "is_trending", "is_ranging", "is_high_vol_regime", "is_low_vol_regime", "trend_bin3", "vol_regime_switch_12h", "trend_regime_switch_12h",
         "trend_age_hours", "trend_regime_duration_4d", "higher_highs_count_48h", "rejection_bar_count",
-        "adx_7_gt25", "adx_10_gt25", "adx_14_gt25", "accept_bin3", "meta_alignment", "mtf_divergence", "vol_price_diverge"
+        "adx_7_gt25", "adx_10_gt25", "adx_14_gt25", "accept_bin3", "meta_alignment", "mtf_divergence", "vol_price_diverge",
+        # Boolean location and trigger features - MUST NOT be transformed
+        *set(LOCATION_FILTER_COLUMNS),
+        *set(INTRADAY_TRIGGER_COLUMNS),
     }
 }
 

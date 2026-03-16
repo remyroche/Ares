@@ -1,0 +1,2 @@
+canonical_key,mask_score,is_structurally_sound,rejection_reason,avg_trades_per_day,density_dispersion,tail_ratio,lift,learn_eff_ratio,entropy_reduction,path_efficiency,tp_rate,sl_rate,timeout_rate,ev_per_trade,win_rate_conditional,win_rate_unconditional
+(*)|(*)|(reg_volume_spike_hybrid_top20==1),,False,low_sign_consistency,0.058424657534246575,0.687997450986486,1.0778298585738233,-0.005275813255855466,0.9896439687675604,,0.3333333333333333,0.3472059398202423,0.6424384525205158,0.0,0.0005774091114290059,0.350839091806446,0.3472059398201744

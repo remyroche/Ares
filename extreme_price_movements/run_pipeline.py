@@ -31,7 +31,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 import argparse
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -45,6 +45,7 @@ from extreme_price_movements.data_store import (
 from extreme_price_movements.offline_optimisers.params_store import (
     apply_offline_optimizer_best_params,
 )
+import extreme_price_movements.mask_optimiser as mask_opt
 from extreme_price_movements.optimise import (
     Policy,
     run_optimise_from_ridge_oof,
@@ -935,6 +936,40 @@ def run_sizer(cfg, ts_override=None, store=None):
         return False
 
 
+def run_trigger_discovery(cfg, ts_override=None):
+    """Run Trigger Discovery (Phase 2.75) via mask_optimiser."""
+    _maintenance_checkpoint("trigger_discovery:start")
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found for Trigger Discovery.")
+        return False
+
+    ts_str = ts_sig.strftime("%Y%m%d_%H%M%S")
+    tprint(f"Trigger Discovery (Phase 2.75) mode. ts_sig={ts_str}")
+
+    # Construct args for mask_optimiser
+    args = argparse.Namespace()
+    args.data_root = cfg["data_root"]
+    args.ts = ts_str
+    args.features = None  # Automatic discovery in mask_optimiser
+    args.perps = bool(cfg.get("use_perps", False))
+    args.max_symbols = cfg.get("mask_opt_max_symbols")
+    args.lookback_years = float(cfg.get("mask_opt_lookback_years", 1.5))
+    args.horizons = ",".join(map(str, cfg.get("horizons", [1, 2, 4, 8])))
+    args.modes = "long,short"  # Refactored side-based modes
+    args.diverse_count = int(cfg.get("mask_opt_diverse_count", 4))
+
+    try:
+        mask_opt.run_mask_optimization_4modes(args)
+        tprint("TRIGGER DISCOVERY COMPLETE")
+        return True
+    except Exception as e:
+        tprint(f"ERROR: Trigger Discovery failed: {e}")
+        return False
+    finally:
+        _maintenance_checkpoint("trigger_discovery:end")
+
+
 def run_all(cfg, ts_override=None):
     """Run download -> features -> train (includes labels) -> optimise (learn entry) -> sizer -> optimise (sizing) in order.
 
@@ -944,7 +979,7 @@ def run_all(cfg, ts_override=None):
           profit exit, position sizing, holdout evaluation).
     """
     _maintenance_checkpoint("run_all:start")
-    run_download(cfg)
+    # run_download(cfg)  <- User requested only download if explicitly in download mode
     _maintenance_checkpoint("run_all:after_download")
 
     # Instantiate store once for use across steps
@@ -952,6 +987,16 @@ def run_all(cfg, ts_override=None):
 
     run_features(cfg, ts_override=ts_override, store=store)
     _maintenance_checkpoint("run_all:after_features")
+
+    if bool(cfg.get("enable_trigger_discovery_stage", False)):
+        success = run_trigger_discovery(cfg, ts_override=ts_override)
+        if not success:
+            tprint("ERROR: Trigger Discovery stage failed. Aborting pipeline.")
+            return
+        # RE-LOAD MASK PARAMS: ensure cfg["strategies"] is populated from new winners!
+        _load_mask_params_by_mode(cfg)
+        _maintenance_checkpoint("run_all:after_trigger_discovery")
+
     run_train(cfg, ts_override=ts_override, store=store)
     _maintenance_checkpoint("run_all:after_train")
 
@@ -1373,6 +1418,11 @@ def main():
         help="Use robust planner mode (enables full inference retrain)",
     )
     parser.add_argument(
+        "--enable-trigger-discovery-stage",
+        action="store_true",
+        help="Enable the trigger discovery stage in the pipeline",
+    )
+    parser.add_argument(
         "--optimise-use-ridge-oof",
         action="store_true",
         help="Run optimise in cheap Ridge/limit-offset OOF mode instead of using backtest_results.csv",
@@ -1404,9 +1454,7 @@ def main():
     tprint(
         f"Planner preset: {cfg['slice_planner_preset']} (full_inference_retrain={cfg['train_full_inference_models']})"
     )
-    tprint(
-        f"Sizer policy: ridge offline optimizer (ev_decomposition_enabled={bool(cfg.get('ev_decomposition_enabled', cfg.get('position_sizer_enabled', False)))})"
-    )
+    cfg["enable_trigger_discovery_stage"] = bool(args.enable_trigger_discovery_stage)
 
     if args.mode == "download":
         run_download(cfg)

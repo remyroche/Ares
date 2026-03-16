@@ -13,6 +13,99 @@ import pyarrow.parquet as pq
 
 from extreme_price_movements.utils import tprint, retry_with_backoff
 
+
+def _normalize_feature_index(
+    idx_vals,
+    val_array=None,
+):
+    idx = pd.Index(idx_vals)
+    if isinstance(idx, pd.DatetimeIndex):
+        normalized = idx.tz_localize(None) if idx.tz is not None else idx
+        return normalized, val_array, None
+
+    if np.issubdtype(idx.dtype, np.number):
+        return None, None, "numeric_index"
+
+    if idx.dtype == object:
+        safe_values = []
+        for value in idx_vals:
+            if isinstance(value, (int, np.integer, float, np.floating)) and not pd.isna(value):
+                safe_values.append(pd.NaT)
+            else:
+                safe_values.append(value)
+        converted = pd.to_datetime(safe_values, utc=True, errors="coerce")
+    else:
+        converted = pd.to_datetime(idx_vals, utc=True, errors="coerce")
+    valid_mask = ~pd.isna(converted)
+    valid_count = int(valid_mask.sum())
+    if valid_count == 0:
+        return None, None, "unparseable_index"
+
+    normalized = pd.DatetimeIndex(converted[valid_mask]).tz_localize(None)
+    if val_array is None:
+        filtered_values = None
+    else:
+        filtered_values = np.asarray(val_array)[valid_mask]
+
+    if valid_count < len(idx):
+        return normalized, filtered_values, "partial_unparseable_index"
+    return normalized, filtered_values, "coerced_index"
+
+
+def _ensure_feature_frame_index(
+    df: pd.DataFrame,
+    parquet_path: str | None = None,
+) -> tuple[pd.DataFrame, str | None]:
+    frame = df.copy()
+    if isinstance(frame.index, pd.DatetimeIndex):
+        if frame.index.tz is None:
+            frame.index = frame.index.tz_localize("UTC")
+        return frame, None
+
+    if "ts" in frame.columns:
+        ts = pd.to_datetime(frame["ts"], utc=True, errors="coerce")
+        valid_mask = ~pd.isna(ts)
+        if not valid_mask.any():
+            return frame, "invalid_ts_column"
+        frame = frame.loc[valid_mask].copy()
+        frame = frame.drop(columns=["ts"])
+        frame.index = pd.DatetimeIndex(ts[valid_mask], tz="UTC")
+        return frame, "ts_column_indexed"
+
+    normalized_idx, _, reason = _normalize_feature_index(frame.index.values)
+    if normalized_idx is None:
+        if parquet_path is not None:
+            recovered = _recover_feature_index_from_metadata(parquet_path, len(frame))
+            if recovered is not None:
+                frame.index = recovered
+                return frame, "recovered_from_metadata"
+        return frame, reason
+    frame.index = pd.DatetimeIndex(normalized_idx, tz="UTC")
+    return frame, reason
+
+
+def _recover_feature_index_from_metadata(
+    parquet_path: str,
+    row_count: int,
+) -> pd.DatetimeIndex | None:
+    meta = _read_feature_metadata(parquet_path)
+    if not meta:
+        return None
+    first_ts = meta.get("first_ts")
+    last_ts = meta.get("last_ts")
+    expected_rows = int(meta.get("rows", 0) or 0)
+    if not first_ts or not last_ts or expected_rows <= 0 or expected_rows != row_count:
+        return None
+    start = pd.Timestamp(first_ts)
+    end = pd.Timestamp(last_ts)
+    if start.tzinfo is None:
+        start = start.tz_localize("UTC")
+    if end.tzinfo is None:
+        end = end.tz_localize("UTC")
+    if row_count == 1:
+        return pd.DatetimeIndex([start], tz="UTC")
+    return pd.date_range(start=start, end=end, periods=row_count, tz="UTC")
+
 class FileLock:
     """
     Simple file-based lock using fcntl for Unix-like systems.
@@ -714,6 +807,11 @@ def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFram
         return 0
 
     new_data = new_data.sort_index()
+    new_data, new_reason = _ensure_feature_frame_index(new_data, parquet_path=parquet_path)
+    if new_reason not in {None, "ts_column_indexed", "recovered_from_metadata"}:
+        raise ValueError(
+            f"append_symbol_features received invalid index for {symbol}: {new_reason}"
+        )
     numeric_cols = [c for c in new_data.columns if c != "__symbol__"]
     new_data[numeric_cols] = new_data[numeric_cols].astype(np.float32)
     os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
@@ -728,7 +826,15 @@ def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFram
                 tprint(f"Warning: quarantining unreadable feature file {parquet_path}: {e}")
                 _quarantine_corrupt_feature_file(parquet_path)
             else:
-                if "__symbol__" in existing.columns:
+                existing, existing_reason = _ensure_feature_frame_index(existing, parquet_path=parquet_path)
+                if existing_reason not in {None, "ts_column_indexed", "recovered_from_metadata"}:
+                    tprint(
+                        f"Warning: quarantining feature file with invalid index {parquet_path}: "
+                        f"{existing_reason}"
+                    )
+                    existing = None
+                    _quarantine_corrupt_feature_file(parquet_path)
+                elif "__symbol__" in existing.columns:
                     existing = existing.drop(columns=["__symbol__"])
 
         all_cols = sorted(set(new_data.columns) | (set(existing.columns) if existing is not None else set()))
@@ -762,6 +868,11 @@ def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFram
 
         combined = combined[~combined.index.duplicated(keep="last")].sort_index()
         combined["__symbol__"] = symbol
+
+        # Ensure all numeric columns are float32 (not float64) to save memory
+        numeric_cols = [c for c in combined.columns if c != "__symbol__"]
+        combined[numeric_cols] = combined[numeric_cols].astype(np.float32, copy=False)
+
         _atomic_write_parquet(combined, parquet_path)
         _write_feature_metadata(parquet_path, symbol, combined.index)
 
@@ -802,10 +913,7 @@ def save_features(
         col_maps = {k: {c: j for j, c in enumerate(feats[k].columns)} for k in feat_keys}
         arrays = {k: feats[k].values for k in feat_keys}
     else:
-        # Numpy array mode — iterate per-feature first to avoid random access
-        # across 469 scattered arrays (which thrashes swap).
-        # Phase 1: Extract columns per-feature sequentially, free each array.
-        # Phase 2: Write per-symbol from transposed structure.
+        # Numpy array mode — stream symbol-by-symbol to avoid feature stacking spikes.
         import gc as _gc
         assert feat_index is not None and feat_columns is not None, \
             "feat_index and feat_columns required when feats contains numpy arrays"
@@ -815,47 +923,37 @@ def save_features(
         n_feats = len(feat_keys)
         total = len(symbols)
 
-        # Phase 1: Transpose — build per-symbol column dict, free each feature array
-        tprint(f"  Transposing {n_feats} features × {total} symbols for save...")
-        sym_data = {j: {} for j in range(total)}  # sym_idx -> {feat_name: 1D array}
-        for fi, k in enumerate(feat_keys):
-            arr = feats[k]
-            for j in range(total):
-                sym_data[j][k] = arr[:, j].copy()  # copy column to own memory
-            feats[k] = None  # free the (T, S) array
-            if (fi + 1) % 50 == 0:
-                _gc.collect()
-                tprint(f"  Transpose progress: {fi+1}/{n_feats}")
-        _gc.collect()
-        tprint(f"  Transpose complete. Writing {total} symbols...")
+        tprint(f"  Saving {n_feats} features × {total} symbols in streaming symbol mode...")
 
-        # Phase 2: Write per-symbol
         count = 0
         for j, sym in enumerate(symbols):
+            safe_sym = sym.replace("/", "_")
+            final_path = os.path.join(out_dir, f"symbol={safe_sym}.parquet")
+
             cutoff_ts = None
             if min_timestamp_by_symbol:
                 cutoff_ts = min_timestamp_by_symbol.get(sym)
 
-            col_data = sym_data.pop(j)  # pop to free as we go
-            if not col_data:
-                continue
-
-            df_sym = pd.DataFrame(col_data, index=time_index)
-            del col_data
+            sym_data = {k: feats[k][:, j] for k in feat_keys}
+            df_sym = pd.DataFrame(sym_data, index=time_index, copy=False)
             df_sym = df_sym.astype(np.float32, copy=False)
+
             if cutoff_ts is not None:
                 df_sym = df_sym[df_sym.index > cutoff_ts]
-            if df_sym.empty:
-                continue
+                if df_sym.empty:
+                    continue
 
-            safe_sym = sym.replace("/", "_")
-            final_path = os.path.join(out_dir, f"symbol={safe_sym}.parquet")
-            append_symbol_features(final_path, sym, df_sym)
+            df_sym['__symbol__'] = sym
+            df_sym.to_parquet(final_path, engine="pyarrow", compression="zstd", index=True)
+            _write_feature_metadata(final_path, sym, df_sym.index)
+
             del df_sym
+            del sym_data
             count += 1
 
-            if count % 50 == 0:
-                tprint(f"  Saved {count}/{total} symbols ({n_feats} features each)")
+            if count % 25 == 0 or count == total:
+                tprint(f"  Save progress: {count}/{total} symbols ({n_feats} features each)")
+                _gc.collect()
             if count % 200 == 0:
                 _gc.collect()
 
@@ -999,15 +1097,44 @@ class LazyFeatureDict:
                 tprint(f"Lazy-assembling DataFrame for '{k}'...")
             data = self._raw.pop(k)
             clean_data = {}
+            skipped_symbols = []
+            normalized_symbols = []
             for sym, (idx_vals, val_array) in data.items():
-                clean_data[sym] = pd.Series(val_array, index=idx_vals)
-            df = pd.DataFrame(clean_data).sort_index()
+                normalized_idx, normalized_vals, reason = _normalize_feature_index(
+                    idx_vals,
+                    val_array,
+                )
+                if normalized_idx is None or normalized_vals is None:
+                    skipped_symbols.append(f"{sym}:{reason}")
+                    continue
+                if reason is not None:
+                    normalized_symbols.append(f"{sym}:{reason}")
+                series = pd.Series(normalized_vals, index=normalized_idx)
+                if not series.index.is_unique:
+                    series = series[~series.index.duplicated(keep="last")]
+                clean_data[sym] = series
+            if skipped_symbols:
+                tprint(
+                    f"Lazy feature assembly skipped {len(skipped_symbols)} symbols for '{k}' "
+                    f"due to invalid indices. Sample: {skipped_symbols[:5]}"
+                )
+            if normalized_symbols:
+                tprint(
+                    f"Lazy feature assembly normalized {len(normalized_symbols)} symbols for '{k}'. "
+                    f"Sample: {normalized_symbols[:5]}"
+                )
+            df = pd.DataFrame(clean_data).sort_index() if clean_data else pd.DataFrame()
             self._assembled[k] = df
             return df
         raise KeyError(k)
 
     def __getitem__(self, k):
         return self._assemble_key(k, log=True)
+
+    def __setitem__(self, k, v):
+        self._assembled[k] = v
+        if k in self._raw:
+            self._raw.pop(k)
 
     def __contains__(self, k):
         return k in self._assembled or k in self._raw
@@ -1098,11 +1225,6 @@ def load_features_selected(
     symbol_set = set(map(str, symbols)) if symbols else None
     start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
     end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
-    parquet_filters = []
-    if start_ts is not None:
-        parquet_filters.append(("ts", ">=", start_ts))
-    if end_ts is not None:
-        parquet_filters.append(("ts", "<=", end_ts))
     if symbol_set is not None:
         files = []
         seen = set()
@@ -1153,9 +1275,15 @@ def load_features_selected(
             cols_to_read = []
             if "__symbol__" in schema_names:
                 cols_to_read.append("__symbol__")
+            if "ts" in schema_names:
+                cols_to_read.append("ts")
             if feature_set is None:
                 cols_to_read.extend(
-                    [c for c in schema_names if c != "__symbol__" and not c.startswith("__index_level_")]
+                    [
+                        c
+                        for c in schema_names
+                        if c not in {"__symbol__", "ts"} and not c.startswith("__index_level_")
+                    ]
                 )
             else:
                 cols_to_read.extend([c for c in feature_set if c in schema_names])
@@ -1170,9 +1298,22 @@ def load_features_selected(
                 continue
 
             read_kwargs = {"columns": cols_to_read}
+            has_filterable_time_field = "ts" in schema_names or any(
+                name.startswith("__index_level_") for name in schema_names
+            )
+            parquet_filters = []
+            if has_filterable_time_field:
+                if start_ts is not None:
+                    parquet_filters.append(("ts", ">=", start_ts))
+                if end_ts is not None:
+                    parquet_filters.append(("ts", "<=", end_ts))
             if parquet_filters:
                 read_kwargs["filters"] = parquet_filters
             df = pd.read_parquet(fpath, **read_kwargs)
+            df, index_reason = _ensure_feature_frame_index(df, parquet_path=fpath)
+            if index_reason == "invalid_ts_column":
+                tprint(f"Skipping feature file {fpath}: invalid ts column")
+                continue
             if start_ts is not None:
                 df = df[df.index >= start_ts]
             if end_ts is not None:
@@ -1206,6 +1347,19 @@ def load_features_selected(
                     )
                 continue
 
+            normalized_idx, _, index_reason = _normalize_feature_index(df.index.values)
+            if normalized_idx is None:
+                tprint(
+                    f"Skipping feature file {fpath} for symbol {real_sym}: invalid index ({index_reason})"
+                )
+                continue
+            if index_reason is not None:
+                tprint(
+                    f"Normalized feature index for symbol {real_sym} in {fpath}: {index_reason}"
+                )
+            df.index = normalized_idx
+            if not df.index.is_unique:
+                df = df[~df.index.duplicated(keep='last')]
             idx_vals = df.index.values
             for k in df.columns:
                 if feature_set is not None and k not in feature_set:

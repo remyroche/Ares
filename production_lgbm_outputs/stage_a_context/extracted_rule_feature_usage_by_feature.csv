@@ -1,0 +1,11 @@
+feature_name,group,usage_count
+reg_volume_spike_hybrid_top20,regime,237
+reg_body_ratio_hybrid_top60,regime,177
+reg_body_ratio_hybrid_top40,regime,156
+reg_ema50_gt_ema200_hybrid_top20,regime,126
+reg_range_atr_hybrid_top60,regime,123
+reg_range_atr_hybrid_top40,regime,90
+reg_atr_compression_ratio_hybrid_top20,regime,72
+reg_ema20_gt_ema50_hybrid_top20,regime,39
+reg_lower_wick_hybrid_top20,regime,15
+reg_ema20_gt_ema50_hybrid_top60,regime,3

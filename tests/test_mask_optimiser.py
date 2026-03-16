@@ -10,6 +10,8 @@ from extreme_price_movements.mask_optimiser import (
     _build_temporal_folds,
     _cap_rows_for_optimization,
     _build_phase_local_shared,
+    _ensure_min_feature_representatives,
+    _mask_symbol_concentration_summary,
 )
 import pytest
 
@@ -200,6 +202,37 @@ def test_cap_rows_for_optimization_caps_all_inputs():
     assert feature_capped["f2"].shape[0] == 7
 
 
+def test_cap_rows_for_optimization_preserves_symbol_breadth():
+    data = pd.DataFrame(
+        {
+            "timestamp": np.arange(12),
+            "symbol": ["A"] * 4 + ["B"] * 4 + ["C"] * 4,
+            "close": np.arange(12, dtype=np.float32),
+        }
+    )
+    feature_dict = {"f1": np.arange(12, dtype=np.float32)}
+    forward_returns = np.arange(12, dtype=np.float32)
+
+    data_capped, feature_capped, forward_capped = _cap_rows_for_optimization(
+        data=data,
+        feature_dict=feature_dict,
+        forward_returns=forward_returns,
+        cfg={"mask_opt_max_rows": 6},
+        seed=42,
+    )
+
+    assert len(data_capped) == 6
+    assert feature_capped["f1"].shape[0] == 6
+    assert forward_capped.shape[0] == 6
+    counts = data_capped["symbol"].value_counts().to_dict()
+    assert counts == {"A": 2, "B": 2, "C": 2}
+    assert data_capped.groupby("symbol")["timestamp"].min().to_dict() == {
+        "A": 2,
+        "B": 6,
+        "C": 10,
+    }
+
+
 def test_build_temporal_folds_fallback_uses_timestamp_groups():
     ts = np.array([1, 1, 2, 2, 3, 3, 4, 4, 5, 5], dtype=np.int64)
     folds = _build_temporal_folds(ts, ts.shape[0], n_splits=2)
@@ -208,3 +241,50 @@ def test_build_temporal_folds_fallback_uses_timestamp_groups():
         va_ts = set(ts[va].tolist())
         assert tr_ts.isdisjoint(va_ts)
         assert max(tr_ts) < min(va_ts)
+
+
+def test_build_temporal_folds_accepts_symbol_vector():
+    ts = np.arange(12, dtype=np.int64)
+    symbols = np.array(["A", "B", "C"] * 4, dtype=object)
+    folds = _build_temporal_folds(ts, ts.shape[0], n_splits=2, symbols=symbols)
+
+    assert len(folds) >= 1
+    for tr, va in folds:
+        assert tr.dtype == np.int32
+        assert va.dtype == np.int32
+
+
+def test_mask_symbol_concentration_summary_reports_top_share():
+    mask = np.array([True, True, True, False, True, False])
+    symbol_codes = np.array([0, 0, 1, 1, 0, 2], dtype=np.int32)
+    symbol_uniques = np.array(["A", "B", "C"], dtype=object)
+
+    summary = _mask_symbol_concentration_summary(mask, symbol_codes, symbol_uniques)
+
+    assert summary["event_symbol_count"] == 2
+    assert summary["top_symbol_share"] == 0.75
+    assert "A:3" in summary["top_symbol_counts_text"]
+
+
+def test_ensure_min_feature_representatives_respects_floor():
+    df = pd.DataFrame(
+        [
+            {"name": "a1", "feature_base": "fa", "score": 10.0},
+            {"name": "a2", "feature_base": "fa", "score": 9.0},
+            {"name": "a3", "feature_base": "fa", "score": 8.0},
+            {"name": "b1", "feature_base": "fb", "score": 7.0},
+            {"name": "b2", "feature_base": "fb", "score": 6.0},
+            {"name": "c1", "feature_base": "fc", "score": 5.0},
+        ]
+    )
+
+    out = _ensure_min_feature_representatives(
+        df,
+        score_col="score",
+        min_per_feature=2,
+        max_total=4,
+    )
+
+    counts = out["feature_base"].value_counts().to_dict()
+    assert counts["fa"] >= 2
+    assert counts["fb"] >= 2

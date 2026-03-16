@@ -1,0 +1,861 @@
+Mar 14, 2026 17:18:29 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:18:29 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:18:29 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:18:29 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:18:29 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:18:29 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.001s
+Mar 14, 2026 17:18:29 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:18:29 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:18:29 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:18:29 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:18:29 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:18:29 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:18:34 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:18:34 (+00:00:05) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:18:34 (+00:00:05) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:18:34 (+00:00:05) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:18:34 (+00:00:05) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:18:34 (+00:00:05) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:18:34 (+00:00:05) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:18:34 (+00:00:05) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:18:34 (+00:00:05) - System.tprint - INFO - DataStreamingManager initialization took 0.001s
+Mar 14, 2026 17:18:34 (+00:00:05) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:18:34 (+00:00:05) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:18:34 (+00:00:05) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:18:34 (+00:00:05) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:18:34 (+00:00:05) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:18:35 (+00:00:06) - params_store - INFO - [params_store] Loaded 6 dynamic strategies from mask_optimiser
+Mar 14, 2026 17:18:35 (+00:00:06) - params_store - INFO - [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG8442CAD91F  base_atr_window=840  k_tp=0.3  sl_as_tp_pct=0.65  tp_base_pct=0.045  mode=optuna_s1_TF_short_H4  horizon_scaling=sqrt
+Mar 14, 2026 17:18:35 (+00:00:06) - params_store - INFO - [params_store] Injected into cfg: barrier_atr_window=840  barrier_k_tp=0.3  barrier_mode=optuna_s1_TF_short_H4  barrier_sl_base_mult=0.65  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.045  barrier_tp_base_pct=0.045  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.002s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:22:40 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:22:40 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:22:40 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:22:40 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:22:40 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:22:40 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:22:40 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:22:40 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.003s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:22:40 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:22:40 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:40 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:22:40 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:22:41 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:22:41 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:22:41 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:22:41 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:41 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:41 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:41 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:41 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:22:41 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:22:47 (+00:00:07) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:22:47 (+00:00:07) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:22:47 (+00:00:07) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:22:47 (+00:00:07) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:22:47 (+00:00:07) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:22:47 (+00:00:07) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:22:47 (+00:00:07) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:22:47 (+00:00:07) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:22:47 (+00:00:07) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:22:47 (+00:00:07) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:22:47 (+00:00:07) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:22:47 (+00:00:07) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:22:47 (+00:00:07) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:22:47 (+00:00:07) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:22:47 (+00:00:07) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:22:47 (+00:00:07) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataCleaner(klines) initialization took 0.003s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:22:47 (+00:00:07) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:22:47 (+00:00:07) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:22:47 (+00:00:07) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataStreamingManager initialization took 0.001s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:22:47 (+00:00:07) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataStreamingManager initialization took 0.001s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:22:47 (+00:00:07) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:22:47 (+00:00:07) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:22:47 (+00:00:07) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:22:47 (+00:00:07) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:22:47 (+00:00:07) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:22:47 (+00:00:07) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:22:47 (+00:00:07) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:47 (+00:00:07) - System.tprint - INFO - DataCleaner(klines) initialization took 0.004s
+Mar 14, 2026 17:22:47 (+00:00:07) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:22:48 (+00:00:07) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:22:48 (+00:00:07) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:22:48 (+00:00:07) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:22:48 (+00:00:07) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:22:48 (+00:00:07) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:22:48 (+00:00:07) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:22:48 (+00:00:07) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:22:48 (+00:00:07) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:22:48 (+00:00:07) - System.tprint - INFO - DataStreamingManager initialization took 0.001s
+Mar 14, 2026 17:22:48 (+00:00:07) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:22:48 (+00:00:07) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:22:48 (+00:00:07) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:22:48 (+00:00:07) - System.tprint - INFO - DataCleaner(klines) initialization took 0.004s
+Mar 14, 2026 17:22:48 (+00:00:07) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:32:10 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:32:10 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:32:10 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.002s
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.003s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:32:11 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:32:11 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:32:11 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:32:11 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:32:11 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:32:11 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:32:11 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:32:11 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:32:11 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:32:11 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:32:11 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:32:11 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:32:11 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:11 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:32:11 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:32:15 (+00:00:04) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:32:15 (+00:00:04) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:32:15 (+00:00:04) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:32:15 (+00:00:04) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:32:15 (+00:00:04) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:32:15 (+00:00:04) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:32:15 (+00:00:04) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:32:15 (+00:00:04) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:32:15 (+00:00:04) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:32:15 (+00:00:04) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:32:15 (+00:00:04) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:32:15 (+00:00:04) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:32:15 (+00:00:04) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:32:15 (+00:00:04) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:32:15 (+00:00:04) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:32:15 (+00:00:04) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:32:15 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:32:15 (+00:00:04) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:32:15 (+00:00:04) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:32:15 (+00:00:04) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:32:15 (+00:00:04) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:32:15 (+00:00:04) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:32:15 (+00:00:04) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:32:15 (+00:00:04) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:32:15 (+00:00:04) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:32:15 (+00:00:04) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:32:15 (+00:00:04) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:32:15 (+00:00:04) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:32:15 (+00:00:04) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:32:15 (+00:00:04) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:32:15 (+00:00:04) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:32:15 (+00:00:04) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:32:15 (+00:00:04) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:32:15 (+00:00:04) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:32:15 (+00:00:04) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:42:04 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:42:04 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:42:04 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.002s
+Mar 14, 2026 17:42:04 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:42:04 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.007s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:42:05 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.002s
+Mar 14, 2026 17:42:05 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:42:05 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:42:05 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.001s
+Mar 14, 2026 17:42:05 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:42:05 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.020s
+Mar 14, 2026 17:42:05 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:42:05 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.001s
+Mar 14, 2026 17:42:05 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:42:05 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:42:05 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.002s
+Mar 14, 2026 17:42:05 (+00:00:01) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:05 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:05 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:42:06 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:42:06 (+00:00:01) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:42:06 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:42:10 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:42:10 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:42:10 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:42:10 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:42:10 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:42:10 (+00:00:05) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:42:10 (+00:00:05) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:42:10 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:42:10 (+00:00:05) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:42:10 (+00:00:05) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:42:10 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:42:11 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:42:11 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:42:11 (+00:00:05) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:42:11 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:42:11 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:42:11 (+00:00:05) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:42:11 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:42:11 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:42:11 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:42:11 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:42:11 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:42:11 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:42:11 (+00:00:05) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:42:11 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:42:11 (+00:00:05) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:42:11 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:05) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:05) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:42:11 (+00:00:05) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:42:11 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:42:11 (+00:00:05) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:42:11 (+00:00:05) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:42:11 (+00:00:05) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:05) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:42:11 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:42:11 (+00:00:05) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:42:11 (+00:00:05) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:42:11 (+00:00:05) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:42:11 (+00:00:05) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:42:11 (+00:00:05) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:05) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:42:11 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:42:11 (+00:00:05) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:42:11 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:42:11 (+00:00:05) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:42:11 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:42:11 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:11 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:42:11 (+00:00:05) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:42:11 (+00:00:05) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:42:11 (+00:00:05) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:42:11 (+00:00:05) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:51:01 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:51:01 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:51:01 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:51:01 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.002s
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:51:01 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:51:01 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:51:01 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:51:01 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 14, 2026 17:51:02 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 14, 2026 17:51:02 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:51:02 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:51:02 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:51:02 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:51:02 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.001s
+Mar 14, 2026 17:51:02 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:51:02 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:51:02 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:51:02 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:51:02 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:51:02 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:51:02 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.001s
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:51:02 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 14, 2026 17:51:02 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:02 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 14, 2026 17:51:02 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 14, 2026 17:51:07 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:51:07 (+00:00:06) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:51:07 (+00:00:06) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:51:07 (+00:00:06) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:51:08 (+00:00:05) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:51:08 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:51:08 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:51:08 (+00:00:06) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:51:08 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.001s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:51:08 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:51:08 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:51:08 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:51:08 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:51:08 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:51:08 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:51:08 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:51:08 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:51:08 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:51:08 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:51:08 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:51:08 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:08 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:51:08 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:51:08 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:51:08 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 14, 2026 17:51:08 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:51:08 (+00:00:06) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:51:08 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:51:08 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.001s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:51:08 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.002s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:51:08 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.005s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 14, 2026 17:51:08 (+00:00:06) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataStreamingManager initialization took 0.001s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:51:08 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:51:08 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:51:08 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 14, 2026 17:51:08 (+00:00:06) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 14, 2026 17:51:08 (+00:00:06) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 14, 2026 17:51:08 (+00:00:06) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 14, 2026 17:51:08 (+00:00:06) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized

@@ -8,6 +8,11 @@ import os
 import pickle
 import re
 from joblib import Memory
+from extreme_price_movements.intraday_crypto_library import (
+    INTRADAY_TRIGGER_COLUMNS,
+    LOCATION_FILTER_COLUMNS,
+    build_intraday_crypto_library,
+)
 from extreme_price_movements.utils import tprint, check_inf_nan
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.time_utils import ensure_utc
@@ -33,6 +38,61 @@ EPS = 1e-12
 _PERP_FEATURE_COLLISION_RENAMES = {
     "ret1h": "ret1h_perp",
 }
+
+_INTRADAY_PERSISTED_KEY_SET = set(LOCATION_FILTER_COLUMNS) | set(INTRADAY_TRIGGER_COLUMNS)
+
+
+def _compute_intraday_library_features_wide(
+    open_df: pd.DataFrame,
+    high_df: pd.DataFrame,
+    low_df: pd.DataFrame,
+    close_df: pd.DataFrame,
+    volume_df: pd.DataFrame,
+    requested_feature_set: set[str],
+) -> dict[str, pd.DataFrame]:
+    selected_keys = (
+        sorted(_INTRADAY_PERSISTED_KEY_SET)
+        if not requested_feature_set
+        else sorted(_INTRADAY_PERSISTED_KEY_SET.intersection(requested_feature_set))
+    )
+    if not selected_keys:
+        return {}
+
+    session_ids = pd.Series(
+        pd.factorize(open_df.index.normalize())[0].astype(np.int32),
+        index=open_df.index,
+        dtype="int32",
+    )
+    out: dict[str, pd.DataFrame] = {
+        key: pd.DataFrame(index=open_df.index, columns=open_df.columns, dtype=np.float32)
+        for key in selected_keys
+    }
+    total_symbols = len(open_df.columns)
+    tprint(
+        f"Features: computing intraday location/trigger library "
+        f"({len(selected_keys)} keys x {total_symbols} symbols)"
+    )
+    for i, sym in enumerate(open_df.columns, start=1):
+        local_df = pd.DataFrame(
+            {
+                "open": open_df[sym].astype(np.float32, copy=False),
+                "high": high_df[sym].astype(np.float32, copy=False),
+                "low": low_df[sym].astype(np.float32, copy=False),
+                "close": close_df[sym].astype(np.float32, copy=False),
+                "volume": volume_df[sym].astype(np.float32, copy=False),
+                "session_id": session_ids,
+            },
+            index=open_df.index,
+        )
+        local_lib = build_intraday_crypto_library(local_df)
+        for key in selected_keys:
+            col = local_lib.get(key)
+            if col is None:
+                continue
+            out[key][sym] = np.asarray(col, dtype=np.float32)
+        if i % 25 == 0 or i == total_symbols:
+            tprint(f"  Intraday library progress: {i}/{total_symbols}")
+    return out
 
 def _sanitize_col_name(name):
     """Make column name filesystem-safe."""
@@ -820,6 +880,9 @@ def _compute_hvn_feature_frames(
 def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     tprint("Features: compute base matrices")
     requested_feature_set = set(requested_feature_keys or [])
+
+    def _needs_feature(*keys: str) -> bool:
+        return (not requested_feature_set) or any(k in requested_feature_set for k in keys)
     
     # Check inputs
     # Check inputs (removing debug checks to reduce spam)
@@ -856,9 +919,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     o_raw = panel.pop("open").astype(np.float32)
     o_raw.index = new_idx
     o = ff.numba_ewma(_safe_log_df(o_raw, eps=safe_log_eps), 2.0 / 6.0, False)
-    del o_raw
-    gc.collect()
-
     # 3. Transform High (log-space)
     h_raw = panel.pop("high").astype(np.float32)
     h_raw.index = new_idx
@@ -915,7 +975,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     _liq_pct = ff.numba_rolling_rank_pct(_liq_feats_temp["liq_score"], window=24 * 30).fillna(0.5)
     _liq_feats_temp["liq_state"] = np.floor(_liq_pct.clip(0, 0.9999) * 5).astype(np.float32)
 
-    del h_raw, l_raw, _v_raw, _rng, _dollar_vol, _rng_sum_48, _dv_sum_48, _impact, _dv_log, _liq_score, _liq_pct
+    del _v_raw, _rng, _dollar_vol, _rng_sum_48, _dv_sum_48, _impact, _dv_log, _liq_score, _liq_pct
     gc.collect()
 
     c_log = _safe_log_df(c_raw, eps=safe_log_eps)
@@ -928,16 +988,21 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         already_logged=False,
         thres=ffd_thres,
     )
-    del c_raw
-    gc.collect()
-
     # 6. Transform Volume
     v_raw = panel.pop("volume").astype(np.float32)
     v_raw.index = new_idx
     # Raw log(volume_usd) — unnormalized, for asset identity
     _raw_log_vol = np.log1p(v_raw).astype(np.float32)
     v = _transform_volume(v_raw)
-    del v_raw
+    intraday_library_feats = _compute_intraday_library_features_wide(
+        open_df=o_raw,
+        high_df=h_raw,
+        low_df=l_raw,
+        close_df=c_raw,
+        volume_df=v_raw,
+        requested_feature_set=requested_feature_set,
+    )
+    del o_raw
     gc.collect()
     
     # Clear panel rest
@@ -945,6 +1010,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     feats = {}
     feats.update(_liq_feats_temp)
+    feats.update(intraday_library_feats)
 
     # Correct return naming: log returns from log close
     feats["lr_1h"] = c_log.diff(1).astype(np.float32)
@@ -1154,6 +1220,47 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         if bool(cfg.get("ratio_use_log", True)):
             vr_ratio = np.log1p(vr_ratio.clip(lower=0))
         feats[f"ffd_vol_range_shock_{d_tag}"] = vr_ratio.astype(np.float32)
+
+    # --- Technical Regime (Ridge) Features (User Request) ---
+    tprint("Features: technical regime (ridge) indicators")
+    ema20 = ff.numba_ewma(c_log, 2.0 / 21.0, False)
+    ema50 = ff.numba_ewma(c_log, 2.0 / 51.0, False)
+    ema200 = ff.numba_ewma(c_log, 2.0 / 201.0, False)
+    
+    _safe_range_ln = (h - l).clip(lower=1e-12)
+    feats["range_atr"] = (feats["range_ln"] / (feats["atr_ln"] + 1e-12)).astype(np.float32)
+    feats["body_ratio"] = ((c_log - o).abs() / _safe_range_ln).astype(np.float32)
+    feats["upper_wick_ratio"] = ((h - np.maximum(o, c_log)) / _safe_range_ln).astype(np.float32)
+    feats["lower_wick_ratio"] = ((np.minimum(o, c_log) - l) / _safe_range_ln).astype(np.float32)
+    
+    # Aliases for exact user-requested names
+    feats["upper_wick"] = feats["upper_wick_ratio"]
+    feats["lower_wick"] = feats["lower_wick_ratio"]
+    
+    feats["ema20_slope_5h"] = ((ema20 - ema20.shift(5)) / (feats["atr_ln"] + 1e-12)).astype(np.float32)
+    feats["ema_slope_norm"] = feats["ema20_slope_5h"]
+    feats["ema_slope"] = (ema20 - ema20.shift(5)).astype(np.float32)
+    
+    feats["pullback_depth"] = ((ema20 - l) / (feats["atr_ln"] + 1e-12)).astype(np.float32)
+    
+    atr_long = ff.numba_ewma(tr_ln, 1.0 / (24 * 7), False).clip(lower=1e-9)
+    feats["atr_compression_ratio"] = (feats["atr_ln"] / atr_long).astype(np.float32)
+    feats["compression_ratio"] = feats["atr_compression_ratio"]
+    
+    _accel_raw = (c_log - 2 * c_log.shift(1) + c_log.shift(2))
+    feats["acceleration"] = _accel_raw.astype(np.float32)
+    feats["acceleration_norm"] = (_accel_raw / (feats["atr_ln"] + 1e-12)).astype(np.float32)
+    
+    # Volume Spike: volume / volume_ma(24)
+    vol_ma24 = ff.numba_rolling_mean(v, 24)
+    feats["volume_spike"] = (v / (vol_ma24 + 1e-12)).astype(np.float32)
+    
+    feats["ema20_gt_ema50"] = (ema20 > ema50).astype(np.float32)
+    feats["ema50_gt_ema200"] = (ema50 > ema200).astype(np.float32)
+    feats["dist_ema20_atr"] = ((c_log - ema20) / (feats["atr_ln"] + 1e-12)).astype(np.float32)
+    feats["distance_to_ema"] = feats["dist_ema20_atr"]
+    
+    # --- End Technical Regime ---
 
     # Distance-from-mean-reversion features (d=0.4)
     for d in [0.4]:
@@ -2910,11 +3017,16 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     gc.collect()
 
     # --- explicit peer-context and ts-percentile features ---
-    cs_feats = add_cross_sectional_peer_context_features(feats, min_group_size=5)
-    feats.update(cs_feats)
+    if (
+        not requested_feature_set
+        or any(str(k).startswith("cs_rank_") or str(k).startswith("cs_rz_") for k in requested_feature_set)
+    ):
+        cs_feats = add_cross_sectional_peer_context_features(feats, min_group_size=5)
+        feats.update(cs_feats)
 
-    ts_feats = add_time_series_percentile_features(feats, lookback=720, min_history_fraction=0.25)
-    feats.update(ts_feats)
+    if not requested_feature_set or any(str(k).startswith("ts_pct_") for k in requested_feature_set):
+        ts_feats = add_time_series_percentile_features(feats, lookback=720, min_history_fraction=0.25)
+        feats.update(ts_feats)
 
     if requested_feature_set:
         feats = {k: v for k, v in feats.items() if k in requested_feature_set}
@@ -2942,6 +3054,213 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid",
     }
 
+    position_sizer_keys = {
+        "ATR_decay_rate", "ATR_spike_ratio", "ATR_ratio_short_long",
+        "bar_direction_entropy", "realized_vol_15m_realized_vol_2h",
+        "micro_range_decay", "range_decay", "vol_regime_transition",
+        "close_position_in_range", "distance_to_local_high", "distance_to_local_low",
+        "distance_to_vwap", "bidirectional_range_ratio", "bollinger_band_width",
+        "choppiness_index_20", "climax_volume_ratio", "dist_ema50_atr",
+        "dist_ema100_atr", "dist_ema200_atr", "dist_rolling_7d_high",
+        "dist_prior_day_high", "dist_prior_day_low", "dist_range_mid_atr",
+        "dist_weekly_vwap", "cost_to_atr", "direction_entropy_20",
+        "atr_change_rate", "acceleration_of_move", "accept_gt66",
+        "bars_since_trend_flip", "MACD_histogram", "RSI", "dist_local_swing",
+        "dist_ma100_atr", "dist_vwap_atr", "abs_edge_pred",
+    }
+    if not requested_feature_set or position_sizer_keys.intersection(requested_feature_set):
+        tprint("Features: adding missing position sizer features")
+
+        atr_base = feats.get("atr_pct_base", pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32))
+        if atr_base.empty:
+            atr_base = _raw_atr_pct
+
+        ret_1 = None
+        bar_range = None
+        atr_mean_24 = None
+        high_12 = None
+        low_12 = None
+        high_24 = None
+        low_24 = None
+
+        if _needs_feature("bar_direction_entropy", "realized_vol_15m_realized_vol_2h", "direction_entropy_20", "acceleration_of_move", "vol_regime_transition"):
+            ret_1 = (c_log.shift(-1) / c_log - 1.0).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("micro_range_decay", "range_decay", "choppiness_index_20", "accept_gt66"):
+            bar_range = h_raw - l_raw
+
+        if _needs_feature("ATR_decay_rate"):
+            feats["ATR_decay_rate"] = atr_base.apply(lambda x: pd.Series(slope_nb(x.values, 6), index=x.index), axis=0).astype(np.float32)
+
+        if _needs_feature("ATR_spike_ratio", "ATR_ratio_short_long"):
+            atr_mean_24 = atr_base.rolling(24, min_periods=1).mean()
+        if _needs_feature("ATR_spike_ratio"):
+            feats["ATR_spike_ratio"] = (atr_base / (atr_mean_24 + 1e-9)).fillna(1.0).astype(np.float32)
+        if _needs_feature("ATR_ratio_short_long"):
+            atr_mean_3 = atr_base.rolling(3, min_periods=1).mean()
+            feats["ATR_ratio_short_long"] = (atr_mean_3 / (atr_mean_24 + 1e-9)).fillna(1.0).astype(np.float32)
+            del atr_mean_3
+
+        if _needs_feature("bar_direction_entropy"):
+            feats["bar_direction_entropy"] = ret_1.apply(lambda x: pd.Series(binary_entropy_nb(x.values, 12), index=x.index), axis=0).astype(np.float32)
+
+        rv_1 = rv_2 = rv_24 = None
+        if _needs_feature("realized_vol_15m_realized_vol_2h", "vol_regime_transition"):
+            rv_1 = ret_1.apply(lambda x: pd.Series(realized_vol_nb(x.values, 1), index=x.index), axis=0)
+            rv_2 = ret_1.apply(lambda x: pd.Series(realized_vol_nb(x.values, 2), index=x.index), axis=0)
+        if _needs_feature("realized_vol_15m_realized_vol_2h"):
+            feats["realized_vol_15m_realized_vol_2h"] = (rv_1 / (rv_2 + 1e-9)).fillna(1.0).astype(np.float32)
+        if _needs_feature("vol_regime_transition"):
+            rv_24 = ret_1.apply(lambda x: pd.Series(realized_vol_nb(x.values, 24), index=x.index), axis=0)
+            rv24_mean_48 = rv_24.rolling(48, min_periods=1).mean()
+            feats["vol_regime_transition"] = (rv_24 / (rv24_mean_48 + 1e-9)).fillna(1.0).astype(np.float32)
+
+        if _needs_feature("micro_range_decay"):
+            feats["micro_range_decay"] = bar_range.apply(lambda x: pd.Series(slope_nb(x.values, 3), index=x.index), axis=0).astype(np.float32)
+
+        if _needs_feature("range_decay"):
+            range_mean_3 = bar_range.rolling(3, min_periods=1).mean()
+            range_mean_6 = bar_range.rolling(6, min_periods=1).mean()
+            feats["range_decay"] = (range_mean_3 / (range_mean_6 + 1e-9)).fillna(1.0).astype(np.float32)
+
+        if _needs_feature("close_position_in_range"):
+            close_pos_in_range = pd.DataFrame(index=h_raw.index, columns=h_raw.columns, dtype=np.float32)
+            for col in h_raw.columns:
+                close_pos_in_range[col] = close_location_in_bar_nb(h_raw[col].values, l_raw[col].values, c_raw[col].values)
+            feats["close_position_in_range"] = close_pos_in_range.astype(np.float32)
+
+        if _needs_feature("distance_to_local_high", "distance_to_local_low", "bidirectional_range_ratio", "dist_local_swing"):
+            high_12 = h_raw.rolling(12, min_periods=1).max()
+            low_12 = l_raw.rolling(12, min_periods=1).min()
+        if _needs_feature("distance_to_local_high"):
+            feats["distance_to_local_high"] = ((high_12 - c_raw) / (c_raw + 1e-9)).fillna(0.0).astype(np.float32)
+        if _needs_feature("distance_to_local_low"):
+            feats["distance_to_local_low"] = ((c_raw - low_12) / (c_raw + 1e-9)).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("distance_to_vwap", "dist_vwap_atr"):
+            vwap_24 = pd.DataFrame(index=c_raw.index, columns=c_raw.columns, dtype=np.float32)
+            for col in c_raw.columns:
+                vwap_24[col] = vwap_nb(c_raw[col].values, v_raw[col].values, 24)
+            feats["distance_to_vwap"] = ((c_raw - vwap_24) / (vwap_24 + 1e-9)).fillna(0.0).astype(np.float32)
+            if _needs_feature("dist_vwap_atr"):
+                feats["dist_vwap_atr"] = feats["distance_to_vwap"]
+
+        if _needs_feature("bidirectional_range_ratio"):
+            range_12 = high_12 - low_12
+            high_3 = h_raw.rolling(3, min_periods=1).max()
+            low_3 = l_raw.rolling(3, min_periods=1).min()
+            range_3 = high_3 - low_3
+            feats["bidirectional_range_ratio"] = (range_3 / (range_12 + 1e-9)).fillna(1.0).astype(np.float32)
+
+        if _needs_feature("bollinger_band_width"):
+            sma_20 = c_log.rolling(20, min_periods=1).mean()
+            std_20 = c_log.rolling(20, min_periods=1).std()
+            feats["bollinger_band_width"] = (2 * std_20 / (sma_20 + 1e-9)).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("choppiness_index_20"):
+            tr = pd.concat([h_raw - l_raw, (h_raw - c_raw.shift(1)).abs(), (l_raw - c_raw.shift(1)).abs()], axis=1).max(axis=1)
+            tr_20 = tr.rolling(20, min_periods=1).sum()
+            high_max_20 = h_raw.rolling(20, min_periods=1).max()
+            low_min_20 = l_raw.rolling(20, min_periods=1).min()
+            range_20 = high_max_20 - low_min_20
+            feats["choppiness_index_20"] = (100.0 * np.log(tr_20 / (range_20 + 1e-9) + 1e-9) / np.log(20.0)).clip(0, 100).astype(np.float32)
+
+        if _needs_feature("climax_volume_ratio"):
+            vol_mean_24 = v_raw.rolling(24, min_periods=1).mean()
+            vol_max_6 = v_raw.rolling(6, min_periods=1).max()
+            feats["climax_volume_ratio"] = (vol_max_6 / (vol_mean_24 + 1e-9)).fillna(1.0).astype(np.float32)
+
+        if _needs_feature("dist_ema50_atr"):
+            ema_50 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 50), index=x.index), axis=0)
+            feats["dist_ema50_atr"] = ((c_log - ema_50) / (atr_base + 1e-9)).astype(np.float32)
+        if _needs_feature("dist_ema100_atr"):
+            ema_100 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 100), index=x.index), axis=0)
+            feats["dist_ema100_atr"] = ((c_log - ema_100) / (atr_base + 1e-9)).astype(np.float32)
+        if _needs_feature("dist_ema200_atr"):
+            ema_200 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 200), index=x.index), axis=0)
+            feats["dist_ema200_atr"] = ((c_log - ema_200) / (atr_base + 1e-9)).astype(np.float32)
+
+        if _needs_feature("dist_rolling_7d_high"):
+            high_168 = h_raw.rolling(168, min_periods=1).max()
+            feats["dist_rolling_7d_high"] = ((high_168 - c_raw) / (c_raw + 1e-9)).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("dist_prior_day_high", "dist_prior_day_low", "dist_range_mid_atr"):
+            high_24 = h_raw.rolling(24, min_periods=1).max()
+            low_24 = l_raw.rolling(24, min_periods=1).min()
+        if _needs_feature("dist_prior_day_high"):
+            feats["dist_prior_day_high"] = ((high_24.shift(1) - c_raw) / (c_raw + 1e-9)).fillna(0.0).astype(np.float32)
+        if _needs_feature("dist_prior_day_low"):
+            feats["dist_prior_day_low"] = ((c_raw - low_24.shift(1)) / (c_raw + 1e-9)).fillna(0.0).astype(np.float32)
+        if _needs_feature("dist_range_mid_atr"):
+            range_mid = (high_24 + low_24) / 2.0
+            feats["dist_range_mid_atr"] = ((c_raw - range_mid) / (atr_base + 1e-9)).astype(np.float32)
+
+        if _needs_feature("dist_weekly_vwap"):
+            vwap_168 = pd.DataFrame(index=c_raw.index, columns=c_raw.columns, dtype=np.float32)
+            for col in c_raw.columns:
+                vwap_168[col] = vwap_nb(c_raw[col].values, v_raw[col].values, 168)
+            feats["dist_weekly_vwap"] = ((c_raw - vwap_168) / (vwap_168 + 1e-9)).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("cost_to_atr"):
+            spread_pct = pd.DataFrame(index=atr_base.index, columns=atr_base.columns, dtype=np.float32).fillna(0.0)
+            feats["cost_to_atr"] = (spread_pct / (atr_base + 1e-9)).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("direction_entropy_20"):
+            feats["direction_entropy_20"] = ret_1.apply(lambda x: pd.Series(binary_entropy_nb(x.values, 20), index=x.index), axis=0).astype(np.float32)
+
+        if _needs_feature("atr_change_rate"):
+            feats["atr_change_rate"] = atr_base.pct_change().fillna(0.0).astype(np.float32)
+
+        if _needs_feature("acceleration_of_move"):
+            feats["acceleration_of_move"] = ret_1.apply(lambda x: pd.Series(slope_nb(x.values, 6), index=x.index), axis=0).astype(np.float32)
+
+        if _needs_feature("accept_gt66"):
+            close_in_range = (c_raw - l_raw) / (h_raw - l_raw + 1e-9)
+            feats["accept_gt66"] = (close_in_range > 0.66).astype(np.float32).rolling(6, min_periods=1).mean().astype(np.float32)
+
+        if _needs_feature("bars_since_trend_flip"):
+            trend_slope = c_log.apply(lambda x: pd.Series(slope_nb(x.values, 6), index=x.index), axis=0)
+            trend_sign = (trend_slope > 0).astype(np.float32)
+            bars_since_flip = pd.DataFrame(index=trend_sign.index, columns=trend_sign.columns, dtype=np.float32)
+            for col in trend_sign.columns:
+                sign = trend_sign[col].values
+                count = np.zeros_like(sign, dtype=np.float32)
+                for i in range(1, len(sign)):
+                    count[i] = count[i - 1] + 1 if sign[i] == sign[i - 1] else 0
+                bars_since_flip[col] = count
+            feats["bars_since_trend_flip"] = bars_since_flip.astype(np.float32)
+
+        if _needs_feature("MACD_histogram"):
+            ema_12 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 12), index=x.index), axis=0)
+            ema_26 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 26), index=x.index), axis=0)
+            macd = ema_12 - ema_26
+            signal = macd.apply(lambda x: pd.Series(ema_nb(x.values, 9), index=x.index), axis=0)
+            feats["MACD_histogram"] = (macd - signal).astype(np.float32)
+
+        if _needs_feature("RSI") and "rsi" not in feats:
+            rsi_14 = c_log.apply(lambda x: pd.Series(rsi(x.to_frame(), 14)[x.name], index=x.index), axis=0)
+            feats["RSI"] = rsi_14.astype(np.float32)
+
+        if _needs_feature("dist_local_swing"):
+            dist_to_high = (high_12 - c_raw).abs()
+            dist_to_low = (c_raw - low_12).abs()
+            feats["dist_local_swing"] = np.minimum(dist_to_high, dist_to_low).astype(np.float32)
+
+        if _needs_feature("dist_ma100_atr"):
+            ma_100 = c_log.rolling(100, min_periods=1).mean()
+            feats["dist_ma100_atr"] = ((c_log - ma_100) / (atr_base + 1e-9)).astype(np.float32)
+
+        if _needs_feature("abs_edge_pred") and "abs_edge_pred" not in feats:
+            feats["abs_edge_pred"] = pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32).fillna(0.0)
+
+        del ret_1, bar_range, atr_mean_24, rv_1, rv_2, rv_24, high_12, low_12, high_24, low_24
+        gc.collect()
+
+    del h_raw, l_raw, c_raw, v_raw
+    gc.collect()
+
+    tprint(f"Features: done ({len(feats)} keys)")
+
     # Add dynamically generated peer context and TS pct to skip set
     for k in feats.keys():
         if k.startswith("cs_rank_") or k.startswith("cs_rz_") or k.startswith("ts_pct_"):
@@ -2953,6 +3272,18 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             for suffix in ["mean", "std", "z", "pct", "bin3", "gt25", "gt50", "gt66", "gt75", "gt85", "gt90"]:
                 skip_transform_set.add(f"{prefix}_{suffix}_{w}")
 
+    def _is_boolean_like_feature(arr_like) -> bool:
+        arr = np.asarray(arr_like, dtype=np.float32)
+        if arr.size == 0:
+            return False
+        finite = arr[np.isfinite(arr)]
+        if finite.size == 0:
+            return False
+        if finite.min() < 0.0 or finite.max() > 1.0:
+            return False
+        rounded = np.round(finite)
+        return bool(np.all(np.abs(finite - rounded) <= 1e-6))
+
     # Capture shared index/columns ONCE before converting to numpy
     _sample_df = feats[list(feats.keys())[0]]
     _feat_index = _sample_df.index
@@ -2960,23 +3291,41 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     del _sample_df
 
     feat_keys_list = list(feats.keys())
-    n_transformed, n_skipped = 0, 0
-    for i, k in enumerate(feat_keys_list):
-        if k in skip_transform_set:
-            feats[k] = np.asarray(feats[k], dtype=np.float32)
+    transform_keys: list[str] = []
+    n_skipped = 0
+    for k in feat_keys_list:
+        arr = np.asarray(feats[k], dtype=np.float32)
+        if (
+            k in skip_transform_set
+            or k.startswith("cs_rank_")
+            or k.startswith("cs_rz_")
+            or k.startswith("ts_pct_")
+            or _is_boolean_like_feature(arr)
+        ):
+            feats[k] = arr
             n_skipped += 1
         else:
-            try:
-                feats[k] = np.asarray(transformer.transform(feats[k], name=k), dtype=np.float32)
-                n_transformed += 1
-            except Exception as e:
-                tprint(f"Warning: Transform failed for {k}: {e}")
-                import traceback
-                traceback.print_exc()
-                feats[k] = np.asarray(feats[k], dtype=np.float32)
+            feats[k] = arr
+            transform_keys.append(k)
+
+    tprint(
+        f"CausalTransform workset: {len(transform_keys)} transform, {n_skipped} skipped"
+    )
+
+    n_transformed = 0
+    for i, k in enumerate(transform_keys):
+        arr = feats[k]
+        try:
+            feats[k] = np.asarray(transformer.transform(arr, name=k), dtype=np.float32)
+            n_transformed += 1
+        except Exception as e:
+            tprint(f"Warning: Transform failed for {k}: {e}")
+            import traceback
+            traceback.print_exc()
+            feats[k] = arr
         if (i + 1) % 50 == 0:
             gc.collect()
-            tprint(f"  CausalTransform progress: {i+1}/{len(feat_keys_list)}")
+            tprint(f"  CausalTransform progress: {i+1}/{len(transform_keys)}")
     del transformer
     gc.collect()
     tprint(f"CausalTransform complete: {n_transformed} transformed, {n_skipped} skipped")

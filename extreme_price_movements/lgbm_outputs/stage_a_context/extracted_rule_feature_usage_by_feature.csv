@@ -1,0 +1,8 @@
+feature_name,group,usage_count
+reg_ema20_slope_5h_hybrid_top40,regime,414
+reg_ema20_slope_5h_hybrid_top20,regime,246
+reg_volume_spike_hybrid_top20,regime,126
+reg_atr_percentile_hybrid_top20,regime,123
+reg_range_atr_hybrid_top40,regime,123
+reg_upper_wick_hybrid_top40,regime,75
+reg_atr_percentile_hybrid_top40,regime,72

@@ -1644,10 +1644,10 @@ def _tb_cache_dir(cfg: dict, run_id: str) -> str:
 
 
 def _tb_cache_paths(
-    cfg: dict, run_id: str, H: int, side: str, kind: str, config_hash: str
+    cfg: dict, run_id: str, H: int, strategy_id: str, config_hash: str
 ) -> tuple[str, str, str]:
     root = _tb_cache_dir(cfg, run_id)
-    stem = f"H{int(H)}_{str(side)}_{str(kind)}_{config_hash}"
+    stem = f"H{int(H)}_{str(strategy_id)}_{config_hash}"
     return (
         os.path.join(root, f"tb_{stem}.pkl"),
         os.path.join(root, f"geom_{stem}.pkl"),
@@ -2907,6 +2907,7 @@ def _optimize_training_sample_weights(
             EventSchema,
             SlicePlanner,
             SlicePlannerConfig,
+            SymbolPolicy,
         )
 
         n_splits_ridge = int(cfg.get("sample_weight_opt_n_splits", 5))
@@ -2922,6 +2923,8 @@ def _optimize_training_sample_weights(
             }
         )
         p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+        # We relax the symbol policy for ridge sizer weight optimization to prevent split failures
+        # on low-density horizons (H2, H4, H8). Fallback to all_symbols to ensure we get splits.
         p_cfg = p_cfg.__class__(
             **{
                 **p_cfg.__dict__,
@@ -2930,7 +2933,7 @@ def _optimize_training_sample_weights(
                     outer=p_cfg.preset.outer,
                     inner=p_cfg.preset.inner.__class__(n_splits=n_splits_ridge),
                     sampling=p_cfg.preset.sampling,
-                    symbol_policy=p_cfg.preset.symbol_policy,
+                    symbol_policy=SymbolPolicy(mode="all_symbols", min_symbols_per_split=1),
                     purge_policy=p_cfg.preset.purge_policy,
                 ),
                 "silent": True,
@@ -5544,62 +5547,58 @@ def generate_label_datasets(
         if spike_df is not None:
             datasets[f"spike_anatomy_{mode}"] = spike_df
 
-    # 2. Alpha Models (MR/TF)
-    trade_sides = ["long", "short"]
-    kinds = ["mr", "tf"]
-    horizons = horizons or cfg["label_horizons_hours"]
-
-    run_id = pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S")
-    cfg_hash = _stable_cfg_subset_hash(cfg, horizons, trade_sides)
-    symbol_vocab = {
-        str(s): i for i, s in enumerate(sorted(map(str, panel["close"].columns)))
-    }
-
-    # Pre-compute/load triple-barrier labels with geometry-grid aggregation per (H, side, kind)
+    # Pre-compute/load triple-barrier labels with geometry-grid aggregation per (H, strategy)
     tb_cache: dict = {}
     geom_cache: dict = {}
-    missing_cells: list[tuple[int, str, str]] = []
+    missing_cells: list[tuple[int, str]] = []
+
+    strategies = get_strategies(cfg)
+    horizons = horizons or cfg["label_horizons_hours"]
+    run_id = pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S")
+    # Hash based on horizons + strategy_ids
+    cfg_hash = _stable_cfg_subset_hash(cfg, horizons, [s["strategy_id"] for s in strategies])
+
     for H in horizons:
-        for side in trade_sides:
-            for k in kinds:
-                p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, side, k, cfg_hash)
-                if os.path.exists(p_tb) and os.path.exists(p_geom):
-                    try:
-                        with open(p_tb, "rb") as fh:
-                            tb_cache[(int(H), side, k)] = _downcast_tb_triplet(
-                                pickle.load(fh)
-                            )
-                        with open(p_geom, "rb") as fh:
-                            geom_cache[(int(H), side, k)] = _downcast_geom_payload(
-                                pickle.load(fh)
-                            )
-                        continue
-                    except Exception as _e_cache:
-                        tprint(
-                            f"TB cache read failed for H={H} side={side} kind={k}: {_e_cache}"
+        for strat in strategies:
+            s_id = strat["strategy_id"]
+            p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, s_id, cfg_hash)
+            if os.path.exists(p_tb) and os.path.exists(p_geom):
+                try:
+                    with open(p_tb, "rb") as fh:
+                        tb_cache[(int(H), s_id)] = _downcast_tb_triplet(
+                            pickle.load(fh)
                         )
-                missing_cells.append((int(H), side, k))
+                    with open(p_geom, "rb") as fh:
+                        geom_cache[(int(H), s_id)] = _downcast_geom_payload(
+                            pickle.load(fh)
+                        )
+                    continue
+                except Exception as _e_cache:
+                    tprint(
+                        f"TB cache read failed for H={H} strategy_id={s_id}: {_e_cache}"
+                    )
+            missing_cells.append((int(H), s_id))
 
     if missing_cells:
         miss_h = sorted({c[0] for c in missing_cells})
-        miss_sides = sorted({c[1] for c in missing_cells})
+        miss_s_ids = sorted({c[1] for c in missing_cells})
         tprint(
-            f"TB cache miss: {len(missing_cells)} cells; recomputing horizons={miss_h} sides={miss_sides}"
+            f"TB cache miss: {len(missing_cells)} cells; recomputing horizons={miss_h} strategy_ids={miss_s_ids}"
         )
         _tb_new, _geom_new = build_grid_aggregated_tb_cache(
             panel=panel,
             feats=feats,
             cfg=cfg,
             horizons=miss_h,
-            trade_sides=miss_sides,
+            strategies=[s for s in strategies if s["strategy_id"] in miss_s_ids],
         )
-        for H, side, k in missing_cells:
-            key = (int(H), side, k)
+        for H, s_id in missing_cells:
+            key = (int(H), s_id)
             if key not in _tb_new or key not in _geom_new:
                 continue
             tb_cache[key] = _downcast_tb_triplet(_tb_new[key])
             geom_cache[key] = _downcast_geom_payload(_geom_new[key])
-            p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, side, k, cfg_hash)
+            p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, s_id, cfg_hash)
             os.makedirs(os.path.dirname(p_tb), exist_ok=True)
             with open(p_tb, "wb") as fh:
                 pickle.dump(tb_cache[key], fh, protocol=pickle.HIGHEST_PROTOCOL)
@@ -5609,16 +5608,16 @@ def generate_label_datasets(
     if bool(cfg.get("base_geometry_train_variants", True)):
         _missing_variant_keys = []
         for H in horizons:
-            for side in trade_sides:
-                for k in kinds:
-                    for _variant in cfg.get(
-                        "base_geometry_archetypes", ["tight", "balanced", "wide"]
-                    ):
-                        _variant = str(_variant)
-                        if _variant == "balanced":
-                            continue
-                        if (int(H), side, k, _variant) not in tb_cache:
-                            _missing_variant_keys.append((int(H), side, k, _variant))
+            for strat in strategies:
+                s_id = strat["strategy_id"]
+                for _variant in cfg.get(
+                    "base_geometry_archetypes", ["tight", "balanced", "wide"]
+                ):
+                    _variant = str(_variant)
+                    if _variant == "balanced":
+                        continue
+                    if (int(H), s_id, _variant) not in tb_cache:
+                        _missing_variant_keys.append((int(H), s_id, _variant))
         if _missing_variant_keys:
             tprint(
                 f"Materializing grouped base-geometry variants in-memory for {len(_missing_variant_keys)} cells..."
@@ -5628,16 +5627,16 @@ def generate_label_datasets(
                 feats=feats,
                 cfg=cfg,
                 horizons=sorted({c[0] for c in _missing_variant_keys}),
-                trade_sides=sorted({c[1] for c in _missing_variant_keys}),
+                strategies=[s for s in strategies if s["strategy_id"] in {c[1] for c in _missing_variant_keys}],
             )
             for _key, _val in _tb_all.items():
-                if isinstance(_key, tuple) and len(_key) == 4:
+                if isinstance(_key, tuple) and len(_key) == 3: # (H, s_id, variant)
                     tb_cache[_key] = _downcast_tb_triplet(_val)
             for _key, _val in _geom_all.items():
-                if isinstance(_key, tuple) and len(_key) == 4:
+                if isinstance(_key, tuple) and len(_key) == 3: # (H, s_id, variant)
                     geom_cache[_key] = _downcast_geom_payload(_val)
 
-    def _prepare_events_once_for_side_kind(_side: str, _kind: str):
+    def _prepare_events_once_for_strategy(_strategy: dict):
         ts_start = ts - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
         min_h = int(min(horizons))
         ts_end_adj = ts - pd.Timedelta(hours=min_h + 8)
@@ -5654,8 +5653,8 @@ def generate_label_datasets(
         if not valid_syms:
             return None
 
-        tb_key = (min_h, _side, _kind)
-        _tb = tb_cache.get(tb_key)
+        s_id = _strategy["strategy_id"]
+        _tb = tb_cache.get((min_h, s_id))
         if _tb is None:
             return None
         tb_labels = _tb[0]
@@ -5685,7 +5684,7 @@ def generate_label_datasets(
         entry_ts = event_ts + pd.Timedelta(hours=1)
 
         if "trend_pct" in feats:
-            cand_filter, move_bucket, _ = _strategy_bucket_context(_side, _kind, cfg)
+            cand_filter, move_bucket, _ = _strategy_bucket_context(_strategy["side"], _strategy["kind"], cfg)
             del cand_filter
             trend_vals = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
             keep = _trend_direction_keep_mask(trend_vals, move_bucket)
@@ -5696,83 +5695,86 @@ def generate_label_datasets(
         return (event_ts, event_sym, entry_ts)
 
     precomputed_events = {
-        (side, k): _prepare_events_once_for_side_kind(side, k)
-        for side in trade_sides
-        for k in kinds
+        strat["strategy_id"]: _prepare_events_once_for_strategy(strat)
+        for strat in strategies
     }
 
     tasks = []
     _required_geometry_variants = ("tight", "wide")
-    for side in trade_sides:
-        for k in kinds:
-            trade_side = side
-            cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
-                trade_side, k
-            )
-            feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
-            fixed_tp = 0.05
-            fixed_sl = 0.025
-            for H in horizons:
-                H_int = int(H)
-                # Keep the H1 regressor/canonical path untouched; for classifier horizons,
-                # require both tight + wide and do not emit a canonical cell.
-                if H_int == 1:
-                    tasks.append(
-                        (
-                            H_int,
-                            side,
-                            k,
-                            None,
-                            move_bucket,
-                            strategy_label,
-                            cand_filter,
-                            feat_key,
-                            fixed_tp,
-                            fixed_sl,
-                        )
+    for strat in strategies:
+        side = strat["side"]
+        k = strat["kind"]
+        strategy_id = strat["strategy_id"]
+        cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
+            side, k
+        )
+        feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
+        fixed_tp = 0.05
+        fixed_sl = 0.025
+        for H in horizons:
+            H_int = int(H)
+            # Keep the H1 regressor/canonical path untouched; for classifier horizons,
+            # require both tight + wide and do not emit a canonical cell.
+            if H_int == 1:
+                tasks.append(
+                    (
+                        H_int,
+                        side,
+                        k,
+                        strategy_id,
+                        None, # variant
+                        move_bucket,
+                        strategy_label,
+                        cand_filter,
+                        feat_key,
+                        fixed_tp,
+                        fixed_sl,
                     )
-                    continue
+                )
+                continue
 
-                if not bool(cfg.get("base_geometry_train_variants", True)):
-                    tprint(
-                        f"Skipping classifier label cell {side}_{k}_H{H_int}: "
-                        "base_geometry_train_variants=False but tight/wide are mandatory."
-                    )
-                    continue
+            if not bool(cfg.get("base_geometry_train_variants", True)):
+                tprint(
+                    f"Skipping classifier label cell {strategy_id}_H{H_int}: "
+                    "base_geometry_train_variants=False but tight/wide are mandatory."
+                )
+                continue
 
-                _missing_required = [
-                    _v
-                    for _v in _required_geometry_variants
-                    if (H_int, side, k, _v) not in tb_cache
-                ]
-                if _missing_required:
-                    tprint(
-                        f"Skipping classifier label cell {side}_{k}_H{H_int}: "
-                        f"missing required geometry variants={_missing_required}."
-                    )
-                    continue
+            _missing_required = [
+                _v
+                for _v in _required_geometry_variants
+                if (H_int, strategy_id, _v) not in tb_cache
+            ]
+            if _missing_required:
+                tprint(
+                    f"Skipping classifier label cell {strategy_id}_H{H_int}: "
+                    f"missing required geometry variants={_missing_required}."
+                )
+                continue
 
-                for _variant in _required_geometry_variants:
-                    tasks.append(
-                        (
-                            H_int,
-                            side,
-                            k,
-                            _variant,
-                            move_bucket,
-                            strategy_label,
-                            cand_filter,
-                            feat_key,
-                            fixed_tp,
-                            fixed_sl,
-                        )
+            for _variant in _required_geometry_variants:
+                tasks.append(
+                    (
+                        H_int,
+                        side,
+                        k,
+                        strategy_id,
+                        _variant,
+                        move_bucket,
+                        strategy_label,
+                        cand_filter,
+                        feat_key,
+                        fixed_tp,
+                        fixed_sl,
                     )
+                )
 
     def _run_one_cell(task):
         (
             H,
             side,
             k,
+            strategy_id,
             variant,
             move_bucket,
             strategy_label,
@@ -5783,14 +5785,13 @@ def generate_label_datasets(
         ) = task
         _variant_log = variant if variant is not None else "h1_regressor"
         tprint(
-            f"Generating labels: trade_side={side}, kind={k}, move_bucket={move_bucket}, "
-            f"candidate_bucket={cand_filter}, strategy={strategy_label}, H={H}, "
+            f"Generating labels: strategy_id={strategy_id}, H={H}, "
             f"variant={_variant_log}"
         )
-        _tb_key = (H, side, k) if variant is None else (H, side, k, variant)
+        _tb_key = (H, strategy_id) if variant is None else (H, strategy_id, variant)
         _geom = geom_cache.get(_tb_key)
 
-        _pre = precomputed_events.get((side, k))
+        _pre = precomputed_events.get(strategy_id)
         if _pre is not None:
             _ts_ev, _sym_ev, _entry_ev = _pre
             _mask_h = _ts_ev <= (ts - pd.Timedelta(hours=H + 8))
@@ -5826,12 +5827,12 @@ def generate_label_datasets(
             fixed_sl=fixed_sl,
             side=side,
             _cached_cand_mask=cached_cand_mask,
-            _cached_tb=tb_cache.get(_tb_key),
+            _cached_tb=tb_cache.get((H, strategy_id)) if variant is None else tb_cache.get((H, strategy_id, variant)),
             _precomputed_events=_pre_h,
             _geom_frames=_geom,
         )
 
-        _, _, p_evt = _tb_cache_paths(cfg, run_id, H, side, k, cfg_hash)
+        _, _, p_evt = _tb_cache_paths(cfg, run_id, H, strategy_id, cfg_hash)
         if _pre_h is not None and variant is None:
             _save_event_index_artifact(p_evt, _pre_h[2], _pre_h[1], symbol_vocab)
 

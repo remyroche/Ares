@@ -16,6 +16,9 @@ from extreme_price_movements.config import (
     POSITION_SIZER_V2_FEATURE_CONFIG,
 )
 from extreme_price_movements.data_store import (
+    _atomic_write_parquet,
+    _ensure_feature_frame_index,
+    _write_feature_metadata,
     get_feature_bounds,
     load_artifact_df,
     load_features,
@@ -37,6 +40,10 @@ from extreme_price_movements.features import (
     add_regime_gates,
     compute_features_hourly,
     compute_market_features,
+)
+from extreme_price_movements.intraday_crypto_library import (
+    INTRADAY_TRIGGER_COLUMNS,
+    LOCATION_FILTER_COLUMNS,
 )
 from extreme_price_movements.metrics import MetricsLogger
 from extreme_price_movements.model_loader import load_alpha_models
@@ -238,6 +245,8 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
     keys.update(HELPER_BASE_FEATURES)
 
     # 4. Causal columns from config
+    keys.update(LOCATION_FILTER_COLUMNS)
+    keys.update(INTRADAY_TRIGGER_COLUMNS)
     causal = cfg.get("causal_cols", [])
     if isinstance(causal, (list, tuple)):
         for k in causal:
@@ -246,6 +255,10 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
 
     # 5. Core features that downstream logic assumes are present.
     keys.update({"atr_pct", "ret1h", "ret24h"})
+
+    # 6. Technical Regime (Ridge) Features
+    from extreme_price_movements.config import RIDGE_FEATURE_COLS
+    keys.update(RIDGE_FEATURE_COLS)
     return keys
 
 
@@ -561,6 +574,109 @@ def _generate_feature_health_reports(
     }
 
 
+def _enforce_feature_snapshot_completeness(
+    ts_sig: pd.Timestamp,
+    data_root: str,
+    expected_keys: set[str],
+    panel_close: pd.DataFrame,
+) -> dict[str, int]:
+    """
+    Rewrite per-symbol feature files so every required symbol has the full
+    expected feature schema and required timestamp coverage.
+
+    Missing feature values are left as NaN to preserve the distinction between
+    "unavailable" and the valid numeric value 0.
+    """
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    in_dir = os.path.join(data_root, "features", run_id)
+    if not os.path.exists(in_dir):
+        return {
+            "normalized_symbols": 0,
+            "created_files": 0,
+            "added_columns": 0,
+            "added_rows": 0,
+        }
+
+    expected_cols = sorted(expected_keys)
+    normalized_symbols = 0
+    created_files = 0
+    added_columns = 0
+    added_rows = 0
+    total_syms = len(panel_close.columns)
+
+    tprint(
+        "Normalizing feature snapshot completeness: "
+        f"{total_syms} symbols x {len(expected_cols)} expected keys"
+    )
+
+    for i, sym in enumerate(panel_close.columns, start=1):
+        sym = str(sym)
+        valid_idx = panel_close.index[panel_close[sym].notna()]
+        if len(valid_idx) == 0:
+            continue
+        required_index = pd.DatetimeIndex(valid_idx)
+        safe_sym = sym.replace("/", "_")
+        fpath = os.path.join(in_dir, f"symbol={safe_sym}.parquet")
+
+        if os.path.exists(fpath):
+            try:
+                df_sym = pd.read_parquet(fpath)
+            except Exception as exc:
+                tprint(f"Warning: rebuilding unreadable feature file {fpath}: {exc}")
+                df_sym = pd.DataFrame(index=required_index)
+                created_files += 1
+            else:
+                df_sym, index_reason = _ensure_feature_frame_index(
+                    df_sym, parquet_path=fpath
+                )
+                if index_reason not in {
+                    None,
+                    "ts_column_indexed",
+                    "recovered_from_metadata",
+                }:
+                    tprint(
+                        f"Warning: rebuilding feature file with invalid index {fpath}: {index_reason}"
+                    )
+                    df_sym = pd.DataFrame(index=required_index)
+                    created_files += 1
+        else:
+            df_sym = pd.DataFrame(index=required_index)
+            created_files += 1
+
+        if "__symbol__" in df_sym.columns:
+            df_sym = df_sym.drop(columns=["__symbol__"])
+
+        before_cols = set(df_sym.columns)
+        before_rows = len(df_sym.index)
+        df_sym = df_sym.reindex(index=required_index, columns=expected_cols)
+        df_sym = df_sym.astype(np.float32, copy=False)
+        df_sym["__symbol__"] = sym
+        _atomic_write_parquet(df_sym, fpath)
+        _write_feature_metadata(fpath, sym, df_sym.index)
+
+        added_columns += len(set(expected_cols) - before_cols)
+        added_rows += max(0, len(required_index) - before_rows)
+        normalized_symbols += 1
+
+        if i % 50 == 0 or i == total_syms:
+            tprint(
+                f"Feature completeness normalization progress: {i}/{total_syms} "
+                f"({(i / total_syms) * 100:.1f}%)"
+            )
+
+    tprint(
+        "Feature completeness normalization complete: "
+        f"symbols={normalized_symbols} created={created_files} "
+        f"added_columns={added_columns} added_rows={added_rows}"
+    )
+    return {
+        "normalized_symbols": normalized_symbols,
+        "created_files": created_files,
+        "added_columns": added_columns,
+        "added_rows": added_rows,
+    }
+
+
 def _scan_feature_cache_light(
     ts_sig: pd.Timestamp,
     data_root: str,
@@ -586,7 +702,13 @@ def _scan_feature_cache_light(
         valid_idx = ser.index[ser.notna()]
         if len(valid_idx) == 0:
             continue
-        required_bounds[s] = (pd.Timestamp(valid_idx[0]), pd.Timestamp(valid_idx[-1]))
+        req_first = pd.Timestamp(valid_idx[0])
+        req_last = pd.Timestamp(valid_idx[-1])
+        if req_first.tzinfo is not None:
+            req_first = req_first.tz_localize(None)
+        if req_last.tzinfo is not None:
+            req_last = req_last.tz_localize(None)
+        required_bounds[s] = (req_first, req_last)
 
     key_symbol_counts: dict[str, int] = {k: 0 for k in expected_keys}
     present_symbols: set[str] = set()
@@ -604,6 +726,10 @@ def _scan_feature_cache_light(
             present_symbols.add(sym)
             req_first, req_last = required_bounds[sym]
             first_ts, last_ts = get_feature_bounds(fpath)
+            if first_ts is not None and pd.Timestamp(first_ts).tzinfo is not None:
+                first_ts = pd.Timestamp(first_ts).tz_localize(None)
+            if last_ts is not None and pd.Timestamp(last_ts).tzinfo is not None:
+                last_ts = pd.Timestamp(last_ts).tz_localize(None)
             if (
                 first_ts is None
                 or last_ts is None
@@ -710,6 +836,10 @@ def _build_tail_only_backfill_cutoffs(
             continue
         req_first = pd.Timestamp(valid_idx[0])
         req_last = pd.Timestamp(valid_idx[-1])
+        if req_first.tzinfo is not None:
+            req_first = req_first.tz_localize(None)
+        if req_last.tzinfo is not None:
+            req_last = req_last.tz_localize(None)
 
         safe_sym = sym.replace("/", "_")
         fpath = os.path.join(in_dir, f"symbol={safe_sym}.parquet")
@@ -728,6 +858,10 @@ def _build_tail_only_backfill_cutoffs(
             continue
 
         first_ts, last_ts = get_feature_bounds(fpath)
+        if first_ts is not None and pd.Timestamp(first_ts).tzinfo is not None:
+            first_ts = pd.Timestamp(first_ts).tz_localize(None)
+        if last_ts is not None and pd.Timestamp(last_ts).tzinfo is not None:
+            last_ts = pd.Timestamp(last_ts).tz_localize(None)
         if first_ts is None or last_ts is None:
             stats["structural_or_interior"] += 1
             continue
@@ -1303,33 +1437,36 @@ def run_training_step(
                                 f"Saved generated spike artifact: spike_anatomy_{mode}"
                             )
 
-    # Alpha models (long/short × mr/tf × horizons)
-    trade_sides = ["long", "short"]
-    kinds = ["mr", "tf"]
-    horizons = cfg["label_horizons_hours"]
+    # Alpha models (Dynamic Strategies from get_strategies)
+    strategies = get_strategies(cfg)
+    horizons = horizons or cfg.get("label_horizons_hours", [1, 2, 4, 8])
 
     found_count = 0
     base_geometry_archetypes = [
         str(v)
         for v in cfg.get("base_geometry_archetypes", ["tight", "balanced", "wide"])
     ]
-    for side in trade_sides:
-        for k in kinds:
-            for H in horizons:
-                name = f"train_{side}_{k}_{H}"
-                df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
-                if df is not None:
-                    datasets[name] = df  # Use all rows (already filtered by SlicePlanner in label step)
-                    found_count += 1
-                    tprint(f"  Loaded {name}: {len(datasets[name])} rows")
-                for variant in base_geometry_archetypes:
-                    if variant == "balanced":
-                        continue
-                    vname = f"train_{side}_{k}_{H}_{variant}"
-                    df_v = load_artifact_df(cfg["data_root"], run_id, "labels", vname)
-                    if df_v is not None:
-                        datasets[vname] = df_v  # Use all rows (already filtered by SlicePlanner in label step)
-                        tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
+    for strat in strategies:
+        side = strat["trade_side"]
+        s_id = strat["strategy_id"]
+        # Determine kind (mr/tf) for backward compatibility with naming if needed
+        # but the actual name will be 'train_{s_id}_{H}'
+        for H in horizons:
+            name = f"train_{s_id}_{H}"
+            df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+            if df is not None:
+                datasets[name] = df
+                found_count += 1
+                tprint(f"  Loaded {name}: {len(datasets[name])} rows")
+            
+            for variant in base_geometry_archetypes:
+                if variant == "balanced":
+                    continue
+                vname = f"train_{s_id}_{H}_{variant}"
+                df_v = load_artifact_df(cfg["data_root"], run_id, "labels", vname)
+                if df_v is not None:
+                    datasets[vname] = df_v
+                    tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
 
     # Exhaustion models
     for d in ["up", "down"]:
@@ -4035,6 +4172,8 @@ def run_feature_generation_step(
     existing_files = sorted(glob.glob(os.path.join(feat_dir, "symbol=*.parquet")))
     expected_keys = _expected_feature_keys_from_cfg(cfg)
     backfill_keys: list[str] = []
+    precomputed_tail_cutoffs: dict[str, pd.Timestamp] = {}
+    tail_cutoff_stats: dict[str, int] | None = None
     if existing_files and force_full_recompute:
         tprint(
             f"Features already exist: {len(existing_files)} symbol files. "
@@ -4142,6 +4281,20 @@ def run_feature_generation_step(
                         + ", ".join(partial_keys[:30])
                         + (" ..." if len(partial_keys) > 30 else "")
                     )
+                precomputed_tail_cutoffs, tail_cutoff_stats = _build_tail_only_backfill_cutoffs(
+                    ts_sig=ts_sig,
+                    data_root=cfg["data_root"],
+                    panel_close=close_panel_light,
+                    backfill_keys=backfill_keys,
+                )
+                tprint(
+                    "Tail-only backfill cutoffs (preload): "
+                    f"eligible={tail_cutoff_stats['eligible_tail_only']} "
+                    f"missing_file={tail_cutoff_stats['missing_symbol_file']} "
+                    f"missing_cols={tail_cutoff_stats['missing_backfill_columns']} "
+                    f"structural_or_interior={tail_cutoff_stats['structural_or_interior']} "
+                    f"already_covered={tail_cutoff_stats['already_covered']}"
+                )
             else:
                 _n_syms = len(close_panel_light.columns)
                 _n_feats = len(expected_keys)
@@ -4160,13 +4313,14 @@ def run_feature_generation_step(
 
     syms_to_load = list(train_syms)
     if backfill_keys and not force_full_recompute and stale_symbols_for_backfill:
+        # Incremental backfill mode: only load symbols that need backfilling
         required_syms = sorted(
             set(stale_symbols_for_backfill).union(set(cfg["market_basket"]))
         )
         if required_syms:
             syms_to_load = [s for s in train_syms if s in set(required_syms)]
             tprint(
-                f"Backfill scope reduced to {len(syms_to_load)}/{len(train_syms)} symbols "
+                f"Backfill mode: Loading {len(syms_to_load)}/{len(train_syms)} symbols "
                 "(stale symbols + market basket)."
             )
 
@@ -4174,6 +4328,7 @@ def run_feature_generation_step(
     skipped_log = []
 
     with Timer("Feature Gen Data Load"):
+        tail_compute_warmup_hours = int(cfg.get("feature_tail_compute_warmup_hours", 24 * 120))
         for s in syms_to_load:
             df = store.load(s, end_ts=ts_sig)  # Load up to ts_sig
 
@@ -4198,8 +4353,18 @@ def run_feature_generation_step(
                 )
                 continue
 
-            dfs[s] = df.tail(24 * lookback_days)
+            df = df.tail(24 * lookback_days)
+            cutoff_ts = precomputed_tail_cutoffs.get(s)
+            if cutoff_ts is not None:
+                warmup_start = pd.Timestamp(cutoff_ts) - pd.Timedelta(hours=tail_compute_warmup_hours)
+                before_rows = len(df)
+                df = df[df.index > warmup_start]
+                tprint(
+                    f"  [TAIL-COMPUTE] {s}: rows {before_rows}->{len(df)} "
+                    f"(cutoff={cutoff_ts}, warmup_h={tail_compute_warmup_hours})"
+                )
             loaded_syms.append(s)
+            dfs[s] = df
 
     tprint(f"Loaded {len(loaded_syms)} symbols. Skipped {len(skipped_log)}.")
     for msg in skipped_log:
@@ -4238,12 +4403,14 @@ def run_feature_generation_step(
 
         backfill_set = set(backfill_keys) if backfill_keys else set()
         if backfill_keys and not force_full_recompute:
-            tail_cutoffs, tail_stats = _build_tail_only_backfill_cutoffs(
-                ts_sig=ts_sig,
-                data_root=cfg["data_root"],
-                panel_close=panel["close"],
-                backfill_keys=backfill_keys,
-            )
+            tail_cutoffs = precomputed_tail_cutoffs
+            tail_stats = tail_cutoff_stats or {
+                "eligible_tail_only": len(tail_cutoffs),
+                "missing_symbol_file": 0,
+                "missing_backfill_columns": 0,
+                "structural_or_interior": 0,
+                "already_covered": 0,
+            }
             tprint(
                 "Tail-only backfill cutoffs: "
                 f"eligible={tail_stats['eligible_tail_only']} "
@@ -4265,59 +4432,91 @@ def run_feature_generation_step(
             f"{len(all_syms)} symbols, chunk_size={chunk_size}, chunks={total_chunks}"
         )
 
+        key_batch_size = int(cfg.get("feature_backfill_key_batch_size", 192))
+
         for ci, start in enumerate(range(0, len(all_syms), chunk_size), start=1):
             chunk_syms = all_syms[start : start + chunk_size]
             tprint(
                 f"[Feature chunk {ci}/{total_chunks}] symbols={len(chunk_syms)} "
                 f"({chunk_syms[0]} .. {chunk_syms[-1]})"
             )
-            panel_chunk = {
+            panel_chunk_source = {
                 k: v.reindex(columns=chunk_syms).copy()
                 for k, v in panel.items()
                 if isinstance(v, pd.DataFrame)
             }
-            feats_chunk, feat_index, feat_columns = compute_features_hourly(
-                panel_chunk, mkt_gates.copy(), cfg
-            )
-
+            chunk_requested_keys = None
             if backfill_keys and not force_full_recompute:
-                chunk_backfill_keys = _derive_symbol_backfill_keys(
+                chunk_requested_keys = _derive_symbol_backfill_keys(
                     ts_sig=ts_sig,
                     data_root=cfg["data_root"],
                     expected_keys=backfill_set,
                     symbols=chunk_syms,
                     full_rewrite_symbols=full_rewrite_symbols_for_backfill,
                 )
-                unresolved = [k for k in chunk_backfill_keys if k not in feats_chunk]
-                if unresolved:
-                    unresolved_union.update(unresolved)
-                feats_chunk = {
-                    k: v
-                    for k, v in feats_chunk.items()
-                    if k in set(chunk_backfill_keys)
-                }
-
-            tprint(
-                f"[Feature chunk {ci}/{total_chunks}] saving {len(feats_chunk)} keys"
-            )
-            if feats_chunk:
-                if backfill_keys and not force_full_recompute:
-                    chunk_cutoffs = {
-                        s: tail_cutoffs[s] for s in chunk_syms if s in tail_cutoffs
-                    }
-                else:
-                    chunk_cutoffs = None
-
-                save_features(
-                    feats_chunk,
-                    ts_sig,
-                    cfg["data_root"],
-                    min_timestamp_by_symbol=chunk_cutoffs if chunk_cutoffs else None,
-                    feat_index=feat_index,
-                    feat_columns=feat_columns,
+                tprint(
+                    f"[Feature chunk {ci}/{total_chunks}] requested_keys={len(chunk_requested_keys)}"
                 )
-                total_saved_keys = len(feats_chunk)
-            del panel_chunk, feats_chunk
+            if backfill_keys and not force_full_recompute and chunk_requested_keys:
+                key_batches = [
+                    chunk_requested_keys[i : i + key_batch_size]
+                    for i in range(0, len(chunk_requested_keys), key_batch_size)
+                ]
+            else:
+                key_batches = [chunk_requested_keys]
+
+            if backfill_keys and not force_full_recompute:
+                chunk_cutoffs = {
+                    s: tail_cutoffs[s] for s in chunk_syms if s in tail_cutoffs
+                }
+            else:
+                chunk_cutoffs = None
+
+            for bi, key_batch in enumerate(key_batches, start=1):
+                batch_label = (
+                    f"[Feature chunk {ci}/{total_chunks} batch {bi}/{len(key_batches)}]"
+                    if len(key_batches) > 1
+                    else f"[Feature chunk {ci}/{total_chunks}]"
+                )
+                if key_batch is not None:
+                    tprint(f"{batch_label} computing requested_keys={len(key_batch)}")
+                panel_chunk = {
+                    k: v.copy()
+                    for k, v in panel_chunk_source.items()
+                }
+                feats_chunk, feat_index, feat_columns = compute_features_hourly(
+                    panel_chunk,
+                    mkt_gates.copy(),
+                    cfg,
+                    requested_feature_keys=key_batch,
+                )
+
+                if backfill_keys and not force_full_recompute:
+                    batch_backfill_keys = key_batch or []
+                    unresolved = [k for k in batch_backfill_keys if k not in feats_chunk]
+                    if unresolved:
+                        unresolved_union.update(unresolved)
+                    feats_chunk = {
+                        k: v
+                        for k, v in feats_chunk.items()
+                        if k in set(batch_backfill_keys)
+                    }
+
+                tprint(f"{batch_label} saving {len(feats_chunk)} keys")
+                if feats_chunk:
+                    save_features(
+                        feats_chunk,
+                        ts_sig,
+                        cfg["data_root"],
+                        min_timestamp_by_symbol=chunk_cutoffs if chunk_cutoffs else None,
+                        feat_index=feat_index,
+                        feat_columns=feat_columns,
+                    )
+                    total_saved_keys += len(feats_chunk)
+                del panel_chunk, feats_chunk
+                gc.collect()
+
+            del panel_chunk_source
             gc.collect()
 
         tprint(f"Computed + saved chunked backfill features: {total_saved_keys} keys")
@@ -4330,26 +4529,39 @@ def run_feature_generation_step(
             )
     else:
         tprint("Computing Asset Features (Hourly)...")
-        feats, feat_index, feat_columns = compute_features_hourly(panel, mkt_gates, cfg)
+        requested_feature_keys = None
+        if backfill_keys and not force_full_recompute:
+            requested_feature_keys = _derive_symbol_backfill_keys(
+                ts_sig=ts_sig,
+                data_root=cfg["data_root"],
+                expected_keys=set(backfill_keys),
+                symbols=panel_symbols,
+                full_rewrite_symbols=full_rewrite_symbols_for_backfill,
+            )
+            tprint(
+                f"Incremental feature compute requested_keys={len(requested_feature_keys)}"
+            )
+        feats, feat_index, feat_columns = compute_features_hourly(
+            panel,
+            mkt_gates,
+            cfg,
+            requested_feature_keys=requested_feature_keys,
+        )
         min_ts_by_symbol = None
 
         if backfill_keys and not force_full_recompute:
             backfill_set = set(backfill_keys)
-            selected_backfill_keys = _derive_symbol_backfill_keys(
-                ts_sig=ts_sig,
-                data_root=cfg["data_root"],
-                expected_keys=backfill_set,
-                symbols=panel_symbols,
-                full_rewrite_symbols=full_rewrite_symbols_for_backfill,
-            )
+            selected_backfill_keys = requested_feature_keys or []
             unresolved = sorted([k for k in selected_backfill_keys if k not in feats])
             feats = {k: v for k, v in feats.items() if k in set(selected_backfill_keys)}
-            min_ts_by_symbol, tail_stats = _build_tail_only_backfill_cutoffs(
-                ts_sig=ts_sig,
-                data_root=cfg["data_root"],
-                panel_close=panel_close_ref,
-                backfill_keys=selected_backfill_keys,
-            )
+            min_ts_by_symbol = precomputed_tail_cutoffs
+            tail_stats = tail_cutoff_stats or {
+                "eligible_tail_only": len(min_ts_by_symbol),
+                "missing_symbol_file": 0,
+                "missing_backfill_columns": 0,
+                "structural_or_interior": 0,
+                "already_covered": 0,
+            }
             tprint(
                 f"Computed + saving only missing/partial features: {len(feats)} keys"
             )
@@ -4386,6 +4598,12 @@ def run_feature_generation_step(
             )
 
     tprint(f"Generated features for {len(loaded_syms)} symbols.")
+    _enforce_feature_snapshot_completeness(
+        ts_sig=ts_sig,
+        data_root=cfg["data_root"],
+        expected_keys=expected_keys,
+        panel_close=panel_close_ref,
+    )
     _generate_feature_health_reports(ts_sig, cfg["data_root"])
     tprint("STEP: FEATURE GENERATION COMPLETE")
 

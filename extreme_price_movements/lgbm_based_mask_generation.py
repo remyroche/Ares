@@ -1,0 +1,4021 @@
+from __future__ import annotations
+
+import collections
+import glob
+import hashlib
+import itertools
+import json
+import logging
+import multiprocessing as mp
+import os
+import pickle
+import re
+import time
+import traceback
+from dataclasses import dataclass, field, replace
+from math import sqrt
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+
+import numpy as np
+import pandas as pd
+from lightgbm import LGBMRegressor
+from scipy.stats import spearmanr
+from sklearn.metrics import roc_auc_score
+from numba import njit, prange
+
+os.environ.setdefault("LOKY_MAX_CPU_COUNT", "3")
+
+from extreme_price_movements.config import (
+    CFG,
+    RIDGE_FEATURE_COLS,
+    TEST_FEATURE_KEYS,
+)
+from extreme_price_movements.data_store import (
+    PartitionedOHLCVStore,
+    load_features_selected,
+    to_panel,
+)
+from extreme_price_movements.periods_symbols_management import (
+    EventSchema,
+    SlicePlanner,
+    SlicePlannerConfig,
+)
+from extreme_price_movements.universe import (
+    get_training_universe,
+)
+from extreme_price_movements.utils import tprint
+from extreme_price_movements.intraday_crypto_library import (
+    INTRADAY_TRIGGER_COLUMNS,
+    LOCATION_FILTER_COLUMNS,
+)
+
+LOGGER = logging.getLogger(__name__)
+
+# =============================================================================
+# DATA STRUCTURES & METADATA
+# =============================================================================
+
+@dataclass(frozen=True)
+class FeatureMetadata:
+    feature_name: str
+    feature_index: int
+    group: str  # 'trigger', 'location', 'regime'
+    source_name: str
+    source_family: str
+    source_type: str  # 'boolean', 'continuous'
+    booleanization_method: Optional[str] = None
+    threshold_type: Optional[str] = None
+    threshold_value: Optional[float] = None
+    description: str = ""
+
+@dataclass(frozen=True)
+class MiningStageSpec:
+    stage_name: str
+    active_groups: Tuple[str, ...]              # e.g. ("regime", "location")
+    allow_groups_in_rule: Tuple[str, ...]       # same as above
+    output_dir_name: str                        # e.g. "stage_a_context"
+    allowed_group_pairs: Tuple[Tuple[str, str], ...]
+    slot_order: Tuple[str, ...] = ("trigger", "location", "regime")
+    context_rule_keys: Optional[List[str]] = None   # used only in Stage B
+    use_context_features: bool = False
+    context_feature_group_name: str = "context"
+    require_uplift: bool = False
+
+@dataclass(frozen=True)
+class RuleCondition:
+    feature_name: str
+    feature_index: int
+    group: str
+    normalized_value: int  # 1 (feature==1) or 0 (feature==0)
+    raw_operator: str      # '<=', '>', '==', etc.
+    raw_threshold: float
+    raw_decision_type: Optional[str] = None
+    default_left: Optional[bool] = None
+    missing_type: Optional[str] = None
+    
+    def __repr__(self):
+        val_str = "==1" if self.normalized_value == 1 else "==0"
+        return f"{self.group}:{self.feature_name}{val_str}"
+
+@dataclass
+class ExtractedRule:
+    rule_id: str          # Instance-specific ID
+    canonical_key: str    # Slot-based identity
+    conditions: List[RuleCondition]
+    model_id: str
+    fold_id: int
+    seed: int
+    tree_index: int
+    leaf_index: int
+    leaf_value: float
+    support_train: int
+    support_val: int = 0
+
+# =============================================================================
+# FEATURE PREPARATION
+# =============================================================================
+
+class FeatureProcessor:
+    def __init__(self):
+        self.metadata: Dict[str, FeatureMetadata] = {}
+        self.feature_names: List[str] = []
+
+    def prepare_features(
+        self, 
+        feature_dict: Dict[str, np.ndarray], 
+        timestamps: np.ndarray,
+        symbol_codes: np.ndarray,
+        cfg: Dict[str, Any],
+        active_groups: Optional[Sequence[str]] = None,
+        extra_binary_features: Optional[Dict[str, np.ndarray]] = None,
+        extra_feature_group: str = "context",
+    ) -> Tuple[np.ndarray, List[FeatureMetadata], pd.DataFrame]:
+        """
+        Groups and booleanizes features with quality hardening.
+        """
+        raw_cols = []
+        raw_names = []
+        self.metadata = {}
+        self.feature_names = []
+        
+        # If active_groups is None, default to all primary groups
+        if active_groups is None:
+            active_groups = ("trigger", "location", "regime")
+
+        # 1. Trigger Features (already boolean)
+        if "trigger" in active_groups:
+            for col in INTRADAY_TRIGGER_COLUMNS:
+                if col in feature_dict:
+                    arr = feature_dict[col].astype(np.float32)
+                    family = col.split('_')[0] if '_' in col else 'trigger'
+                    self._add_metadata(col, 'trigger', 'boolean', source_name=col, source_family=family)
+                    raw_cols.append(arr)
+                    raw_names.append(col)
+
+        # 2. Location Features (already boolean)
+        if "location" in active_groups:
+            for col in LOCATION_FILTER_COLUMNS:
+                if col in feature_dict:
+                    arr = feature_dict[col].astype(np.float32)
+                    family = col.split('_')[0] if '_' in col else 'location'
+                    self._add_metadata(col, 'location', 'boolean', source_name=col, source_family=family)
+                    raw_cols.append(arr)
+                    raw_names.append(col)
+
+        # 3. Regime Features (continuous -> hybrid booleanize)
+        if "regime" in active_groups:
+            cs_weight = float(cfg.get("regime_cs_weight", 0.5))
+            regime_sources = sorted(list(set(RIDGE_FEATURE_COLS) | set(TEST_FEATURE_KEYS)))
+            
+            for src in regime_sources:
+                if src in feature_dict:
+                    raw_arr = feature_dict[src]
+                    cs_ranks = self._compute_cs_ranks(raw_arr, timestamps)
+                    ts_ranks = self._compute_ts_ranks(raw_arr, symbol_codes)
+                    blended_ranks = (cs_weight * cs_ranks) + ((1.0 - cs_weight) * ts_ranks)
+                    
+                    family = src.split('_')[0] if '_' in src else 'regime'
+                    
+                    for q in [0.2, 0.4, 0.6, 0.8]:
+                        bool_name = f"reg_{src}_hybrid_top{int(q*100)}"
+                        bool_arr = (blended_ranks >= (1.0 - q)).astype(np.float32)
+                        
+                        self._add_metadata(
+                            bool_name, 'regime', 'boolean', 
+                            source_name=src, 
+                            source_family=family,
+                            booleanization_method='hybrid_cs_ts_rank',
+                            threshold_type='top_quantile',
+                            threshold_value=q,
+                            description=f"Hybrid Rank (CS weight={cs_weight}) >= {1.0-q}"
+                        )
+                        raw_cols.append(bool_arr)
+                        raw_names.append(bool_name)
+
+                    band_name = f"reg_{src}_hybrid_band30_70"
+                    band_arr = (
+                        (blended_ranks >= 0.30) & (blended_ranks <= 0.70)
+                    ).astype(np.float32)
+                    self._add_metadata(
+                        band_name,
+                        "regime",
+                        "boolean",
+                        source_name=src,
+                        source_family=family,
+                        booleanization_method="hybrid_cs_ts_rank",
+                        threshold_type="band_quantile",
+                        threshold_value=0.50,
+                        description="Hybrid Rank inside the 30-70 median band",
+                    )
+                    raw_cols.append(band_arr)
+                    raw_names.append(band_name)
+
+        # 4. Extra Binary Features (e.g. Stage A Contexts)
+        if extra_binary_features:
+            for name, arr in extra_binary_features.items():
+                arr_f32 = arr.astype(np.float32)
+                self._add_metadata(
+                    name, extra_feature_group, 'boolean',
+                    source_name=name,
+                    source_family=extra_feature_group,
+                    description=f"Extra feature from {extra_feature_group}"
+                )
+                raw_cols.append(arr_f32)
+                raw_names.append(name)
+
+        if not raw_cols:
+            return np.empty((len(timestamps), 0)), [], pd.DataFrame()
+
+        X_raw = np.column_stack(raw_cols)
+        
+        # Quality Hardening: Drop degenerate/duplicate columns
+        X_clean, retained_names, audit_df = self._run_feature_quality_checks(X_raw, raw_names, cfg)
+        
+        # Re-index metadata based on final retained columns
+        retained_metadata = []
+        old_metadata = {m.feature_name: m for m in self.metadata.values()}
+        for i, name in enumerate(retained_names):
+            m = old_metadata[name]
+            # Create fresh copy with updated index
+            new_m = FeatureMetadata(
+                feature_name=m.feature_name,
+                feature_index=i,
+                group=m.group,
+                source_name=m.source_name,
+                source_family=m.source_family,
+                source_type=m.source_type,
+                booleanization_method=m.booleanization_method,
+                threshold_type=m.threshold_type,
+                threshold_value=m.threshold_value,
+                description=m.description
+            )
+            retained_metadata.append(new_m)
+            
+        return X_clean, retained_metadata, audit_df
+
+    def _add_metadata(self, name, group, src_type, **kwargs):
+        idx = len(self.feature_names)
+        self.feature_names.append(name)
+        self.metadata[name] = FeatureMetadata(
+            feature_name=name,
+            feature_index=idx,
+            group=group,
+            source_name=kwargs.get('source_name', name),
+            source_family=kwargs.get('source_family', 'unknown'),
+            source_type=src_type,
+            booleanization_method=kwargs.get('booleanization_method'),
+            threshold_type=kwargs.get('threshold_type'),
+            threshold_value=kwargs.get('threshold_value'),
+            description=kwargs.get('description', '')
+        )
+
+    def _compute_cs_ranks(self, arr: np.ndarray, timestamps: np.ndarray) -> np.ndarray:
+        """
+        Cross-sectional ranking using pandas for vectorization speed.
+        """
+        s = pd.Series(arr)
+        return s.groupby(timestamps, sort=False).rank(pct=True).values
+
+    def _compute_ts_ranks(self, arr: np.ndarray, symbol_codes: np.ndarray) -> np.ndarray:
+        """
+        Time-series ranking using pandas for vectorization speed.
+        """
+        from extreme_price_movements.utils import tprint
+        s = pd.Series(arr)
+        return s.groupby(symbol_codes, sort=False).rank(pct=True).values
+
+    def _run_feature_quality_checks(self, X: np.ndarray, names: List[str], cfg: Dict[str, Any]) -> Tuple[np.ndarray, List[str], pd.DataFrame]:
+        """
+        Drops degenerate or duplicate boolean columns.
+        """
+        n_samples = X.shape[0]
+        min_support = int(cfg.get("min_feature_support", 10))
+        
+        audit_rows = []
+        retained_indices = []
+        retained_names = []
+        hash_registry = {} # To detect exact duplicates
+        
+        for i, name in enumerate(names):
+            col = X[:, i]
+            n_ones = np.sum(col == 1)
+            n_zeros = np.sum(col == 0)
+            
+            dropped = False
+            reason = "retained"
+            
+            if n_ones == 0:
+                dropped = True
+                reason = "all_zeros"
+            elif n_zeros == 0:
+                dropped = True
+                reason = "all_ones"
+            elif n_ones < min_support:
+                dropped = True
+                reason = f"low_support_{int(n_ones)}<{min_support}"
+            else:
+                # Duplicate check via hash
+                col_hash = hashlib.sha1(col.tobytes()).hexdigest()
+                if col_hash in hash_registry:
+                    dropped = True
+                    reason = f"duplicate_of_{hash_registry[col_hash]}"
+                else:
+                    hash_registry[col_hash] = name
+            
+            audit_rows.append({
+                'feature_name': name,
+                'status': 'dropped' if dropped else 'retained',
+                'reason': reason,
+                'support': int(n_ones)
+            })
+            
+            if not dropped:
+                retained_indices.append(i)
+                retained_names.append(name)
+        
+        if not retained_indices:
+            return np.empty((n_samples, 0)), [], pd.DataFrame(audit_rows)
+            
+        X_clean = X[:, retained_indices]
+        return X_clean, retained_names, pd.DataFrame(audit_rows)
+
+# =============================================================================
+# MODEL TRAINING & CONSTRAINTS
+# =============================================================================
+
+class InteractionModel:
+    def __init__(
+        self, 
+        metadata: List[FeatureMetadata], 
+        cfg: Dict[str, Any],
+        allowed_group_pairs: Optional[Sequence[Tuple[str, str]]] = None
+    ):
+        self.metadata = metadata
+        self.cfg = cfg
+        self.allowed_group_pairs = allowed_group_pairs
+        self.constraints = self._build_interaction_constraints()
+        
+    def _build_interaction_constraints(self) -> List[List[int]]:
+        """
+        Build interaction constraints for LightGBM.
+        """
+        # Group to indices map
+        group_map = collections.defaultdict(list)
+        for m in self.metadata:
+            group_map[m.group].append(m.feature_index)
+
+        constraints = []
+        
+        # If allowed_group_pairs is not specified, default to triplet logic for backward compatibility
+        if self.allowed_group_pairs is None:
+            trigger_idxs = group_map.get('trigger', [])
+            location_idxs = group_map.get('location', [])
+            regime_idxs = group_map.get('regime', [])
+
+            for t in trigger_idxs:
+                for l in location_idxs:
+                    for r in regime_idxs:
+                        constraints.append([t, l, r])
+                        constraints.append([t, l])
+                        constraints.append([t, r])
+                        constraints.append([l, r])
+        else:
+            # Build pairwise constraints from allowed group pairs
+            for g1, g2 in self.allowed_group_pairs:
+                idx1_list = group_map.get(g1, [])
+                idx2_list = group_map.get(g2, [])
+                for i in idx1_list:
+                    for j in idx2_list:
+                        constraints.append([i, j])
+
+        # Also add singletons to allow 1-way splits
+        for i in range(len(self.metadata)):
+            constraints.append([i])
+            
+        return constraints
+
+    def _verify_constraints(self, constraints, trigger_idxs, location_idxs, regime_idxs):
+        """
+        Hardening: Verify no same-group pairs.
+        """
+        for c in constraints:
+            if len(c) == 2:
+                idx1, idx2 = c
+                m1 = self.metadata[idx1]
+                m2 = self.metadata[idx2]
+                if m1.group == m2.group:
+                    raise ValueError(f"Constraint violation: {m1.group}-{m2.group} pair ({idx1}, {idx2})")
+        
+        # Summary
+        t_l = sum(1 for c in constraints if len(c) == 2 and {self.metadata[c[0]].group, self.metadata[c[1]].group} == {'trigger', 'location'})
+        t_r = sum(1 for c in constraints if len(c) == 2 and {self.metadata[c[0]].group, self.metadata[c[1]].group} == {'trigger', 'regime'})
+        l_r = sum(1 for c in constraints if len(c) == 2 and {self.metadata[c[0]].group, self.metadata[c[1]].group} == {'location', 'regime'})
+        tprint(f"Constraints built: T-L={t_l}, T-R={t_r}, L-R={l_r}, Singletons={len(self.metadata)}")
+
+    def get_constraint_summary(self) -> Dict[str, Any]:
+        """
+        Returns a dictionary summarizing the interaction constraints.
+        """
+        # Map actual group names in constraints
+        summary = collections.defaultdict(int)
+        for c in self.constraints:
+            if len(c) == 2:
+                g1 = self.metadata[c[0]].group
+                g2 = self.metadata[c[1]].group
+                pair = tuple(sorted([g1, g2]))
+                summary[f"{pair[0]}_{pair[1]}_pairs"] += 1
+            elif len(c) == 3:
+                g1 = self.metadata[c[0]].group
+                g2 = self.metadata[c[1]].group
+                g3 = self.metadata[c[2]].group
+                triplet = tuple(sorted([g1, g2, g3]))
+                summary[f"{triplet[0]}_{triplet[1]}_{triplet[2]}_triplets"] += 1
+        
+        result = {
+            'total_singletons': len(self.metadata),
+            'total_constraints': len(self.constraints)
+        }
+        # Add group counts
+        groups = set(m.group for m in self.metadata)
+        for g in groups:
+            result[f"num_{g}"] = sum(1 for m in self.metadata if m.group == g)
+        
+        result.update(summary)
+        return result
+
+    def train_fold(self, X_tr, y_tr, X_va, y_va, fold_id: int, seed: int):
+        from lightgbm import early_stopping, log_evaluation
+
+        # ENFORCE FINITE TARGETS
+        tr_mask = np.isfinite(y_tr)
+        va_mask = np.isfinite(y_va)
+        X_tr, y_tr = X_tr[tr_mask], y_tr[tr_mask]
+        X_va, y_va = X_va[va_mask], y_va[va_mask]
+
+        if len(y_tr) < 100:
+            tprint(f"WARNING: Fold {fold_id} has very few training samples ({len(y_tr)})")
+        if len(y_va) == 0:
+            raise ValueError(f"Fold {fold_id} has no finite validation samples")
+
+        y_lo = float(np.nanquantile(y_tr, 0.01))
+        y_hi = float(np.nanquantile(y_tr, 0.99))
+        y_tr_reg = np.clip(y_tr, y_lo, y_hi).astype(np.float32, copy=False)
+        y_va_reg = np.clip(y_va, y_lo, y_hi).astype(np.float32, copy=False)
+
+        params = {
+            "objective": "regression",
+            "metric": "l2",
+            "boosting_type": "gbdt",
+            "max_depth": 3,
+            "num_leaves": 8,
+            "min_data_in_leaf": max(20, int(0.001 * X_tr.shape[0])),
+            "learning_rate": 0.03,
+            "n_estimators": 1000,  # Use n_estimators instead of num_iterations
+            # num_iterations removed from params to avoid warning - early stopping handles it
+            "interaction_constraints": self.constraints,
+            "verbosity": -1,
+            "random_state": seed,
+            "extra_trees": self.cfg.get("extra_trees", True),
+            "n_jobs": max(1, min(3, int(self.cfg.get("lgbm_n_jobs", 3)))),
+        }
+
+        model = LGBMRegressor(**params)
+        model.fit(
+            X_tr, y_tr_reg,
+            eval_set=[(X_va, y_va_reg)],
+            callbacks=[
+                early_stopping(stopping_rounds=50),
+                log_evaluation(period=0)
+            ]
+        )
+
+        # Metadata persistence
+        fit_meta = {
+            "model_id": "lgbm_discovery",
+            "fold_id": fold_id,
+            "seed": seed,
+            "best_iteration": model.best_iteration_,
+            "train_samples": X_tr.shape[0],
+            "val_samples": X_va.shape[0],
+            "params_hash": hashlib.sha1(str(params).encode()).hexdigest()[:8],
+            "classification": False,
+            "threshold_tr": np.nan,
+            "threshold_va": np.nan,
+            "target_mode": "regression_5h_return",
+        }
+
+        return model, fit_meta
+
+# =============================================================================
+# LEAF EXTRACTION & RULE SCORING
+# =============================================================================
+
+class RuleExtractor:
+    def __init__(
+        self, 
+        metadata: List[FeatureMetadata], 
+        cfg: Dict[str, Any],
+        slot_order: Sequence[str] = ("trigger", "location", "regime"),
+        positive_only_groups: Optional[Sequence[str]] = None,
+        required_positive_groups: Optional[Sequence[str]] = None,
+        collapse_duplicate_groups: Optional[Sequence[str]] = None,
+    ):
+        self.metadata_lookup = {m.feature_index: m for m in metadata}
+        self.cfg = cfg
+        self.slot_order = slot_order
+        self.positive_only_groups = set(positive_only_groups or [])
+        self.required_positive_groups = set(required_positive_groups or [])
+        self.collapse_duplicate_groups = set(collapse_duplicate_groups or [])
+        self.rejection_audit = []
+
+    def extract_rules(self, model: LGBMRegressor, model_id: str, fold_id: int, seed: int) -> List[ExtractedRule]:
+        # ALWAYS use native booster dump for correct semantics according to fix spec
+        dump = model.booster_.dump_model()
+        rules = []
+        self.rejection_audit = [] # For diagnostics
+        
+        for tree_idx, tree in enumerate(dump['tree_info']):
+            self._traverse_tree(tree['tree_structure'], [], tree_idx, model_id, fold_id, seed, rules)
+        
+        tprint(f"Extracted {len(rules)} valid paths from booster.")
+        return rules
+
+    def _normalize_predicate(self, node: Dict[str, Any], direction: int) -> Optional[Tuple[int, str, float]]:
+        """
+        Simplified and hardened normalization for [0, 1] boolean features.
+        LightGBM JSON format:
+        Left child (direction 1) is 'value <= threshold'
+        Right child (direction 0) is 'value > threshold'
+        """
+        threshold = node.get('threshold')
+        if threshold is None:
+            return None
+
+        # Standard LGBM boolean split is at 0.5
+        # Direction 1: Left (<= 0.5) -> Feature is 0
+        if direction == 1:
+            return (0, '<=', threshold)
+
+        # Direction 0: Right (> 0.5) -> Feature is 1
+        else:
+            return (1, '>', threshold)
+        
+    def _traverse_tree(self, node, current_conditions, tree_idx, model_id, fold_id, seed, rules):
+        if 'leaf_value' in node:
+            if not current_conditions:
+                return
+
+            reduced_conditions, reduce_reason = self._reduce_conditions(current_conditions)
+            if reduce_reason is not None:
+                self.rejection_audit.append({
+                    'model_id': model_id, 'fold_id': fold_id, 'seed': seed,
+                    'tree_idx': tree_idx, 'leaf_idx': node.get('leaf_index', -1),
+                    'reason': reduce_reason
+                })
+                return
+            
+            # 1. Path Validation Gates (Hardened)
+            is_valid, reason = self._is_path_valid(reduced_conditions)
+            if not is_valid:
+                self.rejection_audit.append({
+                    'model_id': model_id, 'fold_id': fold_id, 'seed': seed,
+                    'tree_idx': tree_idx, 'leaf_idx': node.get('leaf_index', -1),
+                    'reason': reason
+                })
+                return
+            
+            # 2. Canonical Identity (Slot-based)
+            canonical_key = self._build_canonical_key(reduced_conditions)
+            if not canonical_key:
+                return
+
+            # 3. Instance-specific ID
+            prov_str = f"{canonical_key}_{model_id}_{fold_id}_{seed}_{tree_idx}_{node.get('leaf_index', -1)}"
+            rule_id = hashlib.sha1(prov_str.encode()).hexdigest()[:12]
+            
+            rules.append(ExtractedRule(
+                rule_id=rule_id,
+                canonical_key=canonical_key,
+                conditions=list(reduced_conditions),
+                model_id=model_id,
+                fold_id=fold_id,
+                seed=seed,
+                tree_index=tree_idx,
+                leaf_index=node.get('leaf_index', -1),
+                leaf_value=node['leaf_value'],
+                support_train=node.get('leaf_count', 0)
+            ))
+            return
+
+        split_feat_idx = node['split_feature']
+        m = self.metadata_lookup.get(split_feat_idx)
+        if not m:
+            return
+
+        # Normalized branching
+        for direction in [1, 0]: # 1=Left, 0=Right
+            norm = self._normalize_predicate(node, direction)
+            if norm is None:
+                continue
+            
+            norm_val, raw_op, raw_thr = norm
+            cond = RuleCondition(
+                feature_name=m.feature_name,
+                feature_index=split_feat_idx,
+                group=m.group,
+                normalized_value=norm_val,
+                raw_operator=raw_op,
+                raw_threshold=raw_thr,
+                raw_decision_type=node.get('decision_type'),
+                default_left=node.get('default_left'),
+                missing_type=node.get('missing_type')
+            )
+            
+            child_node = node['left_child'] if direction == 1 else node['right_child']
+            self._traverse_tree(child_node, current_conditions + [cond], tree_idx, model_id, fold_id, seed, rules)
+
+    def _reduce_conditions(
+        self, conditions: List[RuleCondition]
+    ) -> Tuple[Optional[List[RuleCondition]], Optional[str]]:
+        """
+        Collapse duplicate groups when they contain a single positive condition plus
+        same-group negatives. This lets Stage A preserve one location and one regime
+        slot instead of rejecting paths that refine the same group multiple times.
+        """
+        by_group: Dict[str, List[RuleCondition]] = collections.defaultdict(list)
+        group_order: List[str] = []
+        for c in conditions:
+            if c.group not in by_group:
+                group_order.append(c.group)
+            by_group[c.group].append(c)
+
+        reduced: List[RuleCondition] = []
+        for group in group_order:
+            group_conditions = by_group[group]
+            if group not in self.collapse_duplicate_groups:
+                feat_map: Dict[int, int] = {}
+                for c in group_conditions:
+                    prev = feat_map.get(c.feature_index)
+                    if prev is not None:
+                        if prev != c.normalized_value:
+                            return None, f"contradiction_{c.feature_name}"
+                        continue
+                    feat_map[c.feature_index] = c.normalized_value
+                    reduced.append(c)
+                continue
+
+            positive_by_feature: Dict[int, RuleCondition] = {}
+            negative_by_feature: Dict[int, RuleCondition] = {}
+            for c in group_conditions:
+                if c.normalized_value == 1:
+                    positive_by_feature[c.feature_index] = c
+                else:
+                    negative_by_feature[c.feature_index] = c
+
+            positive_conditions = list(positive_by_feature.values())
+            if len(positive_conditions) > 1:
+                return None, f"group_violation_{group}_{len(group_conditions)}"
+            if len(positive_conditions) == 1:
+                reduced.append(positive_conditions[0])
+                continue
+            reduced.extend(negative_by_feature.values())
+
+        return reduced, None
+
+    def _is_path_valid(self, conditions: List[RuleCondition]) -> Tuple[bool, str]:
+        """
+        Hardened validation: Group limits, contradictions, and polarity.
+        """
+        if not conditions:
+            return False, "empty_path"
+            
+        # Group slot check (max 1 of each)
+        groups = [c.group for c in conditions]
+        counts = collections.Counter(groups)
+        # We now check against the full set of allowed groups if possible, 
+        # but for now ensuring no same-group duplicates is enough
+        for g, count in counts.items():
+            if count > 1:
+                return False, f"group_violation_{g}_{count}"
+        
+        # Contradiction check (Normalized)
+        feat_map = {}
+        for c in conditions:
+            if c.feature_index in feat_map:
+                if feat_map[c.feature_index] != c.normalized_value:
+                    return False, f"contradiction_{c.feature_name}"
+            feat_map[c.feature_index] = c.normalized_value
+        
+        # Polarity Check: reject only all-negative paths
+        # A path is all-negative if NO condition has normalized_value == 1
+        if not any(c.normalized_value == 1 for c in conditions):
+            return False, "all_negative_path"
+
+        for c in conditions:
+            if c.group in self.positive_only_groups and c.normalized_value != 1:
+                return False, f"negative_not_allowed_{c.group}"
+
+        positive_groups = {c.group for c in conditions if c.normalized_value == 1}
+        missing_required = sorted(self.required_positive_groups - positive_groups)
+        if missing_required:
+            return False, f"missing_required_group_{missing_required[0]}"
+
+        return True, "valid"
+
+    def _build_canonical_key(self, conditions: List[RuleCondition]) -> Optional[str]:
+        """
+        Deterministic slot-based key using slot_order.
+        """
+        slots = {s: '*' for s in self.slot_order}
+        for c in conditions:
+            if c.group in slots:
+                slots[c.group] = f"{c.feature_name}=={int(c.normalized_value)}"
+        
+        return "|".join([f"({slots[s]})" for s in self.slot_order])
+
+COMPOSITE_RULE_PATTERN = re.compile(r"^Composite\((.+)\)_OR_\((.+)\)$")
+
+
+def split_composite_key(canonical_key: str) -> Optional[Tuple[str, str]]:
+    match = COMPOSITE_RULE_PATTERN.match(canonical_key)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def parse_slot_map(
+    canonical_key: str,
+    slot_order: Sequence[str] = ("trigger", "location", "regime"),
+) -> Dict[str, str]:
+    parts = split_composite_key(canonical_key)
+    if parts is not None:
+        raise ValueError(f"Composite key {canonical_key} has no direct slot map")
+    slots = canonical_key.split("|")
+    if len(slots) != len(slot_order):
+        raise ValueError(
+            f"Key {canonical_key} has {len(slots)} slots but expected {len(slot_order)}"
+        )
+    return {
+        group: slot.strip("()")
+        for group, slot in zip(slot_order, slots)
+    }
+
+
+def build_stage_a_parent_key_from_slot_map(slot_map: Dict[str, str]) -> Optional[str]:
+    loc = slot_map.get("location", "*")
+    reg = slot_map.get("regime", "*")
+    if loc == "*" and reg == "*":
+        return None
+    return f"(*)|({loc})|({reg})"
+
+
+def iter_primitive_keys(canonical_key: str) -> List[str]:
+    composite_parts = split_composite_key(canonical_key)
+    if composite_parts is None:
+        return [canonical_key]
+    out: List[str] = []
+    for part in composite_parts:
+        out.extend(iter_primitive_keys(part))
+    return out
+
+
+def extract_feature_names_from_key(canonical_key: str) -> List[str]:
+    names: List[str] = []
+    for part in iter_primitive_keys(canonical_key):
+        for slot in part.split("|"):
+            slot_value = slot.strip("()")
+            if slot_value == "*" or "==" not in slot_value:
+                continue
+            names.append(slot_value.split("==")[0])
+    return sorted(set(names))
+
+
+def infer_rule_side(
+    canonical_key: str,
+    mean_net_ret: Optional[float] = None,
+    explicit_side: Optional[str] = None,
+) -> str:
+    if explicit_side:
+        return explicit_side
+    names = [name.lower() for name in extract_feature_names_from_key(canonical_key)]
+    has_long = any(token in name for name in names for token in ("long", "bull", "up"))
+    has_short = any(
+        token in name for name in names for token in ("short", "bear", "down")
+    )
+    if has_long and has_short:
+        return "mixed"
+    if has_long:
+        return "long"
+    if has_short:
+        return "short"
+    if mean_net_ret is not None and np.isfinite(mean_net_ret):
+        if mean_net_ret > 0:
+            return "long"
+        if mean_net_ret < 0:
+            return "short"
+    return "unknown"
+
+
+def display_arity_for_key(canonical_key: str) -> int:
+    composite_parts = split_composite_key(canonical_key)
+    if composite_parts is not None:
+        return max(display_arity_for_key(part) for part in composite_parts)
+    return sum(slot.strip("()") != "*" for slot in canonical_key.split("|"))
+
+
+def structural_depth_for_key(canonical_key: str) -> int:
+    composite_parts = split_composite_key(canonical_key)
+    if composite_parts is not None:
+        return sum(structural_depth_for_key(part) for part in composite_parts)
+    return display_arity_for_key(canonical_key)
+
+
+def build_walk_forward_folds(
+    n_samples: int,
+    n_folds: int,
+    min_train_frac: float = 0.5,
+    embargo: int = 0,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    if n_samples <= 1:
+        return []
+    min_train = max(1, int(np.floor(n_samples * min_train_frac)))
+    min_train = min(min_train, n_samples - 1)
+    remaining = n_samples - min_train
+    if remaining <= 0:
+        return []
+    n_val_folds = min(max(1, n_folds), remaining)
+    base_size = remaining // n_val_folds
+    remainder = remaining % n_val_folds
+    folds: List[Tuple[np.ndarray, np.ndarray]] = []
+    va_start = min_train
+    for fold_id in range(n_val_folds):
+        fold_size = base_size + (1 if fold_id < remainder else 0)
+        va_end = min(n_samples, va_start + fold_size)
+        tr_end = max(0, va_start - embargo)
+        tr_idx = np.arange(0, tr_end, dtype=np.int32)
+        va_idx = np.arange(va_start, va_end, dtype=np.int32)
+        if tr_idx.size == 0 or va_idx.size == 0:
+            va_start = va_end
+            continue
+        if tr_idx.max() >= va_idx.min():
+            raise ValueError(
+                f"Invalid walk-forward fold {fold_id}: train leaks into validation"
+            )
+        folds.append((tr_idx, va_idx))
+        va_start = va_end
+    return folds
+
+
+class DictionaryMaskResolver:
+    def __init__(
+        self,
+        mask_map: Dict[str, np.ndarray],
+        parent_context_map: Optional[Dict[str, str]] = None,
+        side_map: Optional[Dict[str, str]] = None,
+    ):
+        self.mask_map = {key: np.asarray(mask, dtype=bool) for key, mask in mask_map.items()}
+        self.parent_context_map = parent_context_map or {}
+        self.side_map = side_map or {}
+
+    def register_mask(
+        self,
+        canonical_key: str,
+        mask: np.ndarray,
+        parent_context_key: Optional[str] = None,
+        side: Optional[str] = None,
+    ) -> None:
+        self.mask_map[canonical_key] = np.asarray(mask, dtype=bool)
+        if parent_context_key:
+            self.parent_context_map[canonical_key] = parent_context_key
+        if side:
+            self.side_map[canonical_key] = side
+
+    def get_mask(self, canonical_key: str, indices: Optional[np.ndarray] = None) -> np.ndarray:
+        composite_parts = split_composite_key(canonical_key)
+        if composite_parts is not None:
+            left = self.get_mask(composite_parts[0], indices)
+            right = self.get_mask(composite_parts[1], indices)
+            return left | right
+        if canonical_key not in self.mask_map:
+            raise KeyError(f"Cannot resolve mask for {canonical_key}")
+        mask = self.mask_map[canonical_key]
+        if indices is None:
+            return mask.copy()
+        return mask[indices]
+
+    def get_parent_context_key(self, canonical_key: str) -> Optional[str]:
+        composite_parts = split_composite_key(canonical_key)
+        if composite_parts is not None:
+            left = self.get_parent_context_key(composite_parts[0])
+            right = self.get_parent_context_key(composite_parts[1])
+            return left if left == right else None
+        return self.parent_context_map.get(canonical_key)
+
+    def get_rule_side(self, canonical_key: str) -> Optional[str]:
+        composite_parts = split_composite_key(canonical_key)
+        if composite_parts is not None:
+            left = self.get_rule_side(composite_parts[0])
+            right = self.get_rule_side(composite_parts[1])
+            return left if left == right else "mixed"
+        return self.side_map.get(canonical_key)
+
+
+class CanonicalRuleMaskResolver:
+    def __init__(
+        self,
+        X: np.ndarray,
+        metadata: List[FeatureMetadata],
+        context_lookup: Optional[Dict[str, np.ndarray]] = None,
+        context_key_map: Optional[Dict[str, str]] = None,
+        slot_order: Sequence[str] = ("trigger", "location", "regime"),
+    ):
+        self.X = X
+        self.metadata = metadata
+        self.context_lookup = {
+            key: np.asarray(val, dtype=bool) for key, val in (context_lookup or {}).items()
+        }
+        self.context_key_map = context_key_map or {}
+        self.slot_order = tuple(slot_order)
+        self.name_to_idx = {m.feature_name: m.feature_index for m in metadata}
+        self.parent_key_to_context_name = {
+            parent_key: ctx_name for ctx_name, parent_key in self.context_key_map.items()
+        }
+
+    def _slice_mask(self, mask: np.ndarray, indices: Optional[np.ndarray]) -> np.ndarray:
+        if indices is None:
+            return mask.copy()
+        return mask[indices]
+
+    def _resolve_feature_mask(
+        self, feature_name: str, target_val: int, indices: Optional[np.ndarray]
+    ) -> np.ndarray:
+        if feature_name in self.name_to_idx:
+            values = (
+                self.X[:, self.name_to_idx[feature_name]]
+                if indices is None
+                else self.X[indices, self.name_to_idx[feature_name]]
+            )
+            return values == target_val
+        if feature_name in self.context_lookup:
+            base_mask = self._slice_mask(self.context_lookup[feature_name], indices)
+            return base_mask if target_val == 1 else ~base_mask
+        raise KeyError(f"Unknown feature {feature_name} in canonical key")
+
+    def _resolve_context_parent_mask(
+        self, canonical_key: str, indices: Optional[np.ndarray]
+    ) -> Optional[np.ndarray]:
+        try:
+            slot_map = parse_slot_map(canonical_key, self.slot_order)
+        except ValueError:
+            slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
+        parent_key = build_stage_a_parent_key_from_slot_map(slot_map)
+        if parent_key is None:
+            return None
+        ctx_name = self.parent_key_to_context_name.get(parent_key)
+        if ctx_name is None:
+            return None
+        return self._slice_mask(self.context_lookup[ctx_name], indices)
+
+    def get_mask(self, canonical_key: str, indices: Optional[np.ndarray] = None) -> np.ndarray:
+        composite_parts = split_composite_key(canonical_key)
+        if composite_parts is not None:
+            return self.get_mask(composite_parts[0], indices) | self.get_mask(
+                composite_parts[1], indices
+            )
+
+        try:
+            slot_map = parse_slot_map(canonical_key, self.slot_order)
+        except ValueError:
+            slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
+
+        n_samples = self.X.shape[0] if indices is None else len(indices)
+        mask = np.ones(n_samples, dtype=bool)
+        unresolved_groups: List[str] = []
+
+        for group, slot_value in slot_map.items():
+            if slot_value == "*":
+                continue
+            if "==" not in slot_value:
+                raise ValueError(f"Malformed slot {slot_value} in {canonical_key}")
+            feature_name, target_val_raw = slot_value.split("==")
+            target_val = int(target_val_raw)
+            if feature_name in self.name_to_idx or feature_name in self.context_lookup:
+                mask &= self._resolve_feature_mask(feature_name, target_val, indices)
+            else:
+                unresolved_groups.append(group)
+
+        if unresolved_groups:
+            if not set(unresolved_groups).issubset({"location", "regime"}):
+                raise KeyError(
+                    f"Cannot resolve groups {unresolved_groups} for key {canonical_key}"
+                )
+            context_mask = self._resolve_context_parent_mask(canonical_key, indices)
+            if context_mask is None:
+                raise KeyError(f"Cannot map {canonical_key} to a saved Stage A context")
+            mask &= context_mask
+
+        return mask
+
+    def get_parent_context_key(self, canonical_key: str) -> Optional[str]:
+        composite_parts = split_composite_key(canonical_key)
+        if composite_parts is not None:
+            left = self.get_parent_context_key(composite_parts[0])
+            right = self.get_parent_context_key(composite_parts[1])
+            return left if left == right else None
+
+        try:
+            slot_map = parse_slot_map(canonical_key, self.slot_order)
+        except ValueError:
+            slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
+
+        if "context" in slot_map and slot_map["context"] != "*":
+            ctx_name = slot_map["context"].split("==")[0]
+            return self.context_key_map.get(ctx_name)
+
+        parent_key = build_stage_a_parent_key_from_slot_map(slot_map)
+        if parent_key in self.parent_key_to_context_name:
+            return parent_key
+        return None
+
+    def get_rule_side(self, canonical_key: str) -> Optional[str]:
+        return infer_rule_side(canonical_key)
+
+
+class RuleScorer:
+    def __init__(
+        self,
+        metadata: List[FeatureMetadata],
+        cfg: Dict[str, Any],
+        mask_resolver: Optional[Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]] = None,
+    ):
+        self.metadata = metadata
+        self.cfg = cfg
+        self.mask_resolver = mask_resolver
+
+    def _compute_required_hurdle(self, support_pct: float, display_arity: int) -> float:
+        base_hurdle = float(self.cfg.get("prune_base_hurdle", 0.0002))
+        penalty_exp = float(self.cfg.get("prune_support_exp", 0.5))
+        complexity_bonus = float(
+            self.cfg.get("prune_complexity_bonus_map", {}).get(str(display_arity), 0.0)
+        )
+        safe_support = max(float(support_pct), 0.0005)
+        return (base_hurdle * (1.0 - complexity_bonus)) / (safe_support ** penalty_exp)
+
+    def score_key_oos(
+        self,
+        canonical_key: str,
+        fwd_ret: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+        resolver: Optional[Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]] = None,
+        require_uplift: bool = False,
+        parent_context_key: Optional[str] = None,
+        discovery_count: int = 0,
+        n_instances: Optional[int] = None,
+        pipeline_stage: Optional[str] = None,
+        explicit_side: Optional[str] = None,
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        resolver = resolver or self.mask_resolver
+        if resolver is None:
+            raise ValueError("RuleScorer requires a mask resolver")
+
+        fold_records: List[Dict[str, Any]] = []
+        epsilon = float(self.cfg.get("sign_dead_zone", 1e-6))
+
+        if require_uplift and not parent_context_key:
+            parent_context_key = resolver.get_parent_context_key(canonical_key)
+
+        for fold_id, (_, va_idx) in enumerate(folds):
+            y_va = fwd_ret[va_idx]
+            mask = resolver.get_mask(canonical_key, va_idx)
+            support = int(mask.sum())
+            baseline_support = 0
+            baseline_ret = np.nan
+            uplift = np.nan
+
+            if parent_context_key:
+                parent_mask = resolver.get_mask(parent_context_key, va_idx)
+                baseline_support = int(parent_mask.sum())
+                if baseline_support > 0:
+                    baseline_ret = float(np.nanmean(y_va[parent_mask]))
+
+            if support > 0:
+                masked_ret = y_va[mask]
+                mean_ret = float(np.nanmean(masked_ret))
+                std_ret = float(np.nanstd(masked_ret))
+                if np.isfinite(baseline_ret):
+                    uplift = mean_ret - baseline_ret
+                sign = 1 if mean_ret > epsilon else (-1 if mean_ret < -epsilon else 0)
+            else:
+                mean_ret = np.nan
+                std_ret = np.nan
+                sign = 0
+
+            fold_records.append(
+                {
+                    "canonical_key": canonical_key,
+                    "fold_id": fold_id,
+                    "support": support,
+                    "support_pct": support / max(len(va_idx), 1),
+                    "mean_ret": mean_ret,
+                    "std_ret": std_ret,
+                    "sign": sign,
+                    "baseline_support": baseline_support,
+                    "baseline_ret": baseline_ret,
+                    "uplift": uplift,
+                    "parent_context_key": parent_context_key,
+                }
+            )
+
+        df_folds = pd.DataFrame(fold_records)
+        present = df_folds[df_folds["support"] > 0].copy()
+        if present.empty:
+            summary = {
+                "canonical_key": canonical_key,
+                "mean_net_ret": np.nan,
+                "directional_mean_ret": np.nan,
+                "std_net_ret": np.nan,
+                "mean_support_pct": 0.0,
+                "std_support_pct": 0.0,
+                "presence_freq": 0.0,
+                "presence_freq_units": 0.0,
+                "sign_consistency": 0.0,
+                "min_support_actual": 0,
+                "mean_uplift": np.nan,
+                "mean_baseline_ret": np.nan,
+                "composite_score": -np.inf,
+                "required_hurdle": np.nan,
+                "hurdle_excess": np.nan,
+                "n_folds": 0,
+                "discovery_count": discovery_count,
+                "n_instances": 0 if n_instances is None else n_instances,
+                "display_arity": display_arity_for_key(canonical_key),
+                "structural_depth": structural_depth_for_key(canonical_key),
+                "pipeline_stage": pipeline_stage or "unknown",
+                "parent_context_key": parent_context_key,
+                "side": infer_rule_side(canonical_key, explicit_side=explicit_side),
+                "rule_type": "composite"
+                if split_composite_key(canonical_key) is not None
+                else f"{display_arity_for_key(canonical_key)}-way",
+                "accepted": False,
+                "rejection_reason": "no_validation_support",
+            }
+            return summary, fold_records
+
+        mean_net_ret = float(present["mean_ret"].mean())
+        std_net_ret = float(present["mean_ret"].std(ddof=0))
+        mean_support_pct = float(present["support_pct"].mean())
+        std_support_pct = float(present["support_pct"].std(ddof=0))
+        presence_freq = float(len(present) / max(len(folds), 1))
+        nonzero_signs = present[present["sign"] != 0]["sign"]
+        if len(nonzero_signs) == 0:
+            sign_consistency = 0.0
+        else:
+            major_sign = 1 if mean_net_ret > 0 else -1
+            sign_consistency = float((nonzero_signs == major_sign).mean())
+        display_arity = display_arity_for_key(canonical_key)
+        required_hurdle = self._compute_required_hurdle(mean_support_pct, display_arity)
+        use_directional = bool(self.cfg.get("stage_a_directional", True)) and (
+            (pipeline_stage or "") == "stage_a_context"
+        )
+        directional_mean_ret = (
+            abs(mean_net_ret) if (use_directional and np.isfinite(mean_net_ret))
+            else mean_net_ret
+        )
+        hurdle_excess = directional_mean_ret - required_hurdle
+        mean_uplift = float(present["uplift"].mean()) if present["uplift"].notna().any() else np.nan
+        mean_baseline_ret = (
+            float(present["baseline_ret"].mean())
+            if present["baseline_ret"].notna().any()
+            else np.nan
+        )
+        composite_score = (
+            mean_net_ret
+            * sqrt(max(mean_support_pct, 1e-12))
+            * presence_freq
+            * sign_consistency
+            / (1.0 + max(std_net_ret, 0.0))
+        )
+
+        summary = {
+            "canonical_key": canonical_key,
+            "mean_net_ret": mean_net_ret,
+            "directional_mean_ret": directional_mean_ret,
+            "std_net_ret": std_net_ret,
+            "mean_support_pct": mean_support_pct,
+            "std_support_pct": std_support_pct,
+            "presence_freq": presence_freq,
+            "presence_freq_units": presence_freq,
+            "sign_consistency": sign_consistency,
+            "min_support_actual": int(present["support"].min()),
+            "mean_uplift": mean_uplift,
+            "mean_baseline_ret": mean_baseline_ret,
+            "composite_score": composite_score,
+            "required_hurdle": required_hurdle,
+            "hurdle_excess": hurdle_excess,
+            "n_folds": int(len(present)),
+            "discovery_count": int(discovery_count),
+            "n_instances": int(len(present) if n_instances is None else n_instances),
+            "display_arity": display_arity,
+            "structural_depth": structural_depth_for_key(canonical_key),
+            "pipeline_stage": pipeline_stage or "unknown",
+            "parent_context_key": parent_context_key,
+            "side": infer_rule_side(
+                canonical_key, mean_net_ret=mean_net_ret, explicit_side=explicit_side
+            ),
+            "rule_type": "composite"
+            if split_composite_key(canonical_key) is not None
+            else f"{display_arity}-way",
+        }
+
+        rejected: List[str] = []
+        if summary["min_support_actual"] < int(self.cfg.get("min_support_count_validation", 10)):
+            rejected.append("low_support")
+        if summary["presence_freq"] < float(self.cfg.get("min_presence_freq", 0.4)):
+            rejected.append("low_presence")
+        if summary["sign_consistency"] < float(self.cfg.get("min_sign_consistency", 0.75)):
+            rejected.append("low_sign_consistency")
+        if not np.isfinite(summary["directional_mean_ret"]) or summary["directional_mean_ret"] <= 0:
+            rejected.append("non_positive_directional_ret")
+        if summary["hurdle_excess"] <= 0:
+            rejected.append("below_hurdle")
+        if require_uplift:
+            if not np.isfinite(summary["mean_uplift"]):
+                rejected.append("missing_uplift")
+            elif summary["mean_uplift"] <= 0:
+                rejected.append("non_positive_uplift")
+
+        summary["accepted"] = len(rejected) == 0
+        summary["rejection_reason"] = "|".join(rejected)
+        return summary, fold_records
+
+    def score_registry_oos(
+        self,
+        keys: Sequence[str],
+        fwd_ret: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+        resolver: Optional[Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]] = None,
+        parent_context_map: Optional[Dict[str, str]] = None,
+        require_uplift_keys: Optional[Sequence[str]] = None,
+        discovery_count_map: Optional[Dict[str, int]] = None,
+        n_instances_map: Optional[Dict[str, int]] = None,
+        pipeline_stage_map: Optional[Dict[str, str]] = None,
+        side_map: Optional[Dict[str, str]] = None,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        resolver = resolver or self.mask_resolver
+        if resolver is None:
+            raise ValueError("RuleScorer requires a mask resolver")
+
+        require_uplift_set = set(require_uplift_keys or [])
+        summaries: List[Dict[str, Any]] = []
+        audits: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for key in keys:
+            if key in seen:
+                continue
+            seen.add(key)
+            summary, fold_records = self.score_key_oos(
+                canonical_key=key,
+                fwd_ret=fwd_ret,
+                folds=folds,
+                resolver=resolver,
+                require_uplift=key in require_uplift_set,
+                parent_context_key=(parent_context_map or {}).get(key),
+                discovery_count=(discovery_count_map or {}).get(key, 0),
+                n_instances=(n_instances_map or {}).get(key),
+                pipeline_stage=(pipeline_stage_map or {}).get(key),
+                explicit_side=(side_map or {}).get(key),
+            )
+            summaries.append(summary)
+            audits.extend(fold_records)
+
+        summary_df = pd.DataFrame(summaries).sort_values(
+            ["accepted", "composite_score"], ascending=[False, False]
+        )
+        summary_df = self._identify_dominated_rules(summary_df)
+        return summary_df, pd.DataFrame(audits)
+
+    def _identify_dominated_rules(self, df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+        df = df.copy()
+        df["dominated_by_parent"] = False
+        df["dominant_parent_key"] = None
+        lookup = df.set_index("canonical_key")
+        for idx, row in df.iterrows():
+            if split_composite_key(row["canonical_key"]) is not None:
+                continue
+            if row["display_arity"] <= 1:
+                continue
+            slots = row["canonical_key"].split("|")
+            active_positions = [i for i, slot in enumerate(slots) if slot != "(*)"]
+            for parent_size in range(len(active_positions) - 1, 0, -1):
+                found_parent = False
+                for combo in itertools.combinations(active_positions, parent_size):
+                    parent_slots = ["(*)"] * len(slots)
+                    for slot_idx in combo:
+                        parent_slots[slot_idx] = slots[slot_idx]
+                    parent_key = "|".join(parent_slots)
+                    if parent_key not in lookup.index:
+                        continue
+                    parent = lookup.loc[parent_key]
+                    if parent["accepted"] and (
+                        parent["hurdle_excess"] >= row["hurdle_excess"]
+                        or parent["composite_score"] >= 0.95 * row["composite_score"]
+                    ):
+                        df.at[idx, "dominated_by_parent"] = True
+                        df.at[idx, "dominant_parent_key"] = parent_key
+                        found_parent = True
+                        break
+                if found_parent:
+                    break
+        return df
+
+@njit(cache=True, fastmath=True)
+def tbm_outcomes_atr_nb(
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    atr: np.ndarray,
+    horizon: int,
+    tp_atr: float,
+    sl_atr: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    n = close.shape[0]
+    tp_first = np.zeros(n, dtype=np.int8)
+    sl_first = np.zeros(n, dtype=np.int8)
+    timeout = np.zeros(n, dtype=np.int8)
+
+    for i in range(n - horizon):
+        entry = close[i]
+        atr_i = max(atr[i], 1e-9)
+
+        tp_price = entry + tp_atr * atr_i
+        sl_price = entry - sl_atr * atr_i
+
+        for j in range(i + 1, i + horizon + 1):
+            hi = high[j]
+            lo = low[j]
+
+            hit_tp = hi >= tp_price
+            hit_sl = lo <= sl_price
+
+            if hit_tp and not hit_sl:
+                tp_first[i] = 1
+                break
+            if hit_sl and not hit_tp:
+                sl_first[i] = 1
+                break
+            if hit_tp and hit_sl:
+                median = 0.5 * (hi + lo)
+                d_tp = abs(median - tp_price)
+                d_sl = abs(median - sl_price)
+                if d_tp < d_sl:
+                    tp_first[i] = 1
+                elif d_sl < d_tp:
+                    sl_first[i] = 1
+                else:
+                    timeout[i] = 1
+                break
+        else:
+            timeout[i] = 1
+    return tp_first, sl_first, timeout
+
+class RulePruner:
+    def __init__(self, cfg: Dict[str, Any]):
+        self.cfg = cfg
+
+    def prune_for_assessment(self, scored_df: pd.DataFrame, all_rules: List[ExtractedRule], top_n: int = 50) -> pd.DataFrame:
+        """
+        Prunes rules using a hybrid of Scorer metrics (OOS) and LGBM Native metrics (IS).
+        """
+        if scored_df.empty:
+            return scored_df
+
+        # 1. Aggregate Model-Native Metrics from ExtractedRule objects
+        # We want to know how the model 'felt' about this canonical rule during training
+        native_stats = []
+        unique_keys = scored_df['canonical_key'].unique()
+
+        for key in unique_keys:
+            # Get all instances (across trees/folds/seeds) of this canonical rule
+            instances = [r for r in all_rules if r.canonical_key == key]
+
+            # Calculate Model conviction
+            avg_leaf_val = np.mean([r.leaf_value for r in instances])
+            total_is_support = np.sum([r.support_train for r in instances])
+            occurrence_count = len(instances) # How many trees used this rule?
+
+            native_stats.append({
+                'canonical_key': key,
+                'avg_model_conviction': abs(avg_leaf_val),
+                'total_is_support': total_is_support,
+                'discovery_count': occurrence_count
+            })
+
+        native_df = pd.DataFrame(native_stats)
+
+        # 2. Merge Native metrics into the Scored Registry
+        df = scored_df.merge(native_df, on='canonical_key', how='left')
+
+        # 3. Hard Gates based on Model conviction
+        # Reject rules that the model only used once or with very low importance (leaf value)
+        min_conviction = float(self.cfg.get("min_avg_leaf_value", 0.001))
+        min_discoveries = int(self.cfg.get("min_tree_discoveries", 2))
+
+        mask = (
+            (df['avg_model_conviction'] >= min_conviction) &
+            (df['discovery_count'] >= min_discoveries) &
+            (df['dominated_by_parent'] == False) &
+            (df['mean_net_ret'] > 0) # Basic OOS sanity check
+        )
+
+        pruned_df = df[mask].copy()
+
+        # 4. Final Ranking for Assessment
+        # We rank by a hybrid of OOS performance and Model Discovery Count
+        # Discovery Count is a great proxy for 'Structural Stability'
+        pruned_df['prune_rank_score'] = (
+            pruned_df['composite_score'] * np.log1p(pruned_df['discovery_count'])
+        )
+
+        return pruned_df.sort_values('prune_rank_score', ascending=False).head(top_n)
+
+class LineageTracker:
+    def __init__(self):
+        self.history = []  # List of dicts: {child_id, parent_ids, merge_type, round}
+
+    def record_merge(self, child_id, parent_ids, merge_type, iteration_round, details=None):
+        self.history.append({
+            "child_id": child_id,
+            "parent_ids": list(parent_ids),
+            "merge_type": merge_type,
+            "round": iteration_round,
+            "details": json.dumps(details or {}, sort_keys=True),
+            "timestamp": pd.Timestamp.now()
+        })
+
+    def get_ancestors(self, rule_id):
+        """Recursively find original LGBM tree-path IDs for a composite rule."""
+        ancestors = set()
+        to_visit = [rule_id]
+
+        while to_visit:
+            current_id = to_visit.pop()
+            for record in self.history:
+                if record["child_id"] == current_id:
+                    for parent_id in record["parent_ids"]:
+                        if parent_id not in ancestors:
+                            ancestors.add(parent_id)
+                            to_visit.append(parent_id)
+        return list(ancestors)
+
+    def get_audit_df(self) -> pd.DataFrame:
+        """Return lineage history as a DataFrame."""
+        return pd.DataFrame(self.history)
+
+class IndependentRulePruner:
+    """
+    Independent Rule Pruner (Hurdle Edition v2.0)
+    Updated with:
+    1. Hard Max Support Gate (to kill global 'nothingness' rules)
+    2. Complexity Bonus (to reward 2-way and 3-way interactions)
+    """
+    def __init__(self, cfg: dict):
+        self.cfg = cfg
+        self.base_hurdle = float(cfg.get("prune_base_hurdle", 0.0002))
+        self.penalty_exponent = float(cfg.get("prune_support_exp", 0.5))
+        self.min_discoveries = int(cfg.get("min_tree_discoveries", 2))
+        self.min_sign_consistency = float(cfg.get("min_sign_consistency", 0.80))
+
+        # New Gates
+        self.max_support_pct = float(cfg.get("max_support_pct", 0.25)) # Hard ceiling at 25%
+        self.arity_bonus = cfg.get(
+            "prune_complexity_bonus_map",
+            {"1": 0.0, "2": 0.15, "3": 0.30, "4": 0.10, "5": 0.10, "6": 0.10},
+        )
+
+    def prune(self, df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+
+        df = df.copy()
+        if "dominated_by_parent" not in df.columns:
+            df["dominated_by_parent"] = False
+
+        # 1. Hard Gate: Max Support (The 'Lazy Rule' Killer)
+        df['is_too_broad'] = df['mean_support_pct'] > self.max_support_pct
+
+        # 2. Determine Rule Complexity from normalized metadata
+        df["comp_bonus"] = df["display_arity"].apply(
+            lambda val: float(self.arity_bonus.get(str(int(val)), 0.0))
+        )
+
+        # 3. Calculate the Complexity-Adjusted Hurdle
+        # Formula: (Base * (1-Bonus)) / (Support^Exp)
+        safe_support = df['mean_support_pct'].clip(lower=0.0005)
+        df['required_hurdle'] = (self.base_hurdle * (1.0 - df['comp_bonus'])) / (safe_support ** self.penalty_exponent)
+
+        # 4. Gate A: Alpha Performance vs Hurdle
+        df['hurdle_excess'] = df['mean_net_ret'] - df['required_hurdle']
+        df['beats_hurdle'] = df['hurdle_excess'] > 0
+
+        # 5. Final Selection
+        mask = (
+            (df['is_too_broad'] == False) &
+            (df['beats_hurdle'] == True) &
+            (df['sign_consistency'] >= self.min_sign_consistency) &
+            (df['discovery_count'] >= self.min_discoveries) &
+            (df["dominated_by_parent"] == False)
+        )
+
+        final_registry = df[mask].copy()
+
+        tprint(
+            f"Pruning Report: Total={len(df)} | "
+            f"Broad Rejected={df['is_too_broad'].sum()} | "
+            f"Hurdle Pass={df['beats_hurdle'].sum()} | "
+            f"Final Accepted={len(final_registry)}"
+        )
+
+        return final_registry.sort_values('hurdle_excess', ascending=False)
+
+class RuleConsolidator:
+    def __init__(
+        self,
+        metadata: List[FeatureMetadata],
+        cfg: Dict[str, Any],
+        mask_resolver: Optional[Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]] = None,
+        scorer: Optional[RuleScorer] = None,
+    ):
+        self.metadata = metadata
+        self.cfg = cfg
+        self.mask_resolver = mask_resolver
+        self.scorer = scorer or RuleScorer(metadata, cfg, mask_resolver=mask_resolver)
+        self.lineage = LineageTracker()
+        self._symbol_groups_cache: Optional[Dict[str, np.ndarray]] = None
+
+    def _build_symbol_groups(self, data: Optional[pd.DataFrame]) -> Dict[str, np.ndarray]:
+        if self._symbol_groups_cache is not None:
+            return self._symbol_groups_cache
+        if data is None or "symbol" not in data.columns:
+            self._symbol_groups_cache = {}
+            return self._symbol_groups_cache
+        groups: Dict[str, np.ndarray] = {}
+        for symbol, idx in data.groupby("symbol", sort=False).groups.items():
+            groups[str(symbol)] = np.asarray(sorted(idx), dtype=np.int32)
+        self._symbol_groups_cache = groups
+        return groups
+
+    def _dilate_mask_by_symbol(
+        self,
+        mask: np.ndarray,
+        data: Optional[pd.DataFrame],
+        bars: int,
+    ) -> np.ndarray:
+        if bars <= 0:
+            return np.asarray(mask, dtype=bool)
+        mask_bool = np.asarray(mask, dtype=bool)
+        out = mask_bool.copy()
+        symbol_groups = self._build_symbol_groups(data)
+        if not symbol_groups:
+            active = np.flatnonzero(mask_bool)
+            for idx in active:
+                lo = max(0, idx - bars)
+                hi = min(mask_bool.shape[0], idx + bars + 1)
+                out[lo:hi] = True
+            return out
+        for idx_group in symbol_groups.values():
+            local_mask = mask_bool[idx_group]
+            active_local = np.flatnonzero(local_mask)
+            for pos in active_local:
+                lo = max(0, pos - bars)
+                hi = min(idx_group.shape[0], pos + bars + 1)
+                out[idx_group[lo:hi]] = True
+        return out
+
+    def _extract_context_signature(self, row: pd.Series) -> Tuple[str, str]:
+        parent_context_key = row.get("parent_context_key")
+        if isinstance(parent_context_key, str) and parent_context_key:
+            try:
+                slots = parse_slot_map(parent_context_key, ("trigger", "location", "regime"))
+                return slots.get("location", "*"), slots.get("regime", "*")
+            except Exception:
+                pass
+        key = row.get("canonical_key", row.name)
+        if not isinstance(key, str) or not key:
+            return "*", "*"
+        if split_composite_key(key) is not None:
+            return "*", "*"
+        try:
+            slots = parse_slot_map(key, ("trigger", "location", "regime"))
+            return slots.get("location", "*"), slots.get("regime", "*")
+        except Exception:
+            return "*", "*"
+
+    def _semantic_relation(self, row_a: pd.Series, row_b: pd.Series) -> Optional[str]:
+        loc_a, reg_a = self._extract_context_signature(row_a)
+        loc_b, reg_b = self._extract_context_signature(row_b)
+        same_loc = loc_a != "*" and loc_a == loc_b
+        same_reg = reg_a != "*" and reg_a == reg_b
+        if same_loc and same_reg:
+            return "same_regime_location"
+        if same_reg:
+            return "same_regime_only"
+        if same_loc:
+            return "same_location_only"
+        return None
+
+    def _pair_score(
+        self,
+        key_a: str,
+        key_b: str,
+        row_a: pd.Series,
+        row_b: pd.Series,
+        resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
+        data: Optional[pd.DataFrame],
+        dilation_bars: int,
+    ) -> Tuple[int, float, Optional[str], float]:
+        relation = self._semantic_relation(row_a, row_b)
+        dilated_jaccard = self._pair_jaccard(
+            key_a,
+            key_b,
+            resolver,
+            data=data,
+            dilation_bars=dilation_bars,
+        )
+        if relation == "same_regime_location":
+            return 0, dilated_jaccard, relation, dilated_jaccard
+        if dilated_jaccard >= float(self.cfg.get("min_jaccard_stop_threshold", 0.60)):
+            return 1, dilated_jaccard, "dilated_jaccard", dilated_jaccard
+        if relation == "same_regime_only":
+            return 2, dilated_jaccard, relation, dilated_jaccard
+        if relation == "same_location_only":
+            return 3, dilated_jaccard, relation, dilated_jaccard
+        return 99, dilated_jaccard, relation, dilated_jaccard
+
+    def _pair_jaccard(
+        self,
+        key_a: str,
+        key_b: str,
+        resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
+        data: Optional[pd.DataFrame] = None,
+        dilation_bars: int = 0,
+    ) -> float:
+        mask_a = resolver.get_mask(key_a)
+        mask_b = resolver.get_mask(key_b)
+        if dilation_bars > 0:
+            mask_a = self._dilate_mask_by_symbol(mask_a, data, dilation_bars)
+            mask_b = self._dilate_mask_by_symbol(mask_b, data, dilation_bars)
+        union = np.sum(mask_a | mask_b)
+        if union == 0:
+            return 0.0
+        return float(np.sum(mask_a & mask_b) / union)
+
+    def _make_composite_key(self, key_a: str, key_b: str) -> str:
+        ordered = sorted([key_a, key_b])
+        return f"Composite({ordered[0]})_OR_({ordered[1]})"
+
+    def _best_parent(self, row_a: pd.Series, row_b: pd.Series) -> pd.Series:
+        metric_a = (row_a["hurdle_excess"], row_a["composite_score"])
+        metric_b = (row_b["hurdle_excess"], row_b["composite_score"])
+        return row_a if metric_a >= metric_b else row_b
+
+    @staticmethod
+    def _row_key(row: pd.Series) -> str:
+        key = row.get("canonical_key", row.name)
+        if key is None:
+            raise KeyError("Row has no canonical_key column or index name")
+        return str(key)
+
+    def consolidate(
+        self,
+        registry: pd.DataFrame,
+        fwd_ret: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+        resolver: Optional[Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]] = None,
+        data: Optional[pd.DataFrame] = None,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        resolver = resolver or self.mask_resolver
+        if resolver is None or registry.empty:
+            return registry, pd.DataFrame()
+
+        top_n = int(self.cfg.get("consolidation_top_n", 100))
+        support_gain_factor = float(self.cfg.get("support_gain_factor", 1.05))
+        max_failed_pair_checks = int(self.cfg.get("max_failed_pair_checks", 250))
+        max_total_pair_evals = int(self.cfg.get("max_total_pair_evals", 1000))
+        max_rounds = int(self.cfg.get("max_consolidation_rounds", 3))
+        min_jaccard_floor = float(self.cfg.get("min_jaccard_stop_threshold", 0.60))
+        dilation_bars = int(self.cfg.get("consolidation_dilation_bars", 2))
+        round_thresholds = [
+            float(self.cfg.get("jaccard_round1", 0.95)),
+            float(self.cfg.get("jaccard_round2", 0.90)),
+            float(self.cfg.get("jaccard_round3", 0.75)),
+        ]
+
+        active = registry.sort_values(
+            ["composite_score", "hurdle_excess"], ascending=False
+        ).head(top_n).copy()
+        tried_pairs: set[Tuple[str, str]] = set()
+        total_pair_evals = 0
+
+        for round_num in range(1, max_rounds + 1):
+            threshold = round_thresholds[min(round_num - 1, len(round_thresholds) - 1)]
+            candidates: List[Tuple[int, float, str, str, str, float]] = []
+            keys = sorted(active["canonical_key"].tolist())
+            rows_by_key = active.set_index("canonical_key")
+            for key_a, key_b in itertools.combinations(keys, 2):
+                pair = (key_a, key_b)
+                if pair in tried_pairs:
+                    continue
+                if key_a not in rows_by_key.index or key_b not in rows_by_key.index:
+                    continue
+                row_a = rows_by_key.loc[key_a]
+                row_b = rows_by_key.loc[key_b]
+                priority, rank_score, source, dilated_jaccard = self._pair_score(
+                    key_a,
+                    key_b,
+                    row_a,
+                    row_b,
+                    resolver,
+                    data,
+                    dilation_bars,
+                )
+                if priority == 99:
+                    continue
+                candidates.append((priority, rank_score, key_a, key_b, source or "unknown", dilated_jaccard))
+
+            if not candidates:
+                break
+            candidates.sort(key=lambda item: (item[0], -item[1], item[2], item[3]))
+            if candidates[0][0] == 1 and candidates[0][1] < max(threshold, min_jaccard_floor):
+                break
+
+            accepted_merges = 0
+            failed_checks = 0
+
+            for priority, jaccard, key_a, key_b, merge_source, dilated_jaccard in candidates:
+                if priority == 1 and jaccard < threshold:
+                    break
+                if total_pair_evals >= max_total_pair_evals:
+                    break
+                pair = (key_a, key_b)
+                tried_pairs.add(pair)
+                total_pair_evals += 1
+
+                if key_a not in rows_by_key.index or key_b not in rows_by_key.index:
+                    continue
+
+                row_a = rows_by_key.loc[key_a]
+                row_b = rows_by_key.loc[key_b]
+                side_a = row_a["side"]
+                side_b = row_b["side"]
+                if side_a not in ("unknown", side_b) and side_b not in ("unknown", side_a):
+                    self.lineage.record_merge(
+                        key_a,
+                        [key_a, key_b],
+                        "reject_sign_conflict",
+                        round_num,
+                        {"jaccard": jaccard, "merge_source": merge_source},
+                    )
+                    failed_checks += 1
+                    if failed_checks >= max_failed_pair_checks:
+                        break
+                    continue
+
+                best_parent = self._best_parent(row_a, row_b)
+                best_parent_key = self._row_key(best_parent)
+                weaker_parent = row_b if best_parent_key == key_a else row_a
+                weaker_parent_key = self._row_key(weaker_parent)
+                ridge_diag = self._evaluate_ridge_pair(
+                    key_a,
+                    key_b,
+                    resolver,
+                    fwd_ret,
+                    folds,
+                )
+
+                if (
+                    merge_source == "dilated_jaccard"
+                    and dilated_jaccard >= float(self.cfg.get("jaccard_round1", 0.95))
+                    and ridge_diag["ridge_positive_fold_fraction"]
+                    < float(self.cfg.get("merge_ridge_positive_fold_fraction", 0.50))
+                ):
+                    active = active[active["canonical_key"] != weaker_parent_key]
+                    self.lineage.record_merge(
+                        best_parent_key,
+                        [key_a, key_b],
+                        "keep_stronger_parent",
+                        round_num,
+                        {"jaccard": jaccard, "merge_source": merge_source},
+                    )
+                    accepted_merges += 1
+                    rows_by_key = active.set_index("canonical_key")
+                    continue
+
+                child_key = self._make_composite_key(key_a, key_b)
+                parent_context_key = (
+                    row_a["parent_context_key"]
+                    if row_a["parent_context_key"] == row_b["parent_context_key"]
+                    else None
+                )
+                child_summary, _ = self.scorer.score_key_oos(
+                    canonical_key=child_key,
+                    fwd_ret=fwd_ret,
+                    folds=folds,
+                    resolver=resolver,
+                    require_uplift=bool(parent_context_key),
+                    parent_context_key=parent_context_key,
+                    discovery_count=int(row_a["discovery_count"] + row_b["discovery_count"]),
+                    n_instances=int(row_a["n_instances"] + row_b["n_instances"]),
+                    pipeline_stage="global_composite"
+                    if "global" in str(row_a["pipeline_stage"]) or "global" in str(row_b["pipeline_stage"])
+                    else "composite",
+                    explicit_side=side_a if side_a == side_b else "mixed",
+                )
+                child_summary["merge_source"] = merge_source
+                child_summary["ridge_mean_net_ret"] = ridge_diag["ridge_mean_net_ret"]
+                child_summary["ridge_positive_fold_fraction"] = ridge_diag[
+                    "ridge_positive_fold_fraction"
+                ]
+                child_summary["ridge_mean_support_pct"] = ridge_diag[
+                    "ridge_mean_support_pct"
+                ]
+                child_summary["ridge_vs_parent_gain"] = (
+                    ridge_diag["ridge_mean_net_ret"] - best_parent["mean_net_ret"]
+                    if np.isfinite(ridge_diag["ridge_mean_net_ret"])
+                    else np.nan
+                )
+
+                child_improves_uplift = (
+                    np.isfinite(child_summary["mean_uplift"])
+                    and np.isfinite(best_parent["mean_uplift"])
+                    and child_summary["mean_uplift"] > best_parent["mean_uplift"]
+                )
+                child_improves_support = child_summary["mean_support_pct"] >= (
+                    support_gain_factor * best_parent["mean_support_pct"]
+                )
+                ridge_supports_merge = (
+                    np.isfinite(ridge_diag["ridge_mean_net_ret"])
+                    and ridge_diag["ridge_mean_net_ret"] > best_parent["mean_net_ret"]
+                    and ridge_diag["ridge_positive_fold_fraction"]
+                    >= float(
+                        self.cfg.get(
+                            "merge_ridge_positive_fold_fraction",
+                            0.60 if merge_source in {"same_regime_only", "same_location_only"} else 0.50,
+                        )
+                    )
+                )
+                sign_ok = child_summary["sign_consistency"] >= (
+                    best_parent["sign_consistency"] - 0.05
+                )
+                presence_ok = child_summary["presence_freq"] >= (
+                    best_parent["presence_freq"] - 0.05
+                )
+
+                if (
+                    child_summary["accepted"]
+                    and child_summary["hurdle_excess"] > 0
+                    and sign_ok
+                    and presence_ok
+                    and (child_improves_uplift or child_improves_support or ridge_supports_merge)
+                ):
+                    active = active[
+                        ~active["canonical_key"].isin([key_a, key_b])
+                    ].copy()
+                    active = pd.concat([active, pd.DataFrame([child_summary])], ignore_index=True)
+                    self.lineage.record_merge(
+                        child_key,
+                        [key_a, key_b],
+                        "accepted_child_union",
+                        round_num,
+                        {
+                            "jaccard": jaccard,
+                            "merge_source": merge_source,
+                            "ridge_mean_net_ret": ridge_diag["ridge_mean_net_ret"],
+                        },
+                    )
+                    accepted_merges += 1
+                    rows_by_key = active.set_index("canonical_key")
+                else:
+                    self.lineage.record_merge(
+                        child_key,
+                        [key_a, key_b],
+                        "rejected_child_union",
+                        round_num,
+                        {
+                            "jaccard": jaccard,
+                            "accepted": bool(child_summary["accepted"]),
+                            "support_gain": child_improves_support,
+                            "uplift_gain": child_improves_uplift,
+                            "merge_source": merge_source,
+                            "ridge_mean_net_ret": ridge_diag["ridge_mean_net_ret"],
+                            "ridge_positive_fold_fraction": ridge_diag["ridge_positive_fold_fraction"],
+                        },
+                    )
+                    failed_checks += 1
+                    if failed_checks >= max_failed_pair_checks:
+                        break
+
+            if accepted_merges == 0 or total_pair_evals >= max_total_pair_evals:
+                break
+
+        active = active.drop_duplicates(subset=["canonical_key"], keep="first")
+        active = active.sort_values(["composite_score", "hurdle_excess"], ascending=False)
+        return active, self.lineage.get_audit_df()
+
+    def _evaluate_ridge_pair(
+        self,
+        key_a: str,
+        key_b: str,
+        resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
+        fwd_ret: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+    ) -> Dict[str, float]:
+        from sklearn.linear_model import Ridge
+
+        min_train = int(self.cfg.get("merge_ridge_min_train", 20))
+        min_valid = int(self.cfg.get("merge_ridge_min_valid", 10))
+        mask_a_full = resolver.get_mask(key_a).astype(np.float32)
+        mask_b_full = resolver.get_mask(key_b).astype(np.float32)
+        union_full = (mask_a_full > 0) | (mask_b_full > 0)
+
+        fold_returns: List[float] = []
+        fold_supports: List[float] = []
+        fold_r2: List[float] = []
+
+        for tr_idx, va_idx in folds:
+            tr_union = union_full[tr_idx]
+            va_union = union_full[va_idx]
+            if np.sum(tr_union) < min_train or np.sum(va_union) < min_valid:
+                continue
+
+            X_tr = np.column_stack([mask_a_full[tr_idx][tr_union], mask_b_full[tr_idx][tr_union]]).astype(np.float32)
+            y_tr = fwd_ret[tr_idx][tr_union].astype(np.float32, copy=True)
+            X_va = np.column_stack([mask_a_full[va_idx][va_union], mask_b_full[va_idx][va_union]]).astype(np.float32)
+            y_va = fwd_ret[va_idx][va_union].astype(np.float32, copy=False)
+
+            if X_tr.shape[0] < min_train or X_va.shape[0] < min_valid:
+                continue
+
+            hi = np.nanquantile(y_tr, 0.98)
+            lo = np.nanquantile(y_tr, 0.02)
+            y_tr = np.clip(y_tr, lo, hi)
+            model = Ridge(alpha=float(self.cfg.get("merge_ridge_alpha", 1.0)))
+            model.fit(X_tr, y_tr)
+            preds = model.predict(X_va)
+            select = preds > 0.0
+            if np.sum(select) == 0:
+                continue
+
+            selected_returns = y_va[select]
+            fold_returns.append(float(np.nanmean(selected_returns)))
+            fold_supports.append(float(np.sum(select) / max(len(va_idx), 1)))
+            sst = float(np.sum((y_va - np.mean(y_va)) ** 2))
+            if sst > 1e-9:
+                ssr = float(np.sum((y_va - preds) ** 2))
+                fold_r2.append(float(1.0 - ssr / sst))
+
+        ridge_mean_net_ret = float(np.mean(fold_returns)) if fold_returns else np.nan
+        ridge_positive_fold_fraction = (
+            float(np.mean(np.asarray(fold_returns) > 0.0)) if fold_returns else 0.0
+        )
+        return {
+            "ridge_mean_net_ret": ridge_mean_net_ret,
+            "ridge_positive_fold_fraction": ridge_positive_fold_fraction,
+            "ridge_mean_support_pct": float(np.mean(fold_supports)) if fold_supports else 0.0,
+            "ridge_mean_r2": float(np.mean(fold_r2)) if fold_r2 else np.nan,
+        }
+
+def compute_tbm_outcomes_per_symbol(
+    data: pd.DataFrame,
+    horizon: int,
+    tp_atr: float,
+    sl_atr: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute TBM outcomes independently within each symbol's time series.
+
+    Assumes `data` has columns:
+      - symbol
+      - timestamp
+      - close
+      - high
+      - low
+      - atr
+
+    Returns arrays aligned to `data.index`.
+    """
+    if data.empty:
+        z = np.zeros(0, dtype=np.int8)
+        return z, z, z
+
+    # Preserve original row order for final alignment
+    out_tp = np.zeros(len(data), dtype=np.int8)
+    out_sl = np.zeros(len(data), dtype=np.int8)
+    out_to = np.zeros(len(data), dtype=np.int8)
+
+    # Sort once for temporal correctness inside each symbol
+    work = data.reset_index(drop=False).rename(columns={"index": "_orig_idx"})
+    work = work.sort_values(["symbol", "timestamp"], kind="mergesort")
+
+    for sym, g in work.groupby("symbol", sort=False):
+        idx = g["_orig_idx"].to_numpy()
+
+        close = g["close"].to_numpy(dtype=np.float64, copy=False)
+        high = g["high"].to_numpy(dtype=np.float64, copy=False)
+        low = g["low"].to_numpy(dtype=np.float64, copy=False)
+        atr = g["atr"].to_numpy(dtype=np.float64, copy=False)
+
+        tp_f, sl_f, to_f = tbm_outcomes_atr_nb(
+            close=close,
+            high=high,
+            low=low,
+            atr=atr,
+            horizon=horizon,
+            tp_atr=tp_atr,
+            sl_atr=sl_atr,
+        )
+
+        out_tp[idx] = tp_f
+        out_sl[idx] = sl_f
+        out_to[idx] = to_f
+
+    return out_tp, out_sl, out_to
+
+
+def build_context_feature_dict_from_registry(
+    registry: pd.DataFrame,
+    data: pd.DataFrame,
+    X_stage_a: np.ndarray,
+    metadata_stage_a: List[FeatureMetadata],
+) -> Tuple[Dict[str, np.ndarray], Dict[str, str]]:
+    if registry.empty:
+        return {}, {}
+
+    context_feature_dict: Dict[str, np.ndarray] = {}
+    context_feature_to_stage_a_key: Dict[str, str] = {}
+    resolver = CanonicalRuleMaskResolver(X_stage_a, metadata_stage_a)
+
+    for _, row in registry.iterrows():
+        key = row["canonical_key"]
+        ctx_hash = hashlib.sha1(key.encode()).hexdigest()[:8]
+        ctx_name = f"ctx__{ctx_hash}"
+        mask = resolver.get_mask(key)
+        context_feature_dict[ctx_name] = mask.astype(np.float32)
+        context_feature_to_stage_a_key[ctx_name] = key
+
+    return context_feature_dict, context_feature_to_stage_a_key
+
+
+def select_stage_a_contexts(stage_a_result: Dict[str, Any], cfg: Dict[str, Any]) -> pd.DataFrame:
+    registry = stage_a_result.get("accepted_registry")
+    if registry is None or registry.empty:
+        return pd.DataFrame()
+
+    mask = (
+        (registry["mean_support_pct"] >= float(cfg.get("min_context_support_pct", 0.01)))
+        & (registry["directional_mean_ret"] > float(cfg.get("min_context_mean_ret", 0.0)))
+        & (
+            registry["presence_freq"]
+            >= float(cfg.get("min_context_presence_freq", cfg.get("min_presence_freq", 0.4)))
+        )
+        & (
+            registry["sign_consistency"]
+            >= float(
+                cfg.get(
+                    "min_context_sign_consistency",
+                    cfg.get("min_sign_consistency", 0.75),
+                )
+            )
+        )
+        & (registry["display_arity"] >= int(cfg.get("min_context_display_arity", 2)))
+        & (~registry.get("dominated_by_parent", pd.Series(False, index=registry.index)))
+    )
+    if "is_structurally_sound" in registry.columns:
+        mask &= registry["is_structurally_sound"].fillna(False)
+    return registry[mask].copy()
+
+
+def log_stage_gate_diagnostics(stage_name: str, stage_result: Dict[str, Any], cfg: Dict[str, Any]) -> None:
+    scored = stage_result.get("scored_registry")
+    scorer_accepted = stage_result.get("scorer_accepted")
+    consolidated = stage_result.get("consolidated_registry")
+    candidate = stage_result.get("candidate_registry")
+    assessed = stage_result.get("assessment_df")
+    accepted = stage_result.get("accepted_registry")
+    tprint(
+        f"{stage_name} gate counts: extracted={len(stage_result.get('all_extracted_rules', []))} "
+        f"scored={0 if scored is None else len(scored)} "
+        f"scorer_accepted={0 if scorer_accepted is None else len(scorer_accepted)} "
+        f"consolidated={0 if consolidated is None else len(consolidated)} "
+        f"candidate={0 if candidate is None else len(candidate)} "
+        f"assessed={0 if assessed is None else len(assessed)} "
+        f"accepted={0 if accepted is None else len(accepted)}"
+    )
+    if scored is not None and not scored.empty and (scorer_accepted is None or scorer_accepted.empty):
+        rejected = scored[~scored["accepted"]].copy()
+        if "rejection_reason" in rejected.columns:
+            reason_counts = (
+                rejected["rejection_reason"]
+                .fillna("")
+                .astype(str)
+                .str.split("|", regex=False)
+                .explode()
+                .str.strip()
+            )
+            reason_counts = reason_counts[reason_counts != ""].value_counts().head(8)
+            if not reason_counts.empty:
+                tprint(
+                    f"{stage_name} scorer rejection reasons: "
+                    + ", ".join(f"{reason}={count}" for reason, count in reason_counts.items())
+                )
+        if not rejected.empty:
+            top_rejected = rejected.sort_values(
+                ["hurdle_excess", "composite_score"],
+                ascending=[False, False]
+            ).head(10)
+            cols = [
+                c for c in [
+                    "canonical_key",
+                    "side",
+                    "mean_net_ret",
+                    "directional_mean_ret",
+                    "mean_support_pct",
+                    "presence_freq",
+                    "sign_consistency",
+                    "required_hurdle",
+                    "hurdle_excess",
+                    "rejection_reason",
+                ] if c in top_rejected.columns
+            ]
+            tprint(f"{stage_name} top near-miss rules:\n{top_rejected[cols].to_string(index=False)}")
+        tprint(
+            f"{stage_name} score summary: "
+            f"mean_ret_med={rejected['mean_net_ret'].median():.6f} "
+            f"support_med={rejected['mean_support_pct'].median():.4f} "
+            f"presence_med={rejected['presence_freq'].median():.3f} "
+            f"sign_consistency_med={rejected['sign_consistency'].median():.3f}"
+        )
+
+
+def run_mining_stage(
+    data: pd.DataFrame,
+    fwd_ret: np.ndarray,
+    X: np.ndarray,
+    metadata: List[FeatureMetadata],
+    cfg: Dict[str, Any],
+    output_dir: Path,
+    stage_name: str,
+    allowed_group_pairs: Sequence[Tuple[str, str]],
+    slot_order: Sequence[str] = ("trigger", "location", "regime"),
+    folds: Optional[List[Tuple[np.ndarray, np.ndarray]]] = None,
+    mask_resolver: Optional[Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]] = None,
+    require_uplift: bool = False,
+    rule_key_rewriter: Optional[Callable[[str], Tuple[Optional[str], Optional[str]]]] = None,
+    pipeline_stage_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    tprint(f"--- RUNNING MINING STAGE: {stage_name} ---")
+
+    if folds is None:
+        folds = build_walk_forward_folds(
+            n_samples=len(data),
+            n_folds=int(cfg.get("n_folds", 5)),
+            min_train_frac=float(cfg.get("cv_min_train_frac", 0.5)),
+            embargo=int(cfg.get("cv_embargo", 0)),
+        )
+    for fold_id, (tr_idx, va_idx) in enumerate(folds):
+        if tr_idx.size == 0 or va_idx.size == 0 or tr_idx.max() >= va_idx.min():
+            raise ValueError(f"Invalid fold {fold_id} in {stage_name}")
+
+    model_engine = InteractionModel(metadata, cfg, allowed_group_pairs=allowed_group_pairs)
+    constraint_summary = model_engine.get_constraint_summary()
+    with open(output_dir / "interaction_constraint_summary.json", "w") as f:
+        json.dump(constraint_summary, f, indent=2)
+
+    positive_only_groups: Tuple[str, ...] = ()
+    required_positive_groups: Tuple[str, ...] = ()
+    collapse_duplicate_groups: Tuple[str, ...] = ()
+    if pipeline_stage_name == "stage_a_context":
+        collapse_duplicate_groups = ("location", "regime")
+        if not bool(cfg.get("stage_a_relax_positive_groups", True)):
+            positive_only_groups = ("location", "regime")
+            required_positive_groups = ("location", "regime")
+    extractor = RuleExtractor(
+        metadata,
+        cfg,
+        slot_order=slot_order,
+        positive_only_groups=positive_only_groups,
+        required_positive_groups=required_positive_groups,
+        collapse_duplicate_groups=collapse_duplicate_groups,
+    )
+    all_extracted_rules = []
+    all_rejection_audit = []
+    all_split_usage = []
+    seeds = cfg.get("seeds", [42, 123, 999])
+
+    for fold_id, (tr_idx, va_idx) in enumerate(folds):
+        X_tr, X_va = X[tr_idx], X[va_idx]
+        y_tr, y_va = fwd_ret[tr_idx], fwd_ret[va_idx]
+        y_tr_clip = np.clip(y_tr, np.nanquantile(y_tr, 0.01), np.nanquantile(y_tr, 0.99))
+        tprint(
+            f"{stage_name} fold {fold_id}: train_rows={len(tr_idx)} val_rows={len(va_idx)} "
+            f"finite_train={int(np.isfinite(y_tr).sum())} finite_val={int(np.isfinite(y_va).sum())}"
+        )
+        
+        for seed in seeds:
+            model, fit_meta = model_engine.train_fold(X_tr, y_tr_clip, X_va, y_va, fold_id, seed)
+            tprint(
+                f"{stage_name} fold {fold_id} seed {seed}: "
+                f"train_samples={fit_meta['train_samples']} val_samples={fit_meta['val_samples']}"
+            )
+            split_usage_df = collect_split_usage_from_model(model, metadata, fold_id, seed)
+            if not split_usage_df.empty:
+                all_split_usage.append(split_usage_df)
+                group_summary = summarize_fold_feature_usage(split_usage_df)
+                if not group_summary.empty:
+                    summary_text = ", ".join(
+                        f"{row.group}={int(row.used_feature_count)}f/{int(row.split_count)}s"
+                        for row in group_summary.itertuples(index=False)
+                    )
+                    tprint(
+                        f"{stage_name} fold {fold_id} seed {seed} feature usage by group: {summary_text}"
+                    )
+            fold_rules = extractor.extract_rules(model, f"{stage_name}_model", fold_id, seed)
+            all_extracted_rules.extend(fold_rules)
+            if extractor.rejection_audit:
+                all_rejection_audit.extend(extractor.rejection_audit)
+
+    parent_context_map: Dict[str, str] = {}
+    if rule_key_rewriter is not None:
+        rewritten_rules: List[ExtractedRule] = []
+        for rule in all_extracted_rules:
+            rewritten_key, parent_context_key = rule_key_rewriter(rule.canonical_key)
+            if rewritten_key is None:
+                continue
+            rule.canonical_key = rewritten_key
+            rewritten_rules.append(rule)
+            if parent_context_key:
+                parent_context_map[rewritten_key] = parent_context_key
+        all_extracted_rules = rewritten_rules
+
+    if all_rejection_audit:
+        audit_df = pd.DataFrame(all_rejection_audit)
+        audit_df.to_csv(output_dir / "invalid_path_audit.csv", index=False)
+        summarize_feature_usage(audit_df, output_dir / "invalid_path_reason_summary.csv", ["reason"])
+    
+    if all_split_usage:
+        split_usage_all = pd.concat(all_split_usage, ignore_index=True)
+        split_usage_all.to_csv(output_dir / "model_split_usage_detailed.csv", index=False)
+        summarize_feature_usage(split_usage_all, output_dir / "model_split_usage_by_feature.csv", ["feature_name", "group"])
+        summarize_feature_usage(split_usage_all, output_dir / "model_split_usage_by_group.csv", ["group"])
+        summarize_fold_feature_usage(split_usage_all).to_csv(
+            output_dir / "model_split_usage_by_fold_group.csv", index=False
+        )
+    else:
+        split_usage_all = pd.DataFrame()
+
+    rule_usage_df = collect_extracted_rule_feature_usage(all_extracted_rules, metadata)
+    rule_usage_df.to_csv(output_dir / "extracted_rule_feature_usage_detailed.csv", index=False)
+    summarize_feature_usage(rule_usage_df, output_dir / "extracted_rule_feature_usage_by_feature.csv", ["feature_name", "group"])
+    summarize_feature_usage(rule_usage_df, output_dir / "extracted_rule_feature_usage_by_group.csv", ["group"])
+
+    scorer = RuleScorer(metadata, cfg, mask_resolver=mask_resolver)
+    unique_keys = sorted({rule.canonical_key for rule in all_extracted_rules})
+    discovery_count_map = collections.Counter(rule.canonical_key for rule in all_extracted_rules)
+    n_instances_map = discovery_count_map.copy()
+    pipeline_stage_map = {key: (pipeline_stage_name or stage_name) for key in unique_keys}
+    require_uplift_keys = unique_keys if require_uplift else []
+    scored_registry, full_scorer_audit = scorer.score_registry_oos(
+        keys=unique_keys,
+        fwd_ret=fwd_ret,
+        folds=folds,
+        resolver=mask_resolver,
+        parent_context_map=parent_context_map,
+        require_uplift_keys=require_uplift_keys,
+        discovery_count_map=discovery_count_map,
+        n_instances_map=n_instances_map,
+        pipeline_stage_map=pipeline_stage_map,
+    )
+    scored_registry["preset"] = cfg.get("preset", "exploration")
+    full_scorer_audit.to_csv(output_dir / "fold_level_rule_aggregation_audit.csv", index=False)
+    scored_registry.to_csv(output_dir / "scored_rule_registry_full.csv", index=False)
+
+    scorer_accepted = scored_registry[scored_registry["accepted"]].copy()
+    consolidator = RuleConsolidator(
+        metadata, cfg, mask_resolver=mask_resolver, scorer=scorer
+    )
+    consolidated_registry, lineage_audit = consolidator.consolidate(
+        scorer_accepted, fwd_ret, folds, resolver=mask_resolver, data=data
+    )
+    consolidated_registry.to_csv(output_dir / "consolidated_rule_registry.csv", index=False)
+    lineage_audit.to_csv(output_dir / "consolidation_lineage_audit.csv", index=False)
+
+    pruner = IndependentRulePruner(cfg)
+    candidate_registry = pruner.prune(consolidated_registry)
+    candidate_registry["preset"] = cfg.get("preset", "exploration")
+    candidate_registry.to_csv(output_dir / "candidate_rule_registry.csv", index=False)
+    candidate_registry.to_csv(output_dir / "pruned_rule_registry.csv", index=False)
+
+    assessor = MaskAssessor(metadata, cfg, mask_resolver=mask_resolver)
+    assessment_df = assessor.assess_rules(candidate_registry, X, data, fwd_ret, folds)
+    if not assessment_df.empty:
+        assessment_df.to_csv(output_dir / "final_mask_assessment_audit.csv", index=False)
+        accepted_registry = candidate_registry.merge(assessment_df, on='canonical_key', how='left')
+    else:
+        accepted_registry = candidate_registry.copy()
+
+    if "is_structurally_sound" in accepted_registry.columns:
+        accepted_registry = accepted_registry[
+            accepted_registry["is_structurally_sound"].fillna(False)
+        ].copy()
+    accepted_registry = accepted_registry[
+        ~accepted_registry.get(
+            "dominated_by_parent", pd.Series(False, index=accepted_registry.index)
+        ).fillna(False)
+    ].copy()
+    accepted_registry["preset"] = cfg.get("preset", "exploration")
+    accepted_registry.to_csv(output_dir / "accepted_rule_registry.csv", index=False)
+    accepted_registry.to_csv(output_dir / "final_rule_registry.csv", index=False)
+
+    final_usage_df = collect_registry_feature_usage(accepted_registry, metadata)
+    export_coverage_sanity_report(metadata, split_usage_all, rule_usage_df, final_usage_df, output_dir)
+
+    return {
+        "X": X,
+        "metadata": metadata,
+        "folds": folds,
+        "all_extracted_rules": all_extracted_rules,
+        "scored_registry": scored_registry,
+        "parent_context_map": parent_context_map,
+        "scorer_accepted": scorer_accepted,
+        "consolidated_registry": consolidated_registry,
+        "candidate_registry": candidate_registry,
+        "assessment_df": assessment_df,
+        "accepted_registry": accepted_registry,
+        "output_dir": output_dir,
+    }
+
+
+def run_two_stage_lgbm_mask_generation(
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    fwd_ret: np.ndarray,
+    cfg: Dict[str, Any]
+) -> Dict[str, pd.DataFrame]:
+    tprint("=" * 80)
+    tprint("TWO-STAGE LGBM MASK GENERATION: START")
+    tprint("=" * 80)
+    
+    root_output_dir = Path(cfg.get("output_dir", "./lgbm_outputs"))
+    root_output_dir.mkdir(parents=True, exist_ok=True)
+    folds = build_walk_forward_folds(
+        n_samples=len(data),
+        n_folds=int(cfg.get("n_folds", 5)),
+        min_train_frac=float(cfg.get("cv_min_train_frac", 0.5)),
+        embargo=int(cfg.get("cv_embargo", 0)),
+    )
+    
+    # --- STAGE A: CONTEXT MINING ---
+    tprint("STAGE A: Context Mining (Regime x Location)")
+    fp_a = FeatureProcessor()
+    X_a, metadata_a, feat_audit_a = fp_a.prepare_features(
+        feature_dict, data['timestamp'].to_numpy(), data['symbol'].to_numpy(), cfg,
+        active_groups=("regime", "location")
+    )
+    stage_a_output_dir = root_output_dir / "stage_a_context"
+    stage_a_output_dir.mkdir(parents=True, exist_ok=True)
+    feat_audit_a.to_csv(stage_a_output_dir / "feature_quality_audit.csv", index=False)
+    
+    stage_a_spec = MiningStageSpec(
+        stage_name="stage_a_context",
+        active_groups=("regime", "location"),
+        allow_groups_in_rule=("regime", "location"),
+        output_dir_name="stage_a_context",
+        allowed_group_pairs=(("regime", "location"),),
+        slot_order=("trigger", "location", "regime")
+    )
+    
+    stage_a_result = run_mining_stage(
+        data, fwd_ret, X_a, metadata_a, cfg, 
+        stage_a_output_dir,
+        stage_a_spec.stage_name, 
+        stage_a_spec.allowed_group_pairs,
+        slot_order=stage_a_spec.slot_order,
+        folds=folds,
+        mask_resolver=CanonicalRuleMaskResolver(X_a, metadata_a),
+        pipeline_stage_name="stage_a_context",
+    )
+    log_stage_gate_diagnostics("Stage A", stage_a_result, cfg)
+    
+    winning_contexts = select_stage_a_contexts(stage_a_result, cfg)
+    tprint(f"Stage A produced {len(winning_contexts)} winning contexts.")
+    
+    if winning_contexts.empty:
+        tprint("No contexts found in Stage A. Aborting Stage B.")
+        stage_b_output_dir = root_output_dir / "stage_b_trigger_refinement"
+        stage_b_output_dir.mkdir(parents=True, exist_ok=True)
+        empty_df = pd.DataFrame()
+        for path in [
+            stage_b_output_dir / "stage_b_context_mapping.csv",
+            stage_b_output_dir / "candidate_rule_registry.csv",
+            stage_b_output_dir / "accepted_rule_registry.csv",
+            stage_b_output_dir / "final_mask_assessment_audit.csv",
+            root_output_dir / "stage_b_context_mapping.csv",
+            root_output_dir / "combined_candidate_registry_raw.csv",
+            root_output_dir / "combined_accepted_registry_pre_global.csv",
+            root_output_dir / "combined_accepted_rule_registry.csv",
+            root_output_dir / "global_consolidation_lineage.csv",
+            root_output_dir / "portfolio_diversity_report.csv",
+        ]:
+            empty_df.to_csv(path, index=False)
+        return {
+            "stage_a": stage_a_result.get("accepted_registry"),
+            "stage_b": pd.DataFrame(),
+            "combined": stage_a_result.get("accepted_registry"),
+        }
+    
+    # --- STAGE B: TRIGGER REFINEMENT ---
+    tprint("STAGE B: Trigger Refinement (Winning Contexts x Trigger)")
+    
+    context_feature_dict, context_to_key = build_context_feature_dict_from_registry(
+        winning_contexts, data, X_a, metadata_a
+    )
+    
+    # Save mapping for audit
+    context_mapping_df = pd.DataFrame([
+        {"context_feature_name": k, "stage_a_key": v} for k, v in context_to_key.items()
+    ])
+    context_mapping_df.to_csv(root_output_dir / "stage_b_context_mapping.csv", index=False)
+    
+    fp_b = FeatureProcessor()
+    X_b, metadata_b, feat_audit_b = fp_b.prepare_features(
+        feature_dict, data['timestamp'].to_numpy(), data['symbol'].to_numpy(), cfg,
+        active_groups=("trigger",),
+        extra_binary_features=context_feature_dict,
+        extra_feature_group="context"
+    )
+    stage_b_output_dir = root_output_dir / "stage_b_trigger_refinement"
+    stage_b_output_dir.mkdir(parents=True, exist_ok=True)
+    feat_audit_b.to_csv(stage_b_output_dir / "feature_quality_audit.csv", index=False)
+    context_mapping_df.to_csv(stage_b_output_dir / "stage_b_context_mapping.csv", index=False)
+    
+    stage_b_spec = MiningStageSpec(
+        stage_name="stage_b_trigger_refinement",
+        active_groups=("trigger", "context"),
+        allow_groups_in_rule=("trigger", "context"),
+        output_dir_name="stage_b_trigger_refinement",
+        allowed_group_pairs=(("trigger", "context"),),
+        slot_order=("trigger", "context"),
+        require_uplift=True
+    )
+
+    def reconstruct_stage_b_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
+        slots = raw_key.split("|")
+        trigger_slot = "(*)"
+        parent_context_key = None
+        for slot in slots:
+            slot_value = slot.strip("()")
+            if slot_value == "*" or "==" not in slot_value:
+                continue
+            feature_name = slot_value.split("==")[0]
+            if feature_name in INTRADAY_TRIGGER_COLUMNS:
+                trigger_slot = slot
+            elif feature_name.startswith("ctx__"):
+                parent_context_key = context_to_key.get(feature_name)
+        if parent_context_key is None or trigger_slot == "(*)":
+            return None, None
+        parent_slots = parent_context_key.split("|")
+        return f"{trigger_slot}|{parent_slots[1]}|{parent_slots[2]}", parent_context_key
+    
+    stage_b_result = run_mining_stage(
+        data, fwd_ret, X_b, metadata_b, cfg,
+        stage_b_output_dir,
+        stage_b_spec.stage_name,
+        stage_b_spec.allowed_group_pairs,
+        slot_order=stage_b_spec.slot_order,
+        folds=folds,
+        mask_resolver=CanonicalRuleMaskResolver(
+            X_b,
+            metadata_b,
+            context_lookup=context_feature_dict,
+            context_key_map=context_to_key,
+            slot_order=("trigger", "location", "regime"),
+        ),
+        require_uplift=stage_b_spec.require_uplift,
+        rule_key_rewriter=reconstruct_stage_b_key,
+        pipeline_stage_name="stage_b_trigger_refinement",
+    )
+
+    stage_a_candidates = stage_a_result["candidate_registry"].copy()
+    stage_b_candidates = stage_b_result["candidate_registry"].copy()
+    combined_candidate_registry_raw = pd.concat(
+        [stage_a_candidates, stage_b_candidates], ignore_index=True
+    ).drop_duplicates(subset=["canonical_key"], keep="first")
+    combined_candidate_registry_raw["preset"] = cfg.get("preset", "exploration")
+    combined_candidate_registry_raw.to_csv(
+        root_output_dir / "combined_candidate_registry_raw.csv", index=False
+    )
+
+    stage_a_accepted = stage_a_result["accepted_registry"].copy()
+    stage_b_accepted = stage_b_result["accepted_registry"].copy()
+    combined_pre_global = pd.concat(
+        [stage_a_accepted, stage_b_accepted], ignore_index=True
+    ).sort_values(["composite_score", "hurdle_excess"], ascending=False)
+    combined_pre_global = combined_pre_global.drop_duplicates(
+        subset=["canonical_key"], keep="first"
+    )
+    combined_pre_global["preset"] = cfg.get("preset", "exploration")
+    combined_pre_global.to_csv(
+        root_output_dir / "combined_accepted_registry_pre_global.csv", index=False
+    )
+
+    combined_mask_map: Dict[str, np.ndarray] = {}
+    combined_parent_context_map: Dict[str, str] = {}
+    combined_side_map: Dict[str, str] = {}
+    stage_a_resolver = CanonicalRuleMaskResolver(X_a, metadata_a)
+    stage_b_resolver = CanonicalRuleMaskResolver(
+        X_b,
+        metadata_b,
+        context_lookup=context_feature_dict,
+        context_key_map=context_to_key,
+        slot_order=("trigger", "location", "regime"),
+    )
+    for _, row in stage_a_accepted.iterrows():
+        combined_mask_map[row["canonical_key"]] = stage_a_resolver.get_mask(row["canonical_key"])
+        combined_side_map[row["canonical_key"]] = row["side"]
+    for _, row in stage_b_accepted.iterrows():
+        combined_mask_map[row["canonical_key"]] = stage_b_resolver.get_mask(row["canonical_key"])
+        combined_side_map[row["canonical_key"]] = row["side"]
+        if pd.notna(row.get("parent_context_key")):
+            combined_parent_context_map[row["canonical_key"]] = row["parent_context_key"]
+
+    combined_resolver = DictionaryMaskResolver(
+        combined_mask_map,
+        parent_context_map=combined_parent_context_map,
+        side_map=combined_side_map,
+    )
+    global_scorer = RuleScorer(metadata_a + metadata_b, cfg, mask_resolver=combined_resolver)
+    global_consolidator = RuleConsolidator(
+        metadata_a + metadata_b,
+        cfg,
+        mask_resolver=combined_resolver,
+        scorer=global_scorer,
+    )
+    combined_global_registry, global_lineage = global_consolidator.consolidate(
+        combined_pre_global,
+        fwd_ret,
+        folds,
+        resolver=combined_resolver,
+        data=data,
+    )
+    combined_global_registry = combined_global_registry.drop_duplicates(
+        subset=["canonical_key"], keep="first"
+    )
+    combined_global_registry["preset"] = cfg.get("preset", "exploration")
+    combined_global_registry.to_csv(
+        root_output_dir / "combined_accepted_rule_registry.csv", index=False
+    )
+    global_lineage.to_csv(root_output_dir / "global_consolidation_lineage.csv", index=False)
+
+    portfolio_diversity_report = build_portfolio_diversity_report(
+        combined_global_registry,
+        combined_resolver,
+        data,
+        fwd_ret,
+    )
+    portfolio_diversity_report.to_csv(
+        root_output_dir / "portfolio_diversity_report.csv", index=False
+    )
+
+    tprint(f"Two-stage mining complete. Total accepted rules: {len(combined_global_registry)}")
+    return {
+        "stage_a": stage_a_accepted,
+        "stage_b": stage_b_accepted,
+        "combined": combined_global_registry,
+    }
+
+
+class MaskAssessor:
+    def __init__(self, metadata: List[FeatureMetadata], cfg: Dict[str, Any], mask_resolver: Optional[CanonicalRuleMaskResolver] = None):
+        self.metadata = metadata
+        self.cfg = cfg
+        self.mask_resolver = mask_resolver
+
+    def assess_rules(
+        self, 
+        registry: pd.DataFrame, 
+        X: np.ndarray, 
+        data: pd.DataFrame, 
+        fwd_ret: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]]
+    ) -> pd.DataFrame:
+        if registry.empty:
+            return registry
+            
+        tprint(f"Assessing {len(registry)} rules for Structural Alpha & Learnability...")
+        assessment_results = []
+        
+        # Pre-calculate global metrics
+        global_auc = self._compute_baseline_auc(X, fwd_ret, folds)
+        global_entropy = self._compute_entropy(fwd_ret)
+        
+        # Prepare TBM data
+        close = data['close'].to_numpy() if 'close' in data.columns else np.zeros(len(data))
+        high = data['high'].to_numpy() if 'high' in data.columns else np.zeros(len(data))
+        low = data['low'].to_numpy() if 'low' in data.columns else np.zeros(len(data))
+        atr = data['atr'].to_numpy() if 'atr' in data.columns else np.full(len(data), 0.001)
+        
+        horizon = int(self.cfg.get("tbm_horizon", 100))
+        tp_atr = float(self.cfg.get("tbm_tp_atr", 1.25))
+        sl_atr = float(self.cfg.get("tbm_sl_atr", 0.50))
+        
+        tp_f, sl_f, to_f = compute_tbm_outcomes_per_symbol(
+            data=data,
+            horizon=horizon,
+            tp_atr=tp_atr,
+            sl_atr=sl_atr,
+        )
+        
+        for _, row in registry.iterrows():
+            if self.mask_resolver:
+                mask = self.mask_resolver.get_mask(row['canonical_key'])
+            else:
+                mask = self._get_mask_for_rule(row['canonical_key'], X)
+            if np.sum(mask) < 20: continue
+            
+            # 1. Triple Barrier
+            tbm_metrics = self._compute_tbm_metrics(mask, tp_f, sl_f, to_f, fwd_ret)
+            
+            # 2. Economic Viability
+            n_days_denom = len(data) * int(self.cfg.get("n_timeframes", 1))
+            avg_trades = np.sum(mask) / n_days_denom
+            
+            if 'timestamp' in data.columns:
+                days = pd.to_datetime(data['timestamp']).dt.date
+                trades_per_day = pd.Series(mask).groupby(days).sum()
+                density_dispersion = trades_per_day.std() / (trades_per_day.mean() + 1e-9)
+            else:
+                density_dispersion = 0.0
+                
+            # 3. Risk & Stability
+            tail_ratio = self._compute_tail_ratio(fwd_ret[mask])
+            sign_consistency = row['sign_consistency']
+            
+            # 4. Learnability (Efficiency Frontier)
+            mask_auc = self._compute_subset_auc(X, fwd_ret, mask, folds)
+            lift = mask_auc - global_auc
+            learn_eff = mask_auc / (global_auc + 1e-9)
+            
+            mask_entropy = self._compute_entropy(fwd_ret[mask])
+            entropy_red = 1.0 - (mask_entropy / (global_entropy + 1e-9))
+            
+            # Path Efficiency (1 / complexity)
+            n_conds = display_arity_for_key(row["canonical_key"])
+            path_eff = 1.0 / n_conds if n_conds > 0 else 0.0
+            
+            # 5. Final Score
+            score = (
+                (entropy_red * 0.20) + 
+                (lift * 0.20) + 
+                (sign_consistency * 0.20) + 
+                (np.log10(avg_trades + 1.0) * 0.15) + 
+                (path_eff * 0.10)
+            )
+            
+            # Rejection Gates
+            rejected = False
+            rejection_reason = ""
+            if avg_trades < 0.05:
+                rejected, rejection_reason = True, "low_trades_per_day"
+            elif sign_consistency < 0.75:
+                rejected, rejection_reason = True, "low_sign_consistency"
+            elif learn_eff < 1.10:
+                rejected, rejection_reason = True, "low_lift"
+            elif entropy_red < 0.05:
+                rejected, rejection_reason = True, "low_entropy_reduction"
+            
+            assessment_results.append({
+                'canonical_key': row['canonical_key'],
+                'mask_score': score,
+                'is_structurally_sound': not rejected,
+                'rejection_reason': rejection_reason,
+                'avg_trades_per_day': avg_trades,
+                'density_dispersion': density_dispersion,
+                'tail_ratio': tail_ratio,
+                'lift': lift,
+                'learn_eff_ratio': learn_eff,
+                'entropy_reduction': entropy_red,
+                'path_efficiency': path_eff,
+                'tp_rate': tbm_metrics['tp_rate'],
+                'sl_rate': tbm_metrics['sl_rate'],
+                'timeout_rate': tbm_metrics['timeout_rate'],
+                'ev_per_trade': tbm_metrics['ev_per_trade'],
+                'win_rate_conditional': tbm_metrics['win_rate_conditional'],
+                'win_rate_unconditional': tbm_metrics['win_rate_unconditional'],
+            })
+            
+        return pd.DataFrame(assessment_results)
+
+    def _compute_tbm_metrics(self, mask, tp_f, sl_f, to_f, fwd_ret) -> Dict[str, float]:
+        """Compute triple barrier metrics."""
+        m = mask.astype(bool)
+        if not np.any(m):
+            return {
+                'tp_rate': 0.0,
+                'sl_rate': 0.0,
+                'timeout_rate': 0.0,
+                'ev_per_trade': 0.0,
+                'win_rate_conditional': 0.0,
+                'win_rate_unconditional': 0.0,
+            }
+
+        tp = np.sum(tp_f[m])
+        sl = np.sum(sl_f[m])
+        to = np.sum(to_f[m])
+        total = np.sum(m)
+
+        ev = np.nanmean(fwd_ret[m])
+
+        # Conditional on a barrier hit
+        win_rate_conditional = tp / (tp + sl + 1e-9)
+
+        # Unconditional share of selected events
+        win_rate_unconditional = tp / (total + 1e-9)
+
+        return {
+            'tp_rate': float(tp / total),
+            'sl_rate': float(sl / total),
+            'timeout_rate': float(to / total),
+            'ev_per_trade': float(ev),
+            'win_rate_conditional': float(win_rate_conditional),
+            'win_rate_unconditional': float(win_rate_unconditional),
+        }
+
+    def _compute_cvar(self, returns, alpha=0.05) -> float:
+        """Compute Conditional Value at Risk."""
+        if len(returns) == 0: return 0.0
+        n = len(returns)
+        cutoff_idx = max(int(n * alpha), 1)
+        sorted_rets = np.sort(returns)
+        return float(np.mean(sorted_rets[:cutoff_idx]))
+
+    def _compute_tail_ratio(self, returns) -> float:
+        """Compute tail ratio (95th percentile / 5th percentile)."""
+        if len(returns) < 20: return 1.0
+        p95 = abs(np.percentile(returns, 95))
+        p5 = abs(np.percentile(returns, 5))
+        return float(p95 / (p5 + 1e-9))
+
+    def _compute_subset_auc(self, X, fwd_ret, mask, folds) -> float:
+        """Compute AUC for a subset of data defined by mask."""
+        if not np.any(mask): return 0.5
+
+        # Select regime features
+        regime_feats = []
+        for i, m in enumerate(self.metadata):
+            if m.group == 'regime':
+                regime_feats.append(i)
+
+        if not regime_feats:
+            return 0.5
+
+        X_regime = X[:, regime_feats]
+        y = (fwd_ret > 0).astype(float)
+        y[np.isnan(fwd_ret)] = np.nan
+
+        # Compute OOF predictions using Ridge
+        from sklearn.linear_model import Ridge
+        from sklearn.metrics import roc_auc_score
+
+        oof_preds = np.zeros(len(X))
+        rng = np.random.RandomState(42)
+
+        for fold_id, (tr_idx, va_idx) in enumerate(folds):
+            # Apply mask to fold indices
+            tr_masked = tr_idx[mask[tr_idx]]
+            va_masked = va_idx[mask[va_idx]]
+
+            if len(tr_masked) < 20 or len(va_masked) < 20:
+                continue
+
+            X_tr, X_va = X_regime[tr_masked], X_regime[va_masked]
+            y_tr, y_va = y[tr_masked], y[va_masked]
+
+            # Filter valid samples
+            valid_tr = np.isfinite(y_tr) & np.all(np.isfinite(X_tr), axis=1)
+            valid_va = np.isfinite(y_va) & np.all(np.isfinite(X_va), axis=1)
+
+            if np.sum(valid_tr) < 20 or np.sum(valid_va) < 20:
+                continue
+
+            X_tr_clean = X_tr[valid_tr]
+            y_tr_clean = y_tr[valid_tr]
+            X_va_clean = X_va[valid_va]
+
+            # Subsample to 50% of training data
+            n_samples = len(X_tr_clean)
+            n_subsample = max(20, int(n_samples * 0.5))
+            subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
+            X_tr_subsample = X_tr_clean[subsample_idx]
+            y_tr_subsample = y_tr_clean[subsample_idx]
+
+            # Fit Ridge on subsampled data
+            model = Ridge(alpha=1.0)
+            model.fit(X_tr_subsample, y_tr_subsample)
+            preds = model.predict(X_va_clean)
+
+            # Store predictions
+            oof_preds[va_masked[valid_va]] = preds
+
+        # Compute AUC on valid predictions
+        valid_mask = np.isfinite(oof_preds) & np.isfinite(y)
+        if np.sum(valid_mask) < 100:
+            return 0.5
+
+        try:
+            auc = roc_auc_score(y[valid_mask], oof_preds[valid_mask])
+            return max(auc, 1.0 - auc)
+        except:
+            return 0.5
+
+    def _compute_entropy(self, y) -> float:
+        """Compute entropy of the target distribution."""
+        if len(y) == 0: return 0.0
+        if np.all(np.isin(y, [0, 1])):
+            p1 = np.mean(y)
+            if p1 <= 0 or p1 >= 1: return 0.0
+            return float(-(p1 * np.log2(p1) + (1-p1) * np.log2(1-p1)))
+        else:
+            return float(np.log2(np.std(y) + 1e-9))
+
+    def _compute_baseline_auc(self, X: np.ndarray, fwd_ret: np.ndarray, folds: List[Tuple[np.ndarray, np.ndarray]]) -> float:
+        """
+        Compute baseline AUC using regime features across all folds.
+        Uses only 50% of the data for Ridge model training.
+        """
+        # Select regime features
+        regime_feats = [i for i, m in enumerate(self.metadata) if m.group == 'regime']
+        if not regime_feats:
+            return 0.5
+
+        X_regime = X[:, regime_feats]
+        y = (fwd_ret > 0).astype(float)
+        y[np.isnan(fwd_ret)] = np.nan
+
+        # Compute OOF predictions using Ridge (use 50% of data)
+        from sklearn.linear_model import Ridge
+        from sklearn.metrics import roc_auc_score
+        import numpy.random as npr
+
+        oof_preds = np.zeros(len(X))
+        rng = np.random.RandomState(42)
+
+        for fold_id, (tr_idx, va_idx) in enumerate(folds):
+            X_tr, X_va = X_regime[tr_idx], X_regime[va_idx]
+            y_tr, y_va = y[tr_idx], y[va_idx]
+
+            # Filter valid samples
+            valid_tr = np.isfinite(y_tr) & np.all(np.isfinite(X_tr), axis=1)
+            valid_va = np.isfinite(y_va) & np.all(np.isfinite(X_va), axis=1)
+
+            if np.sum(valid_tr) < 20 or np.sum(valid_va) < 20:
+                continue
+
+            X_tr_clean = X_tr[valid_tr]
+            y_tr_clean = y_tr[valid_tr]
+            X_va_clean = X_va[valid_va]
+
+            # Subsample to 50% of training data
+            n_samples = len(X_tr_clean)
+            n_subsample = max(20, int(n_samples * 0.5))
+            subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
+            X_tr_subsample = X_tr_clean[subsample_idx]
+            y_tr_subsample = y_tr_clean[subsample_idx]
+
+            # Fit Ridge on subsampled data
+            model = Ridge(alpha=1.0)
+            model.fit(X_tr_subsample, y_tr_subsample)
+            preds = model.predict(X_va_clean)
+
+            # Store predictions
+            oof_preds[va_idx[valid_va]] = preds
+
+        # Compute AUC on valid predictions
+        valid_mask = np.isfinite(oof_preds) & np.isfinite(y)
+        if np.sum(valid_mask) < 100:
+            return 0.5
+
+        try:
+            auc = roc_auc_score(y[valid_mask], oof_preds[valid_mask])
+            return max(auc, 1.0 - auc)
+        except:
+            return 0.5
+
+    def _get_mask_for_rule(self, key: str, X: np.ndarray) -> np.ndarray:
+        """
+        Parses '(F1==1)|(LOC1==0)|(*)' into a boolean mask.
+        """
+        parts = key.split('|')
+        mask = np.ones(X.shape[0], dtype=bool)
+        for p in parts:
+            p = p.strip('()')
+            if p == '*': continue
+            if '==' in p:
+                fname, val_part = p.split('==')
+                val = int(val_part)
+                # Find matching metadata for feature index
+                f_idx = next(m.feature_index for m in self.metadata if m.feature_name == fname)
+                mask &= (X[:, f_idx] == val)
+        return mask
+
+
+# =============================================================================
+# NUMBA-OPTIMIZED INFERENCE ENGINE
+# =============================================================================
+
+@njit(parallel=True, cache=True, fastmath=True)
+def _generate_masks_numba_kernel(
+    X: np.ndarray,
+    cond_feat_idxs: np.ndarray,
+    cond_vals: np.ndarray,
+    rule_ptr: np.ndarray
+) -> np.ndarray:
+    """
+    Highly optimized kernel to apply N-rules to M-samples.
+    rule_ptr: array of indices marking the start/end of each rule's conditions.
+    """
+    n_samples = X.shape[0]
+    n_rules = len(rule_ptr) - 1
+    out = np.ones((n_samples, n_rules), dtype=np.bool_)
+
+    # Parallelize across samples for high-throughput
+    for i in prange(n_samples):
+        for r in range(n_rules):
+            start = rule_ptr[r]
+            end = rule_ptr[r+1]
+
+            # Intersection of conditions (AND logic within a path)
+            for c in range(start, end):
+                f_idx = cond_feat_idxs[c]
+                target_val = cond_vals[c]
+
+                # Check if boolean feature matches target normalized value
+                if X[i, f_idx] != target_val:
+                    out[i, r] = False
+                    break
+    return out
+
+class NumbaRuleInferenceEngine:
+    def __init__(self, registry: pd.DataFrame, metadata: List[FeatureMetadata]):
+        self.registry = registry
+        self.metadata = metadata
+        self.name_to_idx = {m.feature_name: m.feature_index for m in metadata}
+
+        # Flattened structures for Numba
+        self.feat_idxs = []
+        self.target_vals = []
+        self.rule_ptrs = [0]
+
+        self._compile_registry()
+
+    def _compile_registry(self):
+        """Pre-processes strings into flat integer arrays for Numba."""
+        for _, row in self.registry.iterrows():
+            key = row['canonical_key']
+            # Note: For Composite rules, we currently treat them as their
+            # atomic components in the registry or manage them as separate vectors.
+            # This engine handles standard (T|L|R) path logic.
+            conditions = self._parse_key(key)
+
+            for f_idx, val in conditions:
+                self.feat_idxs.append(f_idx)
+                self.target_vals.append(val)
+
+            self.rule_ptrs.append(len(self.feat_idxs))
+
+        self.feat_idxs_np = np.array(self.feat_idxs, dtype=np.int32)
+        self.target_vals_np = np.array(self.target_vals, dtype=np.int32)
+        self.rule_ptrs_np = np.array(self.rule_ptrs, dtype=np.int32)
+
+    def _parse_key(self, key: str) -> List[Tuple[int, int]]:
+        parts = key.split('|')
+        parsed = []
+        for p in parts:
+            p = p.strip('()')
+            if p == '*': continue
+            name, val = p.split('==')
+            if name in self.name_to_idx:
+                parsed.append((self.name_to_idx[name], int(val)))
+        return parsed
+
+    def apply(self, X: np.ndarray) -> np.ndarray:
+        """Entry point for inference."""
+        # X must be float32 or int for Numba kernel
+        return _generate_masks_numba_kernel(
+            X.astype(np.float32),
+            self.feat_idxs_np,
+            self.target_vals_np,
+            self.rule_ptrs_np
+        )
+
+
+# =============================================================================
+# FEATURE USAGE AUDIT HELPERS
+# =============================================================================
+
+def export_feature_group_summary(metadata: List[FeatureMetadata], output_dir: Path) -> pd.DataFrame:
+    """Export feature metadata and group summary."""
+    rows = []
+    for m in metadata:
+        rows.append({
+            "feature_name": m.feature_name,
+            "feature_index": m.feature_index,
+            "group": m.group,
+            "source_name": m.source_name,
+            "source_family": m.source_family,
+            "source_type": m.source_type,
+        })
+    df = pd.DataFrame(rows)
+    df.to_csv(output_dir / "retained_feature_metadata.csv", index=False)
+
+    summary = df.groupby("group").size().reset_index(name="retained_feature_count")
+    summary.to_csv(output_dir / "retained_feature_group_summary.csv", index=False)
+    return df
+
+
+def collect_split_usage_from_model(model, metadata: List[FeatureMetadata], fold_id: int, seed: int) -> pd.DataFrame:
+    """
+    Count split-feature usage directly from LightGBM tree dump.
+    """
+    idx_to_meta = {m.feature_index: m for m in metadata}
+    dump = model.booster_.dump_model()
+
+    counts = collections.Counter()
+
+    def walk(node):
+        if "split_feature" in node:
+            counts[node["split_feature"]] += 1
+            walk(node["left_child"])
+            walk(node["right_child"])
+
+    for tree in dump["tree_info"]:
+        walk(tree["tree_structure"])
+
+    rows = []
+    for feat_idx, split_count in counts.items():
+        m = idx_to_meta.get(feat_idx)
+        if m is None:
+            continue
+        rows.append({
+            "fold_id": fold_id,
+            "seed": seed,
+            "feature_index": feat_idx,
+            "feature_name": m.feature_name,
+            "group": m.group,
+            "source_name": m.source_name,
+            "source_family": m.source_family,
+            "split_count": split_count,
+        })
+
+    return pd.DataFrame(rows)
+
+
+def summarize_fold_feature_usage(split_usage_df: pd.DataFrame) -> pd.DataFrame:
+    if split_usage_df.empty:
+        return pd.DataFrame(
+            columns=["fold_id", "seed", "group", "used_feature_count", "split_count"]
+        )
+    grouped = (
+        split_usage_df.groupby(["fold_id", "seed", "group"], as_index=False)
+        .agg(
+            used_feature_count=("feature_name", "nunique"),
+            split_count=("split_count", "sum"),
+        )
+        .sort_values(["fold_id", "seed", "group"])
+    )
+    return grouped
+
+
+def collect_extracted_rule_feature_usage(
+    rules: List[ExtractedRule],
+    metadata: List[FeatureMetadata]
+) -> pd.DataFrame:
+    """Collect feature usage from extracted rules."""
+    idx_to_meta = {m.feature_index: m for m in metadata}
+    rows = []
+
+    for r in rules:
+        used = set()
+        for c in r.conditions:
+            if c.feature_index in used:
+                continue
+            used.add(c.feature_index)
+            m = idx_to_meta[c.feature_index]
+            rows.append({
+                "canonical_key": r.canonical_key,
+                "rule_id": r.rule_id,
+                "fold_id": r.fold_id,
+                "seed": r.seed,
+                "feature_index": c.feature_index,
+                "feature_name": m.feature_name,
+                "group": m.group,
+                "source_name": m.source_name,
+                "source_family": m.source_family,
+                "normalized_value": c.normalized_value,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def collect_registry_feature_usage(registry: pd.DataFrame, metadata: List[FeatureMetadata]) -> pd.DataFrame:
+    """Collect feature usage from final registry."""
+    name_to_meta = {m.feature_name: m for m in metadata}
+    rows = []
+
+    for _, row in registry.iterrows():
+        canonical_key = row['canonical_key']
+        for feature_name in extract_feature_names_from_key(canonical_key):
+            m = name_to_meta.get(feature_name)
+            if m is None:
+                continue
+            rows.append({
+                "canonical_key": canonical_key,
+                "feature_index": m.feature_index,
+                "feature_name": m.feature_name,
+                "group": m.group,
+                "source_name": m.source_name,
+                "source_family": m.source_family,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def build_portfolio_diversity_report(
+    registry: pd.DataFrame,
+    resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
+    data: pd.DataFrame,
+    fwd_ret: np.ndarray,
+) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+    if registry.empty:
+        return pd.DataFrame(rows)
+
+    mask_map = {
+        key: resolver.get_mask(key)
+        for key in registry["canonical_key"].tolist()
+    }
+    activation_counts = {key: int(mask.sum()) for key, mask in mask_map.items()}
+    total_activations = sum(activation_counts.values())
+    if total_activations > 0:
+        shares = np.array(list(activation_counts.values()), dtype=np.float64) / total_activations
+        effective_rules = 1.0 / np.sum(shares ** 2)
+        top_rule_share = float(np.max(shares))
+    else:
+        effective_rules = 0.0
+        top_rule_share = 0.0
+
+    rows.append({"category": "summary", "metric": "top_rule_share", "value": top_rule_share})
+    rows.append(
+        {"category": "summary", "metric": "effective_independent_rules", "value": effective_rules}
+    )
+
+    keys = registry["canonical_key"].tolist()
+    for key_a, key_b in itertools.combinations(keys, 2):
+        mask_a = mask_map[key_a]
+        mask_b = mask_map[key_b]
+        union = np.sum(mask_a | mask_b)
+        jaccard = float(np.sum(mask_a & mask_b) / union) if union > 0 else 0.0
+        ret_a = np.where(mask_a, fwd_ret, np.nan)
+        ret_b = np.where(mask_b, fwd_ret, np.nan)
+        valid = np.isfinite(ret_a) & np.isfinite(ret_b)
+        ret_corr = np.nan
+        if np.sum(valid) >= 3:
+            ret_corr = float(np.corrcoef(ret_a[valid], ret_b[valid])[0, 1])
+        rows.append(
+            {
+                "category": "pairwise",
+                "metric": "jaccard_overlap",
+                "item_a": key_a,
+                "item_b": key_b,
+                "value": jaccard,
+            }
+        )
+        rows.append(
+            {
+                "category": "pairwise",
+                "metric": "return_correlation",
+                "item_a": key_a,
+                "item_b": key_b,
+                "value": ret_corr,
+            }
+        )
+
+    if "symbol" in data.columns:
+        symbol_series = data["symbol"].astype(str)
+        for key, mask in mask_map.items():
+            counts = symbol_series[mask].value_counts(normalize=True)
+            for symbol, share in counts.items():
+                rows.append(
+                    {
+                        "category": "coverage_symbol",
+                        "metric": key,
+                        "item_a": symbol,
+                        "value": float(share),
+                    }
+                )
+
+    for side, count in registry["side"].fillna("unknown").value_counts().items():
+        rows.append({"category": "coverage_side", "metric": side, "value": float(count)})
+
+    if "timestamp" in data.columns:
+        hours = pd.to_datetime(data["timestamp"]).dt.hour.fillna(-1)
+        for key, mask in mask_map.items():
+            counts = hours[mask].value_counts(normalize=True)
+            for hour, share in counts.items():
+                rows.append(
+                    {
+                        "category": "coverage_hour",
+                        "metric": key,
+                        "item_a": int(hour),
+                        "value": float(share),
+                    }
+                )
+
+    regime_family_counts = collections.Counter()
+    for key in keys:
+        for feature_name in extract_feature_names_from_key(key):
+            if feature_name.startswith("reg_"):
+                regime_family = feature_name.split("_")[1] if "_" in feature_name else feature_name
+                regime_family_counts[regime_family] += 1
+    for family, count in regime_family_counts.items():
+        rows.append(
+            {"category": "coverage_regime_family", "metric": family, "value": float(count)}
+        )
+
+    return pd.DataFrame(rows)
+
+
+def apply_label_step_sliceplanner_filter(
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    fwd_ret: np.ndarray,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray, Dict[str, Any]]:
+    events = pd.DataFrame(
+        {
+            "event_id": np.arange(len(data), dtype=np.int64),
+            "symbol": data["symbol"].astype(object).to_numpy(copy=False),
+            "t0": pd.to_datetime(data["timestamp"], utc=True, errors="coerce"),
+            "t1": pd.to_datetime(data["timestamp"], utc=True, errors="coerce"),
+        }
+    )
+
+    planner_cfg = build_mining_sliceplanner_config(cfg)
+    bundle = SlicePlanner(planner_cfg).build(events)
+
+    train_indices: set[int] = set()
+    for plan in bundle["consumer_plans"].get("regime_search", []):
+        if plan.tag in {"fit_inner", "fit_outer", "predict_inner"}:
+            train_indices.update(np.asarray(plan.fit_idx, dtype=np.int64).tolist())
+
+    if not train_indices:
+        return data, feature_dict, fwd_ret, {
+            "sliceplanner_applied": False,
+            "reason": "no_training_indices",
+            "rows_before": int(len(data)),
+            "rows_after": int(len(data)),
+            "symbols_before": int(data["symbol"].nunique()),
+            "symbols_after": int(data["symbol"].nunique()),
+        }
+
+    keep_idx = np.array(sorted(train_indices), dtype=np.int64)
+    filtered_data = data.iloc[keep_idx].reset_index(drop=True)
+    filtered_features = {
+        name: np.asarray(values)[keep_idx]
+        for name, values in feature_dict.items()
+    }
+    filtered_fwd_ret = np.asarray(fwd_ret)[keep_idx]
+
+    metadata = {
+        "sliceplanner_applied": True,
+        "preset": planner_cfg.preset.preset_name,
+        "rows_before": int(len(data)),
+        "rows_after": int(len(filtered_data)),
+        "symbols_before": int(data["symbol"].nunique()),
+        "symbols_after": int(filtered_data["symbol"].nunique()),
+        "row_fraction_kept": float(len(filtered_data) / max(len(data), 1)),
+    }
+    return filtered_data, filtered_features, filtered_fwd_ret, metadata
+
+
+def build_mining_sliceplanner_config(cfg: Optional[Dict[str, Any]] = None) -> SlicePlannerConfig:
+    planner_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+    cfg = cfg or {}
+    outer_n_folds = cfg.get("sliceplanner_outer_n_folds")
+    if outer_n_folds is not None:
+        planner_cfg = replace(
+            planner_cfg,
+            preset=replace(
+                planner_cfg.preset,
+                outer=replace(planner_cfg.preset.outer, n_folds=int(outer_n_folds)),
+            ),
+        )
+    return planner_cfg
+
+
+def estimate_pretrim_start_ts(
+    end_ts: pd.Timestamp,
+    cfg: Dict[str, Any],
+) -> pd.Timestamp:
+    planner_cfg = build_mining_sliceplanner_config(cfg)
+    outer = planner_cfg.preset.outer
+    outer_folds = int(outer.n_folds or cfg.get("sliceplanner_outer_n_folds", 8) or 8)
+    warmup_days = int(cfg.get("sliceplanner_warmup_days", 90))
+    total_span = (
+        outer.train_span
+        + (outer.valid_span or pd.Timedelta(0))
+        + outer.test_span
+        + outer.step_span * max(outer_folds - 1, 0)
+        + pd.Timedelta(days=warmup_days)
+    )
+    return end_ts - total_span
+
+
+def build_label_step_sliceplanner_keep_idx(
+    timestamps: pd.Index,
+    symbols: pd.Index,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    ts_arr = np.repeat(timestamps.to_numpy(), len(symbols))
+    events = pd.DataFrame(
+        {
+            "event_id": np.arange(len(ts_arr), dtype=np.int64),
+            "symbol": np.tile(symbols.to_numpy(dtype=object), len(timestamps)),
+            "t0": pd.to_datetime(ts_arr, utc=True, errors="coerce"),
+            "t1": pd.to_datetime(ts_arr, utc=True, errors="coerce"),
+        }
+    )
+
+    planner_cfg = build_mining_sliceplanner_config(cfg)
+    bundle = SlicePlanner(planner_cfg).build(events)
+    clean_events = bundle["events"]
+
+    train_event_ids: set[int] = set()
+    for plan in bundle["consumer_plans"].get("regime_search", []):
+        if plan.tag in {"fit_inner", "fit_outer", "predict_inner"}:
+            fit_idx = np.asarray(plan.fit_idx, dtype=np.int64)
+            if fit_idx.size == 0:
+                continue
+            train_event_ids.update(
+                clean_events.iloc[fit_idx]["event_id"].to_numpy(dtype=np.int64).tolist()
+            )
+
+    total_rows = int(len(events))
+    symbols_before = int(len(symbols))
+    if not train_event_ids:
+        keep_idx = np.arange(total_rows, dtype=np.int64)
+        metadata = {
+            "sliceplanner_applied": False,
+            "reason": "no_training_indices",
+            "preset": planner_cfg.preset.preset_name,
+            "rows_before": total_rows,
+            "rows_after": total_rows,
+            "symbols_before": symbols_before,
+            "symbols_after": symbols_before,
+            "row_fraction_kept": 1.0,
+        }
+        return keep_idx, metadata
+
+    keep_idx = np.array(sorted(train_event_ids), dtype=np.int64)
+    kept_symbol_count = int(np.unique(keep_idx % max(len(symbols), 1)).size)
+    metadata = {
+        "sliceplanner_applied": True,
+        "preset": planner_cfg.preset.preset_name,
+        "rows_before": total_rows,
+        "rows_after": int(len(keep_idx)),
+        "symbols_before": symbols_before,
+        "symbols_after": kept_symbol_count,
+        "row_fraction_kept": float(len(keep_idx) / max(total_rows, 1)),
+    }
+    return keep_idx, metadata
+
+
+def _extract_selected_wide_values(
+    df: pd.DataFrame,
+    common_idx: pd.Index,
+    common_syms: pd.Index,
+    time_idx: np.ndarray,
+    sym_idx: np.ndarray,
+    dtype: Optional[np.dtype] = np.float32,
+) -> np.ndarray:
+    aligned = df.reindex(index=common_idx, columns=common_syms)
+    values = aligned.to_numpy()
+    extracted = values[time_idx, sym_idx]
+    if dtype is None:
+        return extracted
+    return extracted.astype(dtype, copy=False)
+
+
+def filter_complete_feature_rows(
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    fwd_ret: np.ndarray,
+) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray, Dict[str, Any]]:
+    """
+    Retain only rows where every loaded feature is finite.
+    """
+    n_rows = len(data)
+    if n_rows == 0 or not feature_dict:
+        return data, feature_dict, fwd_ret, {
+            "rows_before": int(n_rows),
+            "rows_after": int(n_rows),
+            "dropped_rows": 0,
+            "drop_fraction": 0.0,
+            "worst_features": [],
+        }
+
+    keep_mask = np.ones(n_rows, dtype=bool)
+    missing_counts: List[Tuple[str, int]] = []
+    for name, values in feature_dict.items():
+        arr = np.asarray(values)
+        finite_mask = np.isfinite(arr)
+        if arr.ndim > 1:
+            finite_mask = np.all(finite_mask, axis=1)
+        keep_mask &= finite_mask
+        missing_counts.append((str(name), int((~finite_mask).sum())))
+
+    filtered_data = data.loc[keep_mask].reset_index(drop=True)
+    filtered_features = {
+        name: np.asarray(values)[keep_mask]
+        for name, values in feature_dict.items()
+    }
+    filtered_fwd_ret = np.asarray(fwd_ret)[keep_mask]
+    missing_counts.sort(key=lambda item: item[1], reverse=True)
+    dropped_rows = int((~keep_mask).sum())
+    meta = {
+        "rows_before": int(n_rows),
+        "rows_after": int(len(filtered_data)),
+        "dropped_rows": dropped_rows,
+        "drop_fraction": float(dropped_rows / max(n_rows, 1)),
+        "worst_features": missing_counts[:10],
+    }
+    return filtered_data, filtered_features, filtered_fwd_ret, meta
+
+
+def compute_atr_wide(
+    high_wide: np.ndarray,
+    low_wide: np.ndarray,
+    close_wide: np.ndarray,
+    atr_period: int = 14,
+) -> np.ndarray:
+    n_ts, n_syms = high_wide.shape
+    atr_wide = np.zeros((n_ts, n_syms), dtype=np.float32)
+
+    for sym_idx in range(n_syms):
+        high_sym = high_wide[:, sym_idx]
+        low_sym = low_wide[:, sym_idx]
+        close_sym = close_wide[:, sym_idx]
+
+        tr = np.zeros(n_ts, dtype=np.float32)
+        if n_ts > 1:
+            tr[1:] = np.maximum(
+                high_sym[1:] - low_sym[1:],
+                np.maximum(
+                    np.abs(high_sym[1:] - close_sym[:-1]),
+                    np.abs(low_sym[1:] - close_sym[:-1]),
+                ),
+            )
+
+        if n_ts > atr_period:
+            atr_sym = np.zeros(n_ts, dtype=np.float32)
+            atr_sym[:atr_period] = float(np.mean(tr[:atr_period]))
+            for i in range(atr_period, n_ts):
+                atr_sym[i] = (atr_sym[i - 1] * (atr_period - 1) + tr[i]) / atr_period
+        else:
+            fallback = float(np.mean(tr[1:])) if n_ts > 1 else 0.001
+            atr_sym = np.full(n_ts, fallback, dtype=np.float32)
+
+        atr_wide[:, sym_idx] = atr_sym
+
+    return atr_wide
+
+
+def summarize_feature_usage(
+    df: pd.DataFrame,
+    output_path: Path,
+    groupby_cols: List[str]
+) -> None:
+    """Summarize feature usage by specified columns."""
+    if df.empty:
+        pd.DataFrame(columns=groupby_cols + ["usage_count"]).to_csv(output_path, index=False)
+        return
+
+    summary = df.groupby(groupby_cols).size().reset_index(name="usage_count")
+    summary = summary.sort_values("usage_count", ascending=False)
+    summary.to_csv(output_path, index=False)
+
+
+def export_coverage_sanity_report(
+    metadata: List[FeatureMetadata],
+    split_usage_all: pd.DataFrame,
+    rule_usage_df: pd.DataFrame,
+    final_usage_df: pd.DataFrame,
+    output_dir: Path,
+) -> pd.DataFrame:
+    """Export a comprehensive coverage sanity report."""
+    all_features = pd.DataFrame([{
+        "feature_name": m.feature_name,
+        "group": m.group,
+        "source_name": m.source_name,
+        "source_family": m.source_family,
+    } for m in metadata])
+
+    split_counts = (
+        split_usage_all.groupby("feature_name")["split_count"]
+        .sum()
+        .reset_index()
+        .rename(columns={"split_count": "model_split_count"})
+        if not split_usage_all.empty else
+        pd.DataFrame(columns=["feature_name", "model_split_count"])
+    )
+
+    extracted_counts = (
+        rule_usage_df.groupby("feature_name")
+        .size()
+        .reset_index(name="extracted_rule_count")
+        if not rule_usage_df.empty else
+        pd.DataFrame(columns=["feature_name", "extracted_rule_count"])
+    )
+
+    final_counts = (
+        final_usage_df.groupby("feature_name")
+        .size()
+        .reset_index(name="final_registry_count")
+        if not final_usage_df.empty else
+        pd.DataFrame(columns=["feature_name", "final_registry_count"])
+    )
+
+    report = (
+        all_features
+        .merge(split_counts, on="feature_name", how="left")
+        .merge(extracted_counts, on="feature_name", how="left")
+        .merge(final_counts, on="feature_name", how="left")
+        .fillna(0)
+    )
+
+    for c in ["model_split_count", "extracted_rule_count", "final_registry_count"]:
+        report[c] = report[c].astype(int)
+
+    report["used_in_model"] = report["model_split_count"] > 0
+    report["used_in_extracted_rules"] = report["extracted_rule_count"] > 0
+    report["used_in_final_registry"] = report["final_registry_count"] > 0
+
+    report.to_csv(output_dir / "feature_coverage_sanity_report.csv", index=False)
+
+    summary = (
+        report.groupby("group")[["used_in_model", "used_in_extracted_rules", "used_in_final_registry"]]
+        .sum()
+        .reset_index()
+    )
+    summary.to_csv(output_dir / "final_registry_feature_usage_by_group.csv", index=False)
+
+    return report
+
+
+# =============================================================================
+# MAIN ORCHESTRATION
+# =============================================================================
+
+
+def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    preset = str(cfg.get("preset", "exploration")).lower()
+    out = dict(cfg)
+    defaults = {
+        "exploration": {
+            "min_feature_support": 2,
+            "min_support_count_validation": 5,
+            "min_tree_discoveries": 1,
+            "min_presence_freq": 0.33,
+            "min_sign_consistency": 0.65,
+            "prune_base_hurdle": 0.00005,
+            "prune_support_exp": 0.5,
+            "min_context_support_pct": 0.005,
+            "min_context_presence_freq": 0.33,
+            "min_context_sign_consistency": 0.65,
+            "min_context_mean_ret": 0.0,
+            "cv_min_train_frac": 0.5,
+            "cv_embargo": 0,
+            "max_support_pct": 0.25,
+            "stage_a_directional": True,
+            "stage_a_relax_positive_groups": True,
+        },
+        "production": {
+            "min_feature_support": 5,
+            "min_support_count_validation": 10,
+            "min_tree_discoveries": 2,
+            "min_presence_freq": 0.4,
+            "min_sign_consistency": 0.75,
+            "prune_base_hurdle": 0.00010,
+            "prune_support_exp": 0.5,
+            "min_context_support_pct": 0.01,
+            "min_context_presence_freq": 0.5,
+            "min_context_sign_consistency": 0.80,
+            "min_context_mean_ret": 0.0,
+            "cv_min_train_frac": 0.5,
+            "cv_embargo": 0,
+            "max_support_pct": 0.20,
+            "stage_a_directional": True,
+            "stage_a_relax_positive_groups": True,
+        },
+    }
+    if preset not in defaults:
+        raise ValueError(f"Unknown preset {preset}")
+    for key, value in defaults[preset].items():
+        out.setdefault(key, value)
+    out["preset"] = preset
+    out.setdefault(
+        "prune_complexity_bonus_map",
+        {"1": 0.0, "2": 0.15, "3": 0.30, "4": 0.10, "5": 0.10, "6": 0.10},
+    )
+    out.setdefault("n_folds", 5)
+    out.setdefault("consolidation_top_n", 100)
+    out.setdefault("jaccard_round1", 0.95)
+    out.setdefault("jaccard_round2", 0.90)
+    out.setdefault("jaccard_round3", 0.75)
+    out.setdefault("support_gain_factor", 1.05)
+    out.setdefault("max_failed_pair_checks", 250)
+    out.setdefault("max_total_pair_evals", 1000)
+    out.setdefault("max_consolidation_rounds", 3)
+    out.setdefault("min_jaccard_stop_threshold", 0.60)
+    return out
+
+def run_lgbm_mask_generation(
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    fwd_ret: np.ndarray,
+    cfg: Dict[str, Any]
+):
+    cfg = apply_cfg_preset(cfg)
+    output_dir = Path(cfg.get("output_dir", "./lgbm_outputs"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fp = FeatureProcessor()
+    X, metadata, feat_audit = fp.prepare_features(
+        feature_dict, 
+        data['timestamp'].to_numpy(), 
+        data['symbol'].to_numpy(),
+        cfg
+    )
+    feat_audit.to_csv(output_dir / "feature_quality_audit.csv", index=False)
+    export_feature_group_summary(metadata, output_dir)
+    result = run_mining_stage(
+        data=data,
+        fwd_ret=fwd_ret,
+        X=X,
+        metadata=metadata,
+        cfg=cfg,
+        output_dir=output_dir,
+        stage_name="single_stage",
+        allowed_group_pairs=(("trigger", "location"), ("trigger", "regime"), ("location", "regime")),
+        slot_order=("trigger", "location", "regime"),
+        folds=build_walk_forward_folds(
+            n_samples=len(data),
+            n_folds=int(cfg.get("n_folds", 5)),
+            min_train_frac=float(cfg.get("cv_min_train_frac", 0.5)),
+            embargo=int(cfg.get("cv_embargo", 0)),
+        ),
+        mask_resolver=CanonicalRuleMaskResolver(X, metadata),
+        pipeline_stage_name="single_stage",
+    )
+    return result["accepted_registry"]
+
+def _flatten_wide_frame(df: pd.DataFrame, common_idx: pd.Index, common_syms: pd.Index) -> np.ndarray:
+    return df.reindex(index=common_idx, columns=common_syms).to_numpy().flatten()
+
+
+def list_preload_training_symbols(
+    store: PartitionedOHLCVStore,
+    cfg: Dict[str, Any],
+    max_symbols: int = 0,
+) -> List[str]:
+    """Return the same training universe used by the label step, before heavy data loading."""
+    train_symbols = get_training_universe(None, cfg, store, ts_sig=None)
+    if max_symbols > 0:
+        return list(train_symbols[:max_symbols])
+    return list(train_symbols)
+
+if __name__ == "__main__":
+    import argparse
+    import glob
+    from extreme_price_movements.config import CFG
+    from extreme_price_movements.data_store import (
+        PartitionedOHLCVStore,
+        load_features_selected,
+        save_features,
+        to_panel,
+    )
+    
+    parser = argparse.ArgumentParser(description="Full LGBM Mask Generation Run")
+    parser.add_argument("--data-root", default="/Users/remyroche/Documents/Ares/data", help="Data root path")
+    parser.add_argument("--feature-path", help="Optional feature path override")
+    parser.add_argument(
+        "--lookback-years",
+        type=float,
+        default=0.0,
+        help="Years of data to load before SlicePlanner filtering; 0 means no manual limit",
+    )
+    parser.add_argument(
+        "--max-symbols",
+        type=int,
+        default=0,
+        help="Max symbols to load before SlicePlanner filtering; 0 means no manual limit",
+    )
+    parser.add_argument("--output-dir", default="./production_lgbm_outputs", help="Output directory")
+    parser.add_argument(
+        "--preset",
+        choices=["exploration", "production"],
+        default="production",
+        help="Threshold preset",
+    )
+    args = parser.parse_args()
+
+    cfg = dict(CFG)
+    cfg["data_root"] = args.data_root
+    cfg["output_dir"] = args.output_dir
+    cfg["preset"] = args.preset
+    cfg.setdefault("sliceplanner_outer_n_folds", 8)
+    cfg.setdefault("sliceplanner_warmup_days", 90)
+    cfg = apply_cfg_preset(cfg)
+    
+    tprint(
+        f"LGBM Full Run: root={args.data_root} | lookback={args.lookback_years}y | symbols={args.max_symbols}"
+    )
+    
+    # 1. Data Store & Symbols
+    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg.get("timeframe", "1h"))
+    symbols = list_preload_training_symbols(store, cfg, max_symbols=args.max_symbols)
+    tprint(f"Selected {len(symbols)} pre-load training-universe symbols")
+    feature_dir = os.path.join(cfg["data_root"], "features")
+    feature_files = sorted(glob.glob(os.path.join(feature_dir, "202[0-9]*")))
+    feature_path = args.feature_path or (feature_files[-1] if feature_files else None)
+
+    if not feature_path:
+        feature_files = sorted(glob.glob("202[0-9]*"))
+        feature_path = feature_files[-1] if feature_files else None
+
+    if not feature_path:
+        tprint("ERROR: No feature path found.")
+        exit(1)
+
+    ts_str = os.path.basename(feature_path)
+    try:
+        feature_snapshot_ts = pd.Timestamp(ts_str.replace("_", " "))
+    except Exception:
+        feature_snapshot_ts = pd.Timestamp.now(tz="UTC")
+    if feature_snapshot_ts.tzinfo is None:
+        feature_snapshot_ts = feature_snapshot_ts.tz_localize("UTC")
+
+    start_ts = estimate_pretrim_start_ts(feature_snapshot_ts, cfg)
+    if args.lookback_years and args.lookback_years > 0:
+        manual_start = pd.Timestamp.now(tz="UTC") - pd.Timedelta(
+            days=int(365.25 * args.lookback_years)
+        )
+        start_ts = max(start_ts, manual_start)
+    tprint(f"Pre-trim start_ts={start_ts} derived from planner horizon")
+
+    # 2. Load OHLCV
+    dfs_by_symbol: Dict[str, pd.DataFrame] = {}
+    for s in symbols:
+        try:
+            df = store.load(s, start_ts=start_ts)
+            if not df.empty:
+                dfs_by_symbol[s] = df
+        except Exception:
+            continue
+
+    if not dfs_by_symbol:
+        tprint("ERROR: No data loaded.")
+        exit(1)
+
+    panel = to_panel(dfs_by_symbol)
+    common_idx = panel["close"].index
+    common_syms = panel["close"].columns
+
+    # 3. Prepare planner-bounded indices before loading features
+    fwd_hours = int(cfg.get("mask_opt_forward_hours", 5))
+    fwd_ret_wide = panel["close"].pct_change(fwd_hours, fill_method=None).shift(-fwd_hours)
+
+    common_idx = panel["close"].index
+    common_syms = panel["close"].columns
+    n_ts, n_syms = len(common_idx), len(common_syms)
+
+    # TZ Normalization for alignment
+    common_idx_naive = common_idx.tz_localize(None) if common_idx.tz is not None else common_idx
+
+    tprint(f"Panel: {n_ts} timestamps x {n_syms} symbols. TZ: {common_idx.tz} -> Naive. Top syms: {list(common_syms[:3])}")
+
+    planner_filter_start = time.perf_counter()
+    keep_idx, planner_filter_meta = build_label_step_sliceplanner_keep_idx(common_idx, common_syms, cfg=cfg)
+    time_idx = (keep_idx // n_syms).astype(np.int32, copy=False)
+    sym_idx = (keep_idx % n_syms).astype(np.int32, copy=False)
+    kept_sym_positions = np.unique(sym_idx)
+    kept_syms = common_syms.take(kept_sym_positions)
+    compact_sym_idx = np.searchsorted(kept_sym_positions, sym_idx).astype(np.int32, copy=False)
+    tprint(
+        f"SlicePlanner keep-index build complete: kept_rows={len(keep_idx)} "
+        f"in {time.perf_counter() - planner_filter_start:.1f}s"
+    )
+
+    # 4. Load features only for planner-surviving symbols
+    ts = feature_snapshot_ts
+
+    tprint(
+        f"Loading features from {feature_path} for {len(kept_syms)} planner-surviving symbols..."
+    )
+    requested_feature_keys = (
+        list(CFG.get("FEATURE_SELECTION_KEYS", []))
+        + RIDGE_FEATURE_COLS
+        + list(LOCATION_FILTER_COLUMNS)
+        + list(INTRADAY_TRIGGER_COLUMNS)
+    )
+    feat_dict_raw = load_features_selected(
+        ts=ts,
+        root_dir=os.path.dirname(os.path.dirname(feature_path)),
+        feature_keys=requested_feature_keys,
+        symbols=list(map(str, kept_syms)),
+        start_ts=start_ts,
+    )
+    if feat_dict_raw is None:
+        feat_dict_raw = {}
+
+    missing_lib_cols = [
+        c for c in (LOCATION_FILTER_COLUMNS + INTRADAY_TRIGGER_COLUMNS) if c not in feat_dict_raw
+    ]
+    if missing_lib_cols:
+        tprint(f"WARNING: {len(missing_lib_cols)} library columns missing from disk. Recalculating library...")
+        try:
+            from extreme_price_movements.intraday_crypto_library import build_intraday_crypto_library
+
+            recomputed_wide = {col: [] for col in missing_lib_cols}
+            for sym in kept_syms:
+                sym_df = pd.DataFrame(
+                    {
+                        "open": panel["open"][sym],
+                        "high": panel["high"][sym],
+                        "low": panel["low"][sym],
+                        "close": panel["close"][sym],
+                        "volume": panel["volume"][sym],
+                    }
+                )
+                for extra in ["session_id", "session_id_5h"]:
+                    if extra in panel:
+                        sym_df[extra] = panel[extra][sym]
+
+                lib_sym = build_intraday_crypto_library(sym_df)
+                for col in missing_lib_cols:
+                    if col in lib_sym.columns:
+                        recomputed_wide[col].append(lib_sym[col])
+                    else:
+                        recomputed_wide[col].append(pd.Series(0, index=sym_df.index))
+
+            for col in missing_lib_cols:
+                feat_dict_raw[col] = pd.DataFrame(
+                    np.column_stack([s.values for s in recomputed_wide[col]]),
+                    index=common_idx,
+                    columns=kept_syms,
+                )
+            save_features(
+                {col: feat_dict_raw[col] for col in missing_lib_cols},
+                ts,
+                cfg["data_root"],
+            )
+            tprint(f"Recalculated {len(missing_lib_cols)} features.")
+        except Exception as e:
+            tprint(f"Failed to recalculate library: {e}")
+            import traceback
+            traceback.print_exc()
+
+    missing_requested_keys = sorted(set(requested_feature_keys) - set(feat_dict_raw))
+    if missing_requested_keys:
+        raise RuntimeError(
+            "Feature snapshot incomplete after load/recompute. Missing keys: "
+            + ", ".join(missing_requested_keys[:30])
+            + (" ..." if len(missing_requested_keys) > 30 else "")
+        )
+
+    stack_start = time.perf_counter()
+    ts_arr = common_idx.to_numpy()[time_idx]
+    ts_pd = pd.to_datetime(ts_arr, utc=True)
+    symbol_arr = common_syms.to_numpy(dtype=object)[sym_idx]
+    close_selected = _extract_selected_wide_values(panel["close"], common_idx, common_syms, time_idx, sym_idx)
+    high_selected = _extract_selected_wide_values(panel["high"], common_idx, common_syms, time_idx, sym_idx)
+    low_selected = _extract_selected_wide_values(panel["low"], common_idx, common_syms, time_idx, sym_idx)
+    if "open" in panel:
+        open_selected = _extract_selected_wide_values(panel["open"], common_idx, common_syms, time_idx, sym_idx)
+    else:
+        open_selected = close_selected
+    data_final = pd.DataFrame(
+        {
+            "event_id": np.arange(len(keep_idx), dtype=np.int64),
+            "timestamp": ts_arr,
+            "symbol": symbol_arr,
+            "close": close_selected,
+            "high": high_selected,
+            "low": low_selected,
+            "t0": ts_pd.to_numpy(),
+            "t1": (ts_pd + pd.Timedelta(seconds=1)).to_numpy(),
+            "open": open_selected,
+        }
+    )
+    tprint(
+        f"Filtered event frame built: rows={len(data_final)} cols={len(data_final.columns)} "
+        f"in {time.perf_counter() - stack_start:.1f}s"
+    )
+
+    atr_start = time.perf_counter()
+    high_wide = panel["high"].reindex(index=common_idx, columns=common_syms).to_numpy(dtype=np.float32)
+    low_wide = panel["low"].reindex(index=common_idx, columns=common_syms).to_numpy(dtype=np.float32)
+    close_wide = panel["close"].reindex(index=common_idx, columns=common_syms).to_numpy(dtype=np.float32)
+    atr_wide = compute_atr_wide(high_wide, low_wide, close_wide, atr_period=14)
+    data_final["atr"] = atr_wide[time_idx, sym_idx]
+    tprint(f"ATR computed in wide form and extracted in {time.perf_counter() - atr_start:.1f}s")
+
+    fwd_ret_start = time.perf_counter()
+    fwd_ret_matrix = fwd_ret_wide.reindex(index=common_idx, columns=common_syms).to_numpy(dtype=np.float32)
+    fwd_ret_final = fwd_ret_matrix[time_idx, sym_idx]
+    tprint(f"Forward returns extracted for kept rows in {time.perf_counter() - fwd_ret_start:.1f}s")
+
+    feature_align_start = time.perf_counter()
+    feat_final: Dict[str, np.ndarray] = {}
+    feature_items = list(feat_dict_raw.items())
+    feature_log_every = max(1, len(feature_items) // 10)
+    for feat_idx, (k, df_feat) in enumerate(feature_items, start=1):
+        if isinstance(df_feat, pd.DataFrame):
+            feat_df = df_feat
+            if isinstance(feat_df.index, pd.DatetimeIndex) and feat_df.index.tz is not None:
+                feat_df = feat_df.tz_localize(None)
+
+            if len(feat_final) == 0:
+                 overlap = common_idx_naive.intersection(feat_df.index)
+                 tprint(f"Alignment Check: overlap={len(overlap)}/{len(common_idx_naive)}")
+                 if len(overlap) == 0:
+                     tprint(f"Panel Index Sample: {common_idx_naive[:2].tolist()}")
+                     tprint(f"Feat Index Sample: {feat_df.index[:2].tolist()}")
+
+            feat_df_aligned = feat_df.reindex(index=common_idx_naive, columns=kept_syms)
+            feat_values = feat_df_aligned.to_numpy(dtype=np.float32)
+            feat_final[k] = feat_values[time_idx, compact_sym_idx]
+            if feat_idx % feature_log_every == 0 or feat_idx == len(feature_items):
+                tprint(
+                    f"Feature extraction progress: {feat_idx}/{len(feature_items)} "
+                    f"({100.0 * feat_idx / len(feature_items):.1f}%) in "
+                    f"{time.perf_counter() - feature_align_start:.1f}s"
+                )
+    tprint(
+        f"Feature extraction complete: {len(feat_final)} feature arrays "
+        f"in {time.perf_counter() - feature_align_start:.1f}s"
+    )
+
+    data_final, feat_final, fwd_ret_final, completeness_meta = filter_complete_feature_rows(
+        data_final,
+        feat_final,
+        fwd_ret_final,
+    )
+    tprint(
+        "Feature completeness row filter: "
+        f"rows_before={completeness_meta['rows_before']} "
+        f"rows_after={completeness_meta['rows_after']} "
+        f"dropped={completeness_meta['dropped_rows']} "
+        f"drop_fraction={completeness_meta['drop_fraction']:.3f}"
+    )
+    if completeness_meta["worst_features"]:
+        tprint(
+            "Top incomplete features: "
+            + ", ".join(
+                f"{name}={count}"
+                for name, count in completeness_meta["worst_features"][:5]
+            )
+        )
+
+    tprint(
+        "SlicePlanner label-step filter: "
+        f"rows {planner_filter_meta['rows_before']} -> {planner_filter_meta['rows_after']} | "
+        f"symbols {planner_filter_meta['symbols_before']} -> {planner_filter_meta['symbols_after']} | "
+        f"applied={planner_filter_meta['sliceplanner_applied']} | "
+        f"elapsed={time.perf_counter() - planner_filter_start:.1f}s"
+    )
+
+    # Check non-zero features
+    non_zero_feats = 0
+    for k, v in feat_final.items():
+        if np.nanmax(np.abs(v)) > 0: non_zero_feats += 1
+    tprint(f"Final Input: {len(data_final)} rows. {non_zero_feats}/{len(feat_final)} features have non-zero values.")
+
+    Path(cfg["output_dir"]).mkdir(parents=True, exist_ok=True)
+    with open(Path(cfg["output_dir"]) / "sliceplanner_filter_summary.json", "w") as f:
+        json.dump(planner_filter_meta, f, indent=2, default=str)
+    with open(Path(cfg["output_dir"]) / "run_config_snapshot.json", "w") as f:
+        json.dump(cfg, f, indent=2, default=str)
+    run_two_stage_lgbm_mask_generation(data_final, feat_final, fwd_ret_final, cfg)

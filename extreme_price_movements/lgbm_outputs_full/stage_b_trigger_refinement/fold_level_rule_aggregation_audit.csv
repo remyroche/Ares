@@ -1,0 +1,2 @@
+canonical_key,rule_type,composite_score,mean_net_ret,std_net_ret,mean_support_pct,std_support_pct,presence_freq,presence_freq_units,sign_consistency,n_folds,n_instances,min_support_actual,discovery_count,hurdle_excess,accepted,rejection_reason
+(*)|(ctx__95728724==1),1-way,8.821766857060018e-05,0.0006080738,0.0016982434,0.05866376346550538,0.014469851508995919,1.0,1.0,0.6,5,6519,600,6519,0.00040163796640782696,False,|low_sign

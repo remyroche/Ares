@@ -34,6 +34,13 @@ CONSUMER_ROLES: tuple[str, ...] = (
     "full_inference_fit",
 )
 
+DEDUP_QUOTES: tuple[str, ...] = ("USDT", "USDC", "BUSD")
+DEDUP_QUOTE_PRIORITY: dict[str, int] = {
+    "USDT": 0,
+    "USDC": 1,
+    "BUSD": 2,
+}
+
 
 @dataclass(frozen=True)
 class EventSchema:
@@ -334,6 +341,67 @@ def optimise_event_dtypes(
     return out
 
 
+def _split_symbol_base_quote(symbol: Any) -> tuple[str, Optional[str]]:
+    sym = str(symbol or "").upper().replace("_", "/").strip()
+    if "/" not in sym:
+        return sym, None
+    base, quote = sym.split("/", 1)
+    return base, quote
+
+
+def _deduplicate_alike_symbols(
+    events: pd.DataFrame,
+    schema: EventSchema,
+    log: Callable[[str], None],
+) -> pd.DataFrame:
+    symbol_col = schema.symbol_col
+    work = events.copy()
+    split = work[symbol_col].map(_split_symbol_base_quote)
+    work["_dedup_base"] = split.map(lambda x: x[0])
+    work["_dedup_quote"] = split.map(lambda x: x[1])
+
+    eligible = work["_dedup_quote"].isin(DEDUP_QUOTES)
+    if not eligible.any():
+        return work.drop(columns=["_dedup_base", "_dedup_quote"])
+
+    keep_symbols: set[str] = set()
+    removed_symbols: list[str] = []
+
+    eligible_view = work.loc[eligible, [symbol_col, "_dedup_base", "_dedup_quote"]].copy()
+    counts = eligible_view.groupby([symbol_col, "_dedup_base", "_dedup_quote"], observed=False).size().reset_index(name="n_rows")
+
+    for base, grp in counts.groupby("_dedup_base", sort=False):
+        if grp.shape[0] <= 1:
+            keep_symbols.add(str(grp.iloc[0][symbol_col]))
+            continue
+        ranked = grp.assign(
+            _quote_rank=grp["_dedup_quote"].map(lambda q: DEDUP_QUOTE_PRIORITY.get(str(q), 999))
+        ).sort_values(
+            ["n_rows", "_quote_rank", symbol_col],
+            ascending=[False, True, True],
+            kind="mergesort",
+        )
+        winner = str(ranked.iloc[0][symbol_col])
+        keep_symbols.add(winner)
+        removed_symbols.extend([str(sym) for sym in ranked.iloc[1:][symbol_col].tolist()])
+
+    drop_mask = eligible & ~work[symbol_col].astype(str).isin(keep_symbols)
+    if drop_mask.any():
+        before_rows = int(work.shape[0])
+        before_symbols = int(work[symbol_col].nunique())
+        work = work.loc[~drop_mask].copy()
+        after_rows = int(work.shape[0])
+        after_symbols = int(work[symbol_col].nunique())
+        sample_removed = sorted(set(removed_symbols))[:10]
+        log(
+            "[slice_planner] deduplicated alike symbols "
+            f"rows={before_rows}->{after_rows} symbols={before_symbols}->{after_symbols} "
+            f"removed={len(set(removed_symbols))} sample_removed={sample_removed}"
+        )
+
+    return work.drop(columns=["_dedup_base", "_dedup_quote"])
+
+
 def validate_events(
     events: pd.DataFrame,
     schema: EventSchema,
@@ -348,6 +416,7 @@ def validate_events(
         raise ValueError(f"Missing required columns: {missing}")
 
     out = events.copy()
+    out = _deduplicate_alike_symbols(out, schema, log)
     for col in required:
         if out[col].isna().any():
             raise ValueError(f"Null values detected in required column '{col}'")
@@ -674,10 +743,17 @@ def _resolve_outer_partition(
     elif policy.mode == "subset_symbols":
         frac = 1.0 if policy.subset_fraction is None else policy.subset_fraction
         n_pick = int(np.ceil(frac * universe_codes.size))
+        # Ensure we don't try to pick more than available (handles edge cases where min_symbols > total)
         n_pick = max(policy.min_symbols_per_split, min(n_pick, universe_codes.size))
-        subset = np.sort(rng.choice(universe_codes, size=n_pick, replace=False)).astype(
-            np.int32
-        )
+        n_pick = min(n_pick, universe_codes.size)
+        
+        if n_pick >= universe_codes.size:
+            subset = universe_codes
+        else:
+            subset = np.sort(rng.choice(universe_codes, size=n_pick, replace=False)).astype(
+                np.int32
+            )
+        
         train_codes = subset
         valid_codes = subset
         test_codes = subset

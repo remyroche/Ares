@@ -1,0 +1,12 @@
+{
+  "stage_num": 2,
+  "stage_label": "Phase 2 (Regime Filter)",
+  "mode": "short",
+  "bundle_path": "reports/mask_optimiser_stage_runs/20260313_000000/20260314_174032/mode=short/stage_2_bundle.pkl",
+  "tables": [
+    {
+      "name": "shortlist",
+      "path": "reports/mask_optimiser_stage_runs/20260313_000000/20260314_174032/mode=short/stage_2_shortlist.csv"
+    }
+  ]
+}

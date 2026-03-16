@@ -13,10 +13,39 @@ HARDCODED_EXCLUDED_SYMBOLS = frozenset({
     "DATA/USDT",
     "DF/USDT",
 })
+DEDUP_QUOTES = ("USDT", "USDC", "BUSD")
+DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}
 
 
 def _normalize_symbol(symbol: str) -> str:
     return str(symbol or "").upper().replace("_", "/").strip()
+
+
+def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
+    """Return at most one symbol per base asset for USDT/USDC/BUSD quote variants."""
+
+    best_by_base: dict[str, tuple[int, str]] = {}
+    passthrough: set[str] = set()
+
+    for raw_symbol in symbols:
+        symbol = _normalize_symbol(raw_symbol)
+        if not symbol:
+            continue
+        if "/" not in symbol:
+            passthrough.add(symbol)
+            continue
+        base, quote = symbol.rsplit("/", 1)
+        if not base or quote not in DEDUP_QUOTE_PRIORITY:
+            passthrough.add(symbol)
+            continue
+        rank = DEDUP_QUOTE_PRIORITY[quote]
+        current = best_by_base.get(base)
+        if current is None or rank < current[0] or (rank == current[0] and symbol < current[1]):
+            best_by_base[base] = (rank, symbol)
+
+    deduped = set(passthrough)
+    deduped.update(symbol for _, symbol in best_by_base.values())
+    return sorted(deduped)
 
 
 def apply_hardcoded_universe_exclusions(symbols: list[str]) -> list[str]:
@@ -129,13 +158,13 @@ def refresh_margin_universe_daily(cache: Optional[MarginUniverseCache], quotes=(
 
 def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M: int):
     """
-    Selects top M symbols by 24h volume from margin_symbols.
+    Selects all margin symbols except bottom 30 by 24h volume.
     Always includes market_basket.
     """
     tprint(f"Entering function: build_fetch_universe in universe.py")
     margin_symbols = apply_hardcoded_universe_exclusions(list(margin_symbols))
     market_basket = apply_hardcoded_universe_exclusions(list(market_basket))
-    tprint(f"Building universe from {len(margin_symbols)} margin symbols + {len(market_basket)} basket symbols (Top {M}).")
+    tprint(f"Building universe from {len(margin_symbols)} margin symbols + {len(market_basket)} basket symbols (Remove bottom 30 by volume).")
     try:
         tickers = fetch_24h_tickers()
         vol_map = {}
@@ -154,21 +183,26 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
 
         scored.sort(key=lambda x: x[0], reverse=True)
 
-        top_m = [x[1] for x in scored[:M]]
-        tprint(f"Selected top {len(top_m)} symbols by volume.")
+        # Remove bottom 30 by volume
+        bottom_n = 30
+        if len(scored) > bottom_n:
+            top_m = [x[1] for x in scored[:-bottom_n]]
+        else:
+            top_m = [x[1] for x in scored]
+        tprint(f"Selected {len(top_m)} symbols by volume (removed bottom {bottom_n}).")
 
         final = apply_hardcoded_universe_exclusions(list(set(top_m).union(set(market_basket))))
-        tprint(f"Universe selected: {len(final)} symbols (Top {M} by vol + basket)")
+        tprint(f"Universe selected: {len(final)} symbols (All except bottom {bottom_n} by vol + basket)")
         return final
 
     except Exception as e:
         tprint(f"Error fetching tickers for universe selection: {e}. Fallback to alphabet.")
-        return apply_hardcoded_universe_exclusions(list(set(margin_symbols[:M]).union(set(market_basket))))
+        return apply_hardcoded_universe_exclusions(list(set(margin_symbols).union(set(market_basket))))
 
 def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
     """
     Standardized training universe selection:
-    1. Fetch Universe (Top M by volume)
+    1. Fetch Universe (All except bottom 30 by volume)
     2. Variance Filter (Top N% by volatility)
     3. Union with Market Basket
     """
@@ -185,6 +219,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
             out.append(raw.replace("_", "/", 1))
         return apply_hardcoded_universe_exclusions(out)
 
+    variance_stride = int(cfg.get("variance_filter_stride", 1) or 1)
     offline_universe = bool(cfg.get("offline_backtest_skip_universe_refresh", False))
     if offline_universe:
         tprint("Training universe: offline mode enabled, skipping margin refresh and live ticker ranking.")
@@ -192,8 +227,16 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         base_syms = margin_symbols if margin_symbols is not None else local_syms
         if not base_syms:
             base_syms = list(cfg.get("market_basket", []))
-        syms_all = apply_hardcoded_universe_exclusions(list(set(base_syms).union(set(cfg["market_basket"]))))[: int(cfg.get("fetch_symbols_M", len(base_syms) or 0) or len(base_syms))]
-        train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=cfg["variance_filter_pct"], ts_sig=ts_sig)
+        # In offline mode, use all available symbols (no volume data to remove bottom 30)
+        syms_all = apply_hardcoded_universe_exclusions(list(set(base_syms).union(set(cfg["market_basket"]))))
+        train_syms = filter_low_variance_assets(
+            store,
+            syms_all,
+            lookback_days=30,
+            threshold_pct=cfg["variance_filter_pct"],
+            ts_sig=ts_sig,
+            sample_stride=variance_stride,
+        )
         train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms).union(set(cfg["market_basket"]))))
         return train_syms
 
@@ -211,7 +254,14 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
                 margin_symbols = list(cfg.get("market_basket", []))
 
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
-    train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=cfg["variance_filter_pct"], ts_sig=ts_sig)
+    train_syms = filter_low_variance_assets(
+        store,
+        syms_all,
+        lookback_days=30,
+        threshold_pct=cfg["variance_filter_pct"],
+        ts_sig=ts_sig,
+        sample_stride=variance_stride,
+    )
     train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms).union(set(cfg["market_basket"]))))
     return train_syms
 
@@ -264,3 +314,4 @@ def select_live_candidates(margin_symbols: list[str], market_basket: list[str], 
     except Exception as e:
         tprint(f"Error selecting live candidates: {e}. Fallback to basket.")
         return market_basket
+    variance_stride = int(cfg.get("variance_filter_stride", 1) or 1)

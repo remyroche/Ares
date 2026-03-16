@@ -3,91 +3,11 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import Dict, List, Any, Tuple, Optional
 
-from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
-from sklearn.linear_model import Ridge, RidgeCV
-from sklearn.metrics import r2_score
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import TimeSeriesSplit
+from lightgbm import LGBMRegressor
+from scipy.stats import spearmanr
 
-# =========================================================
-# FEATURE METADATA
-# =========================================================
-RIDGE_FEATURE_META = {
-    "ema20_gt_ema50": {"family": "trend", "type": "binary"},
-    "ema50_gt_ema200": {"family": "trend", "type": "binary"},
-    "price_gt_ema50": {"family": "trend", "type": "binary"},
-    "price_lt_ema200": {"family": "trend", "type": "binary"},
-    "ema20_slope": {"family": "trend", "type": "continuous"},
-    "ema50_slope": {"family": "trend", "type": "continuous"},
-    "ema200_slope": {"family": "trend", "type": "continuous"},
-    "trend_strength_percentile": {"family": "trend", "type": "continuous"},
-    "bars_since_trend_flip": {"family": "trend", "type": "continuous"},
-
-    "rolling_std_4h": {"family": "volatility", "type": "continuous"},
-    "realized_volatility_24h": {"family": "volatility", "type": "continuous"},
-    "atr_change_rate": {"family": "volatility", "type": "continuous"},
-    "true_range_percentile": {"family": "volatility", "type": "continuous"},
-
-    "dist_ema20_atr": {"family": "stretch", "type": "continuous"},
-    "dist_ema50_atr": {"family": "stretch", "type": "continuous"},
-    "dist_ema200_atr": {"family": "stretch", "type": "continuous"},
-    "zscore_price_50": {"family": "stretch", "type": "continuous"},
-    "zscore_price_200": {"family": "stretch", "type": "continuous"},
-    "dist_vwap_atr": {"family": "stretch", "type": "continuous"},
-    "dist_weekly_vwap": {"family": "stretch", "type": "continuous"},
-
-    "bollinger_band_width": {"family": "compression", "type": "continuous"},
-    "rolling_range_20": {"family": "compression", "type": "continuous"},
-    "atr_percentile": {"family": "compression", "type": "continuous"},
-
-    "dist_prior_day_high": {"family": "structure", "type": "continuous"},
-    "dist_prior_day_low": {"family": "structure", "type": "continuous"},
-    "dist_rolling_7d_high": {"family": "structure", "type": "continuous"},
-    "dist_local_swing": {"family": "structure", "type": "continuous"},
-
-    "wick_to_range": {"family": "liquidity", "type": "continuous"},
-    "volume_spike": {"family": "liquidity", "type": "continuous"},
-    "orderflow_imbalance": {"family": "liquidity", "type": "continuous"},
-
-    "RSI": {"family": "momentum", "type": "continuous"},
-    "MACD_histogram": {"family": "momentum", "type": "continuous"},
-    "rate_of_change": {"family": "momentum", "type": "continuous"},
-    "momentum_zscore": {"family": "momentum", "type": "continuous"},
-
-    "prior_return_1h": {"family": "context", "type": "continuous"},
-    "prior_return_4h": {"family": "context", "type": "continuous"},
-    "prior_return_12h": {"family": "context", "type": "continuous"},
-    "prior_range": {"family": "context", "type": "continuous"},
-    "prior_volatility": {"family": "context", "type": "continuous"},
-    "acceleration_of_move": {"family": "context", "type": "continuous"},
-
-    # Micro-regime updates
-    "efficiency_ratio_20": {"family": "path_structure", "type": "continuous"},
-    "choppiness_index_20": {"family": "path_structure", "type": "continuous"},
-    "direction_entropy_20": {"family": "path_structure", "type": "continuous"},
-
-    "compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-    "range_expansion_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-
-    "dist_range_mid_atr": {"family": "structure", "type": "continuous"},
-    "dist_ma100_atr": {"family": "stretch", "type": "continuous"},
-    "volatility_ratio_short_long": {"family": "volatility", "type": "continuous"},
-    "volume_percentile": {"family": "liquidity", "type": "continuous"},
-    
-    # User-requested technical regimes (v17)
-    "range_atr": {"family": "context", "type": "continuous"},
-    "body_ratio": {"family": "path_structure", "type": "continuous"},
-    "upper_wick_ratio": {"family": "liquidity", "type": "continuous"},
-    "lower_wick_ratio": {"family": "liquidity", "type": "continuous"},
-    "ema20_slope_5h": {"family": "trend", "type": "continuous"},
-    "pullback_depth": {"family": "trend", "type": "continuous"},
-    "atr_compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-    "acceleration_norm": {"family": "context", "type": "continuous"},
-}
-
-RIDGE_FEATURE_COLS = list(RIDGE_FEATURE_META.keys())
+from extreme_price_movements.config import RIDGE_FEATURE_META, RIDGE_FEATURE_COLS
 
 # =========================================================
 # DATACLASSES
@@ -181,10 +101,10 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # Volatility
     # -----------------------------
     df["rolling_std_4h"] = df["close"].rolling(32).std()
-    df["realized_volatility_24h"] = df["close"].pct_change().rolling(192).std()
+    df["realized_volatility_24h"] = df["close"].pct_change(fill_method=None).rolling(192).std()
 
     df["atr14"] = atr(df, 28)
-    df["atr_change_rate"] = df["atr14"].pct_change()
+    df["atr_change_rate"] = df["atr14"].pct_change(fill_method=None)
 
     df["true_range"] = true_range(df)
     # Fixed: rolling percentile
@@ -288,20 +208,20 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     signal = ema(macd, 18)
     df["MACD_histogram"] = macd - signal
 
-    df["rate_of_change"] = df["close"].pct_change(24)
+    df["rate_of_change"] = df["close"].pct_change(24, fill_method=None)
     df["momentum_zscore"] = rolling_zscore(df["rate_of_change"], 100)
 
     # -----------------------------
     # Prior move context
     # -----------------------------
-    df["prior_return_1h"] = df["close"].pct_change(8)
-    df["prior_return_4h"] = df["close"].pct_change(32)
-    df["prior_return_12h"] = df["close"].pct_change(96)
+    df["prior_return_1h"] = df["close"].pct_change(8, fill_method=None)
+    df["prior_return_4h"] = df["close"].pct_change(32, fill_method=None)
+    df["prior_return_12h"] = df["close"].pct_change(96, fill_method=None)
 
     df["prior_range"] = df["high"].rolling(32).max() - df["low"].rolling(32).min()
-    df["prior_volatility"] = df["close"].pct_change().rolling(32).std()
+    df["prior_volatility"] = df["close"].pct_change(fill_method=None).rolling(32).std()
 
-    df["acceleration_of_move"] = df["close"].pct_change().diff()
+    df["acceleration_of_move"] = df["close"].pct_change(fill_method=None).diff()
 
     # -----------------------------
     # Micro-regimes / Short Timeframe
@@ -332,8 +252,8 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df["direction_entropy_20"] = df["close"].diff().rolling(40).apply(_entropy, raw=True)
 
     # Volatility Term Structure
-    std_20 = df["close"].pct_change().rolling(40).std()
-    std_100 = df["close"].pct_change().rolling(200).std()
+    std_20 = df["close"].pct_change(fill_method=None).rolling(40).std()
+    std_100 = df["close"].pct_change(fill_method=None).rolling(200).std()
     df["compression_ratio"] = std_20 / std_100.replace(0, np.nan)
 
     df["range_expansion_ratio"] = df["true_range"] / df["atr14"].replace(0, np.nan)
@@ -445,8 +365,20 @@ def build_phase3_conditioner_seeds(
     Transforms selected Ridge features into robust seeds for Phase 3 conditioned events.
     Continuous features will carry quantiles evaluated strictly over the event_df rows.
     """
+    if selected_features.empty:
+        return []
+
+    ranked = selected_features.copy()
+    if "coef" in ranked.columns:
+        abs_strength = ranked["coef"].abs().astype(float)
+        if len(abs_strength) > 1 and np.isfinite(abs_strength).any():
+            strength_cutoff = float(np.nanpercentile(abs_strength.values, 50.0))
+            keep_mask = abs_strength >= strength_cutoff
+            if keep_mask.any():
+                ranked = ranked.loc[keep_mask].copy()
+
     seeds = []
-    for _, row in selected_features.iterrows():
+    for _, row in ranked.iterrows():
         fname = row["feature"]
         coef = row["coef"]
 
@@ -477,6 +409,319 @@ def build_phase3_conditioner_seeds(
 
     return seeds
 
+
+def _impute_and_scale_train_valid(
+    X_train: np.ndarray,
+    X_valid: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    X_tr = np.asarray(X_train, dtype=np.float32).copy()
+    X_va = np.asarray(X_valid, dtype=np.float32).copy()
+    X_tr[~np.isfinite(X_tr)] = np.nan
+    X_va[~np.isfinite(X_va)] = np.nan
+
+    n_features = X_tr.shape[1]
+    mean = np.zeros(n_features, dtype=np.float32)
+    std = np.ones(n_features, dtype=np.float32)
+
+    for j in range(n_features):
+        col = X_tr[:, j]
+        valid = ~np.isnan(col)
+        if np.any(valid):
+            med = np.median(col[valid]).astype(np.float32)
+            X_tr[~valid, j] = med
+            X_va[np.isnan(X_va[:, j]), j] = med
+        else:
+            X_tr[:, j] = 0.0
+            X_va[:, j] = 0.0
+        mean[j] = np.mean(X_tr[:, j]).astype(np.float32)
+        s = np.std(X_tr[:, j]).astype(np.float32)
+        std[j] = s if s > 1e-6 else 1.0
+
+    X_tr = ((X_tr - mean) / std).astype(np.float32, copy=False)
+    X_va = ((X_va - mean) / std).astype(np.float32, copy=False)
+    return X_tr, X_va
+
+
+def _ridge_fit_predict_closed_form(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_valid: np.ndarray,
+    alpha: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    X_tr = np.asarray(X_train, dtype=np.float32)
+    y_tr = np.asarray(y_train, dtype=np.float32)
+    X_va = np.asarray(X_valid, dtype=np.float32)
+    n_features = X_tr.shape[1]
+    if X_tr.shape[0] == 0 or n_features == 0:
+        return np.zeros(X_va.shape[0], dtype=np.float32), np.zeros(n_features, dtype=np.float32)
+
+    y_mean = float(np.mean(y_tr))
+    y_centered = (y_tr - y_mean).astype(np.float32, copy=False)
+    xtx = (X_tr.T @ X_tr).astype(np.float32, copy=False)
+    xty = (X_tr.T @ y_centered).astype(np.float32, copy=False)
+    reg = np.eye(n_features, dtype=np.float32) * np.float32(alpha)
+    coef = np.linalg.solve(xtx + reg, xty).astype(np.float32, copy=False)
+    preds = (X_va @ coef + np.float32(y_mean)).astype(np.float32, copy=False)
+    return preds, coef
+
+
+def _r2_score_np(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true_f = np.asarray(y_true, dtype=np.float32)
+    y_pred_f = np.asarray(y_pred, dtype=np.float32)
+    sst = float(np.sum((y_true_f - np.mean(y_true_f)) ** 2))
+    if sst < 1e-9:
+        return 0.0
+    ssr = float(np.sum((y_true_f - y_pred_f) ** 2))
+    return float(1.0 - ssr / sst)
+
+
+def fit_ridge_regime_scan_arrays(
+    feature_matrix: np.ndarray,
+    feature_cols: List[str],
+    event_mask: np.ndarray,
+    target_values: np.ndarray,
+    timestamps: Optional[np.ndarray] = None,
+    n_splits: int = 4,
+    alphas: tuple = (1.0, 3.0, 10.0, 30.0),
+    min_test_rows_per_fold: int = 10,
+) -> Optional[Dict[str, Any]]:
+    X_all = np.asarray(feature_matrix, dtype=np.float32)
+    y_all = np.asarray(target_values, dtype=np.float32)
+    event_mask_arr = np.asarray(event_mask, dtype=bool)
+    if X_all.ndim != 2 or X_all.shape[0] != y_all.shape[0] or y_all.shape[0] != event_mask_arr.shape[0]:
+        return None
+
+    event_idx = np.flatnonzero(event_mask_arr & np.isfinite(y_all)).astype(np.int32)
+    if event_idx.shape[0] == 0:
+        return None
+    X_event = X_all[event_idx]
+    y_event = y_all[event_idx]
+    ts_event = np.asarray(timestamps)[event_idx] if timestamps is not None else None
+
+    if event_idx.shape[0] < (n_splits + 1) * min_test_rows_per_fold:
+        return None
+
+    usable_positions = [
+        i for i, _ in enumerate(feature_cols)
+        if i < X_event.shape[1] and np.isfinite(X_event[:, i]).any()
+    ]
+    if not usable_positions:
+        return None
+
+    used_features = [feature_cols[i] for i in usable_positions]
+    X_event = X_event[:, usable_positions].astype(np.float32, copy=False)
+
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    fold_coefs: List[np.ndarray] = []
+    fold_scores: List[Dict[str, Any]] = []
+    cv_scores: List[float] = []
+    fold_diagnostics: List[Dict[str, Any]] = []
+
+    best_alpha = float(alphas[0])
+    best_alpha_score = -np.inf
+    for alpha in alphas:
+        alpha_scores: List[float] = []
+        valid_alpha = True
+        for train_idx, test_idx in tscv.split(X_event):
+            if len(test_idx) < min_test_rows_per_fold:
+                return None
+            X_tr, X_te = _impute_and_scale_train_valid(X_event[train_idx], X_event[test_idx])
+            preds, _ = _ridge_fit_predict_closed_form(X_tr, y_event[train_idx], X_te, float(alpha))
+            alpha_scores.append(_r2_score_np(y_event[test_idx], preds))
+        if not valid_alpha or not alpha_scores:
+            continue
+        mean_score = float(np.mean(alpha_scores))
+        if mean_score > best_alpha_score:
+            best_alpha_score = mean_score
+            best_alpha = float(alpha)
+
+    for fold_id, (train_idx, test_idx) in enumerate(tscv.split(X_event), start=1):
+        if len(test_idx) < min_test_rows_per_fold:
+            return None
+        X_tr, X_te = _impute_and_scale_train_valid(X_event[train_idx], X_event[test_idx])
+        preds, coef = _ridge_fit_predict_closed_form(X_tr, y_event[train_idx], X_te, best_alpha)
+        r2 = _r2_score_np(y_event[test_idx], preds)
+        cv_scores.append(r2)
+        fold_coefs.append(coef.astype(np.float32, copy=False))
+        fold_scores.append(
+            {
+                "fold": fold_id,
+                "test_r2": r2,
+                "n_train": int(len(train_idx)),
+                "n_test": int(len(test_idx)),
+            }
+        )
+        if ts_event is not None:
+            fold_diagnostics.append(
+                {
+                    "fold": fold_id,
+                    "train_start_ts": ts_event[train_idx[0]],
+                    "train_end_ts": ts_event[train_idx[-1]],
+                    "test_start_ts": ts_event[test_idx[0]],
+                    "test_end_ts": ts_event[test_idx[-1]],
+                }
+            )
+
+    X_full, _ = _impute_and_scale_train_valid(X_event, X_event[:1])
+    _, full_coef = _ridge_fit_predict_closed_form(X_full, y_event, X_full[:1], best_alpha)
+
+    event_feature_df = pd.DataFrame(X_event, columns=used_features)
+    fold_coef_arr = np.vstack(fold_coefs).astype(np.float32, copy=False)
+    coef_df = pd.DataFrame({"feature": used_features, "coef": full_coef.astype(np.float32, copy=False)})
+    fold_coef_df = pd.DataFrame(fold_coef_arr, columns=used_features)
+    signs = np.sign(fold_coef_df)
+    sign_cons = signs.sum(axis=0).abs() / max(n_splits, 1)
+    coef_stability = pd.DataFrame(
+        {
+            "feature": used_features,
+            "coef_mean": fold_coef_df.mean(axis=0).values,
+            "coef_std": fold_coef_df.std(axis=0).values,
+            "coef_abs_mean": fold_coef_df.abs().mean(axis=0).values,
+            "sign_consistency": sign_cons.values,
+        }
+    )
+    out = coef_df.merge(coef_stability, on="feature", how="left")
+    out["stability_ratio"] = out["coef_abs_mean"] / out["coef_std"].replace(0, np.nan)
+    out["signed_importance"] = out["coef"] * out["stability_ratio"].fillna(0.0)
+    out["abs_signed_importance"] = out["signed_importance"].abs()
+    out = out.sort_values("abs_signed_importance", ascending=False).reset_index(drop=True)
+
+    selected_features = select_promising_regime_variables(out, event_feature_df, max_total=8, max_per_family=2)
+    phase3_conditioner_seeds = build_phase3_conditioner_seeds(selected_features, event_feature_df)
+    summary = {
+        "n_event_rows": int(event_idx.shape[0]),
+        "best_alpha_full_fit": float(best_alpha),
+        "cv_r2_mean": float(np.mean(cv_scores)),
+        "cv_r2_std": float(np.std(cv_scores)),
+        "cv_r2_scores": list(map(float, cv_scores)),
+        "fold_scores": fold_scores,
+    }
+    return {
+        "summary": summary,
+        "ranked_features": out,
+        "selected_features": selected_features,
+        "phase3_conditioner_seeds": phase3_conditioner_seeds,
+        "fold_coefs": fold_coef_df,
+        "fold_diagnostics": fold_diagnostics,
+    }
+
+
+def fit_lgbm_regime_scan_arrays(
+    feature_matrix: np.ndarray,
+    feature_cols: List[str],
+    event_mask: np.ndarray,
+    target_values: np.ndarray,
+    timestamps: Optional[np.ndarray] = None,
+    n_splits: int = 4,
+    min_test_rows_per_fold: int = 10,
+) -> Optional[Dict[str, Any]]:
+    """
+    Economical but superior non-linear alternative to Ridge.
+    Uses LGBM with gain importance and Spearman correlation for directionality.
+    """
+    X_all = np.asarray(feature_matrix, dtype=np.float32)
+    y_all = np.asarray(target_values, dtype=np.float32)
+    event_mask_arr = np.asarray(event_mask, dtype=bool)
+    if X_all.ndim != 2 or X_all.shape[0] != y_all.shape[0] or y_all.shape[0] != event_mask_arr.shape[0]:
+        return None
+
+    event_idx = np.flatnonzero(event_mask_arr & np.isfinite(y_all)).astype(np.int32)
+    if event_idx.shape[0] < (n_splits + 1) * min_test_rows_per_fold:
+        return None
+
+    X_event = X_all[event_idx]
+    y_event = y_all[event_idx]
+    ts_event = np.asarray(timestamps)[event_idx] if timestamps is not None else None
+
+    usable_positions = [
+        i for i, _ in enumerate(feature_cols)
+        if i < X_event.shape[1] and np.isfinite(X_event[:, i]).any()
+    ]
+    if not usable_positions:
+        return None
+
+    used_features = [feature_cols[i] for i in usable_positions]
+    X_event = X_event[:, usable_positions].astype(np.float32, copy=False)
+
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    fold_importances: List[np.ndarray] = []
+    cv_scores: List[float] = []
+
+    for train_idx, test_idx in tscv.split(X_event):
+        X_tr, X_te = _impute_and_scale_train_valid(X_event[train_idx], X_event[test_idx])
+        y_tr, y_te = y_event[train_idx], y_event[test_idx]
+
+        # Cheap yet better config
+        model = LGBMRegressor(
+            n_estimators=50,
+            max_depth=3,
+            num_leaves=8,
+            learning_rate=0.07,
+            importance_type='gain',
+            min_child_samples=max(5, len(train_idx) // 20),
+            subsample=0.8,
+            colsample_bytree=0.8,
+            n_jobs=1,
+            verbosity=-1,
+            random_state=42
+        )
+        try:
+            model.fit(X_tr, y_tr)
+            preds = model.predict(X_te)
+            fold_importances.append(model.feature_importances_.astype(np.float32))
+            cv_scores.append(_r2_score_np(y_te, preds))
+        except:
+            continue
+
+    if not fold_importances:
+        return None
+
+    # Aggregate importance stability
+    imp_arr = np.vstack(fold_importances)
+    imp_mean = np.mean(imp_arr, axis=0)
+    imp_std = np.std(imp_arr, axis=0)
+    stability_ratio = imp_mean / (imp_std + 1e-9)
+
+    # Directionality via Spearman correlation on the whole event set
+    # (Since tree importance is unsigned)
+    directions = []
+    for j in range(X_event.shape[1]):
+        col = X_event[:, j]
+        mask = np.isfinite(col) & np.isfinite(y_event)
+        if np.sum(mask) > 10:
+            rho, _ = spearmanr(col[mask], y_event[mask])
+            directions.append(float(np.nan_to_num(rho)))
+        else:
+            directions.append(0.0)
+    
+    dir_arr = np.asarray(directions, dtype=np.float32)
+
+    out = pd.DataFrame({
+        "feature": used_features,
+        "coef": dir_arr * imp_mean, # "Synthetic" coefficient for compatibility
+        "gain_mean": imp_mean,
+        "stability_ratio": stability_ratio,
+        "spearman_rho": dir_arr
+    })
+    out["abs_signed_importance"] = out["gain_mean"] * stability_ratio
+    out = out.sort_values("abs_signed_importance", ascending=False).reset_index(drop=True)
+
+    summary = {
+        "n_event_rows": int(event_idx.shape[0]),
+        "cv_r2_mean": float(np.mean(cv_scores)) if cv_scores else 0.0,
+        "cv_r2_std": float(np.std(cv_scores)) if cv_scores else 0.0,
+    }
+
+    selected_features = select_promising_regime_variables(out, pd.DataFrame(X_event, columns=used_features), max_total=8, max_per_family=2)
+    phase3_conditioner_seeds = build_phase3_conditioner_seeds(selected_features, pd.DataFrame(X_event, columns=used_features))
+
+    return {
+        "summary": summary,
+        "ranked_features": out,
+        "selected_features": selected_features,
+        "phase3_conditioner_seeds": phase3_conditioner_seeds,
+    }
+
 # =========================================================
 # 3) RIDGE REGIME ATTRIBUTION
 # =========================================================
@@ -493,156 +738,26 @@ def fit_ridge_regime_scan(
     Phase 2.5 expects exact survivor event masks to already exist on the dataframe.
     This function fits Ridge purely on those rows.
     """
-    req_cols = feature_cols + [target_col]
-    if "timestamp" in df.columns:
-        req_cols.append("timestamp")
-
-    event_df = df.loc[df[event_col] == 1, req_cols].copy()
-    event_df = event_df.replace([np.inf, -np.inf], np.nan).dropna(subset=[target_col])
-
-    if "timestamp" in event_df.columns:
-        event_df = event_df.sort_values("timestamp").reset_index(drop=True)
-    else:
-        event_df = event_df.reset_index(drop=True)
-
-    if len(event_df) < (n_splits + 1) * min_test_rows_per_fold:
+    if df is None or df.empty:
         return None
-
-    X = event_df[feature_cols]
-    y = event_df[target_col]
-
-    preprocessor = ColumnTransformer(
-        transformers=[
-            (
-                "num",
-                Pipeline(
-                    steps=[
-                        ("imputer", SimpleImputer(strategy="median")),
-                        ("scaler", StandardScaler()),
-                    ]
-                ),
-                feature_cols,
-            )
-        ],
-        remainder="drop",
+    usable_feature_cols = [col for col in feature_cols if col in df.columns]
+    if not usable_feature_cols:
+        return None
+    feature_matrix = (
+        df[usable_feature_cols]
+        .replace([np.inf, -np.inf], np.nan)
+        .to_numpy(dtype=np.float32, copy=True)
     )
-
-    model = Pipeline(
-        steps=[
-            ("prep", preprocessor),
-            ("ridge", RidgeCV(alphas=alphas)),
-        ]
+    event_mask = df[event_col].to_numpy(dtype=np.int8, copy=False).astype(bool, copy=False)
+    target_values = pd.to_numeric(df[target_col], errors="coerce").to_numpy(dtype=np.float32, copy=False)
+    timestamps = df["timestamp"].to_numpy() if "timestamp" in df.columns else None
+    return fit_ridge_regime_scan_arrays(
+        feature_matrix=feature_matrix,
+        feature_cols=usable_feature_cols,
+        event_mask=event_mask,
+        target_values=target_values,
+        timestamps=timestamps,
+        n_splits=n_splits,
+        alphas=alphas,
+        min_test_rows_per_fold=min_test_rows_per_fold,
     )
-
-    tscv = TimeSeriesSplit(n_splits=n_splits)
-
-    fold_coefs = []
-    fold_scores = []
-    cv_scores = []
-    fold_diagnostics = []
-
-    for fold_id, (train_idx, test_idx) in enumerate(tscv.split(X), start=1):
-        if len(test_idx) < min_test_rows_per_fold:
-            return None # Reject if any fold is too small
-
-        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-
-        fold_model = Pipeline(
-            steps=[
-                ("prep", preprocessor),
-                ("ridge", Ridge(alpha=1.0)),
-            ]
-        )
-
-        fold_model.fit(X_train, y_train)
-        y_pred = fold_model.predict(X_test)
-
-        r2 = r2_score(y_test, y_pred)
-        cv_scores.append(r2)
-
-        ridge = fold_model.named_steps["ridge"]
-        coefs = ridge.coef_
-
-        fold_coefs.append(coefs)
-        fold_scores.append(
-            {
-                "fold": fold_id,
-                "test_r2": r2,
-                "n_train": len(train_idx),
-                "n_test": len(test_idx),
-            }
-        )
-
-        if "timestamp" in event_df.columns:
-            fold_diagnostics.append({
-                "fold": fold_id,
-                "train_start_ts": event_df["timestamp"].iloc[train_idx[0]],
-                "train_end_ts": event_df["timestamp"].iloc[train_idx[-1]],
-                "test_start_ts": event_df["timestamp"].iloc[test_idx[0]],
-                "test_end_ts": event_df["timestamp"].iloc[test_idx[-1]],
-            })
-
-    model.fit(X, y)
-    full_ridge = model.named_steps["ridge"]
-    best_alpha = full_ridge.alpha_
-    
-    # Preprocessor might drop columns if they are all NaN
-    # We need to get the actual feature names passed to the ridge model
-    try:
-        # scikit-learn >= 1.2
-        used_features = model.named_steps["prep"].get_feature_names_out()
-        # strip the prefix 'num__'
-        used_features = [f.replace("num__", "") for f in used_features]
-    except:
-        used_features = feature_cols
-
-    coef_df = pd.DataFrame(
-        {
-            "feature": used_features,
-            "coef": full_ridge.coef_,
-        }
-    )
-
-    fold_coef_df = pd.DataFrame(fold_coefs, columns=used_features)
-
-    signs = np.sign(fold_coef_df)
-    sign_cons = signs.sum(axis=0).abs() / n_splits
-
-    coef_stability = pd.DataFrame(
-        {
-            "feature": used_features,
-            "coef_mean": fold_coef_df.mean(axis=0).values,
-            "coef_std": fold_coef_df.std(axis=0).values,
-            "coef_abs_mean": fold_coef_df.abs().mean(axis=0).values,
-            "sign_consistency": sign_cons.values
-        }
-    )
-
-    out = coef_df.merge(coef_stability, on="feature", how="left")
-    out["stability_ratio"] = out["coef_abs_mean"] / out["coef_std"].replace(0, np.nan)
-    out["signed_importance"] = out["coef"] * out["stability_ratio"].fillna(0.0)
-    out["abs_signed_importance"] = out["signed_importance"].abs()
-
-    out = out.sort_values("abs_signed_importance", ascending=False).reset_index(drop=True)
-
-    selected_features = select_promising_regime_variables(out, event_df, max_total=8, max_per_family=2)
-    phase3_conditioner_seeds = build_phase3_conditioner_seeds(selected_features, event_df)
-
-    summary = {
-        "n_event_rows": int(len(event_df)),
-        "best_alpha_full_fit": float(best_alpha),
-        "cv_r2_mean": float(np.mean(cv_scores)),
-        "cv_r2_std": float(np.std(cv_scores)),
-        "cv_r2_scores": list(map(float, cv_scores)),
-        "fold_scores": fold_scores,
-    }
-
-    return {
-        "summary": summary,
-        "ranked_features": out,
-        "selected_features": selected_features,
-        "phase3_conditioner_seeds": phase3_conditioner_seeds,
-        "fold_coefs": fold_coef_df,
-        "fold_diagnostics": fold_diagnostics
-    }

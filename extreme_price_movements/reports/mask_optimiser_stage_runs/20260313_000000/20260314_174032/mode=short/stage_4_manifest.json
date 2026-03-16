@@ -1,0 +1,16 @@
+{
+  "stage_num": 4,
+  "stage_label": "Phase 4 (Trigger Discovery)",
+  "mode": "short",
+  "bundle_path": "reports/mask_optimiser_stage_runs/20260313_000000/20260314_174032/mode=short/stage_4_bundle.pkl",
+  "tables": [
+    {
+      "name": "trigger_candidates",
+      "path": "reports/mask_optimiser_stage_runs/20260313_000000/20260314_174032/mode=short/stage_4_trigger_candidates.csv"
+    },
+    {
+      "name": "trigger_survivors",
+      "path": "reports/mask_optimiser_stage_runs/20260313_000000/20260314_174032/mode=short/stage_4_trigger_survivors.csv"
+    }
+  ]
+}

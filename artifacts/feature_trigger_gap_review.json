@@ -1,0 +1,2412 @@
+{
+  "added": {
+    "features": [
+      "range",
+      "atr_14",
+      "atr_100",
+      "rolling_range_5",
+      "rolling_range_10",
+      "rolling_range_20",
+      "body",
+      "open_location_in_bar",
+      "signed_body_ratio",
+      "ema_50",
+      "ema_slope_ema20_3",
+      "ema_slope_ema20_5",
+      "distance_to_ema10",
+      "distance_to_ema20",
+      "distance_to_ema30",
+      "distance_to_ema20_atr",
+      "distance_to_ema50_atr",
+      "trend_alignment_ema20_gt_ema50",
+      "returns_1",
+      "returns_3",
+      "returns_5",
+      "returns_10",
+      "acceleration_close",
+      "acceleration_close_atr",
+      "volume_ma_20",
+      "bullish_bar",
+      "bearish_bar",
+      "prior_bullish_bar",
+      "prior_bearish_bar",
+      "inside_bar",
+      "outside_bar"
+    ],
+    "triggers": [
+      "ema_reclaim_touch",
+      "simple_close_breakout",
+      "expansion_bar",
+      "impulse_bar",
+      "relaxed_sweep",
+      "compression_release",
+      "compressed_breakout_up_down"
+    ]
+  },
+  "features": {
+    "comparison": [
+      {
+        "matched_current_name": "range",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "range"
+      },
+      {
+        "matched_current_name": "true_range",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "true_range"
+      },
+      {
+        "matched_current_name": "atr_14",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "atr_14"
+      },
+      {
+        "matched_current_name": "atr_100",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "atr_100"
+      },
+      {
+        "matched_current_name": "range_atr",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "range_atr"
+      },
+      {
+        "matched_current_name": "compression_ratio",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "compression_ratio"
+      },
+      {
+        "matched_current_name": "rolling_range_5",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "rolling_range_5"
+      },
+      {
+        "matched_current_name": "rolling_range_10",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "rolling_range_10"
+      },
+      {
+        "matched_current_name": "rolling_range_20",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "rolling_range_20"
+      },
+      {
+        "matched_current_name": "body",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "body"
+      },
+      {
+        "matched_current_name": "body_ratio",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "body_ratio"
+      },
+      {
+        "matched_current_name": "upper_wick",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "upper_wick"
+      },
+      {
+        "matched_current_name": "lower_wick",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "lower_wick"
+      },
+      {
+        "matched_current_name": "upper_wick_ratio",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "upper_wick_ratio"
+      },
+      {
+        "matched_current_name": "lower_wick_ratio",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "lower_wick_ratio"
+      },
+      {
+        "matched_current_name": "close_location_in_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "close_location_in_bar"
+      },
+      {
+        "matched_current_name": "open_location_in_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "open_location_in_bar"
+      },
+      {
+        "matched_current_name": "signed_body_ratio",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "signed_body_ratio"
+      },
+      {
+        "matched_current_name": "ema_10",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "ema_10"
+      },
+      {
+        "matched_current_name": "ema_20",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "ema_20"
+      },
+      {
+        "matched_current_name": "ema_30",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "ema_30"
+      },
+      {
+        "matched_current_name": "ema_50",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "ema_50"
+      },
+      {
+        "matched_current_name": "ema_slope_ema20_3",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "ema_slope_ema20_3"
+      },
+      {
+        "matched_current_name": "ema_slope_ema20_5",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "ema_slope_ema20_5"
+      },
+      {
+        "matched_current_name": null,
+        "notes": "Optional target not implemented.",
+        "status": "missing",
+        "target_name": "ema_slope_ema50_3"
+      },
+      {
+        "matched_current_name": "distance_to_ema10",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "distance_to_ema10"
+      },
+      {
+        "matched_current_name": "distance_to_ema20",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "distance_to_ema20"
+      },
+      {
+        "matched_current_name": "distance_to_ema30",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "distance_to_ema30"
+      },
+      {
+        "matched_current_name": "distance_to_ema20_atr",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "distance_to_ema20_atr"
+      },
+      {
+        "matched_current_name": "distance_to_ema50_atr",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "distance_to_ema50_atr"
+      },
+      {
+        "matched_current_name": "trend_alignment_ema20_gt_ema50",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "trend_alignment_ema20_gt_ema50"
+      },
+      {
+        "matched_current_name": "returns_1",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "returns_1"
+      },
+      {
+        "matched_current_name": "returns_3",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "returns_3"
+      },
+      {
+        "matched_current_name": "returns_5",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "returns_5"
+      },
+      {
+        "matched_current_name": "returns_10",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "returns_10"
+      },
+      {
+        "matched_current_name": "acceleration_close",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "acceleration_close"
+      },
+      {
+        "matched_current_name": "acceleration_close_atr",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "acceleration_close_atr"
+      },
+      {
+        "matched_current_name": null,
+        "notes": "Optional target not implemented.",
+        "status": "missing",
+        "target_name": "momentum_sign_N"
+      },
+      {
+        "matched_current_name": null,
+        "notes": "Optional target not implemented.",
+        "status": "missing",
+        "target_name": "macd_histogram"
+      },
+      {
+        "matched_current_name": null,
+        "notes": "Optional target not implemented.",
+        "status": "missing",
+        "target_name": "rsi_14"
+      },
+      {
+        "matched_current_name": "volume_ma_20",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "volume_ma_20"
+      },
+      {
+        "matched_current_name": "volume_spike",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "volume_spike"
+      },
+      {
+        "matched_current_name": null,
+        "notes": "Optional target not implemented.",
+        "status": "missing",
+        "target_name": "volume_zscore_rolling"
+      },
+      {
+        "matched_current_name": "rolling_high_5",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "rolling_high_5"
+      },
+      {
+        "matched_current_name": "rolling_high_10",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "rolling_high_10"
+      },
+      {
+        "matched_current_name": "rolling_high_20",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "rolling_high_20"
+      },
+      {
+        "matched_current_name": "rolling_low_5",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "rolling_low_5"
+      },
+      {
+        "matched_current_name": "rolling_low_10",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "rolling_low_10"
+      },
+      {
+        "matched_current_name": "rolling_low_20",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "rolling_low_20"
+      },
+      {
+        "matched_current_name": "close_gt_rolling_high_5",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "close_gt_rolling_high_5"
+      },
+      {
+        "matched_current_name": "close_lt_rolling_low_5",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "close_lt_rolling_low_5"
+      },
+      {
+        "matched_current_name": "high_gt_rolling_high_5",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "high_gt_rolling_high_5"
+      },
+      {
+        "matched_current_name": "low_lt_rolling_low_5",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "low_lt_rolling_low_5"
+      },
+      {
+        "matched_current_name": "bullish_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "bullish_bar"
+      },
+      {
+        "matched_current_name": "bearish_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "bearish_bar"
+      },
+      {
+        "matched_current_name": "prior_bullish_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "prior_bullish_bar"
+      },
+      {
+        "matched_current_name": "prior_bearish_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "prior_bearish_bar"
+      },
+      {
+        "matched_current_name": "inside_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "inside_bar"
+      },
+      {
+        "matched_current_name": "outside_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "outside_bar"
+      }
+    ],
+    "current": [
+      {
+        "dimensionless": false,
+        "feature_name": "open",
+        "formula_or_description": "raw open",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "high",
+        "formula_or_description": "raw high",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "low",
+        "formula_or_description": "raw low",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "close",
+        "formula_or_description": "raw close",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "volume",
+        "formula_or_description": "raw volume",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "range",
+        "formula_or_description": "high - low",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "true_range",
+        "formula_or_description": "max(high-low, |high-prev_close|, |low-prev_close|)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "atr_14",
+        "formula_or_description": "EWMA true range alpha=1/14",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 14,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "atr_100",
+        "formula_or_description": "EWMA true range alpha=1/100",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 100,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "range_atr",
+        "formula_or_description": "range / atr_14",
+        "normalized": true,
+        "notes": "",
+        "parameterization": 14,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "compression_ratio",
+        "formula_or_description": "atr_14 / atr_100",
+        "normalized": true,
+        "notes": "",
+        "parameterization": "14/100",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "rolling_range_5",
+        "formula_or_description": "shifted rolling max(high,5) - shifted rolling min(low,5)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 5,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "rolling_range_10",
+        "formula_or_description": "shifted rolling max(high,10) - shifted rolling min(low,10)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 10,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "rolling_range_20",
+        "formula_or_description": "shifted rolling max(high,20) - shifted rolling min(low,20)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 20,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "body",
+        "formula_or_description": "abs(close-open)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "body_ratio",
+        "formula_or_description": "abs(close-open)/range",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "upper_wick",
+        "formula_or_description": "high - max(open, close)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "lower_wick",
+        "formula_or_description": "min(open, close) - low",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "upper_wick_ratio",
+        "formula_or_description": "upper_wick / range",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "lower_wick_ratio",
+        "formula_or_description": "lower_wick / range",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "close_location_in_bar",
+        "formula_or_description": "(close - low) / range",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "open_location_in_bar",
+        "formula_or_description": "(open - low) / range",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "signed_body_ratio",
+        "formula_or_description": "(close-open) / range",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "ema_10",
+        "formula_or_description": "EMA(close,10)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 10,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "ema_20",
+        "formula_or_description": "EMA(close,20)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 20,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "ema_30",
+        "formula_or_description": "EMA(close,30)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 30,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "ema_50",
+        "formula_or_description": "EMA(close,50)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 50,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "ema_slope_ema20_3",
+        "formula_or_description": "ema_20 - ema_20.shift(3)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 3,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "ema_slope_ema20_5",
+        "formula_or_description": "ema_20 - ema_20.shift(5)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 5,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "distance_to_ema10",
+        "formula_or_description": "close - ema_10",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 10,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "distance_to_ema20",
+        "formula_or_description": "close - ema_20",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 20,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "distance_to_ema30",
+        "formula_or_description": "close - ema_30",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 30,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "distance_to_ema20_atr",
+        "formula_or_description": "(close - ema_20) / atr_14",
+        "normalized": true,
+        "notes": "",
+        "parameterization": 20,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "distance_to_ema50_atr",
+        "formula_or_description": "(close - ema_50) / atr_14",
+        "normalized": true,
+        "notes": "",
+        "parameterization": 50,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "trend_alignment_ema20_gt_ema50",
+        "formula_or_description": "ema_20 > ema_50",
+        "normalized": false,
+        "notes": "",
+        "parameterization": "20/50",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "returns_1",
+        "formula_or_description": "close.pct_change(1)",
+        "normalized": true,
+        "notes": "",
+        "parameterization": 1,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "returns_3",
+        "formula_or_description": "close.pct_change(3)",
+        "normalized": true,
+        "notes": "",
+        "parameterization": 3,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "returns_5",
+        "formula_or_description": "close.pct_change(5)",
+        "normalized": true,
+        "notes": "",
+        "parameterization": 5,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "returns_10",
+        "formula_or_description": "close.pct_change(10)",
+        "normalized": true,
+        "notes": "",
+        "parameterization": 10,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "acceleration_close",
+        "formula_or_description": "close - 2*close.shift(1) + close.shift(2)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "acceleration_close_atr",
+        "formula_or_description": "acceleration_close / atr_14",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "volume_ma_20",
+        "formula_or_description": "rolling mean(volume,20)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 20,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "volume_spike",
+        "formula_or_description": "volume / volume_ma_20",
+        "normalized": true,
+        "notes": "",
+        "parameterization": 20,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "rolling_high_5",
+        "formula_or_description": "shifted rolling max(high,5)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 5,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "rolling_high_10",
+        "formula_or_description": "shifted rolling max(high,10)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 10,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "rolling_high_20",
+        "formula_or_description": "shifted rolling max(high,20)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 20,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "rolling_low_5",
+        "formula_or_description": "shifted rolling min(low,5)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 5,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "rolling_low_10",
+        "formula_or_description": "shifted rolling min(low,10)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 10,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "rolling_low_20",
+        "formula_or_description": "shifted rolling min(low,20)",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 20,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "close_gt_rolling_high_5",
+        "formula_or_description": "close > shifted rolling high 5",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 5,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "close_lt_rolling_low_5",
+        "formula_or_description": "close < shifted rolling low 5",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 5,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "high_gt_rolling_high_5",
+        "formula_or_description": "high > shifted rolling high 5",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 5,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "low_lt_rolling_low_5",
+        "formula_or_description": "low < shifted rolling low 5",
+        "normalized": false,
+        "notes": "",
+        "parameterization": 5,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "bullish_bar",
+        "formula_or_description": "close > open",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "bearish_bar",
+        "formula_or_description": "close < open",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "prior_bullish_bar",
+        "formula_or_description": "bullish_bar shifted by 1",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "prior_bearish_bar",
+        "formula_or_description": "bearish_bar shifted by 1",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "inside_bar",
+        "formula_or_description": "high <= prev_high and low >= prev_low",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "outside_bar",
+        "formula_or_description": "high >= prev_high and low <= prev_low",
+        "normalized": false,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "build_trigger_feature_frame"
+      },
+      {
+        "dimensionless": false,
+        "feature_name": "hl_range",
+        "formula_or_description": "rolling robust z-score of high-low range",
+        "normalized": true,
+        "notes": "approximate range proxy for regime search",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/mask_optimiser.py",
+        "source_function": "_compute_z_cache"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "intrabar_range_atr",
+        "formula_or_description": "intrabar range normalized by approximate ATR",
+        "normalized": true,
+        "notes": "approximate range_atr proxy",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/mask_optimiser.py",
+        "source_function": "_compute_z_cache"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "compression_expansion_transition",
+        "formula_or_description": "range spike divided by rolling bollinger width proxy",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/mask_optimiser.py",
+        "source_function": "_compute_z_cache"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "distance_from_ema_atr",
+        "formula_or_description": "distance from SMA/EMA proxy normalized by ATR proxy",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/mask_optimiser.py",
+        "source_function": "_compute_z_cache"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "volume_robust_z",
+        "formula_or_description": "rolling robust z-score of volume",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/mask_optimiser.py",
+        "source_function": "_compute_z_cache"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "breakout_distance_up_atr",
+        "formula_or_description": "distance from shifted trailing high normalized by ATR proxy",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/mask_optimiser.py",
+        "source_function": "_compute_z_cache"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "breakout_distance_down_atr",
+        "formula_or_description": "distance from shifted trailing low normalized by ATR proxy",
+        "normalized": true,
+        "notes": "",
+        "parameterization": null,
+        "source_file": "extreme_price_movements/mask_optimiser.py",
+        "source_function": "_compute_z_cache"
+      },
+      {
+        "dimensionless": true,
+        "feature_name": "true_range_percentile",
+        "formula_or_description": "rolling percentile rank of true range",
+        "normalized": true,
+        "notes": "",
+        "parameterization": 168,
+        "source_file": "extreme_price_movements/ridge_regime_event_assessment.py",
+        "source_function": "build_regime_features"
+      }
+    ],
+    "target": [
+      {
+        "family": "volatility_range",
+        "target_name": "range"
+      },
+      {
+        "family": "volatility_range",
+        "target_name": "true_range"
+      },
+      {
+        "family": "volatility_range",
+        "target_name": "atr_14"
+      },
+      {
+        "family": "volatility_range",
+        "target_name": "atr_100"
+      },
+      {
+        "family": "volatility_range",
+        "target_name": "range_atr"
+      },
+      {
+        "family": "volatility_range",
+        "target_name": "compression_ratio"
+      },
+      {
+        "family": "volatility_range",
+        "target_name": "rolling_range_5"
+      },
+      {
+        "family": "volatility_range",
+        "target_name": "rolling_range_10"
+      },
+      {
+        "family": "volatility_range",
+        "target_name": "rolling_range_20"
+      },
+      {
+        "family": "candle_geometry",
+        "target_name": "body"
+      },
+      {
+        "family": "candle_geometry",
+        "target_name": "body_ratio"
+      },
+      {
+        "family": "candle_geometry",
+        "target_name": "upper_wick"
+      },
+      {
+        "family": "candle_geometry",
+        "target_name": "lower_wick"
+      },
+      {
+        "family": "candle_geometry",
+        "target_name": "upper_wick_ratio"
+      },
+      {
+        "family": "candle_geometry",
+        "target_name": "lower_wick_ratio"
+      },
+      {
+        "family": "candle_geometry",
+        "target_name": "close_location_in_bar"
+      },
+      {
+        "family": "candle_geometry",
+        "optional": true,
+        "target_name": "open_location_in_bar"
+      },
+      {
+        "family": "candle_geometry",
+        "optional": true,
+        "target_name": "signed_body_ratio"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "ema_10"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "ema_20"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "ema_30"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "ema_50"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "ema_slope_ema20_3"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "ema_slope_ema20_5"
+      },
+      {
+        "family": "trend_distance",
+        "optional": true,
+        "target_name": "ema_slope_ema50_3"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "distance_to_ema10"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "distance_to_ema20"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "distance_to_ema30"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "distance_to_ema20_atr"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "distance_to_ema50_atr"
+      },
+      {
+        "family": "trend_distance",
+        "target_name": "trend_alignment_ema20_gt_ema50"
+      },
+      {
+        "family": "momentum",
+        "target_name": "returns_1"
+      },
+      {
+        "family": "momentum",
+        "target_name": "returns_3"
+      },
+      {
+        "family": "momentum",
+        "target_name": "returns_5"
+      },
+      {
+        "family": "momentum",
+        "target_name": "returns_10"
+      },
+      {
+        "family": "momentum",
+        "target_name": "acceleration_close"
+      },
+      {
+        "family": "momentum",
+        "target_name": "acceleration_close_atr"
+      },
+      {
+        "family": "momentum",
+        "optional": true,
+        "target_name": "momentum_sign_N"
+      },
+      {
+        "family": "momentum",
+        "optional": true,
+        "target_name": "macd_histogram"
+      },
+      {
+        "family": "momentum",
+        "optional": true,
+        "target_name": "rsi_14"
+      },
+      {
+        "family": "volume",
+        "target_name": "volume_ma_20"
+      },
+      {
+        "family": "volume",
+        "target_name": "volume_spike"
+      },
+      {
+        "family": "volume",
+        "optional": true,
+        "target_name": "volume_zscore_rolling"
+      },
+      {
+        "family": "structure",
+        "target_name": "rolling_high_5"
+      },
+      {
+        "family": "structure",
+        "target_name": "rolling_high_10"
+      },
+      {
+        "family": "structure",
+        "target_name": "rolling_high_20"
+      },
+      {
+        "family": "structure",
+        "target_name": "rolling_low_5"
+      },
+      {
+        "family": "structure",
+        "target_name": "rolling_low_10"
+      },
+      {
+        "family": "structure",
+        "target_name": "rolling_low_20"
+      },
+      {
+        "family": "structure",
+        "optional": true,
+        "target_name": "close_gt_rolling_high_5"
+      },
+      {
+        "family": "structure",
+        "optional": true,
+        "target_name": "close_lt_rolling_low_5"
+      },
+      {
+        "family": "structure",
+        "target_name": "high_gt_rolling_high_5"
+      },
+      {
+        "family": "structure",
+        "target_name": "low_lt_rolling_low_5"
+      },
+      {
+        "family": "bar_state",
+        "target_name": "bullish_bar"
+      },
+      {
+        "family": "bar_state",
+        "target_name": "bearish_bar"
+      },
+      {
+        "family": "bar_state",
+        "target_name": "prior_bullish_bar"
+      },
+      {
+        "family": "bar_state",
+        "target_name": "prior_bearish_bar"
+      },
+      {
+        "family": "bar_state",
+        "optional": true,
+        "target_name": "inside_bar"
+      },
+      {
+        "family": "bar_state",
+        "optional": true,
+        "target_name": "outside_bar"
+      }
+    ]
+  },
+  "triggers": {
+    "comparison": [
+      {
+        "matched_current_name": "close_crosses_above_ema",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "close_crosses_above_ema"
+      },
+      {
+        "matched_current_name": "ema_reclaim_touch",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "ema_reclaim_touch"
+      },
+      {
+        "matched_current_name": "reclaim_after_opposite_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "reclaim_after_opposite_bar"
+      },
+      {
+        "matched_current_name": "close_in_extreme_of_range",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "close_in_extreme_of_range"
+      },
+      {
+        "matched_current_name": "simple_close_breakout",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "simple_close_breakout"
+      },
+      {
+        "matched_current_name": "close_gt_rolling_extreme",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "close_gt_rolling_extreme"
+      },
+      {
+        "matched_current_name": "high_break_close_near_extreme",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "high_break_close_near_extreme"
+      },
+      {
+        "matched_current_name": "expansion_body_breakout",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "expansion_body_breakout"
+      },
+      {
+        "matched_current_name": "expansion_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "expansion_bar"
+      },
+      {
+        "matched_current_name": "impulse_bar",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "impulse_bar"
+      },
+      {
+        "matched_current_name": "sweep_reversal",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "sweep_reversal"
+      },
+      {
+        "matched_current_name": "relaxed_sweep",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "relaxed_sweep"
+      },
+      {
+        "matched_current_name": "compression_release",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "compression_release"
+      },
+      {
+        "matched_current_name": "compressed_breakout_up_down",
+        "notes": "",
+        "status": "exact_match",
+        "target_name": "compressed_breakout_up_down"
+      }
+    ],
+    "current": [
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "ema_len": 10
+        },
+        "semantic_description": "close[t-1] <= ema_10[t-1] and close[t] > ema_10[t]",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "close_crosses_above_ema"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "ema_len": 10
+        },
+        "semantic_description": "bar touches ema_10 intrabar and closes back through it",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "ema_reclaim_touch"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "ema_len": 20
+        },
+        "semantic_description": "close[t-1] <= ema_20[t-1] and close[t] > ema_20[t]",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "close_crosses_above_ema"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "ema_len": 20
+        },
+        "semantic_description": "bar touches ema_20 intrabar and closes back through it",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "ema_reclaim_touch"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "ema_len": 30
+        },
+        "semantic_description": "close[t-1] <= ema_30[t-1] and close[t] > ema_30[t]",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "close_crosses_above_ema"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "ema_len": 30
+        },
+        "semantic_description": "bar touches ema_30 intrabar and closes back through it",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "ema_reclaim_touch"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.4
+        },
+        "semantic_description": "close reclaims prior bar extreme after opposite candle",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "reclaim_after_opposite_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.6
+        },
+        "semantic_description": "close reclaims prior bar extreme after opposite candle",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "reclaim_after_opposite_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "close_location_min": 0.7
+        },
+        "semantic_description": "close finishes in the directional extreme of the bar",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "close_in_extreme_of_range"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "close_location_min": 0.8
+        },
+        "semantic_description": "close finishes in the directional extreme of the bar",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "close_in_extreme_of_range"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "close_location_min": 0.9
+        },
+        "semantic_description": "close finishes in the directional extreme of the bar",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "pullback_recovery",
+        "trigger_name": "close_in_extreme_of_range"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 5
+        },
+        "semantic_description": "close breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "simple_close_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 10
+        },
+        "semantic_description": "close breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "simple_close_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 20
+        },
+        "semantic_description": "close breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "simple_close_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "close_location_min": 0.7,
+          "lookback": 5
+        },
+        "semantic_description": "close breaks the prior rolling extreme with a strong close",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "close_gt_rolling_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "close_location_min": 0.8,
+          "lookback": 5
+        },
+        "semantic_description": "close breaks the prior rolling extreme with a strong close",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "close_gt_rolling_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "close_location_min": 0.7,
+          "lookback": 10
+        },
+        "semantic_description": "close breaks the prior rolling extreme with a strong close",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "close_gt_rolling_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "close_location_min": 0.8,
+          "lookback": 10
+        },
+        "semantic_description": "close breaks the prior rolling extreme with a strong close",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "close_gt_rolling_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "close_location_min": 0.7,
+          "lookback": 20
+        },
+        "semantic_description": "close breaks the prior rolling extreme with a strong close",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "close_gt_rolling_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "close_location_min": 0.8,
+          "lookback": 20
+        },
+        "semantic_description": "close breaks the prior rolling extreme with a strong close",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "close_gt_rolling_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 5,
+          "near_high_threshold": 0.8
+        },
+        "semantic_description": "high takes the rolling extreme and close holds near the directional extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "high_break_close_near_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 5,
+          "near_high_threshold": 0.9
+        },
+        "semantic_description": "high takes the rolling extreme and close holds near the directional extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "high_break_close_near_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 10,
+          "near_high_threshold": 0.8
+        },
+        "semantic_description": "high takes the rolling extreme and close holds near the directional extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "high_break_close_near_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 10,
+          "near_high_threshold": 0.9
+        },
+        "semantic_description": "high takes the rolling extreme and close holds near the directional extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "high_break_close_near_extreme"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.6,
+          "lookback": 5,
+          "range_atr_min": 1.2
+        },
+        "semantic_description": "breakout bar expands in both range and body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "expansion_body_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.6,
+          "lookback": 5,
+          "range_atr_min": 1.5
+        },
+        "semantic_description": "breakout bar expands in both range and body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "expansion_body_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.7,
+          "lookback": 5,
+          "range_atr_min": 1.2
+        },
+        "semantic_description": "breakout bar expands in both range and body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "expansion_body_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.7,
+          "lookback": 5,
+          "range_atr_min": 1.5
+        },
+        "semantic_description": "breakout bar expands in both range and body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "expansion_body_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.6,
+          "lookback": 15,
+          "range_atr_min": 1.2
+        },
+        "semantic_description": "breakout bar expands in both range and body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "expansion_body_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.6,
+          "lookback": 15,
+          "range_atr_min": 1.5
+        },
+        "semantic_description": "breakout bar expands in both range and body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "expansion_body_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.7,
+          "lookback": 15,
+          "range_atr_min": 1.2
+        },
+        "semantic_description": "breakout bar expands in both range and body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "expansion_body_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.7,
+          "lookback": 15,
+          "range_atr_min": 1.5
+        },
+        "semantic_description": "breakout bar expands in both range and body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "breakout",
+        "trigger_name": "expansion_body_breakout"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "range_atr_min": 1.2
+        },
+        "semantic_description": "directional expansion bar with large range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "expansion_impulse",
+        "trigger_name": "expansion_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "range_atr_min": 1.5
+        },
+        "semantic_description": "directional expansion bar with large range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "expansion_impulse",
+        "trigger_name": "expansion_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "range_atr_min": 2.0
+        },
+        "semantic_description": "directional expansion bar with large range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "expansion_impulse",
+        "trigger_name": "expansion_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.5,
+          "range_atr_min": 1.2
+        },
+        "semantic_description": "directional expansion bar with large range and strong body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "expansion_impulse",
+        "trigger_name": "impulse_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.6,
+          "range_atr_min": 1.2
+        },
+        "semantic_description": "directional expansion bar with large range and strong body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "expansion_impulse",
+        "trigger_name": "impulse_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.5,
+          "range_atr_min": 1.5
+        },
+        "semantic_description": "directional expansion bar with large range and strong body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "expansion_impulse",
+        "trigger_name": "impulse_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.6,
+          "range_atr_min": 1.5
+        },
+        "semantic_description": "directional expansion bar with large range and strong body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "expansion_impulse",
+        "trigger_name": "impulse_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.5,
+          "range_atr_min": 2.0
+        },
+        "semantic_description": "directional expansion bar with large range and strong body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "expansion_impulse",
+        "trigger_name": "impulse_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_min": 0.6,
+          "range_atr_min": 2.0
+        },
+        "semantic_description": "directional expansion bar with large range and strong body",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "expansion_impulse",
+        "trigger_name": "impulse_bar"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.6,
+          "lookback": 5,
+          "wick_min": 0.4
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.8,
+          "lookback": 5,
+          "wick_min": 0.4
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 5,
+          "wick_min": 0.4
+        },
+        "semantic_description": "bar sweeps the prior extreme and leaves a large rejection wick",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "relaxed_sweep"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.6,
+          "lookback": 5,
+          "wick_min": 0.6
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.8,
+          "lookback": 5,
+          "wick_min": 0.6
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 5,
+          "wick_min": 0.6
+        },
+        "semantic_description": "bar sweeps the prior extreme and leaves a large rejection wick",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "relaxed_sweep"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.6,
+          "lookback": 10,
+          "wick_min": 0.4
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.8,
+          "lookback": 10,
+          "wick_min": 0.4
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 10,
+          "wick_min": 0.4
+        },
+        "semantic_description": "bar sweeps the prior extreme and leaves a large rejection wick",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "relaxed_sweep"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.6,
+          "lookback": 10,
+          "wick_min": 0.6
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.8,
+          "lookback": 10,
+          "wick_min": 0.6
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 10,
+          "wick_min": 0.6
+        },
+        "semantic_description": "bar sweeps the prior extreme and leaves a large rejection wick",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "relaxed_sweep"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.6,
+          "lookback": 20,
+          "wick_min": 0.4
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.8,
+          "lookback": 20,
+          "wick_min": 0.4
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 20,
+          "wick_min": 0.4
+        },
+        "semantic_description": "bar sweeps the prior extreme and leaves a large rejection wick",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "relaxed_sweep"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.6,
+          "lookback": 20,
+          "wick_min": 0.6
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "body_ratio_max": 0.8,
+          "lookback": 20,
+          "wick_min": 0.6
+        },
+        "semantic_description": "bar sweeps the prior extreme then rejects back into range",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "sweep_reversal"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "lookback": 20,
+          "wick_min": 0.6
+        },
+        "semantic_description": "bar sweeps the prior extreme and leaves a large rejection wick",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "sweep_reversal",
+        "trigger_name": "relaxed_sweep"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.5,
+          "range_atr_min": 1.2
+        },
+        "semantic_description": "compression state releases into a directional expansion bar",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compression_release"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.5,
+          "range_atr_min": 1.5
+        },
+        "semantic_description": "compression state releases into a directional expansion bar",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compression_release"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.6,
+          "range_atr_min": 1.2
+        },
+        "semantic_description": "compression state releases into a directional expansion bar",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compression_release"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.6,
+          "range_atr_min": 1.5
+        },
+        "semantic_description": "compression state releases into a directional expansion bar",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compression_release"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.5,
+          "lookback": 5
+        },
+        "semantic_description": "compression state breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compressed_breakout_up_down"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.5,
+          "lookback": 10
+        },
+        "semantic_description": "compression state breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compressed_breakout_up_down"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.5,
+          "lookback": 15
+        },
+        "semantic_description": "compression state breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compressed_breakout_up_down"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.6,
+          "lookback": 5
+        },
+        "semantic_description": "compression state breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compressed_breakout_up_down"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.6,
+          "lookback": 10
+        },
+        "semantic_description": "compression state breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compressed_breakout_up_down"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.6,
+          "lookback": 15
+        },
+        "semantic_description": "compression state breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compressed_breakout_up_down"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.7,
+          "lookback": 5
+        },
+        "semantic_description": "compression state breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compressed_breakout_up_down"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.7,
+          "lookback": 10
+        },
+        "semantic_description": "compression state breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compressed_breakout_up_down"
+      },
+      {
+        "long_short_supported": true,
+        "notes": "",
+        "params": {
+          "compression_ratio_max": 0.7,
+          "lookback": 15
+        },
+        "semantic_description": "compression state breaks the prior rolling extreme",
+        "source_file": "extreme_price_movements/trigger_discovery.py",
+        "source_function": "generate_trigger_templates",
+        "trigger_family": "compression_release",
+        "trigger_name": "compressed_breakout_up_down"
+      }
+    ],
+    "target": [
+      {
+        "family": "pullback_recovery",
+        "target_name": "close_crosses_above_ema"
+      },
+      {
+        "family": "pullback_recovery",
+        "target_name": "ema_reclaim_touch"
+      },
+      {
+        "family": "pullback_recovery",
+        "target_name": "reclaim_after_opposite_bar"
+      },
+      {
+        "family": "pullback_recovery",
+        "target_name": "close_in_extreme_of_range"
+      },
+      {
+        "family": "breakout",
+        "target_name": "simple_close_breakout"
+      },
+      {
+        "family": "breakout",
+        "target_name": "close_gt_rolling_extreme"
+      },
+      {
+        "family": "breakout",
+        "target_name": "high_break_close_near_extreme"
+      },
+      {
+        "family": "breakout",
+        "target_name": "expansion_body_breakout"
+      },
+      {
+        "family": "expansion_impulse",
+        "target_name": "expansion_bar"
+      },
+      {
+        "family": "expansion_impulse",
+        "target_name": "impulse_bar"
+      },
+      {
+        "family": "sweep_reversal",
+        "target_name": "sweep_reversal"
+      },
+      {
+        "family": "sweep_reversal",
+        "target_name": "relaxed_sweep"
+      },
+      {
+        "family": "compression_release",
+        "target_name": "compression_release"
+      },
+      {
+        "family": "compression_release",
+        "target_name": "compressed_breakout_up_down"
+      }
+    ]
+  }
+}

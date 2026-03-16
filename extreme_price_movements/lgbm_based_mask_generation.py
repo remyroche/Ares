@@ -170,6 +170,8 @@ class FeatureProcessor:
     def __init__(self):
         self.metadata: Dict[str, FeatureMetadata] = {}
         self.feature_names: List[str] = []
+        self.rank_audit_rows = []
+        self.bool_support_audit_rows = []
 
     def prepare_features(
         self, 
@@ -180,7 +182,7 @@ class FeatureProcessor:
         active_groups: Optional[Sequence[str]] = None,
         extra_binary_features: Optional[Dict[str, np.ndarray]] = None,
         extra_feature_group: str = "context",
-    ) -> Tuple[np.ndarray, List[FeatureMetadata], pd.DataFrame]:
+    ) -> Tuple[np.ndarray, List[FeatureMetadata], Dict[str, pd.DataFrame]]:
         """
         Groups and booleanizes features with quality hardening.
         """
@@ -193,20 +195,36 @@ class FeatureProcessor:
         if active_groups is None:
             active_groups = ("trigger", "location", "regime")
 
+        raw_source_features_by_group = collections.defaultdict(set)
+
         def _add_continuous_features_as_booleans(sources, group_name):
-            # Fetch group-specific CS weight (e.g. "trigger_cs_weight", "location_cs_weight", "regime_cs_weight")
             cs_weight = float(cfg.get(f"{group_name}_cs_weight", 0.5))
+            min_support = int(cfg.get("min_feature_support", 10))
+            n_samples = len(timestamps)
 
             for src in sources:
                 if src in feature_dict:
+                    raw_source_features_by_group[group_name].add(src)
                     raw_arr = feature_dict[src]
-
-                    # Note: We are no longer filling with median here, to allow fold-level NaN checks downstream.
+                    nan_rate_before = float(np.isnan(raw_arr).mean())
 
                     cs_ranks = self._compute_cs_ranks(raw_arr, timestamps)
                     ts_ranks = self._compute_ts_ranks(raw_arr, symbol_codes)
                     blended_ranks = (cs_weight * cs_ranks) + ((1.0 - cs_weight) * ts_ranks)
                     
+                    nan_rate_cs = float(np.isnan(cs_ranks).mean())
+                    nan_rate_ts = float(np.isnan(ts_ranks).mean())
+                    nan_rate_blended = float(np.isnan(blended_ranks).mean())
+
+                    self.rank_audit_rows.append({
+                        "source_feature": src,
+                        "group": group_name,
+                        "nan_rate_before": nan_rate_before,
+                        "nan_rate_cs": nan_rate_cs,
+                        "nan_rate_ts": nan_rate_ts,
+                        "nan_rate_blended": nan_rate_blended,
+                    })
+
                     family = src.split('_')[0] if '_' in src else group_name
                     
                     for q in [0.2, 0.4, 0.6, 0.8]:
@@ -214,6 +232,20 @@ class FeatureProcessor:
                         bool_name_top = f"{group_name[:3]}_{src}_hybrid_top{int(q*100)}"
                         bool_arr_top = (blended_ranks >= (1.0 - q)).astype(np.float32)
                         
+                        support_top = int(bool_arr_top.sum())
+                        support_top_pct = support_top / n_samples if n_samples > 0 else 0
+
+                        self.bool_support_audit_rows.append({
+                            "generated_boolean": bool_name_top,
+                            "group": group_name,
+                            "source_feature": src,
+                            "support": support_top,
+                            "support_pct": support_top_pct,
+                        })
+
+                        if support_top < min_support or support_top_pct > 0.95:
+                            tprint(f"WARNING: generated boolean {bool_name_top} has extreme support ({support_top}, {support_top_pct:.2%})")
+
                         self._add_metadata(
                             bool_name_top, group_name, 'boolean',
                             source_name=src, 
@@ -229,6 +261,21 @@ class FeatureProcessor:
                         # Bottom quantiles
                         bool_name_bot = f"{group_name[:3]}_{src}_hybrid_bot{int(q*100)}"
                         bool_arr_bot = (blended_ranks <= q).astype(np.float32)
+
+                        support_bot = int(bool_arr_bot.sum())
+                        support_bot_pct = support_bot / n_samples if n_samples > 0 else 0
+
+                        self.bool_support_audit_rows.append({
+                            "generated_boolean": bool_name_bot,
+                            "group": group_name,
+                            "source_feature": src,
+                            "support": support_bot,
+                            "support_pct": support_bot_pct,
+                        })
+
+                        if support_bot < min_support or support_bot_pct > 0.95:
+                            tprint(f"WARNING: generated boolean {bool_name_bot} has extreme support ({support_bot}, {support_bot_pct:.2%})")
+
 
                         self._add_metadata(
                             bool_name_bot, group_name, 'boolean',
@@ -246,6 +293,19 @@ class FeatureProcessor:
                     band_arr = (
                         (blended_ranks >= 0.30) & (blended_ranks <= 0.70)
                     ).astype(np.float32)
+
+                    support_band = int(band_arr.sum())
+                    support_band_pct = support_band / n_samples if n_samples > 0 else 0
+                    self.bool_support_audit_rows.append({
+                        "generated_boolean": band_name,
+                        "group": group_name,
+                        "source_feature": src,
+                        "support": support_band,
+                        "support_pct": support_band_pct,
+                    })
+                    if support_band < min_support or support_band_pct > 0.95:
+                        tprint(f"WARNING: generated boolean {band_name} has extreme support ({support_band}, {support_band_pct:.2%})")
+
                     self._add_metadata(
                         band_name,
                         group_name,
@@ -265,6 +325,7 @@ class FeatureProcessor:
             # Discrete booleans
             for col in INTRADAY_TRIGGER_COLUMNS:
                 if col in feature_dict:
+                    raw_source_features_by_group["trigger"].add(col)
                     arr = feature_dict[col].astype(np.float32)
                     family = col.split('_')[0] if '_' in col else 'trigger'
                     self._add_metadata(col, 'trigger', 'boolean', source_name=col, source_family=family)
@@ -278,6 +339,7 @@ class FeatureProcessor:
             # Discrete booleans
             for col in LOCATION_FILTER_COLUMNS:
                 if col in feature_dict:
+                    raw_source_features_by_group["location"].add(col)
                     arr = feature_dict[col].astype(np.float32)
                     family = col.split('_')[0] if '_' in col else 'location'
                     self._add_metadata(col, 'location', 'boolean', source_name=col, source_family=family)
@@ -294,6 +356,7 @@ class FeatureProcessor:
         # 4. Extra Binary Features (e.g. Stage A Contexts)
         if extra_binary_features:
             for name, arr in extra_binary_features.items():
+                raw_source_features_by_group[extra_feature_group].add(name)
                 arr_f32 = arr.astype(np.float32)
                 self._add_metadata(
                     name, extra_feature_group, 'boolean',
@@ -312,6 +375,125 @@ class FeatureProcessor:
         # Quality Hardening: Drop degenerate/duplicate columns
         X_clean, retained_names, audit_df = self._run_feature_quality_checks(X_raw, raw_names, cfg)
         
+        audit_df["group"] = [self.metadata[n].group for n in audit_df["feature_name"]]
+        audit_df["regime_family"] = [self.metadata[n].regime_family for n in audit_df["feature_name"]]
+
+        raw_source_counts = {k: len(v) for k, v in raw_source_features_by_group.items()}
+
+        # Summary by group
+        group_summary = []
+        all_groups = list(active_groups) if active_groups else []
+        if extra_feature_group and extra_feature_group not in all_groups:
+            all_groups.append(extra_feature_group)
+
+        for g in all_groups:
+            g_df = audit_df[audit_df["group"] == g]
+            if g_df.empty:
+                continue
+            retained = g_df[g_df["status"] == "retained"]
+            dropped = g_df[g_df["status"] == "dropped"]
+            drop_reasons = dropped["reason"].value_counts().to_dict()
+
+            support_stats = retained["support"].describe() if not retained.empty else pd.Series(dtype=float)
+
+            group_summary.append({
+                "group": g,
+                "raw_source_features": raw_source_counts.get(g, 0),
+                "generated_booleans": len(g_df),
+                "retained": len(retained),
+                "dropped": len(dropped),
+                "drop_reason_all_zeros": drop_reasons.get("all_zeros", 0),
+                "drop_reason_all_ones": drop_reasons.get("all_ones", 0),
+                "drop_reason_low_support": sum(v for k, v in drop_reasons.items() if k.startswith("low_support")),
+                "drop_reason_duplicate": sum(v for k, v in drop_reasons.items() if k.startswith("duplicate_of")),
+                "support_min": support_stats.get("min", np.nan),
+                "support_p25": support_stats.get("25%", np.nan),
+                "support_median": support_stats.get("50%", np.nan),
+                "support_p75": support_stats.get("75%", np.nan),
+                "support_max": support_stats.get("max", np.nan),
+            })
+
+        feature_quality_summary_by_group = pd.DataFrame(group_summary)
+
+        # Summary by regime family
+        regime_df = audit_df[audit_df["group"] == "regime"]
+        regime_summary = []
+        if not regime_df.empty:
+            for fam, f_df in regime_df.groupby("regime_family"):
+                retained = f_df[f_df["status"] == "retained"]
+                dropped = f_df[f_df["status"] == "dropped"]
+                regime_summary.append({
+                    "regime_family": fam,
+                    "generated_booleans": len(f_df),
+                    "retained": len(retained),
+                    "dropped": len(dropped),
+                })
+        feature_quality_summary_by_regime_family = pd.DataFrame(regime_summary)
+
+        if not feature_quality_summary_by_regime_family.empty:
+            retained_counts = feature_quality_summary_by_regime_family.set_index("regime_family")["retained"]
+            total_retained_regime = retained_counts.sum()
+            if total_retained_regime > 0:
+                max_fam = retained_counts.idxmax()
+                max_val = retained_counts.max()
+                if max_val / total_retained_regime > 0.5:
+                    tprint(f"WARNING: Regime family '{max_fam}' dominates retained regime features ({max_val}/{total_retained_regime}).")
+
+        # tprints
+        total_raw = sum(raw_source_counts.values())
+        total_gen = len(audit_df)
+        total_retained = len(retained_names)
+        tprint(f"FeaturePrep: total raw={total_raw}, generated={total_gen}, retained={total_retained}")
+
+        for g_sum in group_summary:
+            tprint(f"  - {g_sum['group']}: retained {g_sum['retained']} / {g_sum['generated_booleans']} generated (from {g_sum['raw_source_features']} raw)")
+
+        dropped_df = audit_df[audit_df["status"] == "dropped"]
+        if not dropped_df.empty:
+            top_dropped = dropped_df["reason"].value_counts().head(10)
+            tprint("Top 10 dropped features by reason:")
+            for reason, count in top_dropped.items():
+                tprint(f"  - {reason}: {count}")
+
+        # Rank Audit tprints
+        if self.rank_audit_rows:
+            rank_audit_df = pd.DataFrame(self.rank_audit_rows)
+            rank_audit_df["worst_nan"] = rank_audit_df[["nan_rate_before", "nan_rate_cs", "nan_rate_ts", "nan_rate_blended"]].max(axis=1)
+            top_nan = rank_audit_df.sort_values("worst_nan", ascending=False).head(10)
+            tprint("Top 10 features with worst NaN rates:")
+            for _, row in top_nan.iterrows():
+                tprint(f"  - {row['group']}:{row['source_feature']} -> before={row['nan_rate_before']:.2%}, blended={row['nan_rate_blended']:.2%}")
+        else:
+            rank_audit_df = pd.DataFrame()
+
+        if self.bool_support_audit_rows:
+            bool_support_audit_df = pd.DataFrame(self.bool_support_audit_rows)
+            n_samples = len(timestamps)
+            bool_support_audit_df["usable_support"] = np.minimum(bool_support_audit_df["support"], n_samples - bool_support_audit_df["support"])
+            top_imbal = bool_support_audit_df.sort_values("usable_support").head(10)
+            tprint("Top 10 generated booleans with lowest usable support:")
+            for _, row in top_imbal.iterrows():
+                tprint(f"  - {row['generated_boolean']}: support={row['support']} ({row['support_pct']:.2%})")
+        else:
+            bool_support_audit_df = pd.DataFrame()
+
+        if not rank_audit_df.empty and not bool_support_audit_df.empty:
+            booleanization_support_audit = pd.merge(
+                bool_support_audit_df,
+                rank_audit_df.drop(columns=["worst_nan"]),
+                on=["source_feature", "group"],
+                how="left"
+            )
+        else:
+            booleanization_support_audit = bool_support_audit_df
+
+        audits = {
+            "feature_quality_audit": audit_df,
+            "feature_quality_summary_by_group": feature_quality_summary_by_group,
+            "feature_quality_summary_by_regime_family": feature_quality_summary_by_regime_family,
+            "booleanization_support_audit": booleanization_support_audit
+        }
+
         # Re-index metadata based on final retained columns
         retained_metadata = []
         old_metadata = {m.feature_name: m for m in self.metadata.values()}
@@ -333,7 +515,7 @@ class FeatureProcessor:
             )
             retained_metadata.append(new_m)
             
-        return X_clean, retained_metadata, audit_df
+        return X_clean, retained_metadata, audits
 
     def _add_metadata(self, name, group, src_type, **kwargs):
         idx = len(self.feature_names)
@@ -490,11 +672,16 @@ class InteractionModel:
         result = {
             "total_singletons": len(self.metadata),
             "total_constraints": len(self.constraints) if self.constraints is not None else 0,
+            "mode": "training permissive / validation strict",
         }
 
         groups = set(m.group for m in self.metadata)
         for g in groups:
             result[f"num_{g}"] = sum(1 for m in self.metadata if m.group == g)
+
+        regime_families = set(m.regime_family for m in self.metadata if m.group == "regime")
+        for rf in regime_families:
+            result[f"num_regime_{rf}"] = sum(1 for m in self.metadata if m.group == "regime" and m.regime_family == rf)
 
         if not self.constraints:
             return result
@@ -555,21 +742,37 @@ class InteractionModel:
         }
 
         model = LGBMRegressor(**params)
+        evals_result = {}
         model.fit(
             X_tr, y_tr_reg,
             eval_set=[(X_va, y_va_reg)],
             callbacks=[
                 early_stopping(stopping_rounds=50),
-                log_evaluation(period=0)
+                log_evaluation(period=0),
+                # Record evaluation results
+                lambda env: evals_result.setdefault(env.iteration, env.evaluation_result_list)
             ]
         )
+
+        # Get best metric
+        best_iter = model.best_iteration_
+        best_val_metric = np.nan
+        if best_iter in evals_result:
+            for dataset_name, metric_name, val, is_higher_better in evals_result[best_iter]:
+                if metric_name == 'l2':
+                    best_val_metric = val
+                    break
+
+        feature_importances_gain = model.booster_.feature_importance(importance_type='gain')
+        feature_importances_split = model.booster_.feature_importance(importance_type='split')
 
         # Metadata persistence
         fit_meta = {
             "model_id": "lgbm_discovery",
             "fold_id": fold_id,
             "seed": seed,
-            "best_iteration": model.best_iteration_,
+            "best_iteration": best_iter,
+            "best_val_metric": best_val_metric,
             "train_samples": X_tr.shape[0],
             "val_samples": X_va.shape[0],
             "params_hash": hashlib.sha1(str(params).encode()).hexdigest()[:8],
@@ -577,6 +780,9 @@ class InteractionModel:
             "threshold_tr": np.nan,
             "threshold_va": np.nan,
             "target_mode": "regression_5h_return",
+            "feature_importances_gain": feature_importances_gain,
+            "feature_importances_split": feature_importances_split,
+            "params": params
         }
 
         return model, fit_meta
@@ -602,17 +808,33 @@ class RuleExtractor:
         self.required_positive_groups = set(required_positive_groups or [])
         self.collapse_duplicate_groups = set(collapse_duplicate_groups or [])
         self.rejection_audit = []
+        self.total_leaf_paths = 0
+        self.total_non_empty_paths = 0
 
     def extract_rules(self, model: LGBMRegressor, model_id: str, fold_id: int, seed: int) -> List[ExtractedRule]:
         # ALWAYS use native booster dump for correct semantics according to fix spec
         dump = model.booster_.dump_model()
         rules = []
         self.rejection_audit = [] # For diagnostics
+        self.total_leaf_paths = 0
+        self.total_non_empty_paths = 0
         
         for tree_idx, tree in enumerate(dump['tree_info']):
             self._traverse_tree(tree['tree_structure'], [], tree_idx, model_id, fold_id, seed, rules)
+
+        reject_counts = collections.Counter(r['reason'] for r in self.rejection_audit)
+
+        tprint(f"Extracted {len(rules)} valid paths from {self.total_leaf_paths} total paths ({self.total_non_empty_paths} non-empty).")
+        if reject_counts:
+            tprint("Top rejection reasons:")
+            for reason, count in reject_counts.most_common(5):
+                tprint(f"  - {reason}: {count}")
+
+        # Check if almost all paths rejected for same-family regime violations
+        same_family_violations = sum(count for reason, count in reject_counts.items() if reason.startswith("group_violation_regime"))
+        if self.total_non_empty_paths > 0 and same_family_violations / self.total_non_empty_paths > 0.8:
+            tprint("WARNING: Almost all paths (>80%) rejected for same-family regime violations. Consider relaxing constraints.")
         
-        tprint(f"Extracted {len(rules)} valid paths from booster.")
         return rules
 
     def _normalize_predicate(self, node: Dict[str, Any], direction: int) -> Optional[Tuple[int, str, float]]:
@@ -640,8 +862,16 @@ class RuleExtractor:
         
     def _traverse_tree(self, node, current_conditions, tree_idx, model_id, fold_id, seed, rules):
         if 'leaf_value' in node:
+            self.total_leaf_paths += 1
             if not current_conditions:
+                self.rejection_audit.append({
+                    'model_id': model_id, 'fold_id': fold_id, 'seed': seed,
+                    'tree_idx': tree_idx, 'leaf_idx': node.get('leaf_index', -1),
+                    'reason': "empty_path"
+                })
                 return
+
+            self.total_non_empty_paths += 1
 
             reduced_conditions, reduce_reason = self._reduce_conditions(current_conditions)
             if reduce_reason is not None:
@@ -1031,6 +1261,12 @@ class DictionaryMaskResolver:
         return self.side_map.get(canonical_key)
 
 
+malformed_key_count = 0
+unresolved_feature_count = 0
+unresolved_feature_names = set()
+stage_b_reconstruction_success = 0
+stage_b_reconstruction_failed = 0
+
 class CanonicalRuleMaskResolver:
     def __init__(
         self,
@@ -1105,12 +1341,14 @@ class CanonicalRuleMaskResolver:
         mask = np.ones(n_samples, dtype=bool)
         unresolved: List[Tuple[str, str]] = []
 
+        global malformed_key_count, unresolved_feature_count, unresolved_feature_names
         for group, slot_value in slot_map.items():
             if slot_value == "*":
                 continue
 
             for cond_str in slot_value.split("&"):
                 if "==" not in cond_str:
+                    malformed_key_count += 1
                     raise ValueError(f"Malformed slot {cond_str} in {canonical_key}")
                 feature_name, target_val_raw = cond_str.split("==")
                 target_val = int(target_val_raw)
@@ -1118,6 +1356,8 @@ class CanonicalRuleMaskResolver:
                     mask &= self._resolve_feature_mask(feature_name, target_val, indices)
                 else:
                     unresolved.append((group, feature_name))
+                    unresolved_feature_count += 1
+                    unresolved_feature_names.add(feature_name)
 
         if unresolved:
             unresolved_groups = {g for g, _ in unresolved}
@@ -1138,6 +1378,8 @@ class CanonicalRuleMaskResolver:
                 raise KeyError(
                     f"Unresolved features {unresolved_features} in key {canonical_key}"
                 )
+            elif allow_context_fallback:
+                tprint(f"WARNING: Unresolved feature fallback used for {unresolved_features} in {canonical_key}")
 
             if context_mask is None:
                 raise KeyError(f"Cannot map {canonical_key} to a saved Stage A context")
@@ -1440,6 +1682,29 @@ class RuleScorer:
             ["accepted", "composite_score"], ascending=[False, False]
         )
         summary_df = self._identify_dominated_rules(summary_df)
+
+        # Scorer Reporting Diagnostics
+        accepted_count = summary_df['accepted'].sum()
+        rejected_count = len(summary_df) - accepted_count
+        tprint(f"Scorer Input: {len(summary_df)} rules | Accepted: {accepted_count} | Rejected: {rejected_count}")
+
+        rejection_reasons = collections.Counter(
+            reason.strip()
+            for reasons in summary_df[~summary_df['accepted']]['rejection_reason'].dropna()
+            for reason in reasons.split('|') if reason.strip()
+        )
+        if rejection_reasons:
+            tprint("Top scorer rejection reasons:")
+            for reason, count in rejection_reasons.most_common(5):
+                tprint(f"  - {reason}: {count}")
+
+        dom_count = summary_df.get('dominated_by_parent', pd.Series(False)).sum()
+        if dom_count > 0:
+            tprint(f"Dominated rules flagged: {dom_count}")
+            top_dom = summary_df[summary_df['dominated_by_parent']].head(5)
+            for _, row in top_dom.iterrows():
+                tprint(f"  - {row['canonical_key']} dominated by {row['dominant_parent_key']}")
+
         return summary_df, pd.DataFrame(audits)
 
     def _identify_dominated_rules(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -1668,22 +1933,36 @@ class IndependentRulePruner:
         df['beats_hurdle'] = df['hurdle_excess'] > 0
 
         # 5. Final Selection
+        gate_summary = {
+            "is_too_broad_rejected": int(df['is_too_broad'].sum()),
+            "beats_hurdle_rejected": int((~df['beats_hurdle']).sum()),
+            "sign_consistency_rejected": int((df['sign_consistency'] < self.min_sign_consistency).sum()),
+            "discovery_count_rejected": int((df['discovery_count'] < self.min_discoveries).sum()),
+            "dominated_by_parent_rejected": int(df["dominated_by_parent"].sum())
+        }
+
         mask = (
-            (df['is_too_broad'] == False) &
-            (df['beats_hurdle'] == True) &
+            (~df['is_too_broad']) &
+            (df['beats_hurdle']) &
             (df['sign_consistency'] >= self.min_sign_consistency) &
             (df['discovery_count'] >= self.min_discoveries) &
-            (df["dominated_by_parent"] == False)
+            (~df["dominated_by_parent"])
         )
 
         final_registry = df[mask].copy()
 
         tprint(
-            f"Pruning Report: Total={len(df)} | "
-            f"Broad Rejected={df['is_too_broad'].sum()} | "
-            f"Hurdle Pass={df['beats_hurdle'].sum()} | "
+            f"Pruning Gate-by-Gate Funnel: Total={len(df)} | "
+            f"Broad Rejected={gate_summary['is_too_broad_rejected']} | "
+            f"Hurdle Failed={gate_summary['beats_hurdle_rejected']} | "
+            f"Sign Inconsistent={gate_summary['sign_consistency_rejected']} | "
+            f"Low Discoveries={gate_summary['discovery_count_rejected']} | "
+            f"Dominated={gate_summary['dominated_by_parent_rejected']} | "
             f"Final Accepted={len(final_registry)}"
         )
+
+        # Save gate summary as attribute to extract later
+        self.gate_summary = gate_summary
 
         return final_registry.sort_values('hurdle_excess', ascending=False)
 
@@ -2050,10 +2329,10 @@ class EconomicRuleConsolidator:
         folds: List[Tuple[np.ndarray, np.ndarray]],
         resolver: Optional[Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]] = None,
         data: Optional[pd.DataFrame] = None,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
         resolver = resolver or self.mask_resolver
         if resolver is None or registry.empty:
-            return registry, pd.DataFrame()
+            return registry, pd.DataFrame(), {}
 
         active = registry.copy()
         profiles = {}
@@ -2068,6 +2347,12 @@ class EconomicRuleConsolidator:
 
         max_total_pair_evals = int(self.cfg.get("max_total_pair_evals", 1000))
         evals = 0
+        accepted_merges = 0
+        pruned_dups = 0
+
+        pair_evals_log = []
+
+        tprint(f"Economic Consolidation Start: {len(active)} active rules, {len(candidate_pairs)} candidate pairs.")
 
         for pair in candidate_pairs:
             if evals >= max_total_pair_evals:
@@ -2090,7 +2375,9 @@ class EconomicRuleConsolidator:
             row_a = active[active["canonical_key"] == key_a].iloc[0]
             row_b = active[active["canonical_key"] == key_b].iloc[0]
 
+            pair_evals_log.append({**pair, **diag})
             if diag["accept_merge"]:
+                accepted_merges += 1
                 # Create composite
                 child_key = self._make_composite_key(key_a, key_b)
 
@@ -2141,6 +2428,7 @@ class EconomicRuleConsolidator:
                 weaker_parent_key = key_b if better_parent_key == key_a else key_a
 
                 if prune_dups and is_dup:
+                    pruned_dups += 1
                     active = active[active["canonical_key"] != weaker_parent_key].copy()
                     self.lineage.record_merge(
                         better_parent_key,
@@ -2160,7 +2448,36 @@ class EconomicRuleConsolidator:
 
         active = active.drop_duplicates(subset=["canonical_key"], keep="first")
         active = active.sort_values(["composite_score", "hurdle_excess"], ascending=False)
-        return active, self.lineage.get_audit_df()
+
+        tprint(f"Economic Consolidation End: {len(active)} rules remaining. {evals} evaluated pairs, {accepted_merges} merges, {pruned_dups} duplicate prunes.")
+
+        # Diagnostic prints
+        evals_df = pd.DataFrame(pair_evals_log)
+        if not evals_df.empty:
+            rejected_pairs = evals_df[~evals_df["accept_merge"]].sort_values("pair_retrieval_score", ascending=False).head(10)
+            tprint("Top 10 rejected pairs by retrieval score:")
+            for _, row in rejected_pairs.iterrows():
+                tprint(f"  - {row['key_a']} + {row['key_b']}: reason={row['decision_reason']}, retrieval={row['pair_retrieval_score']:.2f}")
+
+            accepted_pairs = evals_df[evals_df["accept_merge"]].sort_values("child_selection_score", ascending=False).head(10)
+            tprint("Top 10 accepted composites by child selection score:")
+            for _, row in accepted_pairs.iterrows():
+                tprint(f"  - {row['key_a']} + {row['key_b']}: score={row['child_selection_score']:.2f}, gain={row['child_selection_score'] - row['parent_selection_score']:.2f}")
+
+        diag_dict = {
+            "economic_pair_candidates": pd.DataFrame(candidate_pairs),
+            "economic_pair_evaluations": evals_df,
+            "economic_consolidation_summary": {
+                "active_start": len(registry),
+                "active_end": len(active),
+                "pairs_generated": len(candidate_pairs),
+                "evals_count": evals,
+                "accepted_merges": accepted_merges,
+                "duplicate_prunes": pruned_dups
+            }
+        }
+
+        return active, self.lineage.get_audit_df(), diag_dict
 
 class RuleConsolidator:
     def __init__(
@@ -2317,10 +2634,13 @@ class RuleConsolidator:
         folds: List[Tuple[np.ndarray, np.ndarray]],
         resolver: Optional[Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]] = None,
         data: Optional[pd.DataFrame] = None,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
         resolver = resolver or self.mask_resolver
         if resolver is None or registry.empty:
-            return registry, pd.DataFrame()
+            return registry, pd.DataFrame(), {}
+
+        round_summaries = []
+        ridge_evals = []
 
         top_n = int(self.cfg.get("consolidation_top_n", 100))
         support_gain_factor = float(self.cfg.get("support_gain_factor", 1.05))
@@ -2342,6 +2662,8 @@ class RuleConsolidator:
         total_pair_evals = 0
 
         for round_num in range(1, max_rounds + 1):
+            start_count = len(active)
+            tprint(f"Legacy Consolidation Round {round_num} Start: {start_count} active rules")
             threshold = round_thresholds[min(round_num - 1, len(round_thresholds) - 1)]
             candidates: List[Tuple[int, float, str, str, str, float]] = []
             keys = sorted(active["canonical_key"].tolist())
@@ -2416,6 +2738,17 @@ class RuleConsolidator:
                     fwd_ret,
                     folds,
                 )
+
+                ridge_evals.append({
+                    "round": round_num,
+                    "key_a": key_a,
+                    "key_b": key_b,
+                    "merge_source": merge_source,
+                    "priority": priority,
+                    "jaccard": jaccard,
+                    "dilated_jaccard": dilated_jaccard,
+                    **ridge_diag
+                })
 
                 if (
                     merge_source == "dilated_jaccard"
@@ -2528,12 +2861,34 @@ class RuleConsolidator:
                     if failed_checks >= max_failed_pair_checks:
                         break
 
+            tprint(f"Legacy Consolidation Round {round_num} End: {len(active)} active rules. Accepted Merges: {accepted_merges}")
+            round_summaries.append({
+                "round": round_num,
+                "start_count": start_count,
+                "end_count": len(active),
+                "accepted_merges": accepted_merges,
+                "failed_checks": failed_checks
+            })
+
             if accepted_merges == 0 or total_pair_evals >= max_total_pair_evals:
                 break
 
         active = active.drop_duplicates(subset=["canonical_key"], keep="first")
         active = active.sort_values(["composite_score", "hurdle_excess"], ascending=False)
-        return active, self.lineage.get_audit_df()
+
+        diag_dict = {
+            "legacy_consolidation_round_summary": pd.DataFrame(round_summaries),
+            "legacy_ridge_pair_eval_audit": pd.DataFrame(ridge_evals)
+        }
+
+        if ridge_evals:
+            evals_df = pd.DataFrame(ridge_evals)
+            reasons = evals_df[~evals_df["accept_merge"]]["accept_merge_reason"].value_counts().head(5)
+            tprint("Legacy top rejection reasons:")
+            for reason, count in reasons.items():
+                tprint(f"  - {reason}: {count}")
+
+        return active, self.lineage.get_audit_df(), diag_dict
 
     def _evaluate_ridge_pair(
         self,
@@ -2812,33 +3167,41 @@ def build_context_feature_dict_from_registry(
     return context_feature_dict, context_feature_to_stage_a_key
 
 
-def select_stage_a_contexts(stage_a_result: Dict[str, Any], cfg: Dict[str, Any]) -> pd.DataFrame:
+def select_stage_a_contexts(stage_a_result: Dict[str, Any], cfg: Dict[str, Any]) -> Tuple[pd.DataFrame, pd.DataFrame]:
     registry = stage_a_result.get("accepted_registry")
     if registry is None or registry.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
-    mask = (
-        (registry["mean_support_pct"] >= float(cfg.get("min_context_support_pct", 0.01)))
-        & (registry["directional_mean_ret"] > float(cfg.get("min_context_mean_ret", 0.0)))
-        & (
-            registry["presence_freq"]
-            >= float(cfg.get("min_context_presence_freq", cfg.get("min_presence_freq", 0.4)))
-        )
-        & (
-            registry["sign_consistency"]
-            >= float(
-                cfg.get(
-                    "min_context_sign_consistency",
-                    cfg.get("min_sign_consistency", 0.75),
-                )
-            )
-        )
-        & (registry["display_arity"] >= int(cfg.get("min_context_display_arity", 2)))
-        & (~registry.get("dominated_by_parent", pd.Series(False, index=registry.index)))
+    registry = registry.copy()
+    registry["reject_support"] = registry["mean_support_pct"] < float(cfg.get("min_context_support_pct", 0.01))
+    registry["reject_ret"] = registry["directional_mean_ret"] <= float(cfg.get("min_context_mean_ret", 0.0))
+    registry["reject_presence"] = registry["presence_freq"] < float(cfg.get("min_context_presence_freq", cfg.get("min_presence_freq", 0.4)))
+    registry["reject_sign"] = registry["sign_consistency"] < float(cfg.get("min_context_sign_consistency", cfg.get("min_sign_consistency", 0.75)))
+    registry["reject_arity"] = registry["display_arity"] < int(cfg.get("min_context_display_arity", 2))
+    registry["reject_dominated"] = registry.get("dominated_by_parent", pd.Series(False, index=registry.index))
+    registry["reject_structural"] = ~registry.get("is_structurally_sound", pd.Series(True, index=registry.index)).fillna(False)
+
+    mask = ~(
+        registry["reject_support"] |
+        registry["reject_ret"] |
+        registry["reject_presence"] |
+        registry["reject_sign"] |
+        registry["reject_arity"] |
+        registry["reject_dominated"] |
+        registry["reject_structural"]
     )
-    if "is_structurally_sound" in registry.columns:
-        mask &= registry["is_structurally_sound"].fillna(False)
-    return registry[mask].copy()
+
+    selected = registry[mask].copy()
+
+    rejection_reasons = []
+    for col in ["reject_support", "reject_ret", "reject_presence", "reject_sign", "reject_arity", "reject_dominated", "reject_structural"]:
+        rejection_reasons.append({
+            "reason": col,
+            "count": int(registry[col].sum())
+        })
+    rejection_summary = pd.DataFrame(rejection_reasons)
+
+    return selected, rejection_summary
 
 
 def log_stage_gate_diagnostics(stage_name: str, stage_result: Dict[str, Any], cfg: Dict[str, Any]) -> None:
@@ -2939,6 +3302,21 @@ def run_mining_stage(
     with open(output_dir / "interaction_constraint_summary.json", "w") as f:
         json.dump(constraint_summary, f, indent=2)
 
+    stage_input_feature_inventory = pd.DataFrame([
+        {
+            "feature_name": m.feature_name,
+            "group": m.group,
+            "regime_family": m.regime_family,
+            "interaction_group": m.interaction_group
+        }
+        for m in metadata
+    ])
+    stage_input_feature_inventory.to_csv(output_dir / "stage_input_feature_inventory.csv", index=False)
+
+    tprint(f"Constraints Mode: {constraint_summary.get('mode', 'unknown')}")
+    tprint(f"Group Counts: " + ", ".join([f"{k}={v}" for k, v in constraint_summary.items() if k.startswith("num_") and not k.startswith("num_regime_")]))
+    tprint(f"Regime Family Counts: " + ", ".join([f"{k.replace('num_regime_', '')}={v}" for k, v in constraint_summary.items() if k.startswith("num_regime_")]))
+
     positive_only_groups: Tuple[str, ...] = ()
     required_positive_groups: Tuple[str, ...] = ()
     collapse_duplicate_groups: Tuple[str, ...] = ()
@@ -2960,6 +3338,10 @@ def run_mining_stage(
     all_split_usage = []
     seeds = cfg.get("seeds", [42])
 
+    fold_quality_reports = []
+    model_fit_reports = []
+    feature_importance_records = []
+
     for fold_id, (tr_idx, va_idx) in enumerate(folds):
         # Determine available features per group for logging
         group_to_features = collections.defaultdict(list)
@@ -2980,11 +3362,66 @@ def run_mining_stage(
         tprint(f"Target (fwd_ret_norm): TR {tr_target_avail:.1f}% / VA {va_target_avail:.1f}%")
 
         # Find rows with missing features or missing targets
-        tr_missing_mask = np.isnan(X[tr_idx]).any(axis=1) | np.isnan(fwd_ret_norm[tr_idx]) | np.isnan(fwd_ret[tr_idx])
-        va_missing_mask = np.isnan(X[va_idx]).any(axis=1) | np.isnan(fwd_ret_norm[va_idx]) | np.isnan(fwd_ret[va_idx])
+        tr_feature_missing = np.isnan(X[tr_idx]).any(axis=1)
+        tr_fwd_ret_missing = np.isnan(fwd_ret[tr_idx])
+        tr_fwd_ret_norm_missing = np.isnan(fwd_ret_norm[tr_idx])
+        tr_missing_mask = tr_feature_missing | tr_fwd_ret_missing | tr_fwd_ret_norm_missing
+
+        va_feature_missing = np.isnan(X[va_idx]).any(axis=1)
+        va_fwd_ret_missing = np.isnan(fwd_ret[va_idx])
+        va_fwd_ret_norm_missing = np.isnan(fwd_ret_norm[va_idx])
+        va_missing_mask = va_feature_missing | va_fwd_ret_missing | va_fwd_ret_norm_missing
 
         tr_drop_pct = tr_missing_mask.mean() * 100
         va_drop_pct = va_missing_mask.mean() * 100
+
+        # Target distribution summary
+        tr_target_valid = fwd_ret_norm[tr_idx][~np.isnan(fwd_ret_norm[tr_idx])]
+        if len(tr_target_valid) > 0:
+            tr_mean = tr_target_valid.mean()
+            tr_std = tr_target_valid.std()
+            tr_p1 = np.percentile(tr_target_valid, 1)
+            tr_p50 = np.percentile(tr_target_valid, 50)
+            tr_p99 = np.percentile(tr_target_valid, 99)
+
+            # Check severe clipping
+            clipped = np.clip(tr_target_valid, tr_p1, tr_p99)
+            clip_diff = np.abs(tr_target_valid - clipped).sum() / np.abs(tr_target_valid).sum()
+            if clip_diff > 0.05:
+                tprint(f"WARNING: Severe target clipping in Fold {fold_id} ({clip_diff:.1%} diff)")
+
+            pos_ratio = (tr_target_valid > 0).mean()
+            if pos_ratio < 0.2 or pos_ratio > 0.8:
+                tprint(f"WARNING: Fold {fold_id} has extremely imbalanced targets ({pos_ratio:.1%} positive)")
+        else:
+            tr_mean, tr_std, tr_p1, tr_p50, tr_p99 = np.nan, np.nan, np.nan, np.nan, np.nan
+
+        fold_quality_reports.append({
+            "fold_id": fold_id,
+            "tr_rows_before": len(tr_idx),
+            "tr_rows_after": len(tr_idx) - tr_missing_mask.sum(),
+            "tr_dropped": tr_missing_mask.sum(),
+            "tr_drop_pct": tr_drop_pct,
+            "tr_nan_feat": tr_feature_missing.sum(),
+            "tr_nan_ret": tr_fwd_ret_missing.sum(),
+            "tr_nan_norm": tr_fwd_ret_norm_missing.sum(),
+
+            "va_rows_before": len(va_idx),
+            "va_rows_after": len(va_idx) - va_missing_mask.sum(),
+            "va_dropped": va_missing_mask.sum(),
+            "va_drop_pct": va_drop_pct,
+            "va_nan_feat": va_feature_missing.sum(),
+            "va_nan_ret": va_fwd_ret_missing.sum(),
+            "va_nan_norm": va_fwd_ret_norm_missing.sum(),
+
+            "target_mean": tr_mean,
+            "target_std": tr_std,
+            "target_p1": tr_p1,
+            "target_p50": tr_p50,
+            "target_p99": tr_p99
+        })
+
+        tprint(f"Fold {fold_id}: Target fwd_ret_norm -> mean={tr_mean:.4f}, std={tr_std:.4f}, p1={tr_p1:.4f}, p50={tr_p50:.4f}, p99={tr_p99:.4f}")
 
         if tr_drop_pct > 1.0 or va_drop_pct > 1.0:
             tprint(f"WARNING: Fold {fold_id} has > 1% missing rows (TR: {tr_drop_pct:.1f}%, VA: {va_drop_pct:.1f}%).")
@@ -3044,8 +3481,59 @@ def run_mining_stage(
             model, fit_meta = model_engine.train_fold(X_tr, y_tr_clip, X_va, y_va_norm, fold_id, seed)
             tprint(
                 f"{stage_name} fold {fold_id} seed {seed}: "
-                f"train_samples={fit_meta['train_samples']} val_samples={fit_meta['val_samples']}"
+                f"train_samples={fit_meta['train_samples']} val_samples={fit_meta['val_samples']} "
+                f"best_iteration={fit_meta['best_iteration']} best_val_metric={fit_meta['best_val_metric']:.5f}"
             )
+
+            model_fit_reports.append({
+                "fold_id": fold_id,
+                "seed": seed,
+                "best_iteration": fit_meta['best_iteration'],
+                "best_val_metric": fit_meta['best_val_metric'],
+                "max_depth": fit_meta["params"]["max_depth"],
+                "num_leaves": fit_meta["params"]["num_leaves"],
+                "min_data_in_leaf": fit_meta["params"]["min_data_in_leaf"],
+                "objective": fit_meta["params"]["objective"],
+                "metric": fit_meta["params"]["metric"],
+            })
+
+            # Print hyperparams only on first fold/seed
+            if fold_id == 0 and seed == seeds[0]:
+                tprint(f"Model Hyperparams: max_depth={fit_meta['params']['max_depth']}, num_leaves={fit_meta['params']['num_leaves']}, min_data_in_leaf={fit_meta['params']['min_data_in_leaf']}, objective={fit_meta['params']['objective']}, metric={fit_meta['params']['metric']}, n_estimators={fit_meta['params']['n_estimators']}, seeds={len(seeds)}, folds={len(folds)}")
+
+            # Extract Feature Importance
+            gain_imp = fit_meta["feature_importances_gain"]
+            split_imp = fit_meta["feature_importances_split"]
+
+            fi_records = []
+            for m in metadata:
+                idx = m.feature_index
+                gain = gain_imp[idx] if idx < len(gain_imp) else 0.0
+                split = split_imp[idx] if idx < len(split_imp) else 0.0
+                if gain > 0 or split > 0:
+                    fi_records.append({
+                        "fold_id": fold_id,
+                        "seed": seed,
+                        "feature_name": m.feature_name,
+                        "group": m.group,
+                        "regime_family": m.regime_family,
+                        "gain": gain,
+                        "split": split,
+                    })
+                    feature_importance_records.append(fi_records[-1])
+
+            if fi_records:
+                fi_df = pd.DataFrame(fi_records)
+                top_gain = fi_df.sort_values("gain", ascending=False).head(5)
+                tprint("Top 5 features by gain:")
+                for _, row in top_gain.iterrows():
+                    tprint(f"  - {row['feature_name']}: {row['gain']:.2f}")
+
+                top_fam = fi_df.groupby("regime_family")["split"].sum().sort_values(ascending=False).head(5)
+                tprint("Top 5 regime families by split count:")
+                for fam, count in top_fam.items():
+                    if pd.notna(fam):
+                        tprint(f"  - {fam}: {count}")
             split_usage_df = collect_split_usage_from_model(model, metadata, fold_id, seed)
             if not split_usage_df.empty:
                 all_split_usage.append(split_usage_df)
@@ -3076,10 +3564,74 @@ def run_mining_stage(
                 parent_context_map[rewritten_key] = parent_context_key
         all_extracted_rules = rewritten_rules
 
+    if fold_quality_reports:
+        fq_df = pd.DataFrame(fold_quality_reports)
+        data_cols = [
+            "fold_id", "tr_rows_before", "tr_rows_after", "tr_dropped", "tr_drop_pct",
+            "tr_nan_feat", "tr_nan_ret", "tr_nan_norm",
+            "va_rows_before", "va_rows_after", "va_dropped", "va_drop_pct",
+            "va_nan_feat", "va_nan_ret", "va_nan_norm"
+        ]
+        tgt_cols = [
+            "fold_id", "target_mean", "target_std", "target_p1", "target_p50", "target_p99"
+        ]
+
+        fq_df[data_cols].to_csv(output_dir / "fold_data_quality_report.csv", index=False)
+        fq_df[tgt_cols].to_csv(output_dir / "fold_target_distribution_report.csv", index=False)
+
+    if model_fit_reports:
+        pd.DataFrame(model_fit_reports).to_csv(output_dir / "fold_model_fit_summary.csv", index=False)
+
+    if feature_importance_records:
+        fi_df = pd.DataFrame(feature_importance_records)
+        fi_df.to_csv(output_dir / "fold_feature_importance_by_feature.csv", index=False)
+
+        fi_by_group = fi_df.groupby(["fold_id", "seed", "group"])[["gain", "split"]].sum().reset_index()
+        fi_by_group.to_csv(output_dir / "fold_feature_importance_by_group.csv", index=False)
+
+        fi_by_family = fi_df.groupby(["fold_id", "seed", "regime_family"])[["gain", "split"]].sum().reset_index()
+        fi_by_family.to_csv(output_dir / "fold_feature_importance_by_regime_family.csv", index=False)
+
     if all_rejection_audit:
         audit_df = pd.DataFrame(all_rejection_audit)
         audit_df.to_csv(output_dir / "invalid_path_audit.csv", index=False)
         summarize_feature_usage(audit_df, output_dir / "invalid_path_reason_summary.csv", ["reason"])
+
+    if all_extracted_rules:
+        shape_records = []
+        family_combos = collections.defaultdict(int)
+        for r in all_extracted_rules:
+            # arity, structural depth, groups used, regime families used
+            arity = display_arity_for_key(r.canonical_key)
+            depth = structural_depth_for_key(r.canonical_key)
+            groups_used = tuple(sorted(set(c.group for c in r.conditions)))
+
+            regime_families = []
+            for c in r.conditions:
+                if c.group == "regime":
+                    fam = m.regime_family if (m := metadata[c.feature_index]) else "unknown"
+                    if fam: regime_families.append(fam)
+
+            regime_families_tuple = tuple(sorted(set(regime_families)))
+            family_combos[regime_families_tuple] += 1
+
+            shape_records.append({
+                "canonical_key": r.canonical_key,
+                "display_arity": arity,
+                "structural_depth": depth,
+                "groups_used": "|".join(groups_used),
+                "regime_families_used": "|".join(regime_families_tuple)
+            })
+
+        pd.DataFrame(shape_records).to_csv(output_dir / "extracted_rule_shape_summary.csv", index=False)
+
+        family_df = pd.DataFrame([{"regime_families_combo": "|".join(k), "count": v} for k, v in family_combos.items()])
+        family_df.sort_values("count", ascending=False).to_csv(output_dir / "extracted_rule_family_combo_summary.csv", index=False)
+
+        tprint("Top valid family combinations:")
+        for _, row in family_df.sort_values("count", ascending=False).head(5).iterrows():
+            tprint(f"  - {row['regime_families_combo']}: {row['count']}")
+
     
     if all_split_usage:
         split_usage_all = pd.concat(all_split_usage, ignore_index=True)
@@ -3118,6 +3670,18 @@ def run_mining_stage(
     full_scorer_audit.to_csv(output_dir / "fold_level_rule_aggregation_audit.csv", index=False)
     scored_registry.to_csv(output_dir / "scored_rule_registry_full.csv", index=False)
 
+    # Save scorer diagnostics
+    rejection_reasons = collections.Counter(
+        reason.strip()
+        for reasons in scored_registry[~scored_registry['accepted']]['rejection_reason'].dropna()
+        for reason in reasons.split('|') if reason.strip()
+    )
+    pd.DataFrame(list(rejection_reasons.items()), columns=["rejection_reason", "count"]).to_csv(output_dir / "scorer_rejection_reason_summary.csv", index=False)
+
+    dom_df = scored_registry[scored_registry.get('dominated_by_parent', False)][["canonical_key", "dominant_parent_key", "composite_score", "hurdle_excess"]]
+    if not dom_df.empty:
+        dom_df.to_csv(output_dir / "dominated_rule_summary.csv", index=False)
+
     scorer_accepted = scored_registry[scored_registry["accepted"]].copy()
 
     use_economic_consolidator = cfg.get("use_economic_consolidator", True)
@@ -3130,11 +3694,19 @@ def run_mining_stage(
             metadata, cfg, mask_resolver=mask_resolver, scorer=scorer
         )
 
-    consolidated_registry, lineage_audit = consolidator.consolidate(
+    consolidated_registry, lineage_audit, consol_diag = consolidator.consolidate(
         scorer_accepted, fwd_ret, folds, resolver=mask_resolver, data=data
     )
     consolidated_registry.to_csv(output_dir / "consolidated_rule_registry.csv", index=False)
     lineage_audit.to_csv(output_dir / "consolidation_lineage_audit.csv", index=False)
+
+    # Save Consolidator Specific Diagnostics
+    for name, obj in consol_diag.items():
+        if isinstance(obj, pd.DataFrame):
+            obj.to_csv(output_dir / f"{name}.csv", index=False)
+        else:
+            with open(output_dir / f"{name}.json", "w") as f:
+                json.dump(obj, f, indent=2)
 
     pruner = IndependentRulePruner(cfg)
     candidate_registry = pruner.prune(consolidated_registry)
@@ -3142,11 +3714,25 @@ def run_mining_stage(
     candidate_registry.to_csv(output_dir / "candidate_rule_registry.csv", index=False)
     candidate_registry.to_csv(output_dir / "pruned_rule_registry.csv", index=False)
 
+    if hasattr(pruner, 'gate_summary'):
+        pd.DataFrame([pruner.gate_summary]).to_csv(output_dir / "pruner_gate_summary.csv", index=False)
+
+    if not candidate_registry.empty:
+        arity_counts = candidate_registry['display_arity'].value_counts().reset_index()
+        arity_counts.columns = ['display_arity', 'count']
+        arity_counts.to_csv(output_dir / "pruner_arity_summary.csv", index=False)
+        tprint("Accepted by Arity (Pruner):")
+        for _, row in arity_counts.iterrows():
+            tprint(f"  - {int(row['display_arity'])}: {int(row['count'])}")
+
     assessor = MaskAssessor(metadata, cfg, mask_resolver=mask_resolver)
     assessment_df = assessor.assess_rules(candidate_registry, X, data, fwd_ret, folds)
     if not assessment_df.empty:
         assessment_df.to_csv(output_dir / "final_mask_assessment_audit.csv", index=False)
         accepted_registry = candidate_registry.merge(assessment_df, on='canonical_key', how='left')
+
+        if hasattr(assessor, 'rejection_summary') and assessor.rejection_summary:
+            pd.DataFrame(list(assessor.rejection_summary.items()), columns=['reason', 'count']).to_csv(output_dir / "mask_assessment_rejection_summary.csv", index=False)
     else:
         accepted_registry = candidate_registry.copy()
 
@@ -3205,13 +3791,16 @@ def run_two_stage_lgbm_mask_generation(
     # --- STAGE A: CONTEXT MINING ---
     tprint("STAGE A: Context Mining (Regime x Location)")
     fp_a = FeatureProcessor()
-    X_a, metadata_a, feat_audit_a = fp_a.prepare_features(
+    X_a, metadata_a, audits_a = fp_a.prepare_features(
         feature_dict, data['timestamp'].to_numpy(), data['symbol'].to_numpy(), cfg,
         active_groups=("regime", "location")
     )
     stage_a_output_dir = root_output_dir / "stage_a_context"
     stage_a_output_dir.mkdir(parents=True, exist_ok=True)
-    feat_audit_a.to_csv(stage_a_output_dir / "feature_quality_audit.csv", index=False)
+
+    for k, v in audits_a.items():
+        if not v.empty:
+            v.to_csv(stage_a_output_dir / f"{k}.csv", index=False)
     
     stage_a_spec = MiningStageSpec(
         stage_name="stage_a_context",
@@ -3234,8 +3823,20 @@ def run_two_stage_lgbm_mask_generation(
     )
     log_stage_gate_diagnostics("Stage A", stage_a_result, cfg)
     
-    winning_contexts = select_stage_a_contexts(stage_a_result, cfg)
-    tprint(f"Stage A produced {len(winning_contexts)} winning contexts.")
+    winning_contexts, stage_a_rejection_summary = select_stage_a_contexts(stage_a_result, cfg)
+    stage_a_rejection_summary.to_csv(stage_a_output_dir / "stage_a_context_selection_summary.csv", index=False)
+
+    stage_a_accepted_count = len(stage_a_result.get("accepted_registry", []))
+    tprint(f"Stage A accepted -> winning contexts funnel: {stage_a_accepted_count} -> {len(winning_contexts)}")
+
+    if len(winning_contexts) < 5 and stage_a_accepted_count > 10:
+        tprint(f"WARNING: Very few contexts survived selection ({len(winning_contexts)} out of {stage_a_accepted_count}).")
+
+    if not winning_contexts.empty:
+        tprint("Top selected contexts by hurdle excess:")
+        top_ctx = winning_contexts.sort_values("hurdle_excess", ascending=False).head(5)
+        for _, row in top_ctx.iterrows():
+            tprint(f"  - {row['canonical_key']}: hurdle_excess={row['hurdle_excess']:.5f}")
     
     if winning_contexts.empty:
         tprint("No contexts found in Stage A. Aborting Stage B.")
@@ -3274,8 +3875,24 @@ def run_two_stage_lgbm_mask_generation(
     ])
     context_mapping_df.to_csv(root_output_dir / "stage_b_context_mapping.csv", index=False)
     
+    context_support_rows = []
+    n_samples = len(data)
+    for name, mask in context_feature_dict.items():
+        support = int(mask.sum())
+        context_support_rows.append({
+            "context_name": name,
+            "stage_a_key": context_to_key[name],
+            "support": support,
+            "support_pct": float(support / max(n_samples, 1))
+        })
+
+    if context_support_rows:
+        pd.DataFrame(context_support_rows).to_csv(stage_a_output_dir / "context_mask_support_summary.csv", index=False)
+        tprint(f"Mapped {len(context_support_rows)} Contexts to Stage B. Dropped: {len(winning_contexts) - len(context_support_rows)}")
+
+
     fp_b = FeatureProcessor()
-    X_b, metadata_b, feat_audit_b = fp_b.prepare_features(
+    X_b, metadata_b, audits_b = fp_b.prepare_features(
         feature_dict, data['timestamp'].to_numpy(), data['symbol'].to_numpy(), cfg,
         active_groups=("trigger",),
         extra_binary_features=context_feature_dict,
@@ -3283,7 +3900,10 @@ def run_two_stage_lgbm_mask_generation(
     )
     stage_b_output_dir = root_output_dir / "stage_b_trigger_refinement"
     stage_b_output_dir.mkdir(parents=True, exist_ok=True)
-    feat_audit_b.to_csv(stage_b_output_dir / "feature_quality_audit.csv", index=False)
+
+    for k, v in audits_b.items():
+        if not v.empty:
+            v.to_csv(stage_b_output_dir / f"{k}.csv", index=False)
     context_mapping_df.to_csv(stage_b_output_dir / "stage_b_context_mapping.csv", index=False)
     
     stage_b_spec = MiningStageSpec(
@@ -3297,6 +3917,7 @@ def run_two_stage_lgbm_mask_generation(
     )
 
     def reconstruct_stage_b_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
+        global stage_b_reconstruction_success, stage_b_reconstruction_failed
         slots = raw_key.split("|")
         trigger_conditions = []
         parent_context_key = None
@@ -3314,10 +3935,12 @@ def run_two_stage_lgbm_mask_generation(
                     parent_context_key = context_to_key.get(feature_name)
 
         if parent_context_key is None or not trigger_conditions:
+            stage_b_reconstruction_failed += 1
             return None, None
 
         trigger_slot = f"({'&'.join(sorted(trigger_conditions))})"
         parent_slots = parent_context_key.split("|")
+        stage_b_reconstruction_success += 1
         return f"{trigger_slot}|{parent_slots[1]}|{parent_slots[2]}", parent_context_key
     
     stage_b_result = run_mining_stage(
@@ -3350,10 +3973,24 @@ def run_two_stage_lgbm_mask_generation(
     )
 
     stage_a_accepted = stage_a_result["accepted_registry"].copy()
+    stage_a_accepted["origin_stage"] = "stage_a"
+
     stage_b_accepted = stage_b_result["accepted_registry"].copy()
-    combined_pre_global = pd.concat(
-        [stage_a_accepted, stage_b_accepted], ignore_index=True
-    ).sort_values(["composite_score", "hurdle_excess"], ascending=False)
+    stage_b_accepted["origin_stage"] = "stage_b"
+
+    combined_pre_global_raw = pd.concat([stage_a_accepted, stage_b_accepted], ignore_index=True)
+
+    origin_counts = {"stage_a_only": 0, "stage_b_only": 0, "overlapping_keys": 0}
+    a_keys = set(stage_a_accepted["canonical_key"])
+    b_keys = set(stage_b_accepted["canonical_key"])
+
+    origin_counts["overlapping_keys"] = len(a_keys.intersection(b_keys))
+    origin_counts["stage_a_only"] = len(a_keys - b_keys)
+    origin_counts["stage_b_only"] = len(b_keys - a_keys)
+
+    pd.DataFrame([origin_counts]).to_csv(root_output_dir / "combined_registry_origin_summary.csv", index=False)
+
+    combined_pre_global = combined_pre_global_raw.sort_values(["composite_score", "hurdle_excess"], ascending=False)
     combined_pre_global = combined_pre_global.drop_duplicates(
         subset=["canonical_key"], keep="first"
     )
@@ -3389,6 +4026,11 @@ def run_two_stage_lgbm_mask_generation(
     )
     global_scorer = RuleScorer(metadata_a + metadata_b, cfg, mask_resolver=combined_resolver)
     use_economic_consolidator = cfg.get("use_economic_consolidator", True)
+
+    tprint(f"Cross-Stage Funnel: Stage A ({len(stage_a_accepted)}) + Stage B ({len(stage_b_accepted)}) -> Combined Pre-Global ({len(combined_pre_global)})")
+    consolidator_type = "EconomicRuleConsolidator" if use_economic_consolidator else "RuleConsolidator"
+    tprint(f"Chosen Global Consolidator: {consolidator_type}")
+
     if use_economic_consolidator:
         global_consolidator = EconomicRuleConsolidator(
             metadata_a + metadata_b,
@@ -3403,16 +4045,24 @@ def run_two_stage_lgbm_mask_generation(
             mask_resolver=combined_resolver,
             scorer=global_scorer,
         )
-    combined_global_registry, global_lineage = global_consolidator.consolidate(
+    combined_global_registry, global_lineage, global_consol_diag = global_consolidator.consolidate(
         combined_pre_global,
         fwd_ret,
         folds,
         resolver=combined_resolver,
         data=data,
     )
+
+    for name, obj in global_consol_diag.items():
+        if isinstance(obj, pd.DataFrame):
+            obj.to_csv(root_output_dir / f"{name}.csv", index=False)
+        else:
+            with open(root_output_dir / f"{name}.json", "w") as f:
+                json.dump(obj, f, indent=2)
     combined_global_registry = combined_global_registry.drop_duplicates(
         subset=["canonical_key"], keep="first"
     )
+    tprint(f"Global Consolidation resulted in {len(combined_global_registry)} rules.")
     combined_global_registry["preset"] = cfg.get("preset", "exploration")
     combined_global_registry.to_csv(
         root_output_dir / "combined_accepted_rule_registry.csv", index=False
@@ -3428,6 +4078,73 @@ def run_two_stage_lgbm_mask_generation(
     portfolio_diversity_report.to_csv(
         root_output_dir / "portfolio_diversity_report.csv", index=False
     )
+
+    global malformed_key_count, unresolved_feature_count, unresolved_feature_names, stage_b_reconstruction_success, stage_b_reconstruction_failed
+    tprint(f"Canonical Key Diagnostics: malformed={malformed_key_count}, unresolved_features={unresolved_feature_count}")
+    tprint(f"Stage B Reconstruction: success={stage_b_reconstruction_success}, failed={stage_b_reconstruction_failed}")
+    if unresolved_feature_names:
+        tprint(f"Unresolved features: {', '.join(list(unresolved_feature_names)[:10])}")
+
+    audit_data = {
+        "malformed_key_count": malformed_key_count,
+        "unresolved_feature_count": unresolved_feature_count,
+        "stage_b_reconstruction_success": stage_b_reconstruction_success,
+        "stage_b_reconstruction_failed": stage_b_reconstruction_failed,
+    }
+    pd.DataFrame([audit_data]).to_csv(root_output_dir / "canonical_key_parse_audit.csv", index=False)
+
+    # Final Registry Breakdowns
+    if not combined_global_registry.empty:
+        breakdown = combined_global_registry.groupby(["side", "display_arity"]).size().reset_index(name="count")
+        breakdown.to_csv(root_output_dir / "final_registry_breakdown_by_side_arity.csv", index=False)
+
+        final_summary = {
+            "total_accepted": len(combined_global_registry),
+            "mean_support_pct": float(combined_global_registry["mean_support_pct"].mean()),
+            "median_support_pct": float(combined_global_registry["mean_support_pct"].median()),
+            "mean_hurdle_excess": float(combined_global_registry["hurdle_excess"].mean()),
+            "median_hurdle_excess": float(combined_global_registry["hurdle_excess"].median()),
+        }
+
+        # Count by origin
+        if "origin_stage" in combined_global_registry.columns:
+            for origin, count in combined_global_registry["origin_stage"].value_counts().items():
+                final_summary[f"origin_{origin}"] = count
+
+        # Count by rule type
+        if "rule_type" in combined_global_registry.columns:
+            for rtype, count in combined_global_registry["rule_type"].value_counts().items():
+                final_summary[f"type_{rtype}"] = count
+
+        # Portfolio Diversity Highlights
+        eff_rules = portfolio_diversity_report[portfolio_diversity_report["metric"] == "effective_independent_rules"]["value"].values
+        if len(eff_rules) > 0:
+            final_summary["effective_independent_rules"] = float(eff_rules[0])
+
+        top_rule_share = portfolio_diversity_report[portfolio_diversity_report["metric"] == "top_rule_share"]["value"].values
+        if len(top_rule_share) > 0:
+            final_summary["top_rule_share"] = float(top_rule_share[0])
+
+        with open(root_output_dir / "final_registry_summary.json", "w") as f:
+            json.dump(final_summary, f, indent=2)
+
+        tprint(f"Final Output Summary: {len(combined_global_registry)} rules.")
+        tprint(f"  - Mean Support: {final_summary['mean_support_pct']:.2%}")
+        tprint(f"  - Median Hurdle Excess: {final_summary['median_hurdle_excess']:.5f}")
+        if "effective_independent_rules" in final_summary:
+            tprint(f"  - Effective Independent Rules: {final_summary['effective_independent_rules']:.2f}")
+
+        tprint("Side Mix:")
+        side_counts = combined_global_registry["side"].value_counts()
+        for side, count in side_counts.items():
+            tprint(f"  - {side}: {count}")
+
+        tprint("Top 10 Final Rules:")
+        top_final = combined_global_registry.sort_values("composite_score", ascending=False).head(10)
+        for _, row in top_final.iterrows():
+            tprint(f"  - {row['canonical_key']}: score={row['composite_score']:.3f}, arity={row['display_arity']}, side={row['side']}")
+    else:
+        tprint("Final Output Summary: 0 rules accepted.")
 
     tprint(f"Two-stage mining complete. Total accepted rules: {len(combined_global_registry)}")
     return {
@@ -3556,7 +4273,32 @@ class MaskAssessor:
                 'win_rate_unconditional': tbm_metrics['win_rate_unconditional'],
             })
             
-        return pd.DataFrame(assessment_results)
+        assessment_df = pd.DataFrame(assessment_results)
+        if assessment_df.empty:
+            return assessment_df
+
+        assessed_count = len(assessment_df)
+        sound_count = assessment_df['is_structurally_sound'].sum()
+        rejected_count = assessed_count - sound_count
+
+        tprint(f"Mask Assessor: Assessed {assessed_count} | Structurally Sound {sound_count} | Rejected {rejected_count}")
+
+        rejection_counts = assessment_df[~assessment_df['is_structurally_sound']]['rejection_reason'].value_counts()
+        if not rejection_counts.empty:
+            tprint("Top Assessor Rejection Reasons:")
+            for reason, count in rejection_counts.items():
+                tprint(f"  - {reason}: {count}")
+
+        # Save rejection summary as attribute
+        self.rejection_summary = rejection_counts.to_dict()
+
+        top_sound = assessment_df[assessment_df['is_structurally_sound']].sort_values('mask_score', ascending=False).head(5)
+        if not top_sound.empty:
+            tprint("Top 5 Structurally Sound Rules by Mask Score:")
+            for _, row in top_sound.iterrows():
+                tprint(f"  - {row['canonical_key']}: {row['mask_score']:.3f}")
+
+        return assessment_df
 
     def _compute_tbm_metrics(self, mask, tp_f, sl_f, to_f, fwd_ret) -> Dict[str, float]:
         """Compute triple barrier metrics."""
@@ -4511,13 +5253,15 @@ def run_lgbm_mask_generation(
     output_dir = Path(cfg.get("output_dir", "./lgbm_outputs"))
     output_dir.mkdir(parents=True, exist_ok=True)
     fp = FeatureProcessor()
-    X, metadata, feat_audit = fp.prepare_features(
+    X, metadata, audits = fp.prepare_features(
         feature_dict, 
         data['timestamp'].to_numpy(), 
         data['symbol'].to_numpy(),
         cfg
     )
-    feat_audit.to_csv(output_dir / "feature_quality_audit.csv", index=False)
+    for k, v in audits.items():
+        if not v.empty:
+            v.to_csv(output_dir / f"{k}.csv", index=False)
     export_feature_group_summary(metadata, output_dir)
     result = run_mining_stage(
         data=data,

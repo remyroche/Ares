@@ -3090,7 +3090,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             bar_range = h_raw - l_raw
 
         if _needs_feature("ATR_decay_rate"):
-            feats["ATR_decay_rate"] = atr_base.apply(lambda x: pd.Series(slope_nb(x.values, 6), index=x.index), axis=0).astype(np.float32)
+            feats["ATR_decay_rate"] = ff.apply_to_frame(atr_base, ff.slope_nb, 6).astype(np.float32)
 
         if _needs_feature("ATR_spike_ratio", "ATR_ratio_short_long"):
             atr_mean_24 = atr_base.rolling(24, min_periods=1).mean()
@@ -3102,21 +3102,21 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             del atr_mean_3
 
         if _needs_feature("bar_direction_entropy"):
-            feats["bar_direction_entropy"] = ret_1.apply(lambda x: pd.Series(binary_entropy_nb(x.values, 12), index=x.index), axis=0).astype(np.float32)
+            feats["bar_direction_entropy"] = ff.apply_to_frame(ret_1, ff.binary_entropy_nb, 12).astype(np.float32)
 
         rv_1 = rv_2 = rv_24 = None
         if _needs_feature("realized_vol_15m_realized_vol_2h", "vol_regime_transition"):
-            rv_1 = ret_1.apply(lambda x: pd.Series(realized_vol_nb(x.values, 1), index=x.index), axis=0)
-            rv_2 = ret_1.apply(lambda x: pd.Series(realized_vol_nb(x.values, 2), index=x.index), axis=0)
+            rv_1 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 1)
+            rv_2 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 2)
         if _needs_feature("realized_vol_15m_realized_vol_2h"):
             feats["realized_vol_15m_realized_vol_2h"] = (rv_1 / (rv_2 + 1e-9)).fillna(1.0).astype(np.float32)
         if _needs_feature("vol_regime_transition"):
-            rv_24 = ret_1.apply(lambda x: pd.Series(realized_vol_nb(x.values, 24), index=x.index), axis=0)
+            rv_24 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 24)
             rv24_mean_48 = rv_24.rolling(48, min_periods=1).mean()
             feats["vol_regime_transition"] = (rv_24 / (rv24_mean_48 + 1e-9)).fillna(1.0).astype(np.float32)
 
         if _needs_feature("micro_range_decay"):
-            feats["micro_range_decay"] = bar_range.apply(lambda x: pd.Series(slope_nb(x.values, 3), index=x.index), axis=0).astype(np.float32)
+            feats["micro_range_decay"] = ff.apply_to_frame(bar_range, ff.slope_nb, 3).astype(np.float32)
 
         if _needs_feature("range_decay"):
             range_mean_3 = bar_range.rolling(3, min_periods=1).mean()
@@ -3171,13 +3171,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["climax_volume_ratio"] = (vol_max_6 / (vol_mean_24 + 1e-9)).fillna(1.0).astype(np.float32)
 
         if _needs_feature("dist_ema50_atr"):
-            ema_50 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 50), index=x.index), axis=0)
+            ema_50 = ff.apply_to_frame(c_log, ff.ema_nb, 50)
             feats["dist_ema50_atr"] = ((c_log - ema_50) / (atr_base + 1e-9)).astype(np.float32)
         if _needs_feature("dist_ema100_atr"):
-            ema_100 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 100), index=x.index), axis=0)
+            ema_100 = ff.apply_to_frame(c_log, ff.ema_nb, 100)
             feats["dist_ema100_atr"] = ((c_log - ema_100) / (atr_base + 1e-9)).astype(np.float32)
         if _needs_feature("dist_ema200_atr"):
-            ema_200 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 200), index=x.index), axis=0)
+            ema_200 = ff.apply_to_frame(c_log, ff.ema_nb, 200)
             feats["dist_ema200_atr"] = ((c_log - ema_200) / (atr_base + 1e-9)).astype(np.float32)
 
         if _needs_feature("dist_rolling_7d_high"):
@@ -3206,20 +3206,20 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["cost_to_atr"] = (spread_pct / (atr_base + 1e-9)).fillna(0.0).astype(np.float32)
 
         if _needs_feature("direction_entropy_20"):
-            feats["direction_entropy_20"] = ret_1.apply(lambda x: pd.Series(binary_entropy_nb(x.values, 20), index=x.index), axis=0).astype(np.float32)
+            feats["direction_entropy_20"] = ff.apply_to_frame(ret_1, ff.binary_entropy_nb, 20).astype(np.float32)
 
         if _needs_feature("atr_change_rate"):
             feats["atr_change_rate"] = atr_base.pct_change().fillna(0.0).astype(np.float32)
 
         if _needs_feature("acceleration_of_move"):
-            feats["acceleration_of_move"] = ret_1.apply(lambda x: pd.Series(slope_nb(x.values, 6), index=x.index), axis=0).astype(np.float32)
+            feats["acceleration_of_move"] = ff.apply_to_frame(ret_1, ff.slope_nb, 6).astype(np.float32)
 
         if _needs_feature("accept_gt66"):
             close_in_range = (c_raw - l_raw) / (h_raw - l_raw + 1e-9)
             feats["accept_gt66"] = (close_in_range > 0.66).astype(np.float32).rolling(6, min_periods=1).mean().astype(np.float32)
 
         if _needs_feature("bars_since_trend_flip"):
-            trend_slope = c_log.apply(lambda x: pd.Series(slope_nb(x.values, 6), index=x.index), axis=0)
+            trend_slope = ff.apply_to_frame(c_log, ff.slope_nb, 6)
             trend_sign = (trend_slope > 0).astype(np.float32)
             bars_since_flip = pd.DataFrame(index=trend_sign.index, columns=trend_sign.columns, dtype=np.float32)
             for col in trend_sign.columns:
@@ -3231,15 +3231,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["bars_since_trend_flip"] = bars_since_flip.astype(np.float32)
 
         if _needs_feature("MACD_histogram"):
-            ema_12 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 12), index=x.index), axis=0)
-            ema_26 = c_log.apply(lambda x: pd.Series(ema_nb(x.values, 26), index=x.index), axis=0)
+            ema_12 = ff.apply_to_frame(c_log, ff.ema_nb, 12)
+            ema_26 = ff.apply_to_frame(c_log, ff.ema_nb, 26)
             macd = ema_12 - ema_26
-            signal = macd.apply(lambda x: pd.Series(ema_nb(x.values, 9), index=x.index), axis=0)
+            signal = ff.apply_to_frame(macd, ff.ema_nb, 9)
             feats["MACD_histogram"] = (macd - signal).astype(np.float32)
 
         if _needs_feature("RSI") and "rsi" not in feats:
-            rsi_14 = c_log.apply(lambda x: pd.Series(rsi(x.to_frame(), 14)[x.name], index=x.index), axis=0)
-            feats["RSI"] = rsi_14.astype(np.float32)
+            feats["RSI"] = ff.numba_rsi(c_log, 14).astype(np.float32)
 
         if _needs_feature("trend_persistence"):
             up_bars = (c_raw > c_raw.shift(1)).astype(np.float32)

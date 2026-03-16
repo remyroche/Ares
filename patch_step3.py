@@ -2,40 +2,73 @@ with open('extreme_price_movements/lgbm_based_mask_generation.py', 'r') as f:
     code = f.read()
 
 code = code.replace(
-'''    def _get_mask_for_rule(self, key: str, X: np.ndarray) -> np.ndarray:
-        """
-        Parses '(F1==1)|(LOC1==0)|(*)' into a boolean mask.
-        """
-        parts = key.split('|')
-        mask = np.ones(X.shape[0], dtype=bool)
-        for p in parts:
-            p = p.strip('()')
-            if p == '*': continue
-            if '==' in p:
-                fname, val_part = p.split('==')
-                val = int(val_part)
-                # Find matching metadata for feature index
-                f_idx = next(m.feature_index for m in self.metadata if m.feature_name == fname)
-                mask &= (X[:, f_idx] == val)
-        return mask''',
-'''    def _get_mask_for_rule(self, key: str, X: np.ndarray) -> np.ndarray:
-        """
-        Parses '(F1==1)|(LOC1==0)|(*)' into a boolean mask.
-        """
-        parts = key.split('|')
-        mask = np.ones(X.shape[0], dtype=bool)
-        for p in parts:
-            p = p.strip('()')
-            if p == '*':
+'''        n_samples = self.X.shape[0] if indices is None else len(indices)
+        mask = np.ones(n_samples, dtype=bool)
+        unresolved_groups: List[str] = []
+
+        for group, slot_value in slot_map.items():
+            if slot_value == "*":
                 continue
-            for cond_str in p.split("&"):
-                if '==' not in cond_str:
-                    continue
-                fname, val_part = cond_str.split('==')
-                val = int(val_part)
-                # Find matching metadata for feature index
-                f_idx = next(m.feature_index for m in self.metadata if m.feature_name == fname)
-                mask &= (X[:, f_idx] == val)
+
+            for cond_str in slot_value.split("&"):
+                if "==" not in cond_str:
+                    raise ValueError(f"Malformed slot {cond_str} in {canonical_key}")
+                feature_name, target_val_raw = cond_str.split("==")
+                target_val = int(target_val_raw)
+                if feature_name in self.name_to_idx or feature_name in self.context_lookup:
+                    mask &= self._resolve_feature_mask(feature_name, target_val, indices)
+                else:
+                    unresolved_groups.append(group)
+
+        if unresolved_groups:
+            if not set(unresolved_groups).issubset({"location", "regime"}):
+                raise KeyError(
+                    f"Cannot resolve groups {unresolved_groups} for key {canonical_key}"
+                )
+            context_mask = self._resolve_context_parent_mask(canonical_key, indices)
+            if context_mask is None:
+                raise KeyError(f"Cannot map {canonical_key} to a saved Stage A context")
+            mask &= context_mask
+
+        return mask''',
+'''        n_samples = self.X.shape[0] if indices is None else len(indices)
+        mask = np.ones(n_samples, dtype=bool)
+        unresolved: List[Tuple[str, str]] = []
+
+        for group, slot_value in slot_map.items():
+            if slot_value == "*":
+                continue
+
+            for cond_str in slot_value.split("&"):
+                if "==" not in cond_str:
+                    raise ValueError(f"Malformed slot {cond_str} in {canonical_key}")
+                feature_name, target_val_raw = cond_str.split("==")
+                target_val = int(target_val_raw)
+                if feature_name in self.name_to_idx or feature_name in self.context_lookup:
+                    mask &= self._resolve_feature_mask(feature_name, target_val, indices)
+                else:
+                    unresolved.append((group, feature_name))
+
+        if unresolved:
+            unresolved_groups = {g for g, _ in unresolved}
+            unresolved_features = [f for _, f in unresolved]
+
+            if not unresolved_groups.issubset({"location", "regime"}):
+                raise KeyError(
+                    f"Cannot resolve groups {unresolved_groups} for key {canonical_key}"
+                )
+
+            allow_context_fallback = all(f.startswith("ctx__") for f in unresolved_features)
+            if not allow_context_fallback:
+                raise KeyError(
+                    f"Unresolved features {unresolved_features} in key {canonical_key}"
+                )
+
+            context_mask = self._resolve_context_parent_mask(canonical_key, indices)
+            if context_mask is None:
+                raise KeyError(f"Cannot map {canonical_key} to a saved Stage A context")
+            mask &= context_mask
+
         return mask'''
 )
 

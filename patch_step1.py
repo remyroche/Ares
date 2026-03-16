@@ -1,108 +1,89 @@
 with open('extreme_price_movements/lgbm_based_mask_generation.py', 'r') as f:
     code = f.read()
 
-# P2-8: Add comment to InteractionModel
+# 1. Modify collapse_duplicate_groups for stage_a_context
 code = code.replace(
-'''class InteractionModel:
-    def __init__(
-        self,
-        metadata: List[FeatureMetadata],
-        cfg: Dict[str, Any],
-        allowed_group_pairs: Optional[Sequence[Tuple[str, str]]] = None
-    ):''',
-'''class InteractionModel:
-    """
-    LightGBM is trained without strict interaction constraints.
-    Structural validity of rule paths is enforced in:
-        RuleExtractor._is_path_valid()
-    using interaction_group metadata.
-    """
-    def __init__(
-        self,
-        metadata: List[FeatureMetadata],
-        cfg: Dict[str, Any],
-        allowed_group_pairs: Optional[Sequence[Tuple[str, str]]] = None
-    ):'''
+'''    positive_only_groups: Tuple[str, ...] = ()
+    required_positive_groups: Tuple[str, ...] = ()
+    collapse_duplicate_groups: Tuple[str, ...] = ()
+    if pipeline_stage_name == "stage_a_context":
+        collapse_duplicate_groups = ("location", "regime")''',
+'''    positive_only_groups: Tuple[str, ...] = ()
+    required_positive_groups: Tuple[str, ...] = ()
+    collapse_duplicate_groups: Tuple[str, ...] = ()
+    if pipeline_stage_name == "stage_a_context":
+        collapse_duplicate_groups = ("location",)'''
 )
 
-# P0-1: Update _build_interaction_constraints
+# 2. Modify reconstruct_stage_b_key
 code = code.replace(
-'''        # Remove explicit interaction constraints to allow interactions across families
-        # and different groups according to the extractor rules.
-        return None''',
-'''        # Training is permissive; structural validity is enforced post-hoc
-        # in RuleExtractor._is_path_valid().
-        return []'''
-)
-
-# P0-1: Update get_constraint_summary
-code = code.replace(
-'''    def get_constraint_summary(self) -> Dict[str, Any]:
-        """
-        Returns a dictionary summarizing the interaction constraints.
-        """
-        # Map actual group names in constraints
-        summary = collections.defaultdict(int)
-        for c in self.constraints:
-            if len(c) == 1:
+'''    def reconstruct_stage_b_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
+        slots = raw_key.split("|")
+        trigger_slot = "(*)"
+        parent_context_key = None
+        for slot in slots:
+            slot_value = slot.strip("()")
+            if slot_value == "*" or "==" not in slot_value:
                 continue
-            elif len(c) == 2:
-                g1 = self.metadata[c[0]].group
-                g2 = self.metadata[c[1]].group
-                pair = tuple(sorted([g1, g2]))
-                summary[f"{pair[0]}_{pair[1]}_pairs"] += 1
-            elif len(c) == 3:
-                g1 = self.metadata[c[0]].group
-                g2 = self.metadata[c[1]].group
-                g3 = self.metadata[c[2]].group
-                triplet = tuple(sorted([g1, g2, g3]))
-                summary[f"{triplet[0]}_{triplet[1]}_{triplet[2]}_triplets"] += 1
-            else:
-                groups_in_c = set(self.metadata[idx].group for idx in c)
-                groups_str = "_".join(sorted(groups_in_c))
-                summary[f"multi_group_{groups_str}"] += 1
+            feature_name = slot_value.split("==")[0]
+            if feature_name in INTRADAY_TRIGGER_COLUMNS:
+                trigger_slot = slot
+            elif feature_name.startswith("ctx__"):
+                parent_context_key = context_to_key.get(feature_name)
+        if parent_context_key is None or trigger_slot == "(*)":
+            return None, None
+        parent_slots = parent_context_key.split("|")
+        return f"{trigger_slot}|{parent_slots[1]}|{parent_slots[2]}", parent_context_key''',
+'''    def reconstruct_stage_b_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
+        slots = raw_key.split("|")
+        trigger_conditions = []
+        parent_context_key = None
+        for slot in slots:
+            slot_value = slot.strip("()")
+            if slot_value == "*":
+                continue
+            for cond_str in slot_value.split("&"):
+                if "==" not in cond_str:
+                    continue
+                feature_name = cond_str.split("==")[0]
+                if feature_name in INTRADAY_TRIGGER_COLUMNS:
+                    trigger_conditions.append(cond_str)
+                elif feature_name.startswith("ctx__"):
+                    parent_context_key = context_to_key.get(feature_name)
 
-        result = {
-            'total_singletons': len(self.metadata),
-            'total_constraints': len(self.constraints)
-        }
-        # Add group counts
-        groups = set(m.group for m in self.metadata)
-        for g in groups:
-            result[f"num_{g}"] = sum(1 for m in self.metadata if m.group == g)
+        if parent_context_key is None or not trigger_conditions:
+            return None, None
 
-        result.update(summary)
-        return result''',
-'''    def get_constraint_summary(self) -> Dict[str, Any]:
-        import collections
-        result = {
-            "total_singletons": len(self.metadata),
-            "total_constraints": len(self.constraints) if self.constraints is not None else 0,
-        }
+        trigger_slot = f"({'&'.join(sorted(trigger_conditions))})"
+        parent_slots = parent_context_key.split("|")
+        return f"{trigger_slot}|{parent_slots[1]}|{parent_slots[2]}", parent_context_key'''
+)
 
-        groups = set(m.group for m in self.metadata)
-        for g in groups:
-            result[f"num_{g}"] = sum(1 for m in self.metadata if m.group == g)
-
-        if not self.constraints:
-            return result
-
-        summary = collections.defaultdict(int)
-        for c in self.constraints:
-            if len(c) == 1:
-                summary["singleton"] += 1
-                m = self.metadata[c[0]]
-                summary[f"singleton_{m.group}"] += 1
-            else:
-                groups = set(self.metadata[i].group for i in c)
-                if groups == {"regime"}:
-                    summary["regime_cluster"] += 1
-                elif groups == {"location"}:
-                    summary["location_cluster"] += 1
-                else:
-                    summary["mixed_cluster"] += 1
-        result.update(summary)
-        return result'''
+# 3. Global consolidator check
+code = code.replace(
+'''    global_scorer = RuleScorer(metadata_a + metadata_b, cfg, mask_resolver=combined_resolver)
+    global_consolidator = RuleConsolidator(
+        metadata_a + metadata_b,
+        cfg,
+        mask_resolver=combined_resolver,
+        scorer=global_scorer,
+    )''',
+'''    global_scorer = RuleScorer(metadata_a + metadata_b, cfg, mask_resolver=combined_resolver)
+    use_economic_consolidator = cfg.get("use_economic_consolidator", True)
+    if use_economic_consolidator:
+        global_consolidator = EconomicRuleConsolidator(
+            metadata_a + metadata_b,
+            cfg,
+            mask_resolver=combined_resolver,
+            scorer=global_scorer,
+        )
+    else:
+        global_consolidator = RuleConsolidator(
+            metadata_a + metadata_b,
+            cfg,
+            mask_resolver=combined_resolver,
+            scorer=global_scorer,
+        )'''
 )
 
 with open('extreme_price_movements/lgbm_based_mask_generation.py', 'w') as f:

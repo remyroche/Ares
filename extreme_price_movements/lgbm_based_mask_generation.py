@@ -924,7 +924,14 @@ def display_arity_for_key(canonical_key: str) -> int:
     composite_parts = split_composite_key(canonical_key)
     if composite_parts is not None:
         return max(display_arity_for_key(part) for part in composite_parts)
-    return sum(slot.strip("()") != "*" for slot in canonical_key.split("|"))
+
+    total = 0
+    for slot in canonical_key.split("|"):
+        slot_value = slot.strip("()")
+        if slot_value == "*":
+            continue
+        total += sum(1 for cond_str in slot_value.split("&") if "==" in cond_str)
+    return total
 
 
 def structural_depth_for_key(canonical_key: str) -> int:
@@ -1096,7 +1103,7 @@ class CanonicalRuleMaskResolver:
 
         n_samples = self.X.shape[0] if indices is None else len(indices)
         mask = np.ones(n_samples, dtype=bool)
-        unresolved_groups: List[str] = []
+        unresolved: List[Tuple[str, str]] = []
 
         for group, slot_value in slot_map.items():
             if slot_value == "*":
@@ -1110,16 +1117,31 @@ class CanonicalRuleMaskResolver:
                 if feature_name in self.name_to_idx or feature_name in self.context_lookup:
                     mask &= self._resolve_feature_mask(feature_name, target_val, indices)
                 else:
-                    unresolved_groups.append(group)
+                    unresolved.append((group, feature_name))
 
-        if unresolved_groups:
-            if not set(unresolved_groups).issubset({"location", "regime"}):
+        if unresolved:
+            unresolved_groups = {g for g, _ in unresolved}
+            unresolved_features = [f for _, f in unresolved]
+
+            if not unresolved_groups.issubset({"location", "regime"}):
                 raise KeyError(
                     f"Cannot resolve groups {unresolved_groups} for key {canonical_key}"
                 )
+
+            # Stricter fallback safety: Allow context fallback if features explicitly
+            # start with 'ctx__', OR if we successfully locate a parent context mask
+            # mapped to this rule structure.
             context_mask = self._resolve_context_parent_mask(canonical_key, indices)
+            allow_context_fallback = all(f.startswith("ctx__") for f in unresolved_features)
+
+            if context_mask is None and not allow_context_fallback:
+                raise KeyError(
+                    f"Unresolved features {unresolved_features} in key {canonical_key}"
+                )
+
             if context_mask is None:
                 raise KeyError(f"Cannot map {canonical_key} to a saved Stage A context")
+
             mask &= context_mask
 
         return mask
@@ -2921,7 +2943,7 @@ def run_mining_stage(
     required_positive_groups: Tuple[str, ...] = ()
     collapse_duplicate_groups: Tuple[str, ...] = ()
     if pipeline_stage_name == "stage_a_context":
-        collapse_duplicate_groups = ("location", "regime")
+        collapse_duplicate_groups = ("location",)
         if not bool(cfg.get("stage_a_relax_positive_groups", True)):
             positive_only_groups = ("location", "regime")
             required_positive_groups = ("location", "regime")
@@ -3276,19 +3298,25 @@ def run_two_stage_lgbm_mask_generation(
 
     def reconstruct_stage_b_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
         slots = raw_key.split("|")
-        trigger_slot = "(*)"
+        trigger_conditions = []
         parent_context_key = None
         for slot in slots:
             slot_value = slot.strip("()")
-            if slot_value == "*" or "==" not in slot_value:
+            if slot_value == "*":
                 continue
-            feature_name = slot_value.split("==")[0]
-            if feature_name in INTRADAY_TRIGGER_COLUMNS:
-                trigger_slot = slot
-            elif feature_name.startswith("ctx__"):
-                parent_context_key = context_to_key.get(feature_name)
-        if parent_context_key is None or trigger_slot == "(*)":
+            for cond_str in slot_value.split("&"):
+                if "==" not in cond_str:
+                    continue
+                feature_name = cond_str.split("==")[0]
+                if feature_name in INTRADAY_TRIGGER_COLUMNS:
+                    trigger_conditions.append(cond_str)
+                elif feature_name.startswith("ctx__"):
+                    parent_context_key = context_to_key.get(feature_name)
+
+        if parent_context_key is None or not trigger_conditions:
             return None, None
+
+        trigger_slot = f"({'&'.join(sorted(trigger_conditions))})"
         parent_slots = parent_context_key.split("|")
         return f"{trigger_slot}|{parent_slots[1]}|{parent_slots[2]}", parent_context_key
     
@@ -3360,12 +3388,21 @@ def run_two_stage_lgbm_mask_generation(
         side_map=combined_side_map,
     )
     global_scorer = RuleScorer(metadata_a + metadata_b, cfg, mask_resolver=combined_resolver)
-    global_consolidator = RuleConsolidator(
-        metadata_a + metadata_b,
-        cfg,
-        mask_resolver=combined_resolver,
-        scorer=global_scorer,
-    )
+    use_economic_consolidator = cfg.get("use_economic_consolidator", True)
+    if use_economic_consolidator:
+        global_consolidator = EconomicRuleConsolidator(
+            metadata_a + metadata_b,
+            cfg,
+            mask_resolver=combined_resolver,
+            scorer=global_scorer,
+        )
+    else:
+        global_consolidator = RuleConsolidator(
+            metadata_a + metadata_b,
+            cfg,
+            mask_resolver=combined_resolver,
+            scorer=global_scorer,
+        )
     combined_global_registry, global_lineage = global_consolidator.consolidate(
         combined_pre_global,
         fwd_ret,

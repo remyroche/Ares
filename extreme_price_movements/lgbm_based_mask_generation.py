@@ -200,11 +200,12 @@ class FeatureProcessor:
                     family = src.split('_')[0] if '_' in src else group_name
                     
                     for q in [0.2, 0.4, 0.6, 0.8]:
-                        bool_name = f"{group_name[:3]}_{src}_hybrid_top{int(q*100)}"
-                        bool_arr = (blended_ranks >= (1.0 - q)).astype(np.float32)
+                        # Top quantiles
+                        bool_name_top = f"{group_name[:3]}_{src}_hybrid_top{int(q*100)}"
+                        bool_arr_top = (blended_ranks >= (1.0 - q)).astype(np.float32)
                         
                         self._add_metadata(
-                            bool_name, group_name, 'boolean',
+                            bool_name_top, group_name, 'boolean',
                             source_name=src, 
                             source_family=family,
                             booleanization_method='hybrid_cs_ts_rank',
@@ -212,8 +213,24 @@ class FeatureProcessor:
                             threshold_value=q,
                             description=f"Hybrid Rank (CS weight={cs_weight}) >= {1.0-q}"
                         )
-                        raw_cols.append(bool_arr)
-                        raw_names.append(bool_name)
+                        raw_cols.append(bool_arr_top)
+                        raw_names.append(bool_name_top)
+
+                        # Bottom quantiles
+                        bool_name_bot = f"{group_name[:3]}_{src}_hybrid_bot{int(q*100)}"
+                        bool_arr_bot = (blended_ranks <= q).astype(np.float32)
+
+                        self._add_metadata(
+                            bool_name_bot, group_name, 'boolean',
+                            source_name=src,
+                            source_family=family,
+                            booleanization_method='hybrid_cs_ts_rank',
+                            threshold_type='bot_quantile',
+                            threshold_value=q,
+                            description=f"Hybrid Rank (CS weight={cs_weight}) <= {q}"
+                        )
+                        raw_cols.append(bool_arr_bot)
+                        raw_names.append(bool_name_bot)
 
                     band_name = f"{group_name[:3]}_{src}_hybrid_band30_70"
                     band_arr = (

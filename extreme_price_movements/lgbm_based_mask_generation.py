@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.metrics import roc_auc_score
+import scipy.stats
 from numba import njit, prange
 
 os.environ.setdefault("LOKY_MAX_CPU_COUNT", "3")
@@ -52,6 +53,22 @@ from extreme_price_movements.intraday_crypto_library import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+def _safe_spearman(x: np.ndarray, y: np.ndarray) -> float:
+    if len(x) < 3:
+        return np.nan
+    # Check for constant arrays
+    if np.all(x == x[0]) or np.all(y == y[0]):
+        return np.nan
+    return float(scipy.stats.spearmanr(x, y).correlation)
+
+
+def _clip_returns(x: np.ndarray) -> np.ndarray:
+    if len(x) == 0:
+        return x
+    lo = float(np.nanpercentile(x, 2.0))
+    hi = float(np.nanpercentile(x, 98.0))
+    return np.clip(x, lo, hi)
 
 # =============================================================================
 # DATA STRUCTURES & METADATA
@@ -1881,15 +1898,11 @@ class RuleConsolidator:
                 )
                 child_summary["merge_source"] = merge_source
                 child_summary["ridge_mean_net_ret"] = ridge_diag["ridge_mean_net_ret"]
-                child_summary["ridge_positive_fold_fraction"] = ridge_diag[
-                    "ridge_positive_fold_fraction"
-                ]
-                child_summary["ridge_mean_support_pct"] = ridge_diag[
-                    "ridge_mean_support_pct"
-                ]
+                child_summary["ridge_positive_fold_fraction"] = ridge_diag["ridge_positive_fold_fraction"]
+                child_summary["ridge_mean_support_pct"] = ridge_diag.get("ridge_mean_support_pct", 0.0)
                 child_summary["ridge_vs_parent_gain"] = (
-                    ridge_diag["ridge_mean_net_ret"] - best_parent["mean_net_ret"]
-                    if np.isfinite(ridge_diag["ridge_mean_net_ret"])
+                    ridge_diag["child_mean_net_ret"] - ridge_diag["parent_mean_net_ret"]
+                    if np.isfinite(ridge_diag["child_mean_net_ret"]) and np.isfinite(ridge_diag["parent_mean_net_ret"])
                     else np.nan
                 )
 
@@ -1901,17 +1914,8 @@ class RuleConsolidator:
                 child_improves_support = child_summary["mean_support_pct"] >= (
                     support_gain_factor * best_parent["mean_support_pct"]
                 )
-                ridge_supports_merge = (
-                    np.isfinite(ridge_diag["ridge_mean_net_ret"])
-                    and ridge_diag["ridge_mean_net_ret"] > best_parent["mean_net_ret"]
-                    and ridge_diag["ridge_positive_fold_fraction"]
-                    >= float(
-                        self.cfg.get(
-                            "merge_ridge_positive_fold_fraction",
-                            0.60 if merge_source in {"same_regime_only", "same_location_only"} else 0.50,
-                        )
-                    )
-                )
+                ridge_supports_merge = ridge_diag["accept_merge"]
+
                 sign_ok = child_summary["sign_consistency"] >= (
                     best_parent["sign_consistency"] - 0.05
                 )
@@ -1939,6 +1943,7 @@ class RuleConsolidator:
                             "jaccard": jaccard,
                             "merge_source": merge_source,
                             "ridge_mean_net_ret": ridge_diag["ridge_mean_net_ret"],
+                            "accept_merge_reason": ridge_diag["accept_merge_reason"],
                         },
                     )
                     accepted_merges += 1
@@ -1957,6 +1962,7 @@ class RuleConsolidator:
                             "merge_source": merge_source,
                             "ridge_mean_net_ret": ridge_diag["ridge_mean_net_ret"],
                             "ridge_positive_fold_fraction": ridge_diag["ridge_positive_fold_fraction"],
+                            "accept_merge_reason": ridge_diag["accept_merge_reason"],
                         },
                     )
                     failed_checks += 1
@@ -1977,7 +1983,7 @@ class RuleConsolidator:
         resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
         fwd_ret: np.ndarray,
         folds: List[Tuple[np.ndarray, np.ndarray]],
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Any]:
         from sklearn.linear_model import Ridge
 
         min_train = int(self.cfg.get("merge_ridge_min_train", 20))
@@ -1986,51 +1992,184 @@ class RuleConsolidator:
         mask_b_full = resolver.get_mask(key_b).astype(np.float32)
         union_full = (mask_a_full > 0) | (mask_b_full > 0)
 
-        fold_returns: List[float] = []
-        fold_supports: List[float] = []
-        fold_r2: List[float] = []
+        eps = 1e-12
+        candidates = ["composite_or", "parent_a_only", "parent_b_only"]
+        fold_metrics = {c: {"returns": [], "stds": [], "ics": []} for c in candidates}
 
         for tr_idx, va_idx in folds:
             tr_union = union_full[tr_idx]
             va_union = union_full[va_idx]
-            if np.sum(tr_union) < min_train or np.sum(va_union) < min_valid:
-                continue
 
-            X_tr = np.column_stack([mask_a_full[tr_idx][tr_union], mask_b_full[tr_idx][tr_union]]).astype(np.float32)
-            y_tr = fwd_ret[tr_idx][tr_union].astype(np.float32, copy=True)
-            X_va = np.column_stack([mask_a_full[va_idx][va_union], mask_b_full[va_idx][va_union]]).astype(np.float32)
-            y_va = fwd_ret[va_idx][va_union].astype(np.float32, copy=False)
+            # Use out-of-sample data
+            mask_a_va = mask_a_full[va_idx]
+            mask_b_va = mask_b_full[va_idx]
+            y_va_full = fwd_ret[va_idx]
 
-            if X_tr.shape[0] < min_train or X_va.shape[0] < min_valid:
-                continue
+            # 1. Train Ridge for composite
+            preds = np.zeros_like(y_va_full)
+            if np.sum(tr_union) >= min_train and np.sum(va_union) >= min_valid:
+                X_tr = np.column_stack([mask_a_full[tr_idx][tr_union], mask_b_full[tr_idx][tr_union]]).astype(np.float32)
+                y_tr = fwd_ret[tr_idx][tr_union].astype(np.float32, copy=True)
+                X_va = np.column_stack([mask_a_full[va_idx][va_union], mask_b_full[va_idx][va_union]]).astype(np.float32)
+                y_va = fwd_ret[va_idx][va_union].astype(np.float32, copy=False)
 
-            hi = np.nanquantile(y_tr, 0.98)
-            lo = np.nanquantile(y_tr, 0.02)
-            y_tr = np.clip(y_tr, lo, hi)
-            model = Ridge(alpha=float(self.cfg.get("merge_ridge_alpha", 1.0)))
-            model.fit(X_tr, y_tr)
-            preds = model.predict(X_va)
-            select = preds > 0.0
-            if np.sum(select) == 0:
-                continue
+                if X_tr.shape[0] >= min_train and X_va.shape[0] >= min_valid:
+                    hi = np.nanquantile(y_tr, 0.98)
+                    lo = np.nanquantile(y_tr, 0.02)
+                    y_tr_clipped = np.clip(y_tr, lo, hi)
+                    model = Ridge(alpha=float(self.cfg.get("merge_ridge_alpha", 1.0)))
+                    model.fit(X_tr, y_tr_clipped)
+                    preds[va_union] = model.predict(X_va)
 
-            selected_returns = y_va[select]
-            fold_returns.append(float(np.nanmean(selected_returns)))
-            fold_supports.append(float(np.sum(select) / max(len(va_idx), 1)))
-            sst = float(np.sum((y_va - np.mean(y_va)) ** 2))
-            if sst > 1e-9:
-                ssr = float(np.sum((y_va - preds) ** 2))
-                fold_r2.append(float(1.0 - ssr / sst))
+            # Gather validation metrics per candidate
+            scores = {
+                "composite_or": preds,
+                "parent_a_only": mask_a_va,
+                "parent_b_only": mask_b_va
+            }
+            trade_masks = {
+                "composite_or": preds > 0.0,
+                "parent_a_only": mask_a_va > 0,
+                "parent_b_only": mask_b_va > 0
+            }
 
-        ridge_mean_net_ret = float(np.mean(fold_returns)) if fold_returns else np.nan
-        ridge_positive_fold_fraction = (
-            float(np.mean(np.asarray(fold_returns) > 0.0)) if fold_returns else 0.0
-        )
+            for cand in candidates:
+                cand_score = scores[cand]
+                cand_mask = trade_masks[cand]
+
+                # Mean and Std (on clipped returns)
+                selected_returns = y_va_full[cand_mask]
+                valid_returns = selected_returns[np.isfinite(selected_returns)]
+                if len(valid_returns) > 0:
+                    fold_metrics[cand]["returns"].append(float(np.mean(valid_returns)))
+                    clipped_returns = _clip_returns(valid_returns)
+                    fold_metrics[cand]["stds"].append(float(np.std(clipped_returns)))
+                else:
+                    fold_metrics[cand]["returns"].append(np.nan)
+                    fold_metrics[cand]["stds"].append(np.nan)
+
+                # IC (on all valid rows in the fold)
+                valid_idx = np.isfinite(y_va_full) & np.isfinite(cand_score)
+                ic = _safe_spearman(cand_score[valid_idx], y_va_full[valid_idx])
+                fold_metrics[cand]["ics"].append(ic)
+
+        # Aggregate fold metrics
+        agg_metrics = {}
+        for cand in candidates:
+            returns_arr = np.array(fold_metrics[cand]["returns"], dtype=float)
+            stds_arr = np.array(fold_metrics[cand]["stds"], dtype=float)
+            ics_arr = np.array(fold_metrics[cand]["ics"], dtype=float)
+
+            mean_net_ret = float(np.nanmean(returns_arr)) if not np.all(np.isnan(returns_arr)) else np.nan
+            std_net_ret = float(np.nanmean(stds_arr)) if not np.all(np.isnan(stds_arr)) else np.nan
+            mean_ic = float(np.nanmean(ics_arr)) if not np.all(np.isnan(ics_arr)) else np.nan
+            positive_fold_fraction = float(np.mean(returns_arr[np.isfinite(returns_arr)] > 0)) if np.any(np.isfinite(returns_arr)) else 0.0
+
+            if np.isfinite(mean_net_ret) and np.isfinite(std_net_ret):
+                sharpe = mean_net_ret / max(std_net_ret, eps)
+            else:
+                sharpe = np.nan
+
+            if np.isfinite(sharpe) and np.isfinite(mean_ic):
+                selection_score = sharpe * max(mean_ic, 0.0)
+            else:
+                selection_score = -np.inf
+
+            agg_metrics[cand] = {
+                "mean_net_ret": mean_net_ret,
+                "std_net_ret": std_net_ret,
+                "sharpe": sharpe,
+                "mean_ic": mean_ic,
+                "positive_fold_fraction": positive_fold_fraction,
+                "selection_score": selection_score
+            }
+
+        # Compare parents
+        score_a = agg_metrics["parent_a_only"]["selection_score"]
+        score_b = agg_metrics["parent_b_only"]["selection_score"]
+
+        if score_a >= score_b:
+            better_parent_name = "parent_a_only"
+            worse_parent_name = "parent_b_only"
+        else:
+            better_parent_name = "parent_b_only"
+            worse_parent_name = "parent_a_only"
+
+        # Determine winner
+        winner = "composite_or"
+        best_score = agg_metrics["composite_or"]["selection_score"]
+
+        if score_a >= best_score:
+            winner = "parent_a_only"
+            best_score = score_a
+        if score_b >= best_score:
+            winner = "parent_b_only"
+            best_score = score_b
+
+        # Acceptance logic
+        accept_merge = False
+        reason = "accepted"
+
+        child = agg_metrics[winner]
+        parent = agg_metrics[better_parent_name]
+        worse_parent = agg_metrics[worse_parent_name]
+
+        if winner != "composite_or":
+            accept_merge = False
+            reason = "composite_lost_to_parent"
+        else:
+            min_abs_sharpe_delta = 0.02
+            min_abs_ic_delta = 0.002
+
+            # Sharpe OK
+            if np.isfinite(parent["sharpe"]) and parent["sharpe"] > 0:
+                sharpe_ok = child["sharpe"] > parent["sharpe"] * 1.05
+            else:
+                sharpe_ok = child["sharpe"] > (parent["sharpe"] if np.isfinite(parent["sharpe"]) else 0) + min_abs_sharpe_delta
+
+            # IC OK
+            if np.isfinite(parent["mean_ic"]) and parent["mean_ic"] > 0:
+                ic_ok = child["mean_ic"] > parent["mean_ic"] * 1.05
+            else:
+                ic_ok = child["mean_ic"] > (parent["mean_ic"] if np.isfinite(parent["mean_ic"]) else 0) + min_abs_ic_delta
+
+            # Risk OK
+            worst_parent_std = worse_parent["std_net_ret"] if np.isfinite(worse_parent["std_net_ret"]) else np.inf
+            risk_ok = child["std_net_ret"] <= worst_parent_std
+
+            if not sharpe_ok:
+                reason = "failed_sharpe_improvement"
+            elif not ic_ok:
+                reason = "failed_ic_improvement"
+            elif not risk_ok:
+                reason = "failed_std_constraint"
+            else:
+                accept_merge = True
+
         return {
-            "ridge_mean_net_ret": ridge_mean_net_ret,
-            "ridge_positive_fold_fraction": ridge_positive_fold_fraction,
-            "ridge_mean_support_pct": float(np.mean(fold_supports)) if fold_supports else 0.0,
-            "ridge_mean_r2": float(np.mean(fold_r2)) if fold_r2 else np.nan,
+            "child_candidate_name": winner,
+            "child_selection_score": child["selection_score"],
+            "child_mean_net_ret": child["mean_net_ret"],
+            "child_std_net_ret": child["std_net_ret"],
+            "child_sharpe": child["sharpe"],
+            "child_mean_ic": child["mean_ic"],
+            "child_positive_fold_fraction": child["positive_fold_fraction"],
+            "better_parent_name": better_parent_name,
+            "parent_selection_score": parent["selection_score"],
+            "parent_mean_net_ret": parent["mean_net_ret"],
+            "parent_std_net_ret": parent["std_net_ret"],
+            "parent_sharpe": parent["sharpe"],
+            "parent_mean_ic": parent["mean_ic"],
+            "worse_parent_name": worse_parent_name,
+            "worse_parent_std_net_ret": worse_parent["std_net_ret"],
+            "composite_selection_score": agg_metrics["composite_or"]["selection_score"],
+            "parent_a_selection_score": score_a,
+            "parent_b_selection_score": score_b,
+            "accept_merge": accept_merge,
+            "accept_merge_reason": reason,
+            # Maintain legacy keys for upstream
+            "ridge_mean_net_ret": agg_metrics["composite_or"]["mean_net_ret"],
+            "ridge_positive_fold_fraction": agg_metrics["composite_or"]["positive_fold_fraction"]
         }
 
 def compute_tbm_outcomes_per_symbol(

@@ -492,3 +492,62 @@ def test_evaluate_ridge_pair_composite_rejected_on_std():
     # We'll just verify the keys exist and the logic doesn't crash.
     assert "child_std_net_ret" in diag
     assert "worse_parent_std_net_ret" in diag
+
+
+def test_economic_rule_consolidator_composite_accepted():
+    from extreme_price_movements.lgbm_based_mask_generation import EconomicRuleConsolidator, DictionaryMaskResolver
+    import pandas as pd
+
+    mask_a = np.array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1] * 20, dtype=bool)
+    mask_b = np.array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0] * 20, dtype=bool)
+    fwd_ret = np.array([5.1, 5.2, -10.0, 5.0, 5.3, -10.0, 5.2, 5.1, -10.0, 5.0] * 20)
+
+    resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
+    folds = [(np.arange(0, 100), np.arange(100, 200))]
+
+    cfg = {
+        "merge_ridge_min_train": 5,
+        "merge_ridge_min_valid": 5,
+        "econ_min_pair_score": 0.0,
+        "econ_weight_containment": 0.0,
+        "econ_weight_overlap_coeff": 1.0,
+        "econ_weight_behavior_similarity": 0.0,
+        "econ_weight_fold_similarity": 0.0
+    }
+
+    consolidator = EconomicRuleConsolidator(metadata=[], cfg=cfg)
+    diag = consolidator._evaluate_pair_economically("keyA", "keyB", resolver, fwd_ret, folds)
+
+    assert "child_candidate_name" in diag
+    assert "accept_merge" in diag
+
+def test_economic_rule_consolidator_duplicate_pruning():
+    from extreme_price_movements.lgbm_based_mask_generation import EconomicRuleConsolidator, DictionaryMaskResolver
+    import pandas as pd
+
+    mask_a = np.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0] * 20, dtype=bool)
+    # Mask B is a slight subset of Mask A
+    mask_b = np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0] * 20, dtype=bool)
+    fwd_ret = np.array([5.0, 5.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0] * 20)
+
+    resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
+    folds = [(np.arange(0, 100), np.arange(100, 200))]
+
+    cfg = {
+        "merge_ridge_min_train": 5,
+        "merge_ridge_min_valid": 5,
+        "econ_duplicate_containment_threshold": 0.90,
+        "econ_duplicate_behavior_similarity_threshold": 0.50,
+        "econ_min_pair_score": 0.0,
+    }
+
+    consolidator = EconomicRuleConsolidator(metadata=[], cfg=cfg)
+
+    row_a = pd.Series({"canonical_key": "keyA", "rule_id": "keyA"})
+    row_b = pd.Series({"canonical_key": "keyB", "rule_id": "keyB"})
+    prof_a = consolidator._build_rule_profile(row_a, mask_a, fwd_ret, folds)
+    prof_b = consolidator._build_rule_profile(row_b, mask_b, fwd_ret, folds)
+
+    pair_diag = consolidator._score_candidate_pair(prof_a, prof_b)
+
+    assert consolidator._is_near_duplicate(pair_diag) is True

@@ -3270,6 +3270,30 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             var_48 = ff.numba_rolling_std(c_raw, 48) ** 2
             feats["variance_ratio_10_48"] = (var_10 / (var_48 + 1e-12)).fillna(0.0).astype(np.float32)
 
+        if _needs_feature("volume_trend_48"):
+            feats["volume_trend_48"] = v_raw.apply(lambda x: pd.Series(slope_nb(x.values, 48), index=x.index), axis=0).astype(np.float32)
+
+        if _needs_feature("volume_autocorr_48"):
+            def rolling_autocorr(series: pd.Series, window: int) -> pd.Series:
+                return series.rolling(window, min_periods=max(2, window//2)).apply(lambda x: pd.Series(x).autocorr(lag=1) if len(x) > 2 else np.nan, raw=True)
+            feats["volume_autocorr_48"] = v_raw.apply(lambda col: rolling_autocorr(col, 48), axis=0).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("volatility_of_volatility_48"):
+            roll_std_4h = c_raw.apply(lambda x: pd.Series(rolling_std_nb(x.values, 4), index=x.index), axis=0)
+            feats["volatility_of_volatility_48"] = roll_std_4h.apply(lambda x: pd.Series(rolling_std_nb(x.values, 48), index=x.index), axis=0).astype(np.float32)
+
+        if _needs_feature("trend_acceleration"):
+            # ema_slope_norm is equivalent to ema20_slope_5h
+            ema20 = c_raw.apply(lambda x: pd.Series(ema_nb(x.values, 20), index=x.index), axis=0)
+            ema20_slope = ema20 - ema20.shift(5)
+            ema20_slope_norm = (ema20_slope / (atr_base + 1e-12))
+            feats["trend_acceleration"] = (ema20_slope_norm - ema20_slope_norm.shift(1)).fillna(0.0).astype(np.float32)
+
+        if _needs_feature("volatility_autocorr_48"):
+            def rolling_autocorr(series: pd.Series, window: int) -> pd.Series:
+                return series.rolling(window, min_periods=max(2, window//2)).apply(lambda x: pd.Series(x).autocorr(lag=1) if len(x) > 2 else np.nan, raw=True)
+            feats["volatility_autocorr_48"] = atr_base.apply(lambda col: rolling_autocorr(col, 48), axis=0).fillna(0.0).astype(np.float32)
+
         if _needs_feature("dist_local_swing"):
             dist_to_high = (high_12 - c_raw).abs()
             dist_to_low = (c_raw - low_12).abs()

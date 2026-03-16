@@ -28,6 +28,7 @@ os.environ.setdefault("LOKY_MAX_CPU_COUNT", "3")
 
 from extreme_price_movements.config import (
     CFG,
+    RIDGE_FEATURE_META,
     RIDGE_FEATURE_COLS,
     TEST_FEATURE_KEYS,
     CONTINUOUS_TRIGGER_COLS,
@@ -108,6 +109,15 @@ class FeatureMetadata:
     threshold_type: Optional[str] = None
     threshold_value: Optional[float] = None
     description: str = ""
+    regime_family: Optional[str] = None
+
+    @property
+    def interaction_group(self) -> str:
+        if self.group == "location":
+            return "location"
+        elif self.group == "regime":
+            return f"regime:{self.regime_family}" if self.regime_family else "regime:unknown"
+        return self.group
 
 @dataclass(frozen=True)
 class MiningStageSpec:
@@ -318,7 +328,8 @@ class FeatureProcessor:
                 booleanization_method=m.booleanization_method,
                 threshold_type=m.threshold_type,
                 threshold_value=m.threshold_value,
-                description=m.description
+                description=m.description,
+                regime_family=m.regime_family
             )
             retained_metadata.append(new_m)
             
@@ -327,17 +338,27 @@ class FeatureProcessor:
     def _add_metadata(self, name, group, src_type, **kwargs):
         idx = len(self.feature_names)
         self.feature_names.append(name)
+
+        source_name = kwargs.get('source_name', name)
+        regime_family = None
+        if group == "regime":
+            if source_name in RIDGE_FEATURE_META:
+                regime_family = RIDGE_FEATURE_META[source_name].get("family")
+            else:
+                regime_family = kwargs.get('source_family', 'unknown')
+
         self.metadata[name] = FeatureMetadata(
             feature_name=name,
             feature_index=idx,
             group=group,
-            source_name=kwargs.get('source_name', name),
+            source_name=source_name,
             source_family=kwargs.get('source_family', 'unknown'),
             source_type=src_type,
             booleanization_method=kwargs.get('booleanization_method'),
             threshold_type=kwargs.get('threshold_type'),
             threshold_value=kwargs.get('threshold_value'),
-            description=kwargs.get('description', '')
+            description=kwargs.get('description', ''),
+            regime_family=regime_family
         )
 
     def _compute_cs_ranks(self, arr: np.ndarray, timestamps: np.ndarray) -> np.ndarray:
@@ -436,34 +457,9 @@ class InteractionModel:
 
         constraints = []
         
-        # If allowed_group_pairs is not specified, default to triplet logic for backward compatibility
-        if self.allowed_group_pairs is None:
-            trigger_idxs = group_map.get('trigger', [])
-            location_idxs = group_map.get('location', [])
-            regime_idxs = group_map.get('regime', [])
-
-            for t in trigger_idxs:
-                for l in location_idxs:
-                    for r in regime_idxs:
-                        constraints.append([t, l, r])
-                        constraints.append([t, l])
-                        constraints.append([t, r])
-                        constraints.append([l, r])
-        else:
-            # Build constraints from allowed group pairs
-            # Instead of pairwise combinations, we combine the groups so that
-            # features within these groups can interact with each other.
-            for g1, g2 in self.allowed_group_pairs:
-                idx1_list = group_map.get(g1, [])
-                idx2_list = group_map.get(g2, [])
-                if idx1_list and idx2_list:
-                    constraints.append(idx1_list + idx2_list)
-
-        # Also add singletons to allow 1-way splits
-        for i in range(len(self.metadata)):
-            constraints.append([i])
-            
-        return constraints
+        # Remove explicit interaction constraints to allow interactions across families
+        # and different groups according to the extractor rules.
+        return None
 
     def _verify_constraints(self, constraints, trigger_idxs, location_idxs, regime_idxs):
         """
@@ -549,7 +545,6 @@ class InteractionModel:
             "learning_rate": 0.03,
             "n_estimators": 1000,  # Use n_estimators instead of num_iterations
             # num_iterations removed from params to avoid warning - early stopping handles it
-            "interaction_constraints": self.constraints,
             "verbosity": -1,
             "random_state": seed,
             "extra_trees": self.cfg.get("extra_trees", True),
@@ -771,15 +766,22 @@ class RuleExtractor:
         """
         if not conditions:
             return False, "empty_path"
+
+        interaction_groups = set()
+        for c in conditions:
+            m = self.metadata_lookup.get(c.feature_index)
+            if not m:
+                continue
             
-        # Group slot check (max 1 of each)
-        groups = [c.group for c in conditions]
-        counts = collections.Counter(groups)
-        # We now check against the full set of allowed groups if possible, 
-        # but for now ensuring no same-group duplicates is enough
-        for g, count in counts.items():
-            if count > 1:
-                return False, f"group_violation_{g}_{count}"
+            # Check if there's already a different feature from the same interaction group
+            for existing_c in conditions:
+                if existing_c.feature_index == c.feature_index:
+                    continue
+
+                existing_m = self.metadata_lookup.get(existing_c.feature_index)
+                if existing_m and existing_m.interaction_group == m.interaction_group:
+                    return False, f"interaction_group_violation_{m.interaction_group}"
+
         
         # Contradiction check (Normalized)
         feat_map = {}
@@ -809,12 +811,30 @@ class RuleExtractor:
         """
         Deterministic slot-based key using slot_order.
         """
-        slots = {s: '*' for s in self.slot_order}
+        slots = collections.defaultdict(list)
         for c in conditions:
-            if c.group in slots:
-                slots[c.group] = f"{c.feature_name}=={int(c.normalized_value)}"
+            if c.group in self.slot_order:
+                slots[c.group].append(c)
+
+        out_slots = []
+        for s in self.slot_order:
+            group_conds = slots.get(s, [])
+            if not group_conds:
+                out_slots.append("(*)")
+            else:
+                # Sort by feature name for canonical ordering
+                group_conds.sort(key=lambda x: x.feature_name)
+                # Deduplicate same feature identical conditions
+                seen = set()
+                joined = []
+                for c in group_conds:
+                    rep = f"{c.feature_name}=={int(c.normalized_value)}"
+                    if rep not in seen:
+                        joined.append(rep)
+                        seen.add(rep)
+                out_slots.append(f"({'&'.join(joined)})")
         
-        return "|".join([f"({slots[s]})" for s in self.slot_order])
+        return "|".join(out_slots)
 
 COMPOSITE_RULE_PATTERN = re.compile(r"^Composite\((.+)\)_OR_\((.+)\)$")
 
@@ -1078,14 +1098,16 @@ class CanonicalRuleMaskResolver:
         for group, slot_value in slot_map.items():
             if slot_value == "*":
                 continue
-            if "==" not in slot_value:
-                raise ValueError(f"Malformed slot {slot_value} in {canonical_key}")
-            feature_name, target_val_raw = slot_value.split("==")
-            target_val = int(target_val_raw)
-            if feature_name in self.name_to_idx or feature_name in self.context_lookup:
-                mask &= self._resolve_feature_mask(feature_name, target_val, indices)
-            else:
-                unresolved_groups.append(group)
+
+            for cond_str in slot_value.split("&"):
+                if "==" not in cond_str:
+                    raise ValueError(f"Malformed slot {cond_str} in {canonical_key}")
+                feature_name, target_val_raw = cond_str.split("==")
+                target_val = int(target_val_raw)
+                if feature_name in self.name_to_idx or feature_name in self.context_lookup:
+                    mask &= self._resolve_feature_mask(feature_name, target_val, indices)
+                else:
+                    unresolved_groups.append(group)
 
         if unresolved_groups:
             if not set(unresolved_groups).issubset({"location", "regime"}):
@@ -3783,12 +3805,13 @@ class NumbaRuleInferenceEngine:
         for p in parts:
             p = p.strip('()')
             if p == '*': continue
-            if '==' not in p: continue
-            name, val = p.split('==')
-            if name in self.name_to_idx:
-                parsed.append((self.name_to_idx[name], int(val)))
-            else:
-                raise KeyError(f"Feature {name} not found in metadata.")
+            for cond_str in p.split('&'):
+                if '==' not in cond_str: continue
+                name, val = cond_str.split('==')
+                if name in self.name_to_idx:
+                    parsed.append((self.name_to_idx[name], int(val)))
+                else:
+                    raise KeyError(f"Feature {name} not found in metadata.")
         return parsed
 
     def apply(self, X: np.ndarray) -> np.ndarray:

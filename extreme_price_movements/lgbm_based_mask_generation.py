@@ -171,10 +171,7 @@ class FeatureProcessor:
                 if src in feature_dict:
                     raw_arr = feature_dict[src]
 
-                    if np.isnan(raw_arr).any():
-                        tprint(f"WARNING: Feature {src} contains NaNs. Filling with median.")
-                        median_val = np.nanmedian(raw_arr)
-                        raw_arr = np.nan_to_num(raw_arr, nan=median_val)
+                    # Note: We are no longer filling with median here, to allow fold-level NaN checks downstream.
 
                     cs_ranks = self._compute_cs_ranks(raw_arr, timestamps)
                     ts_ranks = self._compute_ts_ranks(raw_arr, symbol_codes)
@@ -2252,12 +2249,82 @@ def run_mining_stage(
     seeds = cfg.get("seeds", [42])
 
     for fold_id, (tr_idx, va_idx) in enumerate(folds):
-        X_tr, X_va = X[tr_idx], X[va_idx]
-        y_tr, y_va = fwd_ret[tr_idx], fwd_ret[va_idx]
-        y_tr_norm, y_va_norm = fwd_ret_norm[tr_idx], fwd_ret_norm[va_idx]
-        y_tr_clip = np.clip(y_tr_norm, np.nanquantile(y_tr_norm, 0.01), np.nanquantile(y_tr_norm, 0.99))
+        # Determine available features per group for logging
+        group_to_features = collections.defaultdict(list)
+        for m in metadata:
+            group_to_features[m.group].append(m.feature_name)
+
+        tprint(f"--- FOLD {fold_id} FEATURE AVAILABILITY ---")
+        for group, features in group_to_features.items():
+            tprint(f"Group: {group}")
+            for feat in features:
+                f_idx = next(m.feature_index for m in metadata if m.feature_name == feat)
+                tr_avail = np.isfinite(X[tr_idx, f_idx]).mean() * 100
+                va_avail = np.isfinite(X[va_idx, f_idx]).mean() * 100
+                tprint(f"  - {feat}: TR {tr_avail:.1f}% / VA {va_avail:.1f}%")
+
+        tr_target_avail = np.isfinite(fwd_ret_norm[tr_idx]).mean() * 100
+        va_target_avail = np.isfinite(fwd_ret_norm[va_idx]).mean() * 100
+        tprint(f"Target (fwd_ret_norm): TR {tr_target_avail:.1f}% / VA {va_target_avail:.1f}%")
+
+        # Find rows with missing features or missing targets
+        tr_missing_mask = np.isnan(X[tr_idx]).any(axis=1) | np.isnan(fwd_ret_norm[tr_idx]) | np.isnan(fwd_ret[tr_idx])
+        va_missing_mask = np.isnan(X[va_idx]).any(axis=1) | np.isnan(fwd_ret_norm[va_idx]) | np.isnan(fwd_ret[va_idx])
+
+        tr_drop_pct = tr_missing_mask.mean() * 100
+        va_drop_pct = va_missing_mask.mean() * 100
+
+        if tr_drop_pct > 1.0 or va_drop_pct > 1.0:
+            tprint(f"WARNING: Fold {fold_id} has > 1% missing rows (TR: {tr_drop_pct:.1f}%, VA: {va_drop_pct:.1f}%).")
+            tprint("Identifying problematic symbols/timestamps...")
+
+            # Combine missing masks and identify exact problems
+            for subset_name, subset_idx, missing_mask in [("TRAIN", tr_idx, tr_missing_mask), ("VALIDATION", va_idx, va_missing_mask)]:
+                if missing_mask.sum() > 0:
+                    prob_idx = subset_idx[missing_mask]
+                    prob_data = data.iloc[prob_idx]
+                    prob_X = X[prob_idx]
+                    prob_ret = fwd_ret_norm[prob_idx]
+
+                    tprint(f"  {subset_name} missing details:")
+                    for i, m in enumerate(metadata):
+                        feat_missing = np.isnan(prob_X[:, i])
+                        if feat_missing.any():
+                            feat_prob_data = prob_data[feat_missing]
+                            tprint(f"    Feature '{m.feature_name}' missing in {feat_missing.sum()} rows:")
+                            # Show up to 5 examples
+                            for _, row in feat_prob_data.head(5).iterrows():
+                                tprint(f"      - Symbol: {row['symbol']}, Timestamp: {row['timestamp']}")
+
+                    target_missing = np.isnan(prob_ret)
+                    if target_missing.any():
+                        tgt_prob_data = prob_data[target_missing]
+                        tprint(f"    Target missing in {target_missing.sum()} rows:")
+                        for _, row in tgt_prob_data.head(5).iterrows():
+                            tprint(f"      - Symbol: {row['symbol']}, Timestamp: {row['timestamp']}")
+
+            tprint(f"Skipping fold {fold_id} due to excessive missing data.")
+            continue
+
+        # If <= 1% rows dropped, apply the mask to drop them
+        clean_tr_idx = tr_idx[~tr_missing_mask]
+        clean_va_idx = va_idx[~va_missing_mask]
+
+        X_tr, X_va = X[clean_tr_idx], X[clean_va_idx]
+        y_tr, y_va = fwd_ret[clean_tr_idx], fwd_ret[clean_va_idx]
+        y_tr_norm, y_va_norm = fwd_ret_norm[clean_tr_idx], fwd_ret_norm[clean_va_idx]
+
+        # Calculate clip boundaries only on valid target data
+        tr_norm_valid = y_tr_norm[np.isfinite(y_tr_norm)]
+        if len(tr_norm_valid) > 0:
+            y_tr_clip = np.clip(y_tr_norm, np.nanquantile(tr_norm_valid, 0.01), np.nanquantile(tr_norm_valid, 0.99))
+        else:
+            tprint(f"WARNING: Fold {fold_id} has no finite target data after cleaning.")
+            continue
+
         tprint(
-            f"{stage_name} fold {fold_id}: train_rows={len(tr_idx)} val_rows={len(va_idx)} "
+            f"{stage_name} fold {fold_id}: train_rows={len(clean_tr_idx)} (dropped {tr_missing_mask.sum()}) "
+            f"val_rows={len(clean_va_idx)} (dropped {va_missing_mask.sum()}) "
             f"finite_train={int(np.isfinite(y_tr).sum())} finite_val={int(np.isfinite(y_va).sum())}"
         )
         

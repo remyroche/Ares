@@ -2163,6 +2163,7 @@ def log_stage_gate_diagnostics(stage_name: str, stage_result: Dict[str, Any], cf
 def run_mining_stage(
     data: pd.DataFrame,
     fwd_ret: np.ndarray,
+    fwd_ret_norm: np.ndarray,
     X: np.ndarray,
     metadata: List[FeatureMetadata],
     cfg: Dict[str, Any],
@@ -2219,14 +2220,15 @@ def run_mining_stage(
     for fold_id, (tr_idx, va_idx) in enumerate(folds):
         X_tr, X_va = X[tr_idx], X[va_idx]
         y_tr, y_va = fwd_ret[tr_idx], fwd_ret[va_idx]
-        y_tr_clip = np.clip(y_tr, np.nanquantile(y_tr, 0.01), np.nanquantile(y_tr, 0.99))
+        y_tr_norm, y_va_norm = fwd_ret_norm[tr_idx], fwd_ret_norm[va_idx]
+        y_tr_clip = np.clip(y_tr_norm, np.nanquantile(y_tr_norm, 0.01), np.nanquantile(y_tr_norm, 0.99))
         tprint(
             f"{stage_name} fold {fold_id}: train_rows={len(tr_idx)} val_rows={len(va_idx)} "
             f"finite_train={int(np.isfinite(y_tr).sum())} finite_val={int(np.isfinite(y_va).sum())}"
         )
         
         for seed in seeds:
-            model, fit_meta = model_engine.train_fold(X_tr, y_tr_clip, X_va, y_va, fold_id, seed)
+            model, fit_meta = model_engine.train_fold(X_tr, y_tr_clip, X_va, y_va_norm, fold_id, seed)
             tprint(
                 f"{stage_name} fold {fold_id} seed {seed}: "
                 f"train_samples={fit_meta['train_samples']} val_samples={fit_meta['val_samples']}"
@@ -2363,6 +2365,7 @@ def run_two_stage_lgbm_mask_generation(
     data: pd.DataFrame,
     feature_dict: Dict[str, np.ndarray],
     fwd_ret: np.ndarray,
+    fwd_ret_norm: np.ndarray,
     cfg: Dict[str, Any]
 ) -> Dict[str, pd.DataFrame]:
     tprint("=" * 80)
@@ -2399,7 +2402,7 @@ def run_two_stage_lgbm_mask_generation(
     )
     
     stage_a_result = run_mining_stage(
-        data, fwd_ret, X_a, metadata_a, cfg, 
+        data, fwd_ret, fwd_ret_norm, X_a, metadata_a, cfg,
         stage_a_output_dir,
         stage_a_spec.stage_name, 
         stage_a_spec.allowed_group_pairs,
@@ -2491,7 +2494,7 @@ def run_two_stage_lgbm_mask_generation(
         return f"{trigger_slot}|{parent_slots[1]}|{parent_slots[2]}", parent_context_key
     
     stage_b_result = run_mining_stage(
-        data, fwd_ret, X_b, metadata_b, cfg,
+        data, fwd_ret, fwd_ret_norm, X_b, metadata_b, cfg,
         stage_b_output_dir,
         stage_b_spec.stage_name,
         stage_b_spec.allowed_group_pairs,
@@ -3423,7 +3426,8 @@ def filter_complete_feature_rows(
     data: pd.DataFrame,
     feature_dict: Dict[str, np.ndarray],
     fwd_ret: np.ndarray,
-) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray, Dict[str, Any]]:
+    fwd_ret_norm: np.ndarray,
+) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     Retain only rows where every loaded feature is finite.
     """
@@ -3453,6 +3457,7 @@ def filter_complete_feature_rows(
         for name, values in feature_dict.items()
     }
     filtered_fwd_ret = np.asarray(fwd_ret)[keep_mask]
+    filtered_fwd_ret_norm = np.asarray(fwd_ret_norm)[keep_mask]
     missing_counts.sort(key=lambda item: item[1], reverse=True)
     dropped_rows = int((~keep_mask).sum())
     meta = {
@@ -3462,7 +3467,7 @@ def filter_complete_feature_rows(
         "drop_fraction": float(dropped_rows / max(n_rows, 1)),
         "worst_features": missing_counts[:10],
     }
-    return filtered_data, filtered_features, filtered_fwd_ret, meta
+    return filtered_data, filtered_features, filtered_fwd_ret, filtered_fwd_ret_norm, meta
 
 
 def compute_atr_wide(
@@ -3656,6 +3661,7 @@ def run_lgbm_mask_generation(
     data: pd.DataFrame,
     feature_dict: Dict[str, np.ndarray],
     fwd_ret: np.ndarray,
+    fwd_ret_norm: np.ndarray,
     cfg: Dict[str, Any]
 ):
     cfg = apply_cfg_preset(cfg)
@@ -3673,6 +3679,7 @@ def run_lgbm_mask_generation(
     result = run_mining_stage(
         data=data,
         fwd_ret=fwd_ret,
+        fwd_ret_norm=fwd_ret_norm,
         X=X,
         metadata=metadata,
         cfg=cfg,
@@ -3944,7 +3951,10 @@ if __name__ == "__main__":
 
     fwd_ret_start = time.perf_counter()
     fwd_ret_matrix = fwd_ret_wide.reindex(index=common_idx, columns=common_syms).to_numpy(dtype=np.float32)
+    atr_pct_matrix = atr_wide / np.maximum(close_wide, 1e-9)
+    fwd_ret_norm_matrix = fwd_ret_matrix / np.maximum(atr_pct_matrix, 1e-9)
     fwd_ret_final = fwd_ret_matrix[time_idx, sym_idx]
+    fwd_ret_norm_final = fwd_ret_norm_matrix[time_idx, sym_idx]
     tprint(f"Forward returns extracted for kept rows in {time.perf_counter() - fwd_ret_start:.1f}s")
 
     feature_align_start = time.perf_counter()
@@ -3978,10 +3988,11 @@ if __name__ == "__main__":
         f"in {time.perf_counter() - feature_align_start:.1f}s"
     )
 
-    data_final, feat_final, fwd_ret_final, completeness_meta = filter_complete_feature_rows(
+    data_final, feat_final, fwd_ret_final, fwd_ret_norm_final, completeness_meta = filter_complete_feature_rows(
         data_final,
         feat_final,
         fwd_ret_final,
+        fwd_ret_norm_final,
     )
     tprint(
         "Feature completeness row filter: "
@@ -4018,4 +4029,4 @@ if __name__ == "__main__":
         json.dump(planner_filter_meta, f, indent=2, default=str)
     with open(Path(cfg["output_dir"]) / "run_config_snapshot.json", "w") as f:
         json.dump(cfg, f, indent=2, default=str)
-    run_two_stage_lgbm_mask_generation(data_final, feat_final, fwd_ret_final, cfg)
+    run_two_stage_lgbm_mask_generation(data_final, feat_final, fwd_ret_final, fwd_ret_norm_final, cfg)

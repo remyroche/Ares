@@ -215,11 +215,13 @@ def test_filter_complete_feature_rows_drops_any_row_with_missing_feature():
         "trig_a": np.array([1.0, 1.0, np.nan], dtype=np.float32),
     }
     fwd = np.array([0.1, 0.2, 0.3], dtype=np.float32)
+    fwd_norm = np.array([0.5, 1.0, 1.5], dtype=np.float32)
 
-    data_f, feat_f, fwd_f, meta = filter_complete_feature_rows(data, feature_dict, fwd)
+    data_f, feat_f, fwd_f, fwd_norm_f, meta = filter_complete_feature_rows(data, feature_dict, fwd, fwd_norm)
 
     assert len(data_f) == 1
     assert np.isclose(float(fwd_f[0]), 0.1)
+    assert np.isclose(float(fwd_norm_f[0]), 0.5)
     assert meta["dropped_rows"] == 2
     assert feat_f["reg_a"].tolist() == [1.0]
 

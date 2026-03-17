@@ -646,34 +646,59 @@ def _resolve_training_cfg_with_offline_optimisers(cfg):
 
 def _build_optimal_candidate_mask(panel, feats, cfg):
     """Build candidate mask strictly from persisted offline-optimal threshold conditions."""
-    strict = bool(cfg.get("require_offline_candidate_ranges", True))
     cfg_resolved = _resolve_training_cfg_with_offline_optimisers(cfg)
 
-    if strict and (not CANDIDATE_BEST_PARAMS_CSV.exists()):
-        raise RuntimeError(
-            "Candidate best-params CSV missing; strict range mode forbids generating events outside offline-optimal ranges. "
-            f"Expected: {CANDIDATE_BEST_PARAMS_CSV}"
-        )
+    from extreme_price_movements.strategy_registry import get_strategies
+    from extreme_price_movements.lgbm_based_mask_generation import FeatureProcessor, CanonicalRuleMaskResolver
 
-    train_pct, train_min_range, train_min_vol = _get_training_candidate_config(
-        cfg_resolved
+    strategies = get_strategies(cfg_resolved)
+
+    tprint(f"Building context-based masks from LGBM strategies: {len(strategies)} strategies found.")
+
+    close_df = panel['close']
+    n_ts, n_syms = close_df.shape
+
+    idx_flat = np.repeat(close_df.index.to_numpy(), n_syms)
+    sym_flat = np.tile(close_df.columns.to_numpy(), n_ts)
+
+    feats_1d = {}
+    for k, v in feats.items():
+        if hasattr(v, 'to_numpy'):
+            feats_1d[k] = v.to_numpy(dtype=np.float32).ravel()
+        else:
+            feats_1d[k] = np.asarray(v, dtype=np.float32).ravel()
+
+    fp = FeatureProcessor()
+    X, metadata, audits = fp.prepare_features(
+        feats_1d, idx_flat, sym_flat, cfg_resolved
     )
-    tprint(
-        "Building strict candidate mask from offline-optimal conditions: "
-        f"pct={float(train_pct):.4f}, min_range_pct={float(train_min_range):.4f}, "
-        f"min_vol_zscore={float(train_min_vol):.4f}, "
-        f"strict={strict}"
-    )
-    cand_mask = select_trade_candidates_vectorized(
-        panel,
-        feats,
-        pct=train_pct,
-        metric=cfg_resolved["trade_deviation_metric"],
-        min_range_pct=train_min_range,
-        min_vol_zscore=train_min_vol,
-        sign_consistency_min=None,
-    )
-    return cand_mask, cfg_resolved
+    resolver = CanonicalRuleMaskResolver(X, metadata)
+
+    mask_by_strategy = {}
+    global_mask = None
+
+    for strat in strategies:
+        strat_id = strat['strategy_id']
+        key = strat['base_event_trigger']
+        try:
+            mask_1d = resolver.get_mask(key)
+            mask_2d = mask_1d.reshape((n_ts, n_syms))
+            mask_df = pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns)
+            mask_by_strategy[strat_id] = mask_df
+
+            if global_mask is None:
+                global_mask = mask_df
+            else:
+                global_mask = global_mask | mask_df
+        except KeyError as e:
+            tprint(f"Failed to generate mask for {strat_id} with key {key}: {e}")
+            mask_by_strategy[strat_id] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns)
+
+    if global_mask is None:
+        global_mask = pd.DataFrame(False, index=close_df.index, columns=close_df.columns)
+
+    return global_mask, cfg_resolved, mask_by_strategy
+
 
 
 def _mad(x):
@@ -2133,7 +2158,9 @@ def compute_weights_logic(df, cfg, model_kind):
         return compute_tf_weights(df, cfg)
 
 
-def _strategy_bucket_context(trade_side: str, model_kind: str, cfg: dict | None = None) -> tuple:
+def _strategy_bucket_context(
+    trade_side: str, model_kind: str, cfg: dict | None = None
+) -> tuple:
     """Return (candidate_bucket, move_bucket, strategy_label) for (trade_side, model_kind).
 
     Strategy definitions (cfg['strategies']) are authoritative; legacy 4-way mapping is fallback.
@@ -2933,7 +2960,9 @@ def _optimize_training_sample_weights(
                     outer=p_cfg.preset.outer,
                     inner=p_cfg.preset.inner.__class__(n_splits=n_splits_ridge),
                     sampling=p_cfg.preset.sampling,
-                    symbol_policy=SymbolPolicy(mode="all_symbols", min_symbols_per_split=1),
+                    symbol_policy=SymbolPolicy(
+                        mode="all_symbols", min_symbols_per_split=1
+                    ),
                     purge_policy=p_cfg.preset.purge_policy,
                 ),
                 "silent": True,
@@ -3079,7 +3108,7 @@ def build_hourly_training_set_and_weights(
         cand_mask = _cached_cand_mask
     else:
         # Strict mode: never generate events outside persisted offline-optimal candidate ranges.
-        cand_mask, _ = _build_optimal_candidate_mask(panel, feats, cfg)
+        cand_mask, _, mask_by_strategy = _build_optimal_candidate_mask(panel, feats, cfg)
     if cand_mask is None:
         tprint("No candidates mask returned.")
         return empty_out
@@ -4179,7 +4208,7 @@ def train_spike_anatomy_model(
     if _cached_cand_mask is not None:
         cand_mask = _cached_cand_mask
     else:
-        cand_mask, _ = _build_optimal_candidate_mask(panel, feats, cfg)
+        cand_mask, _, mask_by_strategy = _build_optimal_candidate_mask(panel, feats, cfg)
     if cand_mask is None:
         return None
 
@@ -4333,7 +4362,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
         Falls back to global grid, then cfg overrides, then hardcoded defaults.
         tp_abs_lo_pct_or_None is None when no per-cell value is available (caller uses global tp_lo).
         """
-        cell_key = f"{kind.upper()}_{side}_H{H}"
+        cell_key = f"{kind}_H{H}"
         cell = _per_cell.get(cell_key)
         if cell and cell.get("k_tp_grid") and cell.get("sl_base_grid"):
             return (
@@ -4438,11 +4467,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
         kind_l = str(kind).lower()
         side_l = str(side).lower()
         key_candidates = [
-            f"label_min_tp_hit_rate_{kind_l}_{side_l}_h{int(h)}",
-            f"label_min_tp_hit_rate_{kind_l}_{side_l}",
-            f"label_min_tp_hit_rate_{side_l}_{kind_l}_h{int(h)}",
-            f"label_min_tp_hit_rate_{side_l}_{kind_l}",
-            f"label_min_tp_hit_rate_{str(kind).upper()}_{str(side).lower()}_H{int(h)}",
+            f"label_min_tp_hit_rate_{kind_l}_h{int(h)}",
+            f"label_min_tp_hit_rate_{kind_l}",
+            f"label_min_tp_hit_rate_{kind_l}_h{int(h)}",
+            f"label_min_tp_hit_rate_{kind_l}",
+            f"label_min_tp_hit_rate_{str(kind).upper()}_H{int(h)}",
         ]
         for _k in key_candidates:
             if _k in cfg:
@@ -4459,11 +4488,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
         kind_l = str(kind).lower()
         side_l = str(side).lower()
         key_candidates = [
-            f"barrier_tp_lo_{mode}_{kind_l}_{side_l}_h{int(h)}",
-            f"barrier_tp_lo_{mode}_{kind_l}_{side_l}",
-            f"barrier_tp_lo_{mode}_{side_l}_{kind_l}_h{int(h)}",
-            f"barrier_tp_lo_{mode}_{side_l}_{kind_l}",
-            f"barrier_tp_lo_{mode}_{str(kind).upper()}_{str(side).lower()}_H{int(h)}",
+            f"barrier_tp_lo_{mode}_{kind_l}_h{int(h)}",
+            f"barrier_tp_lo_{mode}_{kind_l}",
+            f"barrier_tp_lo_{mode}_{kind_l}_h{int(h)}",
+            f"barrier_tp_lo_{mode}_{kind_l}",
+            f"barrier_tp_lo_{mode}_{str(kind).upper()}_H{int(h)}",
         ]
         for _k in key_candidates:
             if _k in cfg:
@@ -4654,8 +4683,10 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
     # ── ALPHA MODELS (long/short × mr/tf × horizons) ──
     # Note: Using horizons=horizons for explicit control.
     horizons = horizons or list(CANON_HORIZONS)
-    for side in ["long", "short"]:
-        for k_label in ["mr", "tf"]:
+    strategies = get_strategies(cfg)
+    for strat in strategies:
+        side = strat["trade_side"]
+        k_label = strat["strategy_id"]
             for H in horizons:
                 # _grid_for_cell must come first — _cell_tp_abs_lo is used in floor resolution below.
                 tp_mults, sl_base_mults, _cell_tp_abs_lo = _grid_for_cell(
@@ -5495,7 +5526,7 @@ def generate_label_datasets(
 
     # Pre-compute shared expensive operations once
     tprint("Pre-computing candidate mask (shared across all steps)...")
-    cached_cand_mask, cfg = _build_optimal_candidate_mask(panel, feats, cfg)
+    cached_cand_mask, cfg, mask_by_strategy = _build_optimal_candidate_mask(panel, feats, cfg)
 
     # Pre-calculate Microstructure Noise Filter (Costly rolling operations, shared across all models)
     if bool(cfg.get("use_noise_filter", True)) and cached_cand_mask is not None:
@@ -5541,7 +5572,7 @@ def generate_label_datasets(
             cfg,
             syms,
             ts,
-            _cached_cand_mask=cached_cand_mask,
+            _cached_cand_mask=mask_by_strategy.get(k, cached_cand_mask),
             mode=mode,
         )
         if spike_df is not None:
@@ -5556,7 +5587,9 @@ def generate_label_datasets(
     horizons = horizons or cfg["label_horizons_hours"]
     run_id = pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S")
     # Hash based on horizons + strategy_ids
-    cfg_hash = _stable_cfg_subset_hash(cfg, horizons, [s["strategy_id"] for s in strategies])
+    cfg_hash = _stable_cfg_subset_hash(
+        cfg, horizons, [s["strategy_id"] for s in strategies]
+    )
 
     for H in horizons:
         for strat in strategies:
@@ -5565,9 +5598,7 @@ def generate_label_datasets(
             if os.path.exists(p_tb) and os.path.exists(p_geom):
                 try:
                     with open(p_tb, "rb") as fh:
-                        tb_cache[(int(H), s_id)] = _downcast_tb_triplet(
-                            pickle.load(fh)
-                        )
+                        tb_cache[(int(H), s_id)] = _downcast_tb_triplet(pickle.load(fh))
                     with open(p_geom, "rb") as fh:
                         geom_cache[(int(H), s_id)] = _downcast_geom_payload(
                             pickle.load(fh)
@@ -5627,13 +5658,17 @@ def generate_label_datasets(
                 feats=feats,
                 cfg=cfg,
                 horizons=sorted({c[0] for c in _missing_variant_keys}),
-                strategies=[s for s in strategies if s["strategy_id"] in {c[1] for c in _missing_variant_keys}],
+                strategies=[
+                    s
+                    for s in strategies
+                    if s["strategy_id"] in {c[1] for c in _missing_variant_keys}
+                ],
             )
             for _key, _val in _tb_all.items():
-                if isinstance(_key, tuple) and len(_key) == 3: # (H, s_id, variant)
+                if isinstance(_key, tuple) and len(_key) == 3:  # (H, s_id, variant)
                     tb_cache[_key] = _downcast_tb_triplet(_val)
             for _key, _val in _geom_all.items():
-                if isinstance(_key, tuple) and len(_key) == 3: # (H, s_id, variant)
+                if isinstance(_key, tuple) and len(_key) == 3:  # (H, s_id, variant)
                     geom_cache[_key] = _downcast_geom_payload(_val)
 
     def _prepare_events_once_for_strategy(_strategy: dict):
@@ -5684,7 +5719,9 @@ def generate_label_datasets(
         entry_ts = event_ts + pd.Timedelta(hours=1)
 
         if "trend_pct" in feats:
-            cand_filter, move_bucket, _ = _strategy_bucket_context(_strategy["side"], _strategy["kind"], cfg)
+            cand_filter, move_bucket, _ = _strategy_bucket_context(
+                _strategy["side"], _strategy["kind"], cfg
+            )
             del cand_filter
             trend_vals = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
             keep = _trend_direction_keep_mask(trend_vals, move_bucket)
@@ -5705,9 +5742,7 @@ def generate_label_datasets(
         side = strat["side"]
         k = strat["kind"]
         strategy_id = strat["strategy_id"]
-        cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
-            side, k
-        )
+        cand_filter, move_bucket, strategy_label = _strategy_bucket_context(side, k)
         feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
         fixed_tp = 0.05
         fixed_sl = 0.025
@@ -5722,7 +5757,7 @@ def generate_label_datasets(
                         side,
                         k,
                         strategy_id,
-                        None, # variant
+                        None,  # variant
                         move_bucket,
                         strategy_label,
                         cand_filter,
@@ -5826,8 +5861,10 @@ def generate_label_datasets(
             fixed_tp=fixed_tp,
             fixed_sl=fixed_sl,
             side=side,
-            _cached_cand_mask=cached_cand_mask,
-            _cached_tb=tb_cache.get((H, strategy_id)) if variant is None else tb_cache.get((H, strategy_id, variant)),
+            _cached_cand_mask=mask_by_strategy.get(k, cached_cand_mask),
+            _cached_tb=tb_cache.get((H, strategy_id))
+            if variant is None
+            else tb_cache.get((H, strategy_id, variant)),
             _precomputed_events=_pre_h,
             _geom_frames=_geom,
         )
@@ -5884,8 +5921,10 @@ def generate_label_datasets(
     # For classifier horizons (>H1), synthesize the base training dataset by
     # concatenating required tight/wide variants. We retain the canonical key
     # name for downstream compatibility only.
-    for side in trade_sides:
-        for k in kinds:
+    strategies = get_strategies(cfg)
+    for strat in strategies:
+        side = strat["trade_side"]
+        k = strat["strategy_id"]
             for H in horizons:
                 H_int = int(H)
                 if H_int == 1:
@@ -8272,8 +8311,10 @@ def train_meta_models_from_artifacts(
             _bucket_metadata[f"{_bucket_key}_clf"] = _md
             tprint(f"Meta {_bucket_key}_clf: fitted aligned classifier head")
 
-    for side in trade_sides:
-        for k in kinds:
+    strategies = get_strategies(cfg)
+    for strat in strategies:
+        side = strat["trade_side"]
+        k = strat["strategy_id"]
             trade_side = side
             cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
                 trade_side, k
@@ -9359,15 +9400,19 @@ def train_meta_models_from_artifacts(
                         .to_numpy(dtype=float)
                     )
                     _oof_ei = np.full(len(_y_ei), 0.5, dtype=float)
-                    
+
                     # Use SlicePlanner for temporal CV
                     n_ei = len(_y_ei)
                     events = pd.DataFrame(
                         {
                             "event_id": np.arange(n_ei, dtype=np.int64),
                             "symbol": np.repeat("ALL", n_ei),
-                            "t0": pd.to_datetime(df["__ts__"], utc=True, errors="coerce"),
-                            "t1": pd.to_datetime(df["__ts__"], utc=True, errors="coerce")
+                            "t0": pd.to_datetime(
+                                df["__ts__"], utc=True, errors="coerce"
+                            ),
+                            "t1": pd.to_datetime(
+                                df["__ts__"], utc=True, errors="coerce"
+                            )
                             + pd.Timedelta(seconds=int(cfg.get("cv_embargo_bars", 12))),
                         }
                     )
@@ -9397,8 +9442,10 @@ def train_meta_models_from_artifacts(
                         and plan.predict_idx.size > 0
                     ]
                     if not splits:
-                        raise ValueError("SlicePlanner failed to generate early invalidation splits")
-                    
+                        raise ValueError(
+                            "SlicePlanner failed to generate early invalidation splits"
+                        )
+
                     for _tr, _va in splits:
                         if len(np.unique(_y_ei[_tr])) < 2:
                             continue
@@ -9466,8 +9513,10 @@ def train_meta_models_from_artifacts(
     )
     tprint(_tbl_hdr)
     tprint(f"  {'─'*146}")
-    for side in trade_sides:
-        for k in kinds:
+    strategies = get_strategies(cfg)
+    for strat in strategies:
+        side = strat["trade_side"]
+        k = strat["strategy_id"]
             _b = f"{side}_{k}"
             _aux = _aux_head_oof.get(_b)
             u_ic, mae_ic, mfe_ic = float("nan"), float("nan"), float("nan")
@@ -11155,8 +11204,10 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             _run_id = cfg.get("run_id", "default")
             oof_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "oof")
             os.makedirs(oof_dir, exist_ok=True)
-            for side in trade_sides:
-                for k in kinds:
+            strategies = get_strategies(cfg)
+    for strat in strategies:
+        side = strat["trade_side"]
+        k = strat["strategy_id"]
                     for H in cfg["label_horizons_hours"]:
                         for variant in cfg.get(
                             "base_geometry_archetypes", ["tight", "balanced", "wide"]
@@ -11320,8 +11371,10 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
     # Extended per-model quality report (base + meta) — per horizon per bucket.
     base_quality_rows = []
-    for side in trade_sides:
-        for kind in kinds:
+    strategies = get_strategies(cfg)
+    for strat in strategies:
+        side = strat["trade_side"]
+        kind = strat["strategy_id"]
             conf = final_models.get(side, {}).get(kind)
             if not conf:
                 continue
@@ -11635,7 +11688,7 @@ def optimize_risk_params(
     # We will scan the last N days (e.g. 90 or 180) for candidates.
     lookback_days = 90
     # Select candidates
-    cand_mask, _ = _build_optimal_candidate_mask(panel, feats, cfg)
+    cand_mask, _, mask_by_strategy = _build_optimal_candidate_mask(panel, feats, cfg)
     if cand_mask is None:
         tprint("No candidates found.")
         return cfg
@@ -11878,8 +11931,10 @@ def optimize_risk_params(
         )
 
     # Now iterate strategies and collect event indices
-    for side in trade_sides:
-        for k in kinds:
+    strategies = get_strategies(cfg)
+    for strat in strategies:
+        side = strat["trade_side"]
+        k = strat["strategy_id"]
             trade_side = side
             cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
                 trade_side, k

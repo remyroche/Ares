@@ -2174,7 +2174,8 @@ def _strict_walk_forward_probe_auc(
                     objective="reg:squarederror",
                     n_estimators=int(
                         cfg.get(
-                            "stage2_probe_xgb_n_estimators", 400 if not fast_mode else 150
+                            "stage2_probe_xgb_n_estimators",
+                            400 if not fast_mode else 150,
                         )
                     ),
                     max_depth=int(cfg.get("stage2_probe_xgb_max_depth", 3)),
@@ -2199,10 +2200,13 @@ def _strict_walk_forward_probe_auc(
                 probe = ExtraTreesRegressor(
                     n_estimators=int(
                         cfg.get(
-                            "stage2_probe_et_n_estimators", 500 if not fast_mode else 200
+                            "stage2_probe_et_n_estimators",
+                            500 if not fast_mode else 200,
                         )
                     ),
-                    min_samples_leaf=int(cfg.get("stage2_probe_et_min_samples_leaf", 80)),
+                    min_samples_leaf=int(
+                        cfg.get("stage2_probe_et_min_samples_leaf", 80)
+                    ),
                     min_samples_split=int(
                         cfg.get("stage2_probe_et_min_samples_split", 400)
                     ),
@@ -2533,149 +2537,48 @@ def build_barriers(
 def build_strategy_masks(
     artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | None = None
 ) -> Dict[str, pd.DataFrame]:
-    """Build strategy masks from full strategy definitions (base trigger + all filters)."""
-    c = artifacts.panel["close"]
-    feats = artifacts.features
-
+    """Build strategy masks from full strategy definitions using LGBM Contexts."""
     from extreme_price_movements.strategy_registry import get_strategies
+    from extreme_price_movements.lgbm_based_mask_generation import FeatureProcessor, CanonicalRuleMaskResolver
 
-    metric = "ret24h"
-    if cfg_runtime is not None:
-        metric = cfg_runtime.get("trade_deviation_metric", "ret24h")
-    if metric not in feats:
-        for fallback in ["ret24h", "ret4h", "ret1h"]:
-            if fallback in feats:
-                metric = fallback
-                break
+    cfg = cfg_runtime or {}
+    strategies = get_strategies(cfg)
 
-    h_df = artifacts.panel["high"]
-    l_df = artifacts.panel["low"]
-    ast_ret = feats["ret15m"] if "ret15m" in feats else c.pct_change()
+    close_df = artifacts.panel['close']
+    n_ts, n_syms = close_df.shape
 
-    def _build_candidate_filter_for(mask_cfg: Dict[str, Any]) -> pd.DataFrame:
-        try:
-            family = str(mask_cfg.get("family", "top_movers"))
-            param_val = float(mask_cfg.get("param", 5.0))
-            z_hr = float(mask_cfg.get("z_hours", 12.0))
-            z_bars = int(z_hr * 4)
+    idx_flat = np.repeat(close_df.index.to_numpy(), n_syms)
+    sym_flat = np.tile(close_df.columns.to_numpy(), n_ts)
 
-            roll_h = h_df.rolling(z_bars, min_periods=1).max()
-            roll_l = l_df.rolling(z_bars, min_periods=1).min()
-            st_px = c.shift(z_bars).bfill()
+    feats_1d = {}
+    for k, v in artifacts.features.items():
+        if hasattr(v, 'to_numpy'):
+            feats_1d[k] = v.to_numpy(dtype=np.float32).ravel()
+        else:
+            feats_1d[k] = np.asarray(v, dtype=np.float32).ravel()
 
-            up_move = ((roll_h - st_px) / (st_px + 1e-9)).fillna(0.0)
-            dn_move = ((st_px - roll_l) / (st_px + 1e-9)).fillna(0.0)
+    fp = FeatureProcessor()
+    X, metadata, _ = fp.prepare_features(
+        feats_1d, idx_flat, sym_flat, cfg
+    )
+    resolver = CanonicalRuleMaskResolver(X, metadata)
 
-            std_up = ast_ret.rolling(24 * 4, min_periods=1).std().fillna(0.0)
-            std_dn = std_up
-
-            mask_h_df = pd.DataFrame(False, index=c.index, columns=c.columns)
-            mask_l_df = pd.DataFrame(False, index=c.index, columns=c.columns)
-
-            if family == "top_movers":
-                for ts, row in up_move.iterrows():
-                    q = row.quantile(1.0 - param_val / 100.0)
-                    mask_h_df.loc[ts] = row >= q
-                for ts, row in dn_move.iterrows():
-                    q = row.quantile(1.0 - param_val / 100.0)
-                    mask_l_df.loc[ts] = row >= q
-            elif family == "std_threshold":
-                mask_h_df = up_move >= (param_val * std_up)
-                mask_l_df = dn_move >= (param_val * std_dn)
-            elif family == "abs_move_threshold":
-                y_move = param_val / 100.0
-                mask_h_df = up_move >= y_move
-                mask_l_df = dn_move >= y_move
-
-            cf_hi = (mask_h_df | mask_l_df).astype(bool)
-            finish_bars = _bars_for_hours(
-                (cfg_runtime or {}).get("timeframe", "15m"), 12.0
-            )
-            time_gate = (
-                cf_hi.any(axis=1)
-                .rolling(finish_bars + 1, min_periods=1)
-                .max()
-                .astype(bool)
-            )
-            time_gate_df = pd.DataFrame(
-                np.repeat(time_gate.values[:, None], len(cf_hi.columns), axis=1),
-                index=cf_hi.index,
-                columns=cf_hi.columns,
-                dtype=bool,
-            )
-            return (cf_hi & time_gate_df).astype(bool)
-        except Exception:
-            return pd.DataFrame(True, index=c.index, columns=c.columns)
-
-    mode_cfg = dict((cfg_runtime or {}).get("candidate_mask_params_by_mode", {}) or {})
-    required_modes = ["price_up_tf", "price_up_mr", "price_down_tf", "price_down_mr"]
-    missing_modes = [m for m in required_modes if m not in mode_cfg]
-    if missing_modes:
-        raise ValueError(
-            "Missing per-mode candidate mask params in cfg_runtime; refusing legacy fallback. "
-            f"missing={missing_modes}"
-        )
-
-    # Split candidates by move direction using the deviation metric.
-    if metric in feats:
-        df_metric = feats[metric]
-        if int(df_metric.shape[1]) < 50:
-            raise ValueError(
-                f"Fast fail: not enough symbols for cross-sectional ranking (found {df_metric.shape[1]}, need >= 50)."
-            )
-        ranks = df_metric.rank(axis=1, method="first", na_option="keep", pct=True)
-        up_zone = (ranks > 0.5).fillna(False).astype(bool)
-        down_zone = (ranks <= 0.5).fillna(False).astype(bool)
-    else:
-        ret = c.pct_change(24).fillna(0.0)
-        up_zone = (ret > 0).astype(bool)
-        down_zone = (ret <= 0).astype(bool)
-
-    m_tf_long = _build_candidate_filter_for(mode_cfg["price_up_tf"])
-    m_mr_short = _build_candidate_filter_for(mode_cfg["price_up_mr"])
-    m_tf_short = _build_candidate_filter_for(mode_cfg["price_down_tf"])
-    m_mr_long = _build_candidate_filter_for(mode_cfg["price_down_mr"])
-
-    tf_long = up_zone & m_tf_long
-    mr_short = up_zone & m_mr_short
-    tf_short = down_zone & m_tf_short
-    mr_long = down_zone & m_mr_long
-
-    up_cands = tf_long | mr_short
-    down_cands = tf_short | mr_long
-    candidate_filter = (up_cands | down_cands).astype(bool)
-
-    mode_masks = {
-        "price_up_tf": tf_long,
-        "price_up_mr": mr_short,
-        "price_down_tf": tf_short,
-        "price_down_mr": mr_long,
-    }
-
-    out = {
-        "up": up_cands,
-        "down": down_cands,
-        "Candidate": candidate_filter,
-        "Global": pd.DataFrame(True, index=c.index, columns=c.columns),
-        "TF_long": tf_long,
-        "TF_short": tf_short,
-        "MR_long": mr_long,
-        "MR_short": mr_short,
-    }
-    for strat in get_strategies(cfg_runtime or {}):
+    out = {}
+    for strat in strategies:
         sid = str(strat.get("strategy_id"))
         base = str(strat.get("base_event_trigger", "")).strip()
         if not base:
             continue
-        mask = mode_masks.get(base)
-        if mask is None:
-            continue
-        for f in strat.get("regime_filters", []) or []:
-            fm = mode_masks.get(str(f).strip())
-            if fm is not None:
-                mask = mask & fm
-        out[sid] = mask.astype(bool)
+
+        try:
+            mask_1d = resolver.get_mask(base)
+            mask_2d = mask_1d.reshape((n_ts, n_syms))
+            out[sid] = pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
+        except Exception as e:
+            out[sid] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+
     return out
+
 
 
 def make_quantile_basis(artifacts: RunArtifacts, basis: str) -> pd.DataFrame:
@@ -3552,7 +3455,7 @@ def evaluate_config(
                             sampled = rng.choice(
                                 block_indices,
                                 size=min(rows_per_block, len(block_indices)),
-                                replace=False
+                                replace=False,
                             )
                             keep_indices.extend(sampled)
                     # Sort to maintain chronological order
@@ -9650,5 +9553,7 @@ if __name__ == "__main__":
 
 
 # Backward compatibility
-def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | None = None) -> Dict[str, pd.DataFrame]:
+def build_bucket_masks(
+    artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | None = None
+) -> Dict[str, pd.DataFrame]:
     return build_strategy_masks(artifacts, cfg_runtime=cfg_runtime)

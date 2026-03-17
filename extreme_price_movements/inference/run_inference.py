@@ -534,8 +534,6 @@ def run_inference_loop(
                         "gt50",
                         "gt66",
                         "gt75",
-                        "gt85",
-                        "gt90",
                     ]:
                         skip_transform_set.add(f"{prefix}_{suffix}_{w}")
 

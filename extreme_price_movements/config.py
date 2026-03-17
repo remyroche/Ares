@@ -1167,7 +1167,7 @@ CFG = {
     # Meta Learner
     "meta_feature_keys": [
         "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
-        "accept", "accept_bin3", "accept_gt85", "rv_ratio_6_24",
+        "accept", "accept_bin3", "accept_gt75", "rv_ratio_6_24",
         "G_TF_TREND", "vol_z_x_trend_t",
         "excess_6h", "donch_dist_12", "donch_dist_8", "clv_mean_4", "evr_6", "delta_stall_6",
         "ft_2", "asym_ratio", "mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "giveback",

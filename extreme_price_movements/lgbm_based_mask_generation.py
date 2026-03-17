@@ -646,9 +646,19 @@ class InteractionModel:
 
         constraints = []
         
-        # Training is permissive; structural validity is enforced post-hoc
-        # in RuleExtractor._is_path_valid().
-        return []
+        if self.allowed_group_pairs:
+            groups = set()
+            for pair in self.allowed_group_pairs:
+                groups.update(pair)
+
+            combined = []
+            for g in sorted(groups):
+                combined.extend(group_map.get(g, []))
+
+            if combined:
+                constraints.append(combined)
+
+        return constraints
 
     def _verify_constraints(self, constraints, trigger_idxs, location_idxs, regime_idxs):
         """
@@ -727,7 +737,7 @@ class InteractionModel:
             "objective": "regression",
             "metric": "l2",
             "boosting_type": "gbdt",
-            "max_depth": 3,
+            "max_depth": self.cfg.get("lgbm_max_depth", 3),
             "num_leaves": 8,
             "min_data_in_leaf": max(20, int(0.001 * X_tr.shape[0])),
             "learning_rate": 0.03,
@@ -741,6 +751,9 @@ class InteractionModel:
             "bagging_freq": 1,
             "feature_fraction": 0.8,
         }
+
+        if self.constraints:
+            params["interaction_constraints"] = self.constraints
 
         model = LGBMRegressor(**params)
         evals_result = {}
@@ -1569,6 +1582,30 @@ class RuleScorer:
             / (1.0 + max(std_net_ret, 0.0))
         )
 
+        fold_ics = []
+        fold_parent_ics = []
+        for r in fold_records:
+            va_idx = folds[r["fold_id"]][1]
+            y_va = fwd_ret[va_idx]
+            m_va = resolver.get_mask(canonical_key, va_idx).astype(np.float32)
+            valid = np.isfinite(y_va)
+            ic = _safe_spearman(m_va[valid], y_va[valid])
+            fold_ics.append(ic)
+
+            p_ic = np.nan
+            if parent_context_key:
+                p_m_va = resolver.get_mask(parent_context_key, va_idx).astype(np.float32)
+                p_ic = _safe_spearman(p_m_va[valid], y_va[valid])
+            fold_parent_ics.append(p_ic)
+            r["ic"] = ic
+            r["parent_ic"] = p_ic
+
+        fold_ics_arr = np.array(fold_ics, dtype=float)
+        fold_parent_ics_arr = np.array(fold_parent_ics, dtype=float)
+        mean_ic = float(np.nanmean(fold_ics_arr)) if not np.all(np.isnan(fold_ics_arr)) else np.nan
+        mean_parent_ic = float(np.nanmean(fold_parent_ics_arr)) if not np.all(np.isnan(fold_parent_ics_arr)) else np.nan
+        delta_ic = mean_ic - mean_parent_ic if np.isfinite(mean_ic) and np.isfinite(mean_parent_ic) else np.nan
+
         summary = {
             "canonical_key": canonical_key,
             "mean_net_ret": mean_net_ret,
@@ -1585,6 +1622,8 @@ class RuleScorer:
             "composite_score": composite_score,
             "required_hurdle": required_hurdle,
             "hurdle_excess": hurdle_excess,
+            "mean_ic": mean_ic,
+            "delta_ic": delta_ic,
             "n_folds": int(len(present)),
             "discovery_count": int(discovery_count),
             "n_instances": int(len(present) if n_instances is None else n_instances),
@@ -3735,7 +3774,11 @@ def run_mining_stage(
         if tr_idx.size == 0 or va_idx.size == 0 or tr_idx.max() >= va_idx.min():
             raise ValueError(f"Invalid fold {fold_id} in {stage_name}")
 
-    model_engine = InteractionModel(metadata, cfg, allowed_group_pairs=allowed_group_pairs)
+    stage_cfg = cfg.copy()
+    if stage_name.startswith("stage_b"):
+        stage_cfg["lgbm_max_depth"] = 2
+
+    model_engine = InteractionModel(metadata, stage_cfg, allowed_group_pairs=allowed_group_pairs)
     constraint_summary = model_engine.get_constraint_summary()
     with open(output_dir / "interaction_constraint_summary.json", "w") as f:
         json.dump(constraint_summary, f, indent=2)
@@ -4312,8 +4355,8 @@ def run_two_stage_lgbm_mask_generation(
             "combined": stage_a_result.get("accepted_registry"),
         }
     
-    # --- STAGE B: TRIGGER REFINEMENT ---
-    tprint("STAGE B: Trigger Refinement (Winning Contexts x Trigger)")
+    # --- STAGE B1: TRIGGER REFINEMENT ---
+    tprint("STAGE B1: Trigger Refinement (Winning Contexts x Trigger)")
     
     context_feature_dict, context_to_key = build_context_feature_dict_from_registry(
         winning_contexts, data, X_a, metadata_a
@@ -4341,32 +4384,32 @@ def run_two_stage_lgbm_mask_generation(
         tprint(f"Mapped {len(context_support_rows)} Contexts to Stage B. Dropped: {len(winning_contexts) - len(context_support_rows)}")
 
 
-    fp_b = FeatureProcessor()
-    X_b, metadata_b, audits_b = fp_b.prepare_features(
+    fp_b1 = FeatureProcessor()
+    X_b1, metadata_b1, audits_b1 = fp_b1.prepare_features(
         feature_dict, data['timestamp'].to_numpy(), data['symbol'].to_numpy(), cfg,
         active_groups=("trigger",),
         extra_binary_features=context_feature_dict,
         extra_feature_group="context"
     )
-    stage_b_output_dir = root_output_dir / "stage_b_trigger_refinement"
-    stage_b_output_dir.mkdir(parents=True, exist_ok=True)
+    stage_b1_output_dir = root_output_dir / "stage_b1_trigger_refinement"
+    stage_b1_output_dir.mkdir(parents=True, exist_ok=True)
 
-    for k, v in audits_b.items():
+    for k, v in audits_b1.items():
         if not v.empty:
-            v.to_csv(stage_b_output_dir / f"{k}.csv", index=False)
-    context_mapping_df.to_csv(stage_b_output_dir / "stage_b_context_mapping.csv", index=False)
+            v.to_csv(stage_b1_output_dir / f"{k}.csv", index=False)
+    context_mapping_df.to_csv(stage_b1_output_dir / "stage_b_context_mapping.csv", index=False)
     
-    stage_b_spec = MiningStageSpec(
-        stage_name="stage_b_trigger_refinement",
+    stage_b1_spec = MiningStageSpec(
+        stage_name="stage_b1_trigger_refinement",
         active_groups=("trigger", "context"),
         allow_groups_in_rule=("trigger", "context"),
-        output_dir_name="stage_b_trigger_refinement",
+        output_dir_name="stage_b1_trigger_refinement",
         allowed_group_pairs=(("trigger", "context"),),
         slot_order=("trigger", "context"),
         require_uplift=True
     )
 
-    def reconstruct_stage_b_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
+    def reconstruct_stage_b1_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
         global stage_b_reconstruction_success, stage_b_reconstruction_failed
         slots = raw_key.split("|")
         trigger_conditions = []
@@ -4379,7 +4422,7 @@ def run_two_stage_lgbm_mask_generation(
                 if "==" not in cond_str:
                     continue
                 feature_name = cond_str.split("==")[0]
-                if feature_name in INTRADAY_TRIGGER_COLUMNS:
+                if feature_name in INTRADAY_TRIGGER_COLUMNS or feature_name in CONTINUOUS_TRIGGER_COLS or feature_name.startswith("tri_"):
                     trigger_conditions.append(cond_str)
                 elif feature_name.startswith("ctx__"):
                     parent_context_key = context_to_key.get(feature_name)
@@ -4393,29 +4436,116 @@ def run_two_stage_lgbm_mask_generation(
         stage_b_reconstruction_success += 1
         return f"{trigger_slot}|{parent_slots[1]}|{parent_slots[2]}", parent_context_key
     
-    stage_b_result = run_mining_stage(
-        data, fwd_ret, fwd_ret_norm, X_b, metadata_b, cfg,
-        stage_b_output_dir,
-        stage_b_spec.stage_name,
-        stage_b_spec.allowed_group_pairs,
-        slot_order=stage_b_spec.slot_order,
+    stage_b1_result = run_mining_stage(
+        data, fwd_ret, fwd_ret_norm, X_b1, metadata_b1, cfg,
+        stage_b1_output_dir,
+        stage_b1_spec.stage_name,
+        stage_b1_spec.allowed_group_pairs,
+        slot_order=stage_b1_spec.slot_order,
         folds=folds,
         mask_resolver=CanonicalRuleMaskResolver(
-            X_b,
-            metadata_b,
+            X_b1,
+            metadata_b1,
             context_lookup=context_feature_dict,
             context_key_map=context_to_key,
             slot_order=("trigger", "location", "regime"),
         ),
-        require_uplift=stage_b_spec.require_uplift,
-        rule_key_rewriter=reconstruct_stage_b_key,
-        pipeline_stage_name="stage_b_trigger_refinement",
+        require_uplift=stage_b1_spec.require_uplift,
+        rule_key_rewriter=reconstruct_stage_b1_key,
+        pipeline_stage_name="stage_b1_trigger_refinement",
+    )
+
+    # --- STAGE B2: LOCATION REFINEMENT ---
+    tprint("STAGE B2: Location Refinement (Winning Contexts x Location)")
+
+    fp_b2 = FeatureProcessor()
+    X_b2, metadata_b2, audits_b2 = fp_b2.prepare_features(
+        feature_dict, data['timestamp'].to_numpy(), data['symbol'].to_numpy(), cfg,
+        active_groups=("location",),
+        extra_binary_features=context_feature_dict,
+        extra_feature_group="context"
+    )
+    stage_b2_output_dir = root_output_dir / "stage_b2_location_refinement"
+    stage_b2_output_dir.mkdir(parents=True, exist_ok=True)
+
+    for k, v in audits_b2.items():
+        if not v.empty:
+            v.to_csv(stage_b2_output_dir / f"{k}.csv", index=False)
+    context_mapping_df.to_csv(stage_b2_output_dir / "stage_b_context_mapping.csv", index=False)
+
+    stage_b2_spec = MiningStageSpec(
+        stage_name="stage_b2_location_refinement",
+        active_groups=("location", "context"),
+        allow_groups_in_rule=("location", "context"),
+        output_dir_name="stage_b2_location_refinement",
+        allowed_group_pairs=(("location", "context"),),
+        slot_order=("trigger", "location", "regime"),  # Keeping full slot order for keys
+        require_uplift=True
+    )
+
+    def reconstruct_stage_b2_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
+        global stage_b_reconstruction_success, stage_b_reconstruction_failed
+        slots = raw_key.split("|")
+        location_conditions = []
+        parent_context_key = None
+        for slot in slots:
+            slot_value = slot.strip("()")
+            if slot_value == "*":
+                continue
+            for cond_str in slot_value.split("&"):
+                if "==" not in cond_str:
+                    continue
+                feature_name = cond_str.split("==")[0]
+                if feature_name in LOCATION_FILTER_COLUMNS or feature_name in CONTINUOUS_LOCATION_COLS or feature_name.startswith("loc_"):
+                    location_conditions.append(cond_str)
+                elif feature_name.startswith("ctx__"):
+                    parent_context_key = context_to_key.get(feature_name)
+
+        if parent_context_key is None or not location_conditions:
+            stage_b_reconstruction_failed += 1
+            return None, None
+
+        loc_slot = f"({'&'.join(sorted(location_conditions))})"
+        parent_slots = parent_context_key.split("|")
+        # Ensure that parent's location slot is merged or overwritten?
+        # A Context is (Location x Regime), so we are refining the location further.
+        # But `canonical_key` represents (*)|(loc_from_context & new_loc)|(reg_from_context)
+        # So we combine parent_slots[1] (location) with loc_slot.
+
+        parent_locs = parent_slots[1].strip("()")
+        if parent_locs == "*":
+            final_loc_slot = loc_slot
+        else:
+            final_loc_slot = f"({parent_locs}&{loc_slot.strip('()')})"
+
+        stage_b_reconstruction_success += 1
+        return f"{parent_slots[0]}|{final_loc_slot}|{parent_slots[2]}", parent_context_key
+
+    stage_b2_result = run_mining_stage(
+        data, fwd_ret, fwd_ret_norm, X_b2, metadata_b2, cfg,
+        stage_b2_output_dir,
+        stage_b2_spec.stage_name,
+        stage_b2_spec.allowed_group_pairs,
+        slot_order=("location", "context"), # The local rule extraction slot order
+        folds=folds,
+        mask_resolver=CanonicalRuleMaskResolver(
+            X_b2,
+            metadata_b2,
+            context_lookup=context_feature_dict,
+            context_key_map=context_to_key,
+            slot_order=("trigger", "location", "regime"),
+        ),
+        require_uplift=stage_b2_spec.require_uplift,
+        rule_key_rewriter=reconstruct_stage_b2_key,
+        pipeline_stage_name="stage_b2_location_refinement",
     )
 
     stage_a_candidates = stage_a_result["candidate_registry"].copy()
-    stage_b_candidates = stage_b_result["candidate_registry"].copy()
+    stage_b1_candidates = stage_b1_result["candidate_registry"].copy()
+    stage_b2_candidates = stage_b2_result["candidate_registry"].copy()
+
     combined_candidate_registry_raw = pd.concat(
-        [stage_a_candidates, stage_b_candidates], ignore_index=True
+        [stage_a_candidates, stage_b1_candidates, stage_b2_candidates], ignore_index=True
     ).drop_duplicates(subset=["canonical_key"], keep="first")
     combined_candidate_registry_raw["preset"] = cfg.get("preset", "exploration")
     combined_candidate_registry_raw.to_csv(
@@ -4425,18 +4555,23 @@ def run_two_stage_lgbm_mask_generation(
     stage_a_accepted = stage_a_result["accepted_registry"].copy()
     stage_a_accepted["origin_stage"] = "stage_a"
 
-    stage_b_accepted = stage_b_result["accepted_registry"].copy()
-    stage_b_accepted["origin_stage"] = "stage_b"
+    stage_b1_accepted = stage_b1_result["accepted_registry"].copy()
+    stage_b1_accepted["origin_stage"] = "stage_b1"
 
-    combined_pre_global_raw = pd.concat([stage_a_accepted, stage_b_accepted], ignore_index=True)
+    stage_b2_accepted = stage_b2_result["accepted_registry"].copy()
+    stage_b2_accepted["origin_stage"] = "stage_b2"
 
-    origin_counts = {"stage_a_only": 0, "stage_b_only": 0, "overlapping_keys": 0}
+    combined_pre_global_raw = pd.concat([stage_a_accepted, stage_b1_accepted, stage_b2_accepted], ignore_index=True)
+
+    origin_counts = {"stage_a_only": 0, "stage_b1_only": 0, "stage_b2_only": 0, "overlapping_keys": 0}
     a_keys = set(stage_a_accepted["canonical_key"])
-    b_keys = set(stage_b_accepted["canonical_key"])
+    b1_keys = set(stage_b1_accepted["canonical_key"])
+    b2_keys = set(stage_b2_accepted["canonical_key"])
 
-    origin_counts["overlapping_keys"] = len(a_keys.intersection(b_keys))
-    origin_counts["stage_a_only"] = len(a_keys - b_keys)
-    origin_counts["stage_b_only"] = len(b_keys - a_keys)
+    origin_counts["overlapping_keys"] = len(a_keys.intersection(b1_keys).union(a_keys.intersection(b2_keys)))
+    origin_counts["stage_a_only"] = len(a_keys - b1_keys - b2_keys)
+    origin_counts["stage_b1_only"] = len(b1_keys - a_keys - b2_keys)
+    origin_counts["stage_b2_only"] = len(b2_keys - a_keys - b1_keys)
 
     pd.DataFrame([origin_counts]).to_csv(root_output_dir / "combined_registry_origin_summary.csv", index=False)
 
@@ -4453,18 +4588,31 @@ def run_two_stage_lgbm_mask_generation(
     combined_parent_context_map: Dict[str, str] = {}
     combined_side_map: Dict[str, str] = {}
     stage_a_resolver = CanonicalRuleMaskResolver(X_a, metadata_a)
-    stage_b_resolver = CanonicalRuleMaskResolver(
-        X_b,
-        metadata_b,
+    stage_b1_resolver = CanonicalRuleMaskResolver(
+        X_b1,
+        metadata_b1,
         context_lookup=context_feature_dict,
         context_key_map=context_to_key,
         slot_order=("trigger", "location", "regime"),
     )
+    stage_b2_resolver = CanonicalRuleMaskResolver(
+        X_b2,
+        metadata_b2,
+        context_lookup=context_feature_dict,
+        context_key_map=context_to_key,
+        slot_order=("trigger", "location", "regime"),
+    )
+
     for _, row in stage_a_accepted.iterrows():
         combined_mask_map[row["canonical_key"]] = stage_a_resolver.get_mask(row["canonical_key"])
         combined_side_map[row["canonical_key"]] = row["side"]
-    for _, row in stage_b_accepted.iterrows():
-        combined_mask_map[row["canonical_key"]] = stage_b_resolver.get_mask(row["canonical_key"])
+    for _, row in stage_b1_accepted.iterrows():
+        combined_mask_map[row["canonical_key"]] = stage_b1_resolver.get_mask(row["canonical_key"])
+        combined_side_map[row["canonical_key"]] = row["side"]
+        if pd.notna(row.get("parent_context_key")):
+            combined_parent_context_map[row["canonical_key"]] = row["parent_context_key"]
+    for _, row in stage_b2_accepted.iterrows():
+        combined_mask_map[row["canonical_key"]] = stage_b2_resolver.get_mask(row["canonical_key"])
         combined_side_map[row["canonical_key"]] = row["side"]
         if pd.notna(row.get("parent_context_key")):
             combined_parent_context_map[row["canonical_key"]] = row["parent_context_key"]
@@ -4474,50 +4622,136 @@ def run_two_stage_lgbm_mask_generation(
         parent_context_map=combined_parent_context_map,
         side_map=combined_side_map,
     )
-    global_scorer = RuleScorer(metadata_a + metadata_b, cfg, mask_resolver=combined_resolver)
+    global_scorer = RuleScorer(metadata_a + metadata_b1 + metadata_b2, cfg, mask_resolver=combined_resolver)
     use_economic_consolidator = cfg.get("use_economic_consolidator", True)
 
-    tprint(f"Cross-Stage Funnel: Stage A ({len(stage_a_accepted)}) + Stage B ({len(stage_b_accepted)}) -> Combined Pre-Global ({len(combined_pre_global)})")
+    tprint(f"Cross-Stage Funnel: Stage A ({len(stage_a_accepted)}) + Stage B1 ({len(stage_b1_accepted)}) + Stage B2 ({len(stage_b2_accepted)}) -> Combined Pre-Global ({len(combined_pre_global)})")
     consolidator_type = "EconomicRuleConsolidator" if use_economic_consolidator else "RuleConsolidator"
     tprint(f"Chosen Global Consolidator: {consolidator_type}")
 
+    # Separated Post-training merging
+    # B1 consolidation
+    b1_pre_global = pd.concat([stage_a_accepted, stage_b1_accepted], ignore_index=True)
+    b1_pre_global = b1_pre_global.sort_values(["composite_score", "hurdle_excess"], ascending=False)
+    b1_pre_global = b1_pre_global.drop_duplicates(subset=["canonical_key"], keep="first")
+
+    # B2 consolidation
+    b2_pre_global = pd.concat([stage_a_accepted, stage_b2_accepted], ignore_index=True)
+    b2_pre_global = b2_pre_global.sort_values(["composite_score", "hurdle_excess"], ascending=False)
+    b2_pre_global = b2_pre_global.drop_duplicates(subset=["canonical_key"], keep="first")
+
     if use_economic_consolidator:
-        global_consolidator = EconomicRuleConsolidator(
-            metadata_a + metadata_b,
+        b1_consolidator = EconomicRuleConsolidator(
+            metadata_a + metadata_b1,
+            cfg,
+            mask_resolver=combined_resolver,
+            scorer=global_scorer,
+        )
+        b2_consolidator = EconomicRuleConsolidator(
+            metadata_a + metadata_b2,
             cfg,
             mask_resolver=combined_resolver,
             scorer=global_scorer,
         )
     else:
-        global_consolidator = RuleConsolidator(
-            metadata_a + metadata_b,
+        b1_consolidator = RuleConsolidator(
+            metadata_a + metadata_b1,
             cfg,
             mask_resolver=combined_resolver,
             scorer=global_scorer,
         )
-    combined_global_registry, global_lineage, global_consol_diag = global_consolidator.consolidate(
-        combined_pre_global,
+        b2_consolidator = RuleConsolidator(
+            metadata_a + metadata_b2,
+            cfg,
+            mask_resolver=combined_resolver,
+            scorer=global_scorer,
+        )
+
+    tprint("Running global consolidation for Stage B1 (trigger)...")
+    b1_global_registry, b1_lineage, b1_consol_diag = b1_consolidator.consolidate(
+        b1_pre_global,
         fwd_ret,
         folds,
         resolver=combined_resolver,
         data=data,
     )
 
-    for name, obj in global_consol_diag.items():
-        if isinstance(obj, pd.DataFrame):
-            obj.to_csv(root_output_dir / f"{name}.csv", index=False)
-        else:
-            with open(root_output_dir / f"{name}.json", "w") as f:
-                json.dump(obj, f, indent=2)
-    combined_global_registry = combined_global_registry.drop_duplicates(
-        subset=["canonical_key"], keep="first"
+    tprint("Running global consolidation for Stage B2 (location)...")
+    b2_global_registry, b2_lineage, b2_consol_diag = b2_consolidator.consolidate(
+        b2_pre_global,
+        fwd_ret,
+        folds,
+        resolver=combined_resolver,
+        data=data,
     )
+
+    def compute_b_metrics(registry: pd.DataFrame, lineage: pd.DataFrame) -> Dict[str, float]:
+        metrics = {}
+        if registry.empty:
+            return metrics
+
+        metrics["median_support_pct"] = float(registry["mean_support_pct"].median())
+        metrics["mean_hurdle_excess"] = float(registry["hurdle_excess"].mean())
+
+        if "mean_ic" in registry.columns:
+            top10 = registry.sort_values("mean_ic", ascending=False).head(10)
+            metrics["p10_support_pct"] = float(top10["mean_support_pct"].mean())
+            metrics["p10_mean_oos_return"] = float(top10["mean_net_ret"].mean())
+
+            # std dev OOS return (post-merge), within folds & between folds
+            # "std_net_ret" captures between folds std dev roughly.
+            metrics["p10_std_dev_oos_return"] = float(top10["std_net_ret"].mean())
+
+            # Calculate merge average for top10
+            # Lineage tracks 'round'. A rule merged multiple times will have multiple ancestors
+            total_merges = 0
+            for key in top10["canonical_key"]:
+                ancestors = lineage[lineage["child_id"] == key]
+                total_merges += len(ancestors)
+            metrics["p10_merge_average"] = total_merges / len(top10) if len(top10) > 0 else 0.0
+
+        return metrics
+
+    b1_metrics = compute_b_metrics(b1_global_registry, pd.concat([b1_lineage], ignore_index=True) if not b1_lineage.empty else pd.DataFrame())
+    b2_metrics = compute_b_metrics(b2_global_registry, pd.concat([b2_lineage], ignore_index=True) if not b2_lineage.empty else pd.DataFrame())
+
+    comparison_metrics = {
+        "b1_context_trigger": b1_metrics,
+        "b2_context_location": b2_metrics
+    }
+
+    with open(root_output_dir / "stage_b_comparison_metrics.json", "w") as f:
+        json.dump(comparison_metrics, f, indent=2)
+
+    tprint("Stage B Comparison Metrics:")
+    tprint(f"B1 (Context+Trigger): {json.dumps(b1_metrics)}")
+    tprint(f"B2 (Context+Location): {json.dumps(b2_metrics)}")
+
+    # Merge the consolidated registries
+    combined_global_registry = pd.concat([b1_global_registry, b2_global_registry], ignore_index=True)
+    combined_global_registry = combined_global_registry.drop_duplicates(subset=["canonical_key"], keep="first")
+    combined_global_registry = combined_global_registry.sort_values(["composite_score", "hurdle_excess"], ascending=False)
+
+    for name, obj in b1_consol_diag.items():
+        if isinstance(obj, pd.DataFrame):
+            obj.to_csv(root_output_dir / f"b1_{name}.csv", index=False)
+        else:
+            with open(root_output_dir / f"b1_{name}.json", "w") as f:
+                json.dump(obj, f, indent=2)
+
+    for name, obj in b2_consol_diag.items():
+        if isinstance(obj, pd.DataFrame):
+            obj.to_csv(root_output_dir / f"b2_{name}.csv", index=False)
+        else:
+            with open(root_output_dir / f"b2_{name}.json", "w") as f:
+                json.dump(obj, f, indent=2)
+
     tprint(f"Global Consolidation resulted in {len(combined_global_registry)} rules.")
     combined_global_registry["preset"] = cfg.get("preset", "exploration")
     combined_global_registry.to_csv(
         root_output_dir / "combined_accepted_rule_registry.csv", index=False
     )
-    global_lineage.to_csv(root_output_dir / "global_consolidation_lineage.csv", index=False)
+    pd.concat([b1_lineage, b2_lineage], ignore_index=True).to_csv(root_output_dir / "global_consolidation_lineage.csv", index=False)
 
     portfolio_diversity_report = build_portfolio_diversity_report(
         combined_global_registry,
@@ -4543,6 +4777,22 @@ def run_two_stage_lgbm_mask_generation(
     }
     pd.DataFrame([audit_data]).to_csv(root_output_dir / "canonical_key_parse_audit.csv", index=False)
 
+    # Score bucket calibration metrics
+    registry_calibration = []
+    if "composite_score" in combined_global_registry.columns and "mean_net_ret" in combined_global_registry.columns:
+        try:
+            combined_global_registry["score_bucket"] = pd.qcut(combined_global_registry["composite_score"], q=5, labels=["Q1", "Q2", "Q3", "Q4", "Q5"])
+            bucket_metrics = combined_global_registry.groupby("score_bucket").agg({
+                "mean_net_ret": ["mean", "std"],
+                "hurdle_excess": "mean",
+                "mean_ic": "mean"
+            }).reset_index()
+            bucket_metrics.columns = ["score_bucket", "mean_net_ret_mean", "mean_net_ret_std", "hurdle_excess_mean", "mean_ic_mean"]
+            bucket_metrics.to_csv(root_output_dir / "calibration_by_score_bucket.csv", index=False)
+            registry_calibration = bucket_metrics.to_dict('records')
+        except Exception as e:
+            tprint(f"Warning: Failed to compute score buckets: {e}")
+
     # Final Registry Breakdowns
     if not combined_global_registry.empty:
         breakdown = combined_global_registry.groupby(["side", "display_arity"]).size().reset_index(name="count")
@@ -4555,6 +4805,14 @@ def run_two_stage_lgbm_mask_generation(
             "mean_hurdle_excess": float(combined_global_registry["hurdle_excess"].mean()),
             "median_hurdle_excess": float(combined_global_registry["hurdle_excess"].median()),
         }
+
+        if "mean_ic" in combined_global_registry.columns:
+            valid_ic = combined_global_registry["mean_ic"].dropna()
+            if not valid_ic.empty:
+                final_summary["strategies_positive_oos_ic_pct"] = float((valid_ic > 0).mean())
+                final_summary["p25_ic"] = float(valid_ic.quantile(0.25))
+                final_summary["p50_ic"] = float(valid_ic.quantile(0.50))
+                final_summary["p75_ic"] = float(valid_ic.quantile(0.75))
 
         # Count by origin
         if "origin_stage" in combined_global_registry.columns:

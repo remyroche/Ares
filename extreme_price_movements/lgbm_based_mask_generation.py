@@ -289,36 +289,38 @@ class FeatureProcessor:
                         raw_cols.append(bool_arr_bot)
                         raw_names.append(bool_name_bot)
 
-                    band_name = f"{group_name[:3]}_{src}_hybrid_band30_70"
-                    band_arr = (
-                        (blended_ranks >= 0.30) & (blended_ranks <= 0.70)
-                    ).astype(np.float32)
+                    for q_band in [0.20, 0.30, 0.40]:
+                        q_band_upper = 1.0 - q_band
+                        band_name = f"{group_name[:3]}_{src}_hybrid_band{int(q_band*100)}_{int(q_band_upper*100)}"
+                        band_arr = (
+                            (blended_ranks >= q_band) & (blended_ranks <= q_band_upper)
+                        ).astype(np.float32)
 
-                    support_band = int(band_arr.sum())
-                    support_band_pct = support_band / n_samples if n_samples > 0 else 0
-                    self.bool_support_audit_rows.append({
-                        "generated_boolean": band_name,
-                        "group": group_name,
-                        "source_feature": src,
-                        "support": support_band,
-                        "support_pct": support_band_pct,
-                    })
-                    if support_band < min_support or support_band_pct > 0.95:
-                        tprint(f"WARNING: generated boolean {band_name} has extreme support ({support_band}, {support_band_pct:.2%})")
+                        support_band = int(band_arr.sum())
+                        support_band_pct = support_band / n_samples if n_samples > 0 else 0
+                        self.bool_support_audit_rows.append({
+                            "generated_boolean": band_name,
+                            "group": group_name,
+                            "source_feature": src,
+                            "support": support_band,
+                            "support_pct": support_band_pct,
+                        })
+                        if support_band < min_support or support_band_pct > 0.95:
+                            tprint(f"WARNING: generated boolean {band_name} has extreme support ({support_band}, {support_band_pct:.2%})")
 
-                    self._add_metadata(
-                        band_name,
-                        group_name,
-                        "boolean",
-                        source_name=src,
-                        source_family=family,
-                        booleanization_method="hybrid_cs_ts_rank",
-                        threshold_type="band_quantile",
-                        threshold_value=0.50,
-                        description="Hybrid Rank inside the 30-70 median band",
-                    )
-                    raw_cols.append(band_arr)
-                    raw_names.append(band_name)
+                        self._add_metadata(
+                            band_name,
+                            group_name,
+                            "boolean",
+                            source_name=src,
+                            source_family=family,
+                            booleanization_method="hybrid_cs_ts_rank",
+                            threshold_type="band_quantile",
+                            threshold_value=0.50,
+                            description=f"Hybrid Rank inside the {int(q_band*100)}-{int(q_band_upper*100)} median band",
+                        )
+                        raw_cols.append(band_arr)
+                        raw_names.append(band_name)
 
         # 1. Trigger Features
         if "trigger" in active_groups:

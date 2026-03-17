@@ -104,12 +104,12 @@ def add_gate_features_panel(
     Panel-aware version of add_gate_features.
     Computes rolling stats per asset (column-wise). Returns dict of feature_names -> Panel DataFrame.
     """
+    import extreme_price_movements.fast_funcs as ff
     s = panel_s.astype(np.float32)
 
     # Rolling per column (asset)
-    roll = s.rolling(n, min_periods=n)
-    mean = roll.mean().shift(1)
-    std = roll.std(ddof=0).shift(1).clip(lower=min_std)
+    mean = ff.numba_rolling_mean(s, n).shift(1)
+    std = ff.numba_rolling_std(s, n).shift(1).clip(lower=min_std)
     # Z-score normalization per asset history
     z = ((s - mean) / std).replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(np.float32)
 

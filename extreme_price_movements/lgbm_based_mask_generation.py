@@ -2340,7 +2340,6 @@ class EconomicRuleConsolidator:
 
         min_train = int(self.cfg.get("merge_ridge_min_train", 20))
 
-        oof_preds = np.full(len(mask), np.nan)
         fold_ics = []
         fold_returns = []
 
@@ -2365,7 +2364,6 @@ class EconomicRuleConsolidator:
         intercept = full_model.intercept_
 
         abs_coefs = np.abs(coefs)
-        rank_order = scipy.stats.rankdata(abs_coefs)
 
         k = min(10, len(coefs))
         top_k_indices = set(np.argsort(abs_coefs)[-k:]) if k > 0 else set()
@@ -2382,15 +2380,18 @@ class EconomicRuleConsolidator:
 
             if np.sum(valid_tr) >= min_train and np.sum(valid_va) > 0:
                 X_tr = X_std[tr_idx][valid_tr]
-                y_tr_fold = np.clip(y_tr[valid_tr], lo, hi)
+
+                # Compute fold-specific clipping limits
+                y_tr_valid = y_tr[valid_tr]
+                hi_fold = np.nanquantile(y_tr_valid, 0.98) if len(y_tr_valid) > 0 else 1.0
+                lo_fold = np.nanquantile(y_tr_valid, 0.02) if len(y_tr_valid) > 0 else -1.0
+                y_tr_fold = np.clip(y_tr_valid, lo_fold, hi_fold)
 
                 fold_model = Ridge(solver="auto")
                 fold_model.fit(X_tr, y_tr_fold)
 
                 X_va_fold = X_std[va_idx][valid_va]
                 preds = fold_model.predict(X_va_fold)
-
-                oof_preds[va_idx[valid_va]] = preds
 
                 ic = _safe_spearman(preds, y_va[valid_va])
                 fold_ics.append(ic)
@@ -2407,39 +2408,52 @@ class EconomicRuleConsolidator:
 
         return {
             "coefficients": coefs,
-            "signed_rank_order": rank_order * np.sign(coefs),
             "top_k_indices": top_k_indices,
             "intercept": intercept,
             "oos_ic": oos_ic,
             "oos_mean_return": oos_mean_return,
-            "train_support": train_support_total
+            "mask_support": len(valid_idx),
+            "fold_train_support_total": train_support_total
         }
 
     def _score_ridge_similarity(
         self,
         sig_a: Dict[str, Any],
         sig_b: Dict[str, Any]
-    ) -> float:
+    ) -> Dict[str, float]:
         import scipy.stats
         if sig_a is None or sig_b is None:
-            return 0.0
+            return {
+                "ridge_context_similarity": 0.0,
+                "coef_sim": 0.0,
+                "topk_jaccard": 0.0,
+                "topk_sign_agreement": 0.0,
+                "topk_sign_conflict_rate": 0.0,
+                "rank_corr": 0.0
+            }
 
         beta_a = sig_a["coefficients"]
         beta_b = sig_b["coefficients"]
 
-        cosine_sim = _cosine_similarity(beta_a, beta_b)
+        coef_sim = _cosine_similarity(beta_a, beta_b)
 
         top_a = sig_a["top_k_indices"]
         top_b = sig_b["top_k_indices"]
 
         overlap = top_a.intersection(top_b)
-        topk_jaccard = len(overlap) / max(len(top_a.union(top_b)), 1)
+        union_set = top_a.union(top_b)
 
-        malus = 0.0
-        for idx in overlap:
-            if np.sign(beta_a[idx]) != np.sign(beta_b[idx]):
-                malus += 0.1
-        topk_jaccard = max(0.0, topk_jaccard - malus)
+        topk_jaccard = len(overlap) / max(len(union_set), 1)
+
+        if overlap:
+            overlap_idx = np.array(sorted(overlap), dtype=int)
+            topk_sign_agreement = float(np.mean(
+                np.sign(beta_a[overlap_idx]) == np.sign(beta_b[overlap_idx])
+            ))
+            topk_sign_conflict_rate = 1.0 - topk_sign_agreement
+        else:
+            topk_sign_agreement = 0.0
+            topk_sign_conflict_rate = 0.0
 
         rank_corr = _safe_spearman(
             scipy.stats.rankdata(np.abs(beta_a)),
@@ -2449,12 +2463,21 @@ class EconomicRuleConsolidator:
             rank_corr = 0.0
 
         ridge_context_similarity = (
-            0.50 * max(cosine_sim, 0.0)
+            0.45 * max(coef_sim, 0.0)
+            + 0.25 * topk_jaccard
+            + 0.20 * topk_sign_agreement
             + 0.10 * max(rank_corr, 0.0)
-            + 0.40 * topk_jaccard
+            - 0.15 * topk_sign_conflict_rate
         )
 
-        return ridge_context_similarity
+        return {
+            "ridge_context_similarity": ridge_context_similarity,
+            "coef_sim": coef_sim,
+            "topk_jaccard": topk_jaccard,
+            "topk_sign_agreement": topk_sign_agreement,
+            "topk_sign_conflict_rate": topk_sign_conflict_rate,
+            "rank_corr": rank_corr
+        }
 
     def _cross_context_transport_test(
         self,
@@ -2484,12 +2507,14 @@ class EconomicRuleConsolidator:
             valid_va_a = va_mask_a & np.isfinite(y_va)
             valid_va_b = va_mask_b & np.isfinite(y_va)
 
-            hi = np.nanquantile(y_tr[np.isfinite(y_tr)], 0.98) if np.any(np.isfinite(y_tr)) else 1.0
-            lo = np.nanquantile(y_tr[np.isfinite(y_tr)], 0.02) if np.any(np.isfinite(y_tr)) else -1.0
-
             if np.sum(valid_tr_a) >= min_train and np.sum(valid_va_b) > 0:
                 X_tr_a = X_std[tr_idx][valid_tr_a]
-                y_tr_a = np.clip(y_tr[valid_tr_a], lo, hi)
+
+                # Compute source-specific clipping bounds for A
+                y_tr_a_valid = y_tr[valid_tr_a]
+                hi_a = np.nanquantile(y_tr_a_valid, 0.98) if len(y_tr_a_valid) > 0 else 1.0
+                lo_a = np.nanquantile(y_tr_a_valid, 0.02) if len(y_tr_a_valid) > 0 else -1.0
+                y_tr_a = np.clip(y_tr_a_valid, lo_a, hi_a)
 
                 model_a = Ridge(solver="auto")
                 model_a.fit(X_tr_a, y_tr_a)
@@ -2502,7 +2527,12 @@ class EconomicRuleConsolidator:
 
             if np.sum(valid_tr_b) >= min_train and np.sum(valid_va_a) > 0:
                 X_tr_b = X_std[tr_idx][valid_tr_b]
-                y_tr_b = np.clip(y_tr[valid_tr_b], lo, hi)
+
+                # Compute source-specific clipping bounds for B
+                y_tr_b_valid = y_tr[valid_tr_b]
+                hi_b = np.nanquantile(y_tr_b_valid, 0.98) if len(y_tr_b_valid) > 0 else 1.0
+                lo_b = np.nanquantile(y_tr_b_valid, 0.02) if len(y_tr_b_valid) > 0 else -1.0
+                y_tr_b = np.clip(y_tr_b_valid, lo_b, hi_b)
 
                 model_b = Ridge(solver="auto")
                 model_b.fit(X_tr_b, y_tr_b)
@@ -2516,19 +2546,18 @@ class EconomicRuleConsolidator:
         transport_ab_ic = np.nanmean(transport_ab_ics) if transport_ab_ics else np.nan
         transport_ba_ic = np.nanmean(transport_ba_ics) if transport_ba_ics else np.nan
 
-        if np.isnan(transport_ab_ic) and np.isnan(transport_ba_ic):
-            transport_sym_ic = 0.0
-        elif np.isnan(transport_ab_ic):
-            transport_sym_ic = transport_ba_ic
-        elif np.isnan(transport_ba_ic):
-            transport_sym_ic = transport_ab_ic
+        if np.isnan(transport_ab_ic) or np.isnan(transport_ba_ic):
+            transport_mean_ic = np.nan
+            transport_min_ic = np.nan
         else:
-            transport_sym_ic = (transport_ab_ic + transport_ba_ic) / 2.0
+            transport_mean_ic = 0.5 * (transport_ab_ic + transport_ba_ic)
+            transport_min_ic = min(transport_ab_ic, transport_ba_ic)
 
         return {
             "transport_ab_ic": transport_ab_ic,
             "transport_ba_ic": transport_ba_ic,
-            "transport_sym_ic": transport_sym_ic
+            "transport_mean_ic": transport_mean_ic,
+            "transport_min_ic": transport_min_ic
         }
 
     def _ridge_based_consolidation(
@@ -2543,6 +2572,9 @@ class EconomicRuleConsolidator:
         if getattr(resolver, 'X', None) is None:
             return active, {}
 
+        # NOTE: A single standardized matrix X_std is built once from resolver.X
+        # for the cheap signature stage, using global column-wise mean/std.
+        # This is acceptable as a pragmatic retrieval heuristic for signature similarity.
         X_raw = resolver.X
         X_std = np.zeros_like(X_raw)
         for i in range(X_raw.shape[1]):
@@ -2569,6 +2601,9 @@ class EconomicRuleConsolidator:
                 signature_cache[key] = self._compute_ridge_signature(mask_cache[key], X_std, fwd_ret, folds)
             return signature_cache[key]
 
+        candidate_seed_keys = set()
+        ridge_evals_log = []
+
         for round_idx in range(max_rounds):
             keys = active["canonical_key"].tolist()
 
@@ -2588,11 +2623,15 @@ class EconomicRuleConsolidator:
                 for j in range(i+1, len(valid_keys)):
                     k_a = valid_keys[i]
                     k_b = valid_keys[j]
-                    sim = self._score_ridge_similarity(signatures[k_a], signatures[k_b])
+
+                    if round_idx > 0 and (k_a not in candidate_seed_keys and k_b not in candidate_seed_keys):
+                        continue
+
+                    sim_dict = self._score_ridge_similarity(signatures[k_a], signatures[k_b])
                     pair_sims.append({
                         "key_a": k_a,
                         "key_b": k_b,
-                        "ridge_context_similarity": sim
+                        **sim_dict
                     })
 
             if not pair_sims:
@@ -2615,31 +2654,44 @@ class EconomicRuleConsolidator:
                 trans_metrics = self._cross_context_transport_test(
                     mask_cache[k_a], mask_cache[k_b], X_std, fwd_ret, folds
                 )
-                transport_results.append({
-                    **p,
-                    **trans_metrics
-                })
 
-            transport_results.sort(key=lambda x: x["transport_sym_ic"], reverse=True)
+                # Only keep pairs with valid symmetric transport
+                if not np.isnan(trans_metrics["transport_min_ic"]):
+                    transport_results.append({
+                        **p,
+                        **trans_metrics
+                    })
 
-            n_top_50 = max(1, len(transport_results) // 2)
-            final_pairs = transport_results[:min(n_top_50, 500)]
+            transport_results.sort(key=lambda x: x["transport_min_ic"], reverse=True)
 
-            if round_idx > 0:
-                n_top_10 = max(1, len(transport_results) // 10)
-                final_pairs = transport_results[:min(n_top_10, 500)]
+            if round_idx == 0:
+                n_top = max(1, len(transport_results) // 2)
+                final_pairs = transport_results[:min(n_top, 500)]
+            else:
+                n_top = max(1, len(transport_results) // 10)
+                final_pairs = transport_results[:min(n_top, 500)]
 
             accepted_in_round = 0
+            created_this_round = set()
+            active_keys = set(active["canonical_key"].tolist())
+
             for p in final_pairs:
                 key_a = p["key_a"]
                 key_b = p["key_b"]
 
-                if key_a not in active["canonical_key"].values or key_b not in active["canonical_key"].values:
+                if key_a not in active_keys or key_b not in active_keys:
                     continue
 
                 total_evals += 1
 
                 diag_eval = self._evaluate_pair_economically(key_a, key_b, resolver, fwd_ret, folds)
+
+                ridge_evals_log.append({
+                    "round": round_idx,
+                    **p,
+                    "final_merge_decision": diag_eval["accept_merge"],
+                    "decision_reason": diag_eval["decision_reason"]
+                })
 
                 if diag_eval["accept_merge"]:
                     accepted_in_round += 1
@@ -2673,6 +2725,12 @@ class EconomicRuleConsolidator:
                     active = active[~active["canonical_key"].isin([key_a, key_b])].copy()
                     active = pd.concat([active, pd.DataFrame([child_summary])], ignore_index=True)
 
+                    active_keys.remove(key_a)
+                    active_keys.remove(key_b)
+                    active_keys.add(child_key)
+
+                    created_this_round.add(child_key)
+
                     self.lineage.record_merge(
                         child_key,
                         [key_a, key_b],
@@ -2681,11 +2739,14 @@ class EconomicRuleConsolidator:
                         {"decision_reason": diag_eval["decision_reason"]}
                     )
 
+            candidate_seed_keys = created_this_round.copy()
+
             if accepted_in_round == 0:
                 break
 
         diag["ridge_signature_evals"] = total_evals
         diag["ridge_signature_merges"] = total_merges
+        diag["ridge_signature_evals_log"] = ridge_evals_log
 
         return active, diag
 
@@ -2848,6 +2909,9 @@ class EconomicRuleConsolidator:
             "ridge_signature_evals": ridge_diag.get("ridge_signature_evals", 0),
             "ridge_signature_merges": ridge_diag.get("ridge_signature_merges", 0)
         }
+
+        if "ridge_signature_evals_log" in ridge_diag and ridge_diag["ridge_signature_evals_log"]:
+            diag_dict["ridge_signature_evals_log"] = pd.DataFrame(ridge_diag["ridge_signature_evals_log"])
 
         tprint(f"Ridge Signature Consolidation End: {len(active)} rules remaining. {ridge_diag.get('ridge_signature_evals', 0)} evaluated pairs, {ridge_diag.get('ridge_signature_merges', 0)} merges.")
 

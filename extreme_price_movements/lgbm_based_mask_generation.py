@@ -639,15 +639,18 @@ class InteractionModel:
         """
         Build interaction constraints for LightGBM.
         """
-        # Group to indices map
-        group_map = collections.defaultdict(list)
-        for m in self.metadata:
-            group_map[m.group].append(m.feature_index)
+        if "interaction_constraints" in self.cfg:
+            constraints = []
+            for constraint_group in self.cfg["interaction_constraints"]:
+                constraint_indices = []
+                for feat_name in constraint_group:
+                    for m in self.metadata:
+                        if m.feature_name == feat_name:
+                            constraint_indices.append(m.feature_index)
+                if constraint_indices:
+                    constraints.append(constraint_indices)
+            return constraints
 
-        constraints = []
-        
-        # Training is permissive; structural validity is enforced post-hoc
-        # in RuleExtractor._is_path_valid().
         return []
 
     def _verify_constraints(self, constraints, trigger_idxs, location_idxs, regime_idxs):
@@ -727,7 +730,7 @@ class InteractionModel:
             "objective": "regression",
             "metric": "l2",
             "boosting_type": "gbdt",
-            "max_depth": 3,
+            "max_depth": self.cfg.get("lgbm_max_depth", 3),
             "num_leaves": 8,
             "min_data_in_leaf": max(20, int(0.001 * X_tr.shape[0])),
             "learning_rate": 0.03,
@@ -741,6 +744,9 @@ class InteractionModel:
             "bagging_freq": 1,
             "feature_fraction": 0.8,
         }
+
+        if self.constraints:
+            params["interaction_constraints"] = self.constraints
 
         model = LGBMRegressor(**params)
         evals_result = {}
@@ -1464,12 +1470,20 @@ class RuleScorer:
             baseline_support = 0
             baseline_ret = np.nan
             uplift = np.nan
+            fold_ic = np.nan
+            baseline_ic = np.nan
+            delta_ic = np.nan
 
             if parent_context_key:
                 parent_mask = resolver.get_mask(parent_context_key, va_idx)
                 baseline_support = int(parent_mask.sum())
                 if baseline_support > 0:
                     baseline_ret = float(np.nanmean(y_va[parent_mask]))
+
+                    # Compute baseline IC
+                    valid_idx = np.isfinite(y_va) & np.isfinite(parent_mask)
+                    if np.sum(valid_idx) >= 3:
+                        baseline_ic = _safe_spearman(parent_mask[valid_idx].astype(np.float32), y_va[valid_idx])
 
             if support > 0:
                 masked_ret = y_va[mask]
@@ -1478,6 +1492,14 @@ class RuleScorer:
                 if np.isfinite(baseline_ret):
                     uplift = mean_ret - baseline_ret
                 sign = 1 if mean_ret > epsilon else (-1 if mean_ret < -epsilon else 0)
+
+                # Compute mask IC
+                valid_idx = np.isfinite(y_va) & np.isfinite(mask)
+                if np.sum(valid_idx) >= 3:
+                    fold_ic = _safe_spearman(mask[valid_idx].astype(np.float32), y_va[valid_idx])
+
+                if np.isfinite(fold_ic) and np.isfinite(baseline_ic):
+                    delta_ic = fold_ic - baseline_ic
             else:
                 mean_ret = np.nan
                 std_ret = np.nan
@@ -1496,6 +1518,9 @@ class RuleScorer:
                     "baseline_ret": baseline_ret,
                     "uplift": uplift,
                     "parent_context_key": parent_context_key,
+                    "fold_ic": fold_ic,
+                    "baseline_ic": baseline_ic,
+                    "delta_ic": delta_ic,
                 }
             )
 
@@ -1507,6 +1532,7 @@ class RuleScorer:
                 "mean_net_ret": np.nan,
                 "directional_mean_ret": np.nan,
                 "std_net_ret": np.nan,
+                "mean_within_fold_std": np.nan,
                 "mean_support_pct": 0.0,
                 "std_support_pct": 0.0,
                 "presence_freq": 0.0,
@@ -1515,6 +1541,12 @@ class RuleScorer:
                 "min_support_actual": 0,
                 "mean_uplift": np.nan,
                 "mean_baseline_ret": np.nan,
+                "mean_oos_ic": np.nan,
+                "p25_oos_ic": np.nan,
+                "p50_oos_ic": np.nan,
+                "p75_oos_ic": np.nan,
+                "mean_delta_ic": np.nan,
+                "positive_ic_fraction": 0.0,
                 "composite_score": -np.inf,
                 "required_hurdle": np.nan,
                 "hurdle_excess": np.nan,
@@ -1536,6 +1568,7 @@ class RuleScorer:
 
         mean_net_ret = float(present["mean_ret"].mean())
         std_net_ret = float(present["mean_ret"].std(ddof=0))
+        mean_within_fold_std = float(present["std_ret"].mean()) if present["std_ret"].notna().any() else np.nan
         mean_support_pct = float(present["support_pct"].mean())
         std_support_pct = float(present["support_pct"].std(ddof=0))
         presence_freq = float(len(present) / max(len(folds), 1))
@@ -1561,7 +1594,18 @@ class RuleScorer:
             if present["baseline_ret"].notna().any()
             else np.nan
         )
+
+        # OOS IC metrics
+        mean_oos_ic = float(present["fold_ic"].mean()) if present["fold_ic"].notna().any() else np.nan
+        p25_oos_ic = float(present["fold_ic"].quantile(0.25)) if present["fold_ic"].notna().any() else np.nan
+        p50_oos_ic = float(present["fold_ic"].quantile(0.50)) if present["fold_ic"].notna().any() else np.nan
+        p75_oos_ic = float(present["fold_ic"].quantile(0.75)) if present["fold_ic"].notna().any() else np.nan
+        mean_delta_ic = float(present["delta_ic"].mean()) if present["delta_ic"].notna().any() else np.nan
+
+        positive_ic_fraction = float((present["fold_ic"] > 0).mean()) if present["fold_ic"].notna().any() else 0.0
+
         composite_score = (
+
             mean_net_ret
             * sqrt(max(mean_support_pct, 1e-12))
             * presence_freq
@@ -1574,6 +1618,7 @@ class RuleScorer:
             "mean_net_ret": mean_net_ret,
             "directional_mean_ret": directional_mean_ret,
             "std_net_ret": std_net_ret,
+            "mean_within_fold_std": mean_within_fold_std,
             "mean_support_pct": mean_support_pct,
             "std_support_pct": std_support_pct,
             "presence_freq": presence_freq,
@@ -1582,6 +1627,12 @@ class RuleScorer:
             "min_support_actual": int(present["support"].min()),
             "mean_uplift": mean_uplift,
             "mean_baseline_ret": mean_baseline_ret,
+            "mean_oos_ic": mean_oos_ic,
+            "p25_oos_ic": p25_oos_ic,
+            "p50_oos_ic": p50_oos_ic,
+            "p75_oos_ic": p75_oos_ic,
+            "mean_delta_ic": mean_delta_ic,
+            "positive_ic_fraction": positive_ic_fraction,
             "composite_score": composite_score,
             "required_hurdle": required_hurdle,
             "hurdle_excess": hurdle_excess,
@@ -2046,6 +2097,7 @@ class EconomicRuleConsolidator:
             "support_pct": float(mask.sum() / max(len(mask), 1)),
             "mean_net_ret": mean_net_ret,
             "std_net_ret": std_net_ret,
+                    "mean_within_fold_std": float(np.nanmean(stds_arr)) if not np.all(np.isnan(stds_arr)) else np.nan,
             "sharpe": sharpe,
             "mean_ic": mean_ic,
             "ic_positive_fold_fraction": ic_positive_fold_fraction,
@@ -2224,6 +2276,7 @@ class EconomicRuleConsolidator:
             agg_metrics[cand] = {
                 "mean_net_ret": mean_net_ret,
                 "std_net_ret": std_net_ret,
+                    "mean_within_fold_std": float(np.nanmean(stds_arr)) if not np.all(np.isnan(stds_arr)) else np.nan,
                 "sharpe": sharpe,
                 "mean_ic": mean_ic,
                 "positive_fold_fraction": positive_fold_fraction,
@@ -3430,6 +3483,7 @@ class RuleConsolidator:
             agg_metrics[cand] = {
                 "mean_net_ret": mean_net_ret,
                 "std_net_ret": std_net_ret,
+                    "mean_within_fold_std": float(np.nanmean(stds_arr)) if not np.all(np.isnan(stds_arr)) else np.nan,
                 "sharpe": sharpe,
                 "mean_ic": mean_ic,
                 "positive_fold_fraction": positive_fold_fraction,
@@ -3991,6 +4045,7 @@ def run_mining_stage(
                 all_rejection_audit.extend(extractor.rejection_audit)
 
     parent_context_map: Dict[str, str] = {}
+
     if rule_key_rewriter is not None:
         rewritten_rules: List[ExtractedRule] = []
         for rule in all_extracted_rules:
@@ -4002,6 +4057,18 @@ def run_mining_stage(
             if parent_context_key:
                 parent_context_map[rewritten_key] = parent_context_key
         all_extracted_rules = rewritten_rules
+
+    require_groups = cfg.get("require_groups", [])
+    if require_groups:
+        filtered_rules = []
+        for rule in all_extracted_rules:
+            # Check if all required groups are present in the rule conditions
+            rule_groups = set(c.group for c in rule.conditions)
+            # Some conditions might be context and we don't have conditions for them inside rule.conditions directly?
+            # Actually, `rule.conditions` should have `group="context"` if we used context features.
+            if all(rg in rule_groups for rg in require_groups):
+                filtered_rules.append(rule)
+        all_extracted_rules = filtered_rules
 
     if fold_quality_reports:
         fq_df = pd.DataFrame(fold_quality_reports)
@@ -4312,51 +4379,26 @@ def run_two_stage_lgbm_mask_generation(
             "combined": stage_a_result.get("accepted_registry"),
         }
     
-    # --- STAGE B: TRIGGER REFINEMENT ---
-    tprint("STAGE B: Trigger Refinement (Winning Contexts x Trigger)")
-    
-    context_feature_dict, context_to_key = build_context_feature_dict_from_registry(
-        winning_contexts, data, X_a, metadata_a
-    )
-    
-    # Save mapping for audit
-    context_mapping_df = pd.DataFrame([
-        {"context_feature_name": k, "stage_a_key": v} for k, v in context_to_key.items()
-    ])
-    context_mapping_df.to_csv(root_output_dir / "stage_b_context_mapping.csv", index=False)
-    
-    context_support_rows = []
-    n_samples = len(data)
-    for name, mask in context_feature_dict.items():
-        support = int(mask.sum())
-        context_support_rows.append({
-            "context_name": name,
-            "stage_a_key": context_to_key[name],
-            "support": support,
-            "support_pct": float(support / max(n_samples, 1))
-        })
 
-    if context_support_rows:
-        pd.DataFrame(context_support_rows).to_csv(stage_a_output_dir / "context_mask_support_summary.csv", index=False)
-        tprint(f"Mapped {len(context_support_rows)} Contexts to Stage B. Dropped: {len(winning_contexts) - len(context_support_rows)}")
+    # --- STAGE B1: TRIGGER REFINEMENT ---
+    tprint("STAGE B1: Trigger Refinement (Winning Contexts x Trigger)")
 
-
-    fp_b = FeatureProcessor()
-    X_b, metadata_b, audits_b = fp_b.prepare_features(
+    fp_b_trig = FeatureProcessor()
+    X_b_trig, metadata_b_trig, audits_b_trig = fp_b_trig.prepare_features(
         feature_dict, data['timestamp'].to_numpy(), data['symbol'].to_numpy(), cfg,
         active_groups=("trigger",),
         extra_binary_features=context_feature_dict,
         extra_feature_group="context"
     )
-    stage_b_output_dir = root_output_dir / "stage_b_trigger_refinement"
-    stage_b_output_dir.mkdir(parents=True, exist_ok=True)
+    stage_b_trig_output_dir = root_output_dir / "stage_b_trigger_refinement"
+    stage_b_trig_output_dir.mkdir(parents=True, exist_ok=True)
 
-    for k, v in audits_b.items():
+    for k, v in audits_b_trig.items():
         if not v.empty:
-            v.to_csv(stage_b_output_dir / f"{k}.csv", index=False)
-    context_mapping_df.to_csv(stage_b_output_dir / "stage_b_context_mapping.csv", index=False)
+            v.to_csv(stage_b_trig_output_dir / f"{k}.csv", index=False)
+    context_mapping_df.to_csv(stage_b_trig_output_dir / "stage_b_context_mapping.csv", index=False)
     
-    stage_b_spec = MiningStageSpec(
+    stage_b_trig_spec = MiningStageSpec(
         stage_name="stage_b_trigger_refinement",
         active_groups=("trigger", "context"),
         allow_groups_in_rule=("trigger", "context"),
@@ -4366,7 +4408,7 @@ def run_two_stage_lgbm_mask_generation(
         require_uplift=True
     )
 
-    def reconstruct_stage_b_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
+    def reconstruct_stage_b_trig_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
         global stage_b_reconstruction_success, stage_b_reconstruction_failed
         slots = raw_key.split("|")
         trigger_conditions = []
@@ -4379,7 +4421,7 @@ def run_two_stage_lgbm_mask_generation(
                 if "==" not in cond_str:
                     continue
                 feature_name = cond_str.split("==")[0]
-                if feature_name in INTRADAY_TRIGGER_COLUMNS:
+                if feature_name in INTRADAY_TRIGGER_COLUMNS or any(feature_name.startswith(c[:3]) for c in CONTINUOUS_TRIGGER_COLS):
                     trigger_conditions.append(cond_str)
                 elif feature_name.startswith("ctx__"):
                     parent_context_key = context_to_key.get(feature_name)
@@ -4393,27 +4435,227 @@ def run_two_stage_lgbm_mask_generation(
         stage_b_reconstruction_success += 1
         return f"{trigger_slot}|{parent_slots[1]}|{parent_slots[2]}", parent_context_key
     
-    stage_b_result = run_mining_stage(
-        data, fwd_ret, fwd_ret_norm, X_b, metadata_b, cfg,
-        stage_b_output_dir,
-        stage_b_spec.stage_name,
-        stage_b_spec.allowed_group_pairs,
-        slot_order=stage_b_spec.slot_order,
+    cfg_trig = cfg.copy()
+    cfg_trig["lgbm_max_depth"] = 2
+    context_features_trig = [m.feature_name for m in metadata_b_trig if m.group == "context"]
+    trigger_features = [m.feature_name for m in metadata_b_trig if m.group == "trigger"]
+    cfg_trig["interaction_constraints"] = [context_features_trig + trigger_features]
+    cfg_trig["require_groups"] = ["context", "trigger"]
+
+    stage_b_trig_result = run_mining_stage(
+        data, fwd_ret, fwd_ret_norm, X_b_trig, metadata_b_trig, cfg_trig,
+        stage_b_trig_output_dir,
+        stage_b_trig_spec.stage_name,
+        stage_b_trig_spec.allowed_group_pairs,
+        slot_order=stage_b_trig_spec.slot_order,
         folds=folds,
         mask_resolver=CanonicalRuleMaskResolver(
-            X_b,
-            metadata_b,
+            X_b_trig,
+            metadata_b_trig,
             context_lookup=context_feature_dict,
             context_key_map=context_to_key,
             slot_order=("trigger", "location", "regime"),
         ),
-        require_uplift=stage_b_spec.require_uplift,
-        rule_key_rewriter=reconstruct_stage_b_key,
+        require_uplift=stage_b_trig_spec.require_uplift,
+        rule_key_rewriter=reconstruct_stage_b_trig_key,
         pipeline_stage_name="stage_b_trigger_refinement",
     )
 
+    # --- STAGE B2: LOCATION REFINEMENT ---
+    tprint("STAGE B2: Location Refinement (Winning Contexts x Location)")
+
+    fp_b_loc = FeatureProcessor()
+    X_b_loc, metadata_b_loc, audits_b_loc = fp_b_loc.prepare_features(
+        feature_dict, data['timestamp'].to_numpy(), data['symbol'].to_numpy(), cfg,
+        active_groups=("location",),
+        extra_binary_features=context_feature_dict,
+        extra_feature_group="context"
+    )
+    stage_b_loc_output_dir = root_output_dir / "stage_b_location_refinement"
+    stage_b_loc_output_dir.mkdir(parents=True, exist_ok=True)
+
+    for k, v in audits_b_loc.items():
+        if not v.empty:
+            v.to_csv(stage_b_loc_output_dir / f"{k}.csv", index=False)
+    context_mapping_df.to_csv(stage_b_loc_output_dir / "stage_b_context_mapping.csv", index=False)
+
+    stage_b_loc_spec = MiningStageSpec(
+        stage_name="stage_b_location_refinement",
+        active_groups=("location", "context"),
+        allow_groups_in_rule=("location", "context"),
+        output_dir_name="stage_b_location_refinement",
+        allowed_group_pairs=(("location", "context"),),
+        slot_order=("location", "context"),
+        require_uplift=True
+    )
+
+    def reconstruct_stage_b_loc_key(raw_key: str) -> Tuple[Optional[str], Optional[str]]:
+        global stage_b_reconstruction_success, stage_b_reconstruction_failed
+        slots = raw_key.split("|")
+        location_conditions = []
+        parent_context_key = None
+        for slot in slots:
+            slot_value = slot.strip("()")
+            if slot_value == "*":
+                continue
+            for cond_str in slot_value.split("&"):
+                if "==" not in cond_str:
+                    continue
+                feature_name = cond_str.split("==")[0]
+                if feature_name in LOCATION_FILTER_COLUMNS or any(feature_name.startswith(c[:3]) for c in CONTINUOUS_LOCATION_COLS):
+                    location_conditions.append(cond_str)
+                elif feature_name.startswith("ctx__"):
+                    parent_context_key = context_to_key.get(feature_name)
+
+        if parent_context_key is None or not location_conditions:
+            stage_b_reconstruction_failed += 1
+            return None, None
+
+        location_slot = f"({'&'.join(sorted(location_conditions))})"
+        parent_slots = parent_context_key.split("|")
+        stage_b_reconstruction_success += 1
+        # Merge with the existing location slot from the parent context
+        existing_loc = parent_slots[1].strip("()")
+        if existing_loc != "*":
+            new_loc_slot = f"({existing_loc}&{location_slot.strip('()')})"
+        else:
+            new_loc_slot = location_slot
+        return f"{parent_slots[0]}|{new_loc_slot}|{parent_slots[2]}", parent_context_key
+
+    cfg_loc = cfg.copy()
+    cfg_loc["lgbm_max_depth"] = 2
+    context_features_loc = [m.feature_name for m in metadata_b_loc if m.group == "context"]
+    location_features = [m.feature_name for m in metadata_b_loc if m.group == "location"]
+    cfg_loc["interaction_constraints"] = [context_features_loc + location_features]
+    cfg_loc["require_groups"] = ["context", "location"]
+
+    stage_b_loc_result = run_mining_stage(
+        data, fwd_ret, fwd_ret_norm, X_b_loc, metadata_b_loc, cfg_loc,
+        stage_b_loc_output_dir,
+        stage_b_loc_spec.stage_name,
+        stage_b_loc_spec.allowed_group_pairs,
+        slot_order=stage_b_loc_spec.slot_order,
+        folds=folds,
+        mask_resolver=CanonicalRuleMaskResolver(
+            X_b_loc,
+            metadata_b_loc,
+            context_lookup=context_feature_dict,
+            context_key_map=context_to_key,
+            slot_order=("trigger", "location", "regime"),
+        ),
+        require_uplift=stage_b_loc_spec.require_uplift,
+        rule_key_rewriter=reconstruct_stage_b_loc_key,
+        pipeline_stage_name="stage_b_location_refinement",
+    )
+
+    # --- CALIBRATION BY SCORE BUCKET ---
+    def compute_calibration(registry_df, output_prefix, output_dir):
+        if registry_df.empty:
+            return
+
+        # We bucket by composite_score into deciles
+        try:
+            registry_df["score_bucket"] = pd.qcut(registry_df["composite_score"], q=10, labels=False, duplicates='drop')
+        except ValueError:
+            # Fallback if too few unique values
+            registry_df["score_bucket"] = pd.cut(registry_df["composite_score"], bins=10, labels=False)
+
+        calib_stats = registry_df.groupby("score_bucket").agg(
+            mean_score=("composite_score", "mean"),
+            min_score=("composite_score", "min"),
+            max_score=("composite_score", "max"),
+            count=("canonical_key", "count"),
+            mean_oos_ret=("mean_net_ret", "mean"),
+            mean_oos_ic=("mean_oos_ic", "mean"),
+            median_support=("mean_support_pct", "median")
+        ).reset_index()
+
+        calib_stats.to_csv(output_dir / f"{output_prefix}_calibration_by_score_bucket.csv", index=False)
+
+    compute_calibration(stage_b_trig_result["accepted_registry"].copy(), "stage_b1_trigger", root_output_dir)
+    compute_calibration(stage_b_loc_result["accepted_registry"].copy(), "stage_b2_location", root_output_dir)
+    compute_calibration(stage_a_result["candidate_registry"].copy(), "stage_a", root_output_dir)
+
+    # --- METRICS COMPARISON (STAGE B1 vs STAGE B2) ---
+    def compute_set_metrics(registry_df, lineage_df=None):
+        if registry_df.empty:
+            return {}
+
+        # Sort by mean_oos_ic to get top 10
+        sorted_by_ic = registry_df.sort_values(by="mean_oos_ic", ascending=False)
+        top10 = sorted_by_ic.head(10)
+
+        metrics = {
+            "median_support_pct": float(registry_df["mean_support_pct"].median()),
+            "p10_support_pct": float(top10["mean_support_pct"].mean()),
+            "p10_mean_oos_return": float(top10["mean_net_ret"].mean()),
+            "p10_std_oos_return_between_folds": float(top10["std_net_ret"].mean()) if "std_net_ret" in top10 else 0.0,
+            "p10_std_oos_return_within_folds": float(top10["mean_within_fold_std"].mean()) if "mean_within_fold_std" in top10 else 0.0,
+            "hurdle_excess_mean": float(registry_df["hurdle_excess"].mean()),
+            "hurdle_excess_p10": float(top10["hurdle_excess"].mean())
+        }
+
+        # Calculate merge average for p10
+        if lineage_df is not None and not lineage_df.empty:
+            merge_counts = []
+            for key in top10["canonical_key"]:
+                ancestors = set()
+                to_visit = [key]
+                while to_visit:
+                    curr = to_visit.pop()
+                    parents = lineage_df[lineage_df["child_id"] == curr]["parent_ids"].tolist()
+                    if parents:
+                        for p_list in parents:
+                            if isinstance(p_list, str):
+                                import ast
+                                try:
+                                    p_list = ast.literal_eval(p_list)
+                                except Exception:
+                                    continue
+                            for p in p_list:
+                                if p not in ancestors:
+                                    ancestors.add(p)
+                                    to_visit.append(p)
+                merge_counts.append(len(ancestors))
+            metrics["p10_merge_average"] = float(np.mean(merge_counts)) if merge_counts else 0.0
+        else:
+            metrics["p10_merge_average"] = 0.0
+
+        return metrics
+    try:
+        b1_lineage = pd.read_csv(stage_b_trig_output_dir / "consolidation_lineage_audit.csv")
+    except Exception:
+        b1_lineage = pd.DataFrame()
+
+    try:
+        b2_lineage = pd.read_csv(stage_b_loc_output_dir / "consolidation_lineage_audit.csv")
+    except Exception:
+        b2_lineage = pd.DataFrame()
+
+    b1_metrics = compute_set_metrics(stage_b_trig_result["accepted_registry"].copy(), b1_lineage)
+    b2_metrics = compute_set_metrics(stage_b_loc_result["accepted_registry"].copy(), b2_lineage)
+
+    stage_b_comparison = pd.DataFrame([
+        {"stage": "b1_trigger", **b1_metrics},
+        {"stage": "b2_location", **b2_metrics}
+    ])
+    stage_b_comparison.to_csv(root_output_dir / "stage_b_comparison_metrics.csv", index=False)
+    tprint(f"Stage B Comparison Metrics saved to stage_b_comparison_metrics.csv")
+
     stage_a_candidates = stage_a_result["candidate_registry"].copy()
-    stage_b_candidates = stage_b_result["candidate_registry"].copy()
+
+    # --- COMBINE STAGE B1 & B2 ---
+    stage_b_candidates = pd.concat([
+        stage_b_trig_result["candidate_registry"],
+        stage_b_loc_result["candidate_registry"]
+    ], ignore_index=True)
+
+    stage_b_accepted = pd.concat([
+        stage_b_trig_result["accepted_registry"],
+        stage_b_loc_result["accepted_registry"]
+    ], ignore_index=True)
+
+    stage_b_accepted["origin_stage"] = "stage_b"
     combined_candidate_registry_raw = pd.concat(
         [stage_a_candidates, stage_b_candidates], ignore_index=True
     ).drop_duplicates(subset=["canonical_key"], keep="first")
@@ -4425,8 +4667,7 @@ def run_two_stage_lgbm_mask_generation(
     stage_a_accepted = stage_a_result["accepted_registry"].copy()
     stage_a_accepted["origin_stage"] = "stage_a"
 
-    stage_b_accepted = stage_b_result["accepted_registry"].copy()
-    stage_b_accepted["origin_stage"] = "stage_b"
+
 
     combined_pre_global_raw = pd.concat([stage_a_accepted, stage_b_accepted], ignore_index=True)
 

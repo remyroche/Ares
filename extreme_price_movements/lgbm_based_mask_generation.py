@@ -227,14 +227,14 @@ class FeatureProcessor:
 
                     family = src.split('_')[0] if '_' in src else group_name
                     
-                    for q in [0.2, 0.3, 0.4, 0.6, 0.7, 0.8]:
+                    for q in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
                         # The threshold `q` directly represents the cutoff.
                         # For q=0.8, >= 0.8 is the top 20%. <= 0.8 is the bottom 80%.
                         # The user wants both upper (>= q) and lower (<= q) for ALL these values.
 
                         # Top quantiles (>= q)
                         bool_name_top = f"{group_name[:3]}_{src}_hybrid_top{int(q*100)}"
-                        bool_arr_top = (blended_ranks >= q).astype(np.float32)
+                        bool_arr_top = (blended_ranks >= q).astype(np.int8)
                         
                         support_top = int(bool_arr_top.sum())
                         support_top_pct = support_top / n_samples if n_samples > 0 else 0
@@ -264,7 +264,7 @@ class FeatureProcessor:
 
                         # Bottom quantiles (<= q)
                         bool_name_bot = f"{group_name[:3]}_{src}_hybrid_bot{int(q*100)}"
-                        bool_arr_bot = (blended_ranks <= q).astype(np.float32)
+                        bool_arr_bot = (blended_ranks <= q).astype(np.int8)
 
                         support_bot = int(bool_arr_bot.sum())
                         support_bot_pct = support_bot / n_samples if n_samples > 0 else 0
@@ -299,7 +299,7 @@ class FeatureProcessor:
                         band_name = f"{group_name[:3]}_{src}_hybrid_band{int(q_band*100)}_{int(q_band_upper*100)}"
                         band_arr = (
                             (blended_ranks >= q_band) & (blended_ranks <= q_band_upper)
-                        ).astype(np.float32)
+                        ).astype(np.int8)
 
                         support_band = int(band_arr.sum())
                         support_band_pct = support_band / n_samples if n_samples > 0 else 0
@@ -333,7 +333,7 @@ class FeatureProcessor:
             for col in INTRADAY_TRIGGER_COLUMNS:
                 if col in feature_dict:
                     raw_source_features_by_group["trigger"].add(col)
-                    arr = feature_dict[col].astype(np.float32)
+                    arr = feature_dict[col].astype(np.int8)
                     family = col.split('_')[0] if '_' in col else 'trigger'
                     self._add_metadata(col, 'trigger', 'boolean', source_name=col, source_family=family)
                     raw_cols.append(arr)
@@ -347,7 +347,7 @@ class FeatureProcessor:
             for col in LOCATION_FILTER_COLUMNS:
                 if col in feature_dict:
                     raw_source_features_by_group["location"].add(col)
-                    arr = feature_dict[col].astype(np.float32)
+                    arr = feature_dict[col].astype(np.int8)
                     family = col.split('_')[0] if '_' in col else 'location'
                     self._add_metadata(col, 'location', 'boolean', source_name=col, source_family=family)
                     raw_cols.append(arr)

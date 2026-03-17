@@ -66,6 +66,7 @@ from extreme_price_movements.inference.data_fetcher import (
     fetch_latest_ohlcv,
     DataFetcher,
 )
+from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.inference.candidate_selector import (
     select_candidates,
 )
@@ -463,6 +464,133 @@ def run_inference_loop(
                 time.sleep(inference_interval)
                 continue
             
+            # Apply feature normalization
+            tprint("Applying feature normalization...")
+            import gc
+            transformer = CausalFeatureTransformer(
+                winsor_qt=0.02,
+                roll_window=24 * 30,
+                cache_dir="./cache/feature_transforms",
+                enable_cache=False,
+            )
+
+            skip_transform_set = {
+                "liq_state",
+                "sin_hod",
+                "cos_hod",
+                "sin_dow",
+                "cos_dow",
+                "range_24h_pct",
+                "range_12h_pct",
+                "volatility_zscore",
+                "breakout_24h",
+                "draw_sym_10h",
+                "draw_extreme_10h",
+                "G_VOL_LIQ_GT1",
+                "G_VOL_LIQ_GT2",
+                "G_VOL_LIQ_GT3",
+                "G_LIQ_GOOD",
+                "G_LIQ_GREAT",
+                "G_LIQ_EXCEL",
+                "mtf_divergence",
+                "vol_price_diverge",
+                "meta_alignment",
+                "rsi_z",
+                "dist_ema_fast_z",
+                "dist_vwap_norm_z",
+                "flow_persistence_z",
+                "excess_6h_z",
+                "vol_z_z",
+                "atr_expansion_z",
+                "coherence_24_z",
+                "accept_surprise",
+                "overext_surprise",
+                "blowoff_risk_surprise",
+                "exh_qual_surprise",
+                "dist_vwap_resid",
+                "dist_ema_fast_resid",
+                "trend_pct_resid",
+            }
+
+            # Add gated feature patterns
+            gate_windows = [6, 12, 24, 48, 72, 120]
+            for w in gate_windows:
+                for prefix in [
+                    "s",
+                    "reject",
+                    "retest_accept",
+                    "tf_qual",
+                    "mr_qual",
+                    "vol_z",
+                    "liquidity",
+                ]:
+                    for suffix in [
+                        "mean",
+                        "std",
+                        "z",
+                        "pct",
+                        "bin3",
+                        "gt25",
+                        "gt50",
+                        "gt66",
+                        "gt75",
+                        "gt85",
+                        "gt90",
+                    ]:
+                        skip_transform_set.add(f"{prefix}_{suffix}_{w}")
+
+            def _is_boolean_like_feature(arr_like) -> bool:
+                arr = np.asarray(arr_like, dtype=np.float32)
+                if arr.size == 0:
+                    return False
+                finite = arr[np.isfinite(arr)]
+                if finite.size == 0:
+                    return False
+                if finite.min() < 0.0 or finite.max() > 1.0:
+                    return False
+                rounded = np.round(finite)
+                return bool(np.all(np.abs(finite - rounded) <= 1e-6))
+
+            feat_keys_list = list(feats.keys())
+            for k in feat_keys_list:
+                if k.startswith("cs_rank_") or k.startswith("cs_rz_") or k.startswith("ts_pct_"):
+                    skip_transform_set.add(k)
+                else:
+                    arr = np.asarray(feats[k], dtype=np.float32)
+                    if _is_boolean_like_feature(arr):
+                        skip_transform_set.add(k)
+
+            tprint(f"CausalTransform workset: {len(feats) - len(skip_transform_set)} transform, {len(skip_transform_set)} skipped")
+
+            feats = transformer.transform_batch(feats, skip_keys=skip_transform_set, chunk_size=50)
+            del transformer
+            gc.collect()
+
+            # Final check for Inf/NaN
+            for k in list(feats.keys()):
+                arr = np.asarray(feats[k], dtype=np.float32)
+                if not np.isfinite(arr).all():
+                    n_bad = (~np.isfinite(arr)).sum()
+                    tprint(f"  WARNING: {k} has {n_bad} non-finite values, replacing with 0")
+                    arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+
+                # Ensure feats[k] is a dataframe if it was originally
+                if isinstance(feats[k], pd.DataFrame):
+                    feats[k] = pd.DataFrame(arr, index=feats[k].index, columns=feats[k].columns)
+                elif isinstance(feats[k], pd.Series):
+                    feats[k] = pd.Series(arr, index=feats[k].index, name=feats[k].name)
+                elif isinstance(feats[k], np.ndarray) and not isinstance(feats.get(k), (pd.DataFrame, pd.Series)):
+                    # If transform_batch returned raw numpy array, convert back to DataFrame if possible
+                    # We need index and columns from somewhere. Let's use close index/cols
+                    panel_close = panel["close"]
+                    try:
+                        feats[k] = pd.DataFrame(arr, index=panel_close.index[-arr.shape[0]:], columns=panel_close.columns)
+                    except Exception as e:
+                        tprint(f"Warning: could not cast {k} back to DataFrame: {e}")
+                        feats[k] = arr
+                else:
+                    feats[k] = arr
+
             # Run inference step
             results = run_inference_step(
                 orchestrator=orchestrator,

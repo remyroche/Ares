@@ -6,7 +6,7 @@ from sklearn.ensemble import ExtraTreesRegressor, GradientBoostingRegressor
 from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import average_precision_score, log_loss, roc_auc_score
 
-from src.utils.tprint import tprint
+from extreme_price_movements.src_utils_tprint import tprint
 
 try:
     from sklearn.ensemble import HistGradientBoostingRegressor

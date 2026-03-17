@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 try:
-    from src.utils.tprint import tprint_info, tprint_warning
+    from extreme_price_movements.src_utils_tprint import tprint as tprint_info, tprint_warning
 except ImportError:
     def tprint_info(msg): print(f"[INFO] {msg}")
     def tprint_warning(msg): print(f"[WARNING] {msg}")

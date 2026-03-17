@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from src.utils.tprint import tprint
+from extreme_price_movements.src_utils_tprint import tprint
 from .sizer import PositionSizerConfig, size_positions_ranked
 
 SUPPORTED_BUNDLE_VERSION = 1

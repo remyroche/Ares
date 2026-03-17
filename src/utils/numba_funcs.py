@@ -1858,3 +1858,54 @@ def _numba_shift(arr, num, fill_value=np.nan):
     else:
         result[:] = arr
     return result
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_slope_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_slope(mat[:, j], window)
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_skew_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_skew(mat[:, j], window)
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_kurt_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_kurt(mat[:, j], window)
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_rsquared_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_rsquared(mat[:, j], window)
+
+    return out
+
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_median_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_median(mat[:, j], window)
+
+    return out

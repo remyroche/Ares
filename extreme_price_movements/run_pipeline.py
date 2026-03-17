@@ -488,15 +488,14 @@ def _label_artifacts_ready(cfg, ts_sig):
     required = [
         "exhaustion_history",
     ]
+    from extreme_price_movements.strategy_registry import get_strategies
+
+    strategies = get_strategies(cfg)
     for h in horizons:
-        required.extend(
-            [
-                f"train_long_mr_{h}",
-                f"train_long_tf_{h}",
-                f"train_short_mr_{h}",
-                f"train_short_tf_{h}",
-            ]
-        )
+        for strat in strategies:
+            side = strat["trade_side"]
+            k = strat["strategy_id"]
+            required.append(f"train_{side}_{k}_{h}")
 
     for name in required:
         fpath = os.path.join(
@@ -646,18 +645,19 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
         return
 
     tprint(f"Inference backtest mode. ts_sig={ts_sig}")
-    
+
     # Load trained state
     import pickle
+
     with open(state_file, "rb") as f:
         state = pickle.load(f)
-    
+
     # Extract necessary components
     if store is None:
         store = PartitionedOHLCVStore(
             root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
         )
-    
+
     # Load panel data
     tprint("Loading panel data...")
     panel, symbols = store.load_panel(
@@ -668,28 +668,36 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
     if panel is None:
         tprint("ERROR: Failed to load panel data.")
         return
-    
+
     # Load features
     tprint("Loading features...")
     from extreme_price_movements.data_store import load_features_selected
+
     feats = load_features_selected(
         root_dir=cfg["data_root"],
         ts_sig=ts_sig,
         symbols=symbols,
     )
-    
+
     # Load mask params by mode
     tprint("Loading mask params by mode...")
-    from extreme_price_movements.offline_optimisers import apply_offline_optimizer_best_params
+    from extreme_price_movements.offline_optimisers import (
+        apply_offline_optimizer_best_params,
+    )
+
     mask_params_by_mode = dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
     if not mask_params_by_mode:
         # Try to load from offline optimizer results
         mask_params = apply_offline_optimizer_best_params(cfg)
-        mask_params_by_mode = dict(mask_params.get("candidate_mask_params_by_mode", {}) or {})
-    
+        mask_params_by_mode = dict(
+            mask_params.get("candidate_mask_params_by_mode", {}) or {}
+        )
+
     # Load strategy exit params
-    strategy_exit_params = dict(cfg.get("strategy_exit_params", cfg.get("bucket_exit_params", {})) or {})
-    
+    strategy_exit_params = dict(
+        cfg.get("strategy_exit_params", cfg.get("bucket_exit_params", {})) or {}
+    )
+
     # Load trades from state or backtest results
     tprint("Loading trade candidates...")
     trades = state.get("trades")
@@ -700,11 +708,12 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
         )
         if os.path.exists(backtest_file):
             import pandas as pd
+
             trades = pd.read_csv(backtest_file)
         else:
             tprint("ERROR: No trades found in state or backtest_results.csv")
             return
-    
+
     # Run inference backtest
     tprint("Running inference backtest...")
     from extreme_price_movements.inference_backtest import (
@@ -712,20 +721,24 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
         run_inference_backtest,
     )
     from extreme_price_movements.periods_symbols_management import SlicePlannerConfig
-    
+
     # Configure inference backtest
     ib_config = InferenceBacktestConfig(
         fee_round_trip_pct=cfg.get("round_trip_fee_pct", 0.3),
-        top_fracs=tuple(cfg.get("inference_backtest_top_fracs", (0.10, 0.20, 0.30, 0.40))),
+        top_fracs=tuple(
+            cfg.get("inference_backtest_top_fracs", (0.10, 0.20, 0.30, 0.40))
+        ),
         annual_days=365,
         sizing_mode=cfg.get("inference_backtest_sizing_mode", "linear"),
         base_position_size=cfg.get("inference_backtest_base_position_size", 1.0),
-        default_limit_offset_bps=cfg.get("inference_backtest_default_limit_offset_bps", 0.0),
+        default_limit_offset_bps=cfg.get(
+            "inference_backtest_default_limit_offset_bps", 0.0
+        ),
     )
-    
+
     # Use SlicePlanner for unseen holdout periods
     planner_cfg = SlicePlannerConfig.fast_defaults()
-    
+
     results = run_inference_backtest(
         trades=trades,
         panel=panel,
@@ -735,14 +748,15 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
         config=ib_config,
         planner_cfg=planner_cfg,
     )
-    
+
     # Save results
     tprint("Saving inference backtest results...")
     reports_root = cfg.get("reports_root", "reports")
     os.makedirs(reports_root, exist_ok=True)
     output_file = os.path.join(reports_root, f"inference_backtest_{run_id}.json")
-    
+
     import json
+
     # Convert numpy types to serializable types
     def convert_to_serializable(obj):
         if isinstance(obj, np.ndarray):
@@ -757,11 +771,11 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
             return [convert_to_serializable(item) for item in obj]
         else:
             return obj
-    
+
     serializable_results = convert_to_serializable(results)
     with open(output_file, "w") as f:
         json.dump(serializable_results, f, indent=2)
-    
+
     tprint(f"Inference backtest results saved to {output_file}")
     tprint(f"Results: {json.dumps(serializable_results, indent=2)}")
     tprint("INFERENCE BACKTEST PIPELINE COMPLETE")

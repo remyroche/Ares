@@ -13,7 +13,9 @@ OFFLINE_OPTIMISERS_DIR = Path(__file__).resolve().parent
 REPORTS_DIR = OFFLINE_OPTIMISERS_DIR / "reports"
 
 CANDIDATE_BEST_PARAMS_CSV = REPORTS_DIR / "candidate_thresholds_best_params.csv"
-INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV = REPORTS_DIR / "inference_candidate_mask_best_params.csv"
+INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV = (
+    REPORTS_DIR / "inference_candidate_mask_best_params.csv"
+)
 TBM_BEST_PARAMS_CSV = REPORTS_DIR / "tbm_best_params.csv"
 TBM_BEST_PARAMS_PER_BUCKET_CSV = REPORTS_DIR / "tbm_best_params_per_bucket.csv"
 TBM_BEST_PARAMS_PER_CELL_CSV = REPORTS_DIR / "tbm_best_params_per_cell.csv"
@@ -82,47 +84,48 @@ def _read_best_params_csv(path: Path) -> Dict[str, Any]:
     return out
 
 
-
-
 def load_inference_candidate_mask_params_per_bucket() -> list[dict[str, Any]]:
-    """Load all dynamically generated strategy parameters from the mask-optimiser.
-
-    Returns a list of dictionaries, each containing:
-      - strategy_id: unique name
-      - trade_side: long|short
-      - base_event_trigger: the dynamic regime key
-      - regime_filters: (optional)
-      - mask_params: {family, param, z_hours, conditioner_mode, duration_hours}
-    """
-    path = REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv"
+    """Load all dynamically generated strategy parameters from the mask-optimiser."""
+    path = Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
+    if not path.exists():
+        path = REPORTS_DIR / "lgbm_accepted_rule_registry.csv"
     if not path.exists():
         return []
     
     import pandas as pd
-    df = pd.read_csv(path)
+    try:
+        df = pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        return []
     if df.empty:
         return []
     
     strategies = []
     for _, row in df.iterrows():
-        name = str(row.get("name", ""))
-        mode = str(row.get("mode", "long")).lower()
-        if not name:
+        key = str(row.get("canonical_key", ""))
+        side = str(row.get("side", "long")).lower()
+        if side == "mixed":
+            side = "long" # fallback
+        if not key:
             continue
             
-        params = {
-            k: _coerce_numeric_if_possible(_to_scalar(row.get(k)))
-            for k in ("family", "param", "z_hours", "conditioner_mode", "duration_hours")
-            if row.get(k) is not None
-        }
+        import re
+        safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', key)
+        # remove duplicate underscores
+        safe_id = re.sub(r'_+', '_', safe_id)
+        # trim trailing underscore
+        safe_id = safe_id.strip('_')
         
         strategies.append({
-            "strategy_id": name,
-            "trade_side": mode,
-            "base_event_trigger": name,
-            "mask_params": params
+            "strategy_id": safe_id,
+            "trade_side": side,
+            "base_event_trigger": key,
+            "mask_params": {"canonical_key": key}
         })
     return strategies
+
+
+
 def load_tbm_geometry_grid() -> Dict[str, Any]:
     """Load the geometry grid saved by compare_tbm_parameters.py.
 
@@ -152,7 +155,12 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
     """
     import pandas as pd
 
-    _empty = {"per_cell": {}, "k_tp_grid": None, "sl_base_grid": None, "atr_window": None}
+    _empty = {
+        "per_cell": {},
+        "k_tp_grid": None,
+        "sl_base_grid": None,
+        "atr_window": None,
+    }
     if not TBM_GEOMETRY_GRID_CSV.exists():
         return _empty
     try:
@@ -161,25 +169,53 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
             return _empty
 
         # Global fallbacks
-        k_tp_grid = sorted(df["k_tp"].dropna().unique().tolist()) if "k_tp" in df.columns else None
-        sl_base_grid = sorted(df["sl_as_tp_pct"].dropna().unique().tolist()) if "sl_as_tp_pct" in df.columns else None
-        atr_window = int(df["base_atr_window"].iloc[0]) if "base_atr_window" in df.columns else None
+        k_tp_grid = (
+            sorted(df["k_tp"].dropna().unique().tolist())
+            if "k_tp" in df.columns
+            else None
+        )
+        sl_base_grid = (
+            sorted(df["sl_as_tp_pct"].dropna().unique().tolist())
+            if "sl_as_tp_pct" in df.columns
+            else None
+        )
+        atr_window = (
+            int(df["base_atr_window"].iloc[0])
+            if "base_atr_window" in df.columns
+            else None
+        )
 
         # Per-cell grids (new format has "cell_key" column)
         per_cell: Dict[str, Any] = {}
         if "cell_key" in df.columns:
             for cell_key, grp in df.groupby("cell_key"):
-                _tp_lo_vals = grp["tp_abs_lo_pct"].dropna().unique().tolist() if "tp_abs_lo_pct" in grp.columns else []
-                _sl_lo_vals = grp["sl_abs_lo_pct"].dropna().unique().tolist() if "sl_abs_lo_pct" in grp.columns else []
+                _tp_lo_vals = (
+                    grp["tp_abs_lo_pct"].dropna().unique().tolist()
+                    if "tp_abs_lo_pct" in grp.columns
+                    else []
+                )
+                _sl_lo_vals = (
+                    grp["sl_abs_lo_pct"].dropna().unique().tolist()
+                    if "sl_abs_lo_pct" in grp.columns
+                    else []
+                )
                 # Validated triplets: exact (k_tp, sl_as_tp_pct, atr_window) per optimizer row.
                 # The window is part of each validated config — callers iterate these triplets
                 # directly, pre-computing one barrier base per unique window and reusing it.
                 _triplets: list = []
                 _has_win = "base_atr_window" in grp.columns
-                _cols = ["k_tp", "sl_as_tp_pct"] + (["base_atr_window"] if _has_win else [])
+                _cols = ["k_tp", "sl_as_tp_pct"] + (
+                    ["base_atr_window"] if _has_win else []
+                )
                 for _, row in grp[_cols].dropna().iterrows():
-                    win = int(row["base_atr_window"]) if _has_win else (atr_window or 720)
-                    triplet = (round(float(row["k_tp"]), 6), round(float(row["sl_as_tp_pct"]), 6), win)
+                    win = (
+                        int(row["base_atr_window"]) if _has_win else (atr_window or 720)
+                    )
+                    triplet = (
+                        round(float(row["k_tp"]), 6),
+                        round(float(row["sl_as_tp_pct"]), 6),
+                        win,
+                    )
                     if triplet not in _triplets:
                         _triplets.append(triplet)
                 # Unique windows needed to pre-compute barrier bases (one per window, reused).
@@ -187,7 +223,9 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
                 _first_win = _win_vals[0] if _win_vals else atr_window
                 per_cell[str(cell_key)] = {
                     "k_tp_grid": sorted(grp["k_tp"].dropna().unique().tolist()),
-                    "sl_base_grid": sorted(grp["sl_as_tp_pct"].dropna().unique().tolist()),
+                    "sl_base_grid": sorted(
+                        grp["sl_as_tp_pct"].dropna().unique().tolist()
+                    ),
                     "validated_triplets": _triplets,
                     "validated_pairs": [(t[0], t[1]) for t in _triplets],
                     "atr_windows": _win_vals,
@@ -196,19 +234,30 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
                     "sl_abs_lo_pct": float(min(_sl_lo_vals)) if _sl_lo_vals else None,
                 }
 
-        return {"per_cell": per_cell, "k_tp_grid": k_tp_grid, "sl_base_grid": sl_base_grid, "atr_window": atr_window}
+        return {
+            "per_cell": per_cell,
+            "k_tp_grid": k_tp_grid,
+            "sl_base_grid": sl_base_grid,
+            "atr_window": atr_window,
+        }
     except Exception:
         return _empty
 
 
-
-def save_best_params_csv(path: Path, best_params: Dict[str, Any], metadata: Dict[str, Any] | None = None) -> Path:
+def save_best_params_csv(
+    path: Path, best_params: Dict[str, Any], metadata: Dict[str, Any] | None = None
+) -> Path:
     import pandas as pd
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     payload: Dict[str, Any] = {}
     payload.update({k: _to_scalar(v) for k, v in (metadata or {}).items()})
-    payload.update({k: json.dumps(v, sort_keys=True) if isinstance(v, dict) else _to_scalar(v) for k, v in best_params.items()})
+    payload.update(
+        {
+            k: json.dumps(v, sort_keys=True) if isinstance(v, dict) else _to_scalar(v)
+            for k, v in best_params.items()
+        }
+    )
     payload["saved_at"] = pd.Timestamp.utcnow().isoformat()
     pd.DataFrame([payload]).to_csv(path, index=False)
     return path
@@ -234,7 +283,9 @@ def load_tbm_best_params_per_bucket() -> Dict[str, Dict[str, Any]]:
             bkt = str(row.get("bucket", ""))
             if not bkt:
                 continue
-            result[bkt] = {k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()}
+            result[bkt] = {
+                k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()
+            }
         return result
     except Exception:
         return {}
@@ -267,7 +318,9 @@ def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
                 continue
             if cell in result:
                 continue
-            result[cell] = {k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()}
+            result[cell] = {
+                k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()
+            }
         return result
     except Exception:
         return load_tbm_best_params_per_bucket()
@@ -342,6 +395,7 @@ def apply_per_bucket_tbm_params_to_cfg(
     A shallow copy of ``cfg`` with barrier keys injected.
     """
     import logging as _logging
+
     _log = _logging.getLogger("params_store")
 
     if per_bucket_params is None:
@@ -351,12 +405,14 @@ def apply_per_bucket_tbm_params_to_cfg(
     if not bkt_params:
         if fallback_to_global:
             _log.warning(
-                "[params_store] No per-bucket params for bucket=%s — falling back to global best", bucket
+                "[params_store] No per-bucket params for bucket=%s — falling back to global best",
+                bucket,
             )
             return apply_offline_optimizer_best_params(cfg)
         return cfg
 
     from copy import deepcopy
+
     merged = deepcopy(cfg)
     injected: Dict[str, Any] = {}
     for src, dst in _TBM_BUCKET_KEY_MAP.items():
@@ -373,10 +429,12 @@ def apply_per_bucket_tbm_params_to_cfg(
 
 def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
     import logging as _logging
+
     _log = _logging.getLogger("params_store")
 
     def _tprint(msg: str) -> None:
         import datetime as _dt
+
         ts = _dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{ts} UTC] {msg}", flush=True)
         _log.info(msg)
@@ -404,7 +462,9 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     dyn_strategies = load_inference_candidate_mask_params_per_bucket()
     if dyn_strategies:
-        _tprint(f"[params_store] Loaded {len(dyn_strategies)} dynamic strategies from mask_optimiser")
+        _tprint(
+            f"[params_store] Loaded {len(dyn_strategies)} dynamic strategies from mask_optimiser"
+        )
         merged["strategies"] = dyn_strategies
         # Maintain backward compatibility for single-mode logic if needed
         if "family" not in merged and len(dyn_strategies) > 0:
@@ -452,17 +512,28 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
             + "  ".join(f"{k}={v}" for k, v in sorted(injected.items()))
         )
     else:
-        _tprint(f"[params_store] WARNING: TBM best params CSV not found or empty at {TBM_BEST_PARAMS_CSV} — using cfg defaults")
+        _tprint(
+            f"[params_store] WARNING: TBM best params CSV not found or empty at {TBM_BEST_PARAMS_CSV} — using cfg defaults"
+        )
 
     sw = _read_best_params_csv(SAMPLE_WEIGHT_BEST_PARAMS_CSV)
     if sw:
         if "component_alphas" in sw and isinstance(sw["component_alphas"], dict):
             merged["sample_weight_component_alphas"] = sw["component_alphas"]
-        if "component_alphas_base" in sw and isinstance(sw["component_alphas_base"], dict):
+        if "component_alphas_base" in sw and isinstance(
+            sw["component_alphas_base"], dict
+        ):
             merged["sample_weight_component_alphas_base"] = sw["component_alphas_base"]
-        if "component_alphas_meta" in sw and isinstance(sw["component_alphas_meta"], dict):
+        if "component_alphas_meta" in sw and isinstance(
+            sw["component_alphas_meta"], dict
+        ):
             merged["sample_weight_component_alphas_meta"] = sw["component_alphas_meta"]
-        for key in ("sample_weight_vol_power", "sample_weight_distance_k", "sample_weight_distance_min_dist", "sample_weight_recency_half_life_bars"):
+        for key in (
+            "sample_weight_vol_power",
+            "sample_weight_distance_k",
+            "sample_weight_distance_min_dist",
+            "sample_weight_recency_half_life_bars",
+        ):
             if key in sw and sw[key] is not None:
                 merged[key] = sw[key]
 

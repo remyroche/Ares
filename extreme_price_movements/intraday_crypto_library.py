@@ -6,6 +6,17 @@ from typing import Any, Dict, Mapping, Optional
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.fast_funcs import (
+    numba_ewma,
+    numba_rolling_mean,
+    numba_rolling_std,
+    numba_rolling_max,
+    numba_rolling_min,
+    numba_atr,
+    numba_rsi,
+    numba_adx,
+)
+
 LOCATION_FILTER_COLUMNS: tuple[str, ...] = (
     "LOC_01_AboveEMA",
     "LOC_02_BelowEMA",
@@ -323,24 +334,25 @@ def _safe_div(
     return (a / np.maximum(b, eps)).astype("float32")
 
 
-def _ema(s: pd.Series, n: int) -> pd.Series:
-    return s.ewm(span=int(n), adjust=False).mean().astype("float32")
+def _ema(s: pd.Series | pd.DataFrame, n: int) -> pd.Series | pd.DataFrame:
+    alpha = 2.0 / (n + 1.0)
+    return numba_ewma(s, alpha=alpha, adjust=False)
 
 
-def _sma(s: pd.Series, n: int) -> pd.Series:
-    return s.rolling(int(n), min_periods=int(n)).mean().astype("float32")
+def _sma(s: pd.Series | pd.DataFrame, n: int) -> pd.Series | pd.DataFrame:
+    return numba_rolling_mean(s, int(n))
 
 
-def _stdev(s: pd.Series, n: int) -> pd.Series:
-    return s.rolling(int(n), min_periods=int(n)).std(ddof=0).astype("float32")
+def _stdev(s: pd.Series | pd.DataFrame, n: int) -> pd.Series | pd.DataFrame:
+    return numba_rolling_std(s, int(n))
 
 
-def _rolling_high(s: pd.Series, n: int) -> pd.Series:
-    return s.rolling(int(n), min_periods=int(n)).max().astype("float32")
+def _rolling_high(s: pd.Series | pd.DataFrame, n: int) -> pd.Series | pd.DataFrame:
+    return numba_rolling_max(s, int(n))
 
 
-def _rolling_low(s: pd.Series, n: int) -> pd.Series:
-    return s.rolling(int(n), min_periods=int(n)).min().astype("float32")
+def _rolling_low(s: pd.Series | pd.DataFrame, n: int) -> pd.Series | pd.DataFrame:
+    return numba_rolling_min(s, int(n))
 
 
 def _true_range(
@@ -359,17 +371,13 @@ def _true_range(
     return _new_like(close, tr, dtype="float32")
 
 
-def _atr(high: pd.Series, low: pd.Series, close: pd.Series, n: int) -> pd.Series:
+def _atr(high: pd.Series | pd.DataFrame, low: pd.Series | pd.DataFrame, close: pd.Series | pd.DataFrame, n: int) -> pd.Series | pd.DataFrame:
     tr = _true_range(high, low, close)
-    return tr.ewm(alpha=1.0 / int(n), adjust=False).mean().astype("float32")
+    return numba_ewma(tr, alpha=1.0 / int(n), adjust=False)
 
 
-def _rsi(close: pd.Series, n: int) -> pd.Series:
-    d = close.diff()
-    up = d.clip(lower=0.0)
-    dn = -d.clip(upper=0.0)
-    rs = _ema(up, n) / np.maximum(_ema(dn, n), 1e-8)
-    return (100.0 - 100.0 / (1.0 + rs)).astype("float32")
+def _rsi(close: pd.Series | pd.DataFrame, n: int) -> pd.Series | pd.DataFrame:
+    return numba_rsi(close, int(n))
 
 
 def _stoch_k(high: pd.Series, low: pd.Series, close: pd.Series, n: int) -> pd.Series:
@@ -390,36 +398,7 @@ def _adx(
 ) -> tuple[
     pd.Series | pd.DataFrame, pd.Series | pd.DataFrame, pd.Series | pd.DataFrame
 ]:
-    up_move = high.diff()
-    dn_move = -low.diff()
-    plus_dm = _new_like(
-        close,
-        np.where(
-            (up_move.to_numpy(copy=False) > dn_move.to_numpy(copy=False))
-            & (up_move.to_numpy(copy=False) > 0),
-            up_move.to_numpy(copy=False),
-            0.0,
-        ),
-        dtype="float32",
-    )
-    minus_dm = _new_like(
-        close,
-        np.where(
-            (dn_move.to_numpy(copy=False) > up_move.to_numpy(copy=False))
-            & (dn_move.to_numpy(copy=False) > 0),
-            dn_move.to_numpy(copy=False),
-            0.0,
-        ),
-        dtype="float32",
-    )
-    atr = _atr(high, low, close, n)
-    plus_di = (100.0 * _ema(plus_dm, n) / np.maximum(atr, 1e-8)).astype("float32")
-    minus_di = (100.0 * _ema(minus_dm, n) / np.maximum(atr, 1e-8)).astype("float32")
-    dx = (
-        100.0 * (plus_di - minus_di).abs() / np.maximum((plus_di + minus_di), 1e-8)
-    ).astype("float32")
-    adx = _ema(dx, n).astype("float32")
-    return adx, plus_di, minus_di
+    return numba_adx(high, low, close, int(n))
 
 
 def _distance(a: pd.Series, b: pd.Series) -> pd.Series:

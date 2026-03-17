@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "quant-advisor": {
+      "command": "node",
+      "args": ["/absolute/path/to/extreme_price_movements/mcp/dist/index.js"],
+      "env": {
+        "QUANT_PROVIDER": "windsurf",
+        "WINDSURF_BASE_URL": "https://your-compatible-endpoint/v1",
+        "WINDSURF_API_KEY": "key-...",
+        "WINDSURF_CLASSIFIER_MODEL": "gpt-5-mini",
+        "WINDSURF_ADVISOR_MODEL": "gpt-5.3-codex",
+        "MAX_PARALLEL_ADVISORS": "3",
+        "MAX_RETRIES": "2",
+        "REQUEST_TIMEOUT_MS": "20000",
+        "CLASSIFIER_TIMEOUT_MS": "8000",
+        "DEBUG": "1"
+      }
+    }
+  }
+}

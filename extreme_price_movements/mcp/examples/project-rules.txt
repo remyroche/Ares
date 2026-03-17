@@ -1,0 +1,14 @@
+MCP TOOL: quant_advisor
+
+Trigger Policy:
+- Call quant_advisor for any change involving alpha signals, feature engineering, backtesting logic, labeling logic, execution logic, or risk management.
+
+Execution Flow:
+1. Provide the current diff and relevant_code in the context object.
+2. If problem_stage is "implementation", you MUST include changed_files.
+
+Enforcement:
+- If confidence < 0.6: stop and ask for missing context.
+- If blockers is not empty: do not apply code changes until blockers are resolved.
+- Treat checks as mandatory unit/integration test requirements.
+- Add risks to PR descriptions, code comments, or implementation notes where relevant.

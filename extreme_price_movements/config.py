@@ -141,54 +141,63 @@ MODEL_FEATURES = [
     "G_TF_TREND", "vol_z_x_trend_t",
     # Ridge model features
     "ema20_gt_ema50", "ema50_gt_ema200", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
+    "price_lt_ema200", "ema50_slope", "trend_strength_percentile",
+    "rolling_std_4h", "realized_volatility_24h", "atr_change_rate", "true_range_percentile",
+    "bollinger_band_width", "rolling_range_20", "atr_percentile",
+    "prior_range", "prior_volatility",
+    "efficiency_ratio_20", "choppiness_index_20", "direction_entropy_20",
+    "volatility_ratio_short_long", "volume_percentile",
+    "ema20_slope_5h", "ema_slope_norm", "trend_persistence", "volume_zscore_48h", "trend_ratio",
+    "compression_score", "return_autocorr_48", "variance_ratio_10_48", "volume_trend_48", "volume_autocorr_48",
+    "volatility_of_volatility_48", "trend_acceleration", "volatility_autocorr_48",
 ]
 
 RIDGE_FEATURE_META = {
     # Trend features
     "ema20_gt_ema50": {"family": "trend", "type": "binary"},
     "ema50_gt_ema200": {"family": "trend", "type": "binary"},
-    # "price_lt_ema200": {"family": "trend", "type": "binary"},  # Not implemented
-    # "ema50_slope": {"family": "trend", "type": "continuous"},  # Not implemented
-    # "trend_strength_percentile": {"family": "trend", "type": "continuous"},  # Not implemented
+    "price_lt_ema200": {"family": "trend", "type": "binary"},
+    "ema50_slope": {"family": "trend", "type": "continuous"},
+    "trend_strength_percentile": {"family": "trend", "type": "continuous"},
 
-    # "rolling_std_4h": {"family": "volatility", "type": "continuous"},  # Not implemented
-    # "realized_volatility_24h": {"family": "volatility", "type": "continuous"},  # Not implemented
-    # "atr_change_rate": {"family": "volatility", "type": "continuous"},  # Not implemented
-    # "true_range_percentile": {"family": "volatility", "type": "continuous"},  # Not implemented
+    "rolling_std_4h": {"family": "volatility", "type": "continuous"},
+    "realized_volatility_24h": {"family": "volatility", "type": "continuous"},
+    "atr_change_rate": {"family": "volatility", "type": "continuous"},
+    "true_range_percentile": {"family": "volatility", "type": "continuous"},
 
-    # "bollinger_band_width": {"family": "compression", "type": "continuous"},  # Not implemented
-    # "rolling_range_20": {"family": "compression", "type": "continuous"},  # Not implemented
-    # "atr_percentile": {"family": "compression", "type": "continuous"},  # Not implemented
+    "bollinger_band_width": {"family": "compression", "type": "continuous"},
+    "rolling_range_20": {"family": "compression", "type": "continuous"},
+    "atr_percentile": {"family": "compression", "type": "continuous"},
 
-    # "prior_range": {"family": "context", "type": "continuous"},  # Not implemented
-    # "prior_volatility": {"family": "context", "type": "continuous"},  # Not implemented
+    "prior_range": {"family": "context", "type": "continuous"},
+    "prior_volatility": {"family": "context", "type": "continuous"},
 
     # Micro-regime updates
-    # "efficiency_ratio_20": {"family": "path_structure", "type": "continuous"},  # Not implemented
-    # "choppiness_index_20": {"family": "path_structure", "type": "continuous"},  # Not implemented
-    # "direction_entropy_20": {"family": "path_structure", "type": "continuous"},  # Not implemented
+    "efficiency_ratio_20": {"family": "path_structure", "type": "continuous"},
+    "choppiness_index_20": {"family": "path_structure", "type": "continuous"},
+    "direction_entropy_20": {"family": "path_structure", "type": "continuous"},
 
     "compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
     "range_expansion_ratio": {"family": "volatility_term_structure", "type": "continuous"},
 
-    # "volatility_ratio_short_long": {"family": "volatility", "type": "continuous"},  # Not implemented
-    # "volume_percentile": {"family": "liquidity", "type": "continuous"},  # Not implemented
+    "volatility_ratio_short_long": {"family": "volatility", "type": "continuous"},
+    "volume_percentile": {"family": "liquidity", "type": "continuous"},
 
     # User-requested technical regimes (v17)
-    # "ema20_slope_5h": {"family": "trend", "type": "continuous"},  # Not implemented
-    # "ema_slope_norm": {"family": "trend", "type": "continuous"},  # Not implemented
+    "ema20_slope_5h": {"family": "trend", "type": "continuous"},
+    "ema_slope_norm": {"family": "trend", "type": "continuous"},
     "atr_compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-    # "trend_persistence": {"family": "trend", "type": "continuous"},  # Not implemented
-    # "volume_zscore_48h": {"family": "liquidity", "type": "continuous"},  # Not implemented
-    # "trend_ratio": {"family": "trend", "type": "continuous"},  # Not implemented
-    # "compression_score": {"family": "volatility_term_structure", "type": "continuous"},  # Not implemented
-    # "return_autocorr_48": {"family": "momentum", "type": "continuous"},  # Not implemented
-    # "variance_ratio_10_48": {"family": "volatility", "type": "continuous"},  # Not implemented
-    # "volume_trend_48": {"family": "liquidity", "type": "continuous"},  # Not implemented
-    # "volume_autocorr_48": {"family": "liquidity", "type": "continuous"},  # Not implemented
-    # "volatility_of_volatility_48": {"family": "volatility", "type": "continuous"},  # Not implemented
-    # "trend_acceleration": {"family": "trend", "type": "continuous"},  # Not implemented
-    # "volatility_autocorr_48": {"family": "volatility", "type": "continuous"},  # Not implemented
+    "trend_persistence": {"family": "trend", "type": "continuous"},
+    "volume_zscore_48h": {"family": "liquidity", "type": "continuous"},
+    "trend_ratio": {"family": "trend", "type": "continuous"},
+    "compression_score": {"family": "volatility_term_structure", "type": "continuous"},
+    "return_autocorr_48": {"family": "momentum", "type": "continuous"},
+    "variance_ratio_10_48": {"family": "volatility", "type": "continuous"},
+    "volume_trend_48": {"family": "liquidity", "type": "continuous"},
+    "volume_autocorr_48": {"family": "liquidity", "type": "continuous"},
+    "volatility_of_volatility_48": {"family": "volatility", "type": "continuous"},
+    "trend_acceleration": {"family": "trend", "type": "continuous"},
+    "volatility_autocorr_48": {"family": "volatility", "type": "continuous"},
 }
 
 RIDGE_FEATURE_COLS = list(RIDGE_FEATURE_META.keys())
@@ -299,6 +308,15 @@ TEST_FEATURE_KEYS = [
     "rv_ratio_24_120", "donch_dist_48", "donch_dist_120", "dist_from_high_120h", "dist_from_low_120h",
     # Ridge model features
     "ema20_gt_ema50", "ema50_gt_ema200", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
+    "price_lt_ema200", "ema50_slope", "trend_strength_percentile",
+    "rolling_std_4h", "realized_volatility_24h", "atr_change_rate", "true_range_percentile",
+    "bollinger_band_width", "rolling_range_20", "atr_percentile",
+    "prior_range", "prior_volatility",
+    "efficiency_ratio_20", "choppiness_index_20", "direction_entropy_20",
+    "volatility_ratio_short_long", "volume_percentile",
+    "ema20_slope_5h", "ema_slope_norm", "trend_persistence", "volume_zscore_48h", "trend_ratio",
+    "compression_score", "return_autocorr_48", "variance_ratio_10_48", "volume_trend_48", "volume_autocorr_48",
+    "volatility_of_volatility_48", "trend_acceleration", "volatility_autocorr_48",
 ]
 
 CFG = {
@@ -782,7 +800,7 @@ CFG = {
     "gate_trend_thr": 0.02,
     "accept_gate_window": 24,
     "accept_gate_percentile_mode": "approx",
-    "enable_gated_features": False,  # Disabled to reduce feature computation time
+    "enable_gated_features": True,  # Disabled to reduce feature computation time
 
     # base feature windows (used for base/fast/slow variants)
     "atr_n": 14,

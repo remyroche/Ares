@@ -2327,6 +2327,429 @@ class EconomicRuleConsolidator:
         return (pair_score_dict["containment_score"] >= cont_thres
                 and pair_score_dict["behavior_similarity"] >= beh_thres)
 
+
+    def _compute_ridge_signature(
+        self,
+        mask: np.ndarray,
+        X_std: np.ndarray,
+        fwd_ret: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+    ) -> Dict[str, Any]:
+        from sklearn.linear_model import Ridge
+        import scipy.stats
+
+        min_train = int(self.cfg.get("merge_ridge_min_train", 20))
+
+        fold_ics = []
+        fold_returns = []
+
+        train_support_total = 0
+
+        valid_idx = np.where(mask & np.isfinite(fwd_ret))[0]
+
+        if len(valid_idx) < min_train:
+            return None
+
+        X_valid = X_std[valid_idx]
+        y_valid = fwd_ret[valid_idx]
+
+        hi = np.nanquantile(y_valid, 0.98) if len(y_valid) > 0 else 1.0
+        lo = np.nanquantile(y_valid, 0.02) if len(y_valid) > 0 else -1.0
+        y_valid_clipped = np.clip(y_valid, lo, hi)
+
+        full_model = Ridge(solver="auto")
+        full_model.fit(X_valid, y_valid_clipped)
+
+        coefs = full_model.coef_
+        intercept = full_model.intercept_
+
+        abs_coefs = np.abs(coefs)
+
+        k = min(10, len(coefs))
+        top_k_indices = set(np.argsort(abs_coefs)[-k:]) if k > 0 else set()
+
+        for tr_idx, va_idx in folds:
+            tr_mask = mask[tr_idx]
+            va_mask = mask[va_idx]
+
+            y_tr = fwd_ret[tr_idx]
+            y_va = fwd_ret[va_idx]
+
+            valid_tr = tr_mask & np.isfinite(y_tr)
+            valid_va = va_mask & np.isfinite(y_va)
+
+            if np.sum(valid_tr) >= min_train and np.sum(valid_va) > 0:
+                X_tr = X_std[tr_idx][valid_tr]
+
+                # Compute fold-specific clipping limits
+                y_tr_valid = y_tr[valid_tr]
+                hi_fold = np.nanquantile(y_tr_valid, 0.98) if len(y_tr_valid) > 0 else 1.0
+                lo_fold = np.nanquantile(y_tr_valid, 0.02) if len(y_tr_valid) > 0 else -1.0
+                y_tr_fold = np.clip(y_tr_valid, lo_fold, hi_fold)
+
+                fold_model = Ridge(solver="auto")
+                fold_model.fit(X_tr, y_tr_fold)
+
+                X_va_fold = X_std[va_idx][valid_va]
+                preds = fold_model.predict(X_va_fold)
+
+                ic = _safe_spearman(preds, y_va[valid_va])
+                fold_ics.append(ic)
+
+                mask_trades = preds > 0
+                ret = y_va[valid_va][mask_trades]
+                if len(ret) > 0:
+                    fold_returns.append(np.mean(ret))
+
+            train_support_total += np.sum(valid_tr)
+
+        oos_ic = np.nanmean(fold_ics) if fold_ics else np.nan
+        oos_mean_return = np.nanmean(fold_returns) if fold_returns else np.nan
+
+        return {
+            "coefficients": coefs,
+            "top_k_indices": top_k_indices,
+            "intercept": intercept,
+            "oos_ic": oos_ic,
+            "oos_mean_return": oos_mean_return,
+            "mask_support": len(valid_idx),
+            "fold_train_support_total": train_support_total
+        }
+
+    def _score_ridge_similarity(
+        self,
+        sig_a: Dict[str, Any],
+        sig_b: Dict[str, Any]
+    ) -> Dict[str, float]:
+        import scipy.stats
+        if sig_a is None or sig_b is None:
+            return {
+                "ridge_context_similarity": 0.0,
+                "coef_sim": 0.0,
+                "topk_jaccard": 0.0,
+                "topk_sign_agreement": 0.0,
+                "topk_sign_conflict_rate": 0.0,
+                "rank_corr": 0.0
+            }
+
+        beta_a = sig_a["coefficients"]
+        beta_b = sig_b["coefficients"]
+
+        coef_sim = _cosine_similarity(beta_a, beta_b)
+
+        top_a = sig_a["top_k_indices"]
+        top_b = sig_b["top_k_indices"]
+
+        overlap = top_a.intersection(top_b)
+        union_set = top_a.union(top_b)
+
+        topk_jaccard = len(overlap) / max(len(union_set), 1)
+
+        if overlap:
+            overlap_idx = np.array(sorted(overlap), dtype=int)
+            topk_sign_agreement = float(np.mean(
+                np.sign(beta_a[overlap_idx]) == np.sign(beta_b[overlap_idx])
+            ))
+            topk_sign_conflict_rate = 1.0 - topk_sign_agreement
+        else:
+            topk_sign_agreement = 0.0
+            topk_sign_conflict_rate = 0.0
+
+        rank_corr = _safe_spearman(
+            scipy.stats.rankdata(np.abs(beta_a)),
+            scipy.stats.rankdata(np.abs(beta_b))
+        )
+        if np.isnan(rank_corr):
+            rank_corr = 0.0
+
+        ridge_context_similarity = (
+            0.45 * max(coef_sim, 0.0)
+            + 0.25 * topk_jaccard
+            + 0.20 * topk_sign_agreement
+            + 0.10 * max(rank_corr, 0.0)
+            - 0.15 * topk_sign_conflict_rate
+        )
+
+        return {
+            "ridge_context_similarity": ridge_context_similarity,
+            "coef_sim": coef_sim,
+            "topk_jaccard": topk_jaccard,
+            "topk_sign_agreement": topk_sign_agreement,
+            "topk_sign_conflict_rate": topk_sign_conflict_rate,
+            "rank_corr": rank_corr
+        }
+
+    def _cross_context_transport_test(
+        self,
+        mask_a: np.ndarray,
+        mask_b: np.ndarray,
+        X_std: np.ndarray,
+        fwd_ret: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]]
+    ) -> Dict[str, float]:
+        from sklearn.linear_model import Ridge
+        min_train = int(self.cfg.get("merge_ridge_min_train", 20))
+
+        transport_ab_ics = []
+        transport_ba_ics = []
+
+        for tr_idx, va_idx in folds:
+            tr_mask_a = mask_a[tr_idx]
+            va_mask_a = mask_a[va_idx]
+            tr_mask_b = mask_b[tr_idx]
+            va_mask_b = mask_b[va_idx]
+
+            y_tr = fwd_ret[tr_idx]
+            y_va = fwd_ret[va_idx]
+
+            valid_tr_a = tr_mask_a & np.isfinite(y_tr)
+            valid_tr_b = tr_mask_b & np.isfinite(y_tr)
+            valid_va_a = va_mask_a & np.isfinite(y_va)
+            valid_va_b = va_mask_b & np.isfinite(y_va)
+
+            if np.sum(valid_tr_a) >= min_train and np.sum(valid_va_b) > 0:
+                X_tr_a = X_std[tr_idx][valid_tr_a]
+
+                # Compute source-specific clipping bounds for A
+                y_tr_a_valid = y_tr[valid_tr_a]
+                hi_a = np.nanquantile(y_tr_a_valid, 0.98) if len(y_tr_a_valid) > 0 else 1.0
+                lo_a = np.nanquantile(y_tr_a_valid, 0.02) if len(y_tr_a_valid) > 0 else -1.0
+                y_tr_a = np.clip(y_tr_a_valid, lo_a, hi_a)
+
+                model_a = Ridge(solver="auto")
+                model_a.fit(X_tr_a, y_tr_a)
+
+                X_va_b = X_std[va_idx][valid_va_b]
+                preds_ab = model_a.predict(X_va_b)
+
+                ic_ab = _safe_spearman(preds_ab, y_va[valid_va_b])
+                transport_ab_ics.append(ic_ab)
+
+            if np.sum(valid_tr_b) >= min_train and np.sum(valid_va_a) > 0:
+                X_tr_b = X_std[tr_idx][valid_tr_b]
+
+                # Compute source-specific clipping bounds for B
+                y_tr_b_valid = y_tr[valid_tr_b]
+                hi_b = np.nanquantile(y_tr_b_valid, 0.98) if len(y_tr_b_valid) > 0 else 1.0
+                lo_b = np.nanquantile(y_tr_b_valid, 0.02) if len(y_tr_b_valid) > 0 else -1.0
+                y_tr_b = np.clip(y_tr_b_valid, lo_b, hi_b)
+
+                model_b = Ridge(solver="auto")
+                model_b.fit(X_tr_b, y_tr_b)
+
+                X_va_a = X_std[va_idx][valid_va_a]
+                preds_ba = model_b.predict(X_va_a)
+
+                ic_ba = _safe_spearman(preds_ba, y_va[valid_va_a])
+                transport_ba_ics.append(ic_ba)
+
+        transport_ab_ic = np.nanmean(transport_ab_ics) if transport_ab_ics else np.nan
+        transport_ba_ic = np.nanmean(transport_ba_ics) if transport_ba_ics else np.nan
+
+        if np.isnan(transport_ab_ic) or np.isnan(transport_ba_ic):
+            transport_mean_ic = np.nan
+            transport_min_ic = np.nan
+        else:
+            transport_mean_ic = 0.5 * (transport_ab_ic + transport_ba_ic)
+            transport_min_ic = min(transport_ab_ic, transport_ba_ic)
+
+        return {
+            "transport_ab_ic": transport_ab_ic,
+            "transport_ba_ic": transport_ba_ic,
+            "transport_mean_ic": transport_mean_ic,
+            "transport_min_ic": transport_min_ic
+        }
+
+    def _ridge_based_consolidation(
+        self,
+        active: pd.DataFrame,
+        fwd_ret: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+        resolver,
+        data: Optional[pd.DataFrame] = None,
+        max_rounds: int = 2
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        if getattr(resolver, 'X', None) is None:
+            return active, {}
+
+        # NOTE: A single standardized matrix X_std is built once from resolver.X
+        # for the cheap signature stage, using global column-wise mean/std.
+        # This is acceptable as a pragmatic retrieval heuristic for signature similarity.
+        X_raw = resolver.X
+        X_std = np.zeros_like(X_raw)
+        for i in range(X_raw.shape[1]):
+            col = X_raw[:, i]
+            valid = np.isfinite(col)
+            if np.sum(valid) > 0:
+                mean = np.mean(col[valid])
+                std = np.std(col[valid])
+                if std == 0:
+                    std = 1.0
+                X_std[valid, i] = (col[valid] - mean) / std
+
+        diag = {}
+        total_evals = 0
+        total_merges = 0
+
+        signature_cache = {}
+        mask_cache = {}
+
+        def get_signature(key):
+            if key not in signature_cache:
+                if key not in mask_cache:
+                    mask_cache[key] = resolver.get_mask(key)
+                signature_cache[key] = self._compute_ridge_signature(mask_cache[key], X_std, fwd_ret, folds)
+            return signature_cache[key]
+
+        candidate_seed_keys = set()
+        ridge_evals_log = []
+
+        for round_idx in range(max_rounds):
+            keys = active["canonical_key"].tolist()
+
+            signatures = {}
+            for k in keys:
+                sig = get_signature(k)
+                if sig is not None:
+                    signatures[k] = sig
+
+            if len(signatures) < 2:
+                break
+
+            valid_keys = list(signatures.keys())
+            pair_sims = []
+
+            for i in range(len(valid_keys)):
+                for j in range(i+1, len(valid_keys)):
+                    k_a = valid_keys[i]
+                    k_b = valid_keys[j]
+
+                    if round_idx > 0 and (k_a not in candidate_seed_keys and k_b not in candidate_seed_keys):
+                        continue
+
+                    sim_dict = self._score_ridge_similarity(signatures[k_a], signatures[k_b])
+                    pair_sims.append({
+                        "key_a": k_a,
+                        "key_b": k_b,
+                        **sim_dict
+                    })
+
+            if not pair_sims:
+                break
+
+            pair_sims.sort(key=lambda x: x["ridge_context_similarity"], reverse=True)
+
+            n_top_25 = max(1, len(pair_sims) // 4)
+            top_pairs = pair_sims[:min(n_top_25, 1000)]
+
+            transport_results = []
+            for p in top_pairs:
+                k_a = p["key_a"]
+                k_b = p["key_b"]
+                if k_a not in mask_cache:
+                    mask_cache[k_a] = resolver.get_mask(k_a)
+                if k_b not in mask_cache:
+                    mask_cache[k_b] = resolver.get_mask(k_b)
+
+                trans_metrics = self._cross_context_transport_test(
+                    mask_cache[k_a], mask_cache[k_b], X_std, fwd_ret, folds
+                )
+
+                # Only keep pairs with valid symmetric transport
+                if not np.isnan(trans_metrics["transport_min_ic"]):
+                    transport_results.append({
+                        **p,
+                        **trans_metrics
+                    })
+
+            transport_results.sort(key=lambda x: x["transport_min_ic"], reverse=True)
+
+            if round_idx == 0:
+                n_top = max(1, len(transport_results) // 2)
+                final_pairs = transport_results[:min(n_top, 500)]
+            else:
+                n_top = max(1, len(transport_results) // 10)
+                final_pairs = transport_results[:min(n_top, 500)]
+
+            accepted_in_round = 0
+            created_this_round = set()
+            active_keys = set(active["canonical_key"].tolist())
+
+            for p in final_pairs:
+                key_a = p["key_a"]
+                key_b = p["key_b"]
+
+                if key_a not in active_keys or key_b not in active_keys:
+                    continue
+
+                total_evals += 1
+
+                diag_eval = self._evaluate_pair_economically(key_a, key_b, resolver, fwd_ret, folds)
+
+                ridge_evals_log.append({
+                    "round": round_idx,
+                    **p,
+                    "final_merge_decision": diag_eval["accept_merge"],
+                    "decision_reason": diag_eval["decision_reason"]
+                })
+
+                if diag_eval["accept_merge"]:
+                    accepted_in_round += 1
+                    total_merges += 1
+                    child_key = self._make_composite_key(key_a, key_b)
+
+                    row_a = active[active["canonical_key"] == key_a].iloc[0]
+                    row_b = active[active["canonical_key"] == key_b].iloc[0]
+
+                    parent_context_key = (
+                        row_a["parent_context_key"]
+                        if row_a["parent_context_key"] == row_b["parent_context_key"]
+                        else None
+                    )
+                    side_a = row_a.get("side", "unknown")
+                    side_b = row_b.get("side", "unknown")
+
+                    child_summary, _ = self.scorer.score_key_oos(
+                        canonical_key=child_key,
+                        fwd_ret=fwd_ret,
+                        folds=folds,
+                        resolver=resolver,
+                        require_uplift=bool(parent_context_key),
+                        parent_context_key=parent_context_key,
+                        discovery_count=int(row_a["discovery_count"] + row_b["discovery_count"]),
+                        n_instances=int(row_a.get("n_instances", 0) + row_b.get("n_instances", 0)),
+                        pipeline_stage="ridge_composite",
+                        explicit_side=side_a if side_a == side_b else "mixed",
+                    )
+
+                    active = active[~active["canonical_key"].isin([key_a, key_b])].copy()
+                    active = pd.concat([active, pd.DataFrame([child_summary])], ignore_index=True)
+
+                    active_keys.remove(key_a)
+                    active_keys.remove(key_b)
+                    active_keys.add(child_key)
+
+                    created_this_round.add(child_key)
+
+                    self.lineage.record_merge(
+                        child_key,
+                        [key_a, key_b],
+                        "accepted_ridge_signature_composite",
+                        round_idx + 10,
+                        {"decision_reason": diag_eval["decision_reason"]}
+                    )
+
+            candidate_seed_keys = created_this_round.copy()
+
+            if accepted_in_round == 0:
+                break
+
+        diag["ridge_signature_evals"] = total_evals
+        diag["ridge_signature_merges"] = total_merges
+        diag["ridge_signature_evals_log"] = ridge_evals_log
+
+        return active, diag
+
     def consolidate(
         self,
         registry: pd.DataFrame,
@@ -2469,6 +2892,9 @@ class EconomicRuleConsolidator:
             for _, row in accepted_pairs.iterrows():
                 tprint(f"  - {row['key_a']} + {row['key_b']}: score={row['child_selection_score']:.2f}, gain={row['child_selection_score'] - row['parent_selection_score']:.2f}")
 
+        # Now run the Ridge-based signature consolidation on the resulting active registry
+        active, ridge_diag = self._ridge_based_consolidation(active, fwd_ret, folds, resolver, data, max_rounds=2)
+
         diag_dict = {
             "economic_pair_candidates": pd.DataFrame(candidate_pairs),
             "economic_pair_evaluations": evals_df,
@@ -2479,8 +2905,15 @@ class EconomicRuleConsolidator:
                 "evals_count": evals,
                 "accepted_merges": accepted_merges,
                 "duplicate_prunes": pruned_dups
-            }
+            },
+            "ridge_signature_evals": ridge_diag.get("ridge_signature_evals", 0),
+            "ridge_signature_merges": ridge_diag.get("ridge_signature_merges", 0)
         }
+
+        if "ridge_signature_evals_log" in ridge_diag and ridge_diag["ridge_signature_evals_log"]:
+            diag_dict["ridge_signature_evals_log"] = pd.DataFrame(ridge_diag["ridge_signature_evals_log"])
+
+        tprint(f"Ridge Signature Consolidation End: {len(active)} rules remaining. {ridge_diag.get('ridge_signature_evals', 0)} evaluated pairs, {ridge_diag.get('ridge_signature_merges', 0)} merges.")
 
         return active, self.lineage.get_audit_df(), diag_dict
 

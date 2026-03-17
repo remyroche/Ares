@@ -400,7 +400,7 @@ def test_feature_processor_adds_dense_regime_quantiles_and_median_band():
     processor._run_feature_quality_checks = lambda x_raw, raw_names, cfg: (
         x_raw,
         raw_names,
-        pd.DataFrame(),
+        pd.DataFrame(columns=["feature_name", "status", "reason", "support", "group", "regime_family"]),
     )
     x, metadata, _ = processor.prepare_features(
         feature_dict,

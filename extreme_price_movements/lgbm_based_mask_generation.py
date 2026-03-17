@@ -3429,7 +3429,7 @@ def run_mining_stage(
         tprint(f"Fold {fold_id}: Target fwd_ret_norm -> mean={tr_mean:.4f}, std={tr_std:.4f}, p1={tr_p1:.4f}, p50={tr_p50:.4f}, p99={tr_p99:.4f}")
 
         if tr_drop_pct > 1.0 or va_drop_pct > 1.0:
-            tprint(f"WARNING: Fold {fold_id} has > 1% missing rows (TR: {tr_drop_pct:.1f}%, VA: {va_drop_pct:.1f}%).")
+            tprint(f"WARNING: Fold {fold_id} has > 1% missing rows (TR: {tr_drop_pct:.1f}%, VA: {va_drop_pct:.1f}%). Dropping missing rows and proceeding.")
             tprint("Identifying problematic symbols/timestamps...")
 
             # Combine missing masks and identify exact problems
@@ -3457,12 +3457,13 @@ def run_mining_stage(
                         for _, row in tgt_prob_data.head(5).iterrows():
                             tprint(f"      - Symbol: {row['symbol']}, Timestamp: {row['timestamp']}")
 
-            tprint(f"Skipping fold {fold_id} due to excessive missing data.")
-            continue
-
-        # If <= 1% rows dropped, apply the mask to drop them
+        # Apply the mask to drop missing rows
         clean_tr_idx = tr_idx[~tr_missing_mask]
         clean_va_idx = va_idx[~va_missing_mask]
+
+        if len(clean_tr_idx) == 0 or len(clean_va_idx) == 0:
+            tprint(f"Skipping fold {fold_id} because clean_tr_idx or clean_va_idx is empty after dropping missing data.")
+            continue
 
         X_tr, X_va = X[clean_tr_idx], X[clean_va_idx]
         y_tr, y_va = fwd_ret[clean_tr_idx], fwd_ret[clean_va_idx]

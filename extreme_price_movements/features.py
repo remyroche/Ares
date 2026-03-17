@@ -1515,6 +1515,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         np.float32
     )
 
+    # Missing Trigger/Location features from ridge_regime_event_assessment
+    feats["wick_to_range"] = (feats["upper_wick_ratio"] + feats["lower_wick_ratio"]).astype(np.float32)
+    feats["orderflow_imbalance"] = ((c_log - o) / _safe_range_ln).astype(np.float32)
+
     # Aliases for exact user-requested names
     feats["upper_wick"] = feats["upper_wick_ratio"]
     feats["lower_wick"] = feats["lower_wick_ratio"]
@@ -1532,6 +1536,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     atr_long = ff.numba_ewma(tr_ln, 1.0 / (24 * 7), False).clip(lower=1e-9)
     feats["atr_compression_ratio"] = (feats["atr_ln"] / atr_long).astype(np.float32)
     feats["compression_ratio"] = feats["atr_compression_ratio"]
+
+    # Missing from Technical Regime (Ridge) Features
+    feats["range_expansion_ratio"] = (tr_ln / (feats["atr_ln"] + 1e-12)).astype(np.float32)
 
     _accel_raw = c_log - 2 * c_log.shift(1) + c_log.shift(2)
     feats["acceleration"] = _accel_raw.astype(np.float32)
@@ -1675,6 +1682,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         np.float32
     )
     feats["distance_to_ema"] = feats["dist_ema20_atr"]
+
+    # Missing Technical Regime Location Features
+    # Note: 50 * 2 = 100 bars for 15m conversion match logic in ridge
+    feats["zscore_price_50"] = zscore_rolling(c_log, 100).astype(np.float32)
+    # Note: 200 * 2 = 400 bars for 15m conversion match logic in ridge
+    feats["zscore_price_200"] = zscore_rolling(c_log, 400).astype(np.float32)
 
     # --- End Technical Regime ---
 

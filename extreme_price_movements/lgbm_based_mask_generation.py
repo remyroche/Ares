@@ -228,9 +228,13 @@ class FeatureProcessor:
                     family = src.split('_')[0] if '_' in src else group_name
                     
                     for q in [0.2, 0.3, 0.4, 0.6, 0.7, 0.8]:
-                        # Top quantiles
+                        # The threshold `q` directly represents the cutoff.
+                        # For q=0.8, >= 0.8 is the top 20%. <= 0.8 is the bottom 80%.
+                        # The user wants both upper (>= q) and lower (<= q) for ALL these values.
+
+                        # Top quantiles (>= q)
                         bool_name_top = f"{group_name[:3]}_{src}_hybrid_top{int(q*100)}"
-                        bool_arr_top = (blended_ranks >= (1.0 - q)).astype(np.float32)
+                        bool_arr_top = (blended_ranks >= q).astype(np.float32)
                         
                         support_top = int(bool_arr_top.sum())
                         support_top_pct = support_top / n_samples if n_samples > 0 else 0
@@ -253,12 +257,12 @@ class FeatureProcessor:
                             booleanization_method='hybrid_cs_ts_rank',
                             threshold_type='top_quantile',
                             threshold_value=q,
-                            description=f"Hybrid Rank (CS weight={cs_weight}) >= {1.0-q}"
+                            description=f"Hybrid Rank (CS weight={cs_weight}) >= {q}"
                         )
                         raw_cols.append(bool_arr_top)
                         raw_names.append(bool_name_top)
 
-                        # Bottom quantiles
+                        # Bottom quantiles (<= q)
                         bool_name_bot = f"{group_name[:3]}_{src}_hybrid_bot{int(q*100)}"
                         bool_arr_bot = (blended_ranks <= q).astype(np.float32)
 
@@ -289,7 +293,8 @@ class FeatureProcessor:
                         raw_cols.append(bool_arr_bot)
                         raw_names.append(bool_name_bot)
 
-                    for q_band in [0.20, 0.30, 0.40]:
+                    # Only the 30-70 band
+                    for q_band in [0.30]:
                         q_band_upper = 1.0 - q_band
                         band_name = f"{group_name[:3]}_{src}_hybrid_band{int(q_band*100)}_{int(q_band_upper*100)}"
                         band_arr = (

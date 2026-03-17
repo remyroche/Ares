@@ -1254,8 +1254,120 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     vol_ma24 = ff.numba_rolling_mean(v, 24)
     feats["volume_spike"] = (v / (vol_ma24 + 1e-12)).astype(np.float32)
     
+    eps = 1e-12
+
+    # Extract locals for frequently used base features
+    ret1h = feats["ret1h"]
+    atr_ln = feats["atr_ln"]
+    range_ln = feats["range_ln"]
+
+    # Cached shifts
+    c_log_l1 = c_log.shift(1)
+    c_log_l20 = c_log.shift(20)
+    ema50_l1 = ema50.shift(1)
+    atr_ln_l1 = atr_ln.shift(1)
+    range_ln_l1 = range_ln.shift(1)
+    ret1h_l1 = ret1h.shift(1)
+    v_l1 = v.shift(1)
+
+    # Cached primitives
+    ema50_slope = ema50 - ema50_l1
+    ema50_slope_abs = ema50_slope.abs()
+    c_diff_abs = (c_log - c_log_l1).abs()
+    ret1h_sign = np.sign(ret1h)
+
+    # Cached rolling stds
+    ret_std_8 = ff.apply_to_frame(ret1h, ff._numba_rolling_std_nan_safe, 8)
+    ret_std_10 = ff.apply_to_frame(ret1h, ff._numba_rolling_std_nan_safe, 10)
+    ret_std_16 = ff.apply_to_frame(ret1h, ff._numba_rolling_std_nan_safe, 16)
+    ret_std_48 = ff.apply_to_frame(ret1h, ff._numba_rolling_std_nan_safe, 48)
+    ret_std_96 = ff.apply_to_frame(ret1h, ff._numba_rolling_std_nan_safe, 96)
+
+    # Cached window-20 values
+    bb_mean_20 = ff.numba_rolling_mean(c_log, 20)
+    bb_std_20 = ff.apply_to_frame(c_log, ff._numba_rolling_std_nan_safe, 20)
+    high_20 = ff.numba_rolling_max(h, 20)
+    low_20 = ff.numba_rolling_min(l, 20)
+    range_20 = high_20 - low_20
+    atr_sum_20 = ff.numba_rolling_sum(tr_ln, 20)
+    c_abs_sum_20 = ff.numba_rolling_sum(c_diff_abs, 20)
+
+    # Base features
     feats["ema20_gt_ema50"] = (ema20 > ema50).astype(np.float32)
     feats["ema50_gt_ema200"] = (ema50 > ema200).astype(np.float32)
+    feats["price_lt_ema200"] = (c_log < ema200).astype(np.float32)
+    feats["ema50_slope"] = ema50_slope.astype(np.float32)
+    feats["trend_strength_percentile"] = ff.numba_rolling_rank_pct(ema50_slope_abs, 1000).astype(np.float32)
+
+    feats["rolling_std_4h"] = ret_std_16.astype(np.float32) # 4h = 16 * 15m
+    feats["realized_volatility_24h"] = ret_std_96.astype(np.float32) # 24h = 96 * 15m
+    feats["atr_change_rate"] = (atr_ln / atr_ln_l1 - 1.0).astype(np.float32)
+    feats["true_range_percentile"] = ff.numba_rolling_rank_pct(tr_ln, 1000).astype(np.float32)
+
+    # Bollinger Band Width
+    feats["bollinger_band_width"] = (4.0 * bb_std_20 / (bb_mean_20 + eps)).astype(np.float32)
+
+    feats["rolling_range_20"] = range_20.astype(np.float32)
+    feats["atr_percentile"] = ff.numba_rolling_rank_pct(atr_ln, 1000).astype(np.float32)
+
+    feats["prior_range"] = range_ln_l1.astype(np.float32)
+    feats["prior_volatility"] = atr_ln_l1.astype(np.float32)
+
+    # Efficiency ratio over 20
+    direction_20 = (c_log - c_log_l20).abs()
+    feats["efficiency_ratio_20"] = (direction_20 / (c_abs_sum_20 + eps)).astype(np.float32)
+
+    # Choppiness index over 20
+    feats["choppiness_index_20"] = (
+        100.0 * np.log10((atr_sum_20 / (range_20 + eps)).clip(lower=eps)) / np.log10(20.0)
+    ).astype(np.float32)
+
+    # Direction Entropy 20
+    feats["direction_entropy_20"] = ff.apply_to_frame(ret1h_sign, ff.binary_entropy_nb, 20).astype(np.float32)
+
+    # Volatility Ratio Short/Long (e.g., 2h vs 24h)
+    feats["volatility_ratio_short_long"] = (ret_std_8 / (ret_std_96 + eps)).astype(np.float32)
+    feats["volume_percentile"] = ff.numba_rolling_rank_pct(v, 1000).astype(np.float32)
+
+    trend_match = (np.sign(c_log - c_log_l1) == np.sign(ema50_slope)).astype(np.float32)
+    feats["trend_persistence"] = ff.numba_rolling_mean(trend_match, 20).astype(np.float32)
+
+    feats["volume_zscore_48h"] = ff.apply_to_frame(v, ff._numba_rolling_zscore_nan_safe_1d, 192).astype(np.float32) # 48h = 192 * 15m
+    feats["trend_ratio"] = (feats["ema20_slope_5h"].abs() / (ema50_slope_abs + eps)).astype(np.float32)
+    feats["compression_score"] = (feats["atr_compression_ratio"] * feats["bollinger_band_width"]).astype(np.float32)
+
+    # Fast func vectorization where appropriate (avoiding Series apply loop)
+    # Autocorrelation 48
+    ret_48_mean = ff.numba_rolling_mean(ret1h, 48)
+    ret_48_mean_l1 = ret_48_mean.shift(1)
+    ret_48_var = ret_std_48 ** 2
+    ret_cov_48 = ff.numba_rolling_mean((ret1h - ret_48_mean) * (ret1h_l1 - ret_48_mean_l1), 48)
+    feats["return_autocorr_48"] = (ret_cov_48 / (ret_48_var + eps)).astype(np.float32)
+
+    feats["variance_ratio_10_48"] = ((ret_std_10 ** 2) / (ret_48_var + eps)).astype(np.float32)
+
+    # Volume blocks
+    v_48_mean = ff.numba_rolling_mean(v, 48)
+    v_48_mean_l1 = v_48_mean.shift(1)
+    v_48_std = ff.apply_to_frame(v, ff._numba_rolling_std_nan_safe, 48)
+    v_48_var = v_48_std ** 2
+    v_cov_48 = ff.numba_rolling_mean((v - v_48_mean) * (v_l1 - v_48_mean_l1), 48)
+
+    feats["volume_trend_48"] = (ff.numba_ewma(v, 2.0 / 49.0, False) - ff.numba_ewma(v, 2.0 / 193.0, False)).astype(np.float32)
+    feats["volume_autocorr_48"] = (v_cov_48 / (v_48_var + eps)).astype(np.float32)
+
+    # Vol-of-vol blocks
+    vol_48 = ret_std_48
+    volvol_48 = ff.apply_to_frame(vol_48, ff._numba_rolling_std_nan_safe, 48)
+    vol_48_mean = ff.numba_rolling_mean(vol_48, 48)
+    vol_48_l1 = vol_48.shift(1)
+    vol_48_mean_l1 = vol_48_mean.shift(1)
+    vol_cov_48 = ff.numba_rolling_mean((vol_48 - vol_48_mean) * (vol_48_l1 - vol_48_mean_l1), 48)
+
+    feats["volatility_of_volatility_48"] = volvol_48.astype(np.float32)
+    feats["trend_acceleration"] = (ema50_slope - ema50_slope.shift(1)).astype(np.float32)
+    feats["volatility_autocorr_48"] = (vol_cov_48 / (volvol_48 ** 2 + eps)).astype(np.float32)
+
     feats["dist_ema20_atr"] = ((c_log - ema20) / (feats["atr_ln"] + 1e-12)).astype(np.float32)
     feats["distance_to_ema"] = feats["dist_ema20_atr"]
     

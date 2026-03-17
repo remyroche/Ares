@@ -18,7 +18,11 @@ try:
         _numba_rolling_median,
         _numba_rolling_sum,
         _numba_rolling_correlation,
-        _numba_rolling_mad
+        _numba_rolling_mad,
+        _numba_rolling_slope_parallel,
+        _numba_rolling_skew_parallel,
+        _numba_rolling_kurt_parallel,
+        _numba_rolling_rsquared_parallel
     )
 except ImportError:
     # Fallback for direct execution
@@ -36,7 +40,11 @@ except ImportError:
         _numba_rolling_median,
         _numba_rolling_sum,
         _numba_rolling_correlation,
-        _numba_rolling_mad
+        _numba_rolling_mad,
+        _numba_rolling_slope_parallel,
+        _numba_rolling_skew_parallel,
+        _numba_rolling_kurt_parallel,
+        _numba_rolling_rsquared_parallel
     )
 try:
     from .utils import tprint
@@ -361,11 +369,29 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     Returns a DataFrame with float32 dtype.
     Handles pd.Series by converting to DataFrame and returning Series.
     """
-    from extreme_price_movements.src_utils_numba_funcs import _numba_rolling_std_nan_safe, _numba_rolling_std_nan_safe_parallel, _numba_rolling_mean_nan_safe, _numba_rolling_mean_nan_safe_parallel
+    from extreme_price_movements.src_utils_numba_funcs import (
+        _numba_rolling_std_nan_safe, _numba_rolling_std_nan_safe_parallel,
+        _numba_rolling_mean_nan_safe, _numba_rolling_mean_nan_safe_parallel,
+        _numba_rolling_slope, _numba_rolling_slope_parallel,
+        _numba_rolling_skew, _numba_rolling_skew_parallel,
+        _numba_rolling_kurt, _numba_rolling_kurt_parallel,
+        _numba_rolling_rsquared, _numba_rolling_rsquared_parallel,
+        _numba_rolling_median, _numba_rolling_median_parallel
+    )
     if func == _numba_rolling_std_nan_safe:
         return apply_to_matrix_parallel(df, _numba_rolling_std_nan_safe_parallel, *args)
     elif func == _numba_rolling_mean_nan_safe:
         return apply_to_matrix_parallel(df, _numba_rolling_mean_nan_safe_parallel, *args)
+    elif func == _numba_rolling_slope:
+        return apply_to_matrix_parallel(df, _numba_rolling_slope_parallel, *args)
+    elif func == _numba_rolling_skew:
+        return apply_to_matrix_parallel(df, _numba_rolling_skew_parallel, *args)
+    elif func == _numba_rolling_kurt:
+        return apply_to_matrix_parallel(df, _numba_rolling_kurt_parallel, *args)
+    elif func == _numba_rolling_rsquared:
+        return apply_to_matrix_parallel(df, _numba_rolling_rsquared_parallel, *args)
+    elif func == _numba_rolling_median:
+        return apply_to_matrix_parallel(df, _numba_rolling_median_parallel, *args)
 
     # tprint(f"Entering function: apply_to_frame in fast_funcs.py")
     return apply_to_matrix(df, func, *args)

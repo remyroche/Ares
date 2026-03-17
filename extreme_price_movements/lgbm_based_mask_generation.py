@@ -227,7 +227,7 @@ class FeatureProcessor:
 
                     family = src.split('_')[0] if '_' in src else group_name
                     
-                    for q in [0.2, 0.4, 0.6, 0.8]:
+                    for q in [0.2, 0.3, 0.4, 0.6, 0.7, 0.8]:
                         # Top quantiles
                         bool_name_top = f"{group_name[:3]}_{src}_hybrid_top{int(q*100)}"
                         bool_arr_top = (blended_ranks >= (1.0 - q)).astype(np.float32)

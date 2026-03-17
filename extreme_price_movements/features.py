@@ -1209,9 +1209,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     c_log = _safe_log_df(c_raw, eps=safe_log_eps)
 
-    pass # c_log_diff1 already defined.astype(np.float32)
-    pass # c_log_diff1_abs already defined.astype(np.float32)
-    pass # c_log_diff1_sign already defined.astype(np.float32)
+    c_log_diff1 = c_log.diff(1).astype(np.float32)
+    c_log_diff1_abs = c_log_diff1.abs().astype(np.float32)
+    c_log_diff1_sign = np.sign(c_log_diff1).astype(np.float32)
     h_minus_l = (h - l).astype(np.float32)
     c_log_minus_o = (c_log - o).astype(np.float32)
 
@@ -3913,11 +3913,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     )
 
     sv = v * np.sign(c_log - c_log.shift(1))
-    pass # c_log_diff1 already defined
-    pass # c_log_diff1_abs already defined
-    pass # c_log_diff1_sign already defined
     press_base = ((c_log - o) / ((h - l) + 1e-9)) * v
-    pass # h_minus_l already defined
 
     for n in [12, 24]:
         atr_15m_n = ff.numba_ewma(tr_15m, 2.0 / (n + 1.0), False)

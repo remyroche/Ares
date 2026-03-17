@@ -192,33 +192,32 @@ def _transform_close_fixed_ffd(
     fallback_used = 0
     direct_used = 0
     total_cols = len(df_den.columns)
-    for i, col in enumerate(df_den.columns):
+    groups: dict[float | None, list[str]] = {}
+    for col in df_den.columns:
         ser = df_den[col]
         valid_n = int(ser.notna().sum())
-
+        
         d_use = None
         for cand in d_candidates:
             if win_by_d[cand] <= valid_n:
                 d_use = cand
                 break
+        
+        if d_use not in groups:
+            groups[d_use] = []
+        groups[d_use].append(col)
 
+    for d_use, group_cols in groups.items():
         if d_use is None:
-            # Series is too short for all configured FFD windows: keep denoised log-close
-            # rather than generating all-NaN features.
-            out[col] = ser.astype(np.float32)
-            direct_used += 1
+            out[group_cols] = df_den[group_cols].astype(np.float32)
+            direct_used += len(group_cols)
         else:
             if d_use != float(d):
-                fallback_used += 1
-            out[col] = frac_diff_ffd(ser, d=float(d_use), thres=float(thres)).astype(np.float32)
+                fallback_used += len(group_cols)
+            # Use parallel matrix-based FFD
+            out[group_cols] = frac_diff_ffd(df_den[group_cols], d=float(d_use), thres=float(thres)).astype(np.float32)
+            tprint(f"Fixed FFD ({_label}): Applied d={d_use:.2f} to {len(group_cols)} columns")
 
-        if (i + 1) % 10 == 0 or (i + 1) == total_cols:
-            tprint(f"Fixed FFD ({_label}, d={d:.2f}): {i+1}/{total_cols}")
-    if fallback_used > 0 or direct_used > 0:
-        tprint(
-            f"Fixed FFD ({_label}, d={d:.2f}) short-history fallback: "
-            f"d-fallback={fallback_used}, direct-denoised={direct_used}, total={total_cols}"
-        )
     return out
 
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
@@ -2113,92 +2112,110 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["retrace_12"] = (-feats["pullback_12"]).astype(np.float32)
 
     # --- Gate Generation & Selection (Updated 2026-02-10) ---
-    from .gated_features import add_gate_features_panel, select_gated_features
+    if cfg.get("enable_gated_features", False):
+        from .gated_features import add_gate_features_panel, select_gated_features
 
-    # Gate windows: 16 bars = 4 hours, 24 bars = 6 hours at 15m timeframe
-    # These capture intraday patterns without excessive lag
-    gate_window = int(cfg.get("accept_gate_window", 24))
-    gate_windows = sorted(set([16, gate_window]))
-    percentile_mode = cfg.get("accept_gate_percentile_mode", "approx")
+        # Gate windows: 16 bars = 4 hours, 24 bars = 6 hours at 15m timeframe
+        # These capture intraday patterns without excessive lag
+        gate_window = int(cfg.get("accept_gate_window", 24))
+        gate_windows = sorted(set([16, gate_window]))
+        percentile_mode = cfg.get("accept_gate_percentile_mode", "approx")
 
-    # Define Gate Sources (Panel Data directly from feats)
-    # Mapping: Source Name -> (Panel Data, Output Prefix)
-    # Note: accept_score maps to prefix 's' for legacy reasons
-    gate_configs = {
-        "accept_score":        (feats["accept_score"], "s"),
-        "reject_score":        (feats["reject_score"], "reject"),
-        "retest_accept_score": (feats["retest_accept_score"], "retest_accept"),
-        "tf_qual_score":       (feats["tf_qual_score"], "tf_qual"),
-        "mr_qual_score":       (feats["mr_qual_score"], "mr_qual"),
-        "vol_z":               (feats["vol_z"], "vol_z"),
-        # Liquidity Score: Higher is better (more liquid). Amihud is Illiq (lower is better).
-        "liquidity_score":     (-feats["amihud_z"], "liquidity"),
-    }
+        # Define Gate Sources (Panel Data directly from feats)
+        # Mapping: Source Name -> (Panel Data, Output Prefix)
+        # Note: accept_score maps to prefix 's' for legacy reasons
+        gate_configs = {
+            "accept_score":        (feats["accept_score"], "s"),
+            "reject_score":        (feats["reject_score"], "reject"),
+            "retest_accept_score": (feats["retest_accept_score"], "retest_accept"),
+            "tf_qual_score":       (feats["tf_qual_score"], "tf_qual"),
+            "mr_qual_score":       (feats["mr_qual_score"], "mr_qual"),
+            "vol_z":               (feats["vol_z"], "vol_z"),
+            # Liquidity Score: Higher is better (more liquid). Amihud is Illiq (lower is better).
+            "liquidity_score":     (-feats["amihud_z"], "liquidity"),
+        }
 
-    tprint(f"Generating Gated Features for windows {gate_windows} with selection...")
+        tprint(f"Generating Gated Features for windows {gate_windows} with selection...")
 
-    # Skill metric: Monthly time blocks for robust evaluation
-    periods = c.index.to_period("M")
-    unique_periods = periods.unique()
-    time_blocks = [(periods == p) for p in unique_periods]
-    # Train mask: Exclude OOS holdout period to prevent leakage
-    train_mask_proxy = pd.Series(True, index=c.index)
-    oos_holdout_hours = int(24 * cfg.get("oos_holdout_days", 730))
+        # Skill metric: Monthly time blocks for robust evaluation
+        periods = c.index.to_period("M")
+        unique_periods = periods.unique()
+        time_blocks = [(periods == p) for p in unique_periods]
+        # Train mask: Exclude OOS holdout period to prevent leakage
+        train_mask_proxy = pd.Series(True, index=c.index)
+        oos_holdout_hours = int(24 * cfg.get("oos_holdout_days", 730))
 
-    # Always drop at least 8 hours for the forward target shift buffer
-    # If the holdout period is larger, drop that instead, but bound by array length
-    if len(train_mask_proxy) > 8:
-        train_mask_proxy.iloc[-8:] = False
+        # Always drop at least 8 hours for the forward target shift buffer
+        # If the holdout period is larger, drop that instead, but bound by array length
+        if len(train_mask_proxy) > 8:
+            train_mask_proxy.iloc[-8:] = False
 
-    if oos_holdout_hours > 8 and len(train_mask_proxy) > oos_holdout_hours:
-        train_mask_proxy.iloc[-oos_holdout_hours:] = False
+        if oos_holdout_hours > 8 and len(train_mask_proxy) > oos_holdout_hours:
+            train_mask_proxy.iloc[-oos_holdout_hours:] = False
 
-    for w in gate_windows:
-        for source_name, (source_panel, prefix) in gate_configs.items():
-            # 1. Generate ALL candidates for this family (mean, std, z, pct, bin3, gt25..gt90)
-            # Returns dict: feature_name -> Panel DataFrame
-            family_features = add_gate_features_panel(
-                source_panel,
-                prefix=prefix,
-                n=w,
-                add_strict=True,
-                percentile_mode=percentile_mode
-            )
+        for w in gate_windows:
+            for source_name, (source_panel, prefix) in gate_configs.items():
+                # 1. Generate ALL candidates for this family (mean, std, z, pct, bin3, gt25..gt90)
+                # Returns dict: feature_name -> Panel DataFrame
+                family_features = add_gate_features_panel(
+                    source_panel,
+                    prefix=prefix,
+                    n=w,
+                    add_strict=True,
+                    percentile_mode=percentile_mode
+                )
 
-            # 2. Extract BASE features (Always keep mean, std, z, pct, bin3)
-            base_suffixes = ["mean", "std", "z", "pct", "bin3"]
-            for suffix in base_suffixes:
-                feat_name = f"{prefix}_{suffix}_{w}"
-                if feat_name in family_features:
-                    feats[feat_name] = family_features[feat_name]
+                # 2. Extract BASE features (Always keep mean, std, z, pct, bin3)
+                base_suffixes = ["mean", "std", "z", "pct", "bin3"]
+                for suffix in base_suffixes:
+                    feat_name = f"{prefix}_{suffix}_{w}"
+                    if feat_name in family_features:
+                        feats[feat_name] = family_features[feat_name]
 
-            # 3. SELECT best threshold features (from gt25, gt50, ..., gt90)
-            # Construct mini-table for selection function
-            # Only include the 'gt' threshold candidates
-            candidates_table = {k: v for k, v in family_features.items() if "_gt" in k}
-            
-            # If no candidates produced, skip selection
-            if not candidates_table:
-                continue
+                # 3. SELECT best threshold features (from gt25, gt50, ..., gt90)
+                # Construct mini-table for selection function
+                # Only include the 'gt' threshold candidates
+                candidates_table = {k: v for k, v in family_features.items() if "_gt" in k}
 
-            # Run selection: Selects globally best thresholds based on prevalence/skill
-            selected_names = select_gated_features(
-                gate_feature_table=candidates_table,
-                families=[(prefix, w)],
-                target=target_proxy,
-                time_blocks=time_blocks,
-                train_mask=train_mask_proxy
-            )
+                # If no candidates produced, skip selection
+                if not candidates_table:
+                    continue
 
-            # 4. Store SELECTED features
-            for name in selected_names:
-                if name in candidates_table:
-                    feats[name] = candidates_table[name]
-            
-            # Explicitly clear intermediate dict to free memory
-            del family_features
-            del candidates_table
-            # import gc; gc.collect() # Optional frequent GC
+                # Run selection: Selects globally best thresholds based on prevalence/skill
+                selected_names = select_gated_features(
+                    gate_feature_table=candidates_table,
+                    families=[(prefix, w)],
+                    target=target_proxy,
+                    time_blocks=time_blocks,
+                    train_mask=train_mask_proxy
+                )
+
+                # 4. Store SELECTED features
+                for name in selected_names:
+                    if name in candidates_table:
+                        feats[name] = candidates_table[name]
+
+                # Explicitly clear intermediate dict to free memory
+                del family_features
+                del candidates_table
+                # import gc; gc.collect() # Optional frequent GC
+    else:
+        # Gated features disabled - provide zero fallbacks
+        tprint("Gated features disabled - providing zero fallbacks")
+        gate_window = int(cfg.get("accept_gate_window", 24))
+        # Zero fallbacks for core gated features
+        zero_panel = pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32)
+        feats["accept"] = zero_panel.copy()
+        feats["accept_bin3"] = zero_panel.copy()
+        feats["accept_gt66"] = zero_panel.copy()
+        feats["accept_gt85"] = zero_panel.copy()
+        feats["retest_accept"] = zero_panel.copy()
+        feats["reject_like"] = zero_panel.copy()
+        feats["tf_qual"] = zero_panel.copy()
+        feats["mr_qual"] = zero_panel.copy()
+        s_pct = zero_panel.copy()
+        s_bin3 = zero_panel.copy()
+        reject_like = zero_panel.copy()
 
     # Re-bind standardized names for downstream dependencies
     # These rely on the standard `gate_window` (e.g. 64) features being present
@@ -3010,11 +3027,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         tprint("Skipping HVN/LVN features: no vp_* keys requested")
 
     # Free target_proxy — no longer needed after gated feature selection
-    del target_proxy, time_blocks, train_mask_proxy
-    # Free base price/volume DataFrames and all remaining intermediates before CausalTransform
-    del o, h, l, c, v
-    del atr_base, atr, dir_s, rv6, rv12, rv_ratio, mkt_gates
-    gc.collect()
+    del target_proxy
+    # Free time_blocks and train_mask_proxy if they were defined (gated features enabled)
+    try:
+        del time_blocks, train_mask_proxy
+    except NameError:
+        pass
+    # Note: o, h, l, c, v are deleted later after all features that use them are computed
 
     # --- explicit peer-context and ts-percentile features ---
     if (
@@ -3307,6 +3326,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["abs_edge_pred"] = pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32).fillna(0.0)
 
         del ret_1, bar_range, atr_mean_24, rv_1, rv_2, rv_24, high_12, low_12, high_24, low_24
+        # Now delete base price/volume DataFrames and intermediates after all features are computed
+        del o, h, l, c, v
+        del atr_base, atr, dir_s, rv6, rv12, rv_ratio, mkt_gates
         gc.collect()
 
     del h_raw, l_raw, c_raw, v_raw
@@ -3320,10 +3342,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             skip_transform_set.add(k)
 
 
-    for w in gate_windows:
-        for prefix in ["s", "reject", "retest_accept", "tf_qual", "mr_qual", "vol_z", "liquidity"]:
-            for suffix in ["mean", "std", "z", "pct", "bin3", "gt25", "gt50", "gt66", "gt75", "gt85", "gt90"]:
-                skip_transform_set.add(f"{prefix}_{suffix}_{w}")
+    # Add gated feature patterns to skip set (if gated features were enabled)
+    if cfg.get("enable_gated_features", False):
+        for w in gate_windows:
+            for prefix in ["s", "reject", "retest_accept", "tf_qual", "mr_qual", "vol_z", "liquidity"]:
+                for suffix in ["mean", "std", "z", "pct", "bin3", "gt25", "gt50", "gt66", "gt75", "gt85", "gt90"]:
+                    skip_transform_set.add(f"{prefix}_{suffix}_{w}")
 
     def _is_boolean_like_feature(arr_like) -> bool:
         arr = np.asarray(arr_like, dtype=np.float32)
@@ -3338,50 +3362,27 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         return bool(np.all(np.abs(finite - rounded) <= 1e-6))
 
     # Capture shared index/columns ONCE before converting to numpy
-    _sample_df = feats[list(feats.keys())[0]]
-    _feat_index = _sample_df.index
-    _feat_columns = list(_sample_df.columns)
-    del _sample_df
+    _feat_index = c_log.index
+    _feat_columns = list(c_log.columns)
 
     feat_keys_list = list(feats.keys())
-    transform_keys: list[str] = []
-    n_skipped = 0
+    # --- Optimized Batched CausalTransform ---
+    # Merge dynamically identified skip patterns into the skip_transform_set
     for k in feat_keys_list:
-        arr = np.asarray(feats[k], dtype=np.float32)
-        if (
-            k in skip_transform_set
-            or k.startswith("cs_rank_")
-            or k.startswith("cs_rz_")
-            or k.startswith("ts_pct_")
-            or _is_boolean_like_feature(arr)
-        ):
-            feats[k] = arr
-            n_skipped += 1
+        if k.startswith("cs_rank_") or k.startswith("cs_rz_") or k.startswith("ts_pct_"):
+             skip_transform_set.add(k)
         else:
-            feats[k] = arr
-            transform_keys.append(k)
+             arr = np.asarray(feats[k], dtype=np.float32)
+             if _is_boolean_like_feature(arr):
+                 skip_transform_set.add(k)
 
-    tprint(
-        f"CausalTransform workset: {len(transform_keys)} transform, {n_skipped} skipped"
-    )
-
-    n_transformed = 0
-    for i, k in enumerate(transform_keys):
-        arr = feats[k]
-        try:
-            feats[k] = np.asarray(transformer.transform(arr, name=k), dtype=np.float32)
-            n_transformed += 1
-        except Exception as e:
-            tprint(f"Warning: Transform failed for {k}: {e}")
-            import traceback
-            traceback.print_exc()
-            feats[k] = arr
-        if (i + 1) % 50 == 0:
-            gc.collect()
-            tprint(f"  CausalTransform progress: {i+1}/{len(transform_keys)}")
+    tprint(f"CausalTransform workset: {len(feats) - len(skip_transform_set)} transform, {len(skip_transform_set)} skipped")
+    
+    chunk_size = int(cfg.get("transform_chunk_size", 50))
+    feats = transformer.transform_batch(feats, skip_keys=skip_transform_set, chunk_size=chunk_size)
+    
     del transformer
     gc.collect()
-    tprint(f"CausalTransform complete: {n_transformed} transformed, {n_skipped} skipped")
 
     # Final check for Inf/NaN (numpy arrays now)
     tprint("Features: performing final Inf/NaN check")

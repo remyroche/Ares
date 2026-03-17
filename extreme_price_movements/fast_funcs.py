@@ -43,6 +43,39 @@ try:
 except ImportError:
     from utils import tprint
 
+slope_nb = _numba_rolling_slope
+
+@jit(nopython=True, cache=True)
+def binary_entropy_nb(x, window):
+    out = np.full(len(x), np.nan, dtype=np.float32)
+    n = len(x)
+    for i in range(window - 1, n):
+        start = i - window + 1
+        pos_c = 0; neg_c = 0; tot = 0
+        for j in range(start, i + 1):
+            val = x[j]
+            if not np.isnan(val):
+                tot += 1
+                if val > 0: pos_c += 1
+                elif val < 0: neg_c += 1
+        if tot > 0:
+            p_pos = pos_c / tot
+            p_neg = neg_c / tot
+            ent = 0.0
+            if p_pos > 0: ent -= p_pos * np.log2(p_pos)
+            if p_neg > 0: ent -= p_neg * np.log2(p_neg)
+            out[i] = np.float32(ent)
+    return out
+
+@jit(nopython=True, cache=True)
+def realized_vol_nb(x, window):
+    return _numba_rolling_std_1d(x, window)
+
+@jit(nopython=True, cache=True)
+def ema_nb(x, window):
+    alpha = np.float32(2.0 / (window + 1.0))
+    return _numba_ewma_1d(x, alpha, False)
+
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_ewma_nan_safe(x, alpha, adjust=False):
     n = len(x)
@@ -1868,7 +1901,7 @@ def numba_frac_diff(df, d, window, thres=1e-5):
 
     return res_df
 
-@jit(nopython=True, nogil=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True, fastmath=True)
 def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
     """
     True O(n) rolling z-score using incremental mean/variance updates.
@@ -1932,12 +1965,18 @@ def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
 
         # --- Compute z-score ---
         if count > 1 and in_valid:
+            # Variance formula using shifted sums: Var = (sum_sq - sum^2/count) / (count - 1)
             var_num = sum_d_sq - (sum_d * sum_d) / count
-            if var_num < 0.0:
-                var_num = 0.0
-            std = np.sqrt(var_num / (count - 1))
-            mean_d = sum_d / count
-            output[i] = ((val_in - K) - mean_d) / (std + eps)
+            
+            # Use a slightly more robust threshold for near-zero variance
+            # to avoid precision issues with denormals.
+            if var_num <= 1e-15:
+                output[i] = 0.0
+            else:
+                std = np.sqrt(var_num / (count - 1))
+                mean_d = sum_d / count
+                # Use a larger eps for the denominator safety
+                output[i] = ((val_in - K) - mean_d) / (std + 1e-9)
         elif count == 1 and in_valid:
             output[i] = 0.0
 
@@ -1980,13 +2019,18 @@ def _numba_causal_clip_with_ffill_1d(x, lo, hi):
 
     return out
 
-@jit(nopython=True, parallel=True, cache=True)
+@jit(nopython=True, parallel=True, cache=True, fastmath=True)
 def _numba_rolling_zscore_parallel(mat, window, eps=1e-12):
     n_rows, n_cols = mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)
 
-    for j in prange(n_cols):
-        out[:, j] = _numba_rolling_zscore_nan_safe_1d(mat[:, j], window, eps)
+    # If few columns, skip overhead of parallel scheduling
+    if n_cols <= 4:
+        for j in range(n_cols):
+            out[:, j] = _numba_rolling_zscore_nan_safe_1d(mat[:, j], window, eps)
+    else:
+        for j in prange(n_cols):
+            out[:, j] = _numba_rolling_zscore_nan_safe_1d(mat[:, j], window, eps)
 
     return out
 

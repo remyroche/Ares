@@ -368,7 +368,7 @@ class FeatureProcessor:
                 raw_names.append(name)
 
         if not raw_cols:
-            return np.empty((len(timestamps), 0)), [], pd.DataFrame()
+            return np.empty((len(timestamps), 0)), [], pd.DataFrame(columns=["feature_name", "status", "reason", "support", "group", "regime_family"])
 
         X_raw = np.column_stack(raw_cols)
         
@@ -607,7 +607,8 @@ class FeatureProcessor:
                 retained_names.append(name)
         
         if not retained_indices:
-            return np.empty((n_samples, 0)), [], pd.DataFrame(audit_rows)
+            return np.empty((len(timestamps), 0)), [], pd.DataFrame(columns=["feature_name", "status", "reason", "support"])
+
             
         X_clean = X[:, retained_indices]
         return X_clean, retained_names, pd.DataFrame(audit_rows)
@@ -1677,6 +1678,10 @@ class RuleScorer:
             )
             summaries.append(summary)
             audits.extend(fold_records)
+
+        if not summaries:
+            tprint("WARNING: No rules scored successfully. Returning empty registry.")
+            return pd.DataFrame(), pd.DataFrame(audits)
 
         summary_df = pd.DataFrame(summaries).sort_values(
             ["accepted", "composite_score"], ascending=[False, False]
@@ -3670,6 +3675,17 @@ def run_mining_stage(
     full_scorer_audit.to_csv(output_dir / "fold_level_rule_aggregation_audit.csv", index=False)
     scored_registry.to_csv(output_dir / "scored_rule_registry_full.csv", index=False)
 
+    # Handle empty registry
+    if scored_registry.empty:
+        tprint("WARNING: No rules scored. Skipping consolidation and returning empty results.")
+        return {
+            "scored_registry": scored_registry,
+            "scorer_accepted": pd.DataFrame(),
+            "accepted_registry": pd.DataFrame(),
+            "consolidated_registry": pd.DataFrame(),
+            "final_registry": pd.DataFrame(),
+        }
+
     # Save scorer diagnostics
     rejection_reasons = collections.Counter(
         reason.strip()
@@ -5533,12 +5549,24 @@ if __name__ == "__main__":
     low_wide = panel["low"].reindex(index=common_idx, columns=common_syms).to_numpy(dtype=np.float32)
     close_wide = panel["close"].reindex(index=common_idx, columns=common_syms).to_numpy(dtype=np.float32)
     atr_wide = compute_atr_wide(high_wide, low_wide, close_wide, atr_period=14)
+    # Compute ATR as percentage of close price
+    atr_pct_matrix = np.where(close_wide > 1e-9, atr_wide / close_wide, 0.0).astype(np.float32)
     data_final["atr"] = atr_wide[time_idx, sym_idx]
     tprint(f"ATR computed in wide form and extracted in {time.perf_counter() - atr_start:.1f}s")
 
     fwd_ret_start = time.perf_counter()
     fwd_ret_matrix = fwd_ret_wide.reindex(index=common_idx, columns=common_syms).to_numpy(dtype=np.float32)
-    atr_pct_matrix = atr_wide / np.maximum(close_wide, 1e-9)
+    target_signal = fwd_ret_matrix / np.maximum(np.sqrt(atr_pct_matrix), 1e-9)
+    
+    # 3. Cross-sectional percentile ranking
+    ranks = pd.DataFrame(target_signal).rank(axis=1, pct=True).to_numpy()
+    fwd_ret_norm_matrix = np.full_like(ranks, np.nan)
+    fwd_ret_norm_matrix[ranks <= 0.20] = -2
+    fwd_ret_norm_matrix[(ranks > 0.20) & (ranks <= 0.40)] = -1
+    fwd_ret_norm_matrix[(ranks > 0.40) & (ranks < 0.60)] = 0
+    fwd_ret_norm_matrix[(ranks >= 0.60) & (ranks < 0.80)] = 1
+    fwd_ret_norm_matrix[ranks >= 0.80] = 2
+    
     fwd_ret_norm_matrix = fwd_ret_matrix / np.maximum(atr_pct_matrix, 1e-9)
     fwd_ret_final = fwd_ret_matrix[time_idx, sym_idx]
     fwd_ret_norm_final = fwd_ret_norm_matrix[time_idx, sym_idx]

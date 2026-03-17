@@ -43,7 +43,8 @@ FEATURE_FAMILY_REGISTRY: Dict[str, Set[str]] = {
         "rejection_proxy", "vol_compression", "vol_compression_ratio", "bidirectional_range_ratio",
         "impulse_ratio_24", "impulse_ratio_12", "vol_expansion_ratio", "atr_expansion", "atr_spike_ratio", "atr_ratio_short_long", "range_decay", "micro_range_decay", "range_last_3bars_impulse_range",
         "rsi", "rsi_base", "rsi_lag1", "ker_10", "ker_16", "ker_24", "path_efficiency_12", "path_efficiency_24", "hurst_proxy_24",
-        "volatility_asymmetry", "down_up_vol_ratio_8", "down_up_vol_ratio_24", "tail_against", "asym_ratio", "asym_ft"
+        "volatility_asymmetry", "down_up_vol_ratio_8", "down_up_vol_ratio_24", "tail_against", "asym_ratio", "asym_ft",
+        "choppiness_index_20"
     },
     FeatureFamily.CATEGORICAL_OR_BUCKETED: {
         "liq_state", "sin_hod", "cos_hod", "sin_dow", "cos_dow", "session_progress",
@@ -85,7 +86,9 @@ FEATURE_FAMILY_PATTERNS = {
         lambda x: x.startswith("rsi"),
         lambda x: "entropy" in x,
         lambda x: x.startswith("ker_"),
-        lambda x: x.startswith("path_efficiency")
+        lambda x: x.startswith("path_efficiency"),
+        lambda x: "choppiness" in x,
+        lambda x: "index" in x and "regime" not in x
     ]
 }
 

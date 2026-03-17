@@ -164,8 +164,11 @@ class CausalFeatureTransformer:
                 del chunk_arrays
                 gc.collect()
 
-                # Transform in-place using family policy
+                tprint(f"    Processing chunk of {len(chunk_keys)} features: {chunk_keys[:5]}...")
+                import time
+                t0 = time.time()
                 stacked = self._apply_transform_numpy(stacked, family=family)
+                t1 = time.time()
 
                 S = stacked.shape[1] // len(chunk_keys)
                 for ci, k in enumerate(chunk_keys):
@@ -174,7 +177,7 @@ class CausalFeatureTransformer:
                 gc.collect()
 
                 processed_count += len(chunk_keys)
-                tprint(f"  CausalTransform batch: {processed_count}/{n_total}")
+                tprint(f"  CausalTransform batch: {processed_count}/{n_total} (family={family}, chunk_time={t1-t0:.2f}s)")
 
         tprint(f"CausalTransform complete: {n_total} transformed across {len(family_groups)} families, {len(keys_skip)} skipped")
         return feats

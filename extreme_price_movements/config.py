@@ -139,56 +139,56 @@ MODEL_FEATURES = [
     "vp_accept_hvn_touchrate", "vp_accept_lvn_touchrate",
     "vp_air_pocket_score",
     "G_TF_TREND", "vol_z_x_trend_t",
+    # Ridge model features
+    "ema20_gt_ema50", "ema50_gt_ema200", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
 ]
 
 RIDGE_FEATURE_META = {
+    # Trend features
     "ema20_gt_ema50": {"family": "trend", "type": "binary"},
     "ema50_gt_ema200": {"family": "trend", "type": "binary"},
-    "price_lt_ema200": {"family": "trend", "type": "binary"},
-    "ema50_slope": {"family": "trend", "type": "continuous"},
-    "trend_strength_percentile": {"family": "trend", "type": "continuous"},
+    # "price_lt_ema200": {"family": "trend", "type": "binary"},  # Not implemented
+    # "ema50_slope": {"family": "trend", "type": "continuous"},  # Not implemented
+    # "trend_strength_percentile": {"family": "trend", "type": "continuous"},  # Not implemented
 
-    "rolling_std_4h": {"family": "volatility", "type": "continuous"},
-    "realized_volatility_24h": {"family": "volatility", "type": "continuous"},
-    "atr_change_rate": {"family": "volatility", "type": "continuous"},
-    "true_range_percentile": {"family": "volatility", "type": "continuous"},
+    # "rolling_std_4h": {"family": "volatility", "type": "continuous"},  # Not implemented
+    # "realized_volatility_24h": {"family": "volatility", "type": "continuous"},  # Not implemented
+    # "atr_change_rate": {"family": "volatility", "type": "continuous"},  # Not implemented
+    # "true_range_percentile": {"family": "volatility", "type": "continuous"},  # Not implemented
 
+    # "bollinger_band_width": {"family": "compression", "type": "continuous"},  # Not implemented
+    # "rolling_range_20": {"family": "compression", "type": "continuous"},  # Not implemented
+    # "atr_percentile": {"family": "compression", "type": "continuous"},  # Not implemented
 
-    "bollinger_band_width": {"family": "compression", "type": "continuous"},
-    "rolling_range_20": {"family": "compression", "type": "continuous"},
-    "atr_percentile": {"family": "compression", "type": "continuous"},
-
-
-
-    "prior_range": {"family": "context", "type": "continuous"},
-    "prior_volatility": {"family": "context", "type": "continuous"},
+    # "prior_range": {"family": "context", "type": "continuous"},  # Not implemented
+    # "prior_volatility": {"family": "context", "type": "continuous"},  # Not implemented
 
     # Micro-regime updates
-    "efficiency_ratio_20": {"family": "path_structure", "type": "continuous"},
-    "choppiness_index_20": {"family": "path_structure", "type": "continuous"},
-    "direction_entropy_20": {"family": "path_structure", "type": "continuous"},
+    # "efficiency_ratio_20": {"family": "path_structure", "type": "continuous"},  # Not implemented
+    # "choppiness_index_20": {"family": "path_structure", "type": "continuous"},  # Not implemented
+    # "direction_entropy_20": {"family": "path_structure", "type": "continuous"},  # Not implemented
 
     "compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
     "range_expansion_ratio": {"family": "volatility_term_structure", "type": "continuous"},
 
-    "volatility_ratio_short_long": {"family": "volatility", "type": "continuous"},
-    "volume_percentile": {"family": "liquidity", "type": "continuous"},
-    
+    # "volatility_ratio_short_long": {"family": "volatility", "type": "continuous"},  # Not implemented
+    # "volume_percentile": {"family": "liquidity", "type": "continuous"},  # Not implemented
+
     # User-requested technical regimes (v17)
-    "ema20_slope_5h": {"family": "trend", "type": "continuous"},
-    "ema_slope_norm": {"family": "trend", "type": "continuous"},
+    # "ema20_slope_5h": {"family": "trend", "type": "continuous"},  # Not implemented
+    # "ema_slope_norm": {"family": "trend", "type": "continuous"},  # Not implemented
     "atr_compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-    "trend_persistence": {"family": "trend", "type": "continuous"},
-    "volume_zscore_48h": {"family": "liquidity", "type": "continuous"},
-    "trend_ratio": {"family": "trend", "type": "continuous"},
-    "compression_score": {"family": "volatility_term_structure", "type": "continuous"},
-    "return_autocorr_48": {"family": "momentum", "type": "continuous"},
-    "variance_ratio_10_48": {"family": "volatility", "type": "continuous"},
-    "volume_trend_48": {"family": "liquidity", "type": "continuous"},
-    "volume_autocorr_48": {"family": "liquidity", "type": "continuous"},
-    "volatility_of_volatility_48": {"family": "volatility", "type": "continuous"},
-    "trend_acceleration": {"family": "trend", "type": "continuous"},
-    "volatility_autocorr_48": {"family": "volatility", "type": "continuous"},
+    # "trend_persistence": {"family": "trend", "type": "continuous"},  # Not implemented
+    # "volume_zscore_48h": {"family": "liquidity", "type": "continuous"},  # Not implemented
+    # "trend_ratio": {"family": "trend", "type": "continuous"},  # Not implemented
+    # "compression_score": {"family": "volatility_term_structure", "type": "continuous"},  # Not implemented
+    # "return_autocorr_48": {"family": "momentum", "type": "continuous"},  # Not implemented
+    # "variance_ratio_10_48": {"family": "volatility", "type": "continuous"},  # Not implemented
+    # "volume_trend_48": {"family": "liquidity", "type": "continuous"},  # Not implemented
+    # "volume_autocorr_48": {"family": "liquidity", "type": "continuous"},  # Not implemented
+    # "volatility_of_volatility_48": {"family": "volatility", "type": "continuous"},  # Not implemented
+    # "trend_acceleration": {"family": "trend", "type": "continuous"},  # Not implemented
+    # "volatility_autocorr_48": {"family": "volatility", "type": "continuous"},  # Not implemented
 }
 
 RIDGE_FEATURE_COLS = list(RIDGE_FEATURE_META.keys())
@@ -297,6 +297,8 @@ TEST_FEATURE_KEYS = [
     # Longer-timeframe regime context
     "trend_regime", "vol_regime_z", "regime_stability_24h", "trend_slope_48h", "trend_slope_120h",
     "rv_ratio_24_120", "donch_dist_48", "donch_dist_120", "dist_from_high_120h", "dist_from_low_120h",
+    # Ridge model features
+    "ema20_gt_ema50", "ema50_gt_ema200", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
 ]
 
 CFG = {
@@ -780,6 +782,7 @@ CFG = {
     "gate_trend_thr": 0.02,
     "accept_gate_window": 24,
     "accept_gate_percentile_mode": "approx",
+    "enable_gated_features": False,  # Disabled to reduce feature computation time
 
     # base feature windows (used for base/fast/slow variants)
     "atr_n": 14,
@@ -856,15 +859,9 @@ CFG = {
         # New Model Features
         "overext", "overext_weak", "effort_gate", "tail_fail", "blowoff_risk",
         "S", "impulse_ratio_24", "impulse_ratio_12", "coherence_24", "accel",
-        "tf_tape", "mr_tape", "accept", "accept_bin3", "accept_gt66", "accept_gt85", "retest_accept", "tf_qual", "mr_qual",
-        "retrace_12", "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual"
+        "tf_tape", "mr_tape", "retrace_12", "exh_qual"
         ,"mfe_2h", "mae_2h", "dir_path_long_2h", "dir_path_short_2h",
-        "dir_path_risk_long_2h", "dir_path_risk_short_2h", "dir_path_edge_2h", "dir_path_risk_skew_2h",
-        "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
-        "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
-        "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
-        "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
-        "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag"
+        "dir_path_risk_long_2h", "dir_path_risk_short_2h", "dir_path_edge_2h", "dir_path_risk_skew_2h"
         # OHLCV-based trend quality features (Report 2026-02-12)
         ,"trend_age_hours", "higher_highs_count_48h", "trend_retest_success_rate",
         "trend_overextension_z", "volume_trend_alignment", "trend_regime_stability",
@@ -882,11 +879,6 @@ CFG = {
         "p_vol_high", "p_cusum_high", "p_liq_low",
         "dir_path_long_2h", "dir_path_short_2h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
         "dir_path_edge_2h", "dir_path_risk_skew_2h",
-        "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
-        "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
-        "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
-        "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
-        "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
         # Orthogonal features (structurally independent dimensions)
         "mtf_divergence", "mtf_div_mag",
         "autocorr_6h", "autocorr_24h",
@@ -909,27 +901,6 @@ CFG = {
         "blowoff_risk_surprise", "exh_qual_surprise",
         "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid",
         "mkt_rv_pct", "abs_mkt_ret24h_z", "trend_bin3",
-        "s_z_64", "s_pct_64", "s_bin3_64",
-        "s_gt25_64", "s_gt50_64", "s_gt66_64", "s_gt75_64", "s_gt85_64", "s_gt90_64",
-        "s_z_8", "s_pct_8", "s_bin3_8",
-        "s_gt25_8", "s_gt50_8", "s_gt66_8", "s_gt75_8", "s_gt85_8", "s_gt90_8",
-        "reject_z_64", "reject_pct_64", "reject_bin3_64",
-        "reject_gt25_64", "reject_gt50_64", "reject_gt66_64", "reject_gt75_64", "reject_gt85_64", "reject_gt90_64",
-        "reject_z_8", "reject_pct_8", "reject_bin3_8",
-        "reject_gt25_8", "reject_gt50_8", "reject_gt66_8", "reject_gt75_8", "reject_gt85_8", "reject_gt90_8",
-        "retest_accept_z_64", "retest_accept_pct_64", "retest_accept_bin3_64",
-        "retest_accept_gt25_64", "retest_accept_gt50_64", "retest_accept_gt66_64", "retest_accept_gt75_64", "retest_accept_gt85_64", "retest_accept_gt90_64",
-        "retest_accept_z_8", "retest_accept_pct_8", "retest_accept_bin3_8",
-        "retest_accept_gt25_8", "retest_accept_gt50_8", "retest_accept_gt66_8", "retest_accept_gt75_8", "retest_accept_gt85_8", "retest_accept_gt90_8",
-        "tf_qual_z_64", "tf_qual_pct_64", "tf_qual_bin3_64",
-        "tf_qual_gt25_64", "tf_qual_gt50_64", "tf_qual_gt66_64", "tf_qual_gt75_64", "tf_qual_gt85_64", "tf_qual_gt90_64",
-        "tf_qual_z_8", "tf_qual_pct_8", "tf_qual_bin3_8",
-        "tf_qual_gt25_8", "tf_qual_gt50_8", "tf_qual_gt66_8", "tf_qual_gt75_8", "tf_qual_gt85_8", "tf_qual_gt90_8",
-        "mr_qual_z_64", "mr_qual_pct_64", "mr_qual_bin3_64",
-        "mr_qual_gt25_64", "mr_qual_gt50_64", "mr_qual_gt66_64", "mr_qual_gt75_64", "mr_qual_gt85_64", "mr_qual_gt90_64",
-        "mr_qual_z_8", "mr_qual_pct_8", "mr_qual_bin3_8",
-        "mr_qual_gt25_8", "mr_qual_gt50_8", "mr_qual_gt66_8", "mr_qual_gt75_8", "mr_qual_gt85_8", "mr_qual_gt90_8",
-
         # New Multi-Horizon Aggregated Features
         "ret_mean", "ret_max", "ret_min",
         "rv_mean", "rv_max", "rv_min",

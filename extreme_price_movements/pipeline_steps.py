@@ -774,9 +774,8 @@ def _scan_feature_cache_light(
         elif present_n < required_n:
             partial_keys.add(k)
 
-    # If some symbols have missing files or incomplete time bounds, all present keys are partial.
-    if missing_symbols or uncovered_symbols:
-        partial_keys.update(set(expected_keys) - set(missing_keys))
+    # Removed: If some symbols have missing files or incomplete time bounds, all present keys are partial.
+    # This was causing redundant re-computation of ~1000 features when only a few were missing.
 
     available_key_count = sum(
         1 for k in expected_keys if key_symbol_counts.get(k, 0) > 0

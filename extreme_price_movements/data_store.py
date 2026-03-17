@@ -943,9 +943,7 @@ def save_features(
                 if df_sym.empty:
                     continue
 
-            df_sym['__symbol__'] = sym
-            df_sym.to_parquet(final_path, engine="pyarrow", compression="zstd", index=True)
-            _write_feature_metadata(final_path, sym, df_sym.index)
+            append_symbol_features(final_path, sym, df_sym)
 
             del df_sym
             del sym_data

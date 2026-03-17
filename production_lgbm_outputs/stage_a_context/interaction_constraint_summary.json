@@ -1,5 +1,6 @@
 {
-  "total_singletons": 46,
-  "total_constraints": 46,
-  "num_regime": 46
+  "total_singletons": 84,
+  "total_constraints": 0,
+  "mode": "training permissive / validation strict",
+  "num_location": 84
 }

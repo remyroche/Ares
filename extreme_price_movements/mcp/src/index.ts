@@ -158,7 +158,7 @@ function debug(...args: unknown[]) {
 }
 
 function stableStringify(value: unknown): string {
-  return JSON.stringify(value, null, 2);
+  return JSON.stringify(value);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -175,7 +175,7 @@ function fnv1a(input: string): string {
 }
 
 function buildSharedContextPrefix(input: Input): string {
-  return [
+  const lines = [
     "QUANT_ADVISOR_SHARED_CONTEXT_V1",
     "",
     "REQUEST",
@@ -183,34 +183,23 @@ function buildSharedContextPrefix(input: Input): string {
     "",
     "PROBLEM_STAGE",
     input.problem_stage,
-    "",
-    "MARKET",
-    input.context.market ?? "",
-    "",
-    "HORIZON",
-    input.context.horizon ?? "",
-    "",
-    "STRATEGY_SUMMARY",
-    input.context.strategy_summary ?? "",
-    "",
-    "DATA_SCHEMA",
-    input.context.data_schema ?? "",
-    "",
-    "RELEVANT_CODE",
-    input.context.relevant_code ?? "",
-    "",
-    "DIFF",
-    input.context.diff ?? "",
-    "",
-    "CHANGED_FILES",
-    stableStringify(input.context.changed_files ?? []),
-    "",
-    "CONSTRAINTS",
-    stableStringify(input.context.constraints ?? []),
-    "",
-    "EXTRA_CONTEXT",
-    input.context.extra_context ?? "",
-  ].join("\n");
+  ];
+
+  if (input.context.market) lines.push("", "MARKET", input.context.market);
+  if (input.context.horizon) lines.push("", "HORIZON", input.context.horizon);
+  if (input.context.strategy_summary) lines.push("", "STRATEGY_SUMMARY", input.context.strategy_summary);
+  if (input.context.data_schema) lines.push("", "DATA_SCHEMA", input.context.data_schema);
+  if (input.context.relevant_code) lines.push("", "RELEVANT_CODE", input.context.relevant_code);
+  if (input.context.diff) lines.push("", "DIFF", input.context.diff);
+  if (input.context.changed_files && input.context.changed_files.length > 0) {
+    lines.push("", "CHANGED_FILES", stableStringify(input.context.changed_files));
+  }
+  if (input.context.constraints && input.context.constraints.length > 0) {
+    lines.push("", "CONSTRAINTS", stableStringify(input.context.constraints));
+  }
+  if (input.context.extra_context) lines.push("", "EXTRA_CONTEXT", input.context.extra_context);
+
+  return lines.join("\n");
 }
 
 function buildPromptCacheKey(input: Input): string {
@@ -572,6 +561,19 @@ Allowed modes:
 `.trim();
 
 function buildClassifierPrompt(input: Input): string {
+  const lightContext: Record<string, unknown> = {
+    has_diff: Boolean(input.context.diff),
+    changed_files_count: input.context.changed_files?.length ?? 0,
+    has_relevant_code: Boolean(input.context.relevant_code),
+    has_data_schema: Boolean(input.context.data_schema),
+  };
+
+  if (input.context.market) lightContext.market = input.context.market;
+  if (input.context.horizon) lightContext.horizon = input.context.horizon;
+  if (input.context.constraints && input.context.constraints.length > 0) {
+    lightContext.constraints = input.context.constraints;
+  }
+
   return [
     "CLASSIFY_THIS_REQUEST",
     "",
@@ -582,15 +584,7 @@ function buildClassifierPrompt(input: Input): string {
     input.problem_stage,
     "",
     "LIGHT_CONTEXT",
-    stableStringify({
-      market: input.context.market,
-      horizon: input.context.horizon,
-      has_diff: Boolean(input.context.diff),
-      changed_files_count: input.context.changed_files?.length ?? 0,
-      has_relevant_code: Boolean(input.context.relevant_code),
-      has_data_schema: Boolean(input.context.data_schema),
-      constraints: input.context.constraints ?? [],
-    }),
+    stableStringify(lightContext),
   ].join("\n");
 }
 
@@ -865,6 +859,7 @@ function getRelevantAdvisors(input: Input, modes: AdvisoryMode[]): AdvisorDefini
 function buildAdvisorPrompt(
   input: Input,
   modes: AdvisoryMode[],
+  advisor: AdvisorDefinition,
   sharedPrefix: string
 ): string {
   return [
@@ -872,6 +867,9 @@ function buildAdvisorPrompt(
     "",
     "ADVISORY_MODES",
     stableStringify(modes),
+    "",
+    "ADVISOR_ROLE",
+    advisor.rolePrompt,
     "",
     "INSTRUCTIONS",
     "- Review only from your assigned lens.",
@@ -895,8 +893,8 @@ async function runAdvisor(
     const payload = await callJsonModel<AdvisorFindingPayload>({
       provider,
       model: provider.advisorModel,
-      system: advisor.rolePrompt,
-      user: buildAdvisorPrompt(input, modes, buildSharedContextPrefix(input)),
+      system: "You are a quant research routing and advisory assistant.",
+      user: buildAdvisorPrompt(input, modes, advisor, buildSharedContextPrefix(input)),
       timeoutMs: ENV.REQUEST_TIMEOUT_MS,
       signal,
       responseSchema: AdvisorFindingSchema,

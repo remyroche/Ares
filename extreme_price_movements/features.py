@@ -55,6 +55,16 @@ _INTRADAY_PERSISTED_KEY_SET = set(LOCATION_FILTER_COLUMNS) | set(
 )
 
 
+def _broadcast_series_to_frame(
+    series: pd.Series, index: pd.Index, columns: pd.Index
+) -> pd.DataFrame:
+    arr = np.ascontiguousarray(series.to_numpy(dtype=np.float32))
+    view = np.broadcast_to(arr[:, None], (len(index), len(columns)))
+    return pd.DataFrame(view, index=index, columns=columns, copy=False).astype(
+        np.float32, copy=False
+    )
+
+
 def _compute_intraday_library_features_wide(
     open_df: pd.DataFrame,
     high_df: pd.DataFrame,
@@ -98,17 +108,10 @@ def _compute_intraday_library_features_wide(
     for key in selected_keys:
         value = wide_lib.get(key)
         if isinstance(value, pd.DataFrame):
-            out[key] = value.astype(np.float32)
+            out[key] = value.astype(np.float32, copy=False)
         elif isinstance(value, pd.Series):
-            out[key] = pd.DataFrame(
-                np.repeat(
-                    value.to_numpy(dtype=np.float32)[:, None],
-                    len(open_df.columns),
-                    axis=1,
-                ),
-                index=open_df.index,
-                columns=open_df.columns,
-                dtype=np.float32,
+            out[key] = _broadcast_series_to_frame(
+                value, index=open_df.index, columns=open_df.columns
             )
     return out
 
@@ -228,9 +231,9 @@ def _transform_close_fixed_ffd(
     direct_used = 0
     total_cols = len(df_den.columns)
     groups: dict[float | None, list[str]] = {}
-    for col in df_den.columns:
-        ser = df_den[col]
-        valid_n = int(ser.notna().sum())
+    valid_counts = df_den.notna().sum(axis=0).to_numpy(dtype=np.int32, copy=False)
+    for col, valid_n in zip(df_den.columns, valid_counts):
+        valid_n = int(valid_n)
 
         d_use = None
         for cand in d_candidates:
@@ -430,10 +433,19 @@ def _transform_price(df, _label=""):
         _FFD_COL_CACHE_DIR, _sanitize_col_name(_label or "default")
     )
     os.makedirs(cache_dir, exist_ok=True)
+    manifest_path = os.path.join(cache_dir, "manifest.pkl")
+    try:
+        with open(manifest_path, "rb") as f:
+            manifest = pickle.load(f)
+        if not isinstance(manifest, dict):
+            manifest = {}
+    except Exception:
+        manifest = {}
 
     df_fd = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
     total_cols = len(df_den.columns)
     stats = {"cached": 0, "cached_d": 0, "computed": 0}
+    updated_manifest = {}
 
     for i, col in enumerate(df_den.columns):
         safe_col = _sanitize_col_name(col)
@@ -444,30 +456,24 @@ def _transform_price(df, _label=""):
         col_dir = os.path.join(cache_dir, safe_col)
         os.makedirs(col_dir, exist_ok=True)
         result_path = os.path.join(col_dir, f"ffd_{data_hash}.npy")
-        d_opt_path = os.path.join(col_dir, "d_opt.pkl")
+        col_manifest = manifest.get(col, {})
 
         # --- Level 1: exact raw-data match -> instant load ---
-        if os.path.exists(result_path):
+        if col_manifest.get("data_hash") == data_hash and os.path.exists(result_path):
             try:
                 cached_vals = np.load(result_path, allow_pickle=False)
                 if len(cached_vals) == len(df_fd):
                     df_fd[col] = cached_vals
+                    updated_manifest[col] = col_manifest
                     stats["cached"] += 1
                     continue
             except Exception:
                 pass
 
         # --- Level 2: reuse cached d_opt (skip expensive ADF search) ---
-        d_opt = None
-        if os.path.exists(d_opt_path):
-            try:
-                with open(d_opt_path, "rb") as f:
-                    d_info = pickle.load(f)
-                d_opt = d_info.get("d_opt")
-                if d_opt is not None:
-                    stats["cached_d"] += 1
-            except Exception:
-                d_opt = None
+        d_opt = col_manifest.get("d_opt")
+        if d_opt is not None:
+            stats["cached_d"] += 1
 
         # --- Full compute: find optimal d ---
         if d_opt is None:
@@ -484,19 +490,24 @@ def _transform_price(df, _label=""):
 
         # Persist caches
         try:
-            # Clean stale result files for this column
-            for fname in os.listdir(col_dir):
-                if (
-                    fname.startswith("ffd_")
-                    and fname.endswith(".npy")
-                    and fname != os.path.basename(result_path)
-                ):
-                    os.remove(os.path.join(col_dir, fname))
+            prev_hash = col_manifest.get("data_hash")
+            if prev_hash and prev_hash != data_hash:
+                stale_path = os.path.join(col_dir, f"ffd_{prev_hash}.npy")
+                if os.path.exists(stale_path):
+                    os.remove(stale_path)
             np.save(result_path, result.values.astype(np.float32))
-            with open(d_opt_path, "wb") as f:
-                pickle.dump({"d_opt": d_opt, "n_rows": len(df)}, f)
+            updated_manifest[col] = {
+                "d_opt": d_opt,
+                "n_rows": len(df),
+                "data_hash": data_hash,
+            }
         except Exception as e:
             tprint(f"Warning: FFD cache write failed for {col}: {e}")
+            updated_manifest[col] = {
+                "d_opt": d_opt,
+                "n_rows": len(df),
+                "data_hash": data_hash,
+            }
 
         if (i + 1) % 5 == 0 or (i + 1) == total_cols:
             tprint(f"Adaptive FFD ({_label}): {i+1}/{total_cols} - {col}")
@@ -509,6 +520,11 @@ def _transform_price(df, _label=""):
     tprint(
         f"Adaptive FFD ({_label}): d range [{df_fd.min().min():.3f}, {df_fd.max().max():.3f}]"
     )
+    try:
+        with open(manifest_path, "wb") as f:
+            pickle.dump(updated_manifest, f)
+    except Exception as e:
+        tprint(f"Warning: FFD manifest write failed for {_label}: {e}")
     return df_fd
 
 
@@ -706,57 +722,24 @@ def add_interactions(
 
 def _robust_obs_var_per_col(df: pd.DataFrame) -> np.ndarray:
     """Robust baseline observation variance estimate per column from first differences."""
-    d = df.diff().to_numpy(dtype=np.float64)
-    med = np.nanmedian(d, axis=0)
-    mad = np.nanmedian(np.abs(d - med), axis=0)
-    sigma = (1.4826 * mad) / np.sqrt(2.0)
-    var = np.square(np.clip(sigma, 1e-6, None))
-    var[~np.isfinite(var)] = 1.0
-    return var.astype(np.float64)
+    arr = np.ascontiguousarray(df.to_numpy(dtype=np.float64))
+    return _robust_obs_var_per_col_nb(arr)
 
 
 def _kalman_local_level_df(
     y_df: pd.DataFrame, lambda_qr: float, r_base: np.ndarray | None = None
 ):
     """Local-level Kalman filter: y_t = x_t + eps_t, x_t = x_{t-1} + eta_t."""
-    y = y_df.to_numpy(dtype=np.float64)
-    t_len, n_cols = y.shape
+    y = np.ascontiguousarray(y_df.to_numpy(dtype=np.float64))
     r = (
         _robust_obs_var_per_col(y_df)
         if r_base is None
         else np.asarray(r_base, dtype=np.float64)
     )
     r = np.clip(r, 1e-8, None)
-    q = np.clip(lambda_qr, 1e-8, None) * r
-
-    x = np.full_like(y, np.nan, dtype=np.float64)
-    innov_var = np.full_like(y, np.nan, dtype=np.float64)
-    p_state = np.full_like(y, np.nan, dtype=np.float64)
-
-    # initialize from first finite observation or zero fallback
-    first_obs = np.where(np.isfinite(y[0]), y[0], 0.0)
-    x_prev = first_obs.copy()
-    p_prev = r.copy()
-
-    for t in range(t_len):
-        y_t = y[t]
-        x_pred = x_prev
-        p_pred = p_prev + q
-
-        s_t = p_pred + r
-        k_t = p_pred / np.clip(s_t, 1e-12, None)
-        innov_t = y_t - x_pred
-
-        valid = np.isfinite(y_t)
-        x_new = np.where(valid, x_pred + k_t * innov_t, x_pred)
-        p_new = np.where(valid, (1.0 - k_t) * p_pred, p_pred)
-
-        x[t] = x_new
-        innov_var[t] = s_t
-        p_state[t] = p_new
-
-        x_prev = x_new
-        p_prev = p_new
+    x, innov_var, p_state = _kalman_local_level_nb(
+        y, np.clip(lambda_qr, 1e-8, None) * r, r
+    )
 
     return (
         pd.DataFrame(x, index=y_df.index, columns=y_df.columns).astype(np.float32),
@@ -772,35 +755,18 @@ def _kalman_local_level_df(
 
 def _decile_monotonicity_score(signal_df: pd.DataFrame, ret_df: pd.DataFrame) -> float:
     """Cross-sectional decile monotonicity score using mean return per decile."""
-    s = signal_df.to_numpy(dtype=np.float64)
-    r = ret_df.to_numpy(dtype=np.float64)
-    sums = np.zeros(10, dtype=np.float64)
-    counts = np.zeros(10, dtype=np.float64)
+    s = np.ascontiguousarray(signal_df.to_numpy(dtype=np.float64))
+    r = np.ascontiguousarray(ret_df.to_numpy(dtype=np.float64))
+    return float(_decile_monotonicity_score_nb(s, r))
 
-    for t in range(s.shape[0]):
-        s_t = s[t]
-        r_t = r[t]
-        valid = np.isfinite(s_t) & np.isfinite(r_t)
-        if valid.sum() < 20:
-            continue
-        s_v = s_t[valid]
-        r_v = r_t[valid]
-        q = np.nanpercentile(s_v, [10, 20, 30, 40, 50, 60, 70, 80, 90])
-        dec = np.searchsorted(q, s_v, side="right")
-        for d in range(10):
-            m = dec == d
-            if m.any():
-                sums[d] += r_v[m].sum()
-                counts[d] += m.sum()
 
-    means = sums / np.clip(counts, 1.0, None)
-    if np.all(~np.isfinite(means)):
-        return 0.0
-    x = np.arange(10, dtype=np.float64)
-    if np.nanstd(means) < 1e-12:
-        return 0.0
-    corr = np.corrcoef(x, np.nan_to_num(means, nan=np.nanmean(means)))[0, 1]
-    return float(np.nan_to_num(corr, nan=0.0))
+def _rolling_autocorr_df(df: pd.DataFrame, window: int) -> pd.DataFrame:
+    """Fast rolling lag-1 autocorrelation using the shared Numba correlation kernel."""
+    return (
+        ff.numba_rolling_corr(df, df.shift(1), int(window))
+        .fillna(0.0)
+        .astype(np.float32)
+    )
 
 
 def _turnover_penalty(signal_df: pd.DataFrame) -> float:
@@ -958,6 +924,17 @@ def _compute_hvn_col(col, o_col, h_col, l_col, c_col, v_col):
     return col, hvn_lvn_features_ohlcv(df_col)
 
 
+def _compute_hvn_batch(
+    compute_col_fn, cols, o_batch, h_batch, l_batch, c_batch, v_batch
+):
+    return [
+        compute_col_fn(
+            col, o_batch[col], h_batch[col], l_batch[col], c_batch[col], v_batch[col]
+        )
+        for col in cols
+    ]
+
+
 def _compute_hvn_feature_frames(
     o: pd.DataFrame,
     h: pd.DataFrame,
@@ -991,29 +968,35 @@ def _compute_hvn_feature_frames(
         can_use_process_pool = False
 
     completed = 0
+    batch_size = max(1, min(16, total_cols // max(max_workers, 1) or 1))
+    col_batches = [
+        list(c_log.columns[i : i + batch_size])
+        for i in range(0, total_cols, batch_size)
+    ]
     if can_use_process_pool and total_cols > 1:
         try:
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
-                for col in c_log.columns:
+                for cols in col_batches:
                     futures.append(
                         executor.submit(
+                            _compute_hvn_batch,
                             compute_col_fn,
-                            col,
-                            o[col],
-                            h[col],
-                            l[col],
-                            c_log[col],
-                            v[col],
+                            cols,
+                            o[cols],
+                            h[cols],
+                            l[cols],
+                            c_log[cols],
+                            v[cols],
                         )
                     )
 
                 for future in as_completed(futures):
-                    col, res_df = future.result()
-                    _assign_hvn_result(col, res_df)
-                    completed += 1
-                    if completed % 50 == 0:
-                        tprint(f"HVN/LVN: {completed}/{total_cols}")
+                    for col, res_df in future.result():
+                        _assign_hvn_result(col, res_df)
+                        completed += 1
+                        if completed % 50 == 0:
+                            tprint(f"HVN/LVN: {completed}/{total_cols}")
         except (OSError, PermissionError) as e:
             tprint(
                 f"HVN/LVN: process pool unavailable ({e}); falling back to single-process."
@@ -1023,12 +1006,14 @@ def _compute_hvn_feature_frames(
     if not can_use_process_pool or total_cols <= 1:
         if total_cols > 1:
             tprint("HVN/LVN: using single-process fallback.")
-        for col in c_log.columns:
-            _, res_df = compute_col_fn(col, o[col], h[col], l[col], c_log[col], v[col])
-            _assign_hvn_result(col, res_df)
-            completed += 1
-            if completed % 50 == 0:
-                tprint(f"HVN/LVN: {completed}/{total_cols}")
+        for cols in col_batches:
+            for col, res_df in _compute_hvn_batch(
+                compute_col_fn, cols, o[cols], h[cols], l[cols], c_log[cols], v[cols]
+            ):
+                _assign_hvn_result(col, res_df)
+                completed += 1
+                if completed % 50 == 0:
+                    tprint(f"HVN/LVN: {completed}/{total_cols}")
 
     return hvn_results
 
@@ -4327,11 +4312,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("distance_to_vwap", "dist_vwap_atr"):
-            vwap_24 = pd.DataFrame(
-                index=c_raw.index, columns=c_raw.columns, dtype=np.float32
+            vwap_24 = ff.numba_rolling_vwap(c_raw, v_raw, 24).astype(
+                np.float32, copy=False
             )
-            for col in c_raw.columns:
-                vwap_24[col] = vwap_nb(c_raw[col].values, v_raw[col].values, 24)
             feats["distance_to_vwap"] = (
                 ((c_raw - vwap_24) / (vwap_24 + 1e-9)).fillna(0.0).astype(np.float32)
             )
@@ -4426,11 +4409,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             ).astype(np.float32)
 
         if _needs_feature("dist_weekly_vwap"):
-            vwap_168 = pd.DataFrame(
-                index=c_raw.index, columns=c_raw.columns, dtype=np.float32
+            vwap_168 = ff.numba_rolling_vwap(c_raw, v_raw, 168).astype(
+                np.float32, copy=False
             )
-            for col in c_raw.columns:
-                vwap_168[col] = vwap_nb(c_raw[col].values, v_raw[col].values, 168)
             feats["dist_weekly_vwap"] = (
                 ((c_raw - vwap_168) / (vwap_168 + 1e-9)).fillna(0.0).astype(np.float32)
             )
@@ -4471,16 +4452,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         if _needs_feature("bars_since_trend_flip"):
             trend_slope = ff.apply_to_frame(c_log, ff.slope_nb, 6)
             trend_sign = (trend_slope > 0).astype(np.float32)
-            bars_since_flip = pd.DataFrame(
-                index=trend_sign.index, columns=trend_sign.columns, dtype=np.float32
-            )
-            for col in trend_sign.columns:
-                sign = trend_sign[col].values
-                count = np.zeros_like(sign, dtype=np.float32)
-                for i in range(1, len(sign)):
-                    count[i] = count[i - 1] + 1 if sign[i] == sign[i - 1] else 0
-                bars_since_flip[col] = count
-            feats["bars_since_trend_flip"] = bars_since_flip.astype(np.float32)
+            feats["bars_since_trend_flip"] = ff.apply_to_frame(
+                trend_sign, bars_since_flip_nb
+            ).astype(np.float32)
 
         if _needs_feature("MACD_histogram"):
             ema_12 = ff.apply_to_frame(c_log, ff.ema_nb, 12)
@@ -4536,23 +4510,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("volume_trend_48"):
-            feats["volume_trend_48"] = v_raw.apply(
-                lambda x: pd.Series(slope_nb(x.values, 48), index=x.index), axis=0
-            ).astype(np.float32)
+            feats["volume_trend_48"] = ff.apply_to_frame(v_raw, slope_nb, 48).astype(
+                np.float32
+            )
 
         if _needs_feature("volume_autocorr_48"):
-
-            def rolling_autocorr(series: pd.Series, window: int) -> pd.Series:
-                return series.rolling(window, min_periods=max(2, window // 2)).apply(
-                    lambda x: pd.Series(x).autocorr(lag=1) if len(x) > 2 else np.nan,
-                    raw=True,
-                )
-
-            feats["volume_autocorr_48"] = (
-                v_raw.apply(lambda col: rolling_autocorr(col, 48), axis=0)
-                .fillna(0.0)
-                .astype(np.float32)
-            )
+            feats["volume_autocorr_48"] = _rolling_autocorr_df(v_raw, 48)
 
         if _needs_feature("volatility_of_volatility_48"):
             roll_std_4h = ff.apply_to_frame(c_raw, rolling_std_nb, 4)
@@ -4572,18 +4535,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("volatility_autocorr_48"):
-
-            def rolling_autocorr(series: pd.Series, window: int) -> pd.Series:
-                return series.rolling(window, min_periods=max(2, window // 2)).apply(
-                    lambda x: pd.Series(x).autocorr(lag=1) if len(x) > 2 else np.nan,
-                    raw=True,
-                )
-
-            feats["volatility_autocorr_48"] = (
-                atr_base.apply(lambda col: rolling_autocorr(col, 48), axis=0)
-                .fillna(0.0)
-                .astype(np.float32)
-            )
+            feats["volatility_autocorr_48"] = _rolling_autocorr_df(atr_base, 48)
 
         if _needs_feature("dist_local_swing"):
             dist_to_high = (high_12 - c_raw).abs()
@@ -4748,6 +4700,231 @@ def rolling_mean_nb(x: np.ndarray, window: int) -> np.ndarray:
         if count > 0:
             out[i] = run_sum / count
     return out
+
+
+@njit(cache=True)
+def bars_since_flip_nb(sign: np.ndarray) -> np.ndarray:
+    out = np.zeros_like(sign, dtype=np.float32)
+    n = len(sign)
+    if n == 0:
+        return out
+
+    prev = sign[0]
+    for i in range(1, n):
+        cur = sign[i]
+        if np.isnan(cur) or np.isnan(prev) or cur != prev:
+            out[i] = 0.0
+        else:
+            out[i] = out[i - 1] + 1.0
+        prev = cur
+    return out
+
+
+@njit(cache=True)
+def _median_inplace_nb(values: np.ndarray, length: int) -> float:
+    if length <= 0:
+        return np.nan
+    tmp = np.empty(length, dtype=np.float64)
+    for i in range(length):
+        tmp[i] = values[i]
+    tmp.sort()
+    mid = length // 2
+    if length % 2 == 1:
+        return tmp[mid]
+    return 0.5 * (tmp[mid - 1] + tmp[mid])
+
+
+@njit(cache=True)
+def _robust_obs_var_per_col_nb(arr: np.ndarray) -> np.ndarray:
+    n_rows, n_cols = arr.shape
+    out = np.ones(n_cols, dtype=np.float64)
+    if n_rows <= 1:
+        return out
+
+    diffs = np.empty(max(n_rows - 1, 1), dtype=np.float64)
+    abs_devs = np.empty(max(n_rows - 1, 1), dtype=np.float64)
+
+    for j in range(n_cols):
+        count = 0
+        prev = arr[0, j]
+        for i in range(1, n_rows):
+            cur = arr[i, j]
+            if np.isfinite(cur) and np.isfinite(prev):
+                diffs[count] = cur - prev
+                count += 1
+            prev = cur
+
+        if count == 0:
+            out[j] = 1.0
+            continue
+
+        med = _median_inplace_nb(diffs, count)
+        abs_count = 0
+        for i in range(count):
+            val = diffs[i]
+            if np.isfinite(val):
+                abs_devs[abs_count] = abs(val - med)
+                abs_count += 1
+
+        mad = _median_inplace_nb(abs_devs, abs_count)
+        sigma = (1.4826 * mad) / np.sqrt(2.0)
+        var = max(sigma, 1e-6) ** 2
+        out[j] = var if np.isfinite(var) else 1.0
+
+    return out
+
+
+@njit(cache=True)
+def _kalman_local_level_nb(
+    y: np.ndarray, q: np.ndarray, r: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    t_len, n_cols = y.shape
+    x = np.full((t_len, n_cols), np.nan, dtype=np.float64)
+    innov_var = np.full((t_len, n_cols), np.nan, dtype=np.float64)
+    p_state = np.full((t_len, n_cols), np.nan, dtype=np.float64)
+
+    x_prev = np.zeros(n_cols, dtype=np.float64)
+    p_prev = np.empty(n_cols, dtype=np.float64)
+    for j in range(n_cols):
+        first = y[0, j]
+        x_prev[j] = first if np.isfinite(first) else 0.0
+        p_prev[j] = r[j]
+
+    for t in range(t_len):
+        for j in range(n_cols):
+            p_pred = p_prev[j] + q[j]
+            s_t = p_pred + r[j]
+            innov_var[t, j] = s_t
+            y_t = y[t, j]
+            if np.isfinite(y_t):
+                k_t = p_pred / max(s_t, 1e-12)
+                x_new = x_prev[j] + k_t * (y_t - x_prev[j])
+                p_new = (1.0 - k_t) * p_pred
+            else:
+                x_new = x_prev[j]
+                p_new = p_pred
+            x[t, j] = x_new
+            p_state[t, j] = p_new
+            x_prev[j] = x_new
+            p_prev[j] = p_new
+
+    return x, innov_var, p_state
+
+
+@njit(cache=True)
+def _corrcoef_1d_nb(x: np.ndarray, y: np.ndarray) -> float:
+    n = len(x)
+    mean_x = 0.0
+    mean_y = 0.0
+    for i in range(n):
+        mean_x += x[i]
+        mean_y += y[i]
+    mean_x /= max(n, 1)
+    mean_y /= max(n, 1)
+
+    cov = 0.0
+    var_x = 0.0
+    var_y = 0.0
+    for i in range(n):
+        dx = x[i] - mean_x
+        dy = y[i] - mean_y
+        cov += dx * dy
+        var_x += dx * dx
+        var_y += dy * dy
+    if var_x <= 1e-12 or var_y <= 1e-12:
+        return 0.0
+    return cov / np.sqrt(var_x * var_y)
+
+
+@njit(cache=True)
+def _decile_monotonicity_score_nb(signal: np.ndarray, ret: np.ndarray) -> float:
+    n_rows, n_cols = signal.shape
+    sums = np.zeros(10, dtype=np.float64)
+    counts = np.zeros(10, dtype=np.float64)
+    valid_s = np.empty(n_cols, dtype=np.float64)
+    valid_r = np.empty(n_cols, dtype=np.float64)
+
+    for t in range(n_rows):
+        n_valid = 0
+        for j in range(n_cols):
+            s = signal[t, j]
+            r = ret[t, j]
+            if np.isfinite(s) and np.isfinite(r):
+                valid_s[n_valid] = s
+                valid_r[n_valid] = r
+                n_valid += 1
+
+        if n_valid < 20:
+            continue
+
+        order = np.argsort(valid_s[:n_valid])
+        for rank in range(n_valid):
+            idx = order[rank]
+            bucket = min((10 * rank) // n_valid, 9)
+            sums[bucket] += valid_r[idx]
+            counts[bucket] += 1.0
+
+    means = np.empty(10, dtype=np.float64)
+    valid_mean_count = 0
+    mean_sum = 0.0
+    for i in range(10):
+        if counts[i] > 0:
+            means[i] = sums[i] / counts[i]
+            mean_sum += means[i]
+            valid_mean_count += 1
+        else:
+            means[i] = np.nan
+
+    if valid_mean_count == 0:
+        return 0.0
+
+    fill = mean_sum / valid_mean_count
+    for i in range(10):
+        if not np.isfinite(means[i]):
+            means[i] = fill
+
+    mean_level = 0.0
+    for i in range(10):
+        mean_level += means[i]
+    mean_level /= 10.0
+
+    var = 0.0
+    for i in range(10):
+        diff = means[i] - mean_level
+        var += diff * diff
+    if var <= 1e-12:
+        return 0.0
+
+    x = np.arange(10, dtype=np.float64)
+    return _corrcoef_1d_nb(x, means)
+
+
+@njit(cache=True)
+def _rowwise_median_mad_nb(mat: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    n_rows, n_cols = mat.shape
+    med = np.full(n_rows, np.nan, dtype=np.float64)
+    mad = np.full(n_rows, np.nan, dtype=np.float64)
+    row_vals = np.empty(n_cols, dtype=np.float64)
+    abs_vals = np.empty(n_cols, dtype=np.float64)
+
+    for i in range(n_rows):
+        count = 0
+        for j in range(n_cols):
+            val = mat[i, j]
+            if np.isfinite(val):
+                row_vals[count] = val
+                count += 1
+        if count == 0:
+            continue
+
+        row_med = _median_inplace_nb(row_vals, count)
+        med[i] = row_med
+
+        for j in range(count):
+            abs_vals[j] = abs(row_vals[j] - row_med)
+        mad[i] = _median_inplace_nb(abs_vals, count)
+
+    return med, mad
 
 
 @njit(cache=True)
@@ -5652,8 +5829,10 @@ def add_cross_sectional_peer_context_features(
             added_feats[f"cs_rank_{candidate}"] = cs_rank
 
             # 2) Compute Cross-Sectional Robust Z-score (cs_rz)
-            med = df.median(axis=1)
-            mad = (df.sub(med, axis=0)).abs().median(axis=1)
+            df_mat = np.ascontiguousarray(df.to_numpy(dtype=np.float64))
+            med_arr, mad_arr = _rowwise_median_mad_nb(df_mat)
+            med = pd.Series(med_arr, index=df.index, dtype=np.float32)
+            mad = pd.Series(mad_arr, index=df.index, dtype=np.float32)
 
             # MAD * 1.4826 for normal std proxy, bound by eps
             eps = 1e-6

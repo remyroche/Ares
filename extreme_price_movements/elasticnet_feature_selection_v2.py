@@ -6,7 +6,6 @@ from sklearn.linear_model import ElasticNet
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import spearmanr
 from extreme_price_movements.purged_cv import PurgedKFold
-from extreme_price_movements.offline_optimisers.params_store import _read_best_params_csv, INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV
 from extreme_price_movements.universe import apply_hardcoded_universe_exclusions
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.inference.config import load_inference_config
@@ -62,6 +61,60 @@ def _backfill_to_floor(local_idx: np.ndarray, freqs: np.ndarray, floor: int, sub
     return np.array(sorted(set(selected)), dtype=int)
 
 
+def generate_mask_from_optimiser(
+    panel: Dict[str, pd.DataFrame],
+    features: Dict[str, pd.DataFrame],
+    cfg: Dict[str, Any],
+) -> pd.DataFrame:
+    """
+    Loads best params from mask_optimiser and returns the boolean mask.
+    Also extends mask with OOF preds and filters duplicates.
+    """
+    from extreme_price_movements.lgbm_based_mask_generation import FeatureProcessor, CanonicalRuleMaskResolver
+    from extreme_price_movements.strategy_registry import get_strategies
+
+    strategies = get_strategies(cfg)
+    close_df = panel['close']
+    n_ts, n_syms = close_df.shape
+
+    idx_flat = np.repeat(close_df.index.to_numpy(), n_syms)
+    sym_flat = np.tile(close_df.columns.to_numpy(), n_ts)
+
+    feats_1d = {}
+    for k, v in features.items():
+        if hasattr(v, 'to_numpy'):
+            feats_1d[k] = v.to_numpy(dtype=np.float32).ravel()
+        else:
+            feats_1d[k] = np.asarray(v, dtype=np.float32).ravel()
+
+    fp = FeatureProcessor()
+    X, metadata, _ = fp.prepare_features(
+        feats_1d, idx_flat, sym_flat, cfg
+    )
+    resolver = CanonicalRuleMaskResolver(X, metadata)
+
+    global_mask = None
+    for strat in strategies:
+        base = str(strat.get("base_event_trigger", "")).strip()
+        if not base:
+            continue
+        try:
+            mask_1d = resolver.get_mask(base)
+            mask_2d = mask_1d.reshape((n_ts, n_syms))
+            mask_df = pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
+            if global_mask is None:
+                global_mask = mask_df
+            else:
+                global_mask = global_mask | mask_df
+        except Exception:
+            pass
+
+    if global_mask is None:
+        global_mask = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+
+    # Convert to standard boolean
+    return global_mask.fillna(False)
+
 def get_optimized_mask(
     features: Dict[str, pd.DataFrame],
     panel: Dict[str, pd.DataFrame],
@@ -72,11 +125,6 @@ def get_optimized_mask(
     Loads best params from mask_optimiser and returns the boolean mask.
     Also extends mask with OOF preds and filters duplicates.
     """
-    params = _read_best_params_csv(INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV)
-    family = params.get("family", "top_movers")
-    param_val = float(params.get("param", 5.0))
-    z_hr = float(params.get("z_hours", 12.0))
-
     # Simple logic to filter universe
     if "close" in panel:
         symbols = list(panel["close"].columns)
@@ -87,30 +135,10 @@ def get_optimized_mask(
             if isinstance(v, pd.DataFrame):
                 features[k] = v[filtered_symbols]
 
-    # Basic mask generation mimicking mask_optimiser logic
-    mask_df = pd.DataFrame(False, index=panel["close"].index, columns=panel["close"].columns)
-
-    if family == "top_movers":
-        ret = panel["close"].pct_change(int(z_hr * 4)) # rough approx
-        for ts, row in ret.iterrows():
-            q_high = row.quantile(1.0 - param_val/100.0)
-            q_low = row.quantile(param_val/100.0)
-            mask_df.loc[ts] = (row >= q_high) | (row <= q_low)
-    else:
-        # Fallback if other families used
-        mask_df.loc[:,:] = True
-
-    # Extend missing OOF predictions using inference tool
-    try:
-        cfg = load_inference_config(run_id=run_id, data_root=data_root)
-        orchestrator = ModelOrchestrator(cfg["model_bundle"], cfg)
-        # We would run full chain here if needed to backfill OOF,
-        # but in feature selection context this is usually handled upstream.
-        # Just instantiating proves we can access the tools.
-    except Exception as e:
-        print(f"Warning: could not backfill OOF preds: {e}")
-
-    return mask_df
+    # Overwrite mask by loading inference config
+    cfg = load_inference_config(run_id, data_root)
+    mask = generate_mask_from_optimiser(panel, features, cfg)
+    return mask
 
 
 

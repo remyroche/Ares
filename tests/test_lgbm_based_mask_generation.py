@@ -410,16 +410,15 @@ def test_feature_processor_adds_dense_regime_quantiles_and_median_band():
         active_groups=("regime",),
     )
     names = [m.feature_name for m in metadata]
-    assert f"reg_{src}_hybrid_top20" in names
-    assert f"reg_{src}_hybrid_bot20" in names
-    assert f"reg_{src}_hybrid_top40" in names
-    assert f"reg_{src}_hybrid_bot40" in names
-    assert f"reg_{src}_hybrid_top60" in names
-    assert f"reg_{src}_hybrid_bot60" in names
-    assert f"reg_{src}_hybrid_top80" in names
-    assert f"reg_{src}_hybrid_bot80" in names
-    assert f"reg_{src}_hybrid_band30_70" in names
-    assert x.shape[1] == 9
+    assert f"reg_{src}_ts_top20" in names
+    assert f"reg_{src}_ts_bot20" in names
+    assert f"reg_{src}_ts_top40" in names
+    assert f"reg_{src}_ts_bot40" in names
+    assert f"reg_{src}_ts_band30_70" in names
+    assert f"reg_{src}_ts_bot60" in names
+    assert f"reg_{src}_ts_top80" in names
+    assert f"reg_{src}_ts_bot80" in names
+    assert x.shape[1] == 15
 
 def test_evaluate_ridge_pair_composite_accepted():
     from extreme_price_movements.lgbm_based_mask_generation import RuleConsolidator, DictionaryMaskResolver

@@ -5698,16 +5698,22 @@ def filter_complete_feature_rows(
     fwd_ret_norm: np.ndarray,
 ) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray, np.ndarray, Dict[str, Any]]:
     """
-    Retain only rows where every loaded feature is finite.
+    Retain only symbol-timestamp rows where every extracted feature value is finite.
+
+    Each entry in ``feature_dict`` is expected to already be reduced to the selected
+    event rows via ``feat_values[time_idx, compact_sym_idx]``. Missing values for
+    other symbols elsewhere in the universe must not affect a retained row for the
+    current symbol/timestamp.
     """
     n_rows = len(data)
     if n_rows == 0 or not feature_dict:
-        return data, feature_dict, fwd_ret, {
+        return data, feature_dict, fwd_ret, fwd_ret_norm, {
             "rows_before": int(n_rows),
             "rows_after": int(n_rows),
             "dropped_rows": 0,
             "drop_fraction": 0.0,
             "worst_features": [],
+            "worst_symbols": [],
         }
 
     keep_mask = np.ones(n_rows, dtype=bool)
@@ -5729,12 +5735,21 @@ def filter_complete_feature_rows(
     filtered_fwd_ret_norm = np.asarray(fwd_ret_norm)[keep_mask]
     missing_counts.sort(key=lambda item: item[1], reverse=True)
     dropped_rows = int((~keep_mask).sum())
+    symbol_drop_counts: List[Tuple[str, int]] = []
+    if "symbol" in data.columns:
+        dropped_by_symbol = (
+            data.loc[~keep_mask, "symbol"].astype(str).value_counts().sort_values(ascending=False)
+        )
+        symbol_drop_counts = [
+            (str(symbol), int(count)) for symbol, count in dropped_by_symbol.head(10).items()
+        ]
     meta = {
         "rows_before": int(n_rows),
         "rows_after": int(len(filtered_data)),
         "dropped_rows": dropped_rows,
         "drop_fraction": float(dropped_rows / max(n_rows, 1)),
         "worst_features": missing_counts[:10],
+        "worst_symbols": symbol_drop_counts,
     }
     return filtered_data, filtered_features, filtered_fwd_ret, filtered_fwd_ret_norm, meta
 
@@ -6244,6 +6259,8 @@ if __name__ == "__main__":
     feat_final: Dict[str, np.ndarray] = {}
     feature_items = list(feat_dict_raw.items())
     feature_log_every = max(1, len(feature_items) // 10)
+    alignment_issue_samples: List[str] = []
+    alignment_issue_count = 0
     for feat_idx, (k, df_feat) in enumerate(feature_items, start=1):
         if isinstance(df_feat, pd.DataFrame):
             feat_df = df_feat
@@ -6256,6 +6273,18 @@ if __name__ == "__main__":
                  if len(overlap) == 0:
                      tprint(f"Panel Index Sample: {common_idx_naive[:2].tolist()}")
                      tprint(f"Feat Index Sample: {feat_df.index[:2].tolist()}")
+
+            missing_ts = common_idx_naive.difference(feat_df.index)
+            missing_syms = kept_syms.difference(feat_df.columns)
+            if len(missing_ts) > 0 or len(missing_syms) > 0:
+                alignment_issue_count += 1
+                if len(alignment_issue_samples) < 10:
+                    ts_sample = [str(ts) for ts in missing_ts[:3].tolist()]
+                    sym_sample = [str(sym) for sym in missing_syms[:3].tolist()]
+                    alignment_issue_samples.append(
+                        f"{k}: missing_ts={len(missing_ts)} sample_ts={ts_sample} "
+                        f"missing_syms={len(missing_syms)} sample_syms={sym_sample}"
+                    )
 
             feat_df_aligned = feat_df.reindex(index=common_idx_naive, columns=kept_syms)
             feat_values = feat_df_aligned.to_numpy(dtype=np.float32)
@@ -6270,6 +6299,13 @@ if __name__ == "__main__":
         f"Feature extraction complete: {len(feat_final)} feature arrays "
         f"in {time.perf_counter() - feature_align_start:.1f}s"
     )
+    if alignment_issue_count > 0:
+        tprint(
+            f"Feature alignment issues detected for {alignment_issue_count} features during "
+            "timestamp/symbol reindexing."
+        )
+        for sample in alignment_issue_samples:
+            tprint(f"Alignment issue sample: {sample}")
 
     data_final, feat_final, fwd_ret_final, fwd_ret_norm_final, completeness_meta = filter_complete_feature_rows(
         data_final,
@@ -6290,6 +6326,14 @@ if __name__ == "__main__":
             + ", ".join(
                 f"{name}={count}"
                 for name, count in completeness_meta["worst_features"][:5]
+            )
+        )
+    if completeness_meta["worst_symbols"]:
+        tprint(
+            "Top symbols with dropped rows: "
+            + ", ".join(
+                f"{symbol}={count}"
+                for symbol, count in completeness_meta["worst_symbols"][:5]
             )
         )
 

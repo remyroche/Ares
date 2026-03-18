@@ -115,15 +115,14 @@ def _numba_rolling_median(x, window):
     if n < window:
         return output
 
+    buf = np.empty(window, dtype=np.float32)
+
     # Fixed off-by-one: range should be (window-1, n) to output at [window-1:]
     for i in range(window - 1, n):
-        # Slice: ending at i+1 (exclusive) -> window size
-        chunk = x[i - window + 1 : i + 1]
+        for k in range(window):
+            buf[k] = x[i - window + 1 + k]
 
-        # Median
-        med = np.median(chunk)
-
-        output[i] = med
+        output[i] = np.median(buf)
 
     return output
 
@@ -599,21 +598,20 @@ def _numba_rolling_mad(x, window):
     if n < window:
         return output
 
+    buf = np.empty(window, dtype=np.float32)
+    devs = np.empty(window, dtype=np.float32)
+
     # Fixed off-by-one: range should be (window-1, n) to output at [window-1:]
     for i in range(window - 1, n):
-        # Slice: ending at i+1 (exclusive) -> window size
-        chunk = x[i - window + 1 : i + 1]
+        for k in range(window):
+            buf[k] = x[i - window + 1 + k]
 
-        # 1. Median
-        med = np.median(chunk)
+        med = np.median(buf)
 
-        # 2. Abs Deviations
-        devs = np.abs(chunk - med)
+        for k in range(window):
+            devs[k] = abs(x[i - window + 1 + k] - med)
 
-        # 3. MAD = median of deviations
-        mad = np.median(devs)
-
-        output[i] = mad
+        output[i] = np.median(devs)
 
     return output
 
@@ -653,6 +651,12 @@ def _numba_rolling_bars_since_extreme_parallel(mat, window, mode):
     out = np.empty((n_rows, n_cols), dtype=np.float32)
 
     for j in prange(n_cols):
+        # deque implementation using pre-allocated array and head/tail pointers
+        # Elements are indices.
+        dq = np.empty(window + 1, dtype=np.int32)
+        head = 0
+        tail = 0
+
         for i in range(n_rows):
             start_idx = max(0, i - window + 1)
             length = i - start_idx + 1
@@ -661,23 +665,35 @@ def _numba_rolling_bars_since_extreme_parallel(mat, window, mode):
                 out[i, j] = np.nan
                 continue
 
-            # Need to find argmax or argmin
-            best_idx = 0
-            best_val = mat[start_idx, j]
+            # Pop old elements outside window
+            while head != tail and dq[head % (window + 1)] < start_idx:
+                head += 1
 
-            for k in range(1, length):
-                val = mat[start_idx + k, j]
-                if mode == 1: # max
-                    if val > best_val or np.isnan(best_val):
-                        best_val = val
-                        best_idx = k
-                else: # min
-                    if val < best_val or np.isnan(best_val):
-                        best_val = val
-                        best_idx = k
+            val = mat[i, j]
+            # Pop elements that are no longer useful
+            if mode == 1: # max
+                while head != tail:
+                    idx = dq[(tail - 1) % (window + 1)]
+                    if mat[idx, j] <= val or np.isnan(mat[idx, j]):
+                        tail -= 1
+                    else:
+                        break
+            else: # min
+                while head != tail:
+                    idx = dq[(tail - 1) % (window + 1)]
+                    if mat[idx, j] >= val or np.isnan(mat[idx, j]):
+                        tail -= 1
+                    else:
+                        break
+
+            # Push current index
+            dq[tail % (window + 1)] = i
+            tail += 1
+
+            best_idx = dq[head % (window + 1)]
 
             # Distance from end of window
-            out[i, j] = float(length - 1 - best_idx)
+            out[i, j] = float(i - best_idx)
 
     return out
 
@@ -795,6 +811,19 @@ def _numba_rolling_median_parallel(mat, window):
     out = np.empty((n_rows, n_cols), dtype=np.float32)
 
     for j in prange(n_cols):
-        out[:, j] = _numba_rolling_median(mat[:, j], window)
+        if n_rows < window:
+            for i in range(n_rows):
+                out[i, j] = 0.0
+            continue
+
+        buf = np.empty(window, dtype=np.float32)
+
+        for i in range(window - 1):
+            out[i, j] = 0.0
+
+        for i in range(window - 1, n_rows):
+            for k in range(window):
+                buf[k] = mat[i - window + 1 + k, j]
+            out[i, j] = np.median(buf)
 
     return out

@@ -4679,107 +4679,107 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
     for strat in strategies:
         side = strat["trade_side"]
         k_label = strat["strategy_id"]
-            for H in horizons:
-                # _grid_for_cell must come first — _cell_tp_abs_lo is used in floor resolution below.
-                tp_mults, sl_base_mults, _cell_tp_abs_lo = _grid_for_cell(
-                    k_label, side, int(H)
-                )
+        for H in horizons:
+            # _grid_for_cell must come first — _cell_tp_abs_lo is used in floor resolution below.
+            tp_mults, sl_base_mults, _cell_tp_abs_lo = _grid_for_cell(
+                k_label, side, int(H)
+            )
 
-                _default_tp_hit = min_tp_hit_h2 if int(H) == 2 else min_tp_hit
-                min_tp_hit_eff = _resolve_cell_min_tp_hit(
-                    side=side, kind=k_label, h=int(H), default_val=_default_tp_hit
+            _default_tp_hit = min_tp_hit_h2 if int(H) == 2 else min_tp_hit
+            min_tp_hit_eff = _resolve_cell_min_tp_hit(
+                side=side, kind=k_label, h=int(H), default_val=_default_tp_hit
+            )
+            # Separate search-vs-production TP floors.
+            # Per-cell tp_abs_lo_pct from the geometry grid takes priority over global cfg value —
+            # this is the floor the optimizer actually selected for this (kind, side, H) cell.
+            _global_tp_lo_base = tp_lo_h2 if int(H) == 2 else tp_lo
+            _cell_tp_lo_base = (
+                float(_cell_tp_abs_lo)
+                if _cell_tp_abs_lo is not None
+                else _global_tp_lo_base
+            )
+            tp_lo_search_default = float(
+                cfg.get(
+                    "barrier_tp_lo_search_h2"
+                    if int(H) == 2
+                    else "barrier_tp_lo_search",
+                    _cell_tp_lo_base,
                 )
-                # Separate search-vs-production TP floors.
-                # Per-cell tp_abs_lo_pct from the geometry grid takes priority over global cfg value —
-                # this is the floor the optimizer actually selected for this (kind, side, H) cell.
-                _global_tp_lo_base = tp_lo_h2 if int(H) == 2 else tp_lo
-                _cell_tp_lo_base = (
-                    float(_cell_tp_abs_lo)
-                    if _cell_tp_abs_lo is not None
-                    else _global_tp_lo_base
+            )
+            tp_lo_prod_default = float(
+                cfg.get(
+                    "barrier_tp_lo_prod_h2"
+                    if int(H) == 2
+                    else "barrier_tp_lo_prod",
+                    max(_cell_tp_lo_base, tp_lo_search_default),
                 )
-                tp_lo_search_default = float(
-                    cfg.get(
-                        "barrier_tp_lo_search_h2"
-                        if int(H) == 2
-                        else "barrier_tp_lo_search",
-                        _cell_tp_lo_base,
-                    )
+            )
+            tp_lo_eff_search = _resolve_cell_tp_floor(
+                side=side,
+                kind=k_label,
+                h=int(H),
+                default_val=tp_lo_search_default,
+                mode="search",
+            )
+            tp_lo_eff_prod = _resolve_cell_tp_floor(
+                side=side,
+                kind=k_label,
+                h=int(H),
+                default_val=tp_lo_prod_default,
+                mode="prod",
+            )
+            # Optional horizon scaling for TP floors.
+            if bool(cfg.get("barrier_tp_lo_scale_with_horizon", True)):
+                _h_scale = float(
+                    np.sqrt(max(float(H), 1.0) / max(float(H_base), 1.0))
                 )
-                tp_lo_prod_default = float(
-                    cfg.get(
-                        "barrier_tp_lo_prod_h2"
-                        if int(H) == 2
-                        else "barrier_tp_lo_prod",
-                        max(_cell_tp_lo_base, tp_lo_search_default),
-                    )
-                )
-                tp_lo_eff_search = _resolve_cell_tp_floor(
-                    side=side,
-                    kind=k_label,
-                    h=int(H),
-                    default_val=tp_lo_search_default,
-                    mode="search",
-                )
-                tp_lo_eff_prod = _resolve_cell_tp_floor(
-                    side=side,
-                    kind=k_label,
-                    h=int(H),
-                    default_val=tp_lo_prod_default,
-                    mode="prod",
-                )
-                # Optional horizon scaling for TP floors.
-                if bool(cfg.get("barrier_tp_lo_scale_with_horizon", True)):
-                    _h_scale = float(
-                        np.sqrt(max(float(H), 1.0) / max(float(H_base), 1.0))
-                    )
-                    tp_lo_eff_search *= _h_scale
-                    tp_lo_eff_prod *= _h_scale
-                # Production floor should not be looser than search floor by default.
-                tp_lo_eff_prod = max(tp_lo_eff_prod, tp_lo_eff_search)
-                max_timeout_eff = max_timeout_h2 if int(H) == 2 else max_timeout
-                min_net_rr_eff = min_net_rr_h2 if int(H) == 2 else min_net_rr
-                min_events_eff = min_events_h2 if int(H) == 2 else 100
-                reject_counts = {
-                    "rr": 0,
-                    "n_events": 0,
-                    "tp_hit": 0,
-                    "timeout": 0,
-                }
-                total_geoms = 0
-                clip_stats = {
-                    "tp_floor_shares": [],
-                    "tp_ceil_shares": [],
-                }
-                # ── Per-cell/bucket geometry override (Native downstream integration) ────────
-                # If per-cell winners exist (from current optimization run), use the
-                # specific winning triplet for this exact bucket-horizon cell.
-                # Bucket mapping: (long, tf) -> TF_long, (short, mr) -> MR_short, etc.
-                _bname = f"{k_label.upper()}_{side}"
-                _cell_key_exact = f"{_bname}_H{H}"
+                tp_lo_eff_search *= _h_scale
+                tp_lo_eff_prod *= _h_scale
+            # Production floor should not be looser than search floor by default.
+            tp_lo_eff_prod = max(tp_lo_eff_prod, tp_lo_eff_search)
+            max_timeout_eff = max_timeout_h2 if int(H) == 2 else max_timeout
+            min_net_rr_eff = min_net_rr_h2 if int(H) == 2 else min_net_rr
+            min_events_eff = min_events_h2 if int(H) == 2 else 100
+            reject_counts = {
+                "rr": 0,
+                "n_events": 0,
+                "tp_hit": 0,
+                "timeout": 0,
+            }
+            total_geoms = 0
+            clip_stats = {
+                "tp_floor_shares": [],
+                "tp_ceil_shares": [],
+            }
+            # ── Per-cell/bucket geometry override (Native downstream integration) ────────
+            # If per-cell winners exist (from current optimization run), use the
+            # specific winning triplet for this exact bucket-horizon cell.
+            # Bucket mapping: (long, tf) -> TF_long, (short, mr) -> MR_short, etc.
+            _bname = f"{k_label.upper()}_{side}"
+            _cell_key_exact = f"{_bname}_H{H}"
 
-                # Load per-cell mapping for a diagnostic tag only; do NOT collapse to a single
-                # triplet — let the full geometry grid validated_triplets drive the sweep.
-                _p_cell_best = load_tbm_best_params_per_cell()
-                _p_cell_all = load_tbm_all_params_per_cell()
-                _cell_winner = _p_cell_best.get(_cell_key_exact)
-                if not _cell_winner:
-                    _cell_winner = _p_cell_best.get(_bname)  # Bucket-level fallback
-                _cell_ranked = _p_cell_all.get(_cell_key_exact, [])
+            # Load per-cell mapping for a diagnostic tag only; do NOT collapse to a single
+            # triplet — let the full geometry grid validated_triplets drive the sweep.
+            _p_cell_best = load_tbm_best_params_per_cell()
+            _p_cell_all = load_tbm_all_params_per_cell()
+            _cell_winner = _p_cell_best.get(_cell_key_exact)
+            if not _cell_winner:
+                _cell_winner = _p_cell_best.get(_bname)  # Bucket-level fallback
+            _cell_ranked = _p_cell_all.get(_cell_key_exact, [])
 
-                # Check for validated triplets first (geometry grid — top-k per cell).
-                _cell_data = _per_cell.get(_cell_key_exact, {})
-                _validated_triplets = _cell_data.get("validated_triplets") or []
+            # Check for validated triplets first (geometry grid — top-k per cell).
+            _cell_data = _per_cell.get(_cell_key_exact, {})
+            _validated_triplets = _cell_data.get("validated_triplets") or []
 
-                # Diagnostic: log how many validated triplets we're sweeping.
-                if _cell_winner:
-                    _tag = (
-                        "native_cell" if "cell_key" in _cell_winner else "native_bucket"
-                    )
-                    tprint(
-                        f"  [{_tag}] {_cell_key_exact}: sweeping {len(_validated_triplets)} "
-                        f"validated geometry triplets (top-k TBM, no policy rollout). "
-                        f"Best single config: k_tp={_cell_winner.get('k_tp')} sl={_cell_winner.get('sl_as_tp_pct')}"
+            # Diagnostic: log how many validated triplets we're sweeping.
+            if _cell_winner:
+                _tag = (
+                    "native_cell" if "cell_key" in _cell_winner else "native_bucket"
+                )
+                tprint(
+                    f"  [{_tag}] {_cell_key_exact}: sweeping {len(_validated_triplets)} "
+                    f"validated geometry triplets (top-k TBM, no policy rollout). "
+                    f"Best single config: k_tp={_cell_winner.get('k_tp')} sl={_cell_winner.get('sl_as_tp_pct')}"
                     )
 
                 if not _validated_triplets:
@@ -5917,20 +5917,20 @@ def generate_label_datasets(
     for strat in strategies:
         side = strat["trade_side"]
         k = strat["strategy_id"]
-            for H in horizons:
-                H_int = int(H)
-                if H_int == 1:
-                    continue
-                _tight_key = f"train_{side}_{k}_{H_int}_tight"
-                _wide_key = f"train_{side}_{k}_{H_int}_wide"
-                _base_key = f"train_{side}_{k}_{H_int}"
-                if _tight_key not in datasets or _wide_key not in datasets:
-                    continue
-                _parts = [datasets[_tight_key], datasets[_wide_key]]
-                _parts = [p for p in _parts if p is not None and not p.empty]
-                if not _parts:
-                    continue
-                datasets[_base_key] = pd.concat(_parts, axis=0, ignore_index=True)
+        for H in horizons:
+            H_int = int(H)
+            if H_int == 1:
+                continue
+            _tight_key = f"train_{side}_{k}_{H_int}_tight"
+            _wide_key = f"train_{side}_{k}_{H_int}_wide"
+            _base_key = f"train_{side}_{k}_{H_int}"
+            if _tight_key not in datasets or _wide_key not in datasets:
+                continue
+            _parts = [datasets[_tight_key], datasets[_wide_key]]
+            _parts = [p for p in _parts if p is not None and not p.empty]
+            if not _parts:
+                continue
+            datasets[_base_key] = pd.concat(_parts, axis=0, ignore_index=True)
 
     # 3. Exhaustion Models
     lookback = cfg["exh_train_lookback_hours"]
@@ -8307,571 +8307,958 @@ def train_meta_models_from_artifacts(
     for strat in strategies:
         side = strat["trade_side"]
         k = strat["strategy_id"]
-            trade_side = side
-            cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
-                trade_side, k
-            )
-            tprint(
-                f"Meta bucket context: trade_side={trade_side}, kind={k}, "
-                f"move_bucket={move_bucket}, candidate_bucket={cand_filter}, strategy={strategy_label}"
-            )
-            conf = alpha_models.get(side, {}).get(k) if alpha_models else None
-            if not conf:
-                tprint(f"Meta {side}_{k}: skipped (missing alpha model)")
-                continue
+        trade_side = side
+        cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
+            trade_side, k
+        )
+        tprint(
+            f"Meta bucket context: trade_side={trade_side}, kind={k}, "
+            f"move_bucket={move_bucket}, candidate_bucket={cand_filter}, strategy={strategy_label}"
+        )
+        conf = alpha_models.get(side, {}).get(k) if alpha_models else None
+        if not conf:
+            tprint(f"Meta {side}_{k}: skipped (missing alpha model)")
+            continue
 
-            # Primary horizon OOF set (this bucket's own alpha models)
-            horizon_dfs, horizon_skip_reasons = _collect_horizon_oof(side, k)
-            for h, reason in horizon_skip_reasons.items():
-                if reason.startswith("oof_len_mismatch"):
-                    ds_key_dbg = f"train_{side}_{k}_{h}"
-                    _df_len = (
-                        len(datasets.get(ds_key_dbg, []))
-                        if ds_key_dbg in datasets
-                        else "na"
-                    )
-                    _oof_len = (
-                        reason.split(":")[-1].split("!=")[0] if ":" in reason else "na"
-                    )
-                    tprint(
-                        f"Meta {side}_{k} H={h}: OOF length mismatch ({_oof_len} vs {_df_len}), skipping horizon"
-                    )
-
-            if not horizon_dfs:
-                tprint(f"Meta {side}_{k}: skipped (no horizon with valid OOF)")
-                if horizon_skip_reasons:
-                    tprint(
-                        f"  Horizon availability diagnostics: {horizon_skip_reasons}"
-                    )
-                continue
-            tprint(
-                f"Meta {side}_{k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())} ({_time.monotonic()-_t0_meta:.1f}s)"
-            )
-            _available_horizons = sorted(horizon_dfs.keys())
-            if horizon_skip_reasons:
-                tprint(f"  Horizons excluded: {horizon_skip_reasons}")
-
-            # Use the largest horizon dataset as the base (for meta feature columns)
-            base_H = max(horizon_dfs.keys(), key=lambda h: len(horizon_dfs[h][0]))
-            df_base = horizon_dfs[base_H][0]
-
-            # Build (ts, symbol) index for union + diagnostics
-            tprint(f"  Building union key index ({len(df_base)} base rows)...")
-            if "__ts__" in df_base.columns and "__symbol__" in df_base.columns:
-                base_keys = list(
-                    zip(df_base["__ts__"].values, df_base["__symbol__"].values)
+        # Primary horizon OOF set (this bucket's own alpha models)
+        horizon_dfs, horizon_skip_reasons = _collect_horizon_oof(side, k)
+        for h, reason in horizon_skip_reasons.items():
+            if reason.startswith("oof_len_mismatch"):
+                ds_key_dbg = f"train_{side}_{k}_{h}"
+                _df_len = (
+                    len(datasets.get(ds_key_dbg, []))
+                    if ds_key_dbg in datasets
+                    else "na"
                 )
-                union_keys = []
-                seen_keys = set()
-                key_to_idx_by_h = {}
+                _oof_len = (
+                    reason.split(":")[-1].split("!=")[0] if ":" in reason else "na"
+                )
+                tprint(
+                    f"Meta {side}_{k} H={h}: OOF length mismatch ({_oof_len} vs {_df_len}), skipping horizon"
+                )
 
-                for kk in base_keys:
+        if not horizon_dfs:
+            tprint(f"Meta {side}_{k}: skipped (no horizon with valid OOF)")
+            if horizon_skip_reasons:
+                tprint(
+                    f"  Horizon availability diagnostics: {horizon_skip_reasons}"
+                )
+            continue
+        tprint(
+            f"Meta {side}_{k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())} ({_time.monotonic()-_t0_meta:.1f}s)"
+        )
+        _available_horizons = sorted(horizon_dfs.keys())
+        if horizon_skip_reasons:
+            tprint(f"  Horizons excluded: {horizon_skip_reasons}")
+
+        # Use the largest horizon dataset as the base (for meta feature columns)
+        base_H = max(horizon_dfs.keys(), key=lambda h: len(horizon_dfs[h][0]))
+        df_base = horizon_dfs[base_H][0]
+
+        # Build (ts, symbol) index for union + diagnostics
+        tprint(f"  Building union key index ({len(df_base)} base rows)...")
+        if "__ts__" in df_base.columns and "__symbol__" in df_base.columns:
+            base_keys = list(
+                zip(df_base["__ts__"].values, df_base["__symbol__"].values)
+            )
+            union_keys = []
+            seen_keys = set()
+            key_to_idx_by_h = {}
+
+            for kk in base_keys:
+                if kk not in seen_keys:
+                    union_keys.append(kk)
+                    seen_keys.add(kk)
+
+            for h in sorted(horizon_dfs.keys()):
+                df_h, _ = horizon_dfs[h]
+                ts_vals = df_h["__ts__"]
+                sym_vals = df_h["__symbol__"]
+                null_key_rows = int((ts_vals.isna() | sym_vals.isna()).sum())
+                h_keys = list(zip(ts_vals.values, sym_vals.values))
+                uniq_keys = len(set(h_keys))
+                dup_keys = len(h_keys) - uniq_keys
+                if null_key_rows > 0 or dup_keys > 0:
+                    tprint(
+                        f"    H{h} key hygiene: rows={len(df_h)}, unique={uniq_keys}, duplicates={dup_keys}, null_keys={null_key_rows}"
+                    )
+                key_to_idx_by_h[h] = {kxy: i for i, kxy in enumerate(h_keys)}
+                for kk in h_keys:
                     if kk not in seen_keys:
                         union_keys.append(kk)
                         seen_keys.add(kk)
 
-                for h in sorted(horizon_dfs.keys()):
-                    df_h, _ = horizon_dfs[h]
-                    ts_vals = df_h["__ts__"]
-                    sym_vals = df_h["__symbol__"]
-                    null_key_rows = int((ts_vals.isna() | sym_vals.isna()).sum())
-                    h_keys = list(zip(ts_vals.values, sym_vals.values))
-                    uniq_keys = len(set(h_keys))
-                    dup_keys = len(h_keys) - uniq_keys
-                    if null_key_rows > 0 or dup_keys > 0:
-                        tprint(
-                            f"    H{h} key hygiene: rows={len(df_h)}, unique={uniq_keys}, duplicates={dup_keys}, null_keys={null_key_rows}"
-                        )
-                    key_to_idx_by_h[h] = {kxy: i for i, kxy in enumerate(h_keys)}
-                    for kk in h_keys:
-                        if kk not in seen_keys:
-                            union_keys.append(kk)
-                            seen_keys.add(kk)
-
-                inter_count = sum(
-                    1
-                    for kk in union_keys
-                    if all(kk in key_to_idx_by_h[h] for h in horizon_dfs.keys())
-                )
-                tprint(
-                    f"  Union: {len(union_keys)} unique samples across horizons (intersection={inter_count})"
-                )
-                for h in sorted(horizon_dfs.keys()):
-                    present = np.array(
-                        [kk in key_to_idx_by_h[h] for kk in union_keys], dtype=bool
-                    )
-                    miss_cnt = int((~present).sum())
-                    coverage = float(present.mean() * 100.0)
-                    tprint(
-                        f"    H{h} coverage on union: {present.sum()}/{len(union_keys)} ({coverage:.1f}%), missing={miss_cnt}"
-                    )
-
-                base_lookup = {kk: i for i, kk in enumerate(base_keys)}
-                for h in sorted(horizon_dfs.keys()):
-                    if h == base_H:
-                        continue
-                    h_key_set = set(key_to_idx_by_h[h].keys())
-                    base_key_set = set(base_lookup.keys())
-                    base_only = len(base_key_set - h_key_set)
-                    h_only = len(h_key_set - base_key_set)
-                    if base_only > 0 or h_only > 0:
-                        tprint(
-                            f"    H{h} vs base H{base_H}: base_only={base_only}, h_only={h_only}"
-                        )
-
-                df = df_base.iloc[
-                    [base_lookup[kk] for kk in union_keys if kk in base_lookup]
-                ].copy()
-
-                missing_keys = [kk for kk in union_keys if kk not in base_lookup]
-                if missing_keys:
-                    donor_horizons = sorted(
-                        horizon_dfs.keys(),
-                        key=lambda hh: (-len(horizon_dfs[hh][0]), hh),
-                    )
-                    extra_rows = []
-                    for kk in missing_keys:
-                        for h in donor_horizons:
-                            h_idx = key_to_idx_by_h[h].get(kk, -1)
-                            if h_idx >= 0:
-                                extra_rows.append(
-                                    horizon_dfs[h][0]
-                                    .iloc[h_idx]
-                                    .reindex(df_base.columns)
-                                )
-                                break
-                    if extra_rows:
-                        df_extra = pd.DataFrame(extra_rows, columns=df_base.columns)
-                        df = pd.concat([df, df_extra], axis=0, ignore_index=True)
-
-                df = df.reset_index(drop=True)
-                tprint(
-                    f"  Union dataset built: {len(df)} rows ({_time.monotonic()-_t0_meta:.1f}s)"
-                )
-            else:
-                # Fallback: use min-length truncation
-                min_len = min(len(df_h) for df_h, _ in horizon_dfs.values())
-                keep_mask = np.ones(len(df_base), dtype=bool)
-                keep_mask[min_len:] = False
-                df = df_base.loc[keep_mask].reset_index(drop=True).copy()
-                tprint(f"  No ts/symbol columns; truncating to {min_len} samples")
-
-            if len(df) < 100:
-                tprint(f"Meta {side}_{k}: skipped (only {len(df)} union samples)")
-                continue
-
-            # Build OOF predictions for each horizon, aligned to common samples
-            tprint(f"  Aligning OOF predictions across horizons...")
-            pred_h = pd.DataFrame(index=df.index)
-            p_oof_avg_parts = []
-            for h in sorted(horizon_dfs.keys()):
-                df_h, oof_h = horizon_dfs[h]
-                p_h = _align_oof_to_union(df, df_h, oof_h)
-                pred_h[f"pred_{k}_H{h}"] = p_h
-                pred_h[f"pred_H{h}"] = p_h
-                p_oof_avg_parts.append(p_h)
-
-            # Ensure side-level meta models see all same-side base outputs (TF + MR)
-            for k_other in kinds:
-                other_horizon_dfs, _ = _collect_horizon_oof(side, k_other)
-                for h in CANON_HORIZONS:
-                    col_name = f"pred_{k_other}_H{h}"
-                    if col_name in pred_h.columns:
-                        continue
-                    if h in other_horizon_dfs:
-                        df_h_other, oof_h_other = other_horizon_dfs[h]
-                        pred_h[col_name] = _align_oof_to_union(
-                            df, df_h_other, oof_h_other
-                        )
-                    else:
-                        pred_h[col_name] = np.full(len(df), 0.5, dtype=np.float32)
-                other_variant_dfs = _collect_variant_horizon_oof(side, k_other)
-                for (h, variant_name), (
-                    df_h_other_v,
-                    oof_h_other_v,
-                ) in other_variant_dfs.items():
-                    pred_h[
-                        f"pred_{k_other}_H{int(h)}_{variant_name}"
-                    ] = _align_oof_to_union(df, df_h_other_v, oof_h_other_v)
+            inter_count = sum(
+                1
+                for kk in union_keys
+                if all(kk in key_to_idx_by_h[h] for h in horizon_dfs.keys())
+            )
             tprint(
-                f"  Meta {side}_{k}: added same-side TF/MR base OOF features "
-                f"(cols={len([c for c in pred_h.columns if c.startswith('pred_')])})"
+                f"  Union: {len(union_keys)} unique samples across horizons (intersection={inter_count})"
             )
-
-            y_ret = df["__y_ret__"].values
-
-            tprint(
-                f"  OOF alignment done ({_time.monotonic()-_t0_meta:.1f}s). Building meta features..."
-            )
-
-            # Build y_target from per-horizon returns (aligned to common samples)
-            _has_keys = "__ts__" in df.columns and "__symbol__" in df.columns
-            if _has_keys:
-                _common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
-            _h_lookup_cache = {}
-
-            def _ret_for_h_aligned(h):
-                ds_key = f"train_{side}_{k}_{h}"
-                for source_df in [datasets.get(ds_key), horizon_dfs.get(h, (None,))[0]]:
-                    if source_df is None:
-                        continue
-                    if not (
-                        _has_keys
-                        and "__ts__" in source_df.columns
-                        and "__symbol__" in source_df.columns
-                    ):
-                        continue
-                    cache_id = id(source_df)
-                    if cache_id not in _h_lookup_cache:
-                        _ts_vals = np.asarray(source_df["__ts__"].values)
-                        _sym_vals = np.asarray(source_df["__symbol__"].values)
-                        _ret_vals = np.asarray(
-                            source_df["__y_ret__"].values, dtype=np.float32
-                        )
-                        _n_src = min(len(_ts_vals), len(_sym_vals), len(_ret_vals))
-                        _ret_lookup = {}
-                        for _i in range(_n_src):
-                            _ret_lookup[(_ts_vals[_i], _sym_vals[_i])] = _ret_vals[_i]
-                        _h_lookup_cache[cache_id] = _ret_lookup
-                    h_lookup = _h_lookup_cache[cache_id]
-                    _ret_vals = np.array(
-                        [h_lookup.get(ck, np.nan) for ck in _common_keys],
-                        dtype=np.float32,
-                    )
-                    valid = np.isfinite(_ret_vals)
-                    if not valid.any():
-                        continue
-                    ret = np.zeros(len(df), dtype=np.float32)
-                    ret[valid] = _ret_vals[valid]
-                    return ret
-                return y_ret.astype(np.float32)
-
-            tprint(f"  Computing meta target ({_time.monotonic()-_t0_meta:.1f}s)...")
-            _use_policy_target = bool(cfg.get("meta_use_policy_value_target", True))
-
-            # Use vol_proxy (ATR) for risk-normalized target / classifier fallback labels
-            _vol_proxy = (
-                df["__barrier_pct__"].values.astype(np.float64)
-                if "__barrier_pct__" in df.columns
-                else None
-            )
-
-            if _use_policy_target:
-                if "__u_policy_net__" not in df.columns:
-                    raise RuntimeError(
-                        "meta_use_policy_value_target=True requires '__u_policy_net__' in training artifacts. "
-                        "Enable policy_rollout_labeling during label generation and rebuild artifacts."
-                    )
-                y_target_h = np.asarray(df["__u_policy_net__"].values, dtype=np.float32)
-                tprint(
-                    f"  META TARGET: policy_value(u_policy) n={len(y_target_h)} "
-                    f"mean={float(np.mean(y_target_h)):.6f} std={float(np.std(y_target_h)):.6f}"
-                )
-                # Keep horizon keys for per-horizon model slots, but target is true policy utility.
-                _y_per_h = {h: y_target_h.copy() for h in sorted(horizon_dfs.keys())}
-            else:
-                _rets = [_ret_for_h_aligned(int(h)) for h in CANON_HORIZONS]
-                y_target_h = compute_meta_target(*_rets, vol_proxy=_vol_proxy)
-                tprint(
-                    f"  Using risk-normalized target: n={len(y_target_h)}, mean={float(np.mean(y_target_h)):.6f}, std={float(np.std(y_target_h)):.6f}"
-                )
-                # Per-horizon returns for multi-barrier classifier labels
-                _y_per_h = {int(h): r for h, r in zip(CANON_HORIZONS, _rets)}
-
-            # Per-horizon IC diagnostics
-            _oof_by_h = {}
             for h in sorted(horizon_dfs.keys()):
-                _oof_by_h[h] = pred_h[f"pred_H{h}"].values
-            for _hh in sorted(_y_per_h.keys()):
-                if _hh not in _oof_by_h:
+                present = np.array(
+                    [kk in key_to_idx_by_h[h] for kk in union_keys], dtype=bool
+                )
+                miss_cnt = int((~present).sum())
+                coverage = float(present.mean() * 100.0)
+                tprint(
+                    f"    H{h} coverage on union: {present.sum()}/{len(union_keys)} ({coverage:.1f}%), missing={miss_cnt}"
+                )
+
+            base_lookup = {kk: i for i, kk in enumerate(base_keys)}
+            for h in sorted(horizon_dfs.keys()):
+                if h == base_H:
                     continue
-                _ic_h = _safe_spearman(_oof_by_h[_hh], _y_per_h[_hh])
-                tprint(f"    IC(oof_H{_hh}, r_H{_hh}) = {_ic_h:.4f}")
+                h_key_set = set(key_to_idx_by_h[h].keys())
+                base_key_set = set(base_lookup.keys())
+                base_only = len(base_key_set - h_key_set)
+                h_only = len(h_key_set - base_key_set)
+                if base_only > 0 or h_only > 0:
+                    tprint(
+                        f"    H{h} vs base H{base_H}: base_only={base_only}, h_only={h_only}"
+                    )
 
-            # p_oof: average OOF across all horizons (used for filtering & diagnostics)
-            p_oof = np.mean(p_oof_avg_parts, axis=0)
+            df = df_base.iloc[
+                [base_lookup[kk] for kk in union_keys if kk in base_lookup]
+            ].copy()
 
-            # Vol proxy for normalization variants (barrier_pct if available)
-            _vol_proxy = (
-                df["__barrier_pct__"].values.astype(np.float64)
-                if "__barrier_pct__" in df.columns
-                else None
+            missing_keys = [kk for kk in union_keys if kk not in base_lookup]
+            if missing_keys:
+                donor_horizons = sorted(
+                    horizon_dfs.keys(),
+                    key=lambda hh: (-len(horizon_dfs[hh][0]), hh),
+                )
+                extra_rows = []
+                for kk in missing_keys:
+                    for h in donor_horizons:
+                        h_idx = key_to_idx_by_h[h].get(kk, -1)
+                        if h_idx >= 0:
+                            extra_rows.append(
+                                horizon_dfs[h][0]
+                                .iloc[h_idx]
+                                .reindex(df_base.columns)
+                            )
+                            break
+                if extra_rows:
+                    df_extra = pd.DataFrame(extra_rows, columns=df_base.columns)
+                    df = pd.concat([df, df_extra], axis=0, ignore_index=True)
+
+            df = df.reset_index(drop=True)
+            tprint(
+                f"  Union dataset built: {len(df)} rows ({_time.monotonic()-_t0_meta:.1f}s)"
             )
+        else:
+            # Fallback: use min-length truncation
+            min_len = min(len(df_h) for df_h, _ in horizon_dfs.values())
+            keep_mask = np.ones(len(df_base), dtype=bool)
+            keep_mask[min_len:] = False
+            df = df_base.loc[keep_mask].reset_index(drop=True).copy()
+            tprint(f"  No ts/symbol columns; truncating to {min_len} samples")
 
-            configured_meta = _meta_feature_keys_for_kind(cfg, k)
-            raw_prefix = "__meta_raw__"
-            feat_cols = [
-                mk for mk in configured_meta if f"{raw_prefix}{mk}" in df.columns
-            ]
-            feat_cols = list(dict.fromkeys(feat_cols))
-            exclude_key = f"meta_feature_exclude_{k}"
-            exclude_set = set(cfg.get(exclude_key, []))
-            if exclude_set:
-                n_before = len(feat_cols)
-                feat_cols = [f for f in feat_cols if f not in exclude_set]
-                tprint(
-                    f"  Meta feature exclusion ({k}): {n_before} -> {len(feat_cols)} features ({n_before - len(feat_cols)} excluded)"
+        if len(df) < 100:
+            tprint(f"Meta {side}_{k}: skipped (only {len(df)} union samples)")
+            continue
+
+        # Build OOF predictions for each horizon, aligned to common samples
+        tprint(f"  Aligning OOF predictions across horizons...")
+        pred_h = pd.DataFrame(index=df.index)
+        p_oof_avg_parts = []
+        for h in sorted(horizon_dfs.keys()):
+            df_h, oof_h = horizon_dfs[h]
+            p_h = _align_oof_to_union(df, df_h, oof_h)
+            pred_h[f"pred_{k}_H{h}"] = p_h
+            pred_h[f"pred_H{h}"] = p_h
+            p_oof_avg_parts.append(p_h)
+
+        # Ensure side-level meta models see all same-side base outputs (TF + MR)
+        for k_other in kinds:
+            other_horizon_dfs, _ = _collect_horizon_oof(side, k_other)
+            for h in CANON_HORIZONS:
+                col_name = f"pred_{k_other}_H{h}"
+                if col_name in pred_h.columns:
+                    continue
+                if h in other_horizon_dfs:
+                    df_h_other, oof_h_other = other_horizon_dfs[h]
+                    pred_h[col_name] = _align_oof_to_union(
+                        df, df_h_other, oof_h_other
+                    )
+                else:
+                    pred_h[col_name] = np.full(len(df), 0.5, dtype=np.float32)
+            other_variant_dfs = _collect_variant_horizon_oof(side, k_other)
+            for (h, variant_name), (
+                df_h_other_v,
+                oof_h_other_v,
+            ) in other_variant_dfs.items():
+                pred_h[
+                    f"pred_{k_other}_H{int(h)}_{variant_name}"
+                ] = _align_oof_to_union(df, df_h_other_v, oof_h_other_v)
+        tprint(
+            f"  Meta {side}_{k}: added same-side TF/MR base OOF features "
+            f"(cols={len([c for c in pred_h.columns if c.startswith('pred_')])})"
+        )
+
+        y_ret = df["__y_ret__"].values
+
+        tprint(
+            f"  OOF alignment done ({_time.monotonic()-_t0_meta:.1f}s). Building meta features..."
+        )
+
+        # Build y_target from per-horizon returns (aligned to common samples)
+        _has_keys = "__ts__" in df.columns and "__symbol__" in df.columns
+        if _has_keys:
+            _common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
+        _h_lookup_cache = {}
+
+        def _ret_for_h_aligned(h):
+            ds_key = f"train_{side}_{k}_{h}"
+            for source_df in [datasets.get(ds_key), horizon_dfs.get(h, (None,))[0]]:
+                if source_df is None:
+                    continue
+                if not (
+                    _has_keys
+                    and "__ts__" in source_df.columns
+                    and "__symbol__" in source_df.columns
+                ):
+                    continue
+                cache_id = id(source_df)
+                if cache_id not in _h_lookup_cache:
+                    _ts_vals = np.asarray(source_df["__ts__"].values)
+                    _sym_vals = np.asarray(source_df["__symbol__"].values)
+                    _ret_vals = np.asarray(
+                        source_df["__y_ret__"].values, dtype=np.float32
+                    )
+                    _n_src = min(len(_ts_vals), len(_sym_vals), len(_ret_vals))
+                    _ret_lookup = {}
+                    for _i in range(_n_src):
+                        _ret_lookup[(_ts_vals[_i], _sym_vals[_i])] = _ret_vals[_i]
+                    _h_lookup_cache[cache_id] = _ret_lookup
+                h_lookup = _h_lookup_cache[cache_id]
+                _ret_vals = np.array(
+                    [h_lookup.get(ck, np.nan) for ck in _common_keys],
+                    dtype=np.float32,
                 )
-            if not feat_cols:
-                tprint(
-                    f"Meta {side}_{k}: skipped (no raw meta features found in dataset)"
+                valid = np.isfinite(_ret_vals)
+                if not valid.any():
+                    continue
+                ret = np.zeros(len(df), dtype=np.float32)
+                ret[valid] = _ret_vals[valid]
+                return ret
+            return y_ret.astype(np.float32)
+
+        tprint(f"  Computing meta target ({_time.monotonic()-_t0_meta:.1f}s)...")
+        _use_policy_target = bool(cfg.get("meta_use_policy_value_target", True))
+
+        # Use vol_proxy (ATR) for risk-normalized target / classifier fallback labels
+        _vol_proxy = (
+            df["__barrier_pct__"].values.astype(np.float64)
+            if "__barrier_pct__" in df.columns
+            else None
+        )
+
+        if _use_policy_target:
+            if "__u_policy_net__" not in df.columns:
+                raise RuntimeError(
+                    "meta_use_policy_value_target=True requires '__u_policy_net__' in training artifacts. "
+                    "Enable policy_rollout_labeling during label generation and rebuild artifacts."
                 )
+            y_target_h = np.asarray(df["__u_policy_net__"].values, dtype=np.float32)
+            tprint(
+                f"  META TARGET: policy_value(u_policy) n={len(y_target_h)} "
+                f"mean={float(np.mean(y_target_h)):.6f} std={float(np.std(y_target_h)):.6f}"
+            )
+            # Keep horizon keys for per-horizon model slots, but target is true policy utility.
+            _y_per_h = {h: y_target_h.copy() for h in sorted(horizon_dfs.keys())}
+        else:
+            _rets = [_ret_for_h_aligned(int(h)) for h in CANON_HORIZONS]
+            y_target_h = compute_meta_target(*_rets, vol_proxy=_vol_proxy)
+            tprint(
+                f"  Using risk-normalized target: n={len(y_target_h)}, mean={float(np.mean(y_target_h)):.6f}, std={float(np.std(y_target_h)):.6f}"
+            )
+            # Per-horizon returns for multi-barrier classifier labels
+            _y_per_h = {int(h): r for h, r in zip(CANON_HORIZONS, _rets)}
+
+        # Per-horizon IC diagnostics
+        _oof_by_h = {}
+        for h in sorted(horizon_dfs.keys()):
+            _oof_by_h[h] = pred_h[f"pred_H{h}"].values
+        for _hh in sorted(_y_per_h.keys()):
+            if _hh not in _oof_by_h:
                 continue
+            _ic_h = _safe_spearman(_oof_by_h[_hh], _y_per_h[_hh])
+            tprint(f"    IC(oof_H{_hh}, r_H{_hh}) = {_ic_h:.4f}")
 
-            # Bulk initialize to avoid fragmentation PerformanceWarnings
-            _feat_dict = {}
-            for mk in feat_cols:
-                _col_val = df[f"{raw_prefix}{mk}"]
-                if isinstance(_col_val, pd.DataFrame):
-                    # Handle unexpected duplicate column names by taking the first one
-                    _feat_dict[mk] = _col_val.iloc[:, 0].values
-                else:
-                    _feat_dict[mk] = _col_val.values
+        # p_oof: average OOF across all horizons (used for filtering & diagnostics)
+        p_oof = np.mean(p_oof_avg_parts, axis=0)
 
-            X_feats = (
-                pd.DataFrame(_feat_dict, index=df.index).fillna(0.0).astype(np.float32)
+        # Vol proxy for normalization variants (barrier_pct if available)
+        _vol_proxy = (
+            df["__barrier_pct__"].values.astype(np.float64)
+            if "__barrier_pct__" in df.columns
+            else None
+        )
+
+        configured_meta = _meta_feature_keys_for_kind(cfg, k)
+        raw_prefix = "__meta_raw__"
+        feat_cols = [
+            mk for mk in configured_meta if f"{raw_prefix}{mk}" in df.columns
+        ]
+        feat_cols = list(dict.fromkeys(feat_cols))
+        exclude_key = f"meta_feature_exclude_{k}"
+        exclude_set = set(cfg.get(exclude_key, []))
+        if exclude_set:
+            n_before = len(feat_cols)
+            feat_cols = [f for f in feat_cols if f not in exclude_set]
+            tprint(
+                f"  Meta feature exclusion ({k}): {n_before} -> {len(feat_cols)} features ({n_before - len(feat_cols)} excluded)"
             )
-
-            n_res = df.get(
-                "__n_res__", pd.Series(np.ones(len(df)), index=df.index)
-            ).values.astype(np.float32)
-            keep = n_res >= np.quantile(n_res, 0.20)
-            if keep.sum() < 100:
-                keep = np.ones(len(df), dtype=bool)
-
-            # Memory optimization: use single copy with shared index, avoid redundant copies
-            keep_idx = np.where(keep)[0]
-            df = df.iloc[keep_idx].reset_index(drop=True)
-            X_feats = X_feats.iloc[keep_idx].reset_index(drop=True)
-            pred_h = pred_h.iloc[keep_idx].reset_index(drop=True)
-            if _vol_proxy is not None:
-                _vol_proxy = _vol_proxy[keep]
-            p_oof = p_oof[keep]
-            n_res = n_res[keep]
-            _y_per_h = {h: v[keep] for h, v in _y_per_h.items()}
-            y_target_h = y_target_h[keep]
-            _trade_mask = np.ones(len(df), dtype=bool)
-            if "__trigger_offset_h__" in df.columns:
-                _trade_mask = np.abs(
-                    np.asarray(df["__trigger_offset_h__"].values, dtype=float)
-                ) <= float(cfg.get("trade_mask_abs_hours", 4.0))
-
-            # Build per-horizon logit features in bulk
-            from scipy.special import expit as _sigmoid
-            from scipy.special import logit as _logit_fn
-
-            _logit_data = {}
-            _logit_parts = []
-            for h in sorted(horizon_dfs.keys()):
-                _p_h = np.clip(
-                    pred_h[f"pred_H{h}"].values.astype(float), 1e-4, 1 - 1e-4
-                )
-                _lg_h = np.clip(_logit_fn(_p_h), -4.0, 4.0).astype(np.float32)
-                _logit_data[f"pred_logit_H{h}"] = _lg_h
-                _logit_parts.append(_lg_h)
-
-            _logit_avg = np.mean(_logit_parts, axis=0).astype(np.float32)
-            _logit_data["pred_logit"] = _logit_avg
-
-            # Combine everything in one shot
-            X_feats = pd.concat(
-                [X_feats, pd.DataFrame(_logit_data, index=X_feats.index), pred_h],
-                axis=1,
+        if not feat_cols:
+            tprint(
+                f"Meta {side}_{k}: skipped (no raw meta features found in dataset)"
             )
+            continue
 
-            # Disagreement/Cross-kind features in bulk
-            _diag_feats = {}
-            for kind_name in ["tf", "mr"]:
-                horizon_preds = [
-                    pred_h[f"pred_{kind_name}_H{int(h)}"].values.astype(np.float32)
-                    for h in CANON_HORIZONS
-                ]
-                stack = np.vstack(horizon_preds).T.astype(np.float32)
-                pair_terms = []
-                for i in range(len(horizon_preds)):
-                    for j in range(i + 1, len(horizon_preds)):
-                        pair_terms.append(np.abs(horizon_preds[i] - horizon_preds[j]))
-                pair_abs = (
-                    np.mean(np.vstack(pair_terms), axis=0)
-                    if pair_terms
-                    else np.zeros(len(stack), dtype=np.float32)
-                )
-                vote_p = (stack > 0.5).mean(axis=1).astype(np.float32)
-                _diag_feats[f"disagree_{kind_name}_std"] = np.std(
-                    stack, axis=1, dtype=np.float32
-                ).astype(np.float32)
-                _diag_feats[f"disagree_{kind_name}_range"] = (
-                    np.max(stack, axis=1) - np.min(stack, axis=1)
-                ).astype(np.float32)
-                _diag_feats[f"disagree_{kind_name}_pair_abs"] = pair_abs.astype(
-                    np.float32
-                )
-                _diag_feats[f"disagree_{kind_name}_vote_mix"] = (
-                    4.0 * vote_p * (1.0 - vote_p)
-                ).astype(np.float32)
-                if kind_name == "tf":
-                    agree_tf_avg = (1.0 - np.clip(pair_abs, 0.0, 1.0)).astype(
-                        np.float32
-                    )
+        # Bulk initialize to avoid fragmentation PerformanceWarnings
+        _feat_dict = {}
+        for mk in feat_cols:
+            _col_val = df[f"{raw_prefix}{mk}"]
+            if isinstance(_col_val, pd.DataFrame):
+                # Handle unexpected duplicate column names by taking the first one
+                _feat_dict[mk] = _col_val.iloc[:, 0].values
+            else:
+                _feat_dict[mk] = _col_val.values
+
+        X_feats = (
+            pd.DataFrame(_feat_dict, index=df.index).fillna(0.0).astype(np.float32)
+        )
+
+        n_res = df.get(
+            "__n_res__", pd.Series(np.ones(len(df)), index=df.index)
+        ).values.astype(np.float32)
+        keep = n_res >= np.quantile(n_res, 0.20)
+        if keep.sum() < 100:
+            keep = np.ones(len(df), dtype=bool)
+
+        # Memory optimization: use single copy with shared index, avoid redundant copies
+        keep_idx = np.where(keep)[0]
+        df = df.iloc[keep_idx].reset_index(drop=True)
+        X_feats = X_feats.iloc[keep_idx].reset_index(drop=True)
+        pred_h = pred_h.iloc[keep_idx].reset_index(drop=True)
+        if _vol_proxy is not None:
+            _vol_proxy = _vol_proxy[keep]
+        p_oof = p_oof[keep]
+        n_res = n_res[keep]
+        _y_per_h = {h: v[keep] for h, v in _y_per_h.items()}
+        y_target_h = y_target_h[keep]
+        _trade_mask = np.ones(len(df), dtype=bool)
+        if "__trigger_offset_h__" in df.columns:
+            _trade_mask = np.abs(
+                np.asarray(df["__trigger_offset_h__"].values, dtype=float)
+            ) <= float(cfg.get("trade_mask_abs_hours", 4.0))
+
+        # Build per-horizon logit features in bulk
+        from scipy.special import expit as _sigmoid
+        from scipy.special import logit as _logit_fn
+
+        _logit_data = {}
+        _logit_parts = []
+        for h in sorted(horizon_dfs.keys()):
+            _p_h = np.clip(
+                pred_h[f"pred_H{h}"].values.astype(float), 1e-4, 1 - 1e-4
+            )
+            _lg_h = np.clip(_logit_fn(_p_h), -4.0, 4.0).astype(np.float32)
+            _logit_data[f"pred_logit_H{h}"] = _lg_h
+            _logit_parts.append(_lg_h)
+
+        _logit_avg = np.mean(_logit_parts, axis=0).astype(np.float32)
+        _logit_data["pred_logit"] = _logit_avg
+
+        # Combine everything in one shot
+        X_feats = pd.concat(
+            [X_feats, pd.DataFrame(_logit_data, index=X_feats.index), pred_h],
+            axis=1,
+        )
+
+        # Disagreement/Cross-kind features in bulk
+        _diag_feats = {}
+        # Fetch strategies specifically for the current side
+        strategies = get_strategies(cfg)
+        available_kinds = [s["strategy_id"] for s in strategies if s["trade_side"] == side]
+        for kind_name in available_kinds:
+            # Safely get horizon predictions, handling missing columns
+            horizon_preds = []
+            for h in CANON_HORIZONS:
+                col = f"pred_{kind_name}_H{int(h)}"
+                if col in pred_h.columns:
+                    horizon_preds.append(pred_h[col].values.astype(np.float32))
                 else:
-                    agree_mr_avg = (1.0 - np.clip(pair_abs, 0.0, 1.0)).astype(
-                        np.float32
-                    )
-
-            _diag_feats["agree_tf_minus_mr_avg"] = (agree_tf_avg - agree_mr_avg).astype(
+                    horizon_preds.append(np.full(len(pred_h), 0.5, dtype=np.float32))
+            stack = np.vstack(horizon_preds).T.astype(np.float32)
+            pair_terms = []
+            for i in range(len(horizon_preds)):
+                for j in range(i + 1, len(horizon_preds)):
+                    pair_terms.append(np.abs(horizon_preds[i] - horizon_preds[j]))
+            pair_abs = (
+                np.mean(np.vstack(pair_terms), axis=0)
+                if pair_terms
+                else np.zeros(len(stack), dtype=np.float32)
+            )
+            vote_p = (stack > 0.5).mean(axis=1).astype(np.float32)
+            _diag_feats[f"disagree_{kind_name}_std"] = np.std(
+                stack, axis=1, dtype=np.float32
+            ).astype(np.float32)
+            _diag_feats[f"disagree_{kind_name}_range"] = (
+                np.max(stack, axis=1) - np.min(stack, axis=1)
+            ).astype(np.float32)
+            _diag_feats[f"disagree_{kind_name}_pair_abs"] = pair_abs.astype(
                 np.float32
             )
-            for h in CANON_HORIZONS:
-                _diag_feats[f"tf_minus_mr_H{h}"] = (
-                    pred_h[f"pred_tf_H{h}"].values.astype(np.float32)
-                    - pred_h[f"pred_mr_H{h}"].values.astype(np.float32)
-                ).astype(np.float32)
+            _diag_feats[f"disagree_{kind_name}_vote_mix"] = (
+                4.0 * vote_p * (1.0 - vote_p)
+            ).astype(np.float32)
+            # Dynamically compute agreement
+            _diag_feats[f"agree_{kind_name}_avg"] = (1.0 - np.clip(pair_abs, 0.0, 1.0)).astype(np.float32)
 
-            X_feats = pd.concat(
-                [X_feats, pd.DataFrame(_diag_feats, index=X_feats.index)], axis=1
+        # Cross-kind difference pairs dynamically computed for all available kinds
+        if len(available_kinds) >= 2:
+            for i in range(len(available_kinds)):
+                for j in range(i + 1, len(available_kinds)):
+                    kind_a = available_kinds[i]
+                    kind_b = available_kinds[j]
+
+                    if f"agree_{kind_a}_avg" in _diag_feats and f"agree_{kind_b}_avg" in _diag_feats:
+                        _diag_feats[f"agree_{kind_a}_minus_{kind_b}_avg"] = (
+                            _diag_feats[f"agree_{kind_a}_avg"] - _diag_feats[f"agree_{kind_b}_avg"]
+                        ).astype(np.float32)
+
+                    for h in CANON_HORIZONS:
+                        col_a = f"pred_{kind_a}_H{h}"
+                        col_b = f"pred_{kind_b}_H{h}"
+                        if col_a in pred_h.columns and col_b in pred_h.columns:
+                            _diag_feats[f"{kind_a}_minus_{kind_b}_H{h}"] = (
+                                pred_h[col_a].values.astype(np.float32)
+                                - pred_h[col_b].values.astype(np.float32)
+                            ).astype(np.float32)
+
+        X_feats = pd.concat(
+            [X_feats, pd.DataFrame(_diag_feats, index=X_feats.index)], axis=1
+        )
+
+        X_meta_base = X_feats.fillna(0.0)
+
+        # pred_logit interaction terms removed by design.
+        # Root-cause analysis showed they can amplify incorrect MAE directionality.
+        pred_logit = _logit_avg
+
+        # Cross-timeframe context features
+        if (
+            "trend_slope_48h" in X_meta_base.columns
+            and "trend_slope_120h" in X_meta_base.columns
+        ):
+            _ts48 = X_meta_base["trend_slope_48h"].values
+            _ts120 = X_meta_base["trend_slope_120h"].values
+            X_meta_base["trend_slope_ratio_48_120"] = np.where(
+                np.abs(_ts120) > 1e-9,
+                _ts48 / np.clip(np.abs(_ts120), 1e-9, None),
+                0.0,
+            ).astype(np.float32)
+        if (
+            "__regime_vol_12h__" in df.columns
+            and "__regime_vol_48h__" in df.columns
+        ):
+            _v12 = df["__regime_vol_12h__"].values
+            _v48 = df["__regime_vol_48h__"].values
+            X_meta_base["vol_regime_agree"] = (_v12 == _v48).astype(np.float32)
+            X_meta_base["vol_regime_diff"] = (_v12 - _v48).astype(np.float32)
+        if (
+            "__regime_trend_12h__" in df.columns
+            and "__regime_trend_48h__" in df.columns
+        ):
+            _t12 = df["__regime_trend_12h__"].values
+            _t48 = df["__regime_trend_48h__"].values
+            X_meta_base["trend_regime_agree"] = (_t12 == _t48).astype(np.float32)
+            X_meta_base["trend_regime_diff"] = (_t12 - _t48).astype(np.float32)
+
+        meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
+
+        if _use_aligned_map_v2:
+            tprint(
+                f"  Using aligned meta map v2 for {side}_{k}: "
+                f"TBM/MAE/MFE map heads + classifier"
+            )
+            _fit_aligned_meta_map_heads(
+                side=side,
+                k=k,
+                df=df,
+                X_meta_base=X_meta_base,
+                meta_groups=meta_groups,
+                trade_mask=_trade_mask,
+                ret_for_h=_ret_for_h_aligned,
+            )
+            continue
+
+        # ══════════════════════════════════════════════════════════════
+        # MAIN META REGRESSOR (bucket-level)
+        # ══════════════════════════════════════════════════════════════
+        # Pick a representative horizon for sample weighting / label context (e.g. 8h)
+        _h_main = 8 if 8 in _y_per_h else sorted(_y_per_h.keys())[-1]
+        _h_label = f"{side}_{k}_reg"
+        y_ret_raw_main = y_target_h.astype(np.float64)
+
+        # Guard: replace any inf/nan with 0 so downstream sklearn/optuna don't choke
+        _y_finite_mask = np.isfinite(y_ret_raw_main)
+        if not _y_finite_mask.all():
+            _y_fill = (
+                float(np.nanmedian(y_ret_raw_main[_y_finite_mask]))
+                if _y_finite_mask.any()
+                else 0.0
+            )
+            y_ret_raw_main = np.where(_y_finite_mask, y_ret_raw_main, _y_fill)
+
+        # Sample weights: magnitude sigmoid (very slight top-40% upweight) + MFE/MAE quality
+        # Use main horizon for quality indicators
+        _alpha_w = float(cfg.get("meta_weight_sigmoid_alpha", 0.2))
+        _y_abs = np.abs(y_ret_raw_main)
+        _fin_w = np.isfinite(_y_abs)
+        _q60 = float(np.percentile(_y_abs[_fin_w], 60))
+        _s_w = max(float(np.std(_y_abs[_fin_w])), 1e-9)
+        # sigmoid centered at p60: top-40% get ~1.1-1.2x, bottom-60% get ~1.0x
+        w_mag = 1.0 + _alpha_w * _sigmoid((_y_abs - _q60) / _s_w)
+        w_mag = w_mag / max(float(np.mean(w_mag)), 1e-12)  # normalize to mean=1
+
+        _mfe_col = f"__meta_raw__mfe_{_h_main}h"
+        _mae_col = f"__meta_raw__mae_{_h_main}h"
+        _bp = (
+            df["__barrier_pct__"].values
+            if "__barrier_pct__" in df.columns
+            else None
+        )
+        if _mfe_col in df.columns and _mae_col in df.columns and _bp is not None:
+            _mfe_v = np.nan_to_num(df[_mfe_col].values, nan=0.0).astype(np.float64)
+            _mae_v = np.nan_to_num(df[_mae_col].values, nan=0.0).astype(np.float64)
+            _bp_v = np.clip(_bp.astype(np.float64), 1e-6, None)
+            _d_exc = np.maximum(np.abs(_mfe_v) / _bp_v, np.abs(_mae_v) / _bp_v)
+            _tau_exc = float(cfg.get("meta_mfe_mae_tau", 1.0))
+            w_exc = 0.5 + 0.5 * np.clip(_d_exc / _tau_exc, 0.0, 1.0)
+        else:
+            w_exc = np.ones(len(df), dtype=np.float64)
+        w_exc = w_exc / max(float(np.mean(w_exc)), 1e-12)  # normalize to mean=1
+
+        w_meta_main = (w_mag * w_exc).astype(np.float64)
+        w_meta_main = w_meta_main / max(
+            float(np.mean(w_meta_main)), 1e-12
+        )  # final mean=1
+        # Guard n_eff: clip extreme weights so n_eff >= 30% of N
+        _n_eff = float(
+            np.sum(w_meta_main) ** 2 / max(np.sum(w_meta_main**2), 1e-12)
+        )
+        if _n_eff < 0.3 * len(w_meta_main):
+            _clip_hi = float(np.percentile(w_meta_main, 95))
+            w_meta_main = np.clip(w_meta_main, 0.0, _clip_hi)
+            w_meta_main = w_meta_main / max(float(np.mean(w_meta_main)), 1e-12)
+            _n_eff_new = float(
+                np.sum(w_meta_main) ** 2 / max(np.sum(w_meta_main**2), 1e-12)
+            )
+            tprint(
+                f"    {_h_label} n_eff clipped: {_n_eff:.0f} -> {_n_eff_new:.0f} (N={len(w_meta_main)})"
             )
 
-            X_meta_base = X_feats.fillna(0.0)
-
-            # pred_logit interaction terms removed by design.
-            # Root-cause analysis showed they can amplify incorrect MAE directionality.
-            pred_logit = _logit_avg
-
-            # Cross-timeframe context features
-            if (
-                "trend_slope_48h" in X_meta_base.columns
-                and "trend_slope_120h" in X_meta_base.columns
-            ):
-                _ts48 = X_meta_base["trend_slope_48h"].values
-                _ts120 = X_meta_base["trend_slope_120h"].values
-                X_meta_base["trend_slope_ratio_48_120"] = np.where(
-                    np.abs(_ts120) > 1e-9,
-                    _ts48 / np.clip(np.abs(_ts120), 1e-9, None),
-                    0.0,
-                ).astype(np.float32)
-            if (
-                "__regime_vol_12h__" in df.columns
-                and "__regime_vol_48h__" in df.columns
-            ):
-                _v12 = df["__regime_vol_12h__"].values
-                _v48 = df["__regime_vol_48h__"].values
-                X_meta_base["vol_regime_agree"] = (_v12 == _v48).astype(np.float32)
-                X_meta_base["vol_regime_diff"] = (_v12 - _v48).astype(np.float32)
-            if (
-                "__regime_trend_12h__" in df.columns
-                and "__regime_trend_48h__" in df.columns
-            ):
-                _t12 = df["__regime_trend_12h__"].values
-                _t48 = df["__regime_trend_48h__"].values
-                X_meta_base["trend_regime_agree"] = (_t12 == _t48).astype(np.float32)
-                X_meta_base["trend_regime_diff"] = (_t12 - _t48).astype(np.float32)
-
-            meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
-
-            if _use_aligned_map_v2:
-                tprint(
-                    f"  Using aligned meta map v2 for {side}_{k}: "
-                    f"TBM/MAE/MFE map heads + classifier"
+        if (
+            bool(cfg.get("sample_weight_opt_enable", True))
+            and "__ts__" in df.columns
+        ):
+            _meta_ts = pd.to_datetime(df["__ts__"])
+            _meta_label_times = pd.DataFrame(
+                {
+                    "t_start": _meta_ts,
+                    "t_end": _meta_ts + pd.Timedelta(hours=int(_h_main)),
+                }
+            )
+            _meta_extra = {
+                "magnitude": w_mag,
+                "excursion": w_exc,
+            }
+            # vol_cs component removed per user request
+            _w_opt = _optimize_training_sample_weights(
+                df=pd.DataFrame({"ts": _meta_ts}),
+                X_frame=X_meta_base.select_dtypes(include=[np.number]).fillna(0.0),
+                y_ret=y_ret_raw_main,
+                label_times=_meta_label_times,
+                base_weights=w_meta_main,
+                cfg={
+                    **cfg,
+                    "sample_weight_opt_trials": int(
+                        cfg.get(
+                            "meta_sample_weight_opt_trials",
+                            cfg.get("sample_weight_opt_trials", 16),
+                        )
+                    ),
+                },
+                stage=f"meta_{_h_label}",
+                extra_components=_meta_extra,
+            )
+            # If optimizer dropped non-finite rows internally, expand back to full union size
+            _full_n = len(w_meta_main)
+            if len(_w_opt) != _full_n:
+                _fin_mask = np.isfinite(y_ret_raw_main)
+                _w_expanded = np.full(
+                    _full_n, float(np.median(_w_opt)), dtype=np.float64
                 )
-                _fit_aligned_meta_map_heads(
-                    side=side,
-                    k=k,
-                    df=df,
-                    X_meta_base=X_meta_base,
-                    meta_groups=meta_groups,
-                    trade_mask=_trade_mask,
-                    ret_for_h=_ret_for_h_aligned,
+                _w_expanded[_fin_mask] = _w_opt[: int(_fin_mask.sum())]
+                w_meta_main = _w_expanded
+            else:
+                w_meta_main = _w_opt
+        w_meta_main = w_meta_main.astype(np.float32)
+
+        # Fit bucket-level regressor only when explicitly enabled (default disabled).
+        if include_meta_reg:
+            meta_reg = MetaModel(reports_dir=reports_dir)
+            meta_reg.strategy_name = _h_label
+            _meta_sel_cfg = dict(cfg.get("meta_selector_cfg", {}) or {})
+            _meta_fs_dir = os.path.join(
+                str(cfg.get("data_root", "data")),
+                "artifacts",
+                str(cfg.get("run_id", "default")),
+                "fs_reports",
+            )
+            _meta_prev_sel = None
+            _meta_prev_run = (
+                cfg.get("prev_run_id")
+                or cfg.get("prior_run_id")
+                or cfg.get("warm_start_run_id")
+            )
+            if _meta_prev_run:
+                _meta_prev_path = os.path.join(
+                    str(cfg.get("data_root", "data")),
+                    "artifacts",
+                    str(_meta_prev_run),
+                    "fs_reports",
+                    f"meta_{_h_label}",
+                    "selected_features.json",
                 )
-                continue
+                if os.path.exists(_meta_prev_path):
+                    try:
+                        with open(_meta_prev_path, "r", encoding="utf-8") as _f:
+                            _meta_prev_sel = list(
+                                (json.load(_f) or {}).get("selected_features", [])
+                            )
+                    except Exception:
+                        _meta_prev_sel = None
+            meta_reg.selector_cfg = _meta_sel_cfg
+            meta_reg.selector_report_dir = _meta_fs_dir
+            meta_reg.selector_prev_selected = _meta_prev_sel
+            meta_reg.selector_family_map = dict(
+                cfg.get("selector_feature_family_map", {}) or {}
+            )
+            tprint(
+                f"  Fitting MetaModel {_h_label} (n={len(df)}, feats={X_meta_base.shape[1]}) ({_time.monotonic()-_t0_meta:.1f}s)..."
+            )
+            _meta_y_per_h = (
+                None
+                if bool(cfg.get("meta_use_policy_value_target", True))
+                else _y_per_h
+            )
+            meta_reg.fit(
+                X_meta_base,
+                y_target_h,
+                sample_weight=w_meta_main,
+                groups=meta_groups,
+                y_per_horizon=_meta_y_per_h,
+            )
+            meta_models[_h_label] = meta_reg
+            _bucket_y_ret[_h_label] = y_ret_raw_main.copy()
+            tprint(f"Meta {_h_label}: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
 
-            # ══════════════════════════════════════════════════════════════
-            # MAIN META REGRESSOR (bucket-level)
-            # ══════════════════════════════════════════════════════════════
-            # Pick a representative horizon for sample weighting / label context (e.g. 8h)
-            _h_main = 8 if 8 in _y_per_h else sorted(_y_per_h.keys())[-1]
-            _h_label = f"{side}_{k}_reg"
-            y_ret_raw_main = y_target_h.astype(np.float64)
-
-            # Guard: replace any inf/nan with 0 so downstream sklearn/optuna don't choke
-            _y_finite_mask = np.isfinite(y_ret_raw_main)
-            if not _y_finite_mask.all():
-                _y_fill = (
-                    float(np.nanmedian(y_ret_raw_main[_y_finite_mask]))
-                    if _y_finite_mask.any()
-                    else 0.0
+            # Orientation safeguard for MR buckets
+            if meta_reg.oof_probs is not None:
+                y_ret_filtered = (
+                    df["__y_ret__"].values
+                    if "__y_ret__" in df.columns
+                    else y_target_h
                 )
-                y_ret_raw_main = np.where(_y_finite_mask, y_ret_raw_main, _y_fill)
+                _mask_eval = np.asarray(_trade_mask, dtype=bool)[
+                    : len(y_ret_filtered)
+                ]
 
-            # Sample weights: magnitude sigmoid (very slight top-40% upweight) + MFE/MAE quality
-            # Use main horizon for quality indicators
-            _alpha_w = float(cfg.get("meta_weight_sigmoid_alpha", 0.2))
-            _y_abs = np.abs(y_ret_raw_main)
-            _fin_w = np.isfinite(_y_abs)
-            _q60 = float(np.percentile(_y_abs[_fin_w], 60))
-            _s_w = max(float(np.std(_y_abs[_fin_w])), 1e-9)
-            # sigmoid centered at p60: top-40% get ~1.1-1.2x, bottom-60% get ~1.0x
-            w_mag = 1.0 + _alpha_w * _sigmoid((_y_abs - _q60) / _s_w)
-            w_mag = w_mag / max(float(np.mean(w_mag)), 1e-12)  # normalize to mean=1
+                def _top_spread(yv, sv, frac=0.10):
+                    n = len(yv)
+                    if n <= 2:
+                        return 0.0
+                    ksel = max(1, int(frac * n))
+                    it = np.argsort(sv)[-ksel:]
+                    ib = np.argsort(sv)[:ksel]
+                    return float(np.mean(yv[it]) - np.mean(yv[ib]))
 
-            _mfe_col = f"__meta_raw__mfe_{_h_main}h"
-            _mae_col = f"__meta_raw__mae_{_h_main}h"
-            _bp = (
+                pred_oof = np.asarray(meta_reg.oof_probs, dtype=float)
+                ic_pos = _safe_spearman(
+                    pred_oof[_mask_eval], y_ret_filtered[_mask_eval]
+                )
+                ic_neg = _safe_spearman(
+                    (-pred_oof)[_mask_eval], y_ret_filtered[_mask_eval]
+                )
+                sp_pos = _top_spread(
+                    y_ret_filtered[_mask_eval], pred_oof[_mask_eval], frac=0.10
+                )
+                sp_neg = _top_spread(
+                    y_ret_filtered[_mask_eval], (-pred_oof)[_mask_eval], frac=0.10
+                )
+
+                meta_reg.score_sign = 1
+                is_mr = "mr" in k.lower()
+                if is_mr and (
+                    (ic_neg > ic_pos + 1e-4) and (sp_neg > sp_pos + 1e-6)
+                ):
+                    meta_reg.score_sign = -1
+                    tprint(
+                        f"Meta {_h_label}: orientation flipped (IC {ic_pos:.4f}->{ic_neg:.4f})"
+                    )
+
+                pred_for_gate = meta_reg.score_sign * pred_oof
+                gate_type = "meta_regression"
+                gate_res = compute_stage_gate_metrics(
+                    y_target_h[_mask_eval],
+                    pred_for_gate[_mask_eval],
+                    y_ret_filtered[_mask_eval],
+                    model_type=gate_type,
+                )
+                gate_res["Model"] = _h_label
+                gate_res["Model_Type"] = gate_type
+                gate_res["Score_Sign"] = int(meta_reg.score_sign)
+                gate_res["IC_Pos"] = float(ic_pos)
+                gate_res["IC_Neg"] = float(ic_neg)
+                gate_res["Spread10_Pos"] = float(sp_pos)
+                gate_res["Spread10_Neg"] = float(sp_neg)
+                meta_gate_results.append(gate_res)
+
+                # Store metadata for this regressor bucket
+                _md = {}
+                for _cn in [
+                    "timestamp",
+                    "symbol",
+                    "asset",
+                    "__ts__",
+                    "__symbol__",
+                    "__y_bin__",
+                    "__y_ret__",
+                    "__u_policy_net__",
+                    "__u_policy__",
+                    "__y_outcome__",
+                    "exit_code",
+                    "__mae_ret__",
+                    "__mfe_ret__",
+                    "__bars_to_mfe__",
+                    "__barrier_pct__",
+                    "__early_inval__",
+                    "__mr_path_penalty__",
+                    "__mr_velocity_penalty__",
+                ]:
+                    if _cn in df.columns:
+                        _md[_cn] = df[_cn].values
+                for _cn in _ps_regime_cols:
+                    if _cn in df.columns:
+                        _md[_cn] = df[_cn].values
+                _bucket_metadata[_h_label] = _md
+        else:
+            tprint(
+                f"Meta {_h_label}: skipped (meta_train_regression_bucket_model=False)"
+            )
+
+        # ══════════════════════════════════════════════════════════════
+        # CLASSIFIER & AUXILIARY HEAD TRAINING (single per bucket, uses all horizons)
+        # ══════════════════════════════════════════════════════════════
+
+        # --- 1. ALWAYS Train Auxiliary Heads (MFE, MAE, Utility) ---
+        # These are critical for the position sizer and reporting, even if classifiers are skipped.
+        # Shared-fold auxiliary heads for sizing/risk features
+        try:
+            _u_raw = (
+                np.asarray(df["__u_policy_net__"].values, dtype=float)
+                if "__u_policy_net__" in df.columns
+                else np.full(len(df), np.nan, dtype=float)
+            )
+            _mae_raw = (
+                np.asarray(df["__mae_ret__"].values, dtype=float)
+                if "__mae_ret__" in df.columns
+                else np.full(len(df), np.nan, dtype=float)
+            )
+            _mfe_raw = (
+                np.asarray(df["__mfe_ret__"].values, dtype=float)
+                if "__mfe_ret__" in df.columns
+                else np.full(len(df), np.nan, dtype=float)
+            )
+            _atr_norm = (
+                np.asarray(df["__barrier_pct__"].values, dtype=float)
+                if "__barrier_pct__" in df.columns
+                else np.full(len(df), np.nan, dtype=float)
+            )
+            _atr_ok = np.isfinite(_atr_norm) & (_atr_norm > 0)
+
+            _y_u = _u_raw
+            _mae_norm = np.full(len(df), np.nan, dtype=float)
+            _mfe_norm = np.full(len(df), np.nan, dtype=float)
+            _mae_norm[_atr_ok] = (
+                np.clip(_mae_raw[_atr_ok], 0.0, None) / _atr_norm[_atr_ok]
+            )
+            _mfe_norm[_atr_ok] = (
+                np.clip(_mfe_raw[_atr_ok], 0.0, None) / _atr_norm[_atr_ok]
+            )
+            _y_mae = np.log1p(np.clip(_mae_norm, 0.0, None))
+            _y_mfe = np.log1p(np.clip(_mfe_norm, 0.0, None))
+
+            _aux_results, _aux_meta = _train_aux_heads_shared_folds(
+                X_num=X_meta_base.select_dtypes(include=[np.number]).fillna(0.0),
+                y_u=_y_u,
+                y_mae=_y_mae,
+                y_mfe=_y_mfe,
+                trade_mask=_trade_mask,
+                timestamps=df["__ts__"].values,
+                cv_embargo_bars=int(cfg.get("cv_embargo_bars", 12)),
+                bucket_id=f"{side}_{k}",
+                data_root=str(cfg.get("data_root", "data")),
+                run_id=str(cfg.get("run_id", "default")),
+            )
+            _aux_head_oof[f"{side}_{k}"] = _aux_results
+
+            # ELBOW: Elevate aux heads to standard meta models for reporting and OOF persistence
+            for _hn, _hm in _aux_meta.items():
+                _hkey = f"{side}_{k}_{_hn}"
+                meta_models[_hkey] = _hm
+                if _hn == "utility":
+                    _bucket_y_ret[_hkey] = np.asarray(_y_u, dtype=float)
+                elif _hn == "mae_q70":
+                    _bucket_y_ret[_hkey] = np.asarray(_y_mae, dtype=float)
+                elif _hn == "mfe":
+                    _bucket_y_ret[_hkey] = np.asarray(_y_mfe, dtype=float)
+                else:
+                    _bucket_y_ret[_hkey] = np.asarray(_y_u, dtype=float)
+
+            # Store metadata for aux heads using standard base names
+            _md = {}
+            for _cn in [
+                "timestamp",
+                "symbol",
+                "asset",
+                "__ts__",
+                "__symbol__",
+                "__y_bin__",
+                "__y_ret__",
+                "__u_policy_net__",
+                "__u_policy__",
+                "__y_outcome__",
+                "exit_code",
+                "__mae_ret__",
+                "__mfe_ret__",
+                "__bars_to_mfe__",
+                "__barrier_pct__",
+                "__early_inval__",
+                "__mr_path_penalty__",
+                "__mr_velocity_penalty__",
+            ]:
+                if _cn in df.columns:
+                    _md[_cn] = df[_cn].values
+            for _cn in _ps_regime_cols:
+                if _cn in df.columns:
+                    _md[_cn] = df[_cn].values
+            for _hn in ["utility", "mae_q70", "mfe"]:
+                _bucket_metadata[f"{side}_{k}_{_hn}"] = _md
+
+        except Exception as _e_aux:
+            tprint(f"Warning: aux head training failed for {side}_{k}: {_e_aux}")
+
+        # --- 2. Optional Meta Classifier Training ---
+        if include_meta_clf:
+            # Magnitude sigmoid: very slight top-40% upweight (same alpha as regressors)
+            # Each source normalized to mean=1 before combining so neither dominates.
+            _alpha_clf = float(cfg.get("meta_weight_sigmoid_alpha", 0.2))
+            _y_avg_abs = np.mean(
+                [np.abs(_y_per_h[h]) for h in _available_horizons], axis=0
+            )
+            _fin_w = np.isfinite(_y_avg_abs)
+            _q60_c = float(np.percentile(_y_avg_abs[_fin_w], 60))
+            _s_c = max(float(np.std(_y_avg_abs[_fin_w])), 1e-9)
+            w_mag_clf = 1.0 + _alpha_clf * _sigmoid((_y_avg_abs - _q60_c) / _s_c)
+            w_mag_clf = w_mag_clf / max(
+                float(np.mean(w_mag_clf)), 1e-12
+            )  # normalize to mean=1
+
+            # MFE/MAE quality weighting for classifier (average across horizons)
+            _bp_clf = (
                 df["__barrier_pct__"].values
                 if "__barrier_pct__" in df.columns
                 else None
             )
-            if _mfe_col in df.columns and _mae_col in df.columns and _bp is not None:
-                _mfe_v = np.nan_to_num(df[_mfe_col].values, nan=0.0).astype(np.float64)
-                _mae_v = np.nan_to_num(df[_mae_col].values, nan=0.0).astype(np.float64)
-                _bp_v = np.clip(_bp.astype(np.float64), 1e-6, None)
-                _d_exc = np.maximum(np.abs(_mfe_v) / _bp_v, np.abs(_mae_v) / _bp_v)
-                _tau_exc = float(cfg.get("meta_mfe_mae_tau", 1.0))
-                w_exc = 0.5 + 0.5 * np.clip(_d_exc / _tau_exc, 0.0, 1.0)
-            else:
-                w_exc = np.ones(len(df), dtype=np.float64)
-            w_exc = w_exc / max(float(np.mean(w_exc)), 1e-12)  # normalize to mean=1
+            w_exc_clf = np.ones(len(df), dtype=np.float64)
+            if _bp_clf is not None:
+                _exc_parts = []
+                for _hc in _available_horizons:
+                    _mfe_col_c = f"__meta_raw__mfe_{_hc}h"
+                    _mae_col_c = f"__meta_raw__mae_{_hc}h"
+                    if _mfe_col_c in df.columns and _mae_col_c in df.columns:
+                        _mfe_vc = np.nan_to_num(
+                            df[_mfe_col_c].values, nan=0.0
+                        ).astype(np.float64)
+                        _mae_vc = np.nan_to_num(
+                            df[_mae_col_c].values, nan=0.0
+                        ).astype(np.float64)
+                        _bp_vc = np.clip(_bp_clf.astype(np.float64), 1e-6, None)
+                        _exc_parts.append(
+                            np.maximum(
+                                np.abs(_mfe_vc) / _bp_vc, np.abs(_mae_vc) / _bp_vc
+                            )
+                        )
+                if _exc_parts:
+                    _d_exc_clf = np.mean(_exc_parts, axis=0)
+                    _tau_exc_clf = float(cfg.get("meta_mfe_mae_tau", 1.0))
+                    w_exc_clf = 0.5 + 0.5 * np.clip(
+                        _d_exc_clf / _tau_exc_clf, 0.0, 1.0
+                    )
+            w_exc_clf = w_exc_clf / max(
+                float(np.mean(w_exc_clf)), 1e-12
+            )  # normalize to mean=1
 
-            w_meta_main = (w_mag * w_exc).astype(np.float64)
-            w_meta_main = w_meta_main / max(
-                float(np.mean(w_meta_main)), 1e-12
+            w_meta_clf = (w_mag_clf * w_exc_clf).astype(np.float64)
+            w_meta_clf = w_meta_clf / max(
+                float(np.mean(w_meta_clf)), 1e-12
             )  # final mean=1
             # Guard n_eff: clip extreme weights so n_eff >= 30% of N
-            _n_eff = float(
-                np.sum(w_meta_main) ** 2 / max(np.sum(w_meta_main**2), 1e-12)
+            _n_eff_clf = float(
+                np.sum(w_meta_clf) ** 2 / max(np.sum(w_meta_clf**2), 1e-12)
             )
-            if _n_eff < 0.3 * len(w_meta_main):
-                _clip_hi = float(np.percentile(w_meta_main, 95))
-                w_meta_main = np.clip(w_meta_main, 0.0, _clip_hi)
-                w_meta_main = w_meta_main / max(float(np.mean(w_meta_main)), 1e-12)
-                _n_eff_new = float(
-                    np.sum(w_meta_main) ** 2 / max(np.sum(w_meta_main**2), 1e-12)
+            if _n_eff_clf < 0.3 * len(w_meta_clf):
+                _clip_hi_clf = float(np.percentile(w_meta_clf, 95))
+                w_meta_clf = np.clip(w_meta_clf, 0.0, _clip_hi_clf)
+                w_meta_clf = w_meta_clf / max(float(np.mean(w_meta_clf)), 1e-12)
+                _n_eff_clf_new = float(
+                    np.sum(w_meta_clf) ** 2 / max(np.sum(w_meta_clf**2), 1e-12)
                 )
                 tprint(
-                    f"    {_h_label} n_eff clipped: {_n_eff:.0f} -> {_n_eff_new:.0f} (N={len(w_meta_main)})"
+                    f"    {side}_{k}_clf n_eff clipped: {_n_eff_clf:.0f} -> {_n_eff_clf_new:.0f} (N={len(w_meta_clf)})"
                 )
 
             if (
                 bool(cfg.get("sample_weight_opt_enable", True))
                 and "__ts__" in df.columns
             ):
-                _meta_ts = pd.to_datetime(df["__ts__"])
-                _meta_label_times = pd.DataFrame(
+                _meta_ts_c = pd.to_datetime(df["__ts__"])
+                _mid_h_c = (
+                    4
+                    if 4 in _available_horizons
+                    else _available_horizons[len(_available_horizons) // 2]
+                )
+                _meta_label_times_c = pd.DataFrame(
                     {
-                        "t_start": _meta_ts,
-                        "t_end": _meta_ts + pd.Timedelta(hours=int(_h_main)),
+                        "t_start": _meta_ts_c,
+                        "t_end": _meta_ts_c + pd.Timedelta(hours=int(_mid_h_c)),
                     }
                 )
-                _meta_extra = {
-                    "magnitude": w_mag,
-                    "excursion": w_exc,
-                }
-                # vol_cs component removed per user request
-                _w_opt = _optimize_training_sample_weights(
-                    df=pd.DataFrame({"ts": _meta_ts}),
-                    X_frame=X_meta_base.select_dtypes(include=[np.number]).fillna(0.0),
-                    y_ret=y_ret_raw_main,
-                    label_times=_meta_label_times,
-                    base_weights=w_meta_main,
+                w_meta_clf = _optimize_training_sample_weights(
+                    df=pd.DataFrame({"ts": _meta_ts_c}),
+                    X_frame=X_meta_base.select_dtypes(include=[np.number]).fillna(
+                        0.0
+                    ),
+                    y_ret=_y_per_h[_mid_h_c].astype(np.float64),
+                    label_times=_meta_label_times_c,
+                    base_weights=w_meta_clf,
                     cfg={
                         **cfg,
                         "sample_weight_opt_trials": int(
@@ -8881,619 +9268,246 @@ def train_meta_models_from_artifacts(
                             )
                         ),
                     },
-                    stage=f"meta_{_h_label}",
-                    extra_components=_meta_extra,
+                    stage=f"meta_clf_{side}_{k}",
+                    extra_components={
+                        "magnitude": w_mag_clf,
+                        "excursion": w_exc_clf,
+                    },
                 )
-                # If optimizer dropped non-finite rows internally, expand back to full union size
-                _full_n = len(w_meta_main)
-                if len(_w_opt) != _full_n:
-                    _fin_mask = np.isfinite(y_ret_raw_main)
-                    _w_expanded = np.full(
-                        _full_n, float(np.median(_w_opt)), dtype=np.float64
-                    )
-                    _w_expanded[_fin_mask] = _w_opt[: int(_fin_mask.sum())]
-                    w_meta_main = _w_expanded
-                else:
-                    w_meta_main = _w_opt
-            w_meta_main = w_meta_main.astype(np.float32)
+            w_meta_clf = w_meta_clf.astype(np.float32)
 
-            # Fit bucket-level regressor only when explicitly enabled (default disabled).
-            if include_meta_reg:
-                meta_reg = MetaModel(reports_dir=reports_dir)
-                meta_reg.strategy_name = _h_label
-                _meta_sel_cfg = dict(cfg.get("meta_selector_cfg", {}) or {})
-                _meta_fs_dir = os.path.join(
-                    str(cfg.get("data_root", "data")),
-                    "artifacts",
-                    str(cfg.get("run_id", "default")),
-                    "fs_reports",
-                )
-                _meta_prev_sel = None
-                _meta_prev_run = (
-                    cfg.get("prev_run_id")
-                    or cfg.get("prior_run_id")
-                    or cfg.get("warm_start_run_id")
-                )
-                if _meta_prev_run:
-                    _meta_prev_path = os.path.join(
-                        str(cfg.get("data_root", "data")),
-                        "artifacts",
-                        str(_meta_prev_run),
-                        "fs_reports",
-                        f"meta_{_h_label}",
-                        "selected_features.json",
+            # Use the middle horizon's target for the classifier's y_ret argument
+            _mid_h = (
+                4
+                if 4 in _y_per_h
+                else _available_horizons[len(_available_horizons) // 2]
+            )
+            y_target_clf = _y_per_h[_mid_h].astype(np.float64)
+
+            _use_engine_meta_labels = bool(
+                cfg.get("meta_clf_use_engine_labels", True)
+            )
+            _y_class_override = None
+            if _use_engine_meta_labels:
+                if "__y_outcome__" not in df.columns:
+                    raise RuntimeError(
+                        "meta_clf_use_engine_labels=True requires '__y_outcome__' in artifacts. "
+                        "Regenerate labels with policy_rollout_labeling enabled."
                     )
-                    if os.path.exists(_meta_prev_path):
-                        try:
-                            with open(_meta_prev_path, "r", encoding="utf-8") as _f:
-                                _meta_prev_sel = list(
-                                    (json.load(_f) or {}).get("selected_features", [])
-                                )
-                        except Exception:
-                            _meta_prev_sel = None
-                meta_reg.selector_cfg = _meta_sel_cfg
-                meta_reg.selector_report_dir = _meta_fs_dir
-                meta_reg.selector_prev_selected = _meta_prev_sel
-                meta_reg.selector_family_map = dict(
-                    cfg.get("selector_feature_family_map", {}) or {}
+                _y_class_override = np.asarray(
+                    df["__y_outcome__"].values, dtype=np.int8
                 )
                 tprint(
-                    f"  Fitting MetaModel {_h_label} (n={len(df)}, feats={X_meta_base.shape[1]}) ({_time.monotonic()-_t0_meta:.1f}s)..."
+                    f"  Meta classifier labels source=engine counts="
+                    f"SL={int(np.sum(_y_class_override == 0))} "
+                    f"TO={int(np.sum(_y_class_override == 1))} "
+                    f"TP={int(np.sum(_y_class_override == 2))}"
                 )
-                _meta_y_per_h = (
-                    None
-                    if bool(cfg.get("meta_use_policy_value_target", True))
-                    else _y_per_h
-                )
-                meta_reg.fit(
-                    X_meta_base,
-                    y_target_h,
-                    sample_weight=w_meta_main,
-                    groups=meta_groups,
-                    y_per_horizon=_meta_y_per_h,
-                )
-                meta_models[_h_label] = meta_reg
-                _bucket_y_ret[_h_label] = y_ret_raw_main.copy()
-                tprint(f"Meta {_h_label}: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
 
-                # Orientation safeguard for MR buckets
-                if meta_reg.oof_probs is not None:
-                    y_ret_filtered = (
-                        df["__y_ret__"].values
-                        if "__y_ret__" in df.columns
-                        else y_target_h
-                    )
-                    _mask_eval = np.asarray(_trade_mask, dtype=bool)[
-                        : len(y_ret_filtered)
-                    ]
-
-                    def _top_spread(yv, sv, frac=0.10):
-                        n = len(yv)
-                        if n <= 2:
-                            return 0.0
-                        ksel = max(1, int(frac * n))
-                        it = np.argsort(sv)[-ksel:]
-                        ib = np.argsort(sv)[:ksel]
-                        return float(np.mean(yv[it]) - np.mean(yv[ib]))
-
-                    pred_oof = np.asarray(meta_reg.oof_probs, dtype=float)
-                    ic_pos = _safe_spearman(
-                        pred_oof[_mask_eval], y_ret_filtered[_mask_eval]
-                    )
-                    ic_neg = _safe_spearman(
-                        (-pred_oof)[_mask_eval], y_ret_filtered[_mask_eval]
-                    )
-                    sp_pos = _top_spread(
-                        y_ret_filtered[_mask_eval], pred_oof[_mask_eval], frac=0.10
-                    )
-                    sp_neg = _top_spread(
-                        y_ret_filtered[_mask_eval], (-pred_oof)[_mask_eval], frac=0.10
-                    )
-
-                    meta_reg.score_sign = 1
-                    if k == "mr" and (
-                        (ic_neg > ic_pos + 1e-4) and (sp_neg > sp_pos + 1e-6)
-                    ):
-                        meta_reg.score_sign = -1
-                        tprint(
-                            f"Meta {_h_label}: orientation flipped (IC {ic_pos:.4f}->{ic_neg:.4f})"
-                        )
-
-                    pred_for_gate = meta_reg.score_sign * pred_oof
-                    gate_type = "meta_regression"
-                    gate_res = compute_stage_gate_metrics(
-                        y_target_h[_mask_eval],
-                        pred_for_gate[_mask_eval],
-                        y_ret_filtered[_mask_eval],
-                        model_type=gate_type,
-                    )
-                    gate_res["Model"] = _h_label
-                    gate_res["Model_Type"] = gate_type
-                    gate_res["Score_Sign"] = int(meta_reg.score_sign)
-                    gate_res["IC_Pos"] = float(ic_pos)
-                    gate_res["IC_Neg"] = float(ic_neg)
-                    gate_res["Spread10_Pos"] = float(sp_pos)
-                    gate_res["Spread10_Neg"] = float(sp_neg)
-                    meta_gate_results.append(gate_res)
-
-                    # Store metadata for this regressor bucket
-                    _md = {}
-                    for _cn in [
-                        "timestamp",
-                        "symbol",
-                        "asset",
-                        "__ts__",
-                        "__symbol__",
-                        "__y_bin__",
-                        "__y_ret__",
-                        "__u_policy_net__",
-                        "__u_policy__",
-                        "__y_outcome__",
-                        "exit_code",
-                        "__mae_ret__",
-                        "__mfe_ret__",
-                        "__bars_to_mfe__",
-                        "__barrier_pct__",
-                        "__early_inval__",
-                        "__mr_path_penalty__",
-                        "__mr_velocity_penalty__",
-                    ]:
-                        if _cn in df.columns:
-                            _md[_cn] = df[_cn].values
-                    for _cn in _ps_regime_cols:
-                        if _cn in df.columns:
-                            _md[_cn] = df[_cn].values
-                    _bucket_metadata[_h_label] = _md
+            tprint(
+                f"  Fitting MetaClassifierModel {side}_{k} ({_time.monotonic()-_t0_meta:.1f}s)..."
+            )
+            meta_clf = MetaClassifierModel(reports_dir=reports_dir)
+            meta_clf.strategy_name = f"{side}_{k}"
+            meta_clf.FEE_PER_ROUND_TRIP = (
+                float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
+            )
+            # Pass vol_proxy for risk-unit thresholding
+            _sel_cfg = MetaClassifierSelectionConfig(
+                max_logloss=float(cfg.get("meta_clf_max_logloss", 1.10)),
+                dynamic_utility_from_realized=bool(
+                    cfg.get("meta_clf_dynamic_utility_from_realized", True)
+                ),
+                u_tp=float(cfg.get("meta_clf_u_tp", 1.0)),
+                u_to=float(cfg.get("meta_clf_u_to", 0.0)),
+                u_sl=float(cfg.get("meta_clf_u_sl", -3.0)),
+                top_frac=float(cfg.get("meta_clf_top_frac", 0.30)),
+                min_top_n=int(cfg.get("meta_clf_min_top_n", 50)),
+                min_lift_vs_baseline=float(
+                    cfg.get("meta_clf_min_lift_vs_baseline", 0.0)
+                ),
+                require_positive_oof_utility=bool(
+                    cfg.get("meta_clf_require_positive_oof_utility", True)
+                ),
+            )
+            if "__u_policy_net__" in df.columns:
+                _realized_u = np.asarray(df["__u_policy_net__"].values, dtype=float)
             else:
-                tprint(
-                    f"Meta {_h_label}: skipped (meta_train_regression_bucket_model=False)"
+                _realized_u = np.log1p(
+                    np.clip(np.asarray(y_target_clf, dtype=float), -0.999999, None)
                 )
 
-            # ══════════════════════════════════════════════════════════════
-            # CLASSIFIER & AUXILIARY HEAD TRAINING (single per bucket, uses all horizons)
-            # ══════════════════════════════════════════════════════════════
+            meta_clf.fit(
+                X_meta_base,
+                y_target_clf,
+                sample_weight=w_meta_clf,
+                groups=meta_groups,
+                y_per_horizon=None if _y_class_override is not None else _y_per_h,
+                vol_proxy=None if _y_class_override is not None else _vol_proxy,
+                realized_u_policy=_realized_u,
+                selection_cfg=_sel_cfg,
+                y_class_override=_y_class_override,
+                trade_mask=_trade_mask,
+            )
+            meta_models[f"{side}_{k}_clf"] = meta_clf
+            _bucket_y_ret[f"{side}_{k}_clf"] = y_target_clf.copy()
 
-            # --- 1. ALWAYS Train Auxiliary Heads (MFE, MAE, Utility) ---
-            # These are critical for the position sizer and reporting, even if classifiers are skipped.
-            # Shared-fold auxiliary heads for sizing/risk features
+            # Store metadata for classifier bucket
+            _md = {}
+            for _cn in [
+                "timestamp",
+                "symbol",
+                "asset",
+                "__ts__",
+                "__symbol__",
+                "__y_bin__",
+                "__y_ret__",
+                "__u_policy_net__",
+                "__u_policy__",
+                "__y_outcome__",
+                "exit_code",
+                "__mae_ret__",
+                "__mfe_ret__",
+                "__bars_to_mfe__",
+                "__barrier_pct__",
+                "__early_inval__",
+                "__mr_path_penalty__",
+                "__mr_velocity_penalty__",
+            ]:
+                if _cn in df.columns:
+                    _md[_cn] = df[_cn].values
+            for _cn in _ps_regime_cols:
+                if _cn in df.columns:
+                    _md[_cn] = df[_cn].values
+            _bucket_metadata[f"{side}_{k}_clf"] = _md
+
+            tprint(
+                f"Meta {side}_{k}_clf: fitted ({_time.monotonic()-_t0_meta:.1f}s)."
+            )
+        else:
+            tprint(
+                f"Meta {side}_{k}_clf: skipped (meta_race_include_classifiers=False)"
+            )
+
+        # --- 3. ALWAYS Train Early Invalidation head for downstream consumers ---
+        if "__early_inval__" in df.columns:
             try:
-                _u_raw = (
-                    np.asarray(df["__u_policy_net__"].values, dtype=float)
-                    if "__u_policy_net__" in df.columns
-                    else np.full(len(df), np.nan, dtype=float)
+                from sklearn.linear_model import LogisticRegression
+                from extreme_price_movements.periods_symbols_management import (
+                    EventSchema,
+                    SlicePlanner,
+                    SlicePlannerConfig,
                 )
-                _mae_raw = (
-                    np.asarray(df["__mae_ret__"].values, dtype=float)
-                    if "__mae_ret__" in df.columns
-                    else np.full(len(df), np.nan, dtype=float)
-                )
-                _mfe_raw = (
-                    np.asarray(df["__mfe_ret__"].values, dtype=float)
-                    if "__mfe_ret__" in df.columns
-                    else np.full(len(df), np.nan, dtype=float)
-                )
-                _atr_norm = (
-                    np.asarray(df["__barrier_pct__"].values, dtype=float)
-                    if "__barrier_pct__" in df.columns
-                    else np.full(len(df), np.nan, dtype=float)
-                )
-                _atr_ok = np.isfinite(_atr_norm) & (_atr_norm > 0)
 
-                _y_u = _u_raw
-                _mae_norm = np.full(len(df), np.nan, dtype=float)
-                _mfe_norm = np.full(len(df), np.nan, dtype=float)
-                _mae_norm[_atr_ok] = (
-                    np.clip(_mae_raw[_atr_ok], 0.0, None) / _atr_norm[_atr_ok]
+                _y_ei = np.asarray(df["__early_inval__"].values, dtype=int)
+                _X_ei = (
+                    X_meta_base.select_dtypes(include=[np.number])
+                    .fillna(0.0)
+                    .to_numpy(dtype=float)
                 )
-                _mfe_norm[_atr_ok] = (
-                    np.clip(_mfe_raw[_atr_ok], 0.0, None) / _atr_norm[_atr_ok]
-                )
-                _y_mae = np.log1p(np.clip(_mae_norm, 0.0, None))
-                _y_mfe = np.log1p(np.clip(_mfe_norm, 0.0, None))
+                _oof_ei = np.full(len(_y_ei), 0.5, dtype=float)
 
-                _aux_results, _aux_meta = _train_aux_heads_shared_folds(
-                    X_num=X_meta_base.select_dtypes(include=[np.number]).fillna(0.0),
-                    y_u=_y_u,
-                    y_mae=_y_mae,
-                    y_mfe=_y_mfe,
-                    trade_mask=_trade_mask,
-                    timestamps=df["__ts__"].values,
-                    cv_embargo_bars=int(cfg.get("cv_embargo_bars", 12)),
-                    bucket_id=f"{side}_{k}",
-                    data_root=str(cfg.get("data_root", "data")),
-                    run_id=str(cfg.get("run_id", "default")),
-                )
-                _aux_head_oof[f"{side}_{k}"] = _aux_results
-
-                # ELBOW: Elevate aux heads to standard meta models for reporting and OOF persistence
-                for _hn, _hm in _aux_meta.items():
-                    _hkey = f"{side}_{k}_{_hn}"
-                    meta_models[_hkey] = _hm
-                    if _hn == "utility":
-                        _bucket_y_ret[_hkey] = np.asarray(_y_u, dtype=float)
-                    elif _hn == "mae_q70":
-                        _bucket_y_ret[_hkey] = np.asarray(_y_mae, dtype=float)
-                    elif _hn == "mfe":
-                        _bucket_y_ret[_hkey] = np.asarray(_y_mfe, dtype=float)
-                    else:
-                        _bucket_y_ret[_hkey] = np.asarray(_y_u, dtype=float)
-
-                # Store metadata for aux heads using standard base names
-                _md = {}
-                for _cn in [
-                    "timestamp",
-                    "symbol",
-                    "asset",
-                    "__ts__",
-                    "__symbol__",
-                    "__y_bin__",
-                    "__y_ret__",
-                    "__u_policy_net__",
-                    "__u_policy__",
-                    "__y_outcome__",
-                    "exit_code",
-                    "__mae_ret__",
-                    "__mfe_ret__",
-                    "__bars_to_mfe__",
-                    "__barrier_pct__",
-                    "__early_inval__",
-                    "__mr_path_penalty__",
-                    "__mr_velocity_penalty__",
-                ]:
-                    if _cn in df.columns:
-                        _md[_cn] = df[_cn].values
-                for _cn in _ps_regime_cols:
-                    if _cn in df.columns:
-                        _md[_cn] = df[_cn].values
-                for _hn in ["utility", "mae_q70", "mfe"]:
-                    _bucket_metadata[f"{side}_{k}_{_hn}"] = _md
-
-            except Exception as _e_aux:
-                tprint(f"Warning: aux head training failed for {side}_{k}: {_e_aux}")
-
-            # --- 2. Optional Meta Classifier Training ---
-            if include_meta_clf:
-                # Magnitude sigmoid: very slight top-40% upweight (same alpha as regressors)
-                # Each source normalized to mean=1 before combining so neither dominates.
-                _alpha_clf = float(cfg.get("meta_weight_sigmoid_alpha", 0.2))
-                _y_avg_abs = np.mean(
-                    [np.abs(_y_per_h[h]) for h in _available_horizons], axis=0
-                )
-                _fin_w = np.isfinite(_y_avg_abs)
-                _q60_c = float(np.percentile(_y_avg_abs[_fin_w], 60))
-                _s_c = max(float(np.std(_y_avg_abs[_fin_w])), 1e-9)
-                w_mag_clf = 1.0 + _alpha_clf * _sigmoid((_y_avg_abs - _q60_c) / _s_c)
-                w_mag_clf = w_mag_clf / max(
-                    float(np.mean(w_mag_clf)), 1e-12
-                )  # normalize to mean=1
-
-                # MFE/MAE quality weighting for classifier (average across horizons)
-                _bp_clf = (
-                    df["__barrier_pct__"].values
-                    if "__barrier_pct__" in df.columns
-                    else None
-                )
-                w_exc_clf = np.ones(len(df), dtype=np.float64)
-                if _bp_clf is not None:
-                    _exc_parts = []
-                    for _hc in _available_horizons:
-                        _mfe_col_c = f"__meta_raw__mfe_{_hc}h"
-                        _mae_col_c = f"__meta_raw__mae_{_hc}h"
-                        if _mfe_col_c in df.columns and _mae_col_c in df.columns:
-                            _mfe_vc = np.nan_to_num(
-                                df[_mfe_col_c].values, nan=0.0
-                            ).astype(np.float64)
-                            _mae_vc = np.nan_to_num(
-                                df[_mae_col_c].values, nan=0.0
-                            ).astype(np.float64)
-                            _bp_vc = np.clip(_bp_clf.astype(np.float64), 1e-6, None)
-                            _exc_parts.append(
-                                np.maximum(
-                                    np.abs(_mfe_vc) / _bp_vc, np.abs(_mae_vc) / _bp_vc
-                                )
-                            )
-                    if _exc_parts:
-                        _d_exc_clf = np.mean(_exc_parts, axis=0)
-                        _tau_exc_clf = float(cfg.get("meta_mfe_mae_tau", 1.0))
-                        w_exc_clf = 0.5 + 0.5 * np.clip(
-                            _d_exc_clf / _tau_exc_clf, 0.0, 1.0
-                        )
-                w_exc_clf = w_exc_clf / max(
-                    float(np.mean(w_exc_clf)), 1e-12
-                )  # normalize to mean=1
-
-                w_meta_clf = (w_mag_clf * w_exc_clf).astype(np.float64)
-                w_meta_clf = w_meta_clf / max(
-                    float(np.mean(w_meta_clf)), 1e-12
-                )  # final mean=1
-                # Guard n_eff: clip extreme weights so n_eff >= 30% of N
-                _n_eff_clf = float(
-                    np.sum(w_meta_clf) ** 2 / max(np.sum(w_meta_clf**2), 1e-12)
-                )
-                if _n_eff_clf < 0.3 * len(w_meta_clf):
-                    _clip_hi_clf = float(np.percentile(w_meta_clf, 95))
-                    w_meta_clf = np.clip(w_meta_clf, 0.0, _clip_hi_clf)
-                    w_meta_clf = w_meta_clf / max(float(np.mean(w_meta_clf)), 1e-12)
-                    _n_eff_clf_new = float(
-                        np.sum(w_meta_clf) ** 2 / max(np.sum(w_meta_clf**2), 1e-12)
-                    )
-                    tprint(
-                        f"    {side}_{k}_clf n_eff clipped: {_n_eff_clf:.0f} -> {_n_eff_clf_new:.0f} (N={len(w_meta_clf)})"
-                    )
-
-                if (
-                    bool(cfg.get("sample_weight_opt_enable", True))
-                    and "__ts__" in df.columns
-                ):
-                    _meta_ts_c = pd.to_datetime(df["__ts__"])
-                    _mid_h_c = (
-                        4
-                        if 4 in _available_horizons
-                        else _available_horizons[len(_available_horizons) // 2]
-                    )
-                    _meta_label_times_c = pd.DataFrame(
-                        {
-                            "t_start": _meta_ts_c,
-                            "t_end": _meta_ts_c + pd.Timedelta(hours=int(_mid_h_c)),
-                        }
-                    )
-                    w_meta_clf = _optimize_training_sample_weights(
-                        df=pd.DataFrame({"ts": _meta_ts_c}),
-                        X_frame=X_meta_base.select_dtypes(include=[np.number]).fillna(
-                            0.0
+                # Use SlicePlanner for temporal CV
+                n_ei = len(_y_ei)
+                events = pd.DataFrame(
+                    {
+                        "event_id": np.arange(n_ei, dtype=np.int64),
+                        "symbol": np.repeat("ALL", n_ei),
+                        "t0": pd.to_datetime(
+                            df["__ts__"], utc=True, errors="coerce"
                         ),
-                        y_ret=_y_per_h[_mid_h_c].astype(np.float64),
-                        label_times=_meta_label_times_c,
-                        base_weights=w_meta_clf,
-                        cfg={
-                            **cfg,
-                            "sample_weight_opt_trials": int(
-                                cfg.get(
-                                    "meta_sample_weight_opt_trials",
-                                    cfg.get("sample_weight_opt_trials", 16),
-                                )
-                            ),
-                        },
-                        stage=f"meta_clf_{side}_{k}",
-                        extra_components={
-                            "magnitude": w_mag_clf,
-                            "excursion": w_exc_clf,
-                        },
-                    )
-                w_meta_clf = w_meta_clf.astype(np.float32)
-
-                # Use the middle horizon's target for the classifier's y_ret argument
-                _mid_h = (
-                    4
-                    if 4 in _y_per_h
-                    else _available_horizons[len(_available_horizons) // 2]
-                )
-                y_target_clf = _y_per_h[_mid_h].astype(np.float64)
-
-                _use_engine_meta_labels = bool(
-                    cfg.get("meta_clf_use_engine_labels", True)
-                )
-                _y_class_override = None
-                if _use_engine_meta_labels:
-                    if "__y_outcome__" not in df.columns:
-                        raise RuntimeError(
-                            "meta_clf_use_engine_labels=True requires '__y_outcome__' in artifacts. "
-                            "Regenerate labels with policy_rollout_labeling enabled."
+                        "t1": pd.to_datetime(
+                            df["__ts__"], utc=True, errors="coerce"
                         )
-                    _y_class_override = np.asarray(
-                        df["__y_outcome__"].values, dtype=np.int8
-                    )
-                    tprint(
-                        f"  Meta classifier labels source=engine counts="
-                        f"SL={int(np.sum(_y_class_override == 0))} "
-                        f"TO={int(np.sum(_y_class_override == 1))} "
-                        f"TP={int(np.sum(_y_class_override == 2))}"
-                    )
-
-                tprint(
-                    f"  Fitting MetaClassifierModel {side}_{k} ({_time.monotonic()-_t0_meta:.1f}s)..."
+                        + pd.Timedelta(seconds=int(cfg.get("cv_embargo_bars", 12))),
+                    }
                 )
-                meta_clf = MetaClassifierModel(reports_dir=reports_dir)
-                meta_clf.strategy_name = f"{side}_{k}"
-                meta_clf.FEE_PER_ROUND_TRIP = (
-                    float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
+                p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+                p_cfg = p_cfg.__class__(
+                    **{
+                        **p_cfg.__dict__,
+                        "preset": p_cfg.preset.__class__(
+                            preset_name=p_cfg.preset.preset_name,
+                            outer=p_cfg.preset.outer,
+                            inner=p_cfg.preset.inner.__class__(n_splits=3),
+                            sampling=p_cfg.preset.sampling,
+                            symbol_policy=p_cfg.preset.symbol_policy,
+                            purge_policy=p_cfg.preset.purge_policy,
+                        ),
+                        "silent": True,
+                        "min_rows_per_fold": 1,
+                        "min_symbols_per_fold": 1,
+                    }
                 )
-                # Pass vol_proxy for risk-unit thresholding
-                _sel_cfg = MetaClassifierSelectionConfig(
-                    max_logloss=float(cfg.get("meta_clf_max_logloss", 1.10)),
-                    dynamic_utility_from_realized=bool(
-                        cfg.get("meta_clf_dynamic_utility_from_realized", True)
-                    ),
-                    u_tp=float(cfg.get("meta_clf_u_tp", 1.0)),
-                    u_to=float(cfg.get("meta_clf_u_to", 0.0)),
-                    u_sl=float(cfg.get("meta_clf_u_sl", -3.0)),
-                    top_frac=float(cfg.get("meta_clf_top_frac", 0.30)),
-                    min_top_n=int(cfg.get("meta_clf_min_top_n", 50)),
-                    min_lift_vs_baseline=float(
-                        cfg.get("meta_clf_min_lift_vs_baseline", 0.0)
-                    ),
-                    require_positive_oof_utility=bool(
-                        cfg.get("meta_clf_require_positive_oof_utility", True)
-                    ),
-                )
-                if "__u_policy_net__" in df.columns:
-                    _realized_u = np.asarray(df["__u_policy_net__"].values, dtype=float)
-                else:
-                    _realized_u = np.log1p(
-                        np.clip(np.asarray(y_target_clf, dtype=float), -0.999999, None)
+                bundle = SlicePlanner(p_cfg).build(events)
+                splits = [
+                    (plan.fit_idx, plan.predict_idx)
+                    for plan in bundle["consumer_plans"]["ridge_sizer_fit"]
+                    if plan.tag == "predict_outer_test"
+                    and plan.fit_idx.size > 0
+                    and plan.predict_idx.size > 0
+                ]
+                if not splits:
+                    raise ValueError(
+                        "SlicePlanner failed to generate early invalidation splits"
                     )
 
-                meta_clf.fit(
-                    X_meta_base,
-                    y_target_clf,
-                    sample_weight=w_meta_clf,
-                    groups=meta_groups,
-                    y_per_horizon=None if _y_class_override is not None else _y_per_h,
-                    vol_proxy=None if _y_class_override is not None else _vol_proxy,
-                    realized_u_policy=_realized_u,
-                    selection_cfg=_sel_cfg,
-                    y_class_override=_y_class_override,
-                    trade_mask=_trade_mask,
-                )
-                meta_models[f"{side}_{k}_clf"] = meta_clf
-                _bucket_y_ret[f"{side}_{k}_clf"] = y_target_clf.copy()
-
-                # Store metadata for classifier bucket
-                _md = {}
-                for _cn in [
-                    "timestamp",
-                    "symbol",
-                    "asset",
-                    "__ts__",
-                    "__symbol__",
-                    "__y_bin__",
-                    "__y_ret__",
-                    "__u_policy_net__",
-                    "__u_policy__",
-                    "__y_outcome__",
-                    "exit_code",
-                    "__mae_ret__",
-                    "__mfe_ret__",
-                    "__bars_to_mfe__",
-                    "__barrier_pct__",
-                    "__early_inval__",
-                    "__mr_path_penalty__",
-                    "__mr_velocity_penalty__",
-                ]:
-                    if _cn in df.columns:
-                        _md[_cn] = df[_cn].values
-                for _cn in _ps_regime_cols:
-                    if _cn in df.columns:
-                        _md[_cn] = df[_cn].values
-                _bucket_metadata[f"{side}_{k}_clf"] = _md
-
-                tprint(
-                    f"Meta {side}_{k}_clf: fitted ({_time.monotonic()-_t0_meta:.1f}s)."
-                )
-            else:
-                tprint(
-                    f"Meta {side}_{k}_clf: skipped (meta_race_include_classifiers=False)"
-                )
-
-            # --- 3. ALWAYS Train Early Invalidation head for downstream consumers ---
-            if "__early_inval__" in df.columns:
-                try:
-                    from sklearn.linear_model import LogisticRegression
-                    from extreme_price_movements.periods_symbols_management import (
-                        EventSchema,
-                        SlicePlanner,
-                        SlicePlannerConfig,
-                    )
-
-                    _y_ei = np.asarray(df["__early_inval__"].values, dtype=int)
-                    _X_ei = (
-                        X_meta_base.select_dtypes(include=[np.number])
-                        .fillna(0.0)
-                        .to_numpy(dtype=float)
-                    )
-                    _oof_ei = np.full(len(_y_ei), 0.5, dtype=float)
-
-                    # Use SlicePlanner for temporal CV
-                    n_ei = len(_y_ei)
-                    events = pd.DataFrame(
-                        {
-                            "event_id": np.arange(n_ei, dtype=np.int64),
-                            "symbol": np.repeat("ALL", n_ei),
-                            "t0": pd.to_datetime(
-                                df["__ts__"], utc=True, errors="coerce"
-                            ),
-                            "t1": pd.to_datetime(
-                                df["__ts__"], utc=True, errors="coerce"
-                            )
-                            + pd.Timedelta(seconds=int(cfg.get("cv_embargo_bars", 12))),
-                        }
-                    )
-                    p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
-                    p_cfg = p_cfg.__class__(
-                        **{
-                            **p_cfg.__dict__,
-                            "preset": p_cfg.preset.__class__(
-                                preset_name=p_cfg.preset.preset_name,
-                                outer=p_cfg.preset.outer,
-                                inner=p_cfg.preset.inner.__class__(n_splits=3),
-                                sampling=p_cfg.preset.sampling,
-                                symbol_policy=p_cfg.preset.symbol_policy,
-                                purge_policy=p_cfg.preset.purge_policy,
-                            ),
-                            "silent": True,
-                            "min_rows_per_fold": 1,
-                            "min_symbols_per_fold": 1,
-                        }
-                    )
-                    bundle = SlicePlanner(p_cfg).build(events)
-                    splits = [
-                        (plan.fit_idx, plan.predict_idx)
-                        for plan in bundle["consumer_plans"]["ridge_sizer_fit"]
-                        if plan.tag == "predict_outer_test"
-                        and plan.fit_idx.size > 0
-                        and plan.predict_idx.size > 0
-                    ]
-                    if not splits:
-                        raise ValueError(
-                            "SlicePlanner failed to generate early invalidation splits"
-                        )
-
-                    for _tr, _va in splits:
-                        if len(np.unique(_y_ei[_tr])) < 2:
-                            continue
-                        _m_ei = LogisticRegression(
-                            max_iter=1000, class_weight="balanced", random_state=42
-                        )
-                        _m_ei.fit(_X_ei[_tr], _y_ei[_tr])
-                        _oof_ei[_va] = _m_ei.predict_proba(_X_ei[_va])[:, 1]
-                    _m_ei_final = LogisticRegression(
+                for _tr, _va in splits:
+                    if len(np.unique(_y_ei[_tr])) < 2:
+                        continue
+                    _m_ei = LogisticRegression(
                         max_iter=1000, class_weight="balanced", random_state=42
                     )
-                    if len(np.unique(_y_ei)) >= 2:
-                        _m_ei_final.fit(_X_ei, _y_ei)
-                    meta_models[f"{side}_{k}_early_inval"] = SimpleNamespace(
-                        oof_probs=np.asarray(_oof_ei, dtype=np.float32),
-                        model={
-                            "kind": "early_inval_clf",
-                            "models": [_m_ei_final],
-                            "name": "early_inval",
-                        },
-                    )
-                    _bucket_y_ret[f"{side}_{k}_early_inval"] = np.asarray(
-                        _y_ei, dtype=float
-                    )
-                    _md = {}
-                    for _cn in [
-                        "timestamp",
-                        "symbol",
-                        "asset",
-                        "__ts__",
-                        "__symbol__",
-                        "__y_bin__",
-                        "__y_ret__",
-                        "__u_policy_net__",
-                        "__u_policy__",
-                        "__y_outcome__",
-                        "exit_code",
-                        "__mae_ret__",
-                        "__mfe_ret__",
-                        "__bars_to_mfe__",
-                        "__barrier_pct__",
-                        "__early_inval__",
-                        "__mr_path_penalty__",
-                        "__mr_velocity_penalty__",
-                    ]:
-                        if _cn in df.columns:
-                            _md[_cn] = df[_cn].values
-                    for _cn in _ps_regime_cols:
-                        if _cn in df.columns:
-                            _md[_cn] = df[_cn].values
-                    _bucket_metadata[f"{side}_{k}_early_inval"] = _md
-                    tprint(f"Meta {side}_{k}_early_inval: fitted")
-                except Exception as _e_ei:
-                    tprint(
-                        f"Warning: early invalidation model failed for {side}_{k}: {_e_ei}"
-                    )
+                    _m_ei.fit(_X_ei[_tr], _y_ei[_tr])
+                    _oof_ei[_va] = _m_ei.predict_proba(_X_ei[_va])[:, 1]
+                _m_ei_final = LogisticRegression(
+                    max_iter=1000, class_weight="balanced", random_state=42
+                )
+                if len(np.unique(_y_ei)) >= 2:
+                    _m_ei_final.fit(_X_ei, _y_ei)
+                meta_models[f"{side}_{k}_early_inval"] = SimpleNamespace(
+                    oof_probs=np.asarray(_oof_ei, dtype=np.float32),
+                    model={
+                        "kind": "early_inval_clf",
+                        "models": [_m_ei_final],
+                        "name": "early_inval",
+                    },
+                )
+                _bucket_y_ret[f"{side}_{k}_early_inval"] = np.asarray(
+                    _y_ei, dtype=float
+                )
+                _md = {}
+                for _cn in [
+                    "timestamp",
+                    "symbol",
+                    "asset",
+                    "__ts__",
+                    "__symbol__",
+                    "__y_bin__",
+                    "__y_ret__",
+                    "__u_policy_net__",
+                    "__u_policy__",
+                    "__y_outcome__",
+                    "exit_code",
+                    "__mae_ret__",
+                    "__mfe_ret__",
+                    "__bars_to_mfe__",
+                    "__barrier_pct__",
+                    "__early_inval__",
+                    "__mr_path_penalty__",
+                    "__mr_velocity_penalty__",
+                ]:
+                    if _cn in df.columns:
+                        _md[_cn] = df[_cn].values
+                for _cn in _ps_regime_cols:
+                    if _cn in df.columns:
+                        _md[_cn] = df[_cn].values
+                _bucket_metadata[f"{side}_{k}_early_inval"] = _md
+                tprint(f"Meta {side}_{k}_early_inval: fitted")
+            except Exception as _e_ei:
+                tprint(
+                    f"Warning: early invalidation model failed for {side}_{k}: {_e_ei}"
+                )
 
     # ── Downstream heads summary table (fed to users/sizers) ──
     tprint(f"\n{'═'*148}")
@@ -9509,53 +9523,53 @@ def train_meta_models_from_artifacts(
     for strat in strategies:
         side = strat["trade_side"]
         k = strat["strategy_id"]
-            _b = f"{side}_{k}"
-            _aux = _aux_head_oof.get(_b)
-            u_ic, mae_ic, mfe_ic = float("nan"), float("nan"), float("nan")
-            n_samp = 0
-            if isinstance(_aux, dict):
-                u_ic = _safe_spearman(
-                    _aux.get("oof_u_hat", []), _bucket_y_ret.get(f"{_b}_utility", [])
-                )
-                mae_ic = _safe_spearman(
-                    _aux.get("oof_log_mae_q70_hat", []),
-                    _bucket_y_ret.get(f"{_b}_mae_q70", []),
-                )
-                mfe_ic = _safe_spearman(
-                    _aux.get("oof_log_mfe_hat", []), _bucket_y_ret.get(f"{_b}_mfe", [])
-                )
-                n_samp = len(_aux.get("oof_u_hat", []))
-
-            ei_auc, ei_p10 = float("nan"), float("nan")
-            _ei_key = f"{_b}_early_inval"
-            _ei = meta_models.get(_ei_key)
-            _ei_md = _bucket_metadata.get(_ei_key, {})
-            if (
-                _ei is not None
-                and hasattr(_ei, "oof_probs")
-                and _ei.oof_probs is not None
-                and "__early_inval__" in _ei_md
-            ):
-                _p = np.asarray(_ei.oof_probs, dtype=float)
-                _y = np.asarray(_ei_md["__early_inval__"], dtype=float)[: len(_p)]
-                _m = np.isfinite(_p) & np.isfinite(_y)
-                if np.sum(_m) >= 10 and len(np.unique(_y[_m])) > 1:
-                    _n_pos = int(np.sum(_y[_m] == 1))
-                    _n_neg = int(np.sum(_y[_m] == 0))
-                    if _n_pos > 0 and _n_neg > 0:
-                        _ranks = (
-                            pd.Series(_p[_m]).rank(method="average").to_numpy(float)
-                        )
-                        _u = _ranks[_y[_m] == 1].sum() - _n_pos * (_n_pos + 1) / 2.0
-                        ei_auc = float(_u / (_n_pos * _n_neg))
-                    _k10 = max(1, int(np.ceil(0.10 * np.sum(_m))))
-                    _idx10 = np.argsort(_p[_m])[-_k10:]
-                    ei_p10 = float(np.mean(_y[_m][_idx10]))
-
-            tprint(
-                f"  {_b:16s} {u_ic:>7.4f} {mae_ic:>7.4f} {mfe_ic:>7.4f} "
-                f"{ei_auc:>7.4f} {ei_p10:>8.4f} {n_samp:>8d}"
+        _b = f"{side}_{k}"
+        _aux = _aux_head_oof.get(_b)
+        u_ic, mae_ic, mfe_ic = float("nan"), float("nan"), float("nan")
+        n_samp = 0
+        if isinstance(_aux, dict):
+            u_ic = _safe_spearman(
+                _aux.get("oof_u_hat", []), _bucket_y_ret.get(f"{_b}_utility", [])
             )
+            mae_ic = _safe_spearman(
+                _aux.get("oof_log_mae_q70_hat", []),
+                _bucket_y_ret.get(f"{_b}_mae_q70", []),
+            )
+            mfe_ic = _safe_spearman(
+                _aux.get("oof_log_mfe_hat", []), _bucket_y_ret.get(f"{_b}_mfe", [])
+            )
+            n_samp = len(_aux.get("oof_u_hat", []))
+
+        ei_auc, ei_p10 = float("nan"), float("nan")
+        _ei_key = f"{_b}_early_inval"
+        _ei = meta_models.get(_ei_key)
+        _ei_md = _bucket_metadata.get(_ei_key, {})
+        if (
+            _ei is not None
+            and hasattr(_ei, "oof_probs")
+            and _ei.oof_probs is not None
+            and "__early_inval__" in _ei_md
+        ):
+            _p = np.asarray(_ei.oof_probs, dtype=float)
+            _y = np.asarray(_ei_md["__early_inval__"], dtype=float)[: len(_p)]
+            _m = np.isfinite(_p) & np.isfinite(_y)
+            if np.sum(_m) >= 10 and len(np.unique(_y[_m])) > 1:
+                _n_pos = int(np.sum(_y[_m] == 1))
+                _n_neg = int(np.sum(_y[_m] == 0))
+                if _n_pos > 0 and _n_neg > 0:
+                    _ranks = (
+                        pd.Series(_p[_m]).rank(method="average").to_numpy(float)
+                    )
+                    _u = _ranks[_y[_m] == 1].sum() - _n_pos * (_n_pos + 1) / 2.0
+                    ei_auc = float(_u / (_n_pos * _n_neg))
+                _k10 = max(1, int(np.ceil(0.10 * np.sum(_m))))
+                _idx10 = np.argsort(_p[_m])[-_k10:]
+                ei_p10 = float(np.mean(_y[_m][_idx10]))
+
+        tprint(
+            f"  {_b:16s} {u_ic:>7.4f} {mae_ic:>7.4f} {mfe_ic:>7.4f} "
+            f"{ei_auc:>7.4f} {ei_p10:>8.4f} {n_samp:>8d}"
+        )
     tprint(f"{'═'*148}\n")
 
     # Save meta OOF predictions for ridge_position_sizer
@@ -11197,59 +11211,59 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             oof_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "oof")
             os.makedirs(oof_dir, exist_ok=True)
             strategies = get_strategies(cfg)
-    for strat in strategies:
-        side = strat["trade_side"]
-        k = strat["strategy_id"]
-                    for H in cfg["label_horizons_hours"]:
-                        for variant in cfg.get(
-                            "base_geometry_archetypes", ["tight", "balanced", "wide"]
-                        ):
-                            variant = str(variant)
-                            if variant == "balanced":
-                                continue
-                            ds_key = f"train_{side}_{k}_{H}_{variant}"
-                            if ds_key not in datasets:
-                                continue
-                            tprint(f"Training grouped base variant {ds_key}...")
-                            _variant_fit = _train_base_variant_dataset(
-                                side, k, H, ds_key, datasets[ds_key]
+            for strat in strategies:
+                side = strat["trade_side"]
+                k = strat["strategy_id"]
+                for H in cfg["label_horizons_hours"]:
+                    for variant in cfg.get(
+                        "base_geometry_archetypes", ["tight", "balanced", "wide"]
+                    ):
+                        variant = str(variant)
+                        if variant == "balanced":
+                            continue
+                        ds_key = f"train_{side}_{k}_{H}_{variant}"
+                        if ds_key not in datasets:
+                            continue
+                        tprint(f"Training grouped base variant {ds_key}...")
+                        _variant_fit = _train_base_variant_dataset(
+                            side, k, H, ds_key, datasets[ds_key]
+                        )
+                        if _variant_fit is None:
+                            tprint(f"  Skipped {ds_key}: insufficient data")
+                            continue
+                        base_variant_models[
+                            (side, k, int(H), variant)
+                        ] = _variant_fit
+                        _race = _variant_fit["model"]
+                        if _race.oof_probs is None:
+                            continue
+                        _df_oof = datasets[ds_key]
+                        _n = min(int(len(_race.oof_probs)), int(len(_df_oof)))
+                        _payload = {
+                            "oof_prob": np.asarray(
+                                _race.oof_probs, dtype=np.float32
+                            )[:_n],
+                            "index": np.arange(_n, dtype=np.int32),
+                        }
+                        if "__ts__" in _df_oof.columns:
+                            _payload[
+                                "timestamp"
+                            ] = _normalize_oof_timestamps_to_numpy(
+                                _df_oof["__ts__"]
+                            )[
+                                :_n
+                            ]
+                        if "__symbol__" in _df_oof.columns:
+                            _payload["symbol"] = (
+                                _df_oof["__symbol__"].astype(str).values[:_n]
                             )
-                            if _variant_fit is None:
-                                tprint(f"  Skipped {ds_key}: insufficient data")
-                                continue
-                            base_variant_models[
-                                (side, k, int(H), variant)
-                            ] = _variant_fit
-                            _race = _variant_fit["model"]
-                            if _race.oof_probs is None:
-                                continue
-                            _df_oof = datasets[ds_key]
-                            _n = min(int(len(_race.oof_probs)), int(len(_df_oof)))
-                            _payload = {
-                                "oof_prob": np.asarray(
-                                    _race.oof_probs, dtype=np.float32
-                                )[:_n],
-                                "index": np.arange(_n, dtype=np.int32),
-                            }
-                            if "__ts__" in _df_oof.columns:
-                                _payload[
-                                    "timestamp"
-                                ] = _normalize_oof_timestamps_to_numpy(
-                                    _df_oof["__ts__"]
-                                )[
-                                    :_n
-                                ]
-                            if "__symbol__" in _df_oof.columns:
-                                _payload["symbol"] = (
-                                    _df_oof["__symbol__"].astype(str).values[:_n]
-                                )
-                            if "__y_bin__" in _df_oof.columns:
-                                _payload["y_bin"] = np.asarray(
-                                    _df_oof["__y_bin__"], dtype=np.float32
-                                )[:_n]
-                            if "__y_ret__" in _df_oof.columns:
-                                _payload["y_ret"] = np.asarray(
-                                    _df_oof["__y_ret__"], dtype=np.float32
+                        if "__y_bin__" in _df_oof.columns:
+                            _payload["y_bin"] = np.asarray(
+                                _df_oof["__y_bin__"], dtype=np.float32
+                            )[:_n]
+                        if "__y_ret__" in _df_oof.columns:
+                            _payload["y_ret"] = np.asarray(
+                                _df_oof["__y_ret__"], dtype=np.float32
                                 )[:_n]
                             _oof_path = os.path.join(
                                 oof_dir, f"oof_{side}_{k}_H{int(H)}_{variant}.parquet"
@@ -11367,67 +11381,67 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     for strat in strategies:
         side = strat["trade_side"]
         kind = strat["strategy_id"]
-            conf = final_models.get(side, {}).get(kind)
-            if not conf:
-                continue
-            models_by_h = conf.get("models_by_h", {})
-            if not models_by_h:
-                # Fallback: single-model legacy format
-                models_by_h = {
-                    conf.get("H", 4): {
-                        "model": conf["model"],
-                        "feat_cols": conf["feat_cols"],
-                    }
+        conf = final_models.get(side, {}).get(kind)
+        if not conf:
+            continue
+        models_by_h = conf.get("models_by_h", {})
+        if not models_by_h:
+            # Fallback: single-model legacy format
+            models_by_h = {
+                conf.get("H", 4): {
+                    "model": conf["model"],
+                    "feat_cols": conf["feat_cols"],
                 }
-            for H_rep, h_info in models_by_h.items():
-                ds_key = f"train_{side}_{kind}_{H_rep}"
-                if ds_key not in datasets:
-                    continue
-                race = h_info["model"]
-                if race.oof_probs is None:
-                    continue
-                dfm = datasets[ds_key]
-                y_bin = (dfm["__y_bin__"].values >= 0.5).astype(int)
-                y_ret = dfm["__y_ret__"].values.astype(float)
-                y_lbl = (
-                    dfm["__y_lbl__"].values.astype(int)
-                    if "__y_lbl__" in dfm.columns
-                    else None
+            }
+        for H_rep, h_info in models_by_h.items():
+            ds_key = f"train_{side}_{kind}_{H_rep}"
+            if ds_key not in datasets:
+                continue
+            race = h_info["model"]
+            if race.oof_probs is None:
+                continue
+            dfm = datasets[ds_key]
+            y_bin = (dfm["__y_bin__"].values >= 0.5).astype(int)
+            y_ret = dfm["__y_ret__"].values.astype(float)
+            y_lbl = (
+                dfm["__y_lbl__"].values.astype(int)
+                if "__y_lbl__" in dfm.columns
+                else None
+            )
+            groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
+            for cand_name, dm in race.detailed_metrics.items():
+                # Use per-model OOF predictions from detailed_metrics, not the winner's OOF
+                oof_probs = dm.get("oof_probs")
+                if oof_probs is None:
+                    # Fallback to winner's OOF if per-model not available (legacy)
+                    oof_probs = np.asarray(race.oof_probs, dtype=float)
+                else:
+                    oof_probs = np.asarray(oof_probs, dtype=float)
+                n = min(len(y_bin), len(oof_probs), len(y_ret))
+                y_bin_model, oof_probs_model, y_ret_model = (
+                    y_bin[:n],
+                    oof_probs[:n],
+                    y_ret[:n],
                 )
-                groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
-                for cand_name, dm in race.detailed_metrics.items():
-                    # Use per-model OOF predictions from detailed_metrics, not the winner's OOF
-                    oof_probs = dm.get("oof_probs")
-                    if oof_probs is None:
-                        # Fallback to winner's OOF if per-model not available (legacy)
-                        oof_probs = np.asarray(race.oof_probs, dtype=float)
-                    else:
-                        oof_probs = np.asarray(oof_probs, dtype=float)
-                    n = min(len(y_bin), len(oof_probs), len(y_ret))
-                    y_bin_model, oof_probs_model, y_ret_model = (
-                        y_bin[:n],
-                        oof_probs[:n],
-                        y_ret[:n],
-                    )
-                    y_lbl_model = y_lbl[:n] if y_lbl is not None else None
-                    if groups is not None:
-                        groups_model = np.asarray(groups)[:n]
-                    else:
-                        groups_model = None
-                    entry = _base_model_report_entry(
-                        model_name=f"{side}_{kind}_H{H_rep}:{cand_name}",
-                        side=side,
-                        kind=kind,
-                        dm=dm,
-                        y_bin=y_bin_model,
-                        oof_probs=oof_probs_model,
-                        y_ret=y_ret_model,
-                        groups=groups_model,
-                        y_lbl=y_lbl_model,
-                    )
-                    entry["H"] = H_rep
-                    entry["is_winner"] = cand_name == race.best_model_name
-                    base_quality_rows.append(entry)
+                y_lbl_model = y_lbl[:n] if y_lbl is not None else None
+                if groups is not None:
+                    groups_model = np.asarray(groups)[:n]
+                else:
+                    groups_model = None
+                entry = _base_model_report_entry(
+                    model_name=f"{side}_{kind}_H{H_rep}:{cand_name}",
+                    side=side,
+                    kind=kind,
+                    dm=dm,
+                    y_bin=y_bin_model,
+                    oof_probs=oof_probs_model,
+                    y_ret=y_ret_model,
+                    groups=groups_model,
+                    y_lbl=y_lbl_model,
+                )
+                entry["H"] = H_rep
+                entry["is_winner"] = cand_name == race.best_model_name
+                base_quality_rows.append(entry)
 
     meta_quality_rows = []
     for key, meta in meta_models.items():
@@ -11927,303 +11941,305 @@ def optimize_risk_params(
     for strat in strategies:
         side = strat["trade_side"]
         k = strat["strategy_id"]
-            trade_side = side
-            cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
-                trade_side, k
+        trade_side = side
+        cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
+            trade_side, k
+        )
+        trend_filter = move_bucket
+
+        # Collect indices (1h and optionally 15m)
+        indices = []
+        time_indices = (
+            []
+        )  # parallel array: actual time position (shared across assets)
+        indices_15m = [] if has_15m_data else None
+
+        # Iterate valid timestamps
+        for t in valid_ts:
+            # Get candidates at t
+            row = final_mask.loc[t]
+            cands = row[row].index.intersection(assets)
+
+            # Check trend
+            trend_vals = (
+                feats["trend_pct"].reindex(columns=cands).loc[t]
+                if t in feats["trend_pct"].index
+                else pd.Series(0.0, index=cands)
             )
-            trend_filter = move_bucket
 
-            # Collect indices (1h and optionally 15m)
-            indices = []
-            time_indices = (
-                []
-            )  # parallel array: actual time position (shared across assets)
-            indices_15m = [] if has_15m_data else None
+            for sym in cands:
+                tv = trend_vals[sym]
+                if not _trend_direction_keep_mask([tv], trend_filter)[0]:
+                    continue
 
-            # Iterate valid timestamps
-            for t in valid_ts:
-                # Get candidates at t
-                row = final_mask.loc[t]
-                cands = row[row].index.intersection(assets)
+                # Found a candidate
+                # Get index in full arrays
+                try:
+                    tidx = close_df.index.get_loc(t)
+                except KeyError:
+                    continue
 
-                # Check trend
-                trend_vals = (
-                    feats["trend_pct"].reindex(columns=cands).loc[t]
-                    if t in feats["trend_pct"].index
-                    else pd.Series(0.0, index=cands)
-                )
+                flat_idx = asset_offsets[sym] + tidx
+                indices.append(flat_idx)
+                time_indices.append(
+                    tidx
+                )  # true temporal coordinate (same for all assets at time t)
 
-                for sym in cands:
-                    tv = trend_vals[sym]
-                    if not _trend_direction_keep_mask([tv], trend_filter)[0]:
-                        continue
+                # Also collect 15m index if available for this asset
+                if has_15m_data and sym in asset_offsets_15m:
+                    flat_idx_15m = asset_offsets_15m[sym] + tidx
+                    indices_15m.append(flat_idx_15m)
 
-                    # Found a candidate
-                    # Get index in full arrays
-                    try:
-                        tidx = close_df.index.get_loc(t)
-                    except KeyError:
-                        continue
-
-                    flat_idx = asset_offsets[sym] + tidx
-                    indices.append(flat_idx)
-                    time_indices.append(
-                        tidx
-                    )  # true temporal coordinate (same for all assets at time t)
-
-                    # Also collect 15m index if available for this asset
-                    if has_15m_data and sym in asset_offsets_15m:
-                        flat_idx_15m = asset_offsets_15m[sym] + tidx
-                        indices_15m.append(flat_idx_15m)
-
-            indices = np.array(indices, dtype=np.int32)
-            time_indices = np.array(time_indices, dtype=np.int64)
-            if len(indices) > 0:
-                mean_z = float(np.mean(full_z[indices]))
-                # Compute actual barrier_pct (vol-scaled, clipped fraction) for meaningful logging
-                _b_pct = scaled_atr_pct(
-                    full_atr[indices],
-                    full_z[indices],
-                    full_atr_base[indices],
-                    z_max=3.0,
-                    lo=0.03,
-                    hi=0.06,
-                )
-                mean_barrier = float(np.nanmean(_b_pct))
-                tprint(
-                    f"Bucket trade_side={trade_side} kind={k} move_bucket={move_bucket} "
-                    f"candidate_bucket={cand_filter} strategy={strategy_label}: {len(indices)} events | "
-                    f"Mean Barrier%={mean_barrier*100:.2f} | Mean VolZ={mean_z:.2f}"
-                )
-            else:
-                tprint(
-                    f"Bucket trade_side={trade_side} kind={k} move_bucket={move_bucket} "
-                    f"candidate_bucket={cand_filter} strategy={strategy_label}: 0 events"
-                )
-
-            if len(indices) < 50:
-                tprint("Not enough events, using defaults.")
-                default_risk = {
-                    "tp_mult": cfg.get("tp_mult", 1.0),
-                    "sl_mult": cfg.get("sl_mult", 0.5),
-                    "trail_mult": cfg.get("trail_mult", 0.5),
-                    "vol_lo": cfg.get("vol_lo", 0.03),
-                    "vol_hi": cfg.get("vol_hi", 0.06),
-                    "vol_z_max": cfg.get("vol_z_max", 3.0),
-                    "max_hold_hours": 12 if k == "mr" else 24,
-                    "k_sl": cfg["risk_k_sl"],
-                    "k_trail_start": cfg["risk_k_trail_start"],
-                    "k_trail_dist": cfg["risk_k_trail_dist"],
-                }
-                granular_risk[f"risk_{side}_{k}"] = default_risk
-                granular_risk[f"risk_{k}_{cand_filter}"] = default_risk
-                continue
-
-            # Run optimization
-            # Note: run_tp_sl_selection_fast selects tp_mult and sl_mult for TRIPLE BARRIER.
-            # But the system might use Trailing ATR logic at execution time?
-            # If we switch to Triple Barrier execution, we use these.
-            # If we use Trailing ATR, we map them: k_sl = sl_mult (approx).
-            # The prompt implies we want to find optimal "TP:SL ratio" and levels.
-
-            # Prepare optional 15m arrays for this bucket
-            _15m_kwargs = {}
-            if has_15m_data and indices_15m and len(indices_15m) == len(indices):
-                _15m_kwargs = {
-                    "open_15m": full_open_15m,
-                    "high_15m": full_high_15m,
-                    "low_15m": full_low_15m,
-                    "close_15m": full_close_15m,
-                }
-                tprint(f"  Passing 15m data to optimizer ({len(indices)} events)")
-
-            _tp_opt = str(cfg.get("tp_sl_search_optimizer", "legacy")).lower()
-            if _tp_opt == "new":
-                from types import SimpleNamespace as _SNS
-
-                from .position_sizer.tp_sl_selection import (
-                    CompositeObjectiveConfig as _COCfg,
-                )
-                from .position_sizer.tp_sl_selection import (
-                    select_best_tp_sl as _select_best_tp_sl,
-                )
-
-                _cocfg = _COCfg(
-                    mar=float(cfg.get("objective_mar", 0.0)),
-                    eps_log=float(cfg.get("objective_eps_log", 1e-12)),
-                    eps_sortino=float(cfg.get("objective_eps_sortino", 1e-12)),
-                    mode=str(cfg.get("objective_composite_mode", "hard_gate")),
-                    q_top=float(cfg.get("objective_composite_q_top", 0.95)),
-                    selection=str(cfg.get("objective_composite_selection", "min_std")),
-                    min_trades_per_fold=int(
-                        cfg.get("tp_sl_search_min_trades_per_fold", 200)
-                    ),
-                    elg_scale=float(cfg.get("objective_scaling_elg_scale", 10000.0)),
-                    mnpt_scale=float(cfg.get("objective_scaling_mnpt_scale", 10000.0)),
-                    elg_min=float(cfg.get("objective_clipping_elg_min", -1.0)),
-                    elg_max=float(cfg.get("objective_clipping_elg_max", 1.0)),
-                    sortino_min=float(cfg.get("objective_clipping_sortino_min", -10.0)),
-                    sortino_max=float(cfg.get("objective_clipping_sortino_max", 10.0)),
-                    mnpt_min=float(cfg.get("objective_clipping_mnpt_min", -1.0)),
-                    mnpt_max=float(cfg.get("objective_clipping_mnpt_max", 1.0)),
-                )
-                _sel = _select_best_tp_sl(
-                    open_=full_open,
-                    close=full_close,
-                    event_idx=indices,
-                    timestamps=time_indices,
-                    tp_mult_grid=cfg.get(
-                        "tp_sl_search_k_tp_grid", [0.8, 1.0, 1.25, 1.5]
-                    ),
-                    sl_mult_grid=cfg.get(
-                        "tp_sl_search_k_sl_grid", [0.1, 0.15, 0.25, 0.4]
-                    ),
-                    cfg=_cocfg,
-                )
-                _best = _sel.get("best") or {}
-                _cand = _best.get(
-                    "candidate", (cfg.get("tp_mult", 1.0), cfg.get("sl_mult", 0.5))
-                )
-                summary = _SNS(
-                    final_tp_mult=float(_cand[0]),
-                    final_sl_mult=float(_cand[1]),
-                    final_trail_mult=float(cfg.get("trail_mult", 0.25)),
-                    final_lo=float(cfg.get("vol_lo", 0.02)),
-                    final_hi=float(cfg.get("vol_hi", 0.06)),
-                    final_z_max=float(cfg.get("vol_z_max", 3.0)),
-                    outer_results=[],
-                )
-            else:
-                summary = run_tp_sl_selection_fast(
-                    X=full_X,
-                    open_=full_open,
-                    high=full_high,
-                    low=full_low,
-                    close=full_close,
-                    atr_pct=full_atr,
-                    z=full_z,
-                    atr_base_pct=full_atr_base,
-                    event_idx=indices,
-                    horizon=24,
-                    max_events=2000,
-                    tp_mult_grid=[0.4, 0.5, 0.6, 0.8, 1.0, 1.25, 1.5],
-                    sl_mult_grid=[0.10, 0.15, 0.18, 0.25, 0.30, 0.40, 0.50],
-                    trail_mult_grid=[0.15, 0.25, 0.35, 0.50],
-                    lo_grid=[0.01, 0.02, 0.03, 0.04],
-                    hi_grid=[0.05, 0.06, 0.07],
-                    z_max_grid=[2.5, 3.0, 3.5],
-                    entry_mode="next_open",
-                    event_time_idx=time_indices,
-                    fee_bps=float(cfg.get("fee_bps", 25.0)),
-                    **_15m_kwargs,
-                )
-
-            # Enforce hard constraints on optimized values
-            _opt_bp_risk = 0.5 * (summary.final_lo + summary.final_hi)
-            _abs_tp_risk = summary.final_tp_mult * _opt_bp_risk
-            _ratio_risk = summary.final_tp_mult / max(summary.final_sl_mult, 0.01)
-            min_ratio = float(cfg.get("min_tp_sl_ratio", 1.2))
-            min_tp_abs = float(cfg.get("min_tp_abs_pct", 0.02))
-            _tp_m = summary.final_tp_mult
-            _sl_m = summary.final_sl_mult
-            if _abs_tp_risk < min_tp_abs:
-                _tp_m = min_tp_abs / max(_opt_bp_risk, 0.01)
-                tprint(
-                    f"  Enforced min TP: tp_mult raised to {_tp_m:.2f} (abs {_tp_m*_opt_bp_risk*100:.1f}%)"
-                )
-            if _tp_m / max(_sl_m, 0.01) < min_ratio:
-                _sl_m = _tp_m / min_ratio
-                tprint(f"  Enforced min ratio: sl_mult lowered to {_sl_m:.2f}")
-            summary.final_tp_mult = _tp_m
-            summary.final_sl_mult = _sl_m
+        indices = np.array(indices, dtype=np.int32)
+        time_indices = np.array(time_indices, dtype=np.int64)
+        if len(indices) > 0:
+            mean_z = float(np.mean(full_z[indices]))
+            # Compute actual barrier_pct (vol-scaled, clipped fraction) for meaningful logging
+            _b_pct = scaled_atr_pct(
+                full_atr[indices],
+                full_z[indices],
+                full_atr_base[indices],
+                z_max=3.0,
+                lo=0.03,
+                hi=0.06,
+            )
+            mean_barrier = float(np.nanmean(_b_pct))
             tprint(
-                f"Optimized {side} {k}: TP={summary.final_tp_mult:.2f} ({summary.final_tp_mult*_opt_bp_risk*100:.1f}%), "
-                f"SL={summary.final_sl_mult:.2f} ({summary.final_sl_mult*_opt_bp_risk*100:.1f}%), "
-                f"ratio={summary.final_tp_mult/max(summary.final_sl_mult,0.01):.1f}x, "
-                f"Trail={summary.final_trail_mult:.2f}, Lo={summary.final_lo:.2f}, Hi={summary.final_hi:.2f}, Zmax={summary.final_z_max:.2f}"
+                f"Bucket trade_side={trade_side} kind={k} move_bucket={move_bucket} "
+                f"candidate_bucket={cand_filter} strategy={strategy_label}: {len(indices)} events | "
+                f"Mean Barrier%={mean_barrier*100:.2f} | Mean VolZ={mean_z:.2f}"
             )
-
-            if summary.outer_results:
-                avg_auc = np.mean([r.test_auc for r in summary.outer_results])
-                avg_ic = np.mean([r.test_ic for r in summary.outer_results])
-                avg_pnl = np.mean([r.test_pnl for r in summary.outer_results])
-                tprint(
-                    f"  Avg Test Metrics: AUC={avg_auc:.4f}, IC={avg_ic:.4f}, PnL={avg_pnl:.4f}"
-                )
-
-                pairs = [
-                    (
-                        r.chosen_tp_mult,
-                        r.chosen_sl_mult,
-                        r.chosen_trail_mult,
-                        r.chosen_lo,
-                        r.chosen_hi,
-                        r.chosen_z_max,
-                    )
-                    for r in summary.outer_results
-                ]
-                tprint(f"  Stability (Chosen Configs): {pairs}")
-
-            # Per-bucket max hold hours: MR = shorter (reversion is fast), TF = longer
-            bucket_hold = 12 if k == "mr" else 24
-
-            # Per-bucket profit-protection anchored to EMPIRICAL MFE quantiles
-            # (not ATR%, which is wildly mis-scaled at ~57%)
-            mfe_s = summary.empirical_mfe_stats or {}
-            mfe_med = mfe_s.get("mfe_median", 0.01)
-            mfe_p25 = mfe_s.get("mfe_p25", 0.005)
-            mfe_p75 = mfe_s.get("mfe_p75", 0.02)
-            mae_med = mfe_s.get("mae_median", 0.01)
-            mae_p75 = mfe_s.get("mae_p75", 0.02)
-
-            # BE threshold: trigger at p25 of MFE (protect early — most losers saw at least this much profit)
-            # MR: tighter (p25), TF: slightly wider (between p25 and median)
-            if k == "mr":
-                be_pct = max(0.003, mfe_p25)
-            else:
-                be_pct = max(0.003, 0.5 * (mfe_p25 + mfe_med))
-
-            # Profit-lock: trigger at p25 MFE (early protection — most winners reach this)
-            lock_pct = max(0.005, mfe_p25)
-            # Lock amount: lock 50% of p25 MFE as real profit
-            lock_amt = max(0.002, 0.50 * mfe_p25)
-
-            # Max giveback: exit if return drops more than 50-65% from peak MFE
-            # MR: tighter giveback (reversion is fast), TF: slightly wider
-            giveback_frac = 0.50 if k == "mr" else 0.60
-            giveback_pct = max(0.003, giveback_frac * mfe_med)
-
-            # Max loss: hard cap at mae_p75 (75th percentile of adverse excursion)
-            max_loss = max(0.01, min(0.05, mae_p75))
-
+        else:
             tprint(
-                f"  {side}_{k} profit-protection (empirical MFE): "
-                f"MFE p25={mfe_p25*100:.2f}% med={mfe_med*100:.2f}% p75={mfe_p75*100:.2f}% | "
-                f"MAE med={mae_med*100:.2f}% p75={mae_p75*100:.2f}% | "
-                f"BE@{be_pct*100:.2f}% Lock@{lock_pct*100:.2f}% LockAmt={lock_amt*100:.2f}% "
-                f"Giveback={giveback_pct*100:.2f}% MaxLoss={max_loss*100:.2f}%"
+                f"Bucket trade_side={trade_side} kind={k} move_bucket={move_bucket} "
+                f"candidate_bucket={cand_filter} strategy={strategy_label}: 0 events"
             )
 
-            bucket_risk = {
-                "tp_mult": summary.final_tp_mult,
-                "sl_mult": summary.final_sl_mult,
-                "trail_mult": summary.final_trail_mult,
-                "vol_lo": summary.final_lo,
-                "vol_hi": summary.final_hi,
-                "vol_z_max": summary.final_z_max,
-                "max_hold_hours": bucket_hold,
-                "k_sl": summary.final_sl_mult,
-                "k_trail_start": summary.final_tp_mult,
-                "k_trail_dist": summary.final_trail_mult,
-                # Profit-protection (anchored to empirical MFE quantiles)
-                "be_threshold_pct": be_pct,
-                "profit_lock_pct": lock_pct,
-                "profit_lock_amount": lock_amt,
-                "giveback_pct": giveback_pct,
-                "max_loss_pct": max_loss,
+        if len(indices) < 50:
+            tprint("Not enough events, using defaults.")
+            is_mr_default = "mr" in k.lower()
+            default_risk = {
+            "tp_mult": cfg.get("tp_mult", 1.0),
+            "sl_mult": cfg.get("sl_mult", 0.5),
+            "trail_mult": cfg.get("trail_mult", 0.5),
+            "vol_lo": cfg.get("vol_lo", 0.03),
+            "vol_hi": cfg.get("vol_hi", 0.06),
+            "vol_z_max": cfg.get("vol_z_max", 3.0),
+                "max_hold_hours": 12 if is_mr_default else 24,
+            "k_sl": cfg["risk_k_sl"],
+                "k_trail_start": cfg["risk_k_trail_start"],
+                "k_trail_dist": cfg["risk_k_trail_dist"],
             }
-            granular_risk[f"risk_{side}_{k}"] = bucket_risk
-            granular_risk[f"risk_{k}_{cand_filter}"] = bucket_risk
+            granular_risk[f"risk_{side}_{k}"] = default_risk
+            granular_risk[f"risk_{k}_{cand_filter}"] = default_risk
+            continue
+
+        # Run optimization
+        # Note: run_tp_sl_selection_fast selects tp_mult and sl_mult for TRIPLE BARRIER.
+        # But the system might use Trailing ATR logic at execution time?
+        # If we switch to Triple Barrier execution, we use these.
+        # If we use Trailing ATR, we map them: k_sl = sl_mult (approx).
+        # The prompt implies we want to find optimal "TP:SL ratio" and levels.
+
+        # Prepare optional 15m arrays for this bucket
+        _15m_kwargs = {}
+        if has_15m_data and indices_15m and len(indices_15m) == len(indices):
+            _15m_kwargs = {
+                "open_15m": full_open_15m,
+                "high_15m": full_high_15m,
+                "low_15m": full_low_15m,
+                "close_15m": full_close_15m,
+            }
+            tprint(f"  Passing 15m data to optimizer ({len(indices)} events)")
+
+        _tp_opt = str(cfg.get("tp_sl_search_optimizer", "legacy")).lower()
+        if _tp_opt == "new":
+            from types import SimpleNamespace as _SNS
+
+            from .position_sizer.tp_sl_selection import (
+                CompositeObjectiveConfig as _COCfg,
+            )
+            from .position_sizer.tp_sl_selection import (
+                select_best_tp_sl as _select_best_tp_sl,
+            )
+
+            _cocfg = _COCfg(
+                mar=float(cfg.get("objective_mar", 0.0)),
+                eps_log=float(cfg.get("objective_eps_log", 1e-12)),
+                eps_sortino=float(cfg.get("objective_eps_sortino", 1e-12)),
+                mode=str(cfg.get("objective_composite_mode", "hard_gate")),
+                q_top=float(cfg.get("objective_composite_q_top", 0.95)),
+                selection=str(cfg.get("objective_composite_selection", "min_std")),
+                min_trades_per_fold=int(
+                    cfg.get("tp_sl_search_min_trades_per_fold", 200)
+                ),
+                elg_scale=float(cfg.get("objective_scaling_elg_scale", 10000.0)),
+                mnpt_scale=float(cfg.get("objective_scaling_mnpt_scale", 10000.0)),
+                elg_min=float(cfg.get("objective_clipping_elg_min", -1.0)),
+                elg_max=float(cfg.get("objective_clipping_elg_max", 1.0)),
+                sortino_min=float(cfg.get("objective_clipping_sortino_min", -10.0)),
+                sortino_max=float(cfg.get("objective_clipping_sortino_max", 10.0)),
+                mnpt_min=float(cfg.get("objective_clipping_mnpt_min", -1.0)),
+                mnpt_max=float(cfg.get("objective_clipping_mnpt_max", 1.0)),
+            )
+            _sel = _select_best_tp_sl(
+                open_=full_open,
+                close=full_close,
+                event_idx=indices,
+                timestamps=time_indices,
+                tp_mult_grid=cfg.get(
+                    "tp_sl_search_k_tp_grid", [0.8, 1.0, 1.25, 1.5]
+                ),
+                sl_mult_grid=cfg.get(
+                    "tp_sl_search_k_sl_grid", [0.1, 0.15, 0.25, 0.4]
+                ),
+                cfg=_cocfg,
+            )
+            _best = _sel.get("best") or {}
+            _cand = _best.get(
+                "candidate", (cfg.get("tp_mult", 1.0), cfg.get("sl_mult", 0.5))
+            )
+            summary = _SNS(
+                final_tp_mult=float(_cand[0]),
+                final_sl_mult=float(_cand[1]),
+                final_trail_mult=float(cfg.get("trail_mult", 0.25)),
+                final_lo=float(cfg.get("vol_lo", 0.02)),
+                final_hi=float(cfg.get("vol_hi", 0.06)),
+                final_z_max=float(cfg.get("vol_z_max", 3.0)),
+                outer_results=[],
+            )
+        else:
+            summary = run_tp_sl_selection_fast(
+                X=full_X,
+                open_=full_open,
+                high=full_high,
+                low=full_low,
+                close=full_close,
+                atr_pct=full_atr,
+                z=full_z,
+                atr_base_pct=full_atr_base,
+                event_idx=indices,
+                horizon=24,
+                max_events=2000,
+                tp_mult_grid=[0.4, 0.5, 0.6, 0.8, 1.0, 1.25, 1.5],
+                sl_mult_grid=[0.10, 0.15, 0.18, 0.25, 0.30, 0.40, 0.50],
+                trail_mult_grid=[0.15, 0.25, 0.35, 0.50],
+                lo_grid=[0.01, 0.02, 0.03, 0.04],
+                hi_grid=[0.05, 0.06, 0.07],
+                z_max_grid=[2.5, 3.0, 3.5],
+                entry_mode="next_open",
+                event_time_idx=time_indices,
+                fee_bps=float(cfg.get("fee_bps", 25.0)),
+                **_15m_kwargs,
+            )
+
+        # Enforce hard constraints on optimized values
+        _opt_bp_risk = 0.5 * (summary.final_lo + summary.final_hi)
+        _abs_tp_risk = summary.final_tp_mult * _opt_bp_risk
+        _ratio_risk = summary.final_tp_mult / max(summary.final_sl_mult, 0.01)
+        min_ratio = float(cfg.get("min_tp_sl_ratio", 1.2))
+        min_tp_abs = float(cfg.get("min_tp_abs_pct", 0.02))
+        _tp_m = summary.final_tp_mult
+        _sl_m = summary.final_sl_mult
+        if _abs_tp_risk < min_tp_abs:
+            _tp_m = min_tp_abs / max(_opt_bp_risk, 0.01)
+            tprint(
+                f"  Enforced min TP: tp_mult raised to {_tp_m:.2f} (abs {_tp_m*_opt_bp_risk*100:.1f}%)"
+            )
+        if _tp_m / max(_sl_m, 0.01) < min_ratio:
+            _sl_m = _tp_m / min_ratio
+            tprint(f"  Enforced min ratio: sl_mult lowered to {_sl_m:.2f}")
+        summary.final_tp_mult = _tp_m
+        summary.final_sl_mult = _sl_m
+        tprint(
+            f"Optimized {side} {k}: TP={summary.final_tp_mult:.2f} ({summary.final_tp_mult*_opt_bp_risk*100:.1f}%), "
+            f"SL={summary.final_sl_mult:.2f} ({summary.final_sl_mult*_opt_bp_risk*100:.1f}%), "
+            f"ratio={summary.final_tp_mult/max(summary.final_sl_mult,0.01):.1f}x, "
+            f"Trail={summary.final_trail_mult:.2f}, Lo={summary.final_lo:.2f}, Hi={summary.final_hi:.2f}, Zmax={summary.final_z_max:.2f}"
+        )
+
+        if summary.outer_results:
+            avg_auc = np.mean([r.test_auc for r in summary.outer_results])
+            avg_ic = np.mean([r.test_ic for r in summary.outer_results])
+            avg_pnl = np.mean([r.test_pnl for r in summary.outer_results])
+            tprint(
+                f"  Avg Test Metrics: AUC={avg_auc:.4f}, IC={avg_ic:.4f}, PnL={avg_pnl:.4f}"
+            )
+
+            pairs = [
+                (
+                    r.chosen_tp_mult,
+                    r.chosen_sl_mult,
+                    r.chosen_trail_mult,
+                    r.chosen_lo,
+                    r.chosen_hi,
+                    r.chosen_z_max,
+                )
+                for r in summary.outer_results
+            ]
+            tprint(f"  Stability (Chosen Configs): {pairs}")
+
+        # Per-bucket max hold hours: MR = shorter (reversion is fast), TF = longer
+        is_mr = "mr" in k.lower()
+        bucket_hold = 12 if is_mr else 24
+
+        # Per-bucket profit-protection anchored to EMPIRICAL MFE quantiles
+        # (not ATR%, which is wildly mis-scaled at ~57%)
+        mfe_s = summary.empirical_mfe_stats or {}
+        mfe_med = mfe_s.get("mfe_median", 0.01)
+        mfe_p25 = mfe_s.get("mfe_p25", 0.005)
+        mfe_p75 = mfe_s.get("mfe_p75", 0.02)
+        mae_med = mfe_s.get("mae_median", 0.01)
+        mae_p75 = mfe_s.get("mae_p75", 0.02)
+
+        # BE threshold: trigger at p25 of MFE (protect early — most losers saw at least this much profit)
+        # MR: tighter (p25), TF: slightly wider (between p25 and median)
+        if is_mr:
+            be_pct = max(0.003, mfe_p25)
+        else:
+            be_pct = max(0.003, 0.5 * (mfe_p25 + mfe_med))
+
+        # Profit-lock: trigger at p25 MFE (early protection — most winners reach this)
+        lock_pct = max(0.005, mfe_p25)
+        # Lock amount: lock 50% of p25 MFE as real profit
+        lock_amt = max(0.002, 0.50 * mfe_p25)
+
+        # Max giveback: exit if return drops more than 50-65% from peak MFE
+        # MR: tighter giveback (reversion is fast), TF: slightly wider
+        giveback_frac = 0.50 if is_mr else 0.60
+        giveback_pct = max(0.003, giveback_frac * mfe_med)
+
+        # Max loss: hard cap at mae_p75 (75th percentile of adverse excursion)
+        max_loss = max(0.01, min(0.05, mae_p75))
+
+        tprint(
+            f"  {side}_{k} profit-protection (empirical MFE): "
+            f"MFE p25={mfe_p25*100:.2f}% med={mfe_med*100:.2f}% p75={mfe_p75*100:.2f}% | "
+            f"MAE med={mae_med*100:.2f}% p75={mae_p75*100:.2f}% | "
+            f"BE@{be_pct*100:.2f}% Lock@{lock_pct*100:.2f}% LockAmt={lock_amt*100:.2f}% "
+            f"Giveback={giveback_pct*100:.2f}% MaxLoss={max_loss*100:.2f}%"
+        )
+
+        bucket_risk = {
+            "tp_mult": summary.final_tp_mult,
+            "sl_mult": summary.final_sl_mult,
+            "trail_mult": summary.final_trail_mult,
+            "vol_lo": summary.final_lo,
+            "vol_hi": summary.final_hi,
+            "vol_z_max": summary.final_z_max,
+            "max_hold_hours": bucket_hold,
+            "k_sl": summary.final_sl_mult,
+            "k_trail_start": summary.final_tp_mult,
+            "k_trail_dist": summary.final_trail_mult,
+            # Profit-protection (anchored to empirical MFE quantiles)
+            "be_threshold_pct": be_pct,
+            "profit_lock_pct": lock_pct,
+            "profit_lock_amount": lock_amt,
+            "giveback_pct": giveback_pct,
+            "max_loss_pct": max_loss,
+        }
+        granular_risk[f"risk_{side}_{k}"] = bucket_risk
+        granular_risk[f"risk_{k}_{cand_filter}"] = bucket_risk
 
     best_params = {
         "k_sl": cfg["risk_k_sl"],

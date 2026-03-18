@@ -1100,7 +1100,7 @@ CFG = {
     # Spike / Regime Head
     "spike_feature_keys": [
         "S", "impulse_ratio_12", "impulse_ratio_24", "coherence_24", "accel",
-        "tf_minus_mr", "mkt_rv_ratio", "wick_ratio", "body_ratio", "rvol_z",
+        "mkt_rv_ratio", "wick_ratio", "body_ratio", "rvol_z",
         "retrace_12", "donch_dist_12"
     ],
 
@@ -1256,7 +1256,7 @@ CFG = {
         "vol_shock_asym_4_12", "vol_shock_asym_8_24", "draw_sym_10h", "atr_pct_change",
     ],
     "tf_meta_feature_keys": [
-        "tf_tape", "tf_minus_mr", "accept_gt66", "retest_accept", "tf_qual",
+        "tf_tape", "accept_gt66", "retest_accept", "tf_qual",
         "breakout_confirmed", "trend_retest_success_rate", "trend_regime_stability",
         "trend_age_hours", "higher_highs_count_48h",
         # TF continuation quality

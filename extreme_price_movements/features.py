@@ -4555,18 +4555,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("volatility_of_volatility_48"):
-            roll_std_4h = c_raw.apply(
-                lambda x: pd.Series(rolling_std_nb(x.values, 4), index=x.index), axis=0
-            )
-            feats["volatility_of_volatility_48"] = roll_std_4h.apply(
-                lambda x: pd.Series(rolling_std_nb(x.values, 48), index=x.index), axis=0
+            roll_std_4h = ff.apply_to_frame(c_raw, rolling_std_nb, 4)
+            feats["volatility_of_volatility_48"] = ff.apply_to_frame(
+                roll_std_4h, rolling_std_nb, 48
             ).astype(np.float32)
 
         if _needs_feature("trend_acceleration"):
             # ema_slope_norm is equivalent to ema20_slope_5h
-            ema20 = c_raw.apply(
-                lambda x: pd.Series(ema_nb(x.values, 20), index=x.index), axis=0
-            )
+            ema20 = ff.apply_to_frame(c_raw, ema_nb, 20)
             ema20_slope = ema20 - ema20.shift(5)
             ema20_slope_norm = ema20_slope / (atr_base + 1e-12)
             feats["trend_acceleration"] = (

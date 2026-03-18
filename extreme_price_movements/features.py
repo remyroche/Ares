@@ -858,7 +858,9 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
     # Vectorized approximation: Rolling Sum of (Ret - Mean) / Vol
     # This captures local trend strength
     # Shift by 1 to ensure decision-time causality (no current-bar leakage).
-    roll_z = (ff.numba_rolling_mean(ret1h / std_ret, 24) * np.float32(np.sqrt(24))).shift(1)
+    roll_z = (
+        ff.numba_rolling_mean(ret1h / std_ret, 24) * np.float32(np.sqrt(24))
+    ).shift(1)
     feats["cusum_strength"] = roll_z.astype(np.float32)
 
     # 2. Standardized Move Magnitude |z| (over 24h)
@@ -1535,7 +1537,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     _safe_range_ln_arr = _safe_range_ln.to_numpy(dtype=np.float32)
 
     feats["orderflow_imbalance"] = pd.DataFrame(
-        (_c_log_arr - _o_arr) / _safe_range_ln_arr, index=c_log.index, columns=c_log.columns
+        (_c_log_arr - _o_arr) / _safe_range_ln_arr,
+        index=c_log.index,
+        columns=c_log.columns,
     ).astype(np.float32)
 
     # Aliases for exact user-requested names
@@ -1557,7 +1561,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["compression_ratio"] = feats["atr_compression_ratio"]
 
     # Missing from Technical Regime (Ridge) Features
-    feats["range_expansion_ratio"] = (tr_ln / (feats["atr_ln"] + 1e-12)).astype(np.float32)
+    feats["range_expansion_ratio"] = (tr_ln / (feats["atr_ln"] + 1e-12)).astype(
+        np.float32
+    )
 
     _accel_raw = c_log - 2 * c_log.shift(1) + c_log.shift(2)
     feats["acceleration"] = _accel_raw.astype(np.float32)
@@ -1616,7 +1622,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     low_20 = l_min_20
     range_20 = high_20 - low_20
     feats["choppiness_index_20"] = (
-        100 * np.log10((atr_sum / (range_20 + 1e-12)).clip(lower=1e-12)) / np.float32(np.log10(20))
+        100
+        * np.log10((atr_sum / (range_20 + 1e-12)).clip(lower=1e-12))
+        / np.float32(np.log10(20))
     ).astype(np.float32)
 
     # Direction Entropy 20
@@ -1845,7 +1853,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # 5th percentile return over 48 hours (2 days)
     # Use Numba-optimized rolling quantile (O(N) vs Pandas O(N log W))
     feats["cvar_5pct"] = (
-        ff.numba_rolling_quantile(feats["ret1h"], 48, 0.05).fillna(0.0).astype(np.float32)
+        ff.numba_rolling_quantile(feats["ret1h"], 48, 0.05)
+        .fillna(0.0)
+        .astype(np.float32)
     )
 
     # 5. Liquidity Shock (Amihud Proxy for long_tf)
@@ -1972,7 +1982,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     )
 
     t_snr_num = ema(feats["ret1h"], 6).abs()
-    t_snr_den = _roll_std('ret1h', feats['ret1h'], 24)
+    t_snr_den = _roll_std("ret1h", feats["ret1h"], 24)
     feats["trend_snr"] = (t_snr_num / (t_snr_den + 1e-12)).astype(np.float32)
 
     # v_power: Volume / Abs Price Change? Normalizing by c.abs() (FFD) is unstable if c~0.
@@ -1988,7 +1998,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     vwap_24 = ff.numba_rolling_vwap(c, v, 24).astype(np.float32)
 
-    feats["dist_vwap_norm"] = ((c - vwap_24) / (atr_base + np.float32(1e-12))).astype(np.float32)
+    feats["dist_vwap_norm"] = ((c - vwap_24) / (atr_base + np.float32(1e-12))).astype(
+        np.float32
+    )
 
     feats["momentum_accel"] = feats["ret1h"].diff().astype(np.float32)
 
@@ -2032,7 +2044,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     feats["vol_expansion_ratio"] = (atr_ema_f / (atr_ema_s + 1e-12)).astype(np.float32)
 
-    sig_s = _roll_std('ret1h', feats['ret1h'], 6)
+    sig_s = _roll_std("ret1h", feats["ret1h"], 6)
     sig_m = ff.numba_rolling_std(feats["ret1h"], 18)
     sig_m_floor = sig_m.abs().clip(lower=ratio_floor)
     vol_comp = sig_s / sig_m_floor
@@ -2161,14 +2173,16 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         (feats["ret1h"].abs() > q90_dx).astype(np.float32), 10
     ).astype(np.float32)
     vol_mu_30d = _roll_mean("v", v, 24 * 30)
-    vol_sd_30d = _roll_std('v', v, 24 * 30)
+    vol_sd_30d = _roll_std("v", v, 24 * 30)
     feats["volu_z"] = ((v - vol_mu_30d) / (vol_sd_30d + 1e-12)).astype(np.float32)
     del max_bar, sign_max_bar, q90_dx, vol_mu_30d, vol_sd_30d
     feats["vol_z_30_calm"] = robust_zscore_rolling(
         np.log(feats["atr_pct_base"] + 1e-9), 24 * 30, quantile=0.50
     ).astype(np.float32)
     feats["volume_price_corr_10h"] = (
-        ff.numba_rolling_corr(feats["ret1h"].abs(), v, 10).fillna(0.0).astype(np.float32)
+        ff.numba_rolling_corr(feats["ret1h"].abs(), v, 10)
+        .fillna(0.0)
+        .astype(np.float32)
     )
 
     sma_fast = ff.numba_rolling_mean(c_context, max(24, int(cfg["trend_sma_n"] * 0.5)))
@@ -3014,7 +3028,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     )
     feats["G_TF_GRIND"] = (ret_rat * feats["clv_mean_4"] * pb2_inv).astype(np.float32)
     feats["G_TF_TREND"] = (
-        (feats["speed"] * feats["coherence_24"] * clv4_pos).fillna(0.0).astype(np.float32)
+        (feats["speed"] * feats["coherence_24"] * clv4_pos)
+        .fillna(0.0)
+        .astype(np.float32)
     )
     feats["G_MR_TAIL"] = (feats["tail_against"] * (1.0 + feats["donch_dist_6"])).astype(
         np.float32
@@ -3266,10 +3282,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # 6. Hurst exponent proxy: R/S ratio over rolling window
     #    H > 0.5 = trending, H < 0.5 = mean-reverting
-    range_24 = _roll_max('c', c, 24) - _roll_min('c', c, 24)
-    std_24 = _roll_std('ret1h', feats['ret1h'], 24)
+    range_24 = _roll_max("c", c, 24) - _roll_min("c", c, 24)
+    std_24 = _roll_std("ret1h", feats["ret1h"], 24)
     feats["hurst_proxy_24"] = (
-        (np.log(range_24 / (std_24 * np.float32(np.sqrt(24)) + 1e-12) + 1e-12) / np.log(24))
+        (
+            np.log(range_24 / (std_24 * np.float32(np.sqrt(24)) + 1e-12) + 1e-12)
+            / np.log(24)
+        )
         .clip(0, 1)
         .fillna(0.5)
         .astype(np.float32)
@@ -3282,7 +3301,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["vol_concentration_12"] = (v_max_12 / (v_sum_12 + 1e-12)).astype(np.float32)
 
     # 4. Signed volume divergence: volume trend vs price trend disagreement
-    vol_trend = ff.numba_rolling_sum(v, 6) - _roll_sum('v', v, 24) / 4.0
+    vol_trend = ff.numba_rolling_sum(v, 6) - _roll_sum("v", v, 24) / 4.0
     price_trend = np.where(np.isfinite(feats["ret6h"]), feats["ret6h"], 0.0)
     feats["vol_price_diverge"] = (
         np.sign(vol_trend) * np.sign(price_trend) * -1.0
@@ -3743,7 +3762,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     trend_t = feats["trend_t"]
 
     # trend_z_t = trend_t / std(price, 24)
-    std_c_24 = _roll_std('c', c, 24)
+    std_c_24 = _roll_std("c", c, 24)
     feats["trend_z_t"] = (trend_t / (std_c_24 + 1e-12)).astype(np.float32)
 
     # convexity_t
@@ -3774,8 +3793,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     impulse = feats["impulse"]
 
     # pct_pos
-    min_24 = _roll_min('c', c, 24)
-    max_24 = _roll_max('c', c, 24)
+    min_24 = _roll_min("c", c, 24)
+    max_24 = _roll_max("c", c, 24)
     pct_pos = ((c - min_24) / (max_24 - min_24 + 1e-12)).clip(0, 1)
 
     # squeeze
@@ -4128,6 +4147,72 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "dist_vwap_atr",
         "abs_edge_pred",
     }
+    if _needs_feature(
+        "close_location_in_bar",
+        "session_progress",
+        "hour_sin",
+        "hour_cos",
+        "dow_sin",
+        "dow_cos",
+    ):
+        idx_utc = c_log.index
+        if isinstance(idx_utc, pd.DatetimeIndex):
+            if idx_utc.tz is None:
+                idx_utc = idx_utc.tz_localize("UTC")
+            else:
+                idx_utc = idx_utc.tz_convert("UTC")
+
+            hours = idx_utc.hour.to_numpy(dtype=np.float32, copy=False)
+            dows = idx_utc.dayofweek.to_numpy(dtype=np.float32, copy=False)
+
+            if _needs_feature("session_progress"):
+                feats["session_progress"] = pd.DataFrame(
+                    np.tile((hours / 24.0)[:, None], (1, len(c_log.columns))),
+                    index=c_log.index,
+                    columns=c_log.columns,
+                    dtype=np.float32,
+                )
+            if _needs_feature("hour_sin"):
+                feats["hour_sin"] = pd.DataFrame(
+                    np.tile(
+                        np.sin(2.0 * np.pi * hours / 24.0)[:, None],
+                        (1, len(c_log.columns)),
+                    ),
+                    index=c_log.index,
+                    columns=c_log.columns,
+                    dtype=np.float32,
+                )
+            if _needs_feature("hour_cos"):
+                feats["hour_cos"] = pd.DataFrame(
+                    np.tile(
+                        np.cos(2.0 * np.pi * hours / 24.0)[:, None],
+                        (1, len(c_log.columns)),
+                    ),
+                    index=c_log.index,
+                    columns=c_log.columns,
+                    dtype=np.float32,
+                )
+            if _needs_feature("dow_sin"):
+                feats["dow_sin"] = pd.DataFrame(
+                    np.tile(
+                        np.sin(2.0 * np.pi * dows / 7.0)[:, None],
+                        (1, len(c_log.columns)),
+                    ),
+                    index=c_log.index,
+                    columns=c_log.columns,
+                    dtype=np.float32,
+                )
+            if _needs_feature("dow_cos"):
+                feats["dow_cos"] = pd.DataFrame(
+                    np.tile(
+                        np.cos(2.0 * np.pi * dows / 7.0)[:, None],
+                        (1, len(c_log.columns)),
+                    ),
+                    index=c_log.index,
+                    columns=c_log.columns,
+                    dtype=np.float32,
+                )
+
     if not requested_feature_set or position_sizer_keys.intersection(
         requested_feature_set
     ):
@@ -4212,7 +4297,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 (range_mean_3 / (range_mean_6 + 1e-9)).fillna(1.0).astype(np.float32)
             )
 
-        if _needs_feature("close_position_in_range"):
+        if _needs_feature("close_position_in_range", "close_location_in_bar"):
             close_pos_in_range = pd.DataFrame(
                 index=h_raw.index, columns=h_raw.columns, dtype=np.float32
             )
@@ -4221,6 +4306,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                     h_raw[col].values, l_raw[col].values, c_raw[col].values
                 )
             feats["close_position_in_range"] = close_pos_in_range.astype(np.float32)
+            if _needs_feature("close_location_in_bar"):
+                feats["close_location_in_bar"] = feats["close_position_in_range"].copy()
 
         if _needs_feature(
             "distance_to_local_high",
@@ -4422,8 +4509,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("compression_score"):
-            rolling_std_short = _roll_std('c_raw', c_raw, 10)
-            rolling_std_long = _roll_std('c_raw', c_raw, 48)
+            rolling_std_short = _roll_std("c_raw", c_raw, 10)
+            rolling_std_long = _roll_std("c_raw", c_raw, 48)
             feats["compression_score"] = (
                 (rolling_std_short / (rolling_std_long + 1e-12))
                 .fillna(0.0)
@@ -4442,8 +4529,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("variance_ratio_10_48"):
-            var_10 = _roll_std('c_raw', c_raw, 10) ** 2
-            var_48 = _roll_std('c_raw', c_raw, 48) ** 2
+            var_10 = _roll_std("c_raw", c_raw, 10) ** 2
+            var_48 = _roll_std("c_raw", c_raw, 48) ** 2
             feats["variance_ratio_10_48"] = (
                 (var_10 / (var_48 + 1e-12)).fillna(0.0).astype(np.float32)
             )

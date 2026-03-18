@@ -5782,29 +5782,12 @@ def add_cross_sectional_peer_context_features(
 
     # Candidates specifically requested for cross-sectional ranking
     cs_candidates = {
-        # Momentum relative
-        "ret1h",
         "ret6h",
-        "impulse",
-        "trend_strength_4d",
-        "trend_regime",
-        # Volatility relative
-        "atr_pct",
-        "rv_6h",
-        "rv_24h",
         "volatility_zscore",
-        # Activity relative
-        "vol_shock_z",
-        "dollar_vol_z_24",
         "amihud_z",
         "volume_z_24",
         "vol_z",
-        # Geometry relative
-        "breakout_24h",
         "range_24h_pct",
-        "range_zscore",
-        "dist_ema_fast",
-        "dist_vwap_norm",
     }
 
     added_feats = {}

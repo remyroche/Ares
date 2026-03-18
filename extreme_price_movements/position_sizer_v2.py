@@ -39,9 +39,6 @@ from extreme_price_movements.label_policy_optimizer import (
     LabelPolicy,
     _simulate_policy_batch,
 )
-from extreme_price_movements.mask_optimiser import (
-    optimize_layer0_masks_by_mode as optimize_layer0_masks,
-)
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.periods_symbols_management import (
     EventSchema,

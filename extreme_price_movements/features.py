@@ -1927,15 +1927,19 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # Use Pearson Mode Skewness Proxy: 3 * (Mean - Median) / Std
     # More stable for small N (works for N>=2) and cheaper.
     r1 = feats["ret1h"]
+
+    r1_arr = np.ascontiguousarray(r1.to_numpy(dtype=np.float64))
+    cs_median_arr, _ = _rowwise_median_mad_nb(r1_arr)
+    cs_median = pd.Series(cs_median_arr, index=r1.index, dtype=np.float32)
+
     cs_mean = r1.mean(axis=1)
-    cs_median = r1.median(axis=1)
     cs_std = r1.std(axis=1)
 
     skew_ser = 3.0 * (cs_mean - cs_median) / (cs_std + 1e-6)
     feats["skew"] = pd.DataFrame(
-        np.repeat(skew_ser.values[:, None], c.shape[1], axis=1),
-        index=c.index,
-        columns=c.columns,
+        np.repeat(skew_ser.values[:, None], r1.shape[1], axis=1),
+        index=r1.index,
+        columns=r1.columns,
     ).astype(np.float32)
 
     r = feats["ret1h"]

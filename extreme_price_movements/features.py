@@ -921,7 +921,7 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
 
 
 def compute_funding_proxy(c, h, l, v, mkt_df):
-    c_ma = _roll_mean('c', c, 24)
+    c_ma = ff.numba_rolling_mean(c, 24)
     dist = c - c_ma
 
     mkt_close_df = mkt_df[["mkt_close"]]
@@ -1527,7 +1527,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     _lower_wick_arr = feats["lower_wick_ratio"].to_numpy(dtype=np.float32)
 
     feats["wick_to_range"] = pd.DataFrame(
-        _upper_wick_arr + _lower_wick_arr, index=_feat_index, columns=_feat_columns
+        _upper_wick_arr + _lower_wick_arr, index=c_log.index, columns=c_log.columns
     ).astype(np.float32)
 
     _c_log_arr = c_log.to_numpy(dtype=np.float32)
@@ -1535,7 +1535,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     _safe_range_ln_arr = _safe_range_ln.to_numpy(dtype=np.float32)
 
     feats["orderflow_imbalance"] = pd.DataFrame(
-        (_c_log_arr - _o_arr) / _safe_range_ln_arr, index=_feat_index, columns=_feat_columns
+        (_c_log_arr - _o_arr) / _safe_range_ln_arr, index=c_log.index, columns=c_log.columns
     ).astype(np.float32)
 
     # Aliases for exact user-requested names
@@ -1709,14 +1709,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     _mean_100 = ff._numba_rolling_mean_parallel(_c_log_arr, 100)
     _std_100 = np.maximum(ff._numba_rolling_std_parallel(_c_log_arr, 100), 1e-12)
     feats["zscore_price_50"] = pd.DataFrame(
-        (_c_log_arr - _mean_100) / _std_100, index=_feat_index, columns=_feat_columns
+        (_c_log_arr - _mean_100) / _std_100, index=c_log.index, columns=c_log.columns
     ).astype(np.float32)
 
     # Note: 200 * 2 = 400 bars for 15m conversion match logic in ridge
     _mean_400 = ff._numba_rolling_mean_parallel(_c_log_arr, 400)
     _std_400 = np.maximum(ff._numba_rolling_std_parallel(_c_log_arr, 400), 1e-12)
     feats["zscore_price_200"] = pd.DataFrame(
-        (_c_log_arr - _mean_400) / _std_400, index=_feat_index, columns=_feat_columns
+        (_c_log_arr - _mean_400) / _std_400, index=c_log.index, columns=c_log.columns
     ).astype(np.float32)
 
     # --- End Technical Regime ---
@@ -4434,8 +4434,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             # ⚡ Bolt: Vectorized rolling autocorrelation of returns
             # 🎯 Why: Iterating over DataFrame columns in Python using pd.Series.rolling().apply() is phenomenally slow.
             # 📊 Impact: ~115x speedup for computing `return_autocorr_48` on large datasets.
+            ret1h = c_log.diff(1)
             feats["return_autocorr_48"] = (
-                ff.numba_rolling_corr(feats["ret1h"], feats["ret1h"].shift(1), 48)
+                ff.numba_rolling_corr(ret1h, ret1h.shift(1), 48)
                 .fillna(0.0)
                 .astype(np.float32)
             )

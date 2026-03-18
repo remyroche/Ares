@@ -201,7 +201,7 @@ def ema(x: pd.DataFrame, span: int):
 
 def _safe_log_df(df: pd.DataFrame, eps: float = 1e-9) -> pd.DataFrame:
     """Causal-safe log transform for strictly positive inputs."""
-    return np.log(np.maximum(df, np.float32(eps))).astype(np.float32).astype(np.float32)
+    return np.log(np.maximum(df, np.float32(eps))).astype(np.float32)
 
 
 def _transform_close_fixed_ffd(
@@ -321,15 +321,14 @@ def _rolling_permutation_entropy_df(
     rets = df.diff(delay)
 
     # Autocorrelation at lag 1 (primary)
-    roll = rets.rolling(window, min_periods=max(4, window // 2))
-    mean = roll.mean().shift(1)
-    var = roll.var(ddof=0).shift(1).clip(lower=1e-12)
+    # Using numba-accelerated rolling kernels instead of Pandas .rolling()
+    mean = ff.numba_rolling_mean(rets, window).shift(1)
+    var = (ff.numba_rolling_std(rets, window) ** 2).shift(1).clip(lower=1e-12)
 
     # Covariance with lagged self
     rets_lag = rets.shift(delay)
-    cov = (rets * rets_lag).rolling(
-        window, min_periods=max(4, window // 2)
-    ).mean().shift(1) - mean * mean.shift(delay)
+    rets_prod = rets * rets_lag
+    cov = ff.numba_rolling_mean(rets_prod, window).shift(1) - mean * mean.shift(delay)
 
     # Autocorrelation
     autocorr = (cov / var).clip(-1, 1)
@@ -338,7 +337,7 @@ def _rolling_permutation_entropy_df(
     sign = (rets > 0).astype(np.float32)
     sign_change = (sign != sign.shift(delay)).astype(np.float32)
     run_freq = (
-        sign_change.rolling(window, min_periods=max(4, window // 2)).mean().shift(1)
+        ff.numba_rolling_mean(sign_change, window).shift(1)
     )
 
     # Combine:
@@ -375,11 +374,11 @@ def _rolling_spectral_entropy_df(df: pd.DataFrame, window: int) -> pd.DataFrame:
     # Trend: variance scales super-linearly
     # Mean-reversion: variance scales sub-linearly
 
-    # Compute variance at multiple scales
+    # Compute variance at multiple scales using Numba-accelerated std function
     scales = [max(2, window // 8), max(4, window // 4), max(8, window // 2), window]
     variances = []
     for s in scales:
-        v = df.rolling(s, min_periods=max(2, s // 2)).var(ddof=0).shift(1)
+        v = (ff.numba_rolling_std(df, s) ** 2).shift(1)
         variances.append(v)
 
     # Variance ratio matrix: how variance scales with window
@@ -671,16 +670,19 @@ def add_regime_gates(
 
 
 def compute_vol_regime_features(
-    close_df: pd.DataFrame, vol_window: int = 24, pct_window: int = 252
+    close_df: pd.DataFrame, vol_window: int = 24, pct_window: int = 252, rv_cache: pd.DataFrame = None
 ):
     """Compute volatility-regime features from close prices."""
-    # Use np.maximum to avoid log(0) or negative values in the ratio
-    ratio = close_df / close_df.shift(1)
-    ratio_safe = np.maximum(ratio, 1e-9)
-    ret = np.log(ratio_safe)
-    rv = ret.rolling(vol_window).std().shift(1)
+    if rv_cache is not None:
+        rv = rv_cache
+    else:
+        # Use np.maximum to avoid log(0) or negative values in the ratio
+        ratio = close_df / close_df.shift(1)
+        ratio_safe = np.maximum(ratio, 1e-9)
+        ret = np.log(ratio_safe)
+        rv = (ff.numba_rolling_std(ret, vol_window)).shift(1)
 
-    vol_pct = rv.rolling(pct_window).rank(pct=True).clip(0.0, 1.0)
+    vol_pct = ff.numba_rolling_rank_pct(rv, pct_window).clip(0.0, 1.0)
     vol_high = (vol_pct - 0.8).clip(lower=0.0)
     vol_low = (0.2 - vol_pct).clip(lower=0.0)
 
@@ -807,7 +809,7 @@ def tune_global_kalman_lambda(
     return float(best_lam)
 
 
-def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
+def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     """
     Compute regime conditioning features (cusum, vol, etc.).
     Returns a dict of new features.
@@ -818,7 +820,10 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
     # Detects if price is persistently drifting away from mean
     # Normalized by volatility
     ret1h = c.diff(1).fillna(0.0)
-    rv_24 = ff.numba_rolling_std(ret1h, 24)
+    if rv_24_cache is not None:
+        rv_24 = rv_24_cache
+    else:
+        rv_24 = ff.numba_rolling_std(ret1h, 24)
     std_ret = rv_24 + np.float32(1e-12)
 
     # Vectorized approximation: Rolling Sum of (Ret - Mean) / Vol
@@ -845,7 +850,7 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
 
     # 4. Volatility percentile and hinges
     vol_pct, vol_high, vol_low = compute_vol_regime_features(
-        c, vol_window=24, pct_window=252
+        c, vol_window=24, pct_window=252, rv_cache=rv_24.shift(1) if rv_24_cache is not None else None
     )
     feats["vol_percentile"] = vol_pct
     feats["vol_high"] = vol_high
@@ -947,15 +952,13 @@ def _compute_hvn_feature_frames(
     if compute_col_fn is None:
         compute_col_fn = _compute_hvn_col
 
-    hvn_results = {
-        k: pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32)
-        for k in hvn_keys
-    }
+    # Create a dict of dicts instead of incrementally updating pandas DataFrames
+    hvn_raw_dict: dict[str, dict[str, np.ndarray]] = {k: {} for k in hvn_keys}
     total_cols = len(c_log.columns)
 
     def _assign_hvn_result(col_name, res_df):
         for k in hvn_keys:
-            hvn_results[k][col_name] = res_df[k].values.astype(np.float32)
+            hvn_raw_dict[k][col_name] = res_df[k].to_numpy(dtype=np.float32)
 
     import multiprocessing
 
@@ -1014,6 +1017,11 @@ def _compute_hvn_feature_frames(
                 completed += 1
                 if completed % 50 == 0:
                     tprint(f"HVN/LVN: {completed}/{total_cols}")
+
+    # Build final DataFrames efficiently from complete dictionaries
+    hvn_results = {}
+    for k in hvn_keys:
+        hvn_results[k] = pd.DataFrame(hvn_raw_dict[k], index=c_log.index).reindex(columns=c_log.columns)
 
     return hvn_results
 
@@ -1377,9 +1385,15 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # - ret2h..ret6h: carry-primary (move continuation)
     # - ret>=8h: context-primary (regime/trend under noise)
     feats["ret1h"] = c_impulse.diff(1).astype(np.float32)
-    for H in [2, 3, 4, 5, 6]:
+
+    # We can optimize these multiple horizons by using `diff` on cumulative sum,
+    # but `numba_rolling_sum` handles NaNs and edge cases. We just use them directly.
+    carry_windows = [2, 3, 4, 5, 6]
+    for H in carry_windows:
         feats[f"ret{H}h"] = ff.numba_rolling_sum(c_carry, H).astype(np.float32)
-    for H in [8, 10, 12, 16, 20, 24, 28, 48, 72, 120]:
+
+    context_windows = [8, 10, 12, 16, 20, 24, 28, 48, 72, 120]
+    for H in context_windows:
         feats[f"ret{H}h"] = ff.numba_rolling_sum(c_context, H).astype(np.float32)
 
     # Carry price becomes default base for many pre-existing features.
@@ -1501,13 +1515,27 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["range_atr"] = (feats["range_ln"] / (feats["atr_ln"] + 1e-12)).astype(
         np.float32
     )
-    feats["body_ratio"] = (c_log_minus_o.abs() / _safe_range_ln).astype(np.float32)
-    feats["upper_wick_ratio"] = ((h - np.maximum(o, c_log)) / _safe_range_ln).astype(
-        np.float32
-    )
-    feats["lower_wick_ratio"] = ((np.minimum(o, c_log) - l) / _safe_range_ln).astype(
-        np.float32
-    )
+    _c_log_minus_o_val = c_log_minus_o.to_numpy(dtype=np.float32)
+    _safe_range_ln_val = _safe_range_ln.to_numpy(dtype=np.float32)
+    feats["body_ratio"] = pd.DataFrame(
+        np.abs(_c_log_minus_o_val) / _safe_range_ln_val,
+        index=c_log.index, columns=c_log.columns
+    ).astype(np.float32)
+
+    _h_val = h.to_numpy(dtype=np.float32)
+    _c_log_val = c_log.to_numpy(dtype=np.float32)
+    _o_val = o.to_numpy(dtype=np.float32)
+    _l_val = l.to_numpy(dtype=np.float32)
+
+    feats["upper_wick_ratio"] = pd.DataFrame(
+        (_h_val - np.maximum(_o_val, _c_log_val)) / _safe_range_ln_val,
+        index=c_log.index, columns=c_log.columns
+    ).astype(np.float32)
+
+    feats["lower_wick_ratio"] = pd.DataFrame(
+        (np.minimum(_o_val, _c_log_val) - _l_val) / _safe_range_ln_val,
+        index=c_log.index, columns=c_log.columns
+    ).astype(np.float32)
 
     # Missing Trigger/Location features from ridge_regime_event_assessment
     _upper_wick_arr = feats["upper_wick_ratio"].to_numpy(dtype=np.float32)
@@ -1517,12 +1545,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         _upper_wick_arr + _lower_wick_arr, index=c_log.index, columns=c_log.columns
     ).astype(np.float32)
 
-    _c_log_arr = c_log.to_numpy(dtype=np.float32)
-    _o_arr = o.to_numpy(dtype=np.float32)
-    _safe_range_ln_arr = _safe_range_ln.to_numpy(dtype=np.float32)
-
     feats["orderflow_imbalance"] = pd.DataFrame(
-        (_c_log_arr - _o_arr) / _safe_range_ln_arr,
+        (_c_log_val - _o_val) / _safe_range_ln_val,
         index=c_log.index,
         columns=c_log.columns,
     ).astype(np.float32)
@@ -1531,24 +1555,40 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["upper_wick"] = feats["upper_wick_ratio"]
     feats["lower_wick"] = feats["lower_wick_ratio"]
 
-    feats["ema20_slope_5h"] = (
-        (ema20 - ema20.shift(5)) / (feats["atr_ln"] + 1e-12)
+    _ema20_val = ema20.to_numpy(dtype=np.float32)
+    _ema20_shift_val = ema20.shift(5).to_numpy(dtype=np.float32)
+    _atr_ln_val = feats["atr_ln"].to_numpy(dtype=np.float32)
+
+    feats["ema20_slope_5h"] = pd.DataFrame(
+        (_ema20_val - _ema20_shift_val) / (_atr_ln_val + 1e-12),
+        index=c_log.index, columns=c_log.columns
     ).astype(np.float32)
     feats["ema_slope_norm"] = feats["ema20_slope_5h"]
-    feats["ema_slope"] = (ema20 - ema20.shift(5)).astype(np.float32)
+    feats["ema_slope"] = pd.DataFrame(
+        (_ema20_val - _ema20_shift_val),
+        index=c_log.index, columns=c_log.columns
+    ).astype(np.float32)
 
-    feats["pullback_depth"] = ((ema20 - l) / (feats["atr_ln"] + 1e-12)).astype(
-        np.float32
-    )
+    _l_val = l.to_numpy(dtype=np.float32)
+    feats["pullback_depth"] = pd.DataFrame(
+        (_ema20_val - _l_val) / (_atr_ln_val + 1e-12),
+        index=c_log.index, columns=c_log.columns
+    ).astype(np.float32)
 
     atr_long = ff.numba_ewma(tr_ln, 1.0 / (24 * 7), False).clip(lower=1e-9)
-    feats["atr_compression_ratio"] = (feats["atr_ln"] / atr_long).astype(np.float32)
+    _atr_long_val = atr_long.to_numpy(dtype=np.float32)
+    feats["atr_compression_ratio"] = pd.DataFrame(
+        _atr_ln_val / _atr_long_val,
+        index=c_log.index, columns=c_log.columns
+    ).astype(np.float32)
     feats["compression_ratio"] = feats["atr_compression_ratio"]
 
     # Missing from Technical Regime (Ridge) Features
-    feats["range_expansion_ratio"] = (tr_ln / (feats["atr_ln"] + 1e-12)).astype(
-        np.float32
-    )
+    _tr_ln_val = tr_ln.to_numpy(dtype=np.float32)
+    feats["range_expansion_ratio"] = pd.DataFrame(
+        _tr_ln_val / (_atr_ln_val + 1e-12),
+        index=c_log.index, columns=c_log.columns
+    ).astype(np.float32)
 
     _accel_raw = c_log - 2 * c_log.shift(1) + c_log.shift(2)
     feats["acceleration"] = _accel_raw.astype(np.float32)
@@ -1569,6 +1609,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     ).astype(np.float32)
 
     ret1h_std_16 = _roll_std("ret1h", feats["ret1h"], 16)
+
+    # Calculate rv_24h and use it for realized_volatility_24h too
+    feats["rv_24h"] = _roll_std("ret1h", feats["ret1h"], 24)
+    # realized_volatility_24h is 24h (96 15m bars). Note rv_24h is standard 24 bars.
     ret1h_std_96 = _roll_std("ret1h", feats["ret1h"], 96)
     feats["rolling_std_4h"] = ret1h_std_16  # 4h = 16 * 15m
     feats["realized_volatility_24h"] = ret1h_std_96  # 24h = 96 * 15m
@@ -1740,7 +1784,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["rsi_base"] = rsi_base
     feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"]).astype(np.float32)
 
-    feats["rv_24h"] = _roll_std("ret1h", feats["ret1h"], 24)
+    # rv_24h calculated earlier
     feats["rv_2h"] = _roll_std("ret1h", feats["ret1h"], 2)
     feats["rv_4h"] = _roll_std("ret1h", feats["ret1h"], 4)
     feats["rv_6h"] = _roll_std("ret1h", feats["ret1h"], 6)
@@ -1932,11 +1976,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     cs_std = r1.std(axis=1)
 
     skew_ser = 3.0 * (cs_mean - cs_median) / (cs_std + 1e-6)
-    feats["skew"] = pd.DataFrame(
-        np.repeat(skew_ser.values[:, None], c.shape[1], axis=1),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
+    feats["skew"] = skew_ser.astype(np.float32)
 
     r = feats["ret1h"]
     r2 = r**2
@@ -2037,45 +2077,34 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         vol_comp = np.log1p(vol_comp.clip(lower=0))
     feats["vol_compression"] = vol_comp.astype(np.float32)
 
-    rv_ratio_s = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
-    rv_ratio = pd.DataFrame(
-        np.broadcast_to(rv_ratio_s.to_numpy()[:, None], c.shape),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
+    rv_ratio = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
     feats["mkt_rv_ratio"] = rv_ratio
 
-    mkt_rv_pct_s = mkt_gates["mkt_rv_pct"].reindex(c.index).astype(np.float32)
-    mkt_rv_pct = pd.DataFrame(
-        np.broadcast_to(mkt_rv_pct_s.to_numpy()[:, None], c.shape),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
+    mkt_rv_pct = mkt_gates["mkt_rv_pct"].reindex(c.index).astype(np.float32)
     feats["mkt_rv_pct"] = mkt_rv_pct
 
-    abs_mkt_ret24h_z_s = (
+    abs_mkt_ret24h_z = (
         mkt_gates["abs_mkt_ret24h_z"].reindex(c.index).astype(np.float32)
     )
-    abs_mkt_ret24h_z = pd.DataFrame(
-        np.broadcast_to(abs_mkt_ret24h_z_s.to_numpy()[:, None], c.shape),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
     feats["abs_mkt_ret24h_z"] = abs_mkt_ret24h_z
 
-    trend_bin3_s = mkt_gates["trend_bin3"].reindex(c.index).astype(np.float32)
-    trend_bin3 = pd.DataFrame(
-        np.broadcast_to(trend_bin3_s.to_numpy()[:, None], c.shape),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
+    trend_bin3 = mkt_gates["trend_bin3"].reindex(c.index).astype(np.float32)
     feats["trend_bin3"] = trend_bin3
 
+    _rv_ratio_smooth = rv_ratio
+    _smooth_span = max(1, int(cfg.get("rv_selector_smooth_span", 6)))
+    if _smooth_span > 1:
+        # Avoid creating DataFrame back and forth here if `rv_ratio` is already broadcasted properly
+        # Wait, `rv_ratio` is now just a 1D Series, `numba_ewma` can handle it natively
+        _rv_ratio_smooth = ff.numba_ewma(_rv_ratio_smooth.to_frame(), 2.0 / (_smooth_span + 1.0), False).iloc[:, 0]
+
     def pick_by_rv(fast_df, base_df, slow_df):
-        rr = rv_ratio
-        smooth_span = max(1, int(cfg.get("rv_selector_smooth_span", 6)))
-        if smooth_span > 1:
-            rr = ff.numba_ewma(rr, 2.0 / (smooth_span + 1.0), False)
+        # We process this mostly in numpy array space
+        fast_arr = fast_df.to_numpy(dtype=np.float32)
+        base_arr = base_df.to_numpy(dtype=np.float32)
+        slow_arr = slow_df.to_numpy(dtype=np.float32)
+        rr = _rv_ratio_smooth.to_numpy(dtype=np.float32)[:, None]
+
         fast_thr = float(cfg["rv_ratio_fast_thr"])
         slow_thr = float(cfg["rv_ratio_slow_thr"])
         mode = str(cfg.get("rv_selector_mode", "blend")).lower()
@@ -2083,21 +2112,31 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         if mode == "blend" and fast_thr > slow_thr:
             mid = 0.5 * (fast_thr + slow_thr)
             half = max(0.5 * (fast_thr - slow_thr), 1e-6)
-            dist = ((rr - mid).abs() / half).clip(upper=1.0)
-            w_base = (1.0 - dist).clip(lower=0.0, upper=1.0)
+
+            # Using NumPy avoids many temporary large (T, S) DataFrames
+            dist = np.clip(np.abs(rr - mid) / half, None, 1.0)
+            w_base = np.clip(1.0 - dist, 0.0, 1.0)
             rem = 1.0 - w_base
-            w_fast_side = ((rr - mid) / half).clip(lower=0.0, upper=1.0)
-            w_slow_side = ((mid - rr) / half).clip(lower=0.0, upper=1.0)
+            w_fast_side = np.clip((rr - mid) / half, 0.0, 1.0)
+            w_slow_side = np.clip((mid - rr) / half, 0.0, 1.0)
+
             w_fast = rem * w_fast_side
             w_slow = rem * w_slow_side
-            out = w_fast * fast_df + w_base * base_df + w_slow * slow_df
-            return out.astype(np.float32)
+
+            out_arr = w_fast * fast_arr + w_base * base_arr + w_slow * slow_arr
+            return pd.DataFrame(out_arr, index=base_df.index, columns=base_df.columns).astype(np.float32)
 
         hyst = max(0.0, float(cfg.get("rv_selector_hysteresis", 0.02)))
-        out = base_df.copy()
-        out = out.where(~(rr > (fast_thr + hyst)), fast_df)
-        out = out.where(~(rr < (slow_thr - hyst)), slow_df)
-        return out.astype(np.float32)
+
+        # Start with base
+        out_arr = np.copy(base_arr)
+
+        # Where > fast + hyst, use fast
+        out_arr = np.where(rr > (fast_thr + hyst), fast_arr, out_arr)
+        # Where < slow - hyst, use slow
+        out_arr = np.where(rr < (slow_thr - hyst), slow_arr, out_arr)
+
+        return pd.DataFrame(out_arr, index=base_df.index, columns=base_df.columns).astype(np.float32)
 
     rsi_fast = rsi(c, max(2, int(cfg["rsi_n"] * 0.5)))
     rsi_slow = rsi(c, int(cfg["rsi_n"] * 2))
@@ -2260,7 +2299,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # --- Regime Conditioning Features ---
     if bool(cfg.get("use_regime_features", True)):
-        feats.update(compute_regime_features(c, h, l, v, atr_base, mkt_gates))
+        feats.update(compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=feats["rv_24h"]))
 
     # --- New Helper Features for Models ---
     dir_s = np.sign(feats["ret24h"])
@@ -2755,15 +2794,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     turb = rv_ratio  # Already broadcasted
 
     mkt_ret6h_raw = mkt_gates["mkt_ret6h"].reindex(c.index).astype(np.float32)
-    mkt_ret6h_s = pd.DataFrame(
-        np.repeat(mkt_ret6h_raw.to_numpy()[:, None], c.shape[1], axis=1),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
 
-    tape_align = dir_s * mkt_ret6h_s
-    feats["tf_tape"] = (tape_align.clip(lower=0) / (1.0 + turb)).astype(np.float32)
-    feats["mr_tape"] = ((-tape_align).clip(lower=0) / (1.0 + turb)).astype(np.float32)
+    # Multiply DataFrame `dir_s` with Series `mkt_ret6h_raw` over axis 0
+    tape_align = dir_s.multiply(mkt_ret6h_raw, axis=0)
+    # turb is `rv_ratio` which is a Series
+    feats["tf_tape"] = (tape_align.clip(lower=0).div(1.0 + turb, axis=0)).astype(np.float32)
+    feats["mr_tape"] = ((-tape_align).clip(lower=0).div(1.0 + turb, axis=0)).astype(np.float32)
 
     feats["tf_minus_mr"] = (feats["tf_tape"] - feats["mr_tape"]).astype(np.float32)
     feats["body_ratio"] = feats["efficiency"]
@@ -3407,35 +3443,45 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     #     dist_resid = dist_to_vwap - k * market_trend_strength
     #     Stops MR entries that are "cheap" only because market is trending hard
     mkt_trend_s = mkt_gates["mkt_trend"].reindex(c.index).astype(np.float32)
-    mkt_trend_bc = pd.DataFrame(
-        np.repeat(np.asarray(mkt_trend_s)[:, None], c.shape[1], axis=1),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
     mkt_rv_s = mkt_gates["mkt_rv"].reindex(c.index).astype(np.float32)
-    mkt_rv_bc = pd.DataFrame(
-        np.repeat(np.asarray(mkt_rv_s)[:, None], c.shape[1], axis=1),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
-    # Normalised market trend strength (in vol units)
-    mkt_trend_z = mkt_trend_bc / (mkt_rv_bc * np.float32(np.sqrt(24)) + 1e-12)
-    # Use safe operations for residual features
+    # Normalised market trend strength (in vol units) as a Series
+    mkt_trend_z = mkt_trend_s / (mkt_rv_s * np.float32(np.sqrt(24)) + 1e-12)
     mkt_trend_z_safe = np.where(np.isfinite(mkt_trend_z), mkt_trend_z, 0.0)
-    feats["dist_vwap_resid"] = np.where(
-        np.isfinite(feats["dist_vwap_norm"]) & np.isfinite(mkt_trend_z_safe),
-        (feats["dist_vwap_norm"] - 0.5 * mkt_trend_z_safe),
-        0.0,
+
+    # Broadcast subtraction by aligning Series across rows using .sub(..., axis=0)
+    dist_vwap_norm_values = feats["dist_vwap_norm"].to_numpy()
+    dist_ema_fast_values = feats["dist_ema_fast"].to_numpy()
+    trend_pct_values = feats["trend_pct"].to_numpy()
+    mkt_trend_z_values = mkt_trend_z_safe[:, None]
+
+    feats["dist_vwap_resid"] = pd.DataFrame(
+        np.where(
+            np.isfinite(dist_vwap_norm_values) & np.isfinite(mkt_trend_z_values),
+            dist_vwap_norm_values - 0.5 * mkt_trend_z_values,
+            0.0
+        ),
+        index=c.index,
+        columns=c.columns
     ).astype(np.float32)
-    feats["dist_ema_fast_resid"] = np.where(
-        np.isfinite(feats["dist_ema_fast"]) & np.isfinite(mkt_trend_z_safe),
-        (feats["dist_ema_fast"] - 0.5 * mkt_trend_z_safe),
-        0.0,
+
+    feats["dist_ema_fast_resid"] = pd.DataFrame(
+        np.where(
+            np.isfinite(dist_ema_fast_values) & np.isfinite(mkt_trend_z_values),
+            dist_ema_fast_values - 0.5 * mkt_trend_z_values,
+            0.0
+        ),
+        index=c.index,
+        columns=c.columns
     ).astype(np.float32)
-    feats["trend_pct_resid"] = np.where(
-        np.isfinite(feats["trend_pct"]) & np.isfinite(mkt_trend_z_safe),
-        (feats["trend_pct"] - 0.5 * mkt_trend_z_safe),
-        0.0,
+
+    feats["trend_pct_resid"] = pd.DataFrame(
+        np.where(
+            np.isfinite(trend_pct_values) & np.isfinite(mkt_trend_z_values),
+            trend_pct_values - 0.5 * mkt_trend_z_values,
+            0.0
+        ),
+        index=c.index,
+        columns=c.columns
     ).astype(np.float32)
 
     # =====================================================================

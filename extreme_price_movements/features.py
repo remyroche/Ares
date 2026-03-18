@@ -2842,7 +2842,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
         for w in gate_windows:
             for source_name, (source_panel, prefix) in gate_configs.items():
-                # 1. Generate ALL candidates for this family (mean, std, z, pct, bin3, gt25..gt90)
+                # 1. Generate ALL candidates for this family (mean, std, z, pct, bin3, gt25..gt75)
                 # Returns dict: feature_name -> Panel DataFrame
                 family_features = add_gate_features_panel(
                     source_panel,
@@ -2859,7 +2859,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                     if feat_name in family_features:
                         feats[feat_name] = family_features[feat_name]
 
-                # 3. SELECT best threshold features (from gt25, gt50, ..., gt90)
+                # 3. SELECT best threshold features (from gt25, gt50, ..., gt75)
                 # Construct mini-table for selection function
                 # Only include the 'gt' threshold candidates
                 candidates_table = {
@@ -2897,7 +2897,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         feats["accept"] = zero_panel.copy()
         feats["accept_bin3"] = zero_panel.copy()
         feats["accept_gt66"] = zero_panel.copy()
-        feats["accept_gt85"] = zero_panel.copy()
+        feats["accept_gt75"] = zero_panel.copy()
         feats["retest_accept"] = zero_panel.copy()
         feats["reject_like"] = zero_panel.copy()
         feats["tf_qual"] = zero_panel.copy()
@@ -2908,7 +2908,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # Re-bind standardized names for downstream dependencies
     # These rely on the standard `gate_window` (e.g. 64) features being present
-    # Warning: If `select_gated_features` didn't select gt66/gt85, these might fall back or error?
+    # Warning: If `select_gated_features` didn't select gt66/gt75, these might fall back or error?
     # Actually, `select_gated_features` has fallback logic to ensure *some* gates are selected.
     # But `s_gt66` specifically is used below.
     # We should ensure s_gt66_64 exists if needed, or update this logic to use selected gates.
@@ -2924,7 +2924,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     s_pct = get_feat(f"s_pct_{gate_window}")
     s_bin3 = get_feat(f"s_bin3_{gate_window}")
 
-    # Dynamic selection might explicitly select gt66/gt85 or might select gt50/gt90.
+    # Dynamic selection might explicitly select gt66/gt75 or might select gt50/gt75.
     # For backward compatibility variables, we ideally want specific thresholds if they exist,
     # or the "best" available proxy?
     # Let's check what was selected for 's' (accept_score) at gate_window.
@@ -2951,11 +2951,11 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         # Fallback to whatever was selected as "broad" or "rare"?
         pass
 
-    if f"s_gt85_{gate_window}" in feats:
-        feats["accept_gt85"] = feats[f"s_gt85_{gate_window}"]
+    if f"s_gt75_{gate_window}" in feats:
+        feats["accept_gt75"] = feats[f"s_gt75_{gate_window}"]
     else:
-        # Keep stable key availability even when dynamic gate selection skips gt85.
-        feats["accept_gt85"] = (s_pct >= 0.85).astype(np.float32)
+        # Keep stable key availability even when dynamic gate selection skips gt75.
+        feats["accept_gt75"] = (s_pct >= 0.75).astype(np.float32)
 
     feats["tf_qual"] = (s_pct * feats["tf_tape"]).astype(np.float32)
     feats["mr_qual"] = (reject_like * feats["mr_tape"]).astype(np.float32)
@@ -4573,8 +4573,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                     "gt50",
                     "gt66",
                     "gt75",
-                    "gt85",
-                    "gt90",
                 ]:
                     skip_transform_set.add(f"{prefix}_{suffix}_{w}")
 

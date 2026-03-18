@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict, Optional, Tuple, Set, Union
 
-THRESHOLDS_ALL   = [25, 50, 66, 75, 85, 90]
-RARE_CANDIDATES  = [85, 90]
+THRESHOLDS_ALL   = [25, 50, 66, 75]
+RARE_CANDIDATES  = [75]
 BROAD_CANDIDATES = [50, 66]
 
 GLOBAL_P_MIN = 0.005   # 0.5%
@@ -86,8 +86,6 @@ def add_gate_features(
         df[f"{prefix}_gt50_{n}"] = (pct > 0.50).astype(np.int8)
         df[f"{prefix}_gt66_{n}"] = (pct > 0.66).astype(np.int8)
         df[f"{prefix}_gt75_{n}"] = (pct > 0.75).astype(np.int8)
-        df[f"{prefix}_gt85_{n}"] = (pct > 0.85).astype(np.int8)
-        df[f"{prefix}_gt90_{n}"] = (pct > 0.90).astype(np.int8)
 
     return df
 
@@ -137,8 +135,6 @@ def add_gate_features_panel(
         out[f"{prefix}_gt50_{n}"] = (pct > 0.50).astype(np.int8)
         out[f"{prefix}_gt66_{n}"] = (pct > 0.66).astype(np.int8)
         out[f"{prefix}_gt75_{n}"] = (pct > 0.75).astype(np.int8)
-        out[f"{prefix}_gt85_{n}"] = (pct > 0.85).astype(np.int8)
-        out[f"{prefix}_gt90_{n}"] = (pct > 0.90).astype(np.int8)
 
     return out
 
@@ -352,10 +348,9 @@ def select_gated_features(
                 p_by_thr_f[t]  = p
 
         # If everything got filtered out, keep nothing or fallback?
-        # User said "fallback: choose gt85 + gt50 if present"
+        # If everything got filtered out, fallback: choose gt75 + gt50 if present
         if len(gate_cols_f) == 0:
-            # fallback: choose gt85 + gt50 if present
-            if 85 in gate_cols: selected.append(f"{interaction}_gt85_{window}")
+            if 75 in gate_cols: selected.append(f"{interaction}_gt75_{window}")
             if 50 in gate_cols: selected.append(f"{interaction}_gt50_{window}")
             continue
 

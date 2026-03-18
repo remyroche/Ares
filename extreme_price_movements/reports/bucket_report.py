@@ -192,9 +192,11 @@ def report_labels(run_id: str, data_root: str, cfg: Dict[str, Any], base_dir: st
     lines.extend(_md_table(headers, table_rows))
     lines.append("")
 
-    # Per-bucket aggregation (MR_long = long_mr, TF_long = long_tf, etc.)
-    _bucket_map = {"MR_long": ("long", "mr"), "MR_short": ("short", "mr"),
-                   "TF_long": ("long", "tf"), "TF_short": ("short", "tf")}
+    # Per-bucket aggregation
+    from extreme_price_movements.strategy_registry import get_strategies
+    strategies = get_strategies()
+    _bucket_map = {f"{strat['trade_side']}_{strat['strategy_id']}": (strat["trade_side"], strat["strategy_id"]) for strat in strategies}
+
     lines.append("## Per-Bucket Summary (median across horizons)")
     bkt_headers = ["Bucket", "Total N", "Median TP%", "Median SL%", "Median Timeout%", "Median Bind%"]
     bkt_rows = []
@@ -263,8 +265,9 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
     lines.append("## Per-Bucket Summary (median across horizons)")
     bkt_headers = ["Bucket", "Deployed Hs", "Primary H", "Median AUC (weighted)", "Median IC"]
     bkt_rows = []
-    _bucket_map = {"MR_long": ("long", "mr"), "MR_short": ("short", "mr"),
-                   "TF_long": ("long", "tf"), "TF_short": ("short", "tf")}
+    from extreme_price_movements.strategy_registry import get_strategies
+    strategies = get_strategies()
+    _bucket_map = {f"{strat['trade_side']}_{strat['strategy_id']}": (strat["trade_side"], strat["strategy_id"]) for strat in strategies}
     for bkt, (s, k) in _bucket_map.items():
         side_models = alpha_models.get(s, {})
         kind_model = side_models.get(k, {})

@@ -625,14 +625,6 @@ TOPK_GATE_FRAC = 0.20
 TOPK_INFO_FRACS = (0.10, 0.30)
 
 
-def _get_training_candidate_config(cfg):
-    return (
-        cfg.get("train_extreme_pct_hourly", cfg.get("trade_extreme_pct", 0.05)),
-        cfg.get("train_min_range_pct", 0.07),
-        cfg.get("train_min_vol_zscore", 1.6),
-    )
-
-
 def _resolve_training_cfg_with_offline_optimisers(cfg):
     """Apply persisted offline-optimiser best params onto cfg with cfg values as fallback."""
     try:

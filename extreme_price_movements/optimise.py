@@ -525,19 +525,6 @@ def run_optimise_step(
     step_run_id = str(run_id or Path(output_path).stem)
     policy_version = step_run_id
 
-    candidate_grid_path = str(Path(output_path).with_name("candidate_mask_grid.csv"))
-    try:
-        _optimise_candidate_mask_grid(
-            trades=trades,
-            run_id=step_run_id,
-            data_root=str(data_root),
-            output_path=candidate_grid_path,
-            store=ohlcv_store,
-        )
-    except Exception as exc:
-        tprint(f"optimise: WARNING candidate-mask optimisation failed: {exc}")
-
-
     # Try to load ridge weights from policy or state file
     ridge_weights = None
     if policy.ridge_weights_path:

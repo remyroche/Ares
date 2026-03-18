@@ -7302,45 +7302,6 @@ class RidgePositionSizer:
             raise RuntimeError("Limit offset model not trained")
         return np.clip(self.limit_offset_pipeline_.predict(X), 0.0, 5.0)
     
-    def apply_candidate_threshold_filter(
-        self,
-        model_preds: pd.DataFrame,
-    ) -> np.ndarray:
-        """Apply candidate threshold filter (first mask from compare_candidate_thresholds).
-        
-        This applies the extreme_price_pct and min_vol_zscore thresholds from
-        compare_candidate_thresholds.py as a first-pass filter before the sizer.
-        
-        Returns:
-            Boolean mask where True = passes threshold filter.
-        """
-        if self.candidate_threshold_config_ is None:
-            return np.ones(len(model_preds), dtype=bool)
-        
-        # Validate model_names and DataFrame have required columns
-        if not self.model_names_:
-            if len(model_preds.columns) == 0:
-                raise ValueError("No model names available and model_preds has no columns")
-            score_col = model_preds.columns[0]
-        else:
-            score_col = self.model_names_[0]
-            if score_col not in model_preds.columns:
-                raise ValueError(f"Score column '{score_col}' not found in model_preds. Available: {list(model_preds.columns)}")
-        
-        scores = model_preds[score_col].values
-        
-        # Apply thresholds from candidate config
-        extreme_pct = self.candidate_threshold_config_.get('extreme_price_pct', 0.0)
-        # Note: min_vol_zscore is stored for potential future use but currently not applied
-        # as it would require additional vol_zscore column in model_preds
-        
-        # Filter based on score percentiles
-        mask = np.ones(len(scores), dtype=bool)
-        if extreme_pct > 0:
-            threshold = np.percentile(scores, 100 - extreme_pct * 100)
-            mask &= (scores >= threshold)
-        
-        return mask
     
     def apply_entry_policy_filter(
         self,

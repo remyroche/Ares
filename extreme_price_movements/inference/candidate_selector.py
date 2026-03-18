@@ -21,64 +21,36 @@ def _build_mask_for_mode(
     feats: Dict[str, pd.DataFrame],
     mask_cfg: Dict[str, Any],
 ) -> pd.DataFrame:
-    c = panel["close"]
-    h = panel["high"]
-    l = panel["low"]
+    from extreme_price_movements.lgbm_based_mask_generation import FeatureProcessor, CanonicalRuleMaskResolver
 
-    family = str(mask_cfg.get("family", "top_movers"))
-    raw_param = mask_cfg.get("param", 5.0)
-    z_hr = float(mask_cfg.get("z_hours", 12.0))
-    duration_hr = float(mask_cfg.get("duration_hours", 1.0))
-    z_bars = max(1, int(z_hr * 4))
+    close_df = panel['close']
+    n_ts, n_syms = close_df.shape
 
-    roll_h = h.rolling(z_bars, min_periods=1).max()
-    roll_l = l.rolling(z_bars, min_periods=1).min()
-    st_px = c.shift(z_bars).bfill()
+    idx_flat = np.repeat(close_df.index.to_numpy(), n_syms)
+    sym_flat = np.tile(close_df.columns.to_numpy(), n_ts)
 
-    up_move = ((roll_h - st_px) / (st_px + 1e-9)).fillna(0.0)
-    dn_move = ((st_px - roll_l) / (st_px + 1e-9)).fillna(0.0)
-    ast_ret = feats.get("ret15m", c.pct_change())
-    std_up = ast_ret.rolling(24 * 4, min_periods=1).std().fillna(0.0)
-    std_dn = std_up
-
-    mask_h_df = pd.DataFrame(False, index=c.index, columns=c.columns)
-    mask_l_df = pd.DataFrame(False, index=c.index, columns=c.columns)
-
-    if family == "top_movers":
-        param = float(raw_param)
-        for ts, row in up_move.iterrows():
-            q = row.quantile(1.0 - param / 100.0)
-            mask_h_df.loc[ts] = row >= q
-        for ts, row in dn_move.iterrows():
-            q = row.quantile(1.0 - param / 100.0)
-            mask_l_df.loc[ts] = row >= q
-    elif family == "std_threshold":
-        param = float(raw_param)
-        mask_h_df = up_move >= (param * std_up)
-        mask_l_df = dn_move >= (param * std_dn)
-    elif family == "abs_move_threshold":
-        y_move = float(raw_param) / 100.0
-        mask_h_df = up_move >= y_move
-        mask_l_df = dn_move >= y_move
-    elif family == "std_plus_abs":
-        if isinstance(raw_param, str):
-            import ast as python_ast
-
-            std_v, abs_v = python_ast.literal_eval(raw_param)
-        elif isinstance(raw_param, (list, tuple)):
-            std_v, abs_v = raw_param
+    feats_1d = {}
+    for k, v in feats.items():
+        if hasattr(v, 'to_numpy'):
+            feats_1d[k] = v.to_numpy(dtype=np.float32).ravel()
         else:
-            std_v, abs_v = float(raw_param), 6.0
-        y_move = float(abs_v) / 100.0
-        mask_h_df = (up_move >= (float(std_v) * std_up)) & (up_move >= y_move)
-        mask_l_df = (dn_move >= (float(std_v) * std_dn)) & (dn_move >= y_move)
+            feats_1d[k] = np.asarray(v, dtype=np.float32).ravel()
 
-    if duration_hr > 1.0:
-        d_bars = max(1, int(duration_hr * 4))
-        mask_h_df = mask_h_df.rolling(d_bars, min_periods=1).max().astype(bool)
-        mask_l_df = mask_l_df.rolling(d_bars, min_periods=1).max().astype(bool)
+    fp = FeatureProcessor()
+    X, metadata, _ = fp.prepare_features(
+        feats_1d, idx_flat, sym_flat, mask_cfg
+    )
+    resolver = CanonicalRuleMaskResolver(X, metadata)
 
-    return (mask_h_df | mask_l_df).astype(bool)
+    base = str(mask_cfg.get("base_event_trigger", "")).strip()
+    if not base:
+        return pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+    try:
+        mask_1d = resolver.get_mask(base)
+        mask_2d = mask_1d.reshape((n_ts, n_syms))
+        return pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
+    except Exception:
+        return pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
 
 
 def _up_down_zones(feats: Dict[str, pd.DataFrame], panel: Dict[str, pd.DataFrame], metric: str) -> Tuple[pd.DataFrame, pd.DataFrame]:

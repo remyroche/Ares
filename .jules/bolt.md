@@ -23,3 +23,7 @@ Action: Rewrote core rolling window functions (`_numba_rolling_std_nan_safe` and
 ## 2026-03-16 - Vectorized Rolling Autocorrelation
 Learning: Iterating over DataFrame columns in Python using `.apply(lambda col: rolling_autocorr(col, window))` and a nested `pd.Series.rolling().apply(pd.Series.autocorr)` creates a severe bottleneck. The overhead of setting up and calling Pandas functions repeatedly across elements and columns dwarfs the actual statistical computation.
 Action: Replace iterative Pandas applications with a pre-existing vectorized 2D Numba JIT function (`ff.numba_rolling_corr(df, df.shift(lag), window)`). This transparently vectorizes the operation across the entire panel at once, yielding over a 115x speedup. Always avoid `rolling().apply()` inside column-wise iterations in performance-critical paths.
+
+## 2026-03-18 - Replacing nested apply(pd.Series) loops with apply_to_frame
+Learning: Inside feature pipelines (like `features.py`), running operations such as `c_raw.apply(lambda x: pd.Series(rolling_std_nb(x.values, 4), index=x.index), axis=0)` wraps Python closures and Pandas object instantiation inside a loop, heavily bottlenecking operations like standard deviation and EMA even when using Numba backend arrays.
+Action: Use the fully parallelized `ff.apply_to_frame(df, numba_func, window)` which intercepts entire panels and farms execution across columns transparently using `@jit(parallel=True)`. This completely skips the sequential Pandas instantiation loop.

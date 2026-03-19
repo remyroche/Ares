@@ -1,22 +1,33 @@
 import numpy as np
-import pandas as pd
-import extreme_price_movements.fast_funcs as ff
 
-def test_zscore():
-    # Make a mock 2D array
-    np.random.seed(42)
-    c_log = pd.DataFrame(np.random.randn(1000, 50).astype(np.float32))
+def calculate_entropy_statistics_numba(values, window):
+    # Quick implementation to see what the test expects vs what is produced
+    from src.utils.entropy_optimized import calculate_entropy_statistics_numba
+    return calculate_entropy_statistics_numba(values, window)
 
-    c_log_arr = c_log.to_numpy()
+np.random.seed(42)
+N = 1000
+window = 10
+values = np.random.random(N)
 
-    # Check if we can use ff._numba_rolling_mean_parallel
-    mean_100 = ff._numba_rolling_mean_parallel(c_log_arr, 100)
-    std_100 = ff._numba_rolling_std_parallel(c_log_arr, 100)
-    std_100 = np.maximum(std_100, 1e-12)
+expected_ma = np.full(N, np.nan)
+expected_std = np.full(N, np.nan)
+expected_zscore = np.full(N, np.nan)
 
-    z_100 = (c_log_arr - mean_100) / std_100
+for i in range(window - 1, N):
+    window_data = values[i - window + 1:i + 1]
+    ma = np.mean(window_data)
+    std = np.std(window_data)
+    expected_ma[i] = ma
+    expected_std[i] = std
+    if std > 0:
+        expected_zscore[i] = (values[i] - ma) / std
+    else:
+        expected_zscore[i] = 0.0
 
-    z_100_df = pd.DataFrame(z_100, index=c_log.index, columns=c_log.columns).astype(np.float32)
-    print("Shape:", z_100_df.shape)
+# Run optimized function
+ma, std, zscore = calculate_entropy_statistics_numba(values, window)
 
-test_zscore()
+valid_mask = np.isfinite(expected_zscore) & np.isfinite(zscore)
+diffs = np.abs(zscore[valid_mask] - expected_zscore[valid_mask])
+print(f"Max abs diff: {np.max(diffs)}")

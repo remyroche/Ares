@@ -5336,28 +5336,30 @@ def entropy_nb(x: np.ndarray, window: int, n_bins: int = 5) -> np.ndarray:
 def binary_entropy_nb(x: np.ndarray, window: int) -> np.ndarray:
     out = np.full_like(x, np.nan)
     n = len(x)
-    for i in range(window - 1, n):
-        start = i - window + 1
-        pos_c = 0
-        neg_c = 0
-        tot = 0
-        for j in range(start, i + 1):
-            val = x[j]
-            if not np.isnan(val):
-                tot += 1
-                if val > 0:
-                    pos_c += 1
-                elif val < 0:
-                    neg_c += 1
-        if tot > 0:
-            p_pos = pos_c / tot
-            p_neg = neg_c / tot
+    if n == 0 or window <= 0:
+        return out
+    pos_count = 0
+    neg_count = 0
+    valid_count = 0
+    for i in range(n):
+        val_in = x[i]
+        if not np.isnan(val_in):
+            valid_count += 1
+            if val_in > 0: pos_count += 1
+            elif val_in < 0: neg_count += 1
+        if i >= window:
+            val_out = x[i - window]
+            if not np.isnan(val_out):
+                valid_count -= 1
+                if val_out > 0: pos_count -= 1
+                elif val_out < 0: neg_count -= 1
+        if i >= window - 1 and valid_count > 0:
+            p_pos = pos_count / valid_count
+            p_neg = neg_count / valid_count
             ent = 0.0
-            if p_pos > 0:
-                ent -= p_pos * np.log2(p_pos)
-            if p_neg > 0:
-                ent -= p_neg * np.log2(p_neg)
-            out[i] = ent
+            if p_pos > 0: ent -= p_pos * np.log2(p_pos)
+            if p_neg > 0: ent -= p_neg * np.log2(p_neg)
+            out[i] = np.float32(ent)
     return out
 
 

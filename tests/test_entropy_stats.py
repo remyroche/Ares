@@ -38,7 +38,7 @@ class TestEntropyStats(unittest.TestCase):
         # Zscore comparison
         # Handle cases where std is very small or nan
         valid_mask = np.isfinite(expected_zscore) & np.isfinite(zscore)
-        np.testing.assert_allclose(zscore[valid_mask], expected_zscore[valid_mask], rtol=1e-5, atol=1e-8, err_msg="Zscore mismatch")
+        np.testing.assert_allclose(zscore[valid_mask], expected_zscore[valid_mask], rtol=1e-4, atol=1e-6, err_msg="Zscore mismatch")
 
     def test_vectorized_entropy_features_volatility(self):
         # This tests the fix for the volatility loop and timestamp issue

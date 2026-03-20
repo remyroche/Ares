@@ -140,7 +140,7 @@ MODEL_FEATURES = [
     "vp_air_pocket_score",
     "G_TF_TREND", "vol_z_x_trend_t",
     # Ridge model features
-    "ema20_gt_ema50", "ema50_gt_ema200", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
+    "ema20_gt_ema50", "ema50_gt_ema200", "ema50_ema200_spread_atr", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
     "price_lt_ema200", "ema50_slope", "trend_strength_percentile",
     "rolling_std_4h", "realized_volatility_24h", "atr_change_rate", "true_range_percentile",
     "bollinger_band_width", "rolling_range_20", "atr_percentile",
@@ -156,6 +156,7 @@ RIDGE_FEATURE_META = {
     # Trend features
     "ema20_gt_ema50": {"family": "trend", "type": "binary"},
     "ema50_gt_ema200": {"family": "trend", "type": "binary"},
+    "ema50_ema200_spread_atr": {"family": "trend", "type": "continuous"},
     "price_lt_ema200": {"family": "trend", "type": "binary"},
     "ema50_slope": {"family": "trend", "type": "continuous"},
     "trend_strength_percentile": {"family": "trend", "type": "continuous"},
@@ -307,7 +308,7 @@ TEST_FEATURE_KEYS = [
     "trend_regime", "vol_regime_z", "regime_stability_24h", "trend_slope_48h", "trend_slope_120h",
     "rv_ratio_24_120", "donch_dist_48", "donch_dist_120", "dist_from_high_120h", "dist_from_low_120h",
     # Ridge model features
-    "ema20_gt_ema50", "ema50_gt_ema200", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
+    "ema20_gt_ema50", "ema50_gt_ema200", "ema50_ema200_spread_atr", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
     "price_lt_ema200", "ema50_slope", "trend_strength_percentile",
     "rolling_std_4h", "realized_volatility_24h", "atr_change_rate", "true_range_percentile",
     "bollinger_band_width", "rolling_range_20", "atr_percentile",

@@ -1603,6 +1603,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["ema20_gt_ema50"] = (ema20 > ema50).astype(np.float32)
     feats["ema50_gt_ema200"] = (ema50 > ema200).astype(np.float32)
     feats["price_lt_ema200"] = (c_log < ema200).astype(np.float32)
+    feats["ema50_ema200_spread_atr"] = (
+        (ema(c, 50) - ema(c, 200)) / (atr_base + 1e-12)
+    ).astype(np.float32)
     feats["ema50_slope"] = (ema50 - ema50.shift(1)).astype(np.float32)
     feats["trend_strength_percentile"] = ff.numba_rolling_rank_pct(
         feats["ema50_slope"].abs(), 1000

@@ -6,16 +6,21 @@ from extreme_price_movements.data_store import LazyFeatureDict
 from extreme_price_movements.lgbm_based_mask_generation import (
     CanonicalRuleMaskResolver,
     DictionaryMaskResolver,
-    FeatureProcessor,
     FeatureMetadata,
+    FeatureProcessor,
+    MaskAssessor,
     RuleCondition,
-    RuleExtractor,
     RuleConsolidator,
+    RuleExtractor,
     RuleScorer,
-    build_walk_forward_folds,
+    atomic_to_csv,
     build_label_step_sliceplanner_keep_idx,
+    build_stage_a_rejection_map,
+    build_walk_forward_folds,
+    create_pre_global_registry,
     filter_complete_feature_rows,
     list_preload_training_symbols,
+    select_stage_a_contexts,
 )
 
 
@@ -39,7 +44,9 @@ def test_stage_b_resolver_maps_canonical_key_to_saved_context():
         dtype=np.float32,
     )
     metadata = [
-        FeatureMetadata("trigger_long", 0, "trigger", "trigger_long", "trigger", "boolean"),
+        FeatureMetadata(
+            "trigger_long", 0, "trigger", "trigger_long", "trigger", "boolean"
+        ),
         FeatureMetadata("ctx__abcd", 1, "context", "ctx__abcd", "context", "boolean"),
     ]
     resolver = CanonicalRuleMaskResolver(
@@ -69,12 +76,24 @@ def test_dictionary_resolver_supports_composites():
 def test_stage_b_uplift_uses_parent_context_oos():
     resolver = DictionaryMaskResolver(
         {
-            "(trigger==1)|(loc==1)|(reg==1)": np.array([True, False, True, False, True, False]),
+            "(trigger==1)|(loc==1)|(reg==1)": np.array(
+                [True, False, True, False, True, False]
+            ),
             "(*)|(loc==1)|(reg==1)": np.array([True, True, True, True, True, True]),
         },
         parent_context_map={"(trigger==1)|(loc==1)|(reg==1)": "(*)|(loc==1)|(reg==1)"},
     )
-    scorer = RuleScorer([], {"min_support_count_validation": 1, "min_presence_freq": 0.0, "min_sign_consistency": 0.0, "prune_base_hurdle": 0.0, "prune_support_exp": 0.5}, mask_resolver=resolver)
+    scorer = RuleScorer(
+        [],
+        {
+            "min_support_count_validation": 1,
+            "min_presence_freq": 0.0,
+            "min_sign_consistency": 0.0,
+            "prune_base_hurdle": 0.0,
+            "prune_support_exp": 0.5,
+        },
+        mask_resolver=resolver,
+    )
     folds = [
         (np.array([0, 1], dtype=np.int32), np.array([2, 3], dtype=np.int32)),
         (np.array([0, 1, 2, 3], dtype=np.int32), np.array([4, 5], dtype=np.int32)),
@@ -103,10 +122,16 @@ def test_dilate_mask_by_symbol_is_symbol_safe():
 def test_semantic_relation_detects_same_regime_location():
     consolidator = RuleConsolidator([], {}, mask_resolver=None)
     row_a = pd.Series(
-        {"canonical_key": "(t1==1)|(loc==1)|(reg==1)", "parent_context_key": "(*)|(loc==1)|(reg==1)"}
+        {
+            "canonical_key": "(t1==1)|(loc==1)|(reg==1)",
+            "parent_context_key": "(*)|(loc==1)|(reg==1)",
+        }
     )
     row_b = pd.Series(
-        {"canonical_key": "(t2==1)|(loc==1)|(reg==1)", "parent_context_key": "(*)|(loc==1)|(reg==1)"}
+        {
+            "canonical_key": "(t2==1)|(loc==1)|(reg==1)",
+            "parent_context_key": "(*)|(loc==1)|(reg==1)",
+        }
     )
     assert consolidator._semantic_relation(row_a, row_b) == "same_regime_location"
 
@@ -133,7 +158,11 @@ def test_ridge_pair_diagnostic_prefers_complementary_pair():
     )
     consolidator = RuleConsolidator(
         [],
-        {"merge_ridge_alpha": 1.0, "merge_ridge_min_train": 4, "merge_ridge_min_valid": 2},
+        {
+            "merge_ridge_alpha": 1.0,
+            "merge_ridge_min_train": 4,
+            "merge_ridge_min_valid": 2,
+        },
         mask_resolver=resolver,
     )
     folds = [
@@ -217,7 +246,9 @@ def test_filter_complete_feature_rows_drops_any_row_with_missing_feature():
     fwd = np.array([0.1, 0.2, 0.3], dtype=np.float32)
     fwd_norm = np.array([0.5, 1.0, 1.5], dtype=np.float32)
 
-    data_f, feat_f, fwd_f, fwd_norm_f, meta = filter_complete_feature_rows(data, feature_dict, fwd, fwd_norm)
+    data_f, feat_f, fwd_f, fwd_norm_f, meta = filter_complete_feature_rows(
+        data, feature_dict, fwd, fwd_norm
+    )
 
     assert len(data_f) == 1
     assert np.isclose(float(fwd_f[0]), 0.1)
@@ -400,7 +431,16 @@ def test_feature_processor_adds_dense_regime_quantiles_and_median_band():
     processor._run_feature_quality_checks = lambda x_raw, raw_names, cfg: (
         x_raw,
         raw_names,
-        pd.DataFrame(columns=["feature_name", "status", "reason", "support", "group", "regime_family"]),
+        pd.DataFrame(
+            columns=[
+                "feature_name",
+                "status",
+                "reason",
+                "support",
+                "group",
+                "regime_family",
+            ]
+        ),
     )
     x, metadata, _ = processor.prepare_features(
         feature_dict,
@@ -420,8 +460,12 @@ def test_feature_processor_adds_dense_regime_quantiles_and_median_band():
     assert f"reg_{src}_ts_bot80" in names
     assert x.shape[1] == 15
 
+
 def test_evaluate_ridge_pair_composite_accepted():
-    from extreme_price_movements.lgbm_based_mask_generation import RuleConsolidator, DictionaryMaskResolver
+    from extreme_price_movements.lgbm_based_mask_generation import (
+        DictionaryMaskResolver,
+        RuleConsolidator,
+    )
 
     # A and B are both ok, but A|B is amazing with almost no std and higher returns
     # We make sure the composite has higher Sharpe and higher IC
@@ -446,7 +490,9 @@ def test_evaluate_ridge_pair_composite_accepted():
     resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
     folds = [(np.arange(0, 100), np.arange(100, 200))]
 
-    consolidator = RuleConsolidator(metadata=[], cfg={"merge_ridge_min_train": 5, "merge_ridge_min_valid": 5})
+    consolidator = RuleConsolidator(
+        metadata=[], cfg={"merge_ridge_min_train": 5, "merge_ridge_min_valid": 5}
+    )
 
     diag = consolidator._evaluate_ridge_pair("keyA", "keyB", resolver, fwd_ret, folds)
 
@@ -455,8 +501,12 @@ def test_evaluate_ridge_pair_composite_accepted():
     assert "child_candidate_name" in diag
     assert "accept_merge" in diag
 
+
 def test_evaluate_ridge_pair_parent_stronger():
-    from extreme_price_movements.lgbm_based_mask_generation import RuleConsolidator, DictionaryMaskResolver
+    from extreme_price_movements.lgbm_based_mask_generation import (
+        DictionaryMaskResolver,
+        RuleConsolidator,
+    )
 
     # Parent A is perfect, Parent B is noise, so Parent A should win directly
     mask_a = np.array([1, 1, 1, 1, 0, 0, 0, 0, 0, 0] * 10, dtype=bool)
@@ -466,7 +516,9 @@ def test_evaluate_ridge_pair_parent_stronger():
     resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
     folds = [(np.arange(0, 50), np.arange(50, 100))]
 
-    consolidator = RuleConsolidator(metadata=[], cfg={"merge_ridge_min_train": 5, "merge_ridge_min_valid": 5})
+    consolidator = RuleConsolidator(
+        metadata=[], cfg={"merge_ridge_min_train": 5, "merge_ridge_min_valid": 5}
+    )
 
     diag = consolidator._evaluate_ridge_pair("keyA", "keyB", resolver, fwd_ret, folds)
 
@@ -474,8 +526,12 @@ def test_evaluate_ridge_pair_parent_stronger():
     assert diag["accept_merge"] is False
     assert diag["accept_merge_reason"] == "composite_lost_to_parent"
 
+
 def test_evaluate_ridge_pair_composite_rejected_on_std():
-    from extreme_price_movements.lgbm_based_mask_generation import RuleConsolidator, DictionaryMaskResolver
+    from extreme_price_movements.lgbm_based_mask_generation import (
+        DictionaryMaskResolver,
+        RuleConsolidator,
+    )
 
     # We want composite to win the score (so it gets evaluated), but fail the worst_parent_std check
     # Let parent A be stable and positive. Let parent B be slightly positive but highly volatile.
@@ -488,7 +544,9 @@ def test_evaluate_ridge_pair_composite_rejected_on_std():
     resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
     folds = [(np.arange(0, 50), np.arange(50, 100))]
 
-    consolidator = RuleConsolidator(metadata=[], cfg={"merge_ridge_min_train": 5, "merge_ridge_min_valid": 5})
+    consolidator = RuleConsolidator(
+        metadata=[], cfg={"merge_ridge_min_train": 5, "merge_ridge_min_valid": 5}
+    )
     diag = consolidator._evaluate_ridge_pair("keyA", "keyB", resolver, fwd_ret, folds)
 
     # We can't guarantee composite wins here without fine-tuning arrays, but if it does, it should fail std constraint.
@@ -498,8 +556,12 @@ def test_evaluate_ridge_pair_composite_rejected_on_std():
 
 
 def test_economic_rule_consolidator_composite_accepted():
-    from extreme_price_movements.lgbm_based_mask_generation import EconomicRuleConsolidator, DictionaryMaskResolver
     import pandas as pd
+
+    from extreme_price_movements.lgbm_based_mask_generation import (
+        DictionaryMaskResolver,
+        EconomicRuleConsolidator,
+    )
 
     mask_a = np.array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1] * 20, dtype=bool)
     mask_b = np.array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0] * 20, dtype=bool)
@@ -515,23 +577,32 @@ def test_economic_rule_consolidator_composite_accepted():
         "econ_weight_containment": 0.0,
         "econ_weight_overlap_coeff": 1.0,
         "econ_weight_behavior_similarity": 0.0,
-        "econ_weight_fold_similarity": 0.0
+        "econ_weight_fold_similarity": 0.0,
     }
 
     consolidator = EconomicRuleConsolidator(metadata=[], cfg=cfg)
-    diag = consolidator._evaluate_pair_economically("keyA", "keyB", resolver, fwd_ret, folds)
+    diag = consolidator._evaluate_pair_economically(
+        "keyA", "keyB", resolver, fwd_ret, folds
+    )
 
     assert "child_candidate_name" in diag
     assert "accept_merge" in diag
 
+
 def test_economic_rule_consolidator_duplicate_pruning():
-    from extreme_price_movements.lgbm_based_mask_generation import EconomicRuleConsolidator, DictionaryMaskResolver
     import pandas as pd
+
+    from extreme_price_movements.lgbm_based_mask_generation import (
+        DictionaryMaskResolver,
+        EconomicRuleConsolidator,
+    )
 
     mask_a = np.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0] * 20, dtype=bool)
     # Mask B is a slight subset of Mask A
     mask_b = np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0] * 20, dtype=bool)
-    fwd_ret = np.array([5.0, 5.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0] * 20)
+    fwd_ret = np.array(
+        [5.0, 5.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0] * 20
+    )
 
     resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
     folds = [(np.arange(0, 100), np.arange(100, 200))]
@@ -554,3 +625,302 @@ def test_economic_rule_consolidator_duplicate_pruning():
     pair_diag = consolidator._score_candidate_pair(prof_a, prof_b)
 
     assert consolidator._is_near_duplicate(pair_diag) is True
+
+
+def test_select_stage_a_contexts_returns_empty_summary_headers():
+    selected, summary = select_stage_a_contexts(
+        {"accepted_registry": pd.DataFrame()}, {}
+    )
+    assert selected.empty
+    assert list(summary.columns) == ["reason", "count"]
+
+
+def test_create_pre_global_registry_uses_selected_stage_a_contexts():
+    side_results = {
+        "stage_a": pd.DataFrame(
+            [
+                {
+                    "canonical_key": "(*)|(loc_selected==1)|(reg_selected==1)",
+                    "side": "long",
+                }
+            ]
+        ),
+        "stage_a_result": {
+            "accepted_registry": pd.DataFrame(
+                [
+                    {
+                        "canonical_key": "(*)|(loc_rejected==1)|(reg_rejected==1)",
+                        "side": "long",
+                    }
+                ]
+            )
+        },
+        "stage_b": pd.DataFrame(),
+    }
+
+    pre_global = create_pre_global_registry(side_results)
+
+    assert pre_global["canonical_key"].tolist() == [
+        "(*)|(loc_selected==1)|(reg_selected==1)"
+    ]
+    assert pre_global["origin_stage"].tolist() == ["stage_a"]
+
+
+def test_atomic_to_csv_preserves_headers_for_empty_dataframes(tmp_path):
+    output_path = tmp_path / "candidate_rule_registry.csv"
+
+    atomic_to_csv(
+        pd.DataFrame(),
+        output_path,
+        expected_columns=["canonical_key", "accepted", "preset"],
+    )
+
+    written = pd.read_csv(output_path)
+    assert list(written.columns) == ["canonical_key", "accepted", "preset"]
+    assert written.empty
+
+
+def test_mask_assessor_avg_trades_per_day_uses_unique_days():
+    data = pd.DataFrame(
+        {
+            "symbol": ["A", "A", "B", "B"],
+            "timestamp": pd.to_datetime(
+                [
+                    "2025-01-01 00:00:00",
+                    "2025-01-01 01:00:00",
+                    "2025-01-02 00:00:00",
+                    "2025-01-02 01:00:00",
+                ]
+            ),
+        }
+    )
+    mask = np.array([True, False, True, True], dtype=bool)
+
+    avg_trades = MaskAssessor._compute_avg_trades_per_day(mask, data)
+
+    assert avg_trades == 15.0
+
+
+def test_mask_assessor_subset_auc_ignores_unscored_rows():
+    rng = np.random.RandomState(0)
+    n = 300
+    signal = rng.normal(size=n).astype(np.float32)
+    x = signal.reshape(-1, 1)
+    fwd_ret = np.where(signal > 0, 1.0, -1.0).astype(np.float32)
+    mask = np.zeros(n, dtype=bool)
+    mask[:100] = True
+    mask[100:160] = True
+    mask[200:260] = True
+    folds = [
+        (np.arange(0, 100, dtype=np.int32), np.arange(100, 200, dtype=np.int32)),
+        (np.arange(0, 200, dtype=np.int32), np.arange(200, 300, dtype=np.int32)),
+    ]
+
+    assessor = MaskAssessor(
+        metadata=[
+            FeatureMetadata(
+                "regime_signal",
+                0,
+                "regime",
+                "regime_signal",
+                "regime",
+                "continuous",
+            )
+        ],
+        cfg={},
+    )
+
+    auc, coverage = assessor._compute_subset_auc(x, fwd_ret, mask, folds)
+
+    assert auc > 0.9
+    assert coverage > 0.5
+
+
+def test_mask_assessor_subset_auc_reports_missing_oof_coverage():
+    n = 200
+    signal = np.linspace(-1.0, 1.0, n, dtype=np.float32)
+    x = signal.reshape(-1, 1)
+    fwd_ret = np.where(signal > 0, 1.0, -1.0).astype(np.float32)
+    mask = np.zeros(n, dtype=bool)
+    mask[:100] = True
+    folds = [
+        (np.arange(0, 100, dtype=np.int32), np.arange(100, 150, dtype=np.int32)),
+        (np.arange(0, 150, dtype=np.int32), np.arange(150, 200, dtype=np.int32)),
+    ]
+
+    assessor = MaskAssessor(
+        metadata=[
+            FeatureMetadata(
+                "regime_signal",
+                0,
+                "regime",
+                "regime_signal",
+                "regime",
+                "continuous",
+            )
+        ],
+        cfg={},
+    )
+
+    auc, coverage = assessor._compute_subset_auc(x, fwd_ret, mask, folds)
+
+    assert np.isnan(auc)
+    assert coverage == 0.0
+
+
+def test_build_stage_a_rejection_map_captures_stage_funnel():
+    stage_a_result = {
+        "scored_registry": pd.DataFrame(
+            [
+                {
+                    "canonical_key": "rule_pass",
+                    "accepted": True,
+                    "rejection_reason": "",
+                },
+                {
+                    "canonical_key": "rule_low_support",
+                    "accepted": False,
+                    "rejection_reason": "low_support|below_hurdle",
+                },
+                {
+                    "canonical_key": "rule_low_presence",
+                    "accepted": False,
+                    "rejection_reason": "low_presence",
+                },
+            ]
+        ),
+        "scorer_accepted": pd.DataFrame(
+            [{"canonical_key": "rule_pass", "accepted": True}]
+        ),
+        "consolidated_registry": pd.DataFrame(
+            [
+                {
+                    "canonical_key": "rule_pass",
+                    "mean_support_pct": 0.05,
+                    "hurdle_excess": 0.01,
+                    "sign_consistency": 0.9,
+                    "discovery_count": 3,
+                    "dominated_by_parent": False,
+                },
+                {
+                    "canonical_key": "rule_broad",
+                    "mean_support_pct": 0.4,
+                    "hurdle_excess": -0.01,
+                    "sign_consistency": 0.7,
+                    "discovery_count": 1,
+                    "dominated_by_parent": True,
+                },
+            ]
+        ),
+        "candidate_registry": pd.DataFrame(
+            [
+                {
+                    "canonical_key": "rule_pass",
+                    "mean_support_pct": 0.05,
+                    "directional_mean_ret": 0.02,
+                    "presence_freq": 0.8,
+                    "sign_consistency": 0.9,
+                    "display_arity": 2,
+                    "dominated_by_parent": False,
+                    "is_structurally_sound": True,
+                },
+                {
+                    "canonical_key": "rule_unassessed",
+                    "mean_support_pct": 0.03,
+                    "directional_mean_ret": 0.01,
+                    "presence_freq": 0.7,
+                    "sign_consistency": 0.85,
+                    "display_arity": 2,
+                    "dominated_by_parent": False,
+                    "is_structurally_sound": False,
+                },
+            ]
+        ),
+        "assessment_df": pd.DataFrame(
+            [
+                {
+                    "canonical_key": "rule_pass",
+                    "is_structurally_sound": True,
+                    "rejection_reason": "",
+                }
+            ]
+        ),
+        "accepted_registry": pd.DataFrame(
+            [
+                {
+                    "canonical_key": "rule_pass",
+                    "mean_support_pct": 0.05,
+                    "directional_mean_ret": 0.02,
+                    "presence_freq": 0.8,
+                    "sign_consistency": 0.9,
+                    "display_arity": 2,
+                    "dominated_by_parent": False,
+                    "is_structurally_sound": True,
+                },
+                {
+                    "canonical_key": "rule_reject_structural",
+                    "mean_support_pct": 0.05,
+                    "directional_mean_ret": 0.02,
+                    "presence_freq": 0.8,
+                    "sign_consistency": 0.9,
+                    "display_arity": 2,
+                    "dominated_by_parent": False,
+                    "is_structurally_sound": False,
+                },
+            ]
+        ),
+    }
+    winning_contexts = pd.DataFrame(
+        [
+            {
+                "canonical_key": "rule_pass",
+                "mean_support_pct": 0.05,
+                "directional_mean_ret": 0.02,
+                "presence_freq": 0.8,
+                "sign_consistency": 0.9,
+                "display_arity": 2,
+                "dominated_by_parent": False,
+                "is_structurally_sound": True,
+            }
+        ]
+    )
+    cfg = {
+        "min_support_count_validation": 2,
+        "min_presence_freq": 0.4,
+        "min_sign_consistency": 0.75,
+        "max_support_pct": 0.25,
+        "min_tree_discoveries": 2,
+        "learnability_min_oof_coverage": 0.25,
+        "min_avg_trades_per_day_10_symbols": 0.1,
+        "min_context_support_pct": 0.01,
+        "min_context_presence_freq": 0.5,
+        "min_context_sign_consistency": 0.8,
+        "min_context_display_arity": 2,
+    }
+
+    rejection_map = build_stage_a_rejection_map(stage_a_result, winning_contexts, cfg)
+
+    assert rejection_map["stage_name"].tolist().count("scorer") == 5
+    assert rejection_map["stage_name"].tolist().count("pruner") == 5
+    assert rejection_map["stage_name"].tolist().count("mask_assessor") == 8
+    assert rejection_map["stage_name"].tolist().count("context_selector") == 7
+
+    scorer_low_support = rejection_map[
+        (rejection_map["stage_name"] == "scorer")
+        & (rejection_map["gate_name"] == "low_support")
+    ].iloc[0]
+    assert int(scorer_low_support["rejected_count"]) == 1
+    assert int(scorer_low_support["passed_count"]) == 1
+
+    assessor_unassessed = rejection_map[
+        (rejection_map["stage_name"] == "mask_assessor")
+        & (rejection_map["gate_name"] == "not_assessed_min_mask_support")
+    ].iloc[0]
+    assert int(assessor_unassessed["rejected_count"]) == 1
+
+    selector_structural = rejection_map[
+        (rejection_map["stage_name"] == "context_selector")
+        & (rejection_map["gate_name"] == "reject_structural")
+    ].iloc[0]
+    assert int(selector_structural["rejected_count"]) == 1
+    assert int(selector_structural["passed_count"]) == 1

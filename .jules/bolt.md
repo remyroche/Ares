@@ -27,3 +27,7 @@ Action: Replace iterative Pandas applications with a pre-existing vectorized 2D 
 ## 2026-03-18 - Replacing nested apply(pd.Series) loops with apply_to_frame
 Learning: Inside feature pipelines (like `features.py`), running operations such as `c_raw.apply(lambda x: pd.Series(rolling_std_nb(x.values, 4), index=x.index), axis=0)` wraps Python closures and Pandas object instantiation inside a loop, heavily bottlenecking operations like standard deviation and EMA even when using Numba backend arrays.
 Action: Use the fully parallelized `ff.apply_to_frame(df, numba_func, window)` which intercepts entire panels and farms execution across columns transparently using `@jit(parallel=True)`. This completely skips the sequential Pandas instantiation loop.
+
+## 2026-03-21 - Vectorized Entropy (Direction Entropy)
+Learning: Iterating over rolling windows to compute custom math (like entropy over up/down signs) via `pd.Series.rolling().apply(_entropy, raw=True)` creates a massive Python bottleneck.
+Action: Rewrote the entropy function into fully vectorized Pandas operations: tracking the rolling sum of positive/negative differences, converting to probabilities, and using `np.log2` with `.fillna(0.0)` for safe logarithmic calculation on 0s. Crucially, explicitly restore the initial `NaN` warmup period (`result.iloc[:window-1] = np.nan`) to maintain identical output semantics to the original `apply()` logic.

@@ -37,10 +37,10 @@ def rolling_zscore(series, window):
     return (series - mean) / std
 
 def rolling_slope(series, window):
-    idx = np.arange(window)
-    def slope(x):
-        return np.polyfit(idx, x, 1)[0]
-    return series.rolling(window).apply(slope, raw=True)
+    from extreme_price_movements import fast_funcs as ff
+    arr = series.to_numpy(dtype=np.float32, copy=False)
+    res = ff.slope_nb(arr, window)
+    return pd.Series(res, index=series.index)
 
 def true_range(df):
     prev_close = df["close"].shift()
@@ -56,11 +56,8 @@ def atr(df, window=14):
     return true_range(df).rolling(window).mean()
 
 def rolling_percentile_rank(series: pd.Series, window: int) -> pd.Series:
-    def pct_rank(x):
-        if len(x) == 0:
-            return np.nan
-        return float(pd.Series(x).rank(pct=True).iloc[-1])
-    return series.rolling(window).apply(pct_rank, raw=True)
+    from extreme_price_movements import fast_funcs as ff
+    return ff.numba_rolling_rank_pct(series, window)
 
 def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -238,18 +235,25 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     chop_ratio = (atr_sum_20 / range_20.replace(0, np.nan)).clip(lower=1e-6)
     df["choppiness_index_20"] = 100.0 * np.log10(chop_ratio) / np.log10(40)
 
-    # Direction Entropy 20: entropy of up/down signs over 40 bars
-    def _entropy(x):
-        if len(x) == 0:
-            return np.nan
-        p_up = (x > 0).sum() / len(x)
-        p_dn = (x < 0).sum() / len(x)
-        e = 0.0
-        if p_up > 0: e -= p_up * np.log2(p_up)
-        if p_dn > 0: e -= p_dn * np.log2(p_dn)
-        return e
+    # Direction Entropy 20: entropy of up/down signs over 40 bars (Vectorized)
+    # 🎯 Why: Iterating over DataFrame columns in Python using pd.Series.rolling().apply() is phenomenally slow.
+    diff = df["close"].diff()
+    # sum of up/down over 40 bars
+    up_sum = (diff > 0).astype(float).rolling(40).sum()
+    dn_sum = (diff < 0).astype(float).rolling(40).sum()
 
-    df["direction_entropy_20"] = df["close"].diff().rolling(40).apply(_entropy, raw=True)
+    p_up = up_sum / 40.0
+    p_dn = dn_sum / 40.0
+
+    # log2(0) handles by np.where/masking or adding a small epsilon. Since pandas can handle log2 with 0s as -inf
+    # and 0 * -inf is nan which we replace with 0.
+    e_up = -(p_up * np.log2(p_up.replace(0, np.nan))).fillna(0.0)
+    e_dn = -(p_dn * np.log2(p_dn.replace(0, np.nan))).fillna(0.0)
+
+    # restore NaNs for warmup period
+    e_total = e_up + e_dn
+    e_total.iloc[:39] = np.nan
+    df["direction_entropy_20"] = e_total
 
     # Volatility Term Structure
     std_20 = df["close"].pct_change(fill_method=None).rolling(40).std()

@@ -3797,6 +3797,8 @@ def evaluate_config(
                 last_gc_ts=_last_gc_ts, mem_threshold_mb=8192.0, min_interval_s=3.0
             )
 
+    if not events_rows:
+        return _empty_result(cfg, cfg_id, 0, reason="empty_events_rows", stage2_rescore=stage2_rescore)
     events = pd.concat(events_rows, ignore_index=True)
     events["label"] = events["label"].astype(np.float32, copy=False)
     events["payoff"] = events["payoff"].astype(np.float32, copy=False)

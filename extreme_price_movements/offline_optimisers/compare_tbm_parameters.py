@@ -991,14 +991,14 @@ def _load_panel_from_store(
             list(set(all_syms) | set(ohlcv_syms))
         )
 
-        # Use a configurable subsample step; default keeps 1/4 of symbols (USDT-only universe).
-        # Previously 2 (1/2 of USDT-only), now 4 (1/4 of USDT-only) for more aggressive downsampling.
-        _step = max(1, int(cfg.get("tbm_symbol_subsample_step", 4)))
+        # Use a configurable subsample step; default keeps 1/3 of symbols (USDT-only universe).
+        # Previously 2 (1/2 of USDT-only), now 3 (1/3 of USDT-only) for more aggressive downsampling.
+        _step = max(1, int(cfg.get("tbm_symbol_subsample_step", 3)))
         train_syms = sorted(all_syms)[::_step]
         # Cap: honour explicit override; otherwise use half the live margin universe size
-        # so "step=4" truly means 1/4 of the USDT margin universe (not 1/4 of local store).
+        # so "step=3" truly means 1/3 of the USDT margin universe (not 1/3 of local store).
         _default_max = (
-            max(1, len(margin_symbols) // 4)
+            max(1, len(margin_symbols) // 3)
             if margin_symbols
             else int(cfg.get("fetch_symbols_M", 600))
         )
@@ -3374,7 +3374,7 @@ def evaluate_config(
                 str(side),
                 str(cfg.get("horizon_scaling", "sqrt")),
                 float(cfg.get("horizon_base", 4.0)),
-                float(cfg.get("tbm_event_fraction", 0.1)), # Match evaluation default
+                float(cfg.get("tbm_event_fraction", 0.15)), # Match evaluation default
                 _index_cache_key(artifacts.panel["close"].index),
             )
 
@@ -3469,7 +3469,7 @@ def evaluate_config(
                 # ── Event Subsampling (from periods_symbols_management SamplingPolicy) ──
                 # Use SamplingPolicy to control the number of events processed
                 # This dramatically reduces computation time by subsampling before heavy labeling
-                event_fraction = float(cfg.get("tbm_event_fraction", 0.1))
+                event_fraction = float(cfg.get("tbm_event_fraction", 0.15))
                 if event_fraction < 1.0:
                     # Subsample the panel by selecting a fraction of timestamps
                     # Use time-block sampling to preserve temporal structure

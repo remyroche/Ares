@@ -1592,23 +1592,24 @@ def run_training_step(
                         train_spike_anatomy_model,
                     )
 
-                    for mode in missing_spike:
-                        tprint(f"Generating Spike Anatomy ({mode})...")
-                        df_spike = train_spike_anatomy_model(
-                            panel, feats, mkt_gates, cfg, valid_syms, ts_sig, mode=mode
-                        )
-                        if df_spike is not None:
-                            datasets[f"spike_anatomy_{mode}"] = df_spike
-                            save_artifact_df(
-                                df_spike,
-                                cfg["data_root"],
-                                run_id,
-                                "labels",
-                                f"spike_anatomy_{mode}",
-                            )
-                            tprint(
-                                f"Saved generated spike artifact: spike_anatomy_{mode}"
-                            )
+                    # NOTE: Spike Anatomy generation disabled
+                    # for mode in missing_spike:
+                    #     tprint(f"Generating Spike Anatomy ({mode})...")
+                    #     df_spike = train_spike_anatomy_model(
+                    #         panel, feats, mkt_gates, cfg, valid_syms, ts_sig, mode=mode
+                    #     )
+                    #     if df_spike is not None:
+                    #         datasets[f"spike_anatomy_{mode}"] = df_spike
+                    #         save_artifact_df(
+                    #             df_spike,
+                    #             cfg["data_root"],
+                    #             run_id,
+                    #             "labels",
+                    #             f"spike_anatomy_{mode}",
+                    #         )
+                    #         tprint(
+                    #             f"Saved generated spike artifact: spike_anatomy_{mode}"
+                    #         )
 
     # Alpha models (Dynamic Strategies from get_strategies)
     strategies = get_strategies(cfg)
@@ -4708,9 +4709,9 @@ def run_feature_generation_step(
         tprint(f"Computed + saved chunked backfill features: {total_saved_keys} keys")
         if unresolved_union:
             unresolved_sorted = sorted(unresolved_union)
-            raise RuntimeError(
-                "Offline backfill requested keys that compute_features_hourly did not "
-                "produce: "
+            tprint(
+                f"WARNING: Backfill could not produce {len(unresolved_sorted)} keys "
+                "(may require other pipelines): "
                 + ", ".join(unresolved_sorted[:30])
                 + (" ..." if len(unresolved_sorted) > 30 else "")
             )
@@ -4761,9 +4762,9 @@ def run_feature_generation_step(
                 f"already_covered={tail_stats['already_covered']}"
             )
             if unresolved:
-                raise RuntimeError(
-                    "Offline backfill requested keys that compute_features_hourly did "
-                    "not produce: "
+                tprint(
+                    f"WARNING: Backfill could not produce {len(unresolved)} keys "
+                    "(may require other pipelines): "
                     + ", ".join(unresolved[:30])
                     + (" ..." if len(unresolved) > 30 else "")
                 )

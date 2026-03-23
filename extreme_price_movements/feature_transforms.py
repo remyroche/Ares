@@ -152,29 +152,50 @@ class CausalFeatureTransformer:
             for chunk_start in range(0, len(keys_xform), chunk_size):
                 chunk_keys = keys_xform[chunk_start:chunk_start + chunk_size]
 
-                # Collect chunk arrays
-                chunk_arrays = []
+                # Separate 1D (market-level) from 2D (per-symbol) features
+                keys_2d = []
+                keys_1d = []
                 for k in chunk_keys:
                     v = feats[k]
                     arr = np.asarray(v, dtype=np.float32) if not isinstance(v, np.ndarray) else v.astype(np.float32, copy=False)
-                    chunk_arrays.append(arr)
-                    feats[k] = None  # free original reference
-
-                stacked = np.concatenate(chunk_arrays, axis=1)
-                del chunk_arrays
-                gc.collect()
+                    feats[k] = arr
+                    if arr.ndim >= 2:
+                        keys_2d.append(k)
+                    else:
+                        keys_1d.append(k)
 
                 tprint(f"    Processing chunk of {len(chunk_keys)} features: {chunk_keys[:5]}...")
                 import time
                 t0 = time.time()
-                stacked = self._apply_transform_numpy(stacked, family=family)
-                t1 = time.time()
 
-                S = stacked.shape[1] // len(chunk_keys)
-                for ci, k in enumerate(chunk_keys):
-                    feats[k] = np.ascontiguousarray(stacked[:, ci * S:(ci + 1) * S])
-                del stacked
-                gc.collect()
+                # Transform 1D features individually (preserves shape)
+                for k in keys_1d:
+                    arr = feats[k]
+                    feats[k] = None
+                    feats[k] = self._apply_transform_numpy(
+                        arr[:, np.newaxis], family=family
+                    ).ravel()
+
+                # Batch-transform 2D features via stacking
+                if keys_2d:
+                    chunk_arrays = []
+                    for k in keys_2d:
+                        chunk_arrays.append(feats[k])
+                        feats[k] = None
+
+                    stacked = np.concatenate(chunk_arrays, axis=1)
+                    del chunk_arrays
+                    gc.collect()
+
+                    stacked = self._apply_transform_numpy(stacked, family=family)
+
+                    S = stacked.shape[1] // len(keys_2d)
+                    for ci, k in enumerate(keys_2d):
+                        feats[k] = np.ascontiguousarray(stacked[:, ci * S:(ci + 1) * S])
+                    del stacked
+                    gc.collect()
+
+                t1 = time.time()
 
                 processed_count += len(chunk_keys)
                 tprint(f"  CausalTransform batch: {processed_count}/{n_total} (family={family}, chunk_time={t1-t0:.2f}s)")

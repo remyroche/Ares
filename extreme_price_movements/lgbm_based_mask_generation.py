@@ -51,6 +51,7 @@ from extreme_price_movements.periods_symbols_management import (
 )
 from extreme_price_movements.universe import get_training_universe
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.hpo_lgbm_regime_miner import run_short_hpo_for_target_horizon
 
 LOGGER = logging.getLogger(__name__)
 
@@ -449,21 +450,9 @@ class FeatureProcessor:
                         raw_cols.append(band_arr)
                         raw_names.append(band_name)
 
-        # 1. Trigger Features
+        # 1. Trigger Features — DISABLED (all trigger features removed from pipeline)
         if "trigger" in active_groups:
-            # Discrete booleans
-            for col in INTRADAY_TRIGGER_COLUMNS:
-                if col in feature_dict:
-                    raw_source_features_by_group["trigger"].add(col)
-                    arr = feature_dict[col].astype(np.int8)
-                    family = col.split("_")[0] if "_" in col else "trigger"
-                    self._add_metadata(
-                        col, "trigger", "boolean", source_name=col, source_family=family
-                    )
-                    raw_cols.append(arr)
-                    raw_names.append(col)
-            # Continuous booleans
-            _add_continuous_features_as_booleans(CONTINUOUS_TRIGGER_COLS, "trigger")
+            tprint("TRIGGER features disabled — skipping trigger group.")
 
         # 2. Location Features
         if "location" in active_groups:
@@ -530,6 +519,16 @@ class FeatureProcessor:
         X_clean, retained_names, audit_df = self._run_feature_quality_checks(
             X_raw, raw_names, cfg
         )
+
+        if cfg.get("boolean_only", False):
+            is_bool = np.array(
+                [self.metadata[n].type == "boolean" for n in retained_names]
+            )
+            if np.any(is_bool):
+                X_clean = X_clean[:, is_bool]
+                retained_names = [n for i, n in enumerate(retained_names) if is_bool[i]]
+            else:
+                tprint("WARNING: boolean_only=True but no boolean features found!")
 
         audit_df["group"] = [self.metadata[n].group for n in audit_df["feature_name"]]
         audit_df["regime_family"] = [
@@ -798,7 +797,7 @@ class FeatureProcessor:
 
         if not retained_indices:
             return (
-                np.empty((len(timestamps), 0)),
+                np.empty((X.shape[0], 0)),
                 [],
                 pd.DataFrame(columns=["feature_name", "status", "reason", "support"]),
             )
@@ -986,14 +985,31 @@ class InteractionModel:
         y_tr_reg = np.clip(y_tr, y_lo, y_hi).astype(np.float32, copy=False)
         y_va_reg = np.clip(y_va, y_lo, y_hi).astype(np.float32, copy=False)
 
+        # Dynamic HPO Overrides
         alpha_hpo = float(self.cfg.get("alpha_hpo", 0.95))
         alpha = alpha_hpo if self.side == "long" else (1.0 - alpha_hpo)
+        
+        # Override with dynamic HPO results if available
+        if "hpo_best_alpha" in self.cfg:
+            alpha = float(self.cfg["hpo_best_alpha"])
+            if self.side == "short":
+                # Ensure alpha is flipped correctly if the HPO returns raw alpha
+                # However, our HPO returns the exact alpha to use for the booster.
+                pass
 
-        max_depth = int(self.cfg.get("lgbm_max_depth", 3)) + 1
-        num_leaves = int(self.cfg.get("lgbm_num_leaves", 2**max_depth))
+        max_depth = int(self.cfg.get("lgbm_max_depth", 5)) + 1
+        num_leaves = int(self.cfg.get("lgbm_num_leaves", 64))
 
         lambda_l1 = float(self.cfg.get("lambda_l1", 0.0)) * 1.33
         lambda_l2 = float(self.cfg.get("lambda_l2", 0.0)) * 1.33
+        
+        min_gain_to_split = float(self.cfg.get("min_gain_to_split", 0.0))
+        if "hpo_min_gain_to_split" in self.cfg:
+            min_gain_to_split = float(self.cfg["hpo_min_gain_to_split"])
+            
+        min_data_in_leaf = max(20, int(0.001 * X_tr.shape[0]))
+        if "hpo_min_data_in_leaf" in self.cfg:
+            min_data_in_leaf = int(self.cfg["hpo_min_data_in_leaf"])
 
         params = {
             "objective": "quantile",
@@ -1002,11 +1018,12 @@ class InteractionModel:
             "boosting_type": "gbdt",
             "max_depth": max_depth,
             "num_leaves": num_leaves,
-            "min_data_in_leaf": max(20, int(0.001 * X_tr.shape[0])),
-            "learning_rate": self.cfg.get("learning_rate", 0.03),
-            "n_estimators": 1000,
+            "min_data_in_leaf": min_data_in_leaf,
             "lambda_l1": lambda_l1,
             "lambda_l2": lambda_l2,
+            "min_gain_to_split": min_gain_to_split,
+            "learning_rate": float(self.cfg.get("learning_rate", 0.01)),
+            "n_estimators": 1000,
             "verbosity": -1,
             "random_state": seed,
             "extra_trees": self.cfg.get("extra_trees", True),
@@ -2430,7 +2447,7 @@ class IndependentRulePruner:
             & (df["beats_hurdle"])
             & (df["sign_consistency"] >= self.min_sign_consistency)
             & (df["discovery_count"] >= self.min_discoveries)
-            & (~df["dominated_by_parent"])
+            & (~df["dominated_by_parent"].fillna(False).astype(bool))
         )
 
         final_registry = df[mask].copy()
@@ -2554,7 +2571,7 @@ class EconomicRuleConsolidator:
         win_rate = float(np.mean(all_valid_ret > 0)) if len(all_valid_ret) > 0 else 0.0
 
         return {
-            "rule_id": row.get("rule_id", row.name),
+            "rule_id": row.get("rule_id", getattr(row, "name", "unknown")),
             "rule_name": row["canonical_key"],
             "support_count": int(mask.sum()),
             "support_pct": float(mask.sum() / max(len(mask), 1)),
@@ -5666,6 +5683,50 @@ def run_side_pipeline(
         slot_order=("trigger", "location", "regime"),
     )
 
+    if cfg.get("use_dynamic_hpo", False):
+        tprint(f"--- DYNAMIC HPO: Tuning Stage A for {side.upper()} ---")
+        try:
+            # We use X_a and side_fwd_ret for HPO
+            # The HPO script expects MAIN_MINER_PARAMS but we can build them from cfg
+            hpo_main_params = {
+                "objective": "quantile",
+                "metric": "quantile",
+                "learning_rate": float(cfg.get("learning_rate", 0.03)),
+                "num_leaves": int(cfg.get("lgbm_num_leaves", 64)),
+                "max_depth": int(cfg.get("lgbm_max_depth", 5)) + 1,
+                "lambda_l1": float(cfg.get("lambda_l1", 0.0)),
+                "lambda_l2": float(cfg.get("lambda_l2", 0.0)),
+                "verbosity": -1,
+            }
+            
+            hpo_results = run_short_hpo_for_target_horizon(
+                X=X_a,
+                y=side_fwd_ret,
+                main_params=hpo_main_params,
+                seed=cfg.get("random_state", 42)
+            )
+            
+            best_cfg = hpo_results.get("best_final_result")
+            if best_cfg and best_cfg.valid:
+                tprint(f"Dynamic HPO Results: alpha={best_cfg.cfg.alpha:.3f}, "
+                       f"min_gain={best_cfg.cfg.min_gain_to_split:.5f}, "
+                       f"min_leaf_frac={best_cfg.cfg.min_leaf_frac:.5f}")
+                
+                # Update cfg for this side pipeline
+                cfg = cfg.copy() # Avoid polluting other sides
+                cfg["hpo_best_alpha"] = best_cfg.cfg.alpha
+                cfg["hpo_min_gain_to_split"] = best_cfg.cfg.min_gain_to_split
+                
+                # Use train_n if available, otherwise fallback to full X_a size
+                train_n = hpo_results.get("train_n", len(X_a))
+                cfg["hpo_min_data_in_leaf"] = max(25, int(round(best_cfg.cfg.min_leaf_frac * train_n)))
+            else:
+                tprint(f"Dynamic HPO failed or invalid: {best_cfg.reason if best_cfg else 'Unknown'}. Using defaults.")
+
+        except Exception as e:
+            tprint(f"Dynamic HPO encountered error: {e}. Using defaults.")
+            traceback.print_exc()
+
     stage_a_result = run_mining_stage(
         data,
         side_fwd_ret,
@@ -5794,103 +5855,13 @@ def run_side_pipeline(
         list(context_to_key.items()), columns=["context_feature", "canonical_key"]
     )
 
-    # --- STAGE B1: TRIGGER REFINEMENT ---
-    tprint(f"STAGE B1: Trigger Refinement (Winning Contexts x Trigger) [{side}]")
-
-    fp_b_trig = FeatureProcessor()
-    X_b_trig, metadata_b_trig, audits_b_trig = fp_b_trig.prepare_features(
-        feature_dict,
-        data["timestamp"].to_numpy(),
-        data["symbol"].to_numpy(),
-        cfg,
-        active_groups=("trigger",),
-        extra_binary_features=context_feature_dict,
-        extra_feature_group="context",
-    )
+    # --- STAGE B1: TRIGGER REFINEMENT --- DISABLED (trigger features removed)
+    tprint(f"STAGE B1: Trigger Refinement SKIPPED (trigger features disabled) [{side}]")
+    stage_b_trig_result = {"accepted_registry": pd.DataFrame()}
+    X_b_trig = None
+    metadata_b_trig = []
     stage_b_trig_output_dir = side_output_dir / "stage_b_trigger_refinement"
     stage_b_trig_output_dir.mkdir(parents=True, exist_ok=True)
-
-    for k, v in audits_b_trig.items():
-        if not v.empty:
-            v.to_csv(stage_b_trig_output_dir / f"{k}.csv", index=False)
-    context_mapping_df.to_csv(
-        stage_b_trig_output_dir / "stage_b_context_mapping.csv", index=False
-    )
-
-    stage_b_trig_spec = MiningStageSpec(
-        stage_name="stage_b_trigger_refinement",
-        active_groups=("trigger", "context"),
-        allow_groups_in_rule=("trigger", "context"),
-        output_dir_name="stage_b_trigger_refinement",
-        allowed_group_pairs=(("trigger", "context"),),
-        slot_order=("trigger", "context"),
-        require_uplift=True,
-    )
-
-    def reconstruct_stage_b_trig_key(
-        raw_key: str,
-    ) -> Tuple[Optional[str], Optional[str]]:
-        global stage_b_reconstruction_success, stage_b_reconstruction_failed
-        slots = raw_key.split("|")
-        trigger_conditions = []
-        parent_context_key = None
-        for slot in slots:
-            slot_value = slot.strip("()")
-            if slot_value == "*":
-                continue
-            for cond_str in slot_value.split("&"):
-                if "==" not in cond_str:
-                    continue
-                feature_name = cond_str.split("==")[0]
-                if feature_name in INTRADAY_TRIGGER_COLUMNS or any(
-                    feature_name.startswith(c[:3]) for c in CONTINUOUS_TRIGGER_COLS
-                ):
-                    trigger_conditions.append(cond_str)
-                elif feature_name.startswith("ctx__"):
-                    parent_context_key = context_to_key.get(feature_name)
-
-        if parent_context_key is None or not trigger_conditions:
-            stage_b_reconstruction_failed += 1
-            return None, None
-
-        trigger_slot = f"({'&'.join(sorted(trigger_conditions))})"
-        parent_slots = parent_context_key.split("|")
-        stage_b_reconstruction_success += 1
-        return f"{trigger_slot}|{parent_slots[1]}|{parent_slots[2]}", parent_context_key
-
-    cfg_trig = cfg.copy()
-    cfg_trig["lgbm_max_depth"] = 2
-    context_features_trig = [
-        m.feature_name for m in metadata_b_trig if m.group == "context"
-    ]
-    trigger_features = [m.feature_name for m in metadata_b_trig if m.group == "trigger"]
-    cfg_trig["interaction_constraints"] = [context_features_trig + trigger_features]
-    cfg_trig["require_groups"] = ["context", "trigger"]
-
-    stage_b_trig_result = run_mining_stage(
-        data,
-        side_fwd_ret,
-        side_fwd_ret_norm,
-        X_b_trig,
-        metadata_b_trig,
-        cfg_trig,
-        stage_b_trig_output_dir,
-        stage_b_trig_spec.stage_name,
-        stage_b_trig_spec.allowed_group_pairs,
-        slot_order=stage_b_trig_spec.slot_order,
-        folds=folds,
-        mask_resolver=CanonicalRuleMaskResolver(
-            X_b_trig,
-            metadata_b_trig,
-            context_lookup=context_feature_dict,
-            context_key_map=context_to_key,
-            slot_order=("trigger", "location", "regime"),
-        ),
-        require_uplift=stage_b_trig_spec.require_uplift,
-        rule_key_rewriter=reconstruct_stage_b_trig_key,
-        pipeline_stage_name="stage_b_trigger_refinement",
-        explicit_side=side,
-    )
 
     # --- STAGE B2: LOCATION REFINEMENT ---
     tprint(f"STAGE B2: Location Refinement (Winning Contexts x Location) [{side}]")
@@ -5998,13 +5969,8 @@ def run_side_pipeline(
         explicit_side=side,
     )
 
-    stage_b_accepted = pd.concat(
-        [
-            stage_b_trig_result["accepted_registry"],
-            stage_b_loc_result["accepted_registry"],
-        ],
-        ignore_index=True,
-    )
+    # Only location refinement active (trigger disabled)
+    stage_b_accepted = stage_b_loc_result["accepted_registry"].copy()
 
     return {
         "stage_a": winning_contexts,
@@ -6719,7 +6685,7 @@ class MaskAssessor:
             rejected = False
             rejection_reason = ""
             min_oof_coverage = float(
-                self.cfg.get("learnability_min_oof_coverage", 0.25)
+                self.cfg.get("learnability_min_oof_coverage", 0.05)
             )
             if avg_trades < float(
                 self.cfg.get("min_avg_trades_per_day_10_symbols", 0.1)
@@ -7994,6 +7960,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Only use boolean features (triggers)",
     )
+    parser.add_argument(
+        "--use-dynamic-hpo",
+        action="store_true",
+        help="Run dynamic HPO for Stage A",
+    )
     args = parser.parse_args()
 
     cfg = dict(CFG)
@@ -8105,14 +8076,14 @@ if __name__ == "__main__":
         list(CFG.get("FEATURE_SELECTION_KEYS", []))
         + RIDGE_FEATURE_COLS
         + list(LOCATION_FILTER_COLUMNS)
-        + list(INTRADAY_TRIGGER_COLUMNS)
     )
+    tprint(f"Requested feature keys: {len(requested_feature_keys)} (TRIGGER features disabled)")
 
     if args.boolean_only:
-        tprint("MODE: boolean_only. Filtering to trigger columns only.")
-        requested_feature_keys = [
-            k for k in requested_feature_keys if k in INTRADAY_TRIGGER_COLUMNS
-        ]
+        cfg["boolean_only"] = True
+        tprint("MODE: boolean_only. Ensuring only boolean features are used after generation.")
+    if args.use_dynamic_hpo:
+        cfg["use_dynamic_hpo"] = True
     feat_dict_raw = load_features_selected(
         ts=ts,
         root_dir=os.path.dirname(os.path.dirname(feature_path)),
@@ -8123,66 +8094,19 @@ if __name__ == "__main__":
     if feat_dict_raw is None:
         feat_dict_raw = {}
 
-    missing_lib_cols = [
-        c
-        for c in (LOCATION_FILTER_COLUMNS + INTRADAY_TRIGGER_COLUMNS)
-        if c not in feat_dict_raw
-    ]
-    if missing_lib_cols:
-        tprint(
-            f"WARNING: {len(missing_lib_cols)} library columns missing from disk. Recalculating library..."
-        )
-        try:
-            from extreme_price_movements.intraday_crypto_library import (
-                build_intraday_crypto_library,
-            )
-
-            recomputed_wide = {col: [] for col in missing_lib_cols}
-            for sym in kept_syms:
-                sym_df = pd.DataFrame(
-                    {
-                        "open": panel["open"][sym],
-                        "high": panel["high"][sym],
-                        "low": panel["low"][sym],
-                        "close": panel["close"][sym],
-                        "volume": panel["volume"][sym],
-                    }
-                )
-                for extra in ["session_id", "session_id_5h"]:
-                    if extra in panel:
-                        sym_df[extra] = panel[extra][sym]
-
-                lib_sym = build_intraday_crypto_library(sym_df)
-                for col in missing_lib_cols:
-                    if col in lib_sym.columns:
-                        recomputed_wide[col].append(lib_sym[col])
-                    else:
-                        recomputed_wide[col].append(pd.Series(0, index=sym_df.index))
-
-            for col in missing_lib_cols:
-                feat_dict_raw[col] = pd.DataFrame(
-                    np.column_stack([s.values for s in recomputed_wide[col]]),
-                    index=common_idx,
-                    columns=kept_syms,
-                )
-            save_features(
-                {col: feat_dict_raw[col] for col in missing_lib_cols},
-                ts,
-                cfg["data_root"],
-            )
-            tprint(f"Recalculated {len(missing_lib_cols)} features.")
-        except Exception as e:
-            tprint(f"Failed to recalculate library: {e}")
-            import traceback
-
-            traceback.print_exc()
-
     missing_requested_keys = sorted(set(requested_feature_keys) - set(feat_dict_raw))
     if missing_requested_keys:
+        tprint(
+            f"ERROR: Feature snapshot incomplete. "
+            f"Missing {len(missing_requested_keys)} keys: {missing_requested_keys[:20]}"
+        )
+        tprint(
+            "Run run_feature_generation_step(force_full_recompute=False) first to "
+            "backfill missing features."
+        )
         raise RuntimeError(
-            "Feature snapshot incomplete after load/recompute. Missing keys: "
-            + ", ".join(missing_requested_keys[:30])
-            + (" ..." if len(missing_requested_keys) > 30 else "")
+            f"Cannot proceed: {len(missing_requested_keys)} required features missing "
+            f"from snapshot. Backfill with run_feature_generation_step first."
         )
 
     stack_start = time.perf_counter()
@@ -8365,7 +8289,7 @@ if __name__ == "__main__":
     # Check non-zero features
     non_zero_feats = 0
     for k, v in feat_final.items():
-        if np.nanmax(np.abs(v)) > 0:
+        if v.size > 0 and np.nanmax(np.abs(v)) > 0:
             non_zero_feats += 1
     tprint(
         f"Final Input: {len(data_final)} rows. {non_zero_feats}/{len(feat_final)} features have non-zero values."

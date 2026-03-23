@@ -5556,19 +5556,20 @@ def generate_label_datasets(
         )
 
     # 1. Spike Anatomy (2 GMM models: Best & Worst)
-    for mode in ["best", "worst"]:
-        spike_df = train_spike_anatomy_model(
-            panel,
-            feats,
-            mkt_gates,
-            cfg,
-            syms,
-            ts,
-            _cached_cand_mask=mask_by_strategy.get(k, cached_cand_mask),
-            mode=mode,
-        )
-        if spike_df is not None:
-            datasets[f"spike_anatomy_{mode}"] = spike_df
+    # NOTE: Spike Anatomy models removed - GMM training disabled
+    # for mode in ["best", "worst"]:
+    #     spike_df = train_spike_anatomy_model(
+    #         panel,
+    #         feats,
+    #         mkt_gates,
+    #         cfg,
+    #         syms,
+    #         ts,
+    #         _cached_cand_mask=mask_by_strategy.get(k, cached_cand_mask),
+    #         mode=mode,
+    #     )
+    #     if spike_df is not None:
+    #         datasets[f"spike_anatomy_{mode}"] = spike_df
 
     # Pre-compute/load triple-barrier labels with geometry-grid aggregation per (H, strategy)
     tb_cache: dict = {}
@@ -5987,21 +5988,24 @@ def train_specialist_models(panel, feats, mkt_gates, cfg, syms, ts_end):
 
     specialist_models = {}
 
-    # 1. Trap Specialist (GMM-based quality filter)
-    try:
-        trap_model = train_trap_specialist(panel, feats, cfg, syms, ts_end)
-        specialist_models["trap_model"] = trap_model
-    except Exception as e:
-        tprint(f"ERROR: Trap Specialist training failed: {e}")
-        specialist_models["trap_model"] = None
+    # NOTE: Trap Specialist (GMM) removed from pipeline
+    # # 1. Trap Specialist (GMM-based quality filter)
+    # NOTE: Trap Specialist (GMM) training disabled
+    # try:
+    #     trap_model = train_trap_specialist(panel, feats, cfg, syms, ts_end)
+    #     specialist_models["trap_model"] = trap_model
+    # except Exception as e:
+    #     tprint(f"ERROR: Trap Specialist training failed: {e}")
+    #     specialist_models["trap_model"] = None
 
     # 2. Gamma Specialist (ExtraTrees regression for volatility)
-    try:
-        gamma_model = train_gamma_specialist(panel, feats, cfg, syms, ts_end)
-        specialist_models["gamma_model"] = gamma_model
-    except Exception as e:
-        tprint(f"ERROR: Gamma Specialist training failed: {e}")
-        specialist_models["gamma_model"] = None
+    # NOTE: Gamma Specialist (GMM) training disabled
+    # try:
+    #     gamma_model = train_gamma_specialist(panel, feats, cfg, syms, ts_end)
+    #     specialist_models["gamma_model"] = gamma_model
+    # except Exception as e:
+    #     tprint(f"ERROR: Gamma Specialist training failed: {e}")
+    #     specialist_models["gamma_model"] = None
 
     tprint("=" * 60)
     tprint("SPECIALIST TRAINING COMPLETE")

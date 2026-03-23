@@ -164,6 +164,9 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
     tprint(f"Entering function: build_fetch_universe in universe.py")
     margin_symbols = apply_hardcoded_universe_exclusions(list(margin_symbols))
     market_basket = apply_hardcoded_universe_exclusions(list(market_basket))
+    # Deduplicate quote variants (USDT > USDC > BUSD) before volume ranking
+    margin_symbols = deduplicate_symbols_by_base(margin_symbols)
+    market_basket = deduplicate_symbols_by_base(market_basket)
     tprint(f"Building universe from {len(margin_symbols)} margin symbols + {len(market_basket)} basket symbols (Remove bottom 30 by volume).")
     try:
         tickers = fetch_24h_tickers()
@@ -228,7 +231,10 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         if not base_syms:
             base_syms = list(cfg.get("market_basket", []))
         # In offline mode, use all available symbols (no volume data to remove bottom 30)
-        syms_all = apply_hardcoded_universe_exclusions(list(set(base_syms).union(set(cfg["market_basket"]))))
+        syms_all = deduplicate_symbols_by_base(
+            list(set(base_syms).union(set(cfg["market_basket"])))
+        )
+        syms_all = apply_hardcoded_universe_exclusions(syms_all)
         train_syms = filter_low_variance_assets(
             store,
             syms_all,
@@ -237,7 +243,10 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
             ts_sig=ts_sig,
             sample_stride=variance_stride,
         )
-        train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms).union(set(cfg["market_basket"]))))
+        train_syms = deduplicate_symbols_by_base(
+            list(set(train_syms).union(set(cfg["market_basket"])))
+        )
+        train_syms = apply_hardcoded_universe_exclusions(train_syms)
         return train_syms
 
     if margin_symbols is None:
@@ -262,7 +271,10 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         ts_sig=ts_sig,
         sample_stride=variance_stride,
     )
-    train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms).union(set(cfg["market_basket"]))))
+    train_syms = deduplicate_symbols_by_base(
+        list(set(train_syms).union(set(cfg["market_basket"])))
+    )
+    train_syms = apply_hardcoded_universe_exclusions(train_syms)
     return train_syms
 
 def select_live_candidates(margin_symbols: list[str], market_basket: list[str], pct: float = 0.05):

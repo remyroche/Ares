@@ -5904,9 +5904,9 @@ def generate_label_datasets(
                     df_out["__ts__"] = meta_idx["ts"]
                     df_out["__symbol__"] = meta_idx["symbol"]
                 _ds_key = (
-                    f"train_{side}_{k}_{H}"
+                    f"train_{k}_{H}"
                     if variant is None
-                    else f"train_{side}_{k}_{H}_{variant}"
+                    else f"train_{k}_{H}_{variant}"
                 )
                 datasets[_ds_key] = df_out
 
@@ -5921,9 +5921,9 @@ def generate_label_datasets(
             H_int = int(H)
             if H_int == 1:
                 continue
-            _tight_key = f"train_{side}_{k}_{H_int}_tight"
-            _wide_key = f"train_{side}_{k}_{H_int}_wide"
-            _base_key = f"train_{side}_{k}_{H_int}"
+            _tight_key = f"train_{k}_{H_int}_tight"
+            _wide_key = f"train_{k}_{H_int}_wide"
+            _base_key = f"train_{k}_{H_int}"
             if _tight_key not in datasets or _wide_key not in datasets:
                 continue
             _parts = [datasets[_tight_key], datasets[_wide_key]]
@@ -6184,9 +6184,8 @@ def train_meta_models_from_artifacts(
 
     _t0_meta = _time.monotonic()
     tprint("train_meta_models_from_artifacts: starting")
-    trade_sides = ["long", "short"]
+    # NOTE: strategy iteration now driven by get_strategies(cfg) - no hardcoded trade_sides/kinds
     alpha_half = max(1, len(alpha_models) // 2)
-    kinds = ["mr", "tf"]
     meta_models = {}
     meta_gate_results = []
     _bucket_y_ret = {}  # per-bucket raw returns for OOF saving
@@ -6240,9 +6239,9 @@ def train_meta_models_from_artifacts(
             "Meta training: optimise policy params not found for current run (using return-derived utility fallback)."
         )
 
-    def _collect_horizon_oof(side_name, kind_name):
+    def _collect_horizon_oof(strategy_id):
         conf_local = (
-            alpha_models.get(side_name, {}).get(kind_name) if alpha_models else None
+            alpha_models.get(strategy_id) if alpha_models else None
         )
         if not conf_local:
             return {}, {
@@ -6252,7 +6251,7 @@ def train_meta_models_from_artifacts(
         out = {}
         skip = {}
         for h_local in CANON_HORIZONS:
-            ds_key_local = f"train_{side_name}_{kind_name}_{h_local}"
+            ds_key_local = f"train_{strategy_id}_{h_local}"
             if ds_key_local not in datasets:
                 skip[h_local] = "missing_dataset"
                 continue
@@ -6274,16 +6273,18 @@ def train_meta_models_from_artifacts(
                 continue
             out[h_local] = (df_local, oof_local)
         tprint(
-            f"Meta training: horizons found for {side_name}_{kind_name}: {list(out.keys())} (skip: {skip})"
+            f"Meta training: horizons found for {strategy_id}: {list(out.keys())} (skip: {skip})"
         )
         return out, skip
 
-    def _collect_variant_horizon_oof(side_name, kind_name):
+    def _collect_variant_horizon_oof(strategy_id):
         out = {}
         for (side_v, kind_v, h_v, variant_v), info in base_variant_models.items():
-            if side_v != side_name or kind_v != kind_name:
+            # Build the expected strategy_id for comparison (legacy format: side_kind)
+            expected_strategy_id = f"{side_v}_{kind_v}"
+            if expected_strategy_id != strategy_id:
                 continue
-            ds_key = f"train_{side_name}_{kind_name}_{int(h_v)}_{variant_v}"
+            ds_key = f"train_{strategy_id}_{int(h_v)}_{variant_v}"
             if ds_key not in datasets:
                 continue
             race_v = info.get("model")
@@ -8315,16 +8316,16 @@ def train_meta_models_from_artifacts(
             f"Meta bucket context: trade_side={trade_side}, kind={k}, "
             f"move_bucket={move_bucket}, candidate_bucket={cand_filter}, strategy={strategy_label}"
         )
-        conf = alpha_models.get(side, {}).get(k) if alpha_models else None
+        conf = alpha_models.get(k) if alpha_models else None
         if not conf:
-            tprint(f"Meta {side}_{k}: skipped (missing alpha model)")
+            tprint(f"Meta {k}: skipped (missing alpha model)")
             continue
 
         # Primary horizon OOF set (this bucket's own alpha models)
-        horizon_dfs, horizon_skip_reasons = _collect_horizon_oof(side, k)
+        horizon_dfs, horizon_skip_reasons = _collect_horizon_oof(k)
         for h, reason in horizon_skip_reasons.items():
             if reason.startswith("oof_len_mismatch"):
-                ds_key_dbg = f"train_{side}_{k}_{h}"
+                ds_key_dbg = f"train_{k}_{h}"
                 _df_len = (
                     len(datasets.get(ds_key_dbg, []))
                     if ds_key_dbg in datasets
@@ -8334,18 +8335,18 @@ def train_meta_models_from_artifacts(
                     reason.split(":")[-1].split("!=")[0] if ":" in reason else "na"
                 )
                 tprint(
-                    f"Meta {side}_{k} H={h}: OOF length mismatch ({_oof_len} vs {_df_len}), skipping horizon"
+                    f"Meta {k} H={h}: OOF length mismatch ({_oof_len} vs {_df_len}), skipping horizon"
                 )
 
         if not horizon_dfs:
-            tprint(f"Meta {side}_{k}: skipped (no horizon with valid OOF)")
+            tprint(f"Meta {k}: skipped (no horizon with valid OOF)")
             if horizon_skip_reasons:
                 tprint(
                     f"  Horizon availability diagnostics: {horizon_skip_reasons}"
                 )
             continue
         tprint(
-            f"Meta {side}_{k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())} ({_time.monotonic()-_t0_meta:.1f}s)"
+            f"Meta {k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())} ({_time.monotonic()-_t0_meta:.1f}s)"
         )
         _available_horizons = sorted(horizon_dfs.keys())
         if horizon_skip_reasons:
@@ -8457,7 +8458,7 @@ def train_meta_models_from_artifacts(
             tprint(f"  No ts/symbol columns; truncating to {min_len} samples")
 
         if len(df) < 100:
-            tprint(f"Meta {side}_{k}: skipped (only {len(df)} union samples)")
+            tprint(f"Meta {k}: skipped (only {len(df)} union samples)")
             continue
 
         # Build OOF predictions for each horizon, aligned to common samples
@@ -8494,7 +8495,7 @@ def train_meta_models_from_artifacts(
                     f"pred_{k_other}_H{int(h)}_{variant_name}"
                 ] = _align_oof_to_union(df, df_h_other_v, oof_h_other_v)
         tprint(
-            f"  Meta {side}_{k}: added same-side TF/MR base OOF features "
+            f"  Meta {k}: added same-side TF/MR base OOF features "
             f"(cols={len([c for c in pred_h.columns if c.startswith('pred_')])})"
         )
 
@@ -8511,7 +8512,7 @@ def train_meta_models_from_artifacts(
         _h_lookup_cache = {}
 
         def _ret_for_h_aligned(h):
-            ds_key = f"train_{side}_{k}_{h}"
+            ds_key = f"train_{k}_{h}"
             for source_df in [datasets.get(ds_key), horizon_dfs.get(h, (None,))[0]]:
                 if source_df is None:
                     continue
@@ -8614,7 +8615,7 @@ def train_meta_models_from_artifacts(
             )
         if not feat_cols:
             tprint(
-                f"Meta {side}_{k}: skipped (no raw meta features found in dataset)"
+                f"Meta {k}: skipped (no raw meta features found in dataset)"
             )
             continue
 
@@ -8783,7 +8784,7 @@ def train_meta_models_from_artifacts(
 
         if _use_aligned_map_v2:
             tprint(
-                f"  Using aligned meta map v2 for {side}_{k}: "
+                f"  Using aligned meta map v2 for {k}: "
                 f"TBM/MAE/MFE map heads + classifier"
             )
             _fit_aligned_meta_map_heads(
@@ -8802,7 +8803,7 @@ def train_meta_models_from_artifacts(
         # ══════════════════════════════════════════════════════════════
         # Pick a representative horizon for sample weighting / label context (e.g. 8h)
         _h_main = 8 if 8 in _y_per_h else sorted(_y_per_h.keys())[-1]
-        _h_label = f"{side}_{k}_reg"
+        _h_label = f"{k}_reg"
         y_ret_raw_main = y_target_h.astype(np.float64)
 
         # Guard: replace any inf/nan with 0 so downstream sklearn/optuna don't choke
@@ -9113,11 +9114,11 @@ def train_meta_models_from_artifacts(
                 trade_mask=_trade_mask,
                 timestamps=df["__ts__"].values,
                 cv_embargo_bars=int(cfg.get("cv_embargo_bars", 12)),
-                bucket_id=f"{side}_{k}",
+                bucket_id=k,
                 data_root=str(cfg.get("data_root", "data")),
                 run_id=str(cfg.get("run_id", "default")),
             )
-            _aux_head_oof[f"{side}_{k}"] = _aux_results
+            _aux_head_oof[k] = _aux_results
 
             # ELBOW: Elevate aux heads to standard meta models for reporting and OOF persistence
             for _hn, _hm in _aux_meta.items():
@@ -9160,7 +9161,7 @@ def train_meta_models_from_artifacts(
                 if _cn in df.columns:
                     _md[_cn] = df[_cn].values
             for _hn in ["utility", "mae_q70", "mfe"]:
-                _bucket_metadata[f"{side}_{k}_{_hn}"] = _md
+                _bucket_metadata[f"{k}_{_hn}"] = _md
 
         except Exception as _e_aux:
             tprint(f"Warning: aux head training failed for {side}_{k}: {_e_aux}")
@@ -9232,7 +9233,7 @@ def train_meta_models_from_artifacts(
                     np.sum(w_meta_clf) ** 2 / max(np.sum(w_meta_clf**2), 1e-12)
                 )
                 tprint(
-                    f"    {side}_{k}_clf n_eff clipped: {_n_eff_clf:.0f} -> {_n_eff_clf_new:.0f} (N={len(w_meta_clf)})"
+                    f"    {k}_clf n_eff clipped: {_n_eff_clf:.0f} -> {_n_eff_clf_new:.0f} (N={len(w_meta_clf)})"
                 )
 
             if (
@@ -9268,7 +9269,7 @@ def train_meta_models_from_artifacts(
                             )
                         ),
                     },
-                    stage=f"meta_clf_{side}_{k}",
+                    stage=f"meta_clf_{k}",
                     extra_components={
                         "magnitude": w_mag_clf,
                         "excursion": w_exc_clf,
@@ -9308,7 +9309,7 @@ def train_meta_models_from_artifacts(
                 f"  Fitting MetaClassifierModel {side}_{k} ({_time.monotonic()-_t0_meta:.1f}s)..."
             )
             meta_clf = MetaClassifierModel(reports_dir=reports_dir)
-            meta_clf.strategy_name = f"{side}_{k}"
+            meta_clf.strategy_name = k
             meta_clf.FEE_PER_ROUND_TRIP = (
                 float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
             )
@@ -9349,8 +9350,8 @@ def train_meta_models_from_artifacts(
                 y_class_override=_y_class_override,
                 trade_mask=_trade_mask,
             )
-            meta_models[f"{side}_{k}_clf"] = meta_clf
-            _bucket_y_ret[f"{side}_{k}_clf"] = y_target_clf.copy()
+            meta_models[f"{k}_clf"] = meta_clf
+            _bucket_y_ret[f"{k}_clf"] = y_target_clf.copy()
 
             # Store metadata for classifier bucket
             _md = {}
@@ -9379,14 +9380,14 @@ def train_meta_models_from_artifacts(
             for _cn in _ps_regime_cols:
                 if _cn in df.columns:
                     _md[_cn] = df[_cn].values
-            _bucket_metadata[f"{side}_{k}_clf"] = _md
+            _bucket_metadata[f"{k}_clf"] = _md
 
             tprint(
-                f"Meta {side}_{k}_clf: fitted ({_time.monotonic()-_t0_meta:.1f}s)."
+                f"Meta {k}_clf: fitted ({_time.monotonic()-_t0_meta:.1f}s)."
             )
         else:
             tprint(
-                f"Meta {side}_{k}_clf: skipped (meta_race_include_classifiers=False)"
+                f"Meta {k}_clf: skipped (meta_race_include_classifiers=False)"
             )
 
         # --- 3. ALWAYS Train Early Invalidation head for downstream consumers ---
@@ -9473,7 +9474,7 @@ def train_meta_models_from_artifacts(
                         "name": "early_inval",
                     },
                 )
-                _bucket_y_ret[f"{side}_{k}_early_inval"] = np.asarray(
+                _bucket_y_ret[f"{k}_early_inval"] = np.asarray(
                     _y_ei, dtype=float
                 )
                 _md = {}
@@ -9502,8 +9503,8 @@ def train_meta_models_from_artifacts(
                 for _cn in _ps_regime_cols:
                     if _cn in df.columns:
                         _md[_cn] = df[_cn].values
-                _bucket_metadata[f"{side}_{k}_early_inval"] = _md
-                tprint(f"Meta {side}_{k}_early_inval: fitted")
+                _bucket_metadata[f"{k}_early_inval"] = _md
+                tprint(f"Meta {k}_early_inval: fitted")
             except Exception as _e_ei:
                 tprint(
                     f"Warning: early invalidation model failed for {side}_{k}: {_e_ei}"
@@ -10556,7 +10557,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 horizons = cfg["label_horizons_hours"]
 
                 for H in horizons:
-                    key = f"train_{side}_{k}_{H}"
+                    key = f"train_{k}_{H}"
                     if key not in datasets:
                         continue
 
@@ -11085,8 +11086,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 if _race.oof_probs is None:
                     continue
 
-                _oof_path = os.path.join(oof_dir, f"oof_{side}_{k}_H{_h}.parquet")
-                _gate_key = f"train_{side}_{k}_{_h}"
+                _oof_path = os.path.join(oof_dir, f"oof_{k}_H{_h}.parquet")
+                _gate_key = f"train_{k}_{_h}"
                 _df_oof = datasets.get(_gate_key)
                 _n = int(len(_race.oof_probs))
                 if _df_oof is not None:
@@ -11168,7 +11169,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             # --- Stage Gate Check (Alpha) — per horizon ---
             for _gate_H, _gate_v in per_h_models.items():
                 _gate_race = _gate_v["model"]
-                _gate_key = f"train_{side}_{k}_{_gate_H}"
+                _gate_key = f"train_{k}_{_gate_H}"
                 if _gate_key not in datasets or _gate_race.oof_probs is None:
                     continue
                 _gate_df = datasets[_gate_key]
@@ -11221,7 +11222,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         variant = str(variant)
                         if variant == "balanced":
                             continue
-                        ds_key = f"train_{side}_{k}_{H}_{variant}"
+                        ds_key = f"train_{k}_{H}_{variant}"
                         if ds_key not in datasets:
                             continue
                         tprint(f"Training grouped base variant {ds_key}...")
@@ -11394,7 +11395,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 }
             }
         for H_rep, h_info in models_by_h.items():
-            ds_key = f"train_{side}_{kind}_{H_rep}"
+            ds_key = f"train_{kind}_{H_rep}"
             if ds_key not in datasets:
                 continue
             race = h_info["model"]
@@ -11498,7 +11499,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         # Collect available horizon OOFs (same logic as train_meta)
         _h_oofs = {}
         for h in CANON_HORIZONS:
-            ds_key = f"train_{side}_{kind}_{h}"
+            ds_key = f"train_{kind}_{h}"
             if ds_key not in datasets:
                 continue
             race_h = models_by_h.get(h, {}).get("model") if h in models_by_h else None
@@ -11526,7 +11527,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
         def _aligned_ret(h):
             """Get __y_ret__ for horizon h, aligned to len(dfm)."""
-            k = f"train_{side}_{kind}_{h}"
+            k = f"train_{kind}_{h}"
             if k not in datasets:
                 return y_ret.copy()
             arr = datasets[k]["__y_ret__"].values.astype(float)

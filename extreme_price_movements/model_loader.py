@@ -315,8 +315,8 @@ def load_alpha_models(native_dir: str) -> dict:
     
     # Build final structure with best horizon and multi-horizon support
     for (side, kind), h_models in models_by_side_kind.items():
-        if side not in alpha_models:
-            alpha_models[side] = {}
+        # Build strategy_id from side and kind (legacy format: side_kind)
+        strategy_id = f"{side}_{kind}"
         
         # Select best horizon (highest H for now, could use metrics)
         best_H = max(h_models.keys())
@@ -330,11 +330,13 @@ def load_alpha_models(native_dir: str) -> dict:
                 "feat_cols": info["feat_cols"],
             }
         
-        alpha_models[side][kind] = {
+        # Use flat dict structure: alpha_models[strategy_id]
+        alpha_models[strategy_id] = {
             "model": best_info["model"],
             "feat_cols": best_info["feat_cols"],
             "H": best_H,
             "models_by_h": models_by_h,
+            "trade_side": side,  # Keep for reference
         }
     
     return alpha_models

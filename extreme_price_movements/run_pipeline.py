@@ -495,7 +495,7 @@ def _label_artifacts_ready(cfg, ts_sig):
         for strat in strategies:
             side = strat["trade_side"]
             k = strat["strategy_id"]
-            required.append(f"train_{side}_{k}_{h}")
+            required.append(f"train_{k}_{h}")
 
     for name in required:
         fpath = os.path.join(

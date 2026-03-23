@@ -149,7 +149,13 @@ from extreme_price_movements.utils import tprint
 
 EPS = 1e-12
 TBM_CACHE_VERSION = 2
-ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS)
+ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS) + [
+    "adx_zscore", 
+    "ema_velocity_divergence", 
+    "multi_timescale_volatility_shape",
+    "trend_persistence_vs_exhaustion",
+    "trend_persistence"
+]
 USE_15M_REFINEMENT = True  # Feature toggle to disable 15m data download/refinement
 _HF_15M_FAILED_SYMBOLS: set[str] = set()
 _HF_15M_MEMORY_CACHE: Dict[str, pd.DataFrame] = {}
@@ -991,14 +997,14 @@ def _load_panel_from_store(
             list(set(all_syms) | set(ohlcv_syms))
         )
 
-        # Use a configurable subsample step; default keeps 1/2 of symbols (USDT-only universe).
-        # Previously 3 (1/3 of all quotes), now 2 (1/2 of USDT-only) for better coverage with native data.
-        _step = max(1, int(cfg.get("tbm_symbol_subsample_step", 2)))
+        # Use a configurable subsample step; default keeps 1/4 of symbols (USDT-only universe).
+        # Previously 2 (1/2 of USDT-only), now 4 (1/4 of USDT-only) for more aggressive downsampling.
+        _step = max(1, int(cfg.get("tbm_symbol_subsample_step", 4)))
         train_syms = sorted(all_syms)[::_step]
-        # Cap: honour explicit override; otherwise use half the live margin universe size
-        # so "step=2" truly means 1/2 of the USDT margin universe (not 1/2 of local store).
+        # Cap: honour explicit override; otherwise use 1/4 of the live margin universe size
+        # so "step=4" truly means 1/4 of the USDT margin universe (not 1/4 of local store).
         _default_max = (
-            max(1, len(margin_symbols) // 2)
+            max(1, len(margin_symbols) // 4)
             if margin_symbols
             else int(cfg.get("fetch_symbols_M", 600))
         )
@@ -1067,36 +1073,54 @@ def _load_features_from_data_root(
     symbols: Optional[List[str]] = None,
     feature_keys: Optional[Sequence[str]] = None,
 ) -> Optional[Dict[str, pd.DataFrame]]:
-    """Load features from the latest feature timestamp in data_root.
+    """Load features from all available feature timestamps in data_root (descending order).
 
-    Only loads TEST_FEATURE_KEYS to minimize memory usage.
+    Merges features from multiple snapshots to handle partial/delta updates.
     """
-    ts = _find_latest_feature_ts(cfg["data_root"])
-    if ts is None:
-        tprint(f"No feature directories found in {cfg['data_root']}/features")
+    feat_root = Path(cfg["data_root"]) / "features"
+    if not feat_root.exists():
+        tprint(f"Feature root {feat_root} not found.")
         return None
 
-    feat_dir = Path(cfg["data_root"]) / "features" / ts.strftime("%Y%m%d_%H%M%S")
-    if not feat_dir.exists():
+    # Find all timestamped directories, sorted descending (newest first)
+    all_dirs = sorted([d for d in feat_root.iterdir() if d.is_dir()], key=lambda x: x.name, reverse=True)
+    if not all_dirs:
+        tprint(f"No feature directories found in {feat_root}")
         return None
-
-    tprint(f"Loading features from {feat_dir}")
 
     feature_keys = list(feature_keys or ACTIVE_TEST_FEATURE_KEYS)
-    # Load only configured feature keys to minimize memory
-    columns = list(dict.fromkeys(feature_keys))
-    dfs = _read_symbol_parquet_dir(feat_dir, symbols=symbols, columns=columns)
+    remaining_keys = set(feature_keys)
     feat_buf: Dict[str, Dict[str, pd.Series]] = {}
 
-    # Only process columns that are in configured feature keys.
-    test_keys_set = set(feature_keys)
-    for sym, df in dfs.items():
-        for c in df.columns:
-            if c in test_keys_set:  # Only keep test feature keys
-                feat_buf.setdefault(c, {})[sym] = pd.to_numeric(df[c], errors="coerce")
+    tprint(f"Attempting to load {len(remaining_keys)} features from {len(all_dirs)} snapshots...")
+
+    for d_path in all_dirs:
+        if not remaining_keys:
+            break
+
+        current_requested = list(remaining_keys)
+        try:
+            # _read_symbol_parquet_dir handles column filtering efficiently
+            dfs = _read_symbol_parquet_dir(d_path, symbols=symbols, columns=current_requested)
+            found_in_this_dir = set()
+            for sym, df in dfs.items():
+                for c in df.columns:
+                    if c in remaining_keys:
+                        feat_buf.setdefault(c, {})[sym] = pd.to_numeric(df[c], errors="coerce")
+                        found_in_this_dir.add(c)
+            
+            if found_in_this_dir:
+                tprint(f"  Loaded {len(found_in_this_dir)} features from {d_path.name}")
+                remaining_keys -= found_in_this_dir
+        except Exception as e:
+            tprint(f"  Skipping {d_path.name} due to error or missing columns: {e}")
+
+    if not feat_buf:
+        tprint("No features could be loaded from any snapshots.")
+        return None
 
     out = {k: pd.DataFrame(v).sort_index() for k, v in feat_buf.items()}
-    tprint(f"Loaded {len(out)} features (configured key universe only)")
+    tprint(f"TOTAL: Loaded {len(out)} features. Missing after merge: {remaining_keys}")
     return out
 
 
@@ -2561,6 +2585,8 @@ def build_strategy_masks(
     X, metadata, _ = fp.prepare_features(
         feats_1d, idx_flat, sym_flat, cfg
     )
+    tprint(f"[DIAGNOSTIC] FeatureProcessor produced {X.shape[1]} features. Sample metadata: {[m.feature_name for m in metadata[:10]]}")
+    tprint(f"[DIAGNOSTIC] Raw feature keys available: {list(artifacts.features.keys())[:20]}")
     resolver = CanonicalRuleMaskResolver(X, metadata)
 
     out = {}
@@ -2575,9 +2601,39 @@ def build_strategy_masks(
             mask_2d = mask_1d.reshape((n_ts, n_syms))
             out[sid] = pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
             tprint(f"[DIAGNOSTIC] Strategy {sid} has {out[sid].sum().sum():,} active triggers")
-        except Exception as e:
-            tprint(f"[DIAGNOSTIC] Strategy {sid} resolution failed: {e}")
-            out[sid] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+        except Exception:
+            # Fallback: attempt to reconstruct canonical trigger from flattened ID
+            # Flattened ID format: side_reg_AAA_reg_BBB_reg_CCC
+            if "_reg_" in sid:
+                splits = sid.split("_reg_")
+                # reconstructed parts start with 'reg_'
+                rule_parts = [f"reg_{p}" for p in splits[1:]]
+                # Canonical resolver expects exactly 3 slots: (trigger)|(location)|(regime)
+                slots = ["(*)"] * 3
+                if len(rule_parts) == 1:
+                    slots[0] = f"({rule_parts[0]}==1)"
+                elif len(rule_parts) == 2:
+                    slots[0] = f"({rule_parts[0]}==1)"
+                    slots[1] = f"({rule_parts[1]}==1)"
+                elif len(rule_parts) >= 3:
+                    slots[0] = f"({rule_parts[0]}==1)"
+                    slots[1] = f"({rule_parts[1]}==1)"
+                    # Combine all remaining parts into the 3rd slot using &
+                    last_slot_val = " & ".join([f"{p}==1" for p in rule_parts[2:]])
+                    slots[2] = f"({last_slot_val})"
+                
+                recon_base = "|".join(slots)
+                
+                try:
+                    mask_1d = resolver.get_mask(recon_base)
+                    mask_2d = mask_1d.reshape((n_ts, n_syms))
+                    out[sid] = pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
+                    tprint(f"[DIAGNOSTIC] Strategy {sid} RECONSTRUCTED as {recon_base}: {out[sid].sum().sum():,} active triggers")
+                except Exception as e2:
+                    tprint(f"[DIAGNOSTIC] Strategy {sid} failed even with reconstruction {recon_base}: {e2}")
+                    out[sid] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+            else:
+                out[sid] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
 
     # Add union buckets expected by evaluate_config based on strategy side prefixes
     long_masks = [m for sid, m in out.items() if sid.startswith("long_")]
@@ -3374,7 +3430,7 @@ def evaluate_config(
                 str(side),
                 str(cfg.get("horizon_scaling", "sqrt")),
                 float(cfg.get("horizon_base", 4.0)),
-                float(cfg.get("tbm_event_fraction", 0.2)), # Match evaluation default
+                float(cfg.get("tbm_event_fraction", 0.1)), # Match evaluation default
                 _index_cache_key(artifacts.panel["close"].index),
             )
 
@@ -3469,7 +3525,7 @@ def evaluate_config(
                 # ── Event Subsampling (from periods_symbols_management SamplingPolicy) ──
                 # Use SamplingPolicy to control the number of events processed
                 # This dramatically reduces computation time by subsampling before heavy labeling
-                event_fraction = float(cfg.get("tbm_event_fraction", 0.2))
+                event_fraction = float(cfg.get("tbm_event_fraction", 0.1))
                 if event_fraction < 1.0:
                     # Subsample the panel by selecting a fraction of timestamps
                     # Use time-block sampling to preserve temporal structure
@@ -8100,8 +8156,20 @@ def run(args: argparse.Namespace) -> None:
 
     global ACTIVE_TEST_FEATURE_KEYS
     ACTIVE_TEST_FEATURE_KEYS = list(
-        runtime_cfg.get("test_feature_keys", TEST_FEATURE_KEYS)
+        set(runtime_cfg.get("test_feature_keys", TEST_FEATURE_KEYS))
+        | {
+            "adx_zscore", 
+            "ema_velocity_divergence", 
+            "multi_timescale_volatility_shape",
+            "trend_persistence_vs_exhaustion",
+            "trend_persistence"
+        }
     )
+
+    # MONKEY-PATCH mask generator to include our new raw features
+    import extreme_price_movements.lgbm_based_mask_generation as lgbm_masks
+    lgbm_masks.TEST_FEATURE_KEYS = list(set(lgbm_masks.TEST_FEATURE_KEYS) | set(ACTIVE_TEST_FEATURE_KEYS))
+    tprint(f"[DIAGNOSTIC] Mask generator TEST_FEATURE_KEYS expanded to {len(lgbm_masks.TEST_FEATURE_KEYS)}")
 
     # Resolve data_root if relative
     data_root = runtime_cfg.get("data_root", "data")

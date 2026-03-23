@@ -409,8 +409,8 @@ class FeatureProcessor:
                         raw_cols.append(bool_arr_bot)
                         raw_names.append(bool_name_bot)
 
-                    # Only the 30-70 band
-                    for q_band in [0.30]:
+                    # Expanded bands for LGBM strategies
+                    for q_band in [0.20, 0.25, 0.30, 0.40]:
                         q_band_upper = 1.0 - q_band
                         band_name = f"{group_name[:3]}_{src}_ts_band{int(q_band*100)}_{int(q_band_upper*100)}"
                         band_arr = (
@@ -811,6 +811,30 @@ class FeatureProcessor:
 # MODEL TRAINING & CONSTRAINTS
 # =============================================================================
 
+def make_regime_weights(fwd_ret: np.ndarray) -> np.ndarray:
+    """
+    Bounded multiplicative sample weight built from move size, tradeability,
+    and tail emphasis.
+    """
+    fee = 0.003
+    net = np.maximum(np.abs(fwd_ret) - fee, 0.0)
+
+    # Scale by 90th percentile of net move
+    scale = np.quantile(net, 0.90) if len(net) > 0 else 1.0
+    scale = max(scale, 1e-6)
+
+    move_trade = np.clip(net / scale, 0.0, 1.0)
+
+    # Slight tail emphasis (fwd_ret is assumed to be direction-aligned)
+    q80 = np.quantile(fwd_ret, 0.80) if len(fwd_ret) > 0 else 0.0
+    q = (fwd_ret > q80).astype(float)
+
+    # w = (1.0 + 1.5 * move_trade) * (1.0 + 0.15 * q)
+    w = (1.0 + 1.5 * move_trade) * (1.0 + 0.15 * q)
+    w = np.clip(w, 0.75, 2.0)
+    w = w / max(w.mean(), 1e-6)
+    return w.astype(np.float32)
+
 
 class InteractionModel:
     """
@@ -824,10 +848,12 @@ class InteractionModel:
         self,
         metadata: List[FeatureMetadata],
         cfg: Dict[str, Any],
+        side: str = "long",
         allowed_group_pairs: Optional[Sequence[Tuple[str, str]]] = None,
     ):
         self.metadata = metadata
         self.cfg = cfg
+        self.side = side
         self.allowed_group_pairs = allowed_group_pairs
         self.constraints = self._build_interaction_constraints()
 
@@ -952,21 +978,35 @@ class InteractionModel:
         if len(y_va) == 0:
             raise ValueError(f"Fold {fold_id} has no finite validation samples")
 
+        # Sample weights for regime mining
+        sample_weight = make_regime_weights(y_tr)
+
         y_lo = float(np.nanquantile(y_tr, 0.01))
         y_hi = float(np.nanquantile(y_tr, 0.99))
         y_tr_reg = np.clip(y_tr, y_lo, y_hi).astype(np.float32, copy=False)
         y_va_reg = np.clip(y_va, y_lo, y_hi).astype(np.float32, copy=False)
 
+        alpha_hpo = float(self.cfg.get("alpha_hpo", 0.95))
+        alpha = alpha_hpo if self.side == "long" else (1.0 - alpha_hpo)
+
+        max_depth = int(self.cfg.get("lgbm_max_depth", 3)) + 1
+        num_leaves = int(self.cfg.get("lgbm_num_leaves", 2**max_depth))
+
+        lambda_l1 = float(self.cfg.get("lambda_l1", 0.0)) * 1.33
+        lambda_l2 = float(self.cfg.get("lambda_l2", 0.0)) * 1.33
+
         params = {
-            "objective": "regression",
-            "metric": "l2",
+            "objective": "quantile",
+            "alpha": alpha,
+            "metric": "quantile",
             "boosting_type": "gbdt",
-            "max_depth": self.cfg.get("lgbm_max_depth", 3),
-            "num_leaves": 8,
+            "max_depth": max_depth,
+            "num_leaves": num_leaves,
             "min_data_in_leaf": max(20, int(0.001 * X_tr.shape[0])),
-            "learning_rate": 0.03,
-            "n_estimators": 1000,  # Use n_estimators instead of num_iterations
-            # num_iterations removed from params to avoid warning - early stopping handles it
+            "learning_rate": self.cfg.get("learning_rate", 0.03),
+            "n_estimators": 1000,
+            "lambda_l1": lambda_l1,
+            "lambda_l2": lambda_l2,
             "verbosity": -1,
             "random_state": seed,
             "extra_trees": self.cfg.get("extra_trees", True),
@@ -984,6 +1024,7 @@ class InteractionModel:
         model.fit(
             X_tr,
             y_tr_reg,
+            sample_weight=sample_weight,
             eval_set=[(X_va, y_va_reg)],
             callbacks=[
                 early_stopping(stopping_rounds=50),
@@ -4878,7 +4919,7 @@ def run_mining_stage(
             raise ValueError(f"Invalid fold {fold_id} in {stage_name}")
 
     model_engine = InteractionModel(
-        metadata, cfg, allowed_group_pairs=allowed_group_pairs
+        metadata, cfg, side=explicit_side, allowed_group_pairs=allowed_group_pairs
     )
     constraint_summary = model_engine.get_constraint_summary()
     with open(output_dir / "interaction_constraint_summary.json", "w") as f:
@@ -7948,6 +7989,11 @@ if __name__ == "__main__":
         default="production",
         help="Threshold preset",
     )
+    parser.add_argument(
+        "--boolean-only",
+        action="store_true",
+        help="Only use boolean features (triggers)",
+    )
     args = parser.parse_args()
 
     cfg = dict(CFG)
@@ -8061,6 +8107,12 @@ if __name__ == "__main__":
         + list(LOCATION_FILTER_COLUMNS)
         + list(INTRADAY_TRIGGER_COLUMNS)
     )
+
+    if args.boolean_only:
+        tprint("MODE: boolean_only. Filtering to trigger columns only.")
+        requested_feature_keys = [
+            k for k in requested_feature_keys if k in INTRADAY_TRIGGER_COLUMNS
+        ]
     feat_dict_raw = load_features_selected(
         ts=ts,
         root_dir=os.path.dirname(os.path.dirname(feature_path)),

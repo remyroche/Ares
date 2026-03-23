@@ -207,7 +207,7 @@ def _load_label_datasets(cfg, run_id):
     for side in trade_sides:
         for k in kinds:
             for H in horizons:
-                name = f"train_{side}_{k}_{H}"
+                name = f"train_{k}_{H}"
                 df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
                 if df is not None:
                     datasets[name] = df

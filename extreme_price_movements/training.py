@@ -11622,11 +11622,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     return {
         "alpha_models": final_models,
         "alpha_oof_metrics": {
-            f"{side}_{kind}": ((final_models.get(side) or {}).get(kind) or {}).get(
-                "alpha_diag", {}
-            )
-            for side in trade_sides
-            for kind in kinds
+            strategy_id: (final_models.get(strategy_id) or {}).get("alpha_diag", {})
+            for strategy_id in [s["strategy_id"] for s in get_strategies(cfg)]
         },
         "exh_models": exh_models,
         "meta_models": meta_models,

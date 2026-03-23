@@ -11381,7 +11381,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     for strat in strategies:
         side = strat["trade_side"]
         kind = strat["strategy_id"]
-        conf = final_models.get(side, {}).get(kind)
+        conf = final_models.get(kind)
         if not conf:
             continue
         models_by_h = conf.get("models_by_h", {})
@@ -11394,7 +11394,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 }
             }
         for H_rep, h_info in models_by_h.items():
-            ds_key = f"train_{side}_{kind}_{H_rep}"
+            ds_key = f"train_{kind}_{H_rep}"
             if ds_key not in datasets:
                 continue
             race = h_info["model"]
@@ -11429,7 +11429,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 else:
                     groups_model = None
                 entry = _base_model_report_entry(
-                    model_name=f"{side}_{kind}_H{H_rep}:{cand_name}",
+                    model_name=f"{kind}_H{H_rep}:{cand_name}",
                     side=side,
                     kind=kind,
                     dm=dm,
@@ -11491,14 +11491,14 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             )
             continue
 
-        conf = final_models.get(side, {}).get(kind)
+        conf = final_models.get(kind)
         if not conf:
             continue
         models_by_h = conf.get("models_by_h", {})
         # Collect available horizon OOFs (same logic as train_meta)
         _h_oofs = {}
         for h in CANON_HORIZONS:
-            ds_key = f"train_{side}_{kind}_{h}"
+            ds_key = f"train_{kind}_{h}"
             if ds_key not in datasets:
                 continue
             race_h = models_by_h.get(h, {}).get("model") if h in models_by_h else None
@@ -11526,7 +11526,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
         def _aligned_ret(h):
             """Get __y_ret__ for horizon h, aligned to len(dfm)."""
-            k = f"train_{side}_{kind}_{h}"
+            k = f"train_{kind}_{h}"
             if k not in datasets:
                 return y_ret.copy()
             arr = datasets[k]["__y_ret__"].values.astype(float)
@@ -11621,12 +11621,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
     return {
         "alpha_models": final_models,
-        "alpha_oof_metrics": {
-            f"{side}_{kind}": ((final_models.get(side) or {}).get(kind) or {}).get(
+                "alpha_oof_metrics": {
+            strat["strategy_id"]: (final_models.get(strat["strategy_id"]) or {}).get(
                 "alpha_diag", {}
             )
-            for side in trade_sides
-            for kind in kinds
+            for strat in get_strategies(cfg)
         },
         "exh_models": exh_models,
         "meta_models": meta_models,

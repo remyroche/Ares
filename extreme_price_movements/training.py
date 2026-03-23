@@ -11621,7 +11621,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
     return {
         "alpha_models": final_models,
-                "alpha_oof_metrics": {
+        "alpha_oof_metrics": {
             strat["strategy_id"]: (final_models.get(strat["strategy_id"]) or {}).get(
                 "alpha_diag", {}
             )

@@ -5,7 +5,6 @@ from dataclasses import dataclass
 import os
 import glob
 from extreme_price_movements.utils import tprint
-from extreme_price_movements.optimization_utils import filter_low_variance_assets
 
 BINANCE_API = "https://api.binance.com"
 HARDCODED_EXCLUDED_SYMBOLS = frozenset({
@@ -23,6 +22,7 @@ def _normalize_symbol(symbol: str) -> str:
 
 def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
     """Return at most one symbol per base asset for USDT/USDC/BUSD quote variants."""
+    original_count = len(symbols)
 
     best_by_base: dict[str, tuple[int, str]] = {}
     passthrough: set[str] = set()
@@ -45,7 +45,12 @@ def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
 
     deduped = set(passthrough)
     deduped.update(symbol for _, symbol in best_by_base.values())
-    return sorted(deduped)
+    result = sorted(deduped)
+
+    removed = original_count - len(result)
+    if removed > 0:
+        tprint(f"Quote deduplication removed {removed} duplicate symbols: {original_count} → {len(result)}")
+    return result
 
 
 def apply_hardcoded_universe_exclusions(symbols: list[str]) -> list[str]:
@@ -186,8 +191,8 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
 
         scored.sort(key=lambda x: x[0], reverse=True)
 
-        # Remove bottom 30 by volume
-        bottom_n = 30
+        # Remove bottom 5 by volume
+        bottom_n = 5
         if len(scored) > bottom_n:
             top_m = [x[1] for x in scored[:-bottom_n]]
         else:
@@ -206,8 +211,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
     """
     Standardized training universe selection:
     1. Fetch Universe (All except bottom 30 by volume)
-    2. Variance Filter (Top N% by volatility)
-    3. Union with Market Basket
+    2. Union with Market Basket
     """
     def _local_store_symbols(_store):
         out = []
@@ -222,7 +226,6 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
             out.append(raw.replace("_", "/", 1))
         return apply_hardcoded_universe_exclusions(out)
 
-    variance_stride = int(cfg.get("variance_filter_stride", 1) or 1)
     offline_universe = bool(cfg.get("offline_backtest_skip_universe_refresh", False))
     if offline_universe:
         tprint("Training universe: offline mode enabled, skipping margin refresh and live ticker ranking.")
@@ -231,20 +234,8 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         if not base_syms:
             base_syms = list(cfg.get("market_basket", []))
         # In offline mode, use all available symbols (no volume data to remove bottom 30)
-        syms_all = deduplicate_symbols_by_base(
-            list(set(base_syms).union(set(cfg["market_basket"])))
-        )
-        syms_all = apply_hardcoded_universe_exclusions(syms_all)
-        train_syms = filter_low_variance_assets(
-            store,
-            syms_all,
-            lookback_days=30,
-            threshold_pct=cfg["variance_filter_pct"],
-            ts_sig=ts_sig,
-            sample_stride=variance_stride,
-        )
         train_syms = deduplicate_symbols_by_base(
-            list(set(train_syms).union(set(cfg["market_basket"])))
+            list(set(base_syms).union(set(cfg["market_basket"])))
         )
         train_syms = apply_hardcoded_universe_exclusions(train_syms)
         return train_syms
@@ -263,16 +254,8 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
                 margin_symbols = list(cfg.get("market_basket", []))
 
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
-    train_syms = filter_low_variance_assets(
-        store,
-        syms_all,
-        lookback_days=30,
-        threshold_pct=cfg["variance_filter_pct"],
-        ts_sig=ts_sig,
-        sample_stride=variance_stride,
-    )
     train_syms = deduplicate_symbols_by_base(
-        list(set(train_syms).union(set(cfg["market_basket"])))
+        list(set(syms_all).union(set(cfg["market_basket"])))
     )
     train_syms = apply_hardcoded_universe_exclusions(train_syms)
     return train_syms

@@ -1065,7 +1065,7 @@ def _load_close_panel_for_symbols(
             skipped_log.append(f"{s}: Insufficient data ({len(df)} rows < {min_rows})")
             continue
         last_ts = df.index[-1]
-        if (ts_sig - last_ts).days > 7:
+        if (ts_sig - last_ts).days > 180:
             skipped_log.append(f"{s}: Stale data (Last: {last_ts}, Target: {ts_sig})")
             continue
         ser = df["close"].tail(24 * lookback_days).rename(s)
@@ -4531,7 +4531,7 @@ def run_feature_generation_step(
 
             # Check recent data freshness?
             last_ts = df.index[-1]
-            if (ts_sig - last_ts).days > 7:
+            if (ts_sig - last_ts).days > 180:
                 skipped_log.append(
                     f"{s}: Stale data (Last: {last_ts}, Target: {ts_sig})"
                 )
@@ -4787,23 +4787,28 @@ def run_feature_generation_step(
             )
 
     tprint(f"Generated features for {len(loaded_syms)} symbols.")
-    completeness_panel = (
-        close_panel_light
-        if close_panel_light is not None and not close_panel_light.empty
-        else panel_close_ref
-    )
-    _enforce_feature_snapshot_completeness(
-        ts_sig=ts_sig,
-        data_root=cfg["data_root"],
-        expected_keys=expected_keys,
-        panel_close=completeness_panel,
-    )
-    _validate_feature_snapshot_completeness(
-        ts_sig=ts_sig,
-        data_root=cfg["data_root"],
-        expected_keys=expected_keys,
-        panel_close=completeness_panel,
-    )
+    # Skip completeness enforcement during incremental backfill to prevent corruption
+    is_incremental_backfill = backfill_keys and not force_full_recompute
+    if not is_incremental_backfill:
+        completeness_panel = (
+            close_panel_light
+            if close_panel_light is not None and not close_panel_light.empty
+            else panel_close_ref
+        )
+        _enforce_feature_snapshot_completeness(
+            ts_sig=ts_sig,
+            data_root=cfg["data_root"],
+            expected_keys=expected_keys,
+            panel_close=completeness_panel,
+        )
+        _validate_feature_snapshot_completeness(
+            ts_sig=ts_sig,
+            data_root=cfg["data_root"],
+            expected_keys=expected_keys,
+            panel_close=completeness_panel,
+        )
+    else:
+        tprint("Incremental backfill mode: skipping feature completeness normalization to preserve existing features")
     _generate_feature_health_reports(ts_sig, cfg["data_root"])
     tprint("STEP: FEATURE GENERATION COMPLETE")
 

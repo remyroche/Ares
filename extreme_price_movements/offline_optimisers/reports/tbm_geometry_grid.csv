@@ -1,9 +1,9 @@
 cell_key,bucket,config_id,rank,k_tp,tp_anchor,sl_as_tp_pct,base_atr_window,tp_base_pct,tp_abs_lo_pct,sl_abs_lo_pct,mode,stage2_score,stage1_score,probe_auc,probe_auc_bound,probe_status,probe_n_train,probe_n_val,cell_auc,cell_auc_bound,cell_tp_sep,cell_timeout,cell_bind,cell_ap_lift,cell_tp_over_sl,cell_brier,cell_ece,cell_monotonicity,cell_ic_std_time,cell_ic_std_asset,cell_ic_payoff,cell_ic_label,cell_barrier_ratio,cell_n
-MR_long_H2,MR_long,CFG8442CAD91F,99,0.3,0.02924,0.65,840,0.045,0.005,0.005,optuna_s1_TF_short_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
-MR_long_H4,MR_long,CFG8442CAD91F,99,0.3,0.02924,0.65,840,0.045,0.005,0.005,optuna_s1_TF_short_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
-MR_short_H2,MR_short,CFG8442CAD91F,99,0.3,0.02924,0.65,840,0.045,0.005,0.005,optuna_s1_TF_short_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
-MR_short_H4,MR_short,CFG8442CAD91F,99,0.3,0.02924,0.65,840,0.045,0.005,0.005,optuna_s1_TF_short_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
-TF_long_H2,TF_long,CFG8442CAD91F,99,0.3,0.02924,0.65,840,0.045,0.005,0.005,optuna_s1_TF_short_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
-TF_long_H4,TF_long,CFG8442CAD91F,99,0.3,0.02924,0.65,840,0.045,0.005,0.005,optuna_s1_TF_short_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
-TF_short_H2,TF_short,CFG8442CAD91F,99,0.3,0.02924,0.65,840,0.045,0.005,0.005,optuna_s1_TF_short_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
-TF_short_H4,TF_short,CFG8442CAD91F,99,0.3,0.02924,0.65,840,0.045,0.005,0.005,optuna_s1_TF_short_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
+MR_long_H2,MR_long,CFG9004FE2A37,99,0.3,0.01,0.42,840,0.03332959058193427,0.005,0.005,optuna_s1_Candidate_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
+MR_long_H4,MR_long,CFG9004FE2A37,99,0.3,0.01,0.42,840,0.03332959058193427,0.005,0.005,optuna_s1_Candidate_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
+MR_short_H2,MR_short,CFG9004FE2A37,99,0.3,0.01,0.42,840,0.03332959058193427,0.005,0.005,optuna_s1_Candidate_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
+MR_short_H4,MR_short,CFG9004FE2A37,99,0.3,0.01,0.42,840,0.03332959058193427,0.005,0.005,optuna_s1_Candidate_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
+TF_long_H2,TF_long,CFG9004FE2A37,99,0.3,0.01,0.42,840,0.03332959058193427,0.005,0.005,optuna_s1_Candidate_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
+TF_long_H4,TF_long,CFG9004FE2A37,99,0.3,0.01,0.42,840,0.03332959058193427,0.005,0.005,optuna_s1_Candidate_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
+TF_short_H2,TF_short,CFG9004FE2A37,99,0.3,0.01,0.42,840,0.03332959058193427,0.005,0.005,optuna_s1_Candidate_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0
+TF_short_H4,TF_short,CFG9004FE2A37,99,0.3,0.01,0.42,840,0.03332959058193427,0.005,0.005,optuna_s1_Candidate_H4,,,,,fallback,0,0,,,,,,,,,,,,,,,,0

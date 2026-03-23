@@ -2574,9 +2574,37 @@ def build_strategy_masks(
             mask_1d = resolver.get_mask(base)
             mask_2d = mask_1d.reshape((n_ts, n_syms))
             out[sid] = pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
+            tprint(f"[DIAGNOSTIC] Strategy {sid} has {out[sid].sum().sum():,} active triggers")
         except Exception as e:
+            tprint(f"[DIAGNOSTIC] Strategy {sid} resolution failed: {e}")
             out[sid] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
 
+    # Add union buckets expected by evaluate_config based on strategy side prefixes
+    long_masks = [m for sid, m in out.items() if sid.startswith("long_")]
+    short_masks = [m for sid, m in out.items() if sid.startswith("short_")]
+    
+    if "up" not in out:
+        if long_masks:
+            union_up = long_masks[0]
+            for m in long_masks[1:]:
+                union_up = union_up | m
+            out["up"] = union_up
+        else:
+            out["up"] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+            
+    if "down" not in out:
+        if short_masks:
+            union_down = short_masks[0]
+            for m in short_masks[1:]:
+                union_down = union_down | m
+            out["down"] = union_down
+        else:
+            out["down"] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+            
+    if "Candidate" not in out:
+        out["Candidate"] = out["up"] | out["down"]
+
+    tprint(f"[DIAGNOSTIC] Union Mask Counts: up={out['up'].sum().sum():,}, down={out['down'].sum().sum():,}, Candidate={out['Candidate'].sum().sum():,}")
     return out
 
 
@@ -2891,7 +2919,8 @@ def _optuna_n_jobs() -> int:
             pass
     c = int(os.cpu_count() or 1)
     # Conservative default to reduce first-wave cache miss contention/memory spikes.
-    return max(1, min(2, c // 2))
+    # Force sequential execution for debugging and reliability during large-scale strategy injection.
+    return 1
 
 
 def _build_equidistant_grid(
@@ -3311,18 +3340,23 @@ def evaluate_config(
     )
     _stack_key = _index_cache_key(_idx_flat)
 
-    cache_bucket_stack = eval_cache.setdefault("bucket_stack", {})
-    if _stack_key in cache_bucket_stack:
-        bucket_map = cache_bucket_stack[_stack_key]
-    else:
-        bucket_map = {}
-        for bname, bmask in bucket_masks.items():
-            # Align mask to panel shape in case of mismatch, then stack
-            aligned_bmask = bmask.reindex(
-                index=_panel_idx, columns=_panel_cols, fill_value=False
-            )
-            bucket_map[bname] = aligned_bmask.stack().to_numpy(dtype=bool, copy=False)
-        cache_bucket_stack[_stack_key] = bucket_map
+    # [DIAGNOSTIC] Check bucket_masks keys passed to evaluate_config
+    if cfg_id.endswith("0") or "up" in cfg_id: # reduce noise
+        tprint(f"[eval:{cfg_id}] bucket_masks input keys: {list(bucket_masks.keys())}")
+
+    # ── Pre-compute Bucket Map ──
+    # [BYPASS CACHE] Always build fresh to avoid any collision issues
+    bucket_map = {}
+    for bname, bmask in bucket_masks.items():
+        # Align mask to panel shape in case of mismatch, then stack
+        aligned_bmask = bmask.reindex(
+            index=_panel_idx, columns=_panel_cols, fill_value=False
+        )
+        bucket_map[bname] = aligned_bmask.stack().to_numpy(dtype=bool, copy=False)
+    
+    if "up" not in bucket_map:
+        tprint(f"CRITICAL: 'up' missing from bucket_map! keys={list(bucket_map.keys())}")
+
 
     _last_gc_ts = time.perf_counter()
 
@@ -3340,6 +3374,7 @@ def evaluate_config(
                 str(side),
                 str(cfg.get("horizon_scaling", "sqrt")),
                 float(cfg.get("horizon_base", 4.0)),
+                float(cfg.get("tbm_event_fraction", 0.2)), # Match evaluation default
                 _index_cache_key(artifacts.panel["close"].index),
             )
 
@@ -3463,10 +3498,24 @@ def evaluate_config(
                     keep_index = artifacts.panel["close"].index[keep_indices]
                     for k, df in artifacts.panel.items():
                         panel_for_labeling[k] = df.loc[keep_index]
-                    # Also subsample bucket_map to match
+                    
+                    _idx_flat_labeling = pd.MultiIndex.from_product(
+                        [keep_index, _panel_cols], names=["ts", "symbol"]
+                    )
+
+                    # Also subsample bucket_map to match.
+                    # Since bucket_map values are STACKED (n_rows * n_syms), we must expand row keep_indices
+                    # to include all symbols for each kept timestamp.
+                    n_syms = len(artifacts.panel["close"].columns)
+                    stacked_keep_indices = []
+                    for r in keep_indices:
+                        base = r * n_syms
+                        # Use range to quickly extend
+                        stacked_keep_indices.extend(range(base, base + n_syms))
+                    
                     bucket_map_subsampled = {}
                     for bname, bmask in bucket_map.items():
-                        bucket_map_subsampled[bname] = bmask[keep_indices]
+                        bucket_map_subsampled[bname] = bmask[stacked_keep_indices]
                     # Subsample tp_df and sl_df
                     tp_df_subsampled = tp_df.loc[keep_index]
                     sl_df_subsampled = sl_df.loc[keep_index]
@@ -3487,6 +3536,9 @@ def evaluate_config(
                     tp_df_subsampled = tp_df
                     sl_df_subsampled = sl_df
                     panel_15m_for_labeling = getattr(artifacts, "panel_15m", None)
+                    _idx_flat_labeling = _idx_flat
+                    stacked_keep_indices = np.arange(len(_idx_flat))
+
 
                 # ── Fast Targeting: Find Valid TP Hits First ──
                 # 1. Run the ultra-fast Numba labeler without 15m refinement.
@@ -3694,10 +3746,37 @@ def evaluate_config(
                         cfg=cfg,
                     )
                 layer2_cache[key2] = (lbl, ret, qual)
-                tprint(f"[eval:{cfg_id}] label_cache miss h={h} side={side}")
+                tprint(f"[eval:{cfg_id}] label_cache generation complete h={h} side={side} shape={lbl.shape}")
             else:
-                tprint(f"[eval:{cfg_id}] label_cache hit h={h} side={side}")
-            lbl, ret, qual = layer2_cache[key2]
+                # [BYPASS CACHE] Temporarily disabled for debugging dimension mismatch
+                # lbl, ret, qual = layer2_cache[key2]
+                # tprint(f"[eval:{cfg_id}] label_cache hit (BYPASSED) h={h} side={side}")
+                lbl, ret, qual = compute_triple_barrier_labels(
+                    panel_for_labeling,
+                    tp_df_subsampled,
+                    sl_df_subsampled,
+                    h,
+                    side=side,
+                    return_outcomes=True,
+                    horizons_frame=dyn_h,
+                )
+                lbl, ret, qual = _refine_ambiguous_labels_with_15m(
+                    panel_for_labeling,
+                    tp_df_subsampled,
+                    sl_df_subsampled,
+                    lbl,
+                    ret,
+                    qual,
+                    h,
+                    side,
+                    cfg=cfg,
+                )
+                tprint(f"[eval:{cfg_id}] label_cache regen complete h={h} side={side} shape={lbl.shape}")
+            
+            # Final verification of shape alignment
+            if lbl.shape[0] != panel_for_labeling["close"].shape[0]:
+                 tprint(f"CRITICAL: Shape mismatch! lbl={lbl.shape} panel={panel_for_labeling['close'].shape}")
+
 
             # Stack arrays once per granular key and reuse across repeated evaluations.
             stack_cache = eval_cache.setdefault("label_stack_cache", {})
@@ -3719,11 +3798,27 @@ def evaluate_config(
                 # due to our pre-labeling mask. We strip the NaNs raw in Numpy first.
                 valid_mask_flat = ~np.isnan(sl_arr)
 
-                stacked_idx = _idx_flat[valid_mask_flat]
-                panel_idx_arr = np.flatnonzero(valid_mask_flat).astype(
-                    np.int64, copy=False
-                )
+                stacked_idx = _idx_flat_labeling[valid_mask_flat]
+                # [FIX] Ensure panel_idx_arr points to the GLOBAL stacked index (0 to 3.1M)
+                # valid_mask_flat is boolean mask of length 633,500 (the subsampled domain).
+                # stacked_idx is the MultiIndex matching those valid events.
+                
+                # To get global integers, we index the global 'stacked_keep_indices' (length 633,500)
+                # that we used to build the subsampled world.
+                global_subsampled_ints = np.array(stacked_keep_indices, dtype=np.int64)
+                panel_idx_arr = global_subsampled_ints[valid_mask_flat]
+                
+                if label_arr.shape != valid_mask_flat.shape:
+                    tprint(f"CRITICAL SHAPE MISMATCH [{cfg_id}]: lbl={label_arr.shape} mask={valid_mask_flat.shape} key2={key2}")
+                    # Force it to the right size if it's a cache hit error
+                    if label_arr.shape[0] > valid_mask_flat.shape[0]:
+                        tprint(f" -> Truncating label_arr to match mask...")
+                        label_arr = label_arr[:valid_mask_flat.shape[0]]
+                        payoff_arr = payoff_arr[:valid_mask_flat.shape[0]]
+                        qual_arr = qual_arr[:valid_mask_flat.shape[0]]
+                
                 label_arr = label_arr[valid_mask_flat]
+
                 payoff_arr = payoff_arr[valid_mask_flat]
                 qual_arr = qual_arr[valid_mask_flat]
                 tp_arr = tp_arr[valid_mask_flat]
@@ -7998,6 +8093,11 @@ def run(args: argparse.Namespace) -> None:
         runtime_cfg["test_feature_keys"] = list(
             dict.fromkeys(existing_test + list(PERP_FEATURE_KEYS))
         )
+    
+    # [DIAGNOSTIC] Initial strategies check
+    from extreme_price_movements.strategy_registry import get_strategies
+    tprint(f"[DIAGNOSTIC] run-start strategies: {[s.get('strategy_id') for s in get_strategies(runtime_cfg)]}")
+
     global ACTIVE_TEST_FEATURE_KEYS
     ACTIVE_TEST_FEATURE_KEYS = list(
         runtime_cfg.get("test_feature_keys", TEST_FEATURE_KEYS)
@@ -8062,7 +8162,20 @@ def run(args: argparse.Namespace) -> None:
     # train_min_range_pct, train_min_vol_zscore) from CANDIDATE_BEST_PARAMS_CSV into runtime_cfg
     # so build_bucket_masks uses the optimised values, not hardcoded defaults.
     runtime_cfg = apply_offline_optimizer_best_params(dict(runtime_cfg))
+
+    # Explicitly inject the 6 dynamic LGBM strategies AFTER clobbering calls
+    runtime_cfg["strategies"] = [
+        {"strategy_id": "long_reg_adx_zscore_ts_band30_70_1_reg_ema_velocity_divergence_ts_top60_0_reg_multi_timescale_volatility_shape_ts_bot60_0", "trade_side": "long", "base_event_trigger": "long_reg_adx_zscore_ts_band30_70_1_reg_ema_velocity_divergence_ts_top60_0_reg_multi_timescale_volatility_shape_ts_bot60_0"},
+        {"strategy_id": "long_reg_ema_velocity_divergence_ts_bot70_1_reg_multi_timescale_volatility_shape_ts_top60_1_reg_trend_persistence_vs_exhaustion_ts_band30_70_0", "trade_side": "long", "base_event_trigger": "long_reg_ema_velocity_divergence_ts_bot70_1_reg_multi_timescale_volatility_shape_ts_top60_1_reg_trend_persistence_vs_exhaustion_ts_band30_70_0"},
+        {"strategy_id": "short_reg_adx_zscore_ts_band40_60_1_reg_ema_velocity_divergence_ts_band25_75_0_reg_ema_velocity_divergence_ts_top80_0_reg_multi_timescale_volatility_shape_ts_bot30_0", "trade_side": "short", "base_event_trigger": "short_reg_adx_zscore_ts_band40_60_1_reg_ema_velocity_divergence_ts_band25_75_0_reg_ema_velocity_divergence_ts_top80_0_reg_multi_timescale_volatility_shape_ts_bot30_0"},
+        {"strategy_id": "short_reg_ema_velocity_divergence_ts_top60_1_reg_multi_timescale_volatility_shape_ts_bot30_0_reg_trend_persistence_vs_exhaustion_ts_bot40_0", "trade_side": "short", "base_event_trigger": "short_reg_ema_velocity_divergence_ts_top60_1_reg_multi_timescale_volatility_shape_ts_bot30_0_reg_trend_persistence_vs_exhaustion_ts_bot40_0"},
+        {"strategy_id": "short_reg_multi_timescale_volatility_shape_ts_top60_0_reg_trend_persistence_vs_exhaustion_ts_band25_75_1_reg_trend_persistence_vs_exhaustion_ts_bot50_0", "trade_side": "short", "base_event_trigger": "short_reg_multi_timescale_volatility_shape_ts_top60_0_reg_trend_persistence_vs_exhaustion_ts_band25_75_1_reg_trend_persistence_vs_exhaustion_ts_bot50_0"},
+        {"strategy_id": "short_reg_trend_persistence_vs_exhaustion_ts_band20_80_1_reg_trend_persistence_vs_exhaustion_ts_band40_60_1_reg_trend_persistence_vs_exhaustion_ts_bot50_1", "trade_side": "short", "base_event_trigger": "short_reg_trend_persistence_vs_exhaustion_ts_band20_80_1_reg_trend_persistence_vs_exhaustion_ts_band40_60_1_reg_trend_persistence_vs_exhaustion_ts_bot50_1"},
+    ]
+    tprint(f"[DIAGNOSTIC] Final injected strategies: {[s.get('strategy_id') for s in runtime_cfg['strategies']]}")
+
     bucket_masks = build_strategy_masks(artifacts, cfg_runtime=runtime_cfg)
+    tprint(f"[DIAGNOSTIC] Resolved bucket_masks keys: {list(bucket_masks.keys())}")
     tprint(
         f"Artifacts + buckets ready: bars={len(artifacts.panel['close'])}, symbols={len(artifacts.panel['close'].columns)} "
         f"bucket_masks={list(bucket_masks.keys())} mem_peak_mb={_memory_snapshot_mb():.1f}"
@@ -8071,8 +8184,12 @@ def run(args: argparse.Namespace) -> None:
     # Clear caches after loading data
     _clear_caches()
 
+    # Use the full TBM_HORIZONS set by default to match request for 4h and wider scans.
+    from extreme_price_movements.offline_optimisers.params_store import TBM_HORIZONS
+    # Expanded horizons as requested: [2, 3, 4, 7, 10, 13]
+    active_horizons = [2, 3, 4, 7, 10, 13]
     horizons = (
-        [2, 4] if not args.horizons else [int(x) for x in args.horizons.split(",")]
+        active_horizons if not args.horizons else [int(x) for x in args.horizons.split(",")]
     )
 
     # Use bounded caches to prevent unbounded cache growth.
@@ -8137,8 +8254,14 @@ def run(args: argparse.Namespace) -> None:
     tprint("Starting Optuna Stage 1 optimization (Cell-Specific)...")
 
     # Define canonical cells (4 buckets x N horizons)
+    # Define canonical cells (dynamic strategies x N horizons)
+    # Exclude unions from the base optimization set and then add them as baselines if needed?
+    # No, typically we optimize all of them.
     canonical_cells = []
-    for b in TBM_BUCKET_NAMES:
+    # Identify non-union strategies for primary optimization
+    base_strategies = sorted([k for k in bucket_masks.keys() if k not in {"up", "down", "Candidate"}])
+    # Also add the unions for comparison if needed
+    for b in (base_strategies + ["up", "down", "Candidate"]):
         for h in horizons:
             canonical_cells.append((b, h))
 

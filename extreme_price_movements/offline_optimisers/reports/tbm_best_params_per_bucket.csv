@@ -1,5 +1,5 @@
 bucket,config_id,rank_in_bucket,source,k_tp,sl_as_tp_pct,base_atr_window,tp_base_pct,tp_abs_lo_pct,sl_abs_lo_pct,tp_abs_hi_pct,sl_abs_hi_pct,tp_method,sl_method,mode,horizon_base,horizon_scaling,bucket_auc,bucket_auc_bound,bucket_tp_sep,bucket_ap_lift,bucket_tp_over_sl,bucket_timeout,bucket_bind,bucket_ece,bucket_brier,bucket_ic_std_time,bucket_ic_std_asset,bucket_stage2_score,learnability_score,saved_at
-MR_long,CFG8442CAD91F,99,per_bucket,0.3,0.65,840,0.045,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-11T22:00:50.347599+00:00
-MR_short,CFG8442CAD91F,99,per_bucket,0.3,0.65,840,0.045,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-11T22:00:50.408830+00:00
-TF_long,CFG8442CAD91F,99,per_bucket,0.3,0.65,840,0.045,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-11T22:00:50.436346+00:00
-TF_short,CFG8442CAD91F,99,per_bucket,0.3,0.65,840,0.045,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_TF_short_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-11T22:00:50.463729+00:00
+MR_long,CFG9004FE2A37,99,per_bucket,0.3,0.42,840,0.03332959058193427,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-23T00:33:47.011946+00:00
+MR_short,CFG9004FE2A37,99,per_bucket,0.3,0.42,840,0.03332959058193427,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-23T00:33:47.016161+00:00
+TF_long,CFG9004FE2A37,99,per_bucket,0.3,0.42,840,0.03332959058193427,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-23T00:33:47.020350+00:00
+TF_short,CFG9004FE2A37,99,per_bucket,0.3,0.42,840,0.03332959058193427,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-03-23T00:33:47.024520+00:00

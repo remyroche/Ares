@@ -7,14 +7,14 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.fast_funcs import (
-    numba_ewma,
-    numba_rolling_mean,
-    numba_rolling_std,
-    numba_rolling_max,
-    numba_rolling_min,
-    numba_atr,
-    numba_rsi,
     numba_adx,
+    numba_atr,
+    numba_ewma,
+    numba_rolling_max,
+    numba_rolling_mean,
+    numba_rolling_min,
+    numba_rolling_std,
+    numba_rsi,
 )
 
 LOCATION_FILTER_COLUMNS: tuple[str, ...] = (
@@ -266,9 +266,35 @@ INTRADAY_TRIGGER_COLUMNS: tuple[str, ...] = (
     "SHORT_153_SqueezeTrendRelease",
 )
 
-PERSISTED_INTRADAY_LIBRARY_COLUMNS: tuple[str, ...] = (
-    LOCATION_FILTER_COLUMNS + INTRADAY_TRIGGER_COLUMNS
+LOC_CONTINUOUS_COLUMNS: tuple[str, ...] = (
+    "loc_ema_stack_pos_24",
+    "loc_ema_stack_pos_48",
+    "loc_vwap_dev_z_24",
+    "loc_vwap_dev_z_48",
+    "loc_range_pos_24",
+    "loc_range_pos_48",
+    "loc_prior_bar_pos_24",
+    "loc_prior_bar_pos_48",
+    "loc_swing_range_pos_24",
+    "loc_swing_range_pos_48",
+    "loc_session_pos_24",
+    "loc_session_pos_48",
+    "loc_initial_balance_pos_24",
+    "loc_initial_balance_pos_48",
+    "loc_prev_day_range_pos_24",
+    "loc_prev_day_range_pos_48",
+    "loc_prev_week_range_pos_24",
+    "loc_prev_week_range_pos_48",
+    "loc_bb_channel_pos_24",
+    "loc_bb_channel_pos_48",
+    "loc_pullback_depth_24",
+    "loc_pullback_depth_48",
+    "loc_pivot_ladder_pos_24",
+    "loc_pivot_ladder_pos_48",
 )
+
+
+PERSISTED_INTRADAY_LIBRARY_COLUMNS: tuple[str, ...] = LOC_CONTINUOUS_COLUMNS
 
 
 def _new_like(
@@ -371,7 +397,12 @@ def _true_range(
     return _new_like(close, tr, dtype="float32")
 
 
-def _atr(high: pd.Series | pd.DataFrame, low: pd.Series | pd.DataFrame, close: pd.Series | pd.DataFrame, n: int) -> pd.Series | pd.DataFrame:
+def _atr(
+    high: pd.Series | pd.DataFrame,
+    low: pd.Series | pd.DataFrame,
+    close: pd.Series | pd.DataFrame,
+    n: int,
+) -> pd.Series | pd.DataFrame:
     tr = _true_range(high, low, close)
     return numba_ewma(tr, alpha=1.0 / int(n), adjust=False)
 
@@ -1073,954 +1104,113 @@ def build_intraday_crypto_library(
     out["fib_618_low_short"] = (ll_imp + 0.55 * span_imp).astype("float32")
     out["fib_618_high_short"] = (ll_imp + 0.70 * span_imp).astype("float32")
 
-    out["LOC_01_AboveEMA"] = (c > out["ema_mid"]).astype("int8")
-    out["LOC_02_BelowEMA"] = (c < out["ema_mid"]).astype("int8")
-    out["LOC_03_BetweenFastMidEMA"] = (
-        (c < out["ema_fast"]) & (c > out["ema_mid"])
-    ).astype("int8")
-    out["LOC_04_BetweenMidSlowEMA"] = (
-        (c < out["ema_mid"]) & (c > out["ema_slow"])
-    ).astype("int8")
-    out["LOC_05_StackedAboveAllEMAs"] = (
-        (c > out["ema_fast"]) & (c > out["ema_mid"]) & (c > out["ema_slow"])
-    ).astype("int8")
-    out["LOC_06_StackedBelowAllEMAs"] = (
-        (c < out["ema_fast"]) & (c < out["ema_mid"]) & (c < out["ema_slow"])
-    ).astype("int8")
-    out["LOC_07_TouchFastEMA_Long"] = (
-        (l <= out["ema_fast"]) & (c >= out["ema_fast"])
-    ).astype("int8")
-    out["LOC_08_TouchFastEMA_Short"] = (
-        (h >= out["ema_fast"]) & (c <= out["ema_fast"])
-    ).astype("int8")
-    out["LOC_09_TouchMidEMA_Long"] = (
-        (l <= out["ema_mid"]) & (c >= out["ema_mid"])
-    ).astype("int8")
-    out["LOC_10_TouchMidEMA_Short"] = (
-        (h >= out["ema_mid"]) & (c <= out["ema_mid"])
-    ).astype("int8")
-    out["LOC_11_DeepPullbackToSlowEMA_Long"] = (
-        (l <= out["ema_slow"]) & (c > out["ema_slow"])
-    ).astype("int8")
-    out["LOC_12_DeepPullbackToSlowEMA_Short"] = (
-        (h >= out["ema_slow"]) & (c < out["ema_slow"])
-    ).astype("int8")
-    out["LOC_13_EMAValueZone_Long"] = (
-        (c <= out["ema_fast"]) & (c >= out["ema_mid"])
-    ).astype("int8")
-    out["LOC_14_EMAValueZone_Short"] = (
-        (c >= out["ema_fast"]) & (c <= out["ema_mid"])
-    ).astype("int8")
-    out["LOC_20_AboveVWAP"] = (c > out["vwap_session"]).astype("int8")
-    out["LOC_21_BelowVWAP"] = (c < out["vwap_session"]).astype("int8")
-    out["LOC_22_AtVWAP_Long"] = (
-        (l <= out["vwap_session"]) & (c >= out["vwap_session"])
-    ).astype("int8")
-    out["LOC_23_AtVWAP_Short"] = (
-        (h >= out["vwap_session"]) & (c <= out["vwap_session"])
-    ).astype("int8")
-    out["LOC_24_VWAPPlus1Dev"] = (c >= out["vwap_session"] + out["vwap_dev_1"]).astype(
-        "int8"
-    )
-    out["LOC_25_VWAPMinus1Dev"] = (c <= out["vwap_session"] - out["vwap_dev_1"]).astype(
-        "int8"
-    )
-    out["LOC_26_VWAPPlus2Dev"] = (c >= out["vwap_session"] + out["vwap_dev_2"]).astype(
-        "int8"
-    )
-    out["LOC_27_VWAPMinus2Dev"] = (c <= out["vwap_session"] - out["vwap_dev_2"]).astype(
-        "int8"
-    )
-    out["LOC_28_BetweenVWAPAndPlus1Dev"] = (
-        (c > out["vwap_session"]) & (c < out["vwap_session"] + out["vwap_dev_1"])
-    ).astype("int8")
-    out["LOC_29_BetweenVWAPAndMinus1Dev"] = (
-        (c < out["vwap_session"]) & (c > out["vwap_session"] - out["vwap_dev_1"])
-    ).astype("int8")
-    out["LOC_30_ReclaimVWAPZone_Long"] = (
-        (c > out["vwap_session"]) & (c.shift(1) <= out["vwap_session"].shift(1))
-    ).astype("int8")
-    out["LOC_31_LoseVWAPZone_Short"] = (
-        (c < out["vwap_session"]) & (c.shift(1) >= out["vwap_session"].shift(1))
-    ).astype("int8")
-    out["LOC_40_UpperQuartileOfRange"] = (out["close_pos_in_range"] >= 0.75).astype(
-        "int8"
-    )
-    out["LOC_41_LowerQuartileOfRange"] = (out["close_pos_in_range"] <= 0.25).astype(
-        "int8"
-    )
-    out["LOC_42_MidRange"] = (
-        (out["close_pos_in_range"] >= 0.40) & (out["close_pos_in_range"] <= 0.60)
-    ).astype("int8")
-    out["LOC_43_NearRangeHigh"] = (
-        _distance(c, out["rolling_high_n"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_44_NearRangeLow"] = (
-        _distance(c, out["rolling_low_n"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_45_AtRangeBreakoutZone_Long"] = (
-        c >= out["rolling_high_n"] - float(p["level_buffer_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_46_AtRangeBreakdownZone_Short"] = (
-        c <= out["rolling_low_n"] + float(p["level_buffer_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_50_AbovePriorHigh"] = (c > h.shift(1)).astype("int8")
-    out["LOC_51_BelowPriorLow"] = (c < l.shift(1)).astype("int8")
-    out["LOC_52_InsidePriorRange"] = ((c <= h.shift(1)) & (c >= l.shift(1))).astype(
-        "int8"
-    )
-    out["LOC_53_NearPriorHigh"] = (
-        _distance(c, h.shift(1)) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_54_NearPriorLow"] = (
-        _distance(c, l.shift(1)) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_55_AboveLastSwingHigh"] = (c > out["last_swing_high"]).astype("int8")
-    out["LOC_56_BelowLastSwingLow"] = (c < out["last_swing_low"]).astype("int8")
-    out["LOC_57_NearLastSwingHigh"] = (
-        _distance(c, out["last_swing_high"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_58_NearLastSwingLow"] = (
-        _distance(c, out["last_swing_low"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_59_BetweenLastSwingLowHigh"] = (
-        (c > out["last_swing_low"]) & (c < out["last_swing_high"])
-    ).astype("int8")
-    out["LOC_70_AboveSessionOpen"] = (c > out["session_open"]).astype("int8")
-    out["LOC_71_BelowSessionOpen"] = (c < out["session_open"]).astype("int8")
-    out["LOC_72_AtSessionOpen_Long"] = (
-        (l <= out["session_open"]) & (c >= out["session_open"])
-    ).astype("int8")
-    out["LOC_73_AtSessionOpen_Short"] = (
-        (h >= out["session_open"]) & (c <= out["session_open"])
-    ).astype("int8")
-    out["LOC_74_AboveInitialBalanceMid"] = (c > out["initial_balance_mid"]).astype(
-        "int8"
-    )
-    out["LOC_75_BelowInitialBalanceMid"] = (c < out["initial_balance_mid"]).astype(
-        "int8"
-    )
-    out["LOC_76_NearInitialBalanceHigh"] = (
-        _distance(c, out["initial_balance_high"])
-        <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_77_NearInitialBalanceLow"] = (
-        _distance(c, out["initial_balance_low"])
-        <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_78_AtSessionHighZone"] = (
-        _distance(c, out["session_high"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_79_AtSessionLowZone"] = (
-        _distance(c, out["session_low"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_80_UpperHalfOfSessionRange"] = (
-        c >= out["session_low"] + 0.5 * (out["session_high"] - out["session_low"])
-    ).astype("int8")
-    out["LOC_81_LowerHalfOfSessionRange"] = (
-        c <= out["session_low"] + 0.5 * (out["session_high"] - out["session_low"])
-    ).astype("int8")
-    out["LOC_90_AbovePrevDayHigh"] = (c > out["prev_day_high"]).astype("int8")
-    out["LOC_91_BelowPrevDayLow"] = (c < out["prev_day_low"]).astype("int8")
-    out["LOC_92_InsidePrevDayRange"] = (
-        (c <= out["prev_day_high"]) & (c >= out["prev_day_low"])
-    ).astype("int8")
-    out["LOC_93_NearPrevDayHigh"] = (
-        _distance(c, out["prev_day_high"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_94_NearPrevDayLow"] = (
-        _distance(c, out["prev_day_low"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_95_AbovePrevDayMid"] = (
-        c > (out["prev_day_high"] + out["prev_day_low"]) / 2.0
-    ).astype("int8")
-    out["LOC_96_BelowPrevDayMid"] = (
-        c < (out["prev_day_high"] + out["prev_day_low"]) / 2.0
-    ).astype("int8")
-    out["LOC_97_NearPrevWeekHigh"] = (
-        _distance(c, out["prev_week_high"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_98_NearPrevWeekLow"] = (
-        _distance(c, out["prev_week_low"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_99_InsidePrevWeekRange"] = (
-        (c <= out["prev_week_high"]) & (c >= out["prev_week_low"])
-    ).astype("int8")
-    out["LOC_110_AboveBBMid"] = (c > out["bb_mid"]).astype("int8")
-    out["LOC_111_BelowBBMid"] = (c < out["bb_mid"]).astype("int8")
-    out["LOC_112_AtBBUpper"] = (
-        c >= out["bb_up"] - float(p["level_buffer_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_113_AtBBLower"] = (
-        c <= out["bb_dn"] + float(p["level_buffer_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_114_OutsideBBUpper"] = (c > out["bb_up"]).astype("int8")
-    out["LOC_115_OutsideBBLower"] = (c < out["bb_dn"]).astype("int8")
-    out["LOC_116_AtKCUpper"] = (
-        c >= out["kc_up"] - float(p["level_buffer_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_117_AtKCLower"] = (
-        c <= out["kc_dn"] + float(p["level_buffer_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_118_BetweenBBMidAndUpper"] = (
-        (c > out["bb_mid"]) & (c < out["bb_up"])
-    ).astype("int8")
-    out["LOC_119_BetweenBBMidAndLower"] = (
-        (c < out["bb_mid"]) & (c > out["bb_dn"])
-    ).astype("int8")
-    out["LOC_130_ShallowPullback_Long"] = (
-        (out["pullback_from_last_impulse_pct"] <= 0.382) & (c > out["impulse_origin"])
-    ).astype("int8")
-    out["LOC_131_DeepPullback_Long"] = (
-        (out["pullback_from_last_impulse_pct"] >= 0.618) & (c > out["impulse_origin"])
-    ).astype("int8")
-    out["LOC_132_ShallowPullback_Short"] = (
-        (out["pullback_from_last_impulse_pct"] <= 0.382)
-        & (c < out["impulse_origin_short"])
-    ).astype("int8")
-    out["LOC_133_DeepPullback_Short"] = (
-        (out["pullback_from_last_impulse_pct"] >= 0.618)
-        & (c < out["impulse_origin_short"])
-    ).astype("int8")
-    out["LOC_134_Fib382Zone_Long"] = (
-        (c <= out["fib_382_high"]) & (c >= out["fib_382_low"])
-    ).astype("int8")
-    out["LOC_135_Fib50Zone_Long"] = (
-        (c <= out["fib_50_high"]) & (c >= out["fib_50_low"])
-    ).astype("int8")
-    out["LOC_136_Fib618Zone_Long"] = (
-        (c <= out["fib_618_high"]) & (c >= out["fib_618_low"])
-    ).astype("int8")
-    out["LOC_137_Fib382Zone_Short"] = (
-        (c >= out["fib_382_low_short"]) & (c <= out["fib_382_high_short"])
-    ).astype("int8")
-    out["LOC_138_Fib50Zone_Short"] = (
-        (c >= out["fib_50_low_short"]) & (c <= out["fib_50_high_short"])
-    ).astype("int8")
-    out["LOC_139_Fib618Zone_Short"] = (
-        (c >= out["fib_618_low_short"]) & (c <= out["fib_618_high_short"])
-    ).astype("int8")
-    out["LOC_150_AtPivotResistance"] = (
-        _distance(c, out["pivot_r1"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_151_AtPivotSupport"] = (
-        _distance(c, out["pivot_s1"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_152_BetweenPivotAndR1"] = (
-        (c > out["pivot"]) & (c < out["pivot_r1"])
-    ).astype("int8")
-    out["LOC_153_BetweenPivotAndS1"] = (
-        (c < out["pivot"]) & (c > out["pivot_s1"])
-    ).astype("int8")
-    out["LOC_154_AtLiquidityPoolHigh"] = (
-        _distance(c, out["equal_highs_level"])
-        <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_155_AtLiquidityPoolLow"] = (
-        _distance(c, out["equal_lows_level"]) <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_156_AtUntestedBreakoutLevel"] = (
-        _distance(c, out["fresh_breakout_level"])
-        <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_157_AtUntestedBreakdownLevel"] = (
-        _distance(c, out["fresh_breakdown_level"])
-        <= float(p["near_level_atr"]) * out["atr"]
-    ).astype("int8")
-    out["LOC_170_NotTooExtendedAboveEMA"] = (
-        _safe_div(c - out["ema_mid"], out["atr"]) <= 1.5
-    ).astype("int8")
+    prev_h = h.shift(1)
+    prev_l = l.shift(1)
+    prev_mid = ((prev_h + prev_l) / 2.0).astype("float32")
 
-    close_gt_prev = c > c.shift(1)
-    close_lt_prev = c < c.shift(1)
-    close_gt_prev2 = c.shift(1) > c.shift(2)
-    close_lt_prev2 = c.shift(1) < c.shift(2)
-    range_buffer = float(p["near_level_atr"]) * out["atr"]
-    ema_10 = out["ema_fast"] if int(p["ema_fast_len"]) == 10 else _ema(c, 10)
-    ema_20 = out["ema_mid"] if int(p["ema_mid_len"]) == 20 else _ema(c, 20)
-    rolling_high_12 = _rolling_high(c, 12)
-    rolling_high_20 = (
-        out["donchian_high_n"] if int(p["dc_len"]) == 20 else _rolling_high(c, 20)
-    )
-    rolling_low_12 = _rolling_low(c, 12)
-    rolling_low_20 = (
-        out["donchian_low_n"] if int(p["dc_len"]) == 20 else _rolling_low(c, 20)
-    )
+    for lb in (24, 48):
+        ema_fast_lb = _ema(c, max(4, lb // 3))
+        ema_mid_lb = _ema(c, max(8, lb // 2))
+        ema_slow_lb = _ema(c, lb)
+        denom_ema = np.maximum((ema_fast_lb - ema_slow_lb).abs(), out["atr"])
+        out[f"loc_ema_stack_pos_{lb}"] = _safe_div(
+            c - ema_mid_lb, denom_ema, eps
+        ).astype("float32")
 
-    out["LONG_01_WideBullBody"] = (
-        (out["range_atr"] >= float(p["range_atr_min"]))
-        & (c > o)
-        & (out["body_ratio"] >= float(p["body_ratio_min"]))
-    ).astype("int8")
-    out["LONG_02_3CloseMomentum"] = (
-        close_gt_prev & close_gt_prev2 & (out["range_atr"] >= float(p["threshold"]))
-    ).astype("int8")
-    out["LONG_03_RollingHighBreakout"] = (
-        (c > out["rolling_high_n"]) & (out["body_ratio"] >= float(p["threshold"]))
-    ).astype("int8")
-    out["LONG_04_EMATagCloseAbove"] = (
-        (l <= out["ema_tag"]) & (c > out["ema_tag"])
-    ).astype("int8")
-    out["SHORT_04_EMATagCloseBelow"] = (
-        (h >= out["ema_tag"]) & (c < out["ema_tag"])
-    ).astype("int8")
-    out["LONG_05_SmallBullContinuation"] = (
-        (c > o) & (out["body_ratio"] <= float(p["threshold"])) & close_gt_prev
-    ).astype("int8")
-    out["SHORT_05_SmallBearContinuation"] = (
-        (c < o) & (out["body_ratio"] <= float(p["threshold"])) & close_lt_prev
-    ).astype("int8")
-    out["LONG_10_2BarMomentum"] = (
-        close_gt_prev & (c.shift(1) > o.shift(1)) & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_10_2BarMomentum"] = (
-        close_lt_prev & (c.shift(1) < o.shift(1)) & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_11_3BarPriceAcceleration"] = (
-        close_gt_prev & close_gt_prev2 & ((c - c.shift(1)) > (c.shift(1) - c.shift(2)))
-    ).astype("int8")
-    out["SHORT_11_3BarPriceAcceleration"] = (
-        close_lt_prev & close_lt_prev2 & ((c.shift(1) - c) > (c.shift(2) - c.shift(1)))
-    ).astype("int8")
-    out["LONG_12_HH_HL_Impulse"] = (
-        (out["hh"] > 0)
-        & (out["hl"] > 0)
-        & (out["bull"] > 0)
-        & (out["body_ratio"] >= float(p["body_ratio_min"]))
-    ).astype("int8")
-    out["SHORT_12_LL_LH_Impulse"] = (
-        (out["ll"] > 0)
-        & (out["lh"] > 0)
-        & (out["bear"] > 0)
-        & (out["body_ratio"] >= float(p["body_ratio_min"]))
-    ).astype("int8")
-    out["LONG_13_BullCloseNearHigh"] = (
-        (out["bull"] > 0)
-        & (out["body_ratio"] >= float(p["body_ratio_min"]))
-        & (out["close_near_high"] > 0)
-        & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["SHORT_13_BearCloseNearLow"] = (
-        (out["bear"] > 0)
-        & (out["body_ratio"] >= float(p["body_ratio_min"]))
-        & (out["close_near_low"] > 0)
-        & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["LONG_14_MomentumWithRelVol"] = (
-        (out["bull"] > 0)
-        & close_gt_prev
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-        & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["SHORT_14_MomentumWithRelVol"] = (
-        (out["bear"] > 0)
-        & close_lt_prev
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-        & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["LONG_15_MomoIgnition"] = (
-        (out["bull"] > 0)
-        & (out["body_ratio"] >= float(p["body_ratio_hi"]))
-        & (out["close_near_high"] > 0)
-        & (out["rel_vol"] >= float(p["rel_vol_hi"]))
-        & (out["range_atr"] >= float(p["range_atr_hi"]))
-    ).astype("int8")
-    out["SHORT_15_MomoIgnition"] = (
-        (out["bear"] > 0)
-        & (out["body_ratio"] >= float(p["body_ratio_hi"]))
-        & (out["close_near_low"] > 0)
-        & (out["rel_vol"] >= float(p["rel_vol_hi"]))
-        & (out["range_atr"] >= float(p["range_atr_hi"]))
-    ).astype("int8")
-    out["LONG_20_HighBreakClose"] = (
-        (c > h.shift(1))
-        & (out["bull"] > 0)
-        & (out["body_ratio"] >= float(p["body_ratio_min"]))
-    ).astype("int8")
-    out["SHORT_20_LowBreakClose"] = (
-        (c < l.shift(1))
-        & (out["bear"] > 0)
-        & (out["body_ratio"] >= float(p["body_ratio_min"]))
-    ).astype("int8")
-    out["LONG_21_DonchianBreak"] = (
-        (c > out["donchian_high_n"].shift(1))
-        & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["SHORT_21_DonchianBreak"] = (
-        (c < out["donchian_low_n"].shift(1))
-        & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["LONG_22_OpeningRangeBreak"] = (
-        (c > out["opening_range_high"])
-        & (out["bull"] > 0)
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
-    out["SHORT_22_OpeningRangeBreak"] = (
-        (c < out["opening_range_low"])
-        & (out["bear"] > 0)
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
-    out["LONG_23_InsideBarBreak"] = (
-        (out["inside_bar"].shift(1) > 0) & (c > h.shift(1)) & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_23_InsideBarBreak"] = (
-        (out["inside_bar"].shift(1) > 0) & (c < l.shift(1)) & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_24_OutsideBarResolution"] = (
-        (out["outside_bar"].shift(1) > 0) & (c > h.shift(1)) & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_24_OutsideBarResolution"] = (
-        (out["outside_bar"].shift(1) > 0) & (c < l.shift(1)) & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_25_NRBreakout"] = (
-        (out["nr_n"].shift(1) > 0)
-        & (c > h.shift(1))
-        & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["SHORT_25_NRBreakout"] = (
-        (out["nr_n"].shift(1) > 0)
-        & (c < l.shift(1))
-        & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["LONG_26_SqueezeRelease"] = (
-        (out["bb_width"] <= float(p["bb_width_thr"]))
-        & (out["kc_contained"] > 0)
-        & (c > out["rolling_high_n"])
-        & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_26_SqueezeRelease"] = (
-        (out["bb_width"] <= float(p["bb_width_thr"]))
-        & (out["kc_contained"] > 0)
-        & (c < out["rolling_low_n"])
-        & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_27_PivotBreak"] = (
-        (c > out["last_swing_high"]) & (out["body_ratio"] >= float(p["body_ratio_min"]))
-    ).astype("int8")
-    out["SHORT_27_PivotBreak"] = (
-        (c < out["last_swing_low"]) & (out["body_ratio"] >= float(p["body_ratio_min"]))
-    ).astype("int8")
-    out["LONG_28_LevelBreakRetestHold"] = (
-        (h > out["prior_resistance"])
-        & (l <= out["prior_resistance"])
-        & (c > out["prior_resistance"])
-    ).astype("int8")
-    out["SHORT_28_LevelBreakRetestHold"] = (
-        (l < out["prior_support"])
-        & (h >= out["prior_support"])
-        & (c < out["prior_support"])
-    ).astype("int8")
-    out["LONG_30_EMA10_PullbackBounce"] = (
-        (out["trend_up_ema"] > 0) & (l <= ema_10) & (c > ema_10) & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_30_EMA10_PullbackReject"] = (
-        (out["trend_dn_ema"] > 0) & (h >= ema_10) & (c < ema_10) & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_31_EMA20_PullbackBounce"] = (
-        (out["trend_up_ema"] > 0) & (l <= ema_20) & (c > ema_20)
-    ).astype("int8")
-    out["SHORT_31_EMA20_PullbackReject"] = (
-        (out["trend_dn_ema"] > 0) & (h >= ema_20) & (c < ema_20)
-    ).astype("int8")
-    out["LONG_32_EMAStackPullback"] = (
-        (out["trend_up_ema"] > 0)
-        & (l <= out["ema_fast"])
-        & (c > out["ema_fast"])
-        & (out["ema_fast"] > out["ema_mid"])
-    ).astype("int8")
-    out["SHORT_32_EMAStackPullback"] = (
-        (out["trend_dn_ema"] > 0)
-        & (h >= out["ema_fast"])
-        & (c < out["ema_fast"])
-        & (out["ema_fast"] < out["ema_mid"])
-    ).astype("int8")
-    out["LONG_33_VWAPPullbackHold"] = (
-        (c.shift(1) > out["vwap_session"].shift(1))
-        & (l <= out["vwap_session"])
-        & (c > out["vwap_session"])
-        & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_33_VWAPPullbackReject"] = (
-        (c.shift(1) < out["vwap_session"].shift(1))
-        & (h >= out["vwap_session"])
-        & (c < out["vwap_session"])
-        & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_34_BreakoutThenInsideContinuation"] = (
-        (c.shift(1) > h.shift(2)) & (out["inside_bar"] > 0) & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_34_BreakdownThenInsideContinuation"] = (
-        (c.shift(1) < l.shift(2)) & (out["inside_bar"] > 0) & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_35_MicroPullbackHigherLow"] = (
-        (out["trend_up_ema"] > 0)
-        & (l > l.shift(1))
-        & (l.shift(1) > l.shift(2))
-        & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_35_MicroPullbackLowerHigh"] = (
-        (out["trend_dn_ema"] > 0)
-        & (h < h.shift(1))
-        & (h.shift(1) < h.shift(2))
-        & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_36_FlagBreak"] = (
-        (out["impulse_up"] > 0)
-        & (out["pullback_channel_down"] > 0)
-        & (c > out["flag_upper_trendline"])
-    ).astype("int8")
-    out["SHORT_36_FlagBreak"] = (
-        (out["impulse_down"] > 0)
-        & (out["pullback_channel_up"] > 0)
-        & (c < out["flag_lower_trendline"])
-    ).astype("int8")
-    out["LONG_37_HighTightFlag"] = (
-        (out["impulse_up"] > 0) & (out["compression_reg"] > 0) & (c > rolling_high_12)
-    ).astype("int8")
-    out["SHORT_37_LowTightFlag"] = (
-        (out["impulse_down"] > 0) & (out["compression_reg"] > 0) & (c < rolling_low_12)
-    ).astype("int8")
-    out["LONG_40_HammerReversal"] = (
-        (out["lower_wick_ratio"] >= float(p["wick_ratio_min"]))
-        & (out["body_ratio"] <= float(p["body_ratio_max"]))
-        & (c > o)
-        & (c > l + float(p["reversal_close_frac"]) * out["range"])
-    ).astype("int8")
-    out["SHORT_40_ShootingStarReversal"] = (
-        (out["upper_wick_ratio"] >= float(p["wick_ratio_min"]))
-        & (out["body_ratio"] <= float(p["body_ratio_max"]))
-        & (c < o)
-        & (c < h - float(p["reversal_close_frac"]) * out["range"])
-    ).astype("int8")
-    out["LONG_41_BullEngulf"] = (
-        (c.shift(1) < o.shift(1)) & (c > o) & (o <= c.shift(1)) & (c >= o.shift(1))
-    ).astype("int8")
-    out["SHORT_41_BearEngulf"] = (
-        (c.shift(1) > o.shift(1)) & (c < o) & (o >= c.shift(1)) & (c <= o.shift(1))
-    ).astype("int8")
-    out["LONG_42_FailedBreakdown"] = (
-        (l < out["rolling_low_n"].shift(1))
-        & (c > out["rolling_low_n"].shift(1))
-        & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_42_FailedBreakout"] = (
-        (h > out["rolling_high_n"].shift(1))
-        & (c < out["rolling_high_n"].shift(1))
-        & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_43_Spring"] = (
-        (l < out["support_level"])
-        & (c > out["support_level"])
-        & (out["lower_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["SHORT_43_Upthrust"] = (
-        (h > out["resistance_level"])
-        & (c < out["resistance_level"])
-        & (out["upper_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["LONG_44_OutsideReversalUp"] = (
-        (out["outside_bar"] > 0) & (c > h.shift(1)) & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_44_OutsideReversalDown"] = (
-        (out["outside_bar"] > 0) & (c < l.shift(1)) & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_45_3BarReversal"] = (
-        (c.shift(2) < o.shift(2)) & (c.shift(1) < c.shift(2)) & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_45_3BarReversal"] = (
-        (c.shift(2) > o.shift(2)) & (c.shift(1) > c.shift(2)) & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_46_StopRunReclaim"] = (
-        (l < l.shift(1))
-        & (l.shift(1) <= _rolling_low(l, int(p["stoprun_len"])).shift(2))
-        & (c > l.shift(1))
-        & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_46_StopRunReject"] = (
-        (h > h.shift(1))
-        & (h.shift(1) >= _rolling_high(h, int(p["stoprun_len"])).shift(2))
-        & (c < h.shift(1))
-        & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_50_BBLowerSnapback"] = (
-        (c < out["bb_dn"]) & (out["rsi"] <= float(p["rsi_os"])) & close_gt_prev
-    ).astype("int8")
-    out["SHORT_50_BBUpperSnapback"] = (
-        (c > out["bb_up"]) & (out["rsi"] >= float(p["rsi_ob"])) & close_lt_prev
-    ).astype("int8")
-    out["LONG_51_KCExtensionRevert"] = (
-        (l < out["kc_dn"]) & (c > out["kc_dn"]) & (out["mr_regime"] > 0)
-    ).astype("int8")
-    out["SHORT_51_KCExtensionRevert"] = (
-        (h > out["kc_up"]) & (c < out["kc_up"]) & (out["mr_regime"] > 0)
-    ).astype("int8")
-    out["LONG_52_VWAPStretchRevert"] = (
-        (c < out["vwap_session"] - float(p["vwap_dev_mult"]) * out["session_stdev"])
-        & close_gt_prev
-        & (out["mr_regime"] > 0)
-    ).astype("int8")
-    out["SHORT_52_VWAPStretchRevert"] = (
-        (c > out["vwap_session"] + float(p["vwap_dev_mult"]) * out["session_stdev"])
-        & close_lt_prev
-        & (out["mr_regime"] > 0)
-    ).astype("int8")
-    out["LONG_53_RSIRecovery"] = (
-        (out["rsi"].shift(1) <= float(p["rsi_os"]))
-        & (out["rsi"] > float(p["rsi_os"]))
-        & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_53_RSIReject"] = (
-        (out["rsi"].shift(1) >= float(p["rsi_ob"]))
-        & (out["rsi"] < float(p["rsi_ob"]))
-        & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_54_StochCrossFromOS"] = (
-        (out["stoch_k"].shift(1) <= float(p["stoch_os"]))
-        & (out["stoch_k"] > out["stoch_d"])
-        & (out["stoch_k"].shift(1) <= out["stoch_d"].shift(1))
-    ).astype("int8")
-    out["SHORT_54_StochCrossFromOB"] = (
-        (out["stoch_k"].shift(1) >= float(p["stoch_ob"]))
-        & (out["stoch_k"] < out["stoch_d"])
-        & (out["stoch_k"].shift(1) >= out["stoch_d"].shift(1))
-    ).astype("int8")
-    out["LONG_60_CloseCrossEMA"] = (
-        (c.shift(1) <= cache.shift("ema_mid", out["ema_mid"], 1))
-        & (c > out["ema_mid"])
-        & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_60_CloseCrossEMA"] = (
-        (c.shift(1) >= cache.shift("ema_mid", out["ema_mid"], 1))
-        & (c < out["ema_mid"])
-        & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_61_FastCrossMid"] = (
-        (out["ema_fast"] > out["ema_mid"])
-        & (out["ema_fast"].shift(1) <= cache.shift("ema_mid", out["ema_mid"], 1))
-        & (out["slope_up"] > 0)
-    ).astype("int8")
-    out["SHORT_61_FastCrossMid"] = (
-        (out["ema_fast"] < out["ema_mid"])
-        & (out["ema_fast"].shift(1) >= cache.shift("ema_mid", out["ema_mid"], 1))
-        & (out["slope_dn"] > 0)
-    ).astype("int8")
-    out["LONG_62_PriceReclaimsEMAStack"] = (
-        (c > out["ema_fast"])
-        & (c > out["ema_mid"])
-        & (c.shift(1) <= cache.shift("ema_mid", out["ema_mid"], 1))
-    ).astype("int8")
-    out["SHORT_62_PriceLosesEMAStack"] = (
-        (c < out["ema_fast"])
-        & (c < out["ema_mid"])
-        & (c.shift(1) >= cache.shift("ema_mid", out["ema_mid"], 1))
-    ).astype("int8")
-    out["LONG_63_EMACompressionExpansion"] = (
-        (out["ema_compression"] > 0) & (c > rolling_high_20) & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_63_EMACompressionExpansion"] = (
-        (out["ema_compression"] > 0) & (c < rolling_low_20) & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_70_VWAPCrossHold"] = (
-        (c.shift(1) <= out["vwap_session"].shift(1))
-        & (c > out["vwap_session"])
-        & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_70_VWAPCrossReject"] = (
-        (c.shift(1) >= out["vwap_session"].shift(1))
-        & (c < out["vwap_session"])
-        & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_71_VWAPReclaimAfterUndercut"] = (
-        (l < out["vwap_session"])
-        & (c > out["vwap_session"])
-        & (out["lower_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["SHORT_71_VWAPRejectAfterOvershoot"] = (
-        (h > out["vwap_session"])
-        & (c < out["vwap_session"])
-        & (out["upper_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["LONG_72_VWAPTrendContinuation"] = (
-        (out["above_vwap"] > 0)
-        & (l <= out["vwap_session"] + float(p["vwap_pullback_buffer"]))
-        & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_72_VWAPTrendContinuation"] = (
-        (out["below_vwap"] > 0)
-        & (h >= out["vwap_session"] - float(p["vwap_pullback_buffer"]))
-        & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_80_RangeLowReversal"] = (
-        (l <= out["session_range_low"] + range_buffer)
-        & (out["bull"] > 0)
-        & (out["lower_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["SHORT_80_RangeHighReversal"] = (
-        (h >= out["session_range_high"] - range_buffer)
-        & (out["bear"] > 0)
-        & (out["upper_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["LONG_81_RangeEscape"] = (
-        (c > out["session_range_high"])
-        & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["SHORT_81_RangeEscape"] = (
-        (c < out["session_range_low"]) & (out["range_atr"] >= float(p["range_atr_min"]))
-    ).astype("int8")
-    out["LONG_82_IBHBreak"] = (
-        (c > out["initial_balance_high"]) & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
-    out["SHORT_82_IBLBreak"] = (
-        (c < out["initial_balance_low"]) & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
-    out["LONG_83_PreviousHighBreak"] = (
-        (c > out["prev_day_high"]) & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_83_PreviousLowBreak"] = (
-        (c < out["prev_day_low"]) & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_84_PreviousLowSweepReclaim"] = (
-        (l < out["prev_day_low"]) & (c > out["prev_day_low"]) & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_84_PreviousHighSweepReject"] = (
-        (h > out["prev_day_high"]) & (c < out["prev_day_high"]) & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_90_RangeExpansion"] = (
-        (out["range_atr"] > out["range_atr"].shift(1))
-        & (out["range_atr"].shift(1) > out["range_atr"].shift(2))
-        & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_90_RangeExpansion"] = (
-        (out["range_atr"] > out["range_atr"].shift(1))
-        & (out["range_atr"].shift(1) > out["range_atr"].shift(2))
-        & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_91_TRExpansionBreak"] = (
-        (out["true_range_atr"] >= float(p["tr_exp_thr"])) & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_91_TRExpansionBreak"] = (
-        (out["true_range_atr"] >= float(p["tr_exp_thr"])) & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_92_CompressionThenExpansion"] = (
-        (out["compression_reg"].shift(1) > 0)
-        & (out["bull"] > 0)
-        & (out["range_atr"] >= float(p["range_atr_break"]))
-    ).astype("int8")
-    out["SHORT_92_CompressionThenExpansion"] = (
-        (out["compression_reg"].shift(1) > 0)
-        & (out["bear"] > 0)
-        & (out["range_atr"] >= float(p["range_atr_break"]))
-    ).astype("int8")
-    out["LONG_93_NR7Expansion"] = (
-        (out["nr7"].shift(1) > 0)
-        & (c > h.shift(1))
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
-    out["SHORT_93_NR7Expansion"] = (
-        (out["nr7"].shift(1) > 0)
-        & (c < l.shift(1))
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
-    out["LONG_100_BOS_Up"] = (
-        (out["last_swing_high"] > out["prior_swing_high"])
-        & (c > out["last_swing_high"])
-    ).astype("int8")
-    out["SHORT_100_BOS_Down"] = (
-        (out["last_swing_low"] < out["prior_swing_low"]) & (c < out["last_swing_low"])
-    ).astype("int8")
-    out["LONG_101_CHOCH_Up"] = (
-        (out["trend_dn_ema"] > 0) & (c > out["last_lower_high"])
-    ).astype("int8")
-    out["SHORT_101_CHOCH_Down"] = (
-        (out["trend_up_ema"] > 0) & (c < out["last_higher_low"])
-    ).astype("int8")
-    out["LONG_102_HigherLowContinuation"] = (
-        (out["last_swing_low"] > out["prior_swing_low"]) & (c > out["last_swing_high"])
-    ).astype("int8")
-    out["SHORT_102_LowerHighContinuation"] = (
-        (out["last_swing_high"] < out["prior_swing_high"]) & (c < out["last_swing_low"])
-    ).astype("int8")
-    out["LONG_103_FlipZoneLong"] = (
-        (c > out["prior_resistance"])
-        & (l <= out["prior_resistance"])
-        & (out["bull"] > 0)
-    ).astype("int8")
-    out["SHORT_103_FlipZoneShort"] = (
-        (c < out["prior_support"]) & (h >= out["prior_support"]) & (out["bear"] > 0)
-    ).astype("int8")
-    out["LONG_110_LongLowerWickAbsorption"] = (
-        (out["lower_wick_ratio"] >= float(p["wick_ratio_hi"]))
-        & (c > o)
-        & (c > l + float(p["absorb_close_frac"]) * out["range"])
-    ).astype("int8")
-    out["SHORT_110_LongUpperWickAbsorption"] = (
-        (out["upper_wick_ratio"] >= float(p["wick_ratio_hi"]))
-        & (c < o)
-        & (c < h - float(p["absorb_close_frac"]) * out["range"])
-    ).astype("int8")
-    out["LONG_111_BearTrapCandle"] = (
-        (l < l.shift(1))
-        & (c > o)
-        & (c > l.shift(1))
-        & (out["lower_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["SHORT_111_BullTrapCandle"] = (
-        (h > h.shift(1))
-        & (c < o)
-        & (c < h.shift(1))
-        & (out["upper_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["LONG_112_DojiResolveUp"] = (
-        (out["body_ratio"].shift(1) <= float(p["doji_body_thr"])) & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_112_DojiResolveDown"] = (
-        (out["body_ratio"].shift(1) <= float(p["doji_body_thr"])) & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_113_PinBarBreakUp"] = (
-        (out["lower_wick_ratio"] >= float(p["wick_ratio_min"]))
-        & (out["body_ratio"] <= float(p["body_ratio_max"]))
-        & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_113_PinBarBreakDown"] = (
-        (out["upper_wick_ratio"] >= float(p["wick_ratio_min"]))
-        & (out["body_ratio"] <= float(p["body_ratio_max"]))
-        & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_120_RSITrendPush"] = (
-        (out["trend_up_ema"] > 0)
-        & (out["rsi"] >= float(p["rsi_trend_min"]))
-        & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_120_RSITrendPush"] = (
-        (out["trend_dn_ema"] > 0)
-        & (out["rsi"] <= float(p["rsi_trend_max"]))
-        & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_121_ADX_DI_Long"] = (
-        (out["adx"] >= 20.0) & (out["plus_di"] > out["minus_di"]) & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_121_ADX_DI_Short"] = (
-        (out["adx"] >= 20.0) & (out["minus_di"] > out["plus_di"]) & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_122_RSIMidlineReclaim"] = (
-        (out["rsi"].shift(1) <= 50.0) & (out["rsi"] > 50.0) & (c > out["ema_mid"])
-    ).astype("int8")
-    out["SHORT_122_RSIMidlineLose"] = (
-        (out["rsi"].shift(1) >= 50.0) & (out["rsi"] < 50.0) & (c < out["ema_mid"])
-    ).astype("int8")
-    out["LONG_130_DislocationUp"] = (
-        (_safe_div((o - c.shift(1)).abs(), out["atr"]) >= float(p["dislocation_thr"]))
-        & (c > o)
-        & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_130_DislocationDown"] = (
-        (_safe_div((o - c.shift(1)).abs(), out["atr"]) >= float(p["dislocation_thr"]))
-        & (c < o)
-        & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_131_DislocationFillHold"] = (
-        (o > h.shift(1)) & (l <= h.shift(1)) & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_131_DislocationFillReject"] = (
-        (o < l.shift(1)) & (h >= l.shift(1)) & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_140_ThreeWhiteSoldiersLite"] = (
-        (out["bull"] > 0)
-        & (out["bull"].shift(1) > 0)
-        & (out["bull"].shift(2) > 0)
-        & close_gt_prev
-        & close_gt_prev2
-    ).astype("int8")
-    out["SHORT_140_ThreeBlackCrowsLite"] = (
-        (out["bear"] > 0)
-        & (out["bear"].shift(1) > 0)
-        & (out["bear"].shift(2) > 0)
-        & close_lt_prev
-        & close_lt_prev2
-    ).astype("int8")
-    out["LONG_141_1_2_3_ReversalUp"] = (
-        (l.shift(2) > l.shift(1)) & (l < l.shift(1)) & (c > h.shift(1))
-    ).astype("int8")
-    out["SHORT_141_1_2_3_ReversalDown"] = (
-        (h.shift(2) < h.shift(1)) & (h > h.shift(1)) & (c < l.shift(1))
-    ).astype("int8")
-    out["LONG_142_PauseThenGo"] = (
-        (c.shift(2) > h.shift(3))
-        & (out["body_ratio"].shift(1) <= float(p["pause_body_thr"]))
-        & (c > h.shift(2))
-    ).astype("int8")
-    out["SHORT_142_PauseThenGo"] = (
-        (c.shift(2) < l.shift(3))
-        & (out["body_ratio"].shift(1) <= float(p["pause_body_thr"]))
-        & (c < l.shift(2))
-    ).astype("int8")
-    out["LONG_150_BreakoutQuality"] = (
-        (c > out["rolling_high_n"].shift(1))
-        & (out["body_ratio"] >= float(p["body_ratio_min"]))
-        & (out["close_near_high"] > 0)
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-        & (out["trend_up_ema"] > 0)
-    ).astype("int8")
-    out["SHORT_150_BreakdownQuality"] = (
-        (c < out["rolling_low_n"].shift(1))
-        & (out["body_ratio"] >= float(p["body_ratio_min"]))
-        & (out["close_near_low"] > 0)
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-        & (out["trend_dn_ema"] > 0)
-    ).astype("int8")
-    out["LONG_151_PullbackQuality"] = (
-        (out["trend_up_ema"] > 0)
-        & (out["above_vwap"] > 0)
-        & (l <= out["ema_fast"])
-        & (c > out["ema_fast"])
-        & (out["lower_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["SHORT_151_PullbackQuality"] = (
-        (out["trend_dn_ema"] > 0)
-        & (out["below_vwap"] > 0)
-        & (h >= out["ema_fast"])
-        & (c < out["ema_fast"])
-        & (out["upper_wick_ratio"] >= float(p["wick_ratio_min"]))
-    ).astype("int8")
-    out["LONG_152_ReversalQuality"] = (
-        (l < out["rolling_low_n"].shift(1))
-        & (c > out["rolling_low_n"].shift(1))
-        & (out["lower_wick_ratio"] >= float(p["wick_ratio_min"]))
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
-    out["SHORT_152_ReversalQuality"] = (
-        (h > out["rolling_high_n"].shift(1))
-        & (c < out["rolling_high_n"].shift(1))
-        & (out["upper_wick_ratio"] >= float(p["wick_ratio_min"]))
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
-    out["LONG_153_SqueezeTrendRelease"] = (
-        (out["bb_width"] <= float(p["bb_width_thr"]))
-        & (out["trend_up_ema"] > 0)
-        & (c > out["rolling_high_n"])
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
-    out["SHORT_153_SqueezeTrendRelease"] = (
-        (out["bb_width"] <= float(p["bb_width_thr"]))
-        & (out["trend_dn_ema"] > 0)
-        & (c < out["rolling_low_n"])
-        & (out["rel_vol"] >= float(p["rel_vol_min"]))
-    ).astype("int8")
+        out[f"loc_vwap_dev_z_{lb}"] = _safe_div(
+            c - out["vwap_session"],
+            np.maximum(out["session_stdev"], out["atr"] * 0.5),
+            eps,
+        ).astype("float32")
+
+        rh_lb = _rolling_high(h, lb)
+        rl_lb = _rolling_low(l, lb)
+        out[f"loc_range_pos_{lb}"] = _safe_div(c - rl_lb, rh_lb - rl_lb, eps).astype(
+            "float32"
+        )
+
+        out[f"loc_prior_bar_pos_{lb}"] = _safe_div(
+            c - prev_mid, prev_h - prev_l, eps
+        ).astype("float32")
+
+        out[f"loc_swing_range_pos_{lb}"] = _safe_div(
+            c - out["last_swing_low"],
+            out["last_swing_high"] - out["last_swing_low"],
+            eps,
+        ).astype("float32")
+
+        out[f"loc_session_pos_{lb}"] = _safe_div(
+            c - out["session_low"],
+            out["session_high"] - out["session_low"],
+            eps,
+        ).astype("float32")
+
+        out[f"loc_initial_balance_pos_{lb}"] = _safe_div(
+            c - out["initial_balance_low"],
+            out["initial_balance_high"] - out["initial_balance_low"],
+            eps,
+        ).astype("float32")
+
+        out[f"loc_prev_day_range_pos_{lb}"] = _safe_div(
+            c - out["prev_day_low"],
+            out["prev_day_high"] - out["prev_day_low"],
+            eps,
+        ).astype("float32")
+
+        out[f"loc_prev_week_range_pos_{lb}"] = _safe_div(
+            c - out["prev_week_low"],
+            out["prev_week_high"] - out["prev_week_low"],
+            eps,
+        ).astype("float32")
+
+        bb_mid_lb = _sma(c, lb)
+        bb_std_lb = _stdev(c, lb)
+        bb_up_lb = (bb_mid_lb + 2.0 * bb_std_lb).astype("float32")
+        bb_dn_lb = (bb_mid_lb - 2.0 * bb_std_lb).astype("float32")
+        out[f"loc_bb_channel_pos_{lb}"] = _safe_div(
+            c - bb_dn_lb, bb_up_lb - bb_dn_lb, eps
+        ).astype("float32")
+
+        hh_lb = _rolling_high(h, lb)
+        ll_lb = _rolling_low(l, lb)
+        span_lb = (hh_lb - ll_lb).astype("float32")
+        pull_from_high = _safe_div(hh_lb - c, span_lb, eps)
+        pull_from_low = _safe_div(c - ll_lb, span_lb, eps)
+        out[f"loc_pullback_depth_{lb}"] = _new_like(
+            c,
+            np.where(
+                c.to_numpy(copy=False) >= (ll_lb + 0.5 * span_lb).to_numpy(copy=False),
+                pull_from_high.to_numpy(copy=False),
+                pull_from_low.to_numpy(copy=False),
+            ),
+            dtype="float32",
+        )
+
+        out[f"loc_pivot_ladder_pos_{lb}"] = _safe_div(
+            c - out["pivot"], out["pivot_r1"] - out["pivot_s1"], eps
+        ).astype("float32")
 
     if isinstance(c, pd.DataFrame):
         if normalized.source_is_dict:
             return {
-                col: val.astype("float32") if hasattr(val, "astype") else val
-                for col, val in out.items()
+                col: out[col].astype("float32")
+                for col in PERSISTED_INTRADAY_LIBRARY_COLUMNS
+                if col in out
             }
+
         stacked = {
-            name: val.stack(dropna=False).astype("float32") for name, val in out.items()
+            name: out[name].stack(dropna=False).astype("float32")
+            for name in PERSISTED_INTRADAY_LIBRARY_COLUMNS
+            if name in out
         }
         result = pd.DataFrame(stacked, index=next(iter(stacked.values())).index)
         result.index.names = ["timestamp", "symbol"]
         return result
 
     result = pd.DataFrame(out, index=base_df.index)
+    result = result.loc[
+        :, [col for col in PERSISTED_INTRADAY_LIBRARY_COLUMNS if col in result.columns]
+    ]
     if normalized.source_is_dict:
         return {col: result[col] for col in result.columns}
     return result

@@ -30,6 +30,7 @@ os.environ.setdefault("LOKY_MAX_CPU_COUNT", "3")
 from extreme_price_movements.config import (
     CFG,
     CONTINUOUS_LOCATION_COLS,
+    LOC_CONTINUOUS_FAMILY_MAP,
     CONTINUOUS_TRIGGER_COLS,
     RIDGE_FEATURE_COLS,
     RIDGE_FEATURE_META,
@@ -327,7 +328,10 @@ class FeatureProcessor:
                         }
                     )
 
-                    family = src.split("_")[0] if "_" in src else group_name
+                    if group_name == "location":
+                        family = LOC_CONTINUOUS_FAMILY_MAP.get(src, "context")
+                    else:
+                        family = src.split("_")[0] if "_" in src else group_name
 
                     for q in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
                         # The threshold `q` directly represents the cutoff.
@@ -456,22 +460,7 @@ class FeatureProcessor:
 
         # 2. Location Features
         if "location" in active_groups:
-            # Discrete booleans
-            for col in LOCATION_FILTER_COLUMNS:
-                if col in feature_dict:
-                    raw_source_features_by_group["location"].add(col)
-                    arr = feature_dict[col].astype(np.int8)
-                    family = col.split("_")[0] if "_" in col else "location"
-                    self._add_metadata(
-                        col,
-                        "location",
-                        "boolean",
-                        source_name=col,
-                        source_family=family,
-                    )
-                    raw_cols.append(arr)
-                    raw_names.append(col)
-            # Continuous booleans
+            # Continuous location features are the sole location source family.
             _add_continuous_features_as_booleans(CONTINUOUS_LOCATION_COLS, "location")
 
         # 3. Regime Features (continuous -> hybrid booleanize)
@@ -8072,10 +8061,12 @@ if __name__ == "__main__":
     tprint(
         f"Loading features from {feature_path} for {len(kept_syms)} planner-surviving symbols..."
     )
-    requested_feature_keys = (
-        list(CFG.get("FEATURE_SELECTION_KEYS", []))
-        + RIDGE_FEATURE_COLS
-        + list(LOCATION_FILTER_COLUMNS)
+    requested_feature_keys = sorted(
+        set(
+            list(CFG.get("FEATURE_SELECTION_KEYS", []))
+            + RIDGE_FEATURE_COLS
+            + list(CONTINUOUS_LOCATION_COLS)
+        )
     )
     tprint(f"Requested feature keys: {len(requested_feature_keys)} (TRIGGER features disabled)")
 

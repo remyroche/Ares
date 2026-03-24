@@ -234,7 +234,58 @@ CONTINUOUS_LOCATION_COLS = [
     "pullback_depth",
     "zscore_price_50",
     "zscore_price_200",
+    "loc_ema_stack_pos_24",
+    "loc_ema_stack_pos_48",
+    "loc_vwap_dev_z_24",
+    "loc_vwap_dev_z_48",
+    "loc_range_pos_24",
+    "loc_range_pos_48",
+    "loc_prior_bar_pos_24",
+    "loc_prior_bar_pos_48",
+    "loc_swing_range_pos_24",
+    "loc_swing_range_pos_48",
+    "loc_session_pos_24",
+    "loc_session_pos_48",
+    "loc_initial_balance_pos_24",
+    "loc_initial_balance_pos_48",
+    "loc_prev_day_range_pos_24",
+    "loc_prev_day_range_pos_48",
+    "loc_prev_week_range_pos_24",
+    "loc_prev_week_range_pos_48",
+    "loc_bb_channel_pos_24",
+    "loc_bb_channel_pos_48",
+    "loc_pullback_depth_24",
+    "loc_pullback_depth_48",
+    "loc_pivot_ladder_pos_24",
+    "loc_pivot_ladder_pos_48",
 ]
+
+LOC_CONTINUOUS_FAMILY_MAP = {
+    "loc_ema_stack_pos_24": "trend",
+    "loc_ema_stack_pos_48": "trend",
+    "loc_vwap_dev_z_24": "liquidity",
+    "loc_vwap_dev_z_48": "liquidity",
+    "loc_range_pos_24": "context",
+    "loc_range_pos_48": "context",
+    "loc_prior_bar_pos_24": "context",
+    "loc_prior_bar_pos_48": "context",
+    "loc_swing_range_pos_24": "context",
+    "loc_swing_range_pos_48": "context",
+    "loc_session_pos_24": "context",
+    "loc_session_pos_48": "context",
+    "loc_initial_balance_pos_24": "context",
+    "loc_initial_balance_pos_48": "context",
+    "loc_prev_day_range_pos_24": "context",
+    "loc_prev_day_range_pos_48": "context",
+    "loc_prev_week_range_pos_24": "context",
+    "loc_prev_week_range_pos_48": "context",
+    "loc_bb_channel_pos_24": "compression",
+    "loc_bb_channel_pos_48": "compression",
+    "loc_pullback_depth_24": "path_structure",
+    "loc_pullback_depth_48": "path_structure",
+    "loc_pivot_ladder_pos_24": "context",
+    "loc_pivot_ladder_pos_48": "context",
+}
 
 
 # Helper/base features produced in features.py that should remain selectable by model heads.
@@ -1745,3 +1796,11 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
     # Time scaling
     "bars_per_hour": 4,  # assume 15m bars default
 }
+
+
+# Legacy cleanup: stop requesting upstream boolean LOC/trigger columns.
+CFG["FEATURE_SELECTION_KEYS"] = [
+    k
+    for k in CFG.get("FEATURE_SELECTION_KEYS", [])
+    if not (k.startswith("LOC_") or k.startswith("LONG_") or k.startswith("SHORT_"))
+]

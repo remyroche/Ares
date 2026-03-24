@@ -939,6 +939,11 @@ def save_features(
             df_sym = df_sym.astype(np.float32, copy=False)
 
             if cutoff_ts is not None:
+                # Ensure timezone compatibility between cutoff and index
+                if df_sym.index.tz is not None and cutoff_ts.tzinfo is None:
+                    cutoff_ts = cutoff_ts.tz_localize(df_sym.index.tz)
+                elif df_sym.index.tz is None and cutoff_ts.tzinfo is not None:
+                    cutoff_ts = cutoff_ts.tz_localize(None)
                 df_sym = df_sym[df_sym.index > cutoff_ts]
                 if df_sym.empty:
                     continue
@@ -980,6 +985,11 @@ def save_features(
         df_sym = pd.DataFrame(col_data, index=time_index)
         df_sym = df_sym.astype(np.float32, copy=False)
         if cutoff_ts is not None:
+            # Ensure timezone compatibility between cutoff and index
+            if df_sym.index.tz is not None and cutoff_ts.tzinfo is None:
+                cutoff_ts = cutoff_ts.tz_localize(df_sym.index.tz)
+            elif df_sym.index.tz is None and cutoff_ts.tzinfo is not None:
+                cutoff_ts = cutoff_ts.tz_localize(None)
             df_sym = df_sym[df_sym.index > cutoff_ts]
         if df_sym.empty:
             continue

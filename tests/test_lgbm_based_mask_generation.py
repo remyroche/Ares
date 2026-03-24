@@ -458,7 +458,7 @@ def test_feature_processor_adds_dense_regime_quantiles_and_median_band():
     assert f"reg_{src}_ts_bot60" in names
     assert f"reg_{src}_ts_top80" in names
     assert f"reg_{src}_ts_bot80" in names
-    assert x.shape[1] == 15
+    assert x.shape[1] == 18
 
 
 def test_evaluate_ridge_pair_composite_accepted():
@@ -902,7 +902,7 @@ def test_build_stage_a_rejection_map_captures_stage_funnel():
 
     assert rejection_map["stage_name"].tolist().count("scorer") == 5
     assert rejection_map["stage_name"].tolist().count("pruner") == 5
-    assert rejection_map["stage_name"].tolist().count("mask_assessor") == 8
+    assert rejection_map["stage_name"].tolist().count("mask_assessor") == 7
     assert rejection_map["stage_name"].tolist().count("context_selector") == 7
 
     scorer_low_support = rejection_map[

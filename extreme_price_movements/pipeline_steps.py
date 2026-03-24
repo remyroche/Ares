@@ -4543,6 +4543,9 @@ def run_feature_generation_step(
                 warmup_start = pd.Timestamp(cutoff_ts) - pd.Timedelta(
                     hours=tail_compute_warmup_hours
                 )
+                # Ensure tz-aware comparison if df.index is tz-aware
+                if df.index.tz is not None and warmup_start.tz is None:
+                    warmup_start = warmup_start.tz_localize("UTC")
                 before_rows = len(df)
                 df = df[df.index > warmup_start]
                 tprint(

@@ -30,6 +30,7 @@ os.environ.setdefault("LOKY_MAX_CPU_COUNT", "3")
 from extreme_price_movements.config import (
     CFG,
     CONTINUOUS_LOCATION_COLS,
+    LOC_CONTINUOUS_FAMILY_MAP,
     CONTINUOUS_TRIGGER_COLS,
     RIDGE_FEATURE_COLS,
     RIDGE_FEATURE_META,
@@ -54,6 +55,47 @@ from extreme_price_movements.utils import tprint
 from extreme_price_movements.hpo_lgbm_regime_miner import run_short_hpo_for_target_horizon
 
 LOGGER = logging.getLogger(__name__)
+
+# =============================================================================
+# TRIAD TARGET CONFIGURATION
+# =============================================================================
+
+# Default horizons for triad target training (in bars)
+TRIAD_DEFAULT_HORIZONS: List[int] = [3, 10]
+
+# Default triad target names
+TRIAD_DEFAULT_TARGET_NAMES: List[str] = ["target_eff", "target_ela", "target_vame"]
+
+# Per-target configuration for triad targets
+TRIAD_TARGET_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "target_eff": {
+        "huber_alpha": 1.0,
+        "learning_rate": 0.03,
+        "min_support_pct": 0.05,
+        "ic_hurdle": 0.02,
+        "description": "Efficiency: direct vs actual path ratio",
+    },
+    "target_ela": {
+        "huber_alpha": 2.0,
+        "learning_rate": 0.02,
+        "min_support_pct": 0.04,
+        "ic_hurdle": 0.015,
+        "description": "Elasticity: reversion tendency at extremes",
+    },
+    "target_vame": {
+        "huber_alpha": 0.5,
+        "learning_rate": 0.04,
+        "min_support_pct": 0.06,
+        "ic_hurdle": 0.025,
+        "description": "Volume-adjusted momentum efficiency",
+    },
+}
+
+# Horizon-specific configuration multipliers
+HORIZON_CONFIGS: Dict[int, Dict[str, Any]] = {
+    3: {"min_data_in_leaf_multiplier": 0.8, "description": "Very short-term"},
+    10: {"min_data_in_leaf_multiplier": 1.0, "description": "Short-term"},
+}
 
 SCORER_REGISTRY_COLUMNS: List[str] = [
     "canonical_key",
@@ -135,19 +177,70 @@ def atomic_to_csv(
     return prepared
 
 
-def build_run_output_dir(cfg: Dict[str, Any]) -> Path:
+def build_run_output_dir(
+    cfg: Dict[str, Any],
+    target_name: Optional[str] = None,
+    horizon: Optional[int] = None,
+    side: Optional[str] = None,
+    stage: Optional[str] = None,
+) -> Path:
+    """
+    Build output directory path for run artifacts.
+
+    Parameters
+    ----------
+    cfg : Dict[str, Any]
+        Configuration dictionary containing 'output_dir' and 'timestamped_run_outputs'
+    target_name : Optional[str]
+        Target name for triad mode (e.g., 'target_eff', 'target_ela', 'target_vame')
+    horizon : Optional[int]
+        Horizon in bars for triad mode
+    side : Optional[str]
+        Side ('long' or 'short') for stage-specific paths
+    stage : Optional[str]
+        Stage name (e.g., 'stage_a_context', 'stage_b_trigger_refinement')
+
+    Returns
+    -------
+    Path
+        Output directory path
+
+    Notes
+    -----
+    When target_name and horizon are provided, creates a triad-style path:
+        base_dir/h{horizon}/{target_name}/{side}/{stage}
+    Otherwise uses the legacy path structure.
+    """
     base_output_dir = Path(cfg.get("output_dir", "./lgbm_outputs"))
     base_output_dir.mkdir(parents=True, exist_ok=True)
-    if not bool(cfg.get("timestamped_run_outputs", True)):
-        return base_output_dir
 
-    timestamp = pd.Timestamp.now(tz="UTC").strftime("%Y%m%d_%H%M%S")
-    run_output_dir = base_output_dir / f"run_{timestamp}"
-    suffix = 1
-    while run_output_dir.exists():
-        suffix += 1
-        run_output_dir = base_output_dir / f"run_{timestamp}_{suffix:02d}"
-    run_output_dir.mkdir(parents=True, exist_ok=False)
+    # Determine if we should use timestamped run directory
+    if not bool(cfg.get("timestamped_run_outputs", True)):
+        run_base = base_output_dir
+    else:
+        timestamp = pd.Timestamp.now(tz="UTC").strftime("%Y%m%d_%H%M%S")
+        run_base = base_output_dir / f"run_{timestamp}"
+        suffix = 1
+        while run_base.exists():
+            suffix += 1
+            run_base = base_output_dir / f"run_{timestamp}_{suffix:02d}"
+
+    # Build path based on triad vs legacy mode
+    if target_name is not None and horizon is not None:
+        # Triad mode: base_dir/h{horizon}/{target_name}/...
+        run_output_dir = run_base / f"h{horizon}" / target_name
+        if side is not None:
+            run_output_dir = run_output_dir / side
+        if stage is not None:
+            run_output_dir = run_output_dir / stage
+    else:
+        # Legacy mode
+        run_output_dir = run_base
+
+    # Only create directory if this is the root call (no side/stage specified)
+    if side is None and stage is None:
+        run_output_dir.mkdir(parents=True, exist_ok=True)
+
     return run_output_dir
 
 
@@ -266,6 +359,8 @@ class ExtractedRule:
     leaf_value: float
     support_train: int
     support_val: int = 0
+    source_target: str = "fwd_ret_norm"  # Target name provenance
+    source_horizon: int = 0  # Horizon in bars provenance
 
 
 # =============================================================================
@@ -327,21 +422,31 @@ class FeatureProcessor:
                         }
                     )
 
-                    family = src.split("_")[0] if "_" in src else group_name
+                    if group_name == "location":
+                        family = LOC_CONTINUOUS_FAMILY_MAP.get(src, "context")
+                    else:
+                        family = src.split("_")[0] if "_" in src else group_name
+
+                    # NaN-preserving booleanization.
+                    # ts_ranks is NaN wherever the raw feature was NaN for that symbol.
+                    # We must propagate NaN through to the boolean column so that
+                    # filter_complete_feature_rows correctly drops rows missing feature data.
+                    nan_mask = np.isnan(ts_ranks)
+
+                    def _bool_float(condition: np.ndarray) -> np.ndarray:
+                        out = condition.astype(np.float32)
+                        out[nan_mask] = np.nan
+                        return out
+
+                    n_valid = int((~nan_mask).sum())
 
                     for q in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
-                        # The threshold `q` directly represents the cutoff.
-                        # For q=0.8, >= 0.8 is the top 20%. <= 0.8 is the bottom 80%.
-                        # The user wants both upper (>= q) and lower (<= q) for ALL these values.
-
                         # Top quantiles (>= q)
                         bool_name_top = f"{group_name[:3]}_{src}_ts_top{int(q*100)}"
-                        bool_arr_top = (ts_ranks >= q).astype(np.int8)
+                        bool_arr_top = _bool_float(ts_ranks >= q)
 
-                        support_top = int(bool_arr_top.sum())
-                        support_top_pct = (
-                            support_top / n_samples if n_samples > 0 else 0
-                        )
+                        support_top = int(np.nansum(bool_arr_top))
+                        support_top_pct = support_top / n_valid if n_valid > 0 else 0
 
                         self.bool_support_audit_rows.append(
                             {
@@ -374,12 +479,10 @@ class FeatureProcessor:
 
                         # Bottom quantiles (<= q)
                         bool_name_bot = f"{group_name[:3]}_{src}_ts_bot{int(q*100)}"
-                        bool_arr_bot = (ts_ranks <= q).astype(np.int8)
+                        bool_arr_bot = _bool_float(ts_ranks <= q)
 
-                        support_bot = int(bool_arr_bot.sum())
-                        support_bot_pct = (
-                            support_bot / n_samples if n_samples > 0 else 0
-                        )
+                        support_bot = int(np.nansum(bool_arr_bot))
+                        support_bot_pct = support_bot / n_valid if n_valid > 0 else 0
 
                         self.bool_support_audit_rows.append(
                             {
@@ -410,18 +513,17 @@ class FeatureProcessor:
                         raw_cols.append(bool_arr_bot)
                         raw_names.append(bool_name_bot)
 
-                    # Expanded bands for LGBM strategies
+                    # Expanded median bands
                     for q_band in [0.20, 0.25, 0.30, 0.40]:
                         q_band_upper = 1.0 - q_band
                         band_name = f"{group_name[:3]}_{src}_ts_band{int(q_band*100)}_{int(q_band_upper*100)}"
-                        band_arr = (
+                        band_arr = _bool_float(
                             (ts_ranks >= q_band) & (ts_ranks <= q_band_upper)
-                        ).astype(np.int8)
-
-                        support_band = int(band_arr.sum())
-                        support_band_pct = (
-                            support_band / n_samples if n_samples > 0 else 0
                         )
+
+                        support_band = int(np.nansum(band_arr))
+                        support_band_pct = support_band / n_valid if n_valid > 0 else 0
+
                         self.bool_support_audit_rows.append(
                             {
                                 "generated_boolean": band_name,
@@ -445,7 +547,7 @@ class FeatureProcessor:
                             booleanization_method="ts_rank",
                             threshold_type="band_quantile",
                             threshold_value=0.50,
-                            description=f"TS Rank inside the {int(q_band*100)}-{int(q_band_upper*100)} median band",
+                            description=f"TS Rank inside {int(q_band*100)}-{int(q_band_upper*100)} band",
                         )
                         raw_cols.append(band_arr)
                         raw_names.append(band_name)
@@ -456,22 +558,7 @@ class FeatureProcessor:
 
         # 2. Location Features
         if "location" in active_groups:
-            # Discrete booleans
-            for col in LOCATION_FILTER_COLUMNS:
-                if col in feature_dict:
-                    raw_source_features_by_group["location"].add(col)
-                    arr = feature_dict[col].astype(np.int8)
-                    family = col.split("_")[0] if "_" in col else "location"
-                    self._add_metadata(
-                        col,
-                        "location",
-                        "boolean",
-                        source_name=col,
-                        source_family=family,
-                    )
-                    raw_cols.append(arr)
-                    raw_names.append(col)
-            # Continuous booleans
+            # Continuous location features are the sole location source family.
             _add_continuous_features_as_booleans(CONTINUOUS_LOCATION_COLS, "location")
 
         # 3. Regime Features (continuous -> hybrid booleanize)
@@ -522,7 +609,7 @@ class FeatureProcessor:
 
         if cfg.get("boolean_only", False):
             is_bool = np.array(
-                [self.metadata[n].type == "boolean" for n in retained_names]
+                [self.metadata[n].source_type == "boolean" for n in retained_names]
             )
             if np.any(is_bool):
                 X_clean = X_clean[:, is_bool]
@@ -740,7 +827,14 @@ class FeatureProcessor:
         Time-series ranking using pandas for vectorization speed.
         """
         s = pd.Series(arr, index=symbol_codes)
-        return s.groupby(level=0, sort=False).rank(pct=True).values
+        # Fix root cause of 0.5 artifacts: if cross-section has no variance, return NaN
+        def _rank_safe(g):
+            if g.nunique() <= 1:
+                return np.full(len(g), np.nan)
+            return g.rank(pct=True)
+        # Using transform for speed while preserving index
+        ranks = s.groupby(level=0, sort=False).transform(_rank_safe)
+        return ranks.values
 
     def _run_feature_quality_checks(
         self, X: np.ndarray, names: List[str], cfg: Dict[str, Any]
@@ -860,18 +954,7 @@ class InteractionModel:
         """
         Build interaction constraints for LightGBM.
         """
-        if "interaction_constraints" in self.cfg:
-            constraints = []
-            for constraint_group in self.cfg["interaction_constraints"]:
-                constraint_indices = []
-                for feat_name in constraint_group:
-                    for m in self.metadata:
-                        if m.feature_name == feat_name:
-                            constraint_indices.append(m.feature_index)
-                if constraint_indices:
-                    constraints.append(constraint_indices)
-            return constraints
-
+        # Interaction constraints removed per user request to allow more combinations.
         return []
 
     def _verify_constraints(
@@ -961,7 +1044,41 @@ class InteractionModel:
         result.update(summary)
         return result
 
-    def train_fold(self, X_tr, y_tr, X_va, y_va, fold_id: int, seed: int):
+    def train_fold(
+        self,
+        X_tr,
+        y_tr,
+        X_va,
+        y_va,
+        fold_id: int,
+        seed: int,
+        target_type: str = "quantile",
+    ):
+        """
+        Train a LightGBM model on a single fold.
+
+        Parameters
+        ----------
+        X_tr : np.ndarray
+            Training features
+        y_tr : np.ndarray
+            Training targets
+        X_va : np.ndarray
+            Validation features
+        y_va : np.ndarray
+            Validation targets
+        fold_id : int
+            Fold identifier
+        seed : int
+            Random seed
+        target_type : str
+            Target type (deprecated, always uses quantile regression)
+
+        Returns
+        -------
+        Tuple[LGBMRegressor, Dict[str, Any]]
+            Trained model and fit metadata
+        """
         from lightgbm import early_stopping, log_evaluation
 
         # ENFORCE FINITE TARGETS
@@ -985,31 +1102,27 @@ class InteractionModel:
         y_tr_reg = np.clip(y_tr, y_lo, y_hi).astype(np.float32, copy=False)
         y_va_reg = np.clip(y_va, y_lo, y_hi).astype(np.float32, copy=False)
 
-        # Dynamic HPO Overrides
-        alpha_hpo = float(self.cfg.get("alpha_hpo", 0.95))
-        alpha = alpha_hpo if self.side == "long" else (1.0 - alpha_hpo)
-        
-        # Override with dynamic HPO results if available
-        if "hpo_best_alpha" in self.cfg:
-            alpha = float(self.cfg["hpo_best_alpha"])
-            if self.side == "short":
-                # Ensure alpha is flipped correctly if the HPO returns raw alpha
-                # However, our HPO returns the exact alpha to use for the booster.
-                pass
-
         max_depth = int(self.cfg.get("lgbm_max_depth", 5)) + 1
         num_leaves = int(self.cfg.get("lgbm_num_leaves", 64))
 
         lambda_l1 = float(self.cfg.get("lambda_l1", 0.0)) * 1.33
         lambda_l2 = float(self.cfg.get("lambda_l2", 0.0)) * 1.33
-        
+
         min_gain_to_split = float(self.cfg.get("min_gain_to_split", 0.0))
         if "hpo_min_gain_to_split" in self.cfg:
             min_gain_to_split = float(self.cfg["hpo_min_gain_to_split"])
-            
+
         min_data_in_leaf = max(20, int(0.001 * X_tr.shape[0]))
         if "hpo_min_data_in_leaf" in self.cfg:
             min_data_in_leaf = int(self.cfg["hpo_min_data_in_leaf"])
+
+        # Use quantile loss for all targets (triad targets work with quantile regression)
+        alpha_hpo = float(self.cfg.get("alpha_hpo", 0.95))
+        alpha = alpha_hpo if self.side == "long" else (1.0 - alpha_hpo)
+
+        # Override with dynamic HPO results if available
+        if "hpo_best_alpha" in self.cfg:
+            alpha = float(self.cfg["hpo_best_alpha"])
 
         params = {
             "objective": "quantile",
@@ -1032,6 +1145,7 @@ class InteractionModel:
             "bagging_freq": 1,
             "feature_fraction": 0.8,
         }
+        target_mode = "quantile_regression"
 
         if self.constraints:
             params["interaction_constraints"] = self.constraints
@@ -1084,7 +1198,8 @@ class InteractionModel:
             "classification": False,
             "threshold_tr": np.nan,
             "threshold_va": np.nan,
-            "target_mode": "regression_5h_return",
+            "target_mode": target_mode,
+            "target_type": target_type,
             "feature_importances_gain": feature_importances_gain,
             "feature_importances_split": feature_importances_split,
             "params": params,
@@ -1119,14 +1234,47 @@ class RuleExtractor:
         self.total_non_empty_paths = 0
 
     def extract_rules(
-        self, model: LGBMRegressor, model_id: str, fold_id: int, seed: int
+        self,
+        model: LGBMRegressor,
+        model_id: str,
+        fold_id: int,
+        seed: int,
+        target_name: str = "fwd_ret_norm",
+        horizon: int = 0,
     ) -> List[ExtractedRule]:
+        """
+        Extract rules from a trained LightGBM model.
+        
+        Parameters
+        ----------
+        model : LGBMRegressor
+            Trained LightGBM model
+        model_id : str
+            Identifier for the model
+        fold_id : int
+            Fold identifier
+        seed : int
+            Random seed used for training
+        target_name : str
+            Name of the target for provenance tracking (default: 'fwd_ret_norm')
+        horizon : int
+            Horizon in bars for provenance tracking (default: 0)
+            
+        Returns
+        -------
+        List[ExtractedRule]
+            List of extracted rules with target/horizon provenance
+        """
         # ALWAYS use native booster dump for correct semantics according to fix spec
         dump = model.booster_.dump_model()
         rules = []
         self.rejection_audit = []  # For diagnostics
         self.total_leaf_paths = 0
         self.total_non_empty_paths = 0
+        
+        # Store target/horizon for provenance
+        self._current_target_name = target_name
+        self._current_horizon = horizon
 
         for tree_idx, tree in enumerate(dump["tree_info"]):
             self._traverse_tree(
@@ -1258,6 +1406,8 @@ class RuleExtractor:
                     leaf_index=node.get("leaf_index", -1),
                     leaf_value=node["leaf_value"],
                     support_train=node.get("leaf_count", 0),
+                    source_target=getattr(self, "_current_target_name", "fwd_ret_norm"),
+                    source_horizon=getattr(self, "_current_horizon", 0),
                 )
             )
             return
@@ -1360,13 +1510,12 @@ class RuleExtractor:
             if m is None:
                 continue
 
-            ig = m.interaction_group
-
-            prev_feat = seen_groups.get(ig)
-            if prev_feat is not None and prev_feat != c.feature_index:
-                return False, f"interaction_group_violation_{ig}"
-
-            seen_groups[ig] = c.feature_index
+            # Interaction group constraints removed per user request.
+            # ig = m.interaction_group
+            # prev_feat = seen_groups.get(ig)
+            # if prev_feat is not None and prev_feat != c.feature_index:
+            #     return False, f"interaction_group_violation_{ig}"
+            # seen_groups[ig] = c.feature_index
 
             prev_val = seen_features.get(c.feature_index)
             if prev_val is not None and prev_val != c.normalized_value:
@@ -1810,6 +1959,111 @@ class RuleScorer:
         safe_support = max(float(support_pct), 0.0005)
         return (base_hurdle * (1.0 - complexity_bonus)) / (safe_support**penalty_exp)
 
+    def _compute_within_mask_ic(
+        self,
+        predictions: np.ndarray,
+        target: np.ndarray,
+        mask: np.ndarray,
+        method: str = "spearman",
+    ) -> Tuple[float, float]:
+        """
+        Compute IC within mask and delta from global IC.
+
+        Args:
+            predictions: Model predictions array
+            target: Target values array
+            mask: Boolean mask indicating regime activation
+            method: Correlation method ("spearman" or "pearson")
+
+        Returns:
+            Tuple of (within_mask_ic, delta_ic) where delta_ic = within_mask_ic - global_ic
+        """
+        # Global IC
+        valid = ~(np.isnan(predictions) | np.isnan(target))
+        if valid.sum() < 10:
+            return np.nan, np.nan
+
+        if method == "spearman":
+            global_ic = _safe_spearman(predictions[valid], target[valid])
+        else:
+            # Pearson correlation
+            valid_preds = predictions[valid]
+            valid_targets = target[valid]
+            if np.all(valid_preds == valid_preds[0]) or np.all(
+                valid_targets == valid_targets[0]
+            ):
+                global_ic = np.nan
+            else:
+                global_ic = float(np.corrcoef(valid_preds, valid_targets)[0, 1])
+
+        # Within-mask IC
+        mask_active = mask.astype(bool) & valid
+        if mask_active.sum() < 10:
+            return np.nan, np.nan
+
+        if method == "spearman":
+            within_ic = _safe_spearman(predictions[mask_active], target[mask_active])
+        else:
+            masked_preds = predictions[mask_active]
+            masked_targets = target[mask_active]
+            if np.all(masked_preds == masked_preds[0]) or np.all(
+                masked_targets == masked_targets[0]
+            ):
+                within_ic = np.nan
+            else:
+                within_ic = float(np.corrcoef(masked_preds, masked_targets)[0, 1])
+
+        delta_ic = within_ic - global_ic if not np.isnan(within_ic) else np.nan
+
+        return within_ic, delta_ic
+
+    def _compute_entropy_reduction(
+        self,
+        target: np.ndarray,
+        mask: np.ndarray,
+        n_bins: int = 20,
+    ) -> float:
+        """
+        Compute reduction in target uncertainty conditional on mask.
+
+        Uses histogram-based entropy estimation.
+        Higher is better - means the regime reduces target uncertainty.
+
+        Args:
+            target: Target values array
+            mask: Boolean mask indicating regime activation
+            n_bins: Number of bins for histogram estimation
+
+        Returns:
+            Entropy reduction (global entropy - conditional entropy).
+            Positive means the mask concentrates the target distribution.
+        """
+        valid = ~np.isnan(target)
+        target_valid = target[valid]
+
+        if len(target_valid) < 100:
+            return np.nan
+
+        # Global entropy
+        hist_global, _ = np.histogram(target_valid, bins=n_bins, density=True)
+        hist_global = hist_global / hist_global.sum()
+        hist_global = hist_global[hist_global > 0]
+        entropy_global = -np.sum(hist_global * np.log2(hist_global + 1e-9))
+
+        # Conditional entropy (within mask)
+        mask_active = mask.astype(bool) & valid
+        if mask_active.sum() < 50:
+            return np.nan
+
+        target_masked = target[mask_active]
+        hist_masked, _ = np.histogram(target_masked, bins=n_bins, density=True)
+        hist_masked = hist_masked / hist_masked.sum()
+        hist_masked = hist_masked[hist_masked > 0]
+        entropy_masked = -np.sum(hist_masked * np.log2(hist_masked + 1e-9))
+
+        # Reduction = global - conditional (positive is good)
+        return entropy_global - entropy_masked
+
     def score_key_oos(
         self,
         canonical_key: str,
@@ -1824,7 +2078,33 @@ class RuleScorer:
         n_instances: Optional[int] = None,
         pipeline_stage: Optional[str] = None,
         explicit_side: Optional[str] = None,
+        bounded_target: Optional[np.ndarray] = None,
+        target_name: str = "fwd_ret_norm",
+        horizon: int = 0,
+        predictions: Optional[np.ndarray] = None,
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """
+        Score rules with optional bounded target support.
+
+        Args:
+            canonical_key: Rule identifier
+            fwd_ret: Forward returns array
+            folds: List of (train_idx, val_idx) tuples for cross-validation
+            resolver: Mask resolver for computing rule masks
+            require_uplift: Whether to require uplift over parent context
+            parent_context_key: Parent context key for uplift computation
+            discovery_count: Number of times this rule was discovered
+            n_instances: Total number of instances
+            pipeline_stage: Pipeline stage identifier
+            explicit_side: Explicit side (long/short) override
+            bounded_target: Optional bounded target for within-mask IC computation
+            target_name: Name of the target for logging
+            horizon: Horizon identifier for logging
+            predictions: Optional model predictions for within-mask IC computation
+
+        Returns:
+            Tuple of (summary_dict, fold_records_list)
+        """
         resolver = resolver or self.mask_resolver
         if resolver is None:
             raise ValueError("RuleScorer requires a mask resolver")
@@ -1834,6 +2114,11 @@ class RuleScorer:
 
         if require_uplift and not parent_context_key:
             parent_context_key = resolver.get_parent_context_key(canonical_key)
+
+        # Track within-mask IC metrics across folds
+        within_mask_ic_values: List[float] = []
+        delta_within_mask_ic_values: List[float] = []
+        entropy_reduction_values: List[float] = []
 
         for fold_id, (_, va_idx) in enumerate(folds):
             y_va = fwd_ret[va_idx]
@@ -1845,6 +2130,9 @@ class RuleScorer:
             fold_ic = np.nan
             baseline_ic = np.nan
             delta_ic = np.nan
+            within_mask_ic = np.nan
+            delta_within_mask_ic = np.nan
+            entropy_reduction = np.nan
 
             if parent_context_key:
                 parent_mask = resolver.get_mask(parent_context_key, va_idx)
@@ -1876,6 +2164,25 @@ class RuleScorer:
 
                 if np.isfinite(fold_ic) and np.isfinite(baseline_ic):
                     delta_ic = fold_ic - baseline_ic
+
+                # Compute within-mask IC if bounded_target and predictions available
+                if bounded_target is not None and predictions is not None:
+                    target_va = bounded_target[va_idx]
+                    preds_va = predictions[va_idx]
+                    within_mask_ic, delta_within_mask_ic = self._compute_within_mask_ic(
+                        preds_va, target_va, mask
+                    )
+                    if np.isfinite(within_mask_ic):
+                        within_mask_ic_values.append(within_mask_ic)
+                    if np.isfinite(delta_within_mask_ic):
+                        delta_within_mask_ic_values.append(delta_within_mask_ic)
+
+                # Compute entropy reduction if bounded_target available
+                if bounded_target is not None:
+                    target_va = bounded_target[va_idx]
+                    entropy_reduction = self._compute_entropy_reduction(target_va, mask)
+                    if np.isfinite(entropy_reduction):
+                        entropy_reduction_values.append(entropy_reduction)
             else:
                 mean_ret = np.nan
                 std_ret = np.nan
@@ -1897,6 +2204,9 @@ class RuleScorer:
                     "fold_ic": fold_ic,
                     "baseline_ic": baseline_ic,
                     "delta_ic": delta_ic,
+                    "within_mask_ic": within_mask_ic,
+                    "delta_within_mask_ic": delta_within_mask_ic,
+                    "entropy_reduction": entropy_reduction,
                 }
             )
 
@@ -1923,6 +2233,11 @@ class RuleScorer:
                 "p75_oos_ic": np.nan,
                 "mean_delta_ic": np.nan,
                 "positive_ic_fraction": 0.0,
+                "within_mask_ic": np.nan,
+                "delta_within_mask_ic": np.nan,
+                "entropy_reduction": np.nan,
+                "source_target": target_name,
+                "source_horizon": horizon,
                 "composite_score": -np.inf,
                 "required_hurdle": np.nan,
                 "hurdle_excess": np.nan,
@@ -1954,6 +2269,8 @@ class RuleScorer:
         presence_freq = float(len(present) / max(len(folds), 1))
         nonzero_signs = present[present["sign"] != 0]["sign"]
         if len(nonzero_signs) == 0:
+            if not present.empty:
+                tprint(f"DEBUG: Rule {canonical_key[:40]}... has {len(present)} folds but 0 nonzero signs. Root cause: all trades have exactly 0 return.")
             sign_consistency = 0.0
         else:
             major_sign = 1 if mean_net_ret > 0 else -1
@@ -2013,6 +2330,23 @@ class RuleScorer:
             else 0.0
         )
 
+        # Within-mask IC metrics (computed from fold-level values)
+        mean_within_mask_ic = (
+            float(np.mean(within_mask_ic_values))
+            if within_mask_ic_values
+            else np.nan
+        )
+        mean_delta_within_mask_ic = (
+            float(np.mean(delta_within_mask_ic_values))
+            if delta_within_mask_ic_values
+            else np.nan
+        )
+        mean_entropy_reduction = (
+            float(np.mean(entropy_reduction_values))
+            if entropy_reduction_values
+            else np.nan
+        )
+
         composite_score = (
             mean_net_ret
             * sqrt(max(mean_support_pct, 1e-12))
@@ -2041,6 +2375,11 @@ class RuleScorer:
             "p75_oos_ic": p75_oos_ic,
             "mean_delta_ic": mean_delta_ic,
             "positive_ic_fraction": positive_ic_fraction,
+            "within_mask_ic": mean_within_mask_ic,
+            "delta_within_mask_ic": mean_delta_within_mask_ic,
+            "entropy_reduction": mean_entropy_reduction,
+            "source_target": target_name,
+            "source_horizon": horizon,
             "composite_score": composite_score,
             "required_hurdle": required_hurdle,
             "hurdle_excess": hurdle_excess,
@@ -2085,6 +2424,22 @@ class RuleScorer:
 
         summary["accepted"] = len(rejected) == 0
         summary["rejection_reason"] = "|".join(rejected)
+        
+        # NEW: Classify rule type (ranking vs gate)
+        rule_type_class = classify_rule_type(
+            mean_oos_ic=summary.get("mean_oos_ic", 0),
+            within_mask_ic=summary.get("within_mask_ic", 0),
+            delta_within_mask_ic=summary.get("delta_within_mask_ic", 0),
+        )
+        summary["rule_type_class"] = rule_type_class
+        
+        # NEW: Production classification
+        classification, diagnostics = classify_rule_production_quality(
+            rule=summary
+        )
+        summary["production_classification"] = classification
+        summary["classification_diagnostics"] = json.dumps(diagnostics)
+        
         return summary, fold_records
 
     def score_registry_oos(
@@ -4710,12 +5065,7 @@ def build_stage_a_rejection_map(
                     assessment_rejections.get("low_lift", 0),
                     ">= 1.1000",
                 ),
-                (
-                    "low_entropy_reduction",
-                    "entropy_reduction",
-                    assessment_rejections.get("low_entropy_reduction", 0),
-                    ">= 0.0500",
-                ),
+                # NOTE: low_entropy_reduction gate removed per user request
             ],
             passed_count=len(accepted_registry),
         )
@@ -4920,9 +5270,103 @@ def run_mining_stage(
     ] = None,
     pipeline_stage_name: Optional[str] = None,
     explicit_side: Optional[str] = None,
+    target_name: str = "fwd_ret_norm",
+    horizon: int = 0,
+    primary_target_override: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
+    """
+    Run a single mining stage.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        DataFrame with event metadata
+    fwd_ret : np.ndarray
+        Forward returns (raw)
+    fwd_ret_norm : np.ndarray
+        Forward returns (normalized by ATR)
+    X : np.ndarray
+        Feature matrix
+    metadata : List[FeatureMetadata]
+        Feature metadata
+    cfg : Dict[str, Any]
+        Configuration dictionary
+    output_dir : Path
+        Output directory for this stage
+    stage_name : str
+        Name of the stage
+    allowed_group_pairs : Sequence[Tuple[str, str]]
+        Allowed interaction group pairs
+    slot_order : Sequence[str]
+        Order of slots in rules
+    folds : Optional[List[Tuple[np.ndarray, np.ndarray]]]
+        Pre-computed folds
+    mask_resolver : Optional[Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]]
+        Mask resolver for rule evaluation
+    require_uplift : bool
+        Whether to require uplift over parent context
+    rule_key_rewriter : Optional[Callable[[str], Tuple[Optional[str], Optional[str]]]]
+        Function to rewrite rule keys
+    pipeline_stage_name : Optional[str]
+        Pipeline stage name for context
+    explicit_side : Optional[str]
+        Explicit side ('long' or 'short')
+    target_name : str
+        Name of the target for provenance tracking (default: 'fwd_ret_norm')
+    horizon : int
+        Horizon in bars for provenance tracking (default: 0)
+
+    Returns
+    -------
+    Dict[str, Any]
+        Stage results including extracted rules and registries
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     tprint(f"--- RUNNING MINING STAGE: {stage_name} ---")
+    
+    # Log target provenance
+    tprint(f"Target: {target_name} | Horizon: {horizon}")
+
+    # Use primary_target_override (bounded triad target) if provided; fall back to fwd_ret_norm.
+    primary_target = primary_target_override if primary_target_override is not None else fwd_ret_norm
+
+    # Relaxed completeness check per user request.
+    # We only require the target to be finite and at least ONE feature to be present.
+    _feature_any_finite = np.any(np.isfinite(X), axis=1)
+    _complete = np.isfinite(primary_target) & _feature_any_finite
+
+    n_before = len(data)
+    n_remain = int(_complete.sum())
+    
+    if n_remain < n_before:
+        tprint(
+            f"{pipeline_stage_name}: upstream filter invalidating {n_before - n_remain} rows "
+            f"({100.0 * (n_before - n_remain) / max(n_before, 1):.1f}%) with missing features/targets. "
+            f"{n_remain} rows will be used for training/metrics."
+        )
+        # We set target to NaN for incomplete rows so train_fold and Scorer skip them.
+        # Use copies to avoid side effects on other stages.
+        primary_target = primary_target.copy()
+        primary_target[~_complete] = np.nan
+        fwd_ret = fwd_ret.copy()
+        fwd_ret[~_complete] = np.nan
+        fwd_ret_norm = fwd_ret_norm.copy()
+        fwd_ret_norm[~_complete] = np.nan
+
+    if n_remain == 0:
+        tprint(f"WARNING: {pipeline_stage_name} has 0 valid rows after filter. Skipping stage.")
+        return {
+            "accepted_registry": pd.DataFrame(),
+            "candidate_registry": pd.DataFrame(),
+            "stage_a": pd.DataFrame(),
+            "stage_b": pd.DataFrame(),
+            "all_extracted_rules": [],
+            "all_rejection_audit": [],
+            "all_split_usage": [],
+            "fold_quality_reports": [],
+            "model_fit_reports": [],
+            "feature_importance_records": [],
+        }
 
     if folds is None:
         folds = build_walk_forward_folds(
@@ -5005,48 +5449,23 @@ def run_mining_stage(
     feature_importance_records = []
 
     for fold_id, (tr_idx, va_idx) in enumerate(folds):
+        # All rows are guaranteed feature-complete (filtered upstream).
+        if len(tr_idx) == 0 or len(va_idx) == 0:
+            tprint(f"Skipping fold {fold_id}: empty split (train={len(tr_idx)}, val={len(va_idx)}).")
+            continue
+
         # Determine available features per group for logging
         group_to_features = collections.defaultdict(list)
         for m in metadata:
             group_to_features[m.group].append(m.feature_name)
 
-        tprint(f"--- FOLD {fold_id} FEATURE AVAILABILITY ---")
-        for group, features in group_to_features.items():
-            tprint(f"Group: {group}")
-            for feat in features:
-                f_idx = next(
-                    m.feature_index for m in metadata if m.feature_name == feat
-                )
-                tr_avail = np.isfinite(X[tr_idx, f_idx]).mean() * 100
-                va_avail = np.isfinite(X[va_idx, f_idx]).mean() * 100
-                tprint(f"  - {feat}: TR {tr_avail:.1f}% / VA {va_avail:.1f}%")
-
-        tr_target_avail = np.isfinite(fwd_ret_norm[tr_idx]).mean() * 100
-        va_target_avail = np.isfinite(fwd_ret_norm[va_idx]).mean() * 100
         tprint(
-            f"Target (fwd_ret_norm): TR {tr_target_avail:.1f}% / VA {va_target_avail:.1f}%"
+            f"Fold {fold_id}: train_rows={len(tr_idx)} val_rows={len(va_idx)}"
         )
 
-        # Find rows with missing features or missing targets
-        tr_feature_missing = np.isnan(X[tr_idx]).any(axis=1)
-        tr_fwd_ret_missing = np.isnan(fwd_ret[tr_idx])
-        tr_fwd_ret_norm_missing = np.isnan(fwd_ret_norm[tr_idx])
-        tr_missing_mask = (
-            tr_feature_missing | tr_fwd_ret_missing | tr_fwd_ret_norm_missing
-        )
-
-        va_feature_missing = np.isnan(X[va_idx]).any(axis=1)
-        va_fwd_ret_missing = np.isnan(fwd_ret[va_idx])
-        va_fwd_ret_norm_missing = np.isnan(fwd_ret_norm[va_idx])
-        va_missing_mask = (
-            va_feature_missing | va_fwd_ret_missing | va_fwd_ret_norm_missing
-        )
-
-        tr_drop_pct = tr_missing_mask.mean() * 100
-        va_drop_pct = va_missing_mask.mean() * 100
-
-        # Target distribution summary
-        tr_target_valid = fwd_ret_norm[tr_idx][~np.isnan(fwd_ret_norm[tr_idx])]
+        # Target distribution summary (using primary_target, which is the real training target)
+        _tr_tgt = primary_target[tr_idx]
+        tr_target_valid = _tr_tgt[~np.isnan(_tr_tgt)]
         if len(tr_target_valid) > 0:
             tr_mean = tr_target_valid.mean()
             tr_std = tr_target_valid.std()
@@ -5081,20 +5500,8 @@ def run_mining_stage(
         fold_quality_reports.append(
             {
                 "fold_id": fold_id,
-                "tr_rows_before": len(tr_idx),
-                "tr_rows_after": len(tr_idx) - tr_missing_mask.sum(),
-                "tr_dropped": tr_missing_mask.sum(),
-                "tr_drop_pct": tr_drop_pct,
-                "tr_nan_feat": tr_feature_missing.sum(),
-                "tr_nan_ret": tr_fwd_ret_missing.sum(),
-                "tr_nan_norm": tr_fwd_ret_norm_missing.sum(),
-                "va_rows_before": len(va_idx),
-                "va_rows_after": len(va_idx) - va_missing_mask.sum(),
-                "va_dropped": va_missing_mask.sum(),
-                "va_drop_pct": va_drop_pct,
-                "va_nan_feat": va_feature_missing.sum(),
-                "va_nan_ret": va_fwd_ret_missing.sum(),
-                "va_nan_norm": va_fwd_ret_norm_missing.sum(),
+                "tr_rows": len(tr_idx),
+                "va_rows": len(va_idx),
                 "target_mean": tr_mean,
                 "target_std": tr_std,
                 "target_p1": tr_p1,
@@ -5107,86 +5514,28 @@ def run_mining_stage(
             f"Fold {fold_id}: Target fwd_ret_norm -> mean={tr_mean:.4f}, std={tr_std:.4f}, p1={tr_p1:.4f}, p50={tr_p50:.4f}, p99={tr_p99:.4f}"
         )
 
-        if tr_drop_pct > 1.0 or va_drop_pct > 1.0:
-            tprint(
-                f"WARNING: Fold {fold_id} has > 1% missing rows (TR: {tr_drop_pct:.1f}%, VA: {va_drop_pct:.1f}%). Dropping missing rows and proceeding."
-            )
-            tprint("Identifying problematic symbols/timestamps...")
+        # All rows in tr_idx and va_idx are already complete (pre-filtered upstream).
+        X_tr, X_va = X[tr_idx], X[va_idx]
+        y_tr_raw = primary_target[tr_idx]
+        y_va_raw = primary_target[va_idx]
 
-            # Combine missing masks and identify exact problems
-            for subset_name, subset_idx, missing_mask in [
-                ("TRAIN", tr_idx, tr_missing_mask),
-                ("VALIDATION", va_idx, va_missing_mask),
-            ]:
-                if missing_mask.sum() > 0:
-                    prob_idx = subset_idx[missing_mask]
-                    prob_data = data.iloc[prob_idx]
-                    prob_X = X[prob_idx]
-                    prob_ret = fwd_ret_norm[prob_idx]
-
-                    tprint(f"  {subset_name} missing details:")
-                    for i, m in enumerate(metadata):
-                        feat_missing = np.isnan(prob_X[:, i])
-                        if feat_missing.any():
-                            feat_prob_data = prob_data[feat_missing]
-                            tprint(
-                                f"    Feature '{m.feature_name}' missing in {feat_missing.sum()} rows:"
-                            )
-                            # Show up to 5 examples
-                            for _, row in feat_prob_data.head(5).iterrows():
-                                tprint(
-                                    f"      - Symbol: {row['symbol']}, Timestamp: {row['timestamp']}"
-                                )
-
-                    target_missing = np.isnan(prob_ret)
-                    if target_missing.any():
-                        tgt_prob_data = prob_data[target_missing]
-                        tprint(f"    Target missing in {target_missing.sum()} rows:")
-                        for _, row in tgt_prob_data.head(5).iterrows():
-                            tprint(
-                                f"      - Symbol: {row['symbol']}, Timestamp: {row['timestamp']}"
-                            )
-
-        # Apply the mask to drop missing rows
-        clean_tr_idx = tr_idx[~tr_missing_mask]
-        clean_va_idx = va_idx[~va_missing_mask]
-
-        if len(clean_tr_idx) == 0 or len(clean_va_idx) == 0:
-            tprint(
-                f"Skipping fold {fold_id} because clean_tr_idx or clean_va_idx is empty after dropping missing data."
-            )
-            continue
-
-        X_tr, X_va = X[clean_tr_idx], X[clean_va_idx]
-        y_tr, y_va = fwd_ret[clean_tr_idx], fwd_ret[clean_va_idx]
-        y_tr_norm, y_va_norm = fwd_ret_norm[clean_tr_idx], fwd_ret_norm[clean_va_idx]
-
-        # Calculate clip boundaries only on valid target data
-        tr_norm_valid = y_tr_norm[np.isfinite(y_tr_norm)]
-        if len(tr_norm_valid) > 0:
-            y_tr_clip = np.clip(
-                y_tr_norm,
-                np.nanquantile(tr_norm_valid, 0.01),
-                np.nanquantile(tr_norm_valid, 0.99),
-            )
-        else:
-            tprint(f"WARNING: Fold {fold_id} has no finite target data after cleaning.")
-            continue
-
-        tprint(
-            f"{stage_name} fold {fold_id}: train_rows={len(clean_tr_idx)} (dropped {tr_missing_mask.sum()}) "
-            f"val_rows={len(clean_va_idx)} (dropped {va_missing_mask.sum()}) "
-            f"finite_train={int(np.isfinite(y_tr).sum())} finite_val={int(np.isfinite(y_va).sum())}"
+        y_tr_clip = np.clip(
+            y_tr_raw,
+            np.nanquantile(y_tr_raw, 0.01),
+            np.nanquantile(y_tr_raw, 0.99),
         )
 
         for seed in seeds:
+            # Use quantile regression for all targets (triad targets work with quantile regression)
+            target_type = "quantile"
             model, fit_meta = model_engine.train_fold(
-                X_tr, y_tr_clip, X_va, y_va_norm, fold_id, seed
+                X_tr, y_tr_clip, X_va, y_va_raw, fold_id, seed, target_type=target_type
             )
             tprint(
                 f"{stage_name} fold {fold_id} seed {seed}: "
                 f"train_samples={fit_meta['train_samples']} val_samples={fit_meta['val_samples']} "
-                f"best_iteration={fit_meta['best_iteration']} best_val_metric={fit_meta['best_val_metric']:.5f}"
+                f"best_iteration={fit_meta['best_iteration']} best_val_metric={fit_meta['best_val_metric']:.5f} "
+                f"target_type={target_type}"
             )
 
             model_fit_reports.append(
@@ -5200,6 +5549,9 @@ def run_mining_stage(
                     "min_data_in_leaf": fit_meta["params"]["min_data_in_leaf"],
                     "objective": fit_meta["params"]["objective"],
                     "metric": fit_meta["params"]["metric"],
+                    "target_type": target_type,
+                    "target_name": target_name,
+                    "horizon": horizon,
                 }
             )
 
@@ -5264,7 +5616,9 @@ def run_mining_stage(
                         f"{stage_name} fold {fold_id} seed {seed} feature usage by group: {summary_text}"
                     )
             fold_rules = extractor.extract_rules(
-                model, f"{stage_name}_model", fold_id, seed
+                model, f"{stage_name}_model", fold_id, seed,
+                target_name=target_name,
+                horizon=horizon,
             )
             all_extracted_rules.extend(fold_rules)
             if extractor.rejection_audit:
@@ -5298,23 +5652,8 @@ def run_mining_stage(
 
     if fold_quality_reports:
         fq_df = pd.DataFrame(fold_quality_reports)
-        data_cols = [
-            "fold_id",
-            "tr_rows_before",
-            "tr_rows_after",
-            "tr_dropped",
-            "tr_drop_pct",
-            "tr_nan_feat",
-            "tr_nan_ret",
-            "tr_nan_norm",
-            "va_rows_before",
-            "va_rows_after",
-            "va_dropped",
-            "va_drop_pct",
-            "va_nan_feat",
-            "va_nan_ret",
-            "va_nan_norm",
-        ]
+        # Simplified columns after removing per-fold filtering
+        data_cols = ["fold_id", "tr_rows", "va_rows"]
         tgt_cols = [
             "fold_id",
             "target_mean",
@@ -5327,7 +5666,9 @@ def run_mining_stage(
         fq_df[data_cols].to_csv(
             output_dir / "fold_data_quality_report.csv", index=False
         )
-        fq_df[tgt_cols].to_csv(
+        # Check if tgt_cols exist (they might be missing if all targets were NaN in a fold)
+        actual_tgt_cols = [c for c in tgt_cols if c in fq_df.columns]
+        fq_df[actual_tgt_cols].to_csv(
             output_dir / "fold_target_distribution_report.csv", index=False
         )
 
@@ -5525,19 +5866,26 @@ def run_mining_stage(
 
     scorer_accepted = scored_registry[scored_registry["accepted"]].copy()
 
-    use_economic_consolidator = cfg.get("use_economic_consolidator", True)
-    if use_economic_consolidator:
-        consolidator = EconomicRuleConsolidator(
-            metadata, cfg, mask_resolver=mask_resolver, scorer=scorer
-        )
+    if cfg.get("skip_stage_a_consolidation", True) and pipeline_stage_name == "stage_a_context":
+        tprint("SKIPPING Stage A consolidation per configuration.")
+        consolidated_registry = scorer_accepted.copy()
+        lineage_audit = pd.DataFrame()
+        consol_diag = {}
     else:
-        consolidator = RuleConsolidator(
-            metadata, cfg, mask_resolver=mask_resolver, scorer=scorer
+        use_economic_consolidator = cfg.get("use_economic_consolidator", True)
+        if use_economic_consolidator:
+            consolidator = EconomicRuleConsolidator(
+                metadata, cfg, mask_resolver=mask_resolver, scorer=scorer
+            )
+        else:
+            consolidator = RuleConsolidator(
+                metadata, cfg, mask_resolver=mask_resolver, scorer=scorer
+            )
+
+        consolidated_registry, lineage_audit, consol_diag = consolidator.consolidate(
+            scorer_accepted, fwd_ret, folds, resolver=mask_resolver, data=data
         )
 
-    consolidated_registry, lineage_audit, consol_diag = consolidator.consolidate(
-        scorer_accepted, fwd_ret, folds, resolver=mask_resolver, data=data
-    )
     atomic_to_csv(consolidated_registry, output_dir / "consolidated_rule_registry.csv")
     atomic_to_csv(lineage_audit, output_dir / "consolidation_lineage_audit.csv")
 
@@ -5648,8 +5996,45 @@ def run_side_pipeline(
     cfg: Dict[str, Any],
     folds: List[Tuple[np.ndarray, np.ndarray]],
     root_output_dir: Path,
+    target_name: str = "fwd_ret_norm",
+    horizon: int = 0,
+    bounded_target: Optional[np.ndarray] = None,
 ) -> Dict[str, pd.DataFrame]:
+    """
+    Run the full side pipeline (long or short).
+
+    Parameters
+    ----------
+    side : str
+        'long' or 'short'
+    data : pd.DataFrame
+        DataFrame with event metadata
+    feature_dict : Dict[str, np.ndarray]
+        Dictionary of feature arrays
+    fwd_ret : np.ndarray
+        Forward returns (raw)
+    fwd_ret_norm : np.ndarray
+        Forward returns (normalized by ATR)
+    cfg : Dict[str, Any]
+        Configuration dictionary
+    folds : List[Tuple[np.ndarray, np.ndarray]]
+        Pre-computed folds
+    root_output_dir : Path
+        Root output directory
+    target_name : str
+        Name of the target for provenance tracking (default: 'fwd_ret_norm')
+    horizon : int
+        Horizon in bars for provenance tracking (default: 0)
+
+    Returns
+    -------
+    Dict[str, pd.DataFrame]
+        Pipeline results including stage registries
+    """
     tprint(f"--- RUNNING PIPELINE FOR SIDE: {side.upper()} ---")
+    
+    # Log target provenance
+    tprint(f"Target: {target_name} | Horizon: {horizon}")
 
     side_fwd_ret = fwd_ret if side == "long" else -fwd_ret
     side_fwd_ret_norm = fwd_ret_norm if side == "long" else -fwd_ret_norm
@@ -5697,6 +6082,9 @@ def run_side_pipeline(
                 "lambda_l1": float(cfg.get("lambda_l1", 0.0)),
                 "lambda_l2": float(cfg.get("lambda_l2", 0.0)),
                 "verbosity": -1,
+                "bagging_fraction": 0.8,
+                "bagging_freq": 1,
+                "feature_fraction": 0.8,
             }
             
             hpo_results = run_short_hpo_for_target_horizon(
@@ -5727,6 +6115,13 @@ def run_side_pipeline(
             tprint(f"Dynamic HPO encountered error: {e}. Using defaults.")
             traceback.print_exc()
 
+    # Use bounded_target as the real training target if provided.
+    # For short side, flip sign (higher target_eff = more favourable for that side).
+    if bounded_target is not None:
+        side_target = -bounded_target if side == "short" else bounded_target
+    else:
+        side_target = side_fwd_ret_norm  # legacy fallback
+
     stage_a_result = run_mining_stage(
         data,
         side_fwd_ret,
@@ -5742,6 +6137,9 @@ def run_side_pipeline(
         mask_resolver=CanonicalRuleMaskResolver(X_a, metadata_a),
         pipeline_stage_name="stage_a_context",
         explicit_side=side,
+        target_name=target_name,
+        horizon=horizon,
+        primary_target_override=side_target,
     )
     log_stage_gate_diagnostics("Stage A", stage_a_result, cfg)
 
@@ -5812,26 +6210,57 @@ def run_side_pipeline(
             pd.DataFrame(
                 columns=[
                     "canonical_key",
-                    "mask_score",
+                    "regime_score",
                     "is_structurally_sound",
                     "rejection_reason",
+                    "support_pct",
+                    "support_ok",
+                    "support_score",
                     "avg_trades_per_day",
                     "density_dispersion",
                     "tail_ratio",
+                    "mae",
+                    "mfe",
+                    "mean_ret_global",
+                    "mean_ret_mask",
+                    "ret_uplift",
                     "lift",
                     "learn_eff_ratio",
+                    "subset_oof_coverage",
+                    "baseline_oof_coverage",
                     "entropy_reduction",
-                    "path_efficiency",
                     "tp_rate",
                     "sl_rate",
                     "timeout_rate",
                     "ev_per_trade",
+                    "ev_per_event",
                     "win_rate_conditional",
                     "win_rate_unconditional",
+                    "production_classification",
+                    "classification_diagnostics",
+                    "rule_type_class",
                 ]
             ),
             stage_b_output_dir / "final_mask_assessment_audit.csv",
         )
+        return {
+            "stage_a": winning_contexts,
+            "stage_a_result": stage_a_result,
+            "stage_b": pd.DataFrame(),
+            "stage_b_trig_result": None,
+            "stage_b_loc_result": None,
+            "metadata_a": metadata_a,
+            "metadata_b_trig": [],
+            "metadata_b_loc": [],
+            "X_a": X_a,
+            "X_b_trig": None,
+            "X_b_loc": None,
+            "context_feature_dict": {},
+            "context_to_key": {},
+        }
+
+    if cfg.get("skip_stage_b", True):
+        tprint(f"SKIPPING Stage B for side {side.upper()} per configuration.")
         return {
             "stage_a": winning_contexts,
             "stage_a_result": stage_a_result,
@@ -5967,6 +6396,8 @@ def run_side_pipeline(
         rule_key_rewriter=reconstruct_stage_b_loc_key,
         pipeline_stage_name="stage_b_location_refinement",
         explicit_side=side,
+        target_name=target_name,
+        horizon=horizon,
     )
 
     # Only location refinement active (trigger disabled)
@@ -6229,18 +6660,31 @@ def run_two_stage_lgbm_mask_generation(
     def extract_masks_from_results(results: Dict[str, Any], side: str):
         if results["X_a"] is None:
             return
+        stage_a_accepted = results["stage_a"]
+        stage_b_accepted = results["stage_b"]
+
         stage_a_resolver = CanonicalRuleMaskResolver(
             results["X_a"], results["metadata_a"]
         )
-        stage_b_resolver = CanonicalRuleMaskResolver(
-            results[
-                "X_b_trig"
-            ],  # We can use X_b_trig or X_b_loc, assuming they have the same shape/base features + contexts
-            results["metadata_b_trig"],
-            context_lookup=results["context_feature_dict"],
-            context_key_map=results["context_to_key"],
-            slot_order=("trigger", "location", "regime"),
-        )
+        
+        # Only build Stage B resolver if it was run
+        stage_b_resolver = None
+        if results["X_b_trig"] is not None:
+            stage_b_resolver = CanonicalRuleMaskResolver(
+                results["X_b_trig"],
+                results["metadata_b_trig"],
+                context_lookup=results["context_feature_dict"],
+                context_key_map=results["context_to_key"],
+                slot_order=("trigger", "location", "regime"),
+            )
+        elif results["X_b_loc"] is not None:
+            stage_b_resolver = CanonicalRuleMaskResolver(
+                results["X_b_loc"],
+                results["metadata_b_loc"],
+                context_lookup=results["context_feature_dict"],
+                context_key_map=results["context_to_key"],
+                slot_order=("trigger", "location", "regime"),
+            )
         stage_a_accepted = results["stage_a"]
         if stage_a_accepted is not None and not stage_a_accepted.empty:
             for _, row in stage_a_accepted.iterrows():
@@ -6481,6 +6925,1217 @@ def run_two_stage_lgbm_mask_generation(
     }
 
 
+def run_two_stage_lgbm_mask_generation_triad(
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    triad_targets: Dict[str, Dict[int, np.ndarray]],
+    cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Triad-target version of the mask generation pipeline.
+
+    Runs the Cartesian product:
+        for horizon in horizons:
+            for target_name in [eff, ela, vame]:
+                for side in [long, short]:
+                    run_side_pipeline(...)
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        DataFrame with event metadata
+    feature_dict : Dict[str, np.ndarray]
+        Dictionary of feature arrays
+    triad_targets : Dict[str, Dict[int, np.ndarray]]
+        Nested dict of bounded targets: {target_name: {horizon: target_array}}
+        e.g., {"target_eff": {5: array, 10: array, ...}, ...}
+    cfg : Dict[str, Any]
+        Configuration dictionary
+
+    Returns
+    -------
+    Dict[str, Any]
+        Merged discovery outputs with provenance. Structure:
+        {
+            "results_by_target_horizon": {
+                ("target_eff", 5): {"long": ..., "short": ...},
+                ...
+            },
+            "combined_registry": pd.DataFrame,
+        }
+    """
+    tprint("=" * 80)
+    tprint("TRIAD-TARGET TWO-STAGE LGBM MASK GENERATION: START")
+    tprint("=" * 80)
+
+    # Get horizons and target names from config or defaults
+    horizons = cfg.get("triad_horizons", TRIAD_DEFAULT_HORIZONS)
+    target_names = cfg.get("triad_target_names", TRIAD_DEFAULT_TARGET_NAMES)
+
+    tprint(f"Horizons: {horizons}")
+    tprint(f"Targets: {target_names}")
+    tprint(f"Total combinations: {len(horizons) * len(target_names) * 2} (horizons × targets × sides)")
+
+    root_output_dir = build_run_output_dir(cfg)
+    
+    # Build folds once (shared across all combinations)
+    folds = build_walk_forward_folds(
+        n_samples=len(data),
+        n_folds=int(cfg.get("n_folds", 5)),
+        min_train_frac=float(cfg.get("cv_min_train_frac", 0.5)),
+        embargo=int(cfg.get("cv_embargo", 0)),
+    )
+
+    # Store results by (target_name, horizon, side)
+    results_by_target_horizon: Dict[Tuple[str, int, str], Dict[str, Any]] = {}
+    
+    # Track all registries for final combination
+    all_registries: List[pd.DataFrame] = []
+
+    total_combinations = len(horizons) * len(target_names)
+    current_combination = 0
+
+    for horizon in horizons:
+        for target_name in target_names:
+            current_combination += 1
+            tprint(f"\n{'='*60}")
+            tprint(f"COMBINATION {current_combination}/{total_combinations}: {target_name} @ H{horizon}")
+            tprint(f"{'='*60}")
+
+            # Get bounded target for this target_name/horizon
+            bounded_target = None
+            if target_name in triad_targets:
+                if horizon in triad_targets[target_name]:
+                    bounded_target = triad_targets[target_name][horizon]
+                    tprint(f"Using bounded target array: shape={bounded_target.shape}, "
+                           f"range=[{np.nanmin(bounded_target):.3f}, {np.nanmax(bounded_target):.3f}]")
+                else:
+                    tprint(f"WARNING: No bounded target for {target_name} @ H{horizon}, skipping")
+                    continue
+            else:
+                tprint(f"WARNING: Target {target_name} not found in triad_targets, skipping")
+                continue
+
+            # Build horizon-specific output directory
+            horizon_target_dir = root_output_dir / f"h{horizon}" / target_name
+            horizon_target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create horizon-specific config with target settings
+            horizon_cfg = cfg.copy()
+            horizon_cfg["target_name"] = target_name
+            horizon_cfg["horizon"] = horizon
+            
+            # Apply per-target config from TRIAD_TARGET_CONFIGS
+            if target_name in TRIAD_TARGET_CONFIGS:
+                target_config = TRIAD_TARGET_CONFIGS[target_name]
+                horizon_cfg["huber_alpha"] = target_config.get("huber_alpha", 0.9)
+                horizon_cfg["learning_rate"] = target_config.get("learning_rate", 0.03)
+                horizon_cfg["min_support_pct"] = target_config.get("min_support_pct", 0.05)
+                horizon_cfg["ic_hurdle"] = target_config.get("ic_hurdle", 0.02)
+                tprint(f"Applied target config: huber_alpha={target_config.get('huber_alpha')}, "
+                       f"lr={target_config.get('learning_rate')}")
+
+            # Apply horizon-specific config from HORIZON_CONFIGS
+            if horizon in HORIZON_CONFIGS:
+                horizon_config = HORIZON_CONFIGS[horizon]
+                min_leaf_mult = horizon_config.get("min_data_in_leaf_multiplier", 1.0)
+                base_min_leaf = int(horizon_cfg.get("min_data_in_leaf", 64))
+                horizon_cfg["min_data_in_leaf"] = int(base_min_leaf * min_leaf_mult)
+                tprint(f"Applied horizon config: min_data_in_leaf_multiplier={min_leaf_mult}")
+
+            # For triad targets, we use the bounded_target itself as the "return" for scoring
+            # so that RuleScorer and MaskAssessor see the actual edge we are mining.
+            dummy_fwd_ret = bounded_target.astype(np.float32, copy=True)
+            dummy_fwd_ret_norm = bounded_target.astype(np.float32, copy=True)
+
+            # Run both sides
+            for side in ["long", "short"]:
+                tprint(f"\n--- Running {side.upper()} side for {target_name} @ H{horizon} ---")
+                
+                side_results = run_side_pipeline(
+                    side=side,
+                    data=data,
+                    feature_dict=feature_dict,
+                    fwd_ret=dummy_fwd_ret,
+                    fwd_ret_norm=dummy_fwd_ret_norm,
+                    cfg=horizon_cfg,
+                    folds=folds,
+                    root_output_dir=horizon_target_dir,
+                    target_name=target_name,
+                    horizon=horizon,
+                    bounded_target=bounded_target,
+                )
+
+                # Store results
+                results_by_target_horizon[(target_name, horizon, side)] = side_results
+
+                # Add provenance to registry
+                if not side_results["stage_a"].empty:
+                    stage_a_with_prov = side_results["stage_a"].copy()
+                    stage_a_with_prov["source_target"] = target_name
+                    stage_a_with_prov["source_horizon"] = horizon
+                    all_registries.append(stage_a_with_prov)
+
+                if not side_results["stage_b"].empty:
+                    stage_b_with_prov = side_results["stage_b"].copy()
+                    stage_b_with_prov["source_target"] = target_name
+                    stage_b_with_prov["source_horizon"] = horizon
+                    all_registries.append(stage_b_with_prov)
+
+    # Combine all registries
+    tprint(f"\n{'='*60}")
+    tprint("COMBINING ALL TRIAD RESULTS")
+    tprint(f"{'='*60}")
+
+    if all_registries:
+        combined_registry = pd.concat(all_registries, ignore_index=True)
+        combined_registry = combined_registry.drop_duplicates(
+            subset=["canonical_key", "side", "source_target", "source_horizon"],
+            keep="first"
+        )
+    else:
+        combined_registry = pd.DataFrame()
+
+    # Save combined registry
+    combined_registry["preset"] = cfg.get("preset", "triad_exploration")
+    combined_registry.to_csv(
+        root_output_dir / "triad_combined_registry.csv", index=False
+    )
+
+    # Summary statistics
+    tprint(f"\nTRIAD TRAINING COMPLETE")
+    tprint(f"Total combinations processed: {current_combination}/{total_combinations}")
+    tprint(f"Total rules discovered: {len(combined_registry)}")
+
+    if not combined_registry.empty:
+        # Breakdown by target/horizon
+        breakdown = (
+            combined_registry
+            .groupby(["source_target", "source_horizon", "side"])
+            .size()
+            .reset_index(name="count")
+        )
+        breakdown.to_csv(
+            root_output_dir / "triad_breakdown_by_target_horizon.csv", index=False
+        )
+        tprint("\nBreakdown by target/horizon/side:")
+        for _, row in breakdown.iterrows():
+            tprint(f"  {row['source_target']} H{row['source_horizon']} {row['side']}: {row['count']}")
+
+    # Save configuration used
+    triad_config = {
+        "horizons": horizons,
+        "target_names": target_names,
+        "total_combinations": total_combinations,
+        "completed_combinations": current_combination,
+        "total_rules": len(combined_registry),
+    }
+    with open(root_output_dir / "triad_config.json", "w") as f:
+        json.dump(triad_config, f, indent=2)
+
+    # Run merged discovery analysis
+    tprint(f"\n{'='*60}")
+    tprint("MERGED DISCOVERY ANALYSIS")
+    tprint(f"{'='*60}")
+    
+    # Build all_results list for merge functions
+    all_results = []
+    for (t_name, h, side), result in results_by_target_horizon.items():
+        all_results.append({
+            "target_name": t_name,
+            "horizon": h,
+            "side": side,
+            "accepted_rules": result.get("accepted_registry", pd.DataFrame()).to_dict("records") if not result.get("accepted_registry", pd.DataFrame()).empty else [],
+            "candidate_rules": result.get("candidate_registry", pd.DataFrame()).to_dict("records") if not result.get("candidate_registry", pd.DataFrame()).empty else [],
+        })
+    
+    # Merge discovery outputs
+    merged_output = merge_discovery_outputs_across_targets(
+        all_results=all_results,
+        output_dir=str(root_output_dir),
+    )
+    
+    # Create cross-target analysis
+    cross_target_analysis = analyze_cross_target_rules(merged_output["merged_rules"])
+    
+    # Create target quality summary
+    quality_summary = create_target_quality_summary(
+        all_results=all_results,
+        output_path=str(root_output_dir / "target_quality_summary.csv"),
+    )
+    
+    # Save merged outputs
+    if not merged_output["merged_rules"].empty:
+        merged_output["merged_rules"].to_csv(
+            root_output_dir / "merged_discovery_all.csv", index=False
+        )
+        tprint(f"Saved merged_discovery_all.csv: {len(merged_output['merged_rules'])} rules")
+    
+    if not merged_output["dedup_rules"].empty:
+        merged_output["dedup_rules"].to_csv(
+            root_output_dir / "merged_discovery_dedup.csv", index=False
+        )
+        tprint(f"Saved merged_discovery_dedup.csv: {len(merged_output['dedup_rules'])} deduplicated rules")
+    
+    # Save cross-target analysis
+    with open(root_output_dir / "cross_target_analysis.json", "w") as f:
+        json.dump(cross_target_analysis, f, indent=2, default=str)
+    
+    # Save triad run summary
+    triad_run_summary = {
+        "horizons": horizons,
+        "target_names": target_names,
+        "total_combinations": total_combinations,
+        "completed_combinations": current_combination,
+        "total_rules": len(combined_registry),
+        "deduplicated_rules": len(merged_output["dedup_rules"]),
+        "cross_target_rules_count": len(cross_target_analysis.get("cross_target_rules", [])),
+        "universal_rules_count": len(cross_target_analysis.get("universal_rules", [])),
+        "merge_stats": merged_output.get("summary_stats", {}),
+    }
+    with open(root_output_dir / "triad_run_summary.json", "w") as f:
+        json.dump(triad_run_summary, f, indent=2, default=str)
+    
+    tprint(f"\nTRIAD TRAINING COMPLETE")
+    tprint(f"Total rules: {len(combined_registry)}")
+    tprint(f"Deduplicated rules: {len(merged_output['dedup_rules'])}")
+    tprint(f"Cross-target rules: {len(cross_target_analysis.get('cross_target_rules', []))}")
+    tprint(f"Universal rules: {len(cross_target_analysis.get('universal_rules', []))}")
+
+    return {
+        "results_by_target_horizon": {
+            (t, h): {
+                "long": results_by_target_horizon.get((t, h, "long"), {}),
+                "short": results_by_target_horizon.get((t, h, "short"), {}),
+            }
+            for t in target_names
+            for h in horizons
+        },
+        "combined_registry": combined_registry,
+        "merged_output": merged_output,
+        "cross_target_analysis": cross_target_analysis,
+        "quality_summary": quality_summary,
+    }
+
+
+# =============================================================================
+# MERGED DISCOVERY OUTPUT FUNCTIONS
+# =============================================================================
+
+
+def merge_discovery_outputs_across_targets(
+    all_results: List[Dict[str, Any]],
+    output_dir: str,
+    dedup_strategy: str = "canonical_key",
+) -> Dict[str, Any]:
+    """
+    Merge discovered rules/contexts from all (target, horizon) runs.
+    
+    Parameters
+    ----------
+    all_results : List[Dict[str, Any]]
+        List of result dicts from run_side_pipeline().
+        Each contains:
+        - target_name: str
+        - horizon: int
+        - side: str
+        - accepted_rules: list of rule dicts
+        - candidate_rules: list of rule dicts
+    output_dir : str
+        Base output directory
+    dedup_strategy : str
+        How to deduplicate ("canonical_key" or "structural")
+    
+    Returns
+    -------
+    Dict[str, Any]
+        Dict with:
+        - merged_rules: pd.DataFrame with all rules and provenance
+        - dedup_rules: pd.DataFrame deduplicated by canonical key
+        - cross_target_rules: rules appearing in multiple targets
+        - summary_stats: dict of merge statistics
+    """
+    tprint(f"Merging discovery outputs from {len(all_results)} result sets...")
+    
+    all_rules = []
+    for result in all_results:
+        target_name = result.get("target_name", "unknown")
+        horizon = result.get("horizon", 0)
+        side = result.get("side", "unknown")
+        
+        # Process accepted rules
+        for rule in result.get("accepted_rules", []):
+            rule_with_prov = dict(rule)
+            rule_with_prov["source_target"] = target_name
+            rule_with_prov["source_horizon"] = horizon
+            rule_with_prov["side"] = side
+            rule_with_prov["rule_status"] = "accepted"
+            all_rules.append(rule_with_prov)
+        
+        # Process candidate rules
+        for rule in result.get("candidate_rules", []):
+            rule_with_prov = dict(rule)
+            rule_with_prov["source_target"] = target_name
+            rule_with_prov["source_horizon"] = horizon
+            rule_with_prov["side"] = side
+            rule_with_prov["rule_status"] = "candidate"
+            all_rules.append(rule_with_prov)
+    
+    if not all_rules:
+        tprint("No rules to merge.")
+        return {
+            "merged_rules": pd.DataFrame(),
+            "dedup_rules": pd.DataFrame(),
+            "cross_target_rules": pd.DataFrame(),
+            "summary_stats": {"total_rules": 0, "unique_canonical_keys": 0},
+        }
+    
+    merged_df = pd.DataFrame(all_rules)
+    tprint(f"Total rules collected: {len(merged_df)}")
+    
+    # Deduplicate by canonical key
+    dedup_df = deduplicate_rules_by_canonical_key(all_rules, aggregation="mean")
+    tprint(f"Unique canonical keys: {len(dedup_df)}")
+    
+    # Summary stats
+    summary_stats = {
+        "total_rules": len(merged_df),
+        "unique_canonical_keys": len(dedup_df),
+        "targets_represented": merged_df["source_target"].nunique() if "source_target" in merged_df.columns else 0,
+        "horizons_represented": merged_df["source_horizon"].nunique() if "source_horizon" in merged_df.columns else 0,
+        "sides_represented": merged_df["side"].nunique() if "side" in merged_df.columns else 0,
+    }
+    
+    return {
+        "merged_rules": merged_df,
+        "dedup_rules": dedup_df,
+        "cross_target_rules": dedup_df[dedup_df["supporting_targets_count"] > 1] if "supporting_targets_count" in dedup_df.columns else pd.DataFrame(),
+        "summary_stats": summary_stats,
+    }
+
+
+def deduplicate_rules_by_canonical_key(
+    rules: List[Dict[str, Any]],
+    aggregation: str = "mean",
+) -> pd.DataFrame:
+    """
+    Deduplicate rules by canonical key, aggregating metrics.
+    
+    For each unique canonical_key:
+    - Keep provenance from all sources
+    - Aggregate numeric metrics (mean, min, max)
+    - Track all source targets/horizons
+    
+    Parameters
+    ----------
+    rules : List[Dict[str, Any]]
+        List of rule dictionaries
+    aggregation : str
+        Aggregation method ("mean", "min", "max")
+    
+    Returns
+    -------
+    pd.DataFrame
+        Deduplicated rules with aggregated metrics
+    """
+    if not rules:
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(rules)
+    
+    if "canonical_key" not in df.columns:
+        tprint("WARNING: No canonical_key column found, returning as-is")
+        return df
+    
+    # Columns to aggregate (numeric metrics)
+    ic_metric_cols = [
+        "mean_oos_ic", "p25_oos_ic", "p50_oos_ic", "p75_oos_ic",
+        "positive_ic_fraction", "within_mask_ic", "delta_within_mask_ic",
+    ]
+    rule_metric_cols = [
+        "mean_net_ret", "std_net_ret", "mean_support_pct", "presence_freq",
+        "sign_consistency", "entropy_reduction",
+    ]
+    all_metric_cols = ic_metric_cols + rule_metric_cols
+    
+    # Group by canonical_key
+    grouped = df.groupby("canonical_key")
+    
+    # Build aggregated records
+    aggregated_records = []
+    for canonical_key, group in grouped:
+        record = {"canonical_key": canonical_key}
+        
+        # Source provenance (take first/original)
+        if "source_target" in group.columns:
+            record["source_target"] = group["source_target"].iloc[0]
+        if "source_horizon" in group.columns:
+            record["source_horizon"] = group["source_horizon"].iloc[0]
+        if "side" in group.columns:
+            record["side"] = group["side"].iloc[0]
+        
+        # Supporting counts
+        if "source_target" in group.columns:
+            record["supporting_targets_count"] = group["source_target"].nunique()
+            record["targets_supporting_rule"] = json.dumps(sorted(group["source_target"].unique().tolist()))
+        else:
+            record["supporting_targets_count"] = 1
+            record["targets_supporting_rule"] = json.dumps([])
+        
+        if "source_horizon" in group.columns:
+            record["supporting_horizons_count"] = group["source_horizon"].nunique()
+            record["horizons_supporting_rule"] = json.dumps(sorted(group["source_horizon"].unique().tolist()))
+        else:
+            record["supporting_horizons_count"] = 1
+            record["horizons_supporting_rule"] = json.dumps([])
+        
+        # Aggregate numeric metrics
+        for col in all_metric_cols:
+            if col in group.columns:
+                col_values = group[col].dropna()
+                if len(col_values) > 0:
+                    if aggregation == "mean":
+                        record[col] = float(col_values.mean())
+                    elif aggregation == "min":
+                        record[col] = float(col_values.min())
+                    elif aggregation == "max":
+                        record[col] = float(col_values.max())
+                    else:
+                        record[col] = float(col_values.mean())
+                    
+                    # Also store min/max for IC metrics
+                    if col in ic_metric_cols:
+                        record[f"{col}_min"] = float(col_values.min())
+                        record[f"{col}_max"] = float(col_values.max())
+        
+        # Conservative metrics (min across sources)
+        if "presence_freq" in group.columns:
+            record["presence_freq_conservative"] = float(group["presence_freq"].dropna().min())
+        if "sign_consistency" in group.columns:
+            record["sign_consistency_conservative"] = float(group["sign_consistency"].dropna().min())
+        
+        # Structural soundness (all must be True)
+        if "is_structurally_sound" in group.columns:
+            record["is_structurally_sound"] = bool(group["is_structurally_sound"].fillna(False).all())
+        
+        # Production status (any source is production)
+        # Check both production_status and production_classification columns
+        if "production_classification" in group.columns:
+            record["merged_production_status"] = "production" if (group["production_classification"] == "production").any() else "research"
+        elif "production_status" in group.columns:
+            record["merged_production_status"] = "production" if (group["production_status"] == "production").any() else "exploration"
+        else:
+            record["merged_production_status"] = "research"
+        
+        # Rule type class (ranking or gate) - use most common across sources
+        if "rule_type_class" in group.columns:
+            rule_type_classes = group["rule_type_class"].dropna().tolist()
+            if rule_type_classes:
+                record["merged_rule_type_class"] = max(set(rule_type_classes), key=rule_type_classes.count)
+            else:
+                record["merged_rule_type_class"] = "rejected"
+        else:
+            record["merged_rule_type_class"] = "rejected"
+        
+        # Rule type (original column - ranking or gate)
+        if "rule_type" in group.columns:
+            # Take most common rule type
+            record["rule_type"] = group["rule_type"].mode().iloc[0] if len(group["rule_type"].mode()) > 0 else "unknown"
+        
+        # Copy other important columns from first row
+        for col in ["display_arity", "composite_score", "hurdle_excess", "conditions"]:
+            if col in group.columns:
+                record[col] = group[col].iloc[0]
+        
+        aggregated_records.append(record)
+    
+    result_df = pd.DataFrame(aggregated_records)
+    
+    # Sort by supporting targets count (descending), then by composite score
+    sort_cols = []
+    if "supporting_targets_count" in result_df.columns:
+        sort_cols.append("supporting_targets_count")
+    if "composite_score" in result_df.columns:
+        sort_cols.append("composite_score")
+    if sort_cols:
+        result_df = result_df.sort_values(sort_cols, ascending=[False, False])
+    
+    return result_df.reset_index(drop=True)
+
+
+def analyze_cross_target_rules(
+    merged_df: pd.DataFrame
+) -> Dict[str, Any]:
+    """
+    Analyze rules that appear across multiple targets.
+    
+    Parameters
+    ----------
+    merged_df : pd.DataFrame
+        Merged rules DataFrame with provenance
+    
+    Returns
+    -------
+    Dict[str, Any]
+        - cross_target_rules: Rules appearing in 2+ targets
+        - universal_rules: Rules appearing in all 3 targets
+        - target_specific_rules: Rules unique to one target
+        - cross_horizon_rules: Rules appearing at multiple horizons
+        - single_horizon_rules: Rules at only one horizon
+    """
+    if merged_df.empty:
+        return {
+            "cross_target_rules": [],
+            "universal_rules": [],
+            "target_specific_rules": [],
+            "cross_horizon_rules": [],
+            "single_horizon_rules": [],
+            "summary": {},
+        }
+    
+    result = {
+        "cross_target_rules": [],
+        "universal_rules": [],
+        "target_specific_rules": [],
+        "cross_horizon_rules": [],
+        "single_horizon_rules": [],
+        "summary": {},
+    }
+    
+    # Check if we have the necessary columns
+    if "supporting_targets_count" not in merged_df.columns:
+        return result
+    
+    # Cross-target rules (2+ targets)
+    cross_target_mask = merged_df["supporting_targets_count"] >= 2
+    cross_target_df = merged_df[cross_target_mask]
+    result["cross_target_rules"] = cross_target_df.to_dict("records")
+    
+    # Universal rules (all 3 targets)
+    universal_mask = merged_df["supporting_targets_count"] >= 3
+    universal_df = merged_df[universal_mask]
+    result["universal_rules"] = universal_df.to_dict("records")
+    
+    # Target-specific rules (1 target only)
+    specific_mask = merged_df["supporting_targets_count"] == 1
+    specific_df = merged_df[specific_mask]
+    result["target_specific_rules"] = specific_df.to_dict("records")
+    
+    # Cross-horizon rules
+    if "supporting_horizons_count" in merged_df.columns:
+        cross_horizon_mask = merged_df["supporting_horizons_count"] >= 2
+        cross_horizon_df = merged_df[cross_horizon_mask]
+        result["cross_horizon_rules"] = cross_horizon_df.to_dict("records")
+        
+        single_horizon_mask = merged_df["supporting_horizons_count"] == 1
+        single_horizon_df = merged_df[single_horizon_mask]
+        result["single_horizon_rules"] = single_horizon_df.to_dict("records")
+    
+    # Summary statistics
+    result["summary"] = {
+        "total_rules": len(merged_df),
+        "cross_target_count": len(result["cross_target_rules"]),
+        "universal_count": len(result["universal_rules"]),
+        "target_specific_count": len(result["target_specific_rules"]),
+        "cross_horizon_count": len(result["cross_horizon_rules"]),
+        "single_horizon_count": len(result["single_horizon_rules"]),
+    }
+    
+    tprint(f"Cross-target analysis: {len(result['cross_target_rules'])} cross-target, "
+           f"{len(result['universal_rules'])} universal, "
+           f"{len(result['target_specific_rules'])} target-specific")
+    
+    return result
+
+
+def classify_rule_type(
+    mean_oos_ic: float,
+    within_mask_ic: float,
+    delta_within_mask_ic: float,
+    ic_threshold: float = 0.02,
+    delta_threshold: float = 0.03,
+) -> str:
+    """
+    Classify rule as ranking vs gate regime.
+    
+    Ranking regime:
+    - mean_oos_ic > ic_threshold
+    - Can be used for continuous ranking/sizing
+    
+    Gate/filter regime:
+    - mean_oos_ic <= ic_threshold (weak or negative global IC)
+    - BUT within_mask_ic > mean_oos_ic + delta_threshold
+    - OR delta_within_mask_ic > delta_threshold
+    - Used for selection/gating, not continuous ranking
+    
+    Rejected:
+    - Neither ranking nor gate characteristics
+    
+    Parameters
+    ----------
+    mean_oos_ic : float
+        Mean out-of-sample IC across folds
+    within_mask_ic : float
+        IC computed within the mask (regime-specific IC)
+    delta_within_mask_ic : float
+        Difference between within_mask_ic and global IC
+    ic_threshold : float
+        Minimum IC for ranking regime (default 0.02)
+    delta_threshold : float
+        Minimum delta IC for gate regime (default 0.03)
+    
+    Returns
+    -------
+    str
+        "ranking", "gate", or "rejected"
+    """
+    # Handle NaN values
+    if not np.isfinite(mean_oos_ic):
+        mean_oos_ic = -np.inf
+    if not np.isfinite(within_mask_ic):
+        within_mask_ic = -np.inf
+    if not np.isfinite(delta_within_mask_ic):
+        delta_within_mask_ic = 0.0
+    
+    # Ranking regime: strong global IC
+    if mean_oos_ic > ic_threshold:
+        return "ranking"
+    
+    # Gate regime: weak global IC but strong within-mask improvement
+    if within_mask_ic > mean_oos_ic + delta_threshold:
+        return "gate"
+    
+    if delta_within_mask_ic > delta_threshold:
+        return "gate"
+    
+    # Neither ranking nor gate
+    return "rejected"
+
+
+def classify_rule_production_quality(
+    rule: Dict[str, Any],
+    min_folds: int = 3,
+    min_presence_freq: float = 0.75,
+    min_positive_ic_fraction: float = 0.6,
+    min_mean_oos_ic: float = 0.0,
+    min_support_actual: int = 50,
+    min_within_mask_ic_lift: float = 0.02,
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Classify rule as production-quality, research, or rejected.
+    
+    Production-quality rules must meet ALL of:
+    - n_folds >= min_folds
+    - presence_freq >= min_presence_freq
+    - positive_ic_fraction >= min_positive_ic_fraction
+    - mean_oos_ic > 0, OR within_mask_ic materially > global_ic (for gate rules)
+    - min_support_actual >= min_support_actual
+    - not dominated by simpler parent unless uplift is material
+    - structurally sound
+    
+    Classification:
+    - "production": Meets all criteria AND (strong IC OR strong gate characteristics)
+    - "research": Meets some criteria, needs further study
+    - "rejected": Fails critical criteria
+    
+    Parameters
+    ----------
+    rule : Dict[str, Any]
+        Rule dictionary with metrics
+    min_folds : int
+        Minimum number of folds rule must appear in (default 3)
+    min_presence_freq : float
+        Minimum presence frequency across folds (default 0.75)
+    min_positive_ic_fraction : float
+        Minimum fraction of folds with positive IC (default 0.6)
+    min_mean_oos_ic : float
+        Minimum mean OOS IC (default 0.0)
+    min_support_actual : int
+        Minimum actual support count (default 50)
+    min_within_mask_ic_lift : float
+        Minimum within-mask IC lift for gate rules (default 0.02)
+    
+    Returns
+    -------
+    Tuple[str, Dict[str, Any]]
+        (classification, diagnostics_dict)
+        classification is "production", "research", or "rejected"
+    """
+    diagnostics: Dict[str, Any] = {
+        "checks": {},
+        "failures": [],
+        "warnings": [],
+    }
+    
+    # Extract metrics with safe defaults
+    n_folds = rule.get("n_folds", 0)
+    presence_freq = rule.get("presence_freq", 0.0)
+    positive_ic_fraction = rule.get("positive_ic_fraction", 0.0)
+    mean_oos_ic = rule.get("mean_oos_ic", np.nan)
+    min_support_actual = rule.get("min_support_actual", 0)
+    within_mask_ic = rule.get("within_mask_ic", np.nan)
+    delta_within_mask_ic = rule.get("delta_within_mask_ic", np.nan)
+    is_structurally_sound = rule.get("is_structurally_sound", False)
+    dominated_by_parent = rule.get("dominated_by_parent", False)
+    sign_consistency = rule.get("sign_consistency", 0.0)
+    
+    # Handle NaN values
+    if not np.isfinite(mean_oos_ic):
+        mean_oos_ic = -np.inf
+    if not np.isfinite(within_mask_ic):
+        within_mask_ic = -np.inf
+    if not np.isfinite(delta_within_mask_ic):
+        delta_within_mask_ic = 0.0
+    
+    # Check 1: Fold count
+    fold_check = n_folds >= min_folds
+    diagnostics["checks"]["n_folds"] = {
+        "value": n_folds,
+        "threshold": min_folds,
+        "passed": fold_check,
+    }
+    if not fold_check:
+        diagnostics["failures"].append(f"n_folds={n_folds} < {min_folds}")
+    
+    # Check 2: Presence frequency
+    presence_check = presence_freq >= min_presence_freq
+    diagnostics["checks"]["presence_freq"] = {
+        "value": presence_freq,
+        "threshold": min_presence_freq,
+        "passed": presence_check,
+    }
+    if not presence_check:
+        diagnostics["failures"].append(f"presence_freq={presence_freq:.3f} < {min_presence_freq}")
+    
+    # Check 3: Positive IC fraction
+    ic_frac_check = positive_ic_fraction >= min_positive_ic_fraction
+    diagnostics["checks"]["positive_ic_fraction"] = {
+        "value": positive_ic_fraction,
+        "threshold": min_positive_ic_fraction,
+        "passed": ic_frac_check,
+    }
+    if not ic_frac_check:
+        diagnostics["failures"].append(f"positive_ic_fraction={positive_ic_fraction:.3f} < {min_positive_ic_fraction}")
+    
+    # Check 4: Mean OOS IC (or gate exception)
+    # For gate rules, we allow negative global IC if within-mask IC is strong
+    is_gate_rule = (
+        mean_oos_ic <= 0.02 and
+        (within_mask_ic > mean_oos_ic + 0.03 or delta_within_mask_ic > 0.03)
+    )
+    ic_check = mean_oos_ic > min_mean_oos_ic or (is_gate_rule and delta_within_mask_ic > min_within_mask_ic_lift)
+    diagnostics["checks"]["mean_oos_ic"] = {
+        "value": mean_oos_ic,
+        "threshold": min_mean_oos_ic,
+        "is_gate_rule": is_gate_rule,
+        "within_mask_ic_lift": delta_within_mask_ic,
+        "passed": ic_check,
+    }
+    if not ic_check:
+        diagnostics["failures"].append(f"mean_oos_ic={mean_oos_ic:.4f} <= {min_mean_oos_ic} and not a gate rule")
+    
+    # Check 5: Support count
+    support_check = min_support_actual >= min_support_actual
+    diagnostics["checks"]["min_support_actual"] = {
+        "value": min_support_actual,
+        "threshold": min_support_actual,
+        "passed": support_check,
+    }
+    if not support_check:
+        diagnostics["failures"].append(f"min_support_actual={min_support_actual} < {min_support_actual}")
+    
+    # Check 6: Structural soundness
+    structural_check = is_structurally_sound
+    diagnostics["checks"]["is_structurally_sound"] = {
+        "value": is_structurally_sound,
+        "passed": structural_check,
+    }
+    if not structural_check:
+        diagnostics["failures"].append("not_structurally_sound")
+    
+    # Check 7: Not dominated by parent (warning only)
+    if dominated_by_parent:
+        diagnostics["warnings"].append("dominated_by_simpler_parent")
+    
+    # Check 8: Sign consistency (warning only)
+    if sign_consistency < 0.75:
+        diagnostics["warnings"].append(f"low_sign_consistency={sign_consistency:.3f}")
+    
+    # Determine classification
+    critical_failures = [f for f in diagnostics["failures"] if "n_folds" in f or "structurally_sound" in f]
+    
+    if critical_failures:
+        # Critical failures -> rejected
+        classification = "rejected"
+    elif len(diagnostics["failures"]) == 0:
+        # All checks passed -> production
+        classification = "production"
+    elif len(diagnostics["failures"]) <= 2:
+        # Minor failures -> research
+        classification = "research"
+    else:
+        # Too many failures -> rejected
+        classification = "rejected"
+    
+    diagnostics["classification"] = classification
+    diagnostics["is_gate_rule"] = is_gate_rule
+    
+    return classification, diagnostics
+
+
+def compute_overall_target_quality_score(
+    mean_oos_ic: float,
+    positive_ic_fraction: float,
+    p25_oos_ic: float,
+    entropy_reduction: float,
+    delta_within_mask_ic: float,
+    production_rule_count: int,
+    total_rule_count: int,
+) -> float:
+    """
+    Compute overall target quality score.
+    
+    Weighted combination:
+    - 30%: mean_oos_ic (global learnability)
+    - 20%: positive_ic_fraction (stability)
+    - 15%: p25_oos_ic (worst-case IC)
+    - 15%: entropy_reduction (regime separation)
+    - 10%: delta_within_mask_ic (within-regime improvement)
+    - 10%: production_rule_ratio (rule quality)
+    
+    Parameters
+    ----------
+    mean_oos_ic : float
+        Mean out-of-sample IC
+    positive_ic_fraction : float
+        Fraction of folds with positive IC
+    p25_oos_ic : float
+        25th percentile of OOS IC
+    entropy_reduction : float
+        Entropy reduction from regime
+    delta_within_mask_ic : float
+        Within-mask IC improvement
+    production_rule_count : int
+        Number of production-quality rules
+    total_rule_count : int
+        Total number of rules
+    
+    Returns
+    -------
+    float
+        Score in [0, 1] range
+    """
+    # Normalize each component to [0, 1]
+    # IC score: assume IC in [-0.2, 0.2]
+    ic_score = (mean_oos_ic + 0.2) / 0.4
+    ic_score = np.clip(ic_score, 0, 1)
+    
+    # Stability score: already in [0, 1]
+    stability_score = positive_ic_fraction
+    
+    # Worst-case score: same normalization as IC
+    worst_case_score = (p25_oos_ic + 0.2) / 0.4
+    worst_case_score = np.clip(worst_case_score, 0, 1)
+    
+    # Entropy reduction can be negative, normalize
+    # Assume range [-0.5, 0.5]
+    entropy_score = (entropy_reduction + 0.5) / 1.0
+    entropy_score = np.clip(entropy_score, 0, 1)
+    
+    # Delta score: assume range [-0.1, 0.1]
+    delta_score = (delta_within_mask_ic + 0.1) / 0.2
+    delta_score = np.clip(delta_score, 0, 1)
+    
+    # Rule ratio: already in [0, 1]
+    rule_ratio = production_rule_count / max(total_rule_count, 1)
+    
+    # Weighted combination
+    score = (
+        0.30 * ic_score +
+        0.20 * stability_score +
+        0.15 * worst_case_score +
+        0.15 * entropy_score +
+        0.10 * delta_score +
+        0.10 * rule_ratio
+    )
+    
+    return float(np.clip(score, 0, 1))
+
+
+def create_triad_run_summary(
+    all_results: List[Dict[str, Any]],
+    merged_rules: Optional[pd.DataFrame] = None,
+    output_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create summary of triad run including:
+    - Per-target production rule counts
+    - Per-horizon production rule counts
+    - Cross-target rule counts
+    - Overall quality assessment
+    
+    Parameters
+    ----------
+    all_results : List[Dict[str, Any]]
+        List of result dicts from run_side_pipeline()
+    merged_rules : Optional[pd.DataFrame]
+        Merged/deduplicated rules DataFrame
+    output_path : Optional[str]
+        Path to save the summary JSON
+    
+    Returns
+    -------
+    Dict[str, Any]
+        Summary dictionary with production rule counts and quality metrics
+    """
+    summary: Dict[str, Any] = {
+        "per_target_summary": {},
+        "per_horizon_summary": {},
+        "cross_target_summary": {},
+        "overall_quality": {},
+    }
+    
+    # Per-target summary
+    target_names = set()
+    for result in all_results:
+        target_name = result.get("target_name", "unknown")
+        target_names.add(target_name)
+        
+        if target_name not in summary["per_target_summary"]:
+            summary["per_target_summary"][target_name] = {
+                "total_rules": 0,
+                "production_rules": 0,
+                "research_rules": 0,
+                "rejected_rules": 0,
+                "ranking_rules": 0,
+                "gate_rules": 0,
+            }
+        
+        accepted_rules = result.get("accepted_rules", [])
+        summary["per_target_summary"][target_name]["total_rules"] += len(accepted_rules)
+        
+        for rule in accepted_rules:
+            classification = rule.get("production_classification", "research")
+            rule_type = rule.get("rule_type_class", "rejected")
+            
+            if classification == "production":
+                summary["per_target_summary"][target_name]["production_rules"] += 1
+            elif classification == "research":
+                summary["per_target_summary"][target_name]["research_rules"] += 1
+            else:
+                summary["per_target_summary"][target_name]["rejected_rules"] += 1
+            
+            if rule_type == "ranking":
+                summary["per_target_summary"][target_name]["ranking_rules"] += 1
+            elif rule_type == "gate":
+                summary["per_target_summary"][target_name]["gate_rules"] += 1
+    
+    # Per-horizon summary
+    horizons = set()
+    for result in all_results:
+        horizon = result.get("horizon", 0)
+        horizons.add(horizon)
+        
+        horizon_key = f"h{horizon}"
+        if horizon_key not in summary["per_horizon_summary"]:
+            summary["per_horizon_summary"][horizon_key] = {
+                "total_rules": 0,
+                "production_rules": 0,
+                "research_rules": 0,
+                "rejected_rules": 0,
+                "ranking_rules": 0,
+                "gate_rules": 0,
+            }
+        
+        accepted_rules = result.get("accepted_rules", [])
+        summary["per_horizon_summary"][horizon_key]["total_rules"] += len(accepted_rules)
+        
+        for rule in accepted_rules:
+            classification = rule.get("production_classification", "research")
+            rule_type = rule.get("rule_type_class", "rejected")
+            
+            if classification == "production":
+                summary["per_horizon_summary"][horizon_key]["production_rules"] += 1
+            elif classification == "research":
+                summary["per_horizon_summary"][horizon_key]["research_rules"] += 1
+            else:
+                summary["per_horizon_summary"][horizon_key]["rejected_rules"] += 1
+            
+            if rule_type == "ranking":
+                summary["per_horizon_summary"][horizon_key]["ranking_rules"] += 1
+            elif rule_type == "gate":
+                summary["per_horizon_summary"][horizon_key]["gate_rules"] += 1
+    
+    # Cross-target summary (from merged rules)
+    if merged_rules is not None and not merged_rules.empty:
+        cross_target_count = 0
+        universal_count = 0
+        production_cross_target_count = 0
+        
+        if "supporting_targets_count" in merged_rules.columns:
+            cross_target_mask = merged_rules["supporting_targets_count"] >= 2
+            cross_target_count = int(cross_target_mask.sum())
+            
+            universal_mask = merged_rules["supporting_targets_count"] >= 3
+            universal_count = int(universal_mask.sum())
+            
+            # Production rules that are cross-target
+            if "merged_production_status" in merged_rules.columns:
+                production_cross_target = merged_rules[cross_target_mask & (merged_rules["merged_production_status"] == "production")]
+                production_cross_target_count = len(production_cross_target)
+        
+        summary["cross_target_summary"] = {
+            "cross_target_rules": cross_target_count,
+            "universal_rules": universal_count,
+            "production_cross_target_rules": production_cross_target_count,
+            "total_merged_rules": len(merged_rules),
+        }
+    
+    # Overall quality assessment
+    total_rules = sum(t["total_rules"] for t in summary["per_target_summary"].values())
+    total_production = sum(t["production_rules"] for t in summary["per_target_summary"].values())
+    total_research = sum(t["research_rules"] for t in summary["per_target_summary"].values())
+    total_ranking = sum(t["ranking_rules"] for t in summary["per_target_summary"].values())
+    total_gate = sum(t["gate_rules"] for t in summary["per_target_summary"].values())
+    
+    summary["overall_quality"] = {
+        "total_rules": total_rules,
+        "production_rules": total_production,
+        "research_rules": total_research,
+        "production_ratio": total_production / max(total_rules, 1),
+        "ranking_rules": total_ranking,
+        "gate_rules": total_gate,
+        "ranking_to_gate_ratio": total_ranking / max(total_gate, 1),
+    }
+    
+    # Compute overall quality score
+    if all_results:
+        # Aggregate metrics across all results
+        all_mean_oos_ic = []
+        all_positive_ic_frac = []
+        all_p25_oos_ic = []
+        all_entropy_reduction = []
+        all_delta_within_mask_ic = []
+        
+        for result in all_results:
+            for rule in result.get("accepted_rules", []):
+                if np.isfinite(rule.get("mean_oos_ic", np.nan)):
+                    all_mean_oos_ic.append(rule["mean_oos_ic"])
+                if np.isfinite(rule.get("positive_ic_fraction", np.nan)):
+                    all_positive_ic_frac.append(rule["positive_ic_fraction"])
+                if np.isfinite(rule.get("p25_oos_ic", np.nan)):
+                    all_p25_oos_ic.append(rule["p25_oos_ic"])
+                if np.isfinite(rule.get("entropy_reduction", np.nan)):
+                    all_entropy_reduction.append(rule["entropy_reduction"])
+                if np.isfinite(rule.get("delta_within_mask_ic", np.nan)):
+                    all_delta_within_mask_ic.append(rule["delta_within_mask_ic"])
+        
+        if all_mean_oos_ic:
+            overall_score = compute_overall_target_quality_score(
+                mean_oos_ic=float(np.mean(all_mean_oos_ic)),
+                positive_ic_fraction=float(np.mean(all_positive_ic_frac)) if all_positive_ic_frac else 0.0,
+                p25_oos_ic=float(np.mean(all_p25_oos_ic)) if all_p25_oos_ic else 0.0,
+                entropy_reduction=float(np.mean(all_entropy_reduction)) if all_entropy_reduction else 0.0,
+                delta_within_mask_ic=float(np.mean(all_delta_within_mask_ic)) if all_delta_within_mask_ic else 0.0,
+                production_rule_count=total_production,
+                total_rule_count=total_rules,
+            )
+            summary["overall_quality"]["quality_score"] = overall_score
+    
+    # Print summary
+    tprint("=" * 60)
+    tprint("TRIAD RUN SUMMARY")
+    tprint("=" * 60)
+    tprint(f"Total rules discovered: {total_rules}")
+    tprint(f"Production-quality rules: {total_production} ({100*total_production/max(total_rules,1):.1f}%)")
+    tprint(f"Research-grade rules: {total_research}")
+    tprint(f"Ranking regimes: {total_ranking}")
+    tprint(f"Gate regimes: {total_gate}")
+    tprint("")
+    tprint("Per-target breakdown:")
+    for target_name, target_summary in summary["per_target_summary"].items():
+        tprint(f"  {target_name}: {target_summary['production_rules']} production / {target_summary['total_rules']} total")
+    tprint("")
+    tprint("Per-horizon breakdown:")
+    for horizon_key, horizon_summary in summary["per_horizon_summary"].items():
+        tprint(f"  {horizon_key}: {horizon_summary['production_rules']} production / {horizon_summary['total_rules']} total")
+    if "quality_score" in summary["overall_quality"]:
+        tprint(f"\nOverall quality score: {summary['overall_quality']['quality_score']:.3f}")
+    tprint("=" * 60)
+    
+    # Save to file if path provided
+    if output_path:
+        with open(output_path, "w") as f:
+            json.dump(summary, f, indent=2, default=str)
+        tprint(f"Saved triad run summary to {output_path}")
+    
+    return summary
+
+
+def create_target_quality_summary(
+    all_results: List[Dict[str, Any]],
+    output_path: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Create a summary of quality metrics per target/horizon combination.
+    
+    Parameters
+    ----------
+    all_results : List[Dict[str, Any]]
+        List of result dicts from run_side_pipeline()
+    output_path : Optional[str]
+        Path to save the summary CSV
+    
+    Returns
+    -------
+    pd.DataFrame
+        Summary DataFrame with quality metrics per target/horizon
+    """
+    summary_records = []
+    
+    for result in all_results:
+        target_name = result.get("target_name", "unknown")
+        horizon = result.get("horizon", 0)
+        side = result.get("side", "unknown")
+        
+        accepted_rules = result.get("accepted_rules", [])
+        candidate_rules = result.get("candidate_rules", [])
+        
+        record = {
+            "target_name": target_name,
+            "horizon": horizon,
+            "side": side,
+            "accepted_rules_count": len(accepted_rules),
+            "candidate_rules_count": len(candidate_rules),
+        }
+        
+        # Aggregate metrics from accepted rules
+        if accepted_rules:
+            accepted_df = pd.DataFrame(accepted_rules)
+            
+            # IC metrics
+            for col in ["mean_oos_ic", "positive_ic_fraction", "within_mask_ic"]:
+                if col in accepted_df.columns:
+                    record[f"mean_{col}"] = accepted_df[col].mean()
+                    record[f"max_{col}"] = accepted_df[col].max()
+            
+            # Rule metrics
+            for col in ["composite_score", "hurdle_excess", "presence_freq", "sign_consistency"]:
+                if col in accepted_df.columns:
+                    record[f"mean_{col}"] = accepted_df[col].mean()
+                    record[f"max_{col}"] = accepted_df[col].max()
+        
+        summary_records.append(record)
+    
+    summary_df = pd.DataFrame(summary_records)
+    
+    if output_path and not summary_df.empty:
+        summary_df.to_csv(output_path, index=False)
+        tprint(f"Saved target quality summary to {output_path}")
+    
+    return summary_df
+
+
 class MaskAssessor:
     def __init__(
         self,
@@ -6576,6 +8231,9 @@ class MaskAssessor:
         )
         global_entropy_short = self._compute_entropy(-fwd_ret)
 
+        if np.nanstd(fwd_ret) < 1e-9:
+            tprint("WARNING: Root cause for degenerate metrics: fwd_ret has zero variance!")
+
         # Prepare TBM data
         close = (
             data["close"].to_numpy() if "close" in data.columns else np.zeros(len(data))
@@ -6590,9 +8248,27 @@ class MaskAssessor:
             else np.full(len(data), 0.001)
         )
 
-        horizon = int(self.cfg.get("tbm_horizon", 100))
-        tp_atr = float(self.cfg.get("tbm_tp_atr", 1.25))
-        sl_atr = float(self.cfg.get("tbm_sl_atr", 0.50))
+        # TBM horizon should match assessment horizon + 2 bars
+        assessment_horizon = int(self.cfg.get("horizon", 100))
+        horizon = assessment_horizon + 2
+
+        # Use the maximum horizon in the current run as reference for TP/SL scaling
+        horizons = self.cfg.get("triad_horizons", [100])
+        h_ref = max(horizons) if horizons else 100
+
+        # Scale TP and SL by sqrt(H / H_ref)
+        scale_factor = np.sqrt(horizon / h_ref)
+
+        # Base TP/SL multipliers (at reference horizon)
+        base_tp_atr = float(self.cfg.get("tbm_tp_atr", 1.25))
+        base_sl_atr = float(self.cfg.get("tbm_sl_atr", 0.50))
+
+        # Scaled TP/SL for current horizon
+        tp_atr = base_tp_atr * scale_factor
+        sl_atr = base_sl_atr * scale_factor
+
+        tprint(f"TBM Configuration: H={horizon} bars (assessment H={assessment_horizon}), "
+               f"TP={tp_atr:.3f} ATR, SL={sl_atr:.3f} ATR, scale_factor={scale_factor:.3f} (h_ref={h_ref})")
 
         tp_f_long, sl_f_long, to_f_long = compute_tbm_outcomes_per_symbol(
             data=data,
@@ -6640,13 +8316,28 @@ class MaskAssessor:
                     trades_per_day.mean() + 1e-9
                 )
             else:
+                tprint("DEBUG: Root cause for 0.0 density_dispersion: 'timestamp' missing from data columns.")
                 density_dispersion = 0.0
 
             # 3. Risk & Stability
             tail_ratio = self._compute_tail_ratio(target_ret[mask])
             sign_consistency = row["sign_consistency"]
 
-            # 4. Learnability (Efficiency Frontier)
+            # 4. Support Constraint
+            support_pct = float(np.mean(mask))
+            support_ok = 0.05 <= support_pct <= 0.10
+            target_support = 0.075
+            support_score = -abs(support_pct - target_support)
+
+            # 5. Return Uplift
+            mean_ret_global = float(np.nanmean(target_ret))
+            mean_ret_mask = float(np.nanmean(target_ret[mask]))
+            ret_uplift = mean_ret_mask - mean_ret_global
+
+            # 6. MAE/MFE Metrics
+            mae, mfe = self._compute_mae_mfe(target_ret[mask])
+
+            # 7. Learnability (Efficiency Frontier)
             global_auc = global_auc_short if side == "short" else global_auc_long
             global_entropy = (
                 global_entropy_short if side == "short" else global_entropy_long
@@ -6660,25 +8351,30 @@ class MaskAssessor:
             )
             if np.isfinite(mask_auc) and np.isfinite(global_auc):
                 lift = mask_auc - global_auc
-                learn_eff = mask_auc / (global_auc + 1e-9)
             else:
                 lift = np.nan
-                learn_eff = np.nan
 
             mask_entropy = self._compute_entropy(target_ret[mask])
             entropy_red = 1.0 - (mask_entropy / (global_entropy + 1e-9))
 
-            # Path Efficiency (1 / complexity)
-            n_conds = display_arity_for_key(row["canonical_key"])
-            path_eff = 1.0 / n_conds if n_conds > 0 else 0.0
+            # 8. Event-based Expected Value
+            tp_payoff = tp_atr  # TP payoff in ATR units
+            sl_payoff = sl_atr  # SL payoff in ATR units
+            timeout_payoff = mean_ret_mask  # Average return for timeouts
 
-            # 5. Final Score
-            score = (
-                (entropy_red * 0.20)
-                + (lift * 0.20)
-                + (sign_consistency * 0.20)
-                + (np.log10(avg_trades + 1.0) * 0.15)
-                + (path_eff * 0.10)
+            ev_per_event = (
+                tbm_metrics["tp_rate"] * tp_payoff
+                - tbm_metrics["sl_rate"] * sl_payoff
+                + tbm_metrics["timeout_rate"] * timeout_payoff
+            )
+
+            # 9. Final Regime Score
+            regime_score = (
+                0.20 * support_score +
+                0.20 * lift +
+                0.20 * ret_uplift +
+                0.20 * ev_per_event +
+                0.10 * sign_consistency
             )
 
             # Rejection Gates
@@ -6691,40 +8387,76 @@ class MaskAssessor:
                 self.cfg.get("min_avg_trades_per_day_10_symbols", 0.1)
             ):
                 rejected, rejection_reason = True, "low_trades_per_day"
+            elif not support_ok:
+                rejected, rejection_reason = True, "support_out_of_range"
             elif baseline_oof_coverage < min_oof_coverage:
                 rejected, rejection_reason = True, "insufficient_baseline_oof_coverage"
             elif subset_oof_coverage < min_oof_coverage:
                 rejected, rejection_reason = True, "insufficient_subset_oof_coverage"
-            elif not np.isfinite(learn_eff):
+            elif not np.isfinite(lift):
                 rejected, rejection_reason = True, "missing_learnability"
             elif sign_consistency < 0.75:
                 rejected, rejection_reason = True, "low_sign_consistency"
-            elif learn_eff < 1.10:
+            elif lift < 0.01:  # Lower threshold for lift (was 1.10)
                 rejected, rejection_reason = True, "low_lift"
-            elif entropy_red < 0.05:
-                rejected, rejection_reason = True, "low_entropy_reduction"
+            # NOTE: low_entropy_reduction gate removed per user request
+
+            # Production classification
+            rule_for_classification = {
+                "n_folds": row.get("n_folds", 0),
+                "presence_freq": row.get("presence_freq", 0.0),
+                "positive_ic_fraction": row.get("positive_ic_fraction", 0.0),
+                "mean_oos_ic": row.get("mean_oos_ic", np.nan),
+                "min_support_actual": row.get("min_support_actual", 0),
+                "within_mask_ic": row.get("within_mask_ic", np.nan),
+                "delta_within_mask_ic": row.get("delta_within_mask_ic", np.nan),
+                "is_structurally_sound": not rejected,
+                "dominated_by_parent": row.get("dominated_by_parent", False),
+                "sign_consistency": sign_consistency,
+            }
+            production_classification, classification_diagnostics = classify_rule_production_quality(
+                rule=rule_for_classification
+            )
+            
+            # Rule type classification
+            rule_type_class = classify_rule_type(
+                mean_oos_ic=row.get("mean_oos_ic", np.nan),
+                within_mask_ic=row.get("within_mask_ic", np.nan),
+                delta_within_mask_ic=row.get("delta_within_mask_ic", np.nan),
+            )
 
             assessment_results.append(
                 {
                     "canonical_key": row["canonical_key"],
-                    "mask_score": score,
+                    "regime_score": regime_score,
                     "is_structurally_sound": not rejected,
                     "rejection_reason": rejection_reason,
+                    "support_pct": support_pct,
+                    "support_ok": support_ok,
+                    "support_score": support_score,
                     "avg_trades_per_day": avg_trades,
                     "density_dispersion": density_dispersion,
                     "tail_ratio": tail_ratio,
+                    "mae": mae,
+                    "mfe": mfe,
+                    "mean_ret_global": mean_ret_global,
+                    "mean_ret_mask": mean_ret_mask,
+                    "ret_uplift": ret_uplift,
                     "lift": lift,
-                    "learn_eff_ratio": learn_eff,
+                    "learn_eff_ratio": np.nan,  # Deprecated - same as lift
                     "subset_oof_coverage": subset_oof_coverage,
                     "baseline_oof_coverage": baseline_oof_coverage,
                     "entropy_reduction": entropy_red,
-                    "path_efficiency": path_eff,
                     "tp_rate": tbm_metrics["tp_rate"],
                     "sl_rate": tbm_metrics["sl_rate"],
                     "timeout_rate": tbm_metrics["timeout_rate"],
                     "ev_per_trade": tbm_metrics["ev_per_trade"],
+                    "ev_per_event": ev_per_event,
                     "win_rate_conditional": tbm_metrics["win_rate_conditional"],
                     "win_rate_unconditional": tbm_metrics["win_rate_unconditional"],
+                    "production_classification": production_classification,
+                    "classification_diagnostics": json.dumps(classification_diagnostics),
+                    "rule_type_class": rule_type_class,
                 }
             )
 
@@ -6753,13 +8485,13 @@ class MaskAssessor:
 
         top_sound = (
             assessment_df[assessment_df["is_structurally_sound"]]
-            .sort_values("mask_score", ascending=False)
+            .sort_values("regime_score", ascending=False)
             .head(5)
         )
         if not top_sound.empty:
-            tprint("Top 5 Structurally Sound Rules by Mask Score:")
+            tprint("Top 5 Structurally Sound Rules by Regime Score:")
             for _, row in top_sound.iterrows():
-                tprint(f"  - {row['canonical_key']}: {row['mask_score']:.3f}")
+                tprint(f"  - {row['canonical_key']}: {row['regime_score']:.3f}")
 
         return assessment_df
 
@@ -6810,10 +8542,33 @@ class MaskAssessor:
     def _compute_tail_ratio(self, returns) -> float:
         """Compute tail ratio (95th percentile / 5th percentile)."""
         if len(returns) < 20:
+            # Root cause: insufficient samples for reliable tail ratio
             return 1.0
         p95 = abs(np.percentile(returns, 95))
         p5 = abs(np.percentile(returns, 5))
         return float(p95 / (p5 + 1e-9))
+
+    def _compute_mae_mfe(self, returns) -> Tuple[float, float]:
+        """
+        Compute Maximum Adverse Excursion (MAE) and Maximum Favorable Excursion (MFE).
+
+        MAE: Average of negative returns (average loss)
+        MFE: Average of positive returns (average gain)
+        """
+        if len(returns) == 0:
+            return 0.0, 0.0
+
+        returns = returns[np.isfinite(returns)]
+        if len(returns) == 0:
+            return 0.0, 0.0
+
+        negative_returns = returns[returns < 0]
+        positive_returns = returns[returns > 0]
+
+        mae = float(np.mean(negative_returns)) if len(negative_returns) > 0 else 0.0
+        mfe = float(np.mean(positive_returns)) if len(positive_returns) > 0 else 0.0
+
+        return mae, mfe
 
     def _compute_subset_auc(self, X, fwd_ret, mask, folds) -> Tuple[float, float]:
         """Compute AUC for a subset of data defined by mask."""
@@ -6850,7 +8605,7 @@ class MaskAssessor:
             X_tr, X_va = X_regime[tr_masked], X_regime[va_masked]
             y_tr, y_va = y[tr_masked], y[va_masked]
 
-            # Filter valid samples
+            # Filter valid samples (y must be finite, and ALL regime features must be finite)
             valid_tr = np.isfinite(y_tr) & np.all(np.isfinite(X_tr), axis=1)
             valid_va = np.isfinite(y_va) & np.all(np.isfinite(X_va), axis=1)
 
@@ -6860,6 +8615,10 @@ class MaskAssessor:
             X_tr_clean = X_tr[valid_tr]
             y_tr_clean = y_tr[valid_tr]
             X_va_clean = X_va[valid_va]
+            
+            # Defensive check for any remaining NaNs (should not happen with valid_tr/valid_va)
+            if not np.all(np.isfinite(X_tr_clean)) or not np.all(np.isfinite(y_tr_clean)):
+                continue
 
             # Subsample to 50% of training data
             n_samples = len(X_tr_clean)
@@ -6876,7 +8635,9 @@ class MaskAssessor:
             # Store predictions
             oof_preds[va_masked[valid_va]] = preds
 
-        return self._compute_oof_auc(oof_preds, y, mask)
+        # Use lower min_predicted_points threshold for subset AUC since we're working
+        # with a masked subset that may have fewer total samples
+        return self._compute_oof_auc(oof_preds, y, mask, min_predicted_points=30)
 
     def _compute_entropy(self, y) -> float:
         """Compute entropy of the target distribution."""
@@ -7915,6 +9676,387 @@ def list_preload_training_symbols(
     return list(train_symbols)
 
 
+# =============================================================================
+# TARGET QUALITY METRICS
+# =============================================================================
+
+
+def compute_target_quality_metrics(
+    target: np.ndarray,
+    target_name: str,
+    horizon: int,
+    predictions: Optional[np.ndarray] = None,
+    fold_ics: Optional[List[float]] = None,
+    mask: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    """
+    Compute comprehensive target quality metrics.
+
+    Args:
+        target: Target values array
+        target_name: Name of the target for logging
+        horizon: Horizon identifier for logging
+        predictions: Optional model predictions for IC computation
+        fold_ics: Optional list of fold-level ICs
+        mask: Optional mask for within-mask metrics
+
+    Returns:
+        Dict with target quality metrics including:
+        - target_name, horizon
+        - target_mean, target_std, target_p05, p25, p50, p75, p95
+        - target_nonzero_fraction
+        - target_top_decile_support
+        - target_autocorr_1
+        - mean_oos_ic, p25_oos_ic, p50_oos_ic, p75_oos_ic, positive_ic_fraction
+        - entropy_reduction (if predictions and mask available)
+        - within_mask_ic, delta_within_mask_ic (if predictions and mask available)
+    """
+    valid = np.isfinite(target)
+    target_valid = target[valid]
+
+    result: Dict[str, Any] = {
+        "target_name": target_name,
+        "horizon": horizon,
+    }
+
+    if len(target_valid) < 10:
+        result.update(
+            {
+                "target_mean": np.nan,
+                "target_std": np.nan,
+                "target_p05": np.nan,
+                "target_p25": np.nan,
+                "target_p50": np.nan,
+                "target_p75": np.nan,
+                "target_p95": np.nan,
+                "target_nonzero_fraction": np.nan,
+                "target_top_decile_support": np.nan,
+                "target_autocorr_1": np.nan,
+                "mean_oos_ic": np.nan,
+                "p25_oos_ic": np.nan,
+                "p50_oos_ic": np.nan,
+                "p75_oos_ic": np.nan,
+                "positive_ic_fraction": np.nan,
+                "entropy_reduction": np.nan,
+                "within_mask_ic": np.nan,
+                "delta_within_mask_ic": np.nan,
+            }
+        )
+        return result
+
+    # Basic statistics
+    result["target_mean"] = float(np.mean(target_valid))
+    result["target_std"] = float(np.std(target_valid))
+    result["target_p05"] = float(np.percentile(target_valid, 5))
+    result["target_p25"] = float(np.percentile(target_valid, 25))
+    result["target_p50"] = float(np.percentile(target_valid, 50))
+    result["target_p75"] = float(np.percentile(target_valid, 75))
+    result["target_p95"] = float(np.percentile(target_valid, 95))
+
+    # Non-zero fraction
+    nonzero_count = np.sum(target_valid != 0)
+    result["target_nonzero_fraction"] = float(nonzero_count / len(target_valid))
+
+    # Top decile support (fraction of values in top 10%)
+    top_decile_threshold = np.percentile(np.abs(target_valid), 90)
+    top_decile_count = np.sum(np.abs(target_valid) >= top_decile_threshold)
+    result["target_top_decile_support"] = float(top_decile_count / len(target_valid))
+
+    # Autocorrelation at lag 1
+    if len(target_valid) > 10:
+        target_centered = target_valid - np.mean(target_valid)
+        autocorr_1 = np.corrcoef(target_centered[:-1], target_centered[1:])[0, 1]
+        result["target_autocorr_1"] = float(autocorr_1) if np.isfinite(autocorr_1) else np.nan
+    else:
+        result["target_autocorr_1"] = np.nan
+
+    # OOS IC metrics from fold ICs
+    if fold_ics is not None and len(fold_ics) > 0:
+        valid_ics = [ic for ic in fold_ics if np.isfinite(ic)]
+        if valid_ics:
+            result["mean_oos_ic"] = float(np.mean(valid_ics))
+            result["p25_oos_ic"] = float(np.percentile(valid_ics, 25))
+            result["p50_oos_ic"] = float(np.percentile(valid_ics, 50))
+            result["p75_oos_ic"] = float(np.percentile(valid_ics, 75))
+            result["positive_ic_fraction"] = float(sum(1 for ic in valid_ics if ic > 0) / len(valid_ics))
+        else:
+            result["mean_oos_ic"] = np.nan
+            result["p25_oos_ic"] = np.nan
+            result["p50_oos_ic"] = np.nan
+            result["p75_oos_ic"] = np.nan
+            result["positive_ic_fraction"] = np.nan
+    else:
+        result["mean_oos_ic"] = np.nan
+        result["p25_oos_ic"] = np.nan
+        result["p50_oos_ic"] = np.nan
+        result["p75_oos_ic"] = np.nan
+        result["positive_ic_fraction"] = np.nan
+
+    # Entropy reduction and within-mask IC (if predictions and mask available)
+    if predictions is not None and mask is not None:
+        # Compute entropy reduction
+        n_bins = 20
+        if len(target_valid) >= 100:
+            hist_global, _ = np.histogram(target_valid, bins=n_bins, density=True)
+            hist_global = hist_global / hist_global.sum()
+            hist_global = hist_global[hist_global > 0]
+            entropy_global = -np.sum(hist_global * np.log2(hist_global + 1e-9))
+
+            mask_active = mask.astype(bool) & valid
+            if mask_active.sum() >= 50:
+                target_masked = target[mask_active]
+                hist_masked, _ = np.histogram(target_masked, bins=n_bins, density=True)
+                hist_masked = hist_masked / hist_masked.sum()
+                hist_masked = hist_masked[hist_masked > 0]
+                entropy_masked = -np.sum(hist_masked * np.log2(hist_masked + 1e-9))
+                result["entropy_reduction"] = entropy_global - entropy_masked
+            else:
+                result["entropy_reduction"] = np.nan
+        else:
+            result["entropy_reduction"] = np.nan
+
+        # Compute within-mask IC
+        pred_valid = ~(np.isnan(predictions) | np.isnan(target))
+        if pred_valid.sum() >= 10:
+            global_ic = _safe_spearman(predictions[pred_valid], target[pred_valid])
+
+            mask_active = mask.astype(bool) & pred_valid
+            if mask_active.sum() >= 10:
+                within_ic = _safe_spearman(predictions[mask_active], target[mask_active])
+                result["within_mask_ic"] = within_ic
+                result["delta_within_mask_ic"] = (
+                    within_ic - global_ic if np.isfinite(within_ic) else np.nan
+                )
+            else:
+                result["within_mask_ic"] = np.nan
+                result["delta_within_mask_ic"] = np.nan
+        else:
+            result["within_mask_ic"] = np.nan
+            result["delta_within_mask_ic"] = np.nan
+    else:
+        result["entropy_reduction"] = np.nan
+        result["within_mask_ic"] = np.nan
+        result["delta_within_mask_ic"] = np.nan
+
+    return result
+
+
+def compute_cross_target_correlation(
+    targets: Dict[str, np.ndarray],
+    horizon: int,
+    correlation_threshold: float = 0.7,
+) -> Dict[str, Any]:
+    """
+    Compute correlation matrix between targets at same horizon.
+
+    Args:
+        targets: Dict mapping target_name -> target_array
+        horizon: Horizon identifier for logging
+        correlation_threshold: Threshold for flagging high correlations
+
+    Returns:
+        Dict with:
+        - correlation_matrix: Dict[(target_a, target_b)] -> correlation
+        - high_correlation_pairs: List of pairs with corr > threshold
+        - quality_flags: List of any issues
+    """
+    result: Dict[str, Any] = {
+        "horizon": horizon,
+        "correlation_matrix": {},
+        "high_correlation_pairs": [],
+        "quality_flags": [],
+    }
+
+    target_names = list(targets.keys())
+    n_targets = len(target_names)
+
+    if n_targets < 2:
+        result["quality_flags"].append("insufficient_targets_for_correlation")
+        return result
+
+    # Compute pairwise correlations
+    for i in range(n_targets):
+        for j in range(i + 1, n_targets):
+            name_a = target_names[i]
+            name_b = target_names[j]
+            target_a = targets[name_a]
+            target_b = targets[name_b]
+
+            # Ensure same length
+            min_len = min(len(target_a), len(target_b))
+            if min_len < 10:
+                continue
+
+            valid = np.isfinite(target_a[:min_len]) & np.isfinite(target_b[:min_len])
+            if valid.sum() < 10:
+                continue
+
+            corr = _safe_spearman(target_a[:min_len][valid], target_b[:min_len][valid])
+            result["correlation_matrix"][(name_a, name_b)] = corr
+
+            if np.isfinite(corr) and abs(corr) > correlation_threshold:
+                result["high_correlation_pairs"].append(
+                    {"pair": (name_a, name_b), "correlation": corr}
+                )
+
+    # Add quality flags for high correlations
+    if result["high_correlation_pairs"]:
+        result["quality_flags"].append(
+            f"high_correlation_count_{len(result['high_correlation_pairs'])}"
+        )
+
+    return result
+
+
+def create_target_quality_summary(
+    all_results: List[Dict[str, Any]],
+    output_path: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    Create summary table of target quality across all targets and horizons.
+
+    Args:
+        all_results: Results from all (target, horizon) runs, where each dict
+                     contains rule summaries with target quality metrics
+        output_path: Optional path to save the summary CSV
+
+    Returns:
+        DataFrame with columns:
+        - target_name
+        - horizon
+        - target_mean, target_std, target_p05, p25, p50, p75, p95
+        - mean_oos_ic, p25_oos_ic, p50_oos_ic, p75_oos_ic
+        - positive_ic_fraction
+        - entropy_reduction
+        - mean_delta_ic
+        - rule_count
+        - structurally_sound_rule_count
+        - production_rule_count
+        - median_support
+        - cross_target_corrs (as dict or JSON string)
+        - overall_target_quality_score
+    """
+    if not all_results:
+        return pd.DataFrame()
+
+    summary_records: List[Dict[str, Any]] = []
+
+    # Group results by (target_name, horizon)
+    grouped: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
+    for result in all_results:
+        target_name = result.get("source_target", "unknown")
+        horizon = result.get("source_horizon", 0)
+        key = (target_name, horizon)
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(result)
+
+    for (target_name, horizon), rules in grouped.items():
+        record: Dict[str, Any] = {
+            "target_name": target_name,
+            "horizon": horizon,
+        }
+
+        # Aggregate target statistics from rules
+        target_means = [r.get("target_mean") for r in rules if np.isfinite(r.get("target_mean", np.nan))]
+        target_stds = [r.get("target_std") for r in rules if np.isfinite(r.get("target_std", np.nan))]
+
+        record["target_mean"] = float(np.mean(target_means)) if target_means else np.nan
+        record["target_std"] = float(np.mean(target_stds)) if target_stds else np.nan
+
+        # Aggregate IC metrics
+        mean_oos_ics = [r.get("mean_oos_ic") for r in rules if np.isfinite(r.get("mean_oos_ic", np.nan))]
+        record["mean_oos_ic"] = float(np.mean(mean_oos_ics)) if mean_oos_ics else np.nan
+
+        p25_oos_ics = [r.get("p25_oos_ic") for r in rules if np.isfinite(r.get("p25_oos_ic", np.nan))]
+        record["p25_oos_ic"] = float(np.mean(p25_oos_ics)) if p25_oos_ics else np.nan
+
+        p50_oos_ics = [r.get("p50_oos_ic") for r in rules if np.isfinite(r.get("p50_oos_ic", np.nan))]
+        record["p50_oos_ic"] = float(np.mean(p50_oos_ics)) if p50_oos_ics else np.nan
+
+        p75_oos_ics = [r.get("p75_oos_ic") for r in rules if np.isfinite(r.get("p75_oos_ic", np.nan))]
+        record["p75_oos_ic"] = float(np.mean(p75_oos_ics)) if p75_oos_ics else np.nan
+
+        positive_ic_fractions = [
+            r.get("positive_ic_fraction")
+            for r in rules
+            if np.isfinite(r.get("positive_ic_fraction", np.nan))
+        ]
+        record["positive_ic_fraction"] = (
+            float(np.mean(positive_ic_fractions)) if positive_ic_fractions else np.nan
+        )
+
+        # Entropy reduction
+        entropy_reductions = [
+            r.get("entropy_reduction")
+            for r in rules
+            if np.isfinite(r.get("entropy_reduction", np.nan))
+        ]
+        record["entropy_reduction"] = (
+            float(np.mean(entropy_reductions)) if entropy_reductions else np.nan
+        )
+
+        # Delta IC
+        delta_ics = [r.get("mean_delta_ic") for r in rules if np.isfinite(r.get("mean_delta_ic", np.nan))]
+        record["mean_delta_ic"] = float(np.mean(delta_ics)) if delta_ics else np.nan
+
+        # Rule counts
+        record["rule_count"] = len(rules)
+        record["structurally_sound_rule_count"] = sum(
+            1 for r in rules if r.get("accepted", False)
+        )
+        record["production_rule_count"] = sum(
+            1 for r in rules
+            if r.get("accepted", False) and r.get("composite_score", -np.inf) > 0
+        )
+
+        # Median support
+        supports = [r.get("min_support_actual", 0) for r in rules]
+        record["median_support"] = float(np.median(supports)) if supports else 0
+
+        # Compute overall target quality score
+        # Formula: weighted combination of IC metrics, entropy reduction, and rule quality
+        quality_score = 0.0
+        quality_components = 0
+
+        if np.isfinite(record.get("mean_oos_ic", np.nan)):
+            quality_score += record["mean_oos_ic"] * 10  # Scale up IC
+            quality_components += 1
+
+        if np.isfinite(record.get("positive_ic_fraction", np.nan)):
+            quality_score += record["positive_ic_fraction"] * 0.5
+            quality_components += 1
+
+        if np.isfinite(record.get("entropy_reduction", np.nan)):
+            quality_score += max(0, record["entropy_reduction"]) * 2
+            quality_components += 1
+
+        if np.isfinite(record.get("mean_delta_ic", np.nan)):
+            quality_score += max(0, record["mean_delta_ic"]) * 5
+            quality_components += 1
+
+        record["overall_target_quality_score"] = (
+            quality_score / max(quality_components, 1) if quality_components > 0 else np.nan
+        )
+
+        summary_records.append(record)
+
+    summary_df = pd.DataFrame(summary_records)
+
+    # Sort by target name and horizon
+    if not summary_df.empty:
+        summary_df = summary_df.sort_values(["target_name", "horizon"])
+
+    # Save to file if path provided
+    if output_path and not summary_df.empty:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_df.to_csv(output_path, index=False)
+        tprint(f"Target quality summary saved to {output_path}")
+
+    return summary_df
+
+
 if __name__ == "__main__":
     import argparse
     import glob
@@ -7965,14 +10107,41 @@ if __name__ == "__main__":
         action="store_true",
         help="Run dynamic HPO for Stage A",
     )
+    parser.add_argument(
+        "--run-stage-b",
+        action="store_true",
+        help="Run Stage B mining and assessment (default: False)",
+    )
+    parser.add_argument(
+        "--run-stage-a-consolidation",
+        action="store_true",
+        help="Run Stage A rule consolidation (default: False)",
+    )
+    parser.add_argument(
+        "--triad-horizons",
+        type=str,
+        default="3,10",
+        help="Comma-separated list of horizons for triad targets (default: 3,10)",
+    )
     args = parser.parse_args()
 
     cfg = dict(CFG)
     cfg["data_root"] = args.data_root
     cfg["output_dir"] = args.output_dir
     cfg["preset"] = args.preset
+    cfg["skip_stage_b"] = not args.run_stage_b
+    cfg["skip_stage_a_consolidation"] = not args.run_stage_a_consolidation
     cfg.setdefault("sliceplanner_outer_n_folds", 8)
     cfg.setdefault("sliceplanner_warmup_days", 90)
+    
+    # Triad target configuration (always use triad targets)
+    cfg["use_triad_targets"] = True
+    if args.triad_horizons:
+        cfg["triad_horizons"] = [int(h.strip()) for h in args.triad_horizons.split(",")]
+    else:
+        cfg["triad_horizons"] = TRIAD_DEFAULT_HORIZONS
+    cfg["triad_target_names"] = TRIAD_DEFAULT_TARGET_NAMES
+    
     cfg = apply_cfg_preset(cfg)
 
     tprint(
@@ -8072,16 +10241,18 @@ if __name__ == "__main__":
     tprint(
         f"Loading features from {feature_path} for {len(kept_syms)} planner-surviving symbols..."
     )
-    requested_feature_keys = (
-        list(CFG.get("FEATURE_SELECTION_KEYS", []))
-        + RIDGE_FEATURE_COLS
-        + list(LOCATION_FILTER_COLUMNS)
+    requested_feature_keys = sorted(
+        set(
+            list(CFG.get("FEATURE_SELECTION_KEYS", []))
+            + RIDGE_FEATURE_COLS
+            + list(CONTINUOUS_LOCATION_COLS)
+        )
     )
     tprint(f"Requested feature keys: {len(requested_feature_keys)} (TRIGGER features disabled)")
 
     if args.boolean_only:
         cfg["boolean_only"] = True
-        tprint("MODE: boolean_only. Ensuring only boolean features are used after generation.")
+        tprint("MODE: boolean_only. Continuous features will be converted to booleans via thresholding.")
     if args.use_dynamic_hpo:
         cfg["use_dynamic_hpo"] = True
     feat_dict_raw = load_features_selected(
@@ -8094,22 +10265,34 @@ if __name__ == "__main__":
     if feat_dict_raw is None:
         feat_dict_raw = {}
 
-    missing_requested_keys = sorted(set(requested_feature_keys) - set(feat_dict_raw))
-    if missing_requested_keys:
+    # Check for missing features - RIDGE_FEATURE_COLS and FEATURE_SELECTION_KEYS are required,
+    # but CONTINUOUS_LOCATION_COLS are optional (they'll be skipped if missing)
+    required_keys = set(list(CFG.get("FEATURE_SELECTION_KEYS", [])) + RIDGE_FEATURE_COLS)
+    missing_required_keys = sorted(required_keys - set(feat_dict_raw))
+    if missing_required_keys:
         tprint(
             f"ERROR: Feature snapshot incomplete. "
-            f"Missing {len(missing_requested_keys)} keys: {missing_requested_keys[:20]}"
+            f"Missing {len(missing_required_keys)} required keys: {missing_required_keys[:20]}"
         )
         tprint(
             "Run run_feature_generation_step(force_full_recompute=False) first to "
             "backfill missing features."
         )
         raise RuntimeError(
-            f"Cannot proceed: {len(missing_requested_keys)} required features missing "
+            f"Cannot proceed: {len(missing_required_keys)} required features missing "
             f"from snapshot. Backfill with run_feature_generation_step first."
         )
+    
+    # Check for optional location features
+    optional_location_keys = set(CONTINUOUS_LOCATION_COLS)
+    missing_location_keys = sorted(optional_location_keys - set(feat_dict_raw))
+    if missing_location_keys:
+        tprint(
+            f"WARNING: {len(missing_location_keys)} optional location features missing. "
+            f"These will be skipped: {missing_location_keys[:10]}{'...' if len(missing_location_keys) > 10 else ''}"
+        )
 
-    stack_start = time.perf_counter()
+    # 5. Load features
     ts_arr = common_idx.to_numpy()[time_idx]
     ts_pd = pd.to_datetime(ts_arr, utc=True)
     symbol_arr = common_syms.to_numpy(dtype=object)[sym_idx]
@@ -8128,6 +10311,7 @@ if __name__ == "__main__":
         )
     else:
         open_selected = close_selected
+    stack_start = time.perf_counter()
     data_final = pd.DataFrame(
         {
             "event_id": np.arange(len(keep_idx), dtype=np.int64),
@@ -8300,6 +10484,47 @@ if __name__ == "__main__":
         json.dump(planner_filter_meta, f, indent=2, default=str)
     with open(Path(cfg["output_dir"]) / "run_config_snapshot.json", "w") as f:
         json.dump(cfg, f, indent=2, default=str)
-    run_two_stage_lgbm_mask_generation(
-        data_final, feat_final, fwd_ret_final, fwd_ret_norm_final, cfg
+    
+    # Triad target mode is now the default and only mode
+    tprint("=" * 60)
+    tprint("TRIAD TARGET MODE")
+    tprint("=" * 60)
+    
+    # Import triad target computation
+    from extreme_price_movements.triad_targets import compute_triad_targets_for_horizons
+    
+    # Compute triad targets for all configured horizons
+    horizons = cfg.get("triad_horizons", TRIAD_DEFAULT_HORIZONS)
+    target_names = cfg.get("triad_target_names", TRIAD_DEFAULT_TARGET_NAMES)
+    
+    tprint(f"Computing triad targets for horizons: {horizons}")
+    tprint(f"Target names: {target_names}")
+    
+    # Compute triad targets using data_final (long format)
+    # compute_triad_targets_for_horizons expects a DataFrame with close, high, low, atr columns
+    triad_results_by_horizon = compute_triad_targets_for_horizons(
+        df=data_final,
+        horizons=horizons,
+        atr_col="atr",
+    )
+    
+    # Convert to the format expected by run_two_stage_lgbm_mask_generation_triad:
+    # {target_name: {horizon: target_array}}
+    triad_targets: Dict[str, Dict[int, np.ndarray]] = {
+        "target_eff": {},
+        "target_ela": {},
+        "target_vame": {},
+    }
+    
+    for horizon, df_targets in triad_results_by_horizon.items():
+        for target_base in ["target_eff", "target_ela", "target_vame"]:
+            col_name = f"{target_base}_{horizon}"
+            if col_name in df_targets.columns:
+                triad_targets[target_base][horizon] = df_targets[col_name].to_numpy(dtype=np.float32)
+                valid_count = int(np.isfinite(triad_targets[target_base][horizon]).sum())
+                tprint(f"  {col_name}: {valid_count}/{len(triad_targets[target_base][horizon])} valid values")
+    
+    # Run triad-target mask generation
+    run_two_stage_lgbm_mask_generation_triad(
+        data_final, feat_final, triad_targets, cfg
     )

@@ -22,8 +22,7 @@ from extreme_price_movements.gated_features import (
     add_gate_interaction_panel,
 )
 from extreme_price_movements.intraday_crypto_library import (
-    INTRADAY_TRIGGER_COLUMNS,
-    LOCATION_FILTER_COLUMNS,
+    PERSISTED_INTRADAY_LIBRARY_COLUMNS,
     build_intraday_crypto_library,
 )
 from extreme_price_movements.perp_features import (
@@ -50,9 +49,7 @@ _PERP_FEATURE_COLLISION_RENAMES = {
     "ret1h": "ret1h_perp",
 }
 
-_INTRADAY_PERSISTED_KEY_SET = set(LOCATION_FILTER_COLUMNS) | set(
-    INTRADAY_TRIGGER_COLUMNS
-)
+_INTRADAY_PERSISTED_KEY_SET = set(PERSISTED_INTRADAY_LIBRARY_COLUMNS)
 
 
 def _broadcast_series_to_frame(

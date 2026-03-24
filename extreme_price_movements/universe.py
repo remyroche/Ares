@@ -262,51 +262,16 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
 
 def select_live_candidates(margin_symbols: list[str], market_basket: list[str], pct: float = 0.05):
     """
-    Selects candidates based on 24h price change (Top Gainers/Losers).
-    Returns list of symbols to fetch for 1h analysis.
+    Selects candidates for 1h analysis.
+    Returns list of symbols to fetch (margin symbols + market basket).
+    Price change filtering removed per user request.
     """
     tprint(f"Entering function: select_live_candidates in universe.py")
     margin_symbols = apply_hardcoded_universe_exclusions(list(margin_symbols))
     market_basket = apply_hardcoded_universe_exclusions(list(market_basket))
-    tprint(f"Selecting live candidates from {len(margin_symbols)} margin symbols + {len(market_basket)} basket (pct={pct})")
-    try:
-        tickers = fetch_24h_tickers()
-        # Map symbol -> priceChangePercent
-        change_map = {}
-        for t in tickers:
-            s = t["symbol"]
-            chg = float(t["priceChangePercent"])
-            change_map[s] = chg
-        tprint(f"Change map built for {len(change_map)} tickers.")
+    tprint(f"Selecting live candidates from {len(margin_symbols)} margin symbols + {len(market_basket)} basket")
 
-        # Filter for margin symbols
-        valid = []
-        for s in margin_symbols:
-            api_s = s.replace("/", "")
-            if api_s in change_map:
-                valid.append((change_map[api_s], s))
-        tprint(f"Found {len(valid)} valid margin symbols in ticker data.")
-
-        if not valid:
-            tprint("No valid margin symbols found. Returning market basket.")
-            return market_basket
-
-        # Sort by change
-        valid.sort(key=lambda x: x[0]) # Ascending
-
-        n = len(valid)
-        k = max(5, int(n * pct))
-
-        top_losers = [x[1] for x in valid[:k]]
-        top_gainers = [x[1] for x in valid[-k:]]
-
-        tprint(f"Selected {len(top_losers)} top losers (worst: {valid[0][0]}%) and {len(top_gainers)} top gainers (best: {valid[-1][0]}%)")
-
-        candidates = set(top_losers + top_gainers + market_basket)
-        tprint(f"Live Candidates: {len(candidates)} (Top/Bot {k} + Basket)")
-        return sorted(list(candidates))
-
-    except Exception as e:
-        tprint(f"Error selecting live candidates: {e}. Fallback to basket.")
-        return market_basket
-    variance_stride = int(cfg.get("variance_filter_stride", 1) or 1)
+    # Simply return margin symbols + market basket (no price change filtering)
+    candidates = set(margin_symbols + market_basket)
+    tprint(f"Live Candidates: {len(candidates)} (All margin symbols + Basket)")
+    return sorted(list(candidates))

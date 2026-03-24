@@ -1661,8 +1661,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # Direction Entropy 20
     ret_sign = np.sign(feats["ret1h"])
-    feats["direction_entropy_20"] = ff.apply_to_frame(
-        ret_sign, ff.binary_entropy_nb, 20
+    feats["direction_entropy_20"] = ff.numba_binary_entropy(
+        ret_sign, 20
     )
 
     # Volatility Ratio Short/Long (e.g., 2h vs 24h)
@@ -4300,8 +4300,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             del atr_mean_3
 
         if _needs_feature("bar_direction_entropy"):
-            feats["bar_direction_entropy"] = ff.apply_to_frame(
-                ret_1, ff.binary_entropy_nb, 12
+            feats["bar_direction_entropy"] = ff.numba_binary_entropy(
+                ret_1, 12
             ).astype(np.float32)
 
         rv_1 = rv_2 = rv_24 = None
@@ -4474,8 +4474,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("direction_entropy_20"):
-            feats["direction_entropy_20"] = ff.apply_to_frame(
-                ret_1, ff.binary_entropy_nb, 20
+            feats["direction_entropy_20"] = ff.numba_binary_entropy(
+                ret_1, 20
             ).astype(np.float32)
 
         if _needs_feature("atr_change_rate"):

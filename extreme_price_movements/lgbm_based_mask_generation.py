@@ -99,6 +99,9 @@ HORIZON_CONFIGS: Dict[int, Dict[str, Any]] = {
 
 SCORER_REGISTRY_COLUMNS: List[str] = [
     "canonical_key",
+    "trigger",
+    "location",
+    "regime",
     "mean_net_ret",
     "directional_mean_ret",
     "std_net_ret",
@@ -2213,8 +2216,14 @@ class RuleScorer:
         df_folds = pd.DataFrame(fold_records)
         present = df_folds[df_folds["support"] > 0].copy()
         if present.empty:
+            # Deconstruct for visibility
+            slots = parse_slot_map(canonical_key, self.slot_order)
+            
             summary = {
                 "canonical_key": canonical_key,
+                "trigger": slots.get("trigger", "*"),
+                "location": slots.get("location", "*"),
+                "regime": slots.get("regime", "*"),
                 "mean_net_ret": np.nan,
                 "directional_mean_ret": np.nan,
                 "std_net_ret": np.nan,
@@ -2355,8 +2364,14 @@ class RuleScorer:
             / (1.0 + max(std_net_ret, 0.0))
         )
 
+        # Deconstruct for visibility
+        slots = parse_slot_map(canonical_key, self.slot_order)
+
         summary = {
             "canonical_key": canonical_key,
+            "trigger": slots.get("trigger", "*"),
+            "location": slots.get("location", "*"),
+            "regime": slots.get("regime", "*"),
             "mean_net_ret": mean_net_ret,
             "directional_mean_ret": directional_mean_ret,
             "std_net_ret": std_net_ret,
@@ -8305,6 +8320,9 @@ class MaskAssessor:
             if np.sum(mask) < 20:
                 continue
 
+            # 0. Infrastructure: Component Extraction
+            slots = parse_slot_map(row["canonical_key"], self.cfg.get("slot_order", ("trigger", "location", "regime")))
+            
             side = row.get("side", "long")
             target_ret = -fwd_ret if side == "short" else fwd_ret
 
@@ -8439,6 +8457,9 @@ class MaskAssessor:
             assessment_results.append(
                 {
                     "canonical_key": row["canonical_key"],
+                    "trigger": slots.get("trigger", "*"),
+                    "location": slots.get("location", "*"),
+                    "regime": slots.get("regime", "*"),
                     "regime_score": regime_score,
                     "is_structurally_sound": not rejected,
                     "rejection_reason": rejection_reason,

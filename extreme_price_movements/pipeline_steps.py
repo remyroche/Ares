@@ -262,9 +262,10 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
     keys.update({"atr_pct", "ret1h", "ret24h"})
 
     # 6. Technical Regime (Ridge) Features
-    from extreme_price_movements.config import RIDGE_FEATURE_COLS
+    from extreme_price_movements.config import RIDGE_FEATURE_COLS, CONTINUOUS_LOCATION_COLS
 
     keys.update(RIDGE_FEATURE_COLS)
+    keys.update(CONTINUOUS_LOCATION_COLS)
 
     offline_unavailable_keys = {
         # OOF / ensemble state is produced later in training / model assembly.

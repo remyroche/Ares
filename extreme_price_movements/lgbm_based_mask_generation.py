@@ -3584,8 +3584,11 @@ class EconomicRuleConsolidator:
         candidate_seed_keys = set()
         ridge_evals_log = []
 
+        top_n = int(self.cfg.get("consolidate_top_n", 20))
         for round_idx in range(max_rounds):
-            keys = active["canonical_key"].tolist()
+            # Limit signature-based consolidation to top 20 rules
+            top_configs = active.sort_values(["composite_score", "hurdle_excess"], ascending=False).head(top_n)
+            keys = top_configs["canonical_key"].tolist()
 
             signatures = {}
             for k in keys:
@@ -3759,9 +3762,17 @@ class EconomicRuleConsolidator:
             return registry, pd.DataFrame(), {}
 
         active = registry.copy()
+        
+        # Limit pairwise consolidation to top 20 rules only
+        top_n = int(self.cfg.get("consolidate_top_n", 20))
+        top_configs = active.sort_values(["composite_score", "hurdle_excess"], ascending=False).head(top_n)
+        top_keys = set(top_configs["canonical_key"].tolist())
+        
         profiles = {}
         for idx, row in active.iterrows():
             key = str(row.get("canonical_key", row.name))
+            if key not in top_keys:
+                continue
             mask = resolver.get_mask(key)
             profiles[key] = self._build_rule_profile(row, mask, fwd_ret, folds)
 
@@ -3961,7 +3972,6 @@ class EconomicRuleConsolidator:
         )
 
         diag_dict = {
-            "economic_pair_candidates": pd.DataFrame(candidate_pairs),
             "economic_pair_evaluations": evals_df,
             "economic_consolidation_summary": {
                 "active_start": len(registry),
@@ -8325,7 +8335,7 @@ class MaskAssessor:
 
             # 4. Support Constraint
             support_pct = float(np.mean(mask))
-            support_ok = 0.05 <= support_pct <= 0.10
+            support_ok = 0.05 <= support_pct <= 0.15
             target_support = 0.075
             support_score = -abs(support_pct - target_support)
 
@@ -9337,6 +9347,85 @@ def _extract_selected_wide_values(
     if dtype is None:
         return extracted
     return extracted.astype(dtype, copy=False)
+
+def apply_robust_data_filtering(
+    data: pd.DataFrame,
+    feature_dict: Dict[str, np.ndarray],
+    fwd_ret: np.ndarray,
+    fwd_ret_norm: np.ndarray,
+    overlap_threshold: float = 0.8,
+) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray, np.ndarray, Dict[str, Any]]:
+    """
+    Apply robust filtering strategy:
+    1. Filter out rows with no feature availability.
+    2. Identify the feature with maximum availability as the 'reference'.
+    3. Drop features that have less than 80% availability overlap with the reference.
+    4. Drop all rows for a given timestamp if any symbol at that timestamp is missing
+       one of the retained features (full cross-sectional availability).
+    """
+    n_rows_initial = len(data)
+    if n_rows_initial == 0 or not feature_dict:
+        return (
+            data,
+            feature_dict,
+            fwd_ret,
+            fwd_ret_norm,
+            {"dropped_features": [], "dropped_rows": 0},
+        )
+
+    # 1. Filter out rows with NO features available
+    has_any_feature = np.zeros(n_rows_initial, dtype=bool)
+    for v in feature_dict.values():
+        has_any_feature |= np.isfinite(v)
+
+    data = data.loc[has_any_feature].reset_index(drop=True)
+    feature_dict = {k: v[has_any_feature] for k, v in feature_dict.items()}
+    fwd_ret = fwd_ret[has_any_feature]
+    fwd_ret_norm = fwd_ret_norm[has_any_feature]
+    n_rows_any = len(data)
+
+    # 2. Identify reference feature (max availability)
+    availability = {k: np.isfinite(v).mean() for k, v in feature_dict.items()}
+    ref_feat = max(availability, key=availability.get)
+    ref_mask = np.isfinite(feature_dict[ref_feat])
+
+    # 3. Prune features based on overlap with reference
+    retained_features = {}
+    dropped_features = []
+    for k, v in feature_dict.items():
+        overlap = np.isfinite(v[ref_mask]).mean()
+        if overlap >= overlap_threshold:
+            retained_features[k] = v
+        else:
+            dropped_features.append((k, overlap))
+
+    # 4. Final row pruning: fully available for all symbols at a timestamp
+    all_finite = np.ones(len(data), dtype=bool)
+    for v in retained_features.values():
+        all_finite &= np.isfinite(v)
+
+    # Group by timestamp and check if all rows for that TS are finite
+    # Optimization: find timestamps where any row is NOT finite
+    invalid_ts = set(data.loc[~all_finite, "timestamp"].unique())
+    final_keep_mask = ~data["timestamp"].isin(invalid_ts)
+
+    data_final = data.loc[final_keep_mask].reset_index(drop=True)
+    features_final = {k: v[final_keep_mask] for k in retained_features}
+    fwd_ret_final = fwd_ret[final_keep_mask]
+    fwd_ret_norm_final = fwd_ret_norm[final_keep_mask]
+
+    meta = {
+        "rows_initial": n_rows_initial,
+        "rows_after_any_feat": n_rows_any,
+        "rows_final": len(data_final),
+        "dropped_rows": n_rows_initial - len(data_final),
+        "reference_feature": ref_feat,
+        "dropped_features": dropped_features,
+        "retained_count": len(retained_features),
+    }
+
+    return data_final, features_final, fwd_ret_final, fwd_ret_norm_final, meta
+
 
 
 def filter_complete_feature_rows(
@@ -10431,34 +10520,31 @@ if __name__ == "__main__":
         feat_final,
         fwd_ret_final,
         fwd_ret_norm_final,
-        completeness_meta,
-    ) = filter_complete_feature_rows(
+        robust_meta,
+    ) = apply_robust_data_filtering(
         data_final,
         feat_final,
         fwd_ret_final,
         fwd_ret_norm_final,
+        overlap_threshold=0.8,
     )
+
     tprint(
-        "Feature completeness row filter: "
-        f"rows_before={completeness_meta['rows_before']} "
-        f"rows_after={completeness_meta['rows_after']} "
-        f"dropped={completeness_meta['dropped_rows']} "
-        f"drop_fraction={completeness_meta['drop_fraction']:.3f}"
+        "Robust Data Filter complete: "
+        f"rows_initial={robust_meta['rows_initial']} "
+        f"rows_after_any_feat={robust_meta['rows_after_any_feat']} "
+        f"rows_final={robust_meta['rows_final']} "
+        f"dropped_rows={robust_meta['dropped_rows']} "
+        f"retained_features={robust_meta['retained_count']} "
+        f"reference={robust_meta['reference_feature']}"
     )
-    if completeness_meta["worst_features"]:
+
+    if robust_meta["dropped_features"]:
         tprint(
-            "Top incomplete features: "
+            "Dropped sparse features (low overlap with reference): "
             + ", ".join(
-                f"{name}={count}"
-                for name, count in completeness_meta["worst_features"][:5]
-            )
-        )
-    if completeness_meta["worst_symbols"]:
-        tprint(
-            "Top symbols with dropped rows: "
-            + ", ".join(
-                f"{symbol}={count}"
-                for symbol, count in completeness_meta["worst_symbols"][:5]
+                f"{name}({overlap:.2%})"
+                for name, overlap in robust_meta["dropped_features"][:5]
             )
         )
 

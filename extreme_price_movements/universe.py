@@ -238,6 +238,10 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
             list(set(base_syms).union(set(cfg["market_basket"])))
         )
         train_syms = apply_hardcoded_universe_exclusions(train_syms)
+        M = int(cfg.get("fetch_symbols_M", 9999))
+        if len(train_syms) > M:
+            tprint(f"Offline mode: limiting universe from {len(train_syms)} to top {M} (alphabetical fallback)")
+            train_syms = train_syms[:M]
         return train_syms
 
     if margin_symbols is None:

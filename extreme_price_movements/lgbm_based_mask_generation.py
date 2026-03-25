@@ -61,7 +61,6 @@ LOGGER = logging.getLogger(__name__)
 # =============================================================================
 # TRIAD TARGET CONFIGURATION
 # =============================================================================
-
 # Default horizons for triad target training (in bars)
 TRIAD_DEFAULT_HORIZONS: List[int] = [3, 10]
 
@@ -292,7 +291,6 @@ def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
 # DATA STRUCTURES & METADATA
 # =============================================================================
 
-
 @dataclass(frozen=True)
 class FeatureMetadata:
     feature_name: str
@@ -371,7 +369,6 @@ class ExtractedRule:
 # =============================================================================
 # FEATURE PREPARATION
 # =============================================================================
-
 
 class FeatureProcessor:
     def __init__(self):
@@ -911,11 +908,11 @@ class FeatureProcessor:
 # MODEL TRAINING & CONSTRAINTS
 # =============================================================================
 
-
 def make_regime_weights(
     fwd_ret: np.ndarray,
     symbol_id: np.ndarray,
-    window: int = 4,
+    window: Optional[int] = None,
+    horizon: int = 10,
     alpha: float = 1.0,
     w_min: float = 0.75,
     w_max: float = 2.0,
@@ -939,6 +936,8 @@ def make_regime_weights(
     symbols = np.asarray(symbol_id)
     abs_ret = np.abs(returns)
     weights = np.ones(n, dtype=np.float32)
+    if window is None:
+        window = int(np.sqrt(horizon))
 
     for sym in np.unique(symbols):
         idx = np.where(symbols == sym)[0]
@@ -1100,6 +1099,7 @@ class InteractionModel:
         fold_id: int,
         seed: int,
         target_type: str = "quantile",
+        horizon: int = 10,
     ):
         """
         Train a LightGBM model on a single fold.
@@ -1145,7 +1145,7 @@ class InteractionModel:
             raise ValueError(f"Fold {fold_id} has no finite validation samples")
 
         # Sample weights for regime mining
-        sample_weight = make_regime_weights(y_tr, symbol_id_tr)
+        sample_weight = make_regime_weights(y_tr, symbol_id_tr, horizon=horizon)
 
         y_lo = float(np.nanquantile(y_tr, 0.01))
         y_hi = float(np.nanquantile(y_tr, 0.99))
@@ -1193,7 +1193,7 @@ class InteractionModel:
             "n_jobs": max(1, min(3, int(self.cfg.get("lgbm_n_jobs", 3)))),
             "bagging_fraction": 0.8,
             "bagging_freq": 1,
-            "feature_fraction": 1.0,
+            "feature_fraction": 0.8,
         }
         target_mode = "quantile_regression"
 
@@ -1261,7 +1261,6 @@ class InteractionModel:
 # =============================================================================
 # LEAF EXTRACTION & RULE SCORING
 # =============================================================================
-
 
 class RuleExtractor:
     def __init__(
@@ -1870,10 +1869,7 @@ class CanonicalRuleMaskResolver:
     def _resolve_context_parent_mask(
         self, canonical_key: str, indices: Optional[np.ndarray]
     ) -> Optional[np.ndarray]:
-        try:
-            slot_map = parse_slot_map(canonical_key)
-        except ValueError:
-            slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
+        slot_map = parse_slot_map(canonical_key, getattr(self, "slot_order", ("trigger", "location", "regime")))
         parent_key = build_stage_a_parent_key_from_slot_map(slot_map)
         if parent_key is None:
             return None
@@ -1895,10 +1891,7 @@ class CanonicalRuleMaskResolver:
                 composite_parts[1], indices
             )
 
-        try:
-            slot_map = parse_slot_map(canonical_key)
-        except ValueError:
-            slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
+        slot_map = parse_slot_map(canonical_key, getattr(self, "slot_order", ("trigger", "location", "regime")))
 
         n_samples = self.X.shape[0] if indices is None else len(indices)
         mask = np.ones(n_samples, dtype=bool)
@@ -1967,10 +1960,7 @@ class CanonicalRuleMaskResolver:
             right = self.get_parent_context_key(composite_parts[1])
             return left if left == right else None
 
-        try:
-            slot_map = parse_slot_map(canonical_key)
-        except ValueError:
-            slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
+        slot_map = parse_slot_map(canonical_key, getattr(self, "slot_order", ("trigger", "location", "regime")))
 
         if "context" in slot_map and slot_map["context"] != "*":
             ctx_name = slot_map["context"].split("==")[0]
@@ -2005,22 +1995,13 @@ class RuleScorer:
         penalty_mult_high = float(self.cfg.get("prune_support_penalty_mult", 15.0))
         penalty_mult_low = float(self.cfg.get("prune_support_penalty_mult_low", 25.0))
 
+        penalty_exp = float(self.cfg.get("prune_support_exp", 0.5))
         complexity_bonus = float(
             self.cfg.get("prune_complexity_bonus_map", {}).get(str(display_arity), 0.0)
         )
         safe_support = max(float(support_pct), 0.0005)
 
-        # Asymmetric U-shaped penalty distance centered around `prune_target_support_pct`
-        support_diff = safe_support - target_support
-
-        if support_diff > 0:
-            # Penalty for being too broad
-            penalty = 1.0 + (support_diff * penalty_mult_high)
-        else:
-            # Heavier penalty for being too rare
-            penalty = 1.0 + (abs(support_diff) * penalty_mult_low)
-
-        return (base_hurdle * (1.0 - complexity_bonus)) * penalty
+        return (base_hurdle * (1.0 - complexity_bonus)) / (safe_support**penalty_exp)
 
     def _compute_within_mask_ic(
         self,
@@ -2277,7 +2258,7 @@ class RuleScorer:
         present = df_folds[df_folds["support"] > 0].copy()
         if present.empty:
             # Deconstruct for visibility
-            slots = parse_slot_map(canonical_key)
+            slots = parse_slot_map(canonical_key, getattr(self, 'slot_order', ('trigger', 'location', 'regime')))
 
             summary = {
                 "canonical_key": canonical_key,
@@ -2425,7 +2406,7 @@ class RuleScorer:
         )
 
         # Deconstruct for visibility
-        slots = parse_slot_map(canonical_key)
+        slots = parse_slot_map(canonical_key, getattr(self, 'slot_order', ('trigger', 'location', 'regime')))
 
         summary = {
             "canonical_key": canonical_key,
@@ -2583,7 +2564,6 @@ class RuleScorer:
         summary_df = pd.DataFrame(summaries).sort_values(
             ["accepted", "composite_score"], ascending=[False, False]
         )
-        summary_df = self._identify_dominated_rules(summary_df)
 
         # Scorer Reporting Diagnostics
         accepted_count = summary_df["accepted"].sum()
@@ -2605,52 +2585,7 @@ class RuleScorer:
             for reason, count in rejection_reasons.most_common(5):
                 tprint(f"  - {reason}: {count}")
 
-        dom_count = summary_df.get("dominated_by_parent", pd.Series(False)).sum()
-        if dom_count > 0:
-            tprint(f"Dominated rules flagged: {dom_count}")
-            top_dom = summary_df[summary_df["dominated_by_parent"]].head(5)
-            for _, row in top_dom.iterrows():
-                tprint(
-                    f"  - {row['canonical_key']} dominated by {row['dominant_parent_key']}"
-                )
-
         return summary_df, pd.DataFrame(audits)
-
-    def _identify_dominated_rules(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty:
-            return df
-        df = df.copy()
-        df["dominated_by_parent"] = False
-        df["dominant_parent_key"] = None
-        lookup = df.set_index("canonical_key")
-        for idx, row in df.iterrows():
-            if split_composite_key(row["canonical_key"]) is not None:
-                continue
-            if row["display_arity"] <= 1:
-                continue
-            slots = row["canonical_key"].split("|")
-            active_positions = [i for i, slot in enumerate(slots) if slot != "(*)"]
-            for parent_size in range(len(active_positions) - 1, 0, -1):
-                found_parent = False
-                for combo in itertools.combinations(active_positions, parent_size):
-                    parent_slots = ["(*)"] * len(slots)
-                    for slot_idx in combo:
-                        parent_slots[slot_idx] = slots[slot_idx]
-                    parent_key = "|".join(parent_slots)
-                    if parent_key not in lookup.index:
-                        continue
-                    parent = lookup.loc[parent_key]
-                    if parent["accepted"] and (
-                        parent["hurdle_excess"] >= row["hurdle_excess"]
-                        or parent["composite_score"] >= 0.95 * row["composite_score"]
-                    ):
-                        df.at[idx, "dominated_by_parent"] = True
-                        df.at[idx, "dominant_parent_key"] = parent_key
-                        found_parent = True
-                        break
-                if found_parent:
-                    break
-        return df
 
 
 @njit(cache=True, fastmath=True)
@@ -2821,6 +2756,7 @@ class IndependentRulePruner:
         self.target_support = float(cfg.get("prune_target_support_pct", 0.10))
         self.penalty_mult_high = float(cfg.get("prune_support_penalty_mult", 15.0))
         self.penalty_mult_low = float(cfg.get("prune_support_penalty_mult_low", 25.0))
+        self.penalty_exponent = float(cfg.get("prune_support_exp", 0.5))
         self.min_discoveries = int(cfg.get("min_tree_discoveries", 2))
         self.min_sign_consistency = float(cfg.get("min_sign_consistency", 0.80))
 
@@ -3792,6 +3728,7 @@ def run_mining_stage(
                 fold_id,
                 seed,
                 target_type=target_type,
+                horizon=horizon,
             )
             tprint(
                 f"{stage_name} fold {fold_id} seed {seed}: "
@@ -5034,7 +4971,6 @@ def run_two_stage_lgbm_mask_generation_triad(
 # =============================================================================
 # MERGED DISCOVERY OUTPUT FUNCTIONS
 # =============================================================================
-
 
 def merge_discovery_outputs_across_targets(
     all_results: List[Dict[str, Any]],
@@ -6607,7 +6543,6 @@ class MaskAssessor:
 # NUMBA-OPTIMIZED INFERENCE ENGINE
 # =============================================================================
 
-
 @njit(parallel=True, cache=True, fastmath=True)
 def _generate_masks_numba_kernel(
     X: np.ndarray,
@@ -6704,7 +6639,6 @@ class NumbaRuleInferenceEngine:
 # =============================================================================
 # FEATURE USAGE AUDIT HELPERS
 # =============================================================================
-
 
 def export_feature_group_summary(
     metadata: List[FeatureMetadata], output_dir: Path
@@ -7432,7 +7366,6 @@ def export_coverage_sanity_report(
 # MAIN ORCHESTRATION
 # =============================================================================
 
-
 def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
     preset = str(cfg.get("preset", "exploration")).lower()
     out = dict(cfg)
@@ -7447,6 +7380,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "prune_target_support_pct": 0.10,
             "prune_support_penalty_mult": 15.0,
             "prune_support_penalty_mult_low": 25.0,
+            "prune_support_exp": 0.5,
             "min_context_support_pct": 0.005,
             "min_context_presence_freq": 0.33,
             "min_context_sign_consistency": 0.65,
@@ -7467,6 +7401,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "prune_target_support_pct": 0.10,
             "prune_support_penalty_mult": 15.0,
             "prune_support_penalty_mult_low": 25.0,
+            "prune_support_exp": 0.5,
             "min_context_support_pct": 0.01,
             "min_context_presence_freq": 0.5,
             "min_context_sign_consistency": 0.80,
@@ -7558,7 +7493,6 @@ def list_preload_training_symbols(
 # =============================================================================
 # TARGET QUALITY METRICS
 # =============================================================================
-
 
 def compute_target_quality_metrics(
     target: np.ndarray,

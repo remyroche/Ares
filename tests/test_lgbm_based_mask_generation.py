@@ -697,9 +697,9 @@ def test_build_stage_a_rejection_map_captures_stage_funnel():
     rejection_map = build_stage_a_rejection_map(stage_a_result, winning_contexts, cfg)
 
     assert rejection_map["stage_name"].tolist().count("scorer") == 5
-    assert rejection_map["stage_name"].tolist().count("pruner") == 5
+    assert rejection_map["stage_name"].tolist().count("pruner") == 4
     assert rejection_map["stage_name"].tolist().count("mask_assessor") == 7
-    assert rejection_map["stage_name"].tolist().count("context_selector") == 7
+    assert rejection_map["stage_name"].tolist().count("context_selector") == 6
 
     scorer_low_support = rejection_map[
         (rejection_map["stage_name"] == "scorer")

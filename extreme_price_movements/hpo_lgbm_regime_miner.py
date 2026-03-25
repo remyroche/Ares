@@ -8,12 +8,11 @@ import numpy as np
 import lightgbm as lgb
 
 
-# ============================================================
+# =============================================================================
 # 1) MAIN MINER PARAMS SPEC
 #    Copy your main miner params here EXACTLY.
 #    Only learning_rate will be changed by HPO wrapper.
-# ============================================================
-
+# =============================================================================
 MAIN_MINER_PARAMS: Dict[str, Any] = {
     # ----- copy these from your main LGBM miner -----
     "objective": "quantile",
@@ -36,8 +35,8 @@ MAIN_MINER_PARAMS: Dict[str, Any] = {
 
 # HPO grids
 ALPHA_GRID = (0.80, 0.825, 0.85, 0.875, 0.90)
-MIN_GAIN_GRID = (0.0005, 0.001, 0.002)
-MIN_LEAF_FRAC_GRID = (0.0005, 0.0010, 0.0015)
+MIN_GAIN_GRID = (0.001, 0.002, 0.003)
+MIN_LEAF_FRAC_GRID = (0.001, 0.0015, 0.002)
 
 # Search controls
 SUPPORT_MIN = 0.05
@@ -72,10 +71,9 @@ class EvalResult:
     reason: str
 
 
-# ============================================================
+# =============================================================================
 # 2) PARAM HANDLING
-# ============================================================
-
+# =============================================================================
 def build_hpo_params(main_params: Dict[str, Any], cfg: HPOConfig, n_train_subsample: int) -> Dict[str, Any]:
     """
     Exact same params as the main miner, except:
@@ -100,10 +98,9 @@ def build_hpo_params(main_params: Dict[str, Any], cfg: HPOConfig, n_train_subsam
     return params
 
 
-# ============================================================
+# =============================================================================
 # 3) SUBSAMPLING / SPLITTING
-# ============================================================
-
+# =============================================================================
 def block_subsample_indices(n: int, frac: float, rng: np.random.Generator) -> np.ndarray:
     """
     Fast contiguous block subsample to preserve time structure better than iid sampling.
@@ -127,10 +124,9 @@ def train_val_split_time_ordered(n: int, val_frac: float = 0.25) -> Tuple[np.nda
     return train_idx, val_idx
 
 
-# ============================================================
+# =============================================================================
 # 4) MODEL TRAINING
-# ============================================================
-
+# =============================================================================
 def train_lgbm_quantile(
     X_train: np.ndarray,
     y_train: np.ndarray,
@@ -155,10 +151,9 @@ def train_lgbm_quantile(
     return booster
 
 
-# ============================================================
+# =============================================================================
 # 5) RULE EXTRACTION HOOK
-# ============================================================
-
+# =============================================================================
 def build_candidate_rule_matrix(model: lgb.Booster, X_val: np.ndarray) -> np.ndarray:
     """
     IMPORTANT: replace this with your own miner's exact leaf/rule extraction logic.
@@ -182,10 +177,9 @@ def build_candidate_rule_matrix(model: lgb.Booster, X_val: np.ndarray) -> np.nda
     return rule_matrix
 
 
-# ============================================================
+# =============================================================================
 # 6) VECTORIZED MODEL-LEVEL SCORING
-# ============================================================
-
+# =============================================================================
 def score_rule_matrix_vectorized(
     y_val: np.ndarray,
     rule_matrix: np.ndarray,
@@ -269,10 +263,9 @@ def score_rule_matrix_vectorized(
     return score, diagnostics
 
 
-# ============================================================
+# =============================================================================
 # 7) SINGLE CONFIG EVALUATION
-# ============================================================
-
+# =============================================================================
 def evaluate_config(
     cfg: HPOConfig,
     X_train: np.ndarray,
@@ -308,10 +301,9 @@ def evaluate_config(
     )
 
 
-# ============================================================
+# =============================================================================
 # 8) TWO-STAGE SHORT HPO
-# ============================================================
-
+# =============================================================================
 def run_short_hpo_for_target_horizon(
     X: np.ndarray,
     y: np.ndarray,
@@ -328,7 +320,7 @@ def run_short_hpo_for_target_horizon(
         # Fallback for very small datasets
         return {
             "best_alpha_result": EvalResult(
-                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.002, min_leaf_frac=0.0015),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,
@@ -339,7 +331,7 @@ def run_short_hpo_for_target_horizon(
                 reason="small_data_fallback_n<100",
             ),
             "best_final_result": EvalResult(
-                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.002, min_leaf_frac=0.0015),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,
@@ -366,7 +358,7 @@ def run_short_hpo_for_target_horizon(
 
     # Stage 1: alpha screen
     stage1_cfgs = [
-        HPOConfig(alpha=a, min_gain_to_split=0.001, min_leaf_frac=0.0010)
+        HPOConfig(alpha=a, min_gain_to_split=0.002, min_leaf_frac=0.0015)
         for a in ALPHA_GRID
     ]
     stage1_results = [

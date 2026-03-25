@@ -110,6 +110,22 @@ def test_stage_b_uplift_uses_parent_context_oos():
     assert summary["mean_uplift"] > 0
 
 
+def test_dilate_mask_by_symbol_is_symbol_safe():
+    consolidator = RuleConsolidator([], {}, mask_resolver=None)
+    data = np.array(["A", "B", "A", "B", "A", "B"], dtype=object)
+    df = pd.DataFrame({"symbol": data})
+    mask = np.array([True, False, False, False, False, False])
+    dilated = consolidator._dilate_mask_by_symbol(mask, df, bars=2)
+
+    # Dilation should NOT bleed across symbols.
+    # Symbol A indices: 0, 2, 4. True at 0 -> should dilate to 2.
+    # Symbol B indices: 1, 3, 5. All False -> should remain False.
+    assert dilated[0]
+    assert dilated[2]
+    assert not dilated[4]
+    assert not dilated[1]
+    assert not dilated[3]
+
 def test_semantic_relation_detects_same_regime_location():
     consolidator = RuleConsolidator([], {}, mask_resolver=None)
     row_a = pd.Series(
@@ -138,6 +154,7 @@ def test_consolidator_row_key_uses_series_name_when_column_missing():
     consolidator = RuleConsolidator([], {}, mask_resolver=None)
     row = pd.Series({"hurdle_excess": 0.1}, name="(t1==1)|(loc==1)|(reg==1)")
     assert consolidator._row_key(row) == "(t1==1)|(loc==1)|(reg==1)"
+
 
 
 def test_list_preload_training_symbols_uses_training_universe(monkeypatch):
@@ -421,6 +438,11 @@ def test_feature_processor_adds_dense_regime_quantiles_and_median_band():
     assert f"reg_{src}_ts_top80" in names
     assert f"reg_{src}_ts_bot80" in names
     assert x.shape[1] == 18
+
+
+
+
+
 
 
 def test_select_stage_a_contexts_returns_empty_summary_headers():

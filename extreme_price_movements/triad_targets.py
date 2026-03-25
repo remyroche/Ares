@@ -46,6 +46,33 @@ def sigmoid(x: np.ndarray | float) -> np.ndarray | float:
     return 1 / (1 + np.exp(-x))
 
 
+def rolling_percentile_rank(
+    series: pd.Series, window: int, min_periods: int = 100
+) -> pd.Series:
+    """
+    Compute strictly backward-looking rolling empirical percentile rank.
+
+    Parameters
+    ----------
+    series : pd.Series
+        Input data series
+    window : int
+        Rolling window size
+    min_periods : int
+        Minimum number of observations in window required to have a value
+
+    Returns
+    -------
+    pd.Series
+        Percentile rank in [0, 1]. NaNs are propagated.
+    """
+    # Use pandas rank method on rolling window. We use pct=True.
+    # However, rolling().rank() returns the rank of the *current* element
+    # compared to the window ending at the current element, which is exactly
+    # a backward-looking empirical percentile.
+    return series.rolling(window, min_periods=min_periods).rank(pct=True)
+
+
 def harmonic_mean(a: np.ndarray | float, b: np.ndarray | float) -> np.ndarray | float:
     """
     Compute harmonic mean of two values/arrays.
@@ -65,16 +92,28 @@ def harmonic_mean(a: np.ndarray | float, b: np.ndarray | float) -> np.ndarray | 
     return (2 * a * b) / (a + b + 1e-9)
 
 
-def get_bounded_triad(df: pd.DataFrame, n: int = 24) -> pd.DataFrame:
+def get_bounded_triad(
+    df: pd.DataFrame,
+    n: int = 24,
+    percentile_lookback: int = 2000,
+    lookback_vol_baseline: int = 100,
+    min_history_percentile: int = 100,
+) -> pd.DataFrame:
     """
     Compute bounded triad targets for regime mining.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Must contain columns: 'close', 'high', 'low', 'atr'
+        Must contain columns: 'close', 'high', 'low', 'atr', 'volume'
     n : int
         Horizon in bars (default 24)
+    percentile_lookback : int
+        Rolling window for percentile normalization (default 2000)
+    lookback_vol_baseline : int
+        Rolling window for volume baseline (default 100)
+    min_history_percentile : int
+        Minimum history required before yielding valid percentile (default 100)
 
     Returns
     -------
@@ -98,6 +137,23 @@ def get_bounded_triad(df: pd.DataFrame, n: int = 24) -> pd.DataFrame:
     up_exc = fwd_high_max - df["close"]
     down_exc = df["close"] - fwd_low_min
     max_excursion = np.maximum(up_exc, down_exc)
+
+    # Finding the index of the max and min values within the forward window.
+    # Note: argmax/argmin return the relative index (0 to n-1)
+    # NaN propagation handled implicitly by pandas.
+    fwd_high_argmax = df["high"].rolling(n).apply(np.argmax, raw=True).shift(-n)
+    fwd_low_argmin = df["low"].rolling(n).apply(np.argmin, raw=True).shift(-n)
+
+    # The max absolute excursion could be up or down
+    is_up_max = up_exc >= down_exc
+    max_excursion_idx = np.where(is_up_max, fwd_high_argmax, fwd_low_argmin)
+
+    # Convert the relative index to a time-to-extreme score
+    # Earlier extreme (index near 0) -> score near 1
+    # Later extreme (index near n-1) -> score near 0
+    time_to_extreme_score = 1.0 - (max_excursion_idx / max(n - 1, 1))
+    # Replace NaNs that resulted from calculation (like insufficient forward window size)
+    time_to_extreme_score = np.nan_to_num(time_to_extreme_score, nan=0.0)
 
     # Final displacement
     final_disp = (fwd_close - df["close"]).abs()
@@ -123,17 +179,21 @@ def get_bounded_triad(df: pd.DataFrame, n: int = 24) -> pd.DataFrame:
     )
 
     # 2) Elasticity
-    s_ela = np.tanh(
-        max_excursion / (df["atr"] * 1.5 + 1e-9)
+    ela_excursion_normalized = max_excursion / (df["atr"] + 1e-9)
+    s_ela = rolling_percentile_rank(
+        ela_excursion_normalized,
+        window=percentile_lookback,
+        min_periods=min_history_percentile
     )
+    s_ela = s_ela.fillna(0.5)
 
     p_ela = 1 - (
         final_disp / (max_excursion + 1e-9)
     )
 
     df["target_ela"] = harmonic_mean(
-        s_ela.clip(0, 1),
-        p_ela.clip(0, 1)
+        harmonic_mean(s_ela.clip(0, 1), p_ela.clip(0, 1)),
+        np.clip(time_to_extreme_score, 0, 1)
     )
 
     # 3) Expansion Sustainability
@@ -148,22 +208,39 @@ def get_bounded_triad(df: pd.DataFrame, n: int = 24) -> pd.DataFrame:
 
     vol_ratio = max_excursion / (df["atr"] + 1e-9)
 
-    floor_gate = np.clip(
-        (vol_ratio - 1.0) / 0.5,
-        0,
-        1
+    # Convert vol_ratio to a [0, 1] scale using a backward-looking empirical percentile rank
+    s_vame = rolling_percentile_rank(
+        vol_ratio, window=percentile_lookback, min_periods=min_history_percentile
     )
-
-    s_vame = sigmoid(vol_ratio - 2) * floor_gate
+    s_vame = s_vame.fillna(0.5)  # safe default before enough history
 
     p_vame = 1 - (
         worst_move_against / (max_excursion + 1e-9)
     )
 
-    df["target_vame"] = harmonic_mean(
-        s_vame.clip(0, 1),
-        p_vame.clip(0, 1)
+    # Participation Confirmation
+    # Baseline volume over the past window
+    vol_baseline = df["volume"].rolling(lookback_vol_baseline, min_periods=min_history_percentile).median()
+    # Expected volume over the forward horizon
+    expected_vol = vol_baseline * n
+    # Actual volume sum over forward horizon
+    fwd_vol_sum = df["volume"].rolling(n).sum().shift(-n)
+
+    participation_ratio = fwd_vol_sum / (expected_vol + 1e-9)
+    participation_confirmation = rolling_percentile_rank(
+        participation_ratio, window=percentile_lookback, min_periods=min_history_percentile
     )
+    participation_confirmation = participation_confirmation.fillna(0.5)
+
+    # In VAME, the relevant extreme is the max excursion in the dominant direction,
+    # which is already what is_up_max defines.
+    # Therefore, time_to_extreme_score correctly captures the time to the VAME extreme.
+    vame_combined = harmonic_mean(
+        harmonic_mean(s_vame.clip(0, 1), p_vame.clip(0, 1)),
+        harmonic_mean(participation_confirmation.clip(0, 1), np.clip(time_to_extreme_score, 0, 1))
+    )
+
+    df["target_vame"] = np.nan_to_num(vame_combined, nan=0.0)
 
     return df
 
@@ -171,7 +248,10 @@ def get_bounded_triad(df: pd.DataFrame, n: int = 24) -> pd.DataFrame:
 def compute_triad_targets_for_horizons(
     df: pd.DataFrame,
     horizons: List[int],
-    atr_col: str = "atr"
+    atr_col: str = "atr",
+    percentile_lookback: int = 2000,
+    lookback_vol_baseline: int = 100,
+    min_history_percentile: int = 100,
 ) -> Dict[int, pd.DataFrame]:
     """
     Compute triad targets for multiple horizons.
@@ -179,7 +259,7 @@ def compute_triad_targets_for_horizons(
     Parameters
     ----------
     df : pd.DataFrame
-        Must contain columns: 'close', 'high', 'low', and the specified ATR column
+        Must contain columns: 'close', 'high', 'low', 'volume', and the specified ATR column
     horizons : List[int]
         List of horizon values (in bars) to compute targets for
     atr_col : str
@@ -205,7 +285,13 @@ def compute_triad_targets_for_horizons(
             raise ValueError(f"ATR column '{atr_col}' not found in DataFrame")
 
         # Compute targets for this horizon
-        df_with_targets = get_bounded_triad(df_copy, n=horizon)
+        df_with_targets = get_bounded_triad(
+            df_copy,
+            n=horizon,
+            percentile_lookback=percentile_lookback,
+            lookback_vol_baseline=lookback_vol_baseline,
+            min_history_percentile=min_history_percentile,
+        )
 
         # Rename target columns with horizon suffix
         rename_map = {

@@ -8221,6 +8221,13 @@ if __name__ == "__main__":
         )
     else:
         open_selected = close_selected
+    if "volume" in panel:
+        volume_selected = _extract_selected_wide_values(
+            panel["volume"], common_idx, common_syms, time_idx, sym_idx
+        )
+    else:
+        # Fallback if volume is missing from panel for some reason
+        volume_selected = np.zeros_like(close_selected)
     stack_start = time.perf_counter()
     data_final = pd.DataFrame(
         {
@@ -8233,6 +8240,7 @@ if __name__ == "__main__":
             "t0": ts_pd.to_numpy(),
             "t1": (ts_pd + pd.Timedelta(seconds=1)).to_numpy(),
             "open": open_selected,
+            "volume": volume_selected,
         }
     )
     tprint(
@@ -8408,7 +8416,7 @@ if __name__ == "__main__":
     tprint(f"Target names: {target_names}")
 
     # Compute triad targets using data_final (long format)
-    # compute_triad_targets_for_horizons expects a DataFrame with close, high, low, atr columns
+    # compute_triad_targets_for_horizons expects a DataFrame with close, high, low, volume, atr columns
     triad_results_by_horizon = compute_triad_targets_for_horizons(
         df=data_final,
         horizons=horizons,

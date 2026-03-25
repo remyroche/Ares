@@ -1193,7 +1193,7 @@ class InteractionModel:
             "n_jobs": max(1, min(3, int(self.cfg.get("lgbm_n_jobs", 3)))),
             "bagging_fraction": 0.8,
             "bagging_freq": 1,
-            "feature_fraction": 0.8,
+            "feature_fraction": 1.0,
         }
         target_mode = "quantile_regression"
 

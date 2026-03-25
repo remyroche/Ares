@@ -5558,6 +5558,7 @@ def run_mining_stage(
                     "num_leaves": fit_meta["params"]["num_leaves"],
                     "min_data_in_leaf": fit_meta["params"]["min_data_in_leaf"],
                     "objective": fit_meta["params"]["objective"],
+                    "alpha": fit_meta["params"].get("alpha", 0.5),
                     "metric": fit_meta["params"]["metric"],
                     "target_type": target_type,
                     "target_name": target_name,

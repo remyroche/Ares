@@ -136,8 +136,6 @@ SCORER_REGISTRY_COLUMNS: List[str] = [
     "rule_type",
     "accepted",
     "rejection_reason",
-    "dominant_parent_key",
-    "dominated_by_parent",
 ]
 
 
@@ -915,7 +913,7 @@ class FeatureProcessor:
 def make_regime_weights(
     fwd_ret: np.ndarray,
     symbol_id: np.ndarray,
-    window: int = 4,
+    horizon: int = 10,
     alpha: float = 1.0,
     w_min: float = 0.75,
     w_max: float = 2.0,
@@ -939,6 +937,7 @@ def make_regime_weights(
     symbols = np.asarray(symbol_id)
     abs_ret = np.abs(returns)
     weights = np.ones(n, dtype=np.float32)
+    window = int(np.sqrt(horizon))
 
     for sym in np.unique(symbols):
         idx = np.where(symbols == sym)[0]
@@ -1100,6 +1099,7 @@ class InteractionModel:
         fold_id: int,
         seed: int,
         target_type: str = "quantile",
+        horizon: int = 10,
     ):
         """
         Train a LightGBM model on a single fold.
@@ -1145,7 +1145,7 @@ class InteractionModel:
             raise ValueError(f"Fold {fold_id} has no finite validation samples")
 
         # Sample weights for regime mining
-        sample_weight = make_regime_weights(y_tr, symbol_id_tr)
+        sample_weight = make_regime_weights(y_tr, symbol_id_tr, horizon=horizon)
 
         y_lo = float(np.nanquantile(y_tr, 0.01))
         y_hi = float(np.nanquantile(y_tr, 0.99))
@@ -1193,7 +1193,7 @@ class InteractionModel:
             "n_jobs": max(1, min(3, int(self.cfg.get("lgbm_n_jobs", 3)))),
             "bagging_fraction": 0.8,
             "bagging_freq": 1,
-            "feature_fraction": 1.0,
+            "feature_fraction": 0.8,
         }
         target_mode = "quantile_regression"
 
@@ -1871,7 +1871,7 @@ class CanonicalRuleMaskResolver:
         self, canonical_key: str, indices: Optional[np.ndarray]
     ) -> Optional[np.ndarray]:
         try:
-            slot_map = parse_slot_map(canonical_key)
+            slot_map = parse_slot_map(canonical_key, self.slot_order)
         except ValueError:
             slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
         parent_key = build_stage_a_parent_key_from_slot_map(slot_map)
@@ -1896,7 +1896,7 @@ class CanonicalRuleMaskResolver:
             )
 
         try:
-            slot_map = parse_slot_map(canonical_key)
+            slot_map = parse_slot_map(canonical_key, self.slot_order)
         except ValueError:
             slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
 
@@ -1968,7 +1968,7 @@ class CanonicalRuleMaskResolver:
             return left if left == right else None
 
         try:
-            slot_map = parse_slot_map(canonical_key)
+            slot_map = parse_slot_map(canonical_key, self.slot_order)
         except ValueError:
             slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
 
@@ -2000,27 +2000,12 @@ class RuleScorer:
 
     def _compute_required_hurdle(self, support_pct: float, display_arity: int) -> float:
         base_hurdle = float(self.cfg.get("prune_base_hurdle", 0.0002))
-
-        target_support = float(self.cfg.get("prune_target_support_pct", 0.10))
-        penalty_mult_high = float(self.cfg.get("prune_support_penalty_mult", 15.0))
-        penalty_mult_low = float(self.cfg.get("prune_support_penalty_mult_low", 25.0))
-
+        penalty_exp = float(self.cfg.get("prune_support_exp", 0.5))
         complexity_bonus = float(
             self.cfg.get("prune_complexity_bonus_map", {}).get(str(display_arity), 0.0)
         )
         safe_support = max(float(support_pct), 0.0005)
-
-        # Asymmetric U-shaped penalty distance centered around `prune_target_support_pct`
-        support_diff = safe_support - target_support
-
-        if support_diff > 0:
-            # Penalty for being too broad
-            penalty = 1.0 + (support_diff * penalty_mult_high)
-        else:
-            # Heavier penalty for being too rare
-            penalty = 1.0 + (abs(support_diff) * penalty_mult_low)
-
-        return (base_hurdle * (1.0 - complexity_bonus)) * penalty
+        return (base_hurdle * (1.0 - complexity_bonus)) / (safe_support**penalty_exp)
 
     def _compute_within_mask_ic(
         self,
@@ -2277,7 +2262,7 @@ class RuleScorer:
         present = df_folds[df_folds["support"] > 0].copy()
         if present.empty:
             # Deconstruct for visibility
-            slots = parse_slot_map(canonical_key)
+            slots = parse_slot_map(canonical_key, getattr(self, 'slot_order', ('trigger', 'location', 'regime')))
 
             summary = {
                 "canonical_key": canonical_key,
@@ -2425,7 +2410,7 @@ class RuleScorer:
         )
 
         # Deconstruct for visibility
-        slots = parse_slot_map(canonical_key)
+        slots = parse_slot_map(canonical_key, getattr(self, 'slot_order', ('trigger', 'location', 'regime')))
 
         summary = {
             "canonical_key": canonical_key,
@@ -2583,7 +2568,6 @@ class RuleScorer:
         summary_df = pd.DataFrame(summaries).sort_values(
             ["accepted", "composite_score"], ascending=[False, False]
         )
-        summary_df = self._identify_dominated_rules(summary_df)
 
         # Scorer Reporting Diagnostics
         accepted_count = summary_df["accepted"].sum()
@@ -2605,52 +2589,10 @@ class RuleScorer:
             for reason, count in rejection_reasons.most_common(5):
                 tprint(f"  - {reason}: {count}")
 
-        dom_count = summary_df.get("dominated_by_parent", pd.Series(False)).sum()
-        if dom_count > 0:
-            tprint(f"Dominated rules flagged: {dom_count}")
-            top_dom = summary_df[summary_df["dominated_by_parent"]].head(5)
-            for _, row in top_dom.iterrows():
-                tprint(
-                    f"  - {row['canonical_key']} dominated by {row['dominant_parent_key']}"
-                )
 
         return summary_df, pd.DataFrame(audits)
 
-    def _identify_dominated_rules(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty:
-            return df
-        df = df.copy()
-        df["dominated_by_parent"] = False
-        df["dominant_parent_key"] = None
-        lookup = df.set_index("canonical_key")
-        for idx, row in df.iterrows():
-            if split_composite_key(row["canonical_key"]) is not None:
-                continue
-            if row["display_arity"] <= 1:
-                continue
-            slots = row["canonical_key"].split("|")
-            active_positions = [i for i, slot in enumerate(slots) if slot != "(*)"]
-            for parent_size in range(len(active_positions) - 1, 0, -1):
-                found_parent = False
-                for combo in itertools.combinations(active_positions, parent_size):
-                    parent_slots = ["(*)"] * len(slots)
-                    for slot_idx in combo:
-                        parent_slots[slot_idx] = slots[slot_idx]
-                    parent_key = "|".join(parent_slots)
-                    if parent_key not in lookup.index:
-                        continue
-                    parent = lookup.loc[parent_key]
-                    if parent["accepted"] and (
-                        parent["hurdle_excess"] >= row["hurdle_excess"]
-                        or parent["composite_score"] >= 0.95 * row["composite_score"]
-                    ):
-                        df.at[idx, "dominated_by_parent"] = True
-                        df.at[idx, "dominant_parent_key"] = parent_key
-                        found_parent = True
-                        break
-                if found_parent:
-                    break
-        return df
+
 
 
 @njit(cache=True, fastmath=True)
@@ -2753,7 +2695,6 @@ class RulePruner:
         mask = (
             (df["avg_model_conviction"] >= min_conviction)
             & (df["discovery_count"] >= min_discoveries)
-            & (df["dominated_by_parent"] == False)
             & (df["mean_net_ret"] > 0)  # Basic OOS sanity check
         )
 
@@ -2818,9 +2759,7 @@ class IndependentRulePruner:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.base_hurdle = float(cfg.get("prune_base_hurdle", 0.0002))
-        self.target_support = float(cfg.get("prune_target_support_pct", 0.10))
-        self.penalty_mult_high = float(cfg.get("prune_support_penalty_mult", 15.0))
-        self.penalty_mult_low = float(cfg.get("prune_support_penalty_mult_low", 25.0))
+        self.penalty_exponent = float(cfg.get("prune_support_exp", 0.5))
         self.min_discoveries = int(cfg.get("min_tree_discoveries", 2))
         self.min_sign_consistency = float(cfg.get("min_sign_consistency", 0.80))
 
@@ -2838,9 +2777,6 @@ class IndependentRulePruner:
             return df
 
         df = df.copy()
-        if "dominated_by_parent" not in df.columns:
-            df["dominated_by_parent"] = False
-
         # 1. Hard Gate: Max Support (The 'Lazy Rule' Killer)
         df["is_too_broad"] = df["mean_support_pct"] > self.max_support_pct
 
@@ -2870,7 +2806,6 @@ class IndependentRulePruner:
             "discovery_count_rejected": int(
                 (df["discovery_count"] < self.min_discoveries).sum()
             ),
-            "dominated_by_parent_rejected": int(df["dominated_by_parent"].sum()),
         }
 
         mask = (
@@ -2878,7 +2813,6 @@ class IndependentRulePruner:
             & (df["beats_hurdle"])
             & (df["sign_consistency"] >= self.min_sign_consistency)
             & (df["discovery_count"] >= self.min_discoveries)
-            & (~df["dominated_by_parent"].fillna(False).astype(bool))
         )
 
         final_registry = df[mask].copy()
@@ -2889,7 +2823,6 @@ class IndependentRulePruner:
             f"Hurdle Failed={gate_summary['beats_hurdle_rejected']} | "
             f"Sign Inconsistent={gate_summary['sign_consistency_rejected']} | "
             f"Low Discoveries={gate_summary['discovery_count_rejected']} | "
-            f"Dominated={gate_summary['dominated_by_parent_rejected']} | "
             f"Final Accepted={len(final_registry)}"
         )
 
@@ -3077,9 +3010,6 @@ def select_stage_a_contexts(
     registry["reject_arity"] = registry["display_arity"] < int(
         cfg.get("min_context_display_arity", 2)
     )
-    registry["reject_dominated"] = registry.get(
-        "dominated_by_parent", pd.Series(False, index=registry.index)
-    )
     registry["reject_structural"] = ~registry.get(
         "is_structurally_sound", pd.Series(True, index=registry.index)
     ).fillna(False)
@@ -3090,7 +3020,6 @@ def select_stage_a_contexts(
         | registry["reject_presence"]
         | registry["reject_sign"]
         | registry["reject_arity"]
-        | registry["reject_dominated"]
         | registry["reject_structural"]
     )
 
@@ -3103,7 +3032,6 @@ def select_stage_a_contexts(
         "reject_presence",
         "reject_sign",
         "reject_arity",
-        "reject_dominated",
         "reject_structural",
     ]:
         rejection_reasons.append({"reason": col, "count": int(registry[col].sum())})
@@ -3249,19 +3177,6 @@ def build_stage_a_rejection_map(
                     ),
                     f">= {int(cfg.get('min_tree_discoveries', 2))}",
                 ),
-                (
-                    "dominated_by_parent",
-                    "dominated_by_parent",
-                    int(
-                        consolidated_registry.get(
-                            "dominated_by_parent",
-                            pd.Series(False, index=consolidated_registry.index),
-                        )
-                        .fillna(False)
-                        .sum()
-                    ),
-                    "must be False",
-                ),
             ],
             passed_count=len(candidate_registry),
         )
@@ -3380,12 +3295,6 @@ def build_stage_a_rejection_map(
                     "display_arity",
                     selection_counts.get("reject_arity", 0),
                     f">= {int(cfg.get('min_context_display_arity', 2))}",
-                ),
-                (
-                    "reject_dominated",
-                    "dominated_by_parent",
-                    selection_counts.get("reject_dominated", 0),
-                    "must be False",
                 ),
                 (
                     "reject_structural",
@@ -3792,6 +3701,7 @@ def run_mining_stage(
                 fold_id,
                 seed,
                 target_type=target_type,
+                horizon=horizon,
             )
             tprint(
                 f"{stage_name} fold {fold_id} seed {seed}: "
@@ -4124,12 +4034,6 @@ def run_mining_stage(
         expected_columns=["rejection_reason", "count"],
     )
 
-    dom_df = scored_registry[scored_registry.get("dominated_by_parent", False)][
-        ["canonical_key", "dominant_parent_key", "composite_score", "hurdle_excess"]
-    ]
-    if not dom_df.empty:
-        atomic_to_csv(dom_df, output_dir / "dominated_rule_summary.csv")
-
     scorer_accepted = scored_registry[scored_registry["accepted"]].copy()
 
     consolidated_registry = scorer_accepted.copy()
@@ -4199,11 +4103,7 @@ def run_mining_stage(
         accepted_registry = accepted_registry[
             accepted_registry["is_structurally_sound"].fillna(False)
         ].copy()
-    accepted_registry = accepted_registry[
-        ~accepted_registry.get(
-            "dominated_by_parent", pd.Series(False, index=accepted_registry.index)
-        ).fillna(False)
-    ].copy()
+    accepted_registry = accepted_registry.copy()
     accepted_registry["preset"] = cfg.get("preset", "exploration")
     accepted_registry = atomic_to_csv(
         accepted_registry,
@@ -5477,7 +5377,6 @@ def classify_rule_production_quality(
     - presence_freq >= min_presence_freq
     - directional_mean_ret > min_directional_mean_ret
     - min_support_actual >= min_support_actual
-    - not dominated by simpler parent unless uplift is material
     - structurally sound
 
     Classification:
@@ -5517,7 +5416,6 @@ def classify_rule_production_quality(
     support_actual = rule.get("min_support_actual", 0)
     hurdle_excess = rule.get("hurdle_excess", np.nan)
     is_structurally_sound = rule.get("is_structurally_sound", False)
-    dominated_by_parent = rule.get("dominated_by_parent", False)
     sign_consistency = rule.get("sign_consistency", 0.0)
 
     if not np.isfinite(directional_mean_ret):
@@ -5589,10 +5487,6 @@ def classify_rule_production_quality(
     }
     if not structural_check:
         diagnostics["failures"].append("not_structurally_sound")
-
-    # Check 7: Not dominated by parent (warning only)
-    if dominated_by_parent:
-        diagnostics["warnings"].append("dominated_by_simpler_parent")
 
     # Check 8: Sign consistency (warning only)
     if sign_consistency < 0.75:
@@ -6270,7 +6164,6 @@ class MaskAssessor:
                 "min_support_actual": row.get("min_support_actual", 0),
                 "hurdle_excess": row.get("hurdle_excess", np.nan),
                 "is_structurally_sound": not rejected,
-                "dominated_by_parent": row.get("dominated_by_parent", False),
                 "sign_consistency": sign_consistency,
             }
             (
@@ -7444,9 +7337,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_presence_freq": 0.33,
             "min_sign_consistency": 0.65,
             "prune_base_hurdle": 0.00005,
-            "prune_target_support_pct": 0.10,
-            "prune_support_penalty_mult": 15.0,
-            "prune_support_penalty_mult_low": 25.0,
+            "prune_support_exp": 0.5,
             "min_context_support_pct": 0.005,
             "min_context_presence_freq": 0.33,
             "min_context_sign_consistency": 0.65,
@@ -7464,9 +7355,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_presence_freq": 0.4,
             "min_sign_consistency": 0.75,
             "prune_base_hurdle": 0.00010,
-            "prune_target_support_pct": 0.10,
-            "prune_support_penalty_mult": 15.0,
-            "prune_support_penalty_mult_low": 25.0,
+            "prune_support_exp": 0.5,
             "min_context_support_pct": 0.01,
             "min_context_presence_freq": 0.5,
             "min_context_sign_consistency": 0.80,
@@ -8221,13 +8110,6 @@ if __name__ == "__main__":
         )
     else:
         open_selected = close_selected
-    if "volume" in panel:
-        volume_selected = _extract_selected_wide_values(
-            panel["volume"], common_idx, common_syms, time_idx, sym_idx
-        )
-    else:
-        # Fallback if volume is missing from panel for some reason
-        volume_selected = np.zeros_like(close_selected)
     stack_start = time.perf_counter()
     data_final = pd.DataFrame(
         {
@@ -8240,7 +8122,6 @@ if __name__ == "__main__":
             "t0": ts_pd.to_numpy(),
             "t1": (ts_pd + pd.Timedelta(seconds=1)).to_numpy(),
             "open": open_selected,
-            "volume": volume_selected,
         }
     )
     tprint(
@@ -8416,7 +8297,7 @@ if __name__ == "__main__":
     tprint(f"Target names: {target_names}")
 
     # Compute triad targets using data_final (long format)
-    # compute_triad_targets_for_horizons expects a DataFrame with close, high, low, volume, atr columns
+    # compute_triad_targets_for_horizons expects a DataFrame with close, high, low, atr columns
     triad_results_by_horizon = compute_triad_targets_for_horizons(
         df=data_final,
         horizons=horizons,

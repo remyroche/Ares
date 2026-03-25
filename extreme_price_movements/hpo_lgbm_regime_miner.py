@@ -36,8 +36,8 @@ MAIN_MINER_PARAMS: Dict[str, Any] = {
 
 # HPO grids
 ALPHA_GRID = (0.80, 0.825, 0.85, 0.875, 0.90)
-MIN_GAIN_GRID = (0.0005, 0.001, 0.002)
-MIN_LEAF_FRAC_GRID = (0.0005, 0.0010, 0.0015)
+MIN_GAIN_GRID = (0.001, 0.002, 0.003)
+MIN_LEAF_FRAC_GRID = (0.001, 0.0015, 0.002)
 
 # Search controls
 SUPPORT_MIN = 0.05
@@ -328,7 +328,7 @@ def run_short_hpo_for_target_horizon(
         # Fallback for very small datasets
         return {
             "best_alpha_result": EvalResult(
-                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.002, min_leaf_frac=0.0015),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,
@@ -339,7 +339,7 @@ def run_short_hpo_for_target_horizon(
                 reason="small_data_fallback_n<100",
             ),
             "best_final_result": EvalResult(
-                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.002, min_leaf_frac=0.0015),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,
@@ -366,7 +366,7 @@ def run_short_hpo_for_target_horizon(
 
     # Stage 1: alpha screen
     stage1_cfgs = [
-        HPOConfig(alpha=a, min_gain_to_split=0.001, min_leaf_frac=0.0010)
+        HPOConfig(alpha=a, min_gain_to_split=0.002, min_leaf_frac=0.0015)
         for a in ALPHA_GRID
     ]
     stage1_results = [

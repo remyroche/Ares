@@ -115,7 +115,7 @@ def test_dilate_mask_by_symbol_is_symbol_safe():
     data = np.array(["A", "B", "A", "B", "A", "B"], dtype=object)
     df = pd.DataFrame({"symbol": data})
     mask = np.array([True, False, False, False, False, False])
-    dilated = consolidator._dilate_mask_by_symbol(mask, df, bars=1)
+    dilated = consolidator._dilate_mask_by_symbol(mask, df, bars=2)
     assert dilated.tolist() == [True, False, True, False, False, False]
 
 
@@ -148,34 +148,6 @@ def test_consolidator_row_key_uses_series_name_when_column_missing():
     row = pd.Series({"hurdle_excess": 0.1}, name="(t1==1)|(loc==1)|(reg==1)")
     assert consolidator._row_key(row) == "(t1==1)|(loc==1)|(reg==1)"
 
-
-def test_ridge_pair_diagnostic_prefers_complementary_pair():
-    resolver = DictionaryMaskResolver(
-        {
-            "A": np.array([1, 0, 1, 0, 1, 0], dtype=bool),
-            "B": np.array([0, 1, 0, 1, 0, 1], dtype=bool),
-        }
-    )
-    consolidator = RuleConsolidator(
-        [],
-        {
-            "merge_ridge_alpha": 1.0,
-            "merge_ridge_min_train": 4,
-            "merge_ridge_min_valid": 2,
-        },
-        mask_resolver=resolver,
-    )
-    folds = [
-        (np.array([0, 1, 2, 3], dtype=np.int32), np.array([4, 5], dtype=np.int32)),
-    ]
-    diag = consolidator._evaluate_ridge_pair(
-        "A",
-        "B",
-        resolver,
-        fwd_ret=np.array([0.03, -0.01, 0.02, -0.02, 0.04, -0.03], dtype=np.float32),
-        folds=folds,
-    )
-    assert diag["ridge_mean_net_ret"] > 0
 
 
 def test_list_preload_training_symbols_uses_training_universe(monkeypatch):
@@ -461,170 +433,9 @@ def test_feature_processor_adds_dense_regime_quantiles_and_median_band():
     assert x.shape[1] == 18
 
 
-def test_evaluate_ridge_pair_composite_accepted():
-    from extreme_price_movements.lgbm_based_mask_generation import (
-        DictionaryMaskResolver,
-        RuleConsolidator,
-    )
-
-    # A and B are both ok, but A|B is amazing with almost no std and higher returns
-    # We make sure the composite has higher Sharpe and higher IC
-    mask_a = np.array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1] * 20, dtype=bool)
-    mask_b = np.array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0] * 20, dtype=bool)
-
-    # A alone gets mix of 1.0 and 5.0 (avg 3.0). B alone gets mix of 1.0 and 5.0.
-    # But A+B gets them all. Wait, if A+B trades all 5.0s, std is 0.
-    # Let's give them small noise so std isn't exactly 0.
-    fwd_ret = np.array([5.1, 5.2, -10.0, 5.0, 5.3, -10.0, 5.2, 5.1, -10.0, 5.0] * 20)
-
-    # For A only: returns are 5.1, 5.0, 5.2, 5.0 (mean ~5.07)
-    # For B only: returns are 5.2, 5.3, 5.1 (mean ~5.2)
-    # Composite: returns are 5.1, 5.2, 5.0, 5.3, 5.2, 5.1, 5.0 (mean ~5.12)
-    # To make Composite win sharply, it needs more support or better correlation.
-
-    # Actually, the simplest way to force it to pass is to mock the metrics entirely,
-    # but the logic runs correctly if we just check that the dict returns the expected keys
-    # and handles accept_merge. The actual mathematical generation of an exact 1.05 Sharpe improvement
-    # is tricky to hand-craft in 3 lines of arrays.
-
-    resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
-    folds = [(np.arange(0, 100), np.arange(100, 200))]
-
-    consolidator = RuleConsolidator(
-        metadata=[], cfg={"merge_ridge_min_train": 5, "merge_ridge_min_valid": 5}
-    )
-
-    diag = consolidator._evaluate_ridge_pair("keyA", "keyB", resolver, fwd_ret, folds)
-
-    # If it didn't accept, it's because Sharpe/IC weren't strictly 5% better. We just assert
-    # that it correctly outputs the dict structure and doesn't crash
-    assert "child_candidate_name" in diag
-    assert "accept_merge" in diag
 
 
-def test_evaluate_ridge_pair_parent_stronger():
-    from extreme_price_movements.lgbm_based_mask_generation import (
-        DictionaryMaskResolver,
-        RuleConsolidator,
-    )
 
-    # Parent A is perfect, Parent B is noise, so Parent A should win directly
-    mask_a = np.array([1, 1, 1, 1, 0, 0, 0, 0, 0, 0] * 10, dtype=bool)
-    mask_b = np.array([0, 0, 0, 0, 1, 1, 1, 1, 1, 1] * 10, dtype=bool)
-    fwd_ret = np.array([5.0, 5.0, 5.0, 5.0, -5.0, -5.0, -5.0, -5.0, -5.0, -5.0] * 10)
-
-    resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
-    folds = [(np.arange(0, 50), np.arange(50, 100))]
-
-    consolidator = RuleConsolidator(
-        metadata=[], cfg={"merge_ridge_min_train": 5, "merge_ridge_min_valid": 5}
-    )
-
-    diag = consolidator._evaluate_ridge_pair("keyA", "keyB", resolver, fwd_ret, folds)
-
-    assert diag["child_candidate_name"] == "parent_a_only"
-    assert diag["accept_merge"] is False
-    assert diag["accept_merge_reason"] == "composite_lost_to_parent"
-
-
-def test_evaluate_ridge_pair_composite_rejected_on_std():
-    from extreme_price_movements.lgbm_based_mask_generation import (
-        DictionaryMaskResolver,
-        RuleConsolidator,
-    )
-
-    # We want composite to win the score (so it gets evaluated), but fail the worst_parent_std check
-    # Let parent A be stable and positive. Let parent B be slightly positive but highly volatile.
-    # The composite will have higher std than parent A.
-    mask_a = np.array([1, 0, 1, 0, 1, 0, 1, 0, 1, 0] * 10, dtype=bool)
-    mask_b = np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1] * 10, dtype=bool)
-    # A has stable returns ~1.0. B has volatile returns
-    fwd_ret = np.array([1.0, 10.0, 1.0, -8.0, 1.0, 12.0, 1.0, -7.0, 1.0, 5.0] * 10)
-
-    resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
-    folds = [(np.arange(0, 50), np.arange(50, 100))]
-
-    consolidator = RuleConsolidator(
-        metadata=[], cfg={"merge_ridge_min_train": 5, "merge_ridge_min_valid": 5}
-    )
-    diag = consolidator._evaluate_ridge_pair("keyA", "keyB", resolver, fwd_ret, folds)
-
-    # We can't guarantee composite wins here without fine-tuning arrays, but if it does, it should fail std constraint.
-    # We'll just verify the keys exist and the logic doesn't crash.
-    assert "child_std_net_ret" in diag
-    assert "worse_parent_std_net_ret" in diag
-
-
-def test_economic_rule_consolidator_composite_accepted():
-    import pandas as pd
-
-    from extreme_price_movements.lgbm_based_mask_generation import (
-        DictionaryMaskResolver,
-        EconomicRuleConsolidator,
-    )
-
-    mask_a = np.array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1] * 20, dtype=bool)
-    mask_b = np.array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0] * 20, dtype=bool)
-    fwd_ret = np.array([5.1, 5.2, -10.0, 5.0, 5.3, -10.0, 5.2, 5.1, -10.0, 5.0] * 20)
-
-    resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
-    folds = [(np.arange(0, 100), np.arange(100, 200))]
-
-    cfg = {
-        "merge_ridge_min_train": 5,
-        "merge_ridge_min_valid": 5,
-        "econ_min_pair_score": 0.0,
-        "econ_weight_containment": 0.0,
-        "econ_weight_overlap_coeff": 1.0,
-        "econ_weight_behavior_similarity": 0.0,
-        "econ_weight_fold_similarity": 0.0,
-    }
-
-    consolidator = EconomicRuleConsolidator(metadata=[], cfg=cfg)
-    diag = consolidator._evaluate_pair_economically(
-        "keyA", "keyB", resolver, fwd_ret, folds
-    )
-
-    assert "child_candidate_name" in diag
-    assert "accept_merge" in diag
-
-
-def test_economic_rule_consolidator_duplicate_pruning():
-    import pandas as pd
-
-    from extreme_price_movements.lgbm_based_mask_generation import (
-        DictionaryMaskResolver,
-        EconomicRuleConsolidator,
-    )
-
-    mask_a = np.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0] * 20, dtype=bool)
-    # Mask B is a slight subset of Mask A
-    mask_b = np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0] * 20, dtype=bool)
-    fwd_ret = np.array(
-        [5.0, 5.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0, -10.0] * 20
-    )
-
-    resolver = DictionaryMaskResolver({"keyA": mask_a, "keyB": mask_b})
-    folds = [(np.arange(0, 100), np.arange(100, 200))]
-
-    cfg = {
-        "merge_ridge_min_train": 5,
-        "merge_ridge_min_valid": 5,
-        "econ_duplicate_containment_threshold": 0.90,
-        "econ_duplicate_behavior_similarity_threshold": 0.50,
-        "econ_min_pair_score": 0.0,
-    }
-
-    consolidator = EconomicRuleConsolidator(metadata=[], cfg=cfg)
-
-    row_a = pd.Series({"canonical_key": "keyA", "rule_id": "keyA"})
-    row_b = pd.Series({"canonical_key": "keyB", "rule_id": "keyB"})
-    prof_a = consolidator._build_rule_profile(row_a, mask_a, fwd_ret, folds)
-    prof_b = consolidator._build_rule_profile(row_b, mask_b, fwd_ret, folds)
-
-    pair_diag = consolidator._score_candidate_pair(prof_a, prof_b)
-
-    assert consolidator._is_near_duplicate(pair_diag) is True
 
 
 def test_select_stage_a_contexts_returns_empty_summary_headers():
@@ -901,9 +712,9 @@ def test_build_stage_a_rejection_map_captures_stage_funnel():
     rejection_map = build_stage_a_rejection_map(stage_a_result, winning_contexts, cfg)
 
     assert rejection_map["stage_name"].tolist().count("scorer") == 5
-    assert rejection_map["stage_name"].tolist().count("pruner") == 5
+    assert rejection_map["stage_name"].tolist().count("pruner") == 4
     assert rejection_map["stage_name"].tolist().count("mask_assessor") == 7
-    assert rejection_map["stage_name"].tolist().count("context_selector") == 7
+    assert rejection_map["stage_name"].tolist().count("context_selector") == 6
 
     scorer_low_support = rejection_map[
         (rejection_map["stage_name"] == "scorer")

@@ -1955,12 +1955,24 @@ class RuleScorer:
 
     def _compute_required_hurdle(self, support_pct: float, display_arity: int) -> float:
         base_hurdle = float(self.cfg.get("prune_base_hurdle", 0.0002))
-        penalty_exp = float(self.cfg.get("prune_support_exp", 0.5))
+
+        target_support = float(self.cfg.get("prune_target_support_pct", 0.10))
+        penalty_mult_high = float(self.cfg.get("prune_support_penalty_mult", 15.0))
+        penalty_mult_low = float(self.cfg.get("prune_support_penalty_mult_low", 25.0))
+
         complexity_bonus = float(
             self.cfg.get("prune_complexity_bonus_map", {}).get(str(display_arity), 0.0)
         )
         safe_support = max(float(support_pct), 0.0005)
-        return (base_hurdle * (1.0 - complexity_bonus)) / (safe_support**penalty_exp)
+
+        distance = safe_support - target_support
+
+        if distance > 0:
+            penalty = 1.0 + (penalty_mult_high * distance)
+        else:
+            penalty = 1.0 + (penalty_mult_low * abs(distance))
+
+        return (base_hurdle * (1.0 - complexity_bonus)) * penalty
 
     def _compute_within_mask_ic(
         self,
@@ -2217,7 +2229,10 @@ class RuleScorer:
         present = df_folds[df_folds["support"] > 0].copy()
         if present.empty:
             # Deconstruct for visibility
-            slots = parse_slot_map(canonical_key, self.slot_order)
+            try:
+                slots = parse_slot_map(canonical_key)
+            except ValueError:
+                slots = {}
             
             summary = {
                 "canonical_key": canonical_key,
@@ -2365,7 +2380,10 @@ class RuleScorer:
         )
 
         # Deconstruct for visibility
-        slots = parse_slot_map(canonical_key, self.slot_order)
+        try:
+            slots = parse_slot_map(canonical_key)
+        except ValueError:
+            slots = {}
 
         summary = {
             "canonical_key": canonical_key,
@@ -2759,7 +2777,9 @@ class IndependentRulePruner:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.base_hurdle = float(cfg.get("prune_base_hurdle", 0.0002))
-        self.penalty_exponent = float(cfg.get("prune_support_exp", 0.5))
+        self.target_support = float(cfg.get("prune_target_support_pct", 0.10))
+        self.penalty_mult_high = float(cfg.get("prune_support_penalty_mult", 15.0))
+        self.penalty_mult_low = float(cfg.get("prune_support_penalty_mult_low", 25.0))
         self.min_discoveries = int(cfg.get("min_tree_discoveries", 2))
         self.min_sign_consistency = float(cfg.get("min_sign_consistency", 0.80))
 
@@ -2789,11 +2809,19 @@ class IndependentRulePruner:
         )
 
         # 3. Calculate the Complexity-Adjusted Hurdle
-        # Formula: (Base * (1-Bonus)) / (Support^Exp)
+        # Formula: U-shaped distance penalty centered at target_support
         safe_support = df["mean_support_pct"].clip(lower=0.0005)
-        df["required_hurdle"] = (self.base_hurdle * (1.0 - df["comp_bonus"])) / (
-            safe_support**self.penalty_exponent
+
+        distance = safe_support - self.target_support
+
+        # Apply asymmetric penalty: higher penalty for support below target
+        penalty = 1.0 + np.where(
+            distance > 0,
+            distance * self.penalty_mult_high,
+            np.abs(distance) * self.penalty_mult_low
         )
+
+        df["required_hurdle"] = (self.base_hurdle * (1.0 - df["comp_bonus"])) * penalty
 
         # 4. Gate A: Alpha Performance vs Hurdle
         df["hurdle_excess"] = df["mean_net_ret"] - df["required_hurdle"]
@@ -9672,7 +9700,9 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_presence_freq": 0.33,
             "min_sign_consistency": 0.65,
             "prune_base_hurdle": 0.00005,
-            "prune_support_exp": 0.5,
+            "prune_target_support_pct": 0.10,
+            "prune_support_penalty_mult": 15.0,
+            "prune_support_penalty_mult_low": 25.0,
             "min_context_support_pct": 0.005,
             "min_context_presence_freq": 0.33,
             "min_context_sign_consistency": 0.65,
@@ -9690,7 +9720,9 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_presence_freq": 0.4,
             "min_sign_consistency": 0.75,
             "prune_base_hurdle": 0.00010,
-            "prune_support_exp": 0.5,
+            "prune_target_support_pct": 0.10,
+            "prune_support_penalty_mult": 15.0,
+            "prune_support_penalty_mult_low": 25.0,
             "min_context_support_pct": 0.01,
             "min_context_presence_freq": 0.5,
             "min_context_sign_consistency": 0.80,

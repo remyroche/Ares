@@ -30,8 +30,8 @@ os.environ.setdefault("LOKY_MAX_CPU_COUNT", "3")
 from extreme_price_movements.config import (
     CFG,
     CONTINUOUS_LOCATION_COLS,
-    LOC_CONTINUOUS_FAMILY_MAP,
     CONTINUOUS_TRIGGER_COLS,
+    LOC_CONTINUOUS_FAMILY_MAP,
     RIDGE_FEATURE_COLS,
     RIDGE_FEATURE_META,
     TEST_FEATURE_KEYS,
@@ -40,6 +40,9 @@ from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
     load_features_selected,
     to_panel,
+)
+from extreme_price_movements.hpo_lgbm_regime_miner import (
+    run_short_hpo_for_target_horizon,
 )
 from extreme_price_movements.intraday_crypto_library import (
     INTRADAY_TRIGGER_COLUMNS,
@@ -52,7 +55,6 @@ from extreme_price_movements.periods_symbols_management import (
 )
 from extreme_price_movements.universe import get_training_universe
 from extreme_price_movements.utils import tprint
-from extreme_price_movements.hpo_lgbm_regime_miner import run_short_hpo_for_target_horizon
 
 LOGGER = logging.getLogger(__name__)
 
@@ -201,7 +203,7 @@ def build_run_output_dir(
     side : Optional[str]
         Side ('long' or 'short') for stage-specific paths
     stage : Optional[str]
-        Stage name (e.g., 'stage_a_context', 'stage_b_trigger_refinement')
+        Optional stage subdirectory name
 
     Returns
     -------
@@ -326,7 +328,7 @@ class MiningStageSpec:
     output_dir_name: str  # e.g. "stage_a_context"
     allowed_group_pairs: Tuple[Tuple[str, str], ...]
     slot_order: Tuple[str, ...] = ("trigger", "location", "regime")
-    context_rule_keys: Optional[List[str]] = None  # used only in Stage B
+    context_rule_keys: Optional[List[str]] = None
     use_context_features: bool = False
     context_feature_group_name: str = "context"
     require_uplift: bool = False
@@ -830,11 +832,13 @@ class FeatureProcessor:
         Time-series ranking using pandas for vectorization speed.
         """
         s = pd.Series(arr, index=symbol_codes)
+
         # Fix root cause of 0.5 artifacts: if cross-section has no variance, return NaN
         def _rank_safe(g):
             if g.nunique() <= 1:
                 return np.full(len(g), np.nan)
             return g.rank(pct=True)
+
         # Using transform for speed while preserving index
         ranks = s.groupby(level=0, sort=False).transform(_rank_safe)
         return ranks.values
@@ -907,29 +911,68 @@ class FeatureProcessor:
 # MODEL TRAINING & CONSTRAINTS
 # =============================================================================
 
-def make_regime_weights(fwd_ret: np.ndarray) -> np.ndarray:
+
+def make_regime_weights(
+    fwd_ret: np.ndarray,
+    symbol_id: np.ndarray,
+    window: int = 4,
+    alpha: float = 1.0,
+    w_min: float = 0.75,
+    w_max: float = 2.0,
+    eps: float = 1e-8,
+) -> np.ndarray:
     """
-    Bounded multiplicative sample weight built from move size, tradeability,
-    and tail emphasis.
+    Regime-coherence harmonic sample weighting.
+
+    Encourages rows that belong to persistent directional neighborhoods with
+    elevated *relative* local intensity (vol-normalized via local percentile
+    rank), without directly rewarding raw magnitude.
     """
-    fee = 0.003
-    net = np.maximum(np.abs(fwd_ret) - fee, 0.0)
+    n = int(len(fwd_ret))
+    if n == 0:
+        return np.empty(0, dtype=np.float32)
 
-    # Scale by 90th percentile of net move
-    scale = np.quantile(net, 0.90) if len(net) > 0 else 1.0
-    scale = max(scale, 1e-6)
+    if len(symbol_id) != n:
+        raise ValueError("symbol_id length must match fwd_ret length")
 
-    move_trade = np.clip(net / scale, 0.0, 1.0)
+    returns = np.asarray(fwd_ret, dtype=np.float32)
+    symbols = np.asarray(symbol_id)
+    abs_ret = np.abs(returns)
+    weights = np.ones(n, dtype=np.float32)
 
-    # Slight tail emphasis (fwd_ret is assumed to be direction-aligned)
-    q80 = np.quantile(fwd_ret, 0.80) if len(fwd_ret) > 0 else 0.0
-    q = (fwd_ret > q80).astype(float)
+    for sym in np.unique(symbols):
+        idx = np.where(symbols == sym)[0]
+        if idx.size == 0:
+            continue
 
-    # w = (1.0 + 1.5 * move_trade) * (1.0 + 0.15 * q)
-    w = (1.0 + 1.5 * move_trade) * (1.0 + 0.15 * q)
-    w = np.clip(w, 0.75, 2.0)
-    w = w / max(w.mean(), 1e-6)
-    return w.astype(np.float32)
+        r = returns[idx]
+        local_mean_abs = np.zeros(idx.size, dtype=np.float32)
+
+        for j in range(idx.size):
+            lo = max(0, j - window)
+            hi = min(idx.size, j + window + 1)
+            local_mean_abs[j] = float(np.mean(abs_ret[idx[lo:hi]]))
+
+        for j in range(idx.size):
+            hist_lo = max(0, j - window)
+            history = local_mean_abs[hist_lo : j + 1]
+            percentile = float(np.mean(history <= local_mean_abs[j]))
+
+            lo = max(0, j - window)
+            hi = min(idx.size, j + window + 1)
+            local = r[lo:hi]
+
+            pos_frac = float(np.mean(local > 0))
+            neg_frac = float(np.mean(local < 0))
+            dir_agree = max(pos_frac, neg_frac)
+            persistence = max(0.0, 2.0 * (dir_agree - 0.5))
+
+            intensity = float(np.tanh(2.0 * percentile))
+            harmonic = (2.0 * persistence * intensity) / (persistence + intensity + eps)
+            weights[idx[j]] = np.float32(1.0 + alpha * harmonic)
+
+    clipped = np.clip(weights, np.float32(w_min), np.float32(w_max))
+    return clipped.astype(np.float32, copy=False)
 
 
 class InteractionModel:
@@ -1051,6 +1094,7 @@ class InteractionModel:
         self,
         X_tr,
         y_tr,
+        symbol_id_tr,
         X_va,
         y_va,
         fold_id: int,
@@ -1066,6 +1110,8 @@ class InteractionModel:
             Training features
         y_tr : np.ndarray
             Training targets
+        symbol_id_tr : np.ndarray
+            Training symbol ids aligned with y_tr
         X_va : np.ndarray
             Validation features
         y_va : np.ndarray
@@ -1088,6 +1134,7 @@ class InteractionModel:
         tr_mask = np.isfinite(y_tr)
         va_mask = np.isfinite(y_va)
         X_tr, y_tr = X_tr[tr_mask], y_tr[tr_mask]
+        symbol_id_tr = symbol_id_tr[tr_mask]
         X_va, y_va = X_va[va_mask], y_va[va_mask]
 
         if len(y_tr) < 100:
@@ -1098,7 +1145,7 @@ class InteractionModel:
             raise ValueError(f"Fold {fold_id} has no finite validation samples")
 
         # Sample weights for regime mining
-        sample_weight = make_regime_weights(y_tr)
+        sample_weight = make_regime_weights(y_tr, symbol_id_tr)
 
         y_lo = float(np.nanquantile(y_tr, 0.01))
         y_hi = float(np.nanquantile(y_tr, 0.99))
@@ -1247,7 +1294,7 @@ class RuleExtractor:
     ) -> List[ExtractedRule]:
         """
         Extract rules from a trained LightGBM model.
-        
+
         Parameters
         ----------
         model : LGBMRegressor
@@ -1262,7 +1309,7 @@ class RuleExtractor:
             Name of the target for provenance tracking (default: 'fwd_ret_norm')
         horizon : int
             Horizon in bars for provenance tracking (default: 0)
-            
+
         Returns
         -------
         List[ExtractedRule]
@@ -1274,7 +1321,7 @@ class RuleExtractor:
         self.rejection_audit = []  # For diagnostics
         self.total_leaf_paths = 0
         self.total_non_empty_paths = 0
-        
+
         # Store target/horizon for provenance
         self._current_target_name = target_name
         self._current_horizon = horizon
@@ -1773,8 +1820,6 @@ class DictionaryMaskResolver:
 malformed_key_count = 0
 unresolved_feature_count = 0
 unresolved_feature_names = set()
-stage_b_reconstruction_success = 0
-stage_b_reconstruction_failed = 0
 
 
 class CanonicalRuleMaskResolver:
@@ -2218,7 +2263,7 @@ class RuleScorer:
         if present.empty:
             # Deconstruct for visibility
             slots = parse_slot_map(canonical_key, self.slot_order)
-            
+
             summary = {
                 "canonical_key": canonical_key,
                 "trigger": slots.get("trigger", "*"),
@@ -2279,7 +2324,9 @@ class RuleScorer:
         nonzero_signs = present[present["sign"] != 0]["sign"]
         if len(nonzero_signs) == 0:
             if not present.empty:
-                tprint(f"DEBUG: Rule {canonical_key[:40]}... has {len(present)} folds but 0 nonzero signs. Root cause: all trades have exactly 0 return.")
+                tprint(
+                    f"DEBUG: Rule {canonical_key[:40]}... has {len(present)} folds but 0 nonzero signs. Root cause: all trades have exactly 0 return."
+                )
             sign_consistency = 0.0
         else:
             major_sign = 1 if mean_net_ret > 0 else -1
@@ -2341,9 +2388,7 @@ class RuleScorer:
 
         # Within-mask IC metrics (computed from fold-level values)
         mean_within_mask_ic = (
-            float(np.mean(within_mask_ic_values))
-            if within_mask_ic_values
-            else np.nan
+            float(np.mean(within_mask_ic_values)) if within_mask_ic_values else np.nan
         )
         mean_delta_within_mask_ic = (
             float(np.mean(delta_within_mask_ic_values))
@@ -2439,22 +2484,21 @@ class RuleScorer:
 
         summary["accepted"] = len(rejected) == 0
         summary["rejection_reason"] = "|".join(rejected)
-        
+
         # NEW: Classify rule type (ranking vs gate)
         rule_type_class = classify_rule_type(
-            mean_oos_ic=summary.get("mean_oos_ic", 0),
-            within_mask_ic=summary.get("within_mask_ic", 0),
-            delta_within_mask_ic=summary.get("delta_within_mask_ic", 0),
+            directional_mean_ret=summary.get("directional_mean_ret", np.nan),
+            mean_uplift=summary.get("mean_uplift", np.nan),
+            sign_consistency=summary.get("sign_consistency", 0.0),
+            required_hurdle=summary.get("required_hurdle", 0.0),
         )
         summary["rule_type_class"] = rule_type_class
-        
+
         # NEW: Production classification
-        classification, diagnostics = classify_rule_production_quality(
-            rule=summary
-        )
+        classification, diagnostics = classify_rule_production_quality(rule=summary)
         summary["production_classification"] = classification
         summary["classification_diagnostics"] = json.dumps(diagnostics)
-        
+
         return summary, fold_records
 
     def score_registry_oos(
@@ -2838,1184 +2882,9 @@ class IndependentRulePruner:
         return final_registry.sort_values("hurdle_excess", ascending=False)
 
 
-class EconomicRuleConsolidator:
-    """
-    Economics-first replacement for RuleConsolidator.
-    """
-
-    def __init__(
-        self,
-        metadata: List[FeatureMetadata],
-        cfg: Dict[str, Any],
-        mask_resolver: Optional[
-            Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]
-        ] = None,
-        scorer: Optional[RuleScorer] = None,
-    ):
-        self.metadata = metadata
-        self.cfg = cfg
-        self.mask_resolver = mask_resolver
-        self.scorer = scorer or RuleScorer(metadata, cfg, mask_resolver=mask_resolver)
-        self.lineage = LineageTracker()
-        self._symbol_groups_cache: Optional[Dict[str, np.ndarray]] = None
-
-    def _make_composite_key(self, key_a: str, key_b: str) -> str:
-        ordered = sorted([key_a, key_b])
-        return f"Composite({ordered[0]})_OR_({ordered[1]})"
-
-    def _build_rule_profile(
-        self,
-        row: pd.Series,
-        mask: np.ndarray,
-        fwd_ret: np.ndarray,
-        folds: List[Tuple[np.ndarray, np.ndarray]],
-    ) -> Dict[str, Any]:
-        fold_returns = []
-        fold_ics = []
-        fold_stds = []
-
-        mask_f = mask.astype(np.float32)
-        target_ret = -fwd_ret if row.get("side") == "short" else fwd_ret
-
-        for tr_idx, va_idx in folds:
-            mask_va = mask[va_idx]
-            y_va = target_ret[va_idx]
-
-            # fold mean return
-            selected_returns = y_va[mask_va]
-            valid_returns = selected_returns[np.isfinite(selected_returns)]
-            if len(valid_returns) > 0:
-                fold_returns.append(float(np.mean(valid_returns)))
-                clipped_returns = _clip_returns(valid_returns)
-                fold_stds.append(float(np.std(clipped_returns)))
-            else:
-                fold_returns.append(np.nan)
-                fold_stds.append(np.nan)
-
-            # fold IC
-            valid_idx = np.isfinite(y_va) & np.isfinite(mask_f[va_idx])
-            ic = _safe_spearman(mask_f[va_idx][valid_idx], y_va[valid_idx])
-            fold_ics.append(ic)
-
-        returns_arr = np.array(fold_returns, dtype=float)
-        stds_arr = np.array(fold_stds, dtype=float)
-        ics_arr = np.array(fold_ics, dtype=float)
-
-        mean_net_ret = (
-            float(np.nanmean(returns_arr))
-            if not np.all(np.isnan(returns_arr))
-            else np.nan
-        )
-        std_net_ret = (
-            float(np.nanmean(stds_arr)) if not np.all(np.isnan(stds_arr)) else np.nan
-        )
-        mean_ic = (
-            float(np.nanmean(ics_arr)) if not np.all(np.isnan(ics_arr)) else np.nan
-        )
-
-        positive_fold_fraction = (
-            float(np.mean(returns_arr[np.isfinite(returns_arr)] > 0))
-            if np.any(np.isfinite(returns_arr))
-            else 0.0
-        )
-        ic_positive_fold_fraction = (
-            float(np.mean(ics_arr[np.isfinite(ics_arr)] > 0))
-            if np.any(np.isfinite(ics_arr))
-            else 0.0
-        )
-
-        sharpe = (
-            mean_net_ret / max(std_net_ret, 1e-12)
-            if np.isfinite(mean_net_ret) and np.isfinite(std_net_ret)
-            else np.nan
-        )
-
-        selection_score = (
-            sharpe * max(mean_ic, 0.0)
-            if np.isfinite(sharpe) and np.isfinite(mean_ic)
-            else -np.inf
-        )
-
-        all_valid_ret = target_ret[mask]
-        all_valid_ret = all_valid_ret[np.isfinite(all_valid_ret)]
-        win_rate = float(np.mean(all_valid_ret > 0)) if len(all_valid_ret) > 0 else 0.0
-
-        return {
-            "rule_id": row.get("rule_id", getattr(row, "name", "unknown")),
-            "rule_name": row["canonical_key"],
-            "support_count": int(mask.sum()),
-            "support_pct": float(mask.sum() / max(len(mask), 1)),
-            "mean_net_ret": mean_net_ret,
-            "std_net_ret": std_net_ret,
-            "mean_within_fold_std": float(np.nanmean(stds_arr))
-            if not np.all(np.isnan(stds_arr))
-            else np.nan,
-            "sharpe": sharpe,
-            "mean_ic": mean_ic,
-            "ic_positive_fold_fraction": ic_positive_fold_fraction,
-            "positive_fold_fraction": positive_fold_fraction,
-            "fold_mean_return_vector": returns_arr,
-            "win_rate": win_rate,
-            "selection_score": selection_score,
-            "mask": mask,
-        }
-
-    def _score_candidate_pair(
-        self, profile_a: Dict[str, Any], profile_b: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        mask_a = profile_a["mask"]
-        mask_b = profile_b["mask"]
-        eps = float(self.cfg.get("econ_eps", 1e-12))
-
-        intersection = (mask_a & mask_b).sum()
-        union = (mask_a | mask_b).sum()
-        support_a = mask_a.sum()
-        support_b = mask_b.sum()
-
-        jaccard = intersection / max(union, eps)
-        overlap_coeff = intersection / max(min(support_a, support_b), eps)
-        contain_ab = intersection / max(support_a, eps)
-        contain_ba = intersection / max(support_b, eps)
-        containment_score = max(contain_ab, contain_ba)
-
-        def zscore_safe(v):
-            if np.std(v) == 0:
-                return np.zeros_like(v)
-            return (v - np.mean(v)) / np.std(v)
-
-        # behavior vector
-        behavior_vector_a = np.array(
-            [
-                profile_a["sharpe"],
-                profile_a["mean_ic"],
-                profile_a["positive_fold_fraction"],
-                profile_a["ic_positive_fold_fraction"],
-                profile_a["win_rate"],
-                profile_a["std_net_ret"],
-            ],
-            dtype=float,
-        )
-        behavior_vector_b = np.array(
-            [
-                profile_b["sharpe"],
-                profile_b["mean_ic"],
-                profile_b["positive_fold_fraction"],
-                profile_b["ic_positive_fold_fraction"],
-                profile_b["win_rate"],
-                profile_b["std_net_ret"],
-            ],
-            dtype=float,
-        )
-
-        behavior_similarity = _cosine_similarity(
-            zscore_safe(behavior_vector_a), zscore_safe(behavior_vector_b)
-        )
-
-        fold_similarity = _safe_corr(
-            profile_a["fold_mean_return_vector"], profile_b["fold_mean_return_vector"]
-        )
-        if np.isnan(fold_similarity):
-            fold_similarity = 0.0
-
-        w_containment = float(self.cfg.get("econ_weight_containment", 0.35))
-        w_overlap_coeff = float(self.cfg.get("econ_weight_overlap_coeff", 0.10))
-        w_behavior_similarity = float(
-            self.cfg.get("econ_weight_behavior_similarity", 0.30)
-        )
-        w_fold_similarity = float(self.cfg.get("econ_weight_fold_similarity", 0.25))
-
-        pair_retrieval_score = (
-            w_containment * containment_score
-            + w_overlap_coeff * overlap_coeff
-            + w_behavior_similarity * max(behavior_similarity, 0.0)
-            + w_fold_similarity * max(fold_similarity, 0.0)
-        )
-
-        return {
-            "pair_retrieval_score": pair_retrieval_score,
-            "containment_score": containment_score,
-            "overlap_coeff": overlap_coeff,
-            "jaccard": jaccard,
-            "behavior_similarity": behavior_similarity,
-            "fold_similarity": fold_similarity,
-        }
-
-    def _generate_candidate_pairs(
-        self, profiles: Dict[str, Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        pairs = []
-        keys = sorted(profiles.keys())
-        min_pair_score = float(self.cfg.get("econ_min_pair_score", 0.15))
-
-        for i, key_a in enumerate(keys):
-            for key_b in keys[i + 1 :]:
-                prof_a = profiles[key_a]
-                prof_b = profiles[key_b]
-                pair_score_dict = self._score_candidate_pair(prof_a, prof_b)
-                if pair_score_dict["pair_retrieval_score"] >= min_pair_score:
-                    pairs.append({"key_a": key_a, "key_b": key_b, **pair_score_dict})
-
-        # Sort desc by retrieval score
-        pairs.sort(key=lambda x: -x["pair_retrieval_score"])
-        return pairs
-
-    def _evaluate_pair_economically(
-        self,
-        key_a: str,
-        key_b: str,
-        resolver,
-        fwd_ret: np.ndarray,
-        folds: List[Tuple[np.ndarray, np.ndarray]],
-    ) -> Dict[str, Any]:
-        from sklearn.linear_model import Ridge
-
-        min_train = int(self.cfg.get("merge_ridge_min_train", 20))
-        min_valid = int(self.cfg.get("merge_ridge_min_valid", 10))
-        mask_a_full = resolver.get_mask(key_a).astype(np.float32)
-        mask_b_full = resolver.get_mask(key_b).astype(np.float32)
-        union_full = (mask_a_full > 0) | (mask_b_full > 0)
-
-        side = resolver.get_rule_side(key_a)
-        target_ret = -fwd_ret if side == "short" else fwd_ret
-
-        eps = 1e-12
-        candidates = ["composite_or", "parent_a_only", "parent_b_only"]
-        fold_metrics = {c: {"returns": [], "stds": [], "ics": []} for c in candidates}
-
-        for tr_idx, va_idx in folds:
-            tr_union = union_full[tr_idx]
-            va_union = union_full[va_idx]
-
-            mask_a_va = mask_a_full[va_idx]
-            mask_b_va = mask_b_full[va_idx]
-            y_va_full = target_ret[va_idx]
-
-            preds = np.zeros_like(y_va_full)
-            if np.sum(tr_union) >= min_train and np.sum(va_union) >= min_valid:
-                X_tr = np.column_stack(
-                    [mask_a_full[tr_idx][tr_union], mask_b_full[tr_idx][tr_union]]
-                ).astype(np.float32)
-                y_tr = target_ret[tr_idx][tr_union].astype(np.float32, copy=True)
-                X_va = np.column_stack(
-                    [mask_a_full[va_idx][va_union], mask_b_full[va_idx][va_union]]
-                ).astype(np.float32)
-                y_va = target_ret[va_idx][va_union].astype(np.float32, copy=False)
-
-                if X_tr.shape[0] >= min_train and X_va.shape[0] >= min_valid:
-                    hi = np.nanquantile(y_tr, 0.98)
-                    lo = np.nanquantile(y_tr, 0.02)
-                    y_tr_clipped = np.clip(y_tr, lo, hi)
-                    model = Ridge(alpha=float(self.cfg.get("merge_ridge_alpha", 1.0)))
-                    model.fit(X_tr, y_tr_clipped)
-                    preds[va_union] = model.predict(X_va)
-
-            scores = {
-                "composite_or": preds,
-                "parent_a_only": mask_a_va,
-                "parent_b_only": mask_b_va,
-            }
-            trade_masks = {
-                "composite_or": preds > 0.0,
-                "parent_a_only": mask_a_va > 0,
-                "parent_b_only": mask_b_va > 0,
-            }
-
-            for cand in candidates:
-                cand_score = scores[cand]
-                cand_mask = trade_masks[cand]
-
-                selected_returns = y_va_full[cand_mask]
-                valid_returns = selected_returns[np.isfinite(selected_returns)]
-                if len(valid_returns) > 0:
-                    fold_metrics[cand]["returns"].append(float(np.mean(valid_returns)))
-                    clipped_returns = _clip_returns(valid_returns)
-                    fold_metrics[cand]["stds"].append(float(np.std(clipped_returns)))
-                else:
-                    fold_metrics[cand]["returns"].append(np.nan)
-                    fold_metrics[cand]["stds"].append(np.nan)
-
-                valid_idx = np.isfinite(y_va_full) & np.isfinite(cand_score)
-                ic = _safe_spearman(cand_score[valid_idx], y_va_full[valid_idx])
-                fold_metrics[cand]["ics"].append(ic)
-
-        agg_metrics = {}
-        for cand in candidates:
-            returns_arr = np.array(fold_metrics[cand]["returns"], dtype=float)
-            stds_arr = np.array(fold_metrics[cand]["stds"], dtype=float)
-            ics_arr = np.array(fold_metrics[cand]["ics"], dtype=float)
-
-            mean_net_ret = (
-                float(np.nanmean(returns_arr))
-                if not np.all(np.isnan(returns_arr))
-                else np.nan
-            )
-            std_net_ret = (
-                float(np.nanmean(stds_arr))
-                if not np.all(np.isnan(stds_arr))
-                else np.nan
-            )
-            mean_ic = (
-                float(np.nanmean(ics_arr)) if not np.all(np.isnan(ics_arr)) else np.nan
-            )
-            positive_fold_fraction = (
-                float(np.mean(returns_arr[np.isfinite(returns_arr)] > 0))
-                if np.any(np.isfinite(returns_arr))
-                else 0.0
-            )
-
-            if np.isfinite(mean_net_ret) and np.isfinite(std_net_ret):
-                sharpe = mean_net_ret / max(std_net_ret, eps)
-            else:
-                sharpe = np.nan
-
-            if np.isfinite(sharpe) and np.isfinite(mean_ic):
-                selection_score = sharpe * max(mean_ic, 0.0)
-            else:
-                selection_score = -np.inf
-
-            agg_metrics[cand] = {
-                "mean_net_ret": mean_net_ret,
-                "std_net_ret": std_net_ret,
-                "mean_within_fold_std": float(np.nanmean(stds_arr))
-                if not np.all(np.isnan(stds_arr))
-                else np.nan,
-                "sharpe": sharpe,
-                "mean_ic": mean_ic,
-                "positive_fold_fraction": positive_fold_fraction,
-                "selection_score": selection_score,
-            }
-
-        score_a = agg_metrics["parent_a_only"]["selection_score"]
-        score_b = agg_metrics["parent_b_only"]["selection_score"]
-
-        if score_a >= score_b:
-            better_parent_name = "parent_a_only"
-            worse_parent_name = "parent_b_only"
-        else:
-            better_parent_name = "parent_b_only"
-            worse_parent_name = "parent_a_only"
-
-        winner = "composite_or"
-        best_score = agg_metrics["composite_or"]["selection_score"]
-
-        if score_a >= best_score:
-            winner = "parent_a_only"
-            best_score = score_a
-        if score_b >= best_score:
-            winner = "parent_b_only"
-            best_score = score_b
-
-        accept_merge = False
-        reason = "accepted"
-        decision = ""
-
-        child = agg_metrics[winner]
-        parent = agg_metrics[better_parent_name]
-        worse_parent = agg_metrics[worse_parent_name]
-
-        if winner != "composite_or":
-            accept_merge = False
-            reason = "composite_lost_to_parent"
-            decision = f"keep_{winner.replace('_only', '')}"
-        else:
-            min_abs_sharpe_delta = float(
-                self.cfg.get("econ_min_abs_sharpe_delta", 0.02)
-            )
-            min_abs_ic_delta = float(self.cfg.get("econ_min_abs_ic_delta", 0.002))
-            mult_sharpe = float(
-                self.cfg.get("econ_child_sharpe_improvement_mult", 1.05)
-            )
-            mult_ic = float(self.cfg.get("econ_child_ic_improvement_mult", 1.05))
-
-            if np.isfinite(parent["sharpe"]) and parent["sharpe"] > 0:
-                sharpe_ok = child["sharpe"] > parent["sharpe"] * mult_sharpe
-            else:
-                sharpe_ok = (
-                    child["sharpe"]
-                    > (parent["sharpe"] if np.isfinite(parent["sharpe"]) else 0)
-                    + min_abs_sharpe_delta
-                )
-
-            if np.isfinite(parent["mean_ic"]) and parent["mean_ic"] > 0:
-                ic_ok = child["mean_ic"] > parent["mean_ic"] * mult_ic
-            else:
-                ic_ok = (
-                    child["mean_ic"]
-                    > (parent["mean_ic"] if np.isfinite(parent["mean_ic"]) else 0)
-                    + min_abs_ic_delta
-                )
-
-            worst_parent_std = (
-                worse_parent["std_net_ret"]
-                if np.isfinite(worse_parent["std_net_ret"])
-                else np.inf
-            )
-            risk_ok = child["std_net_ret"] <= worst_parent_std
-
-            if not sharpe_ok:
-                reason = "failed_sharpe_improvement"
-            elif not ic_ok:
-                reason = "failed_ic_improvement"
-            elif not risk_ok:
-                reason = "failed_std_constraint"
-            else:
-                accept_merge = True
-
-            if not accept_merge:
-                decision = f"keep_{better_parent_name.replace('_only', '')}"
-            else:
-                decision = "accepted_composite"
-
-        return {
-            "child_candidate_name": winner,
-            "child_selection_score": child["selection_score"],
-            "child_mean_net_ret": child["mean_net_ret"],
-            "child_std_net_ret": child["std_net_ret"],
-            "child_sharpe": child["sharpe"],
-            "child_mean_ic": child["mean_ic"],
-            "child_positive_fold_fraction": child["positive_fold_fraction"],
-            "better_parent_name": better_parent_name,
-            "parent_selection_score": parent["selection_score"],
-            "parent_mean_net_ret": parent["mean_net_ret"],
-            "parent_std_net_ret": parent["std_net_ret"],
-            "parent_sharpe": parent["sharpe"],
-            "parent_mean_ic": parent["mean_ic"],
-            "worse_parent_name": worse_parent_name,
-            "worse_parent_std_net_ret": worse_parent["std_net_ret"],
-            "composite_selection_score": agg_metrics["composite_or"]["selection_score"],
-            "parent_a_selection_score": score_a,
-            "parent_b_selection_score": score_b,
-            "accept_merge": accept_merge,
-            "decision": decision,
-            "decision_reason": reason,
-            "ridge_mean_net_ret": agg_metrics["composite_or"]["mean_net_ret"],
-            "ridge_positive_fold_fraction": agg_metrics["composite_or"][
-                "positive_fold_fraction"
-            ],
-        }
-
-    def _is_near_duplicate(self, pair_score_dict: Dict[str, Any]) -> bool:
-        cont_thres = float(self.cfg.get("econ_duplicate_containment_threshold", 0.97))
-        beh_thres = float(
-            self.cfg.get("econ_duplicate_behavior_similarity_threshold", 0.90)
-        )
-        return (
-            pair_score_dict["containment_score"] >= cont_thres
-            and pair_score_dict["behavior_similarity"] >= beh_thres
-        )
-
-    def _compute_ridge_signature(
-        self,
-        mask: np.ndarray,
-        X_std: np.ndarray,
-        fwd_ret: np.ndarray,
-        folds: List[Tuple[np.ndarray, np.ndarray]],
-    ) -> Dict[str, Any]:
-        import scipy.stats
-        from sklearn.linear_model import Ridge
-
-        min_train = int(self.cfg.get("merge_ridge_min_train", 20))
-
-        fold_ics = []
-        fold_returns = []
-
-        train_support_total = 0
-
-        valid_idx = np.where(mask & np.isfinite(fwd_ret))[0]
-
-        if len(valid_idx) < min_train:
-            return None
-
-        X_valid = X_std[valid_idx]
-        y_valid = fwd_ret[valid_idx]
-
-        hi = np.nanquantile(y_valid, 0.98) if len(y_valid) > 0 else 1.0
-        lo = np.nanquantile(y_valid, 0.02) if len(y_valid) > 0 else -1.0
-        y_valid_clipped = np.clip(y_valid, lo, hi)
-
-        full_model = Ridge(solver="auto")
-        full_model.fit(X_valid, y_valid_clipped)
-
-        coefs = full_model.coef_
-        intercept = full_model.intercept_
-
-        abs_coefs = np.abs(coefs)
-
-        k = min(10, len(coefs))
-        top_k_indices = set(np.argsort(abs_coefs)[-k:]) if k > 0 else set()
-
-        for tr_idx, va_idx in folds:
-            tr_mask = mask[tr_idx]
-            va_mask = mask[va_idx]
-
-            y_tr = fwd_ret[tr_idx]
-            y_va = fwd_ret[va_idx]
-
-            valid_tr = tr_mask & np.isfinite(y_tr)
-            valid_va = va_mask & np.isfinite(y_va)
-
-            if np.sum(valid_tr) >= min_train and np.sum(valid_va) > 0:
-                X_tr = X_std[tr_idx][valid_tr]
-
-                # Compute fold-specific clipping limits
-                y_tr_valid = y_tr[valid_tr]
-                hi_fold = (
-                    np.nanquantile(y_tr_valid, 0.98) if len(y_tr_valid) > 0 else 1.0
-                )
-                lo_fold = (
-                    np.nanquantile(y_tr_valid, 0.02) if len(y_tr_valid) > 0 else -1.0
-                )
-                y_tr_fold = np.clip(y_tr_valid, lo_fold, hi_fold)
-
-                fold_model = Ridge(solver="auto")
-                fold_model.fit(X_tr, y_tr_fold)
-
-                X_va_fold = X_std[va_idx][valid_va]
-                preds = fold_model.predict(X_va_fold)
-
-                ic = _safe_spearman(preds, y_va[valid_va])
-                fold_ics.append(ic)
-
-                mask_trades = preds > 0
-                ret = y_va[valid_va][mask_trades]
-                if len(ret) > 0:
-                    fold_returns.append(np.mean(ret))
-
-            train_support_total += np.sum(valid_tr)
-
-        oos_ic = np.nanmean(fold_ics) if fold_ics else np.nan
-        oos_mean_return = np.nanmean(fold_returns) if fold_returns else np.nan
-
-        return {
-            "coefficients": coefs,
-            "top_k_indices": top_k_indices,
-            "intercept": intercept,
-            "oos_ic": oos_ic,
-            "oos_mean_return": oos_mean_return,
-            "mask_support": len(valid_idx),
-            "fold_train_support_total": train_support_total,
-        }
-
-    def _score_ridge_similarity(
-        self, sig_a: Dict[str, Any], sig_b: Dict[str, Any]
-    ) -> Dict[str, float]:
-        import scipy.stats
-
-        if sig_a is None or sig_b is None:
-            return {
-                "ridge_context_similarity": 0.0,
-                "coef_sim": 0.0,
-                "topk_jaccard": 0.0,
-                "topk_sign_agreement": 0.0,
-                "topk_sign_conflict_rate": 0.0,
-                "rank_corr": 0.0,
-            }
-
-        beta_a = sig_a["coefficients"]
-        beta_b = sig_b["coefficients"]
-
-        coef_sim = _cosine_similarity(beta_a, beta_b)
-
-        top_a = sig_a["top_k_indices"]
-        top_b = sig_b["top_k_indices"]
-
-        overlap = top_a.intersection(top_b)
-        union_set = top_a.union(top_b)
-
-        topk_jaccard = len(overlap) / max(len(union_set), 1)
-
-        if overlap:
-            overlap_idx = np.array(sorted(overlap), dtype=int)
-            topk_sign_agreement = float(
-                np.mean(np.sign(beta_a[overlap_idx]) == np.sign(beta_b[overlap_idx]))
-            )
-            topk_sign_conflict_rate = 1.0 - topk_sign_agreement
-        else:
-            topk_sign_agreement = 0.0
-            topk_sign_conflict_rate = 0.0
-
-        rank_corr = _safe_spearman(
-            scipy.stats.rankdata(np.abs(beta_a)), scipy.stats.rankdata(np.abs(beta_b))
-        )
-        if np.isnan(rank_corr):
-            rank_corr = 0.0
-
-        ridge_context_similarity = (
-            0.45 * max(coef_sim, 0.0)
-            + 0.25 * topk_jaccard
-            + 0.20 * topk_sign_agreement
-            + 0.10 * max(rank_corr, 0.0)
-            - 0.15 * topk_sign_conflict_rate
-        )
-
-        return {
-            "ridge_context_similarity": ridge_context_similarity,
-            "coef_sim": coef_sim,
-            "topk_jaccard": topk_jaccard,
-            "topk_sign_agreement": topk_sign_agreement,
-            "topk_sign_conflict_rate": topk_sign_conflict_rate,
-            "rank_corr": rank_corr,
-        }
-
-    def _cross_context_transport_test(
-        self,
-        mask_a: np.ndarray,
-        mask_b: np.ndarray,
-        X_std: np.ndarray,
-        fwd_ret: np.ndarray,
-        folds: List[Tuple[np.ndarray, np.ndarray]],
-    ) -> Dict[str, float]:
-        from sklearn.linear_model import Ridge
-
-        min_train = int(self.cfg.get("merge_ridge_min_train", 20))
-
-        transport_ab_ics = []
-        transport_ba_ics = []
-
-        for tr_idx, va_idx in folds:
-            tr_mask_a = mask_a[tr_idx]
-            va_mask_a = mask_a[va_idx]
-            tr_mask_b = mask_b[tr_idx]
-            va_mask_b = mask_b[va_idx]
-
-            y_tr = fwd_ret[tr_idx]
-            y_va = fwd_ret[va_idx]
-
-            valid_tr_a = tr_mask_a & np.isfinite(y_tr)
-            valid_tr_b = tr_mask_b & np.isfinite(y_tr)
-            valid_va_a = va_mask_a & np.isfinite(y_va)
-            valid_va_b = va_mask_b & np.isfinite(y_va)
-
-            if np.sum(valid_tr_a) >= min_train and np.sum(valid_va_b) > 0:
-                X_tr_a = X_std[tr_idx][valid_tr_a]
-
-                # Compute source-specific clipping bounds for A
-                y_tr_a_valid = y_tr[valid_tr_a]
-                hi_a = (
-                    np.nanquantile(y_tr_a_valid, 0.98) if len(y_tr_a_valid) > 0 else 1.0
-                )
-                lo_a = (
-                    np.nanquantile(y_tr_a_valid, 0.02)
-                    if len(y_tr_a_valid) > 0
-                    else -1.0
-                )
-                y_tr_a = np.clip(y_tr_a_valid, lo_a, hi_a)
-
-                model_a = Ridge(solver="auto")
-                model_a.fit(X_tr_a, y_tr_a)
-
-                X_va_b = X_std[va_idx][valid_va_b]
-                preds_ab = model_a.predict(X_va_b)
-
-                ic_ab = _safe_spearman(preds_ab, y_va[valid_va_b])
-                transport_ab_ics.append(ic_ab)
-
-            if np.sum(valid_tr_b) >= min_train and np.sum(valid_va_a) > 0:
-                X_tr_b = X_std[tr_idx][valid_tr_b]
-
-                # Compute source-specific clipping bounds for B
-                y_tr_b_valid = y_tr[valid_tr_b]
-                hi_b = (
-                    np.nanquantile(y_tr_b_valid, 0.98) if len(y_tr_b_valid) > 0 else 1.0
-                )
-                lo_b = (
-                    np.nanquantile(y_tr_b_valid, 0.02)
-                    if len(y_tr_b_valid) > 0
-                    else -1.0
-                )
-                y_tr_b = np.clip(y_tr_b_valid, lo_b, hi_b)
-
-                model_b = Ridge(solver="auto")
-                model_b.fit(X_tr_b, y_tr_b)
-
-                X_va_a = X_std[va_idx][valid_va_a]
-                preds_ba = model_b.predict(X_va_a)
-
-                ic_ba = _safe_spearman(preds_ba, y_va[valid_va_a])
-                transport_ba_ics.append(ic_ba)
-
-        transport_ab_ic = np.nanmean(transport_ab_ics) if transport_ab_ics else np.nan
-        transport_ba_ic = np.nanmean(transport_ba_ics) if transport_ba_ics else np.nan
-
-        if np.isnan(transport_ab_ic) or np.isnan(transport_ba_ic):
-            transport_mean_ic = np.nan
-            transport_min_ic = np.nan
-        else:
-            transport_mean_ic = 0.5 * (transport_ab_ic + transport_ba_ic)
-            transport_min_ic = min(transport_ab_ic, transport_ba_ic)
-
-        return {
-            "transport_ab_ic": transport_ab_ic,
-            "transport_ba_ic": transport_ba_ic,
-            "transport_mean_ic": transport_mean_ic,
-            "transport_min_ic": transport_min_ic,
-        }
-
-    def _ridge_based_consolidation(
-        self,
-        active: pd.DataFrame,
-        fwd_ret: np.ndarray,
-        folds: List[Tuple[np.ndarray, np.ndarray]],
-        resolver,
-        data: Optional[pd.DataFrame] = None,
-        max_rounds: int = 2,
-    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        if getattr(resolver, "X", None) is None:
-            return active, {}
-
-        # NOTE: A single standardized matrix X_std is built once from resolver.X
-        # for the cheap signature stage, using global column-wise mean/std.
-        # This is acceptable as a pragmatic retrieval heuristic for signature similarity.
-        X_raw = resolver.X
-        X_std = np.zeros_like(X_raw)
-        for i in range(X_raw.shape[1]):
-            col = X_raw[:, i]
-            valid = np.isfinite(col)
-            if np.sum(valid) > 0:
-                mean = np.mean(col[valid])
-                std = np.std(col[valid])
-                if std == 0:
-                    std = 1.0
-                X_std[valid, i] = (col[valid] - mean) / std
-
-        diag = {}
-        total_evals = 0
-        total_merges = 0
-
-        signature_cache = {}
-        mask_cache = {}
-
-        def get_signature(key):
-            if key not in signature_cache:
-                if key not in mask_cache:
-                    mask_cache[key] = resolver.get_mask(key)
-                side = resolver.get_rule_side(key)
-                target_ret = -fwd_ret if side == "short" else fwd_ret
-                signature_cache[key] = self._compute_ridge_signature(
-                    mask_cache[key], X_std, target_ret, folds
-                )
-            return signature_cache[key]
-
-        candidate_seed_keys = set()
-        ridge_evals_log = []
-
-        top_n = int(self.cfg.get("consolidate_top_n", 20))
-        for round_idx in range(max_rounds):
-            # Limit signature-based consolidation to top 20 rules
-            top_configs = active.sort_values(["composite_score", "hurdle_excess"], ascending=False).head(top_n)
-            keys = top_configs["canonical_key"].tolist()
-
-            signatures = {}
-            for k in keys:
-                sig = get_signature(k)
-                if sig is not None:
-                    signatures[k] = sig
-
-            if len(signatures) < 2:
-                break
-
-            valid_keys = list(signatures.keys())
-            pair_sims = []
-
-            for i in range(len(valid_keys)):
-                for j in range(i + 1, len(valid_keys)):
-                    k_a = valid_keys[i]
-                    k_b = valid_keys[j]
-
-                    if round_idx > 0 and (
-                        k_a not in candidate_seed_keys
-                        and k_b not in candidate_seed_keys
-                    ):
-                        continue
-
-                    sim_dict = self._score_ridge_similarity(
-                        signatures[k_a], signatures[k_b]
-                    )
-                    pair_sims.append({"key_a": k_a, "key_b": k_b, **sim_dict})
-
-            if not pair_sims:
-                break
-
-            pair_sims.sort(key=lambda x: x["ridge_context_similarity"], reverse=True)
-
-            n_top_25 = max(1, len(pair_sims) // 4)
-            top_pairs = pair_sims[: min(n_top_25, 1000)]
-
-            transport_results = []
-            for p in top_pairs:
-                k_a = p["key_a"]
-                k_b = p["key_b"]
-                if k_a not in mask_cache:
-                    mask_cache[k_a] = resolver.get_mask(k_a)
-                if k_b not in mask_cache:
-                    mask_cache[k_b] = resolver.get_mask(k_b)
-
-                # Here we assume both rules in a pair have the same side
-                side = resolver.get_rule_side(k_a)
-                target_ret = -fwd_ret if side == "short" else fwd_ret
-
-                trans_metrics = self._cross_context_transport_test(
-                    mask_cache[k_a], mask_cache[k_b], X_std, target_ret, folds
-                )
-
-                # Only keep pairs with valid symmetric transport
-                if not np.isnan(trans_metrics["transport_min_ic"]):
-                    transport_results.append({**p, **trans_metrics})
-
-            transport_results.sort(key=lambda x: x["transport_min_ic"], reverse=True)
-
-            if round_idx == 0:
-                n_top = max(1, len(transport_results) // 2)
-                final_pairs = transport_results[: min(n_top, 500)]
-            else:
-                n_top = max(1, len(transport_results) // 10)
-                final_pairs = transport_results[: min(n_top, 500)]
-
-            accepted_in_round = 0
-            created_this_round = set()
-            active_keys = set(active["canonical_key"].tolist())
-
-            for p in final_pairs:
-                key_a = p["key_a"]
-                key_b = p["key_b"]
-
-                if key_a not in active_keys or key_b not in active_keys:
-                    continue
-
-                total_evals += 1
-
-                diag_eval = self._evaluate_pair_economically(
-                    key_a, key_b, resolver, fwd_ret, folds
-                )
-
-                ridge_evals_log.append(
-                    {
-                        "round": round_idx,
-                        **p,
-                        "final_merge_decision": diag_eval["accept_merge"],
-                        "decision_reason": diag_eval["decision_reason"],
-                    }
-                )
-
-                if diag_eval["accept_merge"]:
-                    accepted_in_round += 1
-                    total_merges += 1
-                    child_key = self._make_composite_key(key_a, key_b)
-
-                    row_a = active[active["canonical_key"] == key_a].iloc[0]
-                    row_b = active[active["canonical_key"] == key_b].iloc[0]
-
-                    parent_context_key = (
-                        row_a["parent_context_key"]
-                        if row_a["parent_context_key"] == row_b["parent_context_key"]
-                        else None
-                    )
-                    side_a = row_a.get("side", "unknown")
-                    side_b = row_b.get("side", "unknown")
-
-                    child_summary, _ = self.scorer.score_key_oos(
-                        canonical_key=child_key,
-                        fwd_ret=fwd_ret,
-                        folds=folds,
-                        resolver=resolver,
-                        require_uplift=bool(parent_context_key),
-                        parent_context_key=parent_context_key,
-                        discovery_count=int(
-                            row_a["discovery_count"] + row_b["discovery_count"]
-                        ),
-                        n_instances=int(
-                            row_a.get("n_instances", 0) + row_b.get("n_instances", 0)
-                        ),
-                        pipeline_stage="ridge_composite",
-                        explicit_side=side_a if side_a == side_b else "mixed",
-                    )
-
-                    active = active[
-                        ~active["canonical_key"].isin([key_a, key_b])
-                    ].copy()
-                    active = pd.concat(
-                        [active, pd.DataFrame([child_summary])], ignore_index=True
-                    )
-
-                    active_keys.remove(key_a)
-                    active_keys.remove(key_b)
-                    active_keys.add(child_key)
-
-                    created_this_round.add(child_key)
-
-                    self.lineage.record_merge(
-                        child_key,
-                        [key_a, key_b],
-                        "accepted_ridge_signature_composite",
-                        round_idx + 10,
-                        {"decision_reason": diag_eval["decision_reason"]},
-                    )
-
-            candidate_seed_keys = created_this_round.copy()
-
-            if accepted_in_round == 0:
-                break
-
-        diag["ridge_signature_evals"] = total_evals
-        diag["ridge_signature_merges"] = total_merges
-        diag["ridge_signature_evals_log"] = ridge_evals_log
-
-        return active, diag
-
-    def consolidate(
-        self,
-        registry: pd.DataFrame,
-        fwd_ret: np.ndarray,
-        folds: List[Tuple[np.ndarray, np.ndarray]],
-        resolver: Optional[
-            Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]
-        ] = None,
-        data: Optional[pd.DataFrame] = None,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
-        resolver = resolver or self.mask_resolver
-        if resolver is None or registry.empty:
-            return registry, pd.DataFrame(), {}
-
-        active = registry.copy()
-        
-        # Limit pairwise consolidation to top 20 rules only
-        top_n = int(self.cfg.get("consolidate_top_n", 20))
-        top_configs = active.sort_values(["composite_score", "hurdle_excess"], ascending=False).head(top_n)
-        top_keys = set(top_configs["canonical_key"].tolist())
-        
-        profiles = {}
-        for idx, row in active.iterrows():
-            key = str(row.get("canonical_key", row.name))
-            if key not in top_keys:
-                continue
-            mask = resolver.get_mask(key)
-            profiles[key] = self._build_rule_profile(row, mask, fwd_ret, folds)
-
-        candidate_pairs = self._generate_candidate_pairs(profiles)
-
-        # Filter out cross-side and cross-stage pairs
-        # We explicitly never merge Stage B1 and B2 rules together
-        side_lookup = active.set_index("canonical_key")["side"].to_dict()
-        stage_lookup = (
-            active.set_index("canonical_key")
-            .get("pipeline_stage", pd.Series(index=active.index))
-            .to_dict()
-        )
-
-        def can_merge(ka, kb):
-            if side_lookup.get(ka) != side_lookup.get(kb):
-                return False
-
-            stage_a = stage_lookup.get(ka)
-            stage_b = stage_lookup.get(kb)
-
-            if (
-                stage_a == "stage_b_trigger_refinement"
-                and stage_b == "stage_b_location_refinement"
-            ):
-                return False
-            if (
-                stage_b == "stage_b_trigger_refinement"
-                and stage_a == "stage_b_location_refinement"
-            ):
-                return False
-
-            return True
-
-        candidate_pairs = [
-            p for p in candidate_pairs if can_merge(p["key_a"], p["key_b"])
-        ]
-
-        prune_dups = bool(self.cfg.get("econ_prune_weaker_duplicates", True))
-
-        max_total_pair_evals = int(self.cfg.get("max_total_pair_evals", 1000))
-        evals = 0
-        accepted_merges = 0
-        pruned_dups = 0
-
-        pair_evals_log = []
-
-        tprint(
-            f"Economic Consolidation Start: {len(active)} active rules, {len(candidate_pairs)} candidate pairs."
-        )
-
-        for pair in candidate_pairs:
-            if evals >= max_total_pair_evals:
-                break
-
-            key_a = pair["key_a"]
-            key_b = pair["key_b"]
-
-            # Skip if either rule is no longer active
-            if (
-                key_a not in active["canonical_key"].values
-                or key_b not in active["canonical_key"].values
-            ):
-                continue
-
-            evals += 1
-
-            diag = self._evaluate_pair_economically(
-                key_a, key_b, resolver, fwd_ret, folds
-            )
-
-            # We construct pair_diag starting with pair_score_dict
-            pair_diag = {**pair, **diag}
-
-            row_a = active[active["canonical_key"] == key_a].iloc[0]
-            row_b = active[active["canonical_key"] == key_b].iloc[0]
-
-            pair_evals_log.append({**pair, **diag})
-            if diag["accept_merge"]:
-                accepted_merges += 1
-                # Create composite
-                child_key = self._make_composite_key(key_a, key_b)
-
-                parent_context_key = (
-                    row_a["parent_context_key"]
-                    if row_a["parent_context_key"] == row_b["parent_context_key"]
-                    else None
-                )
-                side_a = row_a.get("side", "unknown")
-                side_b = row_b.get("side", "unknown")
-
-                child_summary, _ = self.scorer.score_key_oos(
-                    canonical_key=child_key,
-                    fwd_ret=fwd_ret,
-                    folds=folds,
-                    resolver=resolver,
-                    require_uplift=bool(parent_context_key),
-                    parent_context_key=parent_context_key,
-                    discovery_count=int(
-                        row_a["discovery_count"] + row_b["discovery_count"]
-                    ),
-                    n_instances=int(
-                        row_a.get("n_instances", 0) + row_b.get("n_instances", 0)
-                    ),
-                    pipeline_stage="global_composite"
-                    if "global" in str(row_a.get("pipeline_stage", ""))
-                    or "global" in str(row_b.get("pipeline_stage", ""))
-                    else "composite",
-                    explicit_side=side_a if side_a == side_b else "mixed",
-                )
-
-                # We enforce that the created child summary takes the place of A and B
-                active = active[~active["canonical_key"].isin([key_a, key_b])].copy()
-                active = pd.concat(
-                    [active, pd.DataFrame([child_summary])], ignore_index=True
-                )
-
-                self.lineage.record_merge(
-                    child_key,
-                    [key_a, key_b],
-                    "accepted_composite",
-                    1,
-                    {"decision_reason": diag["decision_reason"]},
-                )
-
-                # We must build a new profile for the newly created child to allow future merges
-                mask = resolver.get_mask(child_key)
-                profiles[child_key] = self._build_rule_profile(
-                    child_summary, mask, fwd_ret, folds
-                )
-
-            else:
-                # Rejected merge -> check for duplicate pruning
-                is_dup = self._is_near_duplicate(pair)
-
-                better_parent_key = (
-                    key_a if diag["better_parent_name"] == "parent_a_only" else key_b
-                )
-                weaker_parent_key = key_b if better_parent_key == key_a else key_a
-
-                if prune_dups and is_dup:
-                    pruned_dups += 1
-                    active = active[active["canonical_key"] != weaker_parent_key].copy()
-                    self.lineage.record_merge(
-                        better_parent_key,
-                        [key_a, key_b],
-                        "prune_duplicate",
-                        1,
-                        {"decision_reason": "duplicate_pruned"},
-                    )
-                else:
-                    self.lineage.record_merge(
-                        "none",
-                        [key_a, key_b],
-                        "rejected_pair",
-                        1,
-                        {"decision_reason": diag["decision_reason"]},
-                    )
-
-        active = active.drop_duplicates(subset=["canonical_key"], keep="first")
-        active = active.sort_values(
-            ["composite_score", "hurdle_excess"], ascending=False
-        )
-
-        tprint(
-            f"Economic Consolidation End: {len(active)} rules remaining. {evals} evaluated pairs, {accepted_merges} merges, {pruned_dups} duplicate prunes."
-        )
-
-        # Diagnostic prints
-        evals_df = pd.DataFrame(pair_evals_log)
-        if not evals_df.empty:
-            rejected_pairs = (
-                evals_df[~evals_df["accept_merge"]]
-                .sort_values("pair_retrieval_score", ascending=False)
-                .head(10)
-            )
-            tprint("Top 10 rejected pairs by retrieval score:")
-            for _, row in rejected_pairs.iterrows():
-                tprint(
-                    f"  - {row['key_a']} + {row['key_b']}: reason={row['decision_reason']}, retrieval={row['pair_retrieval_score']:.2f}"
-                )
-
-            accepted_pairs = (
-                evals_df[evals_df["accept_merge"]]
-                .sort_values("child_selection_score", ascending=False)
-                .head(10)
-            )
-            tprint("Top 10 accepted composites by child selection score:")
-            for _, row in accepted_pairs.iterrows():
-                tprint(
-                    f"  - {row['key_a']} + {row['key_b']}: score={row['child_selection_score']:.2f}, gain={row['child_selection_score'] - row['parent_selection_score']:.2f}"
-                )
-
-        # Now run the Ridge-based signature consolidation on the resulting active registry
-        active, ridge_diag = self._ridge_based_consolidation(
-            active, fwd_ret, folds, resolver, data, max_rounds=2
-        )
-
-        diag_dict = {
-            "economic_pair_evaluations": evals_df,
-            "economic_consolidation_summary": {
-                "active_start": len(registry),
-                "active_end": len(active),
-                "pairs_generated": len(candidate_pairs),
-                "evals_count": evals,
-                "accepted_merges": accepted_merges,
-                "duplicate_prunes": pruned_dups,
-            },
-            "ridge_signature_evals": ridge_diag.get("ridge_signature_evals", 0),
-            "ridge_signature_merges": ridge_diag.get("ridge_signature_merges", 0),
-        }
-
-        if (
-            "ridge_signature_evals_log" in ridge_diag
-            and ridge_diag["ridge_signature_evals_log"]
-        ):
-            diag_dict["ridge_signature_evals_log"] = pd.DataFrame(
-                ridge_diag["ridge_signature_evals_log"]
-            )
-
-        tprint(
-            f"Ridge Signature Consolidation End: {len(active)} rules remaining. {ridge_diag.get('ridge_signature_evals', 0)} evaluated pairs, {ridge_diag.get('ridge_signature_merges', 0)} merges."
-        )
-
-        return active, self.lineage.get_audit_df(), diag_dict
-
-
 class RuleConsolidator:
+    """Consolidation logic intentionally removed."""
+
     def __init__(
         self,
         metadata: List[FeatureMetadata],
@@ -4028,147 +2897,41 @@ class RuleConsolidator:
         self.metadata = metadata
         self.cfg = cfg
         self.mask_resolver = mask_resolver
-        self.scorer = scorer or RuleScorer(metadata, cfg, mask_resolver=mask_resolver)
-        self.lineage = LineageTracker()
-        self._symbol_groups_cache: Optional[Dict[str, np.ndarray]] = None
+        self.scorer = scorer
 
-    def _build_symbol_groups(
-        self, data: Optional[pd.DataFrame]
-    ) -> Dict[str, np.ndarray]:
-        if self._symbol_groups_cache is not None:
-            return self._symbol_groups_cache
-        if data is None or "symbol" not in data.columns:
-            self._symbol_groups_cache = {}
-            return self._symbol_groups_cache
-        groups: Dict[str, np.ndarray] = {}
-        for symbol, idx in data.groupby("symbol", sort=False).groups.items():
-            groups[str(symbol)] = np.asarray(sorted(idx), dtype=np.int32)
-        self._symbol_groups_cache = groups
-        return groups
-
-    def _dilate_mask_by_symbol(
-        self,
-        mask: np.ndarray,
-        data: Optional[pd.DataFrame],
-        bars: int,
-    ) -> np.ndarray:
-        if bars <= 0:
-            return np.asarray(mask, dtype=bool)
-        mask_bool = np.asarray(mask, dtype=bool)
-        out = mask_bool.copy()
-        symbol_groups = self._build_symbol_groups(data)
-        if not symbol_groups:
-            active = np.flatnonzero(mask_bool)
-            for idx in active:
-                lo = max(0, idx - bars)
-                hi = min(mask_bool.shape[0], idx + bars + 1)
-                out[lo:hi] = True
-            return out
-        for idx_group in symbol_groups.values():
-            local_mask = mask_bool[idx_group]
-            active_local = np.flatnonzero(local_mask)
-            for pos in active_local:
-                lo = max(0, pos - bars)
-                hi = min(idx_group.shape[0], pos + bars + 1)
-                out[idx_group[lo:hi]] = True
-        return out
-
-    def _extract_context_signature(self, row: pd.Series) -> Tuple[str, str]:
-        parent_context_key = row.get("parent_context_key")
-        if isinstance(parent_context_key, str) and parent_context_key:
-            try:
-                slots = parse_slot_map(
-                    parent_context_key, ("trigger", "location", "regime")
-                )
-                return slots.get("location", "*"), slots.get("regime", "*")
-            except Exception:
-                pass
-        key = row.get("canonical_key", row.name)
-        if not isinstance(key, str) or not key:
-            return "*", "*"
-        if split_composite_key(key) is not None:
-            return "*", "*"
-        try:
-            slots = parse_slot_map(key, ("trigger", "location", "regime"))
-            return slots.get("location", "*"), slots.get("regime", "*")
-        except Exception:
-            return "*", "*"
-
-    def _semantic_relation(self, row_a: pd.Series, row_b: pd.Series) -> Optional[str]:
-        loc_a, reg_a = self._extract_context_signature(row_a)
-        loc_b, reg_b = self._extract_context_signature(row_b)
-        same_loc = loc_a != "*" and loc_a == loc_b
-        same_reg = reg_a != "*" and reg_a == reg_b
-        if same_loc and same_reg:
-            return "same_regime_location"
-        if same_reg:
-            return "same_regime_only"
-        if same_loc:
-            return "same_location_only"
-        return None
-
-    def _pair_score(
-        self,
-        key_a: str,
-        key_b: str,
-        row_a: pd.Series,
-        row_b: pd.Series,
-        resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
-        data: Optional[pd.DataFrame],
-        dilation_bars: int,
-    ) -> Tuple[int, float, Optional[str], float]:
-        relation = self._semantic_relation(row_a, row_b)
-        dilated_jaccard = self._pair_jaccard(
-            key_a,
-            key_b,
-            resolver,
-            data=data,
-            dilation_bars=dilation_bars,
-        )
-        if relation == "same_regime_location":
-            return 0, dilated_jaccard, relation, dilated_jaccard
-        if dilated_jaccard >= float(self.cfg.get("min_jaccard_stop_threshold", 0.60)):
-            return 1, dilated_jaccard, "dilated_jaccard", dilated_jaccard
-        if relation == "same_regime_only":
-            return 2, dilated_jaccard, relation, dilated_jaccard
-        if relation == "same_location_only":
-            return 3, dilated_jaccard, relation, dilated_jaccard
-        return 99, dilated_jaccard, relation, dilated_jaccard
-
-    def _pair_jaccard(
-        self,
-        key_a: str,
-        key_b: str,
-        resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
-        data: Optional[pd.DataFrame] = None,
-        dilation_bars: int = 0,
-    ) -> float:
-        mask_a = resolver.get_mask(key_a)
-        mask_b = resolver.get_mask(key_b)
-        if dilation_bars > 0:
-            mask_a = self._dilate_mask_by_symbol(mask_a, data, dilation_bars)
-            mask_b = self._dilate_mask_by_symbol(mask_b, data, dilation_bars)
-        union = np.sum(mask_a | mask_b)
-        if union == 0:
-            return 0.0
-        return float(np.sum(mask_a & mask_b) / union)
-
-    def _make_composite_key(self, key_a: str, key_b: str) -> str:
-        ordered = sorted([key_a, key_b])
-        return f"Composite({ordered[0]})_OR_({ordered[1]})"
-
-    def _best_parent(self, row_a: pd.Series, row_b: pd.Series) -> pd.Series:
-        metric_a = (row_a["hurdle_excess"], row_a["composite_score"])
-        metric_b = (row_b["hurdle_excess"], row_b["composite_score"])
-        return row_a if metric_a >= metric_b else row_b
-
-    @staticmethod
-    def _row_key(row: pd.Series) -> str:
-        key = row.get("canonical_key", row.name)
-        if key is None:
-            raise KeyError("Row has no canonical_key column or index name")
+    def _row_key(self, row: pd.Series) -> str:
+        key = row.get("canonical_key")
+        if key is None or (isinstance(key, float) and np.isnan(key)):
+            key = row.name
         return str(key)
 
+    def _semantic_relation(self, row_a: pd.Series, row_b: pd.Series) -> str:
+        slots_a = parse_slot_map(
+            self._row_key(row_a), ("trigger", "location", "regime")
+        )
+        slots_b = parse_slot_map(
+            self._row_key(row_b), ("trigger", "location", "regime")
+        )
+        if slots_a.get("location") == slots_b.get("location") and slots_a.get(
+            "regime"
+        ) == slots_b.get("regime"):
+            return "same_regime_location"
+        return "other"
+
+    def _dilate_mask_by_symbol(
+        self, mask: np.ndarray, data: pd.DataFrame, bars: int = 1
+    ) -> np.ndarray:
+        if bars <= 0 or "symbol" not in data.columns:
+            return mask.copy()
+        out = mask.copy()
+        symbols = data["symbol"].to_numpy()
+        for i in np.where(mask)[0]:
+            sym = symbols[i]
+            for j in range(i + 1, min(i + bars + 1, len(mask))):
+                if symbols[j] == sym:
+                    out[j] = True
+        return out
+
     def consolidate(
         self,
         registry: pd.DataFrame,
@@ -4179,551 +2942,12 @@ class RuleConsolidator:
         ] = None,
         data: Optional[pd.DataFrame] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
-        resolver = resolver or self.mask_resolver
-        if resolver is None or registry.empty:
-            return registry, pd.DataFrame(), {}
+        del fwd_ret, folds, resolver, data
+        return registry.copy(), pd.DataFrame(), {}
 
-        round_summaries = []
-        ridge_evals = []
 
-        top_n = int(self.cfg.get("consolidation_top_n", 100))
-        support_gain_factor = float(self.cfg.get("support_gain_factor", 1.05))
-        max_failed_pair_checks = int(self.cfg.get("max_failed_pair_checks", 250))
-        max_total_pair_evals = int(self.cfg.get("max_total_pair_evals", 1000))
-        max_rounds = int(self.cfg.get("max_consolidation_rounds", 3))
-        min_jaccard_floor = float(self.cfg.get("min_jaccard_stop_threshold", 0.60))
-        dilation_bars = int(self.cfg.get("consolidation_dilation_bars", 2))
-        round_thresholds = [
-            float(self.cfg.get("jaccard_round1", 0.95)),
-            float(self.cfg.get("jaccard_round2", 0.90)),
-            float(self.cfg.get("jaccard_round3", 0.75)),
-        ]
-
-        active = (
-            registry.sort_values(["composite_score", "hurdle_excess"], ascending=False)
-            .head(top_n)
-            .copy()
-        )
-        tried_pairs: set[Tuple[str, str]] = set()
-        total_pair_evals = 0
-
-        for round_num in range(1, max_rounds + 1):
-            start_count = len(active)
-            tprint(
-                f"Legacy Consolidation Round {round_num} Start: {start_count} active rules"
-            )
-            threshold = round_thresholds[min(round_num - 1, len(round_thresholds) - 1)]
-            candidates: List[Tuple[int, float, str, str, str, float]] = []
-            keys = sorted(active["canonical_key"].tolist())
-            rows_by_key = active.set_index("canonical_key")
-            for key_a, key_b in itertools.combinations(keys, 2):
-                pair = (key_a, key_b)
-                if pair in tried_pairs:
-                    continue
-                if key_a not in rows_by_key.index or key_b not in rows_by_key.index:
-                    continue
-                row_a = rows_by_key.loc[key_a]
-                row_b = rows_by_key.loc[key_b]
-
-                if row_a.get("side") != row_b.get("side"):
-                    continue
-
-                priority, rank_score, source, dilated_jaccard = self._pair_score(
-                    key_a,
-                    key_b,
-                    row_a,
-                    row_b,
-                    resolver,
-                    data,
-                    dilation_bars,
-                )
-                if priority == 99:
-                    continue
-                candidates.append(
-                    (
-                        priority,
-                        rank_score,
-                        key_a,
-                        key_b,
-                        source or "unknown",
-                        dilated_jaccard,
-                    )
-                )
-
-            if not candidates:
-                break
-            candidates.sort(key=lambda item: (item[0], -item[1], item[2], item[3]))
-            if candidates[0][0] == 1 and candidates[0][1] < max(
-                threshold, min_jaccard_floor
-            ):
-                break
-
-            accepted_merges = 0
-            failed_checks = 0
-
-            for (
-                priority,
-                jaccard,
-                key_a,
-                key_b,
-                merge_source,
-                dilated_jaccard,
-            ) in candidates:
-                if priority == 1 and jaccard < threshold:
-                    break
-                if total_pair_evals >= max_total_pair_evals:
-                    break
-                pair = (key_a, key_b)
-                tried_pairs.add(pair)
-                total_pair_evals += 1
-
-                if key_a not in rows_by_key.index or key_b not in rows_by_key.index:
-                    continue
-
-                row_a = rows_by_key.loc[key_a]
-                row_b = rows_by_key.loc[key_b]
-                side_a = row_a["side"]
-                side_b = row_b["side"]
-                if side_a not in ("unknown", side_b) and side_b not in (
-                    "unknown",
-                    side_a,
-                ):
-                    self.lineage.record_merge(
-                        key_a,
-                        [key_a, key_b],
-                        "reject_sign_conflict",
-                        round_num,
-                        {"jaccard": jaccard, "merge_source": merge_source},
-                    )
-                    failed_checks += 1
-                    if failed_checks >= max_failed_pair_checks:
-                        break
-                    continue
-
-                best_parent = self._best_parent(row_a, row_b)
-                best_parent_key = self._row_key(best_parent)
-                weaker_parent = row_b if best_parent_key == key_a else row_a
-                weaker_parent_key = self._row_key(weaker_parent)
-                ridge_diag = self._evaluate_ridge_pair(
-                    key_a,
-                    key_b,
-                    resolver,
-                    fwd_ret,
-                    folds,
-                )
-
-                ridge_evals.append(
-                    {
-                        "round": round_num,
-                        "key_a": key_a,
-                        "key_b": key_b,
-                        "merge_source": merge_source,
-                        "priority": priority,
-                        "jaccard": jaccard,
-                        "dilated_jaccard": dilated_jaccard,
-                        **ridge_diag,
-                    }
-                )
-
-                if (
-                    merge_source == "dilated_jaccard"
-                    and dilated_jaccard >= float(self.cfg.get("jaccard_round1", 0.95))
-                    and ridge_diag["ridge_positive_fold_fraction"]
-                    < float(self.cfg.get("merge_ridge_positive_fold_fraction", 0.50))
-                ):
-                    active = active[active["canonical_key"] != weaker_parent_key]
-                    self.lineage.record_merge(
-                        best_parent_key,
-                        [key_a, key_b],
-                        "keep_stronger_parent",
-                        round_num,
-                        {"jaccard": jaccard, "merge_source": merge_source},
-                    )
-                    accepted_merges += 1
-                    rows_by_key = active.set_index("canonical_key")
-                    continue
-
-                child_key = self._make_composite_key(key_a, key_b)
-                parent_context_key = (
-                    row_a["parent_context_key"]
-                    if row_a["parent_context_key"] == row_b["parent_context_key"]
-                    else None
-                )
-                child_summary, _ = self.scorer.score_key_oos(
-                    canonical_key=child_key,
-                    fwd_ret=fwd_ret,
-                    folds=folds,
-                    resolver=resolver,
-                    require_uplift=bool(parent_context_key),
-                    parent_context_key=parent_context_key,
-                    discovery_count=int(
-                        row_a["discovery_count"] + row_b["discovery_count"]
-                    ),
-                    n_instances=int(row_a["n_instances"] + row_b["n_instances"]),
-                    pipeline_stage="global_composite"
-                    if "global" in str(row_a["pipeline_stage"])
-                    or "global" in str(row_b["pipeline_stage"])
-                    else "composite",
-                    explicit_side=side_a if side_a == side_b else "mixed",
-                )
-                child_summary["merge_source"] = merge_source
-                child_summary["ridge_mean_net_ret"] = ridge_diag["ridge_mean_net_ret"]
-                child_summary["ridge_positive_fold_fraction"] = ridge_diag[
-                    "ridge_positive_fold_fraction"
-                ]
-                child_summary["ridge_mean_support_pct"] = ridge_diag.get(
-                    "ridge_mean_support_pct", 0.0
-                )
-                child_summary["ridge_vs_parent_gain"] = (
-                    ridge_diag["child_mean_net_ret"] - ridge_diag["parent_mean_net_ret"]
-                    if np.isfinite(ridge_diag["child_mean_net_ret"])
-                    and np.isfinite(ridge_diag["parent_mean_net_ret"])
-                    else np.nan
-                )
-
-                child_improves_uplift = (
-                    np.isfinite(child_summary["mean_uplift"])
-                    and np.isfinite(best_parent["mean_uplift"])
-                    and child_summary["mean_uplift"] > best_parent["mean_uplift"]
-                )
-                child_improves_support = child_summary["mean_support_pct"] >= (
-                    support_gain_factor * best_parent["mean_support_pct"]
-                )
-                ridge_supports_merge = ridge_diag["accept_merge"]
-
-                sign_ok = child_summary["sign_consistency"] >= (
-                    best_parent["sign_consistency"] - 0.05
-                )
-                presence_ok = child_summary["presence_freq"] >= (
-                    best_parent["presence_freq"] - 0.05
-                )
-
-                if (
-                    child_summary["accepted"]
-                    and child_summary["hurdle_excess"] > 0
-                    and sign_ok
-                    and presence_ok
-                    and (
-                        child_improves_uplift
-                        or child_improves_support
-                        or ridge_supports_merge
-                    )
-                ):
-                    active = active[
-                        ~active["canonical_key"].isin([key_a, key_b])
-                    ].copy()
-                    active = pd.concat(
-                        [active, pd.DataFrame([child_summary])], ignore_index=True
-                    )
-                    self.lineage.record_merge(
-                        child_key,
-                        [key_a, key_b],
-                        "accepted_child_union",
-                        round_num,
-                        {
-                            "jaccard": jaccard,
-                            "merge_source": merge_source,
-                            "ridge_mean_net_ret": ridge_diag["ridge_mean_net_ret"],
-                            "accept_merge_reason": ridge_diag["accept_merge_reason"],
-                        },
-                    )
-                    accepted_merges += 1
-                    rows_by_key = active.set_index("canonical_key")
-                else:
-                    self.lineage.record_merge(
-                        child_key,
-                        [key_a, key_b],
-                        "rejected_child_union",
-                        round_num,
-                        {
-                            "jaccard": jaccard,
-                            "accepted": bool(child_summary["accepted"]),
-                            "support_gain": child_improves_support,
-                            "uplift_gain": child_improves_uplift,
-                            "merge_source": merge_source,
-                            "ridge_mean_net_ret": ridge_diag["ridge_mean_net_ret"],
-                            "ridge_positive_fold_fraction": ridge_diag[
-                                "ridge_positive_fold_fraction"
-                            ],
-                            "accept_merge_reason": ridge_diag["accept_merge_reason"],
-                        },
-                    )
-                    failed_checks += 1
-                    if failed_checks >= max_failed_pair_checks:
-                        break
-
-            tprint(
-                f"Legacy Consolidation Round {round_num} End: {len(active)} active rules. Accepted Merges: {accepted_merges}"
-            )
-            round_summaries.append(
-                {
-                    "round": round_num,
-                    "start_count": start_count,
-                    "end_count": len(active),
-                    "accepted_merges": accepted_merges,
-                    "failed_checks": failed_checks,
-                }
-            )
-
-            if accepted_merges == 0 or total_pair_evals >= max_total_pair_evals:
-                break
-
-        active = active.drop_duplicates(subset=["canonical_key"], keep="first")
-        active = active.sort_values(
-            ["composite_score", "hurdle_excess"], ascending=False
-        )
-
-        diag_dict = {
-            "legacy_consolidation_round_summary": pd.DataFrame(round_summaries),
-            "legacy_ridge_pair_eval_audit": pd.DataFrame(ridge_evals),
-        }
-
-        if ridge_evals:
-            evals_df = pd.DataFrame(ridge_evals)
-            reasons = (
-                evals_df[~evals_df["accept_merge"]]["accept_merge_reason"]
-                .value_counts()
-                .head(5)
-            )
-            tprint("Legacy top rejection reasons:")
-            for reason, count in reasons.items():
-                tprint(f"  - {reason}: {count}")
-
-        return active, self.lineage.get_audit_df(), diag_dict
-
-    def _evaluate_ridge_pair(
-        self,
-        key_a: str,
-        key_b: str,
-        resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
-        fwd_ret: np.ndarray,
-        folds: List[Tuple[np.ndarray, np.ndarray]],
-    ) -> Dict[str, Any]:
-        from sklearn.linear_model import Ridge
-
-        min_train = int(self.cfg.get("merge_ridge_min_train", 20))
-        min_valid = int(self.cfg.get("merge_ridge_min_valid", 10))
-        mask_a_full = resolver.get_mask(key_a).astype(np.float32)
-        mask_b_full = resolver.get_mask(key_b).astype(np.float32)
-        union_full = (mask_a_full > 0) | (mask_b_full > 0)
-
-        side = resolver.get_rule_side(key_a)
-        target_ret = -fwd_ret if side == "short" else fwd_ret
-
-        eps = 1e-12
-        candidates = ["composite_or", "parent_a_only", "parent_b_only"]
-        fold_metrics = {c: {"returns": [], "stds": [], "ics": []} for c in candidates}
-
-        for tr_idx, va_idx in folds:
-            tr_union = union_full[tr_idx]
-            va_union = union_full[va_idx]
-
-            # Use out-of-sample data
-            mask_a_va = mask_a_full[va_idx]
-            mask_b_va = mask_b_full[va_idx]
-            y_va_full = target_ret[va_idx]
-
-            # 1. Train Ridge for composite
-            preds = np.zeros_like(y_va_full)
-            if np.sum(tr_union) >= min_train and np.sum(va_union) >= min_valid:
-                X_tr = np.column_stack(
-                    [mask_a_full[tr_idx][tr_union], mask_b_full[tr_idx][tr_union]]
-                ).astype(np.float32)
-                y_tr = target_ret[tr_idx][tr_union].astype(np.float32, copy=True)
-                X_va = np.column_stack(
-                    [mask_a_full[va_idx][va_union], mask_b_full[va_idx][va_union]]
-                ).astype(np.float32)
-                y_va = target_ret[va_idx][va_union].astype(np.float32, copy=False)
-
-                if X_tr.shape[0] >= min_train and X_va.shape[0] >= min_valid:
-                    hi = np.nanquantile(y_tr, 0.98)
-                    lo = np.nanquantile(y_tr, 0.02)
-                    y_tr_clipped = np.clip(y_tr, lo, hi)
-                    model = Ridge(alpha=float(self.cfg.get("merge_ridge_alpha", 1.0)))
-                    model.fit(X_tr, y_tr_clipped)
-                    preds[va_union] = model.predict(X_va)
-
-            # Gather validation metrics per candidate
-            scores = {
-                "composite_or": preds,
-                "parent_a_only": mask_a_va,
-                "parent_b_only": mask_b_va,
-            }
-            trade_masks = {
-                "composite_or": preds > 0.0,
-                "parent_a_only": mask_a_va > 0,
-                "parent_b_only": mask_b_va > 0,
-            }
-
-            for cand in candidates:
-                cand_score = scores[cand]
-                cand_mask = trade_masks[cand]
-
-                # Mean and Std (on clipped returns)
-                selected_returns = y_va_full[cand_mask]
-                valid_returns = selected_returns[np.isfinite(selected_returns)]
-                if len(valid_returns) > 0:
-                    fold_metrics[cand]["returns"].append(float(np.mean(valid_returns)))
-                    clipped_returns = _clip_returns(valid_returns)
-                    fold_metrics[cand]["stds"].append(float(np.std(clipped_returns)))
-                else:
-                    fold_metrics[cand]["returns"].append(np.nan)
-                    fold_metrics[cand]["stds"].append(np.nan)
-
-                # IC (on all valid rows in the fold)
-                valid_idx = np.isfinite(y_va_full) & np.isfinite(cand_score)
-                ic = _safe_spearman(cand_score[valid_idx], y_va_full[valid_idx])
-                fold_metrics[cand]["ics"].append(ic)
-
-        # Aggregate fold metrics
-        agg_metrics = {}
-        for cand in candidates:
-            returns_arr = np.array(fold_metrics[cand]["returns"], dtype=float)
-            stds_arr = np.array(fold_metrics[cand]["stds"], dtype=float)
-            ics_arr = np.array(fold_metrics[cand]["ics"], dtype=float)
-
-            mean_net_ret = (
-                float(np.nanmean(returns_arr))
-                if not np.all(np.isnan(returns_arr))
-                else np.nan
-            )
-            std_net_ret = (
-                float(np.nanmean(stds_arr))
-                if not np.all(np.isnan(stds_arr))
-                else np.nan
-            )
-            mean_ic = (
-                float(np.nanmean(ics_arr)) if not np.all(np.isnan(ics_arr)) else np.nan
-            )
-            positive_fold_fraction = (
-                float(np.mean(returns_arr[np.isfinite(returns_arr)] > 0))
-                if np.any(np.isfinite(returns_arr))
-                else 0.0
-            )
-
-            if np.isfinite(mean_net_ret) and np.isfinite(std_net_ret):
-                sharpe = mean_net_ret / max(std_net_ret, eps)
-            else:
-                sharpe = np.nan
-
-            if np.isfinite(sharpe) and np.isfinite(mean_ic):
-                selection_score = sharpe * max(mean_ic, 0.0)
-            else:
-                selection_score = -np.inf
-
-            agg_metrics[cand] = {
-                "mean_net_ret": mean_net_ret,
-                "std_net_ret": std_net_ret,
-                "mean_within_fold_std": float(np.nanmean(stds_arr))
-                if not np.all(np.isnan(stds_arr))
-                else np.nan,
-                "sharpe": sharpe,
-                "mean_ic": mean_ic,
-                "positive_fold_fraction": positive_fold_fraction,
-                "selection_score": selection_score,
-            }
-
-        # Compare parents
-        score_a = agg_metrics["parent_a_only"]["selection_score"]
-        score_b = agg_metrics["parent_b_only"]["selection_score"]
-
-        if score_a >= score_b:
-            better_parent_name = "parent_a_only"
-            worse_parent_name = "parent_b_only"
-        else:
-            better_parent_name = "parent_b_only"
-            worse_parent_name = "parent_a_only"
-
-        # Determine winner
-        winner = "composite_or"
-        best_score = agg_metrics["composite_or"]["selection_score"]
-
-        if score_a >= best_score:
-            winner = "parent_a_only"
-            best_score = score_a
-        if score_b >= best_score:
-            winner = "parent_b_only"
-            best_score = score_b
-
-        # Acceptance logic
-        accept_merge = False
-        reason = "accepted"
-
-        child = agg_metrics[winner]
-        parent = agg_metrics[better_parent_name]
-        worse_parent = agg_metrics[worse_parent_name]
-
-        if winner != "composite_or":
-            accept_merge = False
-            reason = "composite_lost_to_parent"
-        else:
-            min_abs_sharpe_delta = 0.02
-            min_abs_ic_delta = 0.002
-
-            # Sharpe OK
-            if np.isfinite(parent["sharpe"]) and parent["sharpe"] > 0:
-                sharpe_ok = child["sharpe"] > parent["sharpe"] * 1.05
-            else:
-                sharpe_ok = (
-                    child["sharpe"]
-                    > (parent["sharpe"] if np.isfinite(parent["sharpe"]) else 0)
-                    + min_abs_sharpe_delta
-                )
-
-            # IC OK
-            if np.isfinite(parent["mean_ic"]) and parent["mean_ic"] > 0:
-                ic_ok = child["mean_ic"] > parent["mean_ic"] * 1.05
-            else:
-                ic_ok = (
-                    child["mean_ic"]
-                    > (parent["mean_ic"] if np.isfinite(parent["mean_ic"]) else 0)
-                    + min_abs_ic_delta
-                )
-
-            # Risk OK
-            worst_parent_std = (
-                worse_parent["std_net_ret"]
-                if np.isfinite(worse_parent["std_net_ret"])
-                else np.inf
-            )
-            risk_ok = child["std_net_ret"] <= worst_parent_std
-
-            if not sharpe_ok:
-                reason = "failed_sharpe_improvement"
-            elif not ic_ok:
-                reason = "failed_ic_improvement"
-            elif not risk_ok:
-                reason = "failed_std_constraint"
-            else:
-                accept_merge = True
-
-        return {
-            "child_candidate_name": winner,
-            "child_selection_score": child["selection_score"],
-            "child_mean_net_ret": child["mean_net_ret"],
-            "child_std_net_ret": child["std_net_ret"],
-            "child_sharpe": child["sharpe"],
-            "child_mean_ic": child["mean_ic"],
-            "child_positive_fold_fraction": child["positive_fold_fraction"],
-            "better_parent_name": better_parent_name,
-            "parent_selection_score": parent["selection_score"],
-            "parent_mean_net_ret": parent["mean_net_ret"],
-            "parent_std_net_ret": parent["std_net_ret"],
-            "parent_sharpe": parent["sharpe"],
-            "parent_mean_ic": parent["mean_ic"],
-            "worse_parent_name": worse_parent_name,
-            "worse_parent_std_net_ret": worse_parent["std_net_ret"],
-            "composite_selection_score": agg_metrics["composite_or"]["selection_score"],
-            "parent_a_selection_score": score_a,
-            "parent_b_selection_score": score_b,
-            "accept_merge": accept_merge,
-            "accept_merge_reason": reason,
-            # Maintain legacy keys for upstream
-            "ridge_mean_net_ret": agg_metrics["composite_or"]["mean_net_ret"],
-            "ridge_positive_fold_fraction": agg_metrics["composite_or"][
-                "positive_fold_fraction"
-            ],
-        }
+class EconomicRuleConsolidator(RuleConsolidator):
+    """Consolidation logic intentionally removed."""
 
 
 def compute_tbm_outcomes_per_symbol(
@@ -5184,21 +3408,7 @@ def create_pre_global_registry(side_results: Dict[str, Any]) -> pd.DataFrame:
     else:
         stage_a_selected = stage_a_selected.copy()
         stage_a_selected["origin_stage"] = "stage_a"
-
-    stage_b_accepted = side_results.get("stage_b")
-    if stage_b_accepted is None or stage_b_accepted.empty:
-        stage_b_accepted = pd.DataFrame()
-    else:
-        stage_b_accepted = stage_b_accepted.copy()
-        stage_b_accepted["origin_stage"] = "stage_b"
-
-    if stage_a_selected.empty and stage_b_accepted.empty:
-        return pd.DataFrame()
-    if stage_a_selected.empty:
-        return stage_b_accepted
-    if stage_b_accepted.empty:
-        return stage_a_selected
-    return pd.concat([stage_a_selected, stage_b_accepted], ignore_index=True)
+    return stage_a_selected
 
 
 def log_stage_gate_diagnostics(
@@ -5348,12 +3558,14 @@ def run_mining_stage(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     tprint(f"--- RUNNING MINING STAGE: {stage_name} ---")
-    
+
     # Log target provenance
     tprint(f"Target: {target_name} | Horizon: {horizon}")
 
     # Use primary_target_override (bounded triad target) if provided; fall back to fwd_ret_norm.
-    primary_target = primary_target_override if primary_target_override is not None else fwd_ret_norm
+    primary_target = (
+        primary_target_override if primary_target_override is not None else fwd_ret_norm
+    )
 
     # Relaxed completeness check per user request.
     # We only require the target to be finite and at least ONE feature to be present.
@@ -5362,7 +3574,7 @@ def run_mining_stage(
 
     n_before = len(data)
     n_remain = int(_complete.sum())
-    
+
     if n_remain < n_before:
         tprint(
             f"{pipeline_stage_name}: upstream filter invalidating {n_before - n_remain} rows "
@@ -5379,12 +3591,12 @@ def run_mining_stage(
         fwd_ret_norm[~_complete] = np.nan
 
     if n_remain == 0:
-        tprint(f"WARNING: {pipeline_stage_name} has 0 valid rows after filter. Skipping stage.")
+        tprint(
+            f"WARNING: {pipeline_stage_name} has 0 valid rows after filter. Skipping stage."
+        )
         return {
             "accepted_registry": pd.DataFrame(),
             "candidate_registry": pd.DataFrame(),
-            "stage_a": pd.DataFrame(),
-            "stage_b": pd.DataFrame(),
             "all_extracted_rules": [],
             "all_rejection_audit": [],
             "all_split_usage": [],
@@ -5476,7 +3688,9 @@ def run_mining_stage(
     for fold_id, (tr_idx, va_idx) in enumerate(folds):
         # All rows are guaranteed feature-complete (filtered upstream).
         if len(tr_idx) == 0 or len(va_idx) == 0:
-            tprint(f"Skipping fold {fold_id}: empty split (train={len(tr_idx)}, val={len(va_idx)}).")
+            tprint(
+                f"Skipping fold {fold_id}: empty split (train={len(tr_idx)}, val={len(va_idx)})."
+            )
             continue
 
         # Determine available features per group for logging
@@ -5484,9 +3698,7 @@ def run_mining_stage(
         for m in metadata:
             group_to_features[m.group].append(m.feature_name)
 
-        tprint(
-            f"Fold {fold_id}: train_rows={len(tr_idx)} val_rows={len(va_idx)}"
-        )
+        tprint(f"Fold {fold_id}: train_rows={len(tr_idx)} val_rows={len(va_idx)}")
 
         # Target distribution summary (using primary_target, which is the real training target)
         _tr_tgt = primary_target[tr_idx]
@@ -5543,6 +3755,7 @@ def run_mining_stage(
         X_tr, X_va = X[tr_idx], X[va_idx]
         y_tr_raw = primary_target[tr_idx]
         y_va_raw = primary_target[va_idx]
+        symbol_id_tr = data["symbol"].to_numpy()[tr_idx]
 
         y_tr_clip = np.clip(
             y_tr_raw,
@@ -5554,7 +3767,14 @@ def run_mining_stage(
             # Use quantile regression for all targets (triad targets work with quantile regression)
             target_type = "quantile"
             model, fit_meta = model_engine.train_fold(
-                X_tr, y_tr_clip, X_va, y_va_raw, fold_id, seed, target_type=target_type
+                X_tr,
+                y_tr_clip,
+                symbol_id_tr,
+                X_va,
+                y_va_raw,
+                fold_id,
+                seed,
+                target_type=target_type,
             )
             tprint(
                 f"{stage_name} fold {fold_id} seed {seed}: "
@@ -5642,7 +3862,10 @@ def run_mining_stage(
                         f"{stage_name} fold {fold_id} seed {seed} feature usage by group: {summary_text}"
                     )
             fold_rules = extractor.extract_rules(
-                model, f"{stage_name}_model", fold_id, seed,
+                model,
+                f"{stage_name}_model",
+                fold_id,
+                seed,
                 target_name=target_name,
                 horizon=horizon,
             )
@@ -5892,25 +4115,9 @@ def run_mining_stage(
 
     scorer_accepted = scored_registry[scored_registry["accepted"]].copy()
 
-    if cfg.get("skip_stage_a_consolidation", True) and pipeline_stage_name == "stage_a_context":
-        tprint("SKIPPING Stage A consolidation per configuration.")
-        consolidated_registry = scorer_accepted.copy()
-        lineage_audit = pd.DataFrame()
-        consol_diag = {}
-    else:
-        use_economic_consolidator = cfg.get("use_economic_consolidator", True)
-        if use_economic_consolidator:
-            consolidator = EconomicRuleConsolidator(
-                metadata, cfg, mask_resolver=mask_resolver, scorer=scorer
-            )
-        else:
-            consolidator = RuleConsolidator(
-                metadata, cfg, mask_resolver=mask_resolver, scorer=scorer
-            )
-
-        consolidated_registry, lineage_audit, consol_diag = consolidator.consolidate(
-            scorer_accepted, fwd_ret, folds, resolver=mask_resolver, data=data
-        )
+    consolidated_registry = scorer_accepted.copy()
+    lineage_audit = pd.DataFrame()
+    consol_diag = {}
 
     atomic_to_csv(consolidated_registry, output_dir / "consolidated_rule_registry.csv")
     atomic_to_csv(lineage_audit, output_dir / "consolidation_lineage_audit.csv")
@@ -6058,7 +4265,7 @@ def run_side_pipeline(
         Pipeline results including stage registries
     """
     tprint(f"--- RUNNING PIPELINE FOR SIDE: {side.upper()} ---")
-    
+
     # Log target provenance
     tprint(f"Target: {target_name} | Horizon: {horizon}")
 
@@ -6112,30 +4319,36 @@ def run_side_pipeline(
                 "bagging_freq": 1,
                 "feature_fraction": 0.8,
             }
-            
+
             hpo_results = run_short_hpo_for_target_horizon(
                 X=X_a,
                 y=side_fwd_ret,
                 main_params=hpo_main_params,
-                seed=cfg.get("random_state", 42)
+                seed=cfg.get("random_state", 42),
             )
-            
+
             best_cfg = hpo_results.get("best_final_result")
             if best_cfg and best_cfg.valid:
-                tprint(f"Dynamic HPO Results: alpha={best_cfg.cfg.alpha:.3f}, "
-                       f"min_gain={best_cfg.cfg.min_gain_to_split:.5f}, "
-                       f"min_leaf_frac={best_cfg.cfg.min_leaf_frac:.5f}")
-                
+                tprint(
+                    f"Dynamic HPO Results: alpha={best_cfg.cfg.alpha:.3f}, "
+                    f"min_gain={best_cfg.cfg.min_gain_to_split:.5f}, "
+                    f"min_leaf_frac={best_cfg.cfg.min_leaf_frac:.5f}"
+                )
+
                 # Update cfg for this side pipeline
-                cfg = cfg.copy() # Avoid polluting other sides
+                cfg = cfg.copy()  # Avoid polluting other sides
                 cfg["hpo_best_alpha"] = best_cfg.cfg.alpha
                 cfg["hpo_min_gain_to_split"] = best_cfg.cfg.min_gain_to_split
-                
+
                 # Use train_n if available, otherwise fallback to full X_a size
                 train_n = hpo_results.get("train_n", len(X_a))
-                cfg["hpo_min_data_in_leaf"] = max(25, int(round(best_cfg.cfg.min_leaf_frac * train_n)))
+                cfg["hpo_min_data_in_leaf"] = max(
+                    25, int(round(best_cfg.cfg.min_leaf_frac * train_n))
+                )
             else:
-                tprint(f"Dynamic HPO failed or invalid: {best_cfg.reason if best_cfg else 'Unknown'}. Using defaults.")
+                tprint(
+                    f"Dynamic HPO failed or invalid: {best_cfg.reason if best_cfg else 'Unknown'}. Using defaults."
+                )
 
         except Exception as e:
             tprint(f"Dynamic HPO encountered error: {e}. Using defaults.")
@@ -6214,235 +4427,19 @@ def run_side_pipeline(
             )
 
     if winning_contexts.empty:
-        tprint("No contexts found in Stage A. Aborting Stage B.")
-        stage_b_output_dir = side_output_dir / "stage_b_trigger_refinement"
-        stage_b_output_dir.mkdir(parents=True, exist_ok=True)
-        atomic_to_csv(
-            pd.DataFrame(columns=["context_feature", "canonical_key"]),
-            stage_b_output_dir / "stage_b_context_mapping.csv",
-            expected_columns=["context_feature", "canonical_key"],
-        )
-        atomic_to_csv(
-            pd.DataFrame(columns=SCORER_REGISTRY_COLUMNS + ["preset"]),
-            stage_b_output_dir / "candidate_rule_registry.csv",
-            expected_columns=SCORER_REGISTRY_COLUMNS + ["preset"],
-        )
-        atomic_to_csv(
-            pd.DataFrame(columns=SCORER_REGISTRY_COLUMNS + ["preset"]),
-            stage_b_output_dir / "accepted_rule_registry.csv",
-            expected_columns=SCORER_REGISTRY_COLUMNS + ["preset"],
-        )
-        atomic_to_csv(
-            pd.DataFrame(
-                columns=[
-                    "canonical_key",
-                    "regime_score",
-                    "is_structurally_sound",
-                    "rejection_reason",
-                    "support_pct",
-                    "support_ok",
-                    "support_score",
-                    "avg_trades_per_day",
-                    "density_dispersion",
-                    "tail_ratio",
-                    "mae",
-                    "mfe",
-                    "mean_ret_global",
-                    "mean_ret_mask",
-                    "ret_uplift",
-                    "lift",
-                    "learn_eff_ratio",
-                    "subset_oof_coverage",
-                    "baseline_oof_coverage",
-                    "entropy_reduction",
-                    "tp_rate",
-                    "sl_rate",
-                    "timeout_rate",
-                    "ev_per_trade",
-                    "ev_per_event",
-                    "win_rate_conditional",
-                    "win_rate_unconditional",
-                    "production_classification",
-                    "classification_diagnostics",
-                    "rule_type_class",
-                ]
-            ),
-            stage_b_output_dir / "final_mask_assessment_audit.csv",
-        )
+        tprint("No contexts found in Stage A. Returning Stage A-only results.")
         return {
             "stage_a": winning_contexts,
             "stage_a_result": stage_a_result,
-            "stage_b": pd.DataFrame(),
-            "stage_b_trig_result": None,
-            "stage_b_loc_result": None,
             "metadata_a": metadata_a,
-            "metadata_b_trig": [],
-            "metadata_b_loc": [],
             "X_a": X_a,
-            "X_b_trig": None,
-            "X_b_loc": None,
-            "context_feature_dict": {},
-            "context_to_key": {},
         }
-
-    if cfg.get("skip_stage_b", True):
-        tprint(f"SKIPPING Stage B for side {side.upper()} per configuration.")
-        return {
-            "stage_a": winning_contexts,
-            "stage_a_result": stage_a_result,
-            "stage_b": pd.DataFrame(),
-            "stage_b_trig_result": None,
-            "stage_b_loc_result": None,
-            "metadata_a": metadata_a,
-            "metadata_b_trig": [],
-            "metadata_b_loc": [],
-            "X_a": X_a,
-            "X_b_trig": None,
-            "X_b_loc": None,
-            "context_feature_dict": {},
-            "context_to_key": {},
-        }
-
-    context_feature_dict, context_to_key = build_context_feature_dict_from_registry(
-        winning_contexts, data, X_a, metadata_a
-    )
-    context_mapping_df = pd.DataFrame(
-        list(context_to_key.items()), columns=["context_feature", "canonical_key"]
-    )
-
-    # --- STAGE B1: TRIGGER REFINEMENT --- DISABLED (trigger features removed)
-    tprint(f"STAGE B1: Trigger Refinement SKIPPED (trigger features disabled) [{side}]")
-    stage_b_trig_result = {"accepted_registry": pd.DataFrame()}
-    X_b_trig = None
-    metadata_b_trig = []
-    stage_b_trig_output_dir = side_output_dir / "stage_b_trigger_refinement"
-    stage_b_trig_output_dir.mkdir(parents=True, exist_ok=True)
-
-    # --- STAGE B2: LOCATION REFINEMENT ---
-    tprint(f"STAGE B2: Location Refinement (Winning Contexts x Location) [{side}]")
-
-    fp_b_loc = FeatureProcessor()
-    X_b_loc, metadata_b_loc, audits_b_loc = fp_b_loc.prepare_features(
-        feature_dict,
-        data["timestamp"].to_numpy(),
-        data["symbol"].to_numpy(),
-        cfg,
-        active_groups=("location",),
-        extra_binary_features=context_feature_dict,
-        extra_feature_group="context",
-    )
-    stage_b_loc_output_dir = side_output_dir / "stage_b_location_refinement"
-    stage_b_loc_output_dir.mkdir(parents=True, exist_ok=True)
-
-    for k, v in audits_b_loc.items():
-        if not v.empty:
-            v.to_csv(stage_b_loc_output_dir / f"{k}.csv", index=False)
-    context_mapping_df.to_csv(
-        stage_b_loc_output_dir / "stage_b_context_mapping.csv", index=False
-    )
-
-    stage_b_loc_spec = MiningStageSpec(
-        stage_name="stage_b_location_refinement",
-        active_groups=("location", "context"),
-        allow_groups_in_rule=("location", "context"),
-        output_dir_name="stage_b_location_refinement",
-        allowed_group_pairs=(("location", "context"),),
-        slot_order=("location", "context"),
-        require_uplift=True,
-    )
-
-    def reconstruct_stage_b_loc_key(
-        raw_key: str,
-    ) -> Tuple[Optional[str], Optional[str]]:
-        global stage_b_reconstruction_success, stage_b_reconstruction_failed
-        slots = raw_key.split("|")
-        location_conditions = []
-        parent_context_key = None
-        for slot in slots:
-            slot_value = slot.strip("()")
-            if slot_value == "*":
-                continue
-            for cond_str in slot_value.split("&"):
-                if "==" not in cond_str:
-                    continue
-                feature_name = cond_str.split("==")[0]
-                if feature_name in LOCATION_FILTER_COLUMNS or any(
-                    feature_name.startswith(c[:3]) for c in CONTINUOUS_LOCATION_COLS
-                ):
-                    location_conditions.append(cond_str)
-                elif feature_name.startswith("ctx__"):
-                    parent_context_key = context_to_key.get(feature_name)
-
-        if parent_context_key is None or not location_conditions:
-            stage_b_reconstruction_failed += 1
-            return None, None
-
-        location_slot = f"({'&'.join(sorted(location_conditions))})"
-        parent_slots = parent_context_key.split("|")
-        stage_b_reconstruction_success += 1
-        # Merge with the existing location slot from the parent context
-        existing_loc = parent_slots[1].strip("()")
-        if existing_loc != "*":
-            new_loc_slot = f"({existing_loc}&{location_slot.strip('()')})"
-        else:
-            new_loc_slot = location_slot
-        return f"{parent_slots[0]}|{new_loc_slot}|{parent_slots[2]}", parent_context_key
-
-    cfg_loc = cfg.copy()
-    cfg_loc["lgbm_max_depth"] = 2
-    context_features_loc = [
-        m.feature_name for m in metadata_b_loc if m.group == "context"
-    ]
-    location_features = [
-        m.feature_name for m in metadata_b_loc if m.group == "location"
-    ]
-    cfg_loc["interaction_constraints"] = [context_features_loc + location_features]
-    cfg_loc["require_groups"] = ["context", "location"]
-
-    stage_b_loc_result = run_mining_stage(
-        data,
-        side_fwd_ret,
-        side_fwd_ret_norm,
-        X_b_loc,
-        metadata_b_loc,
-        cfg_loc,
-        stage_b_loc_output_dir,
-        stage_b_loc_spec.stage_name,
-        stage_b_loc_spec.allowed_group_pairs,
-        slot_order=stage_b_loc_spec.slot_order,
-        folds=folds,
-        mask_resolver=CanonicalRuleMaskResolver(
-            X_b_loc,
-            metadata_b_loc,
-            context_lookup=context_feature_dict,
-            context_key_map=context_to_key,
-            slot_order=("trigger", "location", "regime"),
-        ),
-        require_uplift=stage_b_loc_spec.require_uplift,
-        rule_key_rewriter=reconstruct_stage_b_loc_key,
-        pipeline_stage_name="stage_b_location_refinement",
-        explicit_side=side,
-        target_name=target_name,
-        horizon=horizon,
-    )
-
-    # Only location refinement active (trigger disabled)
-    stage_b_accepted = stage_b_loc_result["accepted_registry"].copy()
 
     return {
         "stage_a": winning_contexts,
         "stage_a_result": stage_a_result,
-        "stage_b": stage_b_accepted,
-        "stage_b_trig_result": stage_b_trig_result,
-        "stage_b_loc_result": stage_b_loc_result,
         "metadata_a": metadata_a,
-        "metadata_b_trig": metadata_b_trig,
-        "metadata_b_loc": metadata_b_loc,
         "X_a": X_a,
-        "X_b_trig": X_b_trig,
-        "X_b_loc": X_b_loc,
-        "context_feature_dict": context_feature_dict,
-        "context_to_key": context_to_key,
     }
 
 
@@ -6472,168 +4469,6 @@ def run_two_stage_lgbm_mask_generation(
         "short", data, feature_dict, fwd_ret, fwd_ret_norm, cfg, folds, root_output_dir
     )
 
-    # --- COMBINE METRICS FOR B1 vs B2 ---
-    def process_side_metrics(
-        side: str, side_results: Dict[str, Any], side_output_dir: Path
-    ):
-        stage_b_trig_result = side_results["stage_b_trig_result"]
-        stage_b_loc_result = side_results["stage_b_loc_result"]
-        stage_a_result = side_results.get("stage_a_result", {})
-
-        if stage_b_trig_result is None or stage_b_loc_result is None:
-            return
-
-        # --- CALIBRATION BY SCORE BUCKET ---
-        def compute_calibration(registry_df, output_prefix, output_dir):
-            if registry_df is None or registry_df.empty:
-                return
-
-            # We bucket by composite_score into deciles
-            try:
-                registry_df["score_bucket"] = pd.qcut(
-                    registry_df["composite_score"],
-                    q=10,
-                    labels=False,
-                    duplicates="drop",
-                )
-            except ValueError:
-                # Fallback if too few unique values
-                registry_df["score_bucket"] = pd.cut(
-                    registry_df["composite_score"], bins=10, labels=False
-                )
-
-            calib_stats = (
-                registry_df.groupby("score_bucket")
-                .agg(
-                    mean_score=("composite_score", "mean"),
-                    min_score=("composite_score", "min"),
-                    max_score=("composite_score", "max"),
-                    count=("canonical_key", "count"),
-                    mean_oos_ret=("mean_net_ret", "mean"),
-                    mean_oos_ic=("mean_oos_ic", "mean"),
-                    median_support=("mean_support_pct", "median"),
-                )
-                .reset_index()
-            )
-
-            calib_stats.to_csv(
-                output_dir / f"{output_prefix}_calibration_by_score_bucket.csv",
-                index=False,
-            )
-
-        compute_calibration(
-            stage_b_trig_result["accepted_registry"].copy(),
-            "stage_b1_trigger",
-            side_output_dir,
-        )
-        compute_calibration(
-            stage_b_loc_result["accepted_registry"].copy(),
-            "stage_b2_location",
-            side_output_dir,
-        )
-        if stage_a_result.get("candidate_registry") is not None:
-            compute_calibration(
-                stage_a_result["candidate_registry"].copy(),
-                "stage_a",
-                side_output_dir,
-            )
-
-        # --- METRICS COMPARISON (STAGE B1 vs STAGE B2) ---
-        def compute_set_metrics(registry_df, lineage_df=None):
-            if registry_df is None or registry_df.empty:
-                return {}
-
-            # Sort by mean_oos_ic to get top 10
-            sorted_by_ic = registry_df.sort_values(by="mean_oos_ic", ascending=False)
-            top10 = sorted_by_ic.head(10)
-
-            metrics = {
-                "median_support_pct": float(registry_df["mean_support_pct"].median()),
-                "p10_support_pct": float(top10["mean_support_pct"].mean()),
-                "p10_mean_oos_return": float(top10["mean_net_ret"].mean()),
-                "p10_std_oos_return_between_folds": float(top10["std_net_ret"].mean())
-                if "std_net_ret" in top10
-                else 0.0,
-                "p10_std_oos_return_within_folds": float(
-                    top10["mean_within_fold_std"].mean()
-                )
-                if "mean_within_fold_std" in top10
-                else 0.0,
-                "hurdle_excess_mean": float(registry_df["hurdle_excess"].mean()),
-                "hurdle_excess_p10": float(top10["hurdle_excess"].mean()),
-            }
-
-            # Calculate merge average for p10
-            if lineage_df is not None and not lineage_df.empty:
-                merge_counts = []
-                for key in top10["canonical_key"]:
-                    ancestors = set()
-                    to_visit = [key]
-                    while to_visit:
-                        curr = to_visit.pop()
-                        parents = lineage_df[lineage_df["child_id"] == curr][
-                            "parent_ids"
-                        ].tolist()
-                        if parents:
-                            for p_list in parents:
-                                if isinstance(p_list, str):
-                                    import ast
-
-                                    try:
-                                        p_list = ast.literal_eval(p_list)
-                                    except Exception:
-                                        continue
-                                for p in p_list:
-                                    if p not in ancestors:
-                                        ancestors.add(p)
-                                        to_visit.append(p)
-                    merge_counts.append(len(ancestors))
-                metrics["p10_merge_average"] = (
-                    float(np.mean(merge_counts)) if merge_counts else 0.0
-                )
-            else:
-                metrics["p10_merge_average"] = 0.0
-
-            return metrics
-
-        stage_b_trig_output_dir = side_output_dir / "stage_b_trigger_refinement"
-        stage_b_loc_output_dir = side_output_dir / "stage_b_location_refinement"
-
-        try:
-            b1_lineage = pd.read_csv(
-                stage_b_trig_output_dir / "consolidation_lineage_audit.csv"
-            )
-        except Exception:
-            b1_lineage = pd.DataFrame()
-
-        try:
-            b2_lineage = pd.read_csv(
-                stage_b_loc_output_dir / "consolidation_lineage_audit.csv"
-            )
-        except Exception:
-            b2_lineage = pd.DataFrame()
-
-        b1_metrics = compute_set_metrics(
-            stage_b_trig_result["accepted_registry"].copy(), b1_lineage
-        )
-        b2_metrics = compute_set_metrics(
-            stage_b_loc_result["accepted_registry"].copy(), b2_lineage
-        )
-
-        stage_b_comparison = pd.DataFrame(
-            [
-                {"stage": "b1_trigger", **b1_metrics},
-                {"stage": "b2_location", **b2_metrics},
-            ]
-        )
-        stage_b_comparison.to_csv(
-            side_output_dir / "stage_b_comparison_metrics.csv", index=False
-        )
-        tprint(f"Stage B Comparison Metrics saved to stage_b_comparison_metrics.csv")
-
-    process_side_metrics("long", long_results, root_output_dir / "long")
-    process_side_metrics("short", short_results, root_output_dir / "short")
-
     long_pre_global_raw = create_pre_global_registry(long_results)
     short_pre_global_raw = create_pre_global_registry(short_results)
 
@@ -6644,7 +4479,6 @@ def run_two_stage_lgbm_mask_generation(
         tprint("No rules generated from either side. Aborting Global Consolidation.")
         return {
             "stage_a": pd.DataFrame(),
-            "stage_b": pd.DataFrame(),
             "combined": pd.DataFrame(),
         }
 
@@ -6687,30 +4521,10 @@ def run_two_stage_lgbm_mask_generation(
         if results["X_a"] is None:
             return
         stage_a_accepted = results["stage_a"]
-        stage_b_accepted = results["stage_b"]
 
         stage_a_resolver = CanonicalRuleMaskResolver(
             results["X_a"], results["metadata_a"]
         )
-        
-        # Only build Stage B resolver if it was run
-        stage_b_resolver = None
-        if results["X_b_trig"] is not None:
-            stage_b_resolver = CanonicalRuleMaskResolver(
-                results["X_b_trig"],
-                results["metadata_b_trig"],
-                context_lookup=results["context_feature_dict"],
-                context_key_map=results["context_to_key"],
-                slot_order=("trigger", "location", "regime"),
-            )
-        elif results["X_b_loc"] is not None:
-            stage_b_resolver = CanonicalRuleMaskResolver(
-                results["X_b_loc"],
-                results["metadata_b_loc"],
-                context_lookup=results["context_feature_dict"],
-                context_key_map=results["context_to_key"],
-                slot_order=("trigger", "location", "regime"),
-            )
         stage_a_accepted = results["stage_a"]
         if stage_a_accepted is not None and not stage_a_accepted.empty:
             for _, row in stage_a_accepted.iterrows():
@@ -6718,32 +4532,6 @@ def run_two_stage_lgbm_mask_generation(
                     row["canonical_key"]
                 )
                 combined_side_map[row["canonical_key"]] = row["side"]
-
-        stage_b_accepted = results["stage_b"]
-        if stage_b_accepted is not None and not stage_b_accepted.empty:
-            for _, row in stage_b_accepted.iterrows():
-                try:
-                    combined_mask_map[row["canonical_key"]] = stage_b_resolver.get_mask(
-                        row["canonical_key"]
-                    )
-                except Exception:
-                    # fallback to loc resolver
-                    stage_b_loc_resolver = CanonicalRuleMaskResolver(
-                        results["X_b_loc"],
-                        results["metadata_b_loc"],
-                        context_lookup=results["context_feature_dict"],
-                        context_key_map=results["context_to_key"],
-                        slot_order=("trigger", "location", "regime"),
-                    )
-                    combined_mask_map[
-                        row["canonical_key"]
-                    ] = stage_b_loc_resolver.get_mask(row["canonical_key"])
-
-                combined_side_map[row["canonical_key"]] = row["side"]
-                if pd.notna(row.get("parent_context_key")):
-                    combined_parent_context_map[row["canonical_key"]] = row[
-                        "parent_context_key"
-                    ]
 
     extract_masks_from_results(long_results, "long")
     extract_masks_from_results(short_results, "short")
@@ -6759,65 +4547,23 @@ def run_two_stage_lgbm_mask_generation(
     seen_meta = set()
     for res in [long_results, short_results]:
         if res["metadata_a"]:
-            for m in res["metadata_a"] + res["metadata_b_trig"] + res["metadata_b_loc"]:
+            for m in res["metadata_a"]:
                 if m.feature_name not in seen_meta:
                     all_metadata.append(m)
                     seen_meta.add(m.feature_name)
 
-    global_scorer = RuleScorer(all_metadata, cfg, mask_resolver=combined_resolver)
-    use_economic_consolidator = cfg.get("use_economic_consolidator", True)
-
     tprint(
         f"Cross-Stage Funnel: Long ({len(long_pre_global_raw)}) + Short ({len(short_pre_global_raw)}) -> Combined Pre-Global ({len(combined_pre_global)})"
     )
-    consolidator_type = (
-        "EconomicRuleConsolidator" if use_economic_consolidator else "RuleConsolidator"
-    )
-    tprint(f"Chosen Global Consolidator: {consolidator_type}")
-
-    if use_economic_consolidator:
-        global_consolidator = EconomicRuleConsolidator(
-            all_metadata,
-            cfg,
-            mask_resolver=combined_resolver,
-            scorer=global_scorer,
-        )
-    else:
-        global_consolidator = RuleConsolidator(
-            all_metadata,
-            cfg,
-            mask_resolver=combined_resolver,
-            scorer=global_scorer,
-        )
-
-    (
-        combined_global_registry,
-        global_lineage,
-        global_consol_diag,
-    ) = global_consolidator.consolidate(
-        combined_pre_global,
-        fwd_ret,  # Consolidator handles side internally via rule_profile which reads side_map and negates returns if needed, wait.
-        folds,
-        resolver=combined_resolver,
-        data=data,
-    )
-
-    for name, obj in global_consol_diag.items():
-        if isinstance(obj, pd.DataFrame):
-            obj.to_csv(root_output_dir / f"{name}.csv", index=False)
-        else:
-            with open(root_output_dir / f"{name}.json", "w") as f:
-                json.dump(obj, f, indent=2)
-    combined_global_registry = combined_global_registry.drop_duplicates(
+    combined_global_registry = combined_pre_global.drop_duplicates(
         subset=["canonical_key", "side"], keep="first"
     )
-    tprint(f"Global Consolidation resulted in {len(combined_global_registry)} rules.")
+    tprint(
+        f"Global registry assembly resulted in {len(combined_global_registry)} rules."
+    )
     combined_global_registry["preset"] = cfg.get("preset", "exploration")
     combined_global_registry.to_csv(
         root_output_dir / "combined_accepted_rule_registry.csv", index=False
-    )
-    global_lineage.to_csv(
-        root_output_dir / "global_consolidation_lineage.csv", index=False
     )
 
     # X_a represents regime + location features which are primary driver of correlation anyway
@@ -6838,12 +4584,9 @@ def run_two_stage_lgbm_mask_generation(
         root_output_dir / "portfolio_diversity_report.csv", index=False
     )
 
-    global malformed_key_count, unresolved_feature_count, unresolved_feature_names, stage_b_reconstruction_success, stage_b_reconstruction_failed
+    global malformed_key_count, unresolved_feature_count, unresolved_feature_names
     tprint(
         f"Canonical Key Diagnostics: malformed={malformed_key_count}, unresolved_features={unresolved_feature_count}"
-    )
-    tprint(
-        f"Stage B Reconstruction: success={stage_b_reconstruction_success}, failed={stage_b_reconstruction_failed}"
     )
     if unresolved_feature_names:
         tprint(f"Unresolved features: {', '.join(list(unresolved_feature_names)[:10])}")
@@ -6851,8 +4594,6 @@ def run_two_stage_lgbm_mask_generation(
     audit_data = {
         "malformed_key_count": malformed_key_count,
         "unresolved_feature_count": unresolved_feature_count,
-        "stage_b_reconstruction_success": stage_b_reconstruction_success,
-        "stage_b_reconstruction_failed": stage_b_reconstruction_failed,
     }
     pd.DataFrame([audit_data]).to_csv(
         root_output_dir / "canonical_key_parse_audit.csv", index=False
@@ -6944,9 +4685,7 @@ def run_two_stage_lgbm_mask_generation(
     )
     return {
         "stage_a_long": long_results["stage_a"],
-        "stage_b_long": long_results["stage_b"],
         "stage_a_short": short_results["stage_a"],
-        "stage_b_short": short_results["stage_b"],
         "combined": combined_global_registry,
     }
 
@@ -7000,10 +4739,12 @@ def run_two_stage_lgbm_mask_generation_triad(
 
     tprint(f"Horizons: {horizons}")
     tprint(f"Targets: {target_names}")
-    tprint(f"Total combinations: {len(horizons) * len(target_names) * 2} (horizons × targets × sides)")
+    tprint(
+        f"Total combinations: {len(horizons) * len(target_names) * 2} (horizons × targets × sides)"
+    )
 
     root_output_dir = build_run_output_dir(cfg)
-    
+
     # Build folds once (shared across all combinations)
     folds = build_walk_forward_folds(
         n_samples=len(data),
@@ -7014,7 +4755,7 @@ def run_two_stage_lgbm_mask_generation_triad(
 
     # Store results by (target_name, horizon, side)
     results_by_target_horizon: Dict[Tuple[str, int, str], Dict[str, Any]] = {}
-    
+
     # Track all registries for final combination
     all_registries: List[pd.DataFrame] = []
 
@@ -7025,7 +4766,9 @@ def run_two_stage_lgbm_mask_generation_triad(
         for target_name in target_names:
             current_combination += 1
             tprint(f"\n{'='*60}")
-            tprint(f"COMBINATION {current_combination}/{total_combinations}: {target_name} @ H{horizon}")
+            tprint(
+                f"COMBINATION {current_combination}/{total_combinations}: {target_name} @ H{horizon}"
+            )
             tprint(f"{'='*60}")
 
             # Get bounded target for this target_name/horizon
@@ -7033,13 +4776,19 @@ def run_two_stage_lgbm_mask_generation_triad(
             if target_name in triad_targets:
                 if horizon in triad_targets[target_name]:
                     bounded_target = triad_targets[target_name][horizon]
-                    tprint(f"Using bounded target array: shape={bounded_target.shape}, "
-                           f"range=[{np.nanmin(bounded_target):.3f}, {np.nanmax(bounded_target):.3f}]")
+                    tprint(
+                        f"Using bounded target array: shape={bounded_target.shape}, "
+                        f"range=[{np.nanmin(bounded_target):.3f}, {np.nanmax(bounded_target):.3f}]"
+                    )
                 else:
-                    tprint(f"WARNING: No bounded target for {target_name} @ H{horizon}, skipping")
+                    tprint(
+                        f"WARNING: No bounded target for {target_name} @ H{horizon}, skipping"
+                    )
                     continue
             else:
-                tprint(f"WARNING: Target {target_name} not found in triad_targets, skipping")
+                tprint(
+                    f"WARNING: Target {target_name} not found in triad_targets, skipping"
+                )
                 continue
 
             # Build horizon-specific output directory
@@ -7050,16 +4799,20 @@ def run_two_stage_lgbm_mask_generation_triad(
             horizon_cfg = cfg.copy()
             horizon_cfg["target_name"] = target_name
             horizon_cfg["horizon"] = horizon
-            
+
             # Apply per-target config from TRIAD_TARGET_CONFIGS
             if target_name in TRIAD_TARGET_CONFIGS:
                 target_config = TRIAD_TARGET_CONFIGS[target_name]
                 horizon_cfg["huber_alpha"] = target_config.get("huber_alpha", 0.9)
                 horizon_cfg["learning_rate"] = target_config.get("learning_rate", 0.03)
-                horizon_cfg["min_support_pct"] = target_config.get("min_support_pct", 0.05)
+                horizon_cfg["min_support_pct"] = target_config.get(
+                    "min_support_pct", 0.05
+                )
                 horizon_cfg["ic_hurdle"] = target_config.get("ic_hurdle", 0.02)
-                tprint(f"Applied target config: huber_alpha={target_config.get('huber_alpha')}, "
-                       f"lr={target_config.get('learning_rate')}")
+                tprint(
+                    f"Applied target config: huber_alpha={target_config.get('huber_alpha')}, "
+                    f"lr={target_config.get('learning_rate')}"
+                )
 
             # Apply horizon-specific config from HORIZON_CONFIGS
             if horizon in HORIZON_CONFIGS:
@@ -7067,7 +4820,9 @@ def run_two_stage_lgbm_mask_generation_triad(
                 min_leaf_mult = horizon_config.get("min_data_in_leaf_multiplier", 1.0)
                 base_min_leaf = int(horizon_cfg.get("min_data_in_leaf", 64))
                 horizon_cfg["min_data_in_leaf"] = int(base_min_leaf * min_leaf_mult)
-                tprint(f"Applied horizon config: min_data_in_leaf_multiplier={min_leaf_mult}")
+                tprint(
+                    f"Applied horizon config: min_data_in_leaf_multiplier={min_leaf_mult}"
+                )
 
             # For triad targets, we use the bounded_target itself as the "return" for scoring
             # so that RuleScorer and MaskAssessor see the actual edge we are mining.
@@ -7076,8 +4831,10 @@ def run_two_stage_lgbm_mask_generation_triad(
 
             # Run both sides
             for side in ["long", "short"]:
-                tprint(f"\n--- Running {side.upper()} side for {target_name} @ H{horizon} ---")
-                
+                tprint(
+                    f"\n--- Running {side.upper()} side for {target_name} @ H{horizon} ---"
+                )
+
                 side_results = run_side_pipeline(
                     side=side,
                     data=data,
@@ -7102,12 +4859,6 @@ def run_two_stage_lgbm_mask_generation_triad(
                     stage_a_with_prov["source_horizon"] = horizon
                     all_registries.append(stage_a_with_prov)
 
-                if not side_results["stage_b"].empty:
-                    stage_b_with_prov = side_results["stage_b"].copy()
-                    stage_b_with_prov["source_target"] = target_name
-                    stage_b_with_prov["source_horizon"] = horizon
-                    all_registries.append(stage_b_with_prov)
-
     # Combine all registries
     tprint(f"\n{'='*60}")
     tprint("COMBINING ALL TRIAD RESULTS")
@@ -7117,7 +4868,7 @@ def run_two_stage_lgbm_mask_generation_triad(
         combined_registry = pd.concat(all_registries, ignore_index=True)
         combined_registry = combined_registry.drop_duplicates(
             subset=["canonical_key", "side", "source_target", "source_horizon"],
-            keep="first"
+            keep="first",
         )
     else:
         combined_registry = pd.DataFrame()
@@ -7136,8 +4887,7 @@ def run_two_stage_lgbm_mask_generation_triad(
     if not combined_registry.empty:
         # Breakdown by target/horizon
         breakdown = (
-            combined_registry
-            .groupby(["source_target", "source_horizon", "side"])
+            combined_registry.groupby(["source_target", "source_horizon", "side"])
             .size()
             .reset_index(name="count")
         )
@@ -7146,7 +4896,9 @@ def run_two_stage_lgbm_mask_generation_triad(
         )
         tprint("\nBreakdown by target/horizon/side:")
         for _, row in breakdown.iterrows():
-            tprint(f"  {row['source_target']} H{row['source_horizon']} {row['side']}: {row['count']}")
+            tprint(
+                f"  {row['source_target']} H{row['source_horizon']} {row['side']}: {row['count']}"
+            )
 
     # Save configuration used
     triad_config = {
@@ -7163,50 +4915,64 @@ def run_two_stage_lgbm_mask_generation_triad(
     tprint(f"\n{'='*60}")
     tprint("MERGED DISCOVERY ANALYSIS")
     tprint(f"{'='*60}")
-    
+
     # Build all_results list for merge functions
     all_results = []
     for (t_name, h, side), result in results_by_target_horizon.items():
-        all_results.append({
-            "target_name": t_name,
-            "horizon": h,
-            "side": side,
-            "accepted_rules": result.get("accepted_registry", pd.DataFrame()).to_dict("records") if not result.get("accepted_registry", pd.DataFrame()).empty else [],
-            "candidate_rules": result.get("candidate_registry", pd.DataFrame()).to_dict("records") if not result.get("candidate_registry", pd.DataFrame()).empty else [],
-        })
-    
+        all_results.append(
+            {
+                "target_name": t_name,
+                "horizon": h,
+                "side": side,
+                "accepted_rules": result.get(
+                    "accepted_registry", pd.DataFrame()
+                ).to_dict("records")
+                if not result.get("accepted_registry", pd.DataFrame()).empty
+                else [],
+                "candidate_rules": result.get(
+                    "candidate_registry", pd.DataFrame()
+                ).to_dict("records")
+                if not result.get("candidate_registry", pd.DataFrame()).empty
+                else [],
+            }
+        )
+
     # Merge discovery outputs
     merged_output = merge_discovery_outputs_across_targets(
         all_results=all_results,
         output_dir=str(root_output_dir),
     )
-    
+
     # Create cross-target analysis
     cross_target_analysis = analyze_cross_target_rules(merged_output["merged_rules"])
-    
+
     # Create target quality summary
     quality_summary = create_target_quality_summary(
         all_results=all_results,
         output_path=str(root_output_dir / "target_quality_summary.csv"),
     )
-    
+
     # Save merged outputs
     if not merged_output["merged_rules"].empty:
         merged_output["merged_rules"].to_csv(
             root_output_dir / "merged_discovery_all.csv", index=False
         )
-        tprint(f"Saved merged_discovery_all.csv: {len(merged_output['merged_rules'])} rules")
-    
+        tprint(
+            f"Saved merged_discovery_all.csv: {len(merged_output['merged_rules'])} rules"
+        )
+
     if not merged_output["dedup_rules"].empty:
         merged_output["dedup_rules"].to_csv(
             root_output_dir / "merged_discovery_dedup.csv", index=False
         )
-        tprint(f"Saved merged_discovery_dedup.csv: {len(merged_output['dedup_rules'])} deduplicated rules")
-    
+        tprint(
+            f"Saved merged_discovery_dedup.csv: {len(merged_output['dedup_rules'])} deduplicated rules"
+        )
+
     # Save cross-target analysis
     with open(root_output_dir / "cross_target_analysis.json", "w") as f:
         json.dump(cross_target_analysis, f, indent=2, default=str)
-    
+
     # Save triad run summary
     triad_run_summary = {
         "horizons": horizons,
@@ -7215,17 +4981,21 @@ def run_two_stage_lgbm_mask_generation_triad(
         "completed_combinations": current_combination,
         "total_rules": len(combined_registry),
         "deduplicated_rules": len(merged_output["dedup_rules"]),
-        "cross_target_rules_count": len(cross_target_analysis.get("cross_target_rules", [])),
+        "cross_target_rules_count": len(
+            cross_target_analysis.get("cross_target_rules", [])
+        ),
         "universal_rules_count": len(cross_target_analysis.get("universal_rules", [])),
         "merge_stats": merged_output.get("summary_stats", {}),
     }
     with open(root_output_dir / "triad_run_summary.json", "w") as f:
         json.dump(triad_run_summary, f, indent=2, default=str)
-    
+
     tprint(f"\nTRIAD TRAINING COMPLETE")
     tprint(f"Total rules: {len(combined_registry)}")
     tprint(f"Deduplicated rules: {len(merged_output['dedup_rules'])}")
-    tprint(f"Cross-target rules: {len(cross_target_analysis.get('cross_target_rules', []))}")
+    tprint(
+        f"Cross-target rules: {len(cross_target_analysis.get('cross_target_rules', []))}"
+    )
     tprint(f"Universal rules: {len(cross_target_analysis.get('universal_rules', []))}")
 
     return {
@@ -7256,7 +5026,7 @@ def merge_discovery_outputs_across_targets(
 ) -> Dict[str, Any]:
     """
     Merge discovered rules/contexts from all (target, horizon) runs.
-    
+
     Parameters
     ----------
     all_results : List[Dict[str, Any]]
@@ -7271,7 +5041,7 @@ def merge_discovery_outputs_across_targets(
         Base output directory
     dedup_strategy : str
         How to deduplicate ("canonical_key" or "structural")
-    
+
     Returns
     -------
     Dict[str, Any]
@@ -7282,13 +5052,13 @@ def merge_discovery_outputs_across_targets(
         - summary_stats: dict of merge statistics
     """
     tprint(f"Merging discovery outputs from {len(all_results)} result sets...")
-    
+
     all_rules = []
     for result in all_results:
         target_name = result.get("target_name", "unknown")
         horizon = result.get("horizon", 0)
         side = result.get("side", "unknown")
-        
+
         # Process accepted rules
         for rule in result.get("accepted_rules", []):
             rule_with_prov = dict(rule)
@@ -7297,7 +5067,7 @@ def merge_discovery_outputs_across_targets(
             rule_with_prov["side"] = side
             rule_with_prov["rule_status"] = "accepted"
             all_rules.append(rule_with_prov)
-        
+
         # Process candidate rules
         for rule in result.get("candidate_rules", []):
             rule_with_prov = dict(rule)
@@ -7306,7 +5076,7 @@ def merge_discovery_outputs_across_targets(
             rule_with_prov["side"] = side
             rule_with_prov["rule_status"] = "candidate"
             all_rules.append(rule_with_prov)
-    
+
     if not all_rules:
         tprint("No rules to merge.")
         return {
@@ -7315,27 +5085,35 @@ def merge_discovery_outputs_across_targets(
             "cross_target_rules": pd.DataFrame(),
             "summary_stats": {"total_rules": 0, "unique_canonical_keys": 0},
         }
-    
+
     merged_df = pd.DataFrame(all_rules)
     tprint(f"Total rules collected: {len(merged_df)}")
-    
+
     # Deduplicate by canonical key
     dedup_df = deduplicate_rules_by_canonical_key(all_rules, aggregation="mean")
     tprint(f"Unique canonical keys: {len(dedup_df)}")
-    
+
     # Summary stats
     summary_stats = {
         "total_rules": len(merged_df),
         "unique_canonical_keys": len(dedup_df),
-        "targets_represented": merged_df["source_target"].nunique() if "source_target" in merged_df.columns else 0,
-        "horizons_represented": merged_df["source_horizon"].nunique() if "source_horizon" in merged_df.columns else 0,
-        "sides_represented": merged_df["side"].nunique() if "side" in merged_df.columns else 0,
+        "targets_represented": merged_df["source_target"].nunique()
+        if "source_target" in merged_df.columns
+        else 0,
+        "horizons_represented": merged_df["source_horizon"].nunique()
+        if "source_horizon" in merged_df.columns
+        else 0,
+        "sides_represented": merged_df["side"].nunique()
+        if "side" in merged_df.columns
+        else 0,
     }
-    
+
     return {
         "merged_rules": merged_df,
         "dedup_rules": dedup_df,
-        "cross_target_rules": dedup_df[dedup_df["supporting_targets_count"] > 1] if "supporting_targets_count" in dedup_df.columns else pd.DataFrame(),
+        "cross_target_rules": dedup_df[dedup_df["supporting_targets_count"] > 1]
+        if "supporting_targets_count" in dedup_df.columns
+        else pd.DataFrame(),
         "summary_stats": summary_stats,
     }
 
@@ -7346,19 +5124,19 @@ def deduplicate_rules_by_canonical_key(
 ) -> pd.DataFrame:
     """
     Deduplicate rules by canonical key, aggregating metrics.
-    
+
     For each unique canonical_key:
     - Keep provenance from all sources
     - Aggregate numeric metrics (mean, min, max)
     - Track all source targets/horizons
-    
+
     Parameters
     ----------
     rules : List[Dict[str, Any]]
         List of rule dictionaries
     aggregation : str
         Aggregation method ("mean", "min", "max")
-    
+
     Returns
     -------
     pd.DataFrame
@@ -7366,32 +5144,41 @@ def deduplicate_rules_by_canonical_key(
     """
     if not rules:
         return pd.DataFrame()
-    
+
     df = pd.DataFrame(rules)
-    
+
     if "canonical_key" not in df.columns:
         tprint("WARNING: No canonical_key column found, returning as-is")
         return df
-    
+
     # Columns to aggregate (numeric metrics)
     ic_metric_cols = [
-        "mean_oos_ic", "p25_oos_ic", "p50_oos_ic", "p75_oos_ic",
-        "positive_ic_fraction", "within_mask_ic", "delta_within_mask_ic",
+        "mean_oos_ic",
+        "p25_oos_ic",
+        "p50_oos_ic",
+        "p75_oos_ic",
+        "positive_ic_fraction",
+        "within_mask_ic",
+        "delta_within_mask_ic",
     ]
     rule_metric_cols = [
-        "mean_net_ret", "std_net_ret", "mean_support_pct", "presence_freq",
-        "sign_consistency", "entropy_reduction",
+        "mean_net_ret",
+        "std_net_ret",
+        "mean_support_pct",
+        "presence_freq",
+        "sign_consistency",
+        "entropy_reduction",
     ]
     all_metric_cols = ic_metric_cols + rule_metric_cols
-    
+
     # Group by canonical_key
     grouped = df.groupby("canonical_key")
-    
+
     # Build aggregated records
     aggregated_records = []
     for canonical_key, group in grouped:
         record = {"canonical_key": canonical_key}
-        
+
         # Source provenance (take first/original)
         if "source_target" in group.columns:
             record["source_target"] = group["source_target"].iloc[0]
@@ -7399,22 +5186,26 @@ def deduplicate_rules_by_canonical_key(
             record["source_horizon"] = group["source_horizon"].iloc[0]
         if "side" in group.columns:
             record["side"] = group["side"].iloc[0]
-        
+
         # Supporting counts
         if "source_target" in group.columns:
             record["supporting_targets_count"] = group["source_target"].nunique()
-            record["targets_supporting_rule"] = json.dumps(sorted(group["source_target"].unique().tolist()))
+            record["targets_supporting_rule"] = json.dumps(
+                sorted(group["source_target"].unique().tolist())
+            )
         else:
             record["supporting_targets_count"] = 1
             record["targets_supporting_rule"] = json.dumps([])
-        
+
         if "source_horizon" in group.columns:
             record["supporting_horizons_count"] = group["source_horizon"].nunique()
-            record["horizons_supporting_rule"] = json.dumps(sorted(group["source_horizon"].unique().tolist()))
+            record["horizons_supporting_rule"] = json.dumps(
+                sorted(group["source_horizon"].unique().tolist())
+            )
         else:
             record["supporting_horizons_count"] = 1
             record["horizons_supporting_rule"] = json.dumps([])
-        
+
         # Aggregate numeric metrics
         for col in all_metric_cols:
             if col in group.columns:
@@ -7428,55 +5219,75 @@ def deduplicate_rules_by_canonical_key(
                         record[col] = float(col_values.max())
                     else:
                         record[col] = float(col_values.mean())
-                    
+
                     # Also store min/max for IC metrics
                     if col in ic_metric_cols:
                         record[f"{col}_min"] = float(col_values.min())
                         record[f"{col}_max"] = float(col_values.max())
-        
+
         # Conservative metrics (min across sources)
         if "presence_freq" in group.columns:
-            record["presence_freq_conservative"] = float(group["presence_freq"].dropna().min())
+            record["presence_freq_conservative"] = float(
+                group["presence_freq"].dropna().min()
+            )
         if "sign_consistency" in group.columns:
-            record["sign_consistency_conservative"] = float(group["sign_consistency"].dropna().min())
-        
+            record["sign_consistency_conservative"] = float(
+                group["sign_consistency"].dropna().min()
+            )
+
         # Structural soundness (all must be True)
         if "is_structurally_sound" in group.columns:
-            record["is_structurally_sound"] = bool(group["is_structurally_sound"].fillna(False).all())
-        
+            record["is_structurally_sound"] = bool(
+                group["is_structurally_sound"].fillna(False).all()
+            )
+
         # Production status (any source is production)
         # Check both production_status and production_classification columns
         if "production_classification" in group.columns:
-            record["merged_production_status"] = "production" if (group["production_classification"] == "production").any() else "research"
+            record["merged_production_status"] = (
+                "production"
+                if (group["production_classification"] == "production").any()
+                else "research"
+            )
         elif "production_status" in group.columns:
-            record["merged_production_status"] = "production" if (group["production_status"] == "production").any() else "exploration"
+            record["merged_production_status"] = (
+                "production"
+                if (group["production_status"] == "production").any()
+                else "exploration"
+            )
         else:
             record["merged_production_status"] = "research"
-        
+
         # Rule type class (ranking or gate) - use most common across sources
         if "rule_type_class" in group.columns:
             rule_type_classes = group["rule_type_class"].dropna().tolist()
             if rule_type_classes:
-                record["merged_rule_type_class"] = max(set(rule_type_classes), key=rule_type_classes.count)
+                record["merged_rule_type_class"] = max(
+                    set(rule_type_classes), key=rule_type_classes.count
+                )
             else:
                 record["merged_rule_type_class"] = "rejected"
         else:
             record["merged_rule_type_class"] = "rejected"
-        
+
         # Rule type (original column - ranking or gate)
         if "rule_type" in group.columns:
             # Take most common rule type
-            record["rule_type"] = group["rule_type"].mode().iloc[0] if len(group["rule_type"].mode()) > 0 else "unknown"
-        
+            record["rule_type"] = (
+                group["rule_type"].mode().iloc[0]
+                if len(group["rule_type"].mode()) > 0
+                else "unknown"
+            )
+
         # Copy other important columns from first row
         for col in ["display_arity", "composite_score", "hurdle_excess", "conditions"]:
             if col in group.columns:
                 record[col] = group[col].iloc[0]
-        
+
         aggregated_records.append(record)
-    
+
     result_df = pd.DataFrame(aggregated_records)
-    
+
     # Sort by supporting targets count (descending), then by composite score
     sort_cols = []
     if "supporting_targets_count" in result_df.columns:
@@ -7485,21 +5296,19 @@ def deduplicate_rules_by_canonical_key(
         sort_cols.append("composite_score")
     if sort_cols:
         result_df = result_df.sort_values(sort_cols, ascending=[False, False])
-    
+
     return result_df.reset_index(drop=True)
 
 
-def analyze_cross_target_rules(
-    merged_df: pd.DataFrame
-) -> Dict[str, Any]:
+def analyze_cross_target_rules(merged_df: pd.DataFrame) -> Dict[str, Any]:
     """
     Analyze rules that appear across multiple targets.
-    
+
     Parameters
     ----------
     merged_df : pd.DataFrame
         Merged rules DataFrame with provenance
-    
+
     Returns
     -------
     Dict[str, Any]
@@ -7518,7 +5327,7 @@ def analyze_cross_target_rules(
             "single_horizon_rules": [],
             "summary": {},
         }
-    
+
     result = {
         "cross_target_rules": [],
         "universal_rules": [],
@@ -7527,36 +5336,36 @@ def analyze_cross_target_rules(
         "single_horizon_rules": [],
         "summary": {},
     }
-    
+
     # Check if we have the necessary columns
     if "supporting_targets_count" not in merged_df.columns:
         return result
-    
+
     # Cross-target rules (2+ targets)
     cross_target_mask = merged_df["supporting_targets_count"] >= 2
     cross_target_df = merged_df[cross_target_mask]
     result["cross_target_rules"] = cross_target_df.to_dict("records")
-    
+
     # Universal rules (all 3 targets)
     universal_mask = merged_df["supporting_targets_count"] >= 3
     universal_df = merged_df[universal_mask]
     result["universal_rules"] = universal_df.to_dict("records")
-    
+
     # Target-specific rules (1 target only)
     specific_mask = merged_df["supporting_targets_count"] == 1
     specific_df = merged_df[specific_mask]
     result["target_specific_rules"] = specific_df.to_dict("records")
-    
+
     # Cross-horizon rules
     if "supporting_horizons_count" in merged_df.columns:
         cross_horizon_mask = merged_df["supporting_horizons_count"] >= 2
         cross_horizon_df = merged_df[cross_horizon_mask]
         result["cross_horizon_rules"] = cross_horizon_df.to_dict("records")
-        
+
         single_horizon_mask = merged_df["supporting_horizons_count"] == 1
         single_horizon_df = merged_df[single_horizon_mask]
         result["single_horizon_rules"] = single_horizon_df.to_dict("records")
-    
+
     # Summary statistics
     result["summary"] = {
         "total_rules": len(merged_df),
@@ -7566,75 +5375,73 @@ def analyze_cross_target_rules(
         "cross_horizon_count": len(result["cross_horizon_rules"]),
         "single_horizon_count": len(result["single_horizon_rules"]),
     }
-    
-    tprint(f"Cross-target analysis: {len(result['cross_target_rules'])} cross-target, "
-           f"{len(result['universal_rules'])} universal, "
-           f"{len(result['target_specific_rules'])} target-specific")
-    
+
+    tprint(
+        f"Cross-target analysis: {len(result['cross_target_rules'])} cross-target, "
+        f"{len(result['universal_rules'])} universal, "
+        f"{len(result['target_specific_rules'])} target-specific"
+    )
+
     return result
 
 
 def classify_rule_type(
-    mean_oos_ic: float,
-    within_mask_ic: float,
-    delta_within_mask_ic: float,
-    ic_threshold: float = 0.02,
-    delta_threshold: float = 0.03,
+    directional_mean_ret: float,
+    mean_uplift: float,
+    sign_consistency: float,
+    required_hurdle: float,
+    ranking_excess: float = 0.0,
+    gate_uplift_threshold: float = 0.0,
+    min_sign_consistency: float = 0.60,
 ) -> str:
     """
-    Classify rule as ranking vs gate regime.
-    
+    Classify rule as ranking vs gate regime using return-based metrics.
+
     Ranking regime:
-    - mean_oos_ic > ic_threshold
-    - Can be used for continuous ranking/sizing
-    
+    - directional_mean_ret exceeds required_hurdle (+ optional excess)
+    - sign consistency is acceptable for directional sizing
+
     Gate/filter regime:
-    - mean_oos_ic <= ic_threshold (weak or negative global IC)
-    - BUT within_mask_ic > mean_oos_ic + delta_threshold
-    - OR delta_within_mask_ic > delta_threshold
-    - Used for selection/gating, not continuous ranking
-    
+    - mean_uplift is positive (or above threshold)
+    - sign consistency is acceptable for binary on/off gating
+
     Rejected:
     - Neither ranking nor gate characteristics
-    
+
     Parameters
     ----------
-    mean_oos_ic : float
-        Mean out-of-sample IC across folds
-    within_mask_ic : float
-        IC computed within the mask (regime-specific IC)
-    delta_within_mask_ic : float
-        Difference between within_mask_ic and global IC
-    ic_threshold : float
-        Minimum IC for ranking regime (default 0.02)
-    delta_threshold : float
-        Minimum delta IC for gate regime (default 0.03)
-    
+    directional_mean_ret : float
+        Direction-aligned average return for the rule.
+    mean_uplift : float
+        Mean uplift vs parent context.
+    sign_consistency : float
+        Fraction of folds whose sign agrees with the major sign.
+    required_hurdle : float
+        Required return hurdle based on support/arity.
+
     Returns
     -------
     str
         "ranking", "gate", or "rejected"
     """
-    # Handle NaN values
-    if not np.isfinite(mean_oos_ic):
-        mean_oos_ic = -np.inf
-    if not np.isfinite(within_mask_ic):
-        within_mask_ic = -np.inf
-    if not np.isfinite(delta_within_mask_ic):
-        delta_within_mask_ic = 0.0
-    
-    # Ranking regime: strong global IC
-    if mean_oos_ic > ic_threshold:
+    if not np.isfinite(directional_mean_ret):
+        directional_mean_ret = -np.inf
+    if not np.isfinite(mean_uplift):
+        mean_uplift = -np.inf
+    if not np.isfinite(sign_consistency):
+        sign_consistency = 0.0
+    if not np.isfinite(required_hurdle):
+        required_hurdle = 0.0
+
+    if (
+        directional_mean_ret > (required_hurdle + ranking_excess)
+        and sign_consistency >= min_sign_consistency
+    ):
         return "ranking"
-    
-    # Gate regime: weak global IC but strong within-mask improvement
-    if within_mask_ic > mean_oos_ic + delta_threshold:
+
+    if mean_uplift > gate_uplift_threshold and sign_consistency >= min_sign_consistency:
         return "gate"
-    
-    if delta_within_mask_ic > delta_threshold:
-        return "gate"
-    
-    # Neither ranking nor gate
+
     return "rejected"
 
 
@@ -7642,28 +5449,25 @@ def classify_rule_production_quality(
     rule: Dict[str, Any],
     min_folds: int = 3,
     min_presence_freq: float = 0.75,
-    min_positive_ic_fraction: float = 0.6,
-    min_mean_oos_ic: float = 0.0,
-    min_support_actual: int = 50,
-    min_within_mask_ic_lift: float = 0.02,
+    min_directional_mean_ret: float = 0.0,
+    min_support_threshold: int = 50,
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Classify rule as production-quality, research, or rejected.
-    
+
     Production-quality rules must meet ALL of:
     - n_folds >= min_folds
     - presence_freq >= min_presence_freq
-    - positive_ic_fraction >= min_positive_ic_fraction
-    - mean_oos_ic > 0, OR within_mask_ic materially > global_ic (for gate rules)
+    - directional_mean_ret > min_directional_mean_ret
     - min_support_actual >= min_support_actual
     - not dominated by simpler parent unless uplift is material
     - structurally sound
-    
+
     Classification:
-    - "production": Meets all criteria AND (strong IC OR strong gate characteristics)
+    - "production": Meets all criteria for deployment
     - "research": Meets some criteria, needs further study
     - "rejected": Fails critical criteria
-    
+
     Parameters
     ----------
     rule : Dict[str, Any]
@@ -7672,15 +5476,11 @@ def classify_rule_production_quality(
         Minimum number of folds rule must appear in (default 3)
     min_presence_freq : float
         Minimum presence frequency across folds (default 0.75)
-    min_positive_ic_fraction : float
-        Minimum fraction of folds with positive IC (default 0.6)
-    min_mean_oos_ic : float
-        Minimum mean OOS IC (default 0.0)
-    min_support_actual : int
+    min_directional_mean_ret : float
+        Minimum directional return edge (default 0.0)
+    min_support_threshold : int
         Minimum actual support count (default 50)
-    min_within_mask_ic_lift : float
-        Minimum within-mask IC lift for gate rules (default 0.02)
-    
+
     Returns
     -------
     Tuple[str, Dict[str, Any]]
@@ -7692,27 +5492,22 @@ def classify_rule_production_quality(
         "failures": [],
         "warnings": [],
     }
-    
+
     # Extract metrics with safe defaults
     n_folds = rule.get("n_folds", 0)
     presence_freq = rule.get("presence_freq", 0.0)
-    positive_ic_fraction = rule.get("positive_ic_fraction", 0.0)
-    mean_oos_ic = rule.get("mean_oos_ic", np.nan)
-    min_support_actual = rule.get("min_support_actual", 0)
-    within_mask_ic = rule.get("within_mask_ic", np.nan)
-    delta_within_mask_ic = rule.get("delta_within_mask_ic", np.nan)
+    directional_mean_ret = rule.get("directional_mean_ret", np.nan)
+    support_actual = rule.get("min_support_actual", 0)
+    hurdle_excess = rule.get("hurdle_excess", np.nan)
     is_structurally_sound = rule.get("is_structurally_sound", False)
     dominated_by_parent = rule.get("dominated_by_parent", False)
     sign_consistency = rule.get("sign_consistency", 0.0)
-    
-    # Handle NaN values
-    if not np.isfinite(mean_oos_ic):
-        mean_oos_ic = -np.inf
-    if not np.isfinite(within_mask_ic):
-        within_mask_ic = -np.inf
-    if not np.isfinite(delta_within_mask_ic):
-        delta_within_mask_ic = 0.0
-    
+
+    if not np.isfinite(directional_mean_ret):
+        directional_mean_ret = -np.inf
+    if not np.isfinite(hurdle_excess):
+        hurdle_excess = -np.inf
+
     # Check 1: Fold count
     fold_check = n_folds >= min_folds
     diagnostics["checks"]["n_folds"] = {
@@ -7722,7 +5517,7 @@ def classify_rule_production_quality(
     }
     if not fold_check:
         diagnostics["failures"].append(f"n_folds={n_folds} < {min_folds}")
-    
+
     # Check 2: Presence frequency
     presence_check = presence_freq >= min_presence_freq
     diagnostics["checks"]["presence_freq"] = {
@@ -7731,45 +5526,44 @@ def classify_rule_production_quality(
         "passed": presence_check,
     }
     if not presence_check:
-        diagnostics["failures"].append(f"presence_freq={presence_freq:.3f} < {min_presence_freq}")
-    
-    # Check 3: Positive IC fraction
-    ic_frac_check = positive_ic_fraction >= min_positive_ic_fraction
-    diagnostics["checks"]["positive_ic_fraction"] = {
-        "value": positive_ic_fraction,
-        "threshold": min_positive_ic_fraction,
-        "passed": ic_frac_check,
+        diagnostics["failures"].append(
+            f"presence_freq={presence_freq:.3f} < {min_presence_freq}"
+        )
+
+    # Check 3: Directional return edge
+    edge_check = directional_mean_ret > min_directional_mean_ret
+    diagnostics["checks"]["directional_mean_ret"] = {
+        "value": directional_mean_ret,
+        "threshold": min_directional_mean_ret,
+        "passed": edge_check,
     }
-    if not ic_frac_check:
-        diagnostics["failures"].append(f"positive_ic_fraction={positive_ic_fraction:.3f} < {min_positive_ic_fraction}")
-    
-    # Check 4: Mean OOS IC (or gate exception)
-    # For gate rules, we allow negative global IC if within-mask IC is strong
-    is_gate_rule = (
-        mean_oos_ic <= 0.02 and
-        (within_mask_ic > mean_oos_ic + 0.03 or delta_within_mask_ic > 0.03)
-    )
-    ic_check = mean_oos_ic > min_mean_oos_ic or (is_gate_rule and delta_within_mask_ic > min_within_mask_ic_lift)
-    diagnostics["checks"]["mean_oos_ic"] = {
-        "value": mean_oos_ic,
-        "threshold": min_mean_oos_ic,
-        "is_gate_rule": is_gate_rule,
-        "within_mask_ic_lift": delta_within_mask_ic,
-        "passed": ic_check,
+    if not edge_check:
+        diagnostics["failures"].append(
+            f"directional_mean_ret={directional_mean_ret:.6f} <= {min_directional_mean_ret:.6f}"
+        )
+
+    # Check 4: Hurdle excess
+    hurdle_check = hurdle_excess > 0.0
+    diagnostics["checks"]["hurdle_excess"] = {
+        "value": hurdle_excess,
+        "threshold": 0.0,
+        "passed": hurdle_check,
     }
-    if not ic_check:
-        diagnostics["failures"].append(f"mean_oos_ic={mean_oos_ic:.4f} <= {min_mean_oos_ic} and not a gate rule")
-    
+    if not hurdle_check:
+        diagnostics["failures"].append(f"hurdle_excess={hurdle_excess:.6f} <= 0")
+
     # Check 5: Support count
-    support_check = min_support_actual >= min_support_actual
+    support_check = support_actual >= min_support_threshold
     diagnostics["checks"]["min_support_actual"] = {
-        "value": min_support_actual,
-        "threshold": min_support_actual,
+        "value": support_actual,
+        "threshold": min_support_threshold,
         "passed": support_check,
     }
     if not support_check:
-        diagnostics["failures"].append(f"min_support_actual={min_support_actual} < {min_support_actual}")
-    
+        diagnostics["failures"].append(
+            f"min_support_actual={support_actual} < {min_support_threshold}"
+        )
+
     # Check 6: Structural soundness
     structural_check = is_structurally_sound
     diagnostics["checks"]["is_structurally_sound"] = {
@@ -7778,18 +5572,22 @@ def classify_rule_production_quality(
     }
     if not structural_check:
         diagnostics["failures"].append("not_structurally_sound")
-    
+
     # Check 7: Not dominated by parent (warning only)
     if dominated_by_parent:
         diagnostics["warnings"].append("dominated_by_simpler_parent")
-    
+
     # Check 8: Sign consistency (warning only)
     if sign_consistency < 0.75:
         diagnostics["warnings"].append(f"low_sign_consistency={sign_consistency:.3f}")
-    
+
     # Determine classification
-    critical_failures = [f for f in diagnostics["failures"] if "n_folds" in f or "structurally_sound" in f]
-    
+    critical_failures = [
+        f
+        for f in diagnostics["failures"]
+        if "n_folds" in f or "structurally_sound" in f
+    ]
+
     if critical_failures:
         # Critical failures -> rejected
         classification = "rejected"
@@ -7802,89 +5600,71 @@ def classify_rule_production_quality(
     else:
         # Too many failures -> rejected
         classification = "rejected"
-    
+
     diagnostics["classification"] = classification
-    diagnostics["is_gate_rule"] = is_gate_rule
-    
+
     return classification, diagnostics
 
 
 def compute_overall_target_quality_score(
-    mean_oos_ic: float,
-    positive_ic_fraction: float,
-    p25_oos_ic: float,
+    mean_directional_ret: float,
+    mean_sign_consistency: float,
+    mean_hurdle_excess: float,
     entropy_reduction: float,
-    delta_within_mask_ic: float,
     production_rule_count: int,
     total_rule_count: int,
 ) -> float:
     """
     Compute overall target quality score.
-    
+
     Weighted combination:
-    - 30%: mean_oos_ic (global learnability)
-    - 20%: positive_ic_fraction (stability)
-    - 15%: p25_oos_ic (worst-case IC)
+    - 35%: mean_directional_ret (economic edge)
+    - 25%: mean_sign_consistency (stability)
+    - 15%: mean_hurdle_excess (economic surplus over hurdle)
     - 15%: entropy_reduction (regime separation)
-    - 10%: delta_within_mask_ic (within-regime improvement)
     - 10%: production_rule_ratio (rule quality)
-    
+
     Parameters
     ----------
-    mean_oos_ic : float
-        Mean out-of-sample IC
-    positive_ic_fraction : float
-        Fraction of folds with positive IC
-    p25_oos_ic : float
-        25th percentile of OOS IC
+    mean_directional_ret : float
+        Mean directional return edge across accepted rules
+    mean_sign_consistency : float
+        Mean sign consistency across accepted rules
+    mean_hurdle_excess : float
+        Mean excess return over rule-specific hurdle
     entropy_reduction : float
         Entropy reduction from regime
-    delta_within_mask_ic : float
-        Within-mask IC improvement
     production_rule_count : int
         Number of production-quality rules
     total_rule_count : int
         Total number of rules
-    
+
     Returns
     -------
     float
         Score in [0, 1] range
     """
-    # Normalize each component to [0, 1]
-    # IC score: assume IC in [-0.2, 0.2]
-    ic_score = (mean_oos_ic + 0.2) / 0.4
-    ic_score = np.clip(ic_score, 0, 1)
-    
-    # Stability score: already in [0, 1]
-    stability_score = positive_ic_fraction
-    
-    # Worst-case score: same normalization as IC
-    worst_case_score = (p25_oos_ic + 0.2) / 0.4
-    worst_case_score = np.clip(worst_case_score, 0, 1)
-    
+    edge_score = np.clip((mean_directional_ret + 0.01) / 0.06, 0, 1)
+    stability_score = np.clip(mean_sign_consistency, 0, 1)
+    hurdle_score = np.clip((mean_hurdle_excess + 0.005) / 0.03, 0, 1)
+
     # Entropy reduction can be negative, normalize
     # Assume range [-0.5, 0.5]
     entropy_score = (entropy_reduction + 0.5) / 1.0
     entropy_score = np.clip(entropy_score, 0, 1)
-    
-    # Delta score: assume range [-0.1, 0.1]
-    delta_score = (delta_within_mask_ic + 0.1) / 0.2
-    delta_score = np.clip(delta_score, 0, 1)
-    
+
     # Rule ratio: already in [0, 1]
     rule_ratio = production_rule_count / max(total_rule_count, 1)
-    
+
     # Weighted combination
     score = (
-        0.30 * ic_score +
-        0.20 * stability_score +
-        0.15 * worst_case_score +
-        0.15 * entropy_score +
-        0.10 * delta_score +
-        0.10 * rule_ratio
+        0.35 * edge_score
+        + 0.25 * stability_score
+        + 0.15 * hurdle_score
+        + 0.15 * entropy_score
+        + 0.10 * rule_ratio
     )
-    
+
     return float(np.clip(score, 0, 1))
 
 
@@ -7899,7 +5679,7 @@ def create_triad_run_summary(
     - Per-horizon production rule counts
     - Cross-target rule counts
     - Overall quality assessment
-    
+
     Parameters
     ----------
     all_results : List[Dict[str, Any]]
@@ -7908,7 +5688,7 @@ def create_triad_run_summary(
         Merged/deduplicated rules DataFrame
     output_path : Optional[str]
         Path to save the summary JSON
-    
+
     Returns
     -------
     Dict[str, Any]
@@ -7920,13 +5700,13 @@ def create_triad_run_summary(
         "cross_target_summary": {},
         "overall_quality": {},
     }
-    
+
     # Per-target summary
     target_names = set()
     for result in all_results:
         target_name = result.get("target_name", "unknown")
         target_names.add(target_name)
-        
+
         if target_name not in summary["per_target_summary"]:
             summary["per_target_summary"][target_name] = {
                 "total_rules": 0,
@@ -7936,32 +5716,32 @@ def create_triad_run_summary(
                 "ranking_rules": 0,
                 "gate_rules": 0,
             }
-        
+
         accepted_rules = result.get("accepted_rules", [])
         summary["per_target_summary"][target_name]["total_rules"] += len(accepted_rules)
-        
+
         for rule in accepted_rules:
             classification = rule.get("production_classification", "research")
             rule_type = rule.get("rule_type_class", "rejected")
-            
+
             if classification == "production":
                 summary["per_target_summary"][target_name]["production_rules"] += 1
             elif classification == "research":
                 summary["per_target_summary"][target_name]["research_rules"] += 1
             else:
                 summary["per_target_summary"][target_name]["rejected_rules"] += 1
-            
+
             if rule_type == "ranking":
                 summary["per_target_summary"][target_name]["ranking_rules"] += 1
             elif rule_type == "gate":
                 summary["per_target_summary"][target_name]["gate_rules"] += 1
-    
+
     # Per-horizon summary
     horizons = set()
     for result in all_results:
         horizon = result.get("horizon", 0)
         horizons.add(horizon)
-        
+
         horizon_key = f"h{horizon}"
         if horizon_key not in summary["per_horizon_summary"]:
             summary["per_horizon_summary"][horizon_key] = {
@@ -7972,58 +5752,69 @@ def create_triad_run_summary(
                 "ranking_rules": 0,
                 "gate_rules": 0,
             }
-        
+
         accepted_rules = result.get("accepted_rules", [])
-        summary["per_horizon_summary"][horizon_key]["total_rules"] += len(accepted_rules)
-        
+        summary["per_horizon_summary"][horizon_key]["total_rules"] += len(
+            accepted_rules
+        )
+
         for rule in accepted_rules:
             classification = rule.get("production_classification", "research")
             rule_type = rule.get("rule_type_class", "rejected")
-            
+
             if classification == "production":
                 summary["per_horizon_summary"][horizon_key]["production_rules"] += 1
             elif classification == "research":
                 summary["per_horizon_summary"][horizon_key]["research_rules"] += 1
             else:
                 summary["per_horizon_summary"][horizon_key]["rejected_rules"] += 1
-            
+
             if rule_type == "ranking":
                 summary["per_horizon_summary"][horizon_key]["ranking_rules"] += 1
             elif rule_type == "gate":
                 summary["per_horizon_summary"][horizon_key]["gate_rules"] += 1
-    
+
     # Cross-target summary (from merged rules)
     if merged_rules is not None and not merged_rules.empty:
         cross_target_count = 0
         universal_count = 0
         production_cross_target_count = 0
-        
+
         if "supporting_targets_count" in merged_rules.columns:
             cross_target_mask = merged_rules["supporting_targets_count"] >= 2
             cross_target_count = int(cross_target_mask.sum())
-            
+
             universal_mask = merged_rules["supporting_targets_count"] >= 3
             universal_count = int(universal_mask.sum())
-            
+
             # Production rules that are cross-target
             if "merged_production_status" in merged_rules.columns:
-                production_cross_target = merged_rules[cross_target_mask & (merged_rules["merged_production_status"] == "production")]
+                production_cross_target = merged_rules[
+                    cross_target_mask
+                    & (merged_rules["merged_production_status"] == "production")
+                ]
                 production_cross_target_count = len(production_cross_target)
-        
+
         summary["cross_target_summary"] = {
             "cross_target_rules": cross_target_count,
             "universal_rules": universal_count,
             "production_cross_target_rules": production_cross_target_count,
             "total_merged_rules": len(merged_rules),
         }
-    
+
     # Overall quality assessment
     total_rules = sum(t["total_rules"] for t in summary["per_target_summary"].values())
-    total_production = sum(t["production_rules"] for t in summary["per_target_summary"].values())
-    total_research = sum(t["research_rules"] for t in summary["per_target_summary"].values())
-    total_ranking = sum(t["ranking_rules"] for t in summary["per_target_summary"].values())
+    total_production = sum(
+        t["production_rules"] for t in summary["per_target_summary"].values()
+    )
+    total_research = sum(
+        t["research_rules"] for t in summary["per_target_summary"].values()
+    )
+    total_ranking = sum(
+        t["ranking_rules"] for t in summary["per_target_summary"].values()
+    )
     total_gate = sum(t["gate_rules"] for t in summary["per_target_summary"].values())
-    
+
     summary["overall_quality"] = {
         "total_rules": total_rules,
         "production_rules": total_production,
@@ -8033,68 +5824,78 @@ def create_triad_run_summary(
         "gate_rules": total_gate,
         "ranking_to_gate_ratio": total_ranking / max(total_gate, 1),
     }
-    
+
     # Compute overall quality score
     if all_results:
         # Aggregate metrics across all results
-        all_mean_oos_ic = []
-        all_positive_ic_frac = []
-        all_p25_oos_ic = []
+        all_directional_ret = []
+        all_sign_consistency = []
+        all_hurdle_excess = []
         all_entropy_reduction = []
-        all_delta_within_mask_ic = []
-        
+
         for result in all_results:
             for rule in result.get("accepted_rules", []):
-                if np.isfinite(rule.get("mean_oos_ic", np.nan)):
-                    all_mean_oos_ic.append(rule["mean_oos_ic"])
-                if np.isfinite(rule.get("positive_ic_fraction", np.nan)):
-                    all_positive_ic_frac.append(rule["positive_ic_fraction"])
-                if np.isfinite(rule.get("p25_oos_ic", np.nan)):
-                    all_p25_oos_ic.append(rule["p25_oos_ic"])
+                if np.isfinite(rule.get("directional_mean_ret", np.nan)):
+                    all_directional_ret.append(rule["directional_mean_ret"])
+                if np.isfinite(rule.get("sign_consistency", np.nan)):
+                    all_sign_consistency.append(rule["sign_consistency"])
+                if np.isfinite(rule.get("hurdle_excess", np.nan)):
+                    all_hurdle_excess.append(rule["hurdle_excess"])
                 if np.isfinite(rule.get("entropy_reduction", np.nan)):
                     all_entropy_reduction.append(rule["entropy_reduction"])
-                if np.isfinite(rule.get("delta_within_mask_ic", np.nan)):
-                    all_delta_within_mask_ic.append(rule["delta_within_mask_ic"])
-        
-        if all_mean_oos_ic:
+
+        if all_directional_ret:
             overall_score = compute_overall_target_quality_score(
-                mean_oos_ic=float(np.mean(all_mean_oos_ic)),
-                positive_ic_fraction=float(np.mean(all_positive_ic_frac)) if all_positive_ic_frac else 0.0,
-                p25_oos_ic=float(np.mean(all_p25_oos_ic)) if all_p25_oos_ic else 0.0,
-                entropy_reduction=float(np.mean(all_entropy_reduction)) if all_entropy_reduction else 0.0,
-                delta_within_mask_ic=float(np.mean(all_delta_within_mask_ic)) if all_delta_within_mask_ic else 0.0,
+                mean_directional_ret=float(np.mean(all_directional_ret)),
+                mean_sign_consistency=float(np.mean(all_sign_consistency))
+                if all_sign_consistency
+                else 0.0,
+                mean_hurdle_excess=float(np.mean(all_hurdle_excess))
+                if all_hurdle_excess
+                else 0.0,
+                entropy_reduction=float(np.mean(all_entropy_reduction))
+                if all_entropy_reduction
+                else 0.0,
                 production_rule_count=total_production,
                 total_rule_count=total_rules,
             )
             summary["overall_quality"]["quality_score"] = overall_score
-    
+
     # Print summary
     tprint("=" * 60)
     tprint("TRIAD RUN SUMMARY")
     tprint("=" * 60)
     tprint(f"Total rules discovered: {total_rules}")
-    tprint(f"Production-quality rules: {total_production} ({100*total_production/max(total_rules,1):.1f}%)")
+    tprint(
+        f"Production-quality rules: {total_production} ({100*total_production/max(total_rules,1):.1f}%)"
+    )
     tprint(f"Research-grade rules: {total_research}")
     tprint(f"Ranking regimes: {total_ranking}")
     tprint(f"Gate regimes: {total_gate}")
     tprint("")
     tprint("Per-target breakdown:")
     for target_name, target_summary in summary["per_target_summary"].items():
-        tprint(f"  {target_name}: {target_summary['production_rules']} production / {target_summary['total_rules']} total")
+        tprint(
+            f"  {target_name}: {target_summary['production_rules']} production / {target_summary['total_rules']} total"
+        )
     tprint("")
     tprint("Per-horizon breakdown:")
     for horizon_key, horizon_summary in summary["per_horizon_summary"].items():
-        tprint(f"  {horizon_key}: {horizon_summary['production_rules']} production / {horizon_summary['total_rules']} total")
+        tprint(
+            f"  {horizon_key}: {horizon_summary['production_rules']} production / {horizon_summary['total_rules']} total"
+        )
     if "quality_score" in summary["overall_quality"]:
-        tprint(f"\nOverall quality score: {summary['overall_quality']['quality_score']:.3f}")
+        tprint(
+            f"\nOverall quality score: {summary['overall_quality']['quality_score']:.3f}"
+        )
     tprint("=" * 60)
-    
+
     # Save to file if path provided
     if output_path:
         with open(output_path, "w") as f:
             json.dump(summary, f, indent=2, default=str)
         tprint(f"Saved triad run summary to {output_path}")
-    
+
     return summary
 
 
@@ -8104,29 +5905,29 @@ def create_target_quality_summary(
 ) -> pd.DataFrame:
     """
     Create a summary of quality metrics per target/horizon combination.
-    
+
     Parameters
     ----------
     all_results : List[Dict[str, Any]]
         List of result dicts from run_side_pipeline()
     output_path : Optional[str]
         Path to save the summary CSV
-    
+
     Returns
     -------
     pd.DataFrame
         Summary DataFrame with quality metrics per target/horizon
     """
     summary_records = []
-    
+
     for result in all_results:
         target_name = result.get("target_name", "unknown")
         horizon = result.get("horizon", 0)
         side = result.get("side", "unknown")
-        
+
         accepted_rules = result.get("accepted_rules", [])
         candidate_rules = result.get("candidate_rules", [])
-        
+
         record = {
             "target_name": target_name,
             "horizon": horizon,
@@ -8134,31 +5935,36 @@ def create_target_quality_summary(
             "accepted_rules_count": len(accepted_rules),
             "candidate_rules_count": len(candidate_rules),
         }
-        
+
         # Aggregate metrics from accepted rules
         if accepted_rules:
             accepted_df = pd.DataFrame(accepted_rules)
-            
+
             # IC metrics
             for col in ["mean_oos_ic", "positive_ic_fraction", "within_mask_ic"]:
                 if col in accepted_df.columns:
                     record[f"mean_{col}"] = accepted_df[col].mean()
                     record[f"max_{col}"] = accepted_df[col].max()
-            
+
             # Rule metrics
-            for col in ["composite_score", "hurdle_excess", "presence_freq", "sign_consistency"]:
+            for col in [
+                "composite_score",
+                "hurdle_excess",
+                "presence_freq",
+                "sign_consistency",
+            ]:
                 if col in accepted_df.columns:
                     record[f"mean_{col}"] = accepted_df[col].mean()
                     record[f"max_{col}"] = accepted_df[col].max()
-        
+
         summary_records.append(record)
-    
+
     summary_df = pd.DataFrame(summary_records)
-    
+
     if output_path and not summary_df.empty:
         summary_df.to_csv(output_path, index=False)
         tprint(f"Saved target quality summary to {output_path}")
-    
+
     return summary_df
 
 
@@ -8258,7 +6064,9 @@ class MaskAssessor:
         global_entropy_short = self._compute_entropy(-fwd_ret)
 
         if np.nanstd(fwd_ret) < 1e-9:
-            tprint("WARNING: Root cause for degenerate metrics: fwd_ret has zero variance!")
+            tprint(
+                "WARNING: Root cause for degenerate metrics: fwd_ret has zero variance!"
+            )
 
         # Prepare TBM data
         close = (
@@ -8293,8 +6101,10 @@ class MaskAssessor:
         tp_atr = base_tp_atr * scale_factor
         sl_atr = base_sl_atr * scale_factor
 
-        tprint(f"TBM Configuration: H={horizon} bars (assessment H={assessment_horizon}), "
-               f"TP={tp_atr:.3f} ATR, SL={sl_atr:.3f} ATR, scale_factor={scale_factor:.3f} (h_ref={h_ref})")
+        tprint(
+            f"TBM Configuration: H={horizon} bars (assessment H={assessment_horizon}), "
+            f"TP={tp_atr:.3f} ATR, SL={sl_atr:.3f} ATR, scale_factor={scale_factor:.3f} (h_ref={h_ref})"
+        )
 
         tp_f_long, sl_f_long, to_f_long = compute_tbm_outcomes_per_symbol(
             data=data,
@@ -8321,8 +6131,11 @@ class MaskAssessor:
                 continue
 
             # 0. Infrastructure: Component Extraction
-            slots = parse_slot_map(row["canonical_key"], self.cfg.get("slot_order", ("trigger", "location", "regime")))
-            
+            slots = parse_slot_map(
+                row["canonical_key"],
+                self.cfg.get("slot_order", ("trigger", "location", "regime")),
+            )
+
             side = row.get("side", "long")
             target_ret = -fwd_ret if side == "short" else fwd_ret
 
@@ -8345,7 +6158,9 @@ class MaskAssessor:
                     trades_per_day.mean() + 1e-9
                 )
             else:
-                tprint("DEBUG: Root cause for 0.0 density_dispersion: 'timestamp' missing from data columns.")
+                tprint(
+                    "DEBUG: Root cause for 0.0 density_dispersion: 'timestamp' missing from data columns."
+                )
                 density_dispersion = 0.0
 
             # 3. Risk & Stability
@@ -8399,11 +6214,11 @@ class MaskAssessor:
 
             # 9. Final Regime Score
             regime_score = (
-                0.20 * support_score +
-                0.20 * lift +
-                0.20 * ret_uplift +
-                0.20 * ev_per_event +
-                0.10 * sign_consistency
+                0.20 * support_score
+                + 0.20 * lift
+                + 0.20 * ret_uplift
+                + 0.20 * ev_per_event
+                + 0.10 * sign_consistency
             )
 
             # Rejection Gates
@@ -8434,24 +6249,24 @@ class MaskAssessor:
             rule_for_classification = {
                 "n_folds": row.get("n_folds", 0),
                 "presence_freq": row.get("presence_freq", 0.0),
-                "positive_ic_fraction": row.get("positive_ic_fraction", 0.0),
-                "mean_oos_ic": row.get("mean_oos_ic", np.nan),
+                "directional_mean_ret": row.get("directional_mean_ret", np.nan),
                 "min_support_actual": row.get("min_support_actual", 0),
-                "within_mask_ic": row.get("within_mask_ic", np.nan),
-                "delta_within_mask_ic": row.get("delta_within_mask_ic", np.nan),
+                "hurdle_excess": row.get("hurdle_excess", np.nan),
                 "is_structurally_sound": not rejected,
                 "dominated_by_parent": row.get("dominated_by_parent", False),
                 "sign_consistency": sign_consistency,
             }
-            production_classification, classification_diagnostics = classify_rule_production_quality(
-                rule=rule_for_classification
-            )
-            
+            (
+                production_classification,
+                classification_diagnostics,
+            ) = classify_rule_production_quality(rule=rule_for_classification)
+
             # Rule type classification
             rule_type_class = classify_rule_type(
-                mean_oos_ic=row.get("mean_oos_ic", np.nan),
-                within_mask_ic=row.get("within_mask_ic", np.nan),
-                delta_within_mask_ic=row.get("delta_within_mask_ic", np.nan),
+                directional_mean_ret=row.get("directional_mean_ret", np.nan),
+                mean_uplift=row.get("mean_uplift", np.nan),
+                sign_consistency=sign_consistency,
+                required_hurdle=row.get("required_hurdle", 0.0),
             )
 
             assessment_results.append(
@@ -8487,7 +6302,9 @@ class MaskAssessor:
                     "win_rate_conditional": tbm_metrics["win_rate_conditional"],
                     "win_rate_unconditional": tbm_metrics["win_rate_unconditional"],
                     "production_classification": production_classification,
-                    "classification_diagnostics": json.dumps(classification_diagnostics),
+                    "classification_diagnostics": json.dumps(
+                        classification_diagnostics
+                    ),
                     "rule_type_class": rule_type_class,
                 }
             )
@@ -8647,9 +6464,11 @@ class MaskAssessor:
             X_tr_clean = X_tr[valid_tr]
             y_tr_clean = y_tr[valid_tr]
             X_va_clean = X_va[valid_va]
-            
+
             # Defensive check for any remaining NaNs (should not happen with valid_tr/valid_va)
-            if not np.all(np.isfinite(X_tr_clean)) or not np.all(np.isfinite(y_tr_clean)):
+            if not np.all(np.isfinite(X_tr_clean)) or not np.all(
+                np.isfinite(y_tr_clean)
+            ):
                 continue
 
             # Subsample to 50% of training data
@@ -9017,6 +6836,7 @@ def build_portfolio_diversity_report(
     fwd_ret: np.ndarray,
     X_for_ridge: Optional[np.ndarray] = None,
 ) -> pd.DataFrame:
+    del fwd_ret, X_for_ridge
     rows: List[Dict[str, Any]] = []
     if registry.empty:
         return pd.DataFrame(rows)
@@ -9024,42 +6844,6 @@ def build_portfolio_diversity_report(
     mask_map = {
         key: resolver.get_mask(key) for key in registry["canonical_key"].tolist()
     }
-
-    # Pre-compute Ridge Signatures for orthogonality metrics
-    signatures = {}
-    X_raw = getattr(resolver, "X", None) if X_for_ridge is None else X_for_ridge
-    if X_raw is not None:
-        X_std = np.zeros_like(X_raw)
-        for i in range(X_raw.shape[1]):
-            col = X_raw[:, i]
-            valid = np.isfinite(col)
-            if np.sum(valid) > 0:
-                mean = np.mean(col[valid])
-                std = np.std(col[valid])
-                if std == 0:
-                    std = 1.0
-                X_std[valid, i] = (col[valid] - mean) / std
-
-        # Simple fold definition for signature computation (not strictly needed for just coefficients, but the method requires it)
-        # We can just pass an empty list if we only care about the full-data coefficients, but let's just make one mock fold or use fwd_ret directly.
-        # Actually, the method is _compute_ridge_signature which requires an EconomicRuleConsolidator instance.
-        # We can do a simpler Ridge fit here.
-        import scipy.stats
-        from sklearn.linear_model import Ridge
-
-        for key, mask in mask_map.items():
-            valid_idx = np.where(mask & np.isfinite(fwd_ret))[0]
-            if len(valid_idx) >= 20:
-                side = resolver.get_rule_side(key)
-                target_ret = -fwd_ret if side == "short" else fwd_ret
-                X_valid = X_std[valid_idx]
-                y_valid = target_ret[valid_idx]
-                hi = np.nanquantile(y_valid, 0.98) if len(y_valid) > 0 else 1.0
-                lo = np.nanquantile(y_valid, 0.02) if len(y_valid) > 0 else -1.0
-                y_valid_clipped = np.clip(y_valid, lo, hi)
-                model = Ridge(solver="auto")
-                model.fit(X_valid, y_valid_clipped)
-                signatures[key] = model.coef_
     activation_counts = {key: int(mask.sum()) for key, mask in mask_map.items()}
     total_activations = sum(activation_counts.values())
     if total_activations > 0:
@@ -9085,23 +6869,24 @@ def build_portfolio_diversity_report(
     )
 
     keys = registry["canonical_key"].tolist()
-    for key_a, key_b in itertools.combinations(keys, 2):
+    top_keys = (
+        registry.sort_values(["composite_score", "hurdle_excess"], ascending=False)
+        .head(20)["canonical_key"]
+        .tolist()
+    )
+    for key_a, key_b in itertools.combinations(top_keys, 2):
         mask_a = mask_map[key_a]
         mask_b = mask_map[key_b]
-        union = np.sum(mask_a | mask_b)
-        jaccard = float(np.sum(mask_a & mask_b) / union) if union > 0 else 0.0
-
-        side_a = resolver.get_rule_side(key_a)
-        side_b = resolver.get_rule_side(key_b)
-        target_ret_a = -fwd_ret if side_a == "short" else fwd_ret
-        target_ret_b = -fwd_ret if side_b == "short" else fwd_ret
-
-        ret_a = np.where(mask_a, target_ret_a, np.nan)
-        ret_b = np.where(mask_b, target_ret_b, np.nan)
-        valid = np.isfinite(ret_a) & np.isfinite(ret_b)
-        ret_corr = np.nan
-        if np.sum(valid) >= 3:
-            ret_corr = float(np.corrcoef(ret_a[valid], ret_b[valid])[0, 1])
+        intersection = float(np.sum(mask_a & mask_b))
+        union = float(np.sum(mask_a | mask_b))
+        support_a = float(np.sum(mask_a))
+        support_b = float(np.sum(mask_b))
+        jaccard = intersection / union if union > 0 else 0.0
+        overlap_coeff = (
+            intersection / min(support_a, support_b)
+            if min(support_a, support_b) > 0
+            else 0.0
+        )
         rows.append(
             {
                 "category": "pairwise",
@@ -9114,42 +6899,12 @@ def build_portfolio_diversity_report(
         rows.append(
             {
                 "category": "pairwise",
-                "metric": "return_correlation",
+                "metric": "overlap_coeff",
                 "item_a": key_a,
                 "item_b": key_b,
-                "value": ret_corr,
+                "value": overlap_coeff,
             }
         )
-        if key_a in signatures and key_b in signatures:
-            beta_a = signatures[key_a]
-            beta_b = signatures[key_b]
-            coef_sim = _cosine_similarity(beta_a, beta_b)
-
-            rank_corr = _safe_spearman(
-                scipy.stats.rankdata(np.abs(beta_a)),
-                scipy.stats.rankdata(np.abs(beta_b)),
-            )
-            if np.isnan(rank_corr):
-                rank_corr = 0.0
-
-            rows.append(
-                {
-                    "category": "pairwise",
-                    "metric": "ridge_coefficient_cosine_similarity",
-                    "item_a": key_a,
-                    "item_b": key_b,
-                    "value": coef_sim,
-                }
-            )
-            rows.append(
-                {
-                    "category": "pairwise",
-                    "metric": "ridge_coefficient_spearman_rank_corr",
-                    "item_a": key_a,
-                    "item_b": key_b,
-                    "value": rank_corr,
-                }
-            )
 
     if "symbol" in data.columns:
         symbol_series = data["symbol"].astype(str)
@@ -9370,6 +7125,7 @@ def _extract_selected_wide_values(
         return extracted
     return extracted.astype(dtype, copy=False)
 
+
 def apply_robust_data_filtering(
     data: pd.DataFrame,
     feature_dict: Dict[str, np.ndarray],
@@ -9447,7 +7203,6 @@ def apply_robust_data_filtering(
     }
 
     return data_final, features_final, fwd_ret_final, fwd_ret_norm_final, meta
-
 
 
 def filter_complete_feature_rows(
@@ -9712,15 +7467,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
         {"1": 0.0, "2": 0.15, "3": 0.30, "4": 0.10, "5": 0.10, "6": 0.10},
     )
     out.setdefault("n_folds", 5)
-    out.setdefault("consolidation_top_n", 100)
-    out.setdefault("jaccard_round1", 0.95)
-    out.setdefault("jaccard_round2", 0.90)
-    out.setdefault("jaccard_round3", 0.75)
-    out.setdefault("support_gain_factor", 1.05)
-    out.setdefault("max_failed_pair_checks", 250)
-    out.setdefault("max_total_pair_evals", 1000)
-    out.setdefault("max_consolidation_rounds", 3)
-    out.setdefault("min_jaccard_stop_threshold", 0.60)
+    out.setdefault("pairwise_top_n", 20)
     return out
 
 
@@ -9877,7 +7624,9 @@ def compute_target_quality_metrics(
     if len(target_valid) > 10:
         target_centered = target_valid - np.mean(target_valid)
         autocorr_1 = np.corrcoef(target_centered[:-1], target_centered[1:])[0, 1]
-        result["target_autocorr_1"] = float(autocorr_1) if np.isfinite(autocorr_1) else np.nan
+        result["target_autocorr_1"] = (
+            float(autocorr_1) if np.isfinite(autocorr_1) else np.nan
+        )
     else:
         result["target_autocorr_1"] = np.nan
 
@@ -9889,7 +7638,9 @@ def compute_target_quality_metrics(
             result["p25_oos_ic"] = float(np.percentile(valid_ics, 25))
             result["p50_oos_ic"] = float(np.percentile(valid_ics, 50))
             result["p75_oos_ic"] = float(np.percentile(valid_ics, 75))
-            result["positive_ic_fraction"] = float(sum(1 for ic in valid_ics if ic > 0) / len(valid_ics))
+            result["positive_ic_fraction"] = float(
+                sum(1 for ic in valid_ics if ic > 0) / len(valid_ics)
+            )
         else:
             result["mean_oos_ic"] = np.nan
             result["p25_oos_ic"] = np.nan
@@ -9933,7 +7684,9 @@ def compute_target_quality_metrics(
 
             mask_active = mask.astype(bool) & pred_valid
             if mask_active.sum() >= 10:
-                within_ic = _safe_spearman(predictions[mask_active], target[mask_active])
+                within_ic = _safe_spearman(
+                    predictions[mask_active], target[mask_active]
+                )
                 result["within_mask_ic"] = within_ic
                 result["delta_within_mask_ic"] = (
                     within_ic - global_ic if np.isfinite(within_ic) else np.nan
@@ -10069,23 +7822,47 @@ def create_target_quality_summary(
         }
 
         # Aggregate target statistics from rules
-        target_means = [r.get("target_mean") for r in rules if np.isfinite(r.get("target_mean", np.nan))]
-        target_stds = [r.get("target_std") for r in rules if np.isfinite(r.get("target_std", np.nan))]
+        target_means = [
+            r.get("target_mean")
+            for r in rules
+            if np.isfinite(r.get("target_mean", np.nan))
+        ]
+        target_stds = [
+            r.get("target_std")
+            for r in rules
+            if np.isfinite(r.get("target_std", np.nan))
+        ]
 
         record["target_mean"] = float(np.mean(target_means)) if target_means else np.nan
         record["target_std"] = float(np.mean(target_stds)) if target_stds else np.nan
 
         # Aggregate IC metrics
-        mean_oos_ics = [r.get("mean_oos_ic") for r in rules if np.isfinite(r.get("mean_oos_ic", np.nan))]
+        mean_oos_ics = [
+            r.get("mean_oos_ic")
+            for r in rules
+            if np.isfinite(r.get("mean_oos_ic", np.nan))
+        ]
         record["mean_oos_ic"] = float(np.mean(mean_oos_ics)) if mean_oos_ics else np.nan
 
-        p25_oos_ics = [r.get("p25_oos_ic") for r in rules if np.isfinite(r.get("p25_oos_ic", np.nan))]
+        p25_oos_ics = [
+            r.get("p25_oos_ic")
+            for r in rules
+            if np.isfinite(r.get("p25_oos_ic", np.nan))
+        ]
         record["p25_oos_ic"] = float(np.mean(p25_oos_ics)) if p25_oos_ics else np.nan
 
-        p50_oos_ics = [r.get("p50_oos_ic") for r in rules if np.isfinite(r.get("p50_oos_ic", np.nan))]
+        p50_oos_ics = [
+            r.get("p50_oos_ic")
+            for r in rules
+            if np.isfinite(r.get("p50_oos_ic", np.nan))
+        ]
         record["p50_oos_ic"] = float(np.mean(p50_oos_ics)) if p50_oos_ics else np.nan
 
-        p75_oos_ics = [r.get("p75_oos_ic") for r in rules if np.isfinite(r.get("p75_oos_ic", np.nan))]
+        p75_oos_ics = [
+            r.get("p75_oos_ic")
+            for r in rules
+            if np.isfinite(r.get("p75_oos_ic", np.nan))
+        ]
         record["p75_oos_ic"] = float(np.mean(p75_oos_ics)) if p75_oos_ics else np.nan
 
         positive_ic_fractions = [
@@ -10108,7 +7885,11 @@ def create_target_quality_summary(
         )
 
         # Delta IC
-        delta_ics = [r.get("mean_delta_ic") for r in rules if np.isfinite(r.get("mean_delta_ic", np.nan))]
+        delta_ics = [
+            r.get("mean_delta_ic")
+            for r in rules
+            if np.isfinite(r.get("mean_delta_ic", np.nan))
+        ]
         record["mean_delta_ic"] = float(np.mean(delta_ics)) if delta_ics else np.nan
 
         # Rule counts
@@ -10117,7 +7898,8 @@ def create_target_quality_summary(
             1 for r in rules if r.get("accepted", False)
         )
         record["production_rule_count"] = sum(
-            1 for r in rules
+            1
+            for r in rules
             if r.get("accepted", False) and r.get("composite_score", -np.inf) > 0
         )
 
@@ -10147,7 +7929,9 @@ def create_target_quality_summary(
             quality_components += 1
 
         record["overall_target_quality_score"] = (
-            quality_score / max(quality_components, 1) if quality_components > 0 else np.nan
+            quality_score / max(quality_components, 1)
+            if quality_components > 0
+            else np.nan
         )
 
         summary_records.append(record)
@@ -10219,16 +8003,6 @@ if __name__ == "__main__":
         help="Run dynamic HPO for Stage A",
     )
     parser.add_argument(
-        "--run-stage-b",
-        action="store_true",
-        help="Run Stage B mining and assessment (default: False)",
-    )
-    parser.add_argument(
-        "--run-stage-a-consolidation",
-        action="store_true",
-        help="Run Stage A rule consolidation (default: False)",
-    )
-    parser.add_argument(
         "--triad-horizons",
         type=str,
         default="3,10",
@@ -10240,11 +8014,9 @@ if __name__ == "__main__":
     cfg["data_root"] = args.data_root
     cfg["output_dir"] = args.output_dir
     cfg["preset"] = args.preset
-    cfg["skip_stage_b"] = not args.run_stage_b
-    cfg["skip_stage_a_consolidation"] = not args.run_stage_a_consolidation
     cfg.setdefault("sliceplanner_outer_n_folds", 8)
     cfg.setdefault("sliceplanner_warmup_days", 90)
-    
+
     # Triad target configuration (always use triad targets)
     cfg["use_triad_targets"] = True
     if args.triad_horizons:
@@ -10252,7 +8024,7 @@ if __name__ == "__main__":
     else:
         cfg["triad_horizons"] = TRIAD_DEFAULT_HORIZONS
     cfg["triad_target_names"] = TRIAD_DEFAULT_TARGET_NAMES
-    
+
     cfg = apply_cfg_preset(cfg)
 
     tprint(
@@ -10359,11 +8131,15 @@ if __name__ == "__main__":
             + list(CONTINUOUS_LOCATION_COLS)
         )
     )
-    tprint(f"Requested feature keys: {len(requested_feature_keys)} (TRIGGER features disabled)")
+    tprint(
+        f"Requested feature keys: {len(requested_feature_keys)} (TRIGGER features disabled)"
+    )
 
     if args.boolean_only:
         cfg["boolean_only"] = True
-        tprint("MODE: boolean_only. Continuous features will be converted to booleans via thresholding.")
+        tprint(
+            "MODE: boolean_only. Continuous features will be converted to booleans via thresholding."
+        )
     if args.use_dynamic_hpo:
         cfg["use_dynamic_hpo"] = True
     feat_dict_raw = load_features_selected(
@@ -10378,7 +8154,9 @@ if __name__ == "__main__":
 
     # Check for missing features - RIDGE_FEATURE_COLS and FEATURE_SELECTION_KEYS are required,
     # but CONTINUOUS_LOCATION_COLS are optional (they'll be skipped if missing)
-    required_keys = set(list(CFG.get("FEATURE_SELECTION_KEYS", [])) + RIDGE_FEATURE_COLS)
+    required_keys = set(
+        list(CFG.get("FEATURE_SELECTION_KEYS", [])) + RIDGE_FEATURE_COLS
+    )
     missing_required_keys = sorted(required_keys - set(feat_dict_raw))
     if missing_required_keys:
         tprint(
@@ -10393,7 +8171,7 @@ if __name__ == "__main__":
             f"Cannot proceed: {len(missing_required_keys)} required features missing "
             f"from snapshot. Backfill with run_feature_generation_step first."
         )
-    
+
     # Check for optional location features
     optional_location_keys = set(CONTINUOUS_LOCATION_COLS)
     missing_location_keys = sorted(optional_location_keys - set(feat_dict_raw))
@@ -10592,22 +8370,22 @@ if __name__ == "__main__":
         json.dump(planner_filter_meta, f, indent=2, default=str)
     with open(Path(cfg["output_dir"]) / "run_config_snapshot.json", "w") as f:
         json.dump(cfg, f, indent=2, default=str)
-    
+
     # Triad target mode is now the default and only mode
     tprint("=" * 60)
     tprint("TRIAD TARGET MODE")
     tprint("=" * 60)
-    
+
     # Import triad target computation
     from extreme_price_movements.triad_targets import compute_triad_targets_for_horizons
-    
+
     # Compute triad targets for all configured horizons
     horizons = cfg.get("triad_horizons", TRIAD_DEFAULT_HORIZONS)
     target_names = cfg.get("triad_target_names", TRIAD_DEFAULT_TARGET_NAMES)
-    
+
     tprint(f"Computing triad targets for horizons: {horizons}")
     tprint(f"Target names: {target_names}")
-    
+
     # Compute triad targets using data_final (long format)
     # compute_triad_targets_for_horizons expects a DataFrame with close, high, low, atr columns
     triad_results_by_horizon = compute_triad_targets_for_horizons(
@@ -10615,7 +8393,7 @@ if __name__ == "__main__":
         horizons=horizons,
         atr_col="atr",
     )
-    
+
     # Convert to the format expected by run_two_stage_lgbm_mask_generation_triad:
     # {target_name: {horizon: target_array}}
     triad_targets: Dict[str, Dict[int, np.ndarray]] = {
@@ -10623,16 +8401,20 @@ if __name__ == "__main__":
         "target_ela": {},
         "target_vame": {},
     }
-    
+
     for horizon, df_targets in triad_results_by_horizon.items():
         for target_base in ["target_eff", "target_ela", "target_vame"]:
             col_name = f"{target_base}_{horizon}"
             if col_name in df_targets.columns:
-                triad_targets[target_base][horizon] = df_targets[col_name].to_numpy(dtype=np.float32)
-                valid_count = int(np.isfinite(triad_targets[target_base][horizon]).sum())
-                tprint(f"  {col_name}: {valid_count}/{len(triad_targets[target_base][horizon])} valid values")
-    
+                triad_targets[target_base][horizon] = df_targets[col_name].to_numpy(
+                    dtype=np.float32
+                )
+                valid_count = int(
+                    np.isfinite(triad_targets[target_base][horizon]).sum()
+                )
+                tprint(
+                    f"  {col_name}: {valid_count}/{len(triad_targets[target_base][horizon])} valid values"
+                )
+
     # Run triad-target mask generation
-    run_two_stage_lgbm_mask_generation_triad(
-        data_final, feat_final, triad_targets, cfg
-    )
+    run_two_stage_lgbm_mask_generation_triad(data_final, feat_final, triad_targets, cfg)

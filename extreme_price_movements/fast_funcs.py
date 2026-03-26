@@ -5,46 +5,46 @@ from numba import jit, prange
 # Local duplicated functions for self-contained module
 try:
     from extreme_price_movements.src_utils_numba_funcs import (
-        _numba_rolling_mean_nan_safe,
-        _numba_rolling_std_nan_safe,
         _numba_ewma,
+        _numba_rolling_bars_since_extreme_parallel,
+        _numba_rolling_correlation,
+        _numba_rolling_kurt,
+        _numba_rolling_kurt_parallel,
+        _numba_rolling_mad,
+        _numba_rolling_mean_nan_safe,
+        _numba_rolling_median,
+        _numba_rolling_rsquared,
+        _numba_rolling_rsquared_parallel,
+        _numba_rolling_skew,
+        _numba_rolling_skew_parallel,
+        _numba_rolling_slope,
+        _numba_rolling_slope_parallel,
+        _numba_rolling_std_nan_safe,
+        _numba_rolling_sum,
         _numba_rolling_vwap,
         _numba_rolling_vwap_parallel,
-        _numba_rolling_bars_since_extreme_parallel,
-        _numba_rolling_kurt,
-        _numba_rolling_skew,
-        _numba_rolling_slope,
-        _numba_rolling_rsquared,
-        _numba_rolling_median,
-        _numba_rolling_sum,
-        _numba_rolling_correlation,
-        _numba_rolling_mad,
-        _numba_rolling_slope_parallel,
-        _numba_rolling_skew_parallel,
-        _numba_rolling_kurt_parallel,
-        _numba_rolling_rsquared_parallel
     )
 except ImportError:
     # Fallback for direct execution
     from src_utils_numba_funcs import (
-        _numba_rolling_mean_nan_safe,
-        _numba_rolling_std_nan_safe,
         _numba_ewma,
+        _numba_rolling_bars_since_extreme_parallel,
+        _numba_rolling_correlation,
+        _numba_rolling_kurt,
+        _numba_rolling_kurt_parallel,
+        _numba_rolling_mad,
+        _numba_rolling_mean_nan_safe,
+        _numba_rolling_median,
+        _numba_rolling_rsquared,
+        _numba_rolling_rsquared_parallel,
+        _numba_rolling_skew,
+        _numba_rolling_skew_parallel,
+        _numba_rolling_slope,
+        _numba_rolling_slope_parallel,
+        _numba_rolling_std_nan_safe,
+        _numba_rolling_sum,
         _numba_rolling_vwap,
         _numba_rolling_vwap_parallel,
-        _numba_rolling_bars_since_extreme_parallel,
-        _numba_rolling_kurt,
-        _numba_rolling_skew,
-        _numba_rolling_slope,
-        _numba_rolling_rsquared,
-        _numba_rolling_median,
-        _numba_rolling_sum,
-        _numba_rolling_correlation,
-        _numba_rolling_mad,
-        _numba_rolling_slope_parallel,
-        _numba_rolling_skew_parallel,
-        _numba_rolling_kurt_parallel,
-        _numba_rolling_rsquared_parallel
     )
 try:
     from .utils import tprint
@@ -53,36 +53,46 @@ except ImportError:
 
 slope_nb = _numba_rolling_slope
 
+
 @jit(nopython=True, cache=True)
 def binary_entropy_nb(x, window):
     out = np.full(len(x), np.nan, dtype=np.float32)
     n = len(x)
     for i in range(window - 1, n):
         start = i - window + 1
-        pos_c = 0; neg_c = 0; tot = 0
+        pos_c = 0
+        neg_c = 0
+        tot = 0
         for j in range(start, i + 1):
             val = x[j]
             if not np.isnan(val):
                 tot += 1
-                if val > 0: pos_c += 1
-                elif val < 0: neg_c += 1
+                if val > 0:
+                    pos_c += 1
+                elif val < 0:
+                    neg_c += 1
         if tot > 0:
             p_pos = pos_c / tot
             p_neg = neg_c / tot
             ent = 0.0
-            if p_pos > 0: ent -= p_pos * np.log2(p_pos)
-            if p_neg > 0: ent -= p_neg * np.log2(p_neg)
+            if p_pos > 0:
+                ent -= p_pos * np.log2(p_pos)
+            if p_neg > 0:
+                ent -= p_neg * np.log2(p_neg)
             out[i] = np.float32(ent)
     return out
+
 
 @jit(nopython=True, cache=True)
 def realized_vol_nb(x, window):
     return _numba_rolling_std_1d(x, window)
 
+
 @jit(nopython=True, cache=True)
 def ema_nb(x, window):
     alpha = np.float32(2.0 / (window + 1.0))
     return _numba_ewma_1d(x, alpha, False)
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_ewma_nan_safe(x, alpha, adjust=False):
@@ -106,18 +116,20 @@ def _numba_ewma_nan_safe(x, alpha, adjust=False):
     for i in range(first_valid + 1, n):
         val = x[i]
         if np.isnan(val):
-            out[i] = out[i-1]
+            out[i] = out[i - 1]
         else:
-            out[i] = (one - alpha) * out[i-1] + alpha * val
+            out[i] = (one - alpha) * out[i - 1] + alpha * val
 
     return out
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_sum_nan_safe(x, window):
     n = len(x)
     output = np.full(n, np.nan, dtype=np.float32)
 
-    if window <= 0: return output
+    if window <= 0:
+        return output
 
     current_sum = np.float32(0.0)
     current_count = 0
@@ -140,11 +152,18 @@ def _numba_rolling_sum_nan_safe(x, window):
 
     return output
 
+
 @jit(nopython=True, nogil=True, cache=True)
 def simulate_trade_numba(
-    opens, highs, lows, closes,
-    entry_px, side_int,
-    sl_dist, activation_dist, trailing_dist
+    opens,
+    highs,
+    lows,
+    closes,
+    entry_px,
+    side_int,
+    sl_dist,
+    activation_dist,
+    trailing_dist,
 ):
     """
     Simulates a trade path using Numba optimization.
@@ -162,9 +181,9 @@ def simulate_trade_numba(
     lowest_low = entry_px
     trailing_active = False
 
-    if side_int == 1: # Long
+    if side_int == 1:  # Long
         sl_px = entry_px - sl_dist
-    else: # Short
+    else:  # Short
         sl_px = entry_px + sl_dist
 
     n = len(opens)
@@ -175,7 +194,7 @@ def simulate_trade_numba(
         if np.isnan(curr_h) or np.isnan(curr_l):
             continue
 
-        if side_int == 1: # Long
+        if side_int == 1:  # Long
             # 1. Update Extrema
             if curr_h > highest_high:
                 highest_high = curr_h
@@ -201,10 +220,10 @@ def simulate_trade_numba(
             # (implying we might have hit fixed stop before trailing moved, or trailing moved then we hit it?)
             # Conservative: If ambiguous, return special code.
             if stop_hit and trail_moved:
-                return zero, i, 2 # Ambiguous
+                return zero, i, 2  # Ambiguous
 
             if stop_hit:
-                return (sl_px / entry_px) - one, i, 1 # SL Hit (Fixed)
+                return (sl_px / entry_px) - one, i, 1  # SL Hit (Fixed)
 
             # Update SL for next bar (or if we decide to exit intrabar on trailing?)
             # Original code exits on 'stop_hit' which is against 'sl_px' (Start of Bar).
@@ -213,7 +232,7 @@ def simulate_trade_numba(
             if trail_moved:
                 sl_px = new_sl_val
 
-        else: # Short
+        else:  # Short
             # 1. Update Extrema
             if curr_l < lowest_low:
                 lowest_low = curr_l
@@ -235,22 +254,23 @@ def simulate_trade_numba(
                     new_sl_val = potential_new_sl
 
             if stop_hit and trail_moved:
-                return zero, i, 2 # Ambiguous
+                return zero, i, 2  # Ambiguous
 
             if stop_hit:
-                return (entry_px / sl_px) - one, i, 1 # SL Hit
+                return (entry_px / sl_px) - one, i, 1  # SL Hit
 
             if trail_moved:
                 sl_px = new_sl_val
 
     # Time Exit
-    last_c = closes[n-1]
+    last_c = closes[n - 1]
     if side_int == 1:
         ret = (last_c / entry_px) - one
     else:
         ret = (entry_px / last_c) - one
 
-    return ret, n-1, 3 # Time Exit
+    return ret, n - 1, 3  # Time Exit
+
 
 def apply_to_matrix(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     """
@@ -281,6 +301,7 @@ def apply_to_matrix(df: pd.DataFrame, func, *args) -> pd.DataFrame:
 
     return res_df
 
+
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_robust_zscore_1d(x, window, quantile, eps):
     n = len(x)
@@ -288,7 +309,8 @@ def _numba_rolling_robust_zscore_1d(x, window, quantile, eps):
     buf = np.empty(window, dtype=np.float32)
     devs_buf = np.empty(window, dtype=np.float32)
 
-    if window <= 0: return output
+    if window <= 0:
+        return output
 
     for i in range(n):
         # Window bounds
@@ -337,6 +359,7 @@ def _numba_rolling_robust_zscore_1d(x, window, quantile, eps):
 
     return output
 
+
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps):
     n_rows, n_cols = mat.shape
@@ -346,6 +369,7 @@ def _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps):
         out[:, j] = _numba_rolling_robust_zscore_1d(mat[:, j], window, quantile, eps)
 
     return out
+
 
 def numba_rolling_robust_zscore(df, window, quantile=0.45, eps=1e-12):
     tprint(f"Entering function: numba_rolling_robust_zscore in fast_funcs.py")
@@ -363,6 +387,7 @@ def numba_rolling_robust_zscore(df, window, quantile=0.45, eps=1e-12):
 
     return res_df
 
+
 def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     """
     Applies a Numba 1D function to each column of a DataFrame.
@@ -370,18 +395,28 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     Handles pd.Series by converting to DataFrame and returning Series.
     """
     from extreme_price_movements.src_utils_numba_funcs import (
-        _numba_rolling_std_nan_safe, _numba_rolling_std_nan_safe_parallel,
-        _numba_rolling_mean_nan_safe, _numba_rolling_mean_nan_safe_parallel,
-        _numba_rolling_slope, _numba_rolling_slope_parallel,
-        _numba_rolling_skew, _numba_rolling_skew_parallel,
-        _numba_rolling_kurt, _numba_rolling_kurt_parallel,
-        _numba_rolling_rsquared, _numba_rolling_rsquared_parallel,
-        _numba_rolling_median, _numba_rolling_median_parallel
+        _numba_rolling_kurt,
+        _numba_rolling_kurt_parallel,
+        _numba_rolling_mean_nan_safe,
+        _numba_rolling_mean_nan_safe_parallel,
+        _numba_rolling_median,
+        _numba_rolling_median_parallel,
+        _numba_rolling_rsquared,
+        _numba_rolling_rsquared_parallel,
+        _numba_rolling_skew,
+        _numba_rolling_skew_parallel,
+        _numba_rolling_slope,
+        _numba_rolling_slope_parallel,
+        _numba_rolling_std_nan_safe,
+        _numba_rolling_std_nan_safe_parallel,
     )
+
     if func == _numba_rolling_std_nan_safe:
         return apply_to_matrix_parallel(df, _numba_rolling_std_nan_safe_parallel, *args)
     elif func == _numba_rolling_mean_nan_safe:
-        return apply_to_matrix_parallel(df, _numba_rolling_mean_nan_safe_parallel, *args)
+        return apply_to_matrix_parallel(
+            df, _numba_rolling_mean_nan_safe_parallel, *args
+        )
     elif func == _numba_rolling_slope:
         return apply_to_matrix_parallel(df, _numba_rolling_slope_parallel, *args)
     elif func == _numba_rolling_skew:
@@ -393,9 +428,38 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     elif func == _numba_rolling_median:
         return apply_to_matrix_parallel(df, _numba_rolling_median_parallel, *args)
 
+    # Note: New vectorized functions mapping logic
+    from extreme_price_movements.features import (
+        bars_since_flip_nb,
+        binary_entropy_nb,
+        binary_entropy_nb_parallel,
+        ema_nb,
+        ema_nb_parallel,
+        realized_vol_nb,
+        rolling_std_nb_parallel,
+        slope_nb,
+        slope_nb_parallel,
+    )
+
+    if func == realized_vol_nb:
+        return apply_to_matrix_parallel(df, rolling_std_nb_parallel, *args)
+    elif func == slope_nb:
+        return apply_to_matrix_parallel(df, slope_nb_parallel, *args)
+    elif func == binary_entropy_nb:
+        return apply_to_matrix_parallel(df, binary_entropy_nb_parallel, *args)
+    elif func == ema_nb:
+        return apply_to_matrix_parallel(df, ema_nb_parallel, *args)
+
+    # For functions that don't have explicit parallel mappings here, use default fallback
+    # but we can also add dynamic mappings if needed. Currently, the most expensive are covered.
+
     # tprint(f"Entering function: apply_to_frame in fast_funcs.py")
     return apply_to_matrix(df, func, *args)
-def apply_to_matrix_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> pd.DataFrame:
+
+
+def apply_to_matrix_binary(
+    df1: pd.DataFrame, df2: pd.DataFrame, func, *args
+) -> pd.DataFrame:
     """
     Applies a function taking two arrays (col1, col2) -> out_array.
     Assumes df1 and df2 have same columns and index.
@@ -420,7 +484,8 @@ def apply_to_matrix_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) ->
             out[:, j] = func(m1[:, j], m2[:, j], *args)
 
         res_df = pd.DataFrame(out, index=df1.index, columns=df1.columns)
-        if is_series1: return res_df[res_df.columns[0]]
+        if is_series1:
+            return res_df[res_df.columns[0]]
         return res_df
 
     # Fallback / Intersection path
@@ -428,7 +493,8 @@ def apply_to_matrix_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) ->
     if len(common) == 0:
         out_df = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
         out_df[:] = np.nan
-        if is_series1: return out_df[out_df.columns[0]]
+        if is_series1:
+            return out_df[out_df.columns[0]]
         return out_df
 
     m1 = df1[common].to_numpy(dtype=np.float32, copy=False)
@@ -442,14 +508,17 @@ def apply_to_matrix_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) ->
 
     # Construct result with full columns (NaNs where missing)
     res_common = pd.DataFrame(out_mat, index=df1.index, columns=common)
-    out_df = res_common.reindex(columns=df1.columns) # NaNs for others
+    out_df = res_common.reindex(columns=df1.columns)  # NaNs for others
 
     if is_series1:
         return out_df[out_df.columns[0]]
 
     return out_df
 
-def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> pd.DataFrame:
+
+def apply_to_frame_binary(
+    df1: pd.DataFrame, df2: pd.DataFrame, func, *args
+) -> pd.DataFrame:
     """
     Applies a function taking two arrays (col1, col2) -> out_array.
     Assumes df1 and df2 have same columns and index.
@@ -457,6 +526,7 @@ def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> 
     """
     tprint(f"Entering function: apply_to_frame_binary in fast_funcs.py")
     return apply_to_matrix_binary(df1, df2, func, *args)
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def numba_rsi_kernel(close, n):
@@ -487,14 +557,15 @@ def numba_rsi_kernel(close, n):
             if np.isnan(avg_up[i]):
                 out[i] = np.nan
             elif avg_up[i] == 0:
-                 out[i] = c50 # No move
+                out[i] = c50  # No move
             else:
-                 out[i] = c100 # Only up moves
+                out[i] = c100  # Only up moves
         else:
             rs = avg_up[i] / avg_dn[i]
             out[i] = c100 - (c100 / (c1 + rs))
 
     return out
+
 
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_rsi_parallel(mat, n):
@@ -505,6 +576,7 @@ def _numba_rsi_parallel(mat, n):
         out[:, j] = numba_rsi_kernel(mat[:, j], n)
 
     return out
+
 
 def numba_rsi(close_df, n):
     tprint(f"Entering function: numba_rsi in fast_funcs.py")
@@ -522,6 +594,7 @@ def numba_rsi(close_df, n):
 
     return res_df
 
+
 @jit(nopython=True, nogil=True, cache=True)
 def numba_atr_kernel(high, low, close, n):
     """
@@ -530,28 +603,31 @@ def numba_atr_kernel(high, low, close, n):
     """
     sz = len(close)
     tr = np.empty(sz, dtype=np.float32)
-    tr[0] = high[0] - low[0] # First TR is High - Low
+    tr[0] = high[0] - low[0]  # First TR is High - Low
 
     for i in range(1, sz):
-        h = high[i]; l = low[i]; pc = close[i-1]
+        h = high[i]
+        l = low[i]
+        pc = close[i - 1]
         v1 = h - l
         v2 = abs(h - pc)
         v3 = abs(l - pc)
         tr[i] = max(v1, max(v2, v3))
 
     # ATR is EWM of TR
-    atr = _numba_ewma_nan_safe(tr, np.float32(1.0)/n, adjust=False)
+    atr = _numba_ewma_nan_safe(tr, np.float32(1.0) / n, adjust=False)
 
     # Return ATR percent: ATR / Close
     out = np.empty(sz, dtype=np.float32)
     for i in range(sz):
         c = close[i]
         if c == 0 or np.isnan(c):
-             out[i] = np.nan
+            out[i] = np.nan
         else:
-             out[i] = atr[i] / c
+            out[i] = atr[i] / c
 
     return out
+
 
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_atr_parallel(high_mat, low_mat, close_mat, n):
@@ -563,15 +639,19 @@ def _numba_atr_parallel(high_mat, low_mat, close_mat, n):
 
     return out
 
+
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_atr_no_norm_parallel(high_mat, low_mat, close_mat, n):
     n_rows, n_cols = high_mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)
 
     for j in prange(n_cols):
-        out[:, j] = numba_atr_no_norm_kernel(high_mat[:, j], low_mat[:, j], close_mat[:, j], n)
+        out[:, j] = numba_atr_no_norm_kernel(
+            high_mat[:, j], low_mat[:, j], close_mat[:, j], n
+        )
 
     return out
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def numba_atr_no_norm_kernel(high, low, close, n):
@@ -583,14 +663,17 @@ def numba_atr_no_norm_kernel(high, low, close, n):
     tr[0] = high[0] - low[0]
 
     for i in range(1, sz):
-        h = high[i]; l = low[i]; pc = close[i-1]
+        h = high[i]
+        l = low[i]
+        pc = close[i - 1]
         v1 = h - l
         v2 = abs(h - pc)
         v3 = abs(l - pc)
         tr[i] = max(v1, max(v2, v3))
 
-    atr = _numba_ewma_nan_safe(tr, np.float32(1.0)/n, adjust=False)
+    atr = _numba_ewma_nan_safe(tr, np.float32(1.0) / n, adjust=False)
     return atr
+
 
 def numba_atr_no_norm(high_df, low_df, close_df, n):
     tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
@@ -604,12 +687,17 @@ def numba_atr_no_norm(high_df, low_df, close_df, n):
         low_df = low_df.to_frame()
 
     # Align columns (intersection) to ensure safe numpy conversion
-    common_cols = close_df.columns.intersection(high_df.columns).intersection(low_df.columns)
+    common_cols = close_df.columns.intersection(high_df.columns).intersection(
+        low_df.columns
+    )
 
     if len(common_cols) == 0:
         # Return empty/NaN frame with original structure
-        out = pd.DataFrame(np.nan, index=close_df.index, columns=close_df.columns, dtype=np.float32)
-        if is_series: return out[out.columns[0]]
+        out = pd.DataFrame(
+            np.nan, index=close_df.index, columns=close_df.columns, dtype=np.float32
+        )
+        if is_series:
+            return out[out.columns[0]]
         return out
 
     h_mat = high_df[common_cols].to_numpy(dtype=np.float32, copy=False)
@@ -629,6 +717,7 @@ def numba_atr_no_norm(high_df, low_df, close_df, n):
 
     return res_df
 
+
 def numba_atr(high_df, low_df, close_df, n):
     tprint(f"Entering function: numba_atr in fast_funcs.py")
 
@@ -641,11 +730,16 @@ def numba_atr(high_df, low_df, close_df, n):
         low_df = low_df.to_frame()
 
     # Align columns (intersection)
-    common_cols = close_df.columns.intersection(high_df.columns).intersection(low_df.columns)
+    common_cols = close_df.columns.intersection(high_df.columns).intersection(
+        low_df.columns
+    )
 
     if len(common_cols) == 0:
-        out = pd.DataFrame(np.nan, index=close_df.index, columns=close_df.columns, dtype=np.float32)
-        if is_series: return out[out.columns[0]]
+        out = pd.DataFrame(
+            np.nan, index=close_df.index, columns=close_df.columns, dtype=np.float32
+        )
+        if is_series:
+            return out[out.columns[0]]
         return out
 
     h_mat = high_df[common_cols].to_numpy(dtype=np.float32, copy=False)
@@ -665,6 +759,7 @@ def numba_atr(high_df, low_df, close_df, n):
 
     return res_df
 
+
 def numba_zscore(df, n):
     # (x - mean) / std
     # Using nan_safe versions
@@ -675,35 +770,37 @@ def numba_zscore(df, n):
     # Vectorized pandas operation for final step is fine/fast
     return (df - mu) / (sd + np.float32(1e-12))
 
+
 # --- PARALLEL ROLLING HELPERS ---
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_mean_1d(x, window):
     """Single-pass rolling mean with NaN handling."""
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
-    
+
     if window <= 0:
         return out
-    
+
     current_sum = 0.0
     current_count = 0
-    
+
     for i in range(n):
         val_in = x[i]
         if not np.isnan(val_in):
             current_sum += val_in
             current_count += 1
-        
+
         if i >= window:
             val_out = x[i - window]
             if not np.isnan(val_out):
                 current_sum -= val_out
                 current_count -= 1
-        
+
         if current_count > 0:
             out[i] = np.float32(current_sum / current_count)
-    
+
     return out
 
 
@@ -714,15 +811,15 @@ def _numba_rolling_std_1d(x, window):
     """
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
-    
+
     if window <= 0:
         return out
-    
+
     # Circular buffer to track outgoing values
     buf = np.empty(window, dtype=np.float64)
     buf_valid = np.zeros(window, dtype=np.bool_)
     buf_idx = 0
-    
+
     K = 0.0
     K_set = False
 
@@ -733,7 +830,7 @@ def _numba_rolling_std_1d(x, window):
     for i in range(n):
         val_in = x[i]
         in_valid = not np.isnan(val_in)
-        
+
         # Remove outgoing (only if window is full)
         if i >= window:
             out_idx = buf_idx
@@ -742,18 +839,18 @@ def _numba_rolling_std_1d(x, window):
                 sum_d -= d_out
                 sum_d_sq -= d_out * d_out
                 count -= 1
-        
+
         # Add incoming
         if in_valid:
             if not K_set:
                 K = val_in
                 K_set = True
-            
+
             d_in = val_in - K
             sum_d += d_in
             sum_d_sq += d_in * d_in
             count += 1
-            
+
             buf[buf_idx] = val_in
             buf_valid[buf_idx] = True
         else:
@@ -776,26 +873,26 @@ def _numba_ewma_1d(x, alpha, adjust=False):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
     one = np.float32(1.0)
-    
+
     # Find first valid
     first_valid = -1
     for i in range(n):
         if not np.isnan(x[i]):
             first_valid = i
             break
-    
+
     if first_valid == -1:
         return out
-    
+
     out[first_valid] = x[first_valid]
-    
+
     for i in range(first_valid + 1, n):
         val = x[i]
         if np.isnan(val):
-            out[i] = out[i-1]
+            out[i] = out[i - 1]
         else:
-            out[i] = (one - alpha) * out[i-1] + alpha * val
-    
+            out[i] = (one - alpha) * out[i - 1] + alpha * val
+
     return out
 
 
@@ -815,10 +912,10 @@ def _numba_rolling_mean_parallel(mat, window):
     """Parallel rolling mean across all columns."""
     n_rows, n_cols = mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)
-    
+
     for j in prange(n_cols):
         out[:, j] = _numba_rolling_mean_1d(mat[:, j], window)
-    
+
     return out
 
 
@@ -827,10 +924,10 @@ def _numba_rolling_std_parallel(mat, window):
     """Parallel rolling std across all columns with K-shift stability."""
     n_rows, n_cols = mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)
-    
+
     for j in prange(n_cols):
         out[:, j] = _numba_rolling_std_1d(mat[:, j], window)
-    
+
     return out
 
 
@@ -839,10 +936,10 @@ def _numba_ewma_parallel(mat, alpha, adjust=False):
     """Parallel EWMA across all columns."""
     n_rows, n_cols = mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)
-    
+
     for j in prange(n_cols):
         out[:, j] = _numba_ewma_1d(mat[:, j], alpha, adjust)
-    
+
     return out
 
 
@@ -884,10 +981,10 @@ def numba_rolling_mean_parallel(df, window):
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()
-    
+
     mat = df.to_numpy(dtype=np.float32, copy=False)
     res = _numba_rolling_mean_parallel(mat, window)
-    
+
     res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
     if is_series:
         return res_df[res_df.columns[0]]
@@ -899,10 +996,10 @@ def numba_rolling_std_parallel(df, window):
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()
-    
+
     mat = df.to_numpy(dtype=np.float32, copy=False)
     res = _numba_rolling_std_parallel(mat, window)
-    
+
     res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
     if is_series:
         return res_df[res_df.columns[0]]
@@ -914,21 +1011,23 @@ def numba_ewma_parallel(df, span=None, alpha=None, adjust=False):
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()
-    
+
     if alpha is None:
         if span is None:
             raise ValueError("Either span or alpha must be provided")
         alpha = np.float32(2.0 / (span + 1.0))
-    
+
     mat = df.to_numpy(dtype=np.float32, copy=False)
     res = _numba_ewma_parallel(mat, alpha, adjust)
-    
+
     res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
     if is_series:
         return res_df[res_df.columns[0]]
     return res_df
 
+
 # --- NEW KERNELS & WRAPPERS ---
+
 
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_rolling_max_parallel(mat, window):
@@ -940,6 +1039,7 @@ def _numba_rolling_max_parallel(mat, window):
 
     return out
 
+
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_rolling_min_parallel(mat, window):
     n_rows, n_cols = mat.shape
@@ -949,6 +1049,7 @@ def _numba_rolling_min_parallel(mat, window):
         out[:, j] = _numba_rolling_min(mat[:, j], window)
 
     return out
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_max(x, window):
@@ -996,6 +1097,7 @@ def _numba_rolling_max(x, window):
 
     return out
 
+
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_min(x, window):
     n = len(x)
@@ -1039,6 +1141,7 @@ def _numba_rolling_min(x, window):
             out[i] = x[deque_indices[front % window]]
 
     return out
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_quantile(x, window, q):
@@ -1090,6 +1193,7 @@ def _numba_rolling_quantile(x, window, q):
             out[i] = val_lower + (val_upper - val_lower) * fraction
 
     return out
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_quantile_dual_1d(x, window, q1, q2, out1, out2):
@@ -1195,6 +1299,7 @@ def _numba_rolling_quantile_dual_1d(x, window, q1, q2, out1, out2):
     # Return not strictly needed as in-place, but good for consistency/checking
     return out1, out2
 
+
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_rolling_quantile_dual_parallel(mat, window, q1, q2):
     n_rows, n_cols = mat.shape
@@ -1203,9 +1308,12 @@ def _numba_rolling_quantile_dual_parallel(mat, window, q1, q2):
 
     for j in prange(n_cols):
         # Pass slices to write in-place, avoiding internal allocation
-        _numba_rolling_quantile_dual_1d(mat[:, j], window, q1, q2, out1[:, j], out2[:, j])
+        _numba_rolling_quantile_dual_1d(
+            mat[:, j], window, q1, q2, out1[:, j], out2[:, j]
+        )
 
     return out1, out2
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_pct_change(x, n_shift):
@@ -1218,6 +1326,7 @@ def _numba_pct_change(x, n_shift):
             out[i] = (curr - prev) / prev
     return out
 
+
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_pct_change_parallel(mat, n_shift):
     n_rows, n_cols = mat.shape
@@ -1227,6 +1336,7 @@ def _numba_pct_change_parallel(mat, n_shift):
         out[:, j] = _numba_pct_change(mat[:, j], n_shift)
 
     return out
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_grouped_rolling_mean_gather_kernel(col_vals, indices, window, out_vals):
@@ -1260,7 +1370,10 @@ def _numba_grouped_rolling_mean_gather_kernel(col_vals, indices, window, out_val
         else:
             out_vals[idx_curr] = np.nan
 
-def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window: int) -> pd.DataFrame:
+
+def numba_grouped_rolling_mean(
+    df: pd.DataFrame, group_series: pd.Series, window: int
+) -> pd.DataFrame:
     """
     Vectorized grouped rolling mean.
     Optimized to use pre-computed indices per group to avoid repeated masking.
@@ -1293,10 +1406,13 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
         col_vals = mat[:, j]
         for g in unique_groups:
             indices = group_indices[g]
-            if len(indices) == 0: continue
+            if len(indices) == 0:
+                continue
 
             # Use optimized gather kernel (avoids subset copy + output allocation)
-            _numba_grouped_rolling_mean_gather_kernel(col_vals, indices, window, out_mat[:, j])
+            _numba_grouped_rolling_mean_gather_kernel(
+                col_vals, indices, window, out_mat[:, j]
+            )
 
     res_df = pd.DataFrame(out_mat, index=df.index, columns=df.columns)
 
@@ -1305,8 +1421,11 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
 
     return res_df
 
+
 @jit(nopython=True, nogil=True, cache=True, parallel=True)
-def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
+def _numba_peak_label_and_weight_fast(
+    close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct
+):
     """
     Fast vectorized peak/trough detection using NumPy operations and parallel loop.
     Returns: (labels, weights)
@@ -1314,49 +1433,49 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
     n = len(close)
     labels = np.zeros(n, dtype=np.float32)
     weights = np.ones(n, dtype=np.float32)
-    
+
     for i in prange(n - horizon):
         curr_p = close[i]
         curr_atr = atr[i]
-        
+
         # Valid ATR check
         if np.isnan(curr_atr) or curr_atr <= 0 or np.isnan(curr_p) or curr_p <= 0:
             continue
-        
+
         # Calculate distances
         raw_limit = rev_k * curr_atr
         raw_near = near_k * curr_atr
         near_dist = min(raw_near, max_near_pct * curr_p)
         limit_dist = max(raw_limit, min_rev_pct * curr_p)
-        
+
         start_search = i + 1
         end_search = min(n, i + 1 + horizon)
-        
+
         if start_search >= end_search:
             continue
-            
+
         if is_uptrend:  # Looking for Peak
             window = close[start_search:end_search]
-            fwd_max = -1.0e18 
+            fwd_max = -1.0e18
             idx_max = -1
             for j in range(len(window)):
                 v = window[j]
                 if not np.isnan(v) and v > fwd_max:
                     fwd_max = v
                     idx_max = start_search + j
-            
+
             if idx_max == -1:
                 continue
-                
+
             # Check proximity
             if curr_p < (fwd_max - near_dist):
                 continue
-            
+
             # Check reversal after peak
             if idx_max >= end_search - 1:
                 continue
-            
-            after_peak = close[idx_max + 1:end_search]
+
+            after_peak = close[idx_max + 1 : end_search]
             fwd_min_after = 1.0e18
             found_min = False
             for j in range(len(after_peak)):
@@ -1365,26 +1484,26 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
                     if v < fwd_min_after:
                         fwd_min_after = v
                     found_min = True
-                    
+
             if not found_min:
                 continue
-            
+
             reversal_size = fwd_max - fwd_min_after
             if reversal_size >= limit_dist:
                 X_val = fwd_max - curr_p
                 Y_val = reversal_size
-                
+
                 # Volatility boost
                 atr_pct = curr_atr / curr_p
                 vol_boost = 1.0 + 2.0 * (atr_pct / 0.01)
-                
+
                 # Scale-invariant weighting
                 X_ratio = X_val / curr_p
                 Y_ratio = Y_val / curr_p
                 X_safe = max(X_ratio, 1e-4)
-                term = Y_ratio / (X_safe ** 2)
+                term = Y_ratio / (X_safe**2)
                 weights[i] = np.log1p(term) * vol_boost
-                
+
                 # Soft label
                 soft_lbl = 1.0 - (X_val / near_dist)
                 if soft_lbl < 0:
@@ -1392,26 +1511,26 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
                 labels[i] = float(soft_lbl)
         else:  # Looking for Trough
             window = close[start_search:end_search]
-            fwd_min = 1.0e18 
+            fwd_min = 1.0e18
             idx_min = -1
             for j in range(len(window)):
                 v = window[j]
                 if not np.isnan(v) and v < fwd_min:
                     fwd_min = v
                     idx_min = start_search + j
-            
+
             if idx_min == -1:
                 continue
-                
+
             # Check proximity (relaxed)
             if curr_p > (fwd_min + near_dist * 1.5):
                 continue
-            
+
             # Check rally after trough
             if idx_min >= end_search - 1:
                 continue
-            
-            after_trough = close[idx_min + 1:end_search]
+
+            after_trough = close[idx_min + 1 : end_search]
             fwd_max_after = -1.0e18
             found_max = False
             for j in range(len(after_trough)):
@@ -1420,37 +1539,39 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
                     if v > fwd_max_after:
                         fwd_max_after = v
                     found_max = True
-                    
+
             if not found_max:
                 continue
-            
+
             reversal_size = fwd_max_after - fwd_min
             if reversal_size >= limit_dist:
                 X_val = curr_p - fwd_min
                 Y_val = reversal_size
-                
+
                 # Volatility boost
                 atr_pct = curr_atr / curr_p
                 vol_boost = 1.0 + 2.0 * (atr_pct / 0.01)
-                
+
                 # Scale-invariant weighting
                 X_ratio = X_val / curr_p
                 Y_ratio = Y_val / curr_p
                 X_safe = max(X_ratio, 1e-4)
-                term = Y_ratio / (X_safe ** 2)
+                term = Y_ratio / (X_safe**2)
                 weights[i] = np.log1p(term) * vol_boost
-                
+
                 # Soft label
                 soft_lbl = 1.0 - (X_val / near_dist)
                 if soft_lbl < 0:
                     soft_lbl = 0.0
                 labels[i] = float(soft_lbl)
-    
+
     return labels, weights
 
 
 @jit(nopython=True, nogil=True, cache=True)
-def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
+def _numba_peak_label_and_weight(
+    close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct
+):
     """
     Computes "Peak Proximity" label and sample weights.
     Returns: (labels, weights)
@@ -1494,17 +1615,17 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
         if start_search >= end_search:
             continue
 
-        if is_uptrend: # Looking for Peak (Top)
+        if is_uptrend:  # Looking for Peak (Top)
             # 1. Find Forward Max (Peak) - Vectorized
             window = close[start_search:end_search]
-            fwd_max = -1.0e18 
+            fwd_max = -1.0e18
             idx_max = -1
             for j in range(len(window)):
                 v = window[j]
                 if not np.isnan(v) and v > fwd_max:
                     fwd_max = v
                     idx_max = start_search + j
-            
+
             if idx_max == -1:
                 continue
 
@@ -1520,7 +1641,7 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 continue
 
             # Find Max Reversal (Min Price after Peak) - Vectorized
-            after_peak_window = close[idx_max + 1:end_search]
+            after_peak_window = close[idx_max + 1 : end_search]
             fwd_min_after = 1.0e18
             found_min = False
             for j in range(len(after_peak_window)):
@@ -1529,7 +1650,7 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                     if v < fwd_min_after:
                         fwd_min_after = v
                     found_min = True
-            
+
             if not found_min:
                 continue
 
@@ -1543,11 +1664,11 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 #    User: "Modify compute_peak_labels_and_weights to boost high-volatility samples."
                 #    User: "The current weighting formula log(1 + Y / (X^2 * ATR)) divides by ATR... explicitly trains the model to ignore high-volatility events."
                 #    New Formula: Weight = log(1 + Y / X_safe^2) * (1.0 + 2.0 * ATR_pct / 0.01) [Boost by volatility]
-                
+
                 # ATR as percentage of price (approximate, since we only have raw ATR)
                 # Let's assume input `atr` is raw price units.
                 atr_pct_approx = curr_atr / curr_p if curr_p > 0 else 0.0
-                
+
                 # Volatility Boost Factor: smooth scaling with ATR%
                 # No hard cap - allows natural scaling based on volatility
                 vol_boost = 1.0 + 2.0 * (atr_pct_approx / 0.01)
@@ -1561,8 +1682,8 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 X_safe = max(X_ratio, 1e-4)
 
                 # Scale-invariant term: reversal intensity relative to price
-                term = Y_ratio / (X_safe ** 2)
-                
+                term = Y_ratio / (X_safe**2)
+
                 # Apply Vol Boost
                 weights[i] = np.log1p(term) * vol_boost
 
@@ -1572,10 +1693,11 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 # label = 1.0 - (X_val / near_dist) clipped to [0, 1]
                 # This gives a "triangular" soft label.
                 soft_lbl = 1.0 - (X_val / near_dist)
-                if soft_lbl < 0: soft_lbl = 0.0
+                if soft_lbl < 0:
+                    soft_lbl = 0.0
                 labels[i] = float(soft_lbl)
-                
-        else: # Looking for Trough (Bottom)
+
+        else:  # Looking for Trough (Bottom)
             # 1. Find Forward Min (Trough) - Vectorized
             window = close[start_search:end_search]
             fwd_min = 1.0e18
@@ -1585,12 +1707,12 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 if not np.isnan(v) and v < fwd_min:
                     fwd_min = v
                     idx_min = start_search + j
-            
+
             if idx_min == -1:
                 continue
 
             # 2. Check Trough Proximity (Relaxed/Soft)
-            # We now allow samples even if slightly outside strict near_dist, 
+            # We now allow samples even if slightly outside strict near_dist,
             # effectively handled by the Soft Label which will be 0.0 if > near_dist.
             # But for efficiency we can keep the hard cut-off for now, or relax it.
             # "Relax near_dist in high volatility" -> simpler to just use soft label within current near_dist?
@@ -1604,7 +1726,7 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 continue
 
             # Find Max Reversal (Max Price after Trough) - Vectorized
-            after_trough_window = close[idx_min + 1:end_search]
+            after_trough_window = close[idx_min + 1 : end_search]
             fwd_max_after = -1.0e18
             found_max = False
             for j in range(len(after_trough_window)):
@@ -1613,13 +1735,12 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                     if v > fwd_max_after:
                         fwd_max_after = v
                     found_max = True
-            
+
             if not found_max:
                 continue
 
             reversal_size = fwd_max_after - fwd_min
             if reversal_size >= limit_dist:
-                
                 # Weight Calculation (Fat Tail Logic)
                 atr_pct_approx = curr_atr / curr_p if curr_p > 0 else 0.0
                 # Volatility Boost Factor: smooth scaling - no hard cap
@@ -1632,20 +1753,22 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 X_ratio = X_val / curr_p if curr_p > 0 else 0.0
                 Y_ratio = Y_val / curr_p if curr_p > 0 else 0.0
                 X_safe = max(X_ratio, 1e-4)
-                
+
                 # Scale-invariant term
-                term = Y_ratio / (X_safe ** 2)
+                term = Y_ratio / (X_safe**2)
                 weights[i] = np.log1p(term) * vol_boost
 
                 # Soft Label
                 # Distance X_val.
-                # Standard near_dist. 
+                # Standard near_dist.
                 # If X_val > near_dist, label < 0 -> 0.
                 soft_lbl = 1.0 - (X_val / near_dist)
-                if soft_lbl < 0: soft_lbl = 0.0
-                labels[i] = float(soft_lbl)  
+                if soft_lbl < 0:
+                    soft_lbl = 0.0
+                labels[i] = float(soft_lbl)
 
     return labels, weights
+
 
 # Wrappers
 def numba_rolling_max(df, n):
@@ -1664,6 +1787,7 @@ def numba_rolling_max(df, n):
 
     return res_df
 
+
 def numba_rolling_min(df, n):
     tprint(f"Entering function: numba_rolling_min in fast_funcs.py")
     is_series = isinstance(df, pd.Series)
@@ -1679,6 +1803,7 @@ def numba_rolling_min(df, n):
         return res_df[res_df.columns[0]]
 
     return res_df
+
 
 def numba_rolling_sum(df, n):
     tprint(f"Entering function: numba_rolling_sum in fast_funcs.py")
@@ -1696,6 +1821,7 @@ def numba_rolling_sum(df, n):
 
     return res_df
 
+
 def numba_rolling_median(df, n):
     tprint(f"Entering function: numba_rolling_median in fast_funcs.py")
     is_series = isinstance(df, pd.Series)
@@ -1711,6 +1837,7 @@ def numba_rolling_median(df, n):
         return res_df[res_df.columns[0]]
 
     return res_df
+
 
 def numba_rolling_mad(df, n):
     tprint(f"Entering function: numba_rolling_mad in fast_funcs.py")
@@ -1728,6 +1855,7 @@ def numba_rolling_mad(df, n):
 
     return res_df
 
+
 def numba_rolling_quantile(df, n, q):
     # tprint(f"Entering function: numba_rolling_quantile in fast_funcs.py")
     is_series = isinstance(df, pd.Series)
@@ -1743,6 +1871,7 @@ def numba_rolling_quantile(df, n, q):
         return res_df[res_df.columns[0]]
 
     return res_df
+
 
 def numba_rolling_quantile_dual(df, n, q1, q2):
     # tprint(f"Entering function: numba_rolling_quantile_dual in fast_funcs.py")
@@ -1764,6 +1893,7 @@ def numba_rolling_quantile_dual(df, n, q1, q2):
 
     return out1, out2
 
+
 def numba_pct_change(df, n):
     tprint(f"Entering function: numba_pct_change in fast_funcs.py")
     is_series = isinstance(df, pd.Series)
@@ -1780,21 +1910,25 @@ def numba_pct_change(df, n):
 
     return res_df
 
+
 def numba_rolling_corr(df1, df2, n):
     tprint(f"Entering function: numba_rolling_corr in fast_funcs.py")
     # Optimized parallel implementation
     is_series1 = isinstance(df1, pd.Series)
     is_series2 = isinstance(df2, pd.Series)
 
-    if is_series1: df1 = df1.to_frame()
-    if is_series2: df2 = df2.to_frame()
+    if is_series1:
+        df1 = df1.to_frame()
+    if is_series2:
+        df2 = df2.to_frame()
 
     # Align columns
     common = df1.columns.intersection(df2.columns)
     if len(common) == 0:
         out_df = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
         out_df[:] = np.nan
-        if is_series1: return out_df[out_df.columns[0]]
+        if is_series1:
+            return out_df[out_df.columns[0]]
         return out_df
 
     m1 = df1[common].to_numpy(dtype=np.float32, copy=False)
@@ -1815,19 +1949,32 @@ def numba_rolling_corr(df1, df2, n):
 
     return out_df
 
+
 def numba_rolling_mean(df, n):
     # tprint(f"Entering function: numba_rolling_mean in fast_funcs.py")
     return numba_rolling_mean_parallel(df, n)
+
 
 def numba_rolling_std(df, n):
     # tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
     return numba_rolling_std_parallel(df, n)
 
+
 def numba_ewma(df, alpha, adjust=False):
     """Public EWMA wrapper for DataFrame/Series."""
     return numba_ewma_parallel(df, alpha=np.float32(alpha), adjust=adjust)
 
-def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
+
+def compute_peak_labels_and_weights(
+    close_df,
+    atr_df,
+    horizon,
+    near_k,
+    rev_k,
+    is_uptrend,
+    max_near_pct=0.02,
+    min_rev_pct=0.005,
+):
     tprint(f"Entering function: compute_peak_labels_and_weights in fast_funcs.py")
 
     # Use fast vectorized version with parallel processing
@@ -1840,24 +1987,26 @@ def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is
     total_cols = len(cols)
     for i, c in enumerate(cols):
         if i % 100 == 0:
-            tprint(f"compute_peak_labels_and_weights progress: {i}/{total_cols} columns processed")
-        if c not in atr_df.columns: continue
+            tprint(
+                f"compute_peak_labels_and_weights progress: {i}/{total_cols} columns processed"
+            )
+        if c not in atr_df.columns:
+            continue
 
         c_arr = close_df[c].to_numpy(dtype=np.float32)
         a_arr = atr_df[c].to_numpy(dtype=np.float32)
 
         # Use fast vectorized version
         l_arr, w_arr = _numba_peak_label_and_weight_fast(
-            c_arr, a_arr,
-            horizon, near_k, rev_k, is_uptrend,
-            max_near_pct, min_rev_pct
+            c_arr, a_arr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct
         )
 
         l_out[c] = l_arr
         w_out[c] = w_arr
 
     return l_out, w_out
-  
+
+
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_frac_diff_kernel(x, d, window, thres):
     # Fixed Width Window Frac Diff
@@ -1887,15 +2036,16 @@ def _numba_frac_diff_kernel(x, d, window, thres):
         val = np.float32(0.0)
         valid = True
         for k in range(effective_k):
-            if np.isnan(x[i-k]):
+            if np.isnan(x[i - k]):
                 valid = False
                 break
-            val += weights[k] * x[i-k]
+            val += weights[k] * x[i - k]
 
         if valid:
             out[i] = val
 
     return out
+
 
 # ⚡ Bolt: parallelized fractional differentiation across columns
 # 🎯 Why: Iterating over DataFrame columns in Python is slow. This replaces `apply_to_matrix` with a single parallel Numba execution over a 2D array.
@@ -1926,6 +2076,7 @@ def numba_frac_diff(df, d, window, thres=1e-5):
         return res_df[res_df.columns[0]]
 
     return res_df
+
 
 @jit(nopython=True, nogil=True, cache=True, fastmath=True)
 def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
@@ -1966,7 +2117,7 @@ def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
 
         # --- Remove outgoing value (only after window is full) ---
         if i >= window:
-            out_idx = buf_idx          # oldest slot (about to be overwritten)
+            out_idx = buf_idx  # oldest slot (about to be overwritten)
             if buf_valid[out_idx]:
                 old_d = buf[out_idx] - K
                 sum_d -= old_d
@@ -1993,7 +2144,7 @@ def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
         if count > 1 and in_valid:
             # Variance formula using shifted sums: Var = (sum_sq - sum^2/count) / (count - 1)
             var_num = sum_d_sq - (sum_d * sum_d) / count
-            
+
             # Use a slightly more robust threshold for near-zero variance
             # to avoid precision issues with denormals.
             if var_num <= 1e-15:
@@ -2007,6 +2158,7 @@ def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
             output[i] = 0.0
 
     return output
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_causal_clip_with_ffill_1d(x, lo, hi):
@@ -2036,14 +2188,17 @@ def _numba_causal_clip_with_ffill_1d(x, lo, hi):
 
         # Apply limits if we have them (current or carried forward)
         if not np.isnan(last_lo):
-            if res < last_lo: res = last_lo
+            if res < last_lo:
+                res = last_lo
 
         if not np.isnan(last_hi):
-            if res > last_hi: res = last_hi
+            if res > last_hi:
+                res = last_hi
 
         out[i] = res
 
     return out
+
 
 @jit(nopython=True, parallel=True, cache=True, fastmath=True)
 def _numba_rolling_zscore_parallel(mat, window, eps=1e-12):
@@ -2060,15 +2215,19 @@ def _numba_rolling_zscore_parallel(mat, window, eps=1e-12):
 
     return out
 
+
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_causal_clip_parallel(mat, lo_mat, hi_mat):
     n_rows, n_cols = mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)
 
     for j in prange(n_cols):
-        out[:, j] = _numba_causal_clip_with_ffill_1d(mat[:, j], lo_mat[:, j], hi_mat[:, j])
+        out[:, j] = _numba_causal_clip_with_ffill_1d(
+            mat[:, j], lo_mat[:, j], hi_mat[:, j]
+        )
 
     return out
+
 
 def numba_rolling_zscore_fused(df, window, eps=1e-12):
     is_series = isinstance(df, pd.Series)
@@ -2086,12 +2245,14 @@ def numba_rolling_zscore_fused(df, window, eps=1e-12):
 
     return res_df
 
+
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_sign_consistency_1d(x, window):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
 
-    if window < 2: return out
+    if window < 2:
+        return out
 
     # Returns array: r[i] = x[i] - x[i-1] (diff approx return if x is log price, or just diff)
     # Actually user said "bars ... in the same direction".
@@ -2099,10 +2260,11 @@ def _numba_sign_consistency_1d(x, window):
     # Calculate returns first? Or calculate on the fly.
 
     for i in range(n):
-        if i < window: continue
+        if i < window:
+            continue
 
         start = i - window + 1
-        end = i + 1 # Slice x[start:end] includes i
+        end = i + 1  # Slice x[start:end] includes i
 
         # 1. Determine Window Direction (Close[i] vs Start?)
         # User: "between local extrema and last bars"
@@ -2127,7 +2289,8 @@ def _numba_sign_consistency_1d(x, window):
                     local_max = val
                     idx_max = j
 
-        if idx_min == -1 or idx_max == -1: continue
+        if idx_min == -1 or idx_max == -1:
+            continue
 
         # Determine anchor based on larger move magnitude?
         # If (Max - Current) < (Current - Min) -> Up Move from Min
@@ -2136,8 +2299,8 @@ def _numba_sign_consistency_1d(x, window):
         # Or use net return over window?
         # If x[i] > x[start], assume Up?
         # Robust way:
-        up_move = (x[i] - local_min)
-        dn_move = (local_max - x[i])
+        up_move = x[i] - local_min
+        dn_move = local_max - x[i]
 
         if up_move > dn_move:
             # Up Trend from Local Min
@@ -2150,7 +2313,7 @@ def _numba_sign_consistency_1d(x, window):
 
         if anchor_idx >= i:
             # Current is the extremum? Consistency is 1.0 or undefined?
-            out[i] = 0.0 # No bars between extremum and current
+            out[i] = 0.0  # No bars between extremum and current
             continue
 
         # Count bars in same direction from anchor to current
@@ -2160,7 +2323,7 @@ def _numba_sign_consistency_1d(x, window):
         consistent_bars = 0
 
         for k in range(anchor_idx + 1, i + 1):
-            diff = x[k] - x[k-1]
+            diff = x[k] - x[k - 1]
             sign_diff = 1.0 if diff > 0 else (-1.0 if diff < 0 else 0.0)
 
             if sign_diff != 0:
@@ -2180,13 +2343,14 @@ def _numba_sign_consistency_1d(x, window):
 # SPECIALIST LABELING FUNCTIONS
 # ============================================================================
 
+
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_quality_label(close, high, low, volume, signed_vol, horizon=6):
     """
     Compute quality score for Trap Specialist.
-    
+
     Quality = Flow Consistency × Price Efficiency × Volume Conviction
-    
+
     Args:
         close: Close prices
         high: High prices
@@ -2194,57 +2358,57 @@ def _numba_quality_label(close, high, low, volume, signed_vol, horizon=6):
         volume: Volume
         signed_vol: Signed volume (volume * sign(close - open))
         horizon: Forward-looking window (default 6 bars)
-    
+
     Returns:
         quality_score: Array of quality scores (0 = trap, 1 = clean move)
     """
     n = len(close)
     quality = np.zeros(n, dtype=np.float32)
-    
+
     for i in range(horizon, n):
         # 1. Flow Consistency: Does volume support direction?
-        fwd_ret = close[i] - close[i-horizon]
+        fwd_ret = close[i] - close[i - horizon]
         fwd_signed_vol = 0.0
-        for j in range(i-horizon, i):
+        for j in range(i - horizon, i):
             fwd_signed_vol += signed_vol[j]
-        
+
         # Flow alignment: 1.0 if volume and price agree, 0.0 otherwise
         flow_align = 1.0 if (fwd_ret * fwd_signed_vol > 0) else 0.0
-        
+
         # 2. Price Efficiency: Net move / Gross path
         net_move = abs(fwd_ret)
         gross_path = 0.0
-        for j in range(i-horizon+1, i+1):
-            gross_path += abs(close[j] - close[j-1])
-        
+        for j in range(i - horizon + 1, i + 1):
+            gross_path += abs(close[j] - close[j - 1])
+
         efficiency = net_move / (gross_path + 1e-9)
-        
+
         # 3. Volume Conviction: Sustained vs Spike
         vol_sum = 0.0
         vol_sq_sum = 0.0
-        for j in range(i-horizon, i):
+        for j in range(i - horizon, i):
             vol_sum += volume[j]
             vol_sq_sum += volume[j] * volume[j]
-        
+
         vol_mean = vol_sum / horizon
         vol_variance = (vol_sq_sum / horizon) - (vol_mean * vol_mean)
         vol_std = np.sqrt(max(vol_variance, 0.0))
         vol_consistency = 1.0 - min(vol_std / (vol_mean + 1e-9), 1.0)
-        
+
         # Composite Quality Score (weighted average)
-        quality[i] = (flow_align * 0.4 + efficiency * 0.4 + vol_consistency * 0.2)
-    
+        quality[i] = flow_align * 0.4 + efficiency * 0.4 + vol_consistency * 0.2
+
     return quality
 
 
 def compute_quality_labels(panel, horizon=6):
     """
     Compute quality labels for all symbols in panel.
-    
+
     Args:
         panel: Dictionary with OHLCV DataFrames
         horizon: Forward-looking window
-    
+
     Returns:
         DataFrame of quality scores (index=timestamp, columns=symbols)
     """
@@ -2253,22 +2417,24 @@ def compute_quality_labels(panel, horizon=6):
     low = panel["low"]
     volume = panel["volume"]
     open_prices = panel["open"]
-    
+
     # Compute signed volume
     signed_vol = volume * np.sign(close - open_prices)
-    
-    quality_df = pd.DataFrame(index=close.index, columns=close.columns, dtype=np.float32)
-    
+
+    quality_df = pd.DataFrame(
+        index=close.index, columns=close.columns, dtype=np.float32
+    )
+
     for sym in close.columns:
         c_arr = close[sym].to_numpy(dtype=np.float32)
         h_arr = high[sym].to_numpy(dtype=np.float32)
         l_arr = low[sym].to_numpy(dtype=np.float32)
         v_arr = volume[sym].to_numpy(dtype=np.float32)
         sv_arr = signed_vol[sym].to_numpy(dtype=np.float32)
-        
+
         quality_arr = _numba_quality_label(c_arr, h_arr, l_arr, v_arr, sv_arr, horizon)
         quality_df[sym] = quality_arr
-    
+
     return quality_df
 
 
@@ -2276,69 +2442,70 @@ def compute_quality_labels(panel, horizon=6):
 def _numba_gamma_label(close, atr, horizon=6):
     """
     Compute realized volatility (gamma) label for Gamma Specialist.
-    
+
     Realized Volatility = StdDev of returns over next `horizon` bars,
     normalized by current ATR for stationarity.
-    
+
     Args:
         close: Close prices
         atr: Average True Range
         horizon: Forward-looking window (default 6 bars)
-    
+
     Returns:
         gamma: Array of normalized realized volatility
                (0 = dead, ~1 = normal, >2 = explosive)
     """
     n = len(close)
     gamma = np.zeros(n, dtype=np.float32)
-    
+
     for i in range(n - horizon):
         # Compute forward returns
         fwd_rets_sum = 0.0
         fwd_rets_sq_sum = 0.0
-        
+
         for j in range(i, i + horizon):
-            ret = close[j+1] - close[j]
+            ret = close[j + 1] - close[j]
             fwd_rets_sum += ret
             fwd_rets_sq_sum += ret * ret
-        
+
         # Realized volatility = StdDev of forward returns
         mean_ret = fwd_rets_sum / horizon
         variance = (fwd_rets_sq_sum / horizon) - (mean_ret * mean_ret)
         realized_vol = np.sqrt(max(variance, 0.0))
-        
+
         # Normalize by current ATR
         curr_atr = atr[i]
         gamma[i] = realized_vol / (curr_atr + 1e-9)
-    
+
     return gamma
 
 
 def compute_gamma_labels(panel, feats, horizon=6):
     """
     Compute gamma (realized volatility) labels for all symbols.
-    
+
     Args:
         panel: Dictionary with OHLCV DataFrames
         feats: Dictionary of feature DataFrames (must contain 'atr_pct')
         horizon: Forward-looking window
-    
+
     Returns:
         DataFrame of gamma labels (index=timestamp, columns=symbols)
     """
     close = panel["close"]
     atr = feats["atr_pct"]
-    
+
     gamma_df = pd.DataFrame(index=close.index, columns=close.columns, dtype=np.float32)
-    
+
     for sym in close.columns:
         c_arr = close[sym].to_numpy(dtype=np.float32)
         atr_arr = atr[sym].to_numpy(dtype=np.float32)
-        
+
         gamma_arr = _numba_gamma_label(c_arr, atr_arr, horizon)
         gamma_df[sym] = gamma_arr
-    
+
     return gamma_df
+
 
 # ⚡ Bolt: parallelized sign consistency across columns
 # 🎯 Why: Replaced O(N) column-by-column Python loop in `apply_to_matrix` with parallelized `prange` over columns via Numba.
@@ -2392,9 +2559,11 @@ def numba_causal_clip(df, lo, hi):
 
     return res_df
 
+
 # ============================================================================
 # NEW INDICATORS: KER, VORTEX, ADX
 # ============================================================================
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_ker_1d(close, n):
@@ -2406,7 +2575,8 @@ def _numba_ker_1d(close, n):
     out = np.full(l, np.nan, dtype=np.float32)
 
     # Need at least N+1 points to compute change over N
-    if n < 1: return out
+    if n < 1:
+        return out
 
     # We need rolling sum of absolute 1-bar changes
     # abs_diff[i] = |close[i] - close[i-1]|
@@ -2417,17 +2587,19 @@ def _numba_ker_1d(close, n):
 
     current_sum_abs = 0.0
     # Buffer for abs diffs to handle rolling window removal
-    buf_abs = np.empty(n, dtype=np.float32) # Store all or just window?
+    buf_abs = np.empty(n, dtype=np.float32)  # Store all or just window?
     # Just window circular buffer is enough, but n isn't huge.
     # Actually we iterate through i.
 
     # Let's use circular buffer for the rolling sum of 1-bar changes.
-    diff_buf = np.empty(l, dtype=np.float32) # Store all diffs for simplicity? No, O(N) memory is fine.
+    diff_buf = np.empty(
+        l, dtype=np.float32
+    )  # Store all diffs for simplicity? No, O(N) memory is fine.
 
     # Precompute all 1-bar diffs
     diff_buf[0] = np.nan
     for i in range(1, l):
-        diff_buf[i] = abs(close[i] - close[i-1])
+        diff_buf[i] = abs(close[i] - close[i - 1])
 
     # Now compute rolling sum of diff_buf over window N
     current_sum = 0.0
@@ -2442,7 +2614,7 @@ def _numba_ker_1d(close, n):
 
         # Remove old
         if i >= n:
-            old_val = diff_buf[i-n]
+            old_val = diff_buf[i - n]
             if not np.isnan(old_val):
                 current_sum -= old_val
                 count -= 1
@@ -2452,16 +2624,18 @@ def _numba_ker_1d(close, n):
         # Directional Change = |Close[i] - Close[i-N]|
 
         if i >= n:
-            direction = abs(close[i] - close[i-n])
+            direction = abs(close[i] - close[i - n])
             volatility = current_sum
 
             if volatility > 1e-9:
                 out[i] = direction / volatility
             else:
-                out[i] = 1.0 if direction == 0 else 0.0 # 0/0 -> 1? or 0? 0 usually.
-                if direction > 0: out[i] = 1.0 # Pure efficiency if vol is 0 but moved? (impossible)
+                out[i] = 1.0 if direction == 0 else 0.0  # 0/0 -> 1? or 0? 0 usually.
+                if direction > 0:
+                    out[i] = 1.0  # Pure efficiency if vol is 0 but moved? (impossible)
 
     return out
+
 
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_ker_parallel(mat, n):
@@ -2471,15 +2645,19 @@ def _numba_ker_parallel(mat, n):
         out[:, j] = _numba_ker_1d(mat[:, j], n)
     return out
 
+
 def numba_ker(close_df, n):
     tprint(f"Entering function: numba_ker in fast_funcs.py")
     is_series = isinstance(close_df, pd.Series)
-    if is_series: close_df = close_df.to_frame()
+    if is_series:
+        close_df = close_df.to_frame()
     mat = close_df.to_numpy(dtype=np.float32, copy=False)
     res = _numba_ker_parallel(mat, n)
     res_df = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
-    if is_series: return res_df[res_df.columns[0]]
+    if is_series:
+        return res_df[res_df.columns[0]]
     return res_df
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_vortex_1d(high, low, close, n):
@@ -2500,8 +2678,11 @@ def _numba_vortex_1d(high, low, close, n):
     tr = np.zeros(l, dtype=np.float32)
 
     for i in range(1, l):
-        h = high[i]; l_curr = low[i]; c_prev = close[i-1]
-        h_prev = high[i-1]; l_prev = low[i-1]
+        h = high[i]
+        l_curr = low[i]
+        c_prev = close[i - 1]
+        h_prev = high[i - 1]
+        l_prev = low[i - 1]
 
         vm_plus[i] = abs(h - l_prev)
         vm_minus[i] = abs(l_curr - h_prev)
@@ -2524,9 +2705,9 @@ def _numba_vortex_1d(high, low, close, n):
         sum_tr += tr[i]
 
         if i >= n:
-            sum_vm_plus -= vm_plus[i-n]
-            sum_vm_minus -= vm_minus[i-n]
-            sum_tr -= tr[i-n]
+            sum_vm_plus -= vm_plus[i - n]
+            sum_vm_minus -= vm_minus[i - n]
+            sum_tr -= tr[i - n]
 
             if sum_tr > 1e-9:
                 vi_plus = sum_vm_plus / sum_tr
@@ -2537,6 +2718,7 @@ def _numba_vortex_1d(high, low, close, n):
 
     return out
 
+
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_vortex_parallel(h_mat, l_mat, c_mat, n):
     n_rows, n_cols = h_mat.shape
@@ -2545,12 +2727,16 @@ def _numba_vortex_parallel(h_mat, l_mat, c_mat, n):
         out[:, j] = _numba_vortex_1d(h_mat[:, j], l_mat[:, j], c_mat[:, j], n)
     return out
 
+
 def numba_vortex(high_df, low_df, close_df, n):
     tprint(f"Entering function: numba_vortex in fast_funcs.py")
     is_series = isinstance(close_df, pd.Series)
-    if is_series: close_df = close_df.to_frame()
-    if isinstance(high_df, pd.Series): high_df = high_df.to_frame()
-    if isinstance(low_df, pd.Series): low_df = low_df.to_frame()
+    if is_series:
+        close_df = close_df.to_frame()
+    if isinstance(high_df, pd.Series):
+        high_df = high_df.to_frame()
+    if isinstance(low_df, pd.Series):
+        low_df = low_df.to_frame()
 
     h_mat = high_df.to_numpy(dtype=np.float32, copy=False)
     l_mat = low_df.to_numpy(dtype=np.float32, copy=False)
@@ -2559,8 +2745,10 @@ def numba_vortex(high_df, low_df, close_df, n):
     res = _numba_vortex_parallel(h_mat, l_mat, c_mat, n)
 
     res_df = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
-    if is_series: return res_df[res_df.columns[0]]
+    if is_series:
+        return res_df[res_df.columns[0]]
     return res_df
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_adx_1d(high, low, close, n):
@@ -2585,9 +2773,13 @@ def _numba_adx_1d(high, low, close, n):
 
     # Initialization period (1 to n)
     for i in range(1, n + 1):
-        if i >= l: break
-        h = high[i]; l_curr = low[i]; c_prev = close[i-1]
-        h_prev = high[i-1]; l_prev = low[i-1]
+        if i >= l:
+            break
+        h = high[i]
+        l_curr = low[i]
+        c_prev = close[i - 1]
+        h_prev = high[i - 1]
+        l_prev = low[i - 1]
 
         v1 = h - l_curr
         v2 = abs(h - c_prev)
@@ -2612,14 +2804,19 @@ def _numba_adx_1d(high, low, close, n):
         di_minus[n] = dim
 
         denom = dip + dim
-        dx = np.float32(100.0) * abs(dip - dim) / denom if denom > 0 else np.float32(0.0)
+        dx = (
+            np.float32(100.0) * abs(dip - dim) / denom if denom > 0 else np.float32(0.0)
+        )
 
         # Accumulate first n DX values
         dx_sum = dx
 
         for i in range(n + 1, min(2 * n, l)):
-            h = high[i]; l_curr = low[i]; c_prev = close[i-1]
-            h_prev = high[i-1]; l_prev = low[i-1]
+            h = high[i]
+            l_curr = low[i]
+            c_prev = close[i - 1]
+            h_prev = high[i - 1]
+            l_prev = low[i - 1]
 
             v1 = h - l_curr
             v2 = abs(h - c_prev)
@@ -2643,7 +2840,11 @@ def _numba_adx_1d(high, low, close, n):
             di_minus[i] = dim
 
             denom = dip + dim
-            dx = np.float32(100.0) * abs(dip - dim) / denom if denom > 0 else np.float32(0.0)
+            dx = (
+                np.float32(100.0) * abs(dip - dim) / denom
+                if denom > 0
+                else np.float32(0.0)
+            )
             dx_sum += dx
 
         if (2 * n - 1) < l:
@@ -2652,8 +2853,11 @@ def _numba_adx_1d(high, low, close, n):
 
             # Continuing for the rest of the array
             for i in range(2 * n, l):
-                h = high[i]; l_curr = low[i]; c_prev = close[i-1]
-                h_prev = high[i-1]; l_prev = low[i-1]
+                h = high[i]
+                l_curr = low[i]
+                c_prev = close[i - 1]
+                h_prev = high[i - 1]
+                l_prev = low[i - 1]
 
                 v1 = h - l_curr
                 v2 = abs(h - c_prev)
@@ -2677,13 +2881,18 @@ def _numba_adx_1d(high, low, close, n):
                 di_minus[i] = dim
 
                 denom = dip + dim
-                dx = np.float32(100.0) * abs(dip - dim) / denom if denom > 0 else np.float32(0.0)
+                dx = (
+                    np.float32(100.0) * abs(dip - dim) / denom
+                    if denom > 0
+                    else np.float32(0.0)
+                )
 
                 curr_adx = (prev_adx * (n - 1) + dx) / n
                 adx[i] = curr_adx
                 prev_adx = curr_adx
 
     return adx, di_plus, di_minus
+
 
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_adx_parallel(h_mat, l_mat, c_mat, n):
@@ -2700,12 +2909,16 @@ def _numba_adx_parallel(h_mat, l_mat, c_mat, n):
 
     return out_adx, out_dip, out_dim
 
+
 def numba_adx(high_df, low_df, close_df, n):
     tprint(f"Entering function: numba_adx in fast_funcs.py")
     is_series = isinstance(close_df, pd.Series)
-    if is_series: close_df = close_df.to_frame()
-    if isinstance(high_df, pd.Series): high_df = high_df.to_frame()
-    if isinstance(low_df, pd.Series): low_df = low_df.to_frame()
+    if is_series:
+        close_df = close_df.to_frame()
+    if isinstance(high_df, pd.Series):
+        high_df = high_df.to_frame()
+    if isinstance(low_df, pd.Series):
+        low_df = low_df.to_frame()
 
     h_mat = high_df.to_numpy(dtype=np.float32, copy=False)
     l_mat = low_df.to_numpy(dtype=np.float32, copy=False)
@@ -2724,6 +2937,7 @@ def numba_adx(high_df, low_df, close_df, n):
         return adx_df[cols[0]], dip_df[cols[0]], dim_df[cols[0]]
 
     return adx_df, dip_df, dim_df
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_corr_1d_k_shift(x, y, window):
@@ -2816,6 +3030,7 @@ def _numba_rolling_corr_1d_k_shift(x, y, window):
 
     return out
 
+
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_rolling_corr_parallel(mat1, mat2, window):
     n_rows, n_cols = mat1.shape
@@ -2825,6 +3040,7 @@ def _numba_rolling_corr_parallel(mat1, mat2, window):
         out[:, j] = _numba_rolling_corr_1d_k_shift(mat1[:, j], mat2[:, j], window)
 
     return out
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_entropy_proxy_1d(x, window):
@@ -2864,13 +3080,15 @@ def _numba_rolling_entropy_proxy_1d(x, window):
         mu = sum_val / count
         # ddof=0 for std
         var = (sum_sq / count) - (mu * mu)
-        if var < 0: var = 0.0
+        if var < 0:
+            var = 0.0
         sd = np.sqrt(var)
-        if sd < 1e-12: sd = 1e-12
+        if sd < 1e-12:
+            sd = 1e-12
 
         # Sort buffer to get quantiles
         valid_buf = buf[:count]
-        valid_buf.sort() # In-place sort
+        valid_buf.sort()  # In-place sort
 
         def get_quantile(q, sorted_arr, c):
             idx = q * (c - 1)
@@ -2883,14 +3101,15 @@ def _numba_rolling_entropy_proxy_1d(x, window):
 
         q01 = get_quantile(0.01, valid_buf, count)
         q25 = get_quantile(0.25, valid_buf, count)
-        q50 = get_quantile(0.50, valid_buf, count) # median
+        q50 = get_quantile(0.50, valid_buf, count)  # median
         q75 = get_quantile(0.75, valid_buf, count)
         q99 = get_quantile(0.99, valid_buf, count)
 
         # Logic
         iqr = abs(q75 - q25)
         full_range = abs(q99 - q01)
-        if full_range < 1e-12: full_range = 1e-12
+        if full_range < 1e-12:
+            full_range = 1e-12
 
         spread_ratio = min(max(iqr / full_range, 0.0), 1.0)
 
@@ -2901,6 +3120,7 @@ def _numba_rolling_entropy_proxy_1d(x, window):
 
     return out
 
+
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_rolling_entropy_proxy_parallel(mat, window):
     n_rows, n_cols = mat.shape
@@ -2908,6 +3128,7 @@ def _numba_rolling_entropy_proxy_parallel(mat, window):
     for j in prange(n_cols):
         out[:, j] = _numba_rolling_entropy_proxy_1d(mat[:, j], window)
     return out
+
 
 def numba_rolling_entropy_proxy(df, window):
     is_series = isinstance(df, pd.Series)
@@ -2922,6 +3143,7 @@ def numba_rolling_entropy_proxy(df, window):
     if is_series:
         return res_df[res_df.columns[0]]
     return res_df
+
 
 def numba_rolling_vwap(price_df, volume_df, n):
     """Wrapper for parallel rolling vwap computation."""
@@ -2962,6 +3184,7 @@ def numba_rolling_bars_since_extreme(df, window, mode="max"):
         return res_df[res_df.columns[0]]
     return res_df
 
+
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_rank_pct_1d(x, window):
     """
@@ -2999,12 +3222,15 @@ def _numba_rolling_rank_pct_1d(x, window):
             # (count_less + 0.5 * (count_equal - 1)) / (count_valid - 1)
             # Subtract 1 from valid because we are ranking against prior values + itself
             out[i] = (count_less + 0.5 * (count_equal - 1)) / (count_valid - 1)
-            if out[i] < 0: out[i] = 0.0
-            if out[i] > 1: out[i] = 1.0
+            if out[i] < 0:
+                out[i] = 0.0
+            if out[i] > 1:
+                out[i] = 1.0
         elif count_valid == 1:
             out[i] = 0.5
 
     return out
+
 
 @jit(nopython=True, parallel=True, cache=True)
 def _numba_rolling_rank_pct_parallel(mat, window):
@@ -3015,6 +3241,7 @@ def _numba_rolling_rank_pct_parallel(mat, window):
         out[:, j] = _numba_rolling_rank_pct_1d(mat[:, j], window)
 
     return out
+
 
 def numba_rolling_rank_pct(df, window):
     """Wrapper for parallel rolling percentile rank."""
@@ -3029,6 +3256,7 @@ def numba_rolling_rank_pct(df, window):
     if is_series:
         return res_df[res_df.columns[0]]
     return res_df
+
 
 def apply_to_matrix_parallel(df: pd.DataFrame, func_parallel, *args) -> pd.DataFrame:
     """

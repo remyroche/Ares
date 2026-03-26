@@ -333,9 +333,7 @@ def _rolling_permutation_entropy_df(
     # Also measure run length (consecutive same-sign periods)
     sign = (rets > 0).astype(np.float32)
     sign_change = (sign != sign.shift(delay)).astype(np.float32)
-    run_freq = (
-        ff.numba_rolling_mean(sign_change, window).shift(1)
-    )
+    run_freq = ff.numba_rolling_mean(sign_change, window).shift(1)
 
     # Combine:
     # - High run_freq = frequent sign changes = mean-reverting = medium entropy
@@ -667,7 +665,10 @@ def add_regime_gates(
 
 
 def compute_vol_regime_features(
-    close_df: pd.DataFrame, vol_window: int = 24, pct_window: int = 252, rv_cache: pd.DataFrame = None
+    close_df: pd.DataFrame,
+    vol_window: int = 24,
+    pct_window: int = 252,
+    rv_cache: pd.DataFrame = None,
 ):
     """Compute volatility-regime features from close prices."""
     if rv_cache is not None:
@@ -847,7 +848,10 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
 
     # 4. Volatility percentile and hinges
     vol_pct, vol_high, vol_low = compute_vol_regime_features(
-        c, vol_window=24, pct_window=252, rv_cache=rv_24.shift(1) if rv_24_cache is not None else None
+        c,
+        vol_window=24,
+        pct_window=252,
+        rv_cache=rv_24.shift(1) if rv_24_cache is not None else None,
     )
     feats["vol_percentile"] = vol_pct
     feats["vol_high"] = vol_high
@@ -1018,7 +1022,9 @@ def _compute_hvn_feature_frames(
     # Build final DataFrames efficiently from complete dictionaries
     hvn_results = {}
     for k in hvn_keys:
-        hvn_results[k] = pd.DataFrame(hvn_raw_dict[k], index=c_log.index).reindex(columns=c_log.columns)
+        hvn_results[k] = pd.DataFrame(hvn_raw_dict[k], index=c_log.index).reindex(
+            columns=c_log.columns
+        )
 
     return hvn_results
 
@@ -1516,7 +1522,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     _safe_range_ln_val = _safe_range_ln.to_numpy(dtype=np.float32)
     feats["body_ratio"] = pd.DataFrame(
         np.abs(_c_log_minus_o_val) / _safe_range_ln_val,
-        index=c_log.index, columns=c_log.columns
+        index=c_log.index,
+        columns=c_log.columns,
     ).astype(np.float32)
 
     _h_val = h.to_numpy(dtype=np.float32)
@@ -1526,12 +1533,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     feats["upper_wick_ratio"] = pd.DataFrame(
         (_h_val - np.maximum(_o_val, _c_log_val)) / _safe_range_ln_val,
-        index=c_log.index, columns=c_log.columns
+        index=c_log.index,
+        columns=c_log.columns,
     ).astype(np.float32)
 
     feats["lower_wick_ratio"] = pd.DataFrame(
         (np.minimum(_o_val, _c_log_val) - _l_val) / _safe_range_ln_val,
-        index=c_log.index, columns=c_log.columns
+        index=c_log.index,
+        columns=c_log.columns,
     ).astype(np.float32)
 
     # Missing Trigger/Location features from ridge_regime_event_assessment
@@ -1558,33 +1567,32 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     feats["ema20_slope_5h"] = pd.DataFrame(
         (_ema20_val - _ema20_shift_val) / (_atr_ln_val + 1e-12),
-        index=c_log.index, columns=c_log.columns
+        index=c_log.index,
+        columns=c_log.columns,
     ).astype(np.float32)
     feats["ema_slope_norm"] = feats["ema20_slope_5h"]
     feats["ema_slope"] = pd.DataFrame(
-        (_ema20_val - _ema20_shift_val),
-        index=c_log.index, columns=c_log.columns
+        (_ema20_val - _ema20_shift_val), index=c_log.index, columns=c_log.columns
     ).astype(np.float32)
 
     _l_val = l.to_numpy(dtype=np.float32)
     feats["pullback_depth"] = pd.DataFrame(
         (_ema20_val - _l_val) / (_atr_ln_val + 1e-12),
-        index=c_log.index, columns=c_log.columns
+        index=c_log.index,
+        columns=c_log.columns,
     ).astype(np.float32)
 
     atr_long = ff.numba_ewma(tr_ln, 1.0 / (24 * 7), False).clip(lower=1e-9)
     _atr_long_val = atr_long.to_numpy(dtype=np.float32)
     feats["atr_compression_ratio"] = pd.DataFrame(
-        _atr_ln_val / _atr_long_val,
-        index=c_log.index, columns=c_log.columns
+        _atr_ln_val / _atr_long_val, index=c_log.index, columns=c_log.columns
     ).astype(np.float32)
     feats["compression_ratio"] = feats["atr_compression_ratio"]
 
     # Missing from Technical Regime (Ridge) Features
     _tr_ln_val = tr_ln.to_numpy(dtype=np.float32)
     feats["range_expansion_ratio"] = pd.DataFrame(
-        _tr_ln_val / (_atr_ln_val + 1e-12),
-        index=c_log.index, columns=c_log.columns
+        _tr_ln_val / (_atr_ln_val + 1e-12), index=c_log.index, columns=c_log.columns
     ).astype(np.float32)
 
     _accel_raw = c_log - 2 * c_log.shift(1) + c_log.shift(2)
@@ -2083,9 +2091,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     mkt_rv_pct = mkt_gates["mkt_rv_pct"].reindex(c.index).astype(np.float32)
     feats["mkt_rv_pct"] = mkt_rv_pct
 
-    abs_mkt_ret24h_z = (
-        mkt_gates["abs_mkt_ret24h_z"].reindex(c.index).astype(np.float32)
-    )
+    abs_mkt_ret24h_z = mkt_gates["abs_mkt_ret24h_z"].reindex(c.index).astype(np.float32)
     feats["abs_mkt_ret24h_z"] = abs_mkt_ret24h_z
 
     trend_bin3 = mkt_gates["trend_bin3"].reindex(c.index).astype(np.float32)
@@ -2096,7 +2102,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     if _smooth_span > 1:
         # Avoid creating DataFrame back and forth here if `rv_ratio` is already broadcasted properly
         # Wait, `rv_ratio` is now just a 1D Series, `numba_ewma` can handle it natively
-        _rv_ratio_smooth = ff.numba_ewma(_rv_ratio_smooth.to_frame(), 2.0 / (_smooth_span + 1.0), False).iloc[:, 0]
+        _rv_ratio_smooth = ff.numba_ewma(
+            _rv_ratio_smooth.to_frame(), 2.0 / (_smooth_span + 1.0), False
+        ).iloc[:, 0]
 
     def pick_by_rv(fast_df, base_df, slow_df):
         # We process this mostly in numpy array space
@@ -2124,7 +2132,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             w_slow = rem * w_slow_side
 
             out_arr = w_fast * fast_arr + w_base * base_arr + w_slow * slow_arr
-            return pd.DataFrame(out_arr, index=base_df.index, columns=base_df.columns).astype(np.float32)
+            return pd.DataFrame(
+                out_arr, index=base_df.index, columns=base_df.columns
+            ).astype(np.float32)
 
         hyst = max(0.0, float(cfg.get("rv_selector_hysteresis", 0.02)))
 
@@ -2136,7 +2146,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         # Where < slow - hyst, use slow
         out_arr = np.where(rr < (slow_thr - hyst), slow_arr, out_arr)
 
-        return pd.DataFrame(out_arr, index=base_df.index, columns=base_df.columns).astype(np.float32)
+        return pd.DataFrame(
+            out_arr, index=base_df.index, columns=base_df.columns
+        ).astype(np.float32)
 
     rsi_fast = rsi(c, max(2, int(cfg["rsi_n"] * 0.5)))
     rsi_slow = rsi(c, int(cfg["rsi_n"] * 2))
@@ -2299,7 +2311,11 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # --- Regime Conditioning Features ---
     if bool(cfg.get("use_regime_features", True)):
-        feats.update(compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=feats["rv_24h"]))
+        feats.update(
+            compute_regime_features(
+                c, h, l, v, atr_base, mkt_gates, rv_24_cache=feats["rv_24h"]
+            )
+        )
 
     # --- New Helper Features for Models ---
     dir_s = np.sign(feats["ret24h"])
@@ -2798,8 +2814,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # Multiply DataFrame `dir_s` with Series `mkt_ret6h_raw` over axis 0
     tape_align = dir_s.multiply(mkt_ret6h_raw, axis=0)
     # turb is `rv_ratio` which is a Series
-    feats["tf_tape"] = (tape_align.clip(lower=0).div(1.0 + turb, axis=0)).astype(np.float32)
-    feats["mr_tape"] = ((-tape_align).clip(lower=0).div(1.0 + turb, axis=0)).astype(np.float32)
+    feats["tf_tape"] = (tape_align.clip(lower=0).div(1.0 + turb, axis=0)).astype(
+        np.float32
+    )
+    feats["mr_tape"] = ((-tape_align).clip(lower=0).div(1.0 + turb, axis=0)).astype(
+        np.float32
+    )
 
     feats["tf_minus_mr"] = (feats["tf_tape"] - feats["mr_tape"]).astype(np.float32)
     feats["body_ratio"] = feats["efficiency"]
@@ -3458,30 +3478,30 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         np.where(
             np.isfinite(dist_vwap_norm_values) & np.isfinite(mkt_trend_z_values),
             dist_vwap_norm_values - 0.5 * mkt_trend_z_values,
-            0.0
+            0.0,
         ),
         index=c.index,
-        columns=c.columns
+        columns=c.columns,
     ).astype(np.float32)
 
     feats["dist_ema_fast_resid"] = pd.DataFrame(
         np.where(
             np.isfinite(dist_ema_fast_values) & np.isfinite(mkt_trend_z_values),
             dist_ema_fast_values - 0.5 * mkt_trend_z_values,
-            0.0
+            0.0,
         ),
         index=c.index,
-        columns=c.columns
+        columns=c.columns,
     ).astype(np.float32)
 
     feats["trend_pct_resid"] = pd.DataFrame(
         np.where(
             np.isfinite(trend_pct_values) & np.isfinite(mkt_trend_z_values),
             trend_pct_values - 0.5 * mkt_trend_z_values,
-            0.0
+            0.0,
         ),
         index=c.index,
-        columns=c.columns
+        columns=c.columns,
     ).astype(np.float32)
 
     # =====================================================================
@@ -4780,17 +4800,19 @@ def _median_inplace_nb(values: np.ndarray, length: int) -> float:
     return 0.5 * (tmp[mid - 1] + tmp[mid])
 
 
-@njit(cache=True)
+from numba import prange
+
+
+@njit(parallel=True, cache=True)
 def _robust_obs_var_per_col_nb(arr: np.ndarray) -> np.ndarray:
     n_rows, n_cols = arr.shape
     out = np.ones(n_cols, dtype=np.float64)
     if n_rows <= 1:
         return out
 
-    diffs = np.empty(max(n_rows - 1, 1), dtype=np.float64)
-    abs_devs = np.empty(max(n_rows - 1, 1), dtype=np.float64)
-
-    for j in range(n_cols):
+    for j in prange(n_cols):
+        diffs = np.empty(max(n_rows - 1, 1), dtype=np.float64)
+        abs_devs = np.empty(max(n_rows - 1, 1), dtype=np.float64)
         count = 0
         prev = arr[0, j]
         for i in range(1, n_rows):
@@ -4882,15 +4904,18 @@ def _corrcoef_1d_nb(x: np.ndarray, y: np.ndarray) -> float:
     return cov / np.sqrt(var_x * var_y)
 
 
-@njit(cache=True)
+@njit(parallel=True, cache=True)
 def _decile_monotonicity_score_nb(signal: np.ndarray, ret: np.ndarray) -> float:
     n_rows, n_cols = signal.shape
-    sums = np.zeros(10, dtype=np.float64)
-    counts = np.zeros(10, dtype=np.float64)
-    valid_s = np.empty(n_cols, dtype=np.float64)
-    valid_r = np.empty(n_cols, dtype=np.float64)
 
-    for t in range(n_rows):
+    # Pre-allocate per-thread local arrays to avoid race conditions
+    # We create a 2D array [n_rows, 10] to accumulate sums and counts without locks
+    sums_local = np.zeros((n_rows, 10), dtype=np.float64)
+    counts_local = np.zeros((n_rows, 10), dtype=np.float64)
+
+    for t in prange(n_rows):
+        valid_s = np.empty(n_cols, dtype=np.float64)
+        valid_r = np.empty(n_cols, dtype=np.float64)
         n_valid = 0
         for j in range(n_cols):
             s = signal[t, j]
@@ -4907,8 +4932,16 @@ def _decile_monotonicity_score_nb(signal: np.ndarray, ret: np.ndarray) -> float:
         for rank in range(n_valid):
             idx = order[rank]
             bucket = min((10 * rank) // n_valid, 9)
-            sums[bucket] += valid_r[idx]
-            counts[bucket] += 1.0
+            sums_local[t, bucket] += valid_r[idx]
+            counts_local[t, bucket] += 1.0
+
+    # Aggregate results from local arrays
+    sums = np.zeros(10, dtype=np.float64)
+    counts = np.zeros(10, dtype=np.float64)
+    for t in range(n_rows):
+        for i in range(10):
+            sums[i] += sums_local[t, i]
+            counts[i] += counts_local[t, i]
 
     means = np.empty(10, dtype=np.float64)
     valid_mean_count = 0
@@ -4996,6 +5029,15 @@ def ema_nb(x: np.ndarray, window: int) -> np.ndarray:
     return out
 
 
+@njit(parallel=True, cache=True)
+def ema_nb_parallel(mat: np.ndarray, window: int) -> np.ndarray:
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = ema_nb(mat[:, j], window)
+    return out
+
+
 @njit(cache=True)
 def rolling_std_nb(x: np.ndarray, window: int) -> np.ndarray:
     out = np.full_like(x, np.nan)
@@ -5003,27 +5045,66 @@ def rolling_std_nb(x: np.ndarray, window: int) -> np.ndarray:
     if n == 0 or window <= 0:
         return out
 
+    # Circular buffer to track outgoing values
+    buf = np.empty(window, dtype=np.float64)
+    buf_valid = np.zeros(window, dtype=np.bool_)
+    buf_idx = 0
+
+    K = 0.0
+    K_set = False
+
+    sum_d = 0.0
+    sum_d_sq = 0.0
+    count = 0
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        slice_x = x[start : i + 1]
+        val_in = x[i]
+        in_valid = not np.isnan(val_in)
 
-        valid_count = 0
-        mean = 0.0
-        for val in slice_x:
-            if not np.isnan(val):
-                mean += val
-                valid_count += 1
+        # Remove outgoing (only if window is full)
+        if i >= window:
+            out_idx = buf_idx
+            if buf_valid[out_idx]:
+                d_out = buf[out_idx] - K
+                sum_d -= d_out
+                sum_d_sq -= d_out * d_out
+                count -= 1
 
-        if valid_count > 1:
-            mean /= valid_count
-            var = 0.0
-            for val in slice_x:
-                if not np.isnan(val):
-                    var += (val - mean) ** 2
-            out[i] = np.sqrt(var / (valid_count - 1))
-        elif valid_count == 1:
+        # Add incoming
+        if in_valid:
+            if not K_set:
+                K = val_in
+                K_set = True
+
+            d_in = val_in - K
+            sum_d += d_in
+            sum_d_sq += d_in * d_in
+            count += 1
+
+            buf[buf_idx] = val_in
+            buf_valid[buf_idx] = True
+        else:
+            buf_valid[buf_idx] = False
+
+        buf_idx = (buf_idx + 1) % window
+
+        if count > 1:
+            var_num = sum_d_sq - (sum_d * sum_d) / count
+            if var_num < 0:
+                var_num = 0.0
+            out[i] = np.float32(np.sqrt(var_num / (count - 1)))
+        elif count == 1:
             out[i] = 0.0
 
+    return out
+
+
+@njit(parallel=True, cache=True)
+def rolling_std_nb_parallel(mat: np.ndarray, window: int) -> np.ndarray:
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = rolling_std_nb(mat[:, j], window)
     return out
 
 
@@ -5248,22 +5329,37 @@ def slope_nb(x: np.ndarray, window: int) -> np.ndarray:
     n = len(x)
     if n < 2 or window < 2:
         return out
-    for i in range(window - 1, n):
-        sum_x = 0.0
-        sum_y = 0.0
-        sum_xy = 0.0
-        sum_x2 = 0.0
-        count = 0
-        for j in range(window):
-            idx = i - window + 1 + j
-            y = x[idx]
-            if not np.isnan(y):
-                sum_x += j
-                sum_y += y
-                sum_xy += j * y
-                sum_x2 += j * j
-                count += 1
-        if count > 1:
+
+    sum_x = 0.0
+    sum_y = 0.0
+    sum_xy = 0.0
+    sum_x2 = 0.0
+    count = 0
+
+    for i in range(n):
+        val_in = x[i]
+        in_valid = not np.isnan(val_in)
+
+        # Add incoming
+        if in_valid:
+            sum_x += i
+            sum_y += val_in
+            sum_xy += i * val_in
+            sum_x2 += i * i
+            count += 1
+
+        # Remove outgoing
+        if i >= window:
+            out_idx = i - window
+            val_out = x[out_idx]
+            if not np.isnan(val_out):
+                sum_x -= out_idx
+                sum_y -= val_out
+                sum_xy -= out_idx * val_out
+                sum_x2 -= out_idx * out_idx
+                count -= 1
+
+        if i >= window - 1 and count > 1:
             mean_x = sum_x / count
             mean_y = sum_y / count
             num = sum_xy - count * mean_x * mean_y
@@ -5272,6 +5368,16 @@ def slope_nb(x: np.ndarray, window: int) -> np.ndarray:
                 out[i] = num / den
             else:
                 out[i] = 0.0
+
+    return out
+
+
+@njit(parallel=True, cache=True)
+def slope_nb_parallel(mat: np.ndarray, window: int) -> np.ndarray:
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = slope_nb(mat[:, j], window)
     return out
 
 
@@ -5300,35 +5406,65 @@ def vwap_nb(close: np.ndarray, volume: np.ndarray, window: int) -> np.ndarray:
 def entropy_nb(x: np.ndarray, window: int, n_bins: int = 5) -> np.ndarray:
     out = np.full_like(x, np.nan)
     n = len(x)
+    if window < 2 or n < window:
+        return out
+
+    # Pre-allocate buffer for valid elements
+    buf = np.empty(window, dtype=x.dtype)
+    counts = np.zeros(n_bins, dtype=np.float64)
+
     for i in range(window - 1, n):
         start = i - window + 1
-        slice_x = x[start : i + 1]
-        valid_x = []
-        for val in slice_x:
-            if not np.isnan(val):
-                valid_x.append(val)
 
-        if len(valid_x) > 1:
-            mn = min(valid_x)
-            mx = max(valid_x)
+        valid_count = 0
+        mn = np.inf
+        mx = -np.inf
+
+        for j in range(start, i + 1):
+            val = x[j]
+            if not np.isnan(val):
+                buf[valid_count] = val
+                if val < mn:
+                    mn = val
+                if val > mx:
+                    mx = val
+                valid_count += 1
+
+        if valid_count > 1:
             if mx > mn:
-                counts = np.zeros(n_bins)
+                # Reset counts
+                for b in range(n_bins):
+                    counts[b] = 0.0
+
                 step = (mx - mn) / n_bins
-                for val in valid_x:
-                    b = int((val - mn) / step)
+                for j in range(valid_count):
+                    b = int((buf[j] - mn) / step)
                     if b == n_bins:
                         b -= 1
                     counts[b] += 1
-                probs = counts / len(valid_x)
+
                 ent = 0.0
-                for p in probs:
-                    if p > 0:
+                inv_count = 1.0 / valid_count
+                for b in range(n_bins):
+                    c = counts[b]
+                    if c > 0:
+                        p = c * inv_count
                         ent -= p * np.log2(p)
                 out[i] = ent
             else:
                 out[i] = 0.0
-        elif len(valid_x) == 1:
+        elif valid_count == 1:
             out[i] = 0.0
+
+    return out
+
+
+@njit(parallel=True, cache=True)
+def entropy_nb_parallel(mat: np.ndarray, window: int, n_bins: int = 5) -> np.ndarray:
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = entropy_nb(mat[:, j], window, n_bins)
     return out
 
 
@@ -5336,20 +5472,34 @@ def entropy_nb(x: np.ndarray, window: int, n_bins: int = 5) -> np.ndarray:
 def binary_entropy_nb(x: np.ndarray, window: int) -> np.ndarray:
     out = np.full_like(x, np.nan)
     n = len(x)
-    for i in range(window - 1, n):
-        start = i - window + 1
-        pos_c = 0
-        neg_c = 0
-        tot = 0
-        for j in range(start, i + 1):
-            val = x[j]
-            if not np.isnan(val):
-                tot += 1
-                if val > 0:
-                    pos_c += 1
-                elif val < 0:
-                    neg_c += 1
-        if tot > 0:
+    if window < 1 or n < window:
+        return out
+
+    pos_c = 0
+    neg_c = 0
+    tot = 0
+
+    for i in range(n):
+        val_in = x[i]
+        in_valid = not np.isnan(val_in)
+
+        if i >= window:
+            val_out = x[i - window]
+            if not np.isnan(val_out):
+                tot -= 1
+                if val_out > 0:
+                    pos_c -= 1
+                elif val_out < 0:
+                    neg_c -= 1
+
+        if in_valid:
+            tot += 1
+            if val_in > 0:
+                pos_c += 1
+            elif val_in < 0:
+                neg_c += 1
+
+        if i >= window - 1 and tot > 0:
             p_pos = pos_c / tot
             p_neg = neg_c / tot
             ent = 0.0
@@ -5358,6 +5508,16 @@ def binary_entropy_nb(x: np.ndarray, window: int) -> np.ndarray:
             if p_neg > 0:
                 ent -= p_neg * np.log2(p_neg)
             out[i] = ent
+
+    return out
+
+
+@njit(parallel=True, cache=True)
+def binary_entropy_nb_parallel(mat: np.ndarray, window: int) -> np.ndarray:
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = binary_entropy_nb(mat[:, j], window)
     return out
 
 

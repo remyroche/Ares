@@ -27,3 +27,6 @@ Action: Replace iterative Pandas applications with a pre-existing vectorized 2D 
 ## 2026-03-18 - Replacing nested apply(pd.Series) loops with apply_to_frame
 Learning: Inside feature pipelines (like `features.py`), running operations such as `c_raw.apply(lambda x: pd.Series(rolling_std_nb(x.values, 4), index=x.index), axis=0)` wraps Python closures and Pandas object instantiation inside a loop, heavily bottlenecking operations like standard deviation and EMA even when using Numba backend arrays.
 Action: Use the fully parallelized `ff.apply_to_frame(df, numba_func, window)` which intercepts entire panels and farms execution across columns transparently using `@jit(parallel=True)`. This completely skips the sequential Pandas instantiation loop.
+
+## 2025-02-13 - [Fast Funcs] Learning: Avoid O(N*W) nested loop rolling operations. Action: Implement amortized O(N) single-pass rolling updates using circular buffers and K-shift numerical stability for features like std, slope, and entropy in Numba.
+## 2025-02-13 - [Fast Funcs] Learning: apply_to_frame iterating over columns in Python is slow. Action: Replace `apply_to_frame(df, func, n)` loop with explicitly mapped parallelized 2D versions (`_func_parallel(mat, n)`) in `features.py` and `fast_funcs.py`.

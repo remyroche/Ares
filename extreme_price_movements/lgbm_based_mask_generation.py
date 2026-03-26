@@ -2710,42 +2710,6 @@ class RulePruner:
         return pruned_df.sort_values("prune_rank_score", ascending=False).head(top_n)
 
 
-class LineageTracker:
-    def __init__(self):
-        self.history = []  # List of dicts: {child_id, parent_ids, merge_type, round}
-
-    def record_merge(
-        self, child_id, parent_ids, merge_type, iteration_round, details=None
-    ):
-        self.history.append(
-            {
-                "child_id": child_id,
-                "parent_ids": list(parent_ids),
-                "merge_type": merge_type,
-                "round": iteration_round,
-                "details": json.dumps(details or {}, sort_keys=True),
-                "timestamp": pd.Timestamp.now(),
-            }
-        )
-
-    def get_ancestors(self, rule_id):
-        """Recursively find original LGBM tree-path IDs for a composite rule."""
-        ancestors = set()
-        to_visit = [rule_id]
-
-        while to_visit:
-            current_id = to_visit.pop()
-            for record in self.history:
-                if record["child_id"] == current_id:
-                    for parent_id in record["parent_ids"]:
-                        if parent_id not in ancestors:
-                            ancestors.add(parent_id)
-                            to_visit.append(parent_id)
-        return list(ancestors)
-
-    def get_audit_df(self) -> pd.DataFrame:
-        """Return lineage history as a DataFrame."""
-        return pd.DataFrame(self.history)
 
 
 class IndependentRulePruner:
@@ -2832,72 +2796,6 @@ class IndependentRulePruner:
         return final_registry.sort_values("hurdle_excess", ascending=False)
 
 
-class RuleConsolidator:
-    """Consolidation logic intentionally removed."""
-
-    def __init__(
-        self,
-        metadata: List[FeatureMetadata],
-        cfg: Dict[str, Any],
-        mask_resolver: Optional[
-            Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]
-        ] = None,
-        scorer: Optional[RuleScorer] = None,
-    ):
-        self.metadata = metadata
-        self.cfg = cfg
-        self.mask_resolver = mask_resolver
-        self.scorer = scorer
-
-    def _row_key(self, row: pd.Series) -> str:
-        key = row.get("canonical_key")
-        if key is None or (isinstance(key, float) and np.isnan(key)):
-            key = row.name
-        return str(key)
-
-    def _semantic_relation(self, row_a: pd.Series, row_b: pd.Series) -> str:
-        slots_a = parse_slot_map(
-            self._row_key(row_a), ("trigger", "location", "regime")
-        )
-        slots_b = parse_slot_map(
-            self._row_key(row_b), ("trigger", "location", "regime")
-        )
-        if slots_a.get("location") == slots_b.get("location") and slots_a.get(
-            "regime"
-        ) == slots_b.get("regime"):
-            return "same_regime_location"
-        return "other"
-
-    def _dilate_mask_by_symbol(
-        self, mask: np.ndarray, data: pd.DataFrame, bars: int = 1
-    ) -> np.ndarray:
-        if bars <= 0 or "symbol" not in data.columns:
-            return mask.copy()
-        out = mask.copy()
-        symbols = data["symbol"].to_numpy()
-        for i in np.where(mask)[0]:
-            sym = symbols[i]
-            for j in range(i + 1, min(i + bars + 1, len(mask))):
-                if symbols[j] == sym:
-                    out[j] = True
-        return out
-
-    def consolidate(
-        self,
-        registry: pd.DataFrame,
-        fwd_ret: np.ndarray,
-        folds: List[Tuple[np.ndarray, np.ndarray]],
-        resolver: Optional[
-            Union[CanonicalRuleMaskResolver, DictionaryMaskResolver]
-        ] = None,
-        data: Optional[pd.DataFrame] = None,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
-        del fwd_ret, folds, resolver, data
-        return registry.copy(), pd.DataFrame(), {}
-
-
-class EconomicRuleConsolidator(RuleConsolidator):
-    """Consolidation logic intentionally removed."""
 
 
 def compute_tbm_outcomes_per_symbol(
@@ -3120,20 +3018,20 @@ def build_stage_a_rejection_map(
             passed_count=len(scorer_accepted),
         )
 
-    consolidated_registry = stage_a_result.get("consolidated_registry", pd.DataFrame())
     candidate_registry = stage_a_result.get("candidate_registry", pd.DataFrame())
-    if not consolidated_registry.empty:
+    scorer_accepted = stage_a_result.get("scorer_accepted", pd.DataFrame())
+    if not scorer_accepted.empty:
         _append_stage_rows(
             stage_name="pruner",
             stage_order=2,
-            input_count=len(consolidated_registry),
+            input_count=len(scorer_accepted),
             gate_items=[
                 (
                     "is_too_broad",
                     "mean_support_pct",
                     int(
                         (
-                            consolidated_registry["mean_support_pct"]
+                            scorer_accepted["mean_support_pct"]
                             > float(cfg.get("max_support_pct", 0.25))
                         ).sum()
                     ),
@@ -3144,10 +3042,10 @@ def build_stage_a_rejection_map(
                     "hurdle_excess",
                     int(
                         (
-                            consolidated_registry.get(
+                            scorer_accepted.get(
                                 "hurdle_excess",
                                 pd.Series(
-                                    index=consolidated_registry.index, dtype=float
+                                    index=scorer_accepted.index, dtype=float
                                 ),
                             )
                             <= 0
@@ -3160,7 +3058,7 @@ def build_stage_a_rejection_map(
                     "sign_consistency",
                     int(
                         (
-                            consolidated_registry["sign_consistency"]
+                            scorer_accepted["sign_consistency"]
                             < float(cfg.get("min_sign_consistency", 0.80))
                         ).sum()
                     ),
@@ -3171,7 +3069,7 @@ def build_stage_a_rejection_map(
                     "discovery_count",
                     int(
                         (
-                            consolidated_registry["discovery_count"]
+                            scorer_accepted["discovery_count"]
                             < int(cfg.get("min_tree_discoveries", 2))
                         ).sum()
                     ),
@@ -3342,7 +3240,6 @@ def log_stage_gate_diagnostics(
 ) -> None:
     scored = stage_result.get("scored_registry")
     scorer_accepted = stage_result.get("scorer_accepted")
-    consolidated = stage_result.get("consolidated_registry")
     candidate = stage_result.get("candidate_registry")
     assessed = stage_result.get("assessment_df")
     accepted = stage_result.get("accepted_registry")
@@ -3350,7 +3247,6 @@ def log_stage_gate_diagnostics(
         f"{stage_name} gate counts: extracted={len(stage_result.get('all_extracted_rules', []))} "
         f"scored={0 if scored is None else len(scored)} "
         f"scorer_accepted={0 if scorer_accepted is None else len(scorer_accepted)} "
-        f"consolidated={0 if consolidated is None else len(consolidated)} "
         f"candidate={0 if candidate is None else len(candidate)} "
         f"assessed={0 if assessed is None else len(assessed)} "
         f"accepted={0 if accepted is None else len(accepted)}"
@@ -4011,7 +3907,6 @@ def run_mining_stage(
             "scored_registry": scored_registry,
             "scorer_accepted": pd.DataFrame(),
             "accepted_registry": pd.DataFrame(),
-            "consolidated_registry": pd.DataFrame(),
             "final_registry": pd.DataFrame(),
             "candidate_registry": pd.DataFrame(),
             "assessment_df": pd.DataFrame(),
@@ -4036,28 +3931,13 @@ def run_mining_stage(
 
     scorer_accepted = scored_registry[scored_registry["accepted"]].copy()
 
-    consolidated_registry = scorer_accepted.copy()
-    lineage_audit = pd.DataFrame()
-    consol_diag = {}
-
-    atomic_to_csv(consolidated_registry, output_dir / "consolidated_rule_registry.csv")
-    atomic_to_csv(lineage_audit, output_dir / "consolidation_lineage_audit.csv")
-
-    # Save Consolidator Specific Diagnostics
-    for name, obj in consol_diag.items():
-        if isinstance(obj, pd.DataFrame):
-            obj.to_csv(output_dir / f"{name}.csv", index=False)
-        else:
-            with open(output_dir / f"{name}.json", "w") as f:
-                json.dump(obj, f, indent=2)
-
     pruner = IndependentRulePruner(cfg)
-    candidate_registry = pruner.prune(consolidated_registry)
+    candidate_registry = pruner.prune(scorer_accepted)
     candidate_registry["preset"] = cfg.get("preset", "exploration")
     candidate_registry = atomic_to_csv(
         candidate_registry,
         output_dir / "candidate_rule_registry.csv",
-        expected_columns=list(consolidated_registry.columns) + ["preset"],
+        expected_columns=list(scorer_accepted.columns) + ["preset"],
     )
     atomic_to_csv(
         candidate_registry,
@@ -4129,7 +4009,6 @@ def run_mining_stage(
         "scored_registry": scored_registry,
         "parent_context_map": parent_context_map,
         "scorer_accepted": scorer_accepted,
-        "consolidated_registry": consolidated_registry,
         "candidate_registry": candidate_registry,
         "assessment_df": assessment_df,
         "accepted_registry": accepted_registry,
@@ -4360,7 +4239,7 @@ def run_side_pipeline(
     }
 
 
-def run_two_stage_lgbm_mask_generation(
+def run_lgbm_mask_generation_pipeline(
     data: pd.DataFrame,
     feature_dict: Dict[str, np.ndarray],
     fwd_ret: np.ndarray,
@@ -4368,7 +4247,7 @@ def run_two_stage_lgbm_mask_generation(
     cfg: Dict[str, Any],
 ) -> Dict[str, pd.DataFrame]:
     tprint("=" * 80)
-    tprint("TWO-STAGE LGBM MASK GENERATION: START")
+    tprint("LGBM MASK GENERATION PIPELINE: START")
     tprint("=" * 80)
 
     root_output_dir = build_run_output_dir(cfg)
@@ -4607,7 +4486,7 @@ def run_two_stage_lgbm_mask_generation(
     }
 
 
-def run_two_stage_lgbm_mask_generation_triad(
+def run_lgbm_mask_generation_triad(
     data: pd.DataFrame,
     feature_dict: Dict[str, np.ndarray],
     triad_targets: Dict[str, Dict[int, np.ndarray]],
@@ -8304,7 +8183,7 @@ if __name__ == "__main__":
         atr_col="atr",
     )
 
-    # Convert to the format expected by run_two_stage_lgbm_mask_generation_triad:
+    # Convert to the format expected by run_lgbm_mask_generation_triad:
     # {target_name: {horizon: target_array}}
     triad_targets: Dict[str, Dict[int, np.ndarray]] = {
         "target_eff": {},
@@ -8327,4 +8206,4 @@ if __name__ == "__main__":
                 )
 
     # Run triad-target mask generation
-    run_two_stage_lgbm_mask_generation_triad(data_final, feat_final, triad_targets, cfg)
+    run_lgbm_mask_generation_triad(data_final, feat_final, triad_targets, cfg)

@@ -2262,7 +2262,10 @@ class RuleScorer:
         present = df_folds[df_folds["support"] > 0].copy()
         if present.empty:
             # Deconstruct for visibility
-            slots = parse_slot_map(canonical_key, getattr(self, 'slot_order', ('trigger', 'location', 'regime')))
+            slots = parse_slot_map(
+                canonical_key,
+                getattr(self, "slot_order", ("trigger", "location", "regime")),
+            )
 
             summary = {
                 "canonical_key": canonical_key,
@@ -2410,7 +2413,10 @@ class RuleScorer:
         )
 
         # Deconstruct for visibility
-        slots = parse_slot_map(canonical_key, getattr(self, 'slot_order', ('trigger', 'location', 'regime')))
+        slots = parse_slot_map(
+            canonical_key,
+            getattr(self, "slot_order", ("trigger", "location", "regime")),
+        )
 
         summary = {
             "canonical_key": canonical_key,
@@ -2589,10 +2595,7 @@ class RuleScorer:
             for reason, count in rejection_reasons.most_common(5):
                 tprint(f"  - {reason}: {count}")
 
-
         return summary_df, pd.DataFrame(audits)
-
-
 
 
 @njit(cache=True, fastmath=True)
@@ -4586,13 +4589,13 @@ def run_two_stage_lgbm_mask_generation(
         for side, count in side_counts.items():
             tprint(f"  - {side}: {count}")
 
-        tprint("Top 10 Final Rules:")
-        top_final = combined_global_registry.sort_values(
-            "composite_score", ascending=False
-        ).head(10)
-        for _, row in top_final.iterrows():
+        tprint("Top 15 Final Diverse Rules:")
+        top_final = select_top_diverse_rules(
+            combined_global_registry, combined_mask_map, top_n=15
+        )
+        for i, (_, row) in enumerate(top_final.iterrows(), start=1):
             tprint(
-                f"  - {row['canonical_key']}: score={row['composite_score']:.3f}, arity={row['display_arity']}, side={row['side']}"
+                f"  {i:2d}. {row['canonical_key']}: score={row['composite_score']:.3f}, hurdle_excess={row['hurdle_excess']:.5f}, arity={row['display_arity']}, side={row['side']}"
             )
     else:
         tprint("Final Output Summary: 0 rules accepted.")
@@ -6737,6 +6740,73 @@ def collect_registry_feature_usage(
             )
 
     return pd.DataFrame(rows)
+
+
+def select_top_diverse_rules(
+    registry: pd.DataFrame,
+    mask_map: Dict[str, np.ndarray],
+    top_n: int = 15,
+    max_overlap: float = 0.4,
+    max_side_in_top10: int = 6,
+) -> pd.DataFrame:
+    """
+    Select top `top_n` diverse rules:
+    - Sort by composite_score
+    - Ensure top 10 has at most `max_side_in_top10` of the same side (long/short)
+    - Ensure jaccard similarity between any two selected rules is <= max_overlap
+    """
+    if registry.empty:
+        return registry
+
+    sorted_reg = registry.sort_values("composite_score", ascending=False)
+
+    selected_idx = []
+    selected_sides = {"long": 0, "short": 0}
+
+    for idx, row in sorted_reg.iterrows():
+        if len(selected_idx) >= top_n:
+            break
+
+        key = row["canonical_key"]
+        side = row.get("side", "unknown")
+        mask = mask_map.get(key)
+        if mask is None:
+            continue
+
+        # Check side constraint only for the first 10
+        if len(selected_idx) < 10 and side in selected_sides:
+            if selected_sides[side] >= max_side_in_top10:
+                continue
+
+        # Check overlap constraint
+        too_similar = False
+        for s_idx in selected_idx:
+            s_key = sorted_reg.loc[s_idx, "canonical_key"]
+            s_mask = mask_map.get(s_key)
+            if s_mask is None:
+                continue
+
+            intersection = float(np.sum(mask & s_mask))
+            union = float(np.sum(mask | s_mask))
+            jaccard = intersection / union if union > 0 else 0.0
+
+            if jaccard > max_overlap:
+                too_similar = True
+                break
+
+        if not too_similar:
+            selected_idx.append(idx)
+            if len(selected_idx) <= 10 and side in selected_sides:
+                selected_sides[side] += 1
+
+    # If we couldn't find enough rules, we could try relaxing the overlap constraint slightly
+    if len(selected_idx) < min(top_n, len(registry)) and max_overlap < 0.8:
+        # Recursive call with relaxed overlap
+        return select_top_diverse_rules(
+            registry, mask_map, top_n, max_overlap + 0.1, max_side_in_top10
+        )
+
+    return sorted_reg.loc[selected_idx]
 
 
 def build_portfolio_diversity_report(

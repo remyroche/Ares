@@ -46,7 +46,6 @@ from extreme_price_movements.hpo_lgbm_regime_miner import (
 )
 from extreme_price_movements.intraday_crypto_library import (
     INTRADAY_TRIGGER_COLUMNS,
-    LOCATION_FILTER_COLUMNS,
 )
 from extreme_price_movements.periods_symbols_management import (
     EventSchema,

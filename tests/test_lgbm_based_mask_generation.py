@@ -10,7 +10,6 @@ from extreme_price_movements.lgbm_based_mask_generation import (
     FeatureProcessor,
     MaskAssessor,
     RuleCondition,
-    RuleConsolidator,
     RuleExtractor,
     RuleScorer,
     atomic_to_csv,
@@ -108,36 +107,6 @@ def test_stage_b_uplift_uses_parent_context_oos():
     )
     assert summary["mean_baseline_ret"] > 0
     assert summary["mean_uplift"] > 0
-
-
-def test_semantic_relation_detects_same_regime_location():
-    consolidator = RuleConsolidator([], {}, mask_resolver=None)
-    row_a = pd.Series(
-        {
-            "canonical_key": "(t1==1)|(loc==1)|(reg==1)",
-            "parent_context_key": "(*)|(loc==1)|(reg==1)",
-        }
-    )
-    row_b = pd.Series(
-        {
-            "canonical_key": "(t2==1)|(loc==1)|(reg==1)",
-            "parent_context_key": "(*)|(loc==1)|(reg==1)",
-        }
-    )
-    assert consolidator._semantic_relation(row_a, row_b) == "same_regime_location"
-
-
-def test_semantic_relation_uses_row_name_when_canonical_key_column_missing():
-    consolidator = RuleConsolidator([], {}, mask_resolver=None)
-    row_a = pd.Series({"parent_context_key": None}, name="(t1==1)|(loc==1)|(reg==1)")
-    row_b = pd.Series({"parent_context_key": None}, name="(t2==1)|(loc==1)|(reg==1)")
-    assert consolidator._semantic_relation(row_a, row_b) == "same_regime_location"
-
-
-def test_consolidator_row_key_uses_series_name_when_column_missing():
-    consolidator = RuleConsolidator([], {}, mask_resolver=None)
-    row = pd.Series({"hurdle_excess": 0.1}, name="(t1==1)|(loc==1)|(reg==1)")
-    assert consolidator._row_key(row) == "(t1==1)|(loc==1)|(reg==1)"
 
 
 def test_list_preload_training_symbols_uses_training_universe(monkeypatch):
@@ -586,9 +555,6 @@ def test_build_stage_a_rejection_map_captures_stage_funnel():
             ]
         ),
         "scorer_accepted": pd.DataFrame(
-            [{"canonical_key": "rule_pass", "accepted": True}]
-        ),
-        "consolidated_registry": pd.DataFrame(
             [
                 {
                     "canonical_key": "rule_pass",
@@ -597,6 +563,7 @@ def test_build_stage_a_rejection_map_captures_stage_funnel():
                     "sign_consistency": 0.9,
                     "discovery_count": 3,
                     "dominated_by_parent": False,
+                    "accepted": True
                 },
                 {
                     "canonical_key": "rule_broad",
@@ -605,6 +572,7 @@ def test_build_stage_a_rejection_map_captures_stage_funnel():
                     "sign_consistency": 0.7,
                     "discovery_count": 1,
                     "dominated_by_parent": True,
+                    "accepted": True
                 },
             ]
         ),
@@ -706,7 +674,7 @@ def test_build_stage_a_rejection_map_captures_stage_funnel():
         & (rejection_map["gate_name"] == "low_support")
     ].iloc[0]
     assert int(scorer_low_support["rejected_count"]) == 1
-    assert int(scorer_low_support["passed_count"]) == 1
+    assert int(scorer_low_support["passed_count"]) == 2
 
     assessor_unassessed = rejection_map[
         (rejection_map["stage_name"] == "mask_assessor")

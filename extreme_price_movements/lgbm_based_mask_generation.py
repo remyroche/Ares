@@ -2000,12 +2000,19 @@ class RuleScorer:
 
     def _compute_required_hurdle(self, support_pct: float, display_arity: int) -> float:
         base_hurdle = float(self.cfg.get("prune_base_hurdle", 0.0002))
-        penalty_exp = float(self.cfg.get("prune_support_exp", 0.5))
+        target_support = float(self.cfg.get("prune_target_support_pct", 0.125))
+
         complexity_bonus = float(
             self.cfg.get("prune_complexity_bonus_map", {}).get(str(display_arity), 0.0)
         )
         safe_support = max(float(support_pct), 0.0005)
-        return (base_hurdle * (1.0 - complexity_bonus)) / (safe_support**penalty_exp)
+
+        # Asymmetric U-shaped penalty favoring support around prune_target_support_pct (e.g., 10-15%)
+        dist = safe_support - target_support
+        # Punish lower support more heavily than higher support (asymmetry)
+        penalty_multiplier = 1.0 + (30.0 * (dist ** 2) if dist < 0 else 10.0 * (dist ** 2))
+
+        return (base_hurdle * (1.0 - complexity_bonus)) * penalty_multiplier
 
     def _compute_within_mask_ic(
         self,
@@ -2726,7 +2733,7 @@ class IndependentRulePruner:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.base_hurdle = float(cfg.get("prune_base_hurdle", 0.0002))
-        self.penalty_exponent = float(cfg.get("prune_support_exp", 0.5))
+        self.target_support = float(cfg.get("prune_target_support_pct", 0.125))
         self.min_discoveries = int(cfg.get("min_tree_discoveries", 2))
         self.min_sign_consistency = float(cfg.get("min_sign_consistency", 0.80))
 
@@ -2753,11 +2760,13 @@ class IndependentRulePruner:
         )
 
         # 3. Calculate the Complexity-Adjusted Hurdle
-        # Formula: (Base * (1-Bonus)) / (Support^Exp)
+        # U-shaped penalty favoring target_support
         safe_support = df["mean_support_pct"].clip(lower=0.0005)
-        df["required_hurdle"] = (self.base_hurdle * (1.0 - df["comp_bonus"])) / (
-            safe_support**self.penalty_exponent
-        )
+        dist = safe_support - self.target_support
+        # Asymmetric penalty multiplier
+        penalty_multiplier = 1.0 + np.where(dist < 0, 30.0 * (dist ** 2), 10.0 * (dist ** 2))
+
+        df["required_hurdle"] = (self.base_hurdle * (1.0 - df["comp_bonus"])) * penalty_multiplier
 
         # 4. Gate A: Alpha Performance vs Hurdle
         df["hurdle_excess"] = df["mean_net_ret"] - df["required_hurdle"]
@@ -3034,7 +3043,10 @@ def build_stage_a_rejection_map(
                     "mean_support_pct",
                     int(
                         (
-                            scorer_accepted["mean_support_pct"]
+                            scorer_accepted.get(
+                                "mean_support_pct",
+                                pd.Series(index=scorer_accepted.index, dtype=float),
+                            )
                             > float(cfg.get("max_support_pct", 0.25))
                         ).sum()
                     ),
@@ -3061,7 +3073,10 @@ def build_stage_a_rejection_map(
                     "sign_consistency",
                     int(
                         (
-                            scorer_accepted["sign_consistency"]
+                            scorer_accepted.get(
+                                "sign_consistency",
+                                pd.Series(index=scorer_accepted.index, dtype=float),
+                            )
                             < float(cfg.get("min_sign_consistency", 0.80))
                         ).sum()
                     ),
@@ -3072,7 +3087,10 @@ def build_stage_a_rejection_map(
                     "discovery_count",
                     int(
                         (
-                            scorer_accepted["discovery_count"]
+                            scorer_accepted.get(
+                                "discovery_count",
+                                pd.Series(index=scorer_accepted.index, dtype=float),
+                            )
                             < int(cfg.get("min_tree_discoveries", 2))
                         ).sum()
                     ),
@@ -7286,6 +7304,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_presence_freq": 0.33,
             "min_sign_consistency": 0.65,
             "prune_base_hurdle": 0.00005,
+            "prune_target_support_pct": 0.125,
             "prune_support_exp": 0.5,
             "min_context_support_pct": 0.005,
             "min_context_presence_freq": 0.33,
@@ -7304,6 +7323,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_presence_freq": 0.4,
             "min_sign_consistency": 0.75,
             "prune_base_hurdle": 0.00010,
+            "prune_target_support_pct": 0.125,
             "prune_support_exp": 0.5,
             "min_context_support_pct": 0.01,
             "min_context_presence_freq": 0.5,

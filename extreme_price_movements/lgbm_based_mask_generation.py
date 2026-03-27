@@ -122,6 +122,17 @@ SCORER_REGISTRY_COLUMNS: List[str] = [
     "p75_oos_ic",
     "mean_delta_ic",
     "positive_ic_fraction",
+    "mean_ic",
+    "ic_tstat",
+    "ic_sign_consistency",
+    "decile_spread_sharpe",
+    "mask_ic_uplift",
+    "regression_beta",
+    "regression_slope_fit",
+    "learnability_step_c_score",
+    "trade_path_quality_score",
+    "quality_stability_score",
+    "full_quality_score",
     "composite_score",
     "required_hurdle",
     "hurdle_excess",
@@ -254,6 +265,294 @@ def _safe_spearman(x: np.ndarray, y: np.ndarray) -> float:
     if np.all(x == x[0]) or np.all(y == y[0]):
         return np.nan
     return float(scipy.stats.spearmanr(x, y).correlation)
+
+
+def _safe_tanh_scale(x: float, scale: float) -> float:
+    if not np.isfinite(x):
+        return np.nan
+    scale = max(float(scale), 1e-9)
+    return float(np.tanh(x / scale))
+
+
+def _compute_decile_spread_sharpe(
+    predictions: np.ndarray,
+    target: np.ndarray,
+    mask: np.ndarray,
+    top_frac: float = 0.2,
+    min_obs: int = 20,
+) -> float:
+    """Compute top-vs-bottom spread Sharpe within mask."""
+    valid = np.isfinite(predictions) & np.isfinite(target) & mask.astype(bool)
+    if int(valid.sum()) < int(min_obs):
+        return np.nan
+
+    preds = predictions[valid]
+    targs = target[valid]
+    n = len(preds)
+    k = max(1, int(np.floor(n * float(top_frac))))
+    if n < (2 * k + 2):
+        return np.nan
+
+    order = np.argsort(preds)
+    low_idx = order[:k]
+    high_idx = order[-k:]
+    spread = targs[high_idx] - targs[low_idx]
+    if spread.size < 3:
+        return np.nan
+    spread_std = float(np.nanstd(spread, ddof=0))
+    if spread_std <= 1e-12:
+        return np.nan
+    return float(np.nanmean(spread) / (spread_std + 1e-12))
+
+
+def _compute_regression_beta_and_fit(
+    predictions: np.ndarray,
+    target: np.ndarray,
+    mask: np.ndarray,
+    min_obs: int = 20,
+    tau: float = 0.35,
+) -> Tuple[float, float]:
+    """
+    Fit target ~ prediction on masked observations and return:
+    - beta (slope)
+    - slope fit score in (0,1], where closer to beta=1 is better.
+    """
+    valid = np.isfinite(predictions) & np.isfinite(target) & mask.astype(bool)
+    if int(valid.sum()) < int(min_obs):
+        return np.nan, np.nan
+
+    x = predictions[valid]
+    y = target[valid]
+    x_mean = float(np.nanmean(x))
+    y_mean = float(np.nanmean(y))
+    x_cent = x - x_mean
+    y_cent = y - y_mean
+    denom = float(np.dot(x_cent, x_cent))
+    if denom <= 1e-12:
+        return np.nan, np.nan
+    beta = float(np.dot(x_cent, y_cent) / denom)
+    tau = max(float(tau), 1e-6)
+    fit = float(np.exp(-abs(beta - 1.0) / tau))
+    return beta, fit
+
+
+def _compute_path_arrays_from_ohlc(
+    data: pd.DataFrame, side: str, horizon: int, fallback_final_ret: np.ndarray
+) -> Dict[str, np.ndarray]:
+    """
+    Build per-event trade-path arrays required by trade-path quality metrics.
+    Uses close/high/low forward windows when available; falls back gracefully.
+    """
+    n = len(data)
+    final_ret = np.asarray(fallback_final_ret, dtype=np.float32).copy()
+    mfe = np.full(n, np.nan, dtype=np.float32)
+    mae = np.full(n, np.nan, dtype=np.float32)
+    t_mfe = np.full(n, np.nan, dtype=np.float32)
+    t_mae = np.full(n, np.nan, dtype=np.float32)
+
+    if horizon <= 0:
+        return {
+            "mfe": mfe,
+            "mae": mae,
+            "final_ret": final_ret,
+            "time_to_mfe": t_mfe,
+            "time_to_mae": t_mae,
+        }
+
+    required_cols = {"close", "high", "low"}
+    if not required_cols.issubset(set(data.columns)):
+        return {
+            "mfe": mfe,
+            "mae": mae,
+            "final_ret": final_ret,
+            "time_to_mfe": t_mfe,
+            "time_to_mae": t_mae,
+        }
+
+    close = pd.to_numeric(data["close"], errors="coerce").to_numpy(dtype=np.float64)
+    high = pd.to_numeric(data["high"], errors="coerce").to_numpy(dtype=np.float64)
+    low = pd.to_numeric(data["low"], errors="coerce").to_numpy(dtype=np.float64)
+    side_mult = -1.0 if str(side).lower() == "short" else 1.0
+
+    max_i = n - int(horizon) - 1
+    for i in range(max(max_i + 1, 0)):
+        entry = close[i]
+        exit_px = close[i + horizon]
+        if not (np.isfinite(entry) and np.isfinite(exit_px) and abs(entry) > 1e-12):
+            continue
+
+        window_hi = high[i + 1 : i + horizon + 1]
+        window_lo = low[i + 1 : i + horizon + 1]
+        if len(window_hi) == 0 or len(window_lo) == 0:
+            continue
+
+        if side_mult > 0:
+            fav_path = (window_hi - entry) / entry
+            adv_path = (entry - window_lo) / entry
+            final_ret[i] = float((exit_px - entry) / entry)
+        else:
+            fav_path = (entry - window_lo) / entry
+            adv_path = (window_hi - entry) / entry
+            final_ret[i] = float((entry - exit_px) / entry)
+
+        if np.all(~np.isfinite(fav_path)) or np.all(~np.isfinite(adv_path)):
+            continue
+
+        fav_path = np.where(np.isfinite(fav_path), fav_path, -np.inf)
+        adv_path = np.where(np.isfinite(adv_path), adv_path, -np.inf)
+
+        mfe_idx = int(np.argmax(fav_path))
+        mae_idx = int(np.argmax(adv_path))
+        mfe[i] = float(max(fav_path[mfe_idx], 0.0))
+        mae[i] = float(max(adv_path[mae_idx], 0.0))
+        t_mfe[i] = float(mfe_idx + 1)
+        t_mae[i] = float(mae_idx + 1)
+
+    return {
+        "mfe": mfe,
+        "mae": mae,
+        "final_ret": final_ret,
+        "time_to_mfe": t_mfe,
+        "time_to_mae": t_mae,
+    }
+
+
+def compute_trade_path_quality_metrics(
+    mfe: np.ndarray,
+    mae: np.ndarray,
+    final_ret: np.ndarray,
+    time_to_mfe: np.ndarray,
+    time_to_mae: np.ndarray,
+    fold_id: np.ndarray,
+    eps: float = 1e-6,
+    ratio_cap: float = 12.0,
+) -> Dict[str, Any]:
+    """
+    Robust regime-level trade-path quality metrics.
+    """
+    df = pd.DataFrame(
+        {
+            "mfe": np.asarray(mfe, dtype=float),
+            "mae": np.asarray(mae, dtype=float),
+            "final_ret": np.asarray(final_ret, dtype=float),
+            "time_to_mfe": np.asarray(time_to_mfe, dtype=float),
+            "time_to_mae": np.asarray(time_to_mae, dtype=float),
+            "fold": np.asarray(fold_id),
+        }
+    )
+
+    for col in ["mfe", "mae", "final_ret", "time_to_mfe", "time_to_mae"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.dropna(
+        subset=["mfe", "mae", "final_ret", "time_to_mfe", "time_to_mae", "fold"]
+    )
+
+    if df.empty:
+        return {
+            "quality_stability_score": np.nan,
+            "trade_path_quality_score": np.nan,
+            "n_obs": 0,
+            "n_folds": 0,
+        }
+
+    df["mfe"] = np.clip(df["mfe"], 0.0, None)
+    df["mae"] = np.clip(df["mae"], 0.0, None)
+    df["time_to_mfe"] = np.clip(df["time_to_mfe"], 0.0, None)
+    df["time_to_mae"] = np.clip(df["time_to_mae"], 0.0, None)
+
+    df["mfe_mae_ratio"] = np.clip(df["mfe"] / (df["mae"] + eps), 0.0, ratio_cap)
+    df["retention"] = np.clip(df["final_ret"] / (df["mfe"] + eps), 0.0, 1.0)
+    df["mfe_before_mae"] = (df["time_to_mfe"] < df["time_to_mae"]).astype(float)
+
+    ratio = df["mfe_mae_ratio"].to_numpy(dtype=float)
+    retention = df["retention"].to_numpy(dtype=float)
+    time_to_mfe_arr = df["time_to_mfe"].to_numpy(dtype=float)
+
+    median_mfe_mae = float(np.nanmedian(ratio))
+    q25 = float(np.nanpercentile(ratio, 25))
+    q75 = float(np.nanpercentile(ratio, 75))
+    iqr_mfe_mae = q75 - q25
+    p10_mfe_mae = float(np.nanpercentile(ratio, 10))
+    median_retention = float(np.nanmedian(retention))
+    median_time_to_mfe = float(np.nanmedian(time_to_mfe_arr))
+    pct_mfe_before_mae = float(np.nanmean(df["mfe_before_mae"].to_numpy(dtype=float)))
+
+    fold_medians = (
+        df.groupby("fold", observed=True)["mfe_mae_ratio"]
+        .median()
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+        .to_numpy(dtype=float)
+    )
+    n_folds = int(len(fold_medians))
+    if n_folds > 0:
+        median_fold_median = float(np.nanmedian(fold_medians))
+        mad_fold = float(np.nanmedian(np.abs(fold_medians - median_fold_median)))
+    else:
+        median_fold_median = np.nan
+        mad_fold = np.nan
+
+    rel_mad_fold = (
+        mad_fold / (median_fold_median + eps)
+        if np.isfinite(median_fold_median)
+        else np.nan
+    )
+    rel_iqr_pooled = iqr_mfe_mae / (median_mfe_mae + eps)
+
+    if np.isfinite(median_fold_median):
+        quality_stability_score = float(
+            median_fold_median / (1.0 + rel_mad_fold + rel_iqr_pooled)
+        )
+    else:
+        quality_stability_score = np.nan
+
+    smoothness_term = _safe_tanh_scale(median_mfe_mae, 3.0)
+    survivability_term = (
+        np.sqrt(max(_safe_tanh_scale(p10_mfe_mae, 2.0), 0.0))
+        if np.isfinite(p10_mfe_mae)
+        else np.nan
+    )
+    retention_term = (
+        float(np.clip(median_retention, 0.0, 1.0))
+        if np.isfinite(median_retention)
+        else np.nan
+    )
+    ordering_term = (
+        float(np.clip(pct_mfe_before_mae, 0.0, 1.0))
+        if np.isfinite(pct_mfe_before_mae)
+        else np.nan
+    )
+    decisiveness_term = (
+        float(1.0 / np.sqrt(median_time_to_mfe + 1.0))
+        if np.isfinite(median_time_to_mfe)
+        else np.nan
+    )
+    stability_term = _safe_tanh_scale(quality_stability_score, 3.0)
+
+    composite_terms = np.array(
+        [
+            smoothness_term,
+            survivability_term,
+            retention_term,
+            ordering_term,
+            decisiveness_term,
+            stability_term,
+        ],
+        dtype=float,
+    )
+    if np.any(~np.isfinite(composite_terms)):
+        trade_path_quality_score = np.nan
+    else:
+        trade_path_quality_score = float(np.prod(composite_terms))
+
+    return {
+        "quality_stability_score": quality_stability_score,
+        "trade_path_quality_score": trade_path_quality_score,
+        "n_obs": int(len(df)),
+        "n_folds": n_folds,
+    }
 
 
 def _clip_returns(x: np.ndarray) -> np.ndarray:
@@ -2138,6 +2437,11 @@ class RuleScorer:
         target_name: str = "fwd_ret_norm",
         horizon: int = 0,
         predictions: Optional[np.ndarray] = None,
+        path_mfe: Optional[np.ndarray] = None,
+        path_mae: Optional[np.ndarray] = None,
+        path_final_ret: Optional[np.ndarray] = None,
+        path_time_to_mfe: Optional[np.ndarray] = None,
+        path_time_to_mae: Optional[np.ndarray] = None,
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Score rules with optional bounded target support.
@@ -2175,6 +2479,18 @@ class RuleScorer:
         within_mask_ic_values: List[float] = []
         delta_within_mask_ic_values: List[float] = []
         entropy_reduction_values: List[float] = []
+        ic_sign_values: List[float] = []
+        decile_spread_sharpe_values: List[float] = []
+        slope_beta_values: List[float] = []
+        slope_fit_values: List[float] = []
+
+        # Track path quality observations across folds
+        path_mfe_values: List[float] = []
+        path_mae_values: List[float] = []
+        path_final_ret_values: List[float] = []
+        path_time_to_mfe_values: List[float] = []
+        path_time_to_mae_values: List[float] = []
+        path_fold_ids: List[int] = []
 
         for fold_id, (_, va_idx) in enumerate(folds):
             y_va = fwd_ret[va_idx]
@@ -2188,6 +2504,9 @@ class RuleScorer:
             delta_ic = np.nan
             within_mask_ic = np.nan
             delta_within_mask_ic = np.nan
+            decile_spread_sharpe = np.nan
+            regression_beta = np.nan
+            regression_slope_fit = np.nan
             entropy_reduction = np.nan
 
             if parent_context_key:
@@ -2230,15 +2549,54 @@ class RuleScorer:
                     )
                     if np.isfinite(within_mask_ic):
                         within_mask_ic_values.append(within_mask_ic)
+                        ic_sign_values.append(1.0 if within_mask_ic > 0 else -1.0)
                     if np.isfinite(delta_within_mask_ic):
                         delta_within_mask_ic_values.append(delta_within_mask_ic)
 
-                # Compute entropy reduction if bounded_target available
+                    decile_spread_sharpe = _compute_decile_spread_sharpe(
+                        preds_va, target_va, mask
+                    )
+                    if np.isfinite(decile_spread_sharpe):
+                        decile_spread_sharpe_values.append(decile_spread_sharpe)
+
+                    (
+                        regression_beta,
+                        regression_slope_fit,
+                    ) = _compute_regression_beta_and_fit(preds_va, target_va, mask)
+                    if np.isfinite(regression_beta):
+                        slope_beta_values.append(regression_beta)
+                    if np.isfinite(regression_slope_fit):
+                        slope_fit_values.append(regression_slope_fit)
+
                 if bounded_target is not None:
                     target_va = bounded_target[va_idx]
                     entropy_reduction = self._compute_entropy_reduction(target_va, mask)
                     if np.isfinite(entropy_reduction):
                         entropy_reduction_values.append(entropy_reduction)
+
+                # Collect path stats if available
+                if (
+                    path_mfe is not None
+                    and path_mae is not None
+                    and path_final_ret is not None
+                    and path_time_to_mfe is not None
+                    and path_time_to_mae is not None
+                ):
+                    mask_idx = np.where(mask)[0]
+                    if mask_idx.size > 0:
+                        global_idx = va_idx[mask_idx]
+                        path_mfe_values.extend(path_mfe[global_idx].tolist())
+                        path_mae_values.extend(path_mae[global_idx].tolist())
+                        path_final_ret_values.extend(
+                            path_final_ret[global_idx].tolist()
+                        )
+                        path_time_to_mfe_values.extend(
+                            path_time_to_mfe[global_idx].tolist()
+                        )
+                        path_time_to_mae_values.extend(
+                            path_time_to_mae[global_idx].tolist()
+                        )
+                        path_fold_ids.extend([fold_id] * int(mask_idx.size))
             else:
                 mean_ret = np.nan
                 std_ret = np.nan
@@ -2262,6 +2620,9 @@ class RuleScorer:
                     "delta_ic": delta_ic,
                     "within_mask_ic": within_mask_ic,
                     "delta_within_mask_ic": delta_within_mask_ic,
+                    "decile_spread_sharpe": decile_spread_sharpe,
+                    "regression_beta": regression_beta,
+                    "regression_slope_fit": regression_slope_fit,
                     "entropy_reduction": entropy_reduction,
                 }
             )
@@ -2300,7 +2661,18 @@ class RuleScorer:
                 "positive_ic_fraction": 0.0,
                 "within_mask_ic": np.nan,
                 "delta_within_mask_ic": np.nan,
+                "mean_ic": np.nan,
+                "ic_tstat": np.nan,
+                "ic_sign_consistency": np.nan,
+                "decile_spread_sharpe": np.nan,
+                "mask_ic_uplift": np.nan,
+                "regression_beta": np.nan,
+                "regression_slope_fit": np.nan,
                 "entropy_reduction": np.nan,
+                "learnability_step_c_score": np.nan,
+                "quality_stability_score": np.nan,
+                "trade_path_quality_score": np.nan,
+                "full_quality_score": np.nan,
                 "source_target": target_name,
                 "source_horizon": horizon,
                 "composite_score": -np.inf,
@@ -2406,19 +2778,120 @@ class RuleScorer:
             if delta_within_mask_ic_values
             else np.nan
         )
+        mean_ic = mean_within_mask_ic
+        if len(within_mask_ic_values) >= 2:
+            ic_std = float(np.nanstd(within_mask_ic_values, ddof=1))
+            ic_tstat = (
+                float(mean_ic / (ic_std / np.sqrt(len(within_mask_ic_values))))
+                if ic_std > 1e-12
+                else np.nan
+            )
+        else:
+            ic_tstat = np.nan
+        if ic_sign_values:
+            major_sign = 1.0 if np.nanmean(ic_sign_values) >= 0 else -1.0
+            ic_sign_consistency = float(
+                np.mean(np.array(ic_sign_values, dtype=float) == major_sign)
+            )
+        else:
+            ic_sign_consistency = np.nan
+        decile_spread_sharpe = (
+            float(np.nanmean(decile_spread_sharpe_values))
+            if decile_spread_sharpe_values
+            else np.nan
+        )
+        regression_beta = (
+            float(np.nanmean(slope_beta_values)) if slope_beta_values else np.nan
+        )
+        regression_slope_fit = (
+            float(np.nanmean(slope_fit_values)) if slope_fit_values else np.nan
+        )
+        mask_ic_uplift = mean_delta_within_mask_ic
         mean_entropy_reduction = (
             float(np.mean(entropy_reduction_values))
             if entropy_reduction_values
             else np.nan
         )
 
-        composite_score = (
-            mean_net_ret
-            * sqrt(max(mean_support_pct, 1e-12))
-            * presence_freq
-            * sign_consistency
-            / (1.0 + max(std_net_ret, 0.0))
+        path_quality = compute_trade_path_quality_metrics(
+            mfe=np.asarray(path_mfe_values, dtype=float),
+            mae=np.asarray(path_mae_values, dtype=float),
+            final_ret=np.asarray(path_final_ret_values, dtype=float),
+            time_to_mfe=np.asarray(path_time_to_mfe_values, dtype=float),
+            time_to_mae=np.asarray(path_time_to_mae_values, dtype=float),
+            fold_id=np.asarray(path_fold_ids, dtype=int),
         )
+        trade_path_quality_score = float(
+            path_quality.get("trade_path_quality_score", np.nan)
+        )
+        quality_stability_score = float(
+            path_quality.get("quality_stability_score", np.nan)
+        )
+
+        # Step A: economic edge (support and presence intentionally removed)
+        edge_ret_scale = float(self.cfg.get("score_edge_ret_scale", 0.002))
+        s_edge_ret = _safe_tanh_scale(max(directional_mean_ret, 0.0), edge_ret_scale)
+        s_edge_sign = float(np.clip(sign_consistency, 0.0, 1.0))
+        s_edge_vol = float(1.0 / (1.0 + max(std_net_ret, 0.0)))
+        s_edge = (
+            s_edge_ret * s_edge_sign * s_edge_vol if np.isfinite(s_edge_ret) else np.nan
+        )
+
+        # Step C: enhanced learnability score
+        ic_lo = float(self.cfg.get("step_c_ic_lo", -0.02))
+        ic_hi = float(self.cfg.get("step_c_ic_hi", 0.05))
+        ic_t_scale = float(self.cfg.get("step_c_ic_t_scale", 3.0))
+        spread_scale = float(self.cfg.get("step_c_spread_sharpe_scale", 2.0))
+        uplift_lo = float(self.cfg.get("step_c_uplift_lo", -0.01))
+        uplift_hi = float(self.cfg.get("step_c_uplift_hi", 0.03))
+        neutral_comp = float(self.cfg.get("score_component_neutral", 0.5))
+        eps_score = 1e-6
+
+        def _clip01(v: float) -> float:
+            if not np.isfinite(v):
+                return neutral_comp
+            return float(np.clip(v, 0.0, 1.0))
+
+        s_ic_mean = _clip01((mean_ic - ic_lo) / max(ic_hi - ic_lo, 1e-9))
+        s_ic_t = _clip01(_safe_tanh_scale(max(ic_tstat, 0.0), ic_t_scale))
+        s_ic_sign = _clip01(ic_sign_consistency)
+        s_spread = _clip01(
+            _safe_tanh_scale(max(decile_spread_sharpe, 0.0), spread_scale)
+        )
+        s_uplift = _clip01(
+            (mask_ic_uplift - uplift_lo) / max(uplift_hi - uplift_lo, 1e-9)
+        )
+        s_slope = _clip01(regression_slope_fit)
+
+        learnability_step_c_score = float(
+            (s_ic_mean + eps_score) ** 0.20
+            * (s_ic_t + eps_score) ** 0.15
+            * (s_ic_sign + eps_score) ** 0.15
+            * (s_spread + eps_score) ** 0.20
+            * (s_uplift + eps_score) ** 0.20
+            * (s_slope + eps_score) ** 0.10
+        )
+
+        s_path = (
+            float(np.clip(trade_path_quality_score, 0.0, 1.0))
+            if np.isfinite(trade_path_quality_score)
+            else neutral_comp
+        )
+        s_edge_use = s_edge if np.isfinite(s_edge) else neutral_comp
+        s_c_use = (
+            learnability_step_c_score
+            if np.isfinite(learnability_step_c_score)
+            else neutral_comp
+        )
+
+        # Final quality score with requested weights A=10, B=40, C=50
+        w_a, w_b, w_c = 0.10, 0.40, 0.50
+        full_quality_score = float(
+            (s_edge_use + eps_score) ** w_a
+            * (s_path + eps_score) ** w_b
+            * (s_c_use + eps_score) ** w_c
+        )
+        composite_score = full_quality_score
 
         # Deconstruct for visibility
         slots = parse_slot_map(
@@ -2451,7 +2924,18 @@ class RuleScorer:
             "positive_ic_fraction": positive_ic_fraction,
             "within_mask_ic": mean_within_mask_ic,
             "delta_within_mask_ic": mean_delta_within_mask_ic,
+            "mean_ic": mean_ic,
+            "ic_tstat": ic_tstat,
+            "ic_sign_consistency": ic_sign_consistency,
+            "decile_spread_sharpe": decile_spread_sharpe,
+            "mask_ic_uplift": mask_ic_uplift,
+            "regression_beta": regression_beta,
+            "regression_slope_fit": regression_slope_fit,
             "entropy_reduction": mean_entropy_reduction,
+            "learnability_step_c_score": learnability_step_c_score,
+            "trade_path_quality_score": trade_path_quality_score,
+            "quality_stability_score": quality_stability_score,
+            "full_quality_score": full_quality_score,
             "source_target": target_name,
             "source_horizon": horizon,
             "composite_score": composite_score,
@@ -2529,6 +3013,13 @@ class RuleScorer:
         n_instances_map: Optional[Dict[str, int]] = None,
         pipeline_stage_map: Optional[Dict[str, str]] = None,
         side_map: Optional[Dict[str, str]] = None,
+        bounded_target: Optional[np.ndarray] = None,
+        predictions: Optional[np.ndarray] = None,
+        path_mfe: Optional[np.ndarray] = None,
+        path_mae: Optional[np.ndarray] = None,
+        path_final_ret: Optional[np.ndarray] = None,
+        path_time_to_mfe: Optional[np.ndarray] = None,
+        path_time_to_mae: Optional[np.ndarray] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         resolver = resolver or self.mask_resolver
         if resolver is None:
@@ -2571,6 +3062,13 @@ class RuleScorer:
                 n_instances=(n_instances_map or {}).get(key),
                 pipeline_stage=(pipeline_stage_map or {}).get(key),
                 explicit_side=(side_map or {}).get(key),
+                bounded_target=bounded_target,
+                predictions=predictions,
+                path_mfe=path_mfe,
+                path_mae=path_mae,
+                path_final_ret=path_final_ret,
+                path_time_to_mfe=path_time_to_mfe,
+                path_time_to_mae=path_time_to_mae,
             )
             summaries.append(summary)
             audits.extend(fold_records)
@@ -2721,8 +3219,6 @@ class RulePruner:
         return pruned_df.sort_values("prune_rank_score", ascending=False).head(top_n)
 
 
-
-
 class IndependentRulePruner:
     """
     Independent Rule Pruner (Hurdle Edition v2.0)
@@ -2811,8 +3307,6 @@ class IndependentRulePruner:
         self.gate_summary = gate_summary
 
         return final_registry.sort_values("hurdle_excess", ascending=False)
-
-
 
 
 def compute_tbm_outcomes_per_symbol(
@@ -3064,9 +3558,7 @@ def build_stage_a_rejection_map(
                         (
                             scorer_accepted.get(
                                 "hurdle_excess",
-                                pd.Series(
-                                    index=scorer_accepted.index, dtype=float
-                                ),
+                                pd.Series(index=scorer_accepted.index, dtype=float),
                             )
                             <= 0
                         ).sum()
@@ -3453,6 +3945,13 @@ def run_mining_stage(
             "feature_importance_records": [],
         }
 
+    path_arrays = _compute_path_arrays_from_ohlc(
+        data=data,
+        side=explicit_side or "long",
+        horizon=int(horizon),
+        fallback_final_ret=fwd_ret,
+    )
+
     if folds is None:
         folds = build_walk_forward_folds(
             n_samples=len(data),
@@ -3532,6 +4031,8 @@ def run_mining_stage(
     fold_quality_reports = []
     model_fit_reports = []
     feature_importance_records = []
+    oof_pred_sum = np.zeros(len(data), dtype=np.float64)
+    oof_pred_count = np.zeros(len(data), dtype=np.int32)
 
     for fold_id, (tr_idx, va_idx) in enumerate(folds):
         # All rows are guaranteed feature-complete (filtered upstream).
@@ -3625,6 +4126,17 @@ def run_mining_stage(
                 target_type=target_type,
                 horizon=horizon,
             )
+            try:
+                va_pred = model.predict(X_va)
+                va_pred = np.asarray(va_pred, dtype=np.float64)
+                if va_pred.ndim > 1:
+                    va_pred = va_pred.ravel()
+                oof_pred_sum[va_idx] += va_pred
+                oof_pred_count[va_idx] += 1
+            except Exception as pred_exc:
+                tprint(
+                    f"WARNING: could not compute OOF predictions for fold {fold_id} seed {seed}: {pred_exc}"
+                )
             tprint(
                 f"{stage_name} fold {fold_id} seed {seed}: "
                 f"train_samples={fit_meta['train_samples']} val_samples={fit_meta['val_samples']} "
@@ -3902,6 +4414,9 @@ def run_mining_stage(
     }
     require_uplift_keys = unique_keys if require_uplift else []
     side_map = {key: explicit_side for key in unique_keys} if explicit_side else None
+    oof_predictions = np.full(len(data), np.nan, dtype=np.float64)
+    valid_oof = oof_pred_count > 0
+    oof_predictions[valid_oof] = oof_pred_sum[valid_oof] / oof_pred_count[valid_oof]
     scored_registry, full_scorer_audit = scorer.score_registry_oos(
         keys=unique_keys,
         fwd_ret=fwd_ret,
@@ -3913,6 +4428,13 @@ def run_mining_stage(
         n_instances_map=n_instances_map,
         pipeline_stage_map=pipeline_stage_map,
         side_map=side_map,
+        bounded_target=primary_target,
+        predictions=oof_predictions,
+        path_mfe=path_arrays["mfe"],
+        path_mae=path_arrays["mae"],
+        path_final_ret=path_arrays["final_ret"],
+        path_time_to_mfe=path_arrays["time_to_mfe"],
+        path_time_to_mae=path_arrays["time_to_mae"],
     )
     scored_registry["preset"] = cfg.get("preset", "exploration")
     atomic_to_csv(
@@ -5938,84 +6460,352 @@ class MaskAssessor:
             side="short",
         )
 
-        for _, row in registry.iterrows():
-            if self.mask_resolver:
-                mask = self.mask_resolver.get_mask(row["canonical_key"])
+        min_oof_coverage = float(self.cfg.get("learnability_min_oof_coverage", 0.05))
+        min_avg_trades = float(self.cfg.get("min_avg_trades_per_day_10_symbols", 0.1))
+        min_sign_consistency = float(self.cfg.get("min_sign_consistency", 0.75))
+
+        target_ret_by_side = {"long": fwd_ret, "short": -fwd_ret}
+        mean_ret_global_by_side = {
+            "long": float(np.nanmean(fwd_ret)),
+            "short": float(np.nanmean(-fwd_ret)),
+        }
+        global_cov_by_side = {"long": global_cov_long, "short": global_cov_short}
+        global_auc_by_side = {"long": global_auc_long, "short": global_auc_short}
+        global_entropy_by_side = {
+            "long": global_entropy_long,
+            "short": global_entropy_short,
+        }
+        tbm_side_map = {
+            "long": (tp_f_long, sl_f_long, to_f_long),
+            "short": (tp_f_short, sl_f_short, to_f_short),
+        }
+
+        mask_cache: Dict[str, np.ndarray] = {}
+        cheap_stats_cache: Dict[Tuple[str, str], Dict[str, float]] = {}
+        directional_edge_floor = float(self.cfg.get("directional_edge_floor", 0.0))
+        min_candidates_per_bucket = int(self.cfg.get("min_candidates_per_bucket", 50))
+        support_min = float(self.cfg.get("support_min_pct", 0.05))
+        support_max = float(self.cfg.get("support_max_pct", 0.15))
+        target_support = float(self.cfg.get("target_support_pct", 0.075))
+
+        # Precompute day buckets once to avoid per-rule timestamp parsing/groupby.
+        day_codes: Optional[np.ndarray] = None
+        n_day_buckets = 0
+        if "timestamp" in data.columns:
+            timestamps = pd.to_datetime(data["timestamp"], errors="coerce")
+            if timestamps.notna().any():
+                day_labels, _ = pd.factorize(timestamps.dt.date, sort=False)
+                day_codes = day_labels.astype(np.int32, copy=False)
+                n_day_buckets = int(day_labels.max() + 1)
+
+        def _get_or_compute_cheap_stats(
+            canonical_key: str, side: str, mask: np.ndarray
+        ) -> Dict[str, float]:
+            cache_key = (canonical_key, side)
+            cached_stats = cheap_stats_cache.get(cache_key)
+            if cached_stats is not None:
+                return cached_stats
+
+            support_pct = float(np.mean(mask))
+            support_ok = support_min <= support_pct <= support_max
+            support_score = -abs(support_pct - target_support)
+            avg_trades = self._compute_avg_trades_per_day(mask, data)
+
+            if day_codes is not None and n_day_buckets > 0:
+                active_codes = day_codes[mask]
+                active_codes = active_codes[active_codes >= 0]
+                if active_codes.size > 0:
+                    counts = np.bincount(active_codes, minlength=n_day_buckets).astype(
+                        np.float32, copy=False
+                    )
+                    mean_count = float(np.mean(counts))
+                    density_dispersion = (
+                        float(np.std(counts) / (mean_count + 1e-9))
+                        if mean_count > 0.0
+                        else 0.0
+                    )
+                else:
+                    density_dispersion = 0.0
             else:
-                mask = self._get_mask_for_rule(row["canonical_key"], X)
+                density_dispersion = 0.0
+
+            target_ret_masked = target_ret_by_side[side][mask]
+            tail_ratio = self._compute_tail_ratio(target_ret_masked)
+            mae, mfe = self._compute_mae_mfe(target_ret_masked)
+            mean_ret_global = mean_ret_global_by_side[side]
+            mean_ret_mask = float(np.nanmean(target_ret_masked))
+            ret_uplift = mean_ret_mask - mean_ret_global
+
+            stats = {
+                "support_pct": support_pct,
+                "support_ok": float(support_ok),
+                "support_score": support_score,
+                "avg_trades": avg_trades,
+                "density_dispersion": float(density_dispersion),
+                "tail_ratio": tail_ratio,
+                "mae": mae,
+                "mfe": mfe,
+                "mean_ret_global": mean_ret_global,
+                "mean_ret_mask": mean_ret_mask,
+                "ret_uplift": ret_uplift,
+            }
+            cheap_stats_cache[cache_key] = stats
+            return stats
+
+        # Bucket-level floor calibration and protection list to avoid over-pruning.
+        bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
+        bucket_stability_floor: Dict[Tuple[str, int, str], float] = {}
+        bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
+        bucket_density_cap: Dict[Tuple[str, int, str], float] = {}
+        bucket_tail_cap: Dict[Tuple[str, int, str], float] = {}
+
+        registry_work = registry.copy()
+        if "source_horizon" not in registry_work.columns:
+            registry_work["source_horizon"] = -1
+        if "source_target" not in registry_work.columns:
+            registry_work["source_target"] = "unknown"
+        if "trade_path_quality_score" not in registry_work.columns:
+            registry_work["trade_path_quality_score"] = np.nan
+        if "quality_stability_score" not in registry_work.columns:
+            registry_work["quality_stability_score"] = np.nan
+        if "directional_mean_ret" not in registry_work.columns:
+            registry_work["directional_mean_ret"] = np.nan
+        if "canonical_key" not in registry_work.columns:
+            registry_work["canonical_key"] = ""
+        if "side" not in registry_work.columns:
+            registry_work["side"] = "long"
+
+        for bucket_key, group_df in registry_work.groupby(
+            ["side", "source_horizon", "source_target"], dropna=False
+        ):
+            side_key, horizon_key, target_key = bucket_key
+            side_str = str(side_key) if pd.notna(side_key) else "long"
+            horizon_int = int(horizon_key) if pd.notna(horizon_key) else -1
+            target_str = str(target_key) if pd.notna(target_key) else "unknown"
+            normalized_bucket = (side_str, horizon_int, target_str)
+
+            path_vals = pd.to_numeric(
+                group_df["trade_path_quality_score"], errors="coerce"
+            ).to_numpy(dtype=float)
+            stability_vals = pd.to_numeric(
+                group_df["quality_stability_score"], errors="coerce"
+            ).to_numpy(dtype=float)
+            finite_path = path_vals[np.isfinite(path_vals)]
+            finite_stability = stability_vals[np.isfinite(stability_vals)]
+            bucket_path_floor[normalized_bucket] = (
+                float(np.nanquantile(finite_path, 0.20))
+                if finite_path.size > 0
+                else -np.inf
+            )
+            bucket_stability_floor[normalized_bucket] = (
+                float(np.nanquantile(finite_stability, 0.20))
+                if finite_stability.size > 0
+                else -np.inf
+            )
+
+            cheap_rank = (
+                pd.to_numeric(group_df["directional_mean_ret"], errors="coerce")
+                .fillna(0.0)
+                .to_numpy(dtype=float)
+                + pd.to_numeric(group_df["trade_path_quality_score"], errors="coerce")
+                .fillna(0.0)
+                .to_numpy(dtype=float)
+                + pd.to_numeric(group_df["quality_stability_score"], errors="coerce")
+                .fillna(0.0)
+                .to_numpy(dtype=float)
+            )
+            ranked = group_df.copy()
+            ranked["__cheap_rank"] = cheap_rank
+            protected = (
+                ranked.sort_values("__cheap_rank", ascending=False)
+                .head(max(min_candidates_per_bucket, 0))["canonical_key"]
+                .astype(str)
+                .tolist()
+            )
+            bucket_protected_keys[normalized_bucket] = set(protected)
+
+        # Precompute bucket-level top-decile caps for density dispersion and tail risk.
+        bucket_density_values: Dict[Tuple[str, int, str], List[float]] = {}
+        bucket_tail_values: Dict[Tuple[str, int, str], List[float]] = {}
+        for _, pre_row in registry.iterrows():
+            canonical_key = str(pre_row.get("canonical_key", ""))
+            side = str(pre_row.get("side", "long"))
+            if side not in target_ret_by_side:
+                side = "long"
+
+            if canonical_key in mask_cache:
+                mask = mask_cache[canonical_key]
+            elif self.mask_resolver:
+                mask = self.mask_resolver.get_mask(canonical_key)
+                mask_cache[canonical_key] = mask
+            else:
+                mask = self._get_mask_for_rule(canonical_key, X)
+                mask_cache[canonical_key] = mask
+            if np.sum(mask) < 20:
+                continue
+
+            horizon_raw = pre_row.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+            target_key = str(pre_row.get("source_target", "unknown"))
+            bucket_key = (side, horizon_key, target_key)
+
+            cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
+            bucket_density_values.setdefault(bucket_key, []).append(
+                float(cheap["density_dispersion"])
+            )
+            bucket_tail_values.setdefault(bucket_key, []).append(
+                float(cheap["tail_ratio"])
+            )
+
+        for bucket_key, values in bucket_density_values.items():
+            finite_vals = np.asarray(values, dtype=float)
+            finite_vals = finite_vals[np.isfinite(finite_vals)]
+            bucket_density_cap[bucket_key] = (
+                float(np.nanquantile(finite_vals, 0.90))
+                if finite_vals.size > 0
+                else np.inf
+            )
+        for bucket_key, values in bucket_tail_values.items():
+            finite_vals = np.asarray(values, dtype=float)
+            finite_vals = finite_vals[np.isfinite(finite_vals)]
+            bucket_tail_cap[bucket_key] = (
+                float(np.nanquantile(finite_vals, 0.90))
+                if finite_vals.size > 0
+                else np.inf
+            )
+
+        for _, row in registry.iterrows():
+            canonical_key = str(row["canonical_key"])
+            if canonical_key in mask_cache:
+                mask = mask_cache[canonical_key]
+            elif self.mask_resolver:
+                mask = self.mask_resolver.get_mask(canonical_key)
+                mask_cache[canonical_key] = mask
+            else:
+                mask = self._get_mask_for_rule(canonical_key, X)
+                mask_cache[canonical_key] = mask
             if np.sum(mask) < 20:
                 continue
 
             # 0. Infrastructure: Component Extraction
             slots = parse_slot_map(
-                row["canonical_key"],
+                canonical_key,
                 self.cfg.get("slot_order", ("trigger", "location", "regime")),
             )
 
-            side = row.get("side", "long")
-            target_ret = -fwd_ret if side == "short" else fwd_ret
+            side = str(row.get("side", "long"))
+            if side not in target_ret_by_side:
+                side = "long"
+            horizon_raw = row.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+            target_key = str(row.get("source_target", "unknown"))
+            bucket_key = (side, horizon_key, target_key)
+            target_ret = target_ret_by_side[side]
+            sign_consistency = float(row.get("sign_consistency", 0.0))
 
             # 1. Triple Barrier
-            rule_tp_f = tp_f_short if side == "short" else tp_f_long
-            rule_sl_f = sl_f_short if side == "short" else sl_f_long
-            rule_to_f = to_f_short if side == "short" else to_f_long
+            rule_tp_f, rule_sl_f, rule_to_f = tbm_side_map[side]
 
             tbm_metrics = self._compute_tbm_metrics(
                 mask, rule_tp_f, rule_sl_f, rule_to_f, target_ret
             )
 
-            # 2. Economic Viability
-            avg_trades = self._compute_avg_trades_per_day(mask, data)
+            # 2-6. Cached cheap stats (no Ridge work)
+            cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
 
-            if "timestamp" in data.columns:
-                days = pd.to_datetime(data["timestamp"]).dt.date
-                trades_per_day = pd.Series(mask).groupby(days).sum()
-                density_dispersion = trades_per_day.std() / (
-                    trades_per_day.mean() + 1e-9
+            support_pct = float(cheap["support_pct"])
+            support_ok = bool(cheap["support_ok"])
+            support_score = float(cheap["support_score"])
+            avg_trades = float(cheap["avg_trades"])
+            density_dispersion = float(cheap["density_dispersion"])
+            tail_ratio = float(cheap["tail_ratio"])
+            mae = float(cheap["mae"])
+            mfe = float(cheap["mfe"])
+            mean_ret_global = float(cheap["mean_ret_global"])
+            mean_ret_mask = float(cheap["mean_ret_mask"])
+            ret_uplift = float(cheap["ret_uplift"])
+
+            # Cheap rejection gates before expensive Ridge subset AUC
+            baseline_oof_coverage = float(global_cov_by_side[side])
+            rejected = False
+            rejection_reason = ""
+            if avg_trades < min_avg_trades:
+                rejected, rejection_reason = True, "low_trades_per_day"
+            elif not support_ok:
+                rejected, rejection_reason = True, "support_out_of_range"
+            elif sign_consistency < min_sign_consistency:
+                rejected, rejection_reason = True, "low_sign_consistency"
+            elif baseline_oof_coverage < min_oof_coverage:
+                rejected, rejection_reason = True, "insufficient_baseline_oof_coverage"
+            elif (
+                float(row.get("directional_mean_ret", np.nan)) < directional_edge_floor
+            ):
+                # Keep top-N per bucket protected from over-aggressive flooring.
+                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
+                    rejected, rejection_reason = True, "low_directional_edge"
+            elif float(
+                row.get("trade_path_quality_score", np.nan)
+            ) < bucket_path_floor.get(bucket_key, -np.inf):
+                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
+                    rejected, rejection_reason = True, "low_path_quality_floor"
+            elif float(
+                row.get("quality_stability_score", np.nan)
+            ) < bucket_stability_floor.get(bucket_key, -np.inf):
+                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
+                    rejected, rejection_reason = True, "low_stability_floor"
+            elif density_dispersion > bucket_density_cap.get(bucket_key, np.inf):
+                rejected, rejection_reason = True, "high_density_dispersion_top_decile"
+            elif tail_ratio > bucket_tail_cap.get(bucket_key, np.inf):
+                rejected, rejection_reason = True, "high_tail_risk_top_decile"
+
+            # Ensure we preserve at least top-N candidates per bucket through cheap gates.
+            if (
+                rejected
+                and canonical_key in bucket_protected_keys.get(bucket_key, set())
+                and rejection_reason
+                in {
+                    "low_trades_per_day",
+                    "support_out_of_range",
+                    "low_sign_consistency",
+                    "insufficient_baseline_oof_coverage",
+                    "low_directional_edge",
+                    "low_path_quality_floor",
+                    "low_stability_floor",
+                }
+            ):
+                rejected = False
+                rejection_reason = ""
+
+            # 7. Learnability (Efficiency Frontier) - expensive section
+            global_auc = global_auc_by_side[side]
+            global_entropy = global_entropy_by_side[side]
+            subset_oof_coverage = 0.0
+            lift = np.nan
+            entropy_red = np.nan
+            if not rejected:
+                mask_auc, subset_oof_coverage = self._compute_subset_auc(
+                    X, target_ret, mask, folds
                 )
-            else:
-                tprint(
-                    "DEBUG: Root cause for 0.0 density_dispersion: 'timestamp' missing from data columns."
-                )
-                density_dispersion = 0.0
+                if np.isfinite(mask_auc) and np.isfinite(global_auc):
+                    lift = mask_auc - global_auc
 
-            # 3. Risk & Stability
-            tail_ratio = self._compute_tail_ratio(target_ret[mask])
-            sign_consistency = row["sign_consistency"]
-
-            # 4. Support Constraint
-            support_pct = float(np.mean(mask))
-            support_ok = 0.05 <= support_pct <= 0.15
-            target_support = 0.075
-            support_score = -abs(support_pct - target_support)
-
-            # 5. Return Uplift
-            mean_ret_global = float(np.nanmean(target_ret))
-            mean_ret_mask = float(np.nanmean(target_ret[mask]))
-            ret_uplift = mean_ret_mask - mean_ret_global
-
-            # 6. MAE/MFE Metrics
-            mae, mfe = self._compute_mae_mfe(target_ret[mask])
-
-            # 7. Learnability (Efficiency Frontier)
-            global_auc = global_auc_short if side == "short" else global_auc_long
-            global_entropy = (
-                global_entropy_short if side == "short" else global_entropy_long
-            )
-
-            mask_auc, subset_oof_coverage = self._compute_subset_auc(
-                X, target_ret, mask, folds
-            )
-            baseline_oof_coverage = (
-                global_cov_short if side == "short" else global_cov_long
-            )
-            if np.isfinite(mask_auc) and np.isfinite(global_auc):
-                lift = mask_auc - global_auc
-            else:
-                lift = np.nan
-
-            mask_entropy = self._compute_entropy(target_ret[mask])
-            entropy_red = 1.0 - (mask_entropy / (global_entropy + 1e-9))
+                mask_entropy = self._compute_entropy(target_ret[mask])
+                entropy_red = 1.0 - (mask_entropy / (global_entropy + 1e-9))
+                if subset_oof_coverage < min_oof_coverage:
+                    rejected, rejection_reason = (
+                        True,
+                        "insufficient_subset_oof_coverage",
+                    )
+                elif not np.isfinite(lift):
+                    rejected, rejection_reason = True, "missing_learnability"
+                elif lift < 0.01:  # Lower threshold for lift (was 1.10)
+                    rejected, rejection_reason = True, "low_lift"
 
             # 8. Event-based Expected Value
             tp_payoff = tp_atr  # TP payoff in ATR units
@@ -6036,30 +6826,6 @@ class MaskAssessor:
                 + 0.20 * ev_per_event
                 + 0.10 * sign_consistency
             )
-
-            # Rejection Gates
-            rejected = False
-            rejection_reason = ""
-            min_oof_coverage = float(
-                self.cfg.get("learnability_min_oof_coverage", 0.05)
-            )
-            if avg_trades < float(
-                self.cfg.get("min_avg_trades_per_day_10_symbols", 0.1)
-            ):
-                rejected, rejection_reason = True, "low_trades_per_day"
-            elif not support_ok:
-                rejected, rejection_reason = True, "support_out_of_range"
-            elif baseline_oof_coverage < min_oof_coverage:
-                rejected, rejection_reason = True, "insufficient_baseline_oof_coverage"
-            elif subset_oof_coverage < min_oof_coverage:
-                rejected, rejection_reason = True, "insufficient_subset_oof_coverage"
-            elif not np.isfinite(lift):
-                rejected, rejection_reason = True, "missing_learnability"
-            elif sign_consistency < 0.75:
-                rejected, rejection_reason = True, "low_sign_consistency"
-            elif lift < 0.01:  # Lower threshold for lift (was 1.10)
-                rejected, rejection_reason = True, "low_lift"
-            # NOTE: low_entropy_reduction gate removed per user request
 
             # Production classification
             rule_for_classification = {

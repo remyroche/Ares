@@ -44,10 +44,6 @@ from extreme_price_movements.data_store import (
 from extreme_price_movements.hpo_lgbm_regime_miner import (
     run_short_hpo_for_target_horizon,
 )
-from extreme_price_movements.intraday_crypto_library import (
-    INTRADAY_TRIGGER_COLUMNS,
-    LOCATION_FILTER_COLUMNS,
-)
 from extreme_price_movements.periods_symbols_management import (
     EventSchema,
     SlicePlanner,

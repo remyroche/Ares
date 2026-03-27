@@ -555,7 +555,16 @@ def test_build_stage_a_rejection_map_captures_stage_funnel():
             ]
         ),
         "scorer_accepted": pd.DataFrame(
-            [{"canonical_key": "rule_pass", "accepted": True, "mean_support_pct": 0.05, "hurdle_excess": 0.01, "sign_consistency": 0.9, "discovery_count": 3}]
+            [
+                {
+                    "canonical_key": "rule_pass",
+                    "accepted": True,
+                    "mean_support_pct": 0.05,
+                    "hurdle_excess": 0.01,
+                    "sign_consistency": 0.9,
+                    "discovery_count": 3,
+                }
+            ]
         ),
         "consolidated_registry": pd.DataFrame(
             [

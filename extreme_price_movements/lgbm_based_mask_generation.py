@@ -2607,6 +2607,166 @@ class RuleScorer:
 
 
 @njit(cache=True, fastmath=True)
+def path_metrics_atr_nb(
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    atr: np.ndarray,
+    horizon: int,
+    side_mult: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    n = close.shape[0]
+    mfe = np.zeros(n, dtype=np.float32)
+    mae = np.zeros(n, dtype=np.float32)
+    t_mfe = np.zeros(n, dtype=np.float32)
+    t_mae = np.zeros(n, dtype=np.float32)
+    final_ret = np.zeros(n, dtype=np.float32)
+
+    for i in range(n - horizon):
+        c0 = close[i]
+        a0 = max(atr[i], 1e-9)
+
+        max_fav = 0.0
+        max_adv = 0.0
+        best_t_fav = 0
+        best_t_adv = 0
+
+        for j in range(1, horizon + 1):
+            hi = high[i + j]
+            lo = low[i + j]
+
+            if side_mult > 0:
+                fav = hi - c0
+                adv = c0 - lo
+            else:
+                fav = c0 - lo
+                adv = hi - c0
+
+            if fav > max_fav:
+                max_fav = fav
+                best_t_fav = j
+            if adv > max_adv:
+                max_adv = adv
+                best_t_adv = j
+
+        mfe[i] = max_fav / a0
+        mae[i] = max_adv / a0
+        t_mfe[i] = best_t_fav
+        t_mae[i] = best_t_adv
+        if side_mult > 0:
+            final_ret[i] = (close[i + horizon] - c0) / a0
+        else:
+            final_ret[i] = (c0 - close[i + horizon]) / a0
+
+    for i in range(n - horizon, n):
+        mfe[i] = np.nan
+        mae[i] = np.nan
+        t_mfe[i] = np.nan
+        t_mae[i] = np.nan
+        final_ret[i] = np.nan
+
+    return mfe, mae, t_mfe, t_mae, final_ret
+
+
+def compute_trade_path_quality_metrics(
+    mfe,
+    mae,
+    final_ret,
+    time_to_mfe,
+    time_to_mae,
+    fold_id,
+    eps=1e-6,
+    ratio_cap=12.0,
+):
+    """
+    Computes regime-level trade-path quality metrics.
+    """
+    if len(mfe) == 0:
+        return {
+            "median_mfe_mae": np.nan,
+            "std_fold_median_mfe_mae": np.nan,
+            "iqr_mfe_mae": np.nan,
+            "p10_mfe_mae": np.nan,
+            "median_retention": np.nan,
+            "median_time_to_MFE": np.nan,
+            "pct_MFE_before_MAE": np.nan,
+            "quality_stability_score": 0.0,
+        }
+
+    df = pd.DataFrame(
+        {
+            "mfe": mfe,
+            "mae": mae,
+            "final_ret": final_ret,
+            "time_to_mfe": time_to_mfe,
+            "time_to_mae": time_to_mae,
+            "fold": fold_id,
+        }
+    )
+
+    # Robust MFE/MAE ratio
+    df["mfe_mae_ratio"] = df["mfe"] / (df["mae"] + eps)
+    df["mfe_mae_ratio"] = np.clip(df["mfe_mae_ratio"], 0.0, ratio_cap)
+    ratio = df["mfe_mae_ratio"].values
+
+    # Retention (monetizability)
+    df["retention"] = df["final_ret"] / (df["mfe"] + eps)
+    df["retention"] = np.clip(df["retention"], -1.0, 1.0)
+    retention = df["retention"].values
+
+    # Basic pooled distribution metrics
+    median_mfe_mae = np.nanmedian(ratio)
+    q75 = np.nanpercentile(ratio, 75)
+    q25 = np.nanpercentile(ratio, 25)
+    iqr_mfe_mae = q75 - q25
+    p10_mfe_mae = np.nanpercentile(ratio, 10)
+
+    # Fold-level stability metrics
+    fold_medians = df.groupby("fold")["mfe_mae_ratio"].median().values
+    if len(fold_medians) > 0:
+        std_fold_median_mfe_mae = np.nanstd(fold_medians)
+        med_fold_median = np.nanmedian(fold_medians)
+        mad_fold_median_mfe_mae = np.nanmedian(np.abs(fold_medians - med_fold_median))
+    else:
+        std_fold_median_mfe_mae = np.nan
+        med_fold_median = np.nan
+        mad_fold_median_mfe_mae = np.nan
+
+    # Monetizability metrics
+    median_retention = np.nanmedian(retention)
+
+    # Time efficiency metrics
+    median_time_to_mfe = np.nanmedian(df["time_to_mfe"].values)
+
+    # Path ordering quality metric
+    mfe_before_mae = df["time_to_mfe"].values < df["time_to_mae"].values
+    pct_MFE_before_MAE = np.nanmean(mfe_before_mae.astype(float))
+
+    # Stability-adjusted regime-quality score
+    if (
+        np.isfinite(med_fold_median)
+        and np.isfinite(mad_fold_median_mfe_mae)
+        and np.isfinite(iqr_mfe_mae)
+    ):
+        quality_stability_score = med_fold_median / (
+            1.0 + mad_fold_median_mfe_mae + iqr_mfe_mae
+        )
+    else:
+        quality_stability_score = 0.0
+
+    return {
+        "median_mfe_mae": median_mfe_mae,
+        "std_fold_median_mfe_mae": std_fold_median_mfe_mae,
+        "iqr_mfe_mae": iqr_mfe_mae,
+        "p10_mfe_mae": p10_mfe_mae,
+        "median_retention": median_retention,
+        "median_time_to_MFE": median_time_to_mfe,
+        "pct_MFE_before_MAE": pct_MFE_before_MAE,
+        "quality_stability_score": quality_stability_score,
+    }
+
+
+@njit(cache=True, fastmath=True)
 def tbm_outcomes_atr_nb(
     close: np.ndarray,
     high: np.ndarray,
@@ -2721,8 +2881,6 @@ class RulePruner:
         return pruned_df.sort_values("prune_rank_score", ascending=False).head(top_n)
 
 
-
-
 class IndependentRulePruner:
     """
     Independent Rule Pruner (Hurdle Edition v2.0)
@@ -2811,8 +2969,6 @@ class IndependentRulePruner:
         self.gate_summary = gate_summary
 
         return final_registry.sort_values("hurdle_excess", ascending=False)
-
-
 
 
 def compute_tbm_outcomes_per_symbol(
@@ -3064,9 +3220,7 @@ def build_stage_a_rejection_map(
                         (
                             scorer_accepted.get(
                                 "hurdle_excess",
-                                pd.Series(
-                                    index=scorer_accepted.index, dtype=float
-                                ),
+                                pd.Series(index=scorer_accepted.index, dtype=float),
                             )
                             <= 0
                         ).sum()
@@ -5938,6 +6092,27 @@ class MaskAssessor:
             side="short",
         )
 
+        # Compute global path metrics for trade quality
+        (
+            pm_mfe_long,
+            pm_mae_long,
+            pm_tmfe_long,
+            pm_tmae_long,
+            pm_fret_long,
+        ) = path_metrics_atr_nb(close, high, low, atr, horizon, 1.0)
+        (
+            pm_mfe_short,
+            pm_mae_short,
+            pm_tmfe_short,
+            pm_tmae_short,
+            pm_fret_short,
+        ) = path_metrics_atr_nb(close, high, low, atr, horizon, -1.0)
+
+        # Prepare fold_id mapping for trade quality grouping
+        fold_ids = np.full(len(X), -1, dtype=np.int32)
+        for f_idx, (_, va_idx) in enumerate(folds):
+            fold_ids[va_idx] = f_idx
+
         for _, row in registry.iterrows():
             if self.mask_resolver:
                 mask = self.mask_resolver.get_mask(row["canonical_key"])
@@ -5997,22 +6172,89 @@ class MaskAssessor:
             # 6. MAE/MFE Metrics
             mae, mfe = self._compute_mae_mfe(target_ret[mask])
 
+            # Path-dependent metrics for current mask
+            if side == "short":
+                pm_mfe, pm_mae, pm_tmfe, pm_tmae, pm_fret = (
+                    pm_mfe_short,
+                    pm_mae_short,
+                    pm_tmfe_short,
+                    pm_tmae_short,
+                    pm_fret_short,
+                )
+            else:
+                pm_mfe, pm_mae, pm_tmfe, pm_tmae, pm_fret = (
+                    pm_mfe_long,
+                    pm_mae_long,
+                    pm_tmfe_long,
+                    pm_tmae_long,
+                    pm_fret_long,
+                )
+
+            valid_path_idx = mask & (fold_ids >= 0) & np.isfinite(pm_mfe)
+
+            if np.sum(valid_path_idx) > 0:
+                p90_MAE = float(np.nanpercentile(pm_mae[valid_path_idx], 90))
+                p50_MFE = float(np.nanmedian(pm_mfe[valid_path_idx]))
+
+                tq_metrics = compute_trade_path_quality_metrics(
+                    mfe=pm_mfe[valid_path_idx],
+                    mae=pm_mae[valid_path_idx],
+                    final_ret=pm_fret[valid_path_idx],
+                    time_to_mfe=pm_tmfe[valid_path_idx],
+                    time_to_mae=pm_tmae[valid_path_idx],
+                    fold_id=fold_ids[valid_path_idx],
+                )
+            else:
+                p90_MAE = np.nan
+                p50_MFE = np.nan
+                tq_metrics = {
+                    "median_mfe_mae": np.nan,
+                    "std_fold_median_mfe_mae": np.nan,
+                    "iqr_mfe_mae": np.nan,
+                    "p10_mfe_mae": np.nan,
+                    "median_retention": np.nan,
+                    "median_time_to_MFE": np.nan,
+                    "pct_MFE_before_MAE": np.nan,
+                    "quality_stability_score": 0.0,
+                }
+
+            quality_stability_score = tq_metrics.get("quality_stability_score", 0.0)
+
+            # Rejection Gates setup
+            rejected = False
+            rejection_reason = ""
+
+            # Hard gate before Ridge model training
+            if (
+                np.isfinite(p90_MAE)
+                and np.isfinite(p50_MFE)
+                and p90_MAE > 0.5 * p50_MFE
+            ):
+                rejected = True
+                rejection_reason = "high_adverse_excursion"
+
             # 7. Learnability (Efficiency Frontier)
             global_auc = global_auc_short if side == "short" else global_auc_long
             global_entropy = (
                 global_entropy_short if side == "short" else global_entropy_long
             )
 
-            mask_auc, subset_oof_coverage = self._compute_subset_auc(
-                X, target_ret, mask, folds
-            )
+            if not rejected:
+                mask_auc, subset_oof_coverage = self._compute_subset_auc(
+                    X, target_ret, mask, folds
+                )
+                if np.isfinite(mask_auc) and np.isfinite(global_auc):
+                    lift = mask_auc - global_auc
+                else:
+                    lift = np.nan
+            else:
+                mask_auc = np.nan
+                subset_oof_coverage = 0.0
+                lift = np.nan
+
             baseline_oof_coverage = (
                 global_cov_short if side == "short" else global_cov_long
             )
-            if np.isfinite(mask_auc) and np.isfinite(global_auc):
-                lift = mask_auc - global_auc
-            else:
-                lift = np.nan
 
             mask_entropy = self._compute_entropy(target_ret[mask])
             entropy_red = 1.0 - (mask_entropy / (global_entropy + 1e-9))
@@ -6035,31 +6277,37 @@ class MaskAssessor:
                 + 0.20 * ret_uplift
                 + 0.20 * ev_per_event
                 + 0.10 * sign_consistency
+                + 0.10 * quality_stability_score
             )
 
-            # Rejection Gates
-            rejected = False
-            rejection_reason = ""
+            # Continue Rejection Gates
             min_oof_coverage = float(
                 self.cfg.get("learnability_min_oof_coverage", 0.05)
             )
-            if avg_trades < float(
-                self.cfg.get("min_avg_trades_per_day_10_symbols", 0.1)
-            ):
-                rejected, rejection_reason = True, "low_trades_per_day"
-            elif not support_ok:
-                rejected, rejection_reason = True, "support_out_of_range"
-            elif baseline_oof_coverage < min_oof_coverage:
-                rejected, rejection_reason = True, "insufficient_baseline_oof_coverage"
-            elif subset_oof_coverage < min_oof_coverage:
-                rejected, rejection_reason = True, "insufficient_subset_oof_coverage"
-            elif not np.isfinite(lift):
-                rejected, rejection_reason = True, "missing_learnability"
-            elif sign_consistency < 0.75:
-                rejected, rejection_reason = True, "low_sign_consistency"
-            elif lift < 0.01:  # Lower threshold for lift (was 1.10)
-                rejected, rejection_reason = True, "low_lift"
-            # NOTE: low_entropy_reduction gate removed per user request
+            if not rejected:
+                if avg_trades < float(
+                    self.cfg.get("min_avg_trades_per_day_10_symbols", 0.1)
+                ):
+                    rejected, rejection_reason = True, "low_trades_per_day"
+                elif not support_ok:
+                    rejected, rejection_reason = True, "support_out_of_range"
+                elif baseline_oof_coverage < min_oof_coverage:
+                    rejected, rejection_reason = (
+                        True,
+                        "insufficient_baseline_oof_coverage",
+                    )
+                elif subset_oof_coverage < min_oof_coverage:
+                    rejected, rejection_reason = (
+                        True,
+                        "insufficient_subset_oof_coverage",
+                    )
+                elif not np.isfinite(lift):
+                    rejected, rejection_reason = True, "missing_learnability"
+                elif sign_consistency < 0.75:
+                    rejected, rejection_reason = True, "low_sign_consistency"
+                elif lift < 0.01:  # Lower threshold for lift (was 1.10)
+                    rejected, rejection_reason = True, "low_lift"
+                # NOTE: low_entropy_reduction gate removed per user request
 
             # Production classification
             rule_for_classification = {
@@ -6091,6 +6339,9 @@ class MaskAssessor:
                     "location": slots.get("location", "*"),
                     "regime": slots.get("regime", "*"),
                     "regime_score": regime_score,
+                    "p90_MAE": p90_MAE,
+                    "p50_MFE": p50_MFE,
+                    **tq_metrics,
                     "is_structurally_sound": not rejected,
                     "rejection_reason": rejection_reason,
                     "support_pct": support_pct,

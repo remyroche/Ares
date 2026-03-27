@@ -2010,7 +2010,7 @@ class RuleScorer:
         # Asymmetric U-shaped penalty favoring support around prune_target_support_pct (e.g., 10-15%)
         dist = safe_support - target_support
         # Punish lower support more heavily than higher support (asymmetry)
-        penalty_multiplier = 1.0 + (30.0 * (dist ** 2) if dist < 0 else 10.0 * (dist ** 2))
+        penalty_multiplier = 1.0 + (10.0 * (dist ** 2) if dist < 0 else 5.0 * (dist ** 2))
 
         return (base_hurdle * (1.0 - complexity_bonus)) * penalty_multiplier
 
@@ -2764,7 +2764,7 @@ class IndependentRulePruner:
         safe_support = df["mean_support_pct"].clip(lower=0.0005)
         dist = safe_support - self.target_support
         # Asymmetric penalty multiplier
-        penalty_multiplier = 1.0 + np.where(dist < 0, 30.0 * (dist ** 2), 10.0 * (dist ** 2))
+        penalty_multiplier = 1.0 + np.where(dist < 0, 10.0 * (dist ** 2), 5.0 * (dist ** 2))
 
         df["required_hurdle"] = (self.base_hurdle * (1.0 - df["comp_bonus"])) * penalty_multiplier
 

@@ -112,6 +112,7 @@ def _compute_mfe_mae_numba(panel_idx_arr, close, high, low, horizon, side_is_lon
     mae = np.full(n, np.nan, dtype=np.float32)
     time_to_mfe = np.full(n, np.nan, dtype=np.float32)
     time_to_mae = np.full(n, np.nan, dtype=np.float32)
+    retention = np.full(n, np.nan, dtype=np.float32)
 
     for i in range(n):
         pidx = panel_idx_arr[i]
@@ -158,8 +159,14 @@ def _compute_mfe_mae_numba(panel_idx_arr, close, high, low, horizon, side_is_lon
             mae[i] = cur_mae
             time_to_mfe[i] = t_mfe
             time_to_mae[i] = t_mae
+            exit_p = close[r + horizon, c]
+            if side_is_long:
+                final_ret = (exit_p - entry_p) / entry_p
+            else:
+                final_ret = (entry_p - exit_p) / entry_p
+            retention[i] = final_ret / (cur_mfe + 1e-6)
 
-    return mfe, mae, time_to_mfe, time_to_mae
+    return mfe, mae, time_to_mfe, time_to_mae, retention
 
 from extreme_price_movements.labeling import (
     OUT_SL,
@@ -3952,7 +3959,7 @@ def evaluate_config(
                 h_np = artifacts.panel["high"].to_numpy(dtype=np.float32)
                 l_np = artifacts.panel["low"].to_numpy(dtype=np.float32)
 
-                mfe_arr, mae_arr, t_mfe_arr, t_mae_arr = _compute_mfe_mae_numba(
+                mfe_arr, mae_arr, t_mfe_arr, t_mae_arr, ret_arr = _compute_mfe_mae_numba(
                     panel_idx_arr, c_np, h_np, l_np, h, side == "long"
                 )
 
@@ -3969,6 +3976,7 @@ def evaluate_config(
                     mae_arr,
                     t_mfe_arr,
                     t_mae_arr,
+                    ret_arr,
                 )
                 if len(stack_cache) > 256:
                     stack_cache.pop(next(iter(stack_cache)))
@@ -3986,6 +3994,7 @@ def evaluate_config(
                     mae_arr,
                     t_mfe_arr,
                     t_mae_arr,
+                    ret_arr,
                 ) = stack_cache[stack_key]
 
             # Create DataFrame directly from cached masked numpy arrays (now only ~4,000 rows, not 7,000,000)
@@ -4002,6 +4011,7 @@ def evaluate_config(
                     "mae": mae_arr,
                     "time_to_mfe": t_mfe_arr,
                     "time_to_mae": t_mae_arr,
+                    "retention": ret_arr,
                 },
                 index=stacked_idx,
             )
@@ -4043,6 +4053,7 @@ def evaluate_config(
     events["mae"] = events["mae"].astype(np.float32, copy=False)
     events["time_to_mfe"] = events["time_to_mfe"].astype(np.float32, copy=False)
     events["time_to_mae"] = events["time_to_mae"].astype(np.float32, copy=False)
+    events["retention"] = events["retention"].astype(np.float32, copy=False)
     events["horizon"] = events["horizon"].astype(np.int16, copy=False)
     events["horizon_eff"] = events["horizon_eff"].astype(np.float32, copy=False)
     events["side"] = events["side"].astype("category")
@@ -4647,13 +4658,15 @@ def evaluate_config(
         _mae_top20 = g["mae"].values[_cell_top20_mask]
         _t_mfe_top20 = g["time_to_mfe"].values[_cell_top20_mask]
         _t_mae_top20 = g["time_to_mae"].values[_cell_top20_mask]
+        _retention_top20 = g["retention"].values[_cell_top20_mask]
 
         # Filter NaNs
-        _valid_mfe_mae = np.isfinite(_mfe_top20) & np.isfinite(_mae_top20) & np.isfinite(_t_mfe_top20) & np.isfinite(_t_mae_top20)
+        _valid_mfe_mae = np.isfinite(_mfe_top20) & np.isfinite(_mae_top20) & np.isfinite(_t_mfe_top20) & np.isfinite(_t_mae_top20) & np.isfinite(_retention_top20)
         _mfe_top20 = _mfe_top20[_valid_mfe_mae]
         _mae_top20 = _mae_top20[_valid_mfe_mae]
         _t_mfe_top20 = _t_mfe_top20[_valid_mfe_mae]
         _t_mae_top20 = _t_mae_top20[_valid_mfe_mae]
+        _retention_top20 = _retention_top20[_valid_mfe_mae]
 
         if len(_mfe_top20) > 0:
             _ratio = _mfe_top20 / (_mae_top20 + 1e-6)
@@ -4662,18 +4675,24 @@ def evaluate_config(
             _p90_mae = float(np.percentile(_mae_top20, 90))
             _p50_mfe = float(np.median(_mfe_top20))
             _pct_mfe_before_mae = float(np.mean(_t_mfe_top20 < _t_mae_top20))
+            _median_retention = float(np.median(_retention_top20))
+            _median_time_to_mfe = float(np.median(_t_mfe_top20))
         else:
             _median_mfe_mae = float("nan")
             _p10_mfe_mae = float("nan")
             _p90_mae = float("nan")
             _p50_mfe = float("nan")
             _pct_mfe_before_mae = float("nan")
+            _median_retention = float("nan")
+            _median_time_to_mfe = float("nan")
 
         bucket_h_metrics[(b, h)]["median_mfe_mae"] = _median_mfe_mae
         bucket_h_metrics[(b, h)]["p10_mfe_mae"] = _p10_mfe_mae
         bucket_h_metrics[(b, h)]["p90_mae"] = _p90_mae
         bucket_h_metrics[(b, h)]["p50_mfe"] = _p50_mfe
         bucket_h_metrics[(b, h)]["pct_MFE_before_MAE"] = _pct_mfe_before_mae
+        bucket_h_metrics[(b, h)]["median_retention"] = _median_retention
+        bucket_h_metrics[(b, h)]["median_time_to_mfe"] = _median_time_to_mfe
 
         mfe_mae_ok = True
         if math.isfinite(_median_mfe_mae):
@@ -5357,8 +5376,27 @@ def evaluate_config(
             stage2_score -= probe_gap_penalty
 
     # Keep mild multiplicative regularization, bounded away from zero.
-    # stage2_score *= max(0.70, math.sqrt(max(coverage, 0.0)))
+    stage2_score *= max(0.70, math.sqrt(max(coverage, 0.0)))
     stage2_score *= max(0.70, max(bind_agg, 0.0))
+
+    # Calculate path_quality_score
+    _median_mfe_mae_agg = float(np.median([v["median_mfe_mae"] for v in bucket_h_metrics.values() if math.isfinite(v.get("median_mfe_mae", float("nan")))]))
+    _p10_mfe_mae_agg = float(np.median([v["p10_mfe_mae"] for v in bucket_h_metrics.values() if math.isfinite(v.get("p10_mfe_mae", float("nan")))]))
+    _median_retention_agg = float(np.median([v["median_retention"] for v in bucket_h_metrics.values() if math.isfinite(v.get("median_retention", float("nan")))]))
+    _pct_MFE_before_MAE_agg = float(np.median([v["pct_MFE_before_MAE"] for v in bucket_h_metrics.values() if math.isfinite(v.get("pct_MFE_before_MAE", float("nan")))]))
+    _median_time_to_mfe_agg = float(np.median([v["median_time_to_mfe"] for v in bucket_h_metrics.values() if math.isfinite(v.get("median_time_to_mfe", float("nan")))]))
+
+    if all(math.isfinite(x) for x in [_median_mfe_mae_agg, _p10_mfe_mae_agg, _median_retention_agg, _pct_MFE_before_MAE_agg, _median_time_to_mfe_agg]):
+        path_quality_score = (
+            np.tanh(_median_mfe_mae_agg / 3.0)
+            * np.sqrt(np.tanh(_p10_mfe_mae_agg / 2.0))
+            * np.clip(_median_retention_agg, 0.0, 1.0)
+            * np.clip(_pct_MFE_before_MAE_agg, 0.0, 1.0)
+            * (1.0 / np.sqrt(_median_time_to_mfe_agg + 1.0))
+        )
+        stage2_score = stage2_score * (1.0 + 0.35 * path_quality_score)
+    else:
+        path_quality_score = 0.0
 
     # Additive penalties for clear learnability failures.
     if top10_vs_rest_spread < 0.0:
@@ -5669,6 +5707,7 @@ def evaluate_config(
         else float("nan"),
         "min_cell_tp_sep": round(min_cell_tp_sep, 5),
         "median_cell_tp_sep": round(median_cell_tp_sep, 5),
+        "path_quality_score": round(float(path_quality_score), 6),
         "timeout_range": round(timeout_range, 4),
         "min_cell_ap_lift": round(min_cell_ap_lift, 4)
         if not math.isnan(min_cell_ap_lift)
@@ -6999,6 +7038,10 @@ def _rank_by_learnability(df: pd.DataFrame) -> pd.DataFrame:
         df.get("stage1_score", pd.Series(-np.inf, index=df.index)), errors="coerce"
     ).fillna(-np.inf)
     _score = _s2.where(_s2.notna(), _s1).fillna(-np.inf)
+    if "path_quality_score" in df.columns:
+        _path_q = pd.to_numeric(df["path_quality_score"].fillna(0.0), errors="coerce").fillna(0.0)
+    else:
+        _path_q = pd.Series(0.0, index=df.index)
     _min_auc = (
         (df["min_cell_auc_bound"].fillna(0.0) * 1000).round() / 1000
         if "min_cell_auc_bound" in df.columns
@@ -7054,6 +7097,7 @@ def _rank_by_learnability(df: pd.DataFrame) -> pd.DataFrame:
     return (
         df.assign(
             _sc=_score,
+            _pq=_path_q,
             _ma=_min_auc,
             _ms=_min_sep,
             _d=_disp,
@@ -7064,11 +7108,11 @@ def _rank_by_learnability(df: pd.DataFrame) -> pd.DataFrame:
             _ica=_ic_a,
         )
         .sort_values(
-            ["_sc", "_ma", "_ms", "_ece", "_brier", "_ict", "_ica", "_d", "_tr"],
-            ascending=[False, False, False, True, True, True, True, True, True],
+            ["_sc", "_pq", "_ma", "_ms", "_ece", "_brier", "_ict", "_ica", "_d", "_tr"],
+            ascending=[False, False, False, False, True, True, True, True, True, True],
         )
         .drop(
-            columns=["_sc", "_ma", "_ms", "_d", "_tr", "_ece", "_brier", "_ict", "_ica"]
+            columns=["_sc", "_pq", "_ma", "_ms", "_d", "_tr", "_ece", "_brier", "_ict", "_ica"]
         )
     )
 
@@ -8818,6 +8862,7 @@ def run(args: argparse.Namespace) -> None:
             _to_range_sort=_to_range_col,
             _min_auc_b_sort=_min_auc_b_col,
         )
+        .assign(_pq_sort=out_df.get("path_quality_score", pd.Series(0.0, index=out_df.index)).fillna(0.0))
         .sort_values(
             [
                 "hard_gate",
@@ -8825,6 +8870,7 @@ def run(args: argparse.Namespace) -> None:
                 "_all_cells_pass",
                 "_health_flags",
                 "_score_sort",
+                "_pq_sort",
                 "_min_auc_sort",
                 "_min_sep_sort",
                 "_disp_sort",
@@ -8832,6 +8878,7 @@ def run(args: argparse.Namespace) -> None:
                 "_min_auc_b_sort",
             ],
             ascending=[
+                False,
                 False,
                 False,
                 False,
@@ -8850,6 +8897,7 @@ def run(args: argparse.Namespace) -> None:
                 "_to_range_ok",
                 "_health_flags",
                 "_score_sort",
+                "_pq_sort",
                 "_min_auc_sort",
                 "_min_sep_sort",
                 "_disp_sort",

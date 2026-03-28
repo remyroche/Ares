@@ -101,6 +101,66 @@ from extreme_price_movements.hf_data_loader import (
     get_5m_ohlcv,
     get_15m_ohlcv,
 )
+
+from numba import njit
+@njit(cache=True)
+def _compute_mfe_mae_numba(panel_idx_arr, close, high, low, horizon, side_is_long):
+    n = len(panel_idx_arr)
+    n_rows, n_cols = close.shape
+
+    mfe = np.full(n, np.nan, dtype=np.float32)
+    mae = np.full(n, np.nan, dtype=np.float32)
+    time_to_mfe = np.full(n, np.nan, dtype=np.float32)
+    time_to_mae = np.full(n, np.nan, dtype=np.float32)
+
+    for i in range(n):
+        pidx = panel_idx_arr[i]
+        r = pidx // n_cols
+        c = pidx % n_cols
+
+        if r + horizon >= n_rows:
+            continue
+
+        entry_p = close[r, c]
+        if not np.isfinite(entry_p) or entry_p < 1e-12:
+            continue
+
+        cur_mfe = 0.0
+        cur_mae = 0.0
+        t_mfe = 0
+        t_mae = 0
+
+        valid = True
+        for j in range(1, horizon + 1):
+            h_p = high[r + j, c]
+            l_p = low[r + j, c]
+
+            if not np.isfinite(h_p) or not np.isfinite(l_p):
+                valid = False
+                break
+
+            if side_is_long:
+                step_mfe = (h_p - entry_p) / entry_p
+                step_mae = (entry_p - l_p) / entry_p
+            else:
+                step_mfe = (entry_p - l_p) / entry_p
+                step_mae = (h_p - entry_p) / entry_p
+
+            if step_mfe > cur_mfe:
+                cur_mfe = step_mfe
+                t_mfe = j
+            if step_mae > cur_mae:
+                cur_mae = step_mae
+                t_mae = j
+
+        if valid:
+            mfe[i] = cur_mfe
+            mae[i] = cur_mae
+            time_to_mfe[i] = t_mfe
+            time_to_mae[i] = t_mae
+
+    return mfe, mae, time_to_mfe, time_to_mae
+
 from extreme_price_movements.labeling import (
     OUT_SL,
     OUT_TO,
@@ -3887,6 +3947,15 @@ def evaluate_config(
                 else:
                     h_arr = np.full(len(label_arr), float(h), dtype=np.float32)
 
+                # compute mfe / mae
+                c_np = artifacts.panel["close"].to_numpy(dtype=np.float32)
+                h_np = artifacts.panel["high"].to_numpy(dtype=np.float32)
+                l_np = artifacts.panel["low"].to_numpy(dtype=np.float32)
+
+                mfe_arr, mae_arr, t_mfe_arr, t_mae_arr = _compute_mfe_mae_numba(
+                    panel_idx_arr, c_np, h_np, l_np, h, side == "long"
+                )
+
                 stack_cache[stack_key] = (
                     stacked_idx,
                     panel_idx_arr,
@@ -3896,6 +3965,10 @@ def evaluate_config(
                     tp_arr,
                     sl_arr,
                     h_arr,
+                    mfe_arr,
+                    mae_arr,
+                    t_mfe_arr,
+                    t_mae_arr,
                 )
                 if len(stack_cache) > 256:
                     stack_cache.pop(next(iter(stack_cache)))
@@ -3909,6 +3982,10 @@ def evaluate_config(
                     tp_arr,
                     sl_arr,
                     h_arr,
+                    mfe_arr,
+                    mae_arr,
+                    t_mfe_arr,
+                    t_mae_arr,
                 ) = stack_cache[stack_key]
 
             # Create DataFrame directly from cached masked numpy arrays (now only ~4,000 rows, not 7,000,000)
@@ -3921,6 +3998,10 @@ def evaluate_config(
                     "sl": sl_arr,
                     "horizon_eff": h_arr,
                     "__panel_idx__": panel_idx_arr,
+                    "mfe": mfe_arr,
+                    "mae": mae_arr,
+                    "time_to_mfe": t_mfe_arr,
+                    "time_to_mae": t_mae_arr,
                 },
                 index=stacked_idx,
             )
@@ -3958,6 +4039,10 @@ def evaluate_config(
     )
     events["tp"] = events["tp"].astype(np.float32, copy=False)
     events["sl"] = events["sl"].astype(np.float32, copy=False)
+    events["mfe"] = events["mfe"].astype(np.float32, copy=False)
+    events["mae"] = events["mae"].astype(np.float32, copy=False)
+    events["time_to_mfe"] = events["time_to_mfe"].astype(np.float32, copy=False)
+    events["time_to_mae"] = events["time_to_mae"].astype(np.float32, copy=False)
     events["horizon"] = events["horizon"].astype(np.int16, copy=False)
     events["horizon_eff"] = events["horizon_eff"].astype(np.float32, copy=False)
     events["side"] = events["side"].astype("category")
@@ -4552,6 +4637,53 @@ def evaluate_config(
         )
         bucket_h_metrics[(b, h)]["tp_sep_top10"] = round(tp_sep_cell, 5)
 
+        # MFE / MAE metrics for Top 20%
+        _cell_top20_thresh = (
+            float(np.quantile(p_cell, 0.80)) if len(p_cell) >= 5 else float("inf")
+        )
+        _cell_top20_mask = p_cell >= _cell_top20_thresh
+
+        _mfe_top20 = g["mfe"].values[_cell_top20_mask]
+        _mae_top20 = g["mae"].values[_cell_top20_mask]
+        _t_mfe_top20 = g["time_to_mfe"].values[_cell_top20_mask]
+        _t_mae_top20 = g["time_to_mae"].values[_cell_top20_mask]
+
+        # Filter NaNs
+        _valid_mfe_mae = np.isfinite(_mfe_top20) & np.isfinite(_mae_top20) & np.isfinite(_t_mfe_top20) & np.isfinite(_t_mae_top20)
+        _mfe_top20 = _mfe_top20[_valid_mfe_mae]
+        _mae_top20 = _mae_top20[_valid_mfe_mae]
+        _t_mfe_top20 = _t_mfe_top20[_valid_mfe_mae]
+        _t_mae_top20 = _t_mae_top20[_valid_mfe_mae]
+
+        if len(_mfe_top20) > 0:
+            _ratio = _mfe_top20 / (_mae_top20 + 1e-6)
+            _median_mfe_mae = float(np.median(_ratio))
+            _p10_mfe_mae = float(np.percentile(_ratio, 10))
+            _p90_mae = float(np.percentile(_mae_top20, 90))
+            _p50_mfe = float(np.median(_mfe_top20))
+            _pct_mfe_before_mae = float(np.mean(_t_mfe_top20 < _t_mae_top20))
+        else:
+            _median_mfe_mae = float("nan")
+            _p10_mfe_mae = float("nan")
+            _p90_mae = float("nan")
+            _p50_mfe = float("nan")
+            _pct_mfe_before_mae = float("nan")
+
+        bucket_h_metrics[(b, h)]["median_mfe_mae"] = _median_mfe_mae
+        bucket_h_metrics[(b, h)]["p10_mfe_mae"] = _p10_mfe_mae
+        bucket_h_metrics[(b, h)]["p90_mae"] = _p90_mae
+        bucket_h_metrics[(b, h)]["p50_mfe"] = _p50_mfe
+        bucket_h_metrics[(b, h)]["pct_MFE_before_MAE"] = _pct_mfe_before_mae
+
+        mfe_mae_ok = True
+        if math.isfinite(_median_mfe_mae):
+            if _median_mfe_mae >= 1.5 or _p10_mfe_mae >= 0.45 or _p90_mae <= 0.65 * _p50_mfe or _pct_mfe_before_mae >= 0.56:
+                mfe_mae_ok = False
+
+        if not mfe_mae_ok:
+            bucket_h_metrics[(b, h)]["ok"] = False
+
+
         # ── New guardrail metrics ──────────────────────────────────────────────
         # 1. AP lift: Average Precision / base_rate.  base = mean(y_tp).
         #    Requires sklearn.metrics.average_precision_score.
@@ -4769,6 +4901,9 @@ def evaluate_config(
             if not math.isnan(_ic_std_asset_cell)
             else float("nan")
         )
+
+    # Calculate config-level pass_cells again because ok might have changed
+    pass_cells = sum([int(v["ok"]) for v in bucket_h_metrics.values()])
 
     # Config-level cell stability metrics.
     cell_payoffs = [v["payoff_mean"] for v in bucket_h_metrics.values()]
@@ -5222,7 +5357,7 @@ def evaluate_config(
             stage2_score -= probe_gap_penalty
 
     # Keep mild multiplicative regularization, bounded away from zero.
-    stage2_score *= max(0.70, math.sqrt(max(coverage, 0.0)))
+    # stage2_score *= max(0.70, math.sqrt(max(coverage, 0.0)))
     stage2_score *= max(0.70, max(bind_agg, 0.0))
 
     # Additive penalties for clear learnability failures.

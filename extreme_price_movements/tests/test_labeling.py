@@ -103,7 +103,7 @@ class TestTripleBarrier(unittest.TestCase):
         }
 
         # Default Long
-        labels, rets = compute_triple_barrier_labels(panel, 0.05, 0.05, 5)
+        labels, rets, _, _, _, _ = compute_triple_barrier_labels(panel, 0.05, 0.05, 5)
         self.assertIn(labels.iloc[0, 0], [1, 2])
         self.assertAlmostEqual(rets.iloc[0, 0], 0.0555, places=2)
 
@@ -111,7 +111,7 @@ class TestTripleBarrier(unittest.TestCase):
         # 100 -> 110. Short hits SL (Price increase).
         # SL = 0.05. Entry=100. SL Price = 105.
         # Hit at 105.55 (index 5).
-        labels_s, rets_s = compute_triple_barrier_labels(panel, 0.05, 0.05, 5, side="short")
+        labels_s, rets_s, _, _, _, _ = compute_triple_barrier_labels(panel, 0.05, 0.05, 5, side="short")
         self.assertIn(labels_s.iloc[0, 0], [-1, 0, 1])
         self.assertAlmostEqual(rets_s.iloc[0, 0], -0.032, places=2)
 
@@ -141,7 +141,7 @@ class TestTripleBarrier(unittest.TestCase):
         tp_df = pd.DataFrame({"A": tp_arr}, index=dates)
         sl_df = pd.DataFrame({"A": sl_arr}, index=dates)
 
-        labels, rets = compute_triple_barrier_labels(panel, tp_df, sl_df, 5)
+        labels, rets, _, _, _, _ = compute_triple_barrier_labels(panel, tp_df, sl_df, 5)
 
         # First one should be TP
         self.assertIn(labels.iloc[0, 0], [1, 2])

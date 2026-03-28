@@ -600,6 +600,10 @@ def _refine_ambiguous_labels_with_intrabar(
     has_local_cache_fn,
     load_or_download_fn,
     cfg: Optional[Dict[str, Any]] = None,
+    mfe_df: pd.DataFrame = None,
+    mae_df: pd.DataFrame = None,
+    t_mfe_df: pd.DataFrame = None,
+    t_mae_df: pd.DataFrame = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     close_df = panel.get("close")
     high_df = panel.get("high")
@@ -884,6 +888,10 @@ def _refine_ambiguous_labels_with_15m(
     h: int,
     side: str,
     cfg: Optional[Dict[str, Any]] = None,
+    mfe_df: pd.DataFrame = None,
+    mae_df: pd.DataFrame = None,
+    t_mfe_df: pd.DataFrame = None,
+    t_mae_df: pd.DataFrame = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return _refine_ambiguous_labels_with_intrabar(
         panel,
@@ -897,6 +905,7 @@ def _refine_ambiguous_labels_with_15m(
         timeframe="15min",
         has_local_cache_fn=_has_local_15m_cache,
         load_or_download_fn=_load_or_download_15m,
+        mfe_df=mfe_df, mae_df=mae_df, t_mfe_df=t_mfe_df, t_mae_df=t_mae_df,
         cfg=cfg,
     )
 
@@ -911,6 +920,10 @@ def _refine_ambiguous_labels_with_5m(
     h: int,
     side: str,
     cfg: Optional[Dict[str, Any]] = None,
+    mfe_df: pd.DataFrame = None,
+    mae_df: pd.DataFrame = None,
+    t_mfe_df: pd.DataFrame = None,
+    t_mae_df: pd.DataFrame = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return _refine_ambiguous_labels_with_intrabar(
         panel,
@@ -924,6 +937,7 @@ def _refine_ambiguous_labels_with_5m(
         timeframe="5min",
         has_local_cache_fn=_has_local_5m_cache,
         load_or_download_fn=_load_or_download_5m,
+        mfe_df=mfe_df, mae_df=mae_df, t_mfe_df=t_mfe_df, t_mae_df=t_mae_df,
         cfg=cfg,
     )
 
@@ -1510,6 +1524,14 @@ def load_persisted_tbm_cache(cache_dir: Path) -> Tuple[Dict[str, Any], Dict[str,
             lbl = pd.read_parquet(cache_dir / item["label_file"])
             ret = pd.read_parquet(cache_dir / item["return_file"])
 
+            try:
+                mfe_df = pd.read_parquet(cache_dir / item.get("mfe_file", ""))
+                mae_df = pd.read_parquet(cache_dir / item.get("mae_file", ""))
+                t_mfe_df = pd.read_parquet(cache_dir / item.get("t_mfe_file", ""))
+                t_mae_df = pd.read_parquet(cache_dir / item.get("t_mae_file", ""))
+            except Exception:
+                mfe_df = mae_df = t_mfe_df = t_mae_df = None
+
             # Legacy quality handling
             qual = None
             if "quality_file" in item and item["quality_file"]:
@@ -1522,7 +1544,7 @@ def load_persisted_tbm_cache(cache_dir: Path) -> Tuple[Dict[str, Any], Dict[str,
 
             geom = {"bound_saturation": float(item.get("bound_saturation", 0.0))}
             layer1_loaded[key] = (tp_df, sl_df, geom, dyn_h)
-            layer2_loaded[key] = (lbl, ret, qual)
+            layer2_loaded[key] = (lbl, ret, qual, mfe_df, mae_df, t_mfe_df, t_mae_df)
         tprint(
             f"Loaded persisted TBM cache from {cache_dir} "
             f"(entries={len(entries)}, est_size_mb={manifest.get('estimated_size_mb', float('nan'))})"
@@ -1561,11 +1583,15 @@ def save_persisted_tbm_cache(
             geom = v1[2]
             dyn_h = v1[3] if len(v1) >= 4 else None
 
-            # Layer 2: (lbl, ret, qual)
+            # Layer 2: (lbl, ret, qual, mfe, mae, t_mfe, t_mae)
             v2 = layer2_cache[key]
             lbl = v2[0]
             ret = v2[1]
             qual = v2[2] if len(v2) >= 3 else None
+            mfe_df = v2[3] if len(v2) >= 7 else None
+            mae_df = v2[4] if len(v2) >= 7 else None
+            t_mfe_df = v2[5] if len(v2) >= 7 else None
+            t_mae_df = v2[6] if len(v2) >= 7 else None
 
             stem = _safe_filename_from_key(key)
             tp_file = f"{stem}_tp.parquet"
@@ -1598,6 +1624,20 @@ def save_persisted_tbm_cache(
                 qual_file = f"{stem}_qual.parquet"
                 qual.to_parquet(cache_dir / qual_file, compression="zstd")
                 entry["quality_file"] = qual_file
+
+            if len(v2) >= 7 and v2[3] is not None:
+                mfe_file = f"{stem}_mfe.parquet"
+                mae_file = f"{stem}_mae.parquet"
+                t_mfe_file = f"{stem}_t_mfe.parquet"
+                t_mae_file = f"{stem}_t_mae.parquet"
+                v2[3].to_parquet(cache_dir / mfe_file, compression="zstd")
+                v2[4].to_parquet(cache_dir / mae_file, compression="zstd")
+                v2[5].to_parquet(cache_dir / t_mfe_file, compression="zstd")
+                v2[6].to_parquet(cache_dir / t_mae_file, compression="zstd")
+                entry["mfe_file"] = mfe_file
+                entry["mae_file"] = mae_file
+                entry["t_mfe_file"] = t_mfe_file
+                entry["t_mae_file"] = t_mae_file
 
             entries.append(entry)
         manifest = {
@@ -3601,7 +3641,7 @@ def evaluate_config(
                 # 2. Identify all `TP` hits across the 5-year history.
                 # 3. Sample exactly 2000 of them (and proportional negatives).
                 # 4. Only run the slow 15m refinement on this tiny subset.
-                lbl_fast, _, _ = compute_triple_barrier_labels(
+                lbl_fast, _, _, _, _, _, _ = compute_triple_barrier_labels(
                     panel_for_labeling,
                     tp_df_subsampled,
                     sl_df_subsampled,
@@ -3711,7 +3751,7 @@ def evaluate_config(
                                 tprint(f" _idx_15m dups: {dups[:5].tolist()}")
                         raise e
 
-                    lbl_15m, ret_15m, qual_15m = compute_triple_barrier_labels(
+                    lbl_15m, ret_15m, qual_15m, _, _, _, _ = compute_triple_barrier_labels(
                         _panel_15m,
                         _tp_15m,
                         _sl_15m,
@@ -3781,7 +3821,7 @@ def evaluate_config(
                                 tprint(f" lbl_15m dups: {dups[:5].tolist()}")
                         raise e
                 else:
-                    lbl, ret, qual = compute_triple_barrier_labels(
+                    lbl, ret, qual, mfe_df, mae_df, t_mfe_df, t_mae_df = compute_triple_barrier_labels(
                         panel_for_labeling,
                         _sampled_tp,
                         _sampled_sl,
@@ -3800,14 +3840,15 @@ def evaluate_config(
                         h,
                         side,
                         cfg=cfg,
+                        mfe_df=mfe_df, mae_df=mae_df, t_mfe_df=t_mfe_df, t_mae_df=t_mae_df
                     )
-                layer2_cache[key2] = (lbl, ret, qual)
+                layer2_cache[key2] = (lbl, ret, qual, mfe_df, mae_df, t_mfe_df, t_mae_df)
                 tprint(f"[eval:{cfg_id}] label_cache generation complete h={h} side={side} shape={lbl.shape}")
             else:
                 # [BYPASS CACHE] Temporarily disabled for debugging dimension mismatch
                 # lbl, ret, qual = layer2_cache[key2]
                 # tprint(f"[eval:{cfg_id}] label_cache hit (BYPASSED) h={h} side={side}")
-                lbl, ret, qual = compute_triple_barrier_labels(
+                lbl, ret, qual, mfe_df, mae_df, t_mfe_df, t_mae_df = compute_triple_barrier_labels(
                     panel_for_labeling,
                     tp_df_subsampled,
                     sl_df_subsampled,
@@ -3826,6 +3867,7 @@ def evaluate_config(
                     h,
                     side,
                     cfg=cfg,
+                    mfe_df=mfe_df, mae_df=mae_df, t_mfe_df=t_mfe_df, t_mae_df=t_mae_df
                 )
                 tprint(f"[eval:{cfg_id}] label_cache regen complete h={h} side={side} shape={lbl.shape}")
             
@@ -3843,6 +3885,10 @@ def evaluate_config(
                 label_arr = lbl.to_numpy(dtype=np.float32, copy=False).ravel()
                 payoff_arr = ret.to_numpy(dtype=np.float32, copy=False).ravel()
                 qual_arr = qual.to_numpy(dtype=np.float32, copy=False).ravel()
+                mfe_arr_flat = mfe_df.to_numpy(dtype=np.float32, copy=False).ravel()
+                mae_arr_flat = mae_df.to_numpy(dtype=np.float32, copy=False).ravel()
+                t_mfe_arr_flat = t_mfe_df.to_numpy(dtype=np.float32, copy=False).ravel()
+                t_mae_arr_flat = t_mae_df.to_numpy(dtype=np.float32, copy=False).ravel()
 
                 # IMPORTANT FIX: Must use the DOWNSAMPLED barrier arrays.
                 # If we used the original dense `tp_df`, we would inject 6 million rows of NaN labels.
@@ -3909,6 +3955,10 @@ def evaluate_config(
                     tp_arr,
                     sl_arr,
                     h_arr,
+                    mfe_arr,
+                    mae_arr,
+                    t_mfe_arr,
+                    t_mae_arr,
                 ) = stack_cache[stack_key]
 
             # Create DataFrame directly from cached masked numpy arrays (now only ~4,000 rows, not 7,000,000)
@@ -3921,6 +3971,10 @@ def evaluate_config(
                     "sl": sl_arr,
                     "horizon_eff": h_arr,
                     "__panel_idx__": panel_idx_arr,
+                    "mfe": mfe_arr,
+                    "mae": mae_arr,
+                    "t_mfe": t_mfe_arr,
+                    "t_mae": t_mae_arr,
                 },
                 index=stacked_idx,
             )
@@ -4476,6 +4530,37 @@ def evaluate_config(
     pred = np.full(len(events), 0.5, dtype=np.float32)
     pred[valid_mask] = pred_event
     decile_spread = oof_payoff_decile_spread(pred_event, payoff_event)
+
+    # ── MFE/MAE Geometry Filtering ──
+    _mfe = events["mfe"].to_numpy(dtype=float)
+    _mae = events["mae"].to_numpy(dtype=float)
+    _t_mfe = events["t_mfe"].to_numpy(dtype=float)
+    _t_mae = events["t_mae"].to_numpy(dtype=float)
+
+    _mfe_mae_ratio = np.clip(_mfe / (_mae + EPS), 0.0, 12.0)
+    _mfe_before_mae = (_t_mfe < _t_mae).astype(float)
+
+    median_mfe_mae = float(np.nanmedian(_mfe_mae_ratio)) if len(_mfe_mae_ratio) > 0 else 0.0
+    p10_mfe_mae = float(np.nanpercentile(_mfe_mae_ratio, 10)) if len(_mfe_mae_ratio) > 0 else 0.0
+    p90_mae = float(np.nanpercentile(_mae, 90)) if len(_mae) > 0 else 0.0
+    p50_mfe = float(np.nanpercentile(_mfe, 50)) if len(_mfe) > 0 else 0.0
+    pct_mfe_before_mae = float(np.nanmean(_mfe_before_mae)) if len(_mfe_before_mae) > 0 else 0.0
+
+    if median_mfe_mae >= 1.5 or p10_mfe_mae >= 0.45 or p90_mae <= 0.65 * p50_mfe or pct_mfe_before_mae >= 0.56:
+        tprint(
+            f"[eval:{cfg_id}] EARLY_EXIT geometric filter hit: "
+            f"median_mfe_mae={median_mfe_mae:.2f} (fail>=1.5) "
+            f"p10_mfe_mae={p10_mfe_mae:.2f} (fail>=0.45) "
+            f"p90_mae={p90_mae:.4f} vs 0.65*p50_mfe={0.65*p50_mfe:.4f} "
+            f"pct_mfe_before_mae={pct_mfe_before_mae:.3f} (fail>=0.56)"
+        )
+        return _empty_result(
+            cfg,
+            cfg_id,
+            full_n,
+            reason="failed_geometric_mfe_mae_filter",
+            stage2_rescore=stage2_rescore,
+        )
     tprint(
         f"[eval:{cfg_id}] model_scored n={len(pred):,} ic_payoff={_safe_spearman(pred, payoff):.4f} "
         f"ic_label={_safe_spearman(pred, y_signed):.4f} decile_spread={decile_spread:.6f}"
@@ -5074,7 +5159,7 @@ def evaluate_config(
     )
 
     stage1_score = (
-        (0.5 * ic_snr + 0.5 * mean_bucket_ic) * math.sqrt(max(coverage, 0.0))
+        (0.5 * ic_snr + 0.5 * mean_bucket_ic)
         - 0.2 * float(events["bound_saturation"].mean() if len(events) else 0.0)
         - 0.2 * float((events["label"] == OUT_TO).mean() if len(events) else 1.0)
     )

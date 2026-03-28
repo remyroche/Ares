@@ -42,6 +42,10 @@ def _numba_triple_barrier_outcomes_fast(
     returns = np.zeros(n, dtype=np.float32)
     exit_idxs = np.zeros(n, dtype=np.int64)
     conflict_j = np.full(n, -1, dtype=np.int64)
+    mfe_arr = np.zeros(n, dtype=np.float32)
+    mae_arr = np.zeros(n, dtype=np.float32)
+    time_to_mfe = np.zeros(n, dtype=np.float32)
+    time_to_mae = np.zeros(n, dtype=np.float32)
     
     limit_ns_base = int(horizon * 3600 * 1_000_000_000)
     
@@ -86,6 +90,8 @@ def _numba_triple_barrier_outcomes_fast(
         
         mfe_val = 0.0
         mae_val = 0.0
+        t_mfe = 0.0
+        t_mae = 0.0
         
         for j in range(j_start, min(j_end, n)):
             tt = times[j]
@@ -101,8 +107,12 @@ def _numba_triple_barrier_outcomes_fast(
                 cur_mfe = max(0.0, entry_p - ll)
                 cur_mae = max(0.0, hh - entry_p)
             
-            if cur_mfe > mfe_val: mfe_val = cur_mfe
-            if cur_mae > mae_val: mae_val = cur_mae
+            if cur_mfe > mfe_val:
+                mfe_val = cur_mfe
+                t_mfe = (tt - entry_t) / 1e9 / 3600.0
+            if cur_mae > mae_val:
+                mae_val = cur_mae
+                t_mae = (tt - entry_t) / 1e9 / 3600.0
             
             if np.isnan(hh) or np.isnan(ll):
                 if tt >= cutoff_t:
@@ -149,8 +159,13 @@ def _numba_triple_barrier_outcomes_fast(
                 rel_prog = returns[i] / den_tp
                 quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
                 break
+
+        mfe_arr[i] = mfe_val / entry_p
+        mae_arr[i] = mae_val / entry_p
+        time_to_mfe[i] = t_mfe
+        time_to_mae[i] = t_mae
     
-    return outcomes, quality, returns, exit_idxs, conflict_j
+    return outcomes, quality, returns, exit_idxs, conflict_j, mfe_arr, mae_arr, time_to_mfe, time_to_mae
 
 
 @jit(nopython=True, nogil=True, cache=True)
@@ -178,6 +193,10 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
     returns = np.zeros(n, dtype=np.float32)
     exit_idxs = np.zeros(n, dtype=np.int64)
     conflict_j = np.full(n, -1, dtype=np.int64)
+    mfe_arr = np.zeros(n, dtype=np.float32)
+    mae_arr = np.zeros(n, dtype=np.float32)
+    time_to_mfe = np.zeros(n, dtype=np.float32)
+    time_to_mae = np.zeros(n, dtype=np.float32)
     conflict_j = np.full(n, -1, dtype=np.int64)
 
     limit_ns_base = int(horizon * 3600 * 1_000_000_000)
@@ -348,10 +367,15 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
             rel_prog = returns[i] / den_tp
             quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
 
+        mfe_arr[i] = mfe_val / entry_p
+        mae_arr[i] = mae_val / entry_p
+        time_to_mfe[i] = t_mfe
+        time_to_mae[i] = t_mae
+
     # Numba compatibility: avoid nan_to_num keyword args unsupported in some versions.
     quality = np.nan_to_num(quality)
     quality = np.clip(quality, 0.0, 1.0).astype(np.float32)
-    return outcomes, returns, quality, exit_idxs, conflict_j
+    return outcomes, returns, quality, exit_idxs, conflict_j, mfe_arr, mae_arr, time_to_mfe, time_to_mae
 
 
 @jit(nopython=True, nogil=True, cache=True)
@@ -686,6 +710,10 @@ def _numba_triple_barrier_fast(
     returns = np.zeros(n, dtype=np.float32)
     exit_idxs = np.zeros(n, dtype=np.int64)
     conflict_j = np.full(n, -1, dtype=np.int64)
+    mfe_arr = np.zeros(n, dtype=np.float32)
+    mae_arr = np.zeros(n, dtype=np.float32)
+    time_to_mfe = np.zeros(n, dtype=np.float32)
+    time_to_mae = np.zeros(n, dtype=np.float32)
     
     limit_ns_base = int(horizon * 3600 * 1_000_000_000)
     
@@ -739,6 +767,11 @@ def _numba_triple_barrier_fast(
         stall_checked = False
         extreme = entry_p
         
+        mfe_val = 0.0
+        mae_val = 0.0
+        t_mfe = 0.0
+        t_mae = 0.0
+
         # Scan only within the time window
         for j in range(j_start, min(j_end, n)):
             tt = times[j]
@@ -829,8 +862,13 @@ def _numba_triple_barrier_fast(
             labels[i] = OUT_TO
             returns[i] = (closes[final_idx] / entry_p - 1.0) if side == 1 else (entry_p / closes[final_idx] - 1.0)
             exit_idxs[i] = final_idx
+
+        mfe_arr[i] = mfe_val / entry_p
+        mae_arr[i] = mae_val / entry_p
+        time_to_mfe[i] = t_mfe
+        time_to_mae[i] = t_mae
     
-    return labels, returns, exit_idxs, conflict_j
+    return labels, returns, exit_idxs, conflict_j, mfe_arr, mae_arr, time_to_mfe, time_to_mae
 
 
 @jit(nopython=True, nogil=True, cache=True)
@@ -851,6 +889,10 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
     returns = np.zeros(n, dtype=np.float32)
     exit_idxs = np.zeros(n, dtype=np.int64)
     conflict_j = np.full(n, -1, dtype=np.int64)
+    mfe_arr = np.zeros(n, dtype=np.float32)
+    mae_arr = np.zeros(n, dtype=np.float32)
+    time_to_mfe = np.zeros(n, dtype=np.float32)
+    time_to_mae = np.zeros(n, dtype=np.float32)
 
     limit_ns_base = int(horizon * 3600 * 1_000_000_000)
 
@@ -1099,13 +1141,13 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         h_arr_custom = horizons_frame[asset].to_numpy(dtype=np.float32) if (horizons_frame is not None and asset in horizons_frame.columns) else None
 
         if return_outcomes:
-            out, rets, qual, _, conflict_j = _numba_triple_barrier_outcomes_fast(
+            out, rets, qual, _, conflict_j, mfe_arr, mae_arr, t_mfe, t_mae = _numba_triple_barrier_outcomes_fast(
                 times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom
             )
-            return asset, out, rets, qual, conflict_j, tp_arr, sl_arr
+            return asset, out, rets, qual, conflict_j, tp_arr, sl_arr, mfe_arr, mae_arr, t_mfe, t_mae
         else:
-            lbs, rets, _, conflict_j = _numba_triple_barrier_fast(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
-            return asset, lbs, rets, None, conflict_j, tp_arr, sl_arr
+            lbs, rets, _, conflict_j, mfe_arr, mae_arr, t_mfe, t_mae = _numba_triple_barrier_fast(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
+            return asset, lbs, rets, None, conflict_j, tp_arr, sl_arr, mfe_arr, mae_arr, t_mfe, t_mae
 
     # OPTIMIZATION: Use all available cores for parallel processing
     n_jobs_cap = 8
@@ -1136,7 +1178,12 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
                 _hf_cache[asset] = pd.DataFrame()
         return _hf_cache[asset]
 
-    for asset, lbs_or_out, rets, qual, conflict_j, tp_arr, sl_arr in results:
+    out_mfe = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+    out_mae = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+    out_t_mfe = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+    out_t_mae = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+
+    for asset, lbs_or_out, rets, qual, conflict_j, tp_arr, sl_arr, mfe_arr, mae_arr, t_mfe, t_mae in results:
         # Check for conflicts
         ambiguous_indices = np.where(conflict_j != -1)[0]
         if len(ambiguous_indices) > 0 and resolve_conflicts:
@@ -1194,9 +1241,13 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
 
         out_labels[asset] = lbs_or_out
         out_returns[asset] = rets
+        out_mfe[asset] = mfe_arr
+        out_mae[asset] = mae_arr
+        out_t_mfe[asset] = t_mfe
+        out_t_mae[asset] = t_mae
         if return_outcomes and qual is not None:
             out_quality[asset] = qual
 
     if return_outcomes:
-        return out_labels, out_returns, out_quality
-    return out_labels, out_returns
+        return out_labels, out_returns, out_quality, out_mfe, out_mae, out_t_mfe, out_t_mae
+    return out_labels, out_returns, out_mfe, out_mae, out_t_mfe, out_t_mae

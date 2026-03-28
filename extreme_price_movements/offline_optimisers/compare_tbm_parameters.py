@@ -594,16 +594,16 @@ def _refine_ambiguous_labels_with_intrabar(
     lbl: pd.DataFrame,
     ret: pd.DataFrame,
     qual: pd.DataFrame,
-    mfe_df: pd.DataFrame = None,
-    mae_df: pd.DataFrame = None,
-    t_mfe_df: pd.DataFrame = None,
-    t_mae_df: pd.DataFrame = None,
     h: int,
     side: str,
     timeframe: str,
     has_local_cache_fn,
     load_or_download_fn,
     cfg: Optional[Dict[str, Any]] = None,
+    mfe_df: pd.DataFrame = None,
+    mae_df: pd.DataFrame = None,
+    t_mfe_df: pd.DataFrame = None,
+    t_mae_df: pd.DataFrame = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     close_df = panel.get("close")
     high_df = panel.get("high")
@@ -900,12 +900,12 @@ def _refine_ambiguous_labels_with_15m(
         lbl,
         ret,
         qual,
-        mfe_df, mae_df, t_mfe_df, t_mae_df,
         h,
         side,
         timeframe="15min",
         has_local_cache_fn=_has_local_15m_cache,
         load_or_download_fn=_load_or_download_15m,
+        mfe_df=mfe_df, mae_df=mae_df, t_mfe_df=t_mfe_df, t_mae_df=t_mae_df,
         cfg=cfg,
     )
 
@@ -932,12 +932,12 @@ def _refine_ambiguous_labels_with_5m(
         lbl,
         ret,
         qual,
-        mfe_df, mae_df, t_mfe_df, t_mae_df,
         h,
         side,
         timeframe="5min",
         has_local_cache_fn=_has_local_5m_cache,
         load_or_download_fn=_load_or_download_5m,
+        mfe_df=mfe_df, mae_df=mae_df, t_mfe_df=t_mfe_df, t_mae_df=t_mae_df,
         cfg=cfg,
     )
 

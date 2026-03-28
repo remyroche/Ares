@@ -10551,9 +10551,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         }
 
     if train_base:
-        for side in trade_sides:
-            final_models[side] = {}
-            for k in kinds:
+        from extreme_price_movements.strategy_registry import get_strategies
+        strats = get_strategies(cfg)
+        for s in strats:
+            s_side = s["trade_side"]
+            if s_side not in final_models:
+                final_models[s_side] = {}
+
+        for strategy in strats:
+            for side, k in [(strategy["trade_side"], strategy["strategy_id"])]:
                 best_ic = -1.0
                 best_m = None
                 per_h_models = {}

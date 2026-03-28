@@ -7445,12 +7445,12 @@ def select_top_diverse_rules(
     mask_map: Dict[str, np.ndarray],
     top_n: int = 15,
     max_overlap: float = 0.4,
-    max_side_in_top10: int = 6,
+    max_side_in_top: int = 9,
 ) -> pd.DataFrame:
     """
     Select top `top_n` diverse rules:
     - Sort by composite_score
-    - Ensure top 10 has at most `max_side_in_top10` of the same side (long/short)
+    - Ensure top `top_n` has at most `max_side_in_top` of the same side (long/short)
       IF there are enough valid rules of the other side to fill the quota.
     - Ensure jaccard similarity between any two selected rules is <= max_overlap
     """
@@ -7472,11 +7472,11 @@ def select_top_diverse_rules(
         if mask is None:
             continue
 
-        # Check side constraint only for the first 10
-        if len(selected_idx) < 10 and side in selected_sides:
-            if selected_sides[side] >= max_side_in_top10:
+        # Check side constraint for the selected rules
+        if len(selected_idx) < top_n and side in selected_sides:
+            if selected_sides[side] >= max_side_in_top:
                 other_side = "short" if side == "long" else "long"
-                slots_to_fill = 10 - len(selected_idx)
+                slots_to_fill = top_n - len(selected_idx)
                 valid_other_side = 0
 
                 # Check remaining items
@@ -7503,8 +7503,8 @@ def select_top_diverse_rules(
                                 if valid_other_side >= slots_to_fill:
                                     break
 
-                # If we have enough valid rules of the other side to fill the 10 spots,
-                # skip this one. Otherwise, allow the side count to exceed max_side_in_top10.
+                # If we have enough valid rules of the other side to fill the top_n spots,
+                # skip this one. Otherwise, allow the side count to exceed max_side_in_top.
                 if valid_other_side >= slots_to_fill:
                     continue
 
@@ -7526,12 +7526,12 @@ def select_top_diverse_rules(
 
         if not too_similar:
             selected_idx.append(idx)
-            if len(selected_idx) <= 10 and side in selected_sides:
+            if len(selected_idx) <= top_n and side in selected_sides:
                 selected_sides[side] += 1
 
     if len(selected_idx) < min(top_n, len(registry)) and max_overlap < 0.8:
         return select_top_diverse_rules(
-            registry, mask_map, top_n, max_overlap + 0.1, max_side_in_top10
+            registry, mask_map, top_n, max_overlap + 0.1, max_side_in_top
         )
 
     return sorted_reg.loc[selected_idx]

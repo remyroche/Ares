@@ -122,25 +122,6 @@ if code_to_replace_train3 in text:
     print("Replacing train3")
     text = text.replace(code_to_replace_train3, new_code_train3)
 
-code_to_replace_train_base = """    if train_base:
-        for side in trade_sides:
-            final_models[side] = {}
-            for k in kinds:"""
-new_code_train_base = """    if train_base:
-        from extreme_price_movements.strategy_registry import get_strategies
-        strats = get_strategies(cfg)
-        for s in strats:
-            s_side = s["trade_side"]
-            if s_side not in final_models:
-                final_models[s_side] = {}
-
-        for strategy in strats:
-            for side, k in [(strategy["trade_side"], strategy["strategy_id"])]:"""
-if code_to_replace_train_base in text:
-    print("Replacing train_base")
-    text = text.replace(code_to_replace_train_base, new_code_train_base)
-
-
 code_to_replace_train4 = """        "alpha_oof_metrics": {
             f"{side}_{kind}": ((final_models.get(side) or {}).get(kind) or {}).get(
                 "alpha_diag", {}
@@ -192,6 +173,7 @@ new_code_var1 = """        if bool(cfg.get("base_geometry_train_variants", True)
             _run_id = cfg.get("run_id", "default")
             oof_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "oof")
             os.makedirs(oof_dir, exist_ok=True)
+            from extreme_price_movements.strategy_registry import get_strategies
             strats = get_strategies(cfg)
             for strat in strats:
                 for side, k in [(strat["trade_side"], strat["strategy_id"])]:"""

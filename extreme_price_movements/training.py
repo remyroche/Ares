@@ -4316,7 +4316,7 @@ def _get_bucket_label_config(cfg, side, kind):
     return tp_vals, sl_vals, min_net_rr
 
 
-def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
+def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None):
     """Build grid-aggregated triple-barrier labels shared across MR/TF for each (H, side)."""
     tb_cache = {}  # (H, side) -> (tb_labels, tb_returns)
     geom_cache = {}  # (H, side) -> {"n_tp", "n_sl", "n_to", "n_geom"}
@@ -4392,7 +4392,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
 
     # Cache raw triple barrier results per (H, side, k_tp, sl_base_mult) to avoid recomputation.
     _raw_tb_cache = {}
-    _kinds = ["mr", "tf"]
+
     _prod_events_rows = []
     _prod_cell_metrics = {}
     _diag_labels = bool(cfg.get("label_diagnostics_mode", False))
@@ -4672,10 +4672,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
             "n_geom": len(_runs),
         }
 
-    # ── ALPHA MODELS (long/short × mr/tf × horizons) ──
+    # ── ALPHA MODELS ──
     # Note: Using horizons=horizons for explicit control.
     horizons = horizons or list(CANON_HORIZONS)
-    strategies = get_strategies(cfg)
+    from extreme_price_movements.strategy_registry import get_strategies
+    strategies = strategies if strategies is not None else get_strategies(cfg)
     for strat in strategies:
         side = strat["trade_side"]
         k_label = strat["strategy_id"]
@@ -8476,8 +8477,10 @@ def train_meta_models_from_artifacts(
             pred_h[f"pred_H{h}"] = p_h
             p_oof_avg_parts.append(p_h)
 
-        # Ensure side-level meta models see all same-side base outputs (TF + MR)
-        for k_other in kinds:
+        # Ensure side-level meta models see all same-side base outputs
+        from extreme_price_movements.strategy_registry import get_strategies
+        available_kinds = [s["strategy_id"] for s in get_strategies(cfg) if s["trade_side"] == side]
+        for k_other in available_kinds:
             other_horizon_dfs, _ = _collect_horizon_oof(side, k_other)
             for h in CANON_HORIZONS:
                 col_name = f"pred_{k_other}_H{h}"
@@ -10132,8 +10135,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     tprint(f"Entering function: train_models_from_artifacts in training.py")
     tprint(f"train_base={train_base}, train_meta={train_meta}")
     cfg = _resolve_training_cfg_with_offline_optimisers(cfg)
-    directions = ["up", "down"]
-    kinds = ["mr", "tf"]
+
+
     final_models = {}
 
     alpha_gate_results = []
@@ -10322,7 +10325,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     # Memory optimization: evict exhaustion datasets after training
     exh_models = {}
     if train_base:
-        for d in directions:
+        for d in ["up", "down"]:
             key = f"exh_{d}"
             if key in datasets:
                 df = datasets[key]
@@ -10388,8 +10391,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
     # 2. Train Alpha Models
     # directions (up/down) replaced by sides (long/short)
-    trade_sides = ["long", "short"]
-    kinds = ["mr", "tf"]
+
+
     final_models = {}
     base_variant_models = {}
 
@@ -10551,9 +10554,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         }
 
     if train_base:
-        for side in trade_sides:
-            final_models[side] = {}
-            for k in kinds:
+        from extreme_price_movements.strategy_registry import get_strategies
+        strats = get_strategies(cfg)
+        for s in strats:
+            s_side = s["trade_side"]
+            if s_side not in final_models:
+                final_models[s_side] = {}
+
+        for strategy in strats:
+            for side, k in [(strategy["trade_side"], strategy["strategy_id"])]:
                 best_ic = -1.0
                 best_m = None
                 per_h_models = {}
@@ -11627,11 +11636,10 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     return {
         "alpha_models": final_models,
         "alpha_oof_metrics": {
-            f"{side}_{kind}": ((final_models.get(side) or {}).get(kind) or {}).get(
+            f"{s['trade_side']}_{s['strategy_id']}": ((final_models.get(s['trade_side']) or {}).get(s['strategy_id']) or {}).get(
                 "alpha_diag", {}
             )
-            for side in trade_sides
-            for kind in kinds
+            for s in get_strategies(cfg)
         },
         "exh_models": exh_models,
         "meta_models": meta_models,
@@ -11688,8 +11696,8 @@ def optimize_risk_params(
     z_df = (atr_pct_df - atr_base_df) / (atr_std_df + 1e-12)
 
     # 2. Iterate over strategies (buckets)
-    trade_sides = ["long", "short"]
-    kinds = ["mr", "tf"]
+    from extreme_price_movements.strategy_registry import get_strategies
+    strategies = get_strategies(cfg)
 
     # We need to gather events for each bucket.
     # This is non-trivial because `optimize_risk_params` is usually called on a small simulation window.

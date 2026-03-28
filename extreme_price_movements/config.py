@@ -1083,6 +1083,7 @@ CFG = {
     "borrow_apr": 0.20,
 
     "oos_holdout_days": 730,   # Enforce >= 2 years OOS holdout for robust signal evaluation
+    "oos_holdout_symbols": [], # Symbols to completely exclude from training (keep strictly for walk-forward)
 
     # Trailing Profit Risk Params (used in backtest & live, all vol-scaled)
     # Target absolute: TP ~2%, SL ~0.7% (with median barrier_pct ~4%)

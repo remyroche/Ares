@@ -2555,9 +2555,14 @@ def generate_exhaustion_history(
     tprint(f"Entering function: generate_exhaustion_history in training.py")
     train_end = ts_end - pd.Timedelta(hours=lookback_hours)
     train_len = cfg["exh_train_lookback_hours"]
+
+    train_syms_exh = [s for s in syms if s not in cfg.get("oos_holdout_symbols", [])]
+    if len(train_syms_exh) < len(syms):
+        tprint(f"Exhaustion training: dropped {len(syms) - len(train_syms_exh)} OOS holdout symbols.")
+
     tprint("Generating UP history...")
     X_up, y_up, w_up, _ = build_exhaustion_Xy(
-        panel, feats, mkt_gates, cfg, train_end, train_len, syms, model_direction="up"
+        panel, feats, mkt_gates, cfg, train_end, train_len, train_syms_exh, model_direction="up"
     )
     model_up = None
     arr_oof_up = None
@@ -2571,7 +2576,7 @@ def generate_exhaustion_history(
 
     tprint("Generating DOWN history...")
     X_dn, y_dn, w_dn, _ = build_exhaustion_Xy(
-        panel, feats, mkt_gates, cfg, train_end, train_len, syms, model_direction="down"
+        panel, feats, mkt_gates, cfg, train_end, train_len, train_syms_exh, model_direction="down"
     )
     model_dn = None
     arr_oof_dn = None
@@ -5554,6 +5559,18 @@ def generate_label_datasets(
         tprint(
             f"OOS holdout: excluded last {oos_days} days (cutoff={cutoff}). Candidates: {n_before} -> {n_after}"
         )
+
+    # Apply OOS holdout: exclude specific symbols entirely from training
+    oos_syms = cfg.get("oos_holdout_symbols", [])
+    if oos_syms and cached_cand_mask is not None:
+        drop_syms = [s for s in oos_syms if s in cached_cand_mask.columns]
+        if drop_syms:
+            n_before = cached_cand_mask.sum().sum()
+            cached_cand_mask.loc[:, drop_syms] = False
+            n_after = cached_cand_mask.sum().sum()
+            tprint(
+                f"OOS holdout: excluded {len(drop_syms)} symbols ({drop_syms[:5]}...). Candidates: {n_before} -> {n_after}"
+            )
 
     # 1. Spike Anatomy (2 GMM models: Best & Worst)
     # NOTE: Spike Anatomy models removed - GMM training disabled
@@ -11709,6 +11726,13 @@ def optimize_risk_params(
     if cand_mask is None:
         tprint("No candidates found.")
         return cfg
+
+    oos_syms = cfg.get("oos_holdout_symbols", [])
+    if oos_syms and cand_mask is not None:
+        drop_syms = [s for s in oos_syms if s in cand_mask.columns]
+        if drop_syms:
+            cand_mask.loc[:, drop_syms] = False
+            tprint(f"Risk optimization: excluded {len(drop_syms)} OOS holdout symbols.")
 
     # Ensure ts is a Timestamp and handle potential timezone mismatch with index
     ts = pd.Timestamp(ts)

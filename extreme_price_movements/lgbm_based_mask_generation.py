@@ -5013,13 +5013,21 @@ def run_lgbm_mask_generation_pipeline(
         for side, count in side_counts.items():
             tprint(f"  - {side}: {count}")
 
-        tprint("Top 15 Final Diverse Rules:")
+        tprint("Top 15 Final Diverse Rules (Thorough Report):")
         top_final = select_top_diverse_rules(
             combined_global_registry, combined_mask_map, top_n=15
         )
         for i, (_, row) in enumerate(top_final.iterrows(), start=1):
             tprint(
-                f"  {i:2d}. {row['canonical_key']}: score={row['composite_score']:.3f}, hurdle_excess={row['hurdle_excess']:.5f}, arity={row['display_arity']}, side={row['side']}"
+                f"  {i:2d}. [{row.get('side', 'unknown').upper()}] {row['canonical_key']}\n"
+                f"      score={row.get('composite_score', 0):.3f} | "
+                f"hurdle_excess={row.get('hurdle_excess', 0):.5f} | "
+                f"support={row.get('mean_support_pct', 0):.2%} | "
+                f"ret={row.get('directional_mean_ret', 0):.5f} | "
+                f"uplift={row.get('mean_uplift', 0):.5f} | "
+                f"presence={row.get('presence_freq', 0):.2%} | "
+                f"sign_cons={row.get('sign_consistency', 0):.2%} | "
+                f"arity={row.get('display_arity', 0)}"
             )
     else:
         tprint("Final Output Summary: 0 rules accepted.")
@@ -6624,6 +6632,17 @@ class MaskAssessor:
             )
             bucket_protected_keys[normalized_bucket] = set(protected)
 
+            max_ridge_candidates_per_bucket = int(self.cfg.get("max_ridge_candidates_per_bucket", 20))
+            ridge_cands = (
+                ranked.sort_values("__cheap_rank", ascending=False)
+                .head(max(max_ridge_candidates_per_bucket, 0))["canonical_key"]
+                .astype(str)
+                .tolist()
+            )
+            if not hasattr(self, 'bucket_ridge_keys'):
+                self.bucket_ridge_keys = {}
+            self.bucket_ridge_keys[normalized_bucket] = set(ridge_cands)
+
         # Precompute bucket-level top-decile caps for density dispersion and tail risk.
         bucket_density_values: Dict[Tuple[str, int, str], List[float]] = {}
         bucket_tail_values: Dict[Tuple[str, int, str], List[float]] = {}
@@ -6789,11 +6808,22 @@ class MaskAssessor:
             lift = np.nan
             entropy_red = np.nan
             if not rejected:
-                mask_auc, subset_oof_coverage = self._compute_subset_auc(
-                    X, target_ret, mask, folds
-                )
-                if np.isfinite(mask_auc) and np.isfinite(global_auc):
-                    lift = mask_auc - global_auc
+                run_ridge = False
+                if hasattr(self, 'bucket_ridge_keys') and bucket_key in self.bucket_ridge_keys:
+                    if canonical_key in self.bucket_ridge_keys[bucket_key]:
+                        run_ridge = True
+
+                if run_ridge:
+                    mask_auc, subset_oof_coverage = self._compute_subset_auc(
+                        X, target_ret, mask, folds
+                    )
+                    if np.isfinite(mask_auc) and np.isfinite(global_auc):
+                        lift = mask_auc - global_auc
+                else:
+                    mask_auc = np.nan
+                    subset_oof_coverage = float(np.mean(mask))
+                    lift = 0.0 # Neutral lift
+                    rejected, rejection_reason = True, "not_in_top_ridge_candidates"
 
                 mask_entropy = self._compute_entropy(target_ret[mask])
                 entropy_red = 1.0 - (mask_entropy / (global_entropy + 1e-9))
@@ -6804,7 +6834,7 @@ class MaskAssessor:
                     )
                 elif not np.isfinite(lift):
                     rejected, rejection_reason = True, "missing_learnability"
-                elif lift < 0.01:  # Lower threshold for lift (was 1.10)
+                elif run_ridge and lift < 0.01:  # Lower threshold for lift (was 1.10)
                     rejected, rejection_reason = True, "low_lift"
 
             # 8. Event-based Expected Value
@@ -7421,6 +7451,7 @@ def select_top_diverse_rules(
     Select top `top_n` diverse rules:
     - Sort by composite_score
     - Ensure top 10 has at most `max_side_in_top10` of the same side (long/short)
+      IF there are enough valid rules of the other side to fill the quota.
     - Ensure jaccard similarity between any two selected rules is <= max_overlap
     """
     if registry.empty:
@@ -7444,7 +7475,38 @@ def select_top_diverse_rules(
         # Check side constraint only for the first 10
         if len(selected_idx) < 10 and side in selected_sides:
             if selected_sides[side] >= max_side_in_top10:
-                continue
+                other_side = "short" if side == "long" else "long"
+                slots_to_fill = 10 - len(selected_idx)
+                valid_other_side = 0
+
+                # Check remaining items
+                curr_pos = sorted_reg.index.get_loc(idx)
+                remaining_indices = sorted_reg.index[curr_pos + 1:]
+
+                for rem_idx in remaining_indices:
+                    rem_row = sorted_reg.loc[rem_idx]
+                    if rem_row.get("side", "unknown") == other_side:
+                        rem_mask = mask_map.get(rem_row["canonical_key"])
+                        if rem_mask is not None:
+                            too_similar = False
+                            for s_idx in selected_idx:
+                                s_mask = mask_map.get(sorted_reg.loc[s_idx, "canonical_key"])
+                                intersection = float(np.sum(rem_mask & s_mask))
+                                union = float(np.sum(rem_mask | s_mask))
+                                jaccard = intersection / union if union > 0 else 0.0
+                                if jaccard > max_overlap:
+                                    too_similar = True
+                                    break
+
+                            if not too_similar:
+                                valid_other_side += 1
+                                if valid_other_side >= slots_to_fill:
+                                    break
+
+                # If we have enough valid rules of the other side to fill the 10 spots,
+                # skip this one. Otherwise, allow the side count to exceed max_side_in_top10.
+                if valid_other_side >= slots_to_fill:
+                    continue
 
         # Check overlap constraint
         too_similar = False
@@ -7467,9 +7529,7 @@ def select_top_diverse_rules(
             if len(selected_idx) <= 10 and side in selected_sides:
                 selected_sides[side] += 1
 
-    # If we couldn't find enough rules, we could try relaxing the overlap constraint slightly
     if len(selected_idx) < min(top_n, len(registry)) and max_overlap < 0.8:
-        # Recursive call with relaxed overlap
         return select_top_diverse_rules(
             registry, mask_map, top_n, max_overlap + 0.1, max_side_in_top10
         )

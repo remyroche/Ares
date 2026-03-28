@@ -25,6 +25,7 @@ for i in range(50):
 
 registry = pd.DataFrame(data)
 
-top = select_top_diverse_rules(registry, mask_map, top_n=10, max_overlap=0.4, max_side_in_top10=6)
+# Sort by hurdle_excess then composite_score
+top = select_top_diverse_rules(registry, mask_map, top_n=15, max_overlap=0.4, max_side_in_top10=6)
 print(f"Got {len(top)} rules")
 print(top["side"].value_counts())

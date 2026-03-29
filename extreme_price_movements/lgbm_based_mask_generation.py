@@ -7068,16 +7068,17 @@ class MaskAssessor:
         if not np.any(mask):
             return np.nan, 0.0
 
-        # Select regime features
-        regime_feats = []
+        # Select ridge features (TEST_FEATURE_KEYS)
+        test_keys_set = set(TEST_FEATURE_KEYS)
+        ridge_feats = []
         for i, m in enumerate(self.metadata):
-            if m.group == "regime":
-                regime_feats.append(i)
+            if m.source_name in test_keys_set:
+                ridge_feats.append(i)
 
-        if not regime_feats:
+        if not ridge_feats:
             return np.nan, 0.0
 
-        X_regime = X[:, regime_feats]
+        X_ridge = X[:, ridge_feats]
         y = (fwd_ret > 0).astype(float)
         y[np.isnan(fwd_ret)] = np.nan
 
@@ -7092,22 +7093,17 @@ class MaskAssessor:
             tr_masked = tr_idx[mask[tr_idx]]
             va_masked = va_idx[mask[va_idx]]
 
-            if len(tr_masked) < 20 or len(va_masked) < 20:
-                continue
-
-            X_tr, X_va = X_regime[tr_masked], X_regime[va_masked]
+            X_tr, X_va = X_ridge[tr_masked], X_ridge[va_masked]
             y_tr, y_va = y[tr_masked], y[va_masked]
 
-            # Filter valid samples (y must be finite, and ALL regime features must be finite)
+            # Filter valid samples (y must be finite, and ALL ridge features must be finite)
             valid_tr = np.isfinite(y_tr) & np.all(np.isfinite(X_tr), axis=1)
             valid_va = np.isfinite(y_va) & np.all(np.isfinite(X_va), axis=1)
-
-            if np.sum(valid_tr) < 20 or np.sum(valid_va) < 20:
-                continue
 
             X_tr_clean = X_tr[valid_tr]
             y_tr_clean = y_tr[valid_tr]
             X_va_clean = X_va[valid_va]
+            y_va_clean = y_va[valid_va]
 
             # Defensive check for any remaining NaNs (should not happen with valid_tr/valid_va)
             if not np.all(np.isfinite(X_tr_clean)) or not np.all(
@@ -7115,24 +7111,54 @@ class MaskAssessor:
             ):
                 continue
 
-            # Subsample to 50% of training data
+            # Ensure we have a minimum of 1000 positive samples within the mask for both training and validation
+            pos_tr = int(np.sum(y_tr_clean == 1))
+            pos_va = int(np.sum(y_va_clean == 1))
+            neg_tr = int(np.sum(y_tr_clean == 0))
+            neg_va = int(np.sum(y_va_clean == 0))
+
+            if pos_tr < 1000 or pos_va < 1000:
+                tprint(
+                    f"Skipping fold {fold_id} in subset Ridge evaluation due to insufficient positive samples. "
+                    f"Train: {pos_tr} pos / {neg_tr} neg. Validation: {pos_va} pos / {neg_va} neg. (Required: 1000 pos)"
+                )
+                continue
+
+            # Subsample to 50% of training data, capped at 50,000 samples
             n_samples = len(X_tr_clean)
-            n_subsample = max(20, int(n_samples * 0.5))
+            n_subsample = max(20, min(50000, int(n_samples * 0.5)))
             subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
+
+            y_tr_subsample_pre = y_tr_clean[subsample_idx]
+            pos_mask_pre = y_tr_subsample_pre == 1
+            neg_mask_pre = y_tr_subsample_pre == 0
+
+            # Cap positive samples at 5000 and match negative samples to the same index
+            if np.sum(pos_mask_pre) > 5000:
+                pos_indices = np.where(pos_mask_pre)[0]
+                pos_keep = pos_indices[:5000]
+
+                # Maintain original positive/negative ratio within the subset but limit by the positive cutoff
+                neg_indices = np.where(neg_mask_pre)[0]
+                # Stop including negative samples once we've reached the positive cutoff's relative point in the array
+                max_neg_index = pos_keep[-1] if len(pos_keep) > 0 else len(subsample_idx)
+                neg_keep = neg_indices[neg_indices < max_neg_index]
+
+                final_keep_idx = np.sort(np.concatenate([pos_keep, neg_keep]))
+                subsample_idx = subsample_idx[final_keep_idx]
+
             X_tr_subsample = X_tr_clean[subsample_idx]
             y_tr_subsample = y_tr_clean[subsample_idx]
 
             # Fit Ridge on subsampled data
-            model = Ridge(alpha=1.0)
+            model = Ridge(alpha=1.0, solver="saga")
             model.fit(X_tr_subsample, y_tr_subsample)
             preds = model.predict(X_va_clean)
 
             # Store predictions
             oof_preds[va_masked[valid_va]] = preds
 
-        # Use lower min_predicted_points threshold for subset AUC since we're working
-        # with a masked subset that may have fewer total samples
-        return self._compute_oof_auc(oof_preds, y, mask, min_predicted_points=30)
+        return self._compute_oof_auc(oof_preds, y, mask, min_predicted_points=1000)
 
     def _compute_entropy(self, y) -> float:
         """Compute entropy of the target distribution."""
@@ -7153,15 +7179,16 @@ class MaskAssessor:
         folds: List[Tuple[np.ndarray, np.ndarray]],
     ) -> Tuple[float, float]:
         """
-        Compute baseline AUC using regime features across all folds.
+        Compute baseline AUC using ridge features across all folds.
         Uses only 50% of the data for Ridge model training.
         """
-        # Select regime features
-        regime_feats = [i for i, m in enumerate(self.metadata) if m.group == "regime"]
-        if not regime_feats:
+        # Select ridge features (TEST_FEATURE_KEYS)
+        test_keys_set = set(TEST_FEATURE_KEYS)
+        ridge_feats = [i for i, m in enumerate(self.metadata) if m.source_name in test_keys_set]
+        if not ridge_feats:
             return np.nan, 0.0
 
-        X_regime = X[:, regime_feats]
+        X_ridge = X[:, ridge_feats]
         y = (fwd_ret > 0).astype(float)
         y[np.isnan(fwd_ret)] = np.nan
 
@@ -7172,29 +7199,59 @@ class MaskAssessor:
         rng = np.random.RandomState(42)
 
         for fold_id, (tr_idx, va_idx) in enumerate(folds):
-            X_tr, X_va = X_regime[tr_idx], X_regime[va_idx]
+            X_tr, X_va = X_ridge[tr_idx], X_ridge[va_idx]
             y_tr, y_va = y[tr_idx], y[va_idx]
 
             # Filter valid samples
             valid_tr = np.isfinite(y_tr) & np.all(np.isfinite(X_tr), axis=1)
             valid_va = np.isfinite(y_va) & np.all(np.isfinite(X_va), axis=1)
 
-            if np.sum(valid_tr) < 20 or np.sum(valid_va) < 20:
-                continue
-
             X_tr_clean = X_tr[valid_tr]
             y_tr_clean = y_tr[valid_tr]
             X_va_clean = X_va[valid_va]
+            y_va_clean = y_va[valid_va]
 
-            # Subsample to 50% of training data
+            # Ensure we have a minimum of 1000 positive samples for both training and validation
+            pos_tr = int(np.sum(y_tr_clean == 1))
+            pos_va = int(np.sum(y_va_clean == 1))
+            neg_tr = int(np.sum(y_tr_clean == 0))
+            neg_va = int(np.sum(y_va_clean == 0))
+
+            if pos_tr < 1000 or pos_va < 1000:
+                tprint(
+                    f"Skipping fold {fold_id} in baseline Ridge evaluation due to insufficient positive samples. "
+                    f"Train: {pos_tr} pos / {neg_tr} neg. Validation: {pos_va} pos / {neg_va} neg. (Required: 1000 pos)"
+                )
+                continue
+
+            # Subsample to 50% of training data, capped at 50,000 samples
             n_samples = len(X_tr_clean)
-            n_subsample = max(20, int(n_samples * 0.5))
+            n_subsample = max(20, min(50000, int(n_samples * 0.5)))
             subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
+
+            y_tr_subsample_pre = y_tr_clean[subsample_idx]
+            pos_mask_pre = y_tr_subsample_pre == 1
+            neg_mask_pre = y_tr_subsample_pre == 0
+
+            # Cap positive samples at 5000 and match negative samples to the same index
+            if np.sum(pos_mask_pre) > 5000:
+                pos_indices = np.where(pos_mask_pre)[0]
+                pos_keep = pos_indices[:5000]
+
+                # Maintain original positive/negative ratio within the subset but limit by the positive cutoff
+                neg_indices = np.where(neg_mask_pre)[0]
+                # Stop including negative samples once we've reached the positive cutoff's relative point in the array
+                max_neg_index = pos_keep[-1] if len(pos_keep) > 0 else len(subsample_idx)
+                neg_keep = neg_indices[neg_indices < max_neg_index]
+
+                final_keep_idx = np.sort(np.concatenate([pos_keep, neg_keep]))
+                subsample_idx = subsample_idx[final_keep_idx]
+
             X_tr_subsample = X_tr_clean[subsample_idx]
             y_tr_subsample = y_tr_clean[subsample_idx]
 
             # Fit Ridge on subsampled data
-            model = Ridge(alpha=1.0)
+            model = Ridge(alpha=1.0, solver="saga")
             model.fit(X_tr_subsample, y_tr_subsample)
             preds = model.predict(X_va_clean)
 
@@ -7205,6 +7262,7 @@ class MaskAssessor:
             oof_preds,
             y,
             np.isfinite(y),
+            min_predicted_points=1000
         )
 
     def _get_mask_for_rule(self, key: str, X: np.ndarray) -> np.ndarray:

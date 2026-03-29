@@ -336,39 +336,32 @@ HELPER_BASE_FEATURES = [
 # Emphasis: 2/4/8-bar behavior + longer-horizon regime context.
 TEST_FEATURE_KEYS = [
     # Realized vol / ATR (multi-horizon)
-    "rv_2h", "rv_4h", "rv_8h", "rv_24h", "atr_pct", "atr_pct_change",
+    "rv_2h",
     # Returns + slope family (2/4/8 focus)
-    "ret2h", "ret4h", "ret8h", "ret24h", "slope", "atr_slope", "rsi_slope",
+    "ret4h", "rsi_slope",
     # Momentum acceleration
-    "momentum_accel", "accel", "accel_5h",
+    "momentum_accel",
     # Price distance / z-score style context (EMA / VWAP / breakout band proxies)
-    "dist_ema_fast", "dist_vwap_norm", "breakout_t", "pct_breakout_t", "ret1h_z",
+    "dist_vwap_norm", "breakout_t", "pct_breakout_t", "ret1h_z",
     # RVOL + volume acceleration
-    "rvol_z", "vol_z", "vol_z_4h", "dlog_vol_5h", "volume_entropy_12",
+    "vol_z_4h",
     # Vol-of-vol
-    "vov_ratio", "vov_fast_slow_ratio", "vov_mad_20",
+    "vov_mad_20",
     # Autocorrelation / Hurst-ish / path efficiency proxies
-    "autocorr_6h", "autocorr_24h", "hurst_proxy_24", "path_efficiency_12", "path_efficiency_24",
+    "autocorr_6h", "autocorr_24h", "hurst_proxy_24",
     # Liquidity + time-of-day
-    "amihud_illiq", "amihud_z", "sin_hod", "cos_hod", "sin_dow", "cos_dow",
+    "amihud_illiq", "amihud_z", "sin_hod", "cos_hod",
     # Mid/long lookback context for 8-bar horizon learnability (16-24h + slower)
-    "ret16h", "coherence_24", "impulse_ratio_24", "range_24h_pct",
-    "shannon_entropy_ret_16", "perm_entropy_ret_24", "spectral_entropy_ret_24", "volume_entropy_24",
-    "ret48h", "ret120h", "rv_48h", "rv_120h", "spectral_entropy_ret_48",
+    "range_24h_pct", "spectral_entropy_ret_24",
     # Longer-timeframe regime context
-    "trend_regime", "vol_regime_z", "regime_stability_24h", "trend_slope_48h", "trend_slope_120h",
-    "rv_ratio_24_120", "donch_dist_48", "donch_dist_120", "dist_from_high_120h", "dist_from_low_120h",
+    "trend_regime",
     # Ridge model features
-    "ema20_gt_ema50", "ema50_gt_ema200", "ema50_ema200_spread_atr", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
-    "price_lt_ema200", "ema50_slope", "trend_strength_percentile",
-    "rolling_std_4h", "realized_volatility_24h", "atr_change_rate", "true_range_percentile",
-    "bollinger_band_width", "rolling_range_20", "atr_percentile",
-    "prior_range", "prior_volatility",
-    "efficiency_ratio_20", "choppiness_index_20", "direction_entropy_20",
+    "compression_ratio",
+    "trend_strength_percentile",
+    "bollinger_band_width",
+    "direction_entropy_20",
     "volatility_ratio_short_long", "volume_percentile",
-    "ema20_slope_5h", "ema_slope_norm", "trend_persistence", "volume_zscore_48h", "trend_ratio",
-    "compression_score", "return_autocorr_48", "variance_ratio_10_48", "volume_trend_48", "volume_autocorr_48",
-    "volatility_of_volatility_48", "trend_acceleration", "volatility_autocorr_48",
+    "trend_ratio",
 ]
 
 CFG = {

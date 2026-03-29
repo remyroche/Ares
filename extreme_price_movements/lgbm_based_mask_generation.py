@@ -4664,9 +4664,22 @@ def run_side_pipeline(
                 "feature_fraction": 0.8,
             }
 
+            # Extract recent volatility if available, default to 1s
+            if "atr" in data.columns:
+                vol_array = data["atr"].to_numpy() / np.maximum(data["close"].to_numpy(), 1e-9)
+                vol_array = np.nan_to_num(vol_array, nan=1.0, posinf=1.0, neginf=1.0)
+            else:
+                vol_array = np.ones_like(side_fwd_ret)
+
+            # Ensure vol_array is aligned with X_a
+            # X_a is returned by prepare_features which currently returns aligned data,
+            # but we explicitly slice it if needed. However, data length is assumed to match X_a length here
+            # based on pipeline architecture.
+
             hpo_results = run_short_hpo_for_target_horizon(
                 X=X_a,
-                y=side_fwd_ret,
+                y=side_fwd_ret[:len(X_a)],
+                vol=vol_array[:len(X_a)],
                 main_params=hpo_main_params,
                 seed=cfg.get("random_state", 42),
             )

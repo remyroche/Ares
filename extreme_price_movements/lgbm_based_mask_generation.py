@@ -7846,8 +7846,8 @@ def apply_robust_data_filtering(
     1. Filter out rows with no feature availability.
     2. Identify the feature with maximum availability as the 'reference'.
     3. Drop features that have less than 80% availability overlap with the reference.
-    4. Drop all rows for a given timestamp if any symbol at that timestamp is missing
-       one of the retained features (full cross-sectional availability).
+    4. Drop only the specific (symbol, timestamp) row if it is missing any
+       of the retained features.
     """
     n_rows_initial = len(data)
     if n_rows_initial == 0 or not feature_dict:
@@ -7885,15 +7885,13 @@ def apply_robust_data_filtering(
         else:
             dropped_features.append((k, overlap))
 
-    # 4. Final row pruning: fully available for all symbols at a timestamp
+    # 4. Final row pruning: fully available for the specific symbol/timestamp row
     all_finite = np.ones(len(data), dtype=bool)
     for v in retained_features.values():
         all_finite &= np.isfinite(v)
 
-    # Group by timestamp and check if all rows for that TS are finite
-    # Optimization: find timestamps where any row is NOT finite
-    invalid_ts = set(data.loc[~all_finite, "timestamp"].unique())
-    final_keep_mask = ~data["timestamp"].isin(invalid_ts)
+    # Filtering is necessary, but we only drop the specific (symbol, timestamp) row
+    final_keep_mask = all_finite
 
     data_final = data.loc[final_keep_mask].reset_index(drop=True)
     features_final = {k: v[final_keep_mask] for k in retained_features}

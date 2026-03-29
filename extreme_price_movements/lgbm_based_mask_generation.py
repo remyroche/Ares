@@ -5803,6 +5803,7 @@ def classify_rule_production_quality(
     min_presence_freq: float = 0.75,
     min_directional_mean_ret: float = 0.0,
     min_support_threshold: int = 50,
+    min_path_quality_score: float = 0.0,
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Classify rule as production-quality, research, or rejected.
@@ -5813,6 +5814,7 @@ def classify_rule_production_quality(
     - directional_mean_ret > min_directional_mean_ret
     - min_support_actual >= min_support_actual
     - structurally sound
+    - trade_path_quality_score >= min_path_quality_score
 
     Classification:
     - "production": Meets all criteria for deployment
@@ -5831,6 +5833,8 @@ def classify_rule_production_quality(
         Minimum directional return edge (default 0.0)
     min_support_threshold : int
         Minimum actual support count (default 50)
+    min_path_quality_score : float
+        Minimum trade path quality score (default 0.0)
 
     Returns
     -------
@@ -5852,6 +5856,7 @@ def classify_rule_production_quality(
     hurdle_excess = rule.get("hurdle_excess", np.nan)
     is_structurally_sound = rule.get("is_structurally_sound", False)
     sign_consistency = rule.get("sign_consistency", 0.0)
+    trade_path_quality_score = rule.get("trade_path_quality_score", np.nan)
 
     if not np.isfinite(directional_mean_ret):
         directional_mean_ret = -np.inf
@@ -5923,6 +5928,21 @@ def classify_rule_production_quality(
     if not structural_check:
         diagnostics["failures"].append("not_structurally_sound")
 
+    # Check 7: Trade path quality score
+    if not np.isfinite(trade_path_quality_score):
+        trade_path_quality_score = -np.inf
+
+    path_quality_check = trade_path_quality_score >= min_path_quality_score
+    diagnostics["checks"]["trade_path_quality_score"] = {
+        "value": trade_path_quality_score,
+        "threshold": min_path_quality_score,
+        "passed": path_quality_check,
+    }
+    if not path_quality_check:
+        diagnostics["failures"].append(
+            f"trade_path_quality_score={trade_path_quality_score:.6f} < {min_path_quality_score:.6f}"
+        )
+
     # Check 8: Sign consistency (warning only)
     if sign_consistency < 0.75:
         diagnostics["warnings"].append(f"low_sign_consistency={sign_consistency:.3f}")
@@ -5931,7 +5951,7 @@ def classify_rule_production_quality(
     critical_failures = [
         f
         for f in diagnostics["failures"]
-        if "n_folds" in f or "structurally_sound" in f
+        if "n_folds" in f or "structurally_sound" in f or "trade_path_quality_score" in f
     ]
 
     if critical_failures:

@@ -336,32 +336,33 @@ HELPER_BASE_FEATURES = [
 # Emphasis: 2/4/8-bar behavior + longer-horizon regime context.
 TEST_FEATURE_KEYS = [
     # Realized vol / ATR (multi-horizon)
-    "rv_2h",
+    "rv_2h", "rv_24h", "atr_pct",
     # Returns + slope family (2/4/8 focus)
-    "ret4h", "rsi_slope",
+    "ret4h", "ret24h", "slope", "atr_slope", "rsi_slope",
     # Momentum acceleration
     "momentum_accel",
     # Price distance / z-score style context (EMA / VWAP / breakout band proxies)
-    "dist_vwap_norm", "breakout_t", "pct_breakout_t", "ret1h_z",
+    "dist_ema_fast", "dist_vwap_norm", "breakout_t", "pct_breakout_t", "ret1h_z",
     # RVOL + volume acceleration
     "vol_z_4h",
     # Vol-of-vol
-    "vov_mad_20",
+    "vov_ratio", "vov_mad_20",
     # Autocorrelation / Hurst-ish / path efficiency proxies
-    "autocorr_6h", "autocorr_24h", "hurst_proxy_24",
+    "autocorr_6h", "autocorr_24h", "hurst_proxy_24", "path_efficiency_24",
     # Liquidity + time-of-day
     "amihud_illiq", "amihud_z", "sin_hod", "cos_hod",
     # Mid/long lookback context for 8-bar horizon learnability (16-24h + slower)
-    "range_24h_pct", "spectral_entropy_ret_24",
+    "range_24h_pct",
+    "spectral_entropy_ret_24", "volume_entropy_24",
     # Longer-timeframe regime context
     "trend_regime",
     # Ridge model features
-    "compression_ratio",
+    "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
     "trend_strength_percentile",
-    "bollinger_band_width",
-    "direction_entropy_20",
+    "bollinger_band_width", "direction_entropy_20",
     "volatility_ratio_short_long", "volume_percentile",
     "trend_ratio",
+    "compression_score", "trend_acceleration",
 ]
 
 CFG = {

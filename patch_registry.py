@@ -1,38 +1,12 @@
-from __future__ import annotations
+import json
 
-from typing import Any
+def patch():
+    with open('extreme_price_movements/strategy_registry.py', 'r') as f:
+        content = f.read()
 
-
-_LEGACY_STRATEGIES: tuple[dict[str, Any], ...] = (
-    {
-        "strategy_id": "long_tf",
-        "trade_side": "long",
-        "base_event_trigger": "price_up_tf",
-        "regime_filters": [],
-    },
-    {
-        "strategy_id": "long_mr",
-        "trade_side": "long",
-        "base_event_trigger": "price_down_mr",
-        "regime_filters": [],
-    },
-    {
-        "strategy_id": "short_tf",
-        "trade_side": "short",
-        "base_event_trigger": "price_down_tf",
-        "regime_filters": [],
-    },
-    {
-        "strategy_id": "short_mr",
-        "trade_side": "short",
-        "base_event_trigger": "price_up_mr",
-        "regime_filters": [],
-    },
-)
-
-
-def get_strategies(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Return normalized strategy definitions.
+    # We want to modify get_strategies to parse feature keys, or derive them if missing
+    new_get_strategies = """def get_strategies(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    \"\"\"Return normalized strategy definitions.
 
     Strategy schema:
       - strategy_id: unique key for artifact/model names
@@ -43,7 +17,7 @@ def get_strategies(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
       - meta_feature_keys: list of feature keys for the meta model
       - is_mr: boolean indicating if this is a mean-reversion strategy
       - is_tf: boolean indicating if this is a trend-following strategy
-    """
+    \"\"\"
     raw = (cfg or {}).get("strategies")
 
     def _enrich_legacy(s: dict[str, Any]) -> dict[str, Any]:
@@ -108,9 +82,13 @@ def get_strategies(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
 
     if not out:
         return [_enrich_legacy(dict(s)) for s in _LEGACY_STRATEGIES]
-    return out
+    return out"""
 
+    start_idx = content.find("def get_strategies(")
+    end_idx = content.find("def strategy_map(")
 
-def strategy_map(cfg: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
-    return {s["strategy_id"]: s for s in get_strategies(cfg)}
+    new_content = content[:start_idx] + new_get_strategies + "\n\n\n" + content[end_idx:]
+    with open('extreme_price_movements/strategy_registry.py', 'w') as f:
+        f.write(new_content)
 
+patch()

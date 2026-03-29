@@ -183,6 +183,7 @@ def _cluster_geometry_candidates_hybrid(
     """Cluster TBM candidates into tight/wide.
 
     Wide is the ones with wider SL than the median, tight is tighter SL than the median.
+    If SL is identical to the median, it uses TP (k_tp) as a tie-breaker.
     """
     import numpy as np
 
@@ -191,9 +192,6 @@ def _cluster_geometry_candidates_hybrid(
     ]
     if not triplets:
         return {}
-
-    # We don't really need ranked_rows or KMeans anymore per the new requirement,
-    # but we will extract the sl_as_tp_pct from the triplets to partition.
 
     uniq_triplets = []
     seen = set()
@@ -214,15 +212,33 @@ def _cluster_geometry_candidates_hybrid(
     tight_group = []
     wide_group = []
 
+    # Pre-calculate median of TP (index 0) strictly for those exactly AT the median SL
+    # to use as the tie-breaker
+    median_sl_triplets = [t for t in uniq_triplets if t[1] == sl_median]
+    tp_median = np.median([t[0] for t in median_sl_triplets]) if median_sl_triplets else 0
+
     for t in uniq_triplets:
         if t[1] < sl_median:
             tight_group.append(t)
-        else:
+        elif t[1] > sl_median:
             wide_group.append(t)
+        else:
+            # Tie breaker: compare k_tp (index 0) to median k_tp among the tied group
+            if t[0] < tp_median:
+                tight_group.append(t)
+            elif t[0] > tp_median:
+                wide_group.append(t)
+            else:
+                # If both SL and TP are exactly their respective medians,
+                # just balance the groups.
+                if len(tight_group) <= len(wide_group):
+                    tight_group.append(t)
+                else:
+                    wide_group.append(t)
 
-    # Handle edge case where all sl_vals are the same
+    # Handle edge case where there is no split even after tie-breaker
+    # (e.g. all identical points somehow, though uniq_triplets handles most of that)
     if not tight_group:
-        # Fall back to splitting by width if sl_as_tp_pct is identical
         mid = len(uniq_triplets) // 2
         tight_group = uniq_triplets[:mid]
         wide_group = uniq_triplets[mid:]

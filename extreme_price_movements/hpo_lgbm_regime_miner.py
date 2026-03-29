@@ -188,6 +188,7 @@ def build_candidate_rule_matrix(model: lgb.Booster, X_val: np.ndarray) -> np.nda
 
 def score_rule_matrix_vectorized(
     y_val: np.ndarray,
+    vol_val: np.ndarray,
     rule_matrix: np.ndarray,
     support_min: float = SUPPORT_MIN,
     support_max: float = SUPPORT_MAX,
@@ -215,49 +216,45 @@ def score_rule_matrix_vectorized(
     counts = counts[valid_count_mask]
     supports = counts / float(n)
 
-    baseline_mean = float(y_val.mean())
-    baseline_std = float(y_val.std(ddof=1)) + 1e-12
+    # Volatility normalization of returns using local volatility (vol_val)
+    vol_safe = np.maximum(vol_val, 1e-12)
+    y_val_norm = y_val / vol_safe
 
-    # Calculate number of trades per rule (0 -> 1 transitions + initial state)
-    # M shape is [n, k]
-    diff = M[1:].astype(np.int8) - M[:-1].astype(np.int8)
-    starts = (diff == 1).sum(axis=0)
-    trades_count = starts + M[0]
+    baseline_mean_norm = float(y_val_norm.mean())
 
-    fee = 0.003
-    total_fees = trades_count * fee
+    sum_y_norm = M.T @ y_val_norm                     # [k]
+    mean_return_norm = sum_y_norm / counts            # [k]
 
-    # Apply fees directly to raw sum of returns before normalization
-    sum_y = M.T @ y_val                             # [k]
-    sum_y_after_fee = sum_y - total_fees
-    mean_return_after_fee = sum_y_after_fee / counts
+    incremental = mean_return_norm - baseline_mean_norm # [k]
 
-    # Volatility normalization of the adjusted mean return
-    # and the baseline mean return
-    adjusted_mean_return_norm = mean_return_after_fee / baseline_std
-    baseline_mean_norm = baseline_mean / baseline_std
+    # Alternative to IC: Difference in Means (Cohen's d-like or direct delta)
+    # We already have mean_return_norm. Let's calculate the inactive mean return
+    # to compute the difference in means between active and inactive states.
+    # inactive counts = n - counts
+    sum_y_inactive = y_val_norm.sum() - sum_y_norm
+    inactive_counts = n - counts
+    mean_return_inactive = np.zeros_like(sum_y_inactive)
+    valid_inactive = inactive_counts > 0
+    mean_return_inactive[valid_inactive] = sum_y_inactive[valid_inactive] / inactive_counts[valid_inactive]
 
-    incremental = adjusted_mean_return_norm - baseline_mean_norm
+    diff_in_means = mean_return_norm - mean_return_inactive
 
-    # IC calculation
-    # We use correlation between the boolean mask and normalized returns (without fees subtracted from y_val directly,
-    # since we want the correlation signal strength; however we can use the fee-adjusted mean for the rule).
-    # To keep it consistent, let's use the fee-adjusted normalized return in the IC formula.
-    p = supports
-    std_y_norm = 1.0  # Since y_val / baseline_std has std roughly 1
-    ic = (p * (adjusted_mean_return_norm - baseline_mean_norm)) / (np.sqrt(p * (1 - p) + 1e-12) * std_y_norm)
+    # Sortino ratio approximation per rule
+    # We need the standard deviation of *negative* returns when the rule is active
+    # y_val_norm_negative is only the downside parts
+    y_val_norm_neg = np.minimum(y_val_norm, 0.0)
+    sum_y_norm_neg_sq = M.T @ (y_val_norm_neg ** 2)
 
-    # Sharpe ratio approximation per rule
-    # we use the variance of the raw returns within the rule's active periods, scaled by baseline_std
-    sum_y_sq = M.T @ (y_val ** 2)
-    var_raw_within_rule = (sum_y_sq / counts) - ((sum_y / counts) ** 2)
-    var_raw_within_rule = np.maximum(var_raw_within_rule, 1e-12)
-    std_norm_within_rule = np.sqrt(var_raw_within_rule) / baseline_std
+    # Downside variance: Average of squared negative returns
+    downside_var = sum_y_norm_neg_sq / counts
+    downside_std = np.sqrt(downside_var + 1e-12)
 
-    # Sharpe = normalized fee-adjusted return / normalized std dev of rule
-    sharpe = adjusted_mean_return_norm / std_norm_within_rule
+    # Use incremental return in numerator for Sortino to ensure positive
+    # values for valid rules (since we only keep rules with incremental > 0)
+    # This prevents the negative multiplication bug when integrating metrics.
+    sortino = incremental / downside_std # [k]
 
-    # We only keep rules that have positive incremental return after fees
+    # We only keep rules that have positive incremental return
     keep = incremental > 0.0
     if not np.any(keep):
         return -np.inf, {"reason": "no_positive_rules"}
@@ -265,8 +262,8 @@ def score_rule_matrix_vectorized(
     M_keep = M[:, keep]
     supports_keep = supports[keep]
     incremental_keep = incremental[keep]
-    ic_keep = ic[keep]
-    sharpe_keep = sharpe[keep]
+    diff_in_means_keep = diff_in_means[keep]
+    sortino_keep = sortino[keep]
 
     union_mask = M_keep.any(axis=1)
     total_support = float(union_mask.mean())
@@ -288,20 +285,22 @@ def score_rule_matrix_vectorized(
     w = supports_keep
     w_sum = float(w.sum()) + 1e-12
     weighted_incremental = float(np.dot(incremental_keep, w) / w_sum)
-    weighted_ic = float(np.dot(ic_keep, w) / w_sum)
-    weighted_sharpe = float(np.dot(sharpe_keep, w) / w_sum)
+
+    # Clip diff_in_means so we don't multiply by negatives either,
+    # though it should strictly be positive since incremental > 0.
+    weighted_diff_in_means = max(1e-12, float(np.dot(diff_in_means_keep, w) / w_sum))
+    weighted_sortino = max(1e-12, float(np.dot(sortino_keep, w) / w_sum))
 
     support_penalty = 1.0 - abs(total_support - target_support)
-    score = weighted_incremental * weighted_ic * weighted_sharpe * support_penalty
+    score = weighted_incremental * weighted_diff_in_means * weighted_sortino * support_penalty
 
     diagnostics = {
         "support": total_support,
         "weighted_incremental": weighted_incremental,
-        "weighted_ic": weighted_ic,
-        "weighted_sharpe": weighted_sharpe,
+        "weighted_diff_in_means": weighted_diff_in_means,
+        "weighted_sortino": weighted_sortino,
         "n_kept_rules": int(keep.sum()),
-        "baseline_mean": baseline_mean,
-        "baseline_std": baseline_std,
+        "baseline_mean_norm": baseline_mean_norm,
     }
     return score, diagnostics
 
@@ -316,6 +315,7 @@ def evaluate_config(
     y_train: np.ndarray,
     X_val: np.ndarray,
     y_val: np.ndarray,
+    vol_val: np.ndarray,
     main_params: Dict[str, Any],
 ) -> EvalResult:
     params = build_hpo_params(main_params, cfg, n_train_subsample=len(X_train))
@@ -325,6 +325,7 @@ def evaluate_config(
     rule_matrix = build_candidate_rule_matrix(model, X_val)
     score, d = score_rule_matrix_vectorized(
         y_val=y_val,
+        vol_val=vol_val,
         rule_matrix=rule_matrix,
         support_min=SUPPORT_MIN,
         support_max=SUPPORT_MAX,
@@ -352,6 +353,7 @@ def evaluate_config(
 def run_short_hpo_for_target_horizon(
     X: np.ndarray,
     y: np.ndarray,
+    vol: Optional[np.ndarray] = None,
     main_params: Dict[str, Any] = MAIN_MINER_PARAMS,
     subsample_frac: float = SUBSAMPLE_FRAC,
     seed: int = RANDOM_SEED,
@@ -360,6 +362,9 @@ def run_short_hpo_for_target_horizon(
     Main entry point for dynamic HPO integration.
     """
     rng = np.random.default_rng(seed)
+
+    if vol is None:
+        vol = np.ones_like(y)
 
     if len(y) < 100:
         # Fallback for very small datasets
@@ -396,10 +401,12 @@ def run_short_hpo_for_target_horizon(
     sub_idx = block_subsample_indices(len(y), frac=subsample_frac, rng=rng)
     X_sub = X[sub_idx]
     y_sub = y[sub_idx]
+    vol_sub = vol[sub_idx]
 
     tr_idx, va_idx = train_val_split_time_ordered(len(y_sub), val_frac=0.25)
     X_train, y_train = X_sub[tr_idx], y_sub[tr_idx]
     X_val, y_val = X_sub[va_idx], y_sub[va_idx]
+    vol_val = vol_sub[va_idx]
 
     # Stage 1: alpha screen
     stage1_cfgs = [
@@ -407,7 +414,7 @@ def run_short_hpo_for_target_horizon(
         for a in ALPHA_GRID
     ]
     stage1_results = [
-        evaluate_config(cfg, X_train, y_train, X_val, y_val, main_params)
+        evaluate_config(cfg, X_train, y_train, X_val, y_val, vol_val, main_params)
         for cfg in stage1_cfgs
     ]
 
@@ -425,7 +432,7 @@ def run_short_hpo_for_target_horizon(
         for g, lf in product(MIN_GAIN_GRID, MIN_LEAF_FRAC_GRID)
     ]
     stage2_results = [
-        evaluate_config(cfg, X_train, y_train, X_val, y_val, main_params)
+        evaluate_config(cfg, X_train, y_train, X_val, y_val, vol_val, main_params)
         for cfg in stage2_cfgs
     ]
 
@@ -455,6 +462,7 @@ def run_hpo_all(
         out[(target, horizon)] = run_short_hpo_for_target_horizon(
             X=X,
             y=y,
+            vol=np.ones_like(y), # Default to 1 if not provided in tests
             main_params=main_params,
             subsample_frac=SUBSAMPLE_FRAC,
             seed=RANDOM_SEED,

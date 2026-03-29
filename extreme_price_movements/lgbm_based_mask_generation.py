@@ -7095,6 +7095,25 @@ class MaskAssessor:
             n_samples = len(X_tr_clean)
             n_subsample = max(20, min(50000, int(n_samples * 0.5)))
             subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
+
+            y_tr_subsample_pre = y_tr_clean[subsample_idx]
+            pos_mask_pre = y_tr_subsample_pre == 1
+            neg_mask_pre = y_tr_subsample_pre == 0
+
+            # Cap positive samples at 5000 and match negative samples to the same index
+            if np.sum(pos_mask_pre) > 5000:
+                pos_indices = np.where(pos_mask_pre)[0]
+                pos_keep = pos_indices[:5000]
+
+                # Maintain original positive/negative ratio within the subset but limit by the positive cutoff
+                neg_indices = np.where(neg_mask_pre)[0]
+                # Stop including negative samples once we've reached the positive cutoff's relative point in the array
+                max_neg_index = pos_keep[-1] if len(pos_keep) > 0 else len(subsample_idx)
+                neg_keep = neg_indices[neg_indices < max_neg_index]
+
+                final_keep_idx = np.sort(np.concatenate([pos_keep, neg_keep]))
+                subsample_idx = subsample_idx[final_keep_idx]
+
             X_tr_subsample = X_tr_clean[subsample_idx]
             y_tr_subsample = y_tr_clean[subsample_idx]
 
@@ -7176,6 +7195,25 @@ class MaskAssessor:
             n_samples = len(X_tr_clean)
             n_subsample = max(20, min(50000, int(n_samples * 0.5)))
             subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
+
+            y_tr_subsample_pre = y_tr_clean[subsample_idx]
+            pos_mask_pre = y_tr_subsample_pre == 1
+            neg_mask_pre = y_tr_subsample_pre == 0
+
+            # Cap positive samples at 5000 and match negative samples to the same index
+            if np.sum(pos_mask_pre) > 5000:
+                pos_indices = np.where(pos_mask_pre)[0]
+                pos_keep = pos_indices[:5000]
+
+                # Maintain original positive/negative ratio within the subset but limit by the positive cutoff
+                neg_indices = np.where(neg_mask_pre)[0]
+                # Stop including negative samples once we've reached the positive cutoff's relative point in the array
+                max_neg_index = pos_keep[-1] if len(pos_keep) > 0 else len(subsample_idx)
+                neg_keep = neg_indices[neg_indices < max_neg_index]
+
+                final_keep_idx = np.sort(np.concatenate([pos_keep, neg_keep]))
+                subsample_idx = subsample_idx[final_keep_idx]
+
             X_tr_subsample = X_tr_clean[subsample_idx]
             y_tr_subsample = y_tr_clean[subsample_idx]
 

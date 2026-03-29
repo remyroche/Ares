@@ -467,19 +467,23 @@ def test_mask_assessor_avg_trades_per_day_uses_unique_days():
 
 
 def test_mask_assessor_subset_auc_ignores_unscored_rows():
+    from extreme_price_movements.config import TEST_FEATURE_KEYS
     rng = np.random.RandomState(0)
-    n = 300
+    n = 10000
     signal = rng.normal(size=n).astype(np.float32)
     x = signal.reshape(-1, 1)
     fwd_ret = np.where(signal > 0, 1.0, -1.0).astype(np.float32)
     mask = np.zeros(n, dtype=bool)
-    mask[:100] = True
-    mask[100:160] = True
-    mask[200:260] = True
+    mask[:4000] = True
+    mask[4000:7000] = True
+    mask[7000:10000] = True
     folds = [
-        (np.arange(0, 100, dtype=np.int32), np.arange(100, 200, dtype=np.int32)),
-        (np.arange(0, 200, dtype=np.int32), np.arange(200, 300, dtype=np.int32)),
+        (np.arange(0, 4000, dtype=np.int32), np.arange(4000, 7000, dtype=np.int32)),
+        (np.arange(0, 7000, dtype=np.int32), np.arange(7000, 10000, dtype=np.int32)),
     ]
+
+    # Needs to match one of TEST_FEATURE_KEYS to not be filtered out
+    source_name = TEST_FEATURE_KEYS[0] if TEST_FEATURE_KEYS else "regime_signal"
 
     assessor = MaskAssessor(
         metadata=[
@@ -487,7 +491,7 @@ def test_mask_assessor_subset_auc_ignores_unscored_rows():
                 "regime_signal",
                 0,
                 "regime",
-                "regime_signal",
+                source_name,
                 "regime",
                 "continuous",
             )

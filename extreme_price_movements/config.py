@@ -354,21 +354,15 @@ TEST_FEATURE_KEYS = [
     # Mid/long lookback context for 8-bar horizon learnability (16-24h + slower)
     "ret16h", "coherence_24", "impulse_ratio_24", "range_24h_pct",
     "shannon_entropy_ret_16", "perm_entropy_ret_24", "spectral_entropy_ret_24", "volume_entropy_24",
-    "ret48h", "ret120h", "rv_48h", "rv_120h", "spectral_entropy_ret_48",
     # Longer-timeframe regime context
-    "trend_regime", "vol_regime_z", "regime_stability_24h", "trend_slope_48h", "trend_slope_120h",
-    "rv_ratio_24_120", "donch_dist_48", "donch_dist_120", "dist_from_high_120h", "dist_from_low_120h",
+    "trend_regime", "vol_regime_z", "regime_stability_24h",
     # Ridge model features
-    "ema20_gt_ema50", "ema50_gt_ema200", "ema50_ema200_spread_atr", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
-    "price_lt_ema200", "ema50_slope", "trend_strength_percentile",
-    "rolling_std_4h", "realized_volatility_24h", "atr_change_rate", "true_range_percentile",
-    "bollinger_band_width", "rolling_range_20", "atr_percentile",
-    "prior_range", "prior_volatility",
-    "efficiency_ratio_20", "choppiness_index_20", "direction_entropy_20",
+    "compression_ratio",
+    "trend_strength_percentile",
+    "bollinger_band_width",
+    "direction_entropy_20",
     "volatility_ratio_short_long", "volume_percentile",
-    "ema20_slope_5h", "ema_slope_norm", "trend_persistence", "volume_zscore_48h", "trend_ratio",
-    "compression_score", "return_autocorr_48", "variance_ratio_10_48", "volume_trend_48", "volume_autocorr_48",
-    "volatility_of_volatility_48", "trend_acceleration", "volatility_autocorr_48",
+    "trend_persistence", "trend_ratio",
 ]
 
 CFG = {

@@ -436,6 +436,7 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
         ema_nb,
         ema_nb_parallel,
         realized_vol_nb,
+        rolling_std_nb,
         rolling_std_nb_parallel,
         slope_nb,
         slope_nb_parallel,
@@ -443,6 +444,10 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
 
     if func == realized_vol_nb:
         return apply_to_matrix_parallel(df, rolling_std_nb_parallel, *args)
+    elif func == rolling_std_nb:
+        return apply_to_matrix_parallel(df, rolling_std_nb_parallel, *args)
+    elif func == _numba_rolling_zscore_nan_safe_1d:
+        return apply_to_matrix_parallel(df, _numba_rolling_zscore_parallel, *args)
     elif func == slope_nb:
         return apply_to_matrix_parallel(df, slope_nb_parallel, *args)
     elif func == binary_entropy_nb:

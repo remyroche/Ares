@@ -5310,6 +5310,25 @@ def evaluate_config(
     stage2_score *= max(0.70, math.sqrt(max(coverage, 0.0)))
     stage2_score *= max(0.70, max(bind_agg, 0.0))
 
+    # Calculate path_quality_score
+    _median_mfe_mae_agg = float(np.median([v["median_mfe_mae"] for v in bucket_h_metrics.values() if math.isfinite(v.get("median_mfe_mae", float("nan")))]))
+    _p10_mfe_mae_agg = float(np.median([v["p10_mfe_mae"] for v in bucket_h_metrics.values() if math.isfinite(v.get("p10_mfe_mae", float("nan")))]))
+    _median_retention_agg = float(np.median([v["median_retention"] for v in bucket_h_metrics.values() if math.isfinite(v.get("median_retention", float("nan")))]))
+    _pct_MFE_before_MAE_agg = float(np.median([v["pct_MFE_before_MAE"] for v in bucket_h_metrics.values() if math.isfinite(v.get("pct_MFE_before_MAE", float("nan")))]))
+    _median_time_to_mfe_agg = float(np.median([v["median_time_to_mfe"] for v in bucket_h_metrics.values() if math.isfinite(v.get("median_time_to_mfe", float("nan")))]))
+
+    if all(math.isfinite(x) for x in [_median_mfe_mae_agg, _p10_mfe_mae_agg, _median_retention_agg, _pct_MFE_before_MAE_agg, _median_time_to_mfe_agg]):
+        path_quality_score = (
+            np.tanh(_median_mfe_mae_agg / 3.0)
+            * np.sqrt(max(0.0, np.tanh(_p10_mfe_mae_agg / 2.0)))
+            * np.clip(_median_retention_agg, 0.0, 1.0)
+            * np.clip(_pct_MFE_before_MAE_agg, 0.0, 1.0)
+            * (1.0 / np.sqrt(_median_time_to_mfe_agg + 1.0))
+        )
+        stage2_score = stage2_score * (1.0 + 0.35 * path_quality_score)
+    else:
+        path_quality_score = 0.0
+
     # Additive penalties for clear learnability failures.
     if top10_vs_rest_spread < 0.0:
         stage2_score -= 0.03
@@ -5619,6 +5638,7 @@ def evaluate_config(
         else float("nan"),
         "min_cell_tp_sep": round(min_cell_tp_sep, 5),
         "median_cell_tp_sep": round(median_cell_tp_sep, 5),
+        "path_quality_score": round(float(path_quality_score), 6),
         "timeout_range": round(timeout_range, 4),
         "min_cell_ap_lift": round(min_cell_ap_lift, 4)
         if not math.isnan(min_cell_ap_lift)

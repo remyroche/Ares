@@ -30,3 +30,7 @@ Action: Use the fully parallelized `ff.apply_to_frame(df, numba_func, window)` w
 
 ## 2025-02-13 - [Fast Funcs] Learning: Avoid O(N*W) nested loop rolling operations. Action: Implement amortized O(N) single-pass rolling updates using circular buffers and K-shift numerical stability for features like std, slope, and entropy in Numba.
 ## 2025-02-13 - [Fast Funcs] Learning: apply_to_frame iterating over columns in Python is slow. Action: Replace `apply_to_frame(df, func, n)` loop with explicitly mapped parallelized 2D versions (`_func_parallel(mat, n)`) in `features.py` and `fast_funcs.py`.
+
+## 2026-03-28 - Missing Numba Parallel Mappings in apply_to_frame
+Learning: The `apply_to_frame` dispatcher function in `fast_funcs.py` was missing explicit mappings for `rolling_std_nb` and `_numba_rolling_zscore_nan_safe_1d`. Because they were unmapped, they fell back to the generic `apply_to_matrix` function, which iterates sequentially over every DataFrame column in a pure Python loop (`for j in range(n_cols):`). For typical datasets (e.g., 100k x 200), this sequential Python loop overhead entirely defeated the purpose of Numba, turning a 0.38s operation into a 0.65s bottleneck.
+Action: Always verify that newly created `_parallel` Numba kernels are explicitly mapped inside the `if func == ...` routing logic of `apply_to_frame`. Ensure both `rolling_std_nb` and `_numba_rolling_zscore_nan_safe_1d` map to their respective `_parallel` implementations.

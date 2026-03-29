@@ -2048,52 +2048,51 @@ def _compute_atr_scale(atr_pct_df, cfg):
     return atr_scale.astype(np.float32), atr_ref
 
 
-def compute_weights_logic(df, cfg, model_kind):
+def compute_weights_logic(df, cfg, strategy=None):
     tprint(f"Entering function: compute_weights_logic in training.py")
     from .model_mr import compute_mr_weights
     from .model_tf import compute_tf_weights
 
-    if model_kind == "mr":
+    # Assume TF if strategy is not provided or if it's explicitly TF
+    is_mr = strategy.get("is_mr", False) if strategy else False
+
+    if is_mr:
         return compute_mr_weights(df, cfg)
     else:
         return compute_tf_weights(df, cfg)
 
 
 def _strategy_bucket_context(
-    trade_side: str, model_kind: str, cfg: dict | None = None
+    trade_side: str, strategy_id: str, cfg: dict | None = None
 ) -> tuple:
-    """Return (candidate_bucket, move_bucket, strategy_label) for (trade_side, model_kind).
+    """Return (candidate_bucket, move_bucket, strategy_label) for (trade_side, strategy_id).
 
-    Strategy definitions (cfg['strategies']) are authoritative; legacy 4-way mapping is fallback.
+    Strategy definitions (cfg['strategies']) are authoritative; legacy mapping is fallback.
     """
     side = str(trade_side).lower()
-    kind = str(model_kind).lower()
+    strat_id = str(strategy_id)
 
     for strat in get_strategies(cfg or {}):
         s_side = str(strat.get("trade_side", "")).lower()
+        s_id = str(strat.get("strategy_id", ""))
         mode = str(strat.get("base_event_trigger", "")).lower()
-        if s_side != side:
-            continue
-        is_tf = mode.endswith("_tf")
-        is_mr = mode.endswith("_mr")
-        if (kind == "tf" and is_tf) or (kind == "mr" and is_mr):
+        if s_side == side and s_id == strat_id:
             move_bucket = "up" if "price_up" in mode else "down"
             cand_filter = "best" if move_bucket == "up" else "worst"
-            return cand_filter, move_bucket, str(strat.get("strategy_id", mode))
+            return cand_filter, move_bucket, s_id
 
     # Legacy fallback
+    # To retain backwards compat for existing keys that might just be "mr" or "tf"
+    is_mr = "mr" in strat_id.lower()
+    is_tf = "tf" in strat_id.lower()
+
     if side == "long":
-        cand_filter = "worst" if kind == "mr" else "best"
+        cand_filter = "worst" if is_mr else "best"
     else:
-        cand_filter = "best" if kind == "mr" else "worst"
+        cand_filter = "best" if is_mr else "worst"
+
     move_bucket = "up" if cand_filter == "best" else "down"
-    label_map = {
-        ("long", "mr"): "buy_dips",
-        ("long", "tf"): "buy_momentum",
-        ("short", "mr"): "sell_rips",
-        ("short", "tf"): "sell_weakness",
-    }
-    return cand_filter, move_bucket, label_map.get((side, kind), f"{side}_{kind}")
+    return cand_filter, move_bucket, strat_id
 
 
 def _trend_direction_keep_mask(trend_vals, trend_filter: str) -> np.ndarray:
@@ -2110,18 +2109,36 @@ def _trend_direction_keep_mask(trend_vals, trend_filter: str) -> np.ndarray:
     return finite & (arr < 0.0)
 
 
-def _meta_feature_keys_for_kind(cfg: dict, kind: str | None = None) -> list[str]:
-    """Return shared meta features plus optional kind-specific overlay."""
+def _meta_feature_keys_for_kind(cfg: dict, strategy: dict | None = None) -> list[str]:
+    """Return shared meta features plus optional kind-specific overlay based on strategy config."""
+    if strategy and "meta_feature_keys" in strategy:
+        out = []
+        seen = set()
+        for k in strategy["meta_feature_keys"]:
+            if isinstance(k, str) and k and k not in seen:
+                out.append(k)
+                seen.add(k)
+        return out
+
+    # Fallback to old behavior if no strategy dict is passed
     base = list(cfg.get("meta_feature_keys", []) or [])
-    kind_l = str(kind or "").lower()
-    if kind_l == "mr":
+
+    # Try to guess from strategy definition
+    is_mr = False
+    is_tf = False
+    if strategy:
+        is_mr = strategy.get("is_mr", False)
+        is_tf = strategy.get("is_tf", False)
+
+    if is_mr:
         extra = list(cfg.get("mr_meta_feature_keys", []) or [])
-    elif kind_l == "tf":
+    elif is_tf:
         extra = list(cfg.get("tf_meta_feature_keys", []) or [])
     else:
         extra = list(cfg.get("mr_meta_feature_keys", []) or []) + list(
             cfg.get("tf_meta_feature_keys", []) or []
         )
+
     out = []
     seen = set()
     for k in base + extra:
@@ -2625,6 +2642,7 @@ def _optimize_training_sample_weights(
     cfg: dict,
     stage: str,
     extra_components: dict | None = None,
+    strategy: dict | None = None,
 ) -> np.ndarray:
     """Optimize sample-weight component blend using constrained CV objective."""
     if not bool(cfg.get("sample_weight_opt_enable", True)):
@@ -2719,7 +2737,8 @@ def _optimize_training_sample_weights(
                 tau=float(cfg.get("mfe_mae_tau", 1.0)),
                 cost_floor=float(cfg.get("mfe_mae_cost_floor", 0.001)),
             )
-            if "_mr_" in str(stage).lower():
+            is_mr_strat = strategy.get("is_mr", False) if strategy else "_mr_" in str(stage).lower()
+            if is_mr_strat:
                 _tau_mfe = float(cfg.get("mr_weight_mfe_tau", 1.0))
                 _tau_mae = float(cfg.get("mr_weight_mae_tau", 1.0))
                 _mfe_rel = np.clip(np.maximum(mfe_v, 0.0) / (tp_v + 1e-9), 0.0, 3.0)
@@ -2988,6 +3007,7 @@ def build_hourly_training_set_and_weights(
     H,
     model_kind,
     trend_filter=None,
+    strategy=None,
     feature_key=None,
     extra_feature_keys=None,
     label_method="atr",
@@ -4019,6 +4039,7 @@ def build_hourly_training_set_and_weights(
             cfg=cfg,
             stage="base",
             extra_components=None,  # Removed distance component per user request
+            strategy=strategy,
         )
 
     tprint(
@@ -4075,7 +4096,7 @@ def build_hourly_training_set_and_weights(
     # At inference time (engine.py), the meta model receives raw feature names,
     # so we must train on raw names too. Prefix with __meta_raw__ to avoid
     # collision with toggled columns and to survive drop_raw=True.
-    meta_keys_cfg = _meta_feature_keys_for_kind(cfg, k)
+    meta_keys_cfg = _meta_feature_keys_for_kind(cfg, strat)
     _df_ts = df["ts"].values
     _df_sym = df["symbol"].values
     for mk in meta_keys_cfg:
@@ -5756,7 +5777,7 @@ def generate_label_datasets(
             k,
             trend_filter=move_bucket,
             feature_key=feat_key,
-            extra_feature_keys=_meta_feature_keys_for_kind(cfg, k),
+            extra_feature_keys=_meta_feature_keys_for_kind(cfg, strat),
             label_method="triple_barrier",
             fixed_tp=fixed_tp,
             fixed_sl=fixed_sl,
@@ -8221,7 +8242,7 @@ def train_meta_models_from_artifacts(
         k = strat["strategy_id"]
         trade_side = side
         cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
-            trade_side, k
+            trade_side, k, cfg
         )
         tprint(
             f"Meta bucket context: trade_side={trade_side}, kind={k}, "
@@ -8510,7 +8531,7 @@ def train_meta_models_from_artifacts(
             else None
         )
 
-        configured_meta = _meta_feature_keys_for_kind(cfg, k)
+        configured_meta = _meta_feature_keys_for_kind(cfg, strat)
         raw_prefix = "__meta_raw__"
         feat_cols = [
             mk for mk in configured_meta if f"{raw_prefix}{mk}" in df.columns
@@ -9185,6 +9206,7 @@ def train_meta_models_from_artifacts(
                         "magnitude": w_mag_clf,
                         "excursion": w_exc_clf,
                     },
+                    strategy=strat,
                 )
             w_meta_clf = w_meta_clf.astype(np.float32)
 
@@ -9777,7 +9799,9 @@ def train_meta_models_from_artifacts(
             )
 
             _ps_buckets = {}
-            for _b in ["long_mr", "long_tf", "short_mr", "short_tf"]:
+            _strats = get_strategies(cfg)
+            for _strat in _strats:
+                _b = f"{_strat['trade_side']}_{_strat['strategy_id']}"
                 _util_key = f"{_b}_utility"
                 _md = _bucket_metadata.get(_util_key, {})
                 _aux = _aux_head_oof.get(_b, {})
@@ -10294,14 +10318,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     tprint("Post-specialist memory cleanup complete.")
 
     # 2. Train Alpha Models
-    # directions (up/down) replaced by sides (long/short)
-    trade_sides = ["long", "short"]
-    kinds = ["mr", "tf"]
     final_models = {}
     base_variant_models = {}
 
     def _train_base_variant_dataset(
-        side_name, kind_name, horizon, dataset_key, df_variant
+        side_name, kind_name, horizon, dataset_key, df_variant, strategy=None
     ):
         if (
             df_variant is None
@@ -10323,8 +10344,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             "__barrier_pct__",
         ]
         X = df_variant.drop(columns=[c for c in drop_cols if c in df_variant.columns])
-        feat_key_name = "tf_feature_keys" if kind_name == "tf" else "mr_feature_keys"
-        allowed_keys = set(cfg.get(feat_key_name, []))
+        # Use strategy dict to extract feature keys
+        allowed_keys = set(strategy.get("feature_keys", [])) if strategy else set()
         std_inputs = {
             "p_exh_lag1",
             "G_VOL",
@@ -10530,12 +10551,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
                     # Filter features strictly for the Alpha Model (exclude meta-only features)
                     # We need to know which feature_key was used.
-                    # k is "mr" or "tf"
-                    feat_key_name = (
-                        "tf_feature_keys" if k == "tf" else "mr_feature_keys"
-                    )
-
-                    allowed_keys = set(cfg.get(feat_key_name, []))
+                    # k is strategy_id
+                    allowed_keys = set(strategy.get("feature_keys", []))
 
                     # Also include "causal_cols" if feature_key fallback logic was used, but
                     # here we know we used the explicit keys.
@@ -10594,7 +10611,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     # trade_side (long/short) is separate from move_bucket (up/down).
                     trade_side = side
                     cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
-                        trade_side, k
+                        trade_side, k, cfg
                     )
                     cand_filter_pretty = (
                         "top_ret" if cand_filter == "best" else "bottom_ret"
@@ -11142,7 +11159,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             continue
                         tprint(f"Training grouped base variant {ds_key}...")
                         _variant_fit = _train_base_variant_dataset(
-                            side, k, H, ds_key, datasets[ds_key]
+                            side, k, H, ds_key, datasets[ds_key], strategy=strat
                         )
                         if _variant_fit is None:
                             tprint(f"  Skipped {ds_key}: insufficient data")
@@ -11535,15 +11552,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     )
     print_training_gate_report(gate_report)
 
+    # Build alpha metrics correctly from dynamic strategies
+    alpha_metrics = {}
+    for side, side_models in final_models.items():
+        for kind, kind_model in side_models.items():
+            alpha_metrics[f"{side}_{kind}"] = kind_model.get("alpha_diag", {})
+
     return {
         "alpha_models": final_models,
-        "alpha_oof_metrics": {
-            f"{side}_{kind}": ((final_models.get(side) or {}).get(kind) or {}).get(
-                "alpha_diag", {}
-            )
-            for side in trade_sides
-            for kind in kinds
-        },
+        "alpha_oof_metrics": alpha_metrics,
         "exh_models": exh_models,
         "meta_models": meta_models,
         "spike_models": spike_models,
@@ -11599,8 +11616,6 @@ def optimize_risk_params(
     z_df = (atr_pct_df - atr_base_df) / (atr_std_df + 1e-12)
 
     # 2. Iterate over strategies (buckets)
-    trade_sides = ["long", "short"]
-    kinds = ["mr", "tf"]
 
     # We need to gather events for each bucket.
     # This is non-trivial because `optimize_risk_params` is usually called on a small simulation window.
@@ -11859,7 +11874,7 @@ def optimize_risk_params(
         k = strat["strategy_id"]
         trade_side = side
         cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
-            trade_side, k
+            trade_side, k, cfg
         )
         trend_filter = move_bucket
 
@@ -11933,7 +11948,7 @@ def optimize_risk_params(
 
         if len(indices) < 50:
             tprint("Not enough events, using defaults.")
-            is_mr_default = "mr" in k.lower()
+            is_mr_default = strat.get("is_mr", False)
             default_risk = {
             "tp_mult": cfg.get("tp_mult", 1.0),
             "sl_mult": cfg.get("sl_mult", 0.5),
@@ -12096,7 +12111,7 @@ def optimize_risk_params(
             tprint(f"  Stability (Chosen Configs): {pairs}")
 
         # Per-bucket max hold hours: MR = shorter (reversion is fast), TF = longer
-        is_mr = "mr" in k.lower()
+        is_mr = strat.get("is_mr", False)
         bucket_hold = 12 if is_mr else 24
 
         # Per-bucket profit-protection anchored to EMPIRICAL MFE quantiles

@@ -1,63 +1,46 @@
 import re
 
-with open("extreme_price_movements/training.py", "r") as f:
+with open('extreme_price_movements/training.py', 'r') as f:
     content = f.read()
 
-# Replace hardcoded base archetypes in train_models_from_artifacts
-old_archetypes_get = '''"base_geometry_archetypes", ["tight", "balanced", "wide"]'''
-new_archetypes_get = '''"base_geometry_archetypes", ["tight", "wide"]'''
+old_loop_1 = """    # 2. Train Alpha Models
+    # directions (up/down) replaced by sides (long/short)
+    trade_sides = ["long", "short"]
+    kinds = ["mr", "tf"]
+    final_models = {}
+    base_variant_models = {}"""
 
-content = content.replace(old_archetypes_get, new_archetypes_get)
+new_loop_1 = """    # 2. Train Alpha Models
+    final_models = {}
+    base_variant_models = {}"""
 
-# Also remove the continue for balanced
-old_variant_balanced = '''                        variant = str(variant)
-                        if variant == "balanced":
-                            continue
-                        ds_key = f"train_{k}_{H}_{variant}"'''
-new_variant_balanced = '''                        variant = str(variant)
-                        ds_key = f"train_{k}_{H}_{variant}"'''
+content = content.replace(old_loop_1, new_loop_1)
 
-content = content.replace(old_variant_balanced, new_variant_balanced)
 
-# 3. Fix the "for side in trade_sides" and "for k in kinds" nested loops
-# This happens in train_models_from_artifacts where it iterates over base models
-old_base_loop = '''    if train_base:
-        for side in trade_sides:
-            final_models[side] = {}
-            for k in kinds:
-                best_ic = -1.0
-                best_m = None
-                per_h_models = {}
-                feature_selection_by_h = {}
-                horizons = cfg["label_horizons_hours"]
+old_return = """    return {
+        "alpha_models": final_models,
+        "alpha_oof_metrics": {
+            f"{side}_{kind}": ((final_models.get(side) or {}).get(kind) or {}).get(
+                "alpha_diag", {}
+            )
+            for side in trade_sides
+            for kind in kinds
+        },
+        "exh_models": exh_models,"""
 
-                for H in horizons:
-                    key = f"train_{k}_{H}"
-                    if key not in datasets:
-                        continue'''
+new_return = """    # Build alpha metrics correctly from dynamic strategies
+    alpha_metrics = {}
+    for side, side_models in final_models.items():
+        for kind, kind_model in side_models.items():
+            alpha_metrics[f"{side}_{kind}"] = kind_model.get("alpha_diag", {})
 
-new_base_loop = '''    if train_base:
-        strategies = get_strategies(cfg)
-        for strat in strategies:
-            side = strat["trade_side"]
-            k = strat["strategy_id"]
-            if side not in final_models:
-                final_models[side] = {}
+    return {
+        "alpha_models": final_models,
+        "alpha_oof_metrics": alpha_metrics,
+        "exh_models": exh_models,"""
 
-            best_ic = -1.0
-            best_m = None
-            per_h_models = {}
-            feature_selection_by_h = {}
-            horizons = cfg["label_horizons_hours"]
+content = content.replace(old_return, new_return)
 
-            for H in horizons:
-                key = f"train_{k}_{H}"
-                if key not in datasets:
-                    continue'''
-
-content = content.replace(old_base_loop, new_base_loop)
-
-# Also need to fix the indentation in that whole block that was previously indented for `side` then `k`.
-# But wait, looking at `old_base_loop`, replacing it will change `for side... for k...` to `for strat... side=... k=...`
-# Which removes one level of indentation. We need to be careful with indentation.
-# Let's just do a regex replace or AST manipulation to be safe, or manually dedent.
+with open('extreme_price_movements/training.py', 'w') as f:
+    f.write(content)
+print("Patched loops in train_models_from_artifacts")

@@ -218,12 +218,46 @@ def score_rule_matrix_vectorized(
     baseline_mean = float(y_val.mean())
     baseline_std = float(y_val.std(ddof=1)) + 1e-12
 
+    # Calculate number of trades per rule (0 -> 1 transitions + initial state)
+    # M shape is [n, k]
+    diff = M[1:].astype(np.int8) - M[:-1].astype(np.int8)
+    starts = (diff == 1).sum(axis=0)
+    trades_count = starts + M[0]
+
+    fee = 0.003
+    total_fees = trades_count * fee
+
+    # Apply fees directly to raw sum of returns before normalization
     sum_y = M.T @ y_val                             # [k]
-    mean_return = sum_y / counts                    # [k]
+    sum_y_after_fee = sum_y - total_fees
+    mean_return_after_fee = sum_y_after_fee / counts
 
-    incremental = mean_return - baseline_mean       # [k]
-    mask_score = incremental / baseline_std         # [k]
+    # Volatility normalization of the adjusted mean return
+    # and the baseline mean return
+    adjusted_mean_return_norm = mean_return_after_fee / baseline_std
+    baseline_mean_norm = baseline_mean / baseline_std
 
+    incremental = adjusted_mean_return_norm - baseline_mean_norm
+
+    # IC calculation
+    # We use correlation between the boolean mask and normalized returns (without fees subtracted from y_val directly,
+    # since we want the correlation signal strength; however we can use the fee-adjusted mean for the rule).
+    # To keep it consistent, let's use the fee-adjusted normalized return in the IC formula.
+    p = supports
+    std_y_norm = 1.0  # Since y_val / baseline_std has std roughly 1
+    ic = (p * (adjusted_mean_return_norm - baseline_mean_norm)) / (np.sqrt(p * (1 - p) + 1e-12) * std_y_norm)
+
+    # Sharpe ratio approximation per rule
+    # we use the variance of the raw returns within the rule's active periods, scaled by baseline_std
+    sum_y_sq = M.T @ (y_val ** 2)
+    var_raw_within_rule = (sum_y_sq / counts) - ((sum_y / counts) ** 2)
+    var_raw_within_rule = np.maximum(var_raw_within_rule, 1e-12)
+    std_norm_within_rule = np.sqrt(var_raw_within_rule) / baseline_std
+
+    # Sharpe = normalized fee-adjusted return / normalized std dev of rule
+    sharpe = adjusted_mean_return_norm / std_norm_within_rule
+
+    # We only keep rules that have positive incremental return after fees
     keep = incremental > 0.0
     if not np.any(keep):
         return -np.inf, {"reason": "no_positive_rules"}
@@ -231,7 +265,8 @@ def score_rule_matrix_vectorized(
     M_keep = M[:, keep]
     supports_keep = supports[keep]
     incremental_keep = incremental[keep]
-    mask_keep = mask_score[keep]
+    ic_keep = ic[keep]
+    sharpe_keep = sharpe[keep]
 
     union_mask = M_keep.any(axis=1)
     total_support = float(union_mask.mean())
@@ -253,15 +288,17 @@ def score_rule_matrix_vectorized(
     w = supports_keep
     w_sum = float(w.sum()) + 1e-12
     weighted_incremental = float(np.dot(incremental_keep, w) / w_sum)
-    weighted_mask = float(np.dot(mask_keep, w) / w_sum)
+    weighted_ic = float(np.dot(ic_keep, w) / w_sum)
+    weighted_sharpe = float(np.dot(sharpe_keep, w) / w_sum)
 
     support_penalty = 1.0 - abs(total_support - target_support)
-    score = weighted_incremental * weighted_mask * support_penalty
+    score = weighted_incremental * weighted_ic * weighted_sharpe * support_penalty
 
     diagnostics = {
         "support": total_support,
         "weighted_incremental": weighted_incremental,
-        "weighted_mask": weighted_mask,
+        "weighted_ic": weighted_ic,
+        "weighted_sharpe": weighted_sharpe,
         "n_kept_rules": int(keep.sum()),
         "baseline_mean": baseline_mean,
         "baseline_std": baseline_std,

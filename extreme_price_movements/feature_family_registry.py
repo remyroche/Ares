@@ -38,6 +38,13 @@ FEATURE_FAMILY_REGISTRY: Dict[str, Set[str]] = {
         "ret_mean", "ret_max", "ret_min", "rv_mean", "rv_max", "rv_min", "ret_pct5_24h", "ret_pct95_24h", "tail_risk_score"
     },
     FeatureFamily.BOUNDED_GEOMETRY: {
+        "loc_ema_stack_pos_24", "loc_ema_stack_pos_48", "loc_vwap_dev_z_24", "loc_vwap_dev_z_48",
+        "loc_range_pos_24", "loc_range_pos_48", "loc_prior_bar_pos_24", "loc_prior_bar_pos_48",
+        "loc_swing_range_pos_24", "loc_swing_range_pos_48", "loc_session_pos_24", "loc_session_pos_48",
+        "loc_initial_balance_pos_24", "loc_initial_balance_pos_48", "loc_prev_day_range_pos_24", "loc_prev_day_range_pos_48",
+        "loc_prev_week_range_pos_24", "loc_prev_week_range_pos_48", "loc_bb_channel_pos_24", "loc_bb_channel_pos_48",
+        "loc_pullback_depth_24", "loc_pullback_depth_48", "loc_pivot_ladder_pos_24", "loc_pivot_ladder_pos_48",
+        "dist_ema50_atr", "ema50_slope", "prior_volatility", "rolling_std_4h", "trend_acceleration",
         "close_location_in_bar", "wick_body_ratio", "wick_ratio", "wick_ratio_4h_max", "body_ratio_15m", "body_ratio",
         "clv", "clv_mean_2", "clv_mean_4", "clv_mean_24", "clv_t", "clv_collapse", "clv_pullback",
         "rejection_proxy", "vol_compression", "vol_compression_ratio", "bidirectional_range_ratio",
@@ -81,6 +88,7 @@ FEATURE_FAMILY_PATTERNS = {
         lambda x: x.endswith("_bin")
     ],
     FeatureFamily.BOUNDED_GEOMETRY: [
+        lambda x: x.startswith("loc_"),
         lambda x: "ratio" in x and "rv_ratio" not in x,
         lambda x: "clv" in x,
         lambda x: x.startswith("rsi"),

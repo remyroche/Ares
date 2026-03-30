@@ -2314,6 +2314,34 @@ class RuleScorer:
 
         return (base_hurdle * (1.0 - complexity_bonus)) * penalty_multiplier
 
+    def _compute_support_objective_score(self, support_pct: float) -> float:
+        """Return a bounded support-fit score for the HPO objective.
+
+        The objective is intentionally flat across the preferred 7.5%-12.5% band,
+        and anything outside the hard 5%-15% band is excluded entirely.
+        """
+
+        hard_min = float(self.cfg.get("objective_support_min_pct", 0.05))
+        target_low = float(self.cfg.get("objective_support_target_low_pct", 0.075))
+        target_high = float(self.cfg.get("objective_support_target_high_pct", 0.125))
+        hard_max = float(self.cfg.get("objective_support_max_pct", 0.15))
+        edge_floor = float(self.cfg.get("objective_support_edge_floor", 0.2))
+
+        if not np.isfinite(support_pct) or support_pct < hard_min or support_pct > hard_max:
+            return -np.inf
+
+        if target_low <= support_pct <= target_high:
+            return 1.0
+
+        if support_pct < target_low:
+            span = max(target_low - hard_min, 1e-9)
+            relative = float(np.clip((support_pct - hard_min) / span, 0.0, 1.0))
+        else:
+            span = max(hard_max - target_high, 1e-9)
+            relative = float(np.clip((hard_max - support_pct) / span, 0.0, 1.0))
+
+        return float(edge_floor + (1.0 - edge_floor) * relative)
+
     def _compute_within_mask_ic(
         self,
         predictions: np.ndarray,
@@ -2828,6 +2856,8 @@ class RuleScorer:
             path_quality.get("quality_stability_score", np.nan)
         )
 
+        support_objective_score = self._compute_support_objective_score(mean_support_pct)
+
         # Step A: economic edge (support and presence intentionally removed)
         edge_ret_scale = float(self.cfg.get("score_edge_ret_scale", 0.002))
         s_edge_ret = _safe_tanh_scale(max(directional_mean_ret, 0.0), edge_ret_scale)
@@ -2884,13 +2914,19 @@ class RuleScorer:
             else neutral_comp
         )
 
-        # Final quality score with requested weights A=10, B=40, C=50
-        w_a, w_b, w_c = 0.10, 0.40, 0.50
-        full_quality_score = float(
-            (s_edge_use + eps_score) ** w_a
-            * (s_path + eps_score) ** w_b
-            * (s_c_use + eps_score) ** w_c
-        )
+        if not np.isfinite(support_objective_score):
+            full_quality_score = -np.inf
+        else:
+            s_support_use = float(np.clip(support_objective_score, 0.0, 1.0))
+            # Final quality score with requested weights:
+            # edge 10%, path quality 35%, learnability 45%, support fit 10%.
+            w_a, w_b, w_c, w_s = 0.10, 0.35, 0.45, 0.10
+            full_quality_score = float(
+                (s_edge_use + eps_score) ** w_a
+                * (s_path + eps_score) ** w_b
+                * (s_c_use + eps_score) ** w_c
+                * (s_support_use + eps_score) ** w_s
+            )
         composite_score = full_quality_score
 
         # Deconstruct for visibility
@@ -2933,6 +2969,7 @@ class RuleScorer:
             "regression_slope_fit": regression_slope_fit,
             "entropy_reduction": mean_entropy_reduction,
             "learnability_step_c_score": learnability_step_c_score,
+            "support_objective_score": support_objective_score,
             "trade_path_quality_score": trade_path_quality_score,
             "quality_stability_score": quality_stability_score,
             "full_quality_score": full_quality_score,
@@ -4105,6 +4142,16 @@ def run_mining_stage(
         y_tr_raw = primary_target[tr_idx]
         y_va_raw = primary_target[va_idx]
         symbol_id_tr = data["symbol"].to_numpy()[tr_idx]
+
+        tr_finite_mask = np.isfinite(y_tr_raw)
+        va_finite_mask = np.isfinite(y_va_raw)
+        if not tr_finite_mask.any() or not va_finite_mask.any():
+            tprint(
+                f"WARNING: Skipping fold {fold_id} because it has no finite "
+                f"{'training' if not tr_finite_mask.any() else 'validation'} samples "
+                f"for target {target_name} @ H{horizon}."
+            )
+            continue
 
         y_tr_clip = np.clip(
             y_tr_raw,
@@ -8223,6 +8270,11 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_tree_discoveries": 1,
             "min_presence_freq": 0.33,
             "min_sign_consistency": 0.65,
+            "objective_support_min_pct": 0.05,
+            "objective_support_target_low_pct": 0.075,
+            "objective_support_target_high_pct": 0.125,
+            "objective_support_max_pct": 0.15,
+            "objective_support_edge_floor": 0.2,
             "prune_base_hurdle": 0.00005,
             "prune_target_support_pct": 0.125,
             "prune_support_exp": 0.5,
@@ -8242,6 +8294,11 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_tree_discoveries": 2,
             "min_presence_freq": 0.4,
             "min_sign_consistency": 0.75,
+            "objective_support_min_pct": 0.05,
+            "objective_support_target_low_pct": 0.075,
+            "objective_support_target_high_pct": 0.125,
+            "objective_support_max_pct": 0.15,
+            "objective_support_edge_floor": 0.2,
             "prune_base_hurdle": 0.00010,
             "prune_target_support_pct": 0.125,
             "prune_support_exp": 0.5,
@@ -8759,9 +8816,9 @@ if __name__ == "__main__":
     from extreme_price_movements.data_store import (
         PartitionedOHLCVStore,
         load_features_selected,
-        save_features,
         to_panel,
     )
+    from extreme_price_movements.pipeline_steps import _feature_snapshot_health_issues
 
     parser = argparse.ArgumentParser(description="Full LGBM Mask Generation Run")
     parser.add_argument(
@@ -8950,6 +9007,15 @@ if __name__ == "__main__":
     )
     if feat_dict_raw is None:
         feat_dict_raw = {}
+    health_issues = _feature_snapshot_health_issues(feat_dict_raw)
+    if health_issues:
+        raise RuntimeError(
+            "Loaded feature snapshot is unhealthy for miner consumption: "
+            + ", ".join(health_issues)
+            + ". Regenerate features through the feature pipeline first "
+            "(e.g. `python3 -u extreme_price_movements/run_pipeline.py features "
+            "--force-feature-recompute`)."
+        )
 
     # Check for missing features - RIDGE_FEATURE_COLS and FEATURE_SELECTION_KEYS are required,
     # but CONTINUOUS_LOCATION_COLS are optional (they'll be skipped if missing)
@@ -8993,6 +9059,11 @@ if __name__ == "__main__":
     low_selected = _extract_selected_wide_values(
         panel["low"], common_idx, common_syms, time_idx, sym_idx
     )
+    if "volume" not in panel:
+        raise RuntimeError("volume column is required for triad target generation")
+    volume_selected = _extract_selected_wide_values(
+        panel["volume"], common_idx, common_syms, time_idx, sym_idx
+    )
     if "open" in panel:
         open_selected = _extract_selected_wide_values(
             panel["open"], common_idx, common_syms, time_idx, sym_idx
@@ -9008,6 +9079,7 @@ if __name__ == "__main__":
             "close": close_selected,
             "high": high_selected,
             "low": low_selected,
+            "volume": volume_selected,
             "t0": ts_pd.to_numpy(),
             "t1": (ts_pd + pd.Timedelta(seconds=1)).to_numpy(),
             "open": open_selected,

@@ -1,0 +1,2 @@
+model_id,fold_id,seed,tree_idx,leaf_idx,reason
+stage_a_context_model,4,42,0,-1,empty_path

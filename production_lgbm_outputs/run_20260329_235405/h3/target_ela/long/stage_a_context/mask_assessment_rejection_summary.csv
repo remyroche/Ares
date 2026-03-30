@@ -1,0 +1,5 @@
+reason,count
+support_out_of_range,329
+insufficient_subset_oof_coverage,36
+not_in_top_ridge_candidates,14
+insufficient_baseline_oof_coverage,9

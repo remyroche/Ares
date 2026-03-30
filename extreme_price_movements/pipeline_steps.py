@@ -89,6 +89,16 @@ from extreme_price_movements.utils import Timer, tprint
 
 # Priority order for quote-currency deduplication.
 _QUOTE_PRIORITY: list[str] = ["USDT", "USDC", "BUSD", "EUR"]
+FEATURE_HEALTH_CRITICAL_KEYS: tuple[str, ...] = (
+    "loc_range_pos_24",
+    "loc_vwap_dev_z_24",
+    "loc_pullback_depth_24",
+    "dist_ema50_atr",
+    "ema50_slope",
+    "prior_volatility",
+    "rolling_std_4h",
+    "trend_acceleration",
+)
 
 
 def _dedup_universe_by_base(symbols: list[str]) -> list[str]:
@@ -152,42 +162,14 @@ def _base_feature_keys_union(cfg) -> set[str]:
 def _cap_panel_rows(
     panel: dict[str, pd.DataFrame], max_rows: int = 300_000
 ) -> dict[str, pd.DataFrame]:
-    """DEPRECATED: Use SlicePlanner for temporal splitting instead of random masking.
+    """Deprecated compatibility shim.
 
-    Cap total non-NaN entries in panel to avoid OOM via random masking.
-    This function breaks temporal integrity and should not be used for training data.
+    The old implementation randomly masked entries to reduce memory usage, but
+    that destroys temporal integrity and can flatten downstream features. The
+    proper fix is chunked panel processing, so this helper now leaves the panel
+    untouched.
     """
-    import warnings
-
-    warnings.warn(
-        "_cap_panel_rows is deprecated and breaks temporal integrity. "
-        "Use SlicePlanner for proper temporal splitting instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    if not isinstance(panel, dict) or "close" not in panel:
-        return panel
-    close = panel["close"]
-    if not isinstance(close, pd.DataFrame):
-        return panel
-    n_total = int(close.notna().sum().sum())
-    if n_total <= max_rows:
-        return panel
-    tprint(
-        f"Capping panel at {max_rows} rows (random entry masking for different parts of history & symbols)..."
-    )
-    rng = np.random.RandomState(42)
-    rows, cols = np.where(close.notna())
-    if len(rows) > max_rows:
-        keep_idx = rng.choice(len(rows), max_rows, replace=False)
-        mask_rows = rows[keep_idx]
-        mask_cols = cols[keep_idx]
-        keep_arr = np.zeros(close.shape, dtype=bool)
-        keep_arr[mask_rows, mask_cols] = True
-        keep_df = pd.DataFrame(keep_arr, index=close.index, columns=close.columns)
-        for k in panel:
-            if isinstance(panel[k], pd.DataFrame):
-                panel[k] = panel[k].where(keep_df)
+    return panel
     return panel
 
 
@@ -695,6 +677,46 @@ def _generate_feature_health_reports(
         "constant_feature_rows": n_const_features,
         "interior_nan_feature_rows": n_interior_nan_features,
     }
+
+
+def _feature_snapshot_health_issues(
+    features: dict[str, pd.DataFrame | np.ndarray],
+    critical_keys: tuple[str, ...] = FEATURE_HEALTH_CRITICAL_KEYS,
+) -> list[str]:
+    """Return human-readable health issues for key feature families.
+
+    The miner should never repair a bad feature snapshot in-process. Instead, the
+    generation step should rebuild the snapshot through the proper pipeline and
+    this validator should fail fast if the resulting snapshot is still degenerate.
+    """
+
+    issues: list[str] = []
+    for key in critical_keys:
+        values = features.get(key)
+        if values is None:
+            issues.append(f"missing:{key}")
+            continue
+
+        if isinstance(values, pd.DataFrame):
+            arr = values.to_numpy(dtype=np.float32, copy=False)
+        else:
+            arr = np.asarray(values, dtype=np.float32)
+
+        if arr.size == 0:
+            issues.append(f"empty:{key}")
+            continue
+
+        finite = np.isfinite(arr)
+        finite_count = int(finite.sum())
+        if finite_count == 0:
+            issues.append(f"all_nan:{key}")
+            continue
+
+        finite_vals = arr[finite]
+        if np.nanstd(finite_vals) <= 1e-12 or np.unique(finite_vals).size <= 1:
+            issues.append(f"constant:{key}")
+
+    return issues
 
 
 def _enforce_feature_snapshot_completeness(
@@ -4567,7 +4589,6 @@ def run_feature_generation_step(
     # 3. Compute Features (Panel)
     tprint("Constructing Panel...")
     panel = to_panel(dfs)
-    panel = _cap_panel_rows(panel, 300_000)
     panel_close_ref = panel["close"].copy() if "close" in panel else None
     panel_symbols = (
         list(panel["close"].columns) if "close" in panel else list(loaded_syms)
@@ -4691,6 +4712,13 @@ def run_feature_generation_step(
                         if k in set(batch_backfill_keys)
                     }
 
+                chunk_health_issues = _feature_snapshot_health_issues(feats_chunk)
+                if chunk_health_issues:
+                    raise RuntimeError(
+                        "Feature chunk health validation failed before save: "
+                        + ", ".join(chunk_health_issues)
+                    )
+
                 tprint(f"{batch_label} saving {len(feats_chunk)} keys")
                 if feats_chunk:
                     save_features(
@@ -4740,6 +4768,13 @@ def run_feature_generation_step(
             requested_feature_keys=requested_feature_keys,
         )
         min_ts_by_symbol = None
+
+        full_health_issues = _feature_snapshot_health_issues(feats)
+        if full_health_issues:
+            raise RuntimeError(
+                "Feature snapshot health validation failed before save: "
+                + ", ".join(full_health_issues)
+            )
 
         if backfill_keys and not force_full_recompute:
             backfill_set = set(backfill_keys)
@@ -4814,6 +4849,24 @@ def run_feature_generation_step(
     else:
         tprint("Incremental backfill mode: skipping feature completeness normalization to preserve existing features")
     _generate_feature_health_reports(ts_sig, cfg["data_root"])
+    health_feats = load_features_selected(
+        ts_sig,
+        cfg["data_root"],
+        feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
+    )
+    if health_feats is None:
+        raise RuntimeError(
+            "Feature snapshot health validation failed: critical feature files "
+            "could not be loaded after generation."
+        )
+    health_issues = _feature_snapshot_health_issues(health_feats)
+    if health_issues:
+        raise RuntimeError(
+            "Feature snapshot health validation failed after generation: "
+            + ", ".join(health_issues)
+            + ". Re-run features mode with --force-feature-recompute after fixing "
+            "the underlying feature channel."
+        )
     tprint("STEP: FEATURE GENERATION COMPLETE")
 
 

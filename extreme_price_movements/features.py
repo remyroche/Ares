@@ -1158,6 +1158,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # Raw ATR% = ATR(h_raw, l_raw, c_raw, 14) / c_raw  (fraction, not log-differenced)
     _raw_atr = ff.numba_atr_no_norm(h_raw, l_raw, c_raw, n=cfg["atr_n"])
     _raw_atr_pct = (_raw_atr / (c_raw + 1e-12)).astype(np.float32)
+    raw_atr_pct = _raw_atr_pct
     del _raw_atr
 
     # --- Liquidity Features (User Request) ---
@@ -4273,8 +4274,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             "atr_pct_base",
             pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32),
         )
-        if atr_base.empty:
-            atr_base = _raw_atr_pct
+        atr_base_values = atr_base.to_numpy(dtype=np.float32, copy=False)
+        if atr_base.empty or not np.isfinite(atr_base_values).any():
+            atr_base = raw_atr_pct
 
         ret_1 = None
         bar_range = None

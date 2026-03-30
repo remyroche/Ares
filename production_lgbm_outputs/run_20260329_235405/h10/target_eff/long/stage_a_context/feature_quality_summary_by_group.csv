@@ -1,0 +1,2 @@
+group,raw_source_features,generated_booleans,retained,dropped,drop_reason_all_zeros,drop_reason_all_ones,drop_reason_low_support,drop_reason_duplicate,support_min,support_p25,support_median,support_p75,support_max
+regime,7,126,18,108,0,0,0,108,3134.0,11374.75,22950.0,28532.5,35657.0

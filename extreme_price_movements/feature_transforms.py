@@ -179,19 +179,24 @@ class CausalFeatureTransformer:
                 # Batch-transform 2D features via stacking
                 if keys_2d:
                     chunk_arrays = []
+                    chunk_widths = []
                     for k in keys_2d:
-                        chunk_arrays.append(feats[k])
+                        arr = feats[k]
+                        chunk_arrays.append(arr)
+                        chunk_widths.append(arr.shape[1])
                         feats[k] = None
 
                     stacked = np.concatenate(chunk_arrays, axis=1)
+                    split_offsets = np.cumsum([0, *chunk_widths], dtype=np.int32)
                     del chunk_arrays
                     gc.collect()
 
                     stacked = self._apply_transform_numpy(stacked, family=family)
 
-                    S = stacked.shape[1] // len(keys_2d)
                     for ci, k in enumerate(keys_2d):
-                        feats[k] = np.ascontiguousarray(stacked[:, ci * S:(ci + 1) * S])
+                        start = int(split_offsets[ci])
+                        end = int(split_offsets[ci + 1])
+                        feats[k] = np.ascontiguousarray(stacked[:, start:end])
                     del stacked
                     gc.collect()
 

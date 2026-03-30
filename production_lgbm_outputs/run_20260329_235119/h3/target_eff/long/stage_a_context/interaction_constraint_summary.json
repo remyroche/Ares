@@ -1,0 +1,7 @@
+{
+  "total_singletons": 18,
+  "total_constraints": 0,
+  "mode": "training permissive / validation strict",
+  "num_regime": 18,
+  "num_regime_volatility": 18
+}

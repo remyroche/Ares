@@ -109,6 +109,22 @@ def test_stage_b_uplift_uses_parent_context_oos():
     assert summary["mean_uplift"] > 0
 
 
+def test_support_objective_scores_preferred_band_and_excludes_outside_bounds():
+    scorer = RuleScorer([], {})
+
+    assert scorer._compute_support_objective_score(0.10) == 1.0
+    assert scorer._compute_support_objective_score(0.075) == 1.0
+    assert scorer._compute_support_objective_score(0.125) == 1.0
+
+    edge_low = scorer._compute_support_objective_score(0.05)
+    edge_high = scorer._compute_support_objective_score(0.15)
+    assert 0.0 < edge_low < 1.0
+    assert 0.0 < edge_high < 1.0
+
+    assert scorer._compute_support_objective_score(0.049) == -np.inf
+    assert scorer._compute_support_objective_score(0.151) == -np.inf
+
+
 def test_list_preload_training_symbols_uses_training_universe(monkeypatch):
     class DummyStore:
         pass

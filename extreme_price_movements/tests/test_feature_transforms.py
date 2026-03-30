@@ -64,5 +64,31 @@ def test_causal_feature_transformer_equivalence():
 
     pd.testing.assert_frame_equal(res_opt.astype(np.float64), res_ref, atol=1e-4, check_dtype=False)
 
+
+def test_transform_batch_preserves_mixed_2d_widths():
+    idx = pd.date_range("2026-01-01", periods=8, freq="h", tz="UTC")
+    wide = pd.DataFrame(
+        np.linspace(0.0, 1.0, 24, dtype=np.float32).reshape(8, 3),
+        index=idx,
+        columns=["A", "B", "C"],
+    )
+    narrow = pd.DataFrame(
+        np.linspace(-1.0, 1.0, 8, dtype=np.float32).reshape(8, 1),
+        index=idx,
+        columns=["MKT"],
+    )
+    feats = {
+        "loc_range_pos_24": wide.copy(),
+        "prior_volatility": narrow.copy(),
+    }
+    transformer = CausalFeatureTransformer(enable_cache=False, roll_window=4)
+
+    out = transformer.transform_batch(feats, skip_keys=set(), chunk_size=10)
+
+    assert out["loc_range_pos_24"].shape == (8, 3)
+    assert out["prior_volatility"].shape == (8, 1)
+    assert np.nanstd(out["loc_range_pos_24"]) > 0.0
+    assert np.nanstd(out["prior_volatility"]) > 0.0
+
 if __name__ == "__main__":
     test_causal_feature_transformer_equivalence()

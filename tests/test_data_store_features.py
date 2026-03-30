@@ -7,7 +7,11 @@ from extreme_price_movements.data_store import (
     append_symbol_features,
     load_features_selected,
 )
-from extreme_price_movements.pipeline_steps import _enforce_feature_snapshot_completeness
+from extreme_price_movements.pipeline_steps import (
+    _cap_panel_rows,
+    _enforce_feature_snapshot_completeness,
+    _feature_snapshot_health_issues,
+)
 
 
 def test_ensure_feature_frame_index_restores_ts_column():
@@ -134,3 +138,69 @@ def test_enforce_feature_snapshot_completeness_adds_missing_columns_and_rows(tmp
     assert len(btc) == 3
     assert pd.isna(btc["feat_a"]).all()
     assert pd.isna(btc["feat_b"]).all()
+
+
+def test_feature_snapshot_health_issues_flags_constant_or_missing_critical_keys():
+    healthy = {
+        "loc_range_pos_24": pd.DataFrame(
+            {"A": np.array([0.0, 1.0], dtype=np.float32)},
+            index=pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC"),
+        ),
+        "loc_vwap_dev_z_24": pd.DataFrame(
+            {"A": np.array([1.0, 2.0], dtype=np.float32)},
+            index=pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC"),
+        ),
+        "loc_pullback_depth_24": pd.DataFrame(
+            {"A": np.array([2.0, 3.0], dtype=np.float32)},
+            index=pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC"),
+        ),
+        "dist_ema50_atr": pd.DataFrame(
+            {"A": np.array([3.0, 4.0], dtype=np.float32)},
+            index=pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC"),
+        ),
+        "ema50_slope": pd.DataFrame(
+            {"A": np.array([4.0, 5.0], dtype=np.float32)},
+            index=pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC"),
+        ),
+        "prior_volatility": pd.DataFrame(
+            {"A": np.array([5.0, 6.0], dtype=np.float32)},
+            index=pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC"),
+        ),
+        "rolling_std_4h": pd.DataFrame(
+            {"A": np.array([6.0, 7.0], dtype=np.float32)},
+            index=pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC"),
+        ),
+        "trend_acceleration": pd.DataFrame(
+            {"A": np.array([7.0, 8.0], dtype=np.float32)},
+            index=pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC"),
+        ),
+    }
+
+    assert _feature_snapshot_health_issues(healthy) == []
+
+    unhealthy = dict(healthy)
+    unhealthy["loc_range_pos_24"] = pd.DataFrame(
+        {"A": np.array([0.0, 0.0], dtype=np.float32)},
+        index=pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC"),
+    )
+
+    issues = _feature_snapshot_health_issues(unhealthy)
+    assert any(issue.startswith("constant:loc_range_pos_24") for issue in issues)
+
+
+def test_cap_panel_rows_is_noop():
+    idx = pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC")
+    panel = {
+        "close": pd.DataFrame(
+            {
+                "A": np.array([1.0, 2.0, 3.0], dtype=np.float32),
+                "B": np.array([4.0, 5.0, 6.0], dtype=np.float32),
+            },
+            index=idx,
+        )
+    }
+
+    out = _cap_panel_rows(panel, 1)
+
+    assert out is panel
+    pd.testing.assert_frame_equal(out["close"], panel["close"])

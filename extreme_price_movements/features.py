@@ -1690,9 +1690,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     high_20 = h_max_20
     low_20 = l_min_20
     range_20 = high_20 - low_20
+
+    range_safe = np.where(range_20 > 1e-12, range_20, 1e-12)
+    ratio = atr_sum / range_safe
+    ratio_clean = np.where(np.isfinite(ratio), ratio, 1e-12)
+
     feats["choppiness_index_20"] = (
         100
-        * np.log10((atr_sum / (range_20 + 1e-12)).clip(lower=1e-12))
+        * np.log10(np.clip(ratio_clean, 1e-12, None))
         / np.float32(np.log10(20))
     ).astype(np.float32)
 
@@ -3159,9 +3164,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         (ret_w > 0).to_numpy(), (c - local_low).to_numpy(), (c - local_high).to_numpy()
     )
     # Use safe division with proper handling of non-finite values
+    c_safe = np.where(np.isfinite(c) & (np.abs(c) > 1e-12), c, 1.0)
     draw_sym = np.where(
-        np.isfinite(draw_num) & np.isfinite(c) & (c.abs() > 1e-12),
-        np.sign(ret_w) * draw_num / (c + 1e-12),
+        np.isfinite(draw_num) & np.isfinite(c) & (np.abs(c) > 1e-12),
+        np.sign(ret_w) * draw_num / c_safe,
         0.0,
     )
     feats["draw_sym_10h"] = draw_sym.astype(np.float32)
@@ -4376,10 +4382,18 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             high_max_20 = h_raw.rolling(20, min_periods=1).max()
             low_min_20 = l_raw.rolling(20, min_periods=1).min()
             range_20 = high_max_20 - low_min_20
-            feats["choppiness_index_20"] = (
-                (100.0 * np.log(tr_20 / (range_20 + 1e-9) + 1e-9) / np.log(20.0))
-                .clip(0, 100)
-                .astype(np.float32)
+
+            range_safe = np.where(range_20 > 1e-9, range_20, 1e-9)
+            tr_safe = np.where(np.isfinite(tr_20), tr_20, 1e-9)
+            ratio_clean = np.clip(tr_safe / range_safe, 1e-9, None)
+
+            feats["choppiness_index_20"] = pd.Series(
+                np.clip(
+                    100.0 * np.log(ratio_clean) / np.log(20.0),
+                    0,
+                    100
+                ).astype(np.float32),
+                index=tr_20.index
             )
 
         if _needs_feature("climax_volume_ratio"):

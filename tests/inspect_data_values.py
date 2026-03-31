@@ -40,7 +40,6 @@ def generate_data(n_symbols=2, n_rows=200):
     mkt_gates["mkt_rv_ratio"] = 1.0
     mkt_gates["mkt_rv_pct"] = 0.5
     mkt_gates["abs_mkt_ret24h_z"] = 0.0
-    mkt_gates["trend_bin3"] = 0
     mkt_gates["mkt_trend"] = 0.0
     mkt_gates["mkt_rv"] = 0.01
     mkt_gates["mkt_close"] = 100.0

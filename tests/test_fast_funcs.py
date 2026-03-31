@@ -5,6 +5,17 @@ import extreme_price_movements.fast_funcs as ff
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 
 class TestFastFuncs(unittest.TestCase):
+    def test_rolling_zscore_nan_safe_preserves_late_start_series(self):
+        x = np.array(
+            [np.nan, np.nan, np.nan, 10.0, 11.0, 12.0, 13.0, 14.0],
+            dtype=np.float32,
+        )
+        z = ff._numba_rolling_zscore_nan_safe_1d(x, window=4)
+
+        self.assertTrue(np.isnan(z[:3]).all())
+        self.assertTrue(np.isfinite(z[3:]).all())
+        self.assertGreater(pd.Series(z[3:]).nunique(dropna=True), 1)
+
     def test_rolling_max(self):
         data = np.array([1, 2, 5, 3, 4, 1], dtype=np.float32)
         df = pd.DataFrame({'a': data})
@@ -123,6 +134,72 @@ class TestFastFuncs(unittest.TestCase):
         self.assertAlmostEqual(res_arr[0], 2.0)
         self.assertAlmostEqual(res_arr[1], 2.5)
         self.assertAlmostEqual(res_arr[2], 1.75)
+
+    def test_adx_wide_matrix_matches_series_path(self):
+        rng = np.random.default_rng(42)
+        n = 400
+        noise = rng.normal(0.0, 0.7, n).astype(np.float32)
+        drift = np.linspace(0.0, 12.0, n, dtype=np.float32)
+        wave = 3.0 * np.sin(np.linspace(0.0, 18.0, n, dtype=np.float32))
+        close = (100.0 + drift + wave + noise).astype(np.float32)
+        spread = (1.0 + np.abs(rng.normal(0.0, 0.4, n))).astype(np.float32)
+        high = close + spread
+        low = close - spread
+
+        cols = [f"s{i}" for i in range(64)]
+        h_df = pd.DataFrame({c: high for c in cols}, dtype=np.float32)
+        l_df = pd.DataFrame({c: low for c in cols}, dtype=np.float32)
+        c_df = pd.DataFrame({c: close for c in cols}, dtype=np.float32)
+
+        adx_wide, _, _ = ff.numba_adx(h_df, l_df, c_df, 14)
+        adx_single, _, _ = ff.numba_adx(
+            pd.Series(high, dtype=np.float32),
+            pd.Series(low, dtype=np.float32),
+            pd.Series(close, dtype=np.float32),
+            14,
+        )
+
+        wide_col = adx_wide["s0"].to_numpy(dtype=np.float32)
+        single_col = adx_single.to_numpy(dtype=np.float32)
+
+        self.assertGreater(np.unique(single_col[~np.isnan(single_col)]).size, 10)
+        self.assertGreater(np.unique(wide_col[~np.isnan(wide_col)]).size, 10)
+        self.assertTrue(np.allclose(wide_col, single_col, equal_nan=True, atol=1e-6))
+
+    def test_adx_wide_matrix_with_trailing_nan_padding_preserves_valid_segment(self):
+        rng = np.random.default_rng(7)
+        n = 320
+        base = np.cumsum(rng.normal(0.0, 0.5, n).astype(np.float32)) + 100.0
+        spread = (1.0 + np.abs(rng.normal(0.0, 0.2, n))).astype(np.float32)
+        high = base + spread
+        low = base - spread
+        close = base.astype(np.float32)
+
+        high_padded = high.copy()
+        low_padded = low.copy()
+        close_padded = close.copy()
+        high_padded[-24:] = np.nan
+        low_padded[-24:] = np.nan
+        close_padded[-24:] = np.nan
+
+        h_df = pd.DataFrame(
+            {"dense": high, "padded": high_padded}, dtype=np.float32
+        )
+        l_df = pd.DataFrame(
+            {"dense": low, "padded": low_padded}, dtype=np.float32
+        )
+        c_df = pd.DataFrame(
+            {"dense": close, "padded": close_padded}, dtype=np.float32
+        )
+
+        adx_wide, _, _ = ff.numba_adx(h_df, l_df, c_df, 14)
+
+        dense = adx_wide["dense"].to_numpy(dtype=np.float32)
+        padded = adx_wide["padded"].to_numpy(dtype=np.float32)
+
+        self.assertGreater(np.unique(dense[~np.isnan(dense)]).size, 10)
+        self.assertGreater(np.unique(padded[:-24][~np.isnan(padded[:-24])]).size, 10)
+        self.assertTrue(np.isnan(padded[-24:]).all())
 
 if __name__ == '__main__':
     unittest.main()

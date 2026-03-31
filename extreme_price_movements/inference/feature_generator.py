@@ -247,8 +247,6 @@ def get_inference_required_feature_keys(model_bundle: Dict[str, Any]) -> Set[str
     # Keep a small set of always-needed raw features used across inference glue.
     required.update(
         {
-            "atr_pct",
-            "atr_state",
             "volatility_zscore",
             "range_12h_pct",
             "range_24h_pct",

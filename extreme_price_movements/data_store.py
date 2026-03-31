@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import concurrent.futures
 import numpy as np
 import pandas as pd
 import ccxt
@@ -12,6 +13,47 @@ from datetime import timezone
 import pyarrow.parquet as pq
 
 from extreme_price_movements.utils import tprint, retry_with_backoff
+
+
+SPOT_QUOTE_SUFFIXES = (
+    "USDT",
+    "USDC",
+    "BUSD",
+    "USD1",
+    "FDUSD",
+    "EUR",
+    "BTC",
+    "ETH",
+)
+
+
+def _normalize_spot_symbol(symbol: str) -> str:
+    norm = str(symbol or "").upper().strip().replace("_", "/")
+    if not norm:
+        return norm
+    if "/" in norm:
+        return norm
+    for quote in SPOT_QUOTE_SUFFIXES:
+        if norm.endswith(quote) and len(norm) > len(quote):
+            return f"{norm[:-len(quote)]}/{quote}"
+    return norm
+
+
+def _symbol_alias_candidates(symbol: str) -> list[str]:
+    canonical = _normalize_spot_symbol(symbol)
+    raw = str(symbol or "").upper().strip()
+    candidates: list[str] = []
+    for candidate in (
+        canonical,
+        canonical.replace("/", "_"),
+        canonical.replace("/", ""),
+        raw,
+        raw.replace("/", "_"),
+        raw.replace("/", ""),
+    ):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
 
 
 def _normalize_feature_index(
@@ -315,11 +357,23 @@ class PartitionedOHLCVStore:
         os.makedirs(self.ohlcv_dir, exist_ok=True)
 
     def _get_symbol_dir(self, symbol: str) -> str:
-        safe_sym = symbol.replace("/", "_")
+        canonical = _normalize_spot_symbol(symbol)
+        for candidate in _symbol_alias_candidates(canonical):
+            safe_sym = candidate.replace("/", "_")
+            path = os.path.join(self.ohlcv_dir, f"symbol={safe_sym}")
+            if os.path.exists(path):
+                return path
+        safe_sym = canonical.replace("/", "_")
         return os.path.join(self.ohlcv_dir, f"symbol={safe_sym}")
 
     def _get_meta_path(self, symbol: str) -> str:
-        safe_sym = symbol.replace("/", "_")
+        canonical = _normalize_spot_symbol(symbol)
+        for candidate in _symbol_alias_candidates(canonical):
+            safe_sym = candidate.replace("/", "_")
+            path = os.path.join(self.ohlcv_dir, f"{safe_sym}.meta.json")
+            if os.path.exists(path):
+                return path
+        safe_sym = canonical.replace("/", "_")
         return os.path.join(self.ohlcv_dir, f"{safe_sym}.meta.json")
 
     def _read_meta(self, symbol: str) -> dict:
@@ -837,34 +891,38 @@ def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFram
                 elif "__symbol__" in existing.columns:
                     existing = existing.drop(columns=["__symbol__"])
 
-        all_cols = sorted(set(new_data.columns) | (set(existing.columns) if existing is not None else set()))
-        new_aligned = new_data.reindex(columns=all_cols)
+        incoming_cols = list(new_data.columns)
+        all_cols = sorted(
+            set(incoming_cols) | (set(existing.columns) if existing is not None else set())
+        )
 
         if existing is not None:
             existing_aligned = existing.reindex(columns=all_cols)
             before_rows = len(existing_aligned)
 
-            # Preserve schema-critical features even if the current append is all-NaN.
-            # Dropping these columns (e.g. atr_pct) causes downstream symbol intersection collapse.
-            required_cols = {"atr_pct"}
+            # Only consider columns present in the incoming batch. Otherwise a partial
+            # append would reindex missing columns to NaN and overwrite valid history.
+            required_cols = set()
             existing_all_na = existing_aligned.isna().all(axis=0)
-            new_all_na = new_aligned.isna().all(axis=0)
+            new_all_na = new_data.isna().all(axis=0)
             drop_cols = [
                 c
-                for c in all_cols
+                for c in incoming_cols
                 if bool(existing_all_na.get(c, True))
                 and bool(new_all_na.get(c, True))
                 and c not in required_cols
             ]
             if drop_cols:
                 existing_aligned = existing_aligned.drop(columns=drop_cols, errors="ignore")
-                new_aligned = new_aligned.drop(columns=drop_cols, errors="ignore")
+                new_data = new_data.drop(columns=drop_cols, errors="ignore")
 
-            combined = existing_aligned.reindex(existing_aligned.index.union(new_aligned.index)).sort_index()
-            combined.loc[new_aligned.index, new_aligned.columns] = new_aligned
+            combined = existing_aligned.reindex(
+                existing_aligned.index.union(new_data.index)
+            ).sort_index()
+            combined.loc[new_data.index, new_data.columns] = new_data
         else:
             before_rows = 0
-            combined = new_aligned
+            combined = new_data
 
         combined = combined[~combined.index.duplicated(keep="last")].sort_index()
         combined["__symbol__"] = symbol
@@ -886,6 +944,7 @@ def save_features(
     min_timestamp_by_symbol: dict[str, pd.Timestamp] | None = None,
     feat_index: pd.Index | None = None,
     feat_columns: list | None = None,
+    save_workers: int | None = None,
 ):
     """
     Save generated features to disk (Per-Symbol), streaming one symbol at a time.
@@ -919,14 +978,20 @@ def save_features(
             "feat_index and feat_columns required when feats contains numpy arrays"
         symbols = list(feat_columns)
         time_index = feat_index
-        feat_keys = [k for k in feats if isinstance(feats[k], np.ndarray) and feats[k].ndim == 2]
+        feat_keys = [
+            k
+            for k in feats
+            if isinstance(feats[k], np.ndarray) and feats[k].ndim in (1, 2)
+        ]
         n_feats = len(feat_keys)
         total = len(symbols)
 
         tprint(f"  Saving {n_feats} features × {total} symbols in streaming symbol mode...")
 
-        count = 0
-        for j, sym in enumerate(symbols):
+        worker_count = max(1, int(save_workers or 1))
+        max_pending = max(1, worker_count * 2)
+
+        def _prepare_symbol_payload(j: int, sym: str):
             safe_sym = sym.replace("/", "_")
             final_path = os.path.join(out_dir, f"symbol={safe_sym}.parquet")
 
@@ -934,7 +999,13 @@ def save_features(
             if min_timestamp_by_symbol:
                 cutoff_ts = min_timestamp_by_symbol.get(sym)
 
-            sym_data = {k: feats[k][:, j] for k in feat_keys}
+            sym_data = {}
+            for k in feat_keys:
+                arr = feats[k]
+                if arr.ndim == 2:
+                    sym_data[k] = arr[:, j]
+                else:
+                    sym_data[k] = arr
             df_sym = pd.DataFrame(sym_data, index=time_index, copy=False)
             df_sym = df_sym.astype(np.float32, copy=False)
 
@@ -946,19 +1017,85 @@ def save_features(
                     cutoff_ts = cutoff_ts.tz_localize(None)
                 df_sym = df_sym[df_sym.index > cutoff_ts]
                 if df_sym.empty:
-                    continue
+                    del sym_data
+                    del df_sym
+                    return None
 
-            append_symbol_features(final_path, sym, df_sym)
-
-            del df_sym
             del sym_data
-            count += 1
+            return final_path, sym, df_sym
 
-            if count % 25 == 0 or count == total:
-                tprint(f"  Save progress: {count}/{total} symbols ({n_feats} features each)")
-                _gc.collect()
-            if count % 200 == 0:
-                _gc.collect()
+        def _write_symbol_payload(payload) -> bool:
+            if payload is None:
+                return False
+            final_path, sym, df_sym = payload
+            append_symbol_features(final_path, sym, df_sym)
+            return True
+
+        count = 0
+        if worker_count == 1:
+            for j, sym in enumerate(symbols):
+                payload = _prepare_symbol_payload(j, sym)
+                wrote = _write_symbol_payload(payload)
+                if payload is not None:
+                    _, _, df_sym = payload
+                    del df_sym
+                if wrote:
+                    count += 1
+
+                if count % 25 == 0 or count == total:
+                    tprint(
+                        f"  Save progress: {count}/{total} symbols ({n_feats} features each)"
+                    )
+                    _gc.collect()
+                if count % 200 == 0:
+                    _gc.collect()
+        else:
+            tprint(
+                f"  Save parallelism enabled: workers={worker_count}, max_pending={max_pending}"
+            )
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=worker_count
+            ) as executor:
+                pending: dict[concurrent.futures.Future, pd.DataFrame] = {}
+                for j, sym in enumerate(symbols):
+                    payload = _prepare_symbol_payload(j, sym)
+                    if payload is None:
+                        continue
+                    future = executor.submit(_write_symbol_payload, payload)
+                    pending[future] = payload[2]
+
+                    if len(pending) >= max_pending:
+                        done, _ = concurrent.futures.wait(
+                            list(pending.keys()),
+                            return_when=concurrent.futures.FIRST_COMPLETED,
+                        )
+                        for fut in done:
+                            wrote = fut.result()
+                            df_sym = pending.pop(fut)
+                            del df_sym
+                            if wrote:
+                                count += 1
+                            if count % 25 == 0 or count == total:
+                                tprint(
+                                    f"  Save progress: {count}/{total} symbols ({n_feats} features each)"
+                                )
+                                _gc.collect()
+                            if count % 200 == 0:
+                                _gc.collect()
+
+                for fut in concurrent.futures.as_completed(list(pending.keys())):
+                    wrote = fut.result()
+                    df_sym = pending.pop(fut)
+                    del df_sym
+                    if wrote:
+                        count += 1
+                    if count % 25 == 0 or count == total:
+                        tprint(
+                            f"  Save progress: {count}/{total} symbols ({n_feats} features each)"
+                        )
+                        _gc.collect()
+                    if count % 200 == 0:
+                        _gc.collect()
 
         tprint(f"Feature save complete. {count}/{total} symbols saved ({n_feats} features).")
         return
@@ -1230,18 +1367,19 @@ def load_features_selected(
         return None
 
     feature_set = set(feature_keys) if feature_keys else None
-    symbol_set = set(map(str, symbols)) if symbols else None
+    symbol_set = {_normalize_spot_symbol(str(sym)) for sym in symbols} if symbols else None
     start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
     end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
     if symbol_set is not None:
         files = []
         seen = set()
         for sym in symbol_set:
-            safe_sym = sym.replace("/", "_")
-            fpath = os.path.join(in_dir, f"symbol={safe_sym}.parquet")
-            if os.path.exists(fpath) and fpath not in seen:
-                files.append(fpath)
-                seen.add(fpath)
+            for candidate in _symbol_alias_candidates(sym):
+                safe_sym = candidate.replace("/", "_")
+                fpath = os.path.join(in_dir, f"symbol={safe_sym}.parquet")
+                if os.path.exists(fpath) and fpath not in seen:
+                    files.append(fpath)
+                    seen.add(fpath)
         if not files:
             tprint(
                 f"load_features_selected: no requested symbol parquet files found in {in_dir} "
@@ -1269,7 +1407,9 @@ def load_features_selected(
     for i, fpath in enumerate(files, start=1):
         try:
             fname = os.path.basename(fpath)
-            sym_guess = fname.replace("symbol=", "").replace(".parquet", "").replace("_", "/", 1)
+            sym_guess = _normalize_spot_symbol(
+                fname.replace("symbol=", "").replace(".parquet", "")
+            )
             if symbol_set is not None and sym_guess not in symbol_set:
                 if i % progress_every == 0 or i == total_files:
                     elapsed = time.time() - start_load
@@ -1306,17 +1446,10 @@ def load_features_selected(
                 continue
 
             read_kwargs = {"columns": cols_to_read}
-            has_filterable_time_field = "ts" in schema_names or any(
-                name.startswith("__index_level_") for name in schema_names
-            )
-            parquet_filters = []
-            if has_filterable_time_field:
-                if start_ts is not None:
-                    parquet_filters.append(("ts", ">=", start_ts))
-                if end_ts is not None:
-                    parquet_filters.append(("ts", "<=", end_ts))
-            if parquet_filters:
-                read_kwargs["filters"] = parquet_filters
+            # Avoid parquet pushdown filters here. On the current per-symbol
+            # feature snapshot layout, pyarrow can return the requested rows
+            # while materializing numeric feature columns as all-NaN.
+            # Slice safely after index restoration instead.
             df = pd.read_parquet(fpath, **read_kwargs)
             df, index_reason = _ensure_feature_frame_index(df, parquet_path=fpath)
             if index_reason == "invalid_ts_column":
@@ -1339,7 +1472,7 @@ def load_features_selected(
 
             if "__symbol__" in df.columns:
                 if not df.empty:
-                    real_sym = str(df["__symbol__"].iloc[0])
+                    real_sym = _normalize_spot_symbol(str(df["__symbol__"].iloc[0]))
                 else:
                     real_sym = sym_guess
                 df = df.drop(columns=["__symbol__"])

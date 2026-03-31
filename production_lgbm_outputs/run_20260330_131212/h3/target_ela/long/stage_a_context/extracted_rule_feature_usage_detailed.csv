@@ -1,0 +1,5 @@
+canonical_key,rule_id,fold_id,seed,feature_index,feature_name,group,source_name,source_family,normalized_value
+(*)|(*)|(reg_atr_change_rate_ts_bot50==1),9a5ea1fec459,0,42,14,reg_atr_change_rate_ts_bot50,regime,atr_change_rate,volatility,1
+(*)|(loc_dist_ema20_atr_ts_top20==1)|(*),9a24e85e4b18,1,42,1,loc_dist_ema20_atr_ts_top20,location,dist_ema20_atr,context,1
+(*)|(loc_dist_ema20_atr_ts_bot30==1)|(*),3f5782a56248,2,42,7,loc_dist_ema20_atr_ts_bot30,location,dist_ema20_atr,context,1
+(*)|(loc_dist_ema20_atr_ts_bot30==1)|(*),e06a14a0b949,3,42,7,loc_dist_ema20_atr_ts_bot30,location,dist_ema20_atr,context,1

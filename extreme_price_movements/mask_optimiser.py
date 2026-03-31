@@ -2794,7 +2794,6 @@ def _apply_secondary_conditioner(
     mono_up: np.ndarray,
     mono_dn: np.ndarray,
     vol_exp: np.ndarray,
-    spread_to_atr: np.ndarray,
     alternation_array: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
     new_h = mask_h.copy()
@@ -2802,9 +2801,6 @@ def _apply_secondary_conditioner(
 
     if conditioner == "none":
         return new_h, new_l
-    if conditioner == "liquidity_veto":
-        safe_liq = spread_to_atr < 0.25
-        return new_h & safe_liq, new_l & safe_liq
     if conditioner == "monotonicity_adjust":
         return new_h & (mono_up > 0.25), new_l & (mono_dn > 0.25)
     if conditioner == "volatility_adjust":

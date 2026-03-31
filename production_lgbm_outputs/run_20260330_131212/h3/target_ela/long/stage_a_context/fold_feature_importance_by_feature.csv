@@ -1,0 +1,5 @@
+fold_id,seed,feature_name,group,regime_family,gain,split
+0,42,reg_atr_change_rate_ts_bot50,regime,volatility,2.842169926600864e-14,1
+1,42,loc_dist_ema20_atr_ts_top20,location,,5.684339853201728e-14,1
+2,42,loc_dist_ema20_atr_ts_bot30,location,,1.136870003519419e-13,1
+3,42,loc_dist_ema20_atr_ts_bot30,location,,1.136870003519419e-13,1

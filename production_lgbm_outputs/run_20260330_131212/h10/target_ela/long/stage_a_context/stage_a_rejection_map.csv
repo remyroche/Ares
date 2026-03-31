@@ -1,0 +1,17 @@
+stage_order,stage_name,gate_name,metric_name,threshold,input_count,rejected_count,passed_count
+1,scorer,below_hurdle,hurdle_excess,> 0,175,0,175
+1,scorer,low_presence,presence_freq,>= 0.4000,175,0,175
+1,scorer,low_sign_consistency,sign_consistency,>= 0.7500,175,0,175
+1,scorer,low_support,min_support_actual,>= 10,175,0,175
+1,scorer,non_positive_directional_ret,directional_mean_ret,> 0,175,0,175
+2,pruner,beats_hurdle,hurdle_excess,> 0,175,0,56
+2,pruner,is_too_broad,mean_support_pct,<= 0.2000,175,18,56
+2,pruner,is_too_narrow,mean_support_pct,>= 0.0500,175,101,56
+2,pruner,low_sign_consistency,sign_consistency,>= 0.7500,175,0,56
+3,mask_assessor,insufficient_baseline_oof_coverage,baseline_oof_coverage,>= 0.2500,56,0,0
+3,mask_assessor,insufficient_subset_oof_coverage,subset_oof_coverage,>= 0.2500,56,20,0
+3,mask_assessor,low_lift,learn_eff_ratio,>= 1.1000,56,0,0
+3,mask_assessor,low_sign_consistency,sign_consistency,>= 0.7500,56,0,0
+3,mask_assessor,low_trades_per_day,avg_trades_per_day,>= 0.1000,56,0,0
+3,mask_assessor,missing_learnability,learn_eff_ratio,must be finite,56,0,0
+3,mask_assessor,not_assessed_min_mask_support,mask_support_count,>= 20 rows,56,0,0

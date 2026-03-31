@@ -30,7 +30,7 @@ FEATURE_KEYS_15M_OHLCV = [
 ]
 
 neutral_feature_keys = [
-    "rsi", "vol_z", "atr_pct", "mkt_rv_ratio", "skew", 
+    "rsi", "vol_z", "mkt_rv_ratio",
     "trend_snr", "efficiency", "vol_asym", "momentum_accel",
     "dist_stack", "stage_blowoff", "exh_qual", "volatility_zscore",
     "dv_z", "rng_z", "impact_z", "liq_score", "liq_state"
@@ -53,7 +53,7 @@ MODEL_FEATURES = [
     "perm_entropy_ret_12", "perm_entropy_ret_24",
     "spectral_entropy_ret_24", "spectral_entropy_ret_48",
     "volume_entropy_12", "volume_entropy_24",
-    "downside_semivariance_8", "downside_semivariance_24",
+    "downside_semivariance_24",
     "upside_semivariance_8", "upside_semivariance_24",
     "down_up_vol_ratio_8", "down_up_vol_ratio_24",
     "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
@@ -88,12 +88,6 @@ MODEL_FEATURES = [
     # 2h directional path-risk
     "dir_path_long_2h", "dir_path_short_2h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
     "dir_path_edge_2h", "dir_path_risk_skew_2h",
-    # Gate interactions (2h focus)
-    "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
-    "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
-    "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
-    "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
-    "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
     # Volume/Flow
     "v_power", "flow_persistence", "flow_ratio", "churn",
     "vol_range_shock", "climax_decay", "cumulative_delta_stall",
@@ -115,7 +109,7 @@ MODEL_FEATURES = [
     "mtf_divergence_x_regime_vol_12h", "hurst_proxy_x_regime_trend_48h",
     # Regime features for fold robustness (Report 2026-02-11)
     "vol_regime_z", "is_high_vol_regime", "is_low_vol_regime",
-    "trend_regime", "is_trending", "is_ranging",
+    "is_trending", "is_ranging",
     "liq_regime", "regime_stability_24h",
     "rsi_x_high_vol", "trend_x_trending", "vol_z_x_low_vol",
     # New Indicators (KER, Vortex, ADX, VWAP, HVN/LVN)
@@ -142,12 +136,12 @@ MODEL_FEATURES = [
     # Ridge model features
     "ema20_gt_ema50", "ema50_gt_ema200", "ema50_ema200_spread_atr", "compression_ratio", "range_expansion_ratio", "atr_compression_ratio",
     "price_lt_ema200", "ema50_slope", "trend_strength_percentile",
-    "rolling_std_4h", "realized_volatility_24h", "atr_change_rate", "true_range_percentile",
+    "realized_volatility_24h", "atr_change_rate", "true_range_percentile",
     "bollinger_band_width", "rolling_range_20", "atr_percentile",
     "prior_range", "prior_volatility",
     "efficiency_ratio_20", "choppiness_index_20", "direction_entropy_20",
     "volatility_ratio_short_long", "volume_percentile",
-    "ema20_slope_5h", "ema_slope_norm", "trend_persistence", "volume_zscore_48h", "trend_ratio",
+    "ema20_slope_5h", "ema_slope_norm", "volume_zscore_48h",
     "compression_score", "return_autocorr_48", "variance_ratio_10_48", "volume_trend_48", "volume_autocorr_48",
     "volatility_of_volatility_48", "trend_acceleration", "volatility_autocorr_48",
 ]
@@ -161,7 +155,6 @@ RIDGE_FEATURE_META = {
     "ema50_slope": {"family": "trend", "type": "continuous"},
     "trend_strength_percentile": {"family": "trend", "type": "continuous"},
 
-    "rolling_std_4h": {"family": "volatility", "type": "continuous"},
     "realized_volatility_24h": {"family": "volatility", "type": "continuous"},
     "atr_change_rate": {"family": "volatility", "type": "continuous"},
     "true_range_percentile": {"family": "volatility", "type": "continuous"},
@@ -188,9 +181,7 @@ RIDGE_FEATURE_META = {
     "ema20_slope_5h": {"family": "trend", "type": "continuous"},
     "ema_slope_norm": {"family": "trend", "type": "continuous"},
     "atr_compression_ratio": {"family": "volatility_term_structure", "type": "continuous"},
-    "trend_persistence": {"family": "trend", "type": "continuous"},
     "volume_zscore_48h": {"family": "liquidity", "type": "continuous"},
-    "trend_ratio": {"family": "trend", "type": "continuous"},
     "compression_score": {"family": "volatility_term_structure", "type": "continuous"},
     "return_autocorr_48": {"family": "momentum", "type": "continuous"},
     "variance_ratio_10_48": {"family": "volatility", "type": "continuous"},
@@ -299,10 +290,10 @@ HELPER_BASE_FEATURES = [
     "rvol_hod_base", "signed_vol", "up_vol", "dn_vol", "up_vol_6", "dn_vol_6",
     "vol_asym_6", "clv", "clv_mean_2", "excess_12h", "speed",
     "atr_expansion", "stall_ext_corr",
-    "asset_atr_level", "asset_vol_level", "atr_state", "vol_state",
+    "asset_atr_level", "asset_vol_level", "vol_state",
     "G_EXH_EFFORT", "G_EXH_GIVEBACK", "G_EXH_TAIL_FAIL",
-    "G_MR_SPIKE", "G_TF_GRIND", "G_TF_TREND", "G_MR_TAIL",
-    "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
+    "G_MR_SPIKE", "G_TF_TREND",
+    "G_META_EXH",
     # FFD d-specific helper features
     "ffd_diff_1_04", "ffd_diff_2_04", "ffd_diff_4_04", "ffd_diff_8_04",
     "ffd_diff_1_05", "ffd_diff_2_05", "ffd_diff_4_05", "ffd_diff_8_05",
@@ -336,7 +327,7 @@ HELPER_BASE_FEATURES = [
 # Emphasis: 2/4/8-bar behavior + longer-horizon regime context.
 TEST_FEATURE_KEYS = [
     # Realized vol / ATR (multi-horizon)
-    "rv_2h", "rv_4h", "rv_8h", "rv_24h", "atr_pct", "atr_pct_change",
+    "rv_2h", "rv_4h", "rv_8h", "rv_24h", "atr_pct_change",
     # Returns + slope family (2/4/8 focus)
     "ret2h", "ret4h", "ret8h", "ret24h", "slope", "atr_slope", "rsi_slope",
     # Momentum acceleration
@@ -355,14 +346,13 @@ TEST_FEATURE_KEYS = [
     "ret16h", "coherence_24", "impulse_ratio_24", "range_24h_pct",
     "shannon_entropy_ret_16", "perm_entropy_ret_24", "spectral_entropy_ret_24", "volume_entropy_24",
     # Longer-timeframe regime context
-    "trend_regime", "vol_regime_z", "regime_stability_24h",
+    "vol_regime_z", "regime_stability_24h",
     # Ridge model features
     "compression_ratio",
     "trend_strength_percentile",
     "bollinger_band_width",
     "direction_entropy_20",
     "volatility_ratio_short_long", "volume_percentile",
-    "trend_persistence", "trend_ratio",
 ]
 
 CFG = {
@@ -846,7 +836,9 @@ CFG = {
     "gate_trend_thr": 0.02,
     "accept_gate_window": 24,
     "accept_gate_percentile_mode": "approx",
-    "enable_gated_features": True,  # Disabled to reduce feature computation time
+    "enable_gated_features": False,
+    "feature_backfill_symbol_chunk_size": 100,
+    "feature_backfill_key_batch_size": 100,
 
     # base feature windows (used for base/fast/slow variants)
     "atr_n": 14,
@@ -883,11 +875,11 @@ CFG = {
     "enable_15m_ohlcv_features": True,
     "causal_cols": [
         "dv_z", "rng_z", "impact_z", "liq_score", "liq_state",
-        "ret24h", "rsi", "vol_z", "atr_pct", "trend_pct", "rv_2h", "rv_4h", "rv_24h",
+        "ret24h", "rsi", "vol_z", "trend_pct", "rv_2h", "rv_4h", "rv_24h",
         "p_exh_lag1",
         "a_funding_proxy",
         "flow_ratio", "churn", "slope", "trend_snr",
-        "vol_asym", "skew", "efficiency", "fvg",
+        "vol_asym", "efficiency", "fvg",
         "rvol_z", "vol_range_shock", "climax_decay",
         "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression",
         "atr_slope", "dist_vwap_norm", "momentum_accel",
@@ -918,8 +910,8 @@ CFG = {
         # Gates as continuous features
         "G_EXH_EFFORT", "G_EXH_GIVEBACK",
         "G_EXH_TAIL_FAIL",
-        "G_MR_SPIKE", "G_TF_GRIND", "G_TF_TREND", "G_MR_TAIL",
-        "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
+        "G_MR_SPIKE", "G_TF_TREND",
+        "G_META_EXH",
         # New Model Features
         "overext", "overext_weak", "effort_gate", "tail_fail", "blowoff_risk",
         "S", "impulse_ratio_24", "impulse_ratio_12", "coherence_24", "accel",
@@ -954,17 +946,17 @@ CFG = {
         "perm_entropy_ret_12", "perm_entropy_ret_24",
         "spectral_entropy_ret_24", "spectral_entropy_ret_48",
         "volume_entropy_12", "volume_entropy_24",
-        "downside_semivariance_8", "downside_semivariance_24",
+        "downside_semivariance_24",
         "upside_semivariance_8", "upside_semivariance_24",
         "down_up_vol_ratio_8", "down_up_vol_ratio_24",
         "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
         # Residualised features — relative surprise, not absolute magnitude
         "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
         "excess_6h_z", "vol_z_z", "atr_expansion_z", "coherence_24_z",
-        "accept_surprise", "overext_surprise",
+        "overext_surprise",
         "blowoff_risk_surprise", "exh_qual_surprise",
         "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid",
-        "mkt_rv_pct", "abs_mkt_ret24h_z", "trend_bin3",
+        "mkt_rv_pct", "abs_mkt_ret24h_z",
         # New Multi-Horizon Aggregated Features
         "ret_mean", "ret_max", "ret_min",
         "rv_mean", "rv_max", "rv_min",
@@ -1138,7 +1130,7 @@ CFG = {
         "clv_mean_4", "pullback_2", "pullback_4", "giveback", "evr_6", "progress",
         "delta_stall_6", "tail_against",
         # Context features (Volatility & Regime)
-        "vol_z", "atr_pct", "rsi", "mkt_rv_ratio", "dist_vwap_norm", "accel",
+        "vol_z", "rsi", "mkt_rv_ratio", "dist_vwap_norm", "accel",
         # Interaction Features
         "dist_ext_x_vol", "regime_x_vol", "rsi_x_vol"
     ],
@@ -1152,7 +1144,7 @@ CFG = {
 
     # TF Head (Specifics + Global) — includes trend maturity features
     "tf_feature_keys": [
-        "accept", "retest_accept", "tf_qual", "G_TF_TREND", "coherence_24", "impulse_ratio_24",
+        "retest_accept", "tf_qual", "G_TF_TREND", "coherence_24", "impulse_ratio_24",
         "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "pullback_8", "ft_2", "ft_4", "ft_8",
         "vov_ratio", "vov_interaction", "vov_fast_slow_ratio", "accel_5h", "breakout_24h",
         "stage_tf", "tf_bias", "flow_persistence", "flow_ratio",
@@ -1164,8 +1156,7 @@ CFG = {
         "dist_from_high_48h", "dist_from_high_120h",
         "trend_slope_48h", "trend_slope_120h", "trend_accel_120h",
         "rv_ratio_24_120", "ret48h", "ret120h",
-        "accept_x_dir_edge_2h", "tfq_x_dir_edge_2h", "accept_dir2h_prod", "tfq_dir2h_prod",
-        "downside_semivariance_8", "downside_semivariance_24",
+        "downside_semivariance_24",
         "upside_semivariance_8", "upside_semivariance_24",
         "down_up_vol_ratio_8", "down_up_vol_ratio_24",
         "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
@@ -1179,21 +1170,20 @@ CFG = {
 
     # MR Head (Specifics + Global) — includes exhaustion features
     "mr_feature_keys": [
-        "accept", "accept_bin3", "overext", "overext_weak", "mr_qual", "retrace_12",
+        "overext", "overext_weak", "mr_qual", "retrace_12",
         "impulse_ratio_24", "coherence_24", "mr_tape",
         "clv_mean_4", "pullback_2", "pullback_4", "pullback_8", "ft_2", "ft_4", "ft_8",
         "giveback", "blowoff_risk", "exh_qual", "stage_blowoff", "stage_mr",
         "donch_dist_12", "donch_dist_8", "excess_6h", "tail_fail", "tail_against",
         "mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h",
         "rv_2h", "rv_4h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
-        "reject_x_dir_edge_2h", "mrq_x_dir_edge_2h", "reject_dir2h_prod", "mrq_dir2h_prod",
         # Multi-day regime context (distinguish real dips from trend continuation)
         "donch_dist_48", "donch_dist_72", "donch_dist_120",
         "pullback_48", "pullback_72", "pullback_120",
         "dist_from_low_48h", "dist_from_low_120h",
         "trend_slope_48h", "trend_slope_120h", "trend_accel_120h",
         "rv_ratio_24_120", "ret48h", "ret120h",
-        "downside_semivariance_8", "downside_semivariance_24",
+        "downside_semivariance_24",
         "upside_semivariance_8", "upside_semivariance_24",
         "down_up_vol_ratio_8", "down_up_vol_ratio_24",
         "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
@@ -1213,14 +1203,14 @@ CFG = {
     # Meta Learner
     "meta_feature_keys": [
         "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
-        "accept", "accept_bin3", "accept_gt75", "rv_ratio_6_24",
+        "rv_ratio_6_24",
         "G_TF_TREND", "vol_z_x_trend_t",
         "excess_6h", "donch_dist_12", "donch_dist_8", "clv_mean_4", "evr_6", "delta_stall_6",
         "ft_2", "asym_ratio", "mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "giveback",
         "ret1h", "ret2h", "ret4h", "ret6h", "rv_2h", "rv_4h", "rv_6h", "rv_8h", "rv_24h", "mkt_rv_ratio",
-        "qv", "signed_vol", "vol_z", "atr_pct", "trend_pct",
+        "qv", "signed_vol", "vol_z", "trend_pct",
         "spike_score", "grind_score", "chop_score",
-        "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
+        "G_META_EXH",
         "vol_z_30_calm", "breakout_24h", "draw_extreme_10h",
         "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
         "meta_alignment", "meta_signal_x_accel",
@@ -1230,11 +1220,6 @@ CFG = {
         "p_vol_high", "p_cusum_high", "p_liq_low",
         "dir_path_long_2h", "dir_path_short_2h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
         "dir_path_edge_2h", "dir_path_risk_skew_2h",
-        "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
-        "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
-        "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
-        "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
-        "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
         # Specialist features
         "trap_quality", "predicted_vol_6h",
         # Gated entry features
@@ -1268,7 +1253,7 @@ CFG = {
         # D-family strength indicators for meta
         "ffd_strength_04", "ffd_strength_05", "ffd_strength_06",
         # Asset identity features (raw-scale, not normalized)
-        "asset_atr_level", "asset_vol_level", "atr_state", "vol_state",
+        "asset_atr_level", "asset_vol_level", "vol_state",
         # New Indicators
         "vp_profile_concentration", "vp_profile_entropy", "vp_lvn_depth_ratio",
         "adx_14_slope", "trapped_longs_96",
@@ -1306,7 +1291,7 @@ CFG = {
         "breakout_confirmed", "trend_retest_success_rate", "trend_regime_stability",
         "trend_age_hours", "higher_highs_count_48h",
         # TF continuation quality
-        "trend_regime", "is_trending", "trend_snr", "trend_overextension_z",
+        "is_trending", "trend_snr", "trend_overextension_z",
         "volume_trend_alignment", "impulse_ratio_24", "breakout_t",
         "vol_expansion_ratio", "vol_z_x_regime_trend",
     ],
@@ -1533,21 +1518,20 @@ POSITION_SIZER_V2_FEATURE_CONFIG = {
         "ret_1", "ret_3", "ret_6", "ret_12", "ret_24",
         "price_vs_ema_12_z", "price_vs_ema_24_z", "ema_12_minus_ema_24_z",
         "trend_slope_12_z", "trend_slope_24_z",
-        "atr_pct", "range_1_atr", "range_3_atr", "rv_6", "rv_12", "rv_24", "rv_ratio_6_24",
+        "range_1_atr", "range_3_atr", "rv_6", "rv_12", "rv_24", "rv_ratio_6_24",
         "close_location_in_bar",
-        "volume_z_12", "volume_z_24", "dollar_vol_z_24", "spread_pct", "spread_to_atr",
-        "cost_to_atr", "slippage_proxy", "liquidity_shock_z",
+        "volume_z_12", "volume_z_24", "liquidity_shock_z",
         "regime_trend_score", "regime_vol_score", "regime_liquidity_score",
         "session_progress", "hour_sin", "hour_cos", "dow_sin", "dow_cos"
     ],
     "model1_edge_feature_keys": [
         "oof_base_mean", "oof_base_std", "oof_meta_pred", "oof_top2_gap",
         "oof_sign_agreement_frac", "ret_3", "ret_6", "ret_12", "price_vs_ema_12_z",
-        "ema_12_minus_ema_24_z", "atr_pct", "rv_ratio_6_24", "spread_to_atr",
-        "cost_to_atr", "regime_trend_score", "regime_vol_score", "session_progress",
+        "ema_12_minus_ema_24_z", "rv_ratio_6_24",
+        "regime_trend_score", "regime_vol_score", "session_progress",
 
         "range_last_3bars_impulse_range", "volatility_contraction_ratio",
-        "ATR_decay_rate", "realized_vol_15m_realized_vol_2h", "micro_range_decay",
+        "realized_vol_15m_realized_vol_2h", "micro_range_decay",
         "wick_ratio_last_bar", "close_position_in_range", "rejection_ratio",
         "impulse_participation_volume", "terminal_climax_volume",
         "post_impulse_persistence", "reversal_bar_strength",
@@ -1559,8 +1543,8 @@ POSITION_SIZER_V2_FEATURE_CONFIG = {
     ],
     "model2_downside_feature_keys": [
         "oof_base_mean", "oof_base_std", "oof_meta_pred", "ret_1", "ret_3",
-        "close_location_in_bar", "range_1_atr", "atr_pct", "rv_6", "rv_24",
-        "downside_semivol_12", "spread_to_atr", "slippage_proxy",
+        "close_location_in_bar", "range_1_atr", "rv_6", "rv_24",
+        "downside_semivol_12",
         "regime_vol_score", "regime_liquidity_score", "session_progress",
 
         "impulse_speed", "impulse_acceleration", "wick_cluster_ratio",
@@ -1572,8 +1556,8 @@ POSITION_SIZER_V2_FEATURE_CONFIG = {
     "model3_uncertainty_feature_keys": [
         "oof_base_std", "oof_base_range", "oof_meta_minus_base_mean",
         "oof_sign_agreement_frac", "edge_pred", "downside_pred",
-        "edge_minus_downside", "abs_edge_pred", "atr_pct", "rv_ratio_6_24",
-        "spread_to_atr", "cost_to_atr", "liquidity_shock_z",
+        "edge_minus_downside", "abs_edge_pred", "rv_ratio_6_24",
+        "liquidity_shock_z",
         "regime_vol_score", "regime_liquidity_score", "session_progress",
 
         "vol_regime_transition", "ATR_ratio_short_long", "bar_direction_entropy",

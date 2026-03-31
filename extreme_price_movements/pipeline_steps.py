@@ -44,6 +44,7 @@ from extreme_price_movements.features import (
 from extreme_price_movements.intraday_crypto_library import (
     INTRADAY_TRIGGER_COLUMNS,
     LOCATION_FILTER_COLUMNS,
+    PERSISTED_INTRADAY_LIBRARY_COLUMNS,
 )
 from extreme_price_movements.metrics import MetricsLogger
 from extreme_price_movements.model_loader import load_alpha_models
@@ -96,7 +97,6 @@ FEATURE_HEALTH_CRITICAL_KEYS: tuple[str, ...] = (
     "dist_ema50_atr",
     "ema50_slope",
     "prior_volatility",
-    "rolling_std_4h",
     "trend_acceleration",
 )
 
@@ -231,17 +231,25 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
     # 3. Helper base features (for candidacy/breadth)
     keys.update(HELPER_BASE_FEATURES)
 
-    # 4. Causal columns from config
-    keys.update(LOCATION_FILTER_COLUMNS)
-    keys.update(INTRADAY_TRIGGER_COLUMNS)
+    # 4. Persisted intraday location library columns.
+    # Do not include discrete LOC_*/LONG_*/SHORT_* trigger names here: they are
+    # rule-state labels, not columns emitted by compute_features_hourly().
+    keys.update(PERSISTED_INTRADAY_LIBRARY_COLUMNS)
     causal = cfg.get("causal_cols", [])
     if isinstance(causal, (list, tuple)):
+        nonpersisted_intraday_rule_names = set(LOCATION_FILTER_COLUMNS).union(
+            set(INTRADAY_TRIGGER_COLUMNS)
+        )
         for k in causal:
-            if isinstance(k, str) and k:
+            if (
+                isinstance(k, str)
+                and k
+                and k not in nonpersisted_intraday_rule_names
+            ):
                 keys.add(k)
 
     # 5. Core features that downstream logic assumes are present.
-    keys.update({"atr_pct", "ret1h", "ret24h"})
+    keys.update({"ret1h", "ret24h"})
 
     # 6. Technical Regime (Ridge) Features
     from extreme_price_movements.config import RIDGE_FEATURE_COLS, CONTINUOUS_LOCATION_COLS
@@ -320,9 +328,6 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
         "ret_12",
         "ret_24",
         "slope_last_n_bars",
-        "spread_pct",
-        "spread_to_atr",
-        "slippage_proxy",
     }
     keys.difference_update(offline_unavailable_keys)
     return keys
@@ -338,7 +343,6 @@ def _labeling_feature_keys(cfg) -> set[str]:
     keys = {
         "ret24h",
         "ret1h",
-        "atr_pct",
         "range_12h_pct",
         "volatility_zscore",
         "chop_score",
@@ -719,6 +723,55 @@ def _feature_snapshot_health_issues(
     return issues
 
 
+def _feature_quality_issues_for_keys(
+    features: dict[str, pd.DataFrame | np.ndarray],
+    keys: list[str] | tuple[str, ...] | set[str] | None,
+) -> list[str]:
+    """Return missing/all-NaN/constant issues for an explicit feature-key set."""
+    if not keys:
+        return []
+
+    issues: list[str] = []
+    for key in keys:
+        key = str(key)
+        values = features.get(key)
+        if values is None:
+            issues.append(f"missing:{key}")
+            continue
+
+        if isinstance(values, pd.DataFrame):
+            arr = values.to_numpy(dtype=np.float32, copy=False)
+        else:
+            arr = np.asarray(values, dtype=np.float32)
+
+        if arr.size == 0:
+            issues.append(f"empty:{key}")
+            continue
+
+        finite = np.isfinite(arr)
+        finite_count = int(finite.sum())
+        if finite_count == 0:
+            issues.append(f"all_nan:{key}")
+            continue
+
+        finite_vals = arr[finite]
+        if np.nanstd(finite_vals) <= 1e-12 or np.unique(finite_vals).size <= 1:
+            issues.append(f"constant:{key}")
+
+    return issues
+
+
+def _missing_requested_feature_keys(
+    features: dict[str, pd.DataFrame | np.ndarray],
+    requested_keys: list[str] | tuple[str, ...] | set[str] | None,
+) -> list[str]:
+    """Return requested keys that were not produced in the current compute batch."""
+    if not requested_keys:
+        return []
+    feature_keys = set(features.keys())
+    return sorted(str(k) for k in requested_keys if str(k) not in feature_keys)
+
+
 def _enforce_feature_snapshot_completeness(
     ts_sig: pd.Timestamp,
     data_root: str,
@@ -860,6 +913,7 @@ def _scan_feature_cache_light(
     uncovered_symbols: set[str] = set()
     stale_symbols: set[str] = set()
     full_rewrite_symbols: set[str] = set()
+    all_nan_symbol_keys: dict[str, set[str]] = {}
 
     total_files = len(files)
     progress_every = 100 if total_files >= 500 else 50
@@ -893,9 +947,29 @@ def _scan_feature_cache_light(
                 stale_symbols.add(sym)
                 full_rewrite_symbols.add(sym)
         feat_cols = [c for c in schema_names if c in expected_keys]
-        for c in feat_cols:
+        non_all_nan_cols = set(feat_cols)
+        if sym in required_bounds and feat_cols:
+            try:
+                sample_df = pd.read_parquet(fpath, columns=feat_cols)
+                non_all_nan_cols = {
+                    c for c in feat_cols if c in sample_df.columns and not bool(sample_df[c].isna().all())
+                }
+                empty_cols = set(feat_cols) - non_all_nan_cols
+                if empty_cols:
+                    stale_symbols.add(sym)
+                    full_rewrite_symbols.add(sym)
+                    all_nan_symbol_keys[sym] = set(empty_cols)
+            except Exception:
+                stale_symbols.add(sym)
+                full_rewrite_symbols.add(sym)
+                non_all_nan_cols = set()
+
+        for c in non_all_nan_cols:
             key_symbol_counts[c] += 1
-        if sym in required_bounds and not expected_keys.issubset(schema_names):
+        if sym in required_bounds and (
+            not expected_keys.issubset(schema_names)
+            or len(all_nan_symbol_keys.get(sym, set())) > 0
+        ):
             stale_symbols.add(sym)
 
         if i % progress_every == 0 or i == total_files:
@@ -936,6 +1010,7 @@ def _scan_feature_cache_light(
         "uncovered_symbols": sorted(uncovered_symbols),
         "missing_keys": missing_keys,
         "partial_keys": sorted(partial_keys),
+        "all_nan_symbol_keys": {k: sorted(v) for k, v in all_nan_symbol_keys.items()},
     }
 
 
@@ -1125,6 +1200,15 @@ def _derive_symbol_backfill_keys(
         except Exception:
             return sorted(expected_keys)
         missing_keys.update(expected_keys - schema_names)
+        present_keys = sorted(expected_keys.intersection(schema_names))
+        if present_keys:
+            try:
+                sample_df = pd.read_parquet(fpath, columns=present_keys)
+            except Exception:
+                return sorted(expected_keys)
+            for c in present_keys:
+                if c in sample_df.columns and bool(sample_df[c].isna().all()):
+                    missing_keys.add(c)
 
     return sorted(missing_keys)
 
@@ -4692,18 +4776,21 @@ def run_feature_generation_step(
                 if key_batch is not None:
                     tprint(f"{batch_label} computing requested_keys={len(key_batch)}")
                 panel_chunk = {k: v.copy() for k, v in panel_chunk_source.items()}
+                compute_t0 = time.perf_counter()
                 feats_chunk, feat_index, feat_columns = compute_features_hourly(
                     panel_chunk,
                     mkt_gates.copy(),
                     cfg,
                     requested_feature_keys=key_batch,
                 )
+                compute_dt = time.perf_counter() - compute_t0
 
                 if backfill_keys and not force_full_recompute:
                     batch_backfill_keys = key_batch or []
-                    unresolved = [
-                        k for k in batch_backfill_keys if k not in feats_chunk
-                    ]
+                    unresolved = _missing_requested_feature_keys(
+                        feats_chunk,
+                        batch_backfill_keys,
+                    )
                     if unresolved:
                         unresolved_union.update(unresolved)
                     feats_chunk = {
@@ -4711,16 +4798,57 @@ def run_feature_generation_step(
                         for k, v in feats_chunk.items()
                         if k in set(batch_backfill_keys)
                     }
+                else:
+                    batch_backfill_keys = []
 
-                chunk_health_issues = _feature_snapshot_health_issues(feats_chunk)
+                batch_health_keys = (
+                    tuple(
+                        k for k in FEATURE_HEALTH_CRITICAL_KEYS if k in set(batch_backfill_keys)
+                    )
+                    if batch_backfill_keys
+                    else FEATURE_HEALTH_CRITICAL_KEYS
+                )
+                chunk_health_issues = _feature_snapshot_health_issues(
+                    feats_chunk,
+                    critical_keys=batch_health_keys,
+                )
                 if chunk_health_issues:
                     raise RuntimeError(
                         "Feature chunk health validation failed before save: "
                         + ", ".join(chunk_health_issues)
                     )
+                if batch_backfill_keys and unresolved:
+                    raise RuntimeError(
+                        "Feature chunk missing requested keys before save: "
+                        + ", ".join(unresolved[:30])
+                        + (" ..." if len(unresolved) > 30 else "")
+                    )
+                if batch_backfill_keys:
+                    diagnostic_issues = _feature_quality_issues_for_keys(
+                        feats_chunk,
+                        batch_backfill_keys,
+                    )
+                    noncritical_diagnostic_issues = [
+                        issue
+                        for issue in diagnostic_issues
+                        if str(issue).split(":", 1)[-1]
+                        not in set(FEATURE_HEALTH_CRITICAL_KEYS)
+                    ]
+                    if noncritical_diagnostic_issues:
+                        tprint(
+                            f"{batch_label} diagnostic feature-quality issues "
+                            f"({len(noncritical_diagnostic_issues)}): "
+                            + ", ".join(noncritical_diagnostic_issues[:20])
+                            + (
+                                " ..."
+                                if len(noncritical_diagnostic_issues) > 20
+                                else ""
+                            )
+                        )
 
                 tprint(f"{batch_label} saving {len(feats_chunk)} keys")
                 if feats_chunk:
+                    save_t0 = time.perf_counter()
                     save_features(
                         feats_chunk,
                         ts_sig,
@@ -4730,6 +4858,11 @@ def run_feature_generation_step(
                         else None,
                         feat_index=feat_index,
                         feat_columns=feat_columns,
+                        save_workers=int(cfg.get("feature_save_workers", 2)),
+                    )
+                    save_dt = time.perf_counter() - save_t0
+                    tprint(
+                        f"{batch_label} timings: compute={compute_dt:.1f}s save={save_dt:.1f}s"
                     )
                     total_saved_keys += len(feats_chunk)
                 del panel_chunk, feats_chunk
@@ -4741,9 +4874,9 @@ def run_feature_generation_step(
         tprint(f"Computed + saved chunked backfill features: {total_saved_keys} keys")
         if unresolved_union:
             unresolved_sorted = sorted(unresolved_union)
-            tprint(
-                f"WARNING: Backfill could not produce {len(unresolved_sorted)} keys "
-                "(may require other pipelines): "
+            raise RuntimeError(
+                f"Incremental feature backfill could not produce {len(unresolved_sorted)} "
+                "requested keys: "
                 + ", ".join(unresolved_sorted[:30])
                 + (" ..." if len(unresolved_sorted) > 30 else "")
             )
@@ -4761,12 +4894,14 @@ def run_feature_generation_step(
             tprint(
                 f"Incremental feature compute requested_keys={len(requested_feature_keys)}"
             )
+        compute_t0 = time.perf_counter()
         feats, feat_index, feat_columns = compute_features_hourly(
             panel,
             mkt_gates,
             cfg,
             requested_feature_keys=requested_feature_keys,
         )
+        compute_dt = time.perf_counter() - compute_t0
         min_ts_by_symbol = None
 
         full_health_issues = _feature_snapshot_health_issues(feats)
@@ -4812,6 +4947,7 @@ def run_feature_generation_step(
 
         # 4. Save
         if feats:
+            save_t0 = time.perf_counter()
             save_features(
                 feats,
                 ts_sig,
@@ -4819,6 +4955,10 @@ def run_feature_generation_step(
                 min_timestamp_by_symbol=min_ts_by_symbol,
                 feat_index=feat_index,
                 feat_columns=feat_columns,
+                save_workers=int(cfg.get("feature_save_workers", 2)),
+            )
+            tprint(
+                f"Feature save timing: compute={compute_dt:.1f}s save={time.perf_counter() - save_t0:.1f}s"
             )
         else:
             tprint(
@@ -4826,28 +4966,32 @@ def run_feature_generation_step(
             )
 
     tprint(f"Generated features for {len(loaded_syms)} symbols.")
-    # Skip completeness enforcement during incremental backfill to prevent corruption
+    # Incremental backfill should not synthesize placeholder columns, but it still
+    # must prove the persisted snapshot is complete when it finishes.
     is_incremental_backfill = backfill_keys and not force_full_recompute
+    completeness_panel = (
+        close_panel_light
+        if close_panel_light is not None and not close_panel_light.empty
+        else panel_close_ref
+    )
     if not is_incremental_backfill:
-        completeness_panel = (
-            close_panel_light
-            if close_panel_light is not None and not close_panel_light.empty
-            else panel_close_ref
-        )
         _enforce_feature_snapshot_completeness(
             ts_sig=ts_sig,
             data_root=cfg["data_root"],
             expected_keys=expected_keys,
             panel_close=completeness_panel,
         )
-        _validate_feature_snapshot_completeness(
-            ts_sig=ts_sig,
-            data_root=cfg["data_root"],
-            expected_keys=expected_keys,
-            panel_close=completeness_panel,
-        )
     else:
-        tprint("Incremental backfill mode: skipping feature completeness normalization to preserve existing features")
+        tprint(
+            "Incremental backfill mode: skipping placeholder completeness normalization "
+            "and validating persisted completeness directly"
+        )
+    _validate_feature_snapshot_completeness(
+        ts_sig=ts_sig,
+        data_root=cfg["data_root"],
+        expected_keys=expected_keys,
+        panel_close=completeness_panel,
+    )
     _generate_feature_health_reports(ts_sig, cfg["data_root"])
     health_feats = load_features_selected(
         ts_sig,

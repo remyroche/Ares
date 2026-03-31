@@ -36,13 +36,16 @@ MAIN_MINER_PARAMS: Dict[str, Any] = {
 
 # HPO grids
 ALPHA_GRID = (0.80, 0.825, 0.85, 0.875, 0.90)
-MIN_GAIN_GRID = (0.0005, 0.001, 0.002)
+MIN_GAIN_GRID = (0.0005, 0.001, 0.002, 0.004)
 MIN_LEAF_FRAC_GRID = (0.0005, 0.0010, 0.0015)
 
 # Search controls
 SUPPORT_MIN = 0.05
-SUPPORT_MAX = 0.10
-TARGET_SUPPORT = 0.06
+SUPPORT_MAX = 0.20
+TARGET_SUPPORT = 0.125
+PREFERRED_SUPPORT_MIN = 0.06
+PREFERRED_SUPPORT_MAX = 0.14
+MAX_OUTSIDE_SUPPORT_WEIGHT = 0.35
 
 SUBSAMPLE_FRAC = 0.30
 MAX_BOOST_ROUNDS = 200
@@ -72,6 +75,89 @@ class EvalResult:
     reason: str
 
 
+def _support_quality_score(
+    supports: np.ndarray,
+    weights: np.ndarray,
+    *,
+    target_support: float = TARGET_SUPPORT,
+    preferred_min: float = PREFERRED_SUPPORT_MIN,
+    preferred_max: float = PREFERRED_SUPPORT_MAX,
+) -> float:
+    """Weighted support quality centered on target_support with bonus in preferred band."""
+    supports = np.asarray(supports, dtype=np.float64)
+    weights = np.asarray(weights, dtype=np.float64)
+    if supports.size == 0 or weights.size == 0:
+        return -np.inf
+
+    w_sum = float(weights.sum())
+    if w_sum <= 0.0:
+        return -np.inf
+
+    dist = np.abs(supports - target_support)
+    base = np.clip(1.0 - (dist / max(target_support, 1e-9)), 0.0, 1.0)
+    preferred_bonus = np.where(
+        (supports >= preferred_min) & (supports <= preferred_max), 1.0, 0.0
+    )
+    quality = 0.7 * base + 0.3 * preferred_bonus
+    return float(np.dot(quality, weights) / w_sum)
+
+
+def _support_preference_score_scalar(
+    support_pct: float,
+    *,
+    target_pct: float = 0.125,
+    preferred_low_pct: float = PREFERRED_SUPPORT_MIN,
+    preferred_high_pct: float = PREFERRED_SUPPORT_MAX,
+) -> float:
+    dist = abs(float(support_pct) - float(target_pct))
+    base = max(0.0, 1.0 - dist / max(float(target_pct), 1e-9))
+    preferred = 1.0 if preferred_low_pct <= support_pct <= preferred_high_pct else 0.0
+    return float(0.7 * base + 0.3 * preferred)
+
+
+def make_support_preference_weights(
+    X: np.ndarray,
+    *,
+    target_pct: float = 0.125,
+    preferred_low_pct: float = PREFERRED_SUPPORT_MIN,
+    preferred_high_pct: float = PREFERRED_SUPPORT_MAX,
+    strength: float = 0.20,
+    w_min: float = 0.85,
+    w_max: float = 1.25,
+) -> np.ndarray:
+    if X.size == 0:
+        return np.empty(X.shape[0], dtype=np.float32)
+
+    X_bin = np.asarray(X > 0.5, dtype=np.float32)
+    if X_bin.shape[1] == 0:
+        return np.ones(X.shape[0], dtype=np.float32)
+
+    support_pct = np.mean(X_bin, axis=0, dtype=np.float64)
+    feature_pref = np.array(
+        [
+            _support_preference_score_scalar(
+                float(p),
+                target_pct=target_pct,
+                preferred_low_pct=preferred_low_pct,
+                preferred_high_pct=preferred_high_pct,
+            )
+            for p in support_pct
+        ],
+        dtype=np.float32,
+    )
+    global_pref = float(np.mean(feature_pref)) if feature_pref.size > 0 else 0.0
+    active_count = np.sum(X_bin, axis=1, dtype=np.float32)
+    active_pref_sum = X_bin @ feature_pref
+    row_pref = np.where(
+        active_count > 0.0,
+        active_pref_sum / np.maximum(active_count, 1.0),
+        global_pref,
+    )
+    centered = row_pref - global_pref
+    weights = 1.0 + float(strength) * centered
+    return np.clip(weights, w_min, w_max).astype(np.float32, copy=False)
+
+
 # ============================================================
 # 2) PARAM HANDLING
 # ============================================================
@@ -91,7 +177,19 @@ def build_hpo_params(main_params: Dict[str, Any], cfg: HPOConfig, n_train_subsam
     # HPO dimensions
     params["alpha"] = cfg.alpha
     params["min_gain_to_split"] = cfg.min_gain_to_split
-    params["min_data_in_leaf"] = max(MIN_LEAF_FLOOR, int(round(cfg.min_leaf_frac * n_train_subsample)))
+    min_leaf_from_frac = int(round(cfg.min_leaf_frac * n_train_subsample))
+    max_depth = int(main_params.get("max_depth", 6))
+    num_leaves = int(main_params.get("num_leaves", 64))
+    depth_leaf_budget = (
+        2 ** max(max_depth, 1) if max_depth > 0 else num_leaves
+    )
+    effective_leaf_budget = max(1, min(num_leaves, depth_leaf_budget))
+    depth_aware_floor = int(np.ceil(n_train_subsample / (effective_leaf_budget * 8.0)))
+    params["min_data_in_leaf"] = max(
+        MIN_LEAF_FLOOR,
+        min_leaf_from_frac,
+        depth_aware_floor,
+    )
 
     # Ensure objective/metric remain consistent
     params["objective"] = "quantile"
@@ -137,8 +235,11 @@ def train_lgbm_quantile(
     X_val: np.ndarray,
     y_val: np.ndarray,
     params: Dict[str, Any],
+    train_weight: Optional[np.ndarray] = None,
 ) -> lgb.Booster:
-    lgb_train = lgb.Dataset(X_train, label=y_train, free_raw_data=True)
+    lgb_train = lgb.Dataset(
+        X_train, label=y_train, weight=train_weight, free_raw_data=True
+    )
     lgb_val = lgb.Dataset(X_val, label=y_val, reference=lgb_train, free_raw_data=True)
 
     booster = lgb.train(
@@ -265,6 +366,19 @@ def score_rule_matrix_vectorized(
     diff_in_means_keep = diff_in_means[keep]
     sortino_keep = sortino[keep]
 
+    support_weights = supports_keep.copy()
+    support_w_sum = float(support_weights.sum()) + 1e-12
+    outside_support_mask = (supports_keep < support_min) | (supports_keep > support_max)
+    outside_support_weight = float(
+        np.dot(outside_support_mask.astype(np.float64), support_weights) / support_w_sum
+    )
+    if outside_support_weight > MAX_OUTSIDE_SUPPORT_WEIGHT:
+        return -np.inf, {
+            "reason": "too_many_rules_outside_support_band",
+            "outside_support_weight": outside_support_weight,
+            "n_kept_rules": int(keep.sum()),
+        }
+
     union_mask = M_keep.any(axis=1)
     total_support = float(union_mask.mean())
 
@@ -282,8 +396,8 @@ def score_rule_matrix_vectorized(
             "n_kept_rules": int(keep.sum()),
         }
 
-    w = supports_keep
-    w_sum = float(w.sum()) + 1e-12
+    w = support_weights
+    w_sum = support_w_sum
     weighted_incremental = float(np.dot(incremental_keep, w) / w_sum)
 
     # Clip diff_in_means so we don't multiply by negatives either,
@@ -292,10 +406,25 @@ def score_rule_matrix_vectorized(
     weighted_sortino = max(1e-12, float(np.dot(sortino_keep, w) / w_sum))
 
     support_penalty = 1.0 - abs(total_support - target_support)
-    score = weighted_incremental * weighted_diff_in_means * weighted_sortino * support_penalty
+    support_quality = _support_quality_score(
+        supports_keep,
+        w,
+        target_support=0.125,
+        preferred_min=PREFERRED_SUPPORT_MIN,
+        preferred_max=PREFERRED_SUPPORT_MAX,
+    )
+    score = (
+        weighted_incremental
+        * weighted_diff_in_means
+        * weighted_sortino
+        * max(support_penalty, 1e-6)
+        * max(support_quality, 1e-6)
+    )
 
     diagnostics = {
         "support": total_support,
+        "outside_support_weight": outside_support_weight,
+        "support_quality": support_quality,
         "weighted_incremental": weighted_incremental,
         "weighted_diff_in_means": weighted_diff_in_means,
         "weighted_sortino": weighted_sortino,
@@ -320,7 +449,10 @@ def evaluate_config(
 ) -> EvalResult:
     params = build_hpo_params(main_params, cfg, n_train_subsample=len(X_train))
 
-    model = train_lgbm_quantile(X_train, y_train, X_val, y_val, params)
+    train_weight = make_support_preference_weights(X_train)
+    model = train_lgbm_quantile(
+        X_train, y_train, X_val, y_val, params, train_weight=train_weight
+    )
 
     rule_matrix = build_candidate_rule_matrix(model, X_val)
     score, d = score_rule_matrix_vectorized(

@@ -1,5 +1,5 @@
 {
-  "data_root": "data",
+  "data_root": "/Users/remyroche/Documents/Ares/data",
   "reports_root": "reports",
   "hf_data_dir": "15m_ohlcv",
   "use_perps": false,
@@ -2758,7 +2758,7 @@
   "exit_limit_offset_adaptive": true,
   "verbose_risk_logging": false,
   "FEATURE_SELECTION_KEYS": [],
-  "output_dir": "production_lgbm_outputs",
+  "output_dir": "./production_lgbm_outputs",
   "preset": "production",
   "sliceplanner_outer_n_folds": 8,
   "sliceplanner_warmup_days": 90,
@@ -2777,13 +2777,15 @@
   "min_tree_discoveries": 2,
   "min_presence_freq": 0.4,
   "min_sign_consistency": 0.75,
+  "support_min_pct": 0.05,
+  "support_max_pct": 0.2,
   "objective_support_min_pct": 0.05,
-  "objective_support_target_low_pct": 0.075,
-  "objective_support_target_high_pct": 0.125,
-  "objective_support_max_pct": 0.15,
+  "objective_support_target_low_pct": 0.08,
+  "objective_support_target_high_pct": 0.12,
+  "objective_support_max_pct": 0.2,
   "objective_support_edge_floor": 0.2,
   "prune_base_hurdle": 0.0001,
-  "prune_target_support_pct": 0.125,
+  "prune_target_support_pct": 0.1,
   "prune_support_exp": 0.5,
   "min_context_support_pct": 0.01,
   "min_context_presence_freq": 0.5,
@@ -2803,7 +2805,5 @@
     "6": 0.1
   },
   "n_folds": 5,
-  "pairwise_top_n": 20,
-  "boolean_only": true,
-  "use_dynamic_hpo": true
+  "pairwise_top_n": 20
 }

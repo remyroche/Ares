@@ -24,9 +24,149 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.utils import tprint
+
 
 # Constants
 TRIAD_TARGET_NAMES: List[str] = ["target_eff", "target_ela", "target_vame"]
+
+
+def _per_symbol_shift(series: pd.Series, symbol: pd.Series, periods: int) -> pd.Series:
+    """
+    Apply shift operation per symbol to avoid cross-symbol data leakage.
+    
+    Parameters
+    ----------
+    series : pd.Series
+        Series to shift
+    symbol : pd.Series
+        Symbol column for grouping
+    periods : int
+        Number of periods to shift (negative for forward shift)
+    
+    Returns
+    -------
+    pd.Series
+        Shifted series with NaN at symbol boundaries
+    """
+    result = pd.Series(np.nan, index=series.index, dtype=series.dtype)
+    for _, idx in symbol.groupby(symbol).groups.items():
+        result.iloc[idx] = series.iloc[idx].shift(periods)
+    return result
+
+
+def _per_symbol_rolling_apply(
+    series: pd.Series,
+    symbol: pd.Series,
+    window: int,
+    func,
+    shift_periods: int = 0,
+    min_periods: int = 1,
+) -> pd.Series:
+    """
+    Apply rolling operation per symbol, then optionally shift.
+    
+    Parameters
+    ----------
+    series : pd.Series
+        Series to apply rolling operation to
+    symbol : pd.Series
+        Symbol column for grouping
+    window : int
+        Rolling window size
+    func : callable
+        Function to apply (e.g., .max(), .min(), .sum())
+    shift_periods : int
+        Periods to shift after rolling (negative for forward shift)
+    min_periods : int
+        Minimum periods required for rolling calculation
+    
+    Returns
+    -------
+    pd.Series
+        Result with NaN at symbol boundaries and where insufficient data
+    """
+    result = pd.Series(np.nan, index=series.index, dtype=np.float64)
+    for _, idx in symbol.groupby(symbol).groups.items():
+        idx_arr = np.asarray(idx)
+        rolled = series.iloc[idx_arr].rolling(window, min_periods=min_periods)
+        applied = func(rolled)
+        if shift_periods != 0:
+            applied = applied.shift(shift_periods)
+        result.iloc[idx_arr] = applied
+    return result
+
+
+def _per_symbol_rolling_argmax(
+    series: pd.Series,
+    symbol: pd.Series,
+    window: int,
+    shift_periods: int = 0,
+) -> pd.Series:
+    """
+    Compute rolling argmax per symbol.
+    
+    Parameters
+    ----------
+    series : pd.Series
+        Series to compute argmax on
+    symbol : pd.Series
+        Symbol column for grouping
+    window : int
+        Rolling window size
+    shift_periods : int
+        Periods to shift after rolling (negative for forward shift)
+    
+    Returns
+    -------
+    pd.Series
+        Argmax values (relative index within window)
+    """
+    result = pd.Series(np.nan, index=series.index, dtype=np.float64)
+    for _, idx in symbol.groupby(symbol).groups.items():
+        idx_arr = np.asarray(idx)
+        rolled = series.iloc[idx_arr].rolling(window, min_periods=1)
+        applied = rolled.apply(np.argmax, raw=True)
+        if shift_periods != 0:
+            applied = applied.shift(shift_periods)
+        result.iloc[idx_arr] = applied
+    return result
+
+
+def _per_symbol_rolling_argmin(
+    series: pd.Series,
+    symbol: pd.Series,
+    window: int,
+    shift_periods: int = 0,
+) -> pd.Series:
+    """
+    Compute rolling argmin per symbol.
+    
+    Parameters
+    ----------
+    series : pd.Series
+        Series to compute argmin on
+    symbol : pd.Series
+        Symbol column for grouping
+    window : int
+        Rolling window size
+    shift_periods : int
+        Periods to shift after rolling (negative for forward shift)
+    
+    Returns
+    -------
+    pd.Series
+        Argmin values (relative index within window)
+    """
+    result = pd.Series(np.nan, index=series.index, dtype=np.float64)
+    for _, idx in symbol.groupby(symbol).groups.items():
+        idx_arr = np.asarray(idx)
+        rolled = series.iloc[idx_arr].rolling(window, min_periods=1)
+        applied = rolled.apply(np.argmin, raw=True)
+        if shift_periods != 0:
+            applied = applied.shift(shift_periods)
+        result.iloc[idx_arr] = applied
+    return result
 
 
 def sigmoid(x: np.ndarray | float) -> np.ndarray | float:
@@ -73,6 +213,39 @@ def rolling_percentile_rank(
     return series.rolling(window, min_periods=min_periods).rank(pct=True)
 
 
+def _per_symbol_rolling_percentile_rank(
+    series: pd.Series,
+    symbol: pd.Series,
+    window: int,
+    min_periods: int = 100,
+) -> pd.Series:
+    """Compute strictly backward-looking rolling percentile rank per symbol."""
+    return symbol.groupby(symbol, sort=False).transform(
+        lambda sym: rolling_percentile_rank(
+            series.loc[sym.index], window=window, min_periods=min_periods
+        )
+    )
+
+
+def _log_target_diagnostics(df: pd.DataFrame, target_name: str) -> None:
+    """Emit compact diagnostics for a computed target column."""
+    values = df[target_name].to_numpy(dtype=np.float64)
+    finite = values[np.isfinite(values)]
+    valid_count = int(finite.size)
+    total_count = int(values.size)
+    valid_pct = 100.0 * valid_count / max(total_count, 1)
+    if valid_count == 0:
+        tprint(
+            f"{target_name}: valid=0/{total_count} (0.0%) | mean=nan std=nan min=nan max=nan"
+        )
+        return
+    tprint(
+        f"{target_name}: valid={valid_count}/{total_count} ({valid_pct:.2f}%) | "
+        f"mean={float(finite.mean()):.6f} std={float(finite.std()):.6f} "
+        f"min={float(finite.min()):.6f} max={float(finite.max()):.6f}"
+    )
+
+
 def harmonic_mean(a: np.ndarray | float, b: np.ndarray | float) -> np.ndarray | float:
     """
     Compute harmonic mean of two values/arrays.
@@ -92,12 +265,233 @@ def harmonic_mean(a: np.ndarray | float, b: np.ndarray | float) -> np.ndarray | 
     return (2 * a * b) / (a + b + 1e-9)
 
 
+def _rescale_short_horizon_efficiency(
+    efficiency: pd.Series, horizon: int
+) -> pd.Series:
+    """
+    Compress EFF on very short horizons where raw path efficiency is too generous.
+
+    The raw `final_disp / path_traveled` ratio tends to be structurally high on
+    3-bar windows. We keep longer horizons unchanged and apply a smooth power
+    compression only when `horizon < 10`.
+    """
+    clipped = efficiency.clip(0.0, 1.0).astype(np.float64)
+    if horizon >= 10:
+        return clipped
+    gamma = 1.0 + 0.75 * ((10.0 - float(max(horizon, 1))) / 9.0)
+    return clipped.pow(gamma)
+
+
+def tail_weighted_geometric_mean(
+    a: np.ndarray | float,
+    b: np.ndarray | float,
+    tail_boost: float = 1.15,
+    center: float = 0.5,
+) -> np.ndarray | float:
+    """
+    Compute geometric mean with gentle tail boost for selective regime discovery.
+
+    Amplifies extreme values (near 0 or 1) while compressing middle values.
+    This makes SELECTIVE regimes score higher than broad regimes.
+
+    Parameters
+    ----------
+    a : np.ndarray or float
+        First value(s) in [0, 1]
+    b : np.ndarray or float
+        Second value(s) in [0, 1]
+    tail_boost : float
+        Amplification factor for tails (default 1.15 = gentle 15% boost)
+        - 1.0 = no boost (standard geometric mean)
+        - 1.15 = gentle boost (recommended)
+        - 1.5 = moderate boost
+        - 2.0 = aggressive boost
+    center : float
+        Center point around which to apply boost (default 0.5)
+
+    Returns
+    -------
+    np.ndarray or float
+        Tail-weighted geometric mean in [0, 1]
+    """
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+
+    a_clipped = np.clip(a, 1e-9, 1.0)
+    b_clipped = np.clip(b, 1e-9, 1.0)
+    geometric = np.sqrt(a_clipped * b_clipped)
+    distance = np.abs(geometric - center)
+    boost_factor = 1.0 + (tail_boost - 1.0) * (distance / center)
+    boosted = geometric * boost_factor
+
+    result = np.where(
+        geometric >= center,
+        np.clip(boosted, center, 1.0),
+        np.clip(boosted, 0.0, center),
+    )
+    return result
+
+
+def compute_rolling_surprisal(
+    target_values: np.ndarray,
+    lookback: int = 500,
+    min_samples: int = 50,
+    eps: float = 1e-9,
+    log_base: str = "bits",
+    two_sided: bool = True,
+    smooth_window: int | None = None,
+) -> np.ndarray:
+    """
+    Compute rolling empirical surprisal of target values.
+
+    Higher surprisal means the current value is rarer under recent history.
+    """
+    x = np.asarray(target_values, dtype=np.float64)
+    n = len(x)
+    surprisal = np.full(n, np.nan, dtype=np.float64)
+
+    if lookback <= 0:
+        raise ValueError("lookback must be > 0")
+    if min_samples <= 0:
+        raise ValueError("min_samples must be > 0")
+    if eps <= 0:
+        raise ValueError("eps must be > 0")
+    if log_base not in {"bits", "nats"}:
+        raise ValueError("log_base must be either 'bits' or 'nats'")
+
+    log_fn = np.log2 if log_base == "bits" else np.log
+
+    for i in range(n):
+        current = x[i]
+        if np.isnan(current):
+            continue
+
+        start = max(0, i - lookback)
+        window = x[start:i]
+        valid_window = window[np.isfinite(window)]
+
+        if len(valid_window) < min_samples:
+            continue
+
+        sorted_window = np.sort(valid_window)
+        p = np.searchsorted(sorted_window, current, side="right") / len(sorted_window)
+        p = float(np.clip(p, eps, 1.0 - eps))
+
+        tail_prob = min(p, 1.0 - p)
+        if two_sided:
+            tail_prob *= 2.0
+        tail_prob = float(np.clip(tail_prob, eps, 1.0))
+        surprisal[i] = -log_fn(tail_prob)
+
+    if smooth_window is not None and smooth_window > 1:
+        surprisal = (
+            pd.Series(surprisal)
+            .rolling(window=smooth_window, min_periods=1)
+            .mean()
+            .to_numpy(dtype=np.float64)
+        )
+
+    return surprisal
+
+
+def scale_surprisal(
+    surprisal: np.ndarray, reference_bits: float = 3.0, clip: bool = True
+) -> np.ndarray:
+    """Convert surprisal to a bounded [0, 1] multiplier."""
+    if reference_bits <= 0:
+        raise ValueError("reference_bits must be > 0")
+    out = np.asarray(surprisal, dtype=np.float64) / reference_bits
+    if clip:
+        out = np.clip(out, 0.0, 1.0)
+    return out
+
+
+def apply_surprisal_to_targets(
+    df: pd.DataFrame,
+    target_cols: list[str],
+    symbol_col: str = "symbol",
+    lookback: int = 500,
+    min_samples: int = 50,
+    eps: float = 1e-9,
+    log_base: str = "bits",
+    two_sided: bool = True,
+    smooth_window: int | None = 5,
+    feature_suffix: str = "_surprisal",
+    blend_weight: float = 0.2,
+    reference_bits: float = 3.0,
+) -> pd.DataFrame:
+    """
+    Add surprisal features and apply a weak multiplicative surprisal modulation.
+
+    The surprisal term is first mapped onto multiplier scale around 1.0:
+        surprisal_multiplier = 1.0 + (scaled_surprisal - 0.5)
+
+    Then each target is updated as:
+        target *= (1 - blend_weight) * 1.0 + blend_weight * surprisal_multiplier
+    """
+    if not 0.0 <= blend_weight <= 1.0:
+        raise ValueError("blend_weight must be in [0, 1]")
+
+    out = df.copy()
+
+    for col in target_cols:
+        if col not in out.columns:
+            raise KeyError(f"Missing target column: {col}")
+
+        surprisal = np.full(len(out), np.nan, dtype=np.float64)
+        if symbol_col in out.columns:
+            grouped = out.groupby(symbol_col, sort=False).groups
+            for _, idx in grouped.items():
+                idx_arr = np.asarray(idx, dtype=np.int64)
+                values = out.iloc[idx_arr][col].to_numpy(dtype=np.float64)
+                surprisal[idx_arr] = compute_rolling_surprisal(
+                    values,
+                    lookback=lookback,
+                    min_samples=min_samples,
+                    eps=eps,
+                    log_base=log_base,
+                    two_sided=two_sided,
+                    smooth_window=smooth_window,
+                )
+        else:
+            surprisal = compute_rolling_surprisal(
+                out[col].to_numpy(dtype=np.float64),
+                lookback=lookback,
+                min_samples=min_samples,
+                eps=eps,
+                log_base=log_base,
+                two_sided=two_sided,
+                smooth_window=smooth_window,
+            )
+
+        out[f"{col}{feature_suffix}"] = surprisal.astype(np.float32)
+        scaled = scale_surprisal(surprisal, reference_bits=reference_bits, clip=True)
+        scaled = np.nan_to_num(scaled, nan=0.0)
+        base = out[col].to_numpy(dtype=np.float64)
+        surprisal_multiplier = 1.0 + (scaled - 0.5)
+        weak_multiplier = ((1.0 - blend_weight) * 1.0) + (
+            blend_weight * surprisal_multiplier
+        )
+        out[col] = np.clip(base * weak_multiplier, 0.0, 1.0).astype(np.float32)
+
+    return out
+
+
 def get_bounded_triad(
     df: pd.DataFrame,
     n: int = 24,
     percentile_lookback: int = 2000,
     lookback_vol_baseline: int = 100,
     min_history_percentile: int = 100,
+    use_tail_weighting: bool = True,
+    tail_boost: float = 1.15,
+    use_surprisal_selectivity: bool = True,
+    surprisal_lookback: int = 500,
+    surprisal_min_samples: int = 50,
+    surprisal_eps: float = 1e-9,
+    surprisal_smooth_window: int | None = 5,
+    surprisal_reference_bits: float = 3.0,
+    surprisal_blend_weight: float = 0.2,
 ) -> pd.DataFrame:
     """
     Compute bounded triad targets for regime mining.
@@ -114,6 +508,27 @@ def get_bounded_triad(
         Rolling window for volume baseline (default 100)
     min_history_percentile : int
         Minimum history required before yielding valid percentile (default 100)
+    use_tail_weighting : bool
+        If True, use tail-weighted geometric mean for target combination.
+        If False, use standard harmonic mean (default True)
+    tail_boost : float
+        Tail amplification factor (default 1.15 = gentle 15% boost)
+        Only used when use_tail_weighting=True
+    use_surprisal_selectivity : bool
+        If True, add rolling surprisal features and apply a weak blended multiplier
+        to the triad targets (default True)
+    surprisal_lookback : int
+        Rolling lookback used for surprisal computation (default 500)
+    surprisal_min_samples : int
+        Minimum historical samples required before surprisal is emitted (default 50)
+    surprisal_eps : float
+        Numerical stability constant for surprisal computation
+    surprisal_smooth_window : int | None
+        Optional trailing smoothing window applied to surprisal
+    surprisal_reference_bits : float
+        Scaling constant used to convert surprisal into a [0, 1] multiplier
+    surprisal_blend_weight : float
+        Weak target blending weight for the surprisal multiplier
 
     Returns
     -------
@@ -127,11 +542,16 @@ def get_bounded_triad(
     - Do NOT add a 4th target.
     - Targets should remain independent continuous regressands in [0, 1].
     """
-    # Forward-looking price metrics
-    fwd_close = df["close"].shift(-n)
+    if "symbol" not in df.columns:
+        raise ValueError("get_bounded_triad requires a 'symbol' column for per-symbol causality")
 
-    fwd_high_max = df["high"].rolling(n).max().shift(-n)
-    fwd_low_min = df["low"].rolling(n).min().shift(-n)
+    grouped = df.groupby("symbol", sort=False)
+
+    # Forward-looking price metrics
+    fwd_close = grouped["close"].transform(lambda x: x.shift(-n))
+
+    fwd_high_max = grouped["high"].transform(lambda x: x.rolling(n).max().shift(-n))
+    fwd_low_min = grouped["low"].transform(lambda x: x.rolling(n).min().shift(-n))
 
     # Excursion calculations
     up_exc = fwd_high_max - df["close"]
@@ -141,8 +561,12 @@ def get_bounded_triad(
     # Finding the index of the max and min values within the forward window.
     # Note: argmax/argmin return the relative index (0 to n-1)
     # NaN propagation handled implicitly by pandas.
-    fwd_high_argmax = df["high"].rolling(n).apply(np.argmax, raw=True).shift(-n)
-    fwd_low_argmin = df["low"].rolling(n).apply(np.argmin, raw=True).shift(-n)
+    fwd_high_argmax = grouped["high"].transform(
+        lambda x: x.rolling(n).apply(np.argmax, raw=True).shift(-n)
+    )
+    fwd_low_argmin = grouped["low"].transform(
+        lambda x: x.rolling(n).apply(np.argmin, raw=True).shift(-n)
+    )
 
     # The max absolute excursion could be up or down
     is_up_max = up_exc >= down_exc
@@ -159,31 +583,34 @@ def get_bounded_triad(
     final_disp = (fwd_close - df["close"]).abs()
 
     # 1) Trend Efficiency
-    path_traveled = (
-        df["close"]
-        .diff()
-        .abs()
-        .rolling(n)
-        .sum()
-        .shift(-n)
+    path_traveled = grouped["close"].transform(
+        lambda x: x.diff().abs().rolling(n).sum().shift(-n)
     )
 
-    s_eff = final_disp / (path_traveled + 1e-9)
+    s_eff = _rescale_short_horizon_efficiency(
+        final_disp / (path_traveled + 1e-9), n
+    )
 
     # IMPORTANT: use backward persistence, not future-stacked persistence
-    p_eff = s_eff.shift(1).rolling(n).mean()
+    p_eff = (
+        s_eff.groupby(df["symbol"], sort=False)
+        .transform(lambda x: x.shift(1).rolling(n).mean())
+    )
 
+    # Keep EFF harmonic-only. Tail weighting made h=3 materially less selective.
     df["target_eff"] = harmonic_mean(
         s_eff.clip(0, 1),
         p_eff.clip(0, 1)
     )
+    _log_target_diagnostics(df, "target_eff")
 
     # 2) Elasticity
     ela_excursion_normalized = max_excursion / (df["atr"] + 1e-9)
-    s_ela = rolling_percentile_rank(
+    s_ela = _per_symbol_rolling_percentile_rank(
         ela_excursion_normalized,
+        df["symbol"],
         window=percentile_lookback,
-        min_periods=min_history_percentile
+        min_periods=min_history_percentile,
     )
     s_ela = s_ela.fillna(0.5)
 
@@ -191,10 +618,23 @@ def get_bounded_triad(
         final_disp / (max_excursion + 1e-9)
     )
 
-    df["target_ela"] = harmonic_mean(
-        harmonic_mean(s_ela.clip(0, 1), p_ela.clip(0, 1)),
-        np.clip(time_to_extreme_score, 0, 1)
-    )
+    if use_tail_weighting:
+        ela_intermediate = tail_weighted_geometric_mean(
+            s_ela.clip(0, 1),
+            p_ela.clip(0, 1),
+            tail_boost=tail_boost,
+        )
+        df["target_ela"] = tail_weighted_geometric_mean(
+            ela_intermediate,
+            np.clip(time_to_extreme_score, 0, 1),
+            tail_boost=tail_boost,
+        )
+    else:
+        df["target_ela"] = harmonic_mean(
+            harmonic_mean(s_ela.clip(0, 1), p_ela.clip(0, 1)),
+            np.clip(time_to_extreme_score, 0, 1)
+        )
+    _log_target_diagnostics(df, "target_ela")
 
     # 3) Expansion Sustainability
     # IMPORTANT: use dominant excursion direction, not final close sign
@@ -209,8 +649,11 @@ def get_bounded_triad(
     vol_ratio = max_excursion / (df["atr"] + 1e-9)
 
     # Convert vol_ratio to a [0, 1] scale using a backward-looking empirical percentile rank
-    s_vame = rolling_percentile_rank(
-        vol_ratio, window=percentile_lookback, min_periods=min_history_percentile
+    s_vame = _per_symbol_rolling_percentile_rank(
+        vol_ratio,
+        df["symbol"],
+        window=percentile_lookback,
+        min_periods=min_history_percentile,
     )
     s_vame = s_vame.fillna(0.5)  # safe default before enough history
 
@@ -220,27 +663,70 @@ def get_bounded_triad(
 
     # Participation Confirmation
     # Baseline volume over the past window
-    vol_baseline = df["volume"].rolling(lookback_vol_baseline, min_periods=min_history_percentile).median()
+    vol_baseline = grouped["volume"].transform(
+        lambda x: x.rolling(
+            lookback_vol_baseline, min_periods=min_history_percentile
+        ).median()
+    )
     # Expected volume over the forward horizon
     expected_vol = vol_baseline * n
     # Actual volume sum over forward horizon
-    fwd_vol_sum = df["volume"].rolling(n).sum().shift(-n)
+    fwd_vol_sum = grouped["volume"].transform(lambda x: x.rolling(n).sum().shift(-n))
 
     participation_ratio = fwd_vol_sum / (expected_vol + 1e-9)
-    participation_confirmation = rolling_percentile_rank(
-        participation_ratio, window=percentile_lookback, min_periods=min_history_percentile
+    participation_confirmation = _per_symbol_rolling_percentile_rank(
+        participation_ratio,
+        df["symbol"],
+        window=percentile_lookback,
+        min_periods=min_history_percentile,
     )
     participation_confirmation = participation_confirmation.fillna(0.5)
 
     # In VAME, the relevant extreme is the max excursion in the dominant direction,
     # which is already what is_up_max defines.
     # Therefore, time_to_extreme_score correctly captures the time to the VAME extreme.
-    vame_combined = harmonic_mean(
-        harmonic_mean(s_vame.clip(0, 1), p_vame.clip(0, 1)),
-        harmonic_mean(participation_confirmation.clip(0, 1), np.clip(time_to_extreme_score, 0, 1))
-    )
+    if use_tail_weighting:
+        vame_intermediate_1 = tail_weighted_geometric_mean(
+            s_vame.clip(0, 1),
+            p_vame.clip(0, 1),
+            tail_boost=tail_boost,
+        )
+        vame_intermediate_2 = tail_weighted_geometric_mean(
+            participation_confirmation.clip(0, 1),
+            np.clip(time_to_extreme_score, 0, 1),
+            tail_boost=tail_boost,
+        )
+        vame_combined = tail_weighted_geometric_mean(
+            vame_intermediate_1,
+            vame_intermediate_2,
+            tail_boost=tail_boost,
+        )
+    else:
+        vame_combined = harmonic_mean(
+            harmonic_mean(s_vame.clip(0, 1), p_vame.clip(0, 1)),
+            harmonic_mean(
+                participation_confirmation.clip(0, 1),
+                np.clip(time_to_extreme_score, 0, 1),
+            ),
+        )
 
     df["target_vame"] = np.nan_to_num(vame_combined, nan=0.0)
+    _log_target_diagnostics(df, "target_vame")
+
+    if use_surprisal_selectivity:
+        df = apply_surprisal_to_targets(
+            df=df,
+            target_cols=TRIAD_TARGET_NAMES,
+            symbol_col="symbol",
+            lookback=surprisal_lookback,
+            min_samples=surprisal_min_samples,
+            eps=surprisal_eps,
+            log_base="bits",
+            two_sided=True,
+            smooth_window=surprisal_smooth_window,
+            reference_bits=surprisal_reference_bits,
+            blend_weight=surprisal_blend_weight,
+        )
 
     return df
 
@@ -252,6 +738,15 @@ def compute_triad_targets_for_horizons(
     percentile_lookback: int = 2000,
     lookback_vol_baseline: int = 100,
     min_history_percentile: int = 100,
+    use_tail_weighting: bool = True,
+    tail_boost: float = 1.15,
+    use_surprisal_selectivity: bool = True,
+    surprisal_lookback: int = 500,
+    surprisal_min_samples: int = 50,
+    surprisal_eps: float = 1e-9,
+    surprisal_smooth_window: int | None = 5,
+    surprisal_reference_bits: float = 3.0,
+    surprisal_blend_weight: float = 0.2,
 ) -> Dict[int, pd.DataFrame]:
     """
     Compute triad targets for multiple horizons.
@@ -264,6 +759,24 @@ def compute_triad_targets_for_horizons(
         List of horizon values (in bars) to compute targets for
     atr_col : str
         Name of the ATR column (default 'atr')
+    use_tail_weighting : bool
+        If True, use tail-weighted geometric mean (default True)
+    tail_boost : float
+        Tail amplification factor (default 1.15)
+    use_surprisal_selectivity : bool
+        If True, add surprisal companion features and apply weak blended weighting
+    surprisal_lookback : int
+        Rolling lookback used for surprisal computation
+    surprisal_min_samples : int
+        Minimum historical samples required before surprisal is emitted
+    surprisal_eps : float
+        Numerical stability constant for surprisal computation
+    surprisal_smooth_window : int | None
+        Optional trailing smoothing window applied to surprisal
+    surprisal_reference_bits : float
+        Scaling constant used to convert surprisal into a [0, 1] multiplier
+    surprisal_blend_weight : float
+        Weak target blending weight for the surprisal multiplier
 
     Returns
     -------
@@ -291,14 +804,27 @@ def compute_triad_targets_for_horizons(
             percentile_lookback=percentile_lookback,
             lookback_vol_baseline=lookback_vol_baseline,
             min_history_percentile=min_history_percentile,
+            use_tail_weighting=use_tail_weighting,
+            tail_boost=tail_boost,
+            use_surprisal_selectivity=use_surprisal_selectivity,
+            surprisal_lookback=surprisal_lookback,
+            surprisal_min_samples=surprisal_min_samples,
+            surprisal_eps=surprisal_eps,
+            surprisal_smooth_window=surprisal_smooth_window,
+            surprisal_reference_bits=surprisal_reference_bits,
+            surprisal_blend_weight=surprisal_blend_weight,
         )
 
         # Rename target columns with horizon suffix
         rename_map = {
             "target_eff": f"target_eff_{horizon}",
             "target_ela": f"target_ela_{horizon}",
-            "target_vame": f"target_vame_{horizon}"
+            "target_vame": f"target_vame_{horizon}",
+            "target_eff_surprisal": f"target_eff_surprisal_{horizon}",
+            "target_ela_surprisal": f"target_ela_surprisal_{horizon}",
+            "target_vame_surprisal": f"target_vame_surprisal_{horizon}",
         }
+        rename_map = {k: v for k, v in rename_map.items() if k in df_with_targets.columns}
         df_with_targets = df_with_targets.rename(columns=rename_map)
 
         # Store only the target columns plus original data

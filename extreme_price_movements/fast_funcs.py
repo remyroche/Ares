@@ -2083,7 +2083,7 @@ def numba_frac_diff(df, d, window, thres=1e-5):
     return res_df
 
 
-@jit(nopython=True, nogil=True, cache=True, fastmath=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
     """
     True O(n) rolling z-score using incremental mean/variance updates.
@@ -2205,7 +2205,7 @@ def _numba_causal_clip_with_ffill_1d(x, lo, hi):
     return out
 
 
-@jit(nopython=True, parallel=True, cache=True, fastmath=True)
+@jit(nopython=True, parallel=True, cache=True)
 def _numba_rolling_zscore_parallel(mat, window, eps=1e-12):
     n_rows, n_cols = mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)
@@ -2899,14 +2899,14 @@ def _numba_adx_1d(high, low, close, n):
     return adx, di_plus, di_minus
 
 
-@jit(nopython=True, parallel=True, cache=True)
+@jit(nopython=True, cache=True)
 def _numba_adx_parallel(h_mat, l_mat, c_mat, n):
     n_rows, n_cols = h_mat.shape
     out_adx = np.empty((n_rows, n_cols), dtype=np.float32)
     out_dip = np.empty((n_rows, n_cols), dtype=np.float32)
     out_dim = np.empty((n_rows, n_cols), dtype=np.float32)
 
-    for j in prange(n_cols):
+    for j in range(n_cols):
         adx, dip, dim = _numba_adx_1d(h_mat[:, j], l_mat[:, j], c_mat[:, j], n)
         out_adx[:, j] = adx
         out_dip[:, j] = dip
@@ -2925,14 +2925,53 @@ def numba_adx(high_df, low_df, close_df, n):
     if isinstance(low_df, pd.Series):
         low_df = low_df.to_frame()
 
+    idx = close_df.index
+    cols = close_df.columns
+
     h_mat = high_df.to_numpy(dtype=np.float32, copy=False)
     l_mat = low_df.to_numpy(dtype=np.float32, copy=False)
     c_mat = close_df.to_numpy(dtype=np.float32, copy=False)
 
-    adx, dip, dim = _numba_adx_parallel(h_mat, l_mat, c_mat, n)
+    adx = np.full((len(idx), len(cols)), np.nan, dtype=np.float32)
+    dip = np.full((len(idx), len(cols)), np.nan, dtype=np.float32)
+    dim = np.full((len(idx), len(cols)), np.nan, dtype=np.float32)
+    for j in range(len(cols)):
+        h_col = h_mat[:, j]
+        l_col = l_mat[:, j]
+        c_col = c_mat[:, j]
+        valid_mask = (
+            np.isfinite(h_col) & np.isfinite(l_col) & np.isfinite(c_col)
+        )
+        if not valid_mask.any():
+            continue
 
-    idx = close_df.index
-    cols = close_df.columns
+        valid_idx = np.flatnonzero(valid_mask)
+        seg_start = int(valid_idx[0])
+        seg_end = int(valid_idx[-1]) + 1
+        h_seg = h_col[seg_start:seg_end]
+        l_seg = l_col[seg_start:seg_end]
+        c_seg = c_col[seg_start:seg_end]
+        seg_mask = (
+            np.isfinite(h_seg) & np.isfinite(l_seg) & np.isfinite(c_seg)
+        )
+        if not seg_mask.any():
+            continue
+
+        if seg_mask.all():
+            adx_col, dip_col, dim_col = _numba_adx_1d(h_seg, l_seg, c_seg, n)
+            adx[seg_start:seg_end, j] = adx_col
+            dip[seg_start:seg_end, j] = dip_col
+            dim[seg_start:seg_end, j] = dim_col
+            continue
+
+        compact_h = h_seg[seg_mask]
+        compact_l = l_seg[seg_mask]
+        compact_c = c_seg[seg_mask]
+        adx_col, dip_col, dim_col = _numba_adx_1d(compact_h, compact_l, compact_c, n)
+        target_idx = valid_idx[: len(adx_col)]
+        adx[target_idx, j] = adx_col
+        dip[target_idx, j] = dip_col
+        dim[target_idx, j] = dim_col
 
     adx_df = pd.DataFrame(adx, index=idx, columns=cols)
     dip_df = pd.DataFrame(dip, index=idx, columns=cols)

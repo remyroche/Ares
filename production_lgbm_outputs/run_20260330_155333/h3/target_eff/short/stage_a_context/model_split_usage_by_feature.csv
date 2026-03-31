@@ -1,0 +1,10 @@
+feature_name,group,usage_count
+loc_dist_ema50_atr_ts_band25_75,location,5
+reg_prior_volatility_ts_band20_80,regime,5
+reg_prior_volatility_ts_band30_70,regime,5
+reg_prior_volatility_ts_bot50,regime,5
+reg_prior_volatility_ts_top20,regime,5
+reg_prior_volatility_ts_top30,regime,5
+reg_prior_volatility_ts_top40,regime,5
+loc_dist_ema50_atr_ts_top60,location,3
+reg_prior_volatility_ts_band40_60,regime,2

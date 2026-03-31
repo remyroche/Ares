@@ -15,32 +15,13 @@ from extreme_price_movements.utils import tprint
 # Feature set for volatility regime detection (reduced to 9 core features)
 # Organized by concept for GMM clustering
 GAMMA_FEATURE_KEYS = [
-    # 1. Core Volatility Level (absolute)
-    "atr_pct",        # ATR as % - main volatility measure
-    
-    # 2. Volatility Regime (relative to history)  
-    "vol_z",          # Z-score of current vol vs history
-    
-    # 3. Volatility Dynamics (rate of change)
-    "vol_expansion_ratio",  # Recent vs historical vol (expansion signal)
-    
-    # 4. Vol-of-Vol (regime change indicator)
-    "vov_ratio",      # Vol of vol - captures regime transitions
-    
-    # 5. Price Range (intensity)
-    "range_24h_pct",  # 24h high-low range %
-    
-    # 6. Realized Volatility (multiple horizons, keep one)
-    "rv_24h",         # 24h realized vol (most stable)
-    
-    # 7. Jump/Shock Detection
-    "jump_rate_10h",  # Jump frequency - captures spike events
-    
-    # 8. Volatility Compression (mean-reversion signal)
-    "vol_compression", # Compression before expansion
-    
-    # 9. Market Context
-    "skew",           # Return skew - asymmetric volatility
+    "vol_z",
+    "vol_expansion_ratio",
+    "vov_ratio",
+    "range_24h_pct",
+    "rv_24h",
+    "jump_rate_10h",
+    "vol_compression",
 ]
 
 # Volatility regime labels (for semantic meaning)
@@ -85,9 +66,9 @@ class GammaGMM:
         self.gmm.fit(X_scaled)
         
         # Compute mean volatility by regime (for semantic ordering)
-        # We'll use the mean of atr_pct (first feature) within each cluster
-        if "atr_pct" in X.columns:
-            atr_idx = list(X.columns).index("atr_pct")
+        # Prefer rv_24h as the semantic volatility axis.
+        if "rv_24h" in X.columns:
+            atr_idx = list(X.columns).index("rv_24h")
             self.regime_means_ = self.gmm.means_[:, atr_idx]
         else:
             self.regime_means_ = np.mean(X_scaled, axis=1)

@@ -1,0 +1,5 @@
+canonical_key,display_arity,structural_depth,groups_used,regime_families_used
+(*)|(*)|(reg_atr_change_rate_ts_bot50==1),1,1,regime,volatility
+(*)|(loc_dist_ema20_atr_ts_top20==1)|(*),1,1,location,
+(*)|(loc_dist_ema20_atr_ts_bot30==1)|(*),1,1,location,
+(*)|(loc_dist_ema20_atr_ts_bot30==1)|(*),1,1,location,

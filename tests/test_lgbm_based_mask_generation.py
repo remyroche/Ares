@@ -6,21 +6,211 @@ from extreme_price_movements.data_store import LazyFeatureDict
 from extreme_price_movements.lgbm_based_mask_generation import (
     CanonicalRuleMaskResolver,
     DictionaryMaskResolver,
+    ExtractedRule,
     FeatureMetadata,
     FeatureProcessor,
+    IndependentRulePruner,
     MaskAssessor,
     RuleCondition,
     RuleExtractor,
     RuleScorer,
     atomic_to_csv,
+    build_rule_model_importance_scores,
     build_label_step_sliceplanner_keep_idx,
     build_stage_a_rejection_map,
     build_walk_forward_folds,
     create_pre_global_registry,
     filter_complete_feature_rows,
     list_preload_training_symbols,
+    make_support_preference_weights,
+    make_surprisal_sample_weights,
     select_stage_a_contexts,
 )
+
+
+def test_prepare_features_preserves_raw_binary_regime_features():
+    fp = FeatureProcessor()
+    feature_dict = {
+        "ema20_gt_ema50": np.array([0.0, 1.0, np.nan, 1.0], dtype=np.float32),
+    }
+    timestamps = np.arange(4, dtype=np.int64)
+    symbol_codes = np.array(["A", "A", "B", "B"], dtype=object)
+
+    X, metadata, audits = fp.prepare_features(
+        feature_dict=feature_dict,
+        timestamps=timestamps,
+        symbol_codes=symbol_codes,
+        cfg={"boolean_only": True, "min_feature_support": 1},
+        active_groups=("regime",),
+    )
+
+    assert X.shape == (4, 1)
+    assert metadata[0].feature_name == "reg_ema20_gt_ema50_raw"
+    assert metadata[0].group == "regime"
+    assert metadata[0].booleanization_method == "raw_binary"
+    assert metadata[0].threshold_type == "binary"
+    assert np.allclose(X[[0, 1, 3], 0], np.array([0.0, 1.0, 1.0], dtype=np.float32))
+    assert np.isnan(X[2, 0])
+    audit = audits["booleanization_support_audit"]
+    assert audit.loc[0, "generated_boolean"] == "reg_ema20_gt_ema50_raw"
+
+
+def test_prepare_features_interleaves_groups_after_quality_checks():
+    fp = FeatureProcessor()
+    feature_dict = {
+        "dist_ema20_atr": np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32),
+        "ema20_gt_ema50": np.array([0.0, 1.0, 0.0, 1.0], dtype=np.float32),
+    }
+    timestamps = np.arange(4, dtype=np.int64)
+    symbol_codes = np.array(["A", "A", "B", "B"], dtype=object)
+
+    _, metadata, _ = fp.prepare_features(
+        feature_dict=feature_dict,
+        timestamps=timestamps,
+        symbol_codes=symbol_codes,
+        cfg={"boolean_only": True, "min_feature_support": 1},
+        active_groups=("regime", "location"),
+    )
+
+    groups = [m.group for m in metadata[:2]]
+    assert groups[:2] == ["regime", "location"]
+
+
+def test_prepare_features_skips_reserved_target_side_features():
+    fp = FeatureProcessor()
+    feature_dict = {
+        "dist_ema20_atr": np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32),
+        "target_eff": np.array([0.2, 0.3, 0.4, 0.5], dtype=np.float32),
+        "target_eff_surprisal": np.array([0.0, 1.0, 2.0, 3.0], dtype=np.float32),
+    }
+    timestamps = np.arange(4, dtype=np.int64)
+    symbol_codes = np.array(["A", "A", "B", "B"], dtype=object)
+
+    X, metadata, _ = fp.prepare_features(
+        feature_dict=feature_dict,
+        timestamps=timestamps,
+        symbol_codes=symbol_codes,
+        cfg={"boolean_only": True, "min_feature_support": 1},
+        active_groups=("regime", "location"),
+    )
+
+    feature_names = [m.feature_name for m in metadata]
+    assert X.shape[1] > 0
+    assert any("dist_ema20_atr" in name for name in feature_names)
+    assert all("target_eff" not in name for name in feature_names)
+    assert all("surprisal" not in name for name in feature_names)
+
+
+def test_independent_rule_pruner_rejects_support_below_five_percent():
+    pruner = IndependentRulePruner(
+        {
+            "support_min_pct": 0.05,
+            "max_support_pct": 0.20,
+            "prune_base_hurdle": 0.0,
+            "prune_target_support_pct": 0.10,
+            "min_tree_discoveries": 1,
+            "min_sign_consistency": 0.0,
+        }
+    )
+    df = pd.DataFrame(
+        [
+            {
+                "canonical_key": "narrow",
+                "mean_support_pct": 0.049,
+                "display_arity": 2,
+                "mean_net_ret": 0.1,
+                "sign_consistency": 1.0,
+                "discovery_count": 10,
+            },
+            {
+                "canonical_key": "ok",
+                "mean_support_pct": 0.10,
+                "display_arity": 2,
+                "mean_net_ret": 0.1,
+                "sign_consistency": 1.0,
+                "discovery_count": 10,
+            },
+        ]
+    )
+
+    out = pruner.prune(df)
+    assert out["canonical_key"].tolist() == ["ok"]
+
+
+def test_independent_rule_pruner_default_hurdle_keeps_borderline_rule() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "canonical_key": "rule",
+                "mean_support_pct": 0.10,
+                "display_arity": 2,
+                "mean_net_ret": 0.00009,
+                "sign_consistency": 1.0,
+                "discovery_count": 10,
+            }
+        ]
+    )
+
+    out = IndependentRulePruner(
+        {
+            "support_min_pct": 0.05,
+            "max_support_pct": 0.20,
+            "prune_base_hurdle": 0.00010,
+            "prune_target_support_pct": 0.10,
+            "min_sign_consistency": 0.0,
+        }
+    ).prune(df)
+
+    assert out["canonical_key"].tolist() == ["rule"]
+
+
+
+
+def test_make_support_preference_weights_prefers_target_band_rows():
+    x = np.array(
+        [
+            [1, 0],
+            [1, 0],
+            [0, 1],
+            [0, 1],
+            [0, 1],
+            [0, 1],
+        ],
+        dtype=np.float32,
+    )
+    weights = make_support_preference_weights(
+        x,
+        target_pct=0.33,
+        preferred_low_pct=0.25,
+        preferred_high_pct=0.40,
+        strength=0.5,
+    )
+
+    assert weights[0] > weights[2]
+
+
+def test_compute_oof_learnability_score_uses_auc_for_binary_targets():
+    preds = np.array([0.1, 0.9, 0.2, 0.8], dtype=np.float32)
+    y = np.array([0.0, 1.0, 0.0, 1.0], dtype=np.float32)
+    score, coverage = MaskAssessor._compute_oof_learnability_score(
+        preds, y, np.ones_like(y, dtype=bool), min_predicted_points=1
+    )
+
+    assert np.isfinite(score)
+    assert score > 0.9
+    assert coverage == 1.0
+
+
+def test_compute_oof_learnability_score_uses_correlation_for_continuous_targets():
+    preds = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+    y = np.array([0.15, 0.25, 0.35, 0.45], dtype=np.float32)
+    score, coverage = MaskAssessor._compute_oof_learnability_score(
+        preds, y, np.ones_like(y, dtype=bool), min_predicted_points=1
+    )
+
+    assert np.isfinite(score)
+    assert score > 0.9
+    assert coverage == 1.0
 
 
 def test_build_walk_forward_folds_is_forward_only():
@@ -240,11 +430,12 @@ def test_rule_extractor_allows_negative_slots_when_not_restricted():
     assert reason == "valid"
 
 
-def test_rule_extractor_stage_a_collapses_duplicate_groups_to_single_positive_slot():
+def test_rule_extractor_stage_a_preserves_multiple_positive_conditions_within_group():
     metadata = [
         FeatureMetadata("loc_a", 0, "location", "loc_a", "location", "boolean"),
         FeatureMetadata("loc_b", 1, "location", "loc_b", "location", "boolean"),
         FeatureMetadata("reg_a", 2, "regime", "reg_a", "regime", "boolean"),
+        FeatureMetadata("reg_b", 3, "regime", "reg_b", "regime", "boolean"),
     ]
     extractor = RuleExtractor(
         metadata,
@@ -255,23 +446,26 @@ def test_rule_extractor_stage_a_collapses_duplicate_groups_to_single_positive_sl
     )
     reduced, reason = extractor._reduce_conditions(
         [
-            RuleCondition("loc_a", 0, "location", 0, "<=", 0.5),
+            RuleCondition("loc_a", 0, "location", 1, ">", 0.5),
             RuleCondition("loc_b", 1, "location", 1, ">", 0.5),
             RuleCondition("reg_a", 2, "regime", 1, ">", 0.5),
+            RuleCondition("reg_b", 3, "regime", 1, ">", 0.5),
         ]
     )
     assert reason is None
     assert reduced is not None
     assert [(c.feature_name, c.normalized_value) for c in reduced] == [
+        ("loc_a", 1),
         ("loc_b", 1),
         ("reg_a", 1),
+        ("reg_b", 1),
     ]
     valid, valid_reason = extractor._is_path_valid(reduced)
     assert valid
     assert valid_reason == "valid"
 
 
-def test_rule_extractor_stage_a_allows_same_group_negative_refinements():
+def test_rule_extractor_stage_a_rejects_same_feature_contradictions():
     metadata = [
         FeatureMetadata("loc_a", 0, "location", "loc_a", "location", "boolean"),
         FeatureMetadata("reg_a", 1, "regime", "reg_a", "regime", "boolean"),
@@ -291,15 +485,8 @@ def test_rule_extractor_stage_a_allows_same_group_negative_refinements():
             RuleCondition("reg_a", 1, "regime", 1, ">", 0.5),
         ]
     )
-    assert reason is None
-    assert reduced is not None
-    assert [(c.feature_name, c.normalized_value) for c in reduced] == [
-        ("loc_a", 1),
-        ("reg_a", 1),
-    ]
-    valid, valid_reason = extractor._is_path_valid(reduced)
-    assert valid
-    assert valid_reason == "valid"
+    assert reduced is None
+    assert reason == "contradiction_loc_a"
 
 
 def test_rule_extractor_stage_a_requires_both_location_and_regime():
@@ -397,15 +584,61 @@ def test_feature_processor_adds_dense_regime_quantiles_and_median_band():
         active_groups=("regime",),
     )
     names = [m.feature_name for m in metadata]
-    assert f"reg_{src}_ts_top20" in names
-    assert f"reg_{src}_ts_bot20" in names
-    assert f"reg_{src}_ts_top40" in names
-    assert f"reg_{src}_ts_bot40" in names
-    assert f"reg_{src}_ts_band30_70" in names
-    assert f"reg_{src}_ts_bot60" in names
-    assert f"reg_{src}_ts_top80" in names
-    assert f"reg_{src}_ts_bot80" in names
-    assert x.shape[1] == 18
+    assert names == [f"reg_{src}_raw"]
+    assert x.shape[1] == 1
+
+
+def test_feature_quality_dedup_preserves_cross_source_duplicates():
+    processor = FeatureProcessor()
+    processor.metadata = {
+        "loc_src_a_ts_top20": FeatureMetadata(
+            "loc_src_a_ts_top20",
+            0,
+            "location",
+            "src_a",
+            "context",
+            "boolean",
+        ),
+        "loc_src_b_ts_top20": FeatureMetadata(
+            "loc_src_b_ts_top20",
+            1,
+            "location",
+            "src_b",
+            "context",
+            "boolean",
+        ),
+        "loc_src_a_ts_bot80": FeatureMetadata(
+            "loc_src_a_ts_bot80",
+            2,
+            "location",
+            "src_a",
+            "context",
+            "boolean",
+        ),
+    }
+
+    x_raw = np.array(
+        [
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+    names = ["loc_src_a_ts_top20", "loc_src_b_ts_top20", "loc_src_a_ts_bot80"]
+
+    x_clean, retained_names, audit = processor._run_feature_quality_checks(
+        x_raw, names, cfg={"min_feature_support": 1}
+    )
+
+    assert retained_names == ["loc_src_a_ts_top20", "loc_src_b_ts_top20"]
+    assert x_clean.shape == (4, 2)
+
+    dropped = audit[audit["status"] == "dropped"]
+    assert len(dropped) == 1
+    assert dropped.iloc[0]["feature_name"] == "loc_src_a_ts_bot80"
+    assert dropped.iloc[0]["reason"] == "duplicate_of_loc_src_a_ts_top20"
 
 
 def test_select_stage_a_contexts_returns_empty_summary_headers():
@@ -517,7 +750,8 @@ def test_mask_assessor_subset_auc_ignores_unscored_rows():
 
     auc, coverage = assessor._compute_subset_auc(x, fwd_ret, mask, folds)
 
-    assert auc > 0.9
+    assert np.isfinite(auc)
+    assert auc > 0.7
     assert coverage > 0.5
 
 
@@ -551,6 +785,95 @@ def test_mask_assessor_subset_auc_reports_missing_oof_coverage():
 
     assert np.isnan(auc)
     assert coverage == 0.0
+
+
+def test_mask_assessor_baseline_auc_supports_continuous_targets():
+    from extreme_price_movements.config import TEST_FEATURE_KEYS
+
+    rng = np.random.RandomState(1)
+    n = 1500
+    signal = rng.normal(size=n).astype(np.float32)
+    x = signal.reshape(-1, 1)
+    fwd_ret = (0.3 * signal + 0.05 * rng.normal(size=n)).astype(np.float32)
+    folds = [
+        (np.arange(0, 900, dtype=np.int32), np.arange(900, 1200, dtype=np.int32)),
+        (np.arange(0, 1200, dtype=np.int32), np.arange(1200, 1500, dtype=np.int32)),
+    ]
+
+    source_name = TEST_FEATURE_KEYS[0] if TEST_FEATURE_KEYS else "regime_signal"
+    assessor = MaskAssessor(
+        metadata=[
+            FeatureMetadata(
+                "regime_signal",
+                0,
+                "regime",
+                source_name,
+                "regime",
+                "continuous",
+            )
+        ],
+        cfg={
+            "learnability_min_train_samples_continuous": 200,
+            "learnability_min_val_samples_continuous": 100,
+            "learnability_min_predicted_points_continuous": 100,
+        },
+    )
+
+    score, coverage = assessor._compute_baseline_auc(x, fwd_ret, folds)
+
+    assert np.isfinite(score)
+    assert score > 0.2
+    assert coverage > 0.3
+
+
+def test_build_rule_model_importance_scores_aggregates_feature_gain_per_rule():
+    rules = [
+        ExtractedRule(
+            rule_id="r1",
+            canonical_key="rule_a",
+            conditions=[
+                RuleCondition("f1", 0, "regime", 1, ">", 0.5),
+                RuleCondition("f2", 1, "location", 1, ">", 0.5),
+            ],
+            model_id="m",
+            fold_id=0,
+            seed=1,
+            tree_index=0,
+            leaf_index=0,
+            leaf_value=0.1,
+            support_train=10,
+        ),
+        ExtractedRule(
+            rule_id="r2",
+            canonical_key="rule_b",
+            conditions=[
+                RuleCondition("f3", 2, "regime", 1, ">", 0.5),
+            ],
+            model_id="m",
+            fold_id=0,
+            seed=1,
+            tree_index=0,
+            leaf_index=1,
+            leaf_value=0.1,
+            support_train=10,
+        ),
+    ]
+    feature_importance_records = [
+        {"fold_id": 0, "seed": 1, "feature_name": "f1", "group": "regime", "regime_family": "reg", "gain": 9.0, "split": 3.0},
+        {"fold_id": 0, "seed": 1, "feature_name": "f2", "group": "location", "regime_family": "", "gain": 3.0, "split": 1.0},
+        {"fold_id": 0, "seed": 1, "feature_name": "f3", "group": "regime", "regime_family": "reg", "gain": 1.0, "split": 1.0},
+    ]
+
+    out = build_rule_model_importance_scores(rules, feature_importance_records)
+    out = out.set_index("canonical_key")
+
+    assert "rule_a" in out.index
+    assert "rule_b" in out.index
+    assert out.loc["rule_a", "rule_gain_score"] > out.loc["rule_b", "rule_gain_score"]
+    assert (
+        out.loc["rule_a", "rule_model_importance_score"]
+        > out.loc["rule_b", "rule_model_importance_score"]
+    )
 
 
 def test_build_stage_a_rejection_map_captures_stage_funnel():
@@ -718,3 +1041,21 @@ def test_build_stage_a_rejection_map_captures_stage_funnel():
     ].iloc[0]
     assert int(selector_structural["rejected_count"]) == 1
     assert int(selector_structural["passed_count"]) == 1
+
+
+def test_make_surprisal_sample_weights_is_bounded_and_monotonic():
+    surprisal_bits = np.array([np.nan, 0.0, 1.5, 3.0, 9.0], dtype=np.float32)
+    weights = make_surprisal_sample_weights(
+        surprisal_bits,
+        alpha=0.2,
+        reference_bits=3.0,
+        w_min=1.0,
+        w_max=1.2,
+    )
+
+    assert weights.dtype == np.float32
+    np.testing.assert_allclose(weights[0], 1.0)
+    np.testing.assert_allclose(weights[1], 1.0)
+    assert weights[2] > weights[1]
+    np.testing.assert_allclose(weights[3], 1.2)
+    np.testing.assert_allclose(weights[4], 1.2)

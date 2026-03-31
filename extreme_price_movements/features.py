@@ -647,16 +647,33 @@ def add_regime_gates(
         .fillna(0.0)
         .astype(np.float32)
     )
-    df["trend_bin3"] = np.digitize(
-        df["abs_mkt_ret24h_z"].to_numpy(), bins=[-0.5, 0.5]
-    ).astype(np.int8)
+    mkt_vol_mean = ff.numba_rolling_mean(
+        df[["mkt_volume"]], gate_vol_lookback_hours
+    )["mkt_volume"].shift(1)
+    mkt_vol_std = (
+        ff.numba_rolling_std(df[["mkt_volume"]], gate_vol_lookback_hours)["mkt_volume"]
+        .shift(1)
+        .clip(lower=1e-6)
+    )
+    df["mkt_volume_z_24"] = (
+        ((df["mkt_volume"] - mkt_vol_mean) / mkt_vol_std)
+        .clip(-6, 6)
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+    df["regime_trend_score"] = df["abs_mkt_ret24h_z"].astype(np.float32)
+    df["regime_vol_score"] = df["mkt_rv_pct"].astype(np.float32)
+    df["regime_liquidity_score"] = df["mkt_volume_z_24"].astype(np.float32)
 
     float_cols = [
         "mkt_rv_med",
         "mkt_rv_ratio",
         "mkt_rv_pct",
         "abs_mkt_ret24h_z",
-        "trend_bin3",
+        "mkt_volume_z_24",
+        "regime_trend_score",
+        "regime_vol_score",
+        "regime_liquidity_score",
     ]
     for c in float_cols:
         df[c] = df[c].astype(np.float32)
@@ -838,6 +855,13 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
         (ret_24 / (rv_24 * np.float32(np.sqrt(24)) + 1e-12)).shift(1).astype(np.float32)
     )
 
+    adx_raw, _, _ = ff.numba_adx(h, l, c, 14)
+    adx_mean = ff.numba_rolling_mean(adx_raw, 24 * 14).shift(1)
+    adx_std = ff.numba_rolling_std(adx_raw, 24 * 14).shift(1).clip(lower=1e-6)
+    feats["adx_zscore"] = (
+        ((adx_raw - adx_mean) / adx_std).clip(-6, 6).fillna(0.0).astype(np.float32)
+    )
+
     # 3. Time Since CUSUM Trigger (Trend Age Proxy)
     # Trigger when |cusum| > 5 based on lagged signal only.
     is_trigger = (feats["cusum_strength"].abs() > 5.0).astype(np.float32)
@@ -861,6 +885,10 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     # Coefficient of variation of volatility
     vv = ff.numba_rolling_std(rv_24, 24)
     feats["vol_of_vol"] = (vv / (rv_24 + 1e-12)).shift(1).astype(np.float32)
+    feats["vol_regime_shift"] = (
+        ff.numba_rolling_mean(rv_24, 4)
+        / (ff.numba_rolling_mean(rv_24, 16) + np.float32(1e-12))
+    ).shift(1).astype(np.float32)
 
     # 6. ATR Percentile (similar to vol percentile but using ATR)
     atr_min = ff.numba_rolling_min(atr_base, 24 * 30)
@@ -876,13 +904,21 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     liq_ratio, liq_low = compute_liquidity_features(v, avg_window=24 * 30)
     feats["liquidity_ratio"] = liq_ratio
     feats["liq_low"] = liq_low
-
     # 8. CUSUM normalization and high-regime hinge
     cusum_strength_norm, cusum_high = compute_cusum_regime_features(
         feats["cusum_strength"].abs(), h=6.0
     )
     feats["cusum_strength_norm"] = cusum_strength_norm
     feats["cusum_high"] = cusum_high
+    feats["regime_trend_score"] = (
+        mkt_gates["regime_trend_score"].reindex(c.index).astype(np.float32)
+    )
+    feats["regime_vol_score"] = (
+        mkt_gates["regime_vol_score"].reindex(c.index).astype(np.float32)
+    )
+    feats["regime_liquidity_score"] = (
+        mkt_gates["regime_liquidity_score"].reindex(c.index).astype(np.float32)
+    )
 
     assert float(feats["vol_percentile"].max().max()) <= 1.0 + np.float32(1e-6)
     assert float(feats["vol_percentile"].min().min()) >= -1e-6
@@ -1415,10 +1451,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["asset_vol_level"] = ff.numba_ewma(
         _raw_log_vol, _ALPHA_IDENTITY, False
     ).astype(np.float32)
-    # atr_state: current ATR% / long-run level — >1 means elevated vol vs own baseline
-    feats["atr_state"] = (_raw_atr_pct / (feats["asset_atr_level"] + 1e-9)).astype(
-        np.float32
-    )
     # vol_state: current log_vol / long-run level — >1 means elevated activity vs own baseline
     feats["vol_state"] = (_raw_log_vol / (feats["asset_vol_level"] + 1e-9)).astype(
         np.float32
@@ -1623,7 +1655,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["rv_24h"] = _roll_std("ret1h", feats["ret1h"], 24)
     # realized_volatility_24h is 24h (96 15m bars). Note rv_24h is standard 24 bars.
     ret1h_std_96 = _roll_std("ret1h", feats["ret1h"], 96)
-    feats["rolling_std_4h"] = ret1h_std_16  # 4h = 16 * 15m
     feats["realized_volatility_24h"] = ret1h_std_96  # 24h = 96 * 15m
     feats["atr_change_rate"] = (
         feats["atr_ln"] / feats["atr_ln"].shift(1) - 1.0
@@ -1678,20 +1709,11 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     ).astype(np.float32)
     feats["volume_percentile"] = ff.numba_rolling_rank_pct(v, 1000).astype(np.float32)
 
-    feats["trend_persistence"] = ff.numba_rolling_mean(
-        (np.sign(c_log - c_log.shift(1)) == np.sign(ema50 - ema50.shift(1))).astype(
-            np.float32
-        ),
-        20,
-    ).astype(np.float32)
     feats["volume_zscore_48h"] = ff.apply_to_frame(
         v, ff._numba_rolling_zscore_nan_safe_1d, 192
     ).astype(
         np.float32
     )  # 48h = 192 * 15m
-    feats["trend_ratio"] = (
-        feats["ema20_slope_5h"].abs() / (feats["ema50_slope"].abs() + 1e-12)
-    ).astype(np.float32)
     feats["compression_score"] = (
         feats["atr_compression_ratio"] * feats["bollinger_band_width"]
     ).astype(np.float32)
@@ -1977,16 +1999,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     eff = (c - o).abs() / ((h - l) + 1e-9)
     feats["efficiency"] = ff.numba_rolling_mean(eff, 12)
 
-    # Use Pearson Mode Skewness Proxy: 3 * (Mean - Median) / Std
-    # More stable for small N (works for N>=2) and cheaper.
-    r1 = feats["ret1h"]
-    cs_mean = r1.mean(axis=1)
-    cs_median = r1.median(axis=1)
-    cs_std = r1.std(axis=1)
-
-    skew_ser = 3.0 * (cs_mean - cs_median) / (cs_std + 1e-6)
-    feats["skew"] = skew_ser.astype(np.float32)
-
     r = feats["ret1h"]
     r2 = r**2
     up_sq = r2.where(r > 0, 0.0)
@@ -2092,11 +2104,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     mkt_rv_pct = mkt_gates["mkt_rv_pct"].reindex(c.index).astype(np.float32)
     feats["mkt_rv_pct"] = mkt_rv_pct
 
-    abs_mkt_ret24h_z = mkt_gates["abs_mkt_ret24h_z"].reindex(c.index).astype(np.float32)
+    abs_mkt_ret24h_z = mkt_gates["abs_mkt_ret24h_z"].reindex(c.index).astype(
+        np.float32
+    )
     feats["abs_mkt_ret24h_z"] = abs_mkt_ret24h_z
-
-    trend_bin3 = mkt_gates["trend_bin3"].reindex(c.index).astype(np.float32)
-    feats["trend_bin3"] = trend_bin3
 
     _rv_ratio_smooth = rv_ratio
     _smooth_span = max(1, int(cfg.get("rv_selector_smooth_span", 6)))
@@ -2950,10 +2961,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         gate_window = int(cfg.get("accept_gate_window", 24))
         # Zero fallbacks for core gated features
         zero_panel = pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32)
-        feats["accept"] = zero_panel.copy()
-        feats["accept_bin3"] = zero_panel.copy()
         feats["accept_gt66"] = zero_panel.copy()
-        feats["accept_gt75"] = zero_panel.copy()
         feats["retest_accept"] = zero_panel.copy()
         feats["reject_like"] = zero_panel.copy()
         feats["tf_qual"] = zero_panel.copy()
@@ -2993,10 +3001,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # If we need specific ones for legacy logic, we might need to update legacy logic.
     # For now, let's map `accept_gt66` to `s_gt66_{w}` ONLY if it exists.
 
-    feats["accept"] = s_pct
-    feats["accept_bin3"] = s_bin3.astype(np.float32)
-
-    # reject_like: reject gate percentile (MR counterpart to accept)
+    # reject_like: reject gate percentile (MR counterpart to the trend gate score)
     reject_like = get_feat(f"reject_pct_{gate_window}")
 
     # Map strict gates if they exist
@@ -3007,12 +3012,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         # Fallback to whatever was selected as "broad" or "rare"?
         pass
 
-    if f"s_gt75_{gate_window}" in feats:
-        feats["accept_gt75"] = feats[f"s_gt75_{gate_window}"]
-    else:
-        # Keep stable key availability even when dynamic gate selection skips gt75.
-        feats["accept_gt75"] = (s_pct >= 0.75).astype(np.float32)
-
     feats["tf_qual"] = (s_pct * feats["tf_tape"]).astype(np.float32)
     feats["mr_qual"] = (reject_like * feats["mr_tape"]).astype(np.float32)
 
@@ -3021,27 +3020,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "dir_path_edge_2h",
         pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32),
     )
-    feats["accept_x_dir_edge_2h"] = (s_pct * dir_edge).astype(np.float32)
-    feats["reject_x_dir_edge_2h"] = (reject_like * dir_edge).astype(np.float32)
-    feats["tfq_x_dir_edge_2h"] = (feats["tf_qual"] * dir_edge).astype(np.float32)
-    feats["mrq_x_dir_edge_2h"] = (feats["mr_qual"] * dir_edge).astype(np.float32)
-
-    gate_interactions = {}
-    gate_interactions.update(
-        add_gate_interaction_panel(s_pct, dir_edge, prefix="accept_dir2h")
-    )
-    gate_interactions.update(
-        add_gate_interaction_panel(reject_like, dir_edge, prefix="reject_dir2h")
-    )
-    gate_interactions.update(
-        add_gate_interaction_panel(feats["tf_qual"], dir_edge, prefix="tfq_dir2h")
-    )
-    gate_interactions.update(
-        add_gate_interaction_panel(feats["mr_qual"], dir_edge, prefix="mrq_dir2h")
-    )
-    for gk, gv in gate_interactions.items():
-        feats[gk] = gv.astype(np.float32)
-
     # 4/ Meta
     feats["rv_ratio_6_24"] = (feats["rv_6h"] / (feats["rv_24h"] + 1e-12)).astype(
         np.float32
@@ -3068,21 +3046,17 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["G_MR_SPIKE"] = (
         (feats["speed"] * feats["excess_6h"] * clv_inv).fillna(0.0).astype(np.float32)
     )
-    feats["G_TF_GRIND"] = (ret_rat * feats["clv_mean_4"] * pb2_inv).astype(np.float32)
     feats["G_TF_TREND"] = (
         (feats["speed"] * feats["coherence_24"] * clv4_pos)
         .fillna(0.0)
         .astype(np.float32)
     )
-    feats["G_MR_TAIL"] = (feats["tail_against"] * (1.0 + feats["donch_dist_6"])).astype(
-        np.float32
-    )
 
     # Meta Features using Gates
-    ambig_term = 1.0 - np.maximum(feats["accept"], reject_like)
+    ambig_term = 1.0 - np.maximum(s_pct, reject_like)
     feats["ambig"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
 
-    feats["stage_tf"] = (feats["accept"] * feats["coherence_24"]).astype(np.float32)
+    feats["stage_tf"] = (s_pct * feats["coherence_24"]).astype(np.float32)
     feats["stage_blowoff"] = (
         feats["blowoff_risk"] + feats["effort_gate"] + feats["stall_ext"]
     ).astype(np.float32)
@@ -3178,14 +3152,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         + feats["stall_ext"]
         + feats["G_EXH_GIVEBACK"]
     ).astype(np.float32)
-    feats["G_META_TF_QUAL"] = (
-        feats["accept"] * (1.0 - feats["G_META_EXH"].clip(0, 1))
-    ).astype(np.float32)
-    feats["G_META_MR_QUAL"] = (
-        reject_like * (1.0 - feats["overext"].clip(0, 1))
-    ).astype(np.float32)
-    feats["G_META_AMBIG"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
-
     ret_w = feats["ret10h"]
     local_low = ff.numba_rolling_min(l, 10)
     local_high = ff.numba_rolling_max(h, 10)
@@ -3214,7 +3180,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         0.0,
     ).astype(np.float32)
 
-    abs_net_score = feats["accept"] + reject_like
+    abs_net_score = s_pct + reject_like
     feats["meta_abs_net_x_breakout"] = (
         abs_net_score * np.abs(feats["breakout_24h"])
     ).astype(np.float32)
@@ -3225,18 +3191,18 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         abs_net_score * (feats["vov_ratio"] - 1.0).clip(lower=0)
     ).astype(np.float32)
     # Safe meta_alignment computation
-    accept_diff = feats["accept"] - reject_like
+    accept_diff = s_pct - reject_like
     ret5h_safe = np.where(np.isfinite(feats["ret5h"]), feats["ret5h"], 0.0)
     feats["meta_alignment"] = (np.sign(accept_diff) * np.sign(ret5h_safe)).astype(
         np.float32
     )
     feats["meta_signal_x_accel"] = (
-        (feats["accept"] - reject_like) * feats["accel_5h"]
+        (s_pct - reject_like) * feats["accel_5h"]
     ).astype(np.float32)
 
     # Regime interactions using base-model agreement-weighted success signal.
-    base_agreement = (1.0 - np.abs(feats["accept"] - reject_like)).clip(0.0, 1.0)
-    p_success_df = (((feats["accept"] + reject_like) * 0.5) * base_agreement).astype(
+    base_agreement = (1.0 - np.abs(s_pct - reject_like)).clip(0.0, 1.0)
+    p_success_df = (((s_pct + reject_like) * 0.5) * base_agreement).astype(
         np.float32
     )
     vol_high = feats.get(
@@ -3356,9 +3322,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     pos_sq = pos_ret * pos_ret
 
     # Downside / Upside semivariance
-    feats["downside_semivariance_8"] = ff.apply_to_frame(
-        neg_sq, ff._numba_rolling_mean_nan_safe, 8
-    ).astype(np.float32)
     feats["downside_semivariance_24"] = ff.apply_to_frame(
         neg_sq, ff._numba_rolling_mean_nan_safe, 24
     ).astype(np.float32)
@@ -3370,11 +3333,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     ).astype(np.float32)
 
     # Downside / Upside volatility ratio (std ratio, not variance ratio)
-    down_vol_8 = np.sqrt(feats["downside_semivariance_8"].clip(lower=0))
     up_vol_8 = np.sqrt(feats["upside_semivariance_8"].clip(lower=0))
     down_vol_24 = np.sqrt(feats["downside_semivariance_24"].clip(lower=0))
     up_vol_24 = np.sqrt(feats["upside_semivariance_24"].clip(lower=0))
-    feats["down_up_vol_ratio_8"] = (down_vol_8 / (up_vol_8 + 1e-12)).astype(np.float32)
+    feats["down_up_vol_ratio_8"] = pd.DataFrame(
+        0.0, index=up_vol_8.index, columns=up_vol_8.columns, dtype=np.float32
+    )
     feats["down_up_vol_ratio_24"] = (down_vol_24 / (up_vol_24 + 1e-12)).astype(
         np.float32
     )
@@ -3447,8 +3411,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # (b) Rolling edge residual: how much is the model's current signal
     #     deviating from its recent realised performance?
-    #     Proxy: z-score of composite scores (accept, reject, overext)
-    for comp_name in ["accept", "overext", "blowoff_risk", "exh_qual"]:
+    #     Proxy: z-score of composite scores (trend gate, reject, overext)
+    for comp_name in ["overext", "blowoff_risk", "exh_qual"]:
         if comp_name in feats:
             raw = feats[comp_name]
             roll_mu = ff.numba_rolling_mean(raw, RESID_WINDOW)
@@ -3784,12 +3748,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["trap_strength"] = (
         feats["volume_capitulation"]
         * (1.0 + feats["overext"].clip(lower=0))
-        * (1.0 - feats["accept"])
+        * (1.0 - s_pct)
     ).astype(np.float32)
 
     # Composite entry quality across 2h/4h/8h context.
     feats["entry_quality_composite"] = (
-        0.40 * feats["accept"]
+        0.40 * s_pct
         + 0.25 * feats["bounce_signal"]
         + 0.20 * feats["retest_accept_score"]
         + 0.15 * (1.0 - feats["ambig"].clip(0, 1))
@@ -4152,7 +4116,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "vol_z_z",
         "atr_expansion_z",
         "coherence_24_z",
-        "accept_surprise",
         "overext_surprise",
         "blowoff_risk_surprise",
         "exh_qual_surprise",
@@ -4162,7 +4125,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     }
 
     position_sizer_keys = {
-        "ATR_decay_rate",
         "ATR_spike_ratio",
         "ATR_ratio_short_long",
         "bar_direction_entropy",
@@ -4178,6 +4140,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "bollinger_band_width",
         "choppiness_index_20",
         "climax_volume_ratio",
+        "volume_z_12",
+        "volume_z_24",
         "dist_ema50_atr",
         "dist_ema100_atr",
         "dist_ema200_atr",
@@ -4186,7 +4150,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "dist_prior_day_low",
         "dist_range_mid_atr",
         "dist_weekly_vwap",
-        "cost_to_atr",
         "direction_entropy_20",
         "atr_change_rate",
         "acceleration_of_move",
@@ -4299,11 +4262,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             "micro_range_decay", "range_decay", "choppiness_index_20", "accept_gt66"
         ):
             bar_range = h_raw - l_raw
-
-        if _needs_feature("ATR_decay_rate"):
-            feats["ATR_decay_rate"] = ff.apply_to_frame(
-                atr_base, ff.slope_nb, 6
-            ).astype(np.float32)
 
         if _needs_feature("ATR_spike_ratio", "ATR_ratio_short_long"):
             atr_mean_24 = atr_base.rolling(24, min_periods=1).mean()
@@ -4430,6 +4388,30 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["climax_volume_ratio"] = (
                 (vol_max_6 / (vol_mean_24 + 1e-9)).fillna(1.0).astype(np.float32)
             )
+        if _needs_feature("volume_z_12", "volume_z_24"):
+            vol_mean_12 = v_raw.rolling(12, min_periods=1).mean()
+            vol_std_12 = v_raw.rolling(12, min_periods=1).std()
+            vol_mean_24 = v_raw.rolling(24, min_periods=1).mean()
+            vol_std_24 = v_raw.rolling(24, min_periods=1).std()
+            if _needs_feature("volume_z_12"):
+                feats["volume_z_12"] = (
+                    np.where(
+                        vol_std_12 > 1e-9,
+                        (v_raw - vol_mean_12) / vol_std_12,
+                        0.0,
+                    )
+                    .astype(np.float32)
+                )
+            if _needs_feature("volume_z_24"):
+                volume_z_24 = (
+                    np.where(
+                        vol_std_24 > 1e-9,
+                        (v_raw - vol_mean_24) / vol_std_24,
+                        0.0,
+                    )
+                    .astype(np.float32)
+                )
+                feats["volume_z_24"] = volume_z_24
 
         if _needs_feature("dist_ema50_atr"):
             ema_50 = ff.apply_to_frame(c_log, ff.ema_nb, 50)
@@ -4484,14 +4466,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 ((c_raw - vwap_168) / (vwap_168 + 1e-9)).fillna(0.0).astype(np.float32)
             )
 
-        if _needs_feature("cost_to_atr"):
-            spread_pct = pd.DataFrame(
-                index=atr_base.index, columns=atr_base.columns, dtype=np.float32
-            ).fillna(0.0)
-            feats["cost_to_atr"] = (
-                (spread_pct / (atr_base + 1e-9)).fillna(0.0).astype(np.float32)
-            )
-
         if _needs_feature("direction_entropy_20"):
             feats["direction_entropy_20"] = ff.apply_to_frame(
                 ret_1, ff.binary_entropy_nb, 20
@@ -4534,21 +4508,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         if _needs_feature("RSI") and "rsi" not in feats:
             feats["RSI"] = ff.numba_rsi(c_log, 14).astype(np.float32)
 
-        if _needs_feature("trend_persistence"):
-            up_bars = (c_raw > c_raw.shift(1)).astype(np.float32)
-            feats["trend_persistence"] = ff.numba_rolling_mean(up_bars, 50).astype(
-                np.float32
-            )
-
         if _needs_feature("volume_zscore_48h"):
             feats["volume_zscore_48h"] = zscore_rolling(v, 48, winsorize=False)
-
-        if _needs_feature("trend_ratio"):
-            abs_ret_sum = ff.numba_rolling_sum(c_log.diff(1).abs(), 10)
-            ret_n = c_log.diff(10).abs()
-            feats["trend_ratio"] = (
-                (ret_n / (abs_ret_sum + 1e-12)).fillna(0.0).astype(np.float32)
-            )
 
         if _needs_feature("compression_score"):
             rolling_std_short = _roll_std("c_raw", c_raw, 10)
@@ -4730,6 +4691,15 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             n_bad = (~np.isfinite(arr)).sum()
             tprint(f"  WARNING: {k} has {n_bad} non-finite values, replacing with 0")
             feats[k] = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+
+    for k in (
+        "atr_pct",
+        "rolling_std_4h",
+        "trend_persistence",
+        "trend_ratio",
+        "trend_regime",
+    ):
+        feats.pop(k, None)
 
     tprint(f"Features: done ({len(feats)} keys)")
     return feats, _feat_index, _feat_columns
@@ -5533,9 +5503,6 @@ def build_position_sizer_feature_frame(
         raw_inputs.get("volume", np.empty(0)), dtype=np.float32
     )
     atr = np.ascontiguousarray(raw_inputs.get("atr", np.empty(0)), dtype=np.float32)
-    spread = np.ascontiguousarray(
-        raw_inputs.get("spread_pct", np.empty(0)), dtype=np.float32
-    )
     meta_pred = np.ascontiguousarray(
         raw_inputs.get("meta_oof_pred", np.empty(0)), dtype=np.float32
     )
@@ -5799,10 +5766,6 @@ def build_position_sizer_feature_frame(
         (volume - mean_vol_12) / rolling_std_nb(volume, 12),
         0.0,
     ).astype(np.float32)
-    dollar_vol_z_24 = volume_z_24  # Proxy
-
-    spread_to_atr = np.where(atr_pct > 1e-9, spread / atr_pct, 0.0).astype(np.float32)
-
     regime_trend = np.ascontiguousarray(
         raw_inputs.get("regime_trend_score", np.zeros(n)), dtype=np.float32
     )
@@ -5843,7 +5806,6 @@ def build_position_sizer_feature_frame(
         "ema_12_minus_ema_24_z": ema_12_minus_ema_24_z,
         "trend_slope_12_z": slope_last_n_bars,
         "trend_slope_24_z": slope_nb(close, 24).astype(np.float32),
-        "atr_pct": atr_pct,
         "range_1_atr": range_1,
         "range_3_atr": range_3,
         "rv_6": rv_6,
@@ -5854,11 +5816,6 @@ def build_position_sizer_feature_frame(
         "downside_semivol_12": dsv_12,
         "volume_z_12": volume_z_12,
         "volume_z_24": volume_z_24,
-        "dollar_vol_z_24": dollar_vol_z_24,
-        "spread_pct": spread,
-        "spread_to_atr": spread_to_atr,
-        "cost_to_atr": spread_to_atr,
-        "slippage_proxy": spread_to_atr * 1.5,
         "liquidity_shock_z": liquidity_shock_nb(vol_sum_6, vol_sum_24).astype(
             np.float32
         ),
@@ -5873,7 +5830,6 @@ def build_position_sizer_feature_frame(
         # --- NEW MODEL 1 ---
         "range_last_3bars_impulse_range": range_last_3bars_impulse_range,
         "volatility_contraction_ratio": volatility_contraction_ratio,
-        "ATR_decay_rate": atr_decay_rate,
         "realized_vol_15m_realized_vol_2h": realized_vol_15m_2h,
         "micro_range_decay": micro_range_decay,
         "wick_ratio_last_bar": wick_ratio_last_bar,
@@ -6066,15 +6022,12 @@ def add_time_series_percentile_features(
         "ret6h",
         "impulse",
         "trend_strength_4d",
-        "trend_regime",
         # Volatility & range
-        "atr_pct",
         "rv_6h",
         "rv_24h",
         "vol_compression_ratio",
         # Activity
         "vol_shock_z",
-        "dollar_vol_z_24",
         "amihud_z",
         # Geometry
         "breakout_24h",

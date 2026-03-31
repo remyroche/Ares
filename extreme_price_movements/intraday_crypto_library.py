@@ -1012,6 +1012,14 @@ def build_intraday_crypto_library(
     )
     out["prev_day_high"] = prev_day_high.astype("float32")
     out["prev_day_low"] = prev_day_low.astype("float32")
+    prev_week_high = out["prev_week_high"].fillna(
+        cache.shift("roll_high_168", cache.rolling_high("h", h, 24 * 7), 1)
+    )
+    prev_week_low = out["prev_week_low"].fillna(
+        cache.shift("roll_low_168", cache.rolling_low("l", l, 24 * 7), 1)
+    )
+    out["prev_week_high"] = prev_week_high.astype("float32")
+    out["prev_week_low"] = prev_week_low.astype("float32")
     pivot, pivot_r1, pivot_s1 = _pivot_points(prev_day_high, prev_day_low, prev_close)
     out["pivot"] = pivot
     out["pivot_r1"] = pivot_r1

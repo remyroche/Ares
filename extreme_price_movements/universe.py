@@ -11,13 +11,41 @@ HARDCODED_EXCLUDED_SYMBOLS = frozenset({
     "CHESS/USDT",
     "DATA/USDT",
     "DF/USDT",
+    "FRAX/USDT",
 })
 DEDUP_QUOTES = ("USDT", "USDC", "BUSD")
 DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}
+SUPPORTED_TRAINING_QUOTES = frozenset(DEDUP_QUOTES)
+SPOT_QUOTE_SUFFIXES = (
+    "USDT",
+    "USDC",
+    "BUSD",
+    "USD1",
+    "FDUSD",
+    "EUR",
+    "BTC",
+    "ETH",
+)
 
 
 def _normalize_symbol(symbol: str) -> str:
-    return str(symbol or "").upper().replace("_", "/").strip()
+    norm = str(symbol or "").upper().strip().replace("_", "/")
+    if not norm:
+        return norm
+    if "/" in norm:
+        return norm
+    for quote in SPOT_QUOTE_SUFFIXES:
+        if norm.endswith(quote) and len(norm) > len(quote):
+            return f"{norm[:-len(quote)]}/{quote}"
+    return norm
+
+
+def _is_supported_training_symbol(symbol: str) -> bool:
+    norm = _normalize_symbol(symbol)
+    if not norm or "/" not in norm:
+        return False
+    _base, quote = norm.rsplit("/", 1)
+    return quote in SUPPORTED_TRAINING_QUOTES
 
 
 def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
@@ -56,14 +84,23 @@ def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
 def apply_hardcoded_universe_exclusions(symbols: list[str]) -> list[str]:
     cleaned = []
     removed = 0
+    unsupported = 0
     for sym in symbols:
         norm = _normalize_symbol(sym)
         if norm in HARDCODED_EXCLUDED_SYMBOLS:
             removed += 1
             continue
+        if not _is_supported_training_symbol(norm):
+            unsupported += 1
+            continue
         cleaned.append(norm)
     if removed:
         tprint(f"Hardcoded universe exclusions removed {removed} symbols: {sorted(HARDCODED_EXCLUDED_SYMBOLS)}")
+    if unsupported:
+        tprint(
+            f"Unsupported quote filtering removed {unsupported} symbols "
+            f"(allowed quotes: {sorted(SUPPORTED_TRAINING_QUOTES)})"
+        )
     return sorted(set(cleaned))
 
 def fetch_binance_cross_margin_pairs():

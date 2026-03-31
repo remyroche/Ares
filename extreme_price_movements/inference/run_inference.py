@@ -503,7 +503,6 @@ def run_inference_loop(
                 "vol_z_z",
                 "atr_expansion_z",
                 "coherence_24_z",
-                "accept_surprise",
                 "overext_surprise",
                 "blowoff_risk_surprise",
                 "exh_qual_surprise",

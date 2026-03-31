@@ -7508,8 +7508,16 @@ class MaskAssessor:
                             if overlap > threshold and supp_ratio > SUPPORT_RATIO_MIN:
                                 rq_i = abs(mean_returns[i]) / (std_returns[i] + eps) if std_returns[i] > eps else abs(mean_returns[i])
                                 rq_j = abs(mean_returns[j]) / (std_returns[j] + eps) if std_returns[j] > eps else abs(mean_returns[j])
-                                score_i = gains[i] * sign_consistencies[i] * rq_i
-                                score_j = gains[j] * sign_consistencies[j] * rq_j
+
+                                gain_i_b = min(max(np.sqrt(max(gains[i], 0.0)), 0.0), 1.0)
+                                sign_i_b = min(max(sign_consistencies[i], 0.0), 1.0)
+                                rq_i_b = min(max(rq_i, 0.0), 1.0)
+                                score_i = gain_i_b * sign_i_b * rq_i_b
+
+                                gain_j_b = min(max(np.sqrt(max(gains[j], 0.0)), 0.0), 1.0)
+                                sign_j_b = min(max(sign_consistencies[j], 0.0), 1.0)
+                                rq_j_b = min(max(rq_j, 0.0), 1.0)
+                                score_j = gain_j_b * sign_j_b * rq_j_b
 
                                 if score_i >= score_j:
                                     keep[j] = False
@@ -7526,7 +7534,10 @@ class MaskAssessor:
                 if len(surviving_indices) > 100:
                     def _score(i):
                         rq = abs(mean_returns[i]) / (std_returns[i] + eps) if std_returns[i] > eps else abs(mean_returns[i])
-                        return gains[i] * sign_consistencies[i] * rq
+                        gain_b = min(max(np.sqrt(max(gains[i], 0.0)), 0.0), 1.0)
+                        sign_b = min(max(sign_consistencies[i], 0.0), 1.0)
+                        rq_b = min(max(rq, 0.0), 1.0)
+                        return gain_b * sign_b * rq_b
                     surviving_indices.sort(key=_score, reverse=True)
                     surviving_indices = surviving_indices[:100]
 

@@ -7408,6 +7408,7 @@ class MaskAssessor:
                 sub_idx = np.sort(sub_idx)
             else:
                 sub_idx = np.arange(n_rows)
+            n_subsample = float(len(sub_idx))
 
             registry_key_to_row: Dict[str, int] = {}
             for idx, row in registry.iterrows():
@@ -7422,8 +7423,9 @@ class MaskAssessor:
                     if surviving_keys:
                         stage_a_matrices[bucket_key] = {
                             "key_to_idx": {surviving_keys[0]: 0},
-                            "intersections": np.array([[DEDUP_SUBSAMPLE_SIZE]], dtype=np.int32),
-                            "supports": np.array([DEDUP_SUBSAMPLE_SIZE], dtype=float)
+                            "intersections": np.array([[n_subsample]], dtype=np.int32),
+                            "supports": np.array([n_subsample], dtype=float),
+                            "n_subsample": n_subsample
                         }
                     continue
 
@@ -7474,7 +7476,8 @@ class MaskAssessor:
                 stage_a_matrices[bucket_key] = {
                     "key_to_idx": {k: idx for idx, k in enumerate(surviving_keys)},
                     "intersections": intersections,
-                    "supports": sub_supports
+                    "supports": sub_supports,
+                    "n_subsample": n_subsample
                 }
 
                 keep = [True] * n_rules
@@ -7546,12 +7549,16 @@ class MaskAssessor:
                 )
 
         max_ridge_candidates_per_bucket = int(
-            self.cfg.get("max_ridge_candidates_per_bucket", 5)
+            self.cfg.get("max_ridge_candidates_per_bucket", 7)
         )
         overlap_free_zone = float(self.cfg.get("ridge_overlap_free_zone", 0.30))
         cheap_rank_exponent = float(self.cfg.get("ridge_cheap_rank_exponent", 1.3))
         overlap_penalty_exponent = float(self.cfg.get("ridge_overlap_penalty_exponent", 1.7))
         support_ratio_min = float(self.cfg.get("ridge_support_ratio_min", 0.70))
+        penalty_strength = float(self.cfg.get("ridge_support_penalty_strength", 1.0))
+        boost_strength = float(self.cfg.get("ridge_support_boost_strength", 1.0))
+        center = 0.125
+        half_width = 0.025
 
         self.bucket_ridge_keys = {}
         bucket_ridge_rows: Dict[Tuple[str, int, str], List[Tuple[float, str]]] = (
@@ -7587,6 +7594,7 @@ class MaskAssessor:
             key_to_idx = matrices["key_to_idx"]
             intersections = matrices["intersections"]
             supports = matrices["supports"]
+            n_subsample_bucket = matrices.get("n_subsample", 10000.0)
 
             # Filter matrices for valid entries
             idx_list = []
@@ -7604,6 +7612,22 @@ class MaskAssessor:
 
             sub_intersections = intersections[np.ix_(idx_list, idx_list)]
             sub_supports_arr = supports[idx_list]
+
+            # Compute Support Weight Multiplier
+            s_arr = sub_supports_arr / n_subsample_bucket
+            w_mult_arr = np.ones(len(valid_keys), dtype=float)
+
+            for i, s in enumerate(s_arr):
+                if s < 0.10:
+                    w = 1.0 - penalty_strength * (0.10 - s) / 0.10
+                elif s < center:
+                    w = 1.0 + boost_strength * (s - 0.10) / half_width
+                elif s < 0.15:
+                    w = 1.0 + boost_strength * (0.15 - s) / half_width
+                else:
+                    w = 1.0 - penalty_strength * (s - 0.15) / 0.15
+
+                w_mult_arr[i] = np.clip(w, 0.1, 1.3)
 
             supp_i = sub_supports_arr[:, None]
             supp_j = sub_supports_arr[None, :]
@@ -7630,7 +7654,9 @@ class MaskAssessor:
             selected_indices = []
             remaining_indices = list(range(len(valid_keys)))
 
-            best_idx = remaining_indices[int(np.argmax(norm_cr[remaining_indices]))]
+            # Select highest support-weighted cheap_rank first
+            initial_scores = norm_cr[remaining_indices] * w_mult_arr[remaining_indices]
+            best_idx = remaining_indices[int(np.argmax(initial_scores))]
             selected_indices.append(best_idx)
             remaining_indices.remove(best_idx)
 
@@ -7643,8 +7669,10 @@ class MaskAssessor:
                     effective_overlap_i = max(0.0, max_f1_overlap_i - overlap_free_zone)
                     adjusted_score_i = (norm_cr[i] ** cheap_rank_exponent) * ((1.0 - effective_overlap_i) ** overlap_penalty_exponent)
 
-                    if adjusted_score_i > best_adj_score:
-                        best_adj_score = adjusted_score_i
+                    final_ranking = adjusted_score_i * w_mult_arr[i]
+
+                    if final_ranking > best_adj_score:
+                        best_adj_score = final_ranking
                         best_next_idx = i
 
                 selected_indices.append(best_next_idx)

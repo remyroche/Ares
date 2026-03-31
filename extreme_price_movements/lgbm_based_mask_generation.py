@@ -7580,7 +7580,7 @@ class MaskAssessor:
                 )
 
         max_ridge_candidates_per_bucket = int(
-            self.cfg.get("max_ridge_candidates_per_bucket", 5)
+            self.cfg.get("max_ridge_candidates_per_bucket", 20)
         )
         overlap_free_zone = float(self.cfg.get("ridge_overlap_free_zone", 0.30))
         cheap_rank_exponent = float(self.cfg.get("ridge_cheap_rank_exponent", 1.3))
@@ -7823,13 +7823,18 @@ class MaskAssessor:
                 + tbm_metrics["timeout_rate"] * timeout_payoff
             )
 
+            # Fetch cheap_rank for Final Regime Score
+            cheap_rank = bucket_cheap_ranks.get(group_bucket_key, {}).get(canonical_key, -np.inf)
+            if not np.isfinite(cheap_rank):
+                cheap_rank = 0.0
+
             # 9. Final Regime Score
             regime_score = (
-                0.20 * support_score
+                0.30 * cheap_rank
                 + 0.20 * lift
                 + 0.20 * ret_uplift
                 + 0.20 * ev_per_event
-                + 0.10 * sign_consistency
+                + 0.10 * (mask_auc if np.isfinite(mask_auc) else 0.0)
             )
 
             # Production classification

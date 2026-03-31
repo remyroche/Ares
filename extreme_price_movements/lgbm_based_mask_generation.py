@@ -3426,6 +3426,18 @@ class RulePruner:
         min_conviction = float(self.cfg.get("min_avg_leaf_value", 0.001))
         min_discoveries = int(self.cfg.get("min_tree_discoveries", 2))
 
+        dropped_conviction = (df["avg_model_conviction"] < min_conviction).sum()
+        dropped_discoveries = (df["discovery_count"] < min_discoveries).sum()
+        dropped_oos = (df["mean_net_ret"] <= 0).sum()
+
+        tprint(f"RulePruner (Assessment Prep): Input {len(df)} rules")
+        if dropped_conviction > 0:
+            tprint(f"  - Rejected {dropped_conviction} rules (conviction < {min_conviction})")
+        if dropped_discoveries > 0:
+            tprint(f"  - Rejected {dropped_discoveries} rules (discoveries < {min_discoveries})")
+        if dropped_oos > 0:
+            tprint(f"  - Rejected {dropped_oos} rules (OOS mean_net_ret <= 0)")
+
         mask = (
             (df["avg_model_conviction"] >= min_conviction)
             & (df["discovery_count"] >= min_discoveries)
@@ -3433,6 +3445,7 @@ class RulePruner:
         )
 
         pruned_df = df[mask].copy()
+        tprint(f"RulePruner (Assessment Prep): Selected {len(pruned_df)} rules (pre-ranking)")
 
         # 4. Final Ranking for Assessment
         # We rank by a hybrid of OOS performance and Model Discovery Count
@@ -4812,7 +4825,7 @@ def run_mining_stage(
         )
         finite_importance = finite_importance[np.isfinite(finite_importance)]
         if len(finite_importance) >= 2:
-            cutoff = float(np.nanquantile(finite_importance, 0.50))
+            cutoff = float(np.nanquantile(finite_importance, 0.30))
             before_count = len(scorer_accepted)
             scorer_accepted = scorer_accepted[
                 pd.to_numeric(scorer_accepted[importance_col], errors="coerce").fillna(
@@ -4821,7 +4834,7 @@ def run_mining_stage(
                 > cutoff
             ].copy()
             tprint(
-                f"Model-importance pre-pruner cut: removed bottom 50% by "
+                f"Model-importance pre-pruner cut: removed bottom 30% by "
                 f"{importance_col} ({before_count} -> {len(scorer_accepted)}, cutoff={cutoff:.6f})"
             )
 
@@ -6732,17 +6745,15 @@ class MaskAssessor:
         self.mask_resolver = mask_resolver
 
     @staticmethod
-    def _compute_avg_trades_per_day(mask: np.ndarray, data: pd.DataFrame) -> float:
-        selected_count = int(np.sum(mask))
-        if selected_count == 0:
-            return 0.0
+    def _compute_total_symbol_days(data: pd.DataFrame) -> Optional[float]:
+        """Precomputes the total_symbol_days for a given dataset."""
         if "timestamp" not in data.columns or "symbol" not in data.columns:
-            return float(selected_count)
+            return None
 
         timestamps = pd.to_datetime(data["timestamp"], errors="coerce")
         valid_rows = timestamps.notna().to_numpy()
         if not np.any(valid_rows):
-            return float(selected_count)
+            return None
 
         working = pd.DataFrame(
             {
@@ -6756,10 +6767,21 @@ class MaskAssessor:
             not np.isfinite(typical_rows_per_symbol_day)
             or typical_rows_per_symbol_day <= 0
         ):
-            return float(selected_count)
+            return None
 
         total_symbol_days = float(valid_rows.sum()) / typical_rows_per_symbol_day
         if total_symbol_days <= 0:
+            return None
+
+        return total_symbol_days
+
+    @staticmethod
+    def _compute_avg_trades_per_day(mask: np.ndarray, total_symbol_days: Optional[float]) -> float:
+        selected_count = int(np.sum(mask))
+        if selected_count == 0:
+            return 0.0
+
+        if total_symbol_days is None or total_symbol_days <= 0:
             return float(selected_count)
 
         trades_per_day_per_symbol = selected_count / total_symbol_days
@@ -6937,6 +6959,8 @@ class MaskAssessor:
                 day_codes = day_labels.astype(np.int32, copy=False)
                 n_day_buckets = int(day_labels.max() + 1)
 
+        total_symbol_days = self._compute_total_symbol_days(data)
+
         def _get_or_compute_cheap_stats(
             canonical_key: str, side: str, mask: np.ndarray
         ) -> Dict[str, float]:
@@ -6948,7 +6972,7 @@ class MaskAssessor:
             support_pct = float(np.mean(mask))
             support_ok = support_min <= support_pct <= support_max
             support_score = -abs(support_pct - target_support)
-            avg_trades = self._compute_avg_trades_per_day(mask, data)
+            avg_trades = self._compute_avg_trades_per_day(mask, total_symbol_days)
 
             if day_codes is not None and n_day_buckets > 0:
                 active_codes = day_codes[mask]
@@ -6973,7 +6997,7 @@ class MaskAssessor:
             mae, mfe = self._compute_mae_mfe(target_ret_masked)
             mean_ret_global = mean_ret_global_by_side[side]
             mean_ret_mask = float(np.nanmean(target_ret_masked))
-            std_ret_mask = float(np.nanstd(target_ret_masked))
+            std_ret_mask = float(np.nanstd(_clip_returns(target_ret_masked)))
             ret_uplift = mean_ret_mask - mean_ret_global
 
             stats = {
@@ -6995,92 +7019,46 @@ class MaskAssessor:
 
         # Bucket-level floor calibration and protection list to avoid over-pruning.
         bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
-        bucket_stability_floor: Dict[Tuple[str, int, str], float] = {}
-        bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
-        bucket_density_cap: Dict[Tuple[str, int, str], float] = {}
-        bucket_tail_cap: Dict[Tuple[str, int, str], float] = {}
-
-        registry_work = registry.copy()
-        if "source_horizon" not in registry_work.columns:
-            registry_work["source_horizon"] = -1
-        if "source_target" not in registry_work.columns:
-            registry_work["source_target"] = "unknown"
-        if "trade_path_quality_score" not in registry_work.columns:
-            registry_work["trade_path_quality_score"] = np.nan
-        if "quality_stability_score" not in registry_work.columns:
-            registry_work["quality_stability_score"] = np.nan
-        if "directional_mean_ret" not in registry_work.columns:
-            registry_work["directional_mean_ret"] = np.nan
-        if "canonical_key" not in registry_work.columns:
-            registry_work["canonical_key"] = ""
-        if "side" not in registry_work.columns:
-            registry_work["side"] = "long"
-
-        for bucket_key, group_df in registry_work.groupby(
-            ["side", "source_horizon", "source_target"], dropna=False
-        ):
-            side_key, horizon_key, target_key = bucket_key
-            side_str = str(side_key) if pd.notna(side_key) else "long"
-            horizon_int = int(horizon_key) if pd.notna(horizon_key) else -1
-            target_str = str(target_key) if pd.notna(target_key) else "unknown"
-            normalized_bucket = (side_str, horizon_int, target_str)
-
-            path_vals = pd.to_numeric(
-                group_df["trade_path_quality_score"], errors="coerce"
-            ).to_numpy(dtype=float)
-            stability_vals = pd.to_numeric(
-                group_df["quality_stability_score"], errors="coerce"
-            ).to_numpy(dtype=float)
-            finite_path = path_vals[np.isfinite(path_vals)]
-            finite_stability = stability_vals[np.isfinite(stability_vals)]
-            bucket_stability_floor[normalized_bucket] = (
-                float(np.nanquantile(finite_stability, 0.20))
-                if finite_stability.size > 0
-                else -np.inf
-            )
-
-            cheap_rank = (
-                pd.to_numeric(group_df["directional_mean_ret"], errors="coerce")
-                .fillna(0.0)
-                .to_numpy(dtype=float)
-                + pd.to_numeric(group_df["trade_path_quality_score"], errors="coerce")
-                .fillna(0.0)
-                .to_numpy(dtype=float)
-                + pd.to_numeric(group_df["quality_stability_score"], errors="coerce")
-                .fillna(0.0)
-                .to_numpy(dtype=float)
-            )
-            ranked = group_df.copy()
-            ranked["__cheap_rank"] = cheap_rank
-            protected = (
-                ranked.sort_values("__cheap_rank", ascending=False)
-                .head(max(min_candidates_per_bucket, 0))["canonical_key"]
-                .astype(str)
-                .tolist()
-            )
-            bucket_protected_keys[normalized_bucket] = set(protected)
-
         # Precompute bucket-level top-decile caps for density dispersion and tail risk.
-        bucket_density_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_density_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
-        bucket_tail_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_tail_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
-        bucket_path_quality_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_path_quality_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
-        bucket_sign_consistency_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_stability_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
-        bucket_mean_ret_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_sign_consistency_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
+        bucket_mean_ret_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
+            collections.defaultdict(list)
+        )
+
+        rejected_by_support: set = set()
+        seen_keys_per_bucket = collections.defaultdict(set)
+
         for _, pre_row in registry.iterrows():
             canonical_key = str(pre_row.get("canonical_key", ""))
             side = str(pre_row.get("side", "long"))
             if side not in target_ret_by_side:
                 side = "long"
+
+            horizon_raw = pre_row.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+
+            bucket_key = (side, horizon_key)
+
+            if canonical_key in seen_keys_per_bucket[bucket_key]:
+                continue
+            seen_keys_per_bucket[bucket_key].add(canonical_key)
 
             if canonical_key in mask_cache:
                 mask = mask_cache[canonical_key]
@@ -7093,15 +7071,10 @@ class MaskAssessor:
             if np.sum(mask) < 20:
                 continue
 
-            horizon_raw = pre_row.get("source_horizon", -1)
-            try:
-                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
-            except (TypeError, ValueError):
-                horizon_key = -1
-            target_key = str(pre_row.get("source_target", "unknown"))
-            bucket_key = (side, horizon_key, target_key)
-
             cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
+            if not bool(cheap["support_ok"]):
+                rejected_by_support.add(canonical_key)
+
             bucket_density_values[bucket_key].append(
                 (canonical_key, float(cheap["density_dispersion"]))
             )
@@ -7109,8 +7082,11 @@ class MaskAssessor:
                 (canonical_key, float(cheap["tail_ratio"]))
             )
             path_quality = float(pre_row.get("trade_path_quality_score", np.nan))
+            stability_score = float(pre_row.get("quality_stability_score", np.nan))
             if np.isfinite(path_quality):
                 bucket_path_quality_values[bucket_key].append((canonical_key, path_quality))
+            if np.isfinite(stability_score):
+                bucket_stability_values[bucket_key].append((canonical_key, stability_score))
             sign_consistency = float(pre_row.get("sign_consistency", 0.5))
             mean_ret_mask = float(cheap["mean_ret_mask"])
             bucket_sign_consistency_values[bucket_key].append(
@@ -7118,36 +7094,137 @@ class MaskAssessor:
             )
             bucket_mean_ret_values[bucket_key].append((canonical_key, mean_ret_mask))
 
-        pctile_bottom_cut = float(self.cfg.get("cheap_gate_bottom_pctile", 0.20))
-        bucket_sign_consistency_floor: Dict[Tuple[str, int, str], float] = {}
+        def _normalize_to_1_2(arr: np.ndarray, higher_is_better: bool = True) -> np.ndarray:
+            valid = np.isfinite(arr)
+            if not np.any(valid):
+                return np.full_like(arr, 1.5)
+            valid_vals = arr[valid]
+            if len(valid_vals) == 0:
+                return np.full_like(arr, 1.5)
+            p2 = np.percentile(valid_vals, 2)
+            p98 = np.percentile(valid_vals, 98)
+            clipped = np.clip(arr, p2, p98)
+            min_val = np.nanmin(clipped)
+            max_val = np.nanmax(clipped)
+            if max_val - min_val < 1e-9:
+                return np.full_like(arr, 1.5)
+
+            # Map so that the "best" raw value always becomes 2.0, and the "worst" raw value becomes 1.0.
+            if higher_is_better:
+                return 1.0 + (clipped - min_val) / (max_val - min_val)
+            else:
+                return 1.0 + (max_val - clipped) / (max_val - min_val)
+
+        bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
+        bucket_cheap_ranks: Dict[Tuple[str, int, str], Dict[str, float]] = collections.defaultdict(dict)
+
+        all_bucket_keys = set(bucket_mean_ret_values.keys())
+        for b_key in all_bucket_keys:
+            keys = [k for k, v in bucket_mean_ret_values[b_key]]
+            if not keys:
+                continue
+
+            m_ret_dict = dict(bucket_mean_ret_values[b_key])
+            m_path_dict = dict(bucket_path_quality_values[b_key])
+            m_sign_dict = dict(bucket_sign_consistency_values[b_key])
+            m_tail_dict = dict(bucket_tail_values[b_key])
+            m_dens_dict = dict(bucket_density_values[b_key])
+
+            ret_arr = np.array([m_ret_dict.get(k, np.nan) for k in keys])
+            path_arr = np.array([m_path_dict.get(k, np.nan) for k in keys])
+            sign_arr = np.array([m_sign_dict.get(k, np.nan) for k in keys])
+            tail_arr = np.array([m_tail_dict.get(k, np.nan) for k in keys])
+            dens_arr = np.array([m_dens_dict.get(k, np.nan) for k in keys])
+
+            n_ret = _normalize_to_1_2(ret_arr, higher_is_better=True)
+            n_path = _normalize_to_1_2(path_arr, higher_is_better=True)
+            n_sign = _normalize_to_1_2(sign_arr, higher_is_better=True)
+
+            # For lower-is-better metrics, normalizing them this way maps their best (lowest) value to 2.0
+            n_tail = _normalize_to_1_2(tail_arr, higher_is_better=False)
+            n_dens = _normalize_to_1_2(dens_arr, higher_is_better=False)
+
+            # Because lower-is-better metrics are mapped such that 2.0 is BEST, we must put them
+            # in the numerator (multiplying them) rather than the denominator to maintain a monotonic score.
+            # Using directional_mean_ret directly instead of sqrt(directional_mean_ret).
+            ranks = n_sign * (n_path ** 1.5) * n_ret * np.sqrt(n_tail + n_dens)
+
+            ranked_items = []
+            for i, k in enumerate(keys):
+                rank_val = ranks[i]
+                if np.isnan(rank_val): rank_val = -np.inf
+                bucket_cheap_ranks[b_key][k] = float(rank_val)
+                ranked_items.append((rank_val, k))
+
+            ranked_items.sort(key=lambda x: x[0], reverse=True)
+            top_k = [k for r, k in ranked_items[:max(min_candidates_per_bucket, 0)]]
+            bucket_protected_keys[b_key] = set(top_k)
+
+        pctile_bottom_cut = float(self.cfg.get("cheap_gate_bottom_pctile", 0.30))
+
+        all_rejected = set(rejected_by_support)
+        if all_rejected:
+            tprint(f"Stage A cheap gate (0): support_out_of_range rejected {len(all_rejected)} rules")
+
+        bucket_sign_consistency_floor: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_sign_consistency_values.items():
-            vals = np.asarray([v for _, v in tuples], dtype=float)
+            vals = np.asarray([v for k, v in tuples if k not in all_rejected], dtype=float)
             finite_vals = vals[np.isfinite(vals)]
             bucket_sign_consistency_floor[bucket_key] = (
                 float(np.nanquantile(finite_vals, pctile_bottom_cut))
                 if finite_vals.size > 0
                 else -np.inf
             )
+
         rejected_by_sign_consistency: set = set()
         for bucket_key, tuples in bucket_sign_consistency_values.items():
             floor = bucket_sign_consistency_floor.get(bucket_key, -np.inf)
             for canonical_key, sign_consistency in tuples:
-                if sign_consistency < floor:
+                if canonical_key not in all_rejected and sign_consistency < floor:
                     rejected_by_sign_consistency.add(canonical_key)
+
         n_sign_rejected = len(rejected_by_sign_consistency)
         if n_sign_rejected > 0:
             tprint(
                 f"Stage A cheap gate (1): sign_consistency "
                 f"  rejected {n_sign_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket"
             )
-        bucket_mean_ret_values_surviving: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        all_rejected |= rejected_by_sign_consistency
+
+        bucket_stability_floor: Dict[Tuple[str, int], float] = {}
+        for bucket_key, tuples in bucket_stability_values.items():
+            vals = np.asarray([v for k, v in tuples if k not in all_rejected], dtype=float)
+            finite_vals = vals[np.isfinite(vals)]
+            bucket_stability_floor[bucket_key] = (
+                float(np.nanquantile(finite_vals, 0.20))
+                if finite_vals.size > 0
+                else -np.inf
+            )
+
+        rejected_by_stability: set = set()
+        for bucket_key, tuples in bucket_stability_values.items():
+            floor = bucket_stability_floor.get(bucket_key, -np.inf)
+            protected = bucket_protected_keys.get(bucket_key, set())
+            for canonical_key, stability in tuples:
+                if canonical_key not in all_rejected and stability < floor and canonical_key not in protected:
+                    rejected_by_stability.add(canonical_key)
+
+        n_stability_rejected = len(rejected_by_stability)
+        if n_stability_rejected > 0:
+            tprint(
+                f"Stage A cheap gate (1.5): quality_stability "
+                f"  rejected {n_stability_rejected} rules (bottom 20% per bucket)"
+            )
+        all_rejected |= rejected_by_stability
+
+        bucket_mean_ret_values_surviving: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
         for bucket_key, tuples in bucket_mean_ret_values.items():
             for canonical_key, mean_ret in tuples:
-                if canonical_key not in rejected_by_sign_consistency:
+                if canonical_key not in all_rejected:
                     bucket_mean_ret_values_surviving[bucket_key].append((canonical_key, mean_ret))
-        bucket_mean_ret_floor: Dict[Tuple[str, int, str], float] = {}
+        bucket_mean_ret_floor: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_mean_ret_values_surviving.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)
             finite_vals = vals[np.isfinite(vals)]
@@ -7169,16 +7246,16 @@ class MaskAssessor:
                 f"  rejected {n_mean_ret_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket"
             )
 
-        all_rejected = rejected_by_sign_consistency | rejected_by_mean_ret
+        all_rejected |= rejected_by_mean_ret
 
-        bucket_density_values_surviving: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_density_values_surviving: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
         for bucket_key, tuples in bucket_density_values.items():
             for canonical_key, val in tuples:
                 if canonical_key not in all_rejected:
                     bucket_density_values_surviving[bucket_key].append((canonical_key, val))
-        bucket_density_cap: Dict[Tuple[str, int, str], float] = {}
+        bucket_density_cap: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_density_values_surviving.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)
             finite_vals = vals[np.isfinite(vals)]
@@ -7188,14 +7265,14 @@ class MaskAssessor:
                 else np.inf
             )
 
-        bucket_tail_values_surviving: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_tail_values_surviving: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
         for bucket_key, tuples in bucket_tail_values.items():
             for canonical_key, val in tuples:
                 if canonical_key not in all_rejected:
                     bucket_tail_values_surviving[bucket_key].append((canonical_key, val))
-        bucket_tail_cap: Dict[Tuple[str, int, str], float] = {}
+        bucket_tail_cap: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_tail_values_surviving.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)
             finite_vals = vals[np.isfinite(vals)]
@@ -7222,15 +7299,49 @@ class MaskAssessor:
                 else -np.inf
             )
 
-        cheap_gate_rows: Dict[Tuple[str, int, str], List[Tuple[float, str]]] = (
+        rejected_by_path: set = set()
+        for bucket_key, tuples in bucket_path_quality_values.items():
+            floor = bucket_path_floor.get(bucket_key, -np.inf)
+            protected = bucket_protected_keys.get(bucket_key, set())
+            for canonical_key, path in tuples:
+                if canonical_key not in all_rejected and path < floor and canonical_key not in protected:
+                    rejected_by_path.add(canonical_key)
+
+        n_path_rejected = len(rejected_by_path)
+        if n_path_rejected > 0:
+            tprint(
+                f"Stage A cheap gate (2.5): path_quality "
+                f"  rejected {n_path_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket)"
+            )
+        all_rejected |= rejected_by_path
+
+        cheap_gate_rows: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
             collections.defaultdict(list)
         )
-        cheap_gate_result: Dict[str, Tuple[bool, str]] = {}
+        cheap_gate_result: Dict[Tuple[Tuple[str, int], str], Tuple[bool, str]] = {}
+
+        seen_keys_for_cheap_gate = set()
+
         for _, pre_row in registry.iterrows():
             canonical_key = str(pre_row.get("canonical_key", ""))
             side = str(pre_row.get("side", "long"))
             if side not in target_ret_by_side:
                 side = "long"
+
+            horizon_raw = pre_row.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+
+            bucket_key = (side, horizon_key)
+
+            # Ensure we only process each canonical key once per bucket_key since target metrics
+            # are inherently agnostic to triad targets
+            key_tracker = (bucket_key, canonical_key)
+            if key_tracker in seen_keys_for_cheap_gate:
+                continue
+            seen_keys_for_cheap_gate.add(key_tracker)
 
             mask = mask_cache.get(canonical_key)
             if mask is None:
@@ -7242,13 +7353,6 @@ class MaskAssessor:
             if np.sum(mask) < 20:
                 continue
 
-            horizon_raw = pre_row.get("source_horizon", -1)
-            try:
-                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
-            except (TypeError, ValueError):
-                horizon_key = -1
-            target_key = str(pre_row.get("source_target", "unknown"))
-            bucket_key = (side, horizon_key, target_key)
             sign_consistency = float(pre_row.get("sign_consistency", 0.0))
             cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
 
@@ -7258,6 +7362,11 @@ class MaskAssessor:
                 rejected, rejection_reason = True, "support_out_of_range"
             elif sign_consistency < bucket_sign_consistency_floor.get(bucket_key, -np.inf):
                 rejected, rejection_reason = True, "low_sign_consistency_pctile"
+            elif float(
+                pre_row.get("quality_stability_score", np.nan)
+            ) < bucket_stability_floor.get(bucket_key, -np.inf):
+                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
+                    rejected, rejection_reason = True, "low_stability_floor"
             elif float(cheap["mean_ret_mask"]) < bucket_mean_ret_floor.get(bucket_key, -np.inf):
                 rejected, rejection_reason = True, "low_mean_target_value_pctile"
             elif float(
@@ -7265,11 +7374,6 @@ class MaskAssessor:
             ) < bucket_path_floor.get(bucket_key, -np.inf):
                 if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
                     rejected, rejection_reason = True, "low_path_quality_floor"
-            elif float(
-                pre_row.get("quality_stability_score", np.nan)
-            ) < bucket_stability_floor.get(bucket_key, -np.inf):
-                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
-                    rejected, rejection_reason = True, "low_stability_floor"
             elif float(cheap["density_dispersion"]) > bucket_density_cap.get(
                 bucket_key, np.inf
             ):
@@ -7290,27 +7394,11 @@ class MaskAssessor:
                 rejected = False
 
             if rejected:
-                cheap_gate_result[canonical_key] = (True, rejection_reason)
+                cheap_gate_result[(bucket_key, canonical_key)] = (True, rejection_reason)
                 continue
 
-            cheap_rank = (
-                float(
-                    pd.to_numeric(
-                        pre_row.get("directional_mean_ret", 0.0), errors="coerce"
-                    )
-                )
-                + float(
-                    pd.to_numeric(
-                        pre_row.get("trade_path_quality_score", 0.0), errors="coerce"
-                    )
-                )
-                + float(
-                    pd.to_numeric(
-                        pre_row.get("quality_stability_score", 0.0), errors="coerce"
-                    )
-                )
-            )
-            cheap_gate_result[canonical_key] = (False, "")
+            cheap_rank = bucket_cheap_ranks.get(bucket_key, {}).get(canonical_key, -np.inf)
+            cheap_gate_result[(bucket_key, canonical_key)] = (False, "")
             cheap_gate_rows[bucket_key].append((cheap_rank, canonical_key))
 
         OVERLAP_THRESHOLD = 0.85
@@ -7325,6 +7413,8 @@ class MaskAssessor:
             for _, canonical_key in entries:
                 surviving_keys_by_bucket[bucket_key].append(canonical_key)
 
+        stage_a_matrices = {}
+
         n_total_surviving = sum(len(v) for v in surviving_keys_by_bucket.values())
         if n_total_surviving > 0:
             rng = np.random.default_rng(seed=42)
@@ -7334,6 +7424,7 @@ class MaskAssessor:
                 sub_idx = np.sort(sub_idx)
             else:
                 sub_idx = np.arange(n_rows)
+            n_subsample = float(len(sub_idx))
 
             registry_key_to_row: Dict[str, int] = {}
             for idx, row in registry.iterrows():
@@ -7343,9 +7434,6 @@ class MaskAssessor:
 
             n_dedup_rejected = 0
             for bucket_key, surviving_keys in surviving_keys_by_bucket.items():
-                if len(surviving_keys) < 2:
-                    continue
-
                 n_rules = len(surviving_keys)
                 contexts: List[np.ndarray] = []
                 gains: List[float] = []
@@ -7384,45 +7472,82 @@ class MaskAssessor:
                     mean_returns.append(float(cheap.get("mean_ret_mask", 0.0)))
                     std_returns.append(float(cheap.get("std_ret_mask", 0.0)))
 
-                keep = [True] * n_rules
-                for i in range(n_rules):
-                    if not keep[i]:
-                        continue
-                    A = contexts[i]
-                    for j in range(i + 1, n_rules):
-                        if not keep[j]:
-                            continue
-                        B = contexts[j]
-                        if mean_returns[i] * mean_returns[j] < 0:
-                            continue
+                # Precompute intersection matrix using matrix multiplication for massive speedup
+                context_matrix = np.column_stack(contexts).astype(np.int32)
+                intersections = context_matrix.T @ context_matrix
+                sub_supports = np.diag(intersections).astype(float)
 
-                        inter = float(np.sum(A & B))
-                        if inter < 1:
+                # Store matrices for soft F1/Dice penalty downstream
+                stage_a_matrices[bucket_key] = {
+                    "key_to_idx": {k: idx for idx, k in enumerate(surviving_keys)},
+                    "intersections": intersections,
+                    "supports": sub_supports,
+                    "n_subsample": n_subsample
+                }
+
+                threshold_ladder = [0.85, 0.80, 0.75, 0.70, 0.65, 0.60]
+                final_keep = [True] * n_rules
+
+                for threshold in threshold_ladder:
+                    keep = [True] * n_rules
+                    for i in range(n_rules):
+                        if not keep[i]:
                             continue
-                        overlap = inter / max(min(float(np.sum(A)), float(np.sum(B))), 1.0)
-                        supp_ratio = min(supports[i], supports[j]) / max(supports[i], supports[j], 1e-9)
+                        for j in range(i + 1, n_rules):
+                            if not keep[j]:
+                                continue
+                            if mean_returns[i] * mean_returns[j] < 0:
+                                continue
 
-                        if overlap > OVERLAP_THRESHOLD and supp_ratio > SUPPORT_RATIO_MIN:
-                            rq_i = abs(mean_returns[i]) / (std_returns[i] + eps) if std_returns[i] > eps else abs(mean_returns[i])
-                            rq_j = abs(mean_returns[j]) / (std_returns[j] + eps) if std_returns[j] > eps else abs(mean_returns[j])
-                            score_i = gains[i] * sign_consistencies[i] * rq_i
-                            score_j = gains[j] * sign_consistencies[j] * rq_j
+                            inter = float(intersections[i, j])
+                            if inter < 1:
+                                continue
+                            overlap = inter / max(min(sub_supports[i], sub_supports[j]), 1.0)
+                            supp_ratio = min(supports[i], supports[j]) / max(max(supports[i], supports[j]), 1e-9)
 
-                            if score_i >= score_j:
-                                keep[j] = False
-                                cheap_gate_result[surviving_keys[j]] = (
-                                    True,
-                                    "deduplicated_overlap",
-                                )
-                                n_dedup_rejected += 1
-                            else:
-                                keep[i] = False
-                                cheap_gate_result[surviving_keys[i]] = (
-                                    True,
-                                    "deduplicated_overlap",
-                                )
-                                n_dedup_rejected += 1
-                                break
+                            if overlap > threshold and supp_ratio > SUPPORT_RATIO_MIN:
+                                rq_i = abs(mean_returns[i]) / (std_returns[i] + eps) if std_returns[i] > eps else abs(mean_returns[i])
+                                rq_j = abs(mean_returns[j]) / (std_returns[j] + eps) if std_returns[j] > eps else abs(mean_returns[j])
+                                score_i = gains[i] * sign_consistencies[i] * rq_i
+                                score_j = gains[j] * sign_consistencies[j] * rq_j
+
+                                if score_i >= score_j:
+                                    keep[j] = False
+                                else:
+                                    keep[i] = False
+                                    break
+
+                    if sum(keep) <= 100:
+                        final_keep = keep
+                        break
+                    final_keep = keep
+
+                surviving_indices = [i for i, k in enumerate(final_keep) if k]
+                if len(surviving_indices) > 100:
+                    def _score(i):
+                        rq = abs(mean_returns[i]) / (std_returns[i] + eps) if std_returns[i] > eps else abs(mean_returns[i])
+                        return gains[i] * sign_consistencies[i] * rq
+                    surviving_indices.sort(key=_score, reverse=True)
+                    surviving_indices = surviving_indices[:100]
+
+                final_surviving_set = {surviving_keys[i] for i in surviving_indices}
+
+                for i, k in enumerate(surviving_keys):
+                    if k not in final_surviving_set:
+                        cheap_gate_result[(bucket_key, k)] = (True, "deduplicated_overlap")
+                        n_dedup_rejected += 1
+
+                final_surviving_keys = [surviving_keys[i] for i in surviving_indices]
+
+                if final_surviving_keys:
+                    stage_a_matrices[bucket_key] = {
+                        "key_to_idx": {k: idx for idx, k in enumerate(final_surviving_keys)},
+                        "intersections": intersections[np.ix_(surviving_indices, surviving_indices)],
+                        "supports": sub_supports[surviving_indices],
+                        "n_subsample": n_subsample
+                    }
+                else:
+                    stage_a_matrices.pop(bucket_key, None)
 
             if n_dedup_rejected > 0:
                 tprint(
@@ -7431,12 +7556,12 @@ class MaskAssessor:
                     f"support_ratio>{SUPPORT_RATIO_MIN:.0%})"
                 )
 
-            cheap_gate_rows_deduped: Dict[Tuple[str, int, str], List[Tuple[float, str]]] = (
+            cheap_gate_rows_deduped: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
                 collections.defaultdict(list)
             )
             for bucket_key, entries in cheap_gate_rows.items():
                 for cheap_rank, canonical_key in entries:
-                    rejected, _ = cheap_gate_result.get(canonical_key, (False, ""))
+                    rejected, _ = cheap_gate_result.get((bucket_key, canonical_key), (False, ""))
                     if not rejected:
                         cheap_gate_rows_deduped[bucket_key].append((cheap_rank, canonical_key))
             cheap_gate_rows = cheap_gate_rows_deduped
@@ -7455,10 +7580,19 @@ class MaskAssessor:
                 )
 
         max_ridge_candidates_per_bucket = int(
-            self.cfg.get("max_ridge_candidates_per_bucket", 20)
+            self.cfg.get("max_ridge_candidates_per_bucket", 5)
         )
+        overlap_free_zone = float(self.cfg.get("ridge_overlap_free_zone", 0.30))
+        cheap_rank_exponent = float(self.cfg.get("ridge_cheap_rank_exponent", 1.3))
+        overlap_penalty_exponent = float(self.cfg.get("ridge_overlap_penalty_exponent", 1.8))
+        support_ratio_min = float(self.cfg.get("ridge_support_ratio_min", 0.70))
+        penalty_strength = float(self.cfg.get("ridge_support_penalty_strength", 1.0))
+        boost_strength = float(self.cfg.get("ridge_support_boost_strength", 1.0))
+        center = 0.125
+        half_width = 0.025
+
         self.bucket_ridge_keys = {}
-        bucket_ridge_rows: Dict[Tuple[str, int, str], List[Tuple[float, str]]] = (
+        bucket_ridge_rows: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
             collections.defaultdict(list)
         )
         for bucket_key, entries in cheap_gate_rows.items():
@@ -7466,7 +7600,7 @@ class MaskAssessor:
             baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
             if baseline_oof_coverage < min_oof_coverage:
                 for _, canonical_key in entries:
-                    cheap_gate_result[canonical_key] = (
+                    cheap_gate_result[(bucket_key, canonical_key)] = (
                         True,
                         "insufficient_baseline_oof_coverage",
                     )
@@ -7474,10 +7608,108 @@ class MaskAssessor:
             bucket_ridge_rows[bucket_key].extend(entries)
 
         for bucket_key, entries in bucket_ridge_rows.items():
-            entries.sort(key=lambda item: item[0], reverse=True)
-            self.bucket_ridge_keys[bucket_key] = {
-                key for _, key in entries[: max(max_ridge_candidates_per_bucket, 0)]
-            }
+            if not entries:
+                continue
+
+            surviving_keys = [k for _, k in entries]
+            surviving_ranks = [r for r, _ in entries]
+
+            matrices = stage_a_matrices.get(bucket_key)
+            if not matrices or len(surviving_keys) <= max_ridge_candidates_per_bucket:
+                entries.sort(key=lambda item: item[0], reverse=True)
+                self.bucket_ridge_keys[bucket_key] = {
+                    key for _, key in entries[: max(max_ridge_candidates_per_bucket, 0)]
+                }
+                continue
+
+            key_to_idx = matrices["key_to_idx"]
+            intersections = matrices["intersections"]
+            supports = matrices["supports"]
+            n_subsample_bucket = matrices.get("n_subsample", 10000.0)
+
+            # Filter matrices for valid entries
+            idx_list = []
+            valid_keys = []
+            valid_ranks = []
+            for i, k in enumerate(surviving_keys):
+                if k in key_to_idx:
+                    idx_list.append(key_to_idx[k])
+                    valid_keys.append(k)
+                    valid_ranks.append(surviving_ranks[i])
+
+            if len(valid_keys) <= max_ridge_candidates_per_bucket:
+                self.bucket_ridge_keys[bucket_key] = set(valid_keys)
+                continue
+
+            sub_intersections = intersections[np.ix_(idx_list, idx_list)]
+            sub_supports_arr = supports[idx_list]
+
+            # Compute Support Weight Multiplier
+            s_arr = sub_supports_arr / n_subsample_bucket
+            w_mult_arr = np.ones(len(valid_keys), dtype=float)
+
+            for i, s in enumerate(s_arr):
+                if s < 0.10:
+                    w = 1.0 - penalty_strength * (0.10 - s) / 0.10
+                elif s < center:
+                    w = 1.0 + boost_strength * (s - 0.10) / half_width
+                elif s < 0.15:
+                    w = 1.0 + boost_strength * (0.15 - s) / half_width
+                else:
+                    w = 1.0 - penalty_strength * (s - 0.15) / 0.15
+
+                w_mult_arr[i] = np.clip(w, 0.1, 0.2)
+
+            supp_i = sub_supports_arr[:, None]
+            supp_j = sub_supports_arr[None, :]
+
+            # Compute F1/Dice matrix
+            f1_overlap_matrix = 2.0 * sub_intersections / (supp_i + supp_j + 1e-9)
+
+            # Compute Support Ratio matrix to ignore similarities where support sizes differ greatly
+            supp_ratio_matrix = np.minimum(supp_i, supp_j) / np.maximum(supp_i, supp_j + 1e-9)
+
+            # Effective F1 (Same-side is naturally guaranteed because bucket keys split by side)
+            effective_f1_overlap_matrix = f1_overlap_matrix * (supp_ratio_matrix >= support_ratio_min)
+
+            # Normalize cheap ranks to [0.05, 1.0] positive bounded range
+            raw_cr = np.array(valid_ranks)
+            min_cr = np.min(raw_cr)
+            max_cr = np.max(raw_cr)
+            if max_cr - min_cr < 1e-9:
+                norm_cr = np.full(len(valid_keys), 1.0)
+            else:
+                norm_cr = 0.05 + 0.95 * (raw_cr - min_cr) / (max_cr - min_cr)
+
+            # Diversified Top-K Greedy Selection
+            selected_indices = []
+            remaining_indices = list(range(len(valid_keys)))
+
+            # Select highest support-weighted cheap_rank first
+            initial_scores = norm_cr[remaining_indices] * (1.0 + w_mult_arr[remaining_indices])
+            best_idx = remaining_indices[int(np.argmax(initial_scores))]
+            selected_indices.append(best_idx)
+            remaining_indices.remove(best_idx)
+
+            while len(selected_indices) < max_ridge_candidates_per_bucket and remaining_indices:
+                best_adj_score = -np.inf
+                best_next_idx = -1
+
+                for i in remaining_indices:
+                    max_f1_overlap_i = np.max(effective_f1_overlap_matrix[i, selected_indices])
+                    overlap_excess_i = max(0.0, max_f1_overlap_i - overlap_free_zone) / (1.0 - overlap_free_zone + 1e-9)
+                    adjusted_score_i = (norm_cr[i] ** cheap_rank_exponent) * ((1.0 - overlap_excess_i) ** overlap_penalty_exponent)
+
+                    final_ranking = adjusted_score_i * (1.0 + w_mult_arr[i])
+
+                    if final_ranking > best_adj_score:
+                        best_adj_score = final_ranking
+                        best_next_idx = i
+
+                selected_indices.append(best_next_idx)
+                remaining_indices.remove(best_next_idx)
+
+            self.bucket_ridge_keys[bucket_key] = {valid_keys[i] for i in selected_indices}
 
         for _, row in registry.iterrows():
             canonical_key = str(row["canonical_key"])
@@ -7507,7 +7739,10 @@ class MaskAssessor:
             except (TypeError, ValueError):
                 horizon_key = -1
             target_key = str(row.get("source_target", "unknown"))
-            bucket_key = (side, horizon_key, target_key)
+
+            # The bucket grouping is determined strictly by side and horizon
+            group_bucket_key = (side, horizon_key)
+
             target_ret = target_ret_by_side[side]
             sign_consistency = float(row.get("sign_consistency", 0.0))
             global_auc = float(baseline_cache[side]["global_auc"])
@@ -7537,7 +7772,7 @@ class MaskAssessor:
             ret_uplift = float(cheap["ret_uplift"])
 
             rejected, rejection_reason = cheap_gate_result.get(
-                canonical_key, (False, "")
+                (group_bucket_key, canonical_key), (False, "")
             )
 
             # 7. Learnability (Efficiency Frontier) - expensive section
@@ -7548,9 +7783,9 @@ class MaskAssessor:
                 run_ridge = False
                 if (
                     hasattr(self, "bucket_ridge_keys")
-                    and bucket_key in self.bucket_ridge_keys
+                    and group_bucket_key in self.bucket_ridge_keys
                 ):
-                    if canonical_key in self.bucket_ridge_keys[bucket_key]:
+                    if canonical_key in self.bucket_ridge_keys[group_bucket_key]:
                         run_ridge = True
 
                 if run_ridge:

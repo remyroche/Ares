@@ -710,7 +710,8 @@ def test_mask_assessor_avg_trades_per_day_uses_unique_days():
     )
     mask = np.array([True, False, True, True], dtype=bool)
 
-    avg_trades = MaskAssessor._compute_avg_trades_per_day(mask, data)
+    total_symbol_days = MaskAssessor._compute_total_symbol_days(data)
+    avg_trades = MaskAssessor._compute_avg_trades_per_day(mask, total_symbol_days)
 
     assert avg_trades == 15.0
 

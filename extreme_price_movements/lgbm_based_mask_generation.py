@@ -7019,56 +7019,6 @@ class MaskAssessor:
 
         # Bucket-level floor calibration and protection list to avoid over-pruning.
         bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
-        bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
-        bucket_density_cap: Dict[Tuple[str, int, str], float] = {}
-        bucket_tail_cap: Dict[Tuple[str, int, str], float] = {}
-
-        registry_work = registry.copy()
-        if "source_horizon" not in registry_work.columns:
-            registry_work["source_horizon"] = -1
-        if "source_target" not in registry_work.columns:
-            registry_work["source_target"] = "unknown"
-        if "trade_path_quality_score" not in registry_work.columns:
-            registry_work["trade_path_quality_score"] = np.nan
-        if "quality_stability_score" not in registry_work.columns:
-            registry_work["quality_stability_score"] = np.nan
-        if "directional_mean_ret" not in registry_work.columns:
-            registry_work["directional_mean_ret"] = np.nan
-        if "canonical_key" not in registry_work.columns:
-            registry_work["canonical_key"] = ""
-        if "side" not in registry_work.columns:
-            registry_work["side"] = "long"
-
-        for bucket_key, group_df in registry_work.groupby(
-            ["side", "source_horizon", "source_target"], dropna=False
-        ):
-            side_key, horizon_key, target_key = bucket_key
-            side_str = str(side_key) if pd.notna(side_key) else "long"
-            horizon_int = int(horizon_key) if pd.notna(horizon_key) else -1
-            target_str = str(target_key) if pd.notna(target_key) else "unknown"
-            normalized_bucket = (side_str, horizon_int, target_str)
-
-            cheap_rank = (
-                pd.to_numeric(group_df["directional_mean_ret"], errors="coerce")
-                .fillna(0.0)
-                .to_numpy(dtype=float)
-                + pd.to_numeric(group_df["trade_path_quality_score"], errors="coerce")
-                .fillna(0.0)
-                .to_numpy(dtype=float)
-                + pd.to_numeric(group_df["quality_stability_score"], errors="coerce")
-                .fillna(0.0)
-                .to_numpy(dtype=float)
-            )
-            ranked = group_df.copy()
-            ranked["__cheap_rank"] = cheap_rank
-            protected = (
-                ranked.sort_values("__cheap_rank", ascending=False)
-                .head(max(min_candidates_per_bucket, 0))["canonical_key"]
-                .astype(str)
-                .tolist()
-            )
-            bucket_protected_keys[normalized_bucket] = set(protected)
-
         # Precompute bucket-level top-decile caps for density dispersion and tail risk.
         bucket_density_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
@@ -7138,6 +7088,62 @@ class MaskAssessor:
                 (canonical_key, sign_consistency)
             )
             bucket_mean_ret_values[bucket_key].append((canonical_key, mean_ret_mask))
+
+        def _normalize_to_1_2(arr: np.ndarray) -> np.ndarray:
+            valid = np.isfinite(arr)
+            if not np.any(valid):
+                return np.full_like(arr, 1.5)
+            valid_vals = arr[valid]
+            if len(valid_vals) == 0:
+                return np.full_like(arr, 1.5)
+            p2 = np.percentile(valid_vals, 2)
+            p98 = np.percentile(valid_vals, 98)
+            clipped = np.clip(arr, p2, p98)
+            min_val = np.nanmin(clipped)
+            max_val = np.nanmax(clipped)
+            if max_val - min_val < 1e-9:
+                return np.full_like(arr, 1.5)
+            return 1.0 + (clipped - min_val) / (max_val - min_val)
+
+        bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
+        bucket_cheap_ranks: Dict[Tuple[str, int, str], Dict[str, float]] = collections.defaultdict(dict)
+
+        all_bucket_keys = set(bucket_mean_ret_values.keys())
+        for b_key in all_bucket_keys:
+            keys = [k for k, v in bucket_mean_ret_values[b_key]]
+            if not keys:
+                continue
+
+            m_ret_dict = dict(bucket_mean_ret_values[b_key])
+            m_path_dict = dict(bucket_path_quality_values[b_key])
+            m_sign_dict = dict(bucket_sign_consistency_values[b_key])
+            m_tail_dict = dict(bucket_tail_values[b_key])
+            m_dens_dict = dict(bucket_density_values[b_key])
+
+            ret_arr = np.array([m_ret_dict.get(k, np.nan) for k in keys])
+            path_arr = np.array([m_path_dict.get(k, np.nan) for k in keys])
+            sign_arr = np.array([m_sign_dict.get(k, np.nan) for k in keys])
+            tail_arr = np.array([m_tail_dict.get(k, np.nan) for k in keys])
+            dens_arr = np.array([m_dens_dict.get(k, np.nan) for k in keys])
+
+            n_ret = _normalize_to_1_2(ret_arr)
+            n_path = _normalize_to_1_2(path_arr)
+            n_sign = _normalize_to_1_2(sign_arr)
+            n_tail = _normalize_to_1_2(tail_arr)
+            n_dens = _normalize_to_1_2(dens_arr)
+
+            ranks = n_sign * (n_path ** 1.5) * np.sqrt(n_ret) / np.sqrt(n_tail + n_dens + 1e-9)
+
+            ranked_items = []
+            for i, k in enumerate(keys):
+                rank_val = ranks[i]
+                if np.isnan(rank_val): rank_val = -np.inf
+                bucket_cheap_ranks[b_key][k] = float(rank_val)
+                ranked_items.append((rank_val, k))
+
+            ranked_items.sort(key=lambda x: x[0], reverse=True)
+            top_k = [k for r, k in ranked_items[:max(min_candidates_per_bucket, 0)]]
+            bucket_protected_keys[b_key] = set(top_k)
 
         pctile_bottom_cut = float(self.cfg.get("cheap_gate_bottom_pctile", 0.30))
 
@@ -7365,23 +7371,7 @@ class MaskAssessor:
                 cheap_gate_result[canonical_key] = (True, rejection_reason)
                 continue
 
-            cheap_rank = (
-                float(
-                    pd.to_numeric(
-                        pre_row.get("directional_mean_ret", 0.0), errors="coerce"
-                    )
-                )
-                + float(
-                    pd.to_numeric(
-                        pre_row.get("trade_path_quality_score", 0.0), errors="coerce"
-                    )
-                )
-                + float(
-                    pd.to_numeric(
-                        pre_row.get("quality_stability_score", 0.0), errors="coerce"
-                    )
-                )
-            )
+            cheap_rank = bucket_cheap_ranks.get(bucket_key, {}).get(canonical_key, -np.inf)
             cheap_gate_result[canonical_key] = (False, "")
             cheap_gate_rows[bucket_key].append((cheap_rank, canonical_key))
 

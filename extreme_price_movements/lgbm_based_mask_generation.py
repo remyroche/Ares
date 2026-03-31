@@ -341,7 +341,7 @@ def compute_directional_sign_consistency(
     returns: np.ndarray,
     threshold: float = 0.01,
     min_effective_samples: int = 5,
-    max_samples: int = 10000,
+    max_samples: int = 1000,
 ) -> float:
     """
     Compute sign_consistency using only rows where the return magnitude

@@ -7089,7 +7089,7 @@ class MaskAssessor:
             )
             bucket_mean_ret_values[bucket_key].append((canonical_key, mean_ret_mask))
 
-        def _normalize_to_1_2(arr: np.ndarray) -> np.ndarray:
+        def _normalize_to_1_2(arr: np.ndarray, higher_is_better: bool = True) -> np.ndarray:
             valid = np.isfinite(arr)
             if not np.any(valid):
                 return np.full_like(arr, 1.5)
@@ -7103,7 +7103,12 @@ class MaskAssessor:
             max_val = np.nanmax(clipped)
             if max_val - min_val < 1e-9:
                 return np.full_like(arr, 1.5)
-            return 1.0 + (clipped - min_val) / (max_val - min_val)
+
+            # Map so that the "best" raw value always becomes 2.0, and the "worst" raw value becomes 1.0.
+            if higher_is_better:
+                return 1.0 + (clipped - min_val) / (max_val - min_val)
+            else:
+                return 1.0 + (max_val - clipped) / (max_val - min_val)
 
         bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
         bucket_cheap_ranks: Dict[Tuple[str, int, str], Dict[str, float]] = collections.defaultdict(dict)
@@ -7126,13 +7131,18 @@ class MaskAssessor:
             tail_arr = np.array([m_tail_dict.get(k, np.nan) for k in keys])
             dens_arr = np.array([m_dens_dict.get(k, np.nan) for k in keys])
 
-            n_ret = _normalize_to_1_2(ret_arr)
-            n_path = _normalize_to_1_2(path_arr)
-            n_sign = _normalize_to_1_2(sign_arr)
-            n_tail = _normalize_to_1_2(tail_arr)
-            n_dens = _normalize_to_1_2(dens_arr)
+            n_ret = _normalize_to_1_2(ret_arr, higher_is_better=True)
+            n_path = _normalize_to_1_2(path_arr, higher_is_better=True)
+            n_sign = _normalize_to_1_2(sign_arr, higher_is_better=True)
 
-            ranks = n_sign * (n_path ** 1.5) * np.sqrt(n_ret) / np.sqrt(n_tail + n_dens + 1e-9)
+            # For lower-is-better metrics, normalizing them this way maps their best (lowest) value to 2.0
+            n_tail = _normalize_to_1_2(tail_arr, higher_is_better=False)
+            n_dens = _normalize_to_1_2(dens_arr, higher_is_better=False)
+
+            # Because lower-is-better metrics are mapped such that 2.0 is BEST, we must put them
+            # in the numerator (multiplying them) rather than the denominator to maintain a monotonic score.
+            # Using directional_mean_ret directly instead of sqrt(directional_mean_ret).
+            ranks = n_sign * (n_path ** 1.5) * n_ret * np.sqrt(n_tail + n_dens)
 
             ranked_items = []
             for i, k in enumerate(keys):

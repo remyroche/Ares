@@ -7627,7 +7627,7 @@ class MaskAssessor:
                 else:
                     w = 1.0 - penalty_strength * (s - 0.15) / 0.15
 
-                w_mult_arr[i] = np.clip(w, 0.1, 1.3)
+                w_mult_arr[i] = np.clip(w, 0.1, 0.3)
 
             supp_i = sub_supports_arr[:, None]
             supp_j = sub_supports_arr[None, :]
@@ -7655,7 +7655,7 @@ class MaskAssessor:
             remaining_indices = list(range(len(valid_keys)))
 
             # Select highest support-weighted cheap_rank first
-            initial_scores = norm_cr[remaining_indices] * w_mult_arr[remaining_indices]
+            initial_scores = norm_cr[remaining_indices] * (1.0 + w_mult_arr[remaining_indices])
             best_idx = remaining_indices[int(np.argmax(initial_scores))]
             selected_indices.append(best_idx)
             remaining_indices.remove(best_idx)
@@ -7669,7 +7669,7 @@ class MaskAssessor:
                     effective_overlap_i = max(0.0, max_f1_overlap_i - overlap_free_zone)
                     adjusted_score_i = (norm_cr[i] ** cheap_rank_exponent) * ((1.0 - effective_overlap_i) ** overlap_penalty_exponent)
 
-                    final_ranking = adjusted_score_i * w_mult_arr[i]
+                    final_ranking = adjusted_score_i * (1.0 + w_mult_arr[i])
 
                     if final_ranking > best_adj_score:
                         best_adj_score = final_ranking

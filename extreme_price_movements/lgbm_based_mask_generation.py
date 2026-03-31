@@ -341,26 +341,36 @@ def compute_directional_sign_consistency(
     returns: np.ndarray,
     threshold: float = 0.01,
     min_effective_samples: int = 5,
+    max_samples: int = 10000,
 ) -> float:
     """
     Compute sign_consistency using only rows where the return magnitude
     is large enough to be economically meaningful.
     """
-    if len(returns) == 0:
+    if returns.size == 0:
         return 0.5
 
-    valid_returns = returns[np.isfinite(returns)]
-    if len(valid_returns) == 0:
+    if returns.size > max_samples:
+        rng = np.random.default_rng(seed=42)
+        idx = rng.choice(returns.size, size=max_samples, replace=False)
+        returns = returns[idx]
+
+    valid_mask = np.isfinite(returns)
+    if not np.any(valid_mask):
         return 0.5
 
-    eligible_returns = valid_returns[np.abs(valid_returns) > threshold]
-    n_total = len(eligible_returns)
+    valid_returns = returns[valid_mask]
+
+    # Vectorized check for eligible returns without allocating intermediate arrays of floats
+    eligible_mask = np.abs(valid_returns) > threshold
+    n_total = int(np.sum(eligible_mask))
 
     if n_total == 0:
         return 0.5
 
-    n_pos = np.sum(eligible_returns > 0)
-    n_neg = np.sum(eligible_returns < 0)
+    eligible_returns = valid_returns[eligible_mask]
+    n_pos = int(np.sum(eligible_returns > 0))
+    n_neg = int(np.sum(eligible_returns < 0))
 
     sign_consistency = float(max(n_pos, n_neg) / n_total)
 

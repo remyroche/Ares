@@ -7020,32 +7020,45 @@ class MaskAssessor:
         # Bucket-level floor calibration and protection list to avoid over-pruning.
         bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
         # Precompute bucket-level top-decile caps for density dispersion and tail risk.
-        bucket_density_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_density_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
-        bucket_tail_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_tail_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
-        bucket_path_quality_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_path_quality_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
-        bucket_stability_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_stability_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
-        bucket_sign_consistency_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_sign_consistency_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
-        bucket_mean_ret_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_mean_ret_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
 
         rejected_by_support: set = set()
+        seen_keys_per_bucket = collections.defaultdict(set)
 
         for _, pre_row in registry.iterrows():
             canonical_key = str(pre_row.get("canonical_key", ""))
             side = str(pre_row.get("side", "long"))
             if side not in target_ret_by_side:
                 side = "long"
+
+            horizon_raw = pre_row.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+
+            bucket_key = (side, horizon_key)
+
+            if canonical_key in seen_keys_per_bucket[bucket_key]:
+                continue
+            seen_keys_per_bucket[bucket_key].add(canonical_key)
 
             if canonical_key in mask_cache:
                 mask = mask_cache[canonical_key]
@@ -7057,14 +7070,6 @@ class MaskAssessor:
                 mask_cache[canonical_key] = mask
             if np.sum(mask) < 20:
                 continue
-
-            horizon_raw = pre_row.get("source_horizon", -1)
-            try:
-                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
-            except (TypeError, ValueError):
-                horizon_key = -1
-            target_key = str(pre_row.get("source_target", "unknown"))
-            bucket_key = (side, horizon_key, target_key)
 
             cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
             if not bool(cheap["support_ok"]):
@@ -7161,7 +7166,7 @@ class MaskAssessor:
         if all_rejected:
             tprint(f"Stage A cheap gate (0): support_out_of_range rejected {len(all_rejected)} rules")
 
-        bucket_sign_consistency_floor: Dict[Tuple[str, int, str], float] = {}
+        bucket_sign_consistency_floor: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_sign_consistency_values.items():
             vals = np.asarray([v for k, v in tuples if k not in all_rejected], dtype=float)
             finite_vals = vals[np.isfinite(vals)]
@@ -7186,7 +7191,7 @@ class MaskAssessor:
             )
         all_rejected |= rejected_by_sign_consistency
 
-        bucket_stability_floor: Dict[Tuple[str, int, str], float] = {}
+        bucket_stability_floor: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_stability_values.items():
             vals = np.asarray([v for k, v in tuples if k not in all_rejected], dtype=float)
             finite_vals = vals[np.isfinite(vals)]
@@ -7212,14 +7217,14 @@ class MaskAssessor:
             )
         all_rejected |= rejected_by_stability
 
-        bucket_mean_ret_values_surviving: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_mean_ret_values_surviving: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
         for bucket_key, tuples in bucket_mean_ret_values.items():
             for canonical_key, mean_ret in tuples:
                 if canonical_key not in all_rejected:
                     bucket_mean_ret_values_surviving[bucket_key].append((canonical_key, mean_ret))
-        bucket_mean_ret_floor: Dict[Tuple[str, int, str], float] = {}
+        bucket_mean_ret_floor: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_mean_ret_values_surviving.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)
             finite_vals = vals[np.isfinite(vals)]
@@ -7243,14 +7248,14 @@ class MaskAssessor:
 
         all_rejected |= rejected_by_mean_ret
 
-        bucket_density_values_surviving: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_density_values_surviving: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
         for bucket_key, tuples in bucket_density_values.items():
             for canonical_key, val in tuples:
                 if canonical_key not in all_rejected:
                     bucket_density_values_surviving[bucket_key].append((canonical_key, val))
-        bucket_density_cap: Dict[Tuple[str, int, str], float] = {}
+        bucket_density_cap: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_density_values_surviving.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)
             finite_vals = vals[np.isfinite(vals)]
@@ -7260,14 +7265,14 @@ class MaskAssessor:
                 else np.inf
             )
 
-        bucket_tail_values_surviving: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+        bucket_tail_values_surviving: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
         for bucket_key, tuples in bucket_tail_values.items():
             for canonical_key, val in tuples:
                 if canonical_key not in all_rejected:
                     bucket_tail_values_surviving[bucket_key].append((canonical_key, val))
-        bucket_tail_cap: Dict[Tuple[str, int, str], float] = {}
+        bucket_tail_cap: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_tail_values_surviving.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)
             finite_vals = vals[np.isfinite(vals)]
@@ -7310,7 +7315,7 @@ class MaskAssessor:
             )
         all_rejected |= rejected_by_path
 
-        cheap_gate_rows: Dict[Tuple[str, int, str], List[Tuple[float, str]]] = (
+        cheap_gate_rows: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
             collections.defaultdict(list)
         )
         cheap_gate_result: Dict[str, Tuple[bool, str]] = {}
@@ -7553,7 +7558,7 @@ class MaskAssessor:
         )
         overlap_free_zone = float(self.cfg.get("ridge_overlap_free_zone", 0.30))
         cheap_rank_exponent = float(self.cfg.get("ridge_cheap_rank_exponent", 1.3))
-        overlap_penalty_exponent = float(self.cfg.get("ridge_overlap_penalty_exponent", 1.7))
+        overlap_penalty_exponent = float(self.cfg.get("ridge_overlap_penalty_exponent", 1.8))
         support_ratio_min = float(self.cfg.get("ridge_support_ratio_min", 0.70))
         penalty_strength = float(self.cfg.get("ridge_support_penalty_strength", 1.0))
         boost_strength = float(self.cfg.get("ridge_support_boost_strength", 1.0))
@@ -7561,7 +7566,7 @@ class MaskAssessor:
         half_width = 0.025
 
         self.bucket_ridge_keys = {}
-        bucket_ridge_rows: Dict[Tuple[str, int, str], List[Tuple[float, str]]] = (
+        bucket_ridge_rows: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
             collections.defaultdict(list)
         )
         for bucket_key, entries in cheap_gate_rows.items():
@@ -7708,7 +7713,10 @@ class MaskAssessor:
             except (TypeError, ValueError):
                 horizon_key = -1
             target_key = str(row.get("source_target", "unknown"))
-            bucket_key = (side, horizon_key, target_key)
+
+            # The bucket grouping is determined strictly by side and horizon
+            group_bucket_key = (side, horizon_key)
+
             target_ret = target_ret_by_side[side]
             sign_consistency = float(row.get("sign_consistency", 0.0))
             global_auc = float(baseline_cache[side]["global_auc"])
@@ -7749,9 +7757,9 @@ class MaskAssessor:
                 run_ridge = False
                 if (
                     hasattr(self, "bucket_ridge_keys")
-                    and bucket_key in self.bucket_ridge_keys
+                    and group_bucket_key in self.bucket_ridge_keys
                 ):
-                    if canonical_key in self.bucket_ridge_keys[bucket_key]:
+                    if canonical_key in self.bucket_ridge_keys[group_bucket_key]:
                         run_ridge = True
 
                 if run_ridge:

@@ -3426,6 +3426,18 @@ class RulePruner:
         min_conviction = float(self.cfg.get("min_avg_leaf_value", 0.001))
         min_discoveries = int(self.cfg.get("min_tree_discoveries", 2))
 
+        dropped_conviction = (df["avg_model_conviction"] < min_conviction).sum()
+        dropped_discoveries = (df["discovery_count"] < min_discoveries).sum()
+        dropped_oos = (df["mean_net_ret"] <= 0).sum()
+
+        tprint(f"RulePruner (Assessment Prep): Input {len(df)} rules")
+        if dropped_conviction > 0:
+            tprint(f"  - Rejected {dropped_conviction} rules (conviction < {min_conviction})")
+        if dropped_discoveries > 0:
+            tprint(f"  - Rejected {dropped_discoveries} rules (discoveries < {min_discoveries})")
+        if dropped_oos > 0:
+            tprint(f"  - Rejected {dropped_oos} rules (OOS mean_net_ret <= 0)")
+
         mask = (
             (df["avg_model_conviction"] >= min_conviction)
             & (df["discovery_count"] >= min_discoveries)
@@ -3433,6 +3445,7 @@ class RulePruner:
         )
 
         pruned_df = df[mask].copy()
+        tprint(f"RulePruner (Assessment Prep): Selected {len(pruned_df)} rules (pre-ranking)")
 
         # 4. Final Ranking for Assessment
         # We rank by a hybrid of OOS performance and Model Discovery Count

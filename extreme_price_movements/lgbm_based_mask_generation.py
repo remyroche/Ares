@@ -7395,22 +7395,25 @@ class MaskAssessor:
                     mean_returns.append(float(cheap.get("mean_ret_mask", 0.0)))
                     std_returns.append(float(cheap.get("std_ret_mask", 0.0)))
 
+                # Precompute intersection matrix using matrix multiplication for massive speedup
+                context_matrix = np.column_stack(contexts).astype(np.int32)
+                intersections = context_matrix.T @ context_matrix
+                sub_supports = np.diag(intersections).astype(float)
+
                 keep = [True] * n_rules
                 for i in range(n_rules):
                     if not keep[i]:
                         continue
-                    A = contexts[i]
                     for j in range(i + 1, n_rules):
                         if not keep[j]:
                             continue
-                        B = contexts[j]
                         if mean_returns[i] * mean_returns[j] < 0:
                             continue
 
-                        inter = float(np.sum(A & B))
+                        inter = float(intersections[i, j])
                         if inter < 1:
                             continue
-                        overlap = inter / max(min(float(np.sum(A)), float(np.sum(B))), 1.0)
+                        overlap = inter / max(min(sub_supports[i], sub_supports[j]), 1.0)
                         supp_ratio = min(supports[i], supports[j]) / max(supports[i], supports[j], 1e-9)
 
                         if overlap > OVERLAP_THRESHOLD and supp_ratio > SUPPORT_RATIO_MIN:

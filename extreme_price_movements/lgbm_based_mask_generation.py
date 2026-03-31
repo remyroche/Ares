@@ -4812,7 +4812,7 @@ def run_mining_stage(
         )
         finite_importance = finite_importance[np.isfinite(finite_importance)]
         if len(finite_importance) >= 2:
-            cutoff = float(np.nanquantile(finite_importance, 0.50))
+            cutoff = float(np.nanquantile(finite_importance, 0.30))
             before_count = len(scorer_accepted)
             scorer_accepted = scorer_accepted[
                 pd.to_numeric(scorer_accepted[importance_col], errors="coerce").fillna(
@@ -4821,7 +4821,7 @@ def run_mining_stage(
                 > cutoff
             ].copy()
             tprint(
-                f"Model-importance pre-pruner cut: removed bottom 50% by "
+                f"Model-importance pre-pruner cut: removed bottom 30% by "
                 f"{importance_col} ({before_count} -> {len(scorer_accepted)}, cutoff={cutoff:.6f})"
             )
 
@@ -6984,7 +6984,7 @@ class MaskAssessor:
             mae, mfe = self._compute_mae_mfe(target_ret_masked)
             mean_ret_global = mean_ret_global_by_side[side]
             mean_ret_mask = float(np.nanmean(target_ret_masked))
-            std_ret_mask = float(np.nanstd(target_ret_masked))
+            std_ret_mask = float(np.nanstd(_clip_returns(target_ret_masked)))
             ret_uplift = mean_ret_mask - mean_ret_global
 
             stats = {
@@ -7129,7 +7129,7 @@ class MaskAssessor:
             )
             bucket_mean_ret_values[bucket_key].append((canonical_key, mean_ret_mask))
 
-        pctile_bottom_cut = float(self.cfg.get("cheap_gate_bottom_pctile", 0.20))
+        pctile_bottom_cut = float(self.cfg.get("cheap_gate_bottom_pctile", 0.30))
         bucket_sign_consistency_floor: Dict[Tuple[str, int, str], float] = {}
         for bucket_key, tuples in bucket_sign_consistency_values.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)

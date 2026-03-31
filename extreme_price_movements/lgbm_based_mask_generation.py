@@ -6732,17 +6732,15 @@ class MaskAssessor:
         self.mask_resolver = mask_resolver
 
     @staticmethod
-    def _compute_avg_trades_per_day(mask: np.ndarray, data: pd.DataFrame) -> float:
-        selected_count = int(np.sum(mask))
-        if selected_count == 0:
-            return 0.0
+    def _compute_total_symbol_days(data: pd.DataFrame) -> Optional[float]:
+        """Precomputes the total_symbol_days for a given dataset."""
         if "timestamp" not in data.columns or "symbol" not in data.columns:
-            return float(selected_count)
+            return None
 
         timestamps = pd.to_datetime(data["timestamp"], errors="coerce")
         valid_rows = timestamps.notna().to_numpy()
         if not np.any(valid_rows):
-            return float(selected_count)
+            return None
 
         working = pd.DataFrame(
             {
@@ -6756,10 +6754,21 @@ class MaskAssessor:
             not np.isfinite(typical_rows_per_symbol_day)
             or typical_rows_per_symbol_day <= 0
         ):
-            return float(selected_count)
+            return None
 
         total_symbol_days = float(valid_rows.sum()) / typical_rows_per_symbol_day
         if total_symbol_days <= 0:
+            return None
+
+        return total_symbol_days
+
+    @staticmethod
+    def _compute_avg_trades_per_day(mask: np.ndarray, total_symbol_days: Optional[float]) -> float:
+        selected_count = int(np.sum(mask))
+        if selected_count == 0:
+            return 0.0
+
+        if total_symbol_days is None or total_symbol_days <= 0:
             return float(selected_count)
 
         trades_per_day_per_symbol = selected_count / total_symbol_days
@@ -6937,6 +6946,8 @@ class MaskAssessor:
                 day_codes = day_labels.astype(np.int32, copy=False)
                 n_day_buckets = int(day_labels.max() + 1)
 
+        total_symbol_days = self._compute_total_symbol_days(data)
+
         def _get_or_compute_cheap_stats(
             canonical_key: str, side: str, mask: np.ndarray
         ) -> Dict[str, float]:
@@ -6948,7 +6959,7 @@ class MaskAssessor:
             support_pct = float(np.mean(mask))
             support_ok = support_min <= support_pct <= support_max
             support_score = -abs(support_pct - target_support)
-            avg_trades = self._compute_avg_trades_per_day(mask, data)
+            avg_trades = self._compute_avg_trades_per_day(mask, total_symbol_days)
 
             if day_codes is not None and n_day_buckets > 0:
                 active_codes = day_codes[mask]

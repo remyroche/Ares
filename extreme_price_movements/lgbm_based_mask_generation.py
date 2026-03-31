@@ -7094,6 +7094,9 @@ class MaskAssessor:
         bucket_path_quality_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
+        bucket_stability_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
+            collections.defaultdict(list)
+        )
         bucket_sign_consistency_values: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
@@ -7133,8 +7136,11 @@ class MaskAssessor:
                 (canonical_key, float(cheap["tail_ratio"]))
             )
             path_quality = float(pre_row.get("trade_path_quality_score", np.nan))
+            stability_score = float(pre_row.get("quality_stability_score", np.nan))
             if np.isfinite(path_quality):
                 bucket_path_quality_values[bucket_key].append((canonical_key, path_quality))
+            if np.isfinite(stability_score):
+                bucket_stability_values[bucket_key].append((canonical_key, stability_score))
             sign_consistency = float(pre_row.get("sign_consistency", 0.5))
             mean_ret_mask = float(cheap["mean_ret_mask"])
             bucket_sign_consistency_values[bucket_key].append(
@@ -7164,12 +7170,30 @@ class MaskAssessor:
                 f"Stage A cheap gate (1): sign_consistency "
                 f"  rejected {n_sign_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket"
             )
+
+        rejected_by_stability: set = set()
+        for bucket_key, tuples in bucket_stability_values.items():
+            floor = bucket_stability_floor.get(bucket_key, -np.inf)
+            protected = bucket_protected_keys.get(bucket_key, set())
+            for canonical_key, stability in tuples:
+                if canonical_key in rejected_by_sign_consistency:
+                    continue
+                if stability < floor and canonical_key not in protected:
+                    rejected_by_stability.add(canonical_key)
+
+        n_stability_rejected = len(rejected_by_stability)
+        if n_stability_rejected > 0:
+            tprint(
+                f"Stage A cheap gate (1.5): quality_stability "
+                f"  rejected {n_stability_rejected} rules"
+            )
+
         bucket_mean_ret_values_surviving: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
         )
         for bucket_key, tuples in bucket_mean_ret_values.items():
             for canonical_key, mean_ret in tuples:
-                if canonical_key not in rejected_by_sign_consistency:
+                if canonical_key not in rejected_by_sign_consistency and canonical_key not in rejected_by_stability:
                     bucket_mean_ret_values_surviving[bucket_key].append((canonical_key, mean_ret))
         bucket_mean_ret_floor: Dict[Tuple[str, int, str], float] = {}
         for bucket_key, tuples in bucket_mean_ret_values_surviving.items():
@@ -7193,7 +7217,7 @@ class MaskAssessor:
                 f"  rejected {n_mean_ret_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket"
             )
 
-        all_rejected = rejected_by_sign_consistency | rejected_by_mean_ret
+        all_rejected = rejected_by_sign_consistency | rejected_by_stability | rejected_by_mean_ret
 
         bucket_density_values_surviving: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
             collections.defaultdict(list)
@@ -7282,6 +7306,11 @@ class MaskAssessor:
                 rejected, rejection_reason = True, "support_out_of_range"
             elif sign_consistency < bucket_sign_consistency_floor.get(bucket_key, -np.inf):
                 rejected, rejection_reason = True, "low_sign_consistency_pctile"
+            elif float(
+                pre_row.get("quality_stability_score", np.nan)
+            ) < bucket_stability_floor.get(bucket_key, -np.inf):
+                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
+                    rejected, rejection_reason = True, "low_stability_floor"
             elif float(cheap["mean_ret_mask"]) < bucket_mean_ret_floor.get(bucket_key, -np.inf):
                 rejected, rejection_reason = True, "low_mean_target_value_pctile"
             elif float(
@@ -7289,11 +7318,6 @@ class MaskAssessor:
             ) < bucket_path_floor.get(bucket_key, -np.inf):
                 if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
                     rejected, rejection_reason = True, "low_path_quality_floor"
-            elif float(
-                pre_row.get("quality_stability_score", np.nan)
-            ) < bucket_stability_floor.get(bucket_key, -np.inf):
-                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
-                    rejected, rejection_reason = True, "low_stability_floor"
             elif float(cheap["density_dispersion"]) > bucket_density_cap.get(
                 bucket_key, np.inf
             ):

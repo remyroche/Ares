@@ -11,7 +11,10 @@ HARDCODED_EXCLUDED_SYMBOLS = frozenset({
     "CHESS/USDT",
     "DATA/USDT",
     "DF/USDT",
+    "ESP/USDT",
+    "FOGO/USDT",
     "FRAX/USDT",
+    "MANTRA/USDT",
 })
 DEDUP_QUOTES = ("USDT",)
 DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}

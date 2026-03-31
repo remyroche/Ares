@@ -55,7 +55,7 @@ MODEL_FEATURES = [
     "volume_entropy_12", "volume_entropy_24",
     "downside_semivariance_24",
     "upside_semivariance_8", "upside_semivariance_24",
-    "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+     "down_up_vol_ratio_24",
     "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
     "breakout_24h",
     "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
@@ -948,7 +948,7 @@ CFG = {
         "volume_entropy_12", "volume_entropy_24",
         "downside_semivariance_24",
         "upside_semivariance_8", "upside_semivariance_24",
-        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+         "down_up_vol_ratio_24",
         "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
         # Residualised features — relative surprise, not absolute magnitude
         "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
@@ -1158,7 +1158,7 @@ CFG = {
         "rv_ratio_24_120", "ret48h", "ret120h",
         "downside_semivariance_24",
         "upside_semivariance_8", "upside_semivariance_24",
-        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+         "down_up_vol_ratio_24",
         "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
         # OHLCV-based trend quality features (Report 2026-02-12)
         "trend_age_hours", "higher_highs_count_48h", "trend_retest_success_rate",
@@ -1185,7 +1185,7 @@ CFG = {
         "rv_ratio_24_120", "ret48h", "ret120h",
         "downside_semivariance_24",
         "upside_semivariance_8", "upside_semivariance_24",
-        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+         "down_up_vol_ratio_24",
         "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
         # OHLCV-based mean-reversion quality features (Report 2026-02-12)
         "trend_strength_vs_reversion", "support_quality_score", "dip_velocity",
@@ -1283,7 +1283,7 @@ CFG = {
         "trend_strength_vs_reversion", "mr_tape",
         # MR path quality and trap filtering
         "vol_compression", "climax_decay", "shock_rel", "vol_price_diverge",
-        "rsi_z_x_regime_vol", "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+        "rsi_z_x_regime_vol", "down_up_vol_ratio_24",
         "vol_shock_asym_4_12", "vol_shock_asym_8_24", "draw_sym_10h", "atr_pct_change",
     ],
     "tf_meta_feature_keys": [

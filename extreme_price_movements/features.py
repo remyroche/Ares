@@ -3346,9 +3346,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     up_vol_8 = np.sqrt(feats["upside_semivariance_8"].clip(lower=0))
     down_vol_24 = np.sqrt(feats["downside_semivariance_24"].clip(lower=0))
     up_vol_24 = np.sqrt(feats["upside_semivariance_24"].clip(lower=0))
-    feats["down_up_vol_ratio_8"] = pd.DataFrame(
-        0.0, index=up_vol_8.index, columns=up_vol_8.columns, dtype=np.float32
-    )
     feats["down_up_vol_ratio_24"] = (down_vol_24 / (up_vol_24 + 1e-12)).astype(
         np.float32
     )

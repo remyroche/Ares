@@ -502,7 +502,7 @@ def run_short_hpo_for_target_horizon(
         # Fallback for very small datasets
         return {
             "best_alpha_result": EvalResult(
-                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.90, min_gain_to_split=0.001, min_leaf_frac=0.0010),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,
@@ -513,7 +513,7 @@ def run_short_hpo_for_target_horizon(
                 reason="small_data_fallback_n<100",
             ),
             "best_final_result": EvalResult(
-                cfg=HPOConfig(alpha=0.95, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.90, min_gain_to_split=0.001, min_leaf_frac=0.0010),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,

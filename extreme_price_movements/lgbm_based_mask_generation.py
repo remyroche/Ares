@@ -7397,6 +7397,8 @@ class MaskAssessor:
             for _, canonical_key in entries:
                 surviving_keys_by_bucket[bucket_key].append(canonical_key)
 
+        stage_a_matrices = {}
+
         n_total_surviving = sum(len(v) for v in surviving_keys_by_bucket.values())
         if n_total_surviving > 0:
             rng = np.random.default_rng(seed=42)
@@ -7416,6 +7418,13 @@ class MaskAssessor:
             n_dedup_rejected = 0
             for bucket_key, surviving_keys in surviving_keys_by_bucket.items():
                 if len(surviving_keys) < 2:
+                    # Still need to store trivial matrices for the soft Ridge deduplication fallback
+                    if surviving_keys:
+                        stage_a_matrices[bucket_key] = {
+                            "key_to_idx": {surviving_keys[0]: 0},
+                            "intersections": np.array([[DEDUP_SUBSAMPLE_SIZE]], dtype=np.int32),
+                            "supports": np.array([DEDUP_SUBSAMPLE_SIZE], dtype=float)
+                        }
                     continue
 
                 n_rules = len(surviving_keys)
@@ -7460,6 +7469,13 @@ class MaskAssessor:
                 context_matrix = np.column_stack(contexts).astype(np.int32)
                 intersections = context_matrix.T @ context_matrix
                 sub_supports = np.diag(intersections).astype(float)
+
+                # Store matrices for soft F1/Dice penalty downstream
+                stage_a_matrices[bucket_key] = {
+                    "key_to_idx": {k: idx for idx, k in enumerate(surviving_keys)},
+                    "intersections": intersections,
+                    "supports": sub_supports
+                }
 
                 keep = [True] * n_rules
                 for i in range(n_rules):
@@ -7530,8 +7546,13 @@ class MaskAssessor:
                 )
 
         max_ridge_candidates_per_bucket = int(
-            self.cfg.get("max_ridge_candidates_per_bucket", 20)
+            self.cfg.get("max_ridge_candidates_per_bucket", 5)
         )
+        overlap_free_zone = float(self.cfg.get("ridge_overlap_free_zone", 0.30))
+        cheap_rank_exponent = float(self.cfg.get("ridge_cheap_rank_exponent", 1.3))
+        overlap_penalty_exponent = float(self.cfg.get("ridge_overlap_penalty_exponent", 1.7))
+        support_ratio_min = float(self.cfg.get("ridge_support_ratio_min", 0.70))
+
         self.bucket_ridge_keys = {}
         bucket_ridge_rows: Dict[Tuple[str, int, str], List[Tuple[float, str]]] = (
             collections.defaultdict(list)
@@ -7549,10 +7570,87 @@ class MaskAssessor:
             bucket_ridge_rows[bucket_key].extend(entries)
 
         for bucket_key, entries in bucket_ridge_rows.items():
-            entries.sort(key=lambda item: item[0], reverse=True)
-            self.bucket_ridge_keys[bucket_key] = {
-                key for _, key in entries[: max(max_ridge_candidates_per_bucket, 0)]
-            }
+            if not entries:
+                continue
+
+            surviving_keys = [k for _, k in entries]
+            surviving_ranks = [r for r, _ in entries]
+
+            matrices = stage_a_matrices.get(bucket_key)
+            if not matrices or len(surviving_keys) <= max_ridge_candidates_per_bucket:
+                entries.sort(key=lambda item: item[0], reverse=True)
+                self.bucket_ridge_keys[bucket_key] = {
+                    key for _, key in entries[: max(max_ridge_candidates_per_bucket, 0)]
+                }
+                continue
+
+            key_to_idx = matrices["key_to_idx"]
+            intersections = matrices["intersections"]
+            supports = matrices["supports"]
+
+            # Filter matrices for valid entries
+            idx_list = []
+            valid_keys = []
+            valid_ranks = []
+            for i, k in enumerate(surviving_keys):
+                if k in key_to_idx:
+                    idx_list.append(key_to_idx[k])
+                    valid_keys.append(k)
+                    valid_ranks.append(surviving_ranks[i])
+
+            if len(valid_keys) <= max_ridge_candidates_per_bucket:
+                self.bucket_ridge_keys[bucket_key] = set(valid_keys)
+                continue
+
+            sub_intersections = intersections[np.ix_(idx_list, idx_list)]
+            sub_supports_arr = supports[idx_list]
+
+            supp_i = sub_supports_arr[:, None]
+            supp_j = sub_supports_arr[None, :]
+
+            # Compute F1/Dice matrix
+            f1_overlap_matrix = 2.0 * sub_intersections / (supp_i + supp_j + 1e-9)
+
+            # Compute Support Ratio matrix to ignore similarities where support sizes differ greatly
+            supp_ratio_matrix = np.minimum(supp_i, supp_j) / np.maximum(supp_i, supp_j + 1e-9)
+
+            # Effective F1 (Same-side is naturally guaranteed because bucket keys split by side)
+            effective_f1_overlap_matrix = f1_overlap_matrix * (supp_ratio_matrix >= support_ratio_min)
+
+            # Normalize cheap ranks to [0.05, 1.0] positive bounded range
+            raw_cr = np.array(valid_ranks)
+            min_cr = np.min(raw_cr)
+            max_cr = np.max(raw_cr)
+            if max_cr - min_cr < 1e-9:
+                norm_cr = np.full(len(valid_keys), 1.0)
+            else:
+                norm_cr = 0.05 + 0.95 * (raw_cr - min_cr) / (max_cr - min_cr)
+
+            # Diversified Top-K Greedy Selection
+            selected_indices = []
+            remaining_indices = list(range(len(valid_keys)))
+
+            best_idx = remaining_indices[int(np.argmax(norm_cr[remaining_indices]))]
+            selected_indices.append(best_idx)
+            remaining_indices.remove(best_idx)
+
+            while len(selected_indices) < max_ridge_candidates_per_bucket and remaining_indices:
+                best_adj_score = -np.inf
+                best_next_idx = -1
+
+                for i in remaining_indices:
+                    max_f1_overlap_i = np.max(effective_f1_overlap_matrix[i, selected_indices])
+                    effective_overlap_i = max(0.0, max_f1_overlap_i - overlap_free_zone)
+                    adjusted_score_i = (norm_cr[i] ** cheap_rank_exponent) * ((1.0 - effective_overlap_i) ** overlap_penalty_exponent)
+
+                    if adjusted_score_i > best_adj_score:
+                        best_adj_score = adjusted_score_i
+                        best_next_idx = i
+
+                selected_indices.append(best_next_idx)
+                remaining_indices.remove(best_next_idx)
+
+            self.bucket_ridge_keys[bucket_key] = {valid_keys[i] for i in selected_indices}
 
         for _, row in registry.iterrows():
             canonical_key = str(row["canonical_key"])

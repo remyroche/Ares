@@ -336,6 +336,40 @@ def _compute_regression_beta_and_fit(
     return beta, fit
 
 
+
+def compute_directional_sign_consistency(
+    returns: np.ndarray,
+    threshold: float = 0.01,
+    min_effective_samples: int = 5,
+) -> float:
+    """
+    Compute sign_consistency using only rows where the return magnitude
+    is large enough to be economically meaningful.
+    """
+    if len(returns) == 0:
+        return 0.5
+
+    valid_returns = returns[np.isfinite(returns)]
+    if len(valid_returns) == 0:
+        return 0.5
+
+    eligible_returns = valid_returns[np.abs(valid_returns) > threshold]
+    n_total = len(eligible_returns)
+
+    if n_total == 0:
+        return 0.5
+
+    n_pos = np.sum(eligible_returns > 0)
+    n_neg = np.sum(eligible_returns < 0)
+
+    sign_consistency = float(max(n_pos, n_neg) / n_total)
+
+    if n_total < min_effective_samples:
+        shrink_factor = float(n_total) / float(min_effective_samples)
+        sign_consistency = 0.5 + (sign_consistency - 0.5) * shrink_factor
+
+    return sign_consistency
+
 def _compute_path_arrays_from_ohlc(
     data: pd.DataFrame, side: str, horizon: int, fallback_final_ret: np.ndarray
 ) -> Dict[str, np.ndarray]:
@@ -2916,16 +2950,13 @@ class RuleScorer:
         mean_support_pct = float(present["support_pct"].mean())
         std_support_pct = float(present["support_pct"].std(ddof=0))
         presence_freq = float(len(present) / max(len(folds), 1))
-        nonzero_signs = present[present["sign"] != 0]["sign"]
-        if len(nonzero_signs) == 0:
-            if not present.empty:
-                tprint(
-                    f"DEBUG: Rule {canonical_key[:40]}... has {len(present)} folds but 0 nonzero signs. Root cause: all trades have exactly 0 return."
-                )
-            sign_consistency = 0.0
+        # Compute sign_consistency across pooled out-of-sample returns
+        if path_final_ret_values:
+            pooled_oos_returns = np.asarray(path_final_ret_values, dtype=float)
+            sign_consistency = compute_directional_sign_consistency(pooled_oos_returns)
         else:
-            major_sign = 1 if mean_net_ret > 0 else -1
-            sign_consistency = float((nonzero_signs == major_sign).mean())
+            # Fallback to computing from available fold means or just setting to 0.5
+            sign_consistency = 0.5
         display_arity = display_arity_for_key(canonical_key)
         required_hurdle = self._compute_required_hurdle(mean_support_pct, display_arity)
         use_directional = bool(self.cfg.get("stage_a_directional", True)) and (
@@ -6999,6 +7030,7 @@ class MaskAssessor:
             mean_ret_mask = float(np.nanmean(target_ret_masked))
             std_ret_mask = float(np.nanstd(_clip_returns(target_ret_masked)))
             ret_uplift = mean_ret_mask - mean_ret_global
+            sign_consistency = compute_directional_sign_consistency(target_ret_masked)
 
             stats = {
                 "support_pct": support_pct,
@@ -7013,6 +7045,7 @@ class MaskAssessor:
                 "mean_ret_mask": mean_ret_mask,
                 "std_ret_mask": std_ret_mask,
                 "ret_uplift": ret_uplift,
+                "sign_consistency": sign_consistency,
             }
             cheap_stats_cache[cache_key] = stats
             return stats
@@ -7087,7 +7120,7 @@ class MaskAssessor:
                 bucket_path_quality_values[bucket_key].append((canonical_key, path_quality))
             if np.isfinite(stability_score):
                 bucket_stability_values[bucket_key].append((canonical_key, stability_score))
-            sign_consistency = float(pre_row.get("sign_consistency", 0.5))
+            sign_consistency = float(cheap["sign_consistency"])
             mean_ret_mask = float(cheap["mean_ret_mask"])
             bucket_sign_consistency_values[bucket_key].append(
                 (canonical_key, sign_consistency)
@@ -7353,8 +7386,8 @@ class MaskAssessor:
             if np.sum(mask) < 20:
                 continue
 
-            sign_consistency = float(pre_row.get("sign_consistency", 0.0))
             cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
+            sign_consistency = float(cheap["sign_consistency"])
 
             rejected = False
             rejection_reason = ""
@@ -7455,20 +7488,18 @@ class MaskAssessor:
                     contexts.append(mask_sub)
                     supports.append(float(np.mean(mask_sub)))
 
+                    cheap = _get_or_compute_cheap_stats(
+                        canonical_key, bucket_key[0], mask
+                    )
+
                     row_idx = registry_key_to_row.get(canonical_key)
                     if row_idx is not None:
                         pre_row = registry.iloc[row_idx]
                         gain_val = float(pre_row.get("rule_model_importance_score", 0.0))
-                        sign_cons_val = float(pre_row.get("sign_consistency", 0.5))
                     else:
                         gain_val = 0.0
-                        sign_cons_val = 0.5
                     gains.append(gain_val)
-                    sign_consistencies.append(sign_cons_val)
-
-                    cheap = _get_or_compute_cheap_stats(
-                        canonical_key, bucket_key[0], mask
-                    )
+                    sign_consistencies.append(float(cheap["sign_consistency"]))
                     mean_returns.append(float(cheap.get("mean_ret_mask", 0.0)))
                     std_returns.append(float(cheap.get("std_ret_mask", 0.0)))
 
@@ -7744,7 +7775,6 @@ class MaskAssessor:
             group_bucket_key = (side, horizon_key)
 
             target_ret = target_ret_by_side[side]
-            sign_consistency = float(row.get("sign_consistency", 0.0))
             global_auc = float(baseline_cache[side]["global_auc"])
             global_entropy = float(baseline_cache[side]["global_entropy"])
             baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
@@ -7759,6 +7789,7 @@ class MaskAssessor:
             # 2-6. Cached cheap stats (no Ridge work)
             cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
 
+            sign_consistency = float(cheap["sign_consistency"])
             support_pct = float(cheap["support_pct"])
             support_ok = bool(cheap["support_ok"])
             support_score = float(cheap["support_score"])

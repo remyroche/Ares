@@ -615,7 +615,8 @@ def add_regime_gates(
     dyn_thr = np.maximum(daily_vol * 1.5, 0.005)
 
     df["G_TREND"] = (df["mkt_ret24h"].abs() > dyn_thr).astype(np.int32)
-    df["mkt_rv_ratio"] = df["mkt_rv"] / (df["mkt_rv_med"] + 1e-12)
+    safe_mkt_rv_med = np.where(df["mkt_rv_med"] > 1e-12, df["mkt_rv_med"], 1e-12)
+    df["mkt_rv_ratio"] = df["mkt_rv"] / safe_mkt_rv_med
 
     rv_mean = ff.numba_rolling_mean(df[["mkt_rv"]], gate_vol_lookback_hours)[
         "mkt_rv"
@@ -628,8 +629,9 @@ def add_regime_gates(
     df["mkt_rv_pct"] = (
         ((df["mkt_rv"] - rv_mean) / rv_std).clip(-6, 6).fillna(0.0).astype(np.float32)
     )
+    import math
     df["mkt_rv_pct"] = (
-        0.5 * (1.0 + np.vectorize(np.math.erf)(df["mkt_rv_pct"] / np.sqrt(2.0)))
+        0.5 * (1.0 + np.vectorize(math.erf)(df["mkt_rv_pct"] / np.sqrt(2.0)))
     ).astype(np.float32)
 
     abs_ret = df["mkt_ret24h"].abs()
@@ -883,14 +885,20 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
 
     # 5. Vol of Vol (Rolling Std of Sigma)
     # Coefficient of variation of volatility
-    vv = ff.numba_rolling_std(rv_24, 24)
+    mean_rv_24_16 = ff.numba_rolling_mean(rv_24, 16)
+    safe_mean_rv_24_16 = np.where(mean_rv_24_16 > 1e-12, mean_rv_24_16, 1e-12)
+    feats["vol_regime_shift"] = (
+        ff.numba_rolling_mean(rv_24, 4) / safe_mean_rv_24_16
+    ).shift(1).astype(np.float32)
     feats["vol_of_vol"] = (vv / (rv_24 + 1e-12)).shift(1).astype(np.float32)
 
     # 6. ATR Percentile (similar to vol percentile but using ATR)
     atr_min = ff.numba_rolling_min(atr_base, 24 * 30)
     atr_max = ff.numba_rolling_max(atr_base, 24 * 30)
+    atr_range = atr_max - atr_min
+    safe_atr_range = np.where(atr_range > 1e-12, atr_range, 1e-12)
     feats["atr_percentile"] = (
-        ((atr_base - atr_min) / (atr_max - atr_min + 1e-12))
+        ((atr_base - atr_min) / safe_atr_range)
         .clip(0, 1)
         .shift(1)
         .astype(np.float32)
@@ -1686,9 +1694,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     high_20 = h_max_20
     low_20 = l_min_20
     range_20 = high_20 - low_20
+
+    range_safe = np.where(range_20 > 1e-12, range_20, 1e-12)
+    ratio = atr_sum / range_safe
+    ratio_clean = np.where(np.isfinite(ratio), ratio, 1e-12)
+
     feats["choppiness_index_20"] = (
         100
-        * np.log10((atr_sum / (range_20 + 1e-12)).clip(lower=1e-12))
+        * np.log10(np.clip(ratio_clean, 1e-12, None))
         / np.float32(np.log10(20))
     ).astype(np.float32)
 
@@ -3155,9 +3168,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         (ret_w > 0).to_numpy(), (c - local_low).to_numpy(), (c - local_high).to_numpy()
     )
     # Use safe division with proper handling of non-finite values
+    c_safe = np.where(np.isfinite(c) & (np.abs(c) > 1e-12), c, 1.0)
     draw_sym = np.where(
-        np.isfinite(draw_num) & np.isfinite(c) & (c.abs() > 1e-12),
-        np.sign(ret_w) * draw_num / (c + 1e-12),
+        np.isfinite(draw_num) & np.isfinite(c) & (np.abs(c) > 1e-12),
+        np.sign(ret_w) * draw_num / c_safe,
         0.0,
     )
     feats["draw_sym_10h"] = draw_sym.astype(np.float32)
@@ -4372,10 +4386,18 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             high_max_20 = h_raw.rolling(20, min_periods=1).max()
             low_min_20 = l_raw.rolling(20, min_periods=1).min()
             range_20 = high_max_20 - low_min_20
-            feats["choppiness_index_20"] = (
-                (100.0 * np.log(tr_20 / (range_20 + 1e-9) + 1e-9) / np.log(20.0))
-                .clip(0, 100)
-                .astype(np.float32)
+
+            range_safe = np.where(range_20 > 1e-9, range_20, 1e-9)
+            tr_safe = np.where(np.isfinite(tr_20), tr_20, 1e-9)
+            ratio_clean = np.clip(tr_safe / range_safe, 1e-9, None)
+
+            feats["choppiness_index_20"] = pd.Series(
+                np.clip(
+                    100.0 * np.log(ratio_clean) / np.log(20.0),
+                    0,
+                    100
+                ).astype(np.float32),
+                index=tr_20.index
             )
 
         if _needs_feature("climax_volume_ratio"):
@@ -5720,16 +5742,29 @@ def build_position_sizer_feature_frame(
     )
 
     mean_rv_12 = rolling_mean_nb(rv_12, 12)
+    safe_mean_rv_12 = np.where(mean_rv_12 > 1e-9, mean_rv_12, 1.0)
     vol_of_vol = np.where(
-        mean_rv_12 > 1e-9, rolling_std_nb(rv_12, 12) / mean_rv_12, 0.0
+        mean_rv_12 > 1e-9, rolling_std_nb(rv_12, 12) / safe_mean_rv_12, 0.0
     ).astype(np.float32)
 
+    mean_rv_16 = rolling_mean_nb(rv_12, 16)
+    safe_mean_rv_16 = np.where(mean_rv_16 > 1e-9, mean_rv_16, 1.0)
+    vol_regime_shift_4_16 = np.where(
+        mean_rv_16 > 1e-9,
+        rolling_mean_nb(rv_12, 4) / safe_mean_rv_16,
+        1.0,
+    ).astype(np.float32)
+
+    mean_bar_range_12 = rolling_mean_nb(bar_range, 12)
+    safe_mean_bar_range_12 = np.where(mean_bar_range_12 > 1e-9, mean_bar_range_12, 1.0)
     range_cv = np.where(
-        rolling_mean_nb(bar_range, 12) > 1e-9,
-        rolling_std_nb(bar_range, 12) / rolling_mean_nb(bar_range, 12),
+        mean_bar_range_12 > 1e-9,
+        rolling_std_nb(bar_range, 12) / safe_mean_bar_range_12,
         0.0,
     ).astype(np.float32)
-    return_vol_ratio = np.where(rv_12 > 1e-9, np.abs(ret_1) / rv_12, 0.0).astype(
+
+    safe_rv_12 = np.where(rv_12 > 1e-9, rv_12, 1.0)
+    return_vol_ratio = np.where(rv_12 > 1e-9, np.abs(ret_1) / safe_rv_12, 0.0).astype(
         np.float32
     )
 

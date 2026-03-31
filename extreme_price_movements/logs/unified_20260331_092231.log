@@ -1,0 +1,191 @@
+Mar 31, 2026 09:22:32 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 31, 2026 09:22:32 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 31, 2026 09:22:32 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 31, 2026 09:22:34 (+00:00:02) - ares.registry - INFO - Registered step: data_download
+Mar 31, 2026 09:22:34 (+00:00:02) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 31, 2026 09:22:34 (+00:00:02) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 31, 2026 09:22:34 (+00:00:02) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 31, 2026 09:22:34 (+00:00:02) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 31, 2026 09:22:34 (+00:00:02) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 31, 2026 09:22:34 (+00:00:02) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 31, 2026 09:22:34 (+00:00:02) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 31, 2026 09:22:34 (+00:00:02) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 31, 2026 09:22:42 (+00:00:10) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: False, Generation: none, MPS: False
+Mar 31, 2026 09:22:42 (+00:00:10) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ Non-M1 system detected - M1-specific optimizations disabled
+Mar 31, 2026 09:22:42 (+00:00:10) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ M1-specific CPU optimizations disabled - non-M1 system detected
+Mar 31, 2026 09:22:43 (+00:00:11) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 31, 2026 09:22:43 (+00:00:11) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 31, 2026 09:22:43 (+00:00:11) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 31, 2026 09:22:43 (+00:00:11) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 31, 2026 09:22:43 (+00:00:11) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 31, 2026 09:22:43 (+00:00:11) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 31, 2026 09:22:43 (+00:00:11) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 31, 2026 09:22:43 (+00:00:11) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 31, 2026 09:22:43 (+00:00:11) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 31, 2026 09:22:43 (+00:00:11) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 31, 2026 09:22:43 (+00:00:11) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 31, 2026 09:22:43 (+00:00:11) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 31, 2026 09:22:44 (+00:00:12) - System.VersionManager - INFO - 📝 Created default version config at config/version_config.json
+Mar 31, 2026 09:22:44 (+00:00:12) - System.tprint - INFO - 🔄 Initializing unified model loader
+Mar 31, 2026 09:22:44 (+00:00:12) - System.tprint - INFO - ✅ Unified model loader initialized
+Mar 31, 2026 09:22:44 (+00:00:12) - System.tprint - INFO - 🔄 Trading data exporter initialized
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - ✅ Custom logger available for MLCommon.CV
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - ✅ Custom logger available for MLCommon.HPOUtils
+Mar 31, 2026 09:22:49 (+00:00:17) - MLCommon.HPOUtils - INFO - ✅ VectorBT optimization available
+Mar 31, 2026 09:22:49 (+00:00:17) - MLCommon.HPOUtils - INFO - 🚀 Initializing Enhanced HyperparameterOptimization...
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 Memory limit set to 8.0 GB (8589934592.0 bytes)
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - WARNING - ⚠️ Non-M1 system detected - some optimizations may not be effective
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - WARNING - ⚠️ M1-specific optimizations disabled - non-M1 system detected
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - 🔧 Unified Hardware Manager initialized
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - INFO - 🔍 Hardware performance monitoring started
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - 🧠 M1 memory monitoring started
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ✅ Unified Hardware Manager fully initialized
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - 🎯 Optimizing for feature_engineering workload (balanced)
+Mar 31, 2026 09:22:49 (+00:00:17) - MLCommon.HPOUtils.HPOUtils - INFO - ✅ VectorBT Rolling Optimizer initialized
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.ml_common.hardware_singleton - INFO - 🔍 Detecting hardware capabilities (one-time detection)...
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.ml_common.hardware_singleton - INFO - ✅ Hardware detection complete: {'cpu_cores': 4, 'gpu_available': False, 'gpu_type': None, 'memory_gb': 7.772556304931641, 'mps_available': False, 'gpu_memory_gb': None}
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - 🚀 Initializing Unified Vectorization Manager...
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - 🔄 Initializing optimization components...
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - 🔄 Initializing optimization components...
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - 🔄 Loading VectorBTRollingOptimizer...
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - ✅ VectorBTRollingOptimizer loaded
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - 🔄 Loading vectorized backtesting...
+Mar 31, 2026 09:22:49 (+00:00:17) - System.VectorizedBacktestingEngine - INFO - ✅ Vectorized Backtesting Engine initialized successfully
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - ✅ Vectorized backtesting loaded
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - 🔄 Loading VectorBT backtesting engine...
+Mar 31, 2026 09:22:49 (+00:00:17) - System.VectorBTBacktestingEngine - INFO - ✅ VectorBT Backtesting Engine initialized successfully
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - ✅ VectorBT backtesting engine loaded
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - 🔄 Loading VectorBT financial metrics...
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.ml_common.vectorbt_financial_metrics - INFO - ✅ VectorBT Financial Metrics initialized
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.ml_common.vectorbt_financial_metrics - INFO - 📊 Risk-free rate: 2.00%
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.ml_common.vectorbt_financial_metrics - INFO - 📊 Annualization factor: 252
+Mar 31, 2026 09:22:49 (+00:00:17) - src.utils.ml_common.vectorbt_financial_metrics - INFO - 📊 Regime analysis: True
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - ✅ VectorBT financial metrics loaded
+Mar 31, 2026 09:22:49 (+00:00:17) - System.tprint - INFO - 🔄 Loading VectorBT portfolio optimization...
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - WARNING - Adjusted max memory to 6.22GB based on system
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ✅ VectorBT Memory Manager initialized
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - 📊 Total system memory: 7.77GB
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - 📊 Available memory: 6.77GB
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - 📊 Max allocated memory: 6.22GB
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - ✅ VectorBT Performance Monitor initialized
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - 📊 Monitoring enabled: timing=True, memory=True, gpu=True
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ✅ VectorBT Portfolio Optimizer initialized
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Method: mean_variance
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Rebalancing: monthly
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Risk aversion: 1.0
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - 📊 Memory manager: 6.77GB available
+Mar 31, 2026 09:22:52 (+00:00:20) - System.tprint - INFO - ✅ VectorBT portfolio optimization loaded
+Mar 31, 2026 09:22:52 (+00:00:20) - System.tprint - INFO - 🔄 Loading matrix cross-validation...
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_condition_number
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: gpu_matrix_rank
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: matrix_normalize
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - 📝 Registered custom matrix operation: extract_matrix_features
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations - INFO - ✅ Unified Matrix Operations module initialized
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations - INFO - 📦 Version: 1.0.0
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations - INFO - 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations - INFO - 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations - INFO - 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.matrix_operations - INFO - ⚡ UnifiedVectorizationManager available - unified vectorization operations
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.hardware.m1_memory_optimizer - INFO - 🧠 M1 Memory Optimizer initialized for M1
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - WARNING - ⚠️ Non-M1 system detected - some optimizations may not be effective
+Mar 31, 2026 09:22:52 (+00:00:20) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - WARNING - ⚠️ M1-specific optimizations disabled - non-M1 system detected
+Mar 31, 2026 09:23:02 (+00:00:30) - src.feature_generation.core.vectorbt_batch_processor - INFO - VectorBTBatchProcessor initialized: VectorBT=True, GPU=False, Parallel=True
+Mar 31, 2026 09:23:02 (+00:00:30) - src.feature_generation.utils.unified_vectorization_manager - INFO - UnifiedVectorizationManager initialized: VectorBT=True, GPU=False, Memory=True
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.matrix_operations.unified_operations.UnifiedMatrixOperations - INFO - 📊 GPU: False, Memory Opt: False, Parallel: False
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.matrix_cross_validation - INFO - 🚀 VectorBT configured for cross-validation optimization
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.matrix_cross_validation - INFO - ✅ Matrix-based cross-validator initialized
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.matrix_cross_validation - INFO - 📊 Configuration - Splits: 5, GPU: True, VectorBT: True
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Matrix cross-validation loaded
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - 🔄 Loading feature importance analyzer...
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - 🔗 Integrating memory skimming with all ML utilities
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported HPO utilities (direct import)
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with HPO utilities
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported Unified CV utilities
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with Unified CV utilities
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with lookahead protection utilities
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ Skipping model evaluation memory integration (deprecated)
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported feature selection utilities
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with feature selection utilities
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Successfully imported data quality utilities
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integrated with data quality utilities
+Mar 31, 2026 09:23:02 (+00:00:30) - src.utils.ml_common.utils.memory_integration - INFO - ✅ Memory skimming integration completed: 6/6 successful
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ThreadGuard
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ threadpoolctl available for thread management
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for MLCommon.BaseSafeguards
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Scikit-learn available for thresholding functionality
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.BaseFramework
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.DataValidation
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Vectorization utilities available for feature selection
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.SelectionMethods
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.StabilityAnalysis
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.PerformanceMonitoring
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.QualityMetrics
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.TemporalAnalysis
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.CausalAnalysis
+Mar 31, 2026 09:23:02 (+00:00:30) - System.tprint - INFO - ✅ Custom logger available for FeatureSelection.MainFramework
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 🔍 FeatureImportanceAnalyzer initialized with methods: ['random_forest', 'lasso', 'mutual_info']
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ Feature importance analyzer loaded
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 🔄 Loading technical indicators...
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generators - INFO - TA-Lib not available; attempting ta-based fallbacks before numpy/pandas
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generators - INFO - ✅ ta library available for technical indicator fallbacks
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generators - INFO - Using fallback implementations for feature selection tools
+Mar 31, 2026 09:23:03 (+00:00:31) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - WARNING - ⚠️ Non-M1 system detected - some optimizations may not be effective
+Mar 31, 2026 09:23:03 (+00:00:31) - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - WARNING - ⚠️ M1-specific optimizations disabled - non-M1 system detected
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ✅ Hardware optimization initialized
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ✅ Matrix operations available for vectorization
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ Technical indicators loaded
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ℹ️ HMM operations deprecated - using alternative methods
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ Component initialization completed
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 🔄 Setting up performance tracking...
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ Unified Vectorization Manager initialized
+Mar 31, 2026 09:23:03 (+00:00:31) - src.utils.ml_common.unified_vectorization_manager - INFO - ✅ Unified Vectorization Manager initialized
+Mar 31, 2026 09:23:03 (+00:00:31) - MLCommon.HPOUtils.HPOUtils - INFO - ✅ Unified Vectorization Manager initialized
+Mar 31, 2026 09:23:03 (+00:00:31) - MLCommon.HPOUtils - INFO - ⚙️ Configuration - Parallel processing: True
+Mar 31, 2026 09:23:03 (+00:00:31) - MLCommon.HPOUtils - INFO - ⚙️ Configuration - Max workers: 4
+Mar 31, 2026 09:23:03 (+00:00:31) - MLCommon.HPOUtils - INFO - ⚙️ Configuration - Monitoring enabled: True
+Mar 31, 2026 09:23:03 (+00:00:31) - MLCommon.HPOUtils - INFO - 🚀 Configuration - Non-linear optimization: True
+Mar 31, 2026 09:23:03 (+00:00:31) - src.utils.parallel_processing_optimizer - INFO - 🔧 Initialized MacM1ParallelOptimizer:
+Mar 31, 2026 09:23:03 (+00:00:31) - src.utils.parallel_processing_optimizer - INFO -    Max workers: 4
+Mar 31, 2026 09:23:03 (+00:00:31) - src.utils.parallel_processing_optimizer - INFO -    Chunk size: 1000
+Mar 31, 2026 09:23:03 (+00:00:31) - src.utils.parallel_processing_optimizer - INFO -    Pool type: Process
+Mar 31, 2026 09:23:03 (+00:00:31) - src.utils.parallel_processing_optimizer - INFO -    Memory limit per worker: 2048 MB
+Mar 31, 2026 09:23:03 (+00:00:31) - src.utils.parallel_processing_optimizer - INFO -    M1 Mac detected: False
+Mar 31, 2026 09:23:03 (+00:00:31) - MLCommon.HPOUtils - INFO - ✅ Enhanced HyperparameterOptimization initialized successfully
+Mar 31, 2026 09:23:03 (+00:00:31) - System.ComplementaryLookbackOptimizer - INFO - ✅ Detected VectorBT v0.26.2
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generation_optimization - INFO - ✅ VectorBT available for feature optimization
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.core.feature_registry.FeatureRegistry - INFO - FeatureRegistry initialized
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 🔧 Initializing AutoOptimizationConfig...
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 📝 Setting up conservative optimization settings...
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ Conservative settings configured
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 📝 Setting up balanced optimization settings...
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ Balanced settings configured
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 📝 Setting up aggressive optimization settings...
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ Aggressive settings configured
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 🎯 AutoOptimizationConfig initialized with balanced strategy
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ Auto-optimization enabled for FeatureBank (default)
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.memory_pool_optimizer.MemoryPoolOptimizer - INFO - Memory pool optimizer initialized
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 🚀 Initializing FeatureGenerationOptimizer...
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 📊 Configuration loaded: cross_validation
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ✅ FeatureGenerationOptimizer initialized in 0.000s
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 📊 Min lookback: 5, Max lookback: 252
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - 📊 CV folds: 3, Parallel processing: True
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ✅ Legacy optimization system available
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ✅ LookbackOptimizer initialized
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.core.feature_bank.FeatureBank - INFO - ✅ Regular lookback optimization enabled (Analyst mode)
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ FeatureBank set as global instance
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 🔧 Auto-registering feature generators...
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - 🔧 Configuring lazy loading for feature generators...
+Mar 31, 2026 09:23:03 (+00:00:31) - System.tprint - INFO - ✅ Registered lazy loaders for 16 categories. Generators will be created on demand.
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.core.feature_bank.FeatureBank - INFO - ✅ FeatureBank initialized
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation.core.feature_bank.FeatureBank - INFO - 📊 Matrix ops: True, GPU: True, Lookback opt: True
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation - INFO - ✅ Unified Feature Generation System initialized
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation - INFO - 📦 Version: 2.0.0
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation - INFO - 🔧 Features: Category-based organization, advanced utilities, optimization
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation - INFO - 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation - INFO - 🚀 Advanced utilities available (optimization, analysis, etc.)
+Mar 31, 2026 09:23:03 (+00:00:31) - src.feature_generation - INFO - ⚡ VectorBT optimizations available (advanced volatility, volume, batch processing)
+Mar 31, 2026 09:23:09 (+00:00:37) - matplotlib.category - INFO - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+Mar 31, 2026 09:23:09 (+00:00:37) - matplotlib.category - INFO - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+Mar 31, 2026 09:27:44 (+00:05:12) - System.ArtifactManager - INFO - Cleaned up artifacts directory
+Mar 31, 2026 09:27:44 (+00:05:12) - System.ArtifactManager - INFO - Cleaned up logs directory

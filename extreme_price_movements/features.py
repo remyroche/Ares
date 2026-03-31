@@ -4319,14 +4319,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("close_position_in_range", "close_location_in_bar"):
-            close_pos_in_range = pd.DataFrame(
-                index=h_raw.index, columns=h_raw.columns, dtype=np.float32
+            h_mat = h_raw.to_numpy(dtype=np.float32)
+            l_mat = l_raw.to_numpy(dtype=np.float32)
+            c_mat = c_raw.to_numpy(dtype=np.float32)
+            res = close_location_in_bar_nb_parallel(h_mat, l_mat, c_mat)
+            feats["close_position_in_range"] = pd.DataFrame(
+                res, index=h_raw.index, columns=h_raw.columns, dtype=np.float32
             )
-            for col in h_raw.columns:
-                close_pos_in_range[col] = close_location_in_bar_nb(
-                    h_raw[col].values, l_raw[col].values, c_raw[col].values
-                )
-            feats["close_position_in_range"] = close_pos_in_range.astype(np.float32)
             if _needs_feature("close_location_in_bar"):
                 feats["close_location_in_bar"] = feats["close_position_in_range"].copy()
 
@@ -4832,7 +4831,7 @@ def _robust_obs_var_per_col_nb(arr: np.ndarray) -> np.ndarray:
     return out
 
 
-@njit(cache=True)
+@njit(parallel=True, cache=True)
 def _kalman_local_level_nb(
     y: np.ndarray, q: np.ndarray, r: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -4841,30 +4840,30 @@ def _kalman_local_level_nb(
     innov_var = np.full((t_len, n_cols), np.nan, dtype=np.float64)
     p_state = np.full((t_len, n_cols), np.nan, dtype=np.float64)
 
-    x_prev = np.zeros(n_cols, dtype=np.float64)
-    p_prev = np.empty(n_cols, dtype=np.float64)
-    for j in range(n_cols):
+    for j in prange(n_cols):
         first = y[0, j]
-        x_prev[j] = first if np.isfinite(first) else 0.0
-        p_prev[j] = r[j]
+        x_prev = first if np.isfinite(first) else 0.0
+        p_prev = r[j]
 
-    for t in range(t_len):
-        for j in range(n_cols):
-            p_pred = p_prev[j] + q[j]
-            s_t = p_pred + r[j]
+        q_j = q[j]
+        r_j = r[j]
+
+        for t in range(t_len):
+            p_pred = p_prev + q_j
+            s_t = p_pred + r_j
             innov_var[t, j] = s_t
             y_t = y[t, j]
             if np.isfinite(y_t):
                 k_t = p_pred / max(s_t, 1e-12)
-                x_new = x_prev[j] + k_t * (y_t - x_prev[j])
+                x_new = x_prev + k_t * (y_t - x_prev)
                 p_new = (1.0 - k_t) * p_pred
             else:
-                x_new = x_prev[j]
+                x_new = x_prev
                 p_new = p_pred
             x[t, j] = x_new
             p_state[t, j] = p_new
-            x_prev[j] = x_new
-            p_prev[j] = p_new
+            x_prev = x_new
+            p_prev = p_new
 
     return x, innov_var, p_state
 
@@ -4968,15 +4967,15 @@ def _decile_monotonicity_score_nb(signal: np.ndarray, ret: np.ndarray) -> float:
     return _corrcoef_1d_nb(x, means)
 
 
-@njit(cache=True)
+@njit(parallel=True, cache=True)
 def _rowwise_median_mad_nb(mat: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     n_rows, n_cols = mat.shape
     med = np.full(n_rows, np.nan, dtype=np.float64)
     mad = np.full(n_rows, np.nan, dtype=np.float64)
-    row_vals = np.empty(n_cols, dtype=np.float64)
-    abs_vals = np.empty(n_cols, dtype=np.float64)
 
-    for i in range(n_rows):
+    for i in prange(n_rows):
+        row_vals = np.empty(n_cols, dtype=np.float64)
+        abs_vals = np.empty(n_cols, dtype=np.float64)
         count = 0
         for j in range(n_cols):
             val = mat[i, j]
@@ -5157,6 +5156,16 @@ def close_location_in_bar_nb(
             out[i] = 0.5
     return out
 
+@njit(parallel=True, cache=True)
+def close_location_in_bar_nb_parallel(
+    high: np.ndarray, low: np.ndarray, close: np.ndarray
+) -> np.ndarray:
+    n_rows, n_cols = close.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = close_location_in_bar_nb(high[:, j], low[:, j], close[:, j])
+    return out
+
 
 @njit(cache=True)
 def range_over_atr_nb(high: np.ndarray, low: np.ndarray, atr: np.ndarray) -> np.ndarray:
@@ -5244,6 +5253,7 @@ def liquidity_shock_nb(short_vol: np.ndarray, long_vol: np.ndarray) -> np.ndarra
     return out
 
 
+@njit(cache=True)
 def compute_returns_nb(close: np.ndarray, periods: int) -> np.ndarray:
     out = np.full_like(close, np.nan)
     n = len(close)

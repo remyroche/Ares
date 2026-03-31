@@ -885,15 +885,12 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
 
     # 5. Vol of Vol (Rolling Std of Sigma)
     # Coefficient of variation of volatility
-    vv = ff.numba_rolling_std(rv_24, 24)
-    safe_rv_24 = np.where(rv_24 > 1e-12, rv_24, 1e-12)
-    feats["vol_of_vol"] = (vv / safe_rv_24).shift(1).astype(np.float32)
-
     mean_rv_24_16 = ff.numba_rolling_mean(rv_24, 16)
     safe_mean_rv_24_16 = np.where(mean_rv_24_16 > 1e-12, mean_rv_24_16, 1e-12)
     feats["vol_regime_shift"] = (
         ff.numba_rolling_mean(rv_24, 4) / safe_mean_rv_24_16
     ).shift(1).astype(np.float32)
+    feats["vol_of_vol"] = (vv / (rv_24 + 1e-12)).shift(1).astype(np.float32)
 
     # 6. ATR Percentile (similar to vol percentile but using ATR)
     atr_min = ff.numba_rolling_min(atr_base, 24 * 30)
@@ -5905,7 +5902,6 @@ def build_position_sizer_feature_frame(
         "volume_entropy": volume_entropy,
         "return_per_volume": return_per_volume,
         "vol_of_vol": vol_of_vol,
-        "vol_regime_shift": vol_regime_shift_4_16,
         "range_cv": range_cv,
         "return_vol_ratio": return_vol_ratio,
     }

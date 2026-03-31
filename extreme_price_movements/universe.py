@@ -13,7 +13,7 @@ HARDCODED_EXCLUDED_SYMBOLS = frozenset({
     "DF/USDT",
     "FRAX/USDT",
 })
-DEDUP_QUOTES = ("USDT", "USDC", "BUSD")
+DEDUP_QUOTES = ("USDT",)
 DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}
 SUPPORTED_TRAINING_QUOTES = frozenset(DEDUP_QUOTES)
 SPOT_QUOTE_SUFFIXES = (
@@ -143,7 +143,7 @@ def fetch_binance_cross_margin_pairs():
     tprint(f"Fetched {len(margin_pairs)} cross margin pairs from exchangeInfo.")
     return margin_pairs
 
-def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDT", "USDC", "BUSD", "EUR")):
+def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDT",)):
     tprint(f"Entering function: margin_pairs_to_spot_symbols in universe.py")
 
     # Backward compatibility for single quote string
@@ -185,7 +185,7 @@ class MarginUniverseCache:
     symbols: list[str]
     asof_day: pd.Timestamp
 
-def refresh_margin_universe_daily(cache: Optional[MarginUniverseCache], quotes=("USDT", "USDC", "BUSD", "EUR")) -> MarginUniverseCache:
+def refresh_margin_universe_daily(cache: Optional[MarginUniverseCache], quotes=("USDT",)) -> MarginUniverseCache:
     tprint(f"Entering function: refresh_margin_universe_daily in universe.py")
     today = pd.Timestamp.utcnow().floor("D")
     if cache is not None and cache.asof_day == today:
@@ -285,7 +285,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         # Fallback if not provided.
         # Prefer live refresh; if unavailable (e.g., offline/DNS issues), use local store symbols.
         try:
-            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
+            mu = refresh_margin_universe_daily(None, quotes=("USDT",))
             margin_symbols = mu.symbols
         except Exception as e:
             tprint(f"Warning: margin universe refresh failed ({e}); falling back to local store symbols.")

@@ -513,7 +513,7 @@ def _feature_structural_gaps(
 
 
 def _generate_feature_health_reports(
-    ts_sig: pd.Timestamp, data_root: str
+    ts_sig: pd.Timestamp, data_root: str, allowed_symbols: list[str] | None = None
 ) -> dict | None:
     """
     Build feature quality reports from saved per-symbol parquet files.
@@ -524,6 +524,15 @@ def _generate_feature_health_reports(
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     in_dir = os.path.join(data_root, "features", run_id)
     files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
+
+    if allowed_symbols is not None:
+        allowed_set = set(str(s) for s in allowed_symbols)
+        filtered_files = []
+        for f in files:
+            sym_from_file = os.path.basename(f).replace("symbol=", "").replace(".parquet", "").replace("_", "/", 1)
+            if sym_from_file in allowed_set:
+                filtered_files.append(f)
+        files = filtered_files
     if not files:
         tprint(f"Feature health report: no feature files in {in_dir}")
         return None
@@ -4591,7 +4600,7 @@ def run_feature_generation_step(
                     f"Features already exist and cover full target period: "
                     f"{_n_feats} features × {_n_syms} symbols. Skipping recomputation."
                 )
-                _generate_feature_health_reports(ts_sig, cfg["data_root"])
+                _generate_feature_health_reports(ts_sig, cfg["data_root"], allowed_symbols=train_syms)
                 tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
                 return
         else:
@@ -4992,11 +5001,12 @@ def run_feature_generation_step(
         expected_keys=expected_keys,
         panel_close=completeness_panel,
     )
-    _generate_feature_health_reports(ts_sig, cfg["data_root"])
+    _generate_feature_health_reports(ts_sig, cfg["data_root"], allowed_symbols=train_syms)
     health_feats = load_features_selected(
         ts_sig,
         cfg["data_root"],
         feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
+        symbols=train_syms,
     )
     if health_feats is None:
         raise RuntimeError(

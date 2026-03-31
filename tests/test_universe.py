@@ -13,7 +13,7 @@ def test_normalize_symbol_handles_underscore_and_compact_forms():
 
 def test_supported_training_symbol_rejects_unsupported_quotes():
     assert _is_supported_training_symbol("ETH/USDT")
-    assert _is_supported_training_symbol("ETH_USDC")
+    assert not _is_supported_training_symbol("ETH_USDC")
     assert not _is_supported_training_symbol("BTC/USD1")
     assert not _is_supported_training_symbol("BNBFDUSD")
     assert not _is_supported_training_symbol("AAVE/BTC")

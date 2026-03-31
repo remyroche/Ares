@@ -3058,7 +3058,6 @@ def _required_feature_keys() -> Tuple[str, ...]:
         "reversal_bar_strength",
         "climax_volume_ratio",
         "rejection_volume_ratio",
-        "vol_regime_shift",
         "bar_direction_entropy",
     )
 

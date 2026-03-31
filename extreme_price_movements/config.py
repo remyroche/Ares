@@ -1563,7 +1563,7 @@ POSITION_SIZER_V2_FEATURE_CONFIG = {
         "vol_regime_transition", "ATR_ratio_short_long", "bar_direction_entropy",
         "wick_entropy", "impulse_breakdown_score", "volume_volatility",
         "volume_regime_shift", "volume_entropy", "return_per_volume",
-        "vol_of_vol", "vol_regime_shift", "range_cv", "return_vol_ratio"
+        "vol_of_vol", "range_cv", "return_vol_ratio"
     ]
 }
 

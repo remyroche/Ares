@@ -7318,12 +7318,30 @@ class MaskAssessor:
         cheap_gate_rows: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
             collections.defaultdict(list)
         )
-        cheap_gate_result: Dict[str, Tuple[bool, str]] = {}
+        cheap_gate_result: Dict[Tuple[Tuple[str, int], str], Tuple[bool, str]] = {}
+
+        seen_keys_for_cheap_gate = set()
+
         for _, pre_row in registry.iterrows():
             canonical_key = str(pre_row.get("canonical_key", ""))
             side = str(pre_row.get("side", "long"))
             if side not in target_ret_by_side:
                 side = "long"
+
+            horizon_raw = pre_row.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+
+            bucket_key = (side, horizon_key)
+
+            # Ensure we only process each canonical key once per bucket_key since target metrics
+            # are inherently agnostic to triad targets
+            key_tracker = (bucket_key, canonical_key)
+            if key_tracker in seen_keys_for_cheap_gate:
+                continue
+            seen_keys_for_cheap_gate.add(key_tracker)
 
             mask = mask_cache.get(canonical_key)
             if mask is None:
@@ -7335,13 +7353,6 @@ class MaskAssessor:
             if np.sum(mask) < 20:
                 continue
 
-            horizon_raw = pre_row.get("source_horizon", -1)
-            try:
-                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
-            except (TypeError, ValueError):
-                horizon_key = -1
-            target_key = str(pre_row.get("source_target", "unknown"))
-            bucket_key = (side, horizon_key, target_key)
             sign_consistency = float(pre_row.get("sign_consistency", 0.0))
             cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
 
@@ -7383,11 +7394,11 @@ class MaskAssessor:
                 rejected = False
 
             if rejected:
-                cheap_gate_result[canonical_key] = (True, rejection_reason)
+                cheap_gate_result[(bucket_key, canonical_key)] = (True, rejection_reason)
                 continue
 
             cheap_rank = bucket_cheap_ranks.get(bucket_key, {}).get(canonical_key, -np.inf)
-            cheap_gate_result[canonical_key] = (False, "")
+            cheap_gate_result[(bucket_key, canonical_key)] = (False, "")
             cheap_gate_rows[bucket_key].append((cheap_rank, canonical_key))
 
         OVERLAP_THRESHOLD = 0.85
@@ -7423,17 +7434,6 @@ class MaskAssessor:
 
             n_dedup_rejected = 0
             for bucket_key, surviving_keys in surviving_keys_by_bucket.items():
-                if len(surviving_keys) < 2:
-                    # Still need to store trivial matrices for the soft Ridge deduplication fallback
-                    if surviving_keys:
-                        stage_a_matrices[bucket_key] = {
-                            "key_to_idx": {surviving_keys[0]: 0},
-                            "intersections": np.array([[n_subsample]], dtype=np.int32),
-                            "supports": np.array([n_subsample], dtype=float),
-                            "n_subsample": n_subsample
-                        }
-                    continue
-
                 n_rules = len(surviving_keys)
                 contexts: List[np.ndarray] = []
                 gains: List[float] = []
@@ -7485,43 +7485,69 @@ class MaskAssessor:
                     "n_subsample": n_subsample
                 }
 
-                keep = [True] * n_rules
-                for i in range(n_rules):
-                    if not keep[i]:
-                        continue
-                    for j in range(i + 1, n_rules):
-                        if not keep[j]:
-                            continue
-                        if mean_returns[i] * mean_returns[j] < 0:
-                            continue
+                threshold_ladder = [0.85, 0.80, 0.75, 0.70, 0.65, 0.60]
+                final_keep = [True] * n_rules
 
-                        inter = float(intersections[i, j])
-                        if inter < 1:
+                for threshold in threshold_ladder:
+                    keep = [True] * n_rules
+                    for i in range(n_rules):
+                        if not keep[i]:
                             continue
-                        overlap = inter / max(min(sub_supports[i], sub_supports[j]), 1.0)
-                        supp_ratio = min(supports[i], supports[j]) / max(supports[i], supports[j], 1e-9)
+                        for j in range(i + 1, n_rules):
+                            if not keep[j]:
+                                continue
+                            if mean_returns[i] * mean_returns[j] < 0:
+                                continue
 
-                        if overlap > OVERLAP_THRESHOLD and supp_ratio > SUPPORT_RATIO_MIN:
-                            rq_i = abs(mean_returns[i]) / (std_returns[i] + eps) if std_returns[i] > eps else abs(mean_returns[i])
-                            rq_j = abs(mean_returns[j]) / (std_returns[j] + eps) if std_returns[j] > eps else abs(mean_returns[j])
-                            score_i = gains[i] * sign_consistencies[i] * rq_i
-                            score_j = gains[j] * sign_consistencies[j] * rq_j
+                            inter = float(intersections[i, j])
+                            if inter < 1:
+                                continue
+                            overlap = inter / max(min(sub_supports[i], sub_supports[j]), 1.0)
+                            supp_ratio = min(supports[i], supports[j]) / max(max(supports[i], supports[j]), 1e-9)
 
-                            if score_i >= score_j:
-                                keep[j] = False
-                                cheap_gate_result[surviving_keys[j]] = (
-                                    True,
-                                    "deduplicated_overlap",
-                                )
-                                n_dedup_rejected += 1
-                            else:
-                                keep[i] = False
-                                cheap_gate_result[surviving_keys[i]] = (
-                                    True,
-                                    "deduplicated_overlap",
-                                )
-                                n_dedup_rejected += 1
-                                break
+                            if overlap > threshold and supp_ratio > SUPPORT_RATIO_MIN:
+                                rq_i = abs(mean_returns[i]) / (std_returns[i] + eps) if std_returns[i] > eps else abs(mean_returns[i])
+                                rq_j = abs(mean_returns[j]) / (std_returns[j] + eps) if std_returns[j] > eps else abs(mean_returns[j])
+                                score_i = gains[i] * sign_consistencies[i] * rq_i
+                                score_j = gains[j] * sign_consistencies[j] * rq_j
+
+                                if score_i >= score_j:
+                                    keep[j] = False
+                                else:
+                                    keep[i] = False
+                                    break
+
+                    if sum(keep) <= 100:
+                        final_keep = keep
+                        break
+                    final_keep = keep
+
+                surviving_indices = [i for i, k in enumerate(final_keep) if k]
+                if len(surviving_indices) > 100:
+                    def _score(i):
+                        rq = abs(mean_returns[i]) / (std_returns[i] + eps) if std_returns[i] > eps else abs(mean_returns[i])
+                        return gains[i] * sign_consistencies[i] * rq
+                    surviving_indices.sort(key=_score, reverse=True)
+                    surviving_indices = surviving_indices[:100]
+
+                final_surviving_set = {surviving_keys[i] for i in surviving_indices}
+
+                for i, k in enumerate(surviving_keys):
+                    if k not in final_surviving_set:
+                        cheap_gate_result[(bucket_key, k)] = (True, "deduplicated_overlap")
+                        n_dedup_rejected += 1
+
+                final_surviving_keys = [surviving_keys[i] for i in surviving_indices]
+
+                if final_surviving_keys:
+                    stage_a_matrices[bucket_key] = {
+                        "key_to_idx": {k: idx for idx, k in enumerate(final_surviving_keys)},
+                        "intersections": intersections[np.ix_(surviving_indices, surviving_indices)],
+                        "supports": sub_supports[surviving_indices],
+                        "n_subsample": n_subsample
+                    }
+                else:
+                    stage_a_matrices.pop(bucket_key, None)
 
             if n_dedup_rejected > 0:
                 tprint(
@@ -7530,12 +7556,12 @@ class MaskAssessor:
                     f"support_ratio>{SUPPORT_RATIO_MIN:.0%})"
                 )
 
-            cheap_gate_rows_deduped: Dict[Tuple[str, int, str], List[Tuple[float, str]]] = (
+            cheap_gate_rows_deduped: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
                 collections.defaultdict(list)
             )
             for bucket_key, entries in cheap_gate_rows.items():
                 for cheap_rank, canonical_key in entries:
-                    rejected, _ = cheap_gate_result.get(canonical_key, (False, ""))
+                    rejected, _ = cheap_gate_result.get((bucket_key, canonical_key), (False, ""))
                     if not rejected:
                         cheap_gate_rows_deduped[bucket_key].append((cheap_rank, canonical_key))
             cheap_gate_rows = cheap_gate_rows_deduped
@@ -7574,7 +7600,7 @@ class MaskAssessor:
             baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
             if baseline_oof_coverage < min_oof_coverage:
                 for _, canonical_key in entries:
-                    cheap_gate_result[canonical_key] = (
+                    cheap_gate_result[(bucket_key, canonical_key)] = (
                         True,
                         "insufficient_baseline_oof_coverage",
                     )
@@ -7746,7 +7772,7 @@ class MaskAssessor:
             ret_uplift = float(cheap["ret_uplift"])
 
             rejected, rejection_reason = cheap_gate_result.get(
-                canonical_key, (False, "")
+                (group_bucket_key, canonical_key), (False, "")
             )
 
             # 7. Learnability (Efficiency Frontier) - expensive section

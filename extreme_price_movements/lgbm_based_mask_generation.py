@@ -7147,7 +7147,7 @@ class MaskAssessor:
             # Because lower-is-better metrics are mapped such that 2.0 is BEST, we must put them
             # in the numerator (multiplying them) rather than the denominator to maintain a monotonic score.
             # Using directional_mean_ret directly instead of sqrt(directional_mean_ret).
-            ranks = n_sign * (n_path ** 1.5) * n_ret * np.sqrt(n_tail + n_dens)
+            ranks = n_sign * (n_path ** 1.5) * n_ret * np.sqrt(n_tail + n_dens / 2.0)
 
             ranked_items = []
             for i, k in enumerate(keys):

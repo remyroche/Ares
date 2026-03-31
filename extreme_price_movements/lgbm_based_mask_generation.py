@@ -7549,7 +7549,7 @@ class MaskAssessor:
                 )
 
         max_ridge_candidates_per_bucket = int(
-            self.cfg.get("max_ridge_candidates_per_bucket", 7)
+            self.cfg.get("max_ridge_candidates_per_bucket", 5)
         )
         overlap_free_zone = float(self.cfg.get("ridge_overlap_free_zone", 0.30))
         cheap_rank_exponent = float(self.cfg.get("ridge_cheap_rank_exponent", 1.3))
@@ -7627,7 +7627,7 @@ class MaskAssessor:
                 else:
                     w = 1.0 - penalty_strength * (s - 0.15) / 0.15
 
-                w_mult_arr[i] = np.clip(w, 0.1, 0.3)
+                w_mult_arr[i] = np.clip(w, 0.1, 0.2)
 
             supp_i = sub_supports_arr[:, None]
             supp_j = sub_supports_arr[None, :]
@@ -7666,8 +7666,8 @@ class MaskAssessor:
 
                 for i in remaining_indices:
                     max_f1_overlap_i = np.max(effective_f1_overlap_matrix[i, selected_indices])
-                    effective_overlap_i = max(0.0, max_f1_overlap_i - overlap_free_zone)
-                    adjusted_score_i = (norm_cr[i] ** cheap_rank_exponent) * ((1.0 - effective_overlap_i) ** overlap_penalty_exponent)
+                    overlap_excess_i = max(0.0, max_f1_overlap_i - overlap_free_zone) / (1.0 - overlap_free_zone + 1e-9)
+                    adjusted_score_i = (norm_cr[i] ** cheap_rank_exponent) * ((1.0 - overlap_excess_i) ** overlap_penalty_exponent)
 
                     final_ranking = adjusted_score_i * (1.0 + w_mult_arr[i])
 

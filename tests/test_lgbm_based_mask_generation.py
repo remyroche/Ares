@@ -266,7 +266,7 @@ def test_apply_test_mode_sets_smaller_pipeline_profile():
     assert cfg["test_mode"] is True
     assert cfg["n_folds"] == 3
     assert cfg["sliceplanner_outer_n_folds"] == 3
-    assert cfg["mask_opt_max_symbols"] == 100
+    assert cfg["mask_opt_max_symbols"] == 200
     assert cfg["mask_opt_lookback_years"] == 3.0
 
 

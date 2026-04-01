@@ -2028,23 +2028,19 @@ class InteractionModel:
         max_depth = int(self.cfg.get("lgbm_max_depth", 5)) + 1
         num_leaves = int(self.cfg.get("lgbm_num_leaves", 64))
 
-        lambda_l1 = float(self.cfg.get("lambda_l1", 0.0)) * 1.33
-        lambda_l2 = float(self.cfg.get("lambda_l2", 0.0)) * 1.33
+        lambda_l1 = float(self.cfg.get("lambda_l1", 0.0))
+        lambda_l2 = float(self.cfg.get("lambda_l2", 0.0))
 
-        min_gain_to_split = max(0.005, float(self.cfg.get("min_gain_to_split", 0.0)))
+        min_gain_to_split = max(0.001, float(self.cfg.get("min_gain_to_split", 0.0)))
         if "hpo_min_gain_to_split" in self.cfg:
             min_gain_to_split = max(
-                0.005, float(self.cfg["hpo_min_gain_to_split"])
+                0.001, float(self.cfg["hpo_min_gain_to_split"])
             )
 
         min_leaf_frac = float(self.cfg.get("lgbm_min_leaf_frac", 0.001))
         min_data_in_leaf = max(10, int(min_leaf_frac * X_tr.shape[0]))
         if "hpo_min_data_in_leaf" in self.cfg:
             min_data_in_leaf = max(10, int(self.cfg["hpo_min_data_in_leaf"]))
-        depth_leaf_budget = 2 ** max(max_depth, 1) if max_depth > 0 else num_leaves
-        effective_leaf_budget = max(1, min(num_leaves, depth_leaf_budget))
-        depth_aware_floor = int(np.ceil(X_tr.shape[0] / (effective_leaf_budget * 8.0)))
-        min_data_in_leaf = max(min_data_in_leaf, depth_aware_floor)
 
         # Use quantile loss for all targets (triad targets work with quantile regression)
         alpha_hpo = float(self.cfg.get("alpha_hpo", 0.90))
@@ -2069,11 +2065,11 @@ class InteractionModel:
             "n_estimators": 1000,
             "verbosity": -1,
             "random_state": seed,
-            "extra_trees": self.cfg.get("extra_trees", True),
+            "extra_trees": True,
             "n_jobs": max(1, min(3, int(self.cfg.get("lgbm_n_jobs", 3)))),
             "bagging_fraction": 0.8,
             "bagging_freq": 1,
-            "feature_fraction": 0.8,
+            "feature_fraction": 1.0,
         }
         target_mode = "quantile_regression"
 

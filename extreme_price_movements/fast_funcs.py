@@ -442,7 +442,17 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
         slope_nb_parallel,
     )
 
-    if func == realized_vol_nb:
+    if func == bars_since_flip_nb:
+        return apply_to_matrix_parallel(df, bars_since_flip_nb_parallel, *args)
+    elif func == consecutive_bars_nb:
+        return apply_to_matrix_parallel(df, consecutive_bars_nb_parallel, *args)
+    elif func == up_down_semivol_ratio_nb:
+        return apply_to_matrix_parallel(df, up_down_semivol_ratio_nb_parallel, *args)
+    elif func == up_down_return_mass_ratio_nb:
+        return apply_to_matrix_parallel(
+            df, up_down_return_mass_ratio_nb_parallel, *args
+        )
+    elif func == realized_vol_nb:
         return apply_to_matrix_parallel(df, rolling_std_nb_parallel, *args)
     elif func == rolling_std_nb:
         return apply_to_matrix_parallel(df, rolling_std_nb_parallel, *args)
@@ -2939,9 +2949,7 @@ def numba_adx(high_df, low_df, close_df, n):
         h_col = h_mat[:, j]
         l_col = l_mat[:, j]
         c_col = c_mat[:, j]
-        valid_mask = (
-            np.isfinite(h_col) & np.isfinite(l_col) & np.isfinite(c_col)
-        )
+        valid_mask = np.isfinite(h_col) & np.isfinite(l_col) & np.isfinite(c_col)
         if not valid_mask.any():
             continue
 
@@ -2951,9 +2959,7 @@ def numba_adx(high_df, low_df, close_df, n):
         h_seg = h_col[seg_start:seg_end]
         l_seg = l_col[seg_start:seg_end]
         c_seg = c_col[seg_start:seg_end]
-        seg_mask = (
-            np.isfinite(h_seg) & np.isfinite(l_seg) & np.isfinite(c_seg)
-        )
+        seg_mask = np.isfinite(h_seg) & np.isfinite(l_seg) & np.isfinite(c_seg)
         if not seg_mask.any():
             continue
 
@@ -3326,3 +3332,146 @@ def apply_to_matrix_parallel(df: pd.DataFrame, func_parallel, *args) -> pd.DataF
         return res_df[res_df.columns[0]]
 
     return res_df
+
+
+from numba import njit, prange
+import numpy as np
+
+
+@njit(parallel=True, cache=True)
+def bars_since_flip_nb_parallel(sign_mat: np.ndarray) -> np.ndarray:
+    n_rows, n_cols = sign_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = bars_since_flip_nb(sign_mat[:, j])
+    return out
+
+
+@njit(cache=True)
+def consecutive_bars_nb(mask: np.ndarray) -> np.ndarray:
+    out = np.zeros_like(mask, dtype=np.float32)
+    n = len(mask)
+    if n == 0:
+        return out
+
+    count = 0.0
+    for i in range(n):
+        if np.isnan(mask[i]):
+            out[i] = np.nan
+            count = 0.0
+        elif mask[i] > 0.5:
+            count += 1.0
+            out[i] = count
+        else:
+            count = 0.0
+            out[i] = 0.0
+    return out
+
+
+@njit(parallel=True, cache=True)
+def consecutive_bars_nb_parallel(mask_mat: np.ndarray) -> np.ndarray:
+    n_rows, n_cols = mask_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = consecutive_bars_nb(mask_mat[:, j])
+    return out
+
+
+@njit(cache=True)
+def up_down_semivol_ratio_nb(
+    returns: np.ndarray, window: int, eps: float = 1e-8
+) -> np.ndarray:
+    n = len(returns)
+    out = np.full(n, np.nan, dtype=np.float32)
+
+    for i in range(window - 1, n):
+        up_sum = 0.0
+        up_count = 0
+        down_sum = 0.0
+        down_count = 0
+
+        # Calculate means
+        for j in range(i - window + 1, i + 1):
+            val = returns[j]
+            if not np.isnan(val):
+                if val > 0:
+                    up_sum += val
+                    up_count += 1
+                elif val < 0:
+                    down_sum += val
+                    down_count += 1
+
+        up_mean = up_sum / max(up_count, 1)
+        down_mean = down_sum / max(down_count, 1)
+
+        # Calculate variance
+        up_var_sum = 0.0
+        down_var_sum = 0.0
+
+        for j in range(i - window + 1, i + 1):
+            val = returns[j]
+            if not np.isnan(val):
+                if val > 0:
+                    up_var_sum += (val - up_mean) ** 2
+                elif val < 0:
+                    down_var_sum += (val - down_mean) ** 2
+
+        up_semivol = np.sqrt(up_var_sum / max(up_count - 1, 1)) if up_count > 1 else 0.0
+        down_semivol = (
+            np.sqrt(down_var_sum / max(down_count - 1, 1)) if down_count > 1 else 0.0
+        )
+
+        # We need std(returns[returns > 0]) + eps
+        up_semivol += eps
+        down_semivol += eps
+
+        out[i] = np.tanh(np.log(up_semivol / down_semivol))
+    return out
+
+
+@njit(parallel=True, cache=True)
+def up_down_semivol_ratio_nb_parallel(
+    returns_mat: np.ndarray, window: int, eps: float = 1e-8
+) -> np.ndarray:
+    n_rows, n_cols = returns_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = up_down_semivol_ratio_nb(returns_mat[:, j], window, eps)
+    return out
+
+
+@njit(cache=True)
+def up_down_return_mass_ratio_nb(
+    returns: np.ndarray, window: int, eps: float = 1e-8
+) -> np.ndarray:
+    n = len(returns)
+    out = np.full(n, np.nan, dtype=np.float32)
+
+    for i in range(window - 1, n):
+        up_mass = 0.0
+        down_mass = 0.0
+
+        for j in range(i - window + 1, i + 1):
+            val = returns[j]
+            if not np.isnan(val):
+                if val > 0:
+                    up_mass += val
+                elif val < 0:
+                    down_mass += abs(val)
+
+        up_mass += eps
+        down_mass += eps
+
+        out[i] = np.tanh(np.log(up_mass / down_mass))
+    return out
+
+
+@njit(parallel=True, cache=True)
+def up_down_return_mass_ratio_nb_parallel(
+    returns_mat: np.ndarray, window: int, eps: float = 1e-8
+) -> np.ndarray:
+    n_rows, n_cols = returns_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = up_down_return_mass_ratio_nb(returns_mat[:, j], window, eps)
+    return out

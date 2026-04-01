@@ -6,6 +6,8 @@ from typing import Dict, List, Tuple, Optional, Any
 
 import numpy as np
 import lightgbm as lgb
+from collections import defaultdict
+from extreme_price_movements.feature_family_registry import get_feature_family
 
 
 # ============================================================
@@ -295,6 +297,7 @@ def score_rule_matrix_vectorized(
     vol_val: np.ndarray,
     rule_matrix: np.ndarray,
     feature_importance: Optional[np.ndarray] = None,
+    feature_names: Optional[List[str]] = None,
     best_iteration: int = 0,
     support_min: float = SUPPORT_MIN,
     support_max: float = SUPPORT_MAX,
@@ -438,10 +441,27 @@ def score_rule_matrix_vectorized(
 
     weighted_dispersion_gain = float(np.dot(dispersion_gain_keep, w) / w_sum)
 
-    # Feature reuse penalty (max feature usage share)
+    # Feature reuse penalty & Family analysis
     reuse_penalty = 0.0
-    if feature_importance is not None and feature_importance.sum() > 0:
-        reuse_penalty = float(feature_importance.max() / feature_importance.sum())
+    top_feature_gain_share = 0.0
+    dominant_family_share = 0.0
+    n_distinct_primary_families = 0
+
+    if feature_importance is not None and feature_names is not None and len(feature_importance) == len(feature_names):
+        total_importance = feature_importance.sum()
+        if total_importance > 0:
+            reuse_penalty = float(feature_importance.max() / total_importance)
+            top_feature_gain_share = reuse_penalty
+
+            family_importance = defaultdict(float)
+            for imp, name in zip(feature_importance, feature_names):
+                if imp > 0:
+                    family = get_feature_family(name)
+                    family_importance[family] += imp
+
+            if family_importance:
+                n_distinct_primary_families = len(family_importance)
+                dominant_family_share = float(max(family_importance.values()) / total_importance)
 
     # Training health
     max_boost_rounds_safe = float(MAX_BOOST_ROUNDS) if MAX_BOOST_ROUNDS > 0 else 1.0
@@ -449,7 +469,6 @@ def score_rule_matrix_vectorized(
     training_health = float(max(1, best_iteration) / max_boost_rounds_safe)
 
     # Winsorize / normalize metrics to ~[0, 1] range for the linear combination
-    # Empirically chosen bounds for standard normal returns
     def normalize(val, vmin, vmax):
         return float(np.clip((val - vmin) / (vmax - vmin), 0.0, 1.0))
 
@@ -461,29 +480,56 @@ def score_rule_matrix_vectorized(
     diversity_score_norm = normalize(1.0 - reuse_penalty, 0.0, 1.0)
     training_health_norm = normalize(training_health, 0.0, 1.0)
 
-    # Calculate base hpo_score
-    base_score = (
-        0.30 * weighted_incremental_norm +
-        0.20 * weighted_diff_in_means_norm +
-        0.15 * weighted_sortino_norm +
-        0.15 * support_quality_norm -
-        0.10 * support_penalty -
-        0.05 * reuse_penalty +
-        0.03 * training_health_norm +
-        0.02 * weighted_dispersion_gain_norm
-    )
+    dominant_family_share_norm = normalize(dominant_family_share, 0.0, 1.0)
+    top_feature_gain_share_norm = normalize(top_feature_gain_share, 0.0, 1.0)
+    max_rule_support_share = float(supports_keep.max()) if len(supports_keep) > 0 else 0.0
+    max_rule_support_share_norm = normalize(max_rule_support_share, 0.0, 1.0)
 
-    # Floor-based gating multiplier
-    critical_floor = min(
-        weighted_incremental_norm,
-        weighted_diff_in_means_norm,
-        weighted_sortino_norm,
-        support_quality_norm,
-        diversity_score_norm,
-        training_health_norm
-    )
+    n_valid_rules = int(keep.sum())
+    pct_folds_best_iter_eq_1 = 1.0 if best_iteration == 1 else 0.0
 
-    score = base_score * (critical_floor ** 1.0)
+    if (
+        n_valid_rules < 30 or
+        n_distinct_primary_families < 2 or
+        dominant_family_share > 0.75 or
+        pct_folds_best_iter_eq_1 > 0.50 or
+        weighted_incremental_norm < 0.05 or
+        support_quality_norm < 0.05 or
+        diversity_score_norm < 0.05 or
+        training_health_norm < 0.05
+    ):
+        score = -1e9
+        base_score = 0.0
+        critical_floor = 0.0
+    else:
+        collapse_penalty = max(
+            dominant_family_share_norm,
+            top_feature_gain_share_norm,
+            max_rule_support_share_norm
+        )
+
+        base_score = (
+            0.28 * weighted_incremental_norm +
+            0.18 * weighted_diff_in_means_norm +
+            0.14 * weighted_sortino_norm +
+            0.14 * support_quality_norm -
+            0.10 * support_penalty -
+            0.06 * reuse_penalty +
+            0.05 * diversity_score_norm +
+            0.03 * training_health_norm +
+            0.02 * weighted_dispersion_gain_norm -
+            0.08 * collapse_penalty
+        )
+
+        eps = 1e-6
+        critical_floor = (
+            (weighted_incremental_norm + eps) *
+            (support_quality_norm + eps) *
+            (diversity_score_norm + eps) *
+            (training_health_norm + eps)
+        ) ** (1.0 / 4.0)
+
+        score = base_score * (critical_floor ** 2)
 
     diagnostics = {
         "support": total_support,
@@ -525,12 +571,14 @@ def evaluate_config(
 
     rule_matrix = build_candidate_rule_matrix(model, X_val)
     feature_importance = model.feature_importance(importance_type="split")
+    feature_names = model.feature_name()
     best_iteration = getattr(model, "best_iteration", 0) or 0
     score, d = score_rule_matrix_vectorized(
         y_val=y_val,
         vol_val=vol_val,
         rule_matrix=rule_matrix,
         feature_importance=feature_importance,
+        feature_names=feature_names,
         best_iteration=best_iteration,
         support_min=SUPPORT_MIN,
         support_max=SUPPORT_MAX,

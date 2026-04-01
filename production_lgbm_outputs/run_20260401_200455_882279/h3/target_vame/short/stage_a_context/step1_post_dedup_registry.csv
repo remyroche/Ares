@@ -1,0 +1,11 @@
+side,source_horizon,cheap_rank,canonical_key
+short,0,4.772970773009195,(*)|(*)|(reg_atr_change_rate_ts_top20==0&reg_atr_change_rate_ts_top60==0&reg_compression_ratio_ts_bot50==1)
+short,0,6.803085339941785,(*)|(loc_dist_ema20_atr_ts_top80==0)|(reg_atr_change_rate_ts_top20==1&reg_compression_ratio_ts_top40==0)
+short,0,7.111762772861737,(*)|(loc_dist_ema20_atr_ts_bot60==1)|(reg_atr_change_rate_ts_bot50==1&reg_compression_ratio_ts_top40==1)
+short,0,7.403057905162341,(*)|(loc_dist_ema20_atr_ts_bot60==1)|(reg_atr_change_rate_ts_top80==0&reg_compression_ratio_ts_top40==1)
+short,0,6.616993148711361,(*)|(loc_dist_ema20_atr_ts_bot70==1&loc_dist_ema20_atr_ts_top40==0&loc_dist_local_swing_ts_bot30==1)|(reg_atr_change_rate_ts_top20==1&reg_atr_change_rate_ts_top60==0)
+short,0,7.731239800142391,(*)|(loc_dist_ema20_atr_ts_bot70==1)|(reg_atr_change_rate_ts_bot40==0&reg_atr_change_rate_ts_bot50==0&reg_atr_change_rate_ts_bot70==1&reg_atr_change_rate_ts_top30==1&reg_compression_ratio_ts_top40==1)
+short,0,7.7782198020190885,(*)|(loc_dist_ema20_atr_ts_bot60==0&loc_dist_ema20_atr_ts_bot70==1&loc_dist_ema20_atr_ts_top80==0)|(reg_atr_change_rate_ts_top30==1&reg_atr_change_rate_ts_top40==1&reg_compression_ratio_ts_top40==1)
+short,0,8.047658206510445,(*)|(loc_dist_ema20_atr_ts_bot60==0&loc_dist_ema20_atr_ts_top80==0)|(reg_atr_change_rate_ts_top20==1&reg_atr_change_rate_ts_top30==1&reg_atr_change_rate_ts_top80==0&reg_compression_ratio_ts_top40==1)
+short,0,7.860684414985091,(*)|(loc_dist_ema20_atr_ts_bot70==0&loc_dist_ema20_atr_ts_top80==0)|(reg_atr_change_rate_ts_bot70==0&reg_atr_change_rate_ts_top20==1&reg_compression_ratio_ts_top40==1)
+short,0,8.531976143526755,(*)|(loc_dist_ema20_atr_ts_top80==1)|(reg_atr_change_rate_ts_bot40==0&reg_compression_ratio_ts_top40==1)

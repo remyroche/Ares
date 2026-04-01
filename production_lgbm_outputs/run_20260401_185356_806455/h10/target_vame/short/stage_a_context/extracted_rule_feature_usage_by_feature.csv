@@ -1,0 +1,11 @@
+feature_name,group,usage_count
+reg_atr_change_rate_ts_band25_75,regime,15
+reg_atr_change_rate_ts_top20,regime,15
+reg_atr_change_rate_ts_top60,regime,15
+reg_atr_change_rate_ts_top30,regime,13
+reg_atr_change_rate_ts_top70,regime,10
+reg_ema20_gt_ema50_raw,regime,10
+loc_dist_ema20_atr_ts_top50,location,8
+reg_atr_change_rate_ts_band20_80,regime,8
+reg_atr_change_rate_ts_top40,regime,7
+loc_dist_ema20_atr_ts_top80,location,6

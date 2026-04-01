@@ -1,0 +1,7 @@
+reason,count
+deduplicated_overlap,165
+low_stability_floor,35
+low_path_quality_floor,23
+support_out_of_range,10
+low_lift,9
+high_tail_risk_top_decile,4

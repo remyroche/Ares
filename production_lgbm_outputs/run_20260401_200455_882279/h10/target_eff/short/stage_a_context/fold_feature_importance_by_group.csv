@@ -1,0 +1,4 @@
+fold_id,seed,group,gain,split
+0,42,regime,12.557288,160.0
+1,42,regime,2.365407,10.0
+2,42,regime,3.284992,10.0

@@ -1,0 +1,15 @@
+{
+  "total_singletons": 1353,
+  "total_constraints": 0,
+  "mode": "training permissive / validation strict",
+  "num_regime": 651,
+  "num_location": 702,
+  "num_regime_path_structure": 108,
+  "num_regime_trend": 129,
+  "num_regime_liquidity": 72,
+  "num_regime_context": 36,
+  "num_regime_momentum": 18,
+  "num_regime_compression": 54,
+  "num_regime_volatility_term_structure": 72,
+  "num_regime_volatility": 162
+}

@@ -1,0 +1,7 @@
+fold_id,seed,group,used_feature_count,split_count
+0,42,location,18,265
+0,42,regime,26,1011
+1,42,location,21,262
+1,42,regime,28,975
+2,42,location,2,2
+2,42,regime,5,8

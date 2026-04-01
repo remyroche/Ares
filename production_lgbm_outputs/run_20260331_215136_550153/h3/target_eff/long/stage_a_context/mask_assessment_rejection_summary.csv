@@ -1,0 +1,6 @@
+reason,count
+deduplicated_overlap,186
+support_out_of_range,36
+high_density_dispersion_top_decile,29
+low_lift,11
+low_stability_floor,5

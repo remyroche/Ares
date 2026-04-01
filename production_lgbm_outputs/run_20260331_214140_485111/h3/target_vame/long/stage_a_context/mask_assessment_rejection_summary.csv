@@ -1,0 +1,6 @@
+reason,count
+deduplicated_overlap,400
+low_mean_target_value_pctile,168
+low_stability_floor,102
+low_lift,4
+missing_learnability,2

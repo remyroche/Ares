@@ -614,8 +614,12 @@ def run_short_hpo_for_target_horizon(
     """
     rng = np.random.default_rng(seed)
 
+    X = np.asarray(X, dtype=np.float32, order="C")
+    y = np.asarray(y, dtype=np.float32)
     if vol is None:
-        vol = np.ones_like(y)
+        vol = np.ones_like(y, dtype=np.float32)
+    else:
+        vol = np.asarray(vol, dtype=np.float32)
 
     if len(y) < 100:
         # Fallback for very small datasets

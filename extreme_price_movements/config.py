@@ -466,6 +466,12 @@ CONTINUOUS_LOCATION_COLS = [
     "loc_pullback_depth_48",
     "loc_pivot_ladder_pos_24",
     "loc_pivot_ladder_pos_48",
+    "bars_since_ema20_ema50_cross_log_norm",
+    "bars_in_high_vol_state_log_norm",
+    "bars_outside_ema20_atr_band_log_norm",
+    "up_down_semivol_ratio_tanh",
+    "up_down_return_mass_ratio_tanh",
+    "tail_asymmetry_q90_q10_atr_norm",
 ]
 
 LOC_CONTINUOUS_FAMILY_MAP = {
@@ -495,6 +501,14 @@ LOC_CONTINUOUS_FAMILY_MAP = {
     "loc_pivot_ladder_pos_48": "context",
 }
 
+REGIME_FEATURE_KEYS = [
+    "bars_since_ema20_ema50_cross_log_norm",
+    "bars_in_high_vol_state_log_norm",
+    "bars_outside_ema20_atr_band_log_norm",
+    "up_down_semivol_ratio_tanh",
+    "up_down_return_mass_ratio_tanh",
+    "tail_asymmetry_q90_q10_atr_norm",
+]
 
 # Helper/base features produced in features.py that should remain selectable by model heads.
 # This increases candidate breadth before MDI pruning.

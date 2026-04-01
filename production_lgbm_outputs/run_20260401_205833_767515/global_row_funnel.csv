@@ -1,0 +1,5 @@
+stage,rows,symbols,fraction_of_prev
+raw_panel,2053400,200,1.0
+sliceplanner_keep_idx,81000,97,0.03944677120872699
+event_frame_built,81000,97,1.0
+robust_data_filter,81000,97,1.0

@@ -1,0 +1,7 @@
+fold_id,seed,regime_family,gain,split
+0,42,trend,3806.3235,98.0
+0,42,volatility,621.9116,1083.0
+1,42,trend,6380.9487,212.0
+1,42,volatility,2582.7507,2200.0
+2,42,trend,5138.101,197.0
+2,42,volatility,2500.9675,2381.0

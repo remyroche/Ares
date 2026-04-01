@@ -1,0 +1,13 @@
+source_target,source_horizon,side,count
+target_eff,3,long,9
+target_eff,3,short,4
+target_eff,10,long,5
+target_eff,10,short,5
+target_ela,3,long,1
+target_ela,3,short,2
+target_ela,10,long,6
+target_ela,10,short,7
+target_vame,3,long,5
+target_vame,3,short,5
+target_vame,10,long,7
+target_vame,10,short,7

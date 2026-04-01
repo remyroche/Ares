@@ -1,0 +1,10 @@
+regime_families_combo,count
+trend|volatility,1685
+volatility,579
+trend|volatility|volatility_term_structure,116
+volatility|volatility_term_structure,38
+trend,18
+compression|trend|volatility,9
+trend|volatility_term_structure,6
+compression|volatility,3
+,2

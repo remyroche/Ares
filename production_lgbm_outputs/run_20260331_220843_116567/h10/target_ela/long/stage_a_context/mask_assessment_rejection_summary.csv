@@ -1,0 +1,5 @@
+reason,count
+deduplicated_overlap,105
+support_out_of_range,12
+low_lift,8
+low_stability_floor,1

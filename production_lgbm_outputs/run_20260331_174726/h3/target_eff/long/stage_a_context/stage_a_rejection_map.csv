@@ -1,0 +1,6 @@
+stage_order,stage_name,gate_name,metric_name,threshold,input_count,rejected_count,passed_count
+1,scorer,below_hurdle,hurdle_excess,> 0,1809,0,0
+1,scorer,low_presence,presence_freq,>= 0.4000,1809,0,0
+1,scorer,low_sign_consistency,sign_consistency,>= 0.7500,1809,1809,0
+1,scorer,low_support,min_support_actual,>= 10,1809,0,0
+1,scorer,non_positive_directional_ret,directional_mean_ret,> 0,1809,0,0

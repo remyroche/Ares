@@ -1,0 +1,7 @@
+source_target,source_horizon,side,count
+target_eff,3,long,1
+target_eff,3,short,1
+target_ela,3,long,2
+target_ela,3,short,4
+target_ela,10,long,1
+target_ela,10,short,1

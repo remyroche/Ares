@@ -1712,6 +1712,55 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         ret_sign, ff.binary_entropy_nb, 20
     )
 
+    if _needs_feature("bars_since_trend_flip"):
+        trend_slope = ff.apply_to_frame(c_log, ff.slope_nb, 6)
+        trend_sign = (trend_slope > 0).astype(np.float32)
+        feats["bars_since_trend_flip"] = ff.apply_to_frame(
+            trend_sign, ff.bars_since_flip_nb
+        ).astype(np.float32)
+
+    if _needs_feature("bars_since_ema20_ema50_cross_log_norm"):
+        ema_20 = ff.apply_to_frame(c_log, ff.ema_nb, 20)
+        ema_50 = ff.apply_to_frame(c_log, ff.ema_nb, 50)
+        ema_diff_sign = ((ema_20 - ema_50) > 0).astype(np.float32)
+        raw = ff.apply_to_frame(ema_diff_sign, ff.bars_since_flip_nb)
+        feats["bars_since_ema20_ema50_cross_log_norm"] = (
+            np.log1p(np.minimum(raw, 100)) / np.log1p(100)
+        ).astype(np.float32)
+
+    if _needs_feature("bars_in_high_vol_state_log_norm"):
+        # Depends on atr_percentile (line 1683)
+        high_vol_state = (feats["atr_percentile"] >= 0.8).astype(np.float32)
+        raw = ff.apply_to_frame(high_vol_state, ff.consecutive_bars_nb)
+        feats["bars_in_high_vol_state_log_norm"] = (
+            np.log1p(np.minimum(raw, 50)) / np.log1p(50)
+        ).astype(np.float32)
+
+    if _needs_feature("bars_outside_ema20_atr_band_log_norm"):
+        ema_20 = ff.apply_to_frame(c_log, ff.ema_nb, 20)
+        dist = np.abs(c_raw - np.exp(ema_20)) / np.maximum(atr_base, 1e-8)
+        outside_state = (dist >= 1.0).astype(np.float32)
+        raw = ff.apply_to_frame(outside_state, ff.consecutive_bars_nb)
+        feats["bars_outside_ema20_atr_band_log_norm"] = (
+            np.log1p(np.minimum(raw, 50)) / np.log1p(50)
+        ).astype(np.float32)
+
+    if _needs_feature("up_down_semivol_ratio_tanh"):
+        feats["up_down_semivol_ratio_tanh"] = ff.apply_to_frame(
+            feats["ret1h"], ff.up_down_semivol_ratio_nb, 20
+        ).astype(np.float32)
+
+    if _needs_feature("up_down_return_mass_ratio_tanh"):
+        feats["up_down_return_mass_ratio_tanh"] = ff.apply_to_frame(
+            feats["ret1h"], ff.up_down_return_mass_ratio_nb, 20
+        ).astype(np.float32)
+
+    if _needs_feature("tail_asymmetry_q90_q10_atr_norm"):
+        q90 = ff.numba_rolling_quantile(feats["ret1h"], 50, 0.90)
+        q10 = np.abs(ff.numba_rolling_quantile(feats["ret1h"], 50, 0.10))
+        raw = np.log((q90 + 1e-8) / (q10 + 1e-8))
+        feats["tail_asymmetry_q90_q10_atr_norm"] = np.tanh(raw).astype(np.float32)
+
     # Volatility Ratio Short/Long (e.g., 2h vs 24h)
     ret1h_std_8 = _roll_std("ret1h", feats["ret1h"], 8)
     feats["volatility_ratio_short_long"] = (
@@ -4490,54 +4539,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 .mean()
                 .astype(np.float32)
             )
-
-        if _needs_feature("bars_since_trend_flip"):
-            trend_slope = ff.apply_to_frame(c_log, ff.slope_nb, 6)
-            trend_sign = (trend_slope > 0).astype(np.float32)
-            feats["bars_since_trend_flip"] = ff.apply_to_frame(
-                trend_sign, ff.bars_since_flip_nb
-            ).astype(np.float32)
-
-        if _needs_feature("bars_since_ema20_ema50_cross_log_norm"):
-            ema_20 = ff.apply_to_frame(c_log, ff.ema_nb, 20)
-            ema_50 = ff.apply_to_frame(c_log, ff.ema_nb, 50)
-            ema_diff_sign = ((ema_20 - ema_50) > 0).astype(np.float32)
-            raw = ff.apply_to_frame(ema_diff_sign, ff.bars_since_flip_nb)
-            feats["bars_since_ema20_ema50_cross_log_norm"] = (
-                np.log1p(np.minimum(raw, 100)) / np.log1p(100)
-            ).astype(np.float32)
-
-        if _needs_feature("bars_in_high_vol_state_log_norm"):
-            high_vol_state = (feats["atr_percentile"] >= 0.8).astype(np.float32)
-            raw = ff.apply_to_frame(high_vol_state, ff.consecutive_bars_nb)
-            feats["bars_in_high_vol_state_log_norm"] = (
-                np.log1p(np.minimum(raw, 50)) / np.log1p(50)
-            ).astype(np.float32)
-
-        if _needs_feature("bars_outside_ema20_atr_band_log_norm"):
-            ema_20 = ff.apply_to_frame(c_log, ff.ema_nb, 20)
-            dist = np.abs(c_raw - np.exp(ema_20)) / np.maximum(atr, 1e-8)
-            outside_state = (dist >= 1.0).astype(np.float32)
-            raw = ff.apply_to_frame(outside_state, ff.consecutive_bars_nb)
-            feats["bars_outside_ema20_atr_band_log_norm"] = (
-                np.log1p(np.minimum(raw, 50)) / np.log1p(50)
-            ).astype(np.float32)
-
-        if _needs_feature("up_down_semivol_ratio_tanh"):
-            feats["up_down_semivol_ratio_tanh"] = ff.apply_to_frame(
-                ret_1, ff.up_down_semivol_ratio_nb, 20
-            ).astype(np.float32)
-
-        if _needs_feature("up_down_return_mass_ratio_tanh"):
-            feats["up_down_return_mass_ratio_tanh"] = ff.apply_to_frame(
-                ret_1, ff.up_down_return_mass_ratio_nb, 20
-            ).astype(np.float32)
-
-        if _needs_feature("tail_asymmetry_q90_q10_atr_norm"):
-            q90 = ff.numba_rolling_quantile(ret_1, 50, 0.90)
-            q10 = np.abs(ff.numba_rolling_quantile(ret_1, 50, 0.10))
-            raw = np.log((q90 + 1e-8) / (q10 + 1e-8))
-            feats["tail_asymmetry_q90_q10_atr_norm"] = np.tanh(raw).astype(np.float32)
 
         if _needs_feature("MACD_histogram"):
             ema_12 = ff.apply_to_frame(c_log, ff.ema_nb, 12)

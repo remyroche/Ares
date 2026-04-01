@@ -1,4 +1,5 @@
-from app.providers.base import CMSProvider, CMSPageResult
+from app.providers.base import CMSPageResult
+from app.providers.cms import CMSProvider, CMSPageResult
 import uuid
 import os
 import json

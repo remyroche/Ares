@@ -1,4 +1,5 @@
-from app.providers.base import YouTubeProvider, PublishResult
+from app.providers.base import PublishResult
+from app.providers.youtube import YouTubeProvider, PublishResult
 import uuid
 
 

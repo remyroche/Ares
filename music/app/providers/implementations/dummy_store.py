@@ -1,4 +1,5 @@
-from app.providers.base import StoreProvider, StoreProductResult
+from app.providers.base import StoreProductResult
+from app.providers.store import StoreProvider, StoreProductResult
 import uuid
 import os
 import json

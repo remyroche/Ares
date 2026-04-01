@@ -1,4 +1,4 @@
-from app.providers.base import AnalyticsProvider
+from app.providers.analytics import AnalyticsProvider
 import random
 
 

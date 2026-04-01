@@ -1,4 +1,5 @@
-from app.providers.base import MusicGenerationProvider, MusicGenerationResult
+from app.providers.base import MusicGenerationResult
+from app.providers.music_generation import MusicGenerationProvider, MusicGenerationResult
 import os
 
 

@@ -1,4 +1,5 @@
-from app.providers.base import ImageGenerationProvider, ImageGenerationResult
+from app.providers.base import ImageGenerationResult
+from app.providers.image_generation import ImageGenerationProvider, ImageGenerationResult
 from PIL import Image
 import io
 

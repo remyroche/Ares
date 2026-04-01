@@ -1,4 +1,5 @@
-from app.providers.base import TikTokProvider, PublishResult
+from app.providers.base import PublishResult
+from app.providers.tiktok import TikTokProvider, PublishResult
 import uuid
 
 

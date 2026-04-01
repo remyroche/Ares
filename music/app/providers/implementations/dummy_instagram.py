@@ -1,4 +1,5 @@
-from app.providers.base import InstagramProvider, PublishResult
+from app.providers.base import PublishResult
+from app.providers.instagram import InstagramProvider, PublishResult
 import uuid
 
 

@@ -43,6 +43,11 @@ from extreme_price_movements.data_store import (
 )
 from extreme_price_movements.hpo_lgbm_regime_miner import (
     run_short_hpo_for_target_horizon,
+    TARGET_SUPPORT,
+    SUPPORT_MIN,
+    SUPPORT_MAX,
+    PREFERRED_SUPPORT_MIN,
+    PREFERRED_SUPPORT_MAX,
 )
 from extreme_price_movements.intraday_crypto_library import (
     INTRADAY_TRIGGER_COLUMNS,
@@ -1739,9 +1744,9 @@ def _support_preference_score_scalar(
 def make_support_preference_weights(
     X: np.ndarray,
     *,
-    target_pct: float = 0.125,
-    preferred_low_pct: float = 0.06,
-    preferred_high_pct: float = 0.14,
+    target_pct: float = TARGET_SUPPORT,
+    preferred_low_pct: float = PREFERRED_SUPPORT_MIN,
+    preferred_high_pct: float = PREFERRED_SUPPORT_MAX,
     strength: float = 0.20,
     w_min: float = 0.85,
     w_max: float = 1.25,
@@ -1988,12 +1993,12 @@ class InteractionModel:
         )
         sample_weight = sample_weight * make_support_preference_weights(
             X_tr,
-            target_pct=float(self.cfg.get("support_preference_target_pct", 0.125)),
+            target_pct=float(self.cfg.get("support_preference_target_pct", TARGET_SUPPORT)),
             preferred_low_pct=float(
-                self.cfg.get("support_preference_preferred_low_pct", 0.06)
+                self.cfg.get("support_preference_preferred_low_pct", PREFERRED_SUPPORT_MIN)
             ),
             preferred_high_pct=float(
-                self.cfg.get("support_preference_preferred_high_pct", 0.14)
+                self.cfg.get("support_preference_preferred_high_pct", PREFERRED_SUPPORT_MAX)
             ),
             strength=float(self.cfg.get("support_preference_strength", 0.20)),
             w_min=float(self.cfg.get("support_preference_weight_min", 0.85)),
@@ -2876,7 +2881,7 @@ class RuleScorer:
 
     def _compute_required_hurdle(self, support_pct: float, display_arity: int) -> float:
         base_hurdle = float(self.cfg.get("prune_base_hurdle", 0.0002))
-        target_support = float(self.cfg.get("prune_target_support_pct", 0.125))
+        target_support = float(self.cfg.get("prune_target_support_pct", TARGET_SUPPORT))
         complexity_bonus = float(
             self.cfg.get("prune_complexity_bonus_map", {}).get(str(display_arity), 0.0)
         )
@@ -2896,10 +2901,10 @@ class RuleScorer:
         and anything outside the hard 5%-15% band is excluded entirely.
         """
 
-        hard_min = float(self.cfg.get("objective_support_min_pct", 0.05))
-        target_low = float(self.cfg.get("objective_support_target_low_pct", 0.075))
-        target_high = float(self.cfg.get("objective_support_target_high_pct", 0.125))
-        hard_max = float(self.cfg.get("objective_support_max_pct", 0.15))
+        hard_min = float(self.cfg.get("objective_support_min_pct", SUPPORT_MIN))
+        target_low = float(self.cfg.get("objective_support_target_low_pct", PREFERRED_SUPPORT_MIN))
+        target_high = float(self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX))
+        hard_max = float(self.cfg.get("objective_support_max_pct", SUPPORT_MAX))
         edge_floor = float(self.cfg.get("objective_support_edge_floor", 0.2))
 
         if (
@@ -3860,13 +3865,13 @@ class IndependentRulePruner:
         self.cfg = cfg
         self.base_hurdle = float(cfg.get("prune_base_hurdle", 0.0002))
         self.hurdle_aggressiveness = float(cfg.get("prune_hurdle_aggressiveness", 1.0))
-        self.target_support = float(cfg.get("prune_target_support_pct", 0.125))
-        self.min_support_pct = float(cfg.get("support_min_pct", 0.05))
+        self.target_support = float(cfg.get("prune_target_support_pct", TARGET_SUPPORT))
+        self.min_support_pct = float(cfg.get("support_min_pct", SUPPORT_MIN))
         self.min_sign_consistency = float(cfg.get("min_sign_consistency", 0.0))
 
         # New Gates
         self.max_support_pct = float(
-            cfg.get("max_support_pct", 0.20)
+            cfg.get("max_support_pct", SUPPORT_MAX)
         )  # Hard ceiling at 20%
         self.hurdle_gate_bottom_pctile = float(
             cfg.get("hurdle_gate_bottom_pctile", 0.20)
@@ -4235,10 +4240,10 @@ def build_stage_a_rejection_map(
                                 "mean_support_pct",
                                 pd.Series(index=scorer_accepted.index, dtype=float),
                             )
-                            < float(cfg.get("support_min_pct", 0.05))
+                            < float(cfg.get("support_min_pct", SUPPORT_MIN))
                         ).sum()
                     ),
-                    f">= {float(cfg.get('support_min_pct', 0.05)):.4f}",
+                    f">= {float(cfg.get('support_min_pct', SUPPORT_MIN)):.4f}",
                 ),
                 (
                     "is_too_broad",
@@ -4249,10 +4254,10 @@ def build_stage_a_rejection_map(
                                 "mean_support_pct",
                                 pd.Series(index=scorer_accepted.index, dtype=float),
                             )
-                            > float(cfg.get("max_support_pct", 0.22))
+                            > float(cfg.get("max_support_pct", SUPPORT_MAX))
                         ).sum()
                     ),
-                    f"<= {float(cfg.get('max_support_pct', 0.20)):.4f}",
+                    f"<= {float(cfg.get('max_support_pct', SUPPORT_MAX)):.4f}",
                 ),
             ],
             passed_count=len(candidate_registry),
@@ -7307,9 +7312,9 @@ class MaskAssessor:
         cheap_stats_cache: Dict[Tuple[str, str], Dict[str, float]] = {}
         directional_edge_floor = float(self.cfg.get("directional_edge_floor", 0.0))
         min_candidates_per_bucket = int(self.cfg.get("min_candidates_per_bucket", 50))
-        support_min = float(self.cfg.get("support_min_pct", 0.05))
-        support_max = float(self.cfg.get("support_max_pct", 0.20))
-        target_support = float(self.cfg.get("target_support_pct", 0.10))
+        support_min = float(self.cfg.get("support_min_pct", SUPPORT_MIN))
+        support_max = float(self.cfg.get("support_max_pct", SUPPORT_MAX))
+        target_support = float(self.cfg.get("target_support_pct", TARGET_SUPPORT))
 
         # Precompute day buckets once to avoid per-rule timestamp parsing/groupby.
         day_codes: Optional[np.ndarray] = None
@@ -8006,7 +8011,7 @@ class MaskAssessor:
         support_ratio_min = float(self.cfg.get("ridge_support_ratio_min", 0.70))
         penalty_strength = float(self.cfg.get("ridge_support_penalty_strength", 1.0))
         boost_strength = float(self.cfg.get("ridge_support_boost_strength", 1.0))
-        center = 0.125
+        center = TARGET_SUPPORT
         half_width = 0.025
 
         bucket_ridge_rows: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
@@ -8069,14 +8074,14 @@ class MaskAssessor:
             w_mult_arr = np.ones(len(valid_keys), dtype=float)
 
             for i, s in enumerate(s_arr):
-                if s < 0.10:
-                    w = 1.0 - penalty_strength * (0.10 - s) / 0.10
+                if s < (center - half_width):
+                    w = 1.0 - penalty_strength * (center - half_width - s) / (center - half_width)
                 elif s < center:
-                    w = 1.0 + boost_strength * (s - 0.10) / half_width
-                elif s < 0.15:
-                    w = 1.0 + boost_strength * (0.15 - s) / half_width
+                    w = 1.0 + boost_strength * (s - (center - half_width)) / half_width
+                elif s < (center + half_width):
+                    w = 1.0 + boost_strength * ((center + half_width) - s) / half_width
                 else:
-                    w = 1.0 - penalty_strength * (s - 0.15) / 0.15
+                    w = 1.0 - penalty_strength * (s - (center + half_width)) / (center + half_width)
 
                 # Point 12: Broaden clip bounds to allow meaningful boosting
                 w_mult_arr[i] = np.clip(w, 0.1, 2.0)
@@ -9702,21 +9707,21 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_tree_discoveries": 1,
             "min_presence_freq": 0.33,
             "min_sign_consistency": 0.0,
-            "support_min_pct": 0.05,
-            "support_max_pct": 0.22,
-            "objective_support_min_pct": 0.05,
-            "objective_support_target_low_pct": 0.08,
-            "objective_support_target_high_pct": 0.12,
-            "objective_support_max_pct": 0.22,
+            "support_min_pct": SUPPORT_MIN,
+            "support_max_pct": SUPPORT_MAX,
+            "objective_support_min_pct": SUPPORT_MIN,
+            "objective_support_target_low_pct": PREFERRED_SUPPORT_MIN,
+            "objective_support_target_high_pct": PREFERRED_SUPPORT_MAX,
+            "objective_support_max_pct": SUPPORT_MAX,
             "objective_support_edge_floor": 0.2,
             "prune_base_hurdle": 0.00005,
-            "prune_target_support_pct": 0.10,
+            "prune_target_support_pct": TARGET_SUPPORT,
             "prune_support_exp": 0.5,
             "min_context_support_pct": 0.005,
             "min_context_mean_ret": 0.0,
             "cv_min_train_frac": 0.5,
             "cv_embargo": 0,
-            "max_support_pct": 0.22,
+            "max_support_pct": SUPPORT_MAX,
             "stage_a_directional": True,
             "stage_a_relax_positive_groups": True,
         },
@@ -9725,21 +9730,21 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_support_count_validation": 10,
             "min_tree_discoveries": 2,
             "min_presence_freq": 0.4,
-            "support_min_pct": 0.05,
-            "support_max_pct": 0.22,
-            "objective_support_min_pct": 0.05,
-            "objective_support_target_low_pct": 0.08,
-            "objective_support_target_high_pct": 0.12,
-            "objective_support_max_pct": 0.22,
+            "support_min_pct": SUPPORT_MIN,
+            "support_max_pct": SUPPORT_MAX,
+            "objective_support_min_pct": SUPPORT_MIN,
+            "objective_support_target_low_pct": PREFERRED_SUPPORT_MIN,
+            "objective_support_target_high_pct": PREFERRED_SUPPORT_MAX,
+            "objective_support_max_pct": SUPPORT_MAX,
             "objective_support_edge_floor": 0.2,
             "prune_base_hurdle": 0.00010,
-            "prune_target_support_pct": 0.10,
+            "prune_target_support_pct": TARGET_SUPPORT,
             "prune_support_exp": 0.5,
             "min_context_support_pct": 0.01,
             "min_context_mean_ret": 0.0,
             "cv_min_train_frac": 0.5,
             "cv_embargo": 0,
-            "max_support_pct": 0.22,
+            "max_support_pct": SUPPORT_MAX,
             "stage_a_directional": True,
             "stage_a_relax_positive_groups": True,
         },
@@ -9770,7 +9775,7 @@ def apply_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(cfg)
     out["n_folds"] = 3
     out["sliceplanner_outer_n_folds"] = 3
-    out["mask_opt_max_symbols"] = 200
+    out["mask_opt_max_symbols"] = 100
     out["mask_opt_lookback_years"] = 3.0
     out["support_max_pct"] = 0.22
     out["objective_support_max_pct"] = 0.22

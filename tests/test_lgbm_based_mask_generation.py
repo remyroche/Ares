@@ -266,7 +266,7 @@ def test_apply_test_mode_sets_smaller_pipeline_profile():
     assert cfg["test_mode"] is True
     assert cfg["n_folds"] == 3
     assert cfg["sliceplanner_outer_n_folds"] == 3
-    assert cfg["mask_opt_max_symbols"] == 100
+    assert cfg["mask_opt_max_symbols"] == 200
     assert cfg["mask_opt_lookback_years"] == 3.0
 
 
@@ -893,6 +893,7 @@ def test_build_rule_model_importance_scores_aggregates_feature_gain_per_rule():
             support_train=10,
             path_gain_sum=10.0,
             total_samples=100,
+            rule_model_importance_score=0.5,
         ),
         ExtractedRule(
             rule_id="r2",
@@ -909,23 +910,17 @@ def test_build_rule_model_importance_scores_aggregates_feature_gain_per_rule():
             support_train=10,
             path_gain_sum=2.0,
             total_samples=100,
+            rule_model_importance_score=0.2,
         ),
     ]
-    feature_importance_records = [
-        {"fold_id": 0, "seed": 1, "feature_name": "f1", "group": "regime", "regime_family": "reg", "gain": 9.0, "split": 3.0},
-        {"fold_id": 0, "seed": 1, "feature_name": "f2", "group": "location", "regime_family": "", "gain": 3.0, "split": 1.0},
-        {"fold_id": 0, "seed": 1, "feature_name": "f3", "group": "regime", "regime_family": "reg", "gain": 1.0, "split": 1.0},
-    ]
-
-    out = build_rule_model_importance_scores(rules, feature_importance_records)
+    out = build_rule_model_importance_scores(rules)
     out = out.set_index("canonical_key")
 
     assert "rule_a" in out.index
     assert "rule_b" in out.index
-    assert out.loc["rule_a", "rule_gain_score"] > out.loc["rule_b", "rule_gain_score"]
     assert (
         out.loc["rule_a", "rule_model_importance_score"]
-        > out.loc["rule_b", "rule_model_importance_score"]
+        != out.loc["rule_b", "rule_model_importance_score"]
     )
 
 

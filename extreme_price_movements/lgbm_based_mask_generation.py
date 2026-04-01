@@ -489,6 +489,8 @@ def _compute_cheap_stats_batch_numba(
     support_min: float,
     support_max: float,
     target_support: float,
+    preferred_support_min: float,
+    preferred_support_max: float,
 ) -> np.ndarray:
     """
     Compute cheap stats for all rules in a vectorized batch.
@@ -523,10 +525,18 @@ def _compute_cheap_stats_batch_numba(
 
         # Support metrics
         support_pct = np.float32(n_active / n_samples)
-        support_ok = np.float32(
-            1.0 if support_min <= support_pct <= support_max else 0.0
-        )
-        support_score = -np.abs(support_pct - target_support)
+        support_ok = np.float32(1.0 if support_min <= support_pct <= support_max else 0.0)
+
+        if preferred_support_min <= support_pct <= preferred_support_max:
+            support_score = 1.0
+        elif support_pct < preferred_support_min:
+            span = max(preferred_support_min - support_min, 1e-9)
+            relative = np.clip((support_pct - support_min) / span, 0.0, 1.0)
+            support_score = 0.2 + (1.0 - 0.2) * relative
+        else:
+            span = max(support_max - preferred_support_max, 1e-9)
+            relative = np.clip((support_max - support_pct) / span, 0.0, 1.0)
+            support_score = 0.2 + (1.0 - 0.2) * relative
 
         # Average trades per day
         avg_trades = np.float32(n_active / total_symbol_days)
@@ -7350,6 +7360,8 @@ class MaskAssessor:
         support_min = float(self.cfg.get("support_min_pct", SUPPORT_MIN))
         support_max = float(self.cfg.get("support_max_pct", SUPPORT_MAX))
         target_support = float(self.cfg.get("target_support_pct", TARGET_SUPPORT))
+        preferred_support_min = float(self.cfg.get("objective_support_target_low_pct", PREFERRED_SUPPORT_MIN))
+        preferred_support_max = float(self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX))
 
         # Precompute day buckets once to avoid per-rule timestamp parsing/groupby.
         day_codes: Optional[np.ndarray] = None
@@ -7373,7 +7385,18 @@ class MaskAssessor:
 
             support_pct = float(np.mean(mask))
             support_ok = support_min <= support_pct <= support_max
-            support_score = -abs(support_pct - target_support)
+
+            if preferred_support_min <= support_pct <= preferred_support_max:
+                support_score = 1.0
+            elif support_pct < preferred_support_min:
+                span = max(preferred_support_min - support_min, 1e-9)
+                relative = np.clip((support_pct - support_min) / span, 0.0, 1.0)
+                support_score = float(0.2 + (1.0 - 0.2) * relative)
+            else:
+                span = max(support_max - preferred_support_max, 1e-9)
+                relative = np.clip((support_max - support_pct) / span, 0.0, 1.0)
+                support_score = float(0.2 + (1.0 - 0.2) * relative)
+
             avg_trades = self._compute_avg_trades_per_day(mask, total_symbol_days)
 
             if day_codes is not None and n_day_buckets > 0:

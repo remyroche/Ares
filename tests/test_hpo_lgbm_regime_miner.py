@@ -11,12 +11,12 @@ from extreme_price_movements.hpo_lgbm_regime_miner import (
 
 
 def test_support_quality_score_prefers_center_and_preferred_band():
-    supports = np.array([0.125, 0.10, 0.06, 0.18], dtype=np.float64)
+    supports = np.array([0.15, 0.12, 0.125, 0.20], dtype=np.float64)
     weights = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float64)
 
-    centered = _support_quality_score(np.array([0.125]), np.array([1.0]))
-    preferred_edge = _support_quality_score(np.array([0.06]), np.array([1.0]))
-    outside_preferred = _support_quality_score(np.array([0.18]), np.array([1.0]))
+    centered = _support_quality_score(np.array([0.15]), np.array([1.0]))
+    preferred_edge = _support_quality_score(np.array([0.125]), np.array([1.0]))
+    outside_preferred = _support_quality_score(np.array([0.20]), np.array([1.0]))
 
     assert centered > preferred_edge
     assert preferred_edge > outside_preferred
@@ -46,7 +46,7 @@ def test_score_rule_matrix_invalidates_when_too_many_rules_outside_support_band(
         rule_matrix=rule_matrix,
         support_min=0.30,
         support_max=0.40,
-        target_support=0.125,
+        target_support=0.15,
     )
 
     assert not np.isfinite(score)

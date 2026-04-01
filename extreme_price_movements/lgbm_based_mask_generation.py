@@ -9921,9 +9921,55 @@ class MaskAssessor:
                     "ridge_profitable_daily_pnl_std": ridge_trade_metrics[
                         "ridge_profitable_daily_pnl_std"
                     ],
+                    "ridge_profitable_daily_sortino": ridge_trade_metrics[
+                        "ridge_profitable_daily_sortino"
+                    ],
+                    "ridge_profitable_avg_position_weight": ridge_trade_metrics[
+                        "ridge_profitable_avg_position_weight"
+                    ],
                     "ridge_profitable_total_net_pnl": ridge_trade_metrics["ridge_profitable_total_net_pnl"],
                     "ridge_best_top_pct": ridge_trade_metrics["ridge_best_top_pct"],
                     "ridge_best_total_net_pnl": ridge_trade_metrics["ridge_best_total_net_pnl"],
+                    "ridge_best_score_threshold": ridge_trade_metrics["ridge_best_score_threshold"],
+                    "ridge_best_trade_count": ridge_trade_metrics["ridge_best_trade_count"],
+                    "ridge_best_trades_per_day": ridge_trade_metrics["ridge_best_trades_per_day"],
+                    "ridge_best_win_rate": ridge_trade_metrics["ridge_best_win_rate"],
+                    "ridge_best_avg_net_ret": ridge_trade_metrics["ridge_best_avg_net_ret"],
+                    "ridge_best_avg_pnl_per_day": ridge_trade_metrics["ridge_best_avg_pnl_per_day"],
+                    "ridge_best_avg_pnl_per_active_symbol_day": ridge_trade_metrics[
+                        "ridge_best_avg_pnl_per_active_symbol_day"
+                    ],
+                    "ridge_best_daily_pnl_std": ridge_trade_metrics[
+                        "ridge_best_daily_pnl_std"
+                    ],
+                    "ridge_best_daily_sortino": ridge_trade_metrics[
+                        "ridge_best_daily_sortino"
+                    ],
+                    "ridge_best_avg_position_weight": ridge_trade_metrics[
+                        "ridge_best_avg_position_weight"
+                    ],
+                    "ridge_midpoint_top_pct": ridge_trade_metrics["ridge_midpoint_top_pct"],
+                    "ridge_midpoint_score_threshold": ridge_trade_metrics["ridge_midpoint_score_threshold"],
+                    "ridge_midpoint_trade_count": ridge_trade_metrics["ridge_midpoint_trade_count"],
+                    "ridge_midpoint_trades_per_day": ridge_trade_metrics["ridge_midpoint_trades_per_day"],
+                    "ridge_midpoint_win_rate": ridge_trade_metrics["ridge_midpoint_win_rate"],
+                    "ridge_midpoint_avg_net_ret": ridge_trade_metrics["ridge_midpoint_avg_net_ret"],
+                    "ridge_midpoint_avg_pnl_per_day": ridge_trade_metrics["ridge_midpoint_avg_pnl_per_day"],
+                    "ridge_midpoint_avg_pnl_per_active_symbol_day": ridge_trade_metrics[
+                        "ridge_midpoint_avg_pnl_per_active_symbol_day"
+                    ],
+                    "ridge_midpoint_daily_pnl_std": ridge_trade_metrics[
+                        "ridge_midpoint_daily_pnl_std"
+                    ],
+                    "ridge_midpoint_daily_sortino": ridge_trade_metrics[
+                        "ridge_midpoint_daily_sortino"
+                    ],
+                    "ridge_midpoint_avg_position_weight": ridge_trade_metrics[
+                        "ridge_midpoint_avg_position_weight"
+                    ],
+                    "ridge_midpoint_total_net_pnl": ridge_trade_metrics[
+                        "ridge_midpoint_total_net_pnl"
+                    ],
                     "learnability_step_c_score": float(
                         row.get("learnability_step_c_score", np.nan)
                     ),
@@ -10238,19 +10284,41 @@ class MaskAssessor:
         oof_preds: np.ndarray,
         *,
         round_fee: float = 0.0015,
+        min_weight: float = 0.05,
+        max_weight: float = 0.15,
+        convex_power: float = 2.0,
+        eps: float = 1e-9,
         ranked_top_pcts: Sequence[float] = (
-            0.05,
-            0.10,
-            0.15,
-            0.20,
-            0.25,
-            0.30,
-            0.40,
-            0.50,
+            0.60,
+            0.65,
+            0.70,
             0.75,
+            0.80,
+            0.85,
+            0.875,
+            0.90,
+            0.925,
+            0.95,
+            0.975,
             1.00,
         ),
     ) -> Dict[str, Any]:
+        def _empty_metrics() -> Dict[str, Any]:
+            return {
+                "top_pct": np.nan,
+                "score_threshold": np.nan,
+                "trade_count": 0,
+                "trades_per_day": 0.0,
+                "win_rate": np.nan,
+                "avg_net_ret": np.nan,
+                "avg_pnl_per_day": np.nan,
+                "avg_pnl_per_active_symbol_day": np.nan,
+                "daily_pnl_std": np.nan,
+                "daily_sortino": np.nan,
+                "avg_position_weight": np.nan,
+                "total_net_pnl": np.nan,
+            }
+
         valid = (
             mask.astype(bool)
             & np.isfinite(directional_returns)
@@ -10258,18 +10326,11 @@ class MaskAssessor:
         )
         if int(np.sum(valid)) == 0:
             return {
-                "ridge_profitable_top_pct": np.nan,
-                "ridge_profitable_score_threshold": np.nan,
-                "ridge_profitable_trade_count": 0,
-                "ridge_profitable_trades_per_day": 0.0,
-                "ridge_profitable_win_rate": np.nan,
-                "ridge_profitable_avg_net_ret": np.nan,
-                "ridge_profitable_avg_pnl_per_day": np.nan,
-                "ridge_profitable_avg_pnl_per_active_symbol_day": np.nan,
-                "ridge_profitable_daily_pnl_std": np.nan,
-                "ridge_profitable_total_net_pnl": np.nan,
                 "ridge_best_top_pct": np.nan,
                 "ridge_best_total_net_pnl": np.nan,
+                "ridge_profitable": _empty_metrics(),
+                "ridge_best": _empty_metrics(),
+                "ridge_midpoint": _empty_metrics(),
             }
 
         scores = np.asarray(oof_preds[valid], dtype=np.float32)
@@ -10283,18 +10344,11 @@ class MaskAssessor:
         valid_ts = timestamps.notna().to_numpy()
         if not np.any(valid_ts):
             return {
-                "ridge_profitable_top_pct": np.nan,
-                "ridge_profitable_score_threshold": np.nan,
-                "ridge_profitable_trade_count": 0,
-                "ridge_profitable_trades_per_day": 0.0,
-                "ridge_profitable_win_rate": np.nan,
-                "ridge_profitable_avg_net_ret": np.nan,
-                "ridge_profitable_avg_pnl_per_day": np.nan,
-                "ridge_profitable_avg_pnl_per_active_symbol_day": np.nan,
-                "ridge_profitable_daily_pnl_std": np.nan,
-                "ridge_profitable_total_net_pnl": np.nan,
                 "ridge_best_top_pct": np.nan,
                 "ridge_best_total_net_pnl": np.nan,
+                "ridge_profitable": _empty_metrics(),
+                "ridge_best": _empty_metrics(),
+                "ridge_midpoint": _empty_metrics(),
             }
 
         scores = scores[valid_ts]
@@ -10311,21 +10365,39 @@ class MaskAssessor:
         days_sorted = days.to_numpy()[order]
 
         profitable_metrics: Optional[Dict[str, Any]] = None
+        threshold_metrics: Dict[float, Dict[str, Any]] = {}
         best_total_net_pnl = -np.inf
         best_top_pct = np.nan
 
         for top_pct in ranked_top_pcts:
             k = max(1, int(np.ceil(len(scores_sorted) * float(top_pct))))
+            sel_scores = scores_sorted[:k]
             sel_net = net_sorted[:k]
             sel_symbols = symbols_sorted[:k]
             sel_days = days_sorted[:k]
-            total_net_pnl = float(np.sum(sel_net))
-            avg_net_ret = float(np.mean(sel_net))
-            win_rate = float(np.mean(sel_net > 0.0))
+            score_threshold = float(sel_scores[k - 1])
+            score_max = float(sel_scores[0]) if k > 0 else score_threshold
+            score_denom = max(score_max - score_threshold, eps)
+            normalized_scores = np.clip(
+                (sel_scores - score_threshold) / score_denom, 0.0, 1.0
+            )
+            weights = min_weight + (max_weight - min_weight) * (
+                normalized_scores**convex_power
+            )
+            weighted_net = weights.astype(np.float32) * sel_net.astype(np.float32)
+            total_net_pnl = float(np.sum(weighted_net))
+            avg_net_ret = float(np.mean(weighted_net))
+            win_rate = float(np.mean(weighted_net > 0.0))
             trades_per_day = float(k / observed_days)
-            day_pnl = pd.Series(sel_net).groupby(sel_days).sum()
+            day_pnl = pd.Series(weighted_net).groupby(sel_days).sum()
             avg_pnl_per_day = float(day_pnl.mean()) if len(day_pnl) > 0 else np.nan
             daily_pnl_std = float(day_pnl.std(ddof=0)) if len(day_pnl) > 0 else np.nan
+            if len(day_pnl) > 0:
+                downside = np.minimum(day_pnl.to_numpy(dtype=np.float32), 0.0)
+                downside_dev = float(np.sqrt(np.mean(downside**2)))
+                daily_sortino = float(avg_pnl_per_day / (downside_dev + eps))
+            else:
+                daily_sortino = np.nan
             active_symbol_days = max(
                 int(
                     pd.DataFrame({"symbol": sel_symbols, "day": sel_days})
@@ -10335,45 +10407,63 @@ class MaskAssessor:
                 1,
             )
             avg_pnl_per_active_symbol_day = float(total_net_pnl / active_symbol_days)
-            score_threshold = float(scores_sorted[k - 1])
+            avg_position_weight = float(np.mean(weights)) if len(weights) > 0 else np.nan
+
+            current_metrics = {
+                "top_pct": float(top_pct),
+                "score_threshold": score_threshold,
+                "trade_count": int(k),
+                "trades_per_day": trades_per_day,
+                "win_rate": win_rate,
+                "avg_net_ret": avg_net_ret,
+                "avg_pnl_per_day": avg_pnl_per_day,
+                "avg_pnl_per_active_symbol_day": avg_pnl_per_active_symbol_day,
+                "daily_pnl_std": daily_pnl_std,
+                "daily_sortino": daily_sortino,
+                "avg_position_weight": avg_position_weight,
+                "total_net_pnl": total_net_pnl,
+            }
+            threshold_metrics[float(top_pct)] = current_metrics
 
             if total_net_pnl > best_total_net_pnl:
                 best_total_net_pnl = total_net_pnl
                 best_top_pct = float(top_pct)
 
             if profitable_metrics is None and avg_net_ret > 0.0:
-                profitable_metrics = {
-                    "ridge_profitable_top_pct": float(top_pct),
-                    "ridge_profitable_score_threshold": score_threshold,
-                    "ridge_profitable_trade_count": int(k),
-                    "ridge_profitable_trades_per_day": trades_per_day,
-                    "ridge_profitable_win_rate": win_rate,
-                    "ridge_profitable_avg_net_ret": avg_net_ret,
-                    "ridge_profitable_avg_pnl_per_day": avg_pnl_per_day,
-                    "ridge_profitable_avg_pnl_per_active_symbol_day": avg_pnl_per_active_symbol_day,
-                    "ridge_profitable_daily_pnl_std": daily_pnl_std,
-                    "ridge_profitable_total_net_pnl": total_net_pnl,
-                }
+                profitable_metrics = current_metrics
 
         if profitable_metrics is None:
-            profitable_metrics = {
-                "ridge_profitable_top_pct": np.nan,
-                "ridge_profitable_score_threshold": np.nan,
-                "ridge_profitable_trade_count": 0,
-                "ridge_profitable_trades_per_day": 0.0,
-                "ridge_profitable_win_rate": np.nan,
-                "ridge_profitable_avg_net_ret": np.nan,
-                "ridge_profitable_avg_pnl_per_day": np.nan,
-                "ridge_profitable_avg_pnl_per_active_symbol_day": np.nan,
-                "ridge_profitable_daily_pnl_std": np.nan,
-                "ridge_profitable_total_net_pnl": np.nan,
-            }
+            profitable_metrics = _empty_metrics()
 
-        profitable_metrics["ridge_best_top_pct"] = float(best_top_pct)
-        profitable_metrics["ridge_best_total_net_pnl"] = (
-            float(best_total_net_pnl) if np.isfinite(best_total_net_pnl) else np.nan
+        best_metrics = (
+            threshold_metrics.get(float(best_top_pct), _empty_metrics())
+            if np.isfinite(best_top_pct)
+            else _empty_metrics()
         )
-        return profitable_metrics
+
+        midpoint_metrics = _empty_metrics()
+        profitable_top_pct = profitable_metrics.get("top_pct", np.nan)
+        if np.isfinite(profitable_top_pct):
+            midpoint_top_pct = 0.5 * (float(profitable_top_pct) + 1.0)
+            eligible_midpoints = [p for p in ranked_top_pcts if float(p) >= midpoint_top_pct]
+            midpoint_choice = float(eligible_midpoints[0]) if eligible_midpoints else 1.0
+            midpoint_metrics = threshold_metrics.get(midpoint_choice, _empty_metrics())
+
+        out = {
+            "ridge_best_top_pct": float(best_top_pct) if np.isfinite(best_top_pct) else np.nan,
+            "ridge_best_total_net_pnl": (
+                float(best_total_net_pnl) if np.isfinite(best_total_net_pnl) else np.nan
+            ),
+        }
+        prefix_map = {
+            "ridge_profitable": profitable_metrics,
+            "ridge_best": best_metrics,
+            "ridge_midpoint": midpoint_metrics,
+        }
+        for prefix, metrics in prefix_map.items():
+            for key, value in metrics.items():
+                out[f"{prefix}_{key}"] = value
+        return out
 
     def _compute_entropy(self, y) -> float:
         """Compute entropy proxy of the target distribution."""

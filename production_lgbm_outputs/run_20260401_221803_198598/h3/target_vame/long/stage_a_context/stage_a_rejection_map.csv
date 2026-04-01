@@ -1,0 +1,19 @@
+stage_order,stage_name,gate_name,metric_name,threshold,input_count,rejected_count,passed_count
+1,scorer,below_hurdle,hurdle_excess,> 0,4326,0,1959
+1,scorer,low_support,min_support_actual,>= 10,4326,0,1959
+1,scorer,non_positive_directional_ret,directional_mean_ret,> 0,4326,0,1959
+2,pruner,is_too_broad,mean_support_pct,<= 0.2200,1959,0,1656
+2,pruner,is_too_narrow,mean_support_pct,>= 0.0500,1959,303,1656
+3,mask_assessor,insufficient_baseline_oof_coverage,baseline_oof_coverage,>= 0.2500,1656,0,79
+3,mask_assessor,insufficient_subset_oof_coverage,subset_oof_coverage,>= 0.2500,1656,0,79
+3,mask_assessor,low_lift,learn_eff_ratio,>= 1.1000,1656,1,79
+3,mask_assessor,low_sign_consistency,sign_consistency,>= 0.0000,1656,0,79
+3,mask_assessor,low_trades_per_day,avg_trades_per_day,>= 0.1000,1656,0,79
+3,mask_assessor,missing_learnability,learn_eff_ratio,must be finite,1656,0,79
+3,mask_assessor,not_assessed_min_mask_support,mask_support_count,>= 20 rows,1656,1576,79
+4,context_selector,reject_arity,display_arity,>= 2,79,0,79
+4,context_selector,reject_presence,presence_freq,>= 0.4000,79,0,79
+4,context_selector,reject_ret,directional_mean_ret,> 0.0000,79,0,79
+4,context_selector,reject_sign,sign_consistency,>= 0.0000,79,0,79
+4,context_selector,reject_structural,is_structurally_sound,must be True,79,0,79
+4,context_selector,reject_support,mean_support_pct,>= 0.0100,79,0,79

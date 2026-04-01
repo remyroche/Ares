@@ -393,16 +393,17 @@ def _compute_path_arrays_numba(
     side_mult: float,
     horizon: int,
     final_ret: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Numba-optimized path array computation.
-    Returns: mfe, mae, time_to_mfe, time_to_mae
+    Returns: mfe, mae, time_to_mfe, time_to_mae, path_length
     """
     n = len(close)
     mfe = np.full(n, np.nan, dtype=np.float32)
     mae = np.full(n, np.nan, dtype=np.float32)
     t_mfe = np.full(n, np.nan, dtype=np.float32)
     t_mae = np.full(n, np.nan, dtype=np.float32)
+    path_len = np.full(n, np.nan, dtype=np.float32)
 
     max_i = n - int(horizon) - 1
     for i in range(max(max_i + 1, 0)):
@@ -423,6 +424,9 @@ def _compute_path_arrays_numba(
         max_fav_idx = -1
         max_adv_idx = -1
 
+        sum_abs_ret = 0.0
+        prev_px = entry
+
         if side_mult > 0:
             # Long position
             final_ret[i] = np.float32((exit_px - entry) / entry)
@@ -435,6 +439,11 @@ def _compute_path_arrays_numba(
                 if np.isfinite(adv_val) and adv_val > max_adv_val:
                     max_adv_val = adv_val
                     max_adv_idx = j - i
+
+                curr_px = close[j]
+                if np.isfinite(curr_px) and np.isfinite(prev_px):
+                    sum_abs_ret += abs((curr_px - prev_px) / prev_px)
+                prev_px = curr_px
         else:
             # Short position
             final_ret[i] = np.float32((entry - exit_px) / entry)
@@ -448,6 +457,11 @@ def _compute_path_arrays_numba(
                     max_adv_val = adv_val
                     max_adv_idx = j - i
 
+                curr_px = close[j]
+                if np.isfinite(curr_px) and np.isfinite(prev_px):
+                    sum_abs_ret += abs((prev_px - curr_px) / prev_px)
+                prev_px = curr_px
+
         if max_fav_idx >= 0:
             mfe[i] = np.float32(max(max_fav_val, 0.0))
             t_mfe[i] = np.float32(max_fav_idx)
@@ -455,7 +469,9 @@ def _compute_path_arrays_numba(
             mae[i] = np.float32(max(max_adv_val, 0.0))
             t_mae[i] = np.float32(max_adv_idx)
 
-    return mfe, mae, t_mfe, t_mae
+        path_len[i] = np.float32(sum_abs_ret)
+
+    return mfe, mae, t_mfe, t_mae, path_len
 
 
 @njit(cache=True, fastmath=True)
@@ -584,6 +600,7 @@ def _compute_path_arrays_from_ohlc(
     mae = np.full(n, np.nan, dtype=np.float32)
     t_mfe = np.full(n, np.nan, dtype=np.float32)
     t_mae = np.full(n, np.nan, dtype=np.float32)
+    path_len = np.full(n, np.nan, dtype=np.float32)
 
     if horizon <= 0:
         return {
@@ -592,6 +609,7 @@ def _compute_path_arrays_from_ohlc(
             "final_ret": final_ret,
             "time_to_mfe": t_mfe,
             "time_to_mae": t_mae,
+            "path_length": path_len,
         }
 
     required_cols = {"close", "high", "low"}
@@ -602,6 +620,7 @@ def _compute_path_arrays_from_ohlc(
             "final_ret": final_ret,
             "time_to_mfe": t_mfe,
             "time_to_mae": t_mae,
+            "path_length": path_len,
         }
 
     close = pd.to_numeric(data["close"], errors="coerce").to_numpy(dtype=np.float64)
@@ -610,7 +629,7 @@ def _compute_path_arrays_from_ohlc(
     side_mult = -1.0 if str(side).lower() == "short" else 1.0
 
     # Use Numba-optimized implementation
-    mfe, mae, t_mfe, t_mae = _compute_path_arrays_numba(close, high, low, side_mult, horizon, final_ret)
+    mfe, mae, t_mfe, t_mae, path_len = _compute_path_arrays_numba(close, high, low, side_mult, horizon, final_ret)
 
     return {
         "mfe": mfe,
@@ -618,6 +637,7 @@ def _compute_path_arrays_from_ohlc(
         "final_ret": final_ret,
         "time_to_mfe": t_mfe,
         "time_to_mae": t_mae,
+        "path_length": path_len,
     }
 
 
@@ -631,21 +651,25 @@ def _safe_tanh_scale_numba(x: float, scale: float) -> float:
 @njit(fastmath=False, cache=True)
 def _compute_path_quality_terms_numba(
     mfe_mae_ratio: np.ndarray,
+    realized_profit_consistency: np.ndarray,
+    trajectory_smoothness: np.ndarray,
     fold_medians: np.ndarray,
     eps: float,
     ratio_cap: float,
-) -> Tuple[float, float, float, float, float, float]:
+) -> Tuple[float, float, float, float, float, float, float, float]:
     """
     Numba-optimized computation of path quality terms.
-    Returns: (median_mfe_mae, p10_mfe_mae, median_fold_median, mad_fold, worst_fold, iqr_mfe_mae)
+    Returns: (median_mfe_mae, p10_mfe_mae, median_realized_profit_consistency, median_trajectory_smoothness, median_fold_median, mad_fold, worst_fold, iqr_mfe_mae)
     """
     n = len(mfe_mae_ratio)
     if n == 0:
-        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
     # Compute statistics
     median_mfe_mae = np.nanmedian(mfe_mae_ratio)
     p10_mfe_mae = np.nanpercentile(mfe_mae_ratio, 10)
+    median_realized_profit_consistency = np.nanmedian(realized_profit_consistency)
+    median_trajectory_smoothness = np.nanmedian(trajectory_smoothness)
 
     # Fold statistics
     n_folds = len(fold_medians)
@@ -666,6 +690,8 @@ def _compute_path_quality_terms_numba(
     return (
         median_mfe_mae,
         p10_mfe_mae,
+        median_realized_profit_consistency,
+        median_trajectory_smoothness,
         median_fold_median,
         mad_fold,
         worst_fold,
@@ -679,6 +705,7 @@ def compute_trade_path_quality_metrics(
     final_ret: np.ndarray,
     time_to_mfe: np.ndarray,
     time_to_mae: np.ndarray,
+    path_length: np.ndarray,
     fold_id: np.ndarray,
     eps: float = 1e-6,
     ratio_cap: float = 12.0,
@@ -693,16 +720,17 @@ def compute_trade_path_quality_metrics(
             "final_ret": np.asarray(final_ret, dtype=float),
             "time_to_mfe": np.asarray(time_to_mfe, dtype=float),
             "time_to_mae": np.asarray(time_to_mae, dtype=float),
+            "path_length": np.asarray(path_length, dtype=float),
             "fold": np.asarray(fold_id),
         }
     )
 
-    for col in ["mfe", "mae", "final_ret", "time_to_mfe", "time_to_mae"]:
+    for col in ["mfe", "mae", "final_ret", "time_to_mfe", "time_to_mae", "path_length"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna(
-        subset=["mfe", "mae", "final_ret", "time_to_mfe", "time_to_mae", "fold"]
+        subset=["mfe", "mae", "final_ret", "time_to_mfe", "time_to_mae", "path_length", "fold"]
     )
 
     if df.empty:
@@ -719,9 +747,13 @@ def compute_trade_path_quality_metrics(
     df["time_to_mae"] = np.clip(df["time_to_mae"], 0.0, None)
 
     df["mfe_mae_ratio"] = np.clip(df["mfe"] / (df["mae"] + eps), 0.0, ratio_cap)
+    df["realized_profit_consistency"] = np.clip(df["final_ret"] / (df["mae"] + eps), -ratio_cap, ratio_cap)
+    df["trajectory_smoothness"] = np.clip(df["final_ret"].abs() / (df["path_length"] + eps), 0.0, 1.0)
 
     # Convert to numpy arrays for Numba
     ratio = df["mfe_mae_ratio"].to_numpy(dtype=float)
+    realized_profit_consistency = df["realized_profit_consistency"].to_numpy(dtype=float)
+    trajectory_smoothness = df["trajectory_smoothness"].to_numpy(dtype=float)
 
     # Compute fold medians
     fold_medians = (
@@ -737,12 +769,14 @@ def compute_trade_path_quality_metrics(
     (
         median_mfe_mae,
         p10_mfe_mae,
+        median_realized_profit_consistency,
+        median_trajectory_smoothness,
         median_fold_median,
         mad_fold,
         worst_fold,
         iqr_mfe_mae,
     ) = _compute_path_quality_terms_numba(
-        ratio, fold_medians_arr, eps, ratio_cap
+        ratio, realized_profit_consistency, trajectory_smoothness, fold_medians_arr, eps, ratio_cap
     )
 
     n_folds = int(len(fold_medians_arr))
@@ -786,12 +820,24 @@ def compute_trade_path_quality_metrics(
         if np.isfinite(p10_mfe_mae)
         else np.nan
     )
+    realized_profit_consistency_term = (
+        _safe_tanh_scale_numba(median_realized_profit_consistency, 3.0)
+        if np.isfinite(median_realized_profit_consistency)
+        else np.nan
+    )
+    trajectory_smoothness_term = (
+        float(np.clip(median_trajectory_smoothness, 0.0, 1.0))
+        if np.isfinite(median_trajectory_smoothness)
+        else np.nan
+    )
 
     composite_terms = np.array(
         [
             smoothness_term,
             survivability_term,
             stability_term,
+            realized_profit_consistency_term,
+            trajectory_smoothness_term,
         ],
         dtype=float,
     )
@@ -3013,6 +3059,7 @@ class RuleScorer:
         path_final_ret: Optional[np.ndarray] = None,
         path_time_to_mfe: Optional[np.ndarray] = None,
         path_time_to_mae: Optional[np.ndarray] = None,
+        path_length: Optional[np.ndarray] = None,
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Score rules with optional bounded target support.
@@ -3061,6 +3108,7 @@ class RuleScorer:
         path_final_ret_values: List[float] = []
         path_time_to_mfe_values: List[float] = []
         path_time_to_mae_values: List[float] = []
+        path_length_values: List[float] = []
         path_fold_ids: List[int] = []
 
         for fold_id, (_, va_idx) in enumerate(folds):
@@ -3152,6 +3200,7 @@ class RuleScorer:
                     and path_final_ret is not None
                     and path_time_to_mfe is not None
                     and path_time_to_mae is not None
+                    and path_length is not None
                 ):
                     mask_idx = np.where(mask)[0]
                     if mask_idx.size > 0:
@@ -3166,6 +3215,9 @@ class RuleScorer:
                         )
                         path_time_to_mae_values.extend(
                             path_time_to_mae[global_idx].tolist()
+                        )
+                        path_length_values.extend(
+                            path_length[global_idx].tolist()
                         )
                         path_fold_ids.extend([fold_id] * int(mask_idx.size))
             else:
@@ -3389,6 +3441,7 @@ class RuleScorer:
             final_ret=np.asarray(path_final_ret_values, dtype=float),
             time_to_mfe=np.asarray(path_time_to_mfe_values, dtype=float),
             time_to_mae=np.asarray(path_time_to_mae_values, dtype=float),
+            path_length=np.asarray(path_length_values, dtype=float),
             fold_id=np.asarray(path_fold_ids, dtype=int),
         )
         trade_path_quality_score = float(
@@ -5094,6 +5147,7 @@ def run_mining_stage(
         path_final_ret=path_arrays["final_ret"],
         path_time_to_mfe=path_arrays["time_to_mfe"],
         path_time_to_mae=path_arrays["time_to_mae"],
+        path_length=path_arrays["path_length"],
     )
     scored_registry["preset"] = cfg.get("preset", "exploration")
     atomic_to_csv(

@@ -1,0 +1,118 @@
+def _compute_subset_auc(self, X, fwd_ret, mask, folds) -> Tuple[float, float]:
+        """Compute AUC for a subset of data defined by mask."""
+        if not np.any(mask):
+            return np.nan, 0.0
+
+        # Learnability must use the canonical Ridge/test feature set only.
+        test_keys_set = set(TEST_FEATURE_KEYS)
+        ridge_feats = []
+        for i, m in enumerate(self.metadata):
+            if m.source_name in test_keys_set:
+                ridge_feats.append(i)
+        if not ridge_feats:
+            return np.nan, 0.0
+
+        X_ridge = X[:, ridge_feats]
+        y = np.asarray(fwd_ret, dtype=np.float32)
+        y[~np.isfinite(fwd_ret)] = np.nan
+        (
+            is_binary_target,
+            min_train_req,
+            min_val_req,
+            min_pred_points,
+        ) = self._ridge_learnability_thresholds(y)
+
+        # Compute OOF predictions using Ridge
+        from sklearn.linear_model import Ridge
+
+        oof_preds = np.full(len(X), np.nan, dtype=np.float32)
+        rng = np.random.RandomState(42)
+
+        for fold_id, (tr_idx, va_idx) in enumerate(folds):
+            # Apply mask to fold indices
+            tr_masked = tr_idx[mask[tr_idx]]
+            va_masked = va_idx[mask[va_idx]]
+
+            X_tr, X_va = X_ridge[tr_masked], X_ridge[va_masked]
+            y_tr, y_va = y[tr_masked], y[va_masked]
+
+            # Filter valid samples (y must be finite, and ALL ridge features must be finite)
+            valid_tr = np.isfinite(y_tr) & np.all(np.isfinite(X_tr), axis=1)
+            valid_va = np.isfinite(y_va) & np.all(np.isfinite(X_va), axis=1)
+
+            X_tr_clean = X_tr[valid_tr]
+            y_tr_clean = y_tr[valid_tr]
+            X_va_clean = X_va[valid_va]
+            y_va_clean = y_va[valid_va]
+
+            # Defensive check for any remaining NaNs (should not happen with valid_tr/valid_va)
+            if not np.all(np.isfinite(X_tr_clean)) or not np.all(
+                np.isfinite(y_tr_clean)
+            ):
+                continue
+
+            if is_binary_target:
+                pos_tr = int(np.sum(y_tr_clean == 1))
+                pos_va = int(np.sum(y_va_clean == 1))
+                neg_tr = int(np.sum(y_tr_clean == 0))
+                neg_va = int(np.sum(y_va_clean == 0))
+                if pos_tr < min_train_req or pos_va < min_val_req:
+                    tprint(
+                        f"Skipping fold {fold_id} in subset Ridge evaluation due to insufficient positive samples. "
+                        f"Train: {pos_tr} pos / {neg_tr} neg. Validation: {pos_va} pos / {neg_va} neg. "
+                        f"(Required: train>={min_train_req} pos, val>={min_val_req} pos)"
+                    )
+                    continue
+            else:
+                if len(X_tr_clean) < min_train_req or len(X_va_clean) < min_val_req:
+                    tprint(
+                        f"Skipping fold {fold_id} in subset Ridge evaluation due to insufficient continuous samples. "
+                        f"Train={len(X_tr_clean)} Validation={len(X_va_clean)} "
+                        f"(Required: train>={min_train_req}, val>={min_val_req})"
+                    )
+                    continue
+                if np.nanstd(y_tr_clean) < 1e-12 or np.nanstd(y_va_clean) < 1e-12:
+                    tprint(
+                        f"Skipping fold {fold_id} in subset Ridge evaluation due to near-zero continuous target variance."
+                    )
+                    continue
+
+            # Subsample to 50% of training data, capped at 50,000 samples
+            n_samples = len(X_tr_clean)
+            n_subsample = max(20, min(50000, int(n_samples * 0.5)))
+            subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
+
+            y_tr_subsample_pre = y_tr_clean[subsample_idx]
+            pos_mask_pre = y_tr_subsample_pre == 1
+            neg_mask_pre = y_tr_subsample_pre == 0
+
+            # Cap positive samples at 5000 and match negative samples to the same index
+            if np.sum(pos_mask_pre) > 5000:
+                pos_indices = np.where(pos_mask_pre)[0]
+                pos_keep = pos_indices[:5000]
+
+                # Maintain original positive/negative ratio within the subset but limit by the positive cutoff
+                neg_indices = np.where(neg_mask_pre)[0]
+                # Stop including negative samples once we've reached the positive cutoff's relative point in the array
+                max_neg_index = (
+                    pos_keep[-1] if len(pos_keep) > 0 else len(subsample_idx)
+                )
+                neg_keep = neg_indices[neg_indices < max_neg_index]
+
+                final_keep_idx = np.sort(np.concatenate([pos_keep, neg_keep]))
+                subsample_idx = subsample_idx[final_keep_idx]
+
+            X_tr_subsample = X_tr_clean[subsample_idx]
+            y_tr_subsample = y_tr_clean[subsample_idx]
+
+            # Fit Ridge on subsampled data
+            model = Ridge(alpha=1.0, solver="saga")
+            model.fit(X_tr_subsample, y_tr_subsample)
+            preds = model.predict(X_va_clean)
+
+            # Store predictions
+            oof_preds[va_masked[valid_va]] = preds
+
+        return self._compute_oof_learnability_score(
+            oof_preds, y, mask, min_predicted_points=min_pred_points
+        )

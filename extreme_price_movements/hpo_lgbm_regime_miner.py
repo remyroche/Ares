@@ -36,7 +36,7 @@ MAIN_MINER_PARAMS: Dict[str, Any] = {
 
 # HPO grids
 ALPHA_GRID = (0.80, 0.825, 0.85, 0.875, 0.90)
-MIN_GAIN_GRID = (0.0005, 0.001, 0.002, 0.004)
+MIN_GAIN_GRID = (1e-4, 5e-4, 1e-3, 2e-3)
 MIN_LEAF_FRAC_GRID = (0.0005, 0.0010, 0.0015)
 
 # Search controls

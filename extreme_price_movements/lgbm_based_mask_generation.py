@@ -2031,11 +2031,9 @@ class InteractionModel:
         lambda_l1 = float(self.cfg.get("lambda_l1", 0.0))
         lambda_l2 = float(self.cfg.get("lambda_l2", 0.0))
 
-        min_gain_to_split = max(0.001, float(self.cfg.get("min_gain_to_split", 0.0)))
+        min_gain_to_split = float(self.cfg.get("min_gain_to_split", 0.0))
         if "hpo_min_gain_to_split" in self.cfg:
-            min_gain_to_split = max(
-                0.001, float(self.cfg["hpo_min_gain_to_split"])
-            )
+            min_gain_to_split = float(self.cfg["hpo_min_gain_to_split"])
 
         min_leaf_frac = float(self.cfg.get("lgbm_min_leaf_frac", 0.001))
         min_data_in_leaf = max(10, int(min_leaf_frac * X_tr.shape[0]))

@@ -95,4 +95,4 @@ def test_support_preference_weights_favor_target_support_rows():
 
 
 def test_min_gain_grid_includes_higher_value():
-    assert 0.004 in MIN_GAIN_GRID
+    assert 0.002 in MIN_GAIN_GRID

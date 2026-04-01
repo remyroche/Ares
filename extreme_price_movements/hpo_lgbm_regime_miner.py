@@ -40,11 +40,14 @@ MIN_GAIN_GRID = (0.0005, 0.001, 0.002, 0.004)
 MIN_LEAF_FRAC_GRID = (0.0005, 0.0010, 0.0015)
 
 # Search controls
-SUPPORT_MIN = 0.05
-SUPPORT_MAX = 0.20
-TARGET_SUPPORT = 0.125
-PREFERRED_SUPPORT_MIN = 0.06
-PREFERRED_SUPPORT_MAX = 0.14
+TARGET_SUPPORT = 0.15
+SUPPORT_BAND_WIDTH = 0.05
+FAVORED_BAND_WIDTH = 0.025
+
+SUPPORT_MIN = TARGET_SUPPORT - SUPPORT_BAND_WIDTH
+SUPPORT_MAX = TARGET_SUPPORT + SUPPORT_BAND_WIDTH
+PREFERRED_SUPPORT_MIN = TARGET_SUPPORT - FAVORED_BAND_WIDTH
+PREFERRED_SUPPORT_MAX = TARGET_SUPPORT + FAVORED_BAND_WIDTH
 MAX_OUTSIDE_SUPPORT_WEIGHT = 0.35
 
 SUBSAMPLE_FRAC = 0.30
@@ -105,7 +108,7 @@ def _support_quality_score(
 def _support_preference_score_scalar(
     support_pct: float,
     *,
-    target_pct: float = 0.125,
+    target_pct: float = TARGET_SUPPORT,
     preferred_low_pct: float = PREFERRED_SUPPORT_MIN,
     preferred_high_pct: float = PREFERRED_SUPPORT_MAX,
 ) -> float:
@@ -118,7 +121,7 @@ def _support_preference_score_scalar(
 def make_support_preference_weights(
     X: np.ndarray,
     *,
-    target_pct: float = 0.125,
+    target_pct: float = TARGET_SUPPORT,
     preferred_low_pct: float = PREFERRED_SUPPORT_MIN,
     preferred_high_pct: float = PREFERRED_SUPPORT_MAX,
     strength: float = 0.20,
@@ -409,7 +412,7 @@ def score_rule_matrix_vectorized(
     support_quality = _support_quality_score(
         supports_keep,
         w,
-        target_support=0.125,
+        target_support=TARGET_SUPPORT,
         preferred_min=PREFERRED_SUPPORT_MIN,
         preferred_max=PREFERRED_SUPPORT_MAX,
     )

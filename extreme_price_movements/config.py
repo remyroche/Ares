@@ -392,6 +392,21 @@ RIDGE_FEATURE_META = {
     "volatility_of_volatility_48": {"family": "volatility", "type": "continuous"},
     "trend_acceleration": {"family": "trend", "type": "continuous"},
     "volatility_autocorr_48": {"family": "volatility", "type": "continuous"},
+    "bars_since_ema20_ema50_cross_log_norm": {"family": "trend", "type": "continuous"},
+    "bars_in_high_vol_state_log_norm": {"family": "volatility", "type": "continuous"},
+    "bars_outside_ema20_atr_band_log_norm": {
+        "family": "volatility",
+        "type": "continuous",
+    },
+    "up_down_semivol_ratio_tanh": {"family": "path_structure", "type": "continuous"},
+    "up_down_return_mass_ratio_tanh": {
+        "family": "path_structure",
+        "type": "continuous",
+    },
+    "tail_asymmetry_q90_q10_atr_norm": {
+        "family": "path_structure",
+        "type": "continuous",
+    },
 }
 
 RIDGE_FEATURE_COLS = list(RIDGE_FEATURE_META.keys())
@@ -665,12 +680,6 @@ TEST_FEATURE_KEYS = [
     # Longer-timeframe regime context
     "vol_regime_z",
     "regime_stability_24h",
-    "bars_since_ema20_ema50_cross_log_norm",
-    "bars_in_high_vol_state_log_norm",
-    "bars_outside_ema20_atr_band_log_norm",
-    "up_down_semivol_ratio_tanh",
-    "up_down_return_mass_ratio_tanh",
-    "tail_asymmetry_q90_q10_atr_norm",
     # Ridge model features
     "compression_ratio",
     "trend_strength_percentile",

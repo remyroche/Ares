@@ -973,6 +973,8 @@ class ExtractedRule:
     support_val: int = 0
     source_target: str = "primary_target"  # Target name provenance
     source_horizon: int = 0  # Horizon in bars provenance
+    path_gain_sum: float = 0.0
+    total_samples: int = 1
 
 
 # =============================================================================
@@ -2211,8 +2213,13 @@ class RuleExtractor:
         self._current_horizon = horizon
 
         for tree_idx, tree in enumerate(dump["tree_info"]):
+            root_node = tree["tree_structure"]
+            # internal_count gives total samples evaluated by the root split
+            total_samples = root_node.get("internal_count", root_node.get("leaf_count", 1))
             self._traverse_tree(
-                tree["tree_structure"], [], tree_idx, model_id, fold_id, seed, rules
+                root_node, [], tree_idx, model_id, fold_id, seed, rules,
+                path_gain_sum=0.0,
+                total_samples=total_samples
             )
 
         reject_counts = collections.Counter(r["reason"] for r in self.rejection_audit)
@@ -2255,7 +2262,8 @@ class RuleExtractor:
             return (1, ">", threshold)
 
     def _traverse_tree(
-        self, node, current_conditions, tree_idx, model_id, fold_id, seed, rules
+        self, node, current_conditions, tree_idx, model_id, fold_id, seed, rules,
+        path_gain_sum: float = 0.0, total_samples: int = 1
     ):
         if "leaf_value" in node:
             self.total_leaf_paths += 1
@@ -2330,6 +2338,8 @@ class RuleExtractor:
                         self, "_current_target_name", "primary_target"
                     ),
                     source_horizon=getattr(self, "_current_horizon", 0),
+                    path_gain_sum=path_gain_sum,
+                    total_samples=total_samples,
                 )
             )
             return
@@ -2338,6 +2348,8 @@ class RuleExtractor:
         m = self.metadata_lookup.get(split_feat_idx)
         if not m:
             return
+
+        current_split_gain = node.get("split_gain", 0.0)
 
         # Normalized branching
         for direction in [1, 0]:  # 1=Left, 0=Right
@@ -2367,6 +2379,8 @@ class RuleExtractor:
                 fold_id,
                 seed,
                 rules,
+                path_gain_sum=path_gain_sum + current_split_gain,
+                total_samples=total_samples,
             )
 
     def _reduce_conditions(
@@ -4078,12 +4092,24 @@ def build_rule_model_importance_scores(
             continue
         gain_score = float(np.mean(gains)) if gains else 0.0
         split_score = float(np.mean(splits)) if splits else 0.0
+
+        support_pct = rule.support_train / max(rule.total_samples, 1)
+
+        if support_pct < SUPPORT_MIN or support_pct > SUPPORT_MAX:
+            support_score = 0.0
+        elif PREFERRED_SUPPORT_MIN <= support_pct <= PREFERRED_SUPPORT_MAX:
+            support_score = 1.0
+        else:
+            support_score = 1.0 - min(abs(support_pct - TARGET_SUPPORT) / TARGET_SUPPORT, 1.0)
+
+        rule_model_importance_score = np.log1p(rule.path_gain_sum) * (1 + 0.25 * abs(rule.leaf_value)) * support_score
+
         instance_rows.append(
             {
                 "canonical_key": rule.canonical_key,
                 "rule_gain_score": gain_score,
                 "rule_split_score": split_score,
-                "rule_model_importance_score": gain_score + 0.1 * split_score,
+                "rule_model_importance_score": rule_model_importance_score,
             }
         )
 

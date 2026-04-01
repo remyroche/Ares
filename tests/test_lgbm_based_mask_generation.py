@@ -891,6 +891,8 @@ def test_build_rule_model_importance_scores_aggregates_feature_gain_per_rule():
             leaf_index=0,
             leaf_value=0.1,
             support_train=10,
+            path_gain_sum=10.0,
+            total_samples=100,
         ),
         ExtractedRule(
             rule_id="r2",
@@ -905,6 +907,8 @@ def test_build_rule_model_importance_scores_aggregates_feature_gain_per_rule():
             leaf_index=1,
             leaf_value=0.1,
             support_train=10,
+            path_gain_sum=2.0,
+            total_samples=100,
         ),
     ]
     feature_importance_records = [

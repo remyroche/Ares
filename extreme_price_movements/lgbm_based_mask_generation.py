@@ -1010,6 +1010,9 @@ class ExtractedRule:
     support_val: int = 0
     source_target: str = "primary_target"  # Target name provenance
     source_horizon: int = 0  # Horizon in bars provenance
+    path_gain_sum: float = 0.0
+    total_samples: int = 1
+    rule_model_importance_score: float = 0.0
 
 
 # =============================================================================
@@ -2193,6 +2196,113 @@ class InteractionModel:
 # =============================================================================
 
 
+def bounded_path_term(path_gain_sum: float, path_gain_cap: float = 50.0) -> float:
+    """
+    Map raw cumulative split gain to [0, 1].
+    Uses log compression + clipping so a few very large paths cannot dominate.
+    """
+    if path_gain_cap <= 0:
+        raise ValueError("path_gain_cap must be > 0")
+    x = max(0.0, float(path_gain_sum))
+    return float(np.clip(np.log1p(x) / np.log1p(path_gain_cap), 0.0, 1.0))
+
+
+def bounded_leaf_term(leaf_value: float, leaf_scale: float = 0.25) -> float:
+    """
+    Map absolute leaf value to [0, 1) using tanh.
+    leaf_scale controls how quickly the term saturates.
+    Smaller leaf_scale => faster saturation.
+    """
+    if leaf_scale <= 0:
+        raise ValueError("leaf_scale must be > 0")
+    x = abs(float(leaf_value)) / leaf_scale
+    return float(np.tanh(x))
+
+
+def support_band_score(
+    support_pct: float,
+    support_min: float = 0.10,
+    support_max: float = 0.20,
+    preferred_support_min: float = 0.10,
+    preferred_support_max: float = 0.15,
+    target_support: float = 0.125,
+    hard_zero_outside_band: bool = True,
+) -> float:
+    """
+    Return a support score in [0, 1].
+
+    - 1.0 inside preferred band
+    - linearly decays toward edges of allowed band
+    - optionally 0.0 outside allowed band
+    """
+    s = float(support_pct)
+
+    if support_min <= preferred_support_min <= preferred_support_max <= support_max:
+        pass
+    else:
+        raise ValueError("Support bounds are inconsistent")
+
+    if s < support_min or s > support_max:
+        return 0.0 if hard_zero_outside_band else 0.05
+
+    if preferred_support_min <= s <= preferred_support_max:
+        return 1.0
+
+    # Soft decay toward target_support inside allowed band
+    return float(1.0 - min(abs(s - target_support) / max(target_support, 1e-9), 1.0))
+
+
+def compute_rule_model_importance_score(
+    path_gain_sum: float,
+    leaf_value: float,
+    support_train: int,
+    total_samples: int,
+    *,
+    path_gain_cap: float = 50.0,
+    leaf_scale: float = 0.25,
+    support_min: float = 0.10,
+    support_max: float = 0.20,
+    preferred_support_min: float = 0.10,
+    preferred_support_max: float = 0.15,
+    target_support: float = 0.125,
+    hard_zero_outside_band: bool = True,
+    leaf_weight: float = 0.15,
+) -> float:
+    """
+    Final bounded, path-based rule importance score.
+
+    Design:
+      - path_term is the anchor, bounded in [0, 1]
+      - leaf_term is a bounded modifier, not a dominant driver
+      - support_score enforces your desired support band
+
+    Score shape:
+      score = path_term * (1 + leaf_weight * leaf_term) * support_score
+
+    Range:
+      approximately [0, 1 + leaf_weight], then suppressed by support_score
+    """
+    if total_samples <= 0:
+        return 0.0
+
+    support_pct = float(support_train) / float(total_samples)
+
+    path_term = bounded_path_term(path_gain_sum, path_gain_cap=path_gain_cap)
+    leaf_term = bounded_leaf_term(leaf_value, leaf_scale=leaf_scale)
+    support_score = support_band_score(
+        support_pct=support_pct,
+        support_min=support_min,
+        support_max=support_max,
+        preferred_support_min=preferred_support_min,
+        preferred_support_max=preferred_support_max,
+        target_support=target_support,
+        hard_zero_outside_band=hard_zero_outside_band,
+    )
+
+    score = path_term * (1.0 + leaf_weight * leaf_term) * support_score
+    return float(score)
+
+
 class RuleExtractor:
     def __init__(
         self,
@@ -2257,8 +2367,13 @@ class RuleExtractor:
         self._current_horizon = horizon
 
         for tree_idx, tree in enumerate(dump["tree_info"]):
+            root_node = tree["tree_structure"]
+            # internal_count gives total samples evaluated by the root split
+            total_samples = root_node.get("internal_count", root_node.get("leaf_count", 1))
             self._traverse_tree(
-                tree["tree_structure"], [], tree_idx, model_id, fold_id, seed, rules
+                root_node, [], tree_idx, model_id, fold_id, seed, rules,
+                path_gain_sum=0.0,
+                total_samples=total_samples
             )
 
         reject_counts = collections.Counter(r["reason"] for r in self.rejection_audit)
@@ -2301,7 +2416,8 @@ class RuleExtractor:
             return (1, ">", threshold)
 
     def _traverse_tree(
-        self, node, current_conditions, tree_idx, model_id, fold_id, seed, rules
+        self, node, current_conditions, tree_idx, model_id, fold_id, seed, rules,
+        path_gain_sum: float = 0.0, total_samples: int = 1
     ):
         if "leaf_value" in node:
             self.total_leaf_paths += 1
@@ -2360,6 +2476,25 @@ class RuleExtractor:
             prov_str = f"{canonical_key}_{model_id}_{fold_id}_{seed}_{tree_idx}_{node.get('leaf_index', -1)}"
             rule_id = hashlib.sha1(prov_str.encode()).hexdigest()[:12]
 
+            leaf_value = float(node["leaf_value"])
+            support_train = int(node.get("leaf_count", 0))
+
+            rule_model_importance_score = compute_rule_model_importance_score(
+                path_gain_sum=path_gain_sum,
+                leaf_value=leaf_value,
+                support_train=support_train,
+                total_samples=total_samples,
+                path_gain_cap=50.0,
+                leaf_scale=0.25,
+                support_min=float(self.cfg.get("support_min_pct", SUPPORT_MIN)),
+                support_max=float(self.cfg.get("support_max_pct", SUPPORT_MAX)),
+                preferred_support_min=float(self.cfg.get("objective_support_target_low_pct", PREFERRED_SUPPORT_MIN)),
+                preferred_support_max=float(self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX)),
+                target_support=float(self.cfg.get("target_support", TARGET_SUPPORT)),
+                hard_zero_outside_band=True,
+                leaf_weight=0.15,
+            )
+
             rules.append(
                 ExtractedRule(
                     rule_id=rule_id,
@@ -2370,12 +2505,15 @@ class RuleExtractor:
                     seed=seed,
                     tree_index=tree_idx,
                     leaf_index=node.get("leaf_index", -1),
-                    leaf_value=node["leaf_value"],
-                    support_train=node.get("leaf_count", 0),
+                    leaf_value=leaf_value,
+                    support_train=support_train,
                     source_target=getattr(
                         self, "_current_target_name", "primary_target"
                     ),
                     source_horizon=getattr(self, "_current_horizon", 0),
+                    path_gain_sum=path_gain_sum,
+                    total_samples=total_samples,
+                    rule_model_importance_score=rule_model_importance_score,
                 )
             )
             return
@@ -2384,6 +2522,8 @@ class RuleExtractor:
         m = self.metadata_lookup.get(split_feat_idx)
         if not m:
             return
+
+        current_split_gain = node.get("split_gain", 0.0)
 
         # Normalized branching
         for direction in [1, 0]:  # 1=Left, 0=Right
@@ -2413,6 +2553,8 @@ class RuleExtractor:
                 fold_id,
                 seed,
                 rules,
+                path_gain_sum=path_gain_sum + current_split_gain,
+                total_samples=total_samples,
             )
 
     def _reduce_conditions(
@@ -4082,15 +4224,12 @@ def build_context_feature_dict_from_registry(
 
 
 def build_rule_model_importance_scores(
-    all_rules: List[ExtractedRule], feature_importance_records: List[Dict[str, Any]]
+    all_rules: List[ExtractedRule]
 ) -> pd.DataFrame:
     """
     Aggregate model-native feature gain/split into canonical rule importance scores.
-
-    Uses the mean constituent feature gain/split within the originating fold/seed/model
-    instance, then aggregates by canonical key.
     """
-    if not all_rules or not feature_importance_records:
+    if not all_rules:
         return pd.DataFrame(
             columns=[
                 "canonical_key",
@@ -4100,43 +4239,16 @@ def build_rule_model_importance_scores(
             ]
         )
 
-    fi_df = pd.DataFrame(feature_importance_records)
-    if fi_df.empty:
-        return pd.DataFrame(
-            columns=[
-                "canonical_key",
-                "rule_gain_score",
-                "rule_split_score",
-                "rule_model_importance_score",
-            ]
-        )
-
-    fi_lookup = fi_df.set_index(["fold_id", "seed", "feature_name"])[["gain", "split"]]
     instance_rows: List[Dict[str, Any]] = []
     for rule in all_rules:
-        feature_names = sorted({c.feature_name for c in rule.conditions})
-        if not feature_names:
-            continue
-        gains: List[float] = []
-        splits: List[float] = []
-        for feature_name in feature_names:
-            key = (rule.fold_id, rule.seed, feature_name)
-            if key not in fi_lookup.index:
-                continue
-            gain = float(fi_lookup.loc[key, "gain"])
-            split = float(fi_lookup.loc[key, "split"])
-            gains.append(gain)
-            splits.append(split)
-        if not gains and not splits:
-            continue
-        gain_score = float(np.mean(gains)) if gains else 0.0
-        split_score = float(np.mean(splits)) if splits else 0.0
+        # We no longer calculate rule_gain_score and rule_split_score from feature importances
+        # as it was legacy code. We only need the rule_model_importance_score.
         instance_rows.append(
             {
                 "canonical_key": rule.canonical_key,
-                "rule_gain_score": gain_score,
-                "rule_split_score": split_score,
-                "rule_model_importance_score": gain_score + 0.1 * split_score,
+                "rule_gain_score": 0.0,
+                "rule_split_score": 0.0,
+                "rule_model_importance_score": rule.rule_model_importance_score,
             }
         )
 
@@ -5225,7 +5337,7 @@ def run_mining_stage(
 
     scorer_accepted = scored_registry[scored_registry["accepted"]]
     rule_importance_df = build_rule_model_importance_scores(
-        all_extracted_rules, feature_importance_records
+        all_extracted_rules
     )
     if not rule_importance_df.empty and not scorer_accepted.empty:
         scorer_accepted = scorer_accepted.merge(

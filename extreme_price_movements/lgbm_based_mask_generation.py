@@ -2997,16 +2997,16 @@ class RuleScorer:
         """
         Compute reduction in target uncertainty conditional on mask.
 
-        Uses histogram-based entropy estimation.
+        Uses variance proxy for entropy estimation.
         Higher is better - means the regime reduces target uncertainty.
 
         Args:
             target: Target values array
             mask: Boolean mask indicating regime activation
-            n_bins: Number of bins for histogram estimation
+            n_bins: Number of bins for histogram estimation (ignored)
 
         Returns:
-            Entropy reduction (global entropy - conditional entropy).
+            Entropy reduction proxy (global entropy proxy - conditional entropy proxy).
             Positive means the mask concentrates the target distribution.
         """
         valid = ~np.isnan(target)
@@ -3015,25 +3015,18 @@ class RuleScorer:
         if len(target_valid) < 100:
             return np.nan
 
-        # Global entropy
-        hist_global, _ = np.histogram(target_valid, bins=n_bins, density=True)
-        hist_global = hist_global / hist_global.sum()
-        hist_global = hist_global[hist_global > 0]
-        entropy_global = -np.sum(hist_global * np.log2(hist_global + 1e-9))
-
         # Conditional entropy (within mask)
         mask_active = mask.astype(bool) & valid
         if mask_active.sum() < 50:
             return np.nan
 
         target_masked = target[mask_active]
-        hist_masked, _ = np.histogram(target_masked, bins=n_bins, density=True)
-        hist_masked = hist_masked / hist_masked.sum()
-        hist_masked = hist_masked[hist_masked > 0]
-        entropy_masked = -np.sum(hist_masked * np.log2(hist_masked + 1e-9))
+
+        entropy_global = np.log(np.std(target_valid) + 1e-9)
+        entropy_masked = np.log(np.std(target_masked) + 1e-9)
 
         # Reduction = global - conditional (positive is good)
-        return entropy_global - entropy_masked
+        return float(entropy_global - entropy_masked)
 
     def score_key_oos(
         self,
@@ -8617,16 +8610,16 @@ class MaskAssessor:
         )
 
     def _compute_entropy(self, y) -> float:
-        """Compute entropy of the target distribution."""
+        """Compute entropy proxy of the target distribution."""
         if len(y) == 0:
             return 0.0
         if np.all(np.isin(y, [0, 1])):
             p1 = np.mean(y)
             if p1 <= 0 or p1 >= 1:
                 return 0.0
-            return float(-(p1 * np.log2(p1) + (1 - p1) * np.log2(1 - p1)))
+            return float(-(p1 * np.log(p1) + (1 - p1) * np.log(1 - p1)))
         else:
-            return float(np.log2(np.std(y) + 1e-9))
+            return float(np.log(np.std(y) + 1e-9))
 
     def _compute_baseline_auc(
         self,
@@ -9981,22 +9974,14 @@ def compute_target_quality_metrics(
 
     # Entropy reduction and within-mask IC (if predictions and mask available)
     if predictions is not None and mask is not None:
-        # Compute entropy reduction
-        n_bins = 20
+        # Compute entropy reduction proxy
         if len(target_valid) >= 100:
-            hist_global, _ = np.histogram(target_valid, bins=n_bins, density=True)
-            hist_global = hist_global / hist_global.sum()
-            hist_global = hist_global[hist_global > 0]
-            entropy_global = -np.sum(hist_global * np.log2(hist_global + 1e-9))
-
             mask_active = mask.astype(bool) & valid
             if mask_active.sum() >= 50:
                 target_masked = target[mask_active]
-                hist_masked, _ = np.histogram(target_masked, bins=n_bins, density=True)
-                hist_masked = hist_masked / hist_masked.sum()
-                hist_masked = hist_masked[hist_masked > 0]
-                entropy_masked = -np.sum(hist_masked * np.log2(hist_masked + 1e-9))
-                result["entropy_reduction"] = entropy_global - entropy_masked
+                entropy_global = np.log(np.std(target_valid) + 1e-9)
+                entropy_masked = np.log(np.std(target_masked) + 1e-9)
+                result["entropy_reduction"] = float(entropy_global - entropy_masked)
             else:
                 result["entropy_reduction"] = np.nan
         else:

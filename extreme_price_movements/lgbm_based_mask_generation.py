@@ -631,28 +631,21 @@ def _safe_tanh_scale_numba(x: float, scale: float) -> float:
 @njit(fastmath=False, cache=True)
 def _compute_path_quality_terms_numba(
     mfe_mae_ratio: np.ndarray,
-    retention: np.ndarray,
-    time_to_mfe: np.ndarray,
-    mfe_before_mae: np.ndarray,
     fold_medians: np.ndarray,
     eps: float,
     ratio_cap: float,
-) -> Tuple[float, float, float, float, float, float, float, float, float]:
+) -> Tuple[float, float, float, float, float, float]:
     """
     Numba-optimized computation of path quality terms.
-    Returns: (median_mfe_mae, p10_mfe_mae, median_retention, median_time_to_mfe,
-             pct_mfe_before_mae, median_fold_median, mad_fold, worst_fold, iqr_mfe_mae)
+    Returns: (median_mfe_mae, p10_mfe_mae, median_fold_median, mad_fold, worst_fold, iqr_mfe_mae)
     """
     n = len(mfe_mae_ratio)
     if n == 0:
-        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
     # Compute statistics
     median_mfe_mae = np.nanmedian(mfe_mae_ratio)
     p10_mfe_mae = np.nanpercentile(mfe_mae_ratio, 10)
-    median_retention = np.nanmedian(retention)
-    median_time_to_mfe = np.nanmedian(time_to_mfe)
-    pct_mfe_before_mae = np.nanmean(mfe_before_mae)
 
     # Fold statistics
     n_folds = len(fold_medians)
@@ -673,9 +666,6 @@ def _compute_path_quality_terms_numba(
     return (
         median_mfe_mae,
         p10_mfe_mae,
-        median_retention,
-        median_time_to_mfe,
-        pct_mfe_before_mae,
         median_fold_median,
         mad_fold,
         worst_fold,
@@ -729,14 +719,9 @@ def compute_trade_path_quality_metrics(
     df["time_to_mae"] = np.clip(df["time_to_mae"], 0.0, None)
 
     df["mfe_mae_ratio"] = np.clip(df["mfe"] / (df["mae"] + eps), 0.0, ratio_cap)
-    df["retention"] = np.clip(df["final_ret"] / (df["mfe"] + eps), 0.0, 1.0)
-    df["mfe_before_mae"] = (df["time_to_mfe"] < df["time_to_mae"]).astype(float)
 
     # Convert to numpy arrays for Numba
     ratio = df["mfe_mae_ratio"].to_numpy(dtype=float)
-    retention = df["retention"].to_numpy(dtype=float)
-    time_to_mfe_arr = df["time_to_mfe"].to_numpy(dtype=float)
-    mfe_before_mae = df["mfe_before_mae"].to_numpy(dtype=float)
 
     # Compute fold medians
     fold_medians = (
@@ -752,15 +737,12 @@ def compute_trade_path_quality_metrics(
     (
         median_mfe_mae,
         p10_mfe_mae,
-        median_retention,
-        median_time_to_mfe,
-        pct_mfe_before_mae,
         median_fold_median,
         mad_fold,
         worst_fold,
         iqr_mfe_mae,
     ) = _compute_path_quality_terms_numba(
-        ratio, retention, time_to_mfe_arr, mfe_before_mae, fold_medians_arr, eps, ratio_cap
+        ratio, fold_medians_arr, eps, ratio_cap
     )
 
     n_folds = int(len(fold_medians_arr))
@@ -804,29 +786,11 @@ def compute_trade_path_quality_metrics(
         if np.isfinite(p10_mfe_mae)
         else np.nan
     )
-    retention_term = (
-        float(np.clip(median_retention, 0.0, 1.0))
-        if np.isfinite(median_retention)
-        else np.nan
-    )
-    ordering_term = (
-        float(np.clip(pct_mfe_before_mae, 0.0, 1.0))
-        if np.isfinite(pct_mfe_before_mae)
-        else np.nan
-    )
-    decisiveness_term = (
-        float(1.0 / np.sqrt(median_time_to_mfe + 1.0))
-        if np.isfinite(median_time_to_mfe)
-        else np.nan
-    )
 
     composite_terms = np.array(
         [
             smoothness_term,
             survivability_term,
-            retention_term,
-            ordering_term,
-            decisiveness_term,
             stability_term,
         ],
         dtype=float,

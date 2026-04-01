@@ -9440,10 +9440,20 @@ def apply_robust_data_filtering(
     # 3. Prune features based on overlap with reference
     retained_features = {}
     dropped_features = []
+
+    continuous_features_converted = 0
+    total_features_initial = len(feature_dict)
+
     for k, v in feature_dict.items():
         overlap = np.isfinite(v[ref_mask]).mean()
         if overlap >= overlap_threshold:
             retained_features[k] = v
+
+            # Heuristic to check if continuous feature transformed to binary (e.g. only 0/1/NaN)
+            unique_vals = np.unique(v[np.isfinite(v)])
+            if set(unique_vals).issubset({0.0, 1.0}):
+                # Assuming this implies it's been transformed into binaries successfully if it has binary values
+                continuous_features_converted += 1
         else:
             dropped_features.append((k, overlap))
 
@@ -9457,6 +9467,12 @@ def apply_robust_data_filtering(
 
     data_final = data.loc[final_keep_mask].reset_index(drop=True)
     features_final = {k: v[final_keep_mask] for k in retained_features}
+
+    # Check if there are any NaNs left after filtering
+    nan_features_detected = []
+    for k, v in features_final.items():
+        if np.isnan(v).any():
+            nan_features_detected.append(k)
     fwd_ret_final = fwd_ret[final_keep_mask]
     fwd_ret_norm_final = fwd_ret_norm[final_keep_mask]
 
@@ -9468,6 +9484,9 @@ def apply_robust_data_filtering(
         "reference_feature": ref_feat,
         "dropped_features": dropped_features,
         "retained_count": len(retained_features),
+        "total_features_initial": total_features_initial,
+        "continuous_features_converted": continuous_features_converted,
+        "nan_features_detected": nan_features_detected,
     }
 
     return data_final, features_final, fwd_ret_final, fwd_ret_norm_final, meta
@@ -9780,7 +9799,7 @@ def apply_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(cfg)
     out["n_folds"] = 3
     out["sliceplanner_outer_n_folds"] = 3
-    out["mask_opt_max_symbols"] = 100
+    out["mask_opt_max_symbols"] = 200
     out["mask_opt_lookback_years"] = 3.0
     out["support_max_pct"] = 0.22
     out["objective_support_max_pct"] = 0.22
@@ -10673,7 +10692,9 @@ if __name__ == "__main__":
         f"rows_final={robust_meta['rows_final']} "
         f"dropped_rows={robust_meta['dropped_rows']} "
         f"retained_features={robust_meta['retained_count']} "
-        f"reference={robust_meta['reference_feature']}"
+        f"reference={robust_meta['reference_feature']} "
+        f"total_features_initial={robust_meta['total_features_initial']} "
+        f"continuous_features_converted={robust_meta['continuous_features_converted']}"
     )
 
     if robust_meta["dropped_features"]:
@@ -10683,6 +10704,11 @@ if __name__ == "__main__":
                 f"{name}({overlap:.2%})"
                 for name, overlap in robust_meta["dropped_features"][:5]
             )
+        )
+
+    if robust_meta.get("nan_features_detected"):
+        tprint(
+            f"WARNING: NaN features detected during filtering: {robust_meta['nan_features_detected']}"
         )
 
     tprint(

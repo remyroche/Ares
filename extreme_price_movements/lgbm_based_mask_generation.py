@@ -8429,10 +8429,22 @@ class MaskAssessor:
             f"Stage A: Starting final assessment for {total_ridge_selected} rules..."
         )
 
+        selected_key_set = {
+            key for keys in self.bucket_ridge_keys.values() for key in keys
+        }
+        selected_registry = registry[
+            registry["canonical_key"].astype(str).isin(selected_key_set)
+        ].copy()
+        selected_records = selected_registry.to_dict("records")
+
+        tprint(
+            f"Stage A: Final assessment narrowed registry from {len(registry)} to {len(selected_records)} ridge-selected rules"
+        )
+
         assessed_progress = 0
-        for row in registry.to_dict("records"):
+        for row in selected_records:
             assessed_progress += 1
-            if assessed_progress == 1 or assessed_progress % 100 == 0:
+            if assessed_progress == 1 or assessed_progress % 25 == 0:
                 tprint(
                     f"Stage A: Final assessment progress {assessed_progress}/{total_ridge_selected} "
                     f"rules"
@@ -8515,8 +8527,20 @@ class MaskAssessor:
                         run_ridge = True
 
                 if run_ridge:
+                    ridge_start = time.time()
+                    tprint(
+                        f"Stage A: Ridge learnability start {assessed_progress}/{total_ridge_selected} "
+                        f"key={canonical_key[:120]}"
+                    )
                     mask_auc, subset_oof_coverage = self._compute_subset_auc(
                         X, target_ret, mask, folds
+                    )
+                    tprint(
+                        f"Stage A: Ridge learnability done {assessed_progress}/{total_ridge_selected} "
+                        f"key={canonical_key[:120]} "
+                        f"mask_auc={mask_auc if np.isfinite(mask_auc) else np.nan:.6f} "
+                        f"coverage={subset_oof_coverage:.4f} "
+                        f"elapsed={time.time() - ridge_start:.2f}s"
                     )
                     if np.isfinite(mask_auc) and np.isfinite(global_auc):
                         lift = mask_auc - global_auc
@@ -8885,7 +8909,7 @@ class MaskAssessor:
             y_tr_subsample = y_tr_clean[subsample_idx]
 
             # Fit Ridge on subsampled data
-            model = Ridge(alpha=1.0, solver="saga")
+            model = Ridge(alpha=1.0, solver="auto")
             model.fit(X_tr_subsample, y_tr_subsample)
             preds = model.predict(X_va_clean)
 
@@ -9010,7 +9034,7 @@ class MaskAssessor:
             y_tr_subsample = y_tr_clean[subsample_idx]
 
             # Fit Ridge on subsampled data
-            model = Ridge(alpha=1.0, solver="saga")
+            model = Ridge(alpha=1.0, solver="auto")
             model.fit(X_tr_subsample, y_tr_subsample)
             preds = model.predict(X_va_clean)
 

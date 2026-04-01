@@ -3338,6 +3338,33 @@ from numba import njit, prange
 import numpy as np
 
 
+@njit(cache=True)
+def bars_since_flip_nb(vec: np.ndarray) -> np.ndarray:
+    """Counts consecutive bars since the last price sign flip (ignoring zeros)."""
+    n = len(vec)
+    out = np.zeros(n, dtype=np.float32)
+    if n == 0:
+        return out
+    
+    count = 0.0
+    cur_sign = 0.0
+    for i in range(n):
+        s = vec[i]
+        if np.isnan(s):
+            out[i] = np.nan
+            continue
+        
+        # If sign changes (and is not zero), reset count
+        if s != cur_sign and (s > 0.1 or s < -0.1): # Robust sign check
+            count = 1.0
+            cur_sign = s
+        else:
+            count += 1.0
+            
+        out[i] = count
+    return out
+
+
 @njit(parallel=True, cache=True)
 def bars_since_flip_nb_parallel(sign_mat: np.ndarray) -> np.ndarray:
     n_rows, n_cols = sign_mat.shape

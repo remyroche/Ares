@@ -4249,7 +4249,7 @@ def build_stage_a_rejection_map(
                                 "mean_support_pct",
                                 pd.Series(index=scorer_accepted.index, dtype=float),
                             )
-                            > float(cfg.get("max_support_pct", 0.25))
+                            > float(cfg.get("max_support_pct", 0.22))
                         ).sum()
                     ),
                     f"<= {float(cfg.get('max_support_pct', 0.20)):.4f}",
@@ -8325,6 +8325,26 @@ class MaskAssessor:
                     "is_structurally_sound": not rejected,
                     "rejection_reason": rejection_reason,
                     "support_pct": support_pct,
+                    "directional_mean_ret": float(row.get("directional_mean_ret", np.nan)),
+                    "presence_freq": float(row.get("presence_freq", np.nan)),
+                    "min_support_actual": float(row.get("min_support_actual", np.nan)),
+                    "n_folds": int(row.get("n_folds", 0) or 0),
+                    "mean_uplift": float(row.get("mean_uplift", np.nan)),
+                    "required_hurdle": float(row.get("required_hurdle", np.nan)),
+                    "hurdle_excess": float(row.get("hurdle_excess", np.nan)),
+                    "trade_path_quality_score": float(
+                        row.get("trade_path_quality_score", np.nan)
+                    ),
+                    "quality_stability_score": float(
+                        row.get("quality_stability_score", np.nan)
+                    ),
+                    "full_quality_score": float(row.get("full_quality_score", np.nan)),
+                    "composite_score": float(row.get("composite_score", np.nan)),
+                    "rule_gain_score": float(row.get("rule_gain_score", np.nan)),
+                    "rule_split_score": float(row.get("rule_split_score", np.nan)),
+                    "rule_model_importance_score": float(
+                        row.get("rule_model_importance_score", np.nan)
+                    ),
                     "support_ok": support_ok,
                     "support_score": support_score,
                     "avg_trades_per_day": avg_trades,
@@ -8339,6 +8359,9 @@ class MaskAssessor:
                     "learn_eff_ratio": np.nan,  # Deprecated - same as lift
                     "subset_oof_coverage": subset_oof_coverage,
                     "baseline_oof_coverage": baseline_oof_coverage,
+                    "mask_auc": mask_auc,
+                    "global_auc": global_auc,
+                    "global_entropy": global_entropy,
                     "entropy_reduction": entropy_red,
                     "tp_rate": tbm_metrics["tp_rate"],
                     "sl_rate": tbm_metrics["sl_rate"],
@@ -8347,6 +8370,9 @@ class MaskAssessor:
                     "ev_per_event": ev_per_event,
                     "win_rate_conditional": tbm_metrics["win_rate_conditional"],
                     "win_rate_unconditional": tbm_metrics["win_rate_unconditional"],
+                    "learnability_step_c_score": float(
+                        row.get("learnability_step_c_score", np.nan)
+                    ),
                     "production_classification": production_classification,
                     "classification_diagnostics": json.dumps(
                         classification_diagnostics
@@ -9763,6 +9789,9 @@ def apply_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
     out["sliceplanner_outer_n_folds"] = 3
     out["mask_opt_max_symbols"] = 200
     out["mask_opt_lookback_years"] = 3.0
+    out["support_max_pct"] = 0.22
+    out["objective_support_max_pct"] = 0.22
+    out["max_support_pct"] = 0.22
     out["test_mode"] = True
     return out
 

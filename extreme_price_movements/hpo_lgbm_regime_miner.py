@@ -6,6 +6,8 @@ from typing import Dict, List, Tuple, Optional, Any
 
 import numpy as np
 import lightgbm as lgb
+from collections import defaultdict
+from extreme_price_movements.feature_family_registry import get_feature_family
 
 
 # ============================================================
@@ -35,7 +37,7 @@ MAIN_MINER_PARAMS: Dict[str, Any] = {
 }
 
 # HPO grids
-ALPHA_GRID = (0.80, 0.825, 0.85, 0.875, 0.90)
+ALPHA_GRID = (0.6, 0.65, 0.7, 0.75)
 MIN_GAIN_GRID = (1e-4, 5e-4, 1e-3, 2e-3)
 MIN_LEAF_FRAC_GRID = (0.0005, 0.0010, 0.0015)
 
@@ -294,6 +296,9 @@ def score_rule_matrix_vectorized(
     y_val: np.ndarray,
     vol_val: np.ndarray,
     rule_matrix: np.ndarray,
+    feature_importance: Optional[np.ndarray] = None,
+    feature_names: Optional[List[str]] = None,
+    best_iteration: int = 0,
     support_min: float = SUPPORT_MIN,
     support_max: float = SUPPORT_MAX,
     target_support: float = TARGET_SUPPORT,
@@ -358,6 +363,22 @@ def score_rule_matrix_vectorized(
     # This prevents the negative multiplication bug when integrating metrics.
     sortino = incremental / downside_std # [k]
 
+    # Calculate dispersion gain per rule: log(std_global + eps) - log(std_active + eps)
+    eps = 1e-6
+    std_global = float(np.std(y_val_norm))
+
+    # Calculate var_active explicitly using the subset of samples where the rule is active
+    var_active = np.zeros(k, dtype=np.float64)
+    for i in range(k):
+        active_returns = y_val_norm[M[:, i] > 0]
+        if len(active_returns) > 1:
+            var_active[i] = np.var(active_returns)
+        else:
+            var_active[i] = 0.0
+
+    std_active = np.sqrt(var_active)
+    dispersion_gain = np.log(std_global + eps) - np.log(std_active + eps) # [k]
+
     # We only keep rules that have positive incremental return
     keep = incremental > 0.0
     if not np.any(keep):
@@ -368,6 +389,7 @@ def score_rule_matrix_vectorized(
     incremental_keep = incremental[keep]
     diff_in_means_keep = diff_in_means[keep]
     sortino_keep = sortino[keep]
+    dispersion_gain_keep = dispersion_gain[keep]
 
     support_weights = supports_keep.copy()
     support_w_sum = float(support_weights.sum()) + 1e-12
@@ -408,7 +430,7 @@ def score_rule_matrix_vectorized(
     weighted_diff_in_means = max(1e-12, float(np.dot(diff_in_means_keep, w) / w_sum))
     weighted_sortino = max(1e-12, float(np.dot(sortino_keep, w) / w_sum))
 
-    support_penalty = 1.0 - abs(total_support - target_support)
+    support_penalty = abs(total_support - target_support)
     support_quality = _support_quality_score(
         supports_keep,
         w,
@@ -416,13 +438,98 @@ def score_rule_matrix_vectorized(
         preferred_min=PREFERRED_SUPPORT_MIN,
         preferred_max=PREFERRED_SUPPORT_MAX,
     )
-    score = (
-        weighted_incremental
-        * weighted_diff_in_means
-        * weighted_sortino
-        * max(support_penalty, 1e-6)
-        * max(support_quality, 1e-6)
-    )
+
+    weighted_dispersion_gain = float(np.dot(dispersion_gain_keep, w) / w_sum)
+
+    # Feature reuse penalty & Family analysis
+    reuse_penalty = 0.0
+    top_feature_gain_share = 0.0
+    dominant_family_share = 0.0
+    n_distinct_primary_families = 0
+
+    if feature_importance is not None and feature_names is not None and len(feature_importance) == len(feature_names):
+        total_importance = feature_importance.sum()
+        if total_importance > 0:
+            reuse_penalty = float(feature_importance.max() / total_importance)
+            top_feature_gain_share = reuse_penalty
+
+            family_importance = defaultdict(float)
+            for imp, name in zip(feature_importance, feature_names):
+                if imp > 0:
+                    family = get_feature_family(name)
+                    family_importance[family] += imp
+
+            if family_importance:
+                n_distinct_primary_families = len(family_importance)
+                dominant_family_share = float(max(family_importance.values()) / total_importance)
+
+    # Training health
+    max_boost_rounds_safe = float(MAX_BOOST_ROUNDS) if MAX_BOOST_ROUNDS > 0 else 1.0
+    # Add small epsilon to best_iteration to ensure a non-zero floor even if best_iteration is 0 (or not set)
+    training_health = float(max(1, best_iteration) / max_boost_rounds_safe)
+
+    # Winsorize / normalize metrics to ~[0, 1] range for the linear combination
+    def normalize(val, vmin, vmax):
+        return float(np.clip((val - vmin) / (vmax - vmin), 0.0, 1.0))
+
+    weighted_incremental_norm = normalize(weighted_incremental, 0.0, 0.5)
+    weighted_diff_in_means_norm = normalize(weighted_diff_in_means, 0.0, 0.8)
+    weighted_sortino_norm = normalize(weighted_sortino, 0.0, 0.5)
+    weighted_dispersion_gain_norm = normalize(weighted_dispersion_gain, 0.0, 1.0)
+    support_quality_norm = normalize(support_quality, 0.0, 1.0)
+    diversity_score_norm = normalize(1.0 - reuse_penalty, 0.0, 1.0)
+    training_health_norm = normalize(training_health, 0.0, 1.0)
+
+    dominant_family_share_norm = normalize(dominant_family_share, 0.0, 1.0)
+    top_feature_gain_share_norm = normalize(top_feature_gain_share, 0.0, 1.0)
+    max_rule_support_share = float(supports_keep.max()) if len(supports_keep) > 0 else 0.0
+    max_rule_support_share_norm = normalize(max_rule_support_share, 0.0, 1.0)
+
+    n_valid_rules = int(keep.sum())
+    pct_folds_best_iter_eq_1 = 1.0 if best_iteration == 1 else 0.0
+
+    if (
+        n_valid_rules < 30 or
+        n_distinct_primary_families < 2 or
+        dominant_family_share > 0.75 or
+        pct_folds_best_iter_eq_1 > 0.50 or
+        weighted_incremental_norm < 0.05 or
+        support_quality_norm < 0.05 or
+        diversity_score_norm < 0.05 or
+        training_health_norm < 0.05
+    ):
+        score = -1e9
+        base_score = 0.0
+        critical_floor = 0.0
+    else:
+        collapse_penalty = max(
+            dominant_family_share_norm,
+            top_feature_gain_share_norm,
+            max_rule_support_share_norm
+        )
+
+        base_score = (
+            0.28 * weighted_incremental_norm +
+            0.18 * weighted_diff_in_means_norm +
+            0.14 * weighted_sortino_norm +
+            0.14 * support_quality_norm -
+            0.10 * support_penalty -
+            0.06 * reuse_penalty +
+            0.05 * diversity_score_norm +
+            0.03 * training_health_norm +
+            0.02 * weighted_dispersion_gain_norm -
+            0.08 * collapse_penalty
+        )
+
+        eps = 1e-6
+        critical_floor = (
+            (weighted_incremental_norm + eps) *
+            (support_quality_norm + eps) *
+            (diversity_score_norm + eps) *
+            (training_health_norm + eps)
+        ) ** (1.0 / 4.0)
+
+        score = base_score * (critical_floor ** 2)
 
     diagnostics = {
         "support": total_support,
@@ -431,8 +538,13 @@ def score_rule_matrix_vectorized(
         "weighted_incremental": weighted_incremental,
         "weighted_diff_in_means": weighted_diff_in_means,
         "weighted_sortino": weighted_sortino,
+        "weighted_dispersion_gain": weighted_dispersion_gain,
+        "reuse_penalty": reuse_penalty,
+        "training_health": training_health,
         "n_kept_rules": int(keep.sum()),
         "baseline_mean_norm": baseline_mean_norm,
+        "critical_floor": critical_floor,
+        "base_score": base_score
     }
     return score, diagnostics
 
@@ -458,10 +570,16 @@ def evaluate_config(
     )
 
     rule_matrix = build_candidate_rule_matrix(model, X_val)
+    feature_importance = model.feature_importance(importance_type="split")
+    feature_names = model.feature_name()
+    best_iteration = getattr(model, "best_iteration", 0) or 0
     score, d = score_rule_matrix_vectorized(
         y_val=y_val,
         vol_val=vol_val,
         rule_matrix=rule_matrix,
+        feature_importance=feature_importance,
+        feature_names=feature_names,
+        best_iteration=best_iteration,
         support_min=SUPPORT_MIN,
         support_max=SUPPORT_MAX,
         target_support=TARGET_SUPPORT,
@@ -505,7 +623,7 @@ def run_short_hpo_for_target_horizon(
         # Fallback for very small datasets
         return {
             "best_alpha_result": EvalResult(
-                cfg=HPOConfig(alpha=0.90, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.75, min_gain_to_split=0.001, min_leaf_frac=0.0010),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,
@@ -516,7 +634,7 @@ def run_short_hpo_for_target_horizon(
                 reason="small_data_fallback_n<100",
             ),
             "best_final_result": EvalResult(
-                cfg=HPOConfig(alpha=0.90, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.75, min_gain_to_split=0.001, min_leaf_frac=0.0010),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,

@@ -3862,7 +3862,7 @@ class IndependentRulePruner:
         self.hurdle_aggressiveness = float(cfg.get("prune_hurdle_aggressiveness", 1.0))
         self.target_support = float(cfg.get("prune_target_support_pct", 0.125))
         self.min_support_pct = float(cfg.get("support_min_pct", 0.05))
-        self.min_sign_consistency = float(cfg.get("min_sign_consistency", 0.80))
+        self.min_sign_consistency = float(cfg.get("min_sign_consistency", 0.0))
 
         # New Gates
         self.max_support_pct = float(
@@ -4315,7 +4315,7 @@ def build_stage_a_rejection_map(
                     "low_sign_consistency",
                     "sign_consistency",
                     assessment_rejections.get("low_sign_consistency", 0),
-                    ">= 0.7500",
+                    f">= {float(cfg.get('min_sign_consistency', 0.0)):.4f}",
                 ),
                 (
                     "low_lift",
@@ -4365,7 +4365,7 @@ def build_stage_a_rejection_map(
                     "reject_sign",
                     "sign_consistency",
                     selection_counts.get("reject_sign", 0),
-                    f">= {float(cfg.get('min_context_sign_consistency', cfg.get('min_sign_consistency', 0.75))):.4f}",
+                    f">= {float(cfg.get('min_context_sign_consistency', cfg.get('min_sign_consistency', 0.0))):.4f}",
                 ),
                 (
                     "reject_arity",
@@ -6498,7 +6498,7 @@ def classify_rule_type(
     required_hurdle: float,
     ranking_excess: float = 0.0,
     gate_uplift_threshold: float = 0.0,
-    min_sign_consistency: float = 0.60,
+    min_sign_consistency: float = 0.0,
 ) -> str:
     """
     Classify rule as ranking vs gate regime using return-based metrics.
@@ -7289,7 +7289,7 @@ class MaskAssessor:
 
         min_oof_coverage = float(self.cfg.get("learnability_min_oof_coverage", 0.05))
         min_avg_trades = float(self.cfg.get("min_avg_trades_per_day_10_symbols", 0.1))
-        min_sign_consistency = float(self.cfg.get("min_sign_consistency", 0.60))
+        min_sign_consistency = float(self.cfg.get("min_sign_consistency", 0.0))
         min_mean_target_value = float(self.cfg.get("min_mean_target_value", 0.003))
 
         target_ret_by_side = {"long": fwd_ret, "short": -fwd_ret}
@@ -7549,20 +7549,6 @@ class MaskAssessor:
                 else -np.inf
             )
 
-        rejected_by_sign_consistency: set = set()
-        for bucket_key, tuples in bucket_sign_consistency_values.items():
-            floor = bucket_sign_consistency_floor.get(bucket_key, -np.inf)
-            for canonical_key, sign_consistency in tuples:
-                if canonical_key not in all_rejected and sign_consistency < floor:
-                    rejected_by_sign_consistency.add(canonical_key)
-
-        n_sign_rejected = len(rejected_by_sign_consistency)
-        if n_sign_rejected > 0:
-            tprint(
-                f"Stage A cheap gate (1): sign_consistency "
-                f"  rejected {n_sign_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket"
-            )
-        all_rejected |= rejected_by_sign_consistency
 
         bucket_hurdle_floor: Dict[Tuple[str, int], float] = {}
         bucket_hurdle_values_surviving: Dict[
@@ -7739,8 +7725,6 @@ class MaskAssessor:
             rejection_reason = ""
             if not bool(cheap["support_ok"]):
                 rejected, rejection_reason = True, "support_out_of_range"
-            elif sign_consistency < bucket_sign_consistency_floor.get(bucket_key, -np.inf):
-                rejected, rejection_reason = True, "low_sign_consistency_pctile"
             elif float(
                 pre_row.get("quality_stability_score", np.nan)
             ) < bucket_stability_floor.get(bucket_key, -np.inf):
@@ -7763,7 +7747,6 @@ class MaskAssessor:
                 and canonical_key in bucket_protected_keys.get(bucket_key, set())
                 and rejection_reason
                 in {
-                    "low_sign_consistency",
                     "low_path_quality_floor",
                     "low_stability_floor",
                 }
@@ -9718,7 +9701,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "min_support_count_validation": 5,
             "min_tree_discoveries": 1,
             "min_presence_freq": 0.33,
-            "min_sign_consistency": 0.51,
+            "min_sign_consistency": 0.0,
             "support_min_pct": 0.05,
             "support_max_pct": 0.22,
             "objective_support_min_pct": 0.05,

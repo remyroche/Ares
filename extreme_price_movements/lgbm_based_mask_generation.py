@@ -337,14 +337,13 @@ def _compute_regression_beta_and_fit(
     if denom <= 1e-12:
         return np.nan, np.nan
     beta = float(np.dot(x_cent, y_cent) / denom)
-    
+
     # Point 8: Stabilize tau and fit calculation
     tau = max(float(tau), 1e-6)
     delta = abs(beta - 1.0)
     # Numerical safety for exp
     fit = float(np.exp(-min(delta / tau, 20.0)))
     return beta, fit
-
 
 
 def compute_directional_sign_consistency(
@@ -389,6 +388,7 @@ def compute_directional_sign_consistency(
         sign_consistency = 0.5 + (sign_consistency - 0.5) * shrink_factor
 
     return sign_consistency
+
 
 @njit(cache=True, fastmath=True)
 def _compute_path_arrays_numba(
@@ -546,7 +546,9 @@ def _compute_cheap_stats_batch_numba(
             active_codes = day_codes[mask]
             active_codes = active_codes[active_codes >= 0]
             if active_codes.size > 0:
-                counts = np.bincount(active_codes, minlength=n_day_buckets).astype(np.float32)
+                counts = np.bincount(active_codes, minlength=n_day_buckets).astype(
+                    np.float32
+                )
                 mean_count = np.mean(counts)
                 density_dispersion = np.std(counts) / (mean_count + 1e-9)
             else:
@@ -565,7 +567,9 @@ def _compute_cheap_stats_batch_numba(
         p95_idx = int(0.95 * len(sorted_ret))
         p5_idx = int(0.05 * len(sorted_ret))
         if p95_idx < len(sorted_ret) and p5_idx < len(sorted_ret):
-            tail_ratio = np.abs(sorted_ret[p95_idx]) / (np.abs(sorted_ret[p5_idx]) + 1e-9)
+            tail_ratio = np.abs(sorted_ret[p95_idx]) / (
+                np.abs(sorted_ret[p5_idx]) + 1e-9
+            )
         else:
             tail_ratio = 1.0
 
@@ -646,7 +650,9 @@ def _compute_path_arrays_from_ohlc(
     side_mult = -1.0 if str(side).lower() == "short" else 1.0
 
     # Use Numba-optimized implementation
-    mfe, mae, t_mfe, t_mae, path_len = _compute_path_arrays_numba(close, high, low, side_mult, horizon, final_ret)
+    mfe, mae, t_mfe, t_mae, path_len = _compute_path_arrays_numba(
+        close, high, low, side_mult, horizon, final_ret
+    )
 
     return {
         "mfe": mfe,
@@ -747,7 +753,15 @@ def compute_trade_path_quality_metrics(
 
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna(
-        subset=["mfe", "mae", "final_ret", "time_to_mfe", "time_to_mae", "path_length", "fold"]
+        subset=[
+            "mfe",
+            "mae",
+            "final_ret",
+            "time_to_mfe",
+            "time_to_mae",
+            "path_length",
+            "fold",
+        ]
     )
 
     if df.empty:
@@ -764,12 +778,18 @@ def compute_trade_path_quality_metrics(
     df["time_to_mae"] = np.clip(df["time_to_mae"], 0.0, None)
 
     df["mfe_mae_ratio"] = np.clip(df["mfe"] / (df["mae"] + eps), 0.0, ratio_cap)
-    df["realized_profit_consistency"] = np.clip(df["final_ret"] / (df["mae"] + eps), -ratio_cap, ratio_cap)
-    df["trajectory_smoothness"] = np.clip(df["final_ret"].abs() / (df["path_length"] + eps), 0.0, 1.0)
+    df["realized_profit_consistency"] = np.clip(
+        df["final_ret"] / (df["mae"] + eps), -ratio_cap, ratio_cap
+    )
+    df["trajectory_smoothness"] = np.clip(
+        df["final_ret"].abs() / (df["path_length"] + eps), 0.0, 1.0
+    )
 
     # Convert to numpy arrays for Numba
     ratio = df["mfe_mae_ratio"].to_numpy(dtype=float)
-    realized_profit_consistency = df["realized_profit_consistency"].to_numpy(dtype=float)
+    realized_profit_consistency = df["realized_profit_consistency"].to_numpy(
+        dtype=float
+    )
     trajectory_smoothness = df["trajectory_smoothness"].to_numpy(dtype=float)
 
     # Compute fold medians
@@ -793,7 +813,12 @@ def compute_trade_path_quality_metrics(
         worst_fold,
         iqr_mfe_mae,
     ) = _compute_path_quality_terms_numba(
-        ratio, realized_profit_consistency, trajectory_smoothness, fold_medians_arr, eps, ratio_cap
+        ratio,
+        realized_profit_consistency,
+        trajectory_smoothness,
+        fold_medians_arr,
+        eps,
+        ratio_cap,
     )
 
     n_folds = int(len(fold_medians_arr))
@@ -1332,9 +1357,9 @@ class FeatureProcessor:
                 tprint("WARNING: boolean_only=True but no boolean features found!")
 
         if retained_names:
-            grouped_indices: Dict[str, collections.deque[int]] = (
-                collections.defaultdict(collections.deque)
-            )
+            grouped_indices: Dict[
+                str, collections.deque[int]
+            ] = collections.defaultdict(collections.deque)
             group_order = list(dict.fromkeys(active_groups))
             for idx, name in enumerate(retained_names):
                 grouped_indices[self.metadata[name].group].append(idx)
@@ -1468,9 +1493,7 @@ class FeatureProcessor:
             top_nan = rank_audit_df.sort_values("worst_nan", ascending=False).head(10)
             tprint("Top 10 features with worst NaN rates:")
             for row in top_nan.itertuples(index=False, name=None):
-                tprint(
-                    f"  - {row[0]}:{row[1]} -> before={row[2]:.2%}, ts={row[3]:.2%}"
-                )
+                tprint(f"  - {row[0]}:{row[1]} -> before={row[2]:.2%}, ts={row[3]:.2%}")
         else:
             rank_audit_df = pd.DataFrame()
 
@@ -1747,7 +1770,9 @@ def make_regime_weights(
         symbols = np.asarray(symbols, dtype=np.int32)
 
     # Use Numba-optimized implementation
-    return _make_regime_weights_numba(returns, symbols, horizon, alpha, w_min, w_max, eps)
+    return _make_regime_weights_numba(
+        returns, symbols, horizon, alpha, w_min, w_max, eps
+    )
 
 
 def _support_preference_score_scalar(
@@ -2015,12 +2040,18 @@ class InteractionModel:
         )
         sample_weight = sample_weight * make_support_preference_weights(
             X_tr,
-            target_pct=float(self.cfg.get("support_preference_target_pct", TARGET_SUPPORT)),
+            target_pct=float(
+                self.cfg.get("support_preference_target_pct", TARGET_SUPPORT)
+            ),
             preferred_low_pct=float(
-                self.cfg.get("support_preference_preferred_low_pct", PREFERRED_SUPPORT_MIN)
+                self.cfg.get(
+                    "support_preference_preferred_low_pct", PREFERRED_SUPPORT_MIN
+                )
             ),
             preferred_high_pct=float(
-                self.cfg.get("support_preference_preferred_high_pct", PREFERRED_SUPPORT_MAX)
+                self.cfg.get(
+                    "support_preference_preferred_high_pct", PREFERRED_SUPPORT_MAX
+                )
             ),
             strength=float(self.cfg.get("support_preference_strength", 0.20)),
             w_min=float(self.cfg.get("support_preference_weight_min", 0.85)),
@@ -2089,7 +2120,10 @@ class InteractionModel:
             "n_jobs": max(1, min(3, int(self.cfg.get("lgbm_n_jobs", 3)))),
             "bagging_fraction": 0.8,
             "bagging_freq": 1,
-            "feature_fraction": 1.0,
+            "feature_fraction": 0.7,
+            "min_sum_hessian_in_leaf": float(
+                self.cfg.get("min_sum_hessian_in_leaf", 1e-4)
+            ),
         }
         target_mode = "quantile_regression"
 
@@ -2906,7 +2940,9 @@ class RuleScorer:
         # Asymmetric U-shaped penalty favoring support around prune_target_support_pct (e.g., 10-15%)
         dist = safe_support - target_support
         # Punish lower support more heavily than higher support (asymmetry)
-        penalty_multiplier = 1.0 + (10.0 * (dist**2) if dist < 0 else 5.0 * (dist**2))
+        penalty_multiplier = 1.0 + (
+            10.0 * (dist**2) if dist < 0 else 5.0 * (dist**2)
+        )
 
         return (base_hurdle * (1.0 - complexity_bonus)) * penalty_multiplier
 
@@ -2918,8 +2954,12 @@ class RuleScorer:
         """
 
         hard_min = float(self.cfg.get("objective_support_min_pct", SUPPORT_MIN))
-        target_low = float(self.cfg.get("objective_support_target_low_pct", PREFERRED_SUPPORT_MIN))
-        target_high = float(self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX))
+        target_low = float(
+            self.cfg.get("objective_support_target_low_pct", PREFERRED_SUPPORT_MIN)
+        )
+        target_high = float(
+            self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX)
+        )
         hard_max = float(self.cfg.get("objective_support_max_pct", SUPPORT_MAX))
         edge_floor = float(self.cfg.get("objective_support_edge_floor", 0.2))
 
@@ -3220,9 +3260,7 @@ class RuleScorer:
                         path_time_to_mae_values.extend(
                             path_time_to_mae[global_idx].tolist()
                         )
-                        path_length_values.extend(
-                            path_length[global_idx].tolist()
-                        )
+                        path_length_values.extend(path_length[global_idx].tolist())
                         path_fold_ids.extend([fold_id] * int(mask_idx.size))
             else:
                 mean_ret = np.nan
@@ -3844,9 +3882,13 @@ class RulePruner:
 
         tprint(f"RulePruner (Assessment Prep): Input {len(df)} rules")
         if dropped_conviction > 0:
-            tprint(f"  - Rejected {dropped_conviction} rules (conviction < {min_conviction})")
+            tprint(
+                f"  - Rejected {dropped_conviction} rules (conviction < {min_conviction})"
+            )
         if dropped_discoveries > 0:
-            tprint(f"  - Rejected {dropped_discoveries} rules (discoveries < {min_discoveries})")
+            tprint(
+                f"  - Rejected {dropped_discoveries} rules (discoveries < {min_discoveries})"
+            )
         if dropped_oos > 0:
             tprint(f"  - Rejected {dropped_oos} rules (OOS mean_net_ret <= 0)")
 
@@ -3857,7 +3899,9 @@ class RulePruner:
         )
 
         pruned_df = df[mask].copy()
-        tprint(f"RulePruner (Assessment Prep): Selected {len(pruned_df)} rules (pre-ranking)")
+        tprint(
+            f"RulePruner (Assessment Prep): Selected {len(pruned_df)} rules (pre-ranking)"
+        )
 
         # 4. Final Ranking for Assessment
         # We rank by a hybrid of OOS performance and Model Discovery Count
@@ -3933,10 +3977,7 @@ class IndependentRulePruner:
             "is_too_broad_rejected": int(df["is_too_broad"].sum()),
         }
 
-        mask = (
-            (~df["is_too_narrow"])
-            & (~df["is_too_broad"])
-        )
+        mask = (~df["is_too_narrow"]) & (~df["is_too_broad"])
 
         final_registry = df[mask]
 
@@ -4728,12 +4769,8 @@ def run_mining_stage(
 
         orig_tr_rows = len(tr_idx)
         orig_va_rows = len(va_idx)
-        tr_idx = _cap_fold_indices(
-            tr_idx, int(cfg.get("fold_train_row_cap", 50_000))
-        )
-        va_idx = _cap_fold_indices(
-            va_idx, int(cfg.get("fold_val_row_cap", 10_000))
-        )
+        tr_idx = _cap_fold_indices(tr_idx, int(cfg.get("fold_train_row_cap", 50_000)))
+        va_idx = _cap_fold_indices(va_idx, int(cfg.get("fold_val_row_cap", 10_000)))
 
         # Determine available features per group for logging
         group_to_features = collections.defaultdict(list)
@@ -5007,20 +5044,12 @@ def run_mining_stage(
         fi_by_group_cache = fi_df.groupby(["fold_id", "seed", "group"])
         fi_by_family_cache = fi_df.groupby(["fold_id", "seed", "regime_family"])
 
-        fi_by_group = (
-            fi_by_group_cache[["gain", "split"]]
-            .sum()
-            .reset_index()
-        )
+        fi_by_group = fi_by_group_cache[["gain", "split"]].sum().reset_index()
         fi_by_group.to_csv(
             output_dir / "fold_feature_importance_by_group.csv", index=False
         )
 
-        fi_by_family = (
-            fi_by_family_cache[["gain", "split"]]
-            .sum()
-            .reset_index()
-        )
+        fi_by_family = fi_by_family_cache[["gain", "split"]].sum().reset_index()
         fi_by_family.to_csv(
             output_dir / "fold_feature_importance_by_regime_family.csv", index=False
         )
@@ -5403,7 +5432,10 @@ def run_side_pipeline(
                 "verbosity": -1,
                 "bagging_fraction": 0.8,
                 "bagging_freq": 1,
-                "feature_fraction": 0.8,
+                "feature_fraction": 0.7,
+                "min_sum_hessian_in_leaf": float(
+                    cfg.get("min_sum_hessian_in_leaf", 1e-4)
+                ),
             }
 
             # Extract recent volatility if available, default to 1s
@@ -5526,9 +5558,7 @@ def run_side_pipeline(
         tprint("Top selected contexts by hurdle excess:")
         top_ctx = winning_contexts.sort_values("hurdle_excess", ascending=False).head(5)
         for row in top_ctx.itertuples(index=False, name=None):
-            tprint(
-                f"  - {row[0]}: hurdle_excess={row[1]:.5f}"
-            )
+            tprint(f"  - {row[0]}: hurdle_excess={row[1]:.5f}")
 
     if winning_contexts.empty:
         tprint("No contexts found in Stage A. Returning Stage A-only results.")
@@ -5997,9 +6027,7 @@ def run_lgbm_mask_generation_triad(
     combined_registry.to_csv(
         root_output_dir / "triad_combined_registry.csv", index=False
     )
-    combined_registry.to_csv(
-        root_output_dir / "final_rule_registry.csv", index=False
-    )
+    combined_registry.to_csv(root_output_dir / "final_rule_registry.csv", index=False)
 
     # Summary statistics
     tprint(f"\nTRIAD TRAINING COMPLETE")
@@ -6018,9 +6046,7 @@ def run_lgbm_mask_generation_triad(
         )
         tprint("\nBreakdown by target/horizon/side:")
         for row in breakdown.itertuples(index=False, name=None):
-            tprint(
-                f"  {row[0]} H{row[1]} {row[2]}: {row[3]}"
-            )
+            tprint(f"  {row[0]} H{row[1]} {row[2]}: {row[3]}")
 
     # Save configuration used
     triad_config = {
@@ -7159,7 +7185,9 @@ class MaskAssessor:
         return total_symbol_days
 
     @staticmethod
-    def _compute_avg_trades_per_day(mask: np.ndarray, total_symbol_days: Optional[float]) -> float:
+    def _compute_avg_trades_per_day(
+        mask: np.ndarray, total_symbol_days: Optional[float]
+    ) -> float:
         selected_count = int(np.sum(mask))
         if selected_count == 0:
             return 0.0
@@ -7419,32 +7447,34 @@ class MaskAssessor:
         # Bucket-level floor calibration and protection list to avoid over-pruning.
         bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
         # Precompute bucket-level top-decile caps for density dispersion and tail risk.
-        bucket_density_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
-        bucket_tail_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
-        bucket_path_quality_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
-        bucket_stability_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
-        bucket_sign_consistency_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
-        bucket_mean_ret_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
-        bucket_hurdle_values: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
+        bucket_density_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_tail_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_path_quality_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_stability_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_sign_consistency_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_mean_ret_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_hurdle_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
 
         rejected_by_support: set = set()
         seen_keys_per_bucket = collections.defaultdict(set)
 
-        tprint(f"Stage A: Pass 1 - Computing cheap stats for all {len(registry)} rules...")
+        tprint(
+            f"Stage A: Pass 1 - Computing cheap stats for all {len(registry)} rules..."
+        )
         for pre_row in registry.to_dict("records"):
             canonical_key = str(pre_row["canonical_key"])
             side = str(pre_row["side"])
@@ -7487,9 +7517,13 @@ class MaskAssessor:
             path_quality = float(pre_row.get("trade_path_quality_score", np.nan))
             stability_score = float(pre_row.get("quality_stability_score", np.nan))
             if np.isfinite(path_quality):
-                bucket_path_quality_values[bucket_key].append((canonical_key, path_quality))
+                bucket_path_quality_values[bucket_key].append(
+                    (canonical_key, path_quality)
+                )
             if np.isfinite(stability_score):
-                bucket_stability_values[bucket_key].append((canonical_key, stability_score))
+                bucket_stability_values[bucket_key].append(
+                    (canonical_key, stability_score)
+                )
             sign_consistency = float(cheap["sign_consistency"])
             mean_ret_mask = float(cheap["mean_ret_mask"])
             hurdle_excess = float(pre_row.get("hurdle_excess", np.nan))
@@ -7500,7 +7534,9 @@ class MaskAssessor:
             if np.isfinite(hurdle_excess):
                 bucket_hurdle_values[bucket_key].append((canonical_key, hurdle_excess))
 
-        def _normalize_to_1_2(arr: np.ndarray, higher_is_better: bool = True) -> np.ndarray:
+        def _normalize_to_1_2(
+            arr: np.ndarray, higher_is_better: bool = True
+        ) -> np.ndarray:
             valid = np.isfinite(arr)
             if not np.any(valid):
                 return np.full_like(arr, 1.5)
@@ -7522,7 +7558,9 @@ class MaskAssessor:
                 return 1.0 + (max_val - clipped) / (max_val - min_val)
 
         bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
-        bucket_cheap_ranks: Dict[Tuple[str, int, str], Dict[str, float]] = collections.defaultdict(dict)
+        bucket_cheap_ranks: Dict[
+            Tuple[str, int, str], Dict[str, float]
+        ] = collections.defaultdict(dict)
 
         all_bucket_keys = set(bucket_mean_ret_values.keys())
         for b_key in all_bucket_keys:
@@ -7553,37 +7591,43 @@ class MaskAssessor:
             # Because lower-is-better metrics are mapped such that 2.0 is BEST, we must put them
             # in the numerator (multiplying them) rather than the denominator to maintain a monotonic score.
             # Using directional_mean_ret directly instead of sqrt(directional_mean_ret).
-            ranks = n_sign * (n_path ** 1.5) * n_ret * np.sqrt(n_tail + n_dens)
+            ranks = n_sign * (n_path**1.5) * n_ret * np.sqrt(n_tail + n_dens)
 
             ranked_items = []
             for i, k in enumerate(keys):
                 rank_val = ranks[i]
-                if np.isnan(rank_val): rank_val = -np.inf
+                if np.isnan(rank_val):
+                    rank_val = -np.inf
                 bucket_cheap_ranks[b_key][k] = float(rank_val)
                 ranked_items.append((rank_val, k))
 
             ranked_items.sort(key=lambda x: x[0], reverse=True)
-            top_k = [k for r, k in ranked_items[:max(min_candidates_per_bucket, 0)]]
+            top_k = [k for r, k in ranked_items[: max(min_candidates_per_bucket, 0)]]
             bucket_protected_keys[b_key] = set(top_k)
 
-        tprint(f"Stage A: Pass 1 complete - computed cheap stats for {len(registry)} rules")
+        tprint(
+            f"Stage A: Pass 1 complete - computed cheap stats for {len(registry)} rules"
+        )
 
         pctile_bottom_cut = float(self.cfg.get("cheap_gate_bottom_pctile", 0.20))
 
         all_rejected = set(rejected_by_support)
         if all_rejected:
-            tprint(f"Stage A cheap gate (0): support_out_of_range rejected {len(all_rejected)} rules")
+            tprint(
+                f"Stage A cheap gate (0): support_out_of_range rejected {len(all_rejected)} rules"
+            )
 
         bucket_sign_consistency_floor: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_sign_consistency_values.items():
-            vals = np.asarray([v for k, v in tuples if k not in all_rejected], dtype=float)
+            vals = np.asarray(
+                [v for k, v in tuples if k not in all_rejected], dtype=float
+            )
             finite_vals = vals[np.isfinite(vals)]
             bucket_sign_consistency_floor[bucket_key] = (
                 float(np.nanquantile(finite_vals, pctile_bottom_cut))
                 if finite_vals.size > 0
                 else -np.inf
             )
-
 
         bucket_hurdle_floor: Dict[Tuple[str, int], float] = {}
         bucket_hurdle_values_surviving: Dict[
@@ -7621,7 +7665,9 @@ class MaskAssessor:
 
         bucket_stability_floor: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_stability_values.items():
-            vals = np.asarray([v for k, v in tuples if k not in all_rejected], dtype=float)
+            vals = np.asarray(
+                [v for k, v in tuples if k not in all_rejected], dtype=float
+            )
             finite_vals = vals[np.isfinite(vals)]
             bucket_stability_floor[bucket_key] = (
                 float(np.nanquantile(finite_vals, 0.20))
@@ -7634,7 +7680,11 @@ class MaskAssessor:
             floor = bucket_stability_floor.get(bucket_key, -np.inf)
             protected = bucket_protected_keys.get(bucket_key, set())
             for canonical_key, stability in tuples:
-                if canonical_key not in all_rejected and stability < floor and canonical_key not in protected:
+                if (
+                    canonical_key not in all_rejected
+                    and stability < floor
+                    and canonical_key not in protected
+                ):
                     rejected_by_stability.add(canonical_key)
 
         n_stability_rejected = len(rejected_by_stability)
@@ -7646,13 +7696,15 @@ class MaskAssessor:
 
         all_rejected |= rejected_by_stability
 
-        bucket_density_values_surviving: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
+        bucket_density_values_surviving: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
         for bucket_key, tuples in bucket_density_values.items():
             for canonical_key, val in tuples:
                 if canonical_key not in all_rejected:
-                    bucket_density_values_surviving[bucket_key].append((canonical_key, val))
+                    bucket_density_values_surviving[bucket_key].append(
+                        (canonical_key, val)
+                    )
         bucket_density_cap: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_density_values_surviving.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)
@@ -7663,13 +7715,15 @@ class MaskAssessor:
                 else np.inf
             )
 
-        bucket_tail_values_surviving: Dict[Tuple[str, int], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
+        bucket_tail_values_surviving: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
         for bucket_key, tuples in bucket_tail_values.items():
             for canonical_key, val in tuples:
                 if canonical_key not in all_rejected:
-                    bucket_tail_values_surviving[bucket_key].append((canonical_key, val))
+                    bucket_tail_values_surviving[bucket_key].append(
+                        (canonical_key, val)
+                    )
         bucket_tail_cap: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_tail_values_surviving.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)
@@ -7680,13 +7734,15 @@ class MaskAssessor:
                 else np.inf
             )
 
-        bucket_path_quality_surviving: Dict[Tuple[str, int, str], List[Tuple[str, float]]] = (
-            collections.defaultdict(list)
-        )
+        bucket_path_quality_surviving: Dict[
+            Tuple[str, int, str], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
         for bucket_key, tuples in bucket_path_quality_values.items():
             for canonical_key, val in tuples:
                 if canonical_key not in all_rejected:
-                    bucket_path_quality_surviving[bucket_key].append((canonical_key, val))
+                    bucket_path_quality_surviving[bucket_key].append(
+                        (canonical_key, val)
+                    )
         bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
         for bucket_key, tuples in bucket_path_quality_surviving.items():
             vals = np.asarray([v for _, v in tuples], dtype=float)
@@ -7702,7 +7758,11 @@ class MaskAssessor:
             floor = bucket_path_floor.get(bucket_key, -np.inf)
             protected = bucket_protected_keys.get(bucket_key, set())
             for canonical_key, path in tuples:
-                if canonical_key not in all_rejected and path < floor and canonical_key not in protected:
+                if (
+                    canonical_key not in all_rejected
+                    and path < floor
+                    and canonical_key not in protected
+                ):
                     rejected_by_path.add(canonical_key)
 
         n_path_rejected = len(rejected_by_path)
@@ -7713,11 +7773,13 @@ class MaskAssessor:
             )
         all_rejected |= rejected_by_path
 
-        tprint(f"Stage A: Cheap gates complete - {len(registry) - len(all_rejected)} rules survived cheap gates")
-
-        cheap_gate_rows: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
-            collections.defaultdict(list)
+        tprint(
+            f"Stage A: Cheap gates complete - {len(registry) - len(all_rejected)} rules survived cheap gates"
         )
+
+        cheap_gate_rows: Dict[
+            Tuple[str, int], List[Tuple[float, str]]
+        ] = collections.defaultdict(list)
         cheap_gate_result: Dict[Tuple[Tuple[str, int], str], Tuple[bool, str]] = {}
 
         seen_keys_for_cheap_gate = set()
@@ -7789,10 +7851,15 @@ class MaskAssessor:
                 rejected = False
 
             if rejected:
-                cheap_gate_result[(bucket_key, canonical_key)] = (True, rejection_reason)
+                cheap_gate_result[(bucket_key, canonical_key)] = (
+                    True,
+                    rejection_reason,
+                )
                 continue
 
-            cheap_rank = bucket_cheap_ranks.get(bucket_key, {}).get(canonical_key, -np.inf)
+            cheap_rank = bucket_cheap_ranks.get(bucket_key, {}).get(
+                canonical_key, -np.inf
+            )
             cheap_gate_result[(bucket_key, canonical_key)] = (False, "")
             cheap_gate_rows[bucket_key].append((cheap_rank, canonical_key))
 
@@ -7801,9 +7868,9 @@ class MaskAssessor:
         DEDUP_SUBSAMPLE_SIZE = 10000
         eps = 1e-8
 
-        surviving_keys_by_bucket: Dict[Tuple[str, int, str], List[str]] = (
-            collections.defaultdict(list)
-        )
+        surviving_keys_by_bucket: Dict[
+            Tuple[str, int, str], List[str]
+        ] = collections.defaultdict(list)
         for bucket_key, entries in cheap_gate_rows.items():
             for _, canonical_key in entries:
                 surviving_keys_by_bucket[bucket_key].append(canonical_key)
@@ -7858,7 +7925,9 @@ class MaskAssessor:
                     row_idx = registry_key_to_row.get(canonical_key)
                     if row_idx is not None:
                         pre_row = registry.iloc[row_idx]
-                        gain_val = float(pre_row.get("rule_model_importance_score", 0.0))
+                        gain_val = float(
+                            pre_row.get("rule_model_importance_score", 0.0)
+                        )
                     else:
                         gain_val = 0.0
                     gains[idx] = gain_val
@@ -7866,7 +7935,9 @@ class MaskAssessor:
                     mean_returns[idx] = float(cheap.get("mean_ret_mask", 0.0))
                     std_returns[idx] = float(cheap.get("std_ret_mask", 0.0))
 
-                tprint(f"Stage A: Overlap deduplication - processing {len(surviving_keys)} surviving rules in bucket {bucket_key}")
+                tprint(
+                    f"Stage A: Overlap deduplication - processing {len(surviving_keys)} surviving rules in bucket {bucket_key}"
+                )
 
                 # Build a dense subsample matrix directly. The current bucket sizes are
                 # small enough that this is safer than hand-assembling sparse COO indices.
@@ -7882,7 +7953,7 @@ class MaskAssessor:
                     "key_to_idx": {k: idx for idx, k in enumerate(surviving_keys)},
                     "intersections": intersections,
                     "supports": sub_supports,
-                    "n_subsample": n_subsample
+                    "n_subsample": n_subsample,
                 }
 
                 threshold_ladder = [0.90, 0.85, 0.80, 0.75, 0.70, 0.65, 0.60]
@@ -7895,7 +7966,9 @@ class MaskAssessor:
                 supports_arr = np.array(supports, dtype=np.float32)
                 sub_supports_arr = np.array(sub_supports, dtype=np.float32)
 
-                tprint(f"Stage A: Starting overlap deduplication threshold ladder for bucket {bucket_key}...")
+                tprint(
+                    f"Stage A: Starting overlap deduplication threshold ladder for bucket {bucket_key}..."
+                )
 
                 for threshold in threshold_ladder:
                     tprint(
@@ -7906,24 +7979,34 @@ class MaskAssessor:
 
                     # Vectorized overlap checking
                     # Create mask for pairs with same sign returns
-                    sign_mask = mean_returns_arr[:, None] * mean_returns_arr[None, :] >= 0
+                    sign_mask = (
+                        mean_returns_arr[:, None] * mean_returns_arr[None, :] >= 0
+                    )
 
                     # Create mask for valid overlaps (intersection >= 1)
                     valid_inter_mask = intersections >= 1
 
                     # Compute overlap matrix
-                    min_supports = np.minimum(sub_supports_arr[:, None], sub_supports_arr[None, :])
+                    min_supports = np.minimum(
+                        sub_supports_arr[:, None], sub_supports_arr[None, :]
+                    )
                     overlap_matrix = intersections / np.maximum(min_supports, 1.0)
 
                     # Compute support ratio matrix
-                    supp_ratio_matrix = np.minimum(supports_arr[:, None], supports_arr[None, :]) / np.maximum(np.maximum(supports_arr[:, None], supports_arr[None, :]), 1e-9)
+                    supp_ratio_matrix = np.minimum(
+                        supports_arr[:, None], supports_arr[None, :]
+                    ) / np.maximum(
+                        np.maximum(supports_arr[:, None], supports_arr[None, :]), 1e-9
+                    )
 
                     # Create overlap threshold mask
                     overlap_mask = overlap_matrix > threshold
                     supp_ratio_mask = supp_ratio_matrix > SUPPORT_RATIO_MIN
 
                     # Combined mask for pairs to check
-                    check_mask = sign_mask & valid_inter_mask & overlap_mask & supp_ratio_mask
+                    check_mask = (
+                        sign_mask & valid_inter_mask & overlap_mask & supp_ratio_mask
+                    )
 
                     # Only check upper triangular (i < j)
                     tri_mask = np.triu(np.ones((n_rules, n_rules), dtype=bool), k=1)
@@ -7936,10 +8019,22 @@ class MaskAssessor:
                         continue
 
                     # Vectorized rule quality computation
-                    rq_i = np.abs(mean_returns_arr[i_indices]) / (std_returns_arr[i_indices] + eps)
-                    rq_j = np.abs(mean_returns_arr[j_indices]) / (std_returns_arr[j_indices] + eps)
-                    rq_i = np.where(std_returns_arr[i_indices] > eps, rq_i, np.abs(mean_returns_arr[i_indices]))
-                    rq_j = np.where(std_returns_arr[j_indices] > eps, rq_j, np.abs(mean_returns_arr[j_indices]))
+                    rq_i = np.abs(mean_returns_arr[i_indices]) / (
+                        std_returns_arr[i_indices] + eps
+                    )
+                    rq_j = np.abs(mean_returns_arr[j_indices]) / (
+                        std_returns_arr[j_indices] + eps
+                    )
+                    rq_i = np.where(
+                        std_returns_arr[i_indices] > eps,
+                        rq_i,
+                        np.abs(mean_returns_arr[i_indices]),
+                    )
+                    rq_j = np.where(
+                        std_returns_arr[j_indices] > eps,
+                        rq_j,
+                        np.abs(mean_returns_arr[j_indices]),
+                    )
 
                     # Determine which to drop
                     drop_i = (rq_i < rq_j) & keep[i_indices]
@@ -7970,12 +8065,18 @@ class MaskAssessor:
 
                 surviving_indices = [i for i, k in enumerate(final_keep) if k]
                 if len(surviving_indices) > 100:
+
                     def _score(i):
-                        rq = abs(mean_returns[i]) / (std_returns[i] + eps) if std_returns[i] > eps else abs(mean_returns[i])
+                        rq = (
+                            abs(mean_returns[i]) / (std_returns[i] + eps)
+                            if std_returns[i] > eps
+                            else abs(mean_returns[i])
+                        )
                         gain_b = min(max(np.sqrt(max(gains[i], 0.0)), 0.0), 1.0)
                         sign_b = min(max(sign_consistencies[i], 0.0), 1.0)
                         rq_b = min(max(rq, 0.0), 1.0)
                         return gain_b * sign_b * rq_b
+
                     surviving_indices.sort(key=_score, reverse=True)
                     surviving_indices = surviving_indices[:100]
 
@@ -7983,19 +8084,28 @@ class MaskAssessor:
 
                 for i, k in enumerate(surviving_keys):
                     if k not in final_surviving_set:
-                        cheap_gate_result[(bucket_key, k)] = (True, "deduplicated_overlap")
+                        cheap_gate_result[(bucket_key, k)] = (
+                            True,
+                            "deduplicated_overlap",
+                        )
                         n_dedup_rejected += 1
 
                 final_surviving_keys = [surviving_keys[i] for i in surviving_indices]
 
-                tprint(f"Stage A: Overlap deduplication complete for bucket {bucket_key} - {len(final_surviving_keys)} rules survived (from {initial_n_rules})")
+                tprint(
+                    f"Stage A: Overlap deduplication complete for bucket {bucket_key} - {len(final_surviving_keys)} rules survived (from {initial_n_rules})"
+                )
 
                 if final_surviving_keys:
                     stage_a_matrices[bucket_key] = {
-                        "key_to_idx": {k: idx for idx, k in enumerate(final_surviving_keys)},
-                        "intersections": intersections[np.ix_(surviving_indices, surviving_indices)],
+                        "key_to_idx": {
+                            k: idx for idx, k in enumerate(final_surviving_keys)
+                        },
+                        "intersections": intersections[
+                            np.ix_(surviving_indices, surviving_indices)
+                        ],
                         "supports": sub_supports[surviving_indices],
-                        "n_subsample": n_subsample
+                        "n_subsample": n_subsample,
                     }
                 else:
                     stage_a_matrices.pop(bucket_key, None)
@@ -8007,17 +8117,23 @@ class MaskAssessor:
                     f"support_ratio>{SUPPORT_RATIO_MIN:.0%})"
                 )
 
-            cheap_gate_rows_deduped: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
-                collections.defaultdict(list)
-            )
+            cheap_gate_rows_deduped: Dict[
+                Tuple[str, int], List[Tuple[float, str]]
+            ] = collections.defaultdict(list)
             for bucket_key, entries in cheap_gate_rows.items():
                 for cheap_rank, canonical_key in entries:
-                    rejected, _ = cheap_gate_result.get((bucket_key, canonical_key), (False, ""))
+                    rejected, _ = cheap_gate_result.get(
+                        (bucket_key, canonical_key), (False, "")
+                    )
                     if not rejected:
-                        cheap_gate_rows_deduped[bucket_key].append((cheap_rank, canonical_key))
+                        cheap_gate_rows_deduped[bucket_key].append(
+                            (cheap_rank, canonical_key)
+                        )
             cheap_gate_rows = cheap_gate_rows_deduped
 
-        tprint(f"Stage A: Overlap deduplication complete - {sum(len(v) for v in cheap_gate_rows.values())} rules total survived")
+        tprint(
+            f"Stage A: Overlap deduplication complete - {sum(len(v) for v in cheap_gate_rows.values())} rules total survived"
+        )
 
         # Cache baseline learnability once per side after cheap structural filtering.
         for side, target_ret in target_ret_by_side.items():
@@ -8037,17 +8153,21 @@ class MaskAssessor:
         )
         overlap_free_zone = float(self.cfg.get("ridge_overlap_free_zone", 0.30))
         cheap_rank_exponent = float(self.cfg.get("ridge_cheap_rank_exponent", 1.3))
-        overlap_penalty_exponent = float(self.cfg.get("ridge_overlap_penalty_exponent", 1.8))
+        overlap_penalty_exponent = float(
+            self.cfg.get("ridge_overlap_penalty_exponent", 1.8)
+        )
         support_ratio_min = float(self.cfg.get("ridge_support_ratio_min", 0.70))
         penalty_strength = float(self.cfg.get("ridge_support_penalty_strength", 1.0))
         boost_strength = float(self.cfg.get("ridge_support_boost_strength", 1.0))
         center = TARGET_SUPPORT
         half_width = 0.025
 
-        bucket_ridge_rows: Dict[Tuple[str, int], List[Tuple[float, str]]] = (
-            collections.defaultdict(list)
+        bucket_ridge_rows: Dict[
+            Tuple[str, int], List[Tuple[float, str]]
+        ] = collections.defaultdict(list)
+        tprint(
+            f"Stage A: Starting ridge regression selection for {len(cheap_gate_rows)} buckets..."
         )
-        tprint(f"Stage A: Starting ridge regression selection for {len(cheap_gate_rows)} buckets...")
 
         self.bucket_ridge_keys = {}
         for bucket_key, entries in cheap_gate_rows.items():
@@ -8105,13 +8225,17 @@ class MaskAssessor:
 
             for i, s in enumerate(s_arr):
                 if s < (center - half_width):
-                    w = 1.0 - penalty_strength * (center - half_width - s) / (center - half_width)
+                    w = 1.0 - penalty_strength * (center - half_width - s) / (
+                        center - half_width
+                    )
                 elif s < center:
                     w = 1.0 + boost_strength * (s - (center - half_width)) / half_width
                 elif s < (center + half_width):
                     w = 1.0 + boost_strength * ((center + half_width) - s) / half_width
                 else:
-                    w = 1.0 - penalty_strength * (s - (center + half_width)) / (center + half_width)
+                    w = 1.0 - penalty_strength * (s - (center + half_width)) / (
+                        center + half_width
+                    )
 
                 # Point 12: Broaden clip bounds to allow meaningful boosting
                 w_mult_arr[i] = np.clip(w, 0.1, 2.0)
@@ -8123,10 +8247,14 @@ class MaskAssessor:
             f1_overlap_matrix = 2.0 * sub_intersections / (supp_i + supp_j + 1e-9)
 
             # Compute Support Ratio matrix to ignore similarities where support sizes differ greatly
-            supp_ratio_matrix = np.minimum(supp_i, supp_j) / np.maximum(supp_i, supp_j + 1e-9)
+            supp_ratio_matrix = np.minimum(supp_i, supp_j) / np.maximum(
+                supp_i, supp_j + 1e-9
+            )
 
             # Effective F1 (Same-side is naturally guaranteed because bucket keys split by side)
-            effective_f1_overlap_matrix = f1_overlap_matrix * (supp_ratio_matrix >= support_ratio_min)
+            effective_f1_overlap_matrix = f1_overlap_matrix * (
+                supp_ratio_matrix >= support_ratio_min
+            )
 
             # Normalize cheap ranks to [0.05, 1.0] positive bounded range
             raw_cr = np.array(valid_ranks)
@@ -8157,9 +8285,16 @@ class MaskAssessor:
 
                 # Vectorized overlap computation for all remaining candidates
                 selected_so_far = selected_indices[:n_selected]
-                max_f1_overlap = np.max(effective_f1_overlap_matrix[remaining_indices][:, selected_so_far], axis=1)
-                overlap_excess = np.maximum(0.0, max_f1_overlap - overlap_free_zone) / (1.0 - overlap_free_zone + 1e-9)
-                adjusted_scores = (norm_cr[remaining_indices] ** cheap_rank_exponent) * ((1.0 - overlap_excess) ** overlap_penalty_exponent)
+                max_f1_overlap = np.max(
+                    effective_f1_overlap_matrix[remaining_indices][:, selected_so_far],
+                    axis=1,
+                )
+                overlap_excess = np.maximum(0.0, max_f1_overlap - overlap_free_zone) / (
+                    1.0 - overlap_free_zone + 1e-9
+                )
+                adjusted_scores = (
+                    norm_cr[remaining_indices] ** cheap_rank_exponent
+                ) * ((1.0 - overlap_excess) ** overlap_penalty_exponent)
                 final_ranking = adjusted_scores * (1.0 + w_mult_arr[remaining_indices])
 
                 best_next_idx = remaining_indices[int(np.argmax(final_ranking))]
@@ -8167,12 +8302,20 @@ class MaskAssessor:
                 remaining_mask[best_next_idx] = False
                 n_selected += 1
 
-            self.bucket_ridge_keys[bucket_key] = {valid_keys[i] for i in selected_indices}
+            self.bucket_ridge_keys[bucket_key] = {
+                valid_keys[i] for i in selected_indices
+            }
 
-        total_ridge_selected = sum(len(keys) for keys in self.bucket_ridge_keys.values())
-        tprint(f"Stage A: Ridge regression selection complete - {total_ridge_selected} rules selected for final assessment")
+        total_ridge_selected = sum(
+            len(keys) for keys in self.bucket_ridge_keys.values()
+        )
+        tprint(
+            f"Stage A: Ridge regression selection complete - {total_ridge_selected} rules selected for final assessment"
+        )
 
-        tprint(f"Stage A: Starting final assessment for {total_ridge_selected} rules...")
+        tprint(
+            f"Stage A: Starting final assessment for {total_ridge_selected} rules..."
+        )
 
         assessed_progress = 0
         for row in registry.to_dict("records"):
@@ -8294,7 +8437,9 @@ class MaskAssessor:
             )
 
             # Fetch cheap_rank for Final Regime Score
-            cheap_rank = bucket_cheap_ranks.get(group_bucket_key, {}).get(canonical_key, -np.inf)
+            cheap_rank = bucket_cheap_ranks.get(group_bucket_key, {}).get(
+                canonical_key, -np.inf
+            )
             if not np.isfinite(cheap_rank):
                 cheap_rank = 0.0
 
@@ -8314,9 +8459,7 @@ class MaskAssessor:
                 "directional_mean_ret": row.get("directional_mean_ret", np.nan),
                 "min_support_actual": row.get("min_support_actual", 0),
                 "hurdle_excess": row.get("hurdle_excess", np.nan),
-                "trade_path_quality_score": row.get(
-                    "trade_path_quality_score", np.nan
-                ),
+                "trade_path_quality_score": row.get("trade_path_quality_score", np.nan),
                 "is_structurally_sound": not rejected,
                 "sign_consistency": sign_consistency,
             }
@@ -8343,7 +8486,9 @@ class MaskAssessor:
                     "is_structurally_sound": not rejected,
                     "rejection_reason": rejection_reason,
                     "support_pct": support_pct,
-                    "directional_mean_ret": float(row.get("directional_mean_ret", np.nan)),
+                    "directional_mean_ret": float(
+                        row.get("directional_mean_ret", np.nan)
+                    ),
                     "presence_freq": float(row.get("presence_freq", np.nan)),
                     "min_support_actual": float(row.get("min_support_actual", np.nan)),
                     "n_folds": int(row.get("n_folds", 0) or 0),
@@ -8430,16 +8575,18 @@ class MaskAssessor:
         )
         if not top_sound.empty:
             tprint("Top 5 Structurally Sound Rules by Regime Score:")
-            for row in top_sound[["canonical_key", "regime_score"]].to_dict(
-                "records"
-            ):
+            for row in top_sound[["canonical_key", "regime_score"]].to_dict("records"):
                 regime_score = row.get("regime_score", np.nan)
                 if isinstance(regime_score, (int, float, np.floating)) and np.isfinite(
                     regime_score
                 ):
-                    tprint(f"  - {row.get('canonical_key', '<unknown>')}: {float(regime_score):.3f}")
+                    tprint(
+                        f"  - {row.get('canonical_key', '<unknown>')}: {float(regime_score):.3f}"
+                    )
                 else:
-                    tprint(f"  - {row.get('canonical_key', '<unknown>')}: {regime_score}")
+                    tprint(
+                        f"  - {row.get('canonical_key', '<unknown>')}: {regime_score}"
+                    )
 
         return assessment_df
 
@@ -8535,9 +8682,12 @@ class MaskAssessor:
         X_ridge = X[:, ridge_feats]
         y = np.asarray(fwd_ret, dtype=np.float32)
         y[~np.isfinite(fwd_ret)] = np.nan
-        is_binary_target, min_train_req, min_val_req, min_pred_points = (
-            self._ridge_learnability_thresholds(y)
-        )
+        (
+            is_binary_target,
+            min_train_req,
+            min_val_req,
+            min_pred_points,
+        ) = self._ridge_learnability_thresholds(y)
 
         # Compute OOF predictions using Ridge
         from sklearn.linear_model import Ridge
@@ -8667,9 +8817,12 @@ class MaskAssessor:
         X_ridge = X[:, ridge_feats]
         y = np.asarray(fwd_ret, dtype=np.float32)
         y[~np.isfinite(fwd_ret)] = np.nan
-        is_binary_target, min_train_req, min_val_req, min_pred_points = (
-            self._ridge_learnability_thresholds(y)
-        )
+        (
+            is_binary_target,
+            min_train_req,
+            min_val_req,
+            min_pred_points,
+        ) = self._ridge_learnability_thresholds(y)
 
         # Compute OOF predictions using Ridge (use 50% of data)
         from sklearn.linear_model import Ridge
@@ -9040,7 +9193,9 @@ def select_top_diverse_rules(
         return registry
 
     # Point 5: Reset index to ensure safe integer-based slicing later
-    sorted_reg = registry.sort_values("composite_score", ascending=False).reset_index(drop=True)
+    sorted_reg = registry.sort_values("composite_score", ascending=False).reset_index(
+        drop=True
+    )
 
     selected_idx = []
     selected_sides = {"long": 0, "short": 0}
@@ -9078,9 +9233,7 @@ def select_top_diverse_rules(
                                 if s_mask is not None:
                                     intersection = float(np.sum(rem_mask & s_mask))
                                     union = float(np.sum(rem_mask | s_mask))
-                                    jaccard = (
-                                        intersection / union if union > 0 else 0.0
-                                    )
+                                    jaccard = intersection / union if union > 0 else 0.0
                                     if jaccard > max_overlap:
                                         too_similar = True
                                         break
@@ -9617,7 +9770,10 @@ def _compute_atr_wide_numba(
             for i in range(1, n_ts):
                 tr[i] = max(
                     high_sym[i] - low_sym[i],
-                    max(abs(high_sym[i] - close_sym[i - 1]), abs(low_sym[i] - close_sym[i - 1]))
+                    max(
+                        abs(high_sym[i] - close_sym[i - 1]),
+                        abs(low_sym[i] - close_sym[i - 1]),
+                    ),
                 )
 
         if n_ts > atr_period:
@@ -10429,7 +10585,9 @@ if __name__ == "__main__":
             days=int(365.25 * args.lookback_years)
         )
         start_ts = max(start_ts, manual_start)
-    tprint(f"Pre-trim start_ts={start_ts} derived from planner horizon (floored to hour)")
+    tprint(
+        f"Pre-trim start_ts={start_ts} derived from planner horizon (floored to hour)"
+    )
 
     # 2. Load OHLCV
     dfs_by_symbol: Dict[str, pd.DataFrame] = {}

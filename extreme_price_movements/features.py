@@ -630,6 +630,7 @@ def add_regime_gates(
         ((df["mkt_rv"] - rv_mean) / rv_std).clip(-6, 6).fillna(0.0).astype(np.float32)
     )
     import math
+
     df["mkt_rv_pct"] = (
         0.5 * (1.0 + np.vectorize(math.erf)(df["mkt_rv_pct"] / np.sqrt(2.0)))
     ).astype(np.float32)
@@ -649,9 +650,9 @@ def add_regime_gates(
         .fillna(0.0)
         .astype(np.float32)
     )
-    mkt_vol_mean = ff.numba_rolling_mean(
-        df[["mkt_volume"]], gate_vol_lookback_hours
-    )["mkt_volume"].shift(1)
+    mkt_vol_mean = ff.numba_rolling_mean(df[["mkt_volume"]], gate_vol_lookback_hours)[
+        "mkt_volume"
+    ].shift(1)
     mkt_vol_std = (
         ff.numba_rolling_std(df[["mkt_volume"]], gate_vol_lookback_hours)["mkt_volume"]
         .shift(1)
@@ -888,8 +889,10 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     mean_rv_24_16 = ff.numba_rolling_mean(rv_24, 16)
     safe_mean_rv_24_16 = np.where(mean_rv_24_16 > 1e-12, mean_rv_24_16, 1e-12)
     feats["vol_regime_shift"] = (
-        ff.numba_rolling_mean(rv_24, 4) / safe_mean_rv_24_16
-    ).shift(1).astype(np.float32)
+        (ff.numba_rolling_mean(rv_24, 4) / safe_mean_rv_24_16)
+        .shift(1)
+        .astype(np.float32)
+    )
     feats["vol_of_vol"] = (vv / (rv_24 + 1e-12)).shift(1).astype(np.float32)
 
     # 6. ATR Percentile (similar to vol percentile but using ATR)
@@ -898,10 +901,7 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     atr_range = atr_max - atr_min
     safe_atr_range = np.where(atr_range > 1e-12, atr_range, 1e-12)
     feats["atr_percentile"] = (
-        ((atr_base - atr_min) / safe_atr_range)
-        .clip(0, 1)
-        .shift(1)
-        .astype(np.float32)
+        ((atr_base - atr_min) / safe_atr_range).clip(0, 1).shift(1).astype(np.float32)
     )
 
     # 7. Liquidity ratio and low-liquidity hinge
@@ -1700,9 +1700,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     ratio_clean = np.where(np.isfinite(ratio), ratio, 1e-12)
 
     feats["choppiness_index_20"] = (
-        100
-        * np.log10(np.clip(ratio_clean, 1e-12, None))
-        / np.float32(np.log10(20))
+        100 * np.log10(np.clip(ratio_clean, 1e-12, None)) / np.float32(np.log10(20))
     ).astype(np.float32)
 
     # Direction Entropy 20
@@ -2113,9 +2111,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     mkt_rv_pct = mkt_gates["mkt_rv_pct"].reindex(c.index).astype(np.float32)
     feats["mkt_rv_pct"] = mkt_rv_pct
 
-    abs_mkt_ret24h_z = mkt_gates["abs_mkt_ret24h_z"].reindex(c.index).astype(
-        np.float32
-    )
+    abs_mkt_ret24h_z = mkt_gates["abs_mkt_ret24h_z"].reindex(c.index).astype(np.float32)
     feats["abs_mkt_ret24h_z"] = abs_mkt_ret24h_z
 
     _rv_ratio_smooth = rv_ratio
@@ -3206,15 +3202,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["meta_alignment"] = (np.sign(accept_diff) * np.sign(ret5h_safe)).astype(
         np.float32
     )
-    feats["meta_signal_x_accel"] = (
-        (s_pct - reject_like) * feats["accel_5h"]
-    ).astype(np.float32)
+    feats["meta_signal_x_accel"] = ((s_pct - reject_like) * feats["accel_5h"]).astype(
+        np.float32
+    )
 
     # Regime interactions using base-model agreement-weighted success signal.
     base_agreement = (1.0 - np.abs(s_pct - reject_like)).clip(0.0, 1.0)
-    p_success_df = (((s_pct + reject_like) * 0.5) * base_agreement).astype(
-        np.float32
-    )
+    p_success_df = (((s_pct + reject_like) * 0.5) * base_agreement).astype(np.float32)
     vol_high = feats.get(
         "vol_high",
         pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32),
@@ -4388,12 +4382,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             ratio_clean = np.clip(tr_safe / range_safe, 1e-9, None)
 
             feats["choppiness_index_20"] = pd.Series(
-                np.clip(
-                    100.0 * np.log(ratio_clean) / np.log(20.0),
-                    0,
-                    100
-                ).astype(np.float32),
-                index=tr_20.index
+                np.clip(100.0 * np.log(ratio_clean) / np.log(20.0), 0, 100).astype(
+                    np.float32
+                ),
+                index=tr_20.index,
             )
 
         if _needs_feature("climax_volume_ratio"):
@@ -4408,23 +4400,17 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             vol_mean_24 = v_raw.rolling(24, min_periods=1).mean()
             vol_std_24 = v_raw.rolling(24, min_periods=1).std()
             if _needs_feature("volume_z_12"):
-                feats["volume_z_12"] = (
-                    np.where(
-                        vol_std_12 > 1e-9,
-                        (v_raw - vol_mean_12) / vol_std_12,
-                        0.0,
-                    )
-                    .astype(np.float32)
-                )
+                feats["volume_z_12"] = np.where(
+                    vol_std_12 > 1e-9,
+                    (v_raw - vol_mean_12) / vol_std_12,
+                    0.0,
+                ).astype(np.float32)
             if _needs_feature("volume_z_24"):
-                volume_z_24 = (
-                    np.where(
-                        vol_std_24 > 1e-9,
-                        (v_raw - vol_mean_24) / vol_std_24,
-                        0.0,
-                    )
-                    .astype(np.float32)
-                )
+                volume_z_24 = np.where(
+                    vol_std_24 > 1e-9,
+                    (v_raw - vol_mean_24) / vol_std_24,
+                    0.0,
+                ).astype(np.float32)
                 feats["volume_z_24"] = volume_z_24
 
         if _needs_feature("dist_ema50_atr"):
@@ -4511,6 +4497,47 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["bars_since_trend_flip"] = ff.apply_to_frame(
                 trend_sign, bars_since_flip_nb
             ).astype(np.float32)
+
+        if _needs_feature("bars_since_ema20_ema50_cross_log_norm"):
+            ema_20 = ff.apply_to_frame(c_log, ff.ema_nb, 20)
+            ema_50 = ff.apply_to_frame(c_log, ff.ema_nb, 50)
+            ema_diff_sign = ((ema_20 - ema_50) > 0).astype(np.float32)
+            raw = ff.apply_to_frame(ema_diff_sign, bars_since_flip_nb)
+            feats["bars_since_ema20_ema50_cross_log_norm"] = (
+                np.log1p(np.minimum(raw, 100)) / np.log1p(100)
+            ).astype(np.float32)
+
+        if _needs_feature("bars_in_high_vol_state_log_norm"):
+            high_vol_state = (feats["atr_pct_rank"] >= 0.8).astype(np.float32)
+            raw = ff.apply_to_frame(high_vol_state, consecutive_bars_nb)
+            feats["bars_in_high_vol_state_log_norm"] = (
+                np.log1p(np.minimum(raw, 50)) / np.log1p(50)
+            ).astype(np.float32)
+
+        if _needs_feature("bars_outside_ema20_atr_band_log_norm"):
+            ema_20 = ff.apply_to_frame(c_log, ff.ema_nb, 20)
+            dist = np.abs(c_raw - np.exp(ema_20)) / np.maximum(atr, 1e-8)
+            outside_state = (dist >= 1.0).astype(np.float32)
+            raw = ff.apply_to_frame(outside_state, consecutive_bars_nb)
+            feats["bars_outside_ema20_atr_band_log_norm"] = (
+                np.log1p(np.minimum(raw, 50)) / np.log1p(50)
+            ).astype(np.float32)
+
+        if _needs_feature("up_down_semivol_ratio_tanh"):
+            feats["up_down_semivol_ratio_tanh"] = ff.apply_to_frame(
+                ret_1, up_down_semivol_ratio_nb, 20
+            ).astype(np.float32)
+
+        if _needs_feature("up_down_return_mass_ratio_tanh"):
+            feats["up_down_return_mass_ratio_tanh"] = ff.apply_to_frame(
+                ret_1, up_down_return_mass_ratio_nb, 20
+            ).astype(np.float32)
+
+        if _needs_feature("tail_asymmetry_q90_q10_atr_norm"):
+            q90 = ff.numba_rolling_quantile(ret_1, 50, 0.90)
+            q10 = np.abs(ff.numba_rolling_quantile(ret_1, 50, 0.10))
+            raw = np.log((q90 + 1e-8) / (q10 + 1e-8))
+            feats["tail_asymmetry_q90_q10_atr_norm"] = np.tanh(raw).astype(np.float32)
 
         if _needs_feature("MACD_histogram"):
             ema_12 = ff.apply_to_frame(c_log, ff.ema_nb, 12)
@@ -5152,6 +5179,7 @@ def close_location_in_bar_nb(
         else:
             out[i] = 0.5
     return out
+
 
 @njit(parallel=True, cache=True)
 def close_location_in_bar_nb_parallel(

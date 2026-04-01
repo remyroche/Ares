@@ -11,12 +11,13 @@ from extreme_price_movements.hpo_lgbm_regime_miner import (
 
 
 def test_support_quality_score_prefers_center_and_preferred_band():
-    supports = np.array([0.15, 0.12, 0.125, 0.20], dtype=np.float64)
+    from extreme_price_movements.hpo_lgbm_regime_miner import TARGET_SUPPORT, PREFERRED_SUPPORT_MIN, PREFERRED_SUPPORT_MAX
+    supports = np.array([TARGET_SUPPORT, TARGET_SUPPORT - 0.03, PREFERRED_SUPPORT_MIN, TARGET_SUPPORT + 0.05], dtype=np.float64)
     weights = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float64)
 
-    centered = _support_quality_score(np.array([0.15]), np.array([1.0]))
-    preferred_edge = _support_quality_score(np.array([0.125]), np.array([1.0]))
-    outside_preferred = _support_quality_score(np.array([0.20]), np.array([1.0]))
+    centered = _support_quality_score(np.array([TARGET_SUPPORT]), np.array([1.0]))
+    preferred_edge = _support_quality_score(np.array([PREFERRED_SUPPORT_MIN]), np.array([1.0]))
+    outside_preferred = _support_quality_score(np.array([TARGET_SUPPORT + 0.05]), np.array([1.0]))
 
     assert centered > preferred_edge
     assert preferred_edge > outside_preferred

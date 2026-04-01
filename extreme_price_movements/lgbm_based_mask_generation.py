@@ -5914,9 +5914,7 @@ def run_lgbm_mask_generation_pipeline(
             tprint(f"  - {side}: {count}")
 
         tprint("Top 15 Final Diverse Rules (Thorough Report):")
-        top_final = select_top_diverse_rules(
-            combined_global_registry, combined_mask_map, top_n=15
-        )
+        top_final = select_final_regimes(combined_global_registry, combined_mask_map, top_n=10)
         for i, (_, row) in enumerate(top_final.iterrows(), start=1):
             tprint(
                 f"  {i:2d}. [{row.get('side', 'unknown').upper()}] {row['canonical_key']}\n"
@@ -7266,6 +7264,300 @@ class MaskAssessor:
         self.mask_resolver = mask_resolver
 
     @staticmethod
+
+    @staticmethod
+    def compute_ridge_pnl(
+        trades: List[Dict[str, Any]],
+        threshold_star: float,
+        round_fee: float = 0.0015,
+        min_weight: float = 0.10,
+        max_weight: float = 0.30,
+        convex_power: float = 2.0,
+        starting_capital: float = 1.0,
+        forbid_concurrent: bool = True
+    ) -> Dict[str, Any]:
+        eligible_trades = [t for t in trades if t["confidence_score"] >= threshold_star]
+        if len(eligible_trades) == 0:
+            return {
+                "ridge_pnl_raw": 0.0,
+                "fold_pnl_raws": {},
+                "selected_trades": [],
+                "weighted_net_returns": [],
+                "ending_capital": starting_capital,
+            }
+
+        eligible_trades.sort(key=lambda x: x["entry_time"])
+
+        if forbid_concurrent:
+            selected_trades = []
+            current_open_until = None
+            for t in eligible_trades:
+                if current_open_until is None or t["entry_time"] >= current_open_until:
+                    selected_trades.append(t)
+                    current_open_until = t["exit_time"]
+        else:
+            selected_trades = eligible_trades
+
+        if len(selected_trades) == 0:
+            return {
+                "ridge_pnl_raw": 0.0,
+                "fold_pnl_raws": {},
+                "selected_trades": [],
+                "weighted_net_returns": [],
+                "ending_capital": starting_capital,
+            }
+
+        weighted_net_returns = []
+        for t in selected_trades:
+            conf = t["confidence_score"]
+            denom = max(1.0 - threshold_star, 1e-9)
+            normalized_conf = min(max((conf - threshold_star) / denom, 0.0), 1.0)
+
+            position_weight = (
+                min_weight + (max_weight - min_weight) * (normalized_conf ** convex_power)
+            )
+
+            net_trade_return = t["gross_trade_return"] - round_fee
+            weighted_net_return = position_weight * net_trade_return
+            weighted_net_returns.append(weighted_net_return)
+
+        import collections
+        capital = starting_capital
+        fold_pnls = collections.defaultdict(lambda: starting_capital)
+        for i, t in enumerate(selected_trades):
+            wr = weighted_net_returns[i]
+            capital = capital * (1.0 + wr)
+            if "fold_id" in t:
+                fold_pnls[t["fold_id"]] = fold_pnls[t["fold_id"]] * (1.0 + wr)
+
+        ridge_pnl_raw = capital - starting_capital
+
+        fold_pnl_raws = {k: v - starting_capital for k, v in fold_pnls.items()}
+
+        return {
+            "ridge_pnl_raw": ridge_pnl_raw,
+            "fold_pnl_raws": fold_pnl_raws,
+            "selected_trades": selected_trades,
+            "weighted_net_returns": weighted_net_returns,
+            "ending_capital": capital,
+        }
+
+    @staticmethod
+    def compute_ridge_trade_sortino(
+        gross_trade_returns: np.ndarray,
+        confidence_scores: np.ndarray,
+        threshold_star: float,
+        round_fee: float = 0.0015,
+        min_weight: float = 0.10,
+        max_weight: float = 0.30,
+        convex_power: float = 2.0,
+        sortino_scale: float = 2.0,
+        eps: float = 1e-9,
+    ) -> Dict[str, Any]:
+        r = np.asarray(gross_trade_returns, dtype=float)
+        s = np.asarray(confidence_scores, dtype=float)
+
+        if r.shape != s.shape:
+            raise ValueError("gross_trade_returns and confidence_scores must have the same shape")
+
+        n = r.size
+        if n == 0:
+            return {
+                "selected_mask": np.zeros(0, dtype=bool),
+                "sizing_weights": np.zeros(0, dtype=float),
+                "net_weighted_returns": np.zeros(0, dtype=float),
+                "ridge_trade_sortino_raw": 0.0,
+                "ridge_trade_sortino": 0.0,
+            }
+
+        selected_mask = s >= threshold_star
+
+        if not np.any(selected_mask):
+            return {
+                "selected_mask": selected_mask,
+                "sizing_weights": np.zeros(n, dtype=float),
+                "net_weighted_returns": np.zeros(n, dtype=float),
+                "ridge_trade_sortino_raw": 0.0,
+                "ridge_trade_sortino": 0.0,
+            }
+
+        kept_scores = s[selected_mask]
+
+        denom = max(1.0 - threshold_star, eps)
+        normalized_scores = np.clip((kept_scores - threshold_star) / denom, 0.0, 1.0)
+
+        kept_weights = min_weight + (max_weight - min_weight) * (normalized_scores ** convex_power)
+
+        sizing_weights = np.zeros(n, dtype=float)
+        sizing_weights[selected_mask] = kept_weights
+
+        net_weighted_returns = np.zeros(n, dtype=float)
+        net_weighted_returns[selected_mask] = kept_weights * (r[selected_mask] - round_fee)
+
+        realized = net_weighted_returns[selected_mask]
+
+        mean_ret = float(np.mean(realized)) if realized.size else 0.0
+        downside = np.minimum(realized, 0.0)
+        downside_dev = float(np.sqrt(np.mean(downside ** 2))) if realized.size else 0.0
+
+        ridge_trade_sortino_raw = mean_ret / (downside_dev + eps)
+
+        ridge_trade_sortino = float(
+            np.tanh(max(ridge_trade_sortino_raw, 0.0) / sortino_scale)
+        )
+
+        return {
+            "selected_mask": selected_mask,
+            "sizing_weights": sizing_weights,
+            "net_weighted_returns": net_weighted_returns,
+            "ridge_trade_sortino_raw": ridge_trade_sortino_raw,
+            "ridge_trade_sortino": ridge_trade_sortino,
+        }
+
+
+
+
+    @staticmethod
+    def _find_threshold_star(
+        oof_preds: np.ndarray,
+        fwd_ret: np.ndarray,
+        data: pd.DataFrame,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+        horizon: int,
+        round_fee: float = 0.0015,
+        forbid_concurrent: bool = True
+    ) -> Tuple[Optional[float], List[Dict[str, Any]], Dict[str, Any]]:
+        valid_mask = np.isfinite(oof_preds) & np.isfinite(fwd_ret)
+
+        # Build fold map
+        fold_map = np.full(len(oof_preds), -1, dtype=int)
+        for f_idx, (tr_idx, va_idx) in enumerate(folds):
+            fold_map[va_idx] = f_idx
+
+
+        all_trades = []
+        if np.any(valid_mask):
+            valid_indices = np.where(valid_mask)[0]
+
+            has_symbol = "symbol" in data.columns
+            if has_symbol:
+                symbols = data["symbol"].to_numpy()
+            else:
+                symbols = np.zeros(len(data))
+
+            # Optimize trade creation
+            selected_oof = oof_preds[valid_indices]
+            selected_ret = fwd_ret[valid_indices]
+            selected_sym = symbols[valid_indices]
+
+            for i in range(len(valid_indices)):
+                idx = int(valid_indices[i])
+                all_trades.append({
+                    "confidence_score": float(selected_oof[i]),
+                    "gross_trade_return": float(selected_ret[i]),
+                    "entry_time": idx,
+                    "exit_time": idx + horizon,
+                    "symbol": selected_sym[i],
+                    "fold_id": fold_map[idx]
+                })
+
+        if not all_trades:
+            return None, [], {"reason": "no valid trades"}
+
+        best_t = None
+        max_net_expectancy = -np.inf
+        best_trade_rate = 0.0
+        best_selected = []
+
+        # Try thresholds on a 0-1 confidence scale from 0.60 to 0.90 inclusive, step size 0.05
+        # Add a small epsilon to 0.90 to include it
+        for t in np.arange(0.60, 0.95, 0.05):
+            t_float = float(t)
+            eligible = [tr for tr in all_trades if tr["confidence_score"] >= t_float]
+
+            if not eligible:
+                continue
+
+            eligible.sort(key=lambda x: x["entry_time"])
+
+            if forbid_concurrent:
+                selected = []
+                current_open_until = {}
+                for tr in eligible:
+                    sym = tr["symbol"]
+                    if sym not in current_open_until or tr["entry_time"] >= current_open_until[sym]:
+                        selected.append(tr)
+                        current_open_until[sym] = tr["exit_time"]
+            else:
+                selected = eligible
+
+            if not selected:
+                continue
+
+            returns = np.array([tr["gross_trade_return"] for tr in selected])
+            net_expectancy_t = float(np.mean(returns - round_fee))
+
+            if net_expectancy_t > 0:
+                # threshold_star is the smallest confidence threshold t such that net_expectancy_t > 0
+                return t_float, selected, {}
+
+            if net_expectancy_t > max_net_expectancy:
+                max_net_expectancy = net_expectancy_t
+                best_t = t_float
+                best_trade_rate = len(selected) # Temporary, will be divided by symbol days later
+                best_selected = selected
+
+        return None, best_selected, {
+            "reason": "no positive post-fee expectancy threshold",
+            "max_net_expectancy": max_net_expectancy,
+            "best_threshold_candidate": best_t,
+            "trades_per_symbol_day_at_best_t": best_trade_rate # This needs adjustment for symbol_days
+        }
+
+        best_t = None
+        max_net_expectancy = -np.inf
+        best_trade_rate = 0.0
+
+        for t in np.arange(0.60, 0.95, 0.05):
+            t = float(t)
+            eligible = [tr for tr in all_trades if tr["confidence_score"] >= t]
+
+            if not eligible:
+                continue
+
+            eligible.sort(key=lambda x: x["entry_time"])
+
+            if forbid_concurrent:
+                selected = []
+                current_open_until = None
+                for tr in eligible:
+                    if current_open_until is None or tr["entry_time"] >= current_open_until:
+                        selected.append(tr)
+                        current_open_until = tr["exit_time"]
+            else:
+                selected = eligible
+
+            if not selected:
+                continue
+
+            returns = np.array([tr["gross_trade_return"] for tr in selected])
+            net_expectancy_t = float(np.mean(returns - round_fee))
+
+            if net_expectancy_t > max_net_expectancy:
+                max_net_expectancy = net_expectancy_t
+                best_t = t
+                best_trade_rate = len(selected) # Temporary, will be divided later
+
+            if net_expectancy_t > 0:
+                return t, selected, {}
+
+        return None, [], {
+            "reason": "no positive post-fee expectancy threshold",
+            "max_net_expectancy": max_net_expectancy,
+            "best_threshold_candidate": best_t,
+            "trades_per_symbol_day_at_best_t": best_trade_rate # This needs adjustment for symbol_days
+        }
+
     def _compute_total_symbol_days(data: pd.DataFrame) -> Optional[float]:
         """Precomputes the total_symbol_days for a given dataset."""
         if "timestamp" not in data.columns or "symbol" not in data.columns:
@@ -7394,6 +7686,10 @@ class MaskAssessor:
         )
         tprint(f"Stage A: Starting assessment - preparing data and configuration...")
         assessment_results = []
+
+        total_symbol_days = self._compute_total_symbol_days(data)
+        if total_symbol_days is None:
+            total_symbol_days = 1.0
 
         # Prepare TBM data
         close = (
@@ -8500,11 +8796,20 @@ class MaskAssessor:
                 (group_bucket_key, canonical_key), (False, "")
             )
 
-            # 7. Learnability (Efficiency Frontier) - expensive section
+            # 7. Learnability (Efficiency Frontier) & Trade Realization
             subset_oof_coverage = 0.0
             mask_auc = np.nan
             lift = np.nan
             entropy_red = np.nan
+
+            # New Metrics
+            ridge_pnl_raw = 0.0
+            ridge_trade_sortino_raw = 0.0
+            ridge_trade_sortino = 0.0
+            threshold_star = np.nan
+            trades_per_symbol_day_above_t = 0.0
+            selected_trades = []
+
             if not rejected:
                 run_ridge = False
                 if (
@@ -8515,11 +8820,67 @@ class MaskAssessor:
                         run_ridge = True
 
                 if run_ridge:
-                    mask_auc, subset_oof_coverage = self._compute_subset_auc(
+                    mask_auc, subset_oof_coverage, oof_preds = self._compute_subset_auc(
                         X, target_ret, mask, folds
                     )
                     if np.isfinite(mask_auc) and np.isfinite(global_auc):
                         lift = mask_auc - global_auc
+
+                    # Find threshold_star and generate trades
+                    t_star, sel_trades, reject_info = self._find_threshold_star(
+                        oof_preds=oof_preds,
+                        fwd_ret=target_ret,
+                        data=data,
+                        folds=folds,
+                        horizon=horizon,
+                        round_fee=0.0015,
+                        forbid_concurrent=True
+                    )
+
+                    if t_star is None:
+                        rejected = True
+                        rejection_reason = "no positive post-fee expectancy threshold"
+                        rejection_data = reject_info
+                    else:
+                        threshold_star = t_star
+                        selected_trades = sel_trades
+                        trades_per_symbol_day_above_t = len(selected_trades) / total_symbol_days
+
+                        if trades_per_symbol_day_above_t < 0.1:
+                            rejected = True
+                            rejection_reason = "low_trade_rate_above_threshold_star"
+                        else:
+                            # Compute Ridge PNL
+                            pnl_info = self.compute_ridge_pnl(
+                                trades=selected_trades,
+                                threshold_star=threshold_star,
+                                round_fee=0.0015,
+                                min_weight=0.10,
+                                max_weight=0.30,
+                                convex_power=2.0,
+                                starting_capital=1.0,
+                                forbid_concurrent=True
+                            )
+                            ridge_pnl_raw = pnl_info["ridge_pnl_raw"]
+
+                            # Compute Ridge Sortino
+                            gross_returns = np.array([tr["gross_trade_return"] for tr in selected_trades])
+                            scores = np.array([tr["confidence_score"] for tr in selected_trades])
+
+                            sortino_info = self.compute_ridge_trade_sortino(
+                                gross_trade_returns=gross_returns,
+                                confidence_scores=scores,
+                                threshold_star=threshold_star,
+                                round_fee=0.0015,
+                                min_weight=0.10,
+                                max_weight=0.30,
+                                convex_power=2.0,
+                                sortino_scale=2.0,
+                                eps=1e-9
+                            )
+                            ridge_trade_sortino_raw = sortino_info["ridge_trade_sortino_raw"]
+                            ridge_trade_sortino = sortino_info["ridge_trade_sortino"]
+
                 else:
                     subset_oof_coverage = float(np.mean(mask))
                     lift = 0.0  # Neutral lift
@@ -8534,7 +8895,7 @@ class MaskAssessor:
                     )
                 elif not np.isfinite(lift):
                     rejected, rejection_reason = True, "missing_learnability"
-                elif run_ridge and lift < 0.01:  # Lower threshold for lift (was 1.10)
+                elif run_ridge and lift <= 0.0:  # Hard gate on lift <= 0
                     rejected, rejection_reason = True, "low_lift"
 
             # 8. Event-based Expected Value
@@ -8548,21 +8909,11 @@ class MaskAssessor:
                 + tbm_metrics["timeout_rate"] * timeout_payoff
             )
 
-            # Fetch cheap_rank for Final Regime Score
-            cheap_rank = bucket_cheap_ranks.get(group_bucket_key, {}).get(
-                canonical_key, -np.inf
-            )
-            if not np.isfinite(cheap_rank):
-                cheap_rank = 0.0
+            if ev_per_event <= 0:
+                rejected, rejection_reason = True, "ev_per_event <= 0"
 
-            # 9. Final Regime Score
-            regime_score = (
-                0.30 * cheap_rank
-                + 0.20 * lift
-                + 0.20 * ret_uplift
-                + 0.20 * ev_per_event
-                + 0.10 * (mask_auc if np.isfinite(mask_auc) else 0.0)
-            )
+            # base_regime_score is computed after all rules are assessed (due to PNL scaling)
+            regime_score = np.nan
 
             # Production classification
             rule_for_classification = {
@@ -8597,6 +8948,7 @@ class MaskAssessor:
                     "regime_score": regime_score,
                     "is_structurally_sound": not rejected,
                     "rejection_reason": rejection_reason,
+                    "rejection_data": rejection_data if "rejection_data" in locals() else None,
                     "support_pct": support_pct,
                     "directional_mean_ret": float(
                         row.get("directional_mean_ret", np.nan)
@@ -8638,6 +8990,12 @@ class MaskAssessor:
                     "global_auc": global_auc,
                     "global_entropy": global_entropy,
                     "entropy_reduction": entropy_red,
+                    "ridge_pnl_raw": ridge_pnl_raw,
+                    "fold_pnl_raws": pnl_info.get("fold_pnl_raws", {}) if 'pnl_info' in locals() else {},
+                    "ridge_trade_sortino": ridge_trade_sortino,
+                    "ridge_trade_sortino_raw": ridge_trade_sortino_raw,
+                    "threshold_star": threshold_star,
+                    "trades_per_symbol_day_above_t": trades_per_symbol_day_above_t,
                     "tp_rate": tbm_metrics["tp_rate"],
                     "sl_rate": tbm_metrics["sl_rate"],
                     "timeout_rate": tbm_metrics["timeout_rate"],
@@ -8656,7 +9014,86 @@ class MaskAssessor:
                 }
             )
 
+
         assessment_df = pd.DataFrame(assessment_results)
+
+        if not assessment_df.empty:
+            # --- 5. RIDGE PNL NORMALIZATION AND RISK ADJUSTMENT ---
+            positive_pnls = assessment_df.loc[
+                assessment_df["ridge_pnl_raw"] > 0, "ridge_pnl_raw"
+            ]
+
+            pnl_scale = float(positive_pnls.quantile(0.75)) if len(positive_pnls) > 0 else 1.0
+            if not np.isfinite(pnl_scale) or pnl_scale <= 0:
+                pnl_scale = 1.0
+
+            ridge_pnl_norm = np.tanh(
+                np.maximum(assessment_df["ridge_pnl_raw"].to_numpy(), 0.0) / pnl_scale
+            )
+
+            # Compute Fold Stability
+            ridge_trade_stability_good = []
+            for idx, row in assessment_df.iterrows():
+                fold_pnl_dict = row.get("fold_pnl_raws", {})
+                if not isinstance(fold_pnl_dict, dict) or len(fold_pnl_dict) < 2:
+                    ridge_trade_stability_good.append(1.0)
+                    continue
+
+                # Normalize fold pnls with the same global pnl_scale
+                fold_pnls = list(fold_pnl_dict.values())
+                fold_norms = [np.tanh(max(float(p), 0.0) / pnl_scale) for p in fold_pnls]
+
+                # std dev of ridge_pnl_norm between folds
+                fold_std = float(np.std(fold_norms)) if len(fold_norms) > 1 else 0.0
+
+                # normalize to [0,1]
+                # Maximum std dev of values in [0,1] is 0.5 (e.g., [0,1]).
+                # We can normalize it by dividing by 0.5 or cap it.
+                normalized_fold_pnl_std = min(fold_std / 0.5, 1.0)
+                ridge_trade_stability_good.append(1.0 - normalized_fold_pnl_std)
+
+            ridge_trade_stability_good = np.array(ridge_trade_stability_good)
+
+            ridge_pnl_risk = ridge_pnl_norm * np.sqrt(ridge_trade_stability_good)
+            ridge_pnl_risk = np.clip(ridge_pnl_risk, 0.0, 1.0)
+            assessment_df["ridge_pnl_risk"] = ridge_pnl_risk
+
+            # Normalize other base score components to [0,1]
+            def robust_normalize(s):
+                if s.empty or s.isna().all():
+                    return np.zeros(len(s))
+                p05 = s.quantile(0.05)
+                p95 = s.quantile(0.95)
+                span = p95 - p05
+                if span <= 1e-9:
+                    return np.zeros(len(s))
+                return np.clip((s - p05) / span, 0.0, 1.0)
+
+            lift_norm = robust_normalize(assessment_df["lift"])
+            ev_per_event_norm = robust_normalize(assessment_df["ev_per_event"])
+
+            ridge_trade_sortino = assessment_df["ridge_trade_sortino"].to_numpy() # already [0,1]
+
+            # --- FINAL BASE SCORE ---
+            base_regime_score = (
+                0.3 * ridge_pnl_risk
+                + 0.3 * ridge_trade_sortino
+                + 0.2 * lift_norm
+                + 0.1 * ev_per_event_norm
+            )
+            assessment_df["regime_score"] = base_regime_score
+
+            # --- WORST PENALTY ---
+            worst_malus = np.minimum.reduce([
+                ridge_pnl_risk,
+                ridge_trade_sortino,
+                lift_norm,
+                ev_per_event_norm
+            ])
+            worst_penalty = 1.0 - worst_malus
+            assessment_df["worst_penalty"] = worst_penalty
+
+            # Remove ret_uplift from scoring, already done
         if assessment_df.empty:
             tprint(f"Stage A: Final assessment complete - no rules passed all gates")
             return assessment_df
@@ -8777,10 +9214,10 @@ class MaskAssessor:
 
         return mae, mfe
 
-    def _compute_subset_auc(self, X, fwd_ret, mask, folds) -> Tuple[float, float]:
+    def _compute_subset_auc(self, X, fwd_ret, mask, folds) -> Tuple[float, float, np.ndarray]:
         """Compute AUC for a subset of data defined by mask."""
         if not np.any(mask):
-            return np.nan, 0.0
+            return np.nan, 0.0, np.full(len(X), np.nan)
 
         # Learnability must use the canonical Ridge/test feature set only.
         test_keys_set = set(TEST_FEATURE_KEYS)
@@ -8789,7 +9226,7 @@ class MaskAssessor:
             if m.source_name in test_keys_set:
                 ridge_feats.append(i)
         if not ridge_feats:
-            return np.nan, 0.0
+            return np.nan, 0.0, np.full(len(X), np.nan)
 
         X_ridge = X[:, ridge_feats]
         y = np.asarray(fwd_ret, dtype=np.float32)
@@ -8892,9 +9329,10 @@ class MaskAssessor:
             # Store predictions
             oof_preds[va_masked[valid_va]] = preds
 
-        return self._compute_oof_learnability_score(
+        score, coverage = self._compute_oof_learnability_score(
             oof_preds, y, mask, min_predicted_points=min_pred_points
         )
+        return score, coverage, oof_preds
 
     def _compute_entropy(self, y) -> float:
         """Compute entropy proxy of the target distribution."""
@@ -8924,7 +9362,7 @@ class MaskAssessor:
             i for i, m in enumerate(self.metadata) if m.source_name in test_keys_set
         ]
         if not ridge_feats:
-            return np.nan, 0.0
+            return np.nan, 0.0, np.full(len(X), np.nan)
 
         X_ridge = X[:, ridge_feats]
         y = np.asarray(fwd_ret, dtype=np.float32)
@@ -9285,6 +9723,101 @@ def collect_registry_feature_usage(
             )
 
     return pd.DataFrame(rows)
+
+
+
+def dice_overlap(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
+    intersection = float(np.sum(mask_a & mask_b))
+    support_a = float(np.sum(mask_a))
+    support_b = float(np.sum(mask_b))
+    if support_a + support_b == 0:
+        return 0.0
+    return (2.0 * intersection) / (support_a + support_b)
+
+def select_final_regimes(
+    registry: pd.DataFrame,
+    mask_map: Dict[str, np.ndarray],
+    top_n: int = 10,
+) -> pd.DataFrame:
+    if registry.empty:
+        return registry
+
+    # Filter out structurally unsound
+    if "is_structurally_sound" in registry.columns:
+        valid_reg = registry[registry["is_structurally_sound"]].copy()
+    else:
+        valid_reg = registry.copy()
+
+    if valid_reg.empty:
+        return valid_reg
+
+    # Sort candidates by base_regime_score descending
+    # Assume base_regime_score is stored in 'regime_score'
+    sorted_reg = valid_reg.sort_values("regime_score", ascending=False).reset_index(drop=True)
+
+    selected_rows = []
+    accepted_masks = []
+
+    # Pre-union mask
+    if len(sorted_reg) > 0:
+        shape = mask_map[sorted_reg.iloc[0]["canonical_key"]].shape
+        accepted_union_mask = np.zeros(shape, dtype=bool)
+    else:
+        return sorted_reg
+
+    for idx, row in sorted_reg.iterrows():
+        if len(selected_rows) >= top_n:
+            break
+
+        key = str(row["canonical_key"])
+        mask = mask_map.get(key)
+        if mask is None:
+            continue
+
+        base_score = float(row.get("regime_score", 0.0))
+        worst_penalty = float(row.get("worst_penalty", 1.0))
+
+        # Calculate overlaps
+        pairwise_raw_overlap = 0.0
+        if accepted_masks:
+            eligible_pairwise_overlaps = [dice_overlap(mask, m) for m in accepted_masks]
+            pairwise_raw_overlap = max(eligible_pairwise_overlaps, default=0.0)
+
+        pairwise_overlap_penalty = pairwise_raw_overlap if pairwise_raw_overlap >= 0.30 else 0.0
+
+        if accepted_masks:
+            union_raw_overlap = dice_overlap(mask, accepted_union_mask)
+        else:
+            union_raw_overlap = 0.0
+
+        union_overlap_penalty = union_raw_overlap if union_raw_overlap >= 0.40 else 0.0
+
+        # Hard reject conditions
+        if pairwise_raw_overlap >= 0.50:
+            continue
+        if union_raw_overlap >= 0.75:
+            continue
+
+        overlap_penalty = max(pairwise_overlap_penalty, 0.70 * union_overlap_penalty)
+
+        selection_score = (
+            base_score
+            - 0.2 * (overlap_penalty ** 2)
+            - 0.1 * (worst_penalty ** 2)
+        )
+
+        row_dict = row.to_dict()
+        row_dict["selection_score"] = selection_score
+        selected_rows.append(row_dict)
+
+        accepted_masks.append(mask)
+        accepted_union_mask |= mask
+
+    if not selected_rows:
+        return pd.DataFrame()
+
+    final_df = pd.DataFrame(selected_rows)
+    return final_df.sort_values("selection_score", ascending=False).reset_index(drop=True)
 
 
 def select_top_diverse_rules(

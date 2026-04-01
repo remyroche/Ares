@@ -1,0 +1,1323 @@
+def assess_rules(
+        self,
+        registry: pd.DataFrame,
+        X: np.ndarray,
+        data: pd.DataFrame,
+        fwd_ret: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+    ) -> pd.DataFrame:
+        if registry.empty:
+            return registry
+
+        tprint(
+            f"Assessing {len(registry)} rules for Structural Alpha & Learnability..."
+        )
+        tprint(f"Stage A: Starting assessment - preparing data and configuration...")
+        assessment_results = []
+
+        # Prepare TBM data
+        close = (
+            data["close"].to_numpy() if "close" in data.columns else np.zeros(len(data))
+        )
+        high = (
+            data["high"].to_numpy() if "high" in data.columns else np.zeros(len(data))
+        )
+        low = data["low"].to_numpy() if "low" in data.columns else np.zeros(len(data))
+        atr = (
+            data["atr"].to_numpy()
+            if "atr" in data.columns
+            else np.full(len(data), 0.001)
+        )
+
+        # TBM horizon should match assessment horizon + 2 bars
+        assessment_horizon = int(self.cfg.get("horizon", 100))
+        horizon = assessment_horizon + 2
+
+        # Use the maximum horizon in the current run as reference for TP/SL scaling
+        horizons = self.cfg.get("triad_horizons", [100])
+        h_ref = max(horizons) if horizons else 100
+
+        # Scale TP and SL by sqrt(H / H_ref)
+        scale_factor = np.sqrt(horizon / h_ref)
+
+        # Base TP/SL multipliers (at reference horizon)
+        base_tp_atr = float(self.cfg.get("tbm_tp_atr", 1.25))
+        base_sl_atr = float(self.cfg.get("tbm_sl_atr", 0.50))
+
+        # Scaled TP/SL for current horizon
+        tp_atr = base_tp_atr * scale_factor
+        sl_atr = base_sl_atr * scale_factor
+
+        tprint(
+            f"TBM Configuration: H={horizon} bars (assessment H={assessment_horizon}), "
+            f"TP={tp_atr:.3f} ATR, SL={sl_atr:.3f} ATR, scale_factor={scale_factor:.3f} (h_ref={h_ref})"
+        )
+
+        tp_f_long, sl_f_long, to_f_long = compute_tbm_outcomes_per_symbol(
+            data=data,
+            horizon=horizon,
+            tp_atr=tp_atr,
+            sl_atr=sl_atr,
+            side="long",
+        )
+
+        tp_f_short, sl_f_short, to_f_short = compute_tbm_outcomes_per_symbol(
+            data=data,
+            horizon=horizon,
+            tp_atr=tp_atr,
+            sl_atr=sl_atr,
+            side="short",
+        )
+
+        min_oof_coverage = float(self.cfg.get("learnability_min_oof_coverage", 0.05))
+        min_avg_trades = float(self.cfg.get("min_avg_trades_per_day_10_symbols", 0.1))
+        min_sign_consistency = float(self.cfg.get("min_sign_consistency", 0.0))
+        min_mean_target_value = float(self.cfg.get("min_mean_target_value", 0.003))
+
+        target_ret_by_side = {"long": fwd_ret, "short": -fwd_ret}
+        mean_ret_global_by_side = {
+            "long": float(np.nanmean(fwd_ret)),
+            "short": float(np.nanmean(-fwd_ret)),
+        }
+        tbm_side_map = {
+            "long": (tp_f_long, sl_f_long, to_f_long),
+            "short": (tp_f_short, sl_f_short, to_f_short),
+        }
+        baseline_cache: Dict[str, Dict[str, float]] = {}
+
+        mask_cache: Dict[str, np.ndarray] = {}
+        cheap_stats_cache: Dict[Tuple[str, str], Dict[str, float]] = {}
+        directional_edge_floor = float(self.cfg.get("directional_edge_floor", 0.0))
+        min_candidates_per_bucket = int(self.cfg.get("min_candidates_per_bucket", 50))
+        support_min = float(self.cfg.get("support_min_pct", SUPPORT_MIN))
+        support_max = float(self.cfg.get("support_max_pct", SUPPORT_MAX))
+        target_support = float(self.cfg.get("target_support_pct", TARGET_SUPPORT))
+        preferred_support_min = float(self.cfg.get("objective_support_target_low_pct", PREFERRED_SUPPORT_MIN))
+        preferred_support_max = float(self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX))
+
+        # Precompute day buckets once to avoid per-rule timestamp parsing/groupby.
+        day_codes: Optional[np.ndarray] = None
+        n_day_buckets = 0
+        if "timestamp" in data.columns:
+            timestamps = pd.to_datetime(data["timestamp"], errors="coerce")
+            if timestamps.notna().any():
+                day_labels, _ = pd.factorize(timestamps.dt.date, sort=False)
+                day_codes = day_labels.astype(np.int32, copy=False)
+                n_day_buckets = int(day_labels.max() + 1)
+
+        total_symbol_days = self._compute_total_symbol_days(data)
+
+        def _get_or_compute_cheap_stats(
+            canonical_key: str, side: str, mask: np.ndarray
+        ) -> Dict[str, float]:
+            cache_key = (canonical_key, side)
+            cached_stats = cheap_stats_cache.get(cache_key)
+            if cached_stats is not None:
+                return cached_stats
+
+            support_pct = float(np.mean(mask))
+            support_ok = support_min <= support_pct <= support_max
+
+            if preferred_support_min <= support_pct <= preferred_support_max:
+                support_score = 1.0
+            elif support_pct < preferred_support_min:
+                span = max(preferred_support_min - support_min, 1e-9)
+                relative = np.clip((support_pct - support_min) / span, 0.0, 1.0)
+                support_score = float(0.2 + (1.0 - 0.2) * relative)
+            else:
+                span = max(support_max - preferred_support_max, 1e-9)
+                relative = np.clip((support_max - support_pct) / span, 0.0, 1.0)
+                support_score = float(0.2 + (1.0 - 0.2) * relative)
+
+            avg_trades = self._compute_avg_trades_per_day(mask, total_symbol_days)
+
+            if day_codes is not None and n_day_buckets > 0:
+                active_codes = day_codes[mask]
+                active_codes = active_codes[active_codes >= 0]
+                if active_codes.size > 0:
+                    counts = np.bincount(active_codes, minlength=n_day_buckets).astype(
+                        np.float32, copy=False
+                    )
+                    mean_count = float(np.mean(counts))
+                    density_dispersion = (
+                        float(np.std(counts) / (mean_count + 1e-9))
+                        if mean_count > 0.0
+                        else 0.0
+                    )
+                else:
+                    density_dispersion = 0.0
+            else:
+                density_dispersion = 0.0
+
+            target_ret_masked = target_ret_by_side[side][mask]
+            tail_ratio = self._compute_tail_ratio(target_ret_masked)
+            mae, mfe = self._compute_mae_mfe(target_ret_masked)
+            mean_ret_global = mean_ret_global_by_side[side]
+            mean_ret_mask = float(np.nanmean(target_ret_masked))
+            std_ret_mask = float(np.nanstd(_clip_returns(target_ret_masked)))
+            ret_uplift = mean_ret_mask - mean_ret_global
+            sign_consistency = compute_directional_sign_consistency(target_ret_masked)
+
+            stats = {
+                "support_pct": support_pct,
+                "support_ok": float(support_ok),
+                "support_score": support_score,
+                "avg_trades": avg_trades,
+                "density_dispersion": float(density_dispersion),
+                "tail_ratio": tail_ratio,
+                "mae": mae,
+                "mfe": mfe,
+                "mean_ret_global": mean_ret_global,
+                "mean_ret_mask": mean_ret_mask,
+                "std_ret_mask": std_ret_mask,
+                "ret_uplift": ret_uplift,
+                "sign_consistency": sign_consistency,
+            }
+            cheap_stats_cache[cache_key] = stats
+            return stats
+
+        # Bucket-level floor calibration and protection list to avoid over-pruning.
+        bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
+        # Precompute bucket-level top-decile caps for density dispersion and tail risk.
+        bucket_density_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_tail_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_path_quality_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_stability_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_sign_consistency_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_mean_ret_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_hurdle_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+
+        rejected_by_support: set = set()
+        seen_keys_per_bucket = collections.defaultdict(set)
+
+        tprint(
+            f"Stage A: Pass 1 - Computing cheap stats for all {len(registry)} rules..."
+        )
+        for pre_row in registry.to_dict("records"):
+            canonical_key = str(pre_row["canonical_key"])
+            side = str(pre_row["side"])
+            if side not in target_ret_by_side:
+                side = "long"
+
+            horizon_raw = pre_row.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+
+            bucket_key = (side, horizon_key)
+
+            if canonical_key in seen_keys_per_bucket[bucket_key]:
+                continue
+            seen_keys_per_bucket[bucket_key].add(canonical_key)
+
+            if canonical_key in mask_cache:
+                mask = mask_cache[canonical_key]
+            elif self.mask_resolver:
+                mask = self.mask_resolver.get_mask(canonical_key)
+                mask_cache[canonical_key] = mask
+            else:
+                mask = self._get_mask_for_rule(canonical_key, X)
+                mask_cache[canonical_key] = mask
+            if np.sum(mask) < 20:
+                continue
+
+            cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
+            if not bool(cheap["support_ok"]):
+                rejected_by_support.add(canonical_key)
+
+            bucket_density_values[bucket_key].append(
+                (canonical_key, float(cheap["density_dispersion"]))
+            )
+            bucket_tail_values[bucket_key].append(
+                (canonical_key, float(cheap["tail_ratio"]))
+            )
+            path_quality = float(pre_row.get("trade_path_quality_score", np.nan))
+            stability_score = float(pre_row.get("quality_stability_score", np.nan))
+            if np.isfinite(path_quality):
+                bucket_path_quality_values[bucket_key].append(
+                    (canonical_key, path_quality)
+                )
+            if np.isfinite(stability_score):
+                bucket_stability_values[bucket_key].append(
+                    (canonical_key, stability_score)
+                )
+            sign_consistency = float(cheap["sign_consistency"])
+            mean_ret_mask = float(cheap["mean_ret_mask"])
+            hurdle_excess = float(pre_row.get("hurdle_excess", np.nan))
+            bucket_sign_consistency_values[bucket_key].append(
+                (canonical_key, sign_consistency)
+            )
+            bucket_mean_ret_values[bucket_key].append((canonical_key, mean_ret_mask))
+            if np.isfinite(hurdle_excess):
+                bucket_hurdle_values[bucket_key].append((canonical_key, hurdle_excess))
+
+        def _normalize_to_1_2(
+            arr: np.ndarray, higher_is_better: bool = True
+        ) -> np.ndarray:
+            valid = np.isfinite(arr)
+            if not np.any(valid):
+                return np.full_like(arr, 1.5)
+            valid_vals = arr[valid]
+            if len(valid_vals) == 0:
+                return np.full_like(arr, 1.5)
+            p2 = np.percentile(valid_vals, 2)
+            p98 = np.percentile(valid_vals, 98)
+            clipped = np.clip(arr, p2, p98)
+            min_val = np.nanmin(clipped)
+            max_val = np.nanmax(clipped)
+            if max_val - min_val < 1e-9:
+                return np.full_like(arr, 1.5)
+
+            # Map so that the "best" raw value always becomes 2.0, and the "worst" raw value becomes 1.0.
+            if higher_is_better:
+                return 1.0 + (clipped - min_val) / (max_val - min_val)
+            else:
+                return 1.0 + (max_val - clipped) / (max_val - min_val)
+
+        bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
+        bucket_cheap_ranks: Dict[
+            Tuple[str, int, str], Dict[str, float]
+        ] = collections.defaultdict(dict)
+
+        all_bucket_keys = set(bucket_mean_ret_values.keys())
+        for b_key in all_bucket_keys:
+            keys = [k for k, v in bucket_mean_ret_values[b_key]]
+            if not keys:
+                continue
+
+            m_ret_dict = dict(bucket_mean_ret_values[b_key])
+            m_path_dict = dict(bucket_path_quality_values[b_key])
+            m_sign_dict = dict(bucket_sign_consistency_values[b_key])
+            m_tail_dict = dict(bucket_tail_values[b_key])
+            m_dens_dict = dict(bucket_density_values[b_key])
+
+            ret_arr = np.array([m_ret_dict.get(k, np.nan) for k in keys])
+            path_arr = np.array([m_path_dict.get(k, np.nan) for k in keys])
+            sign_arr = np.array([m_sign_dict.get(k, np.nan) for k in keys])
+            tail_arr = np.array([m_tail_dict.get(k, np.nan) for k in keys])
+            dens_arr = np.array([m_dens_dict.get(k, np.nan) for k in keys])
+
+            n_ret = _normalize_to_1_2(ret_arr, higher_is_better=True)
+            n_path = _normalize_to_1_2(path_arr, higher_is_better=True)
+            n_sign = _normalize_to_1_2(sign_arr, higher_is_better=True)
+
+            # For lower-is-better metrics, normalizing them this way maps their best (lowest) value to 2.0
+            n_tail = _normalize_to_1_2(tail_arr, higher_is_better=False)
+            n_dens = _normalize_to_1_2(dens_arr, higher_is_better=False)
+
+            # Because lower-is-better metrics are mapped such that 2.0 is BEST, we must put them
+            # in the numerator (multiplying them) rather than the denominator to maintain a monotonic score.
+            # Using directional_mean_ret directly instead of sqrt(directional_mean_ret).
+            ranks = n_sign * (n_path**1.5) * n_ret * np.sqrt(n_tail + n_dens)
+
+            ranked_items = []
+            for i, k in enumerate(keys):
+                rank_val = ranks[i]
+                if np.isnan(rank_val):
+                    rank_val = -np.inf
+                bucket_cheap_ranks[b_key][k] = float(rank_val)
+                ranked_items.append((rank_val, k))
+
+            ranked_items.sort(key=lambda x: x[0], reverse=True)
+            top_k = [k for r, k in ranked_items[: max(min_candidates_per_bucket, 0)]]
+            bucket_protected_keys[b_key] = set(top_k)
+
+        tprint(
+            f"Stage A: Pass 1 complete - computed cheap stats for {len(registry)} rules"
+        )
+
+        pctile_bottom_cut = float(self.cfg.get("cheap_gate_bottom_pctile", 0.20))
+
+        all_rejected = set(rejected_by_support)
+        if all_rejected:
+            tprint(
+                f"Stage A cheap gate (0): support_out_of_range rejected {len(all_rejected)} rules"
+            )
+
+        bucket_sign_consistency_floor: Dict[Tuple[str, int], float] = {}
+        for bucket_key, tuples in bucket_sign_consistency_values.items():
+            vals = np.asarray(
+                [v for k, v in tuples if k not in all_rejected], dtype=float
+            )
+            finite_vals = vals[np.isfinite(vals)]
+            bucket_sign_consistency_floor[bucket_key] = (
+                float(np.nanquantile(finite_vals, pctile_bottom_cut))
+                if finite_vals.size > 0
+                else -np.inf
+            )
+
+        bucket_hurdle_floor: Dict[Tuple[str, int], float] = {}
+        bucket_hurdle_values_surviving: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        for bucket_key, tuples in bucket_hurdle_values.items():
+            for canonical_key, hurdle_excess in tuples:
+                if canonical_key not in all_rejected:
+                    bucket_hurdle_values_surviving[bucket_key].append(
+                        (canonical_key, hurdle_excess)
+                    )
+        for bucket_key, tuples in bucket_hurdle_values_surviving.items():
+            vals = np.asarray([v for _, v in tuples], dtype=float)
+            finite_vals = vals[np.isfinite(vals)]
+            bucket_hurdle_floor[bucket_key] = (
+                float(np.nanquantile(finite_vals, pctile_bottom_cut))
+                if finite_vals.size > 0
+                else -np.inf
+            )
+
+        rejected_by_hurdle: set = set()
+        for bucket_key, tuples in bucket_hurdle_values_surviving.items():
+            floor = bucket_hurdle_floor.get(bucket_key, -np.inf)
+            for canonical_key, hurdle_excess in tuples:
+                if hurdle_excess < floor:
+                    rejected_by_hurdle.add(canonical_key)
+
+        n_hurdle_rejected = len(rejected_by_hurdle)
+        if n_hurdle_rejected > 0:
+            tprint(
+                f"Stage A cheap gate (1.1): beats_hurdle "
+                f"  rejected {n_hurdle_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket)"
+            )
+        all_rejected |= rejected_by_hurdle
+
+        bucket_stability_floor: Dict[Tuple[str, int], float] = {}
+        for bucket_key, tuples in bucket_stability_values.items():
+            vals = np.asarray(
+                [v for k, v in tuples if k not in all_rejected], dtype=float
+            )
+            finite_vals = vals[np.isfinite(vals)]
+            bucket_stability_floor[bucket_key] = (
+                float(np.nanquantile(finite_vals, 0.20))
+                if finite_vals.size > 0
+                else -np.inf
+            )
+
+        rejected_by_stability: set = set()
+        for bucket_key, tuples in bucket_stability_values.items():
+            floor = bucket_stability_floor.get(bucket_key, -np.inf)
+            protected = bucket_protected_keys.get(bucket_key, set())
+            for canonical_key, stability in tuples:
+                if (
+                    canonical_key not in all_rejected
+                    and stability < floor
+                    and canonical_key not in protected
+                ):
+                    rejected_by_stability.add(canonical_key)
+
+        n_stability_rejected = len(rejected_by_stability)
+        if n_stability_rejected > 0:
+            tprint(
+                f"Stage A cheap gate (1.5): quality_stability "
+                f"  rejected {n_stability_rejected} rules (bottom 20% per bucket)"
+            )
+
+        all_rejected |= rejected_by_stability
+
+        bucket_density_values_surviving: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        for bucket_key, tuples in bucket_density_values.items():
+            for canonical_key, val in tuples:
+                if canonical_key not in all_rejected:
+                    bucket_density_values_surviving[bucket_key].append(
+                        (canonical_key, val)
+                    )
+        bucket_density_cap: Dict[Tuple[str, int], float] = {}
+        for bucket_key, tuples in bucket_density_values_surviving.items():
+            vals = np.asarray([v for _, v in tuples], dtype=float)
+            finite_vals = vals[np.isfinite(vals)]
+            bucket_density_cap[bucket_key] = (
+                float(np.nanquantile(finite_vals, 0.90))
+                if finite_vals.size > 0
+                else np.inf
+            )
+
+        bucket_tail_values_surviving: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        for bucket_key, tuples in bucket_tail_values.items():
+            for canonical_key, val in tuples:
+                if canonical_key not in all_rejected:
+                    bucket_tail_values_surviving[bucket_key].append(
+                        (canonical_key, val)
+                    )
+        bucket_tail_cap: Dict[Tuple[str, int], float] = {}
+        for bucket_key, tuples in bucket_tail_values_surviving.items():
+            vals = np.asarray([v for _, v in tuples], dtype=float)
+            finite_vals = vals[np.isfinite(vals)]
+            bucket_tail_cap[bucket_key] = (
+                float(np.nanquantile(finite_vals, 0.90))
+                if finite_vals.size > 0
+                else np.inf
+            )
+
+        bucket_path_quality_surviving: Dict[
+            Tuple[str, int, str], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        for bucket_key, tuples in bucket_path_quality_values.items():
+            for canonical_key, val in tuples:
+                if canonical_key not in all_rejected:
+                    bucket_path_quality_surviving[bucket_key].append(
+                        (canonical_key, val)
+                    )
+        bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
+        for bucket_key, tuples in bucket_path_quality_surviving.items():
+            vals = np.asarray([v for _, v in tuples], dtype=float)
+            finite_vals = vals[np.isfinite(vals)]
+            bucket_path_floor[bucket_key] = (
+                float(np.nanquantile(finite_vals, pctile_bottom_cut))
+                if finite_vals.size > 0
+                else -np.inf
+            )
+
+        rejected_by_path: set = set()
+        for bucket_key, tuples in bucket_path_quality_values.items():
+            floor = bucket_path_floor.get(bucket_key, -np.inf)
+            protected = bucket_protected_keys.get(bucket_key, set())
+            for canonical_key, path in tuples:
+                if (
+                    canonical_key not in all_rejected
+                    and path < floor
+                    and canonical_key not in protected
+                ):
+                    rejected_by_path.add(canonical_key)
+
+        n_path_rejected = len(rejected_by_path)
+        if n_path_rejected > 0:
+            tprint(
+                f"Stage A cheap gate (2.5): path_quality "
+                f"  rejected {n_path_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket)"
+            )
+        all_rejected |= rejected_by_path
+
+        tprint(
+            f"Stage A: Cheap gates complete - {len(registry) - len(all_rejected)} rules survived cheap gates"
+        )
+
+        cheap_gate_rows: Dict[
+            Tuple[str, int], List[Tuple[float, str]]
+        ] = collections.defaultdict(list)
+        cheap_gate_result: Dict[Tuple[Tuple[str, int], str], Tuple[bool, str]] = {}
+
+        seen_keys_for_cheap_gate = set()
+
+        for pre_row in registry.to_dict("records"):
+            canonical_key = str(pre_row["canonical_key"])
+            side = str(pre_row["side"])
+            if side not in target_ret_by_side:
+                side = "long"
+
+            horizon_raw = pre_row.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+
+            bucket_key = (side, horizon_key)
+
+            # Ensure we only process each canonical key once per bucket_key since target metrics
+            # are inherently agnostic to triad targets
+            key_tracker = (bucket_key, canonical_key)
+            if key_tracker in seen_keys_for_cheap_gate:
+                continue
+            seen_keys_for_cheap_gate.add(key_tracker)
+
+            mask = mask_cache.get(canonical_key)
+            if mask is None:
+                if self.mask_resolver:
+                    mask = self.mask_resolver.get_mask(canonical_key)
+                else:
+                    mask = self._get_mask_for_rule(canonical_key, X)
+                mask_cache[canonical_key] = mask
+            if np.sum(mask) < 20:
+                continue
+
+            cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
+            sign_consistency = float(cheap["sign_consistency"])
+
+            rejected = False
+            rejection_reason = ""
+            if not bool(cheap["support_ok"]):
+                rejected, rejection_reason = True, "support_out_of_range"
+            elif float(
+                pre_row.get("quality_stability_score", np.nan)
+            ) < bucket_stability_floor.get(bucket_key, -np.inf):
+                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
+                    rejected, rejection_reason = True, "low_stability_floor"
+            elif float(
+                pre_row.get("trade_path_quality_score", np.nan)
+            ) < bucket_path_floor.get(bucket_key, -np.inf):
+                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
+                    rejected, rejection_reason = True, "low_path_quality_floor"
+            elif float(cheap["density_dispersion"]) > bucket_density_cap.get(
+                bucket_key, np.inf
+            ):
+                rejected, rejection_reason = True, "high_density_dispersion_top_decile"
+            elif float(cheap["tail_ratio"]) > bucket_tail_cap.get(bucket_key, np.inf):
+                rejected, rejection_reason = True, "high_tail_risk_top_decile"
+
+            if (
+                rejected
+                and canonical_key in bucket_protected_keys.get(bucket_key, set())
+                and rejection_reason
+                in {
+                    "low_path_quality_floor",
+                    "low_stability_floor",
+                }
+            ):
+                rejected = False
+
+            if rejected:
+                cheap_gate_result[(bucket_key, canonical_key)] = (
+                    True,
+                    rejection_reason,
+                )
+                continue
+
+            cheap_rank = bucket_cheap_ranks.get(bucket_key, {}).get(
+                canonical_key, -np.inf
+            )
+            cheap_gate_result[(bucket_key, canonical_key)] = (False, "")
+            cheap_gate_rows[bucket_key].append((cheap_rank, canonical_key))
+
+        OVERLAP_THRESHOLD = 0.90
+        SUPPORT_RATIO_MIN = 0.70
+        DEDUP_SUBSAMPLE_SIZE = 10000
+        eps = 1e-8
+
+        surviving_keys_by_bucket: Dict[
+            Tuple[str, int, str], List[str]
+        ] = collections.defaultdict(list)
+        for bucket_key, entries in cheap_gate_rows.items():
+            for _, canonical_key in entries:
+                surviving_keys_by_bucket[bucket_key].append(canonical_key)
+
+        stage_a_matrices = {}
+
+        n_total_surviving = sum(len(v) for v in surviving_keys_by_bucket.values())
+        if n_total_surviving > 0:
+            rng = np.random.default_rng(seed=42)
+            n_rows = X.shape[0]
+            if n_rows > DEDUP_SUBSAMPLE_SIZE:
+                sub_idx = rng.choice(n_rows, size=DEDUP_SUBSAMPLE_SIZE, replace=False)
+                sub_idx = np.sort(sub_idx)
+            else:
+                sub_idx = np.arange(n_rows)
+            n_subsample = float(len(sub_idx))
+
+            registry_key_to_row: Dict[str, int] = {}
+            for i, row_dict in enumerate(registry.to_dict("records")):
+                ck = str(row_dict.get("canonical_key", ""))
+                if ck:
+                    registry_key_to_row[ck] = i
+
+            n_dedup_rejected = 0
+            for bucket_key, surviving_keys in surviving_keys_by_bucket.items():
+                n_rules = len(surviving_keys)
+                # Pre-allocate arrays for better performance
+                contexts = [None] * n_rules
+                gains = np.zeros(n_rules, dtype=np.float32)
+                sign_consistencies = np.zeros(n_rules, dtype=np.float32)
+                mean_returns = np.zeros(n_rules, dtype=np.float32)
+                std_returns = np.zeros(n_rules, dtype=np.float32)
+                supports = np.zeros(n_rules, dtype=np.float32)
+
+                for idx, canonical_key in enumerate(surviving_keys):
+                    mask = mask_cache.get(canonical_key)
+                    if mask is None:
+                        if self.mask_resolver:
+                            mask = self.mask_resolver.get_mask(canonical_key)
+                        else:
+                            mask = self._get_mask_for_rule(canonical_key, X)
+                        mask_cache[canonical_key] = mask
+
+                    mask_sub = mask[sub_idx]
+                    contexts[idx] = mask_sub
+                    supports[idx] = float(np.mean(mask_sub))
+
+                    cheap = _get_or_compute_cheap_stats(
+                        canonical_key, bucket_key[0], mask
+                    )
+
+                    row_idx = registry_key_to_row.get(canonical_key)
+                    if row_idx is not None:
+                        pre_row = registry.iloc[row_idx]
+                        gain_val = float(
+                            pre_row.get("rule_model_importance_score", 0.0)
+                        )
+                    else:
+                        gain_val = 0.0
+                    gains[idx] = gain_val
+                    sign_consistencies[idx] = float(cheap["sign_consistency"])
+                    mean_returns[idx] = float(cheap.get("mean_ret_mask", 0.0))
+                    std_returns[idx] = float(cheap.get("std_ret_mask", 0.0))
+
+                tprint(
+                    f"Stage A: Overlap deduplication - processing {len(surviving_keys)} surviving rules in bucket {bucket_key}"
+                )
+
+                # Build a dense subsample matrix directly. The current bucket sizes are
+                # small enough that this is safer than hand-assembling sparse COO indices.
+                context_matrix = np.column_stack(
+                    [c.astype(np.int32, copy=False) for c in contexts]
+                )
+                intersections = context_matrix.T @ context_matrix
+                n_rules = len(surviving_keys)
+                sub_supports = np.diag(intersections).astype(float)
+
+                # Store matrices for soft F1/Dice penalty downstream
+                stage_a_matrices[bucket_key] = {
+                    "key_to_idx": {k: idx for idx, k in enumerate(surviving_keys)},
+                    "intersections": intersections,
+                    "supports": sub_supports,
+                    "n_subsample": n_subsample,
+                }
+
+                threshold_ladder = [0.90, 0.85, 0.80, 0.75, 0.70, 0.65, 0.60]
+                final_keep = [True] * n_rules
+                initial_n_rules = n_rules
+
+                # Convert lists to numpy arrays for vectorized operations
+                mean_returns_arr = np.array(mean_returns, dtype=np.float32)
+                std_returns_arr = np.array(std_returns, dtype=np.float32)
+                supports_arr = np.array(supports, dtype=np.float32)
+                sub_supports_arr = np.array(sub_supports, dtype=np.float32)
+
+                tprint(
+                    f"Stage A: Starting overlap deduplication threshold ladder for bucket {bucket_key}..."
+                )
+
+                for threshold in threshold_ladder:
+                    tprint(
+                        f"Stage A: Overlap dedup bucket {bucket_key} at threshold {threshold:.2f} "
+                        f"(active={int(np.sum(final_keep))}/{n_rules})"
+                    )
+                    keep = np.ones(n_rules, dtype=bool)
+
+                    # Vectorized overlap checking
+                    # Create mask for pairs with same sign returns
+                    sign_mask = (
+                        mean_returns_arr[:, None] * mean_returns_arr[None, :] >= 0
+                    )
+
+                    # Create mask for valid overlaps (intersection >= 1)
+                    valid_inter_mask = intersections >= 1
+
+                    # Compute overlap matrix
+                    min_supports = np.minimum(
+                        sub_supports_arr[:, None], sub_supports_arr[None, :]
+                    )
+                    overlap_matrix = intersections / np.maximum(min_supports, 1.0)
+
+                    # Compute support ratio matrix
+                    supp_ratio_matrix = np.minimum(
+                        supports_arr[:, None], supports_arr[None, :]
+                    ) / np.maximum(
+                        np.maximum(supports_arr[:, None], supports_arr[None, :]), 1e-9
+                    )
+
+                    # Create overlap threshold mask
+                    overlap_mask = overlap_matrix > threshold
+                    supp_ratio_mask = supp_ratio_matrix > SUPPORT_RATIO_MIN
+
+                    # Combined mask for pairs to check
+                    check_mask = (
+                        sign_mask & valid_inter_mask & overlap_mask & supp_ratio_mask
+                    )
+
+                    # Only check upper triangular (i < j)
+                    tri_mask = np.triu(np.ones((n_rules, n_rules), dtype=bool), k=1)
+                    check_mask = check_mask & tri_mask
+
+                    # Get indices of pairs to check
+                    i_indices, j_indices = np.where(check_mask)
+
+                    if len(i_indices) == 0:
+                        continue
+
+                    # Vectorized rule quality computation
+                    rq_i = np.abs(mean_returns_arr[i_indices]) / (
+                        std_returns_arr[i_indices] + eps
+                    )
+                    rq_j = np.abs(mean_returns_arr[j_indices]) / (
+                        std_returns_arr[j_indices] + eps
+                    )
+                    rq_i = np.where(
+                        std_returns_arr[i_indices] > eps,
+                        rq_i,
+                        np.abs(mean_returns_arr[i_indices]),
+                    )
+                    rq_j = np.where(
+                        std_returns_arr[j_indices] > eps,
+                        rq_j,
+                        np.abs(mean_returns_arr[j_indices]),
+                    )
+
+                    # Determine which to drop
+                    drop_i = (rq_i < rq_j) & keep[i_indices]
+                    drop_j = (rq_j < rq_i) & keep[j_indices]
+                    drop_both = (rq_i == rq_j) & keep[i_indices] & keep[j_indices]
+
+                    # Apply drops
+                    keep[i_indices[drop_i]] = False
+                    keep[j_indices[drop_j]] = False
+
+                    # For ties, drop the one with lower support
+                    if np.any(drop_both):
+                        tie_i = i_indices[drop_both]
+                        tie_j = j_indices[drop_both]
+                        drop_lower_support = supports_arr[tie_i] < supports_arr[tie_j]
+                        keep[tie_i[drop_lower_support]] = False
+                        keep[tie_j[~drop_lower_support]] = False
+
+                    final_keep = final_keep & keep
+
+                    if np.sum(keep) <= 100:
+                        final_keep = keep
+                        tprint(
+                            f"Stage A: Overlap dedup bucket {bucket_key} reached <=100 survivors at "
+                            f"threshold {threshold:.2f}"
+                        )
+                        break
+
+                surviving_indices = [i for i, k in enumerate(final_keep) if k]
+                if len(surviving_indices) > 100:
+
+                    def _score(i):
+                        rq = (
+                            abs(mean_returns[i]) / (std_returns[i] + eps)
+                            if std_returns[i] > eps
+                            else abs(mean_returns[i])
+                        )
+                        gain_b = min(max(np.sqrt(max(gains[i], 0.0)), 0.0), 1.0)
+                        sign_b = min(max(sign_consistencies[i], 0.0), 1.0)
+                        rq_b = min(max(rq, 0.0), 1.0)
+                        return gain_b * sign_b * rq_b
+
+                    surviving_indices.sort(key=_score, reverse=True)
+                    surviving_indices = surviving_indices[:100]
+
+                final_surviving_set = {surviving_keys[i] for i in surviving_indices}
+
+                for i, k in enumerate(surviving_keys):
+                    if k not in final_surviving_set:
+                        cheap_gate_result[(bucket_key, k)] = (
+                            True,
+                            "deduplicated_overlap",
+                        )
+                        n_dedup_rejected += 1
+
+                final_surviving_keys = [surviving_keys[i] for i in surviving_indices]
+
+                tprint(
+                    f"Stage A: Overlap deduplication complete for bucket {bucket_key} - {len(final_surviving_keys)} rules survived (from {initial_n_rules})"
+                )
+
+                if final_surviving_keys:
+                    stage_a_matrices[bucket_key] = {
+                        "key_to_idx": {
+                            k: idx for idx, k in enumerate(final_surviving_keys)
+                        },
+                        "intersections": intersections[
+                            np.ix_(surviving_indices, surviving_indices)
+                        ],
+                        "supports": sub_supports[surviving_indices],
+                        "n_subsample": n_subsample,
+                    }
+                else:
+                    stage_a_matrices.pop(bucket_key, None)
+
+            if n_dedup_rejected > 0:
+                tprint(
+                    f"Stage A cheap gate (3): overlap deduplication "
+                    f"rejected {n_dedup_rejected} rules (overlap>{OVERLAP_THRESHOLD:.0%}, "
+                    f"support_ratio>{SUPPORT_RATIO_MIN:.0%})"
+                )
+
+            cheap_gate_rows_deduped: Dict[
+                Tuple[str, int], List[Tuple[float, str]]
+            ] = collections.defaultdict(list)
+            for bucket_key, entries in cheap_gate_rows.items():
+                for cheap_rank, canonical_key in entries:
+                    rejected, _ = cheap_gate_result.get(
+                        (bucket_key, canonical_key), (False, "")
+                    )
+                    if not rejected:
+                        cheap_gate_rows_deduped[bucket_key].append(
+                            (cheap_rank, canonical_key)
+                        )
+            cheap_gate_rows = cheap_gate_rows_deduped
+
+        tprint(
+            f"Stage A: Overlap deduplication complete - {sum(len(v) for v in cheap_gate_rows.values())} rules total survived"
+        )
+
+        # Cache baseline learnability once per side after cheap structural filtering.
+        for side, target_ret in target_ret_by_side.items():
+            global_auc, global_cov = self._compute_baseline_auc(X, target_ret, folds)
+            baseline_cache[side] = {
+                "global_auc": float(global_auc) if np.isfinite(global_auc) else np.nan,
+                "global_cov": float(global_cov),
+                "global_entropy": float(self._compute_entropy(target_ret)),
+            }
+            if np.nanstd(target_ret) < 1e-9:
+                tprint(
+                    f"WARNING: Root cause for degenerate metrics: {side} target has zero variance!"
+                )
+
+        max_ridge_candidates_per_bucket = int(
+            self.cfg.get("max_ridge_candidates_per_bucket", 20)
+        )
+        overlap_free_zone = float(self.cfg.get("ridge_overlap_free_zone", 0.30))
+        cheap_rank_exponent = float(self.cfg.get("ridge_cheap_rank_exponent", 1.3))
+        overlap_penalty_exponent = float(
+            self.cfg.get("ridge_overlap_penalty_exponent", 1.8)
+        )
+        support_ratio_min = float(self.cfg.get("ridge_support_ratio_min", 0.70))
+        penalty_strength = float(self.cfg.get("ridge_support_penalty_strength", 1.0))
+        boost_strength = float(self.cfg.get("ridge_support_boost_strength", 1.0))
+        center = TARGET_SUPPORT
+        half_width = 0.025
+
+        bucket_ridge_rows: Dict[
+            Tuple[str, int], List[Tuple[float, str]]
+        ] = collections.defaultdict(list)
+        tprint(
+            f"Stage A: Starting ridge regression selection for {len(cheap_gate_rows)} buckets..."
+        )
+
+        self.bucket_ridge_keys = {}
+        for bucket_key, entries in cheap_gate_rows.items():
+            side = bucket_key[0]
+            baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
+            if baseline_oof_coverage < min_oof_coverage:
+                for _, canonical_key in entries:
+                    cheap_gate_result[(bucket_key, canonical_key)] = (
+                        True,
+                        "insufficient_baseline_oof_coverage",
+                    )
+                continue
+            bucket_ridge_rows[bucket_key].extend(entries)
+
+        for bucket_key, entries in bucket_ridge_rows.items():
+            if not entries:
+                continue
+
+            surviving_keys = [k for _, k in entries]
+            surviving_ranks = [r for r, _ in entries]
+
+            matrices = stage_a_matrices.get(bucket_key)
+            if not matrices or len(surviving_keys) <= max_ridge_candidates_per_bucket:
+                entries.sort(key=lambda item: item[0], reverse=True)
+                self.bucket_ridge_keys[bucket_key] = {
+                    key for _, key in entries[: max(max_ridge_candidates_per_bucket, 0)]
+                }
+                continue
+
+            key_to_idx = matrices["key_to_idx"]
+            intersections = matrices["intersections"]
+            supports = matrices["supports"]
+            n_subsample_bucket = matrices.get("n_subsample", 10000.0)
+
+            # Filter matrices for valid entries
+            idx_list = []
+            valid_keys = []
+            valid_ranks = []
+            for i, k in enumerate(surviving_keys):
+                if k in key_to_idx:
+                    idx_list.append(key_to_idx[k])
+                    valid_keys.append(k)
+                    valid_ranks.append(surviving_ranks[i])
+
+            if len(valid_keys) <= max_ridge_candidates_per_bucket:
+                self.bucket_ridge_keys[bucket_key] = set(valid_keys)
+                continue
+
+            sub_intersections = intersections[np.ix_(idx_list, idx_list)]
+            sub_supports_arr = supports[idx_list]
+
+            # Compute Support Weight Multiplier
+            s_arr = sub_supports_arr / n_subsample_bucket
+            w_mult_arr = np.ones(len(valid_keys), dtype=float)
+
+            for i, s in enumerate(s_arr):
+                if s < (center - half_width):
+                    w = 1.0 - penalty_strength * (center - half_width - s) / (
+                        center - half_width
+                    )
+                elif s < center:
+                    w = 1.0 + boost_strength * (s - (center - half_width)) / half_width
+                elif s < (center + half_width):
+                    w = 1.0 + boost_strength * ((center + half_width) - s) / half_width
+                else:
+                    w = 1.0 - penalty_strength * (s - (center + half_width)) / (
+                        center + half_width
+                    )
+
+                # Point 12: Broaden clip bounds to allow meaningful boosting
+                w_mult_arr[i] = np.clip(w, 0.1, 2.0)
+
+            supp_i = sub_supports_arr[:, None]
+            supp_j = sub_supports_arr[None, :]
+
+            # Compute F1/Dice matrix
+            f1_overlap_matrix = 2.0 * sub_intersections / (supp_i + supp_j + 1e-9)
+
+            # Compute Support Ratio matrix to ignore similarities where support sizes differ greatly
+            supp_ratio_matrix = np.minimum(supp_i, supp_j) / np.maximum(
+                supp_i, supp_j + 1e-9
+            )
+
+            # Effective F1 (Same-side is naturally guaranteed because bucket keys split by side)
+            effective_f1_overlap_matrix = f1_overlap_matrix * (
+                supp_ratio_matrix >= support_ratio_min
+            )
+
+            # Normalize cheap ranks to [0.05, 1.0] positive bounded range
+            raw_cr = np.array(valid_ranks)
+            min_cr = np.min(raw_cr)
+            max_cr = np.max(raw_cr)
+            if max_cr - min_cr < 1e-9:
+                norm_cr = np.full(len(valid_keys), 1.0)
+            else:
+                norm_cr = 0.05 + 0.95 * (raw_cr - min_cr) / (max_cr - min_cr)
+
+            # Diversified Top-K Greedy Selection
+            # Pre-allocate arrays for better performance
+            max_candidates = min(max_ridge_candidates_per_bucket, len(valid_keys))
+            selected_indices = np.zeros(max_candidates, dtype=np.int32)
+            remaining_mask = np.ones(len(valid_keys), dtype=bool)
+
+            # Select highest support-weighted cheap_rank first
+            initial_scores = norm_cr * (1.0 + w_mult_arr)
+            best_idx = int(np.argmax(initial_scores))
+            selected_indices[0] = best_idx
+            remaining_mask[best_idx] = False
+            n_selected = 1
+
+            while n_selected < max_candidates and remaining_mask.any():
+                remaining_indices = np.where(remaining_mask)[0]
+                if len(remaining_indices) == 0:
+                    break
+
+                # Vectorized overlap computation for all remaining candidates
+                selected_so_far = selected_indices[:n_selected]
+                max_f1_overlap = np.max(
+                    effective_f1_overlap_matrix[remaining_indices][:, selected_so_far],
+                    axis=1,
+                )
+                overlap_excess = np.maximum(0.0, max_f1_overlap - overlap_free_zone) / (
+                    1.0 - overlap_free_zone + 1e-9
+                )
+                adjusted_scores = (
+                    norm_cr[remaining_indices] ** cheap_rank_exponent
+                ) * ((1.0 - overlap_excess) ** overlap_penalty_exponent)
+                final_ranking = adjusted_scores * (1.0 + w_mult_arr[remaining_indices])
+
+                best_next_idx = remaining_indices[int(np.argmax(final_ranking))]
+                selected_indices[n_selected] = best_next_idx
+                remaining_mask[best_next_idx] = False
+                n_selected += 1
+
+            self.bucket_ridge_keys[bucket_key] = {
+                valid_keys[i] for i in selected_indices
+            }
+
+        total_ridge_selected = sum(
+            len(keys) for keys in self.bucket_ridge_keys.values()
+        )
+        tprint(
+            f"Stage A: Ridge regression selection complete - {total_ridge_selected} rules selected for final assessment"
+        )
+
+        tprint(
+            f"Stage A: Starting final assessment for {total_ridge_selected} rules..."
+        )
+
+        assessed_progress = 0
+        for row in registry.to_dict("records"):
+            assessed_progress += 1
+            if assessed_progress == 1 or assessed_progress % 100 == 0:
+                tprint(
+                    f"Stage A: Final assessment progress {assessed_progress}/{total_ridge_selected} "
+                    f"rules"
+                )
+            canonical_key = str(row["canonical_key"])
+            if canonical_key in mask_cache:
+                mask = mask_cache[canonical_key]
+            elif self.mask_resolver:
+                mask = self.mask_resolver.get_mask(canonical_key)
+                mask_cache[canonical_key] = mask
+            else:
+                mask = self._get_mask_for_rule(canonical_key, X)
+                mask_cache[canonical_key] = mask
+            if np.sum(mask) < 20:
+                continue
+
+            # 0. Infrastructure: Component Extraction
+            slots = parse_slot_map(
+                canonical_key,
+                self.cfg.get("slot_order", ("trigger", "location", "regime")),
+            )
+
+            side = str(row.get("side", "long"))
+            if side not in target_ret_by_side:
+                side = "long"
+            horizon_raw = row.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+            target_key = str(row.get("source_target", "unknown"))
+
+            # The bucket grouping is determined strictly by side and horizon
+            group_bucket_key = (side, horizon_key)
+
+            target_ret = target_ret_by_side[side]
+            global_auc = float(baseline_cache[side]["global_auc"])
+            global_entropy = float(baseline_cache[side]["global_entropy"])
+            baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
+
+            # 1. Triple Barrier
+            rule_tp_f, rule_sl_f, rule_to_f = tbm_side_map[side]
+
+            tbm_metrics = self._compute_tbm_metrics(
+                mask, rule_tp_f, rule_sl_f, rule_to_f, target_ret
+            )
+
+            # 2-6. Cached cheap stats (no Ridge work)
+            cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
+
+            sign_consistency = float(cheap["sign_consistency"])
+            support_pct = float(cheap["support_pct"])
+            support_ok = bool(cheap["support_ok"])
+            support_score = float(cheap["support_score"])
+            avg_trades = float(cheap["avg_trades"])
+            density_dispersion = float(cheap["density_dispersion"])
+            tail_ratio = float(cheap["tail_ratio"])
+            mae = float(cheap["mae"])
+            mfe = float(cheap["mfe"])
+            mean_ret_global = float(cheap["mean_ret_global"])
+            mean_ret_mask = float(cheap["mean_ret_mask"])
+            ret_uplift = float(cheap["ret_uplift"])
+
+            rejected, rejection_reason = cheap_gate_result.get(
+                (group_bucket_key, canonical_key), (False, "")
+            )
+
+            # 7. Learnability (Efficiency Frontier) - expensive section
+            subset_oof_coverage = 0.0
+            mask_auc = np.nan
+            lift = np.nan
+            entropy_red = np.nan
+            if not rejected:
+                run_ridge = False
+                if (
+                    hasattr(self, "bucket_ridge_keys")
+                    and group_bucket_key in self.bucket_ridge_keys
+                ):
+                    if canonical_key in self.bucket_ridge_keys[group_bucket_key]:
+                        run_ridge = True
+
+                if run_ridge:
+                    mask_auc, subset_oof_coverage = self._compute_subset_auc(
+                        X, target_ret, mask, folds
+                    )
+                    if np.isfinite(mask_auc) and np.isfinite(global_auc):
+                        lift = mask_auc - global_auc
+                else:
+                    subset_oof_coverage = float(np.mean(mask))
+                    lift = 0.0  # Neutral lift
+                    rejected, rejection_reason = True, "not_in_top_ridge_candidates"
+
+                mask_entropy = self._compute_entropy(target_ret[mask])
+                entropy_red = 1.0 - (mask_entropy / (global_entropy + 1e-9))
+                if subset_oof_coverage < min_oof_coverage:
+                    rejected, rejection_reason = (
+                        True,
+                        "insufficient_subset_oof_coverage",
+                    )
+                elif not np.isfinite(lift):
+                    rejected, rejection_reason = True, "missing_learnability"
+                elif run_ridge and lift < 0.01:  # Lower threshold for lift (was 1.10)
+                    rejected, rejection_reason = True, "low_lift"
+
+            # 8. Event-based Expected Value
+            tp_payoff = tp_atr  # TP payoff in ATR units
+            sl_payoff = sl_atr  # SL payoff in ATR units
+            timeout_payoff = mean_ret_mask  # Average return for timeouts
+
+            ev_per_event = (
+                tbm_metrics["tp_rate"] * tp_payoff
+                - tbm_metrics["sl_rate"] * sl_payoff
+                + tbm_metrics["timeout_rate"] * timeout_payoff
+            )
+
+            # Fetch cheap_rank for Final Regime Score
+            cheap_rank = bucket_cheap_ranks.get(group_bucket_key, {}).get(
+                canonical_key, -np.inf
+            )
+            if not np.isfinite(cheap_rank):
+                cheap_rank = 0.0
+
+            # 9. Final Regime Score
+            regime_score = (
+                0.30 * cheap_rank
+                + 0.20 * lift
+                + 0.20 * ret_uplift
+                + 0.20 * ev_per_event
+                + 0.10 * (mask_auc if np.isfinite(mask_auc) else 0.0)
+            )
+
+            # Production classification
+            rule_for_classification = {
+                "n_folds": row.get("n_folds", 0),
+                "presence_freq": row.get("presence_freq", 0.0),
+                "directional_mean_ret": row.get("directional_mean_ret", np.nan),
+                "min_support_actual": row.get("min_support_actual", 0),
+                "hurdle_excess": row.get("hurdle_excess", np.nan),
+                "trade_path_quality_score": row.get("trade_path_quality_score", np.nan),
+                "is_structurally_sound": not rejected,
+                "sign_consistency": sign_consistency,
+            }
+            (
+                production_classification,
+                classification_diagnostics,
+            ) = classify_rule_production_quality(rule=rule_for_classification)
+
+            # Rule type classification
+            rule_type_class = classify_rule_type(
+                directional_mean_ret=row.get("directional_mean_ret", np.nan),
+                mean_uplift=row.get("mean_uplift", np.nan),
+                sign_consistency=sign_consistency,
+                required_hurdle=row.get("required_hurdle", 0.0),
+            )
+
+            assessment_results.append(
+                {
+                    "canonical_key": row["canonical_key"],
+                    "trigger": slots.get("trigger", "*"),
+                    "location": slots.get("location", "*"),
+                    "regime": slots.get("regime", "*"),
+                    "regime_score": regime_score,
+                    "is_structurally_sound": not rejected,
+                    "rejection_reason": rejection_reason,
+                    "support_pct": support_pct,
+                    "directional_mean_ret": float(
+                        row.get("directional_mean_ret", np.nan)
+                    ),
+                    "presence_freq": float(row.get("presence_freq", np.nan)),
+                    "min_support_actual": float(row.get("min_support_actual", np.nan)),
+                    "n_folds": int(row.get("n_folds", 0) or 0),
+                    "mean_uplift": float(row.get("mean_uplift", np.nan)),
+                    "required_hurdle": float(row.get("required_hurdle", np.nan)),
+                    "hurdle_excess": float(row.get("hurdle_excess", np.nan)),
+                    "trade_path_quality_score": float(
+                        row.get("trade_path_quality_score", np.nan)
+                    ),
+                    "quality_stability_score": float(
+                        row.get("quality_stability_score", np.nan)
+                    ),
+                    "full_quality_score": float(row.get("full_quality_score", np.nan)),
+                    "composite_score": float(row.get("composite_score", np.nan)),
+                    "rule_gain_score": float(row.get("rule_gain_score", np.nan)),
+                    "rule_split_score": float(row.get("rule_split_score", np.nan)),
+                    "rule_model_importance_score": float(
+                        row.get("rule_model_importance_score", np.nan)
+                    ),
+                    "support_ok": support_ok,
+                    "support_score": support_score,
+                    "avg_trades_per_day": avg_trades,
+                    "density_dispersion": density_dispersion,
+                    "tail_ratio": tail_ratio,
+                    "mae": mae,
+                    "mfe": mfe,
+                    "mean_ret_global": mean_ret_global,
+                    "mean_ret_mask": mean_ret_mask,
+                    "ret_uplift": ret_uplift,
+                    "lift": lift,
+                    "learn_eff_ratio": np.nan,  # Deprecated - same as lift
+                    "subset_oof_coverage": subset_oof_coverage,
+                    "baseline_oof_coverage": baseline_oof_coverage,
+                    "mask_auc": mask_auc,
+                    "global_auc": global_auc,
+                    "global_entropy": global_entropy,
+                    "entropy_reduction": entropy_red,
+                    "tp_rate": tbm_metrics["tp_rate"],
+                    "sl_rate": tbm_metrics["sl_rate"],
+                    "timeout_rate": tbm_metrics["timeout_rate"],
+                    "ev_per_trade": tbm_metrics["ev_per_trade"],
+                    "ev_per_event": ev_per_event,
+                    "win_rate_conditional": tbm_metrics["win_rate_conditional"],
+                    "win_rate_unconditional": tbm_metrics["win_rate_unconditional"],
+                    "learnability_step_c_score": float(
+                        row.get("learnability_step_c_score", np.nan)
+                    ),
+                    "production_classification": production_classification,
+                    "classification_diagnostics": json.dumps(
+                        classification_diagnostics
+                    ),
+                    "rule_type_class": rule_type_class,
+                }
+            )
+
+        assessment_df = pd.DataFrame(assessment_results)
+        if assessment_df.empty:
+            tprint(f"Stage A: Final assessment complete - no rules passed all gates")
+            return assessment_df
+
+        assessed_count = len(assessment_df)
+        sound_count = assessment_df["is_structurally_sound"].sum()
+        rejected_count = assessed_count - sound_count
+
+        tprint(
+            f"Stage A: Final assessment complete - {assessed_count} assessed | {sound_count} structurally sound | {rejected_count} rejected"
+        )
+
+        rejection_counts = assessment_df[~assessment_df["is_structurally_sound"]][
+            "rejection_reason"
+        ].value_counts()
+        if not rejection_counts.empty:
+            tprint("Top Assessor Rejection Reasons:")
+            for reason, count in rejection_counts.items():
+                tprint(f"  - {reason}: {count}")
+
+        # Save rejection summary as attribute
+        self.rejection_summary = rejection_counts.to_dict()
+
+        top_sound = (
+            assessment_df[assessment_df["is_structurally_sound"]]
+            .sort_values("regime_score", ascending=False)
+            .head(5)
+        )
+        if not top_sound.empty:
+            tprint("Top 5 Structurally Sound Rules by Regime Score:")
+            for row in top_sound[["canonical_key", "regime_score"]].to_dict("records"):
+                regime_score = row.get("regime_score", np.nan)
+                if isinstance(regime_score, (int, float, np.floating)) and np.isfinite(
+                    regime_score
+                ):
+                    tprint(
+                        f"  - {row.get('canonical_key', '<unknown>')}: {float(regime_score):.3f}"
+                    )
+                else:
+                    tprint(
+                        f"  - {row.get('canonical_key', '<unknown>')}: {regime_score}"
+                    )
+
+        return assessment_df

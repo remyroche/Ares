@@ -4,9 +4,11 @@ import pickle
 import re
 import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
-
+import math
+  
 import numpy as np
 import pandas as pd
+import scipy.special
 from joblib import Memory
 
 import extreme_price_movements.fast_funcs as ff
@@ -629,10 +631,10 @@ def add_regime_gates(
     df["mkt_rv_pct"] = (
         ((df["mkt_rv"] - rv_mean) / rv_std).clip(-6, 6).fillna(0.0).astype(np.float32)
     )
-    import math
+
 
     df["mkt_rv_pct"] = (
-        0.5 * (1.0 + np.vectorize(math.erf)(df["mkt_rv_pct"] / np.sqrt(2.0)))
+        0.5 * (1.0 + scipy.special.erf(df["mkt_rv_pct"] / np.sqrt(2.0)))
     ).astype(np.float32)
 
     abs_ret = df["mkt_ret24h"].abs()

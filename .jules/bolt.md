@@ -36,3 +36,5 @@ Learning: The `apply_to_frame` dispatcher function in `fast_funcs.py` was missin
 Action: Always verify that newly created `_parallel` Numba kernels are explicitly mapped inside the `if func == ...` routing logic of `apply_to_frame`. Ensure both `rolling_std_nb` and `_numba_rolling_zscore_nan_safe_1d` map to their respective `_parallel` implementations.
 
 ## 2025-05-18 - [Features] Learning: Avoid Pandas column iteration inside feature compilation pipelines. Action: When calculating row-wise stats or applying logic like `close_location_in_bar` across columns, define a `_parallel` Numba kernel wrapping `prange(n_cols)` to unlock multi-threading and eliminate pandas Series instantiation overhead.
+
+## 2024-05-24 - [Numpy Vectorize Performance] Learning: [np.vectorize is simply a convenience wrapper that runs a slow Python for-loop under the hood, resulting in catastrophic performance overhead on large DataFrames when applying math functions like `erf`.] Action: [Always replace `np.vectorize(func)` with native C-level ufuncs like `scipy.special.erf` for mathematical operations on arrays to achieve orders of magnitude speedups (~50x).]

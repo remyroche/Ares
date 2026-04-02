@@ -417,7 +417,8 @@ def compute_ridge_pnl(
     convex_power: float = 2.0,
     starting_capital: float = 1.0,
     forbid_concurrent: bool = True,
-    max_concurrent_per_symbol: int = 2
+    max_concurrent_per_symbol: int = 1,
+    max_concurrent_total: int = 3
 ) -> Dict[str, Any]:
     eligible_trades = [
         t for t in trades
@@ -438,6 +439,8 @@ def compute_ridge_pnl(
         selected_trades = []
         # Maintain active intervals separately per symbol
         active_intervals_per_symbol: Dict[str, List[pd.Timestamp]] = collections.defaultdict(list)
+        # Global active intervals to enforce total concurrency
+        active_intervals_global: List[pd.Timestamp] = []
 
         for t in eligible_trades:
             # Drop expired active intervals for that symbol
@@ -445,9 +448,14 @@ def compute_ridge_pnl(
             active_intervals = [end_time for end_time in active_intervals if t.entry_time < end_time]
             active_intervals_per_symbol[t.symbol] = active_intervals
 
-            if len(active_intervals) < max_concurrent_per_symbol:
+            # Drop expired active intervals globally
+            active_intervals_global = [end_time for end_time in active_intervals_global if t.entry_time < end_time]
+
+            # Enforce concurrency policy
+            if len(active_intervals) < max_concurrent_per_symbol and len(active_intervals_global) < max_concurrent_total:
                 selected_trades.append(t)
                 active_intervals_per_symbol[t.symbol].append(t.exit_time)
+                active_intervals_global.append(t.exit_time)
             else:
                 continue
     else:
@@ -10212,8 +10220,6 @@ class MaskAssessor:
                 "ridge_pnl_raw_at_optimal_threshold": np.nan,
                 "avg_pnl_per_day": np.nan,
                 "avg_pnl_per_active_symbol_day": np.nan,
-                "ridge_trade_sortino_raw": 0.0,
-                "ridge_trade_sortino": 0.0,
                 "ridge_trade_sortino_7d": 0.0,
                 "ridge_trade_sortino_30d": 0.0,
                 "ridge_trade_sortino_90d": 0.0,
@@ -10421,6 +10427,7 @@ class MaskAssessor:
                     "threshold_star_optimal_pnl": ridge_trade_metrics.get("threshold_star_optimal_pnl", np.nan),
                     "ridge_pnl_raw": ridge_trade_metrics.get("ridge_pnl_raw", 0.0),
                     "ridge_pnl_raw_at_optimal_threshold": ridge_trade_metrics.get("ridge_pnl_raw_at_optimal_threshold", np.nan),
+                    "avg_trades_per_day": ridge_trade_metrics.get("avg_trades_per_day", np.nan),
                     "avg_pnl_per_day": ridge_trade_metrics.get("avg_pnl_per_day", np.nan),
                     "avg_pnl_per_active_symbol_day": ridge_trade_metrics.get("avg_pnl_per_active_symbol_day", np.nan),
                     "ridge_trade_sortino_7d": ridge_trade_metrics.get("ridge_trade_sortino_7d", 0.0),
@@ -10539,8 +10546,11 @@ class MaskAssessor:
             if entry_times.dt.tz is not None:
                 entry_times = entry_times.dt.tz_convert("UTC").dt.tz_localize(None)
 
+            # Robust timezone-safe weekly bucketing: floor to day, then subtract dayofweek to get Monday
+            # entry_times is already tz-naive here
+            monday_floors = entry_times.dt.floor("D") - pd.to_timedelta(entry_times.dt.dayofweek, unit="D")
             df_trades = pd.DataFrame({
-                "week": entry_times.dt.to_period("W").dt.start_time,
+                "week": monday_floors,
                 "pnl": net_returns
             })
 
@@ -10884,8 +10894,6 @@ class MaskAssessor:
             return {
                 "threshold_star": np.nan,
                 "ridge_pnl_raw": 0.0,
-                "ridge_trade_sortino_raw": 0.0,
-                "ridge_trade_sortino": 0.0,
                 "trades_per_symbol_day_above_threshold_star": 0.0,
                 "total_trades": 0,
                 "rejected": True,
@@ -10932,8 +10940,11 @@ class MaskAssessor:
         # Calculate total valid symbol days observed from the candidate's valid subset
         # Floor the valid timestamps to the day level before counting unique days to get true symbol-days
         valid_days = timestamps.dt.floor("D")
-        valid_symbol_days_observed = pd.DataFrame({"symbol": symbols, "day": valid_days.to_numpy()}).groupby("symbol")["day"].nunique().sum()
-        if valid_symbol_days_observed == 0:
+        valid_df = pd.DataFrame({"symbol": symbols, "day": valid_days.to_numpy()}).drop_duplicates()
+        valid_symbol_days_observed = len(valid_df)
+        valid_calendar_days_observed = valid_df["day"].nunique()
+
+        if valid_symbol_days_observed == 0 or valid_calendar_days_observed == 0:
              return _empty_metrics()
 
         # Check if actual exit time 't1' is available in data
@@ -10952,14 +10963,22 @@ class MaskAssessor:
         all_trades = []
         for i in range(len(timestamps)):
              entry_t = timestamps[i]
+             exit_t = None
 
              # Prefer actual exit time if available, otherwise fallback to horizon proxy
              # Validate that t1 > entry_time and that it is not NaT
-             if t1_vals is not None and not pd.isna(t1_vals[i]) and t1_vals[i] > entry_t:
-                 exit_t = t1_vals[i]
-             else:
+             if t1_vals is not None:
+                 t1_candidate = t1_vals[i]
+                 if pd.notna(t1_candidate) and t1_candidate > entry_t:
+                     exit_t = t1_candidate
+
+             if exit_t is None:
                  # Fallback: estimate exit time using horizon proxy safely
                  exit_t = entry_t + pd.Timedelta(hours=horizon)
+
+             # Ensure consistent timezone handling
+             if getattr(exit_t, 'tz', None) is None and getattr(entry_t, 'tz', None) is not None:
+                 exit_t = exit_t.tz_localize('UTC')
 
              all_trades.append(EvaluatedTrade(
                  entry_time=entry_t,
@@ -10990,7 +11009,8 @@ class MaskAssessor:
                 convex_power=convex_power,
                 starting_capital=1.0,
                 forbid_concurrent=forbid_concurrent,
-                max_concurrent_per_symbol=2
+                max_concurrent_per_symbol=1,
+                max_concurrent_total=3
             )
 
             pnl_raw = float(pnl_res["ridge_pnl_raw"])
@@ -11033,11 +11053,34 @@ class MaskAssessor:
             convex_power=convex_power,
             starting_capital=1.0,
             forbid_concurrent=forbid_concurrent,
-            max_concurrent_per_symbol=2
+            max_concurrent_per_symbol=1,
+                max_concurrent_total=3
         )
 
         final_trades = final_pnl_res["selected_trades"]
         total_trades = len(final_trades)
+
+        # Validation: check concurrency
+        if total_trades > 0 and forbid_concurrent:
+            events = []
+            for t in final_trades:
+                events.append((t.entry_time, 1, t.symbol))
+                events.append((t.exit_time, -1, t.symbol))
+            events.sort(key=lambda x: (x[0], x[1])) # Exit first on exact same time
+
+            symbol_open = collections.defaultdict(int)
+            total_open = 0
+            for dt, delta, sym in events:
+                symbol_open[sym] += delta
+                total_open += delta
+                if symbol_open[sym] > 1:
+                    res = _empty_metrics()
+                    res["reject_reason"] = {"reason": "validation_failed: >1 trade per symbol"}
+                    return res
+                if total_open > 3:
+                    res = _empty_metrics()
+                    res["reject_reason"] = {"reason": "validation_failed: >3 total concurrent trades"}
+                    return res
 
         # Alignment Note:
         # Numerator (`total_trades`) counts realized execution intervals defined by their entry_time.
@@ -11084,7 +11127,10 @@ class MaskAssessor:
 
         # 6. Compute avg PnL metrics
         ridge_pnl_raw = final_pnl_res["ridge_pnl_raw"]
-        avg_pnl_per_day = ridge_pnl_raw / max(valid_days.nunique(), 1)
+
+        # Denominators are purely derived from the candidate's valid universe
+        avg_trades_per_day = total_trades / max(valid_calendar_days_observed, 1)
+        avg_pnl_per_day = ridge_pnl_raw / max(valid_calendar_days_observed, 1)
 
         if total_trades > 0:
             active_days_series = pd.Series([t.entry_time for t in final_trades]).dt.floor("D")
@@ -11100,6 +11146,7 @@ class MaskAssessor:
             "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
             "ridge_pnl_raw_at_optimal_threshold": best_pnl_raw,
             "ridge_pnl_raw": ridge_pnl_raw,
+            "avg_trades_per_day": avg_trades_per_day,
             "avg_pnl_per_day": avg_pnl_per_day,
             "avg_pnl_per_active_symbol_day": avg_pnl_per_active_symbol_day,
             "ridge_trade_sortino_7d": sortino_7d,
@@ -11565,8 +11612,11 @@ def select_top_diverse_rules(
                 accepted_union_mask = np.logical_or.reduce(accepted_masks)
 
         to_remove = []
+        updates = []
 
-        for idx in remaining_idx:
+        # Iterate over a sorted list to ensure deterministic traversal
+        current_remaining = sorted(list(remaining_idx))
+        for idx in current_remaining:
             row = working_reg.loc[idx]
             key = str(row["canonical_key"])
             rule_mask = mask_map.get(key)
@@ -11612,21 +11662,26 @@ def select_top_diverse_rules(
                 - 0.1 * (worst_penalty ** 2)
             )
 
-            # Keep track of metrics for export/audit
-            working_reg.at[idx, "overlap_penalty"] = overlap_penalty
-            working_reg.at[idx, "selection_score"] = selection_score
+            # Store metrics for batch update to avoid in-loop mutation of dataframe
+            updates.append((idx, overlap_penalty, selection_score))
 
             if selection_score > best_score:
                 best_score = selection_score
                 best_idx = idx
                 best_overlap_penalty = overlap_penalty
 
+        # Apply updates outside the iteration loop safely
+        for idx, overlap_penalty, selection_score in updates:
+            working_reg.at[idx, "overlap_penalty"] = overlap_penalty
+            working_reg.at[idx, "selection_score"] = selection_score
+
         # Apply removals
         remaining_idx.difference_update(to_remove)
 
         if best_idx is not None and np.isfinite(best_score):
             selected_idx.append(best_idx)
-            remaining_idx.remove(best_idx)
+            if best_idx in remaining_idx:
+                remaining_idx.remove(best_idx)
         else:
             break
 

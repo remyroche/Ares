@@ -837,17 +837,19 @@ def _compute_cheap_stats_batch_numba(
 
     # Pre-compute global statistics
     mean_ret_global = np.float32(np.nanmean(target_ret))
+    valid_mask = ~np.isnan(target_ret)
+    valid_samples = np.sum(valid_mask)
 
     for i in range(n_rules):
         mask = masks[i]
-        n_active = np.sum(mask)
+        n_active = np.sum(mask & valid_mask)
 
         if n_active < 2:
             results[i, :] = np.nan
             continue
 
         # Support metrics
-        support_pct = np.float32(n_active / n_samples)
+        support_pct = np.float32(n_active / max(valid_samples, 1))
         support_ok = np.float32(
             1.0 if support_min <= support_pct <= support_max else 0.0
         )
@@ -8470,7 +8472,7 @@ class MaskAssessor:
         coverage_denominator: np.ndarray,
         min_predicted_points: int = 100,
     ) -> Tuple[float, float]:
-        predicted_mask = np.isfinite(oof_preds) & np.isfinite(y)
+        predicted_mask = np.isfinite(oof_preds) & np.isfinite(y) & coverage_denominator.astype(bool)
         coverage_base_mask = np.isfinite(y) & coverage_denominator.astype(bool)
         coverage_base = int(np.sum(coverage_base_mask))
         predicted_count = int(np.sum(predicted_mask))
@@ -8507,7 +8509,7 @@ class MaskAssessor:
         coverage_denominator: np.ndarray,
         min_predicted_points: int = 100,
     ) -> Dict[str, float]:
-        predicted_mask = np.isfinite(oof_preds) & np.isfinite(y)
+        predicted_mask = np.isfinite(oof_preds) & np.isfinite(y) & coverage_denominator.astype(bool)
         coverage_base_mask = np.isfinite(y) & coverage_denominator.astype(bool)
         coverage_base = int(np.sum(coverage_base_mask))
         predicted_count = int(np.sum(predicted_mask))
@@ -8789,7 +8791,9 @@ class MaskAssessor:
             mean_ret_global = mean_ret_global_by_side[side]
             for idx, canonical_key in enumerate(unique_rule_keys):
                 support_count = int(support_counts_arr[idx])
-                support_pct = float(support_count / max(len(data), 1))
+                # support_pct: number of valid active rows / number of valid evaluation universe rows
+                valid_universe_count = int(np.sum(np.isfinite(side_returns)))
+                support_pct = float(support_count / max(valid_universe_count, 1))
                 support_ok = support_min <= support_pct <= support_max
                 if preferred_support_min <= support_pct <= preferred_support_max:
                     support_score = 1.0
@@ -8834,7 +8838,11 @@ class MaskAssessor:
             cached_stats = cheap_stats_cache.get(cache_key)
             if cached_stats is not None:
                 return cached_stats
-            support_pct = float(np.mean(mask))
+            # support_pct: number of valid active rows / number of valid evaluation universe rows
+            valid_returns = target_ret_by_side[side]
+            valid_universe_count = int(np.sum(np.isfinite(valid_returns)))
+            support_count = int(np.sum(mask & np.isfinite(valid_returns)))
+            support_pct = float(support_count / max(valid_universe_count, 1))
             return {
                 "support_pct": support_pct,
                 "support_ok": float(support_min <= support_pct <= support_max),
@@ -10014,17 +10022,32 @@ class MaskAssessor:
             lift = np.nan
             entropy_red = np.nan
             ridge_trade_metrics: Dict[str, Any] = {
-                "ridge_profitable_top_pct": np.nan,
-                "ridge_profitable_score_threshold": np.nan,
-                "ridge_profitable_trade_count": 0,
-                "ridge_profitable_trades_per_day": 0.0,
-                "ridge_profitable_win_rate": np.nan,
-                "ridge_profitable_avg_net_ret": np.nan,
-                "ridge_profitable_avg_pnl_per_day": np.nan,
-                "ridge_profitable_total_net_pnl": np.nan,
                 "ridge_best_top_pct": np.nan,
                 "ridge_best_total_net_pnl": np.nan,
             }
+
+            for prefix in ["ridge_profitable", "ridge_best", "ridge_midpoint"]:
+                for key, val in {
+                    "top_pct": np.nan,
+                    "score_threshold": np.nan,
+                    "trade_count": 0,
+                    "trades_per_day": 0.0,
+                    "trades_per_week": 0.0,
+                    "win_rate": np.nan,
+                    "avg_net_ret": np.nan,
+                    "avg_pnl_per_day": np.nan,
+                    "avg_pnl_per_week": np.nan,
+                    "avg_pnl_per_active_symbol_day": np.nan,
+                    "daily_pnl_std": np.nan,
+                    "weekly_pnl_std": np.nan,
+                    "daily_sortino": np.nan,
+                    "weekly_sortino": np.nan,
+                    "avg_position_weight": np.nan,
+                    "total_net_pnl": np.nan,
+                    "fold_pnls": [],
+                }.items():
+                    ridge_trade_metrics[f"{prefix}_{key}"] = val
+
             if not rejected:
                 run_ridge = False
                 if (
@@ -10395,6 +10418,25 @@ class MaskAssessor:
             return base_regime_score
 
         assessment_df["regime_score"] = assessment_df.apply(update_regime_score, axis=1)
+
+        # Integrity Checks
+        def integrity_check(row):
+            support = row.get("support_pct", np.nan)
+            if np.isfinite(support) and not (0.0 <= support <= 1.0):
+                tprint(f"Integrity WARNING: support_pct {support} out of bounds for rule {row['canonical_key']}")
+
+            for auc_col in ["mask_roc_auc", "mask_pr_auc"]:
+                auc_val = row.get(auc_col, np.nan)
+                if np.isfinite(auc_val) and not (0.0 <= auc_val <= 1.0):
+                    tprint(f"Integrity WARNING: {auc_col} {auc_val} out of bounds for rule {row['canonical_key']}")
+
+            for pnl_col in ["ridge_profitable_avg_pnl_per_day", "ridge_profitable_avg_pnl_per_active_symbol_day"]:
+                pnl_val = row.get(pnl_col, np.nan)
+                trade_count = row.get("ridge_profitable_trade_count", 0)
+                if trade_count > 0 and pd.isna(pnl_val):
+                    tprint(f"Integrity WARNING: {pnl_col} is NaN but trade_count > 0 for rule {row['canonical_key']}")
+
+        assessment_df.apply(integrity_check, axis=1)
 
         assessed_count = len(assessment_df)
         sound_count = assessment_df["is_structurally_sound"].sum()
@@ -10806,7 +10848,8 @@ class MaskAssessor:
             trades_per_week = float(k / observed_weeks)
 
             day_pnl = pd.Series(weighted_net).groupby(sel_days).sum()
-            avg_pnl_per_day = float(day_pnl.mean()) if len(day_pnl) > 0 else np.nan
+            # avg_pnl_per_day: total pnl aggregated by day then average over observed days in the relevant evaluation universe
+            avg_pnl_per_day = float(total_net_pnl / observed_days) if observed_days > 0 else np.nan
             daily_pnl_std = float(day_pnl.std(ddof=0)) if len(day_pnl) > 0 else np.nan
             if len(day_pnl) > 0:
                 downside = np.minimum(day_pnl.to_numpy(dtype=np.float32), 0.0)
@@ -10816,7 +10859,8 @@ class MaskAssessor:
                 daily_sortino = np.nan
 
             week_pnl = pd.Series(weighted_net).groupby(sel_weeks).sum()
-            avg_pnl_per_week = float(week_pnl.mean()) if len(week_pnl) > 0 else np.nan
+            # avg_pnl_per_week: total pnl aggregated by week then average over observed weeks in the relevant evaluation universe
+            avg_pnl_per_week = float(total_net_pnl / observed_weeks) if observed_weeks > 0 else np.nan
             weekly_pnl_std = float(week_pnl.std(ddof=0)) if len(week_pnl) > 0 else np.nan
             if len(week_pnl) > 0:
                 downside_w = np.minimum(week_pnl.to_numpy(dtype=np.float32), 0.0)
@@ -10833,6 +10877,7 @@ class MaskAssessor:
                 ),
                 1,
             )
+            # avg_pnl_per_active_symbol_day: total pnl divided by the number of unique (symbol, day) combinations that actually had selected/realized trades
             avg_pnl_per_active_symbol_day = float(total_net_pnl / active_symbol_days)
             avg_position_weight = (
                 float(np.mean(weights)) if len(weights) > 0 else np.nan

@@ -6401,8 +6401,22 @@ def run_mining_stage(
     )
     if not assessment_df.empty:
         atomic_to_csv(assessment_df, output_dir / "final_mask_assessment_audit.csv")
-        accepted_registry = candidate_registry.merge(
-            assessment_df, on="canonical_key", how="left"
+
+        # Clean merge: verify uniqueness of canonical_key in both sides
+        if candidate_registry["canonical_key"].duplicated().any():
+            raise ValueError("Duplicate canonical_key found in candidate_registry before final assessment merge")
+        if assessment_df["canonical_key"].duplicated().any():
+            raise ValueError("Duplicate canonical_key found in assessment_df before final assessment merge")
+
+        # Select explicit canonical columns to avoid _x/_y leakage
+        overlap_cols = list(set(candidate_registry.columns).intersection(assessment_df.columns))
+        overlap_cols.remove("canonical_key")
+
+        # Drop overlapping columns from candidate registry to prefer the final assessment versions
+        candidate_registry_clean = candidate_registry.drop(columns=overlap_cols)
+
+        accepted_registry = candidate_registry_clean.merge(
+            assessment_df, on="canonical_key", how="left", validate="1:1"
         )
 
         if hasattr(assessor, "rejection_summary") and assessor.rejection_summary:
@@ -6425,7 +6439,33 @@ def run_mining_stage(
         accepted_registry = accepted_registry[
             accepted_registry["is_structurally_sound"].fillna(False)
         ]
-    accepted_registry["preset"] = cfg.get("preset", "exploration")
+
+    if "preset" not in accepted_registry.columns:
+        accepted_registry["preset"] = cfg.get("preset", "exploration")
+
+    # Ensure canonical schema by dropping duplicate columns before export
+    accepted_registry = accepted_registry.loc[:, ~accepted_registry.columns.duplicated()]
+
+    # Pre-export integrity pass
+    _cols = accepted_registry.columns
+    if any(c.endswith("_x") or c.endswith("_y") for c in _cols):
+        bad_cols = [c for c in _cols if c.endswith("_x") or c.endswith("_y")]
+        raise ValueError(f"Merge suffixes _x or _y detected in final registry: {bad_cols}")
+
+    if "support_pct" in accepted_registry.columns:
+        invalid_support = accepted_registry[~accepted_registry["support_pct"].between(0.0, 1.0, inclusive="both")]
+        if not invalid_support.empty:
+            raise ValueError(f"Found {len(invalid_support)} rows with support_pct out of [0, 1] bounds")
+
+    for auc_col in ["mask_roc_auc", "mask_pr_auc", "global_roc_auc", "global_pr_auc"]:
+        if auc_col in accepted_registry.columns:
+            invalid_auc = accepted_registry[
+                (~accepted_registry[auc_col].isna()) &
+                (~accepted_registry[auc_col].between(0.0, 1.0, inclusive="both"))
+            ]
+            if not invalid_auc.empty:
+                raise ValueError(f"Found {len(invalid_auc)} rows with {auc_col} out of [0, 1] bounds")
+
     accepted_registry = atomic_to_csv(
         accepted_registry,
         output_dir / "accepted_rule_registry.csv",
@@ -8614,7 +8654,8 @@ class MaskAssessor:
         coverage_denominator: np.ndarray,
         min_predicted_points: int = 100,
     ) -> Tuple[float, float]:
-        predicted_mask = np.isfinite(oof_preds) & np.isfinite(y)
+        # Ensure we only compute metrics on the exact masked subset.
+        predicted_mask = np.isfinite(oof_preds) & np.isfinite(y) & coverage_denominator.astype(bool)
         coverage_base_mask = np.isfinite(y) & coverage_denominator.astype(bool)
         coverage_base = int(np.sum(coverage_base_mask))
         predicted_count = int(np.sum(predicted_mask))
@@ -8622,6 +8663,7 @@ class MaskAssessor:
 
         if predicted_count < min_predicted_points:
             return np.nan, coverage
+
         y_predicted = y[predicted_mask]
         preds = oof_preds[predicted_mask]
         unique_y = np.unique(y_predicted)
@@ -8651,7 +8693,8 @@ class MaskAssessor:
         coverage_denominator: np.ndarray,
         min_predicted_points: int = 100,
     ) -> Dict[str, float]:
-        predicted_mask = np.isfinite(oof_preds) & np.isfinite(y)
+        # Ensure we only compute metrics on the exact masked subset.
+        predicted_mask = np.isfinite(oof_preds) & np.isfinite(y) & coverage_denominator.astype(bool)
         coverage_base_mask = np.isfinite(y) & coverage_denominator.astype(bool)
         coverage_base = int(np.sum(coverage_base_mask))
         predicted_count = int(np.sum(predicted_mask))
@@ -8953,6 +8996,7 @@ class MaskAssessor:
 
                 mean_ret_mask = float(mean_ret_arr[idx])
                 cheap_stats_cache[(canonical_key, side)] = {
+                    "support_count": support_count,
                     "support_pct": support_pct,
                     "support_ok": float(support_ok),
                     "support_score": support_score,
@@ -8978,8 +9022,11 @@ class MaskAssessor:
             cached_stats = cheap_stats_cache.get(cache_key)
             if cached_stats is not None:
                 return cached_stats
-            support_pct = float(np.mean(mask))
+
+            support_count = int(np.sum(mask))
+            support_pct = float(support_count / max(len(data), 1))
             return {
+                "support_count": support_count,
                 "support_pct": support_pct,
                 "support_ok": float(support_min <= support_pct <= support_max),
                 "support_score": 1.0,
@@ -10158,16 +10205,26 @@ class MaskAssessor:
             lift = np.nan
             entropy_red = np.nan
             ridge_trade_metrics: Dict[str, Any] = {
-                "ridge_profitable_top_pct": np.nan,
-                "ridge_profitable_score_threshold": np.nan,
-                "ridge_profitable_trade_count": 0,
-                "ridge_profitable_trades_per_day": 0.0,
-                "ridge_profitable_win_rate": np.nan,
-                "ridge_profitable_avg_net_ret": np.nan,
-                "ridge_profitable_avg_pnl_per_day": np.nan,
-                "ridge_profitable_total_net_pnl": np.nan,
-                "ridge_best_top_pct": np.nan,
-                "ridge_best_total_net_pnl": np.nan,
+                "threshold_star": np.nan,
+                "threshold_star_lowest_positive": np.nan,
+                "threshold_star_optimal_pnl": np.nan,
+                "ridge_pnl_raw": 0.0,
+                "ridge_pnl_raw_at_optimal_threshold": np.nan,
+                "avg_pnl_per_day": np.nan,
+                "avg_pnl_per_active_symbol_day": np.nan,
+                "ridge_trade_sortino_raw": 0.0,
+                "ridge_trade_sortino": 0.0,
+                "ridge_trade_sortino_7d": 0.0,
+                "ridge_trade_sortino_30d": 0.0,
+                "ridge_trade_sortino_90d": 0.0,
+                "ridge_trade_sortino_composite": 0.0,
+                "trades_per_symbol_day_above_threshold_star": 0.0,
+                "valid_symbol_days_observed": 0,
+                "total_trades": 0,
+                "rejected": True,
+                "reject_reason": {"reason": "did_not_run_ridge"},
+                "realized_trades": [],
+                "net_weighted_returns": []
             }
             if not rejected:
                 run_ridge = False
@@ -10303,6 +10360,7 @@ class MaskAssessor:
                     "regime_score": regime_score,
                     "is_structurally_sound": not rejected,
                     "rejection_reason": rejection_reason,
+                    "support_count": cheap.get("support_count", int(np.sum(mask))),
                     "support_pct": support_pct,
                     "directional_mean_ret": float(
                         row.get("directional_mean_ret", np.nan)
@@ -10363,6 +10421,8 @@ class MaskAssessor:
                     "threshold_star_optimal_pnl": ridge_trade_metrics.get("threshold_star_optimal_pnl", np.nan),
                     "ridge_pnl_raw": ridge_trade_metrics.get("ridge_pnl_raw", 0.0),
                     "ridge_pnl_raw_at_optimal_threshold": ridge_trade_metrics.get("ridge_pnl_raw_at_optimal_threshold", np.nan),
+                    "avg_pnl_per_day": ridge_trade_metrics.get("avg_pnl_per_day", np.nan),
+                    "avg_pnl_per_active_symbol_day": ridge_trade_metrics.get("avg_pnl_per_active_symbol_day", np.nan),
                     "ridge_trade_sortino_7d": ridge_trade_metrics.get("ridge_trade_sortino_7d", 0.0),
                     "ridge_trade_sortino_30d": ridge_trade_metrics.get("ridge_trade_sortino_30d", 0.0),
                     "ridge_trade_sortino_90d": ridge_trade_metrics.get("ridge_trade_sortino_90d", 0.0),
@@ -11022,12 +11082,26 @@ class MaskAssessor:
 
         ridge_trade_sortino_composite = 0.3 * sortino_7d + 0.3 * sortino_30d + 0.3 * sortino_90d
 
+        # 6. Compute avg PnL metrics
+        ridge_pnl_raw = final_pnl_res["ridge_pnl_raw"]
+        avg_pnl_per_day = ridge_pnl_raw / max(valid_days.nunique(), 1)
+
+        if total_trades > 0:
+            active_days_series = pd.Series([t.entry_time for t in final_trades]).dt.floor("D")
+            active_symbols_series = pd.Series([t.symbol for t in final_trades])
+            active_symbol_days = pd.DataFrame({"symbol": active_symbols_series, "day": active_days_series}).drop_duplicates().shape[0]
+            avg_pnl_per_active_symbol_day = ridge_pnl_raw / max(active_symbol_days, 1)
+        else:
+            avg_pnl_per_active_symbol_day = np.nan
+
         return {
             "threshold_star": threshold_star,
             "threshold_star_lowest_positive": threshold_star_lowest_positive,
             "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
             "ridge_pnl_raw_at_optimal_threshold": best_pnl_raw,
-            "ridge_pnl_raw": final_pnl_res["ridge_pnl_raw"],
+            "ridge_pnl_raw": ridge_pnl_raw,
+            "avg_pnl_per_day": avg_pnl_per_day,
+            "avg_pnl_per_active_symbol_day": avg_pnl_per_active_symbol_day,
             "ridge_trade_sortino_7d": sortino_7d,
             "ridge_trade_sortino_30d": sortino_30d,
             "ridge_trade_sortino_90d": sortino_90d,

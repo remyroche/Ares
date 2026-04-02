@@ -7161,21 +7161,27 @@ def build_global_stage_a_ridge_shortlist(
             if inter < 1.0:
                 continue
             min_support = max(min(cand_support, sel_support), 1.0)
-            overlap = inter / min_support
+            raw_overlap = inter / min_support
+
+            different_sides = str(row["side"]) != str(sel["side"])
+            different_horizons = str(row["source_horizon"]) != str(sel["source_horizon"])
+            side_factor = 0.3 if different_sides else 0.0
+            horizon_factor = 0.2 if different_horizons else 0.0
+            difference_leniency = max(0.0, side_factor + horizon_factor)
+            effective_overlap = raw_overlap * (1.0 - difference_leniency)
+
             support_ratio = min(cand_support, sel_support) / max(
                 max(cand_support, sel_support), 1e-9
             )
             if support_ratio < support_ratio_min:
                 continue
             threshold = same_bucket_thr
-            side_diff = str(row["side"]) != str(sel["side"])
-            horizon_diff = int(row["source_horizon"]) != int(sel["source_horizon"])
-            if side_diff or horizon_diff:
+            if different_sides or different_horizons:
                 threshold += diff_dim_bonus
-            if side_diff and horizon_diff:
+            if different_sides and different_horizons:
                 threshold += both_diff_bonus
             threshold = min(threshold, 0.995)
-            if overlap > threshold:
+            if effective_overlap > threshold:
                 keep = False
                 break
         if keep:
@@ -11630,10 +11636,18 @@ def select_top_diverse_rules(
             pairwise_raw_overlap = 0.0
             eligible_pairwise_overlaps = []
             for s_idx in selected_idx:
-                s_key = working_reg.loc[s_idx, "canonical_key"]
+                sel = working_reg.loc[s_idx]
+                s_key = sel["canonical_key"]
                 s_mask = mask_map.get(s_key)
                 if s_mask is not None:
-                    eligible_pairwise_overlaps.append(dice_overlap(rule_mask, s_mask))
+                    raw_overlap = dice_overlap(rule_mask, s_mask)
+                    different_sides = str(row.get("side")) != str(sel.get("side"))
+                    different_horizons = str(row.get("source_horizon")) != str(sel.get("source_horizon"))
+                    side_factor = 0.3 if different_sides else 0.0
+                    horizon_factor = 0.2 if different_horizons else 0.0
+                    difference_leniency = max(0.0, side_factor + horizon_factor)
+                    effective_overlap = raw_overlap * (1.0 - difference_leniency)
+                    eligible_pairwise_overlaps.append(effective_overlap)
 
             if eligible_pairwise_overlaps:
                 pairwise_raw_overlap = max(eligible_pairwise_overlaps)
@@ -11642,6 +11656,8 @@ def select_top_diverse_rules(
 
             union_raw_overlap = 0.0
             if accepted_union_mask is not None:
+                # We do not compute effective overlap for union mask as side/horizon
+                # could vary within the union. Leniency only applies to pairwise.
                 union_raw_overlap = dice_overlap(rule_mask, accepted_union_mask)
 
             union_overlap_penalty = union_raw_overlap if union_raw_overlap >= 0.40 else 0.0

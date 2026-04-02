@@ -5337,6 +5337,7 @@ def run_mining_stage(
     run_step: str = "full",
     step1_input_dir: Optional[Path] = None,
     candidate_registry_override: Optional[pd.DataFrame] = None,
+    bounded_target: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """
     Run a single mining stage.
@@ -5495,10 +5496,12 @@ def run_mining_stage(
             X,
             data,
             fwd_ret,
+            fwd_ret_norm,
             folds,
             step_mode="step2",
             step1_checkpoint_dir=step1_input_dir,
             checkpoint_output_dir=output_dir,
+            bounded_target=bounded_target,
         )
         if not assessment_df.empty:
             atomic_to_csv(assessment_df, output_dir / "final_mask_assessment_audit.csv")
@@ -6244,11 +6247,13 @@ def run_mining_stage(
         X,
         data,
         fwd_ret,
+        fwd_ret_norm,
         folds,
         fold_health_summary=fold_health_summary,
         step_mode=run_step,
         step1_checkpoint_dir=step1_input_dir,
         checkpoint_output_dir=output_dir,
+        bounded_target=bounded_target,
     )
     if not assessment_df.empty:
         atomic_to_csv(assessment_df, output_dir / "final_mask_assessment_audit.csv")
@@ -6566,6 +6571,7 @@ def run_side_pipeline(
         run_step=run_step,
         step1_input_dir=step1_input_dir,
         candidate_registry_override=candidate_registry_override,
+        bounded_target=bounded_target,
     )
     log_stage_gate_diagnostics("Stage A", stage_a_result, cfg)
 
@@ -7151,9 +7157,6 @@ def run_lgbm_mask_generation_triad(
 
             # For triad targets, we use the bounded_target itself as the "return" for scoring
             # so that RuleScorer and MaskAssessor see the actual edge we are mining.
-            dummy_fwd_ret = bounded_target.astype(np.float32, copy=True)
-            dummy_fwd_ret_norm = bounded_target.astype(np.float32, copy=True)
-
             # Run both sides
             for side in ["long", "short"]:
                 tprint(
@@ -7164,8 +7167,8 @@ def run_lgbm_mask_generation_triad(
                     side=side,
                     data=data,
                     feature_dict=feature_dict,
-                    fwd_ret=dummy_fwd_ret,
-                    fwd_ret_norm=dummy_fwd_ret_norm,
+                    fwd_ret=fwd_ret,
+                    fwd_ret_norm=fwd_ret_norm,
                     cfg=horizon_cfg,
                     folds=folds,
                     root_output_dir=horizon_target_dir,
@@ -7263,8 +7266,6 @@ def run_lgbm_mask_generation_triad(
                     )
                     base_min_leaf = int(horizon_cfg.get("min_data_in_leaf", 64))
                     horizon_cfg["min_data_in_leaf"] = int(base_min_leaf * min_leaf_mult)
-                dummy_fwd_ret = bounded_target.astype(np.float32, copy=True)
-                dummy_fwd_ret_norm = bounded_target.astype(np.float32, copy=True)
                 for side in ["long", "short"]:
                     tprint(
                         f"\n--- Running GLOBAL STEP2 {side.upper()} side for {target_name} @ H{horizon} ---"
@@ -7273,8 +7274,8 @@ def run_lgbm_mask_generation_triad(
                         side=side,
                         data=data,
                         feature_dict=feature_dict,
-                        fwd_ret=dummy_fwd_ret,
-                        fwd_ret_norm=dummy_fwd_ret_norm,
+                        fwd_ret=fwd_ret,
+                        fwd_ret_norm=fwd_ret_norm,
                         cfg=horizon_cfg,
                         folds=folds,
                         root_output_dir=horizon_target_dir,
@@ -8582,11 +8583,13 @@ class MaskAssessor:
         X: np.ndarray,
         data: pd.DataFrame,
         fwd_ret: np.ndarray,
+        fwd_ret_norm: np.ndarray,
         folds: List[Tuple[np.ndarray, np.ndarray]],
         fold_health_summary: Optional[Dict[str, Any]] = None,
         step_mode: str = "full",
         step1_checkpoint_dir: Optional[Path] = None,
         checkpoint_output_dir: Optional[Path] = None,
+        bounded_target: Optional[np.ndarray] = None,
     ) -> pd.DataFrame:
         if registry.empty:
             return registry
@@ -8677,6 +8680,12 @@ class MaskAssessor:
         min_sign_consistency = float(self.cfg.get("min_sign_consistency", 0.0))
         min_mean_target_value = float(self.cfg.get("min_mean_target_value", 0.003))
 
+        # We need both the mining target for the baseline calculations and the
+        # actual return for the trade simulation.
+        # bounded_target holds the target used for tree splits (e.g. bounded target_vame).
+        # If not provided, it implies we are not using a bounded target and fwd_ret is the mining target.
+        _mining = bounded_target if bounded_target is not None else fwd_ret
+        mining_target_by_side = {"long": _mining, "short": -_mining}
         target_ret_by_side = {"long": fwd_ret, "short": -fwd_ret}
         mean_ret_global_by_side = {
             "long": float(np.nanmean(fwd_ret)),
@@ -9673,8 +9682,9 @@ class MaskAssessor:
                 return pd.DataFrame()
 
         # Cache baseline learnability once per side after cheap structural filtering.
-        for side, target_ret in target_ret_by_side.items():
-            baseline_metrics = self._compute_baseline_auc(X, target_ret, folds)
+        # Baseline AUC must be evaluated on the bounded target used for mining.
+        for side, mining_target in mining_target_by_side.items():
+            baseline_metrics = self._compute_baseline_auc(X, mining_target, folds)
             baseline_cache[side] = {
                 "global_auc": float(baseline_metrics["global_auc"])
                 if np.isfinite(baseline_metrics["global_auc"])
@@ -9686,9 +9696,9 @@ class MaskAssessor:
                 if np.isfinite(baseline_metrics["global_pr_auc"])
                 else np.nan,
                 "global_cov": float(baseline_metrics["global_cov"]),
-                "global_entropy": float(self._compute_entropy(target_ret)),
+                "global_entropy": float(self._compute_entropy(mining_target)),
             }
-            if np.nanstd(target_ret) < 1e-9:
+            if np.nanstd(mining_target) < 1e-9:
                 tprint(
                     f"WARNING: Root cause for degenerate metrics: {side} target has zero variance!"
                 )
@@ -9962,6 +9972,7 @@ class MaskAssessor:
             group_bucket_key = (side, horizon_key)
 
             target_ret = target_ret_by_side[side]
+            mining_target = mining_target_by_side[side]
             global_auc = float(baseline_cache[side]["global_auc"])
             global_roc_auc = float(baseline_cache[side]["global_roc_auc"])
             global_pr_auc = float(baseline_cache[side]["global_pr_auc"])
@@ -10865,7 +10876,10 @@ class MaskAssessor:
                 best_total_net_pnl = total_net_pnl
                 best_top_pct = float(top_pct)
 
-            if profitable_metrics is None and avg_net_ret > 0.0:
+            if avg_net_ret > 0.0:
+                # We want the highest top_pct (i.e. broadest mask, closest to 100%) that is still profitable
+                # to avoid overly narrow overfit masks. Since ranked_top_pcts is sorted ascending,
+                # continuously updating profitable_metrics will yield the largest profitable top_pct.
                 profitable_metrics = current_metrics
 
         if profitable_metrics is None:

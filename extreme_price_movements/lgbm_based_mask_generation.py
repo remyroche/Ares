@@ -382,6 +382,10 @@ def load_stage_a_step1_checkpoint(step1_dir: Union[str, Path]) -> Dict[str, Any]
         return pickle.load(f)
 
 
+def _make_slice_selection_key(target_name: str, horizon: int, side: str) -> str:
+    return f"{target_name}|{int(horizon)}|{side}"
+
+
 def _safe_spearman(x: np.ndarray, y: np.ndarray) -> float:
     if len(x) < 3:
         return np.nan
@@ -6522,6 +6526,21 @@ def run_side_pipeline(
         candidate_registry_override = pd.read_csv(
             step1_input_dir / "candidate_rule_registry.csv"
         )
+        has_global_slice_filter = "global_step2_selected_keys_by_slice" in cfg
+        selected_keys_by_slice = cfg.get("global_step2_selected_keys_by_slice", {})
+        slice_sel_key = _make_slice_selection_key(
+            target_name or "unknown", int(horizon or -1), side
+        )
+        selected_keys = selected_keys_by_slice.get(slice_sel_key)
+        if has_global_slice_filter:
+            selected_keys = selected_keys or set()
+            selected_keys = {str(k) for k in selected_keys}
+            if "canonical_key" in candidate_registry_override.columns:
+                candidate_registry_override = candidate_registry_override[
+                    candidate_registry_override["canonical_key"]
+                    .astype(str)
+                    .isin(selected_keys)
+                ].copy()
         tprint(
             f"Stage A: Loaded stored step1 candidate registry from {step1_input_dir} "
             f"({len(candidate_registry_override)} rules)"
@@ -6875,6 +6894,101 @@ def run_lgbm_mask_generation_pipeline(
     }
 
 
+def build_global_stage_a_ridge_shortlist(
+    pooled_step1_frames: List[pd.DataFrame],
+    X_ref: np.ndarray,
+    metadata_ref: List[FeatureMetadata],
+    cfg: Dict[str, Any],
+) -> Dict[str, set[str]]:
+    global_cap = int(cfg.get("global_ridge_candidate_cap", 80))
+    if not pooled_step1_frames or X_ref is None or len(metadata_ref) == 0:
+        return {}
+
+    pooled = pd.concat(pooled_step1_frames, ignore_index=True, copy=False)
+    if pooled.empty:
+        return {}
+
+    pooled = pooled.drop_duplicates(
+        subset=["canonical_key", "source_target", "source_horizon", "side"], keep="first"
+    ).copy()
+    if "cheap_rank" not in pooled.columns:
+        pooled["cheap_rank"] = 0.0
+
+    resolver = CanonicalRuleMaskResolver(X_ref, metadata_ref)
+    unique_keys = list(dict.fromkeys(pooled["canonical_key"].astype(str).tolist()))
+    key_to_idx = {k: i for i, k in enumerate(unique_keys)}
+
+    rng = np.random.default_rng(42)
+    n_rows = X_ref.shape[0]
+    subsample_size = int(min(max(int(cfg.get("global_overlap_subsample_size", 10000)), 1000), n_rows))
+    sub_idx = np.sort(rng.choice(n_rows, size=subsample_size, replace=False)) if n_rows > subsample_size else np.arange(n_rows)
+    mask_matrix = resolver.get_masks_matrix(unique_keys)[:, sub_idx].astype(np.int8, copy=False)
+    intersections = mask_matrix @ mask_matrix.T
+    supports = np.diag(intersections).astype(np.float32)
+
+    pooled["canonical_key"] = pooled["canonical_key"].astype(str)
+    pooled["mask_idx"] = pooled["canonical_key"].map(key_to_idx).astype(np.int32)
+    pooled["cheap_rank"] = pd.to_numeric(pooled["cheap_rank"], errors="coerce").fillna(-np.inf)
+    pooled["support_sub"] = pooled["mask_idx"].map(lambda i: float(supports[int(i)]))
+    pooled = pooled[pooled["support_sub"] > 0].copy()
+    pooled = pooled.sort_values(
+        ["cheap_rank", "source_target", "source_horizon", "side"],
+        ascending=[False, True, True, True],
+    ).reset_index(drop=True)
+
+    selected_rows: List[int] = []
+    support_ratio_min = float(cfg.get("global_overlap_support_ratio_min", 0.70))
+    same_bucket_thr = float(cfg.get("global_overlap_same_bucket_threshold", 0.975))
+    diff_dim_bonus = float(cfg.get("global_overlap_diff_dim_bonus", 0.01))
+    both_diff_bonus = float(cfg.get("global_overlap_both_diff_bonus", 0.01))
+
+    for row_idx, row in pooled.iterrows():
+        if len(selected_rows) >= global_cap:
+            break
+        cand_mask_idx = int(row["mask_idx"])
+        cand_support = float(row["support_sub"])
+        keep = True
+        for sel_idx in selected_rows:
+            sel = pooled.iloc[sel_idx]
+            sel_mask_idx = int(sel["mask_idx"])
+            sel_support = float(sel["support_sub"])
+            inter = float(intersections[cand_mask_idx, sel_mask_idx])
+            if inter < 1.0:
+                continue
+            min_support = max(min(cand_support, sel_support), 1.0)
+            overlap = inter / min_support
+            support_ratio = min(cand_support, sel_support) / max(max(cand_support, sel_support), 1e-9)
+            if support_ratio < support_ratio_min:
+                continue
+            threshold = same_bucket_thr
+            side_diff = str(row["side"]) != str(sel["side"])
+            horizon_diff = int(row["source_horizon"]) != int(sel["source_horizon"])
+            if side_diff or horizon_diff:
+                threshold += diff_dim_bonus
+            if side_diff and horizon_diff:
+                threshold += both_diff_bonus
+            threshold = min(threshold, 0.995)
+            if overlap > threshold:
+                keep = False
+                break
+        if keep:
+            selected_rows.append(int(row_idx))
+
+    selected = pooled.iloc[selected_rows].copy() if selected_rows else pooled.iloc[0:0].copy()
+    tprint(
+        "Global stage2 shortlist: "
+        f"input={len(pooled)} selected={len(selected)} cap={global_cap}"
+    )
+
+    selected_by_slice: Dict[str, set[str]] = collections.defaultdict(set)
+    for row in selected.itertuples(index=False):
+        slice_key = _make_slice_selection_key(
+            str(row.source_target), int(row.source_horizon), str(row.side)
+        )
+        selected_by_slice[slice_key].add(str(row.canonical_key))
+    return dict(selected_by_slice)
+
+
 def run_lgbm_mask_generation_triad(
     data: pd.DataFrame,
     feature_dict: Dict[str, np.ndarray],
@@ -6921,6 +7035,7 @@ def run_lgbm_mask_generation_triad(
     # Get horizons and target names from config or defaults
     horizons = cfg.get("triad_horizons", TRIAD_DEFAULT_HORIZONS)
     target_names = cfg.get("triad_target_names", TRIAD_DEFAULT_TARGET_NAMES)
+    triad_run_step = str(cfg.get("run_step", "full")).lower()
 
     tprint(f"Horizons: {horizons}")
     tprint(f"Targets: {target_names}")
@@ -6943,6 +7058,9 @@ def run_lgbm_mask_generation_triad(
 
     # Track all registries for final combination
     all_registries: List[pd.DataFrame] = []
+    pooled_step1_frames: List[pd.DataFrame] = []
+    x_ref: Optional[np.ndarray] = None
+    metadata_ref: List[FeatureMetadata] = []
 
     total_combinations = len(horizons) * len(target_names)
     current_combination = 0
@@ -6992,6 +7110,7 @@ def run_lgbm_mask_generation_triad(
             horizon_cfg = cfg.copy()
             horizon_cfg["target_name"] = target_name
             horizon_cfg["horizon"] = horizon
+            horizon_cfg["run_step"] = "step1" if triad_run_step == "full" else triad_run_step
 
             # Apply per-target config from TRIAD_TARGET_CONFIGS
             if target_name in TRIAD_TARGET_CONFIGS:
@@ -7046,14 +7165,110 @@ def run_lgbm_mask_generation_triad(
                 # Store results
                 results_by_target_horizon[(target_name, horizon, side)] = side_results
 
-                # Add provenance to registry
-                if not side_results["stage_a"].empty:
-                    stage_a_with_prov = side_results["stage_a"].copy()
-                    stage_a_with_prov["source_target"] = target_name
-                    stage_a_with_prov["source_horizon"] = horizon
-                    all_registries.append(stage_a_with_prov)
+                if triad_run_step == "full":
+                    if x_ref is None and side_results.get("X_a") is not None:
+                        x_ref = side_results["X_a"]
+                        metadata_ref = side_results.get("metadata_a", []) or []
+                    step1_dir = resolve_stage_a_step1_dir(
+                        root_output_dir,
+                        target_name=target_name,
+                        horizon=horizon,
+                        side=side,
+                    )
+                    post_dedup_path = step1_dir / "step1_post_dedup_registry.csv"
+                    if post_dedup_path.exists():
+                        post_df = pd.read_csv(post_dedup_path)
+                        if not post_df.empty:
+                            post_df["source_target"] = target_name
+                            post_df["source_horizon"] = horizon
+                            post_df["side"] = side
+                            pooled_step1_frames.append(post_df)
+                else:
+                    # Add provenance to registry
+                    if not side_results["stage_a"].empty:
+                        stage_a_with_prov = side_results["stage_a"].copy()
+                        stage_a_with_prov["source_target"] = target_name
+                        stage_a_with_prov["source_horizon"] = horizon
+                        all_registries.append(stage_a_with_prov)
 
-    if str(cfg.get("run_step", "full")).lower() == "step1":
+    if triad_run_step == "full":
+        global_selected_keys_by_slice = build_global_stage_a_ridge_shortlist(
+            pooled_step1_frames=pooled_step1_frames,
+            X_ref=x_ref,
+            metadata_ref=metadata_ref,
+            cfg=cfg,
+        )
+        tprint(
+            "Global step2 shortlist by slice: "
+            + ", ".join(
+                f"{k}={len(v)}" for k, v in sorted(global_selected_keys_by_slice.items())
+            )
+        )
+
+        results_by_target_horizon = {}
+        all_registries = []
+        for horizon in horizons:
+            for target_name in target_names:
+                bounded_target = (
+                    triad_targets.get(target_name, {}).get(horizon)
+                    if target_name in triad_targets
+                    else None
+                )
+                if bounded_target is None:
+                    continue
+                surprisal_key = f"{target_name}_surprisal"
+                bounded_target_surprisal = None
+                if (
+                    surprisal_key in triad_targets
+                    and horizon in triad_targets[surprisal_key]
+                ):
+                    bounded_target_surprisal = triad_targets[surprisal_key][horizon]
+                horizon_target_dir = root_output_dir / f"h{horizon}" / target_name
+                horizon_cfg = cfg.copy()
+                horizon_cfg["target_name"] = target_name
+                horizon_cfg["horizon"] = horizon
+                horizon_cfg["run_step"] = "step2"
+                horizon_cfg["step1_dir"] = str(root_output_dir)
+                horizon_cfg["global_step2_selected_keys_by_slice"] = global_selected_keys_by_slice
+                if target_name in TRIAD_TARGET_CONFIGS:
+                    target_config = TRIAD_TARGET_CONFIGS[target_name]
+                    horizon_cfg["huber_alpha"] = target_config.get("huber_alpha", 0.9)
+                    horizon_cfg["learning_rate"] = target_config.get("learning_rate", 0.03)
+                    horizon_cfg["min_support_pct"] = target_config.get("min_support_pct", 0.05)
+                    horizon_cfg["ic_hurdle"] = target_config.get("ic_hurdle", 0.02)
+                if horizon in HORIZON_CONFIGS:
+                    horizon_config = HORIZON_CONFIGS[horizon]
+                    min_leaf_mult = horizon_config.get("min_data_in_leaf_multiplier", 1.0)
+                    base_min_leaf = int(horizon_cfg.get("min_data_in_leaf", 64))
+                    horizon_cfg["min_data_in_leaf"] = int(base_min_leaf * min_leaf_mult)
+                dummy_fwd_ret = bounded_target.astype(np.float32, copy=True)
+                dummy_fwd_ret_norm = bounded_target.astype(np.float32, copy=True)
+                for side in ["long", "short"]:
+                    tprint(
+                        f"\n--- Running GLOBAL STEP2 {side.upper()} side for {target_name} @ H{horizon} ---"
+                    )
+                    side_results = run_side_pipeline(
+                        side=side,
+                        data=data,
+                        feature_dict=feature_dict,
+                        fwd_ret=dummy_fwd_ret,
+                        fwd_ret_norm=dummy_fwd_ret_norm,
+                        cfg=horizon_cfg,
+                        folds=folds,
+                        root_output_dir=horizon_target_dir,
+                        target_name=target_name,
+                        horizon=horizon,
+                        bounded_target=bounded_target,
+                        bounded_target_surprisal=bounded_target_surprisal,
+                    )
+                    results_by_target_horizon[(target_name, horizon, side)] = side_results
+                    if not side_results["stage_a"].empty:
+                        stage_a_with_prov = side_results["stage_a"].copy()
+                        stage_a_with_prov["source_target"] = target_name
+                        stage_a_with_prov["source_horizon"] = horizon
+                        all_registries.append(stage_a_with_prov)
+
+    if triad_run_step == "step1":
         tprint("TRIAD STEP1 COMPLETE")
         tprint(
             "Stored stage_a_context step1 checkpoints for all processed slices. "
@@ -8610,6 +8825,36 @@ class MaskAssessor:
             cheap_gate_result = step1_payload["cheap_gate_result"]
             bucket_cheap_ranks = step1_payload["bucket_cheap_ranks"]
             stage_a_matrices = step1_payload["stage_a_matrices"]
+            selected_keys_runtime = {
+                str(k) for k in registry.get("canonical_key", pd.Series(dtype=str)).astype(str)
+            }
+            if selected_keys_runtime:
+                cheap_gate_rows = {
+                    bucket_key: [
+                        (cheap_rank, canonical_key)
+                        for cheap_rank, canonical_key in entries
+                        if str(canonical_key) in selected_keys_runtime
+                    ]
+                    for bucket_key, entries in cheap_gate_rows.items()
+                }
+                cheap_gate_rows = {
+                    bucket_key: entries
+                    for bucket_key, entries in cheap_gate_rows.items()
+                    if entries
+                }
+                cheap_gate_result = {
+                    (bucket_key, canonical_key): outcome
+                    for (bucket_key, canonical_key), outcome in cheap_gate_result.items()
+                    if str(canonical_key) in selected_keys_runtime
+                }
+                bucket_cheap_ranks = {
+                    bucket_key: {
+                        canonical_key: rank
+                        for canonical_key, rank in ranks.items()
+                        if str(canonical_key) in selected_keys_runtime
+                    }
+                    for bucket_key, ranks in bucket_cheap_ranks.items()
+                }
             tprint(
                 f"Stage A: Loaded step1 checkpoint from {step1_checkpoint_dir} "
                 f"with {sum(len(v) for v in cheap_gate_rows.values())} post-dedup rules"

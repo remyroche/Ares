@@ -1,0 +1,14 @@
+{
+  "horizons": [
+    3,
+    10
+  ],
+  "target_names": [
+    "target_eff",
+    "target_ela",
+    "target_vame"
+  ],
+  "total_combinations": 6,
+  "completed_combinations": 6,
+  "total_rules": 289
+}

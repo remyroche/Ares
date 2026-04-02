@@ -3560,8 +3560,10 @@ def evaluate_config(
                     cfg, ("k_tp", "sl_as_tp_pct", "tp_base_pct", "base_atr_window")
                 ),
             )
+            mfe_df = mae_df = t_mfe_df = t_mae_df = None
 
             if key2 not in layer2_cache:
+                mfe_df = mae_df = t_mfe_df = t_mae_df = None
                 # ── Event Subsampling (from periods_symbols_management SamplingPolicy) ──
                 # Use SamplingPolicy to control the number of events processed
                 # This dramatically reduces computation time by subsampling before heavy labeling
@@ -3751,7 +3753,7 @@ def evaluate_config(
                                 tprint(f" _idx_15m dups: {dups[:5].tolist()}")
                         raise e
 
-                    lbl_15m, ret_15m, qual_15m, _, _, _, _ = compute_triple_barrier_labels(
+                    lbl_15m, ret_15m, qual_15m, mfe_15m, mae_15m, t_mfe_15m, t_mae_15m = compute_triple_barrier_labels(
                         _panel_15m,
                         _tp_15m,
                         _sl_15m,
@@ -3807,6 +3809,10 @@ def evaluate_config(
                         lbl = lbl_15m.reindex(_idx_1h).fillna(0)
                         ret = ret_15m.reindex(_idx_1h).fillna(0)
                         qual = qual_15m.reindex(_idx_1h).fillna(0)
+                        mfe_df = mfe_15m.reindex(_idx_1h).fillna(0)
+                        mae_df = mae_15m.reindex(_idx_1h).fillna(0)
+                        t_mfe_df = t_mfe_15m.reindex(_idx_1h).fillna(0)
+                        t_mae_df = t_mae_15m.reindex(_idx_1h).fillna(0)
                     except Exception as e:
                         if "duplicate labels" in str(e).lower():
                             tprint(

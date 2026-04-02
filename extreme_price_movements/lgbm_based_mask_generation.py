@@ -9643,8 +9643,8 @@ class MaskAssessor:
                     f"WARNING: Root cause for degenerate metrics: {side} target has zero variance!"
                 )
 
-        max_ridge_candidates_per_bucket = int(
-            self.cfg.get("max_ridge_candidates_per_bucket", 80)
+        max_ridge_candidates_total = int(
+            self.cfg.get("max_ridge_candidates_total", 80)
         )
         family_rarity_bonus_strength = float(
             self.cfg.get("family_rarity_bonus_strength", 0.05)
@@ -9673,10 +9673,11 @@ class MaskAssessor:
             collections.defaultdict(dict)
         )
         tprint(
-            f"Stage A: Starting ridge regression selection for {len(cheap_gate_rows)} buckets..."
+            f"Stage A: Starting global ridge regression selection..."
         )
 
-        self.bucket_ridge_keys = {}
+        global_pool = []
+
         for bucket_key, entries in cheap_gate_rows.items():
             side = bucket_key[0]
             baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
@@ -9695,81 +9696,59 @@ class MaskAssessor:
             total_bucket = max(sum(family_counts.values()), 1)
             n_family_combos = max(len(family_counts), 1)
             target_share_family = 1.0 / float(n_family_combos)
-            for _, canonical_key in entries:
-                combo = _infer_regime_family_combo(canonical_key)
-                combo_share = family_counts.get(combo, 0) / float(total_bucket)
-                underrep = max(target_share_family - combo_share, 0.0) / max(
-                    target_share_family, 1e-9
-                )
-                bonus = min(
-                    family_rarity_bonus_cap,
-                    family_rarity_bonus_strength * underrep,
-                )
-                family_rarity_bonus_by_key[bucket_key][canonical_key] = float(bonus)
-            if family_counts:
-                top_combo, top_count = max(family_counts.items(), key=lambda kv: kv[1])
-                tprint(
-                    f"Stage A: Family rarity bonus bucket {bucket_key} "
-                    f"combos={len(family_counts)} top_combo={top_combo} top_count={top_count}"
-                )
 
-        for bucket_key, entries in bucket_ridge_rows.items():
-            if not entries:
-                continue
+            for family_combo, count in family_counts.items():
+                actual_share = float(count) / total_bucket
+                deficit = target_share_family - actual_share
+                if deficit > 0:
+                    bonus = min(
+                        deficit * family_rarity_bonus_strength, family_rarity_bonus_cap
+                    )
+                else:
+                    bonus = 0.0
+                for _, canonical_key in entries:
+                    if _infer_regime_family_combo(canonical_key) == family_combo:
+                        family_rarity_bonus_by_key[bucket_key][canonical_key] = bonus
 
-            surviving_keys = [k for _, k in entries]
-            surviving_ranks = [r for r, _ in entries]
-            family_bonus_arr = np.array(
-                [
-                    family_rarity_bonus_by_key.get(bucket_key, {}).get(k, 0.0)
-                    for k in surviving_keys
-                ],
-                dtype=float,
-            )
+            global_pool.extend([
+                (bucket_key, rank, canonical_key)
+                for rank, canonical_key in entries
+            ])
 
-            matrices = stage_a_matrices.get(bucket_key)
-            if not matrices or len(surviving_keys) <= max_ridge_candidates_per_bucket:
-                entries.sort(
-                    key=lambda item: (
-                        item[0]
-                        + family_rarity_bonus_by_key.get(bucket_key, {}).get(
-                            item[1], 0.0
-                        )
-                    ),
-                    reverse=True,
-                )
-                self.bucket_ridge_keys[bucket_key] = {
-                    key for _, key in entries[: max(max_ridge_candidates_per_bucket, 0)]
-                }
-                continue
+        self.bucket_ridge_keys = collections.defaultdict(set)
 
-            key_to_idx = matrices["key_to_idx"]
-            intersections = matrices["intersections"]
-            supports = matrices["supports"]
-            n_subsample_bucket = matrices.get("n_subsample", 10000.0)
+        if len(global_pool) <= max_ridge_candidates_total:
+            for bucket_key, rank, canonical_key in global_pool:
+                self.bucket_ridge_keys[bucket_key].add(canonical_key)
+        else:
+            # Prepare global matrices
+            global_valid_keys = []
+            global_valid_ranks = []
+            global_bucket_keys = []
 
-            # Filter matrices for valid entries
-            idx_list = []
-            valid_keys = []
-            valid_ranks = []
-            for i, k in enumerate(surviving_keys):
-                if k in key_to_idx:
-                    idx_list.append(key_to_idx[k])
-                    valid_keys.append(k)
-                    valid_ranks.append(surviving_ranks[i])
+            # Since overlap matrix is per-bucket, we only compute overlap for rules in the same bucket.
+            # We can build a global list and just check overlap if the candidates are in the same bucket.
+            # Let's extract the necessary info
 
-            if len(valid_keys) <= max_ridge_candidates_per_bucket:
-                self.bucket_ridge_keys[bucket_key] = set(valid_keys)
-                continue
+            key_to_bucket_idx = {}
+            bucket_to_matrices = {}
 
-            sub_intersections = intersections[np.ix_(idx_list, idx_list)]
-            sub_supports_arr = supports[idx_list]
+            for bucket_key in bucket_ridge_rows.keys():
+                matrices = stage_a_matrices.get(bucket_key)
+                if matrices:
+                    bucket_to_matrices[bucket_key] = matrices
 
-            # Compute Support Weight Multiplier
-            s_arr = sub_supports_arr / n_subsample_bucket
-            w_mult_arr = np.ones(len(valid_keys), dtype=float)
+            w_mult_list = []
+            family_bonus_list = []
 
-            for i, s in enumerate(s_arr):
+            for bucket_key, rank, canonical_key in global_pool:
+                matrices = bucket_to_matrices.get(bucket_key)
+                if not matrices or canonical_key not in matrices["key_to_idx"]:
+                    continue
+
+                idx = matrices["key_to_idx"][canonical_key]
+                s = matrices["supports"][idx] / matrices.get("n_subsample", 10000.0)
+
                 if s < (center - half_width):
                     w = 1.0 - penalty_strength * (center - half_width - s) / (
                         center - half_width
@@ -9782,59 +9761,70 @@ class MaskAssessor:
                     w = 1.0 - penalty_strength * (s - (center + half_width)) / (
                         center + half_width
                     )
+                w = np.clip(w, 0.1, 2.0)
 
-                # Point 12: Broaden clip bounds to allow meaningful boosting
-                w_mult_arr[i] = np.clip(w, 0.1, 2.0)
+                w_mult_list.append(w)
+                family_bonus_list.append(family_rarity_bonus_by_key.get(bucket_key, {}).get(canonical_key, 0.0))
 
-            supp_i = sub_supports_arr[:, None]
-            supp_j = sub_supports_arr[None, :]
+                global_valid_keys.append(canonical_key)
+                global_valid_ranks.append(rank)
+                global_bucket_keys.append(bucket_key)
+                key_to_bucket_idx[len(global_valid_keys) - 1] = idx
 
-            # Compute F1/Dice matrix
-            f1_overlap_matrix = 2.0 * sub_intersections / (supp_i + supp_j + 1e-9)
+            w_mult_arr = np.array(w_mult_list)
+            family_bonus_arr = np.array(family_bonus_list)
 
-            # Compute Support Ratio matrix to ignore similarities where support sizes differ greatly
-            supp_ratio_matrix = np.minimum(supp_i, supp_j) / np.maximum(
-                supp_i, supp_j + 1e-9
-            )
-
-            # Effective F1 (Same-side is naturally guaranteed because bucket keys split by side)
-            effective_f1_overlap_matrix = f1_overlap_matrix * (
-                supp_ratio_matrix >= support_ratio_min
-            )
-
-            # Normalize cheap ranks to [0.05, 1.0] positive bounded range
-            raw_cr = np.array(valid_ranks)
+            raw_cr = np.array(global_valid_ranks)
             min_cr = np.min(raw_cr)
             max_cr = np.max(raw_cr)
             if max_cr - min_cr < 1e-9:
-                norm_cr = np.full(len(valid_keys), 1.0)
+                norm_cr = np.full(len(global_valid_keys), 1.0)
             else:
                 norm_cr = 0.05 + 0.95 * (raw_cr - min_cr) / (max_cr - min_cr)
 
-            # Diversified Top-K Greedy Selection
-            # Pre-allocate arrays for better performance
-            max_candidates = min(max_ridge_candidates_per_bucket, len(valid_keys))
+            max_candidates = min(max_ridge_candidates_total, len(global_valid_keys))
             selected_indices = np.zeros(max_candidates, dtype=np.int32)
-            remaining_mask = np.ones(len(valid_keys), dtype=bool)
+            remaining_mask = np.ones(len(global_valid_keys), dtype=bool)
 
-            # Select highest support-weighted cheap_rank first
             initial_scores = norm_cr * (1.0 + w_mult_arr) * (1.0 + family_bonus_arr)
             best_idx = int(np.argmax(initial_scores))
             selected_indices[0] = best_idx
             remaining_mask[best_idx] = False
             n_selected = 1
 
+            # Helper to calculate F1 overlap for same bucket only
+            def get_f1_overlap(i, j):
+                bucket_i = global_bucket_keys[i]
+                bucket_j = global_bucket_keys[j]
+                if bucket_i != bucket_j:
+                    return 0.0
+
+                matrices = bucket_to_matrices[bucket_i]
+                idx_i = key_to_bucket_idx[i]
+                idx_j = key_to_bucket_idx[j]
+
+                inter = matrices["intersections"][idx_i, idx_j]
+                supp_i = matrices["supports"][idx_i]
+                supp_j = matrices["supports"][idx_j]
+
+                supp_ratio = min(supp_i, supp_j) / max(supp_i, supp_j + 1e-9)
+                if supp_ratio < support_ratio_min:
+                    return 0.0
+
+                return 2.0 * inter / (supp_i + supp_j + 1e-9)
+
             while n_selected < max_candidates and remaining_mask.any():
                 remaining_indices = np.where(remaining_mask)[0]
                 if len(remaining_indices) == 0:
                     break
 
-                # Vectorized overlap computation for all remaining candidates
                 selected_so_far = selected_indices[:n_selected]
-                max_f1_overlap = np.max(
-                    effective_f1_overlap_matrix[remaining_indices][:, selected_so_far],
-                    axis=1,
-                )
+                max_f1_overlap = np.zeros(len(remaining_indices))
+
+                for r_idx, rem in enumerate(remaining_indices):
+                    overlaps = [get_f1_overlap(rem, sel) for sel in selected_so_far]
+                    max_f1_overlap[r_idx] = max(overlaps) if overlaps else 0.0
+
                 overlap_excess = np.maximum(0.0, max_f1_overlap - overlap_free_zone) / (
                     1.0 - overlap_free_zone + 1e-9
                 )
@@ -9852,9 +9842,8 @@ class MaskAssessor:
                 remaining_mask[best_next_idx] = False
                 n_selected += 1
 
-            self.bucket_ridge_keys[bucket_key] = {
-                valid_keys[i] for i in selected_indices
-            }
+            for i in selected_indices:
+                self.bucket_ridge_keys[global_bucket_keys[i]].add(global_valid_keys[i])
 
         total_ridge_selected = sum(
             len(keys) for keys in self.bucket_ridge_keys.values()
@@ -10003,6 +9992,7 @@ class MaskAssessor:
                         directional_returns=target_ret,
                         mask=mask,
                         oof_preds=np.asarray(ridge_details["oof_preds"], dtype=np.float32),
+                        folds=folds,
                     )
                     tprint(
                         f"Stage A: Ridge learnability done {assessed_progress}/{total_ridge_selected} "
@@ -10097,6 +10087,7 @@ class MaskAssessor:
                     "regime": slots.get("regime", "*"),
                     "regime_score": regime_score,
                     "is_structurally_sound": not rejected,
+                    "fold_pnls": ridge_trade_metrics.get("ridge_profitable_fold_pnls", []),
                     "rejection_reason": rejection_reason,
                     "support_pct": support_pct,
                     "directional_mean_ret": float(
@@ -10166,8 +10157,14 @@ class MaskAssessor:
                     "ridge_profitable_daily_pnl_std": ridge_trade_metrics[
                         "ridge_profitable_daily_pnl_std"
                     ],
+                    "ridge_profitable_weekly_pnl_std": ridge_trade_metrics[
+                        "ridge_profitable_weekly_pnl_std"
+                    ],
                     "ridge_profitable_daily_sortino": ridge_trade_metrics[
                         "ridge_profitable_daily_sortino"
+                    ],
+                    "ridge_profitable_weekly_sortino": ridge_trade_metrics[
+                        "ridge_profitable_weekly_sortino"
                     ],
                     "ridge_profitable_avg_position_weight": ridge_trade_metrics[
                         "ridge_profitable_avg_position_weight"
@@ -10234,6 +10231,66 @@ class MaskAssessor:
                 f"assessed=0 accepted=0 rejected=0 elapsed={time.perf_counter() - final_assessment_start_ts:.2f}s"
             )
             return assessment_df
+
+        # Calculate positive_ridge_pnl_p75
+        positive_pnls = assessment_df["ridge_profitable_total_net_pnl"].dropna()
+        positive_pnls = positive_pnls[positive_pnls > 0]
+        pnl_scale = np.nanpercentile(positive_pnls, 75) if len(positive_pnls) > 0 else 1.0
+        if pnl_scale <= 0:
+            pnl_scale = 1.0
+
+        def compute_risk_score(row):
+            ridge_pnl_raw = row["ridge_profitable_total_net_pnl"]
+            if not np.isfinite(ridge_pnl_raw):
+                return np.nan
+
+            ridge_pnl_norm = np.tanh(max(ridge_pnl_raw, 0.0) / pnl_scale)
+
+            fold_pnls = row.get("fold_pnls", [])
+            if not fold_pnls or len(fold_pnls) < 2:
+                normalized_fold_pnl_std = 1.0
+            else:
+                pnl_std = np.std(fold_pnls)
+                # Normalize std
+                mean_pnl = max(np.mean(fold_pnls), 1e-9)
+                normalized_fold_pnl_std = min(pnl_std / mean_pnl, 1.0) if mean_pnl > 0 else 1.0
+
+            ridge_trade_stability_good = max(1.0 - normalized_fold_pnl_std, 0.0)
+            ridge_pnl_risk = ridge_pnl_norm * np.sqrt(ridge_trade_stability_good)
+            return ridge_pnl_risk
+
+        assessment_df["ridge_pnl_risk"] = assessment_df.apply(compute_risk_score, axis=1)
+
+        # Update Regime Score
+        def update_regime_score(row):
+            if not row["is_structurally_sound"]:
+                return row["regime_score"] # Keep original if rejected, though it doesn't matter much
+
+            ridge_pnl_risk = row["ridge_pnl_risk"]
+            if not np.isfinite(ridge_pnl_risk):
+                ridge_pnl_risk = 0.0
+
+            ridge_trade_sortino = row["ridge_profitable_weekly_sortino"]
+            if not np.isfinite(ridge_trade_sortino):
+                ridge_trade_sortino = 0.0
+
+            lift = row["lift"]
+            if not np.isfinite(lift):
+                lift = 0.0
+
+            ev_per_event = row["ev_per_event"]
+            if not np.isfinite(ev_per_event):
+                ev_per_event = 0.0
+
+            base_regime_score = (
+                0.3 * ridge_pnl_risk
+                + 0.3 * ridge_trade_sortino
+                + 0.2 * lift
+                + 0.1 * ev_per_event
+            )
+            return base_regime_score
+
+        assessment_df["regime_score"] = assessment_df.apply(update_regime_score, axis=1)
 
         assessed_count = len(assessment_df)
         sound_count = assessment_df["is_structurally_sound"].sum()
@@ -10527,6 +10584,7 @@ class MaskAssessor:
         directional_returns: np.ndarray,
         mask: np.ndarray,
         oof_preds: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]] = None,
         *,
         round_fee: float = 0.0015,
         min_weight: float = 0.05,
@@ -10554,14 +10612,19 @@ class MaskAssessor:
                 "score_threshold": np.nan,
                 "trade_count": 0,
                 "trades_per_day": 0.0,
+                "trades_per_week": 0.0,
                 "win_rate": np.nan,
                 "avg_net_ret": np.nan,
                 "avg_pnl_per_day": np.nan,
+                "avg_pnl_per_week": np.nan,
                 "avg_pnl_per_active_symbol_day": np.nan,
                 "daily_pnl_std": np.nan,
+                "weekly_pnl_std": np.nan,
                 "daily_sortino": np.nan,
+                "weekly_sortino": np.nan,
                 "avg_position_weight": np.nan,
                 "total_net_pnl": np.nan,
+                "fold_pnls": [],
             }
 
         valid = (
@@ -10601,13 +10664,16 @@ class MaskAssessor:
         symbols = symbols[valid_ts]
         timestamps = timestamps[valid_ts]
         days = timestamps.dt.floor("D")
+        weeks = timestamps.dt.to_period("W").dt.start_time
         observed_days = max(int(days.nunique()), 1)
+        observed_weeks = max(int(weeks.nunique()), 1)
 
         order = np.argsort(scores)[::-1]
         scores_sorted = scores[order]
         net_sorted = net_returns[order]
         symbols_sorted = symbols[order]
         days_sorted = days.to_numpy()[order]
+        weeks_sorted = weeks.to_numpy()[order]
 
         profitable_metrics: Optional[Dict[str, Any]] = None
         threshold_metrics: Dict[float, Dict[str, Any]] = {}
@@ -10620,6 +10686,7 @@ class MaskAssessor:
             sel_net = net_sorted[:k]
             sel_symbols = symbols_sorted[:k]
             sel_days = days_sorted[:k]
+            sel_weeks = weeks_sorted[:k]
             score_threshold = float(sel_scores[k - 1])
             score_max = float(sel_scores[0]) if k > 0 else score_threshold
             score_denom = max(score_max - score_threshold, eps)
@@ -10634,6 +10701,8 @@ class MaskAssessor:
             avg_net_ret = float(np.mean(weighted_net))
             win_rate = float(np.mean(weighted_net > 0.0))
             trades_per_day = float(k / observed_days)
+            trades_per_week = float(k / observed_weeks)
+
             day_pnl = pd.Series(weighted_net).groupby(sel_days).sum()
             avg_pnl_per_day = float(day_pnl.mean()) if len(day_pnl) > 0 else np.nan
             daily_pnl_std = float(day_pnl.std(ddof=0)) if len(day_pnl) > 0 else np.nan
@@ -10643,6 +10712,17 @@ class MaskAssessor:
                 daily_sortino = float(avg_pnl_per_day / (downside_dev + eps))
             else:
                 daily_sortino = np.nan
+
+            week_pnl = pd.Series(weighted_net).groupby(sel_weeks).sum()
+            avg_pnl_per_week = float(week_pnl.mean()) if len(week_pnl) > 0 else np.nan
+            weekly_pnl_std = float(week_pnl.std(ddof=0)) if len(week_pnl) > 0 else np.nan
+            if len(week_pnl) > 0:
+                downside_w = np.minimum(week_pnl.to_numpy(dtype=np.float32), 0.0)
+                downside_dev_w = float(np.sqrt(np.mean(downside_w**2)))
+                weekly_sortino = float(avg_pnl_per_week / (downside_dev_w + eps))
+            else:
+                weekly_sortino = np.nan
+
             active_symbol_days = max(
                 int(
                     pd.DataFrame({"symbol": sel_symbols, "day": sel_days})
@@ -10654,19 +10734,37 @@ class MaskAssessor:
             avg_pnl_per_active_symbol_day = float(total_net_pnl / active_symbol_days)
             avg_position_weight = float(np.mean(weights)) if len(weights) > 0 else np.nan
 
+            fold_pnls = []
+            if folds is not None:
+                for tr_idx, va_idx in folds:
+                    va_mask_fold = np.zeros(len(data), dtype=bool)
+                    va_mask_fold[va_idx] = True
+                    # valid_fold is the intersection of the valid mask, the sorted order, and the fold validation set
+                    valid_fold_in_sel = va_mask_fold[valid][valid_ts][order][:k]
+                    if valid_fold_in_sel.any():
+                        fold_pnl = float(np.sum(weighted_net[valid_fold_in_sel]))
+                    else:
+                        fold_pnl = 0.0
+                    fold_pnls.append(fold_pnl)
+
             current_metrics = {
                 "top_pct": float(top_pct),
                 "score_threshold": score_threshold,
                 "trade_count": int(k),
                 "trades_per_day": trades_per_day,
+                "trades_per_week": trades_per_week,
                 "win_rate": win_rate,
                 "avg_net_ret": avg_net_ret,
                 "avg_pnl_per_day": avg_pnl_per_day,
+                "avg_pnl_per_week": avg_pnl_per_week,
                 "avg_pnl_per_active_symbol_day": avg_pnl_per_active_symbol_day,
                 "daily_pnl_std": daily_pnl_std,
+                "weekly_pnl_std": weekly_pnl_std,
                 "daily_sortino": daily_sortino,
+                "weekly_sortino": weekly_sortino,
                 "avg_position_weight": avg_position_weight,
                 "total_net_pnl": total_net_pnl,
+                "fold_pnls": fold_pnls,
             }
             threshold_metrics[float(top_pct)] = current_metrics
 
@@ -11143,6 +11241,7 @@ def select_top_diverse_rules(
 
     selected_idx = []
     selected_sides = {"long": 0, "short": 0}
+    max_overlap_with_accepted = {}
 
     for idx, row in sorted_reg.iterrows():
         if len(selected_idx) >= top_n:
@@ -11194,6 +11293,7 @@ def select_top_diverse_rules(
 
         # Check overlap constraint
         too_similar = False
+        current_max_overlap = 0.0
         for s_idx in selected_idx:
             s_key = sorted_reg.loc[s_idx, "canonical_key"]
             s_mask = mask_map.get(s_key)
@@ -11204,12 +11304,16 @@ def select_top_diverse_rules(
             union = float(np.sum(mask | s_mask))
             jaccard = intersection / union if union > 0 else 0.0
 
+            if jaccard > current_max_overlap:
+                current_max_overlap = jaccard
+
             if jaccard > max_overlap:
                 too_similar = True
                 break
 
         if not too_similar:
             selected_idx.append(idx)
+            max_overlap_with_accepted[key] = current_max_overlap
             if side in selected_sides:
                 selected_sides[side] += 1
 
@@ -11218,7 +11322,9 @@ def select_top_diverse_rules(
             registry, mask_map, top_n, max_overlap + 0.1, max_side_in_top
         )
 
-    return sorted_reg.loc[selected_idx]
+    result_df = sorted_reg.loc[selected_idx].copy()
+    result_df["max_overlap_with_accepted"] = result_df["canonical_key"].apply(lambda k: max_overlap_with_accepted.get(str(k), 0.0))
+    return result_df
 
 
 def build_portfolio_diversity_report(

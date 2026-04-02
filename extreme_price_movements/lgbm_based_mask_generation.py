@@ -71,7 +71,7 @@ LOGGER = logging.getLogger(__name__)
 TRIAD_DEFAULT_HORIZONS: List[int] = [3, 10]
 
 # Default triad target names
-TRIAD_DEFAULT_TARGET_NAMES: List[str] = ["target_eff", "target_ela", "target_vame"]
+TRIAD_DEFAULT_TARGET_NAMES: List[str] = ["target_eff", "target_vame"]
 
 # Per-target configuration for triad targets
 TRIAD_TARGET_CONFIGS: Dict[str, Dict[str, Any]] = {
@@ -81,13 +81,6 @@ TRIAD_TARGET_CONFIGS: Dict[str, Dict[str, Any]] = {
         "min_support_pct": 0.05,
         "ic_hurdle": 0.02,
         "description": "Efficiency: direct vs actual path ratio",
-    },
-    "target_ela": {
-        "huber_alpha": 2.0,
-        "learning_rate": 0.02,
-        "min_support_pct": 0.04,
-        "ic_hurdle": 0.015,
-        "description": "Elasticity: reversion tendency at extremes",
     },
     "target_vame": {
         "huber_alpha": 0.5,
@@ -229,7 +222,7 @@ def build_run_output_dir(
     cfg : Dict[str, Any]
         Configuration dictionary containing 'output_dir' and 'timestamped_run_outputs'
     target_name : Optional[str]
-        Target name for triad mode (e.g., 'target_eff', 'target_ela', 'target_vame')
+        Target name for triad mode (e.g., 'target_eff', 'target_vame')
     horizon : Optional[int]
         Horizon in bars for triad mode
     side : Optional[str]
@@ -13515,20 +13508,16 @@ if __name__ == "__main__":
     # {target_name: {horizon: target_array}}
     triad_targets: Dict[str, Dict[int, np.ndarray]] = {
         "target_eff": {},
-        "target_ela": {},
         "target_vame": {},
         "target_eff_surprisal": {},
-        "target_ela_surprisal": {},
         "target_vame_surprisal": {},
     }
 
     for horizon, df_targets in triad_results_by_horizon.items():
         for target_base in [
             "target_eff",
-            "target_ela",
             "target_vame",
             "target_eff_surprisal",
-            "target_ela_surprisal",
             "target_vame_surprisal",
         ]:
             col_name = f"{target_base}_{horizon}"

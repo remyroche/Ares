@@ -87,11 +87,11 @@ def test_get_bounded_triad_adds_surprisal_features_and_blends_targets() -> None:
         surprisal_blend_weight=0.2,
     )
 
-    for col in ["target_eff_surprisal", "target_ela_surprisal", "target_vame_surprisal"]:
+    for col in ["target_eff_surprisal", "target_vame_surprisal"]:
         assert col in out.columns
         assert np.isfinite(out[col].to_numpy(dtype=np.float64)[20:]).any()
 
-    for col in ["target_eff", "target_ela", "target_vame"]:
+    for col in ["target_eff", "target_vame"]:
         out_arr = out[col].to_numpy(dtype=np.float64)
         base_arr = base[col].to_numpy(dtype=np.float64)
         assert np.nanmin(out_arr) >= 0.0
@@ -129,7 +129,6 @@ def test_get_bounded_triad_respects_symbol_boundaries() -> None:
     for symbol in ("AAA", "BBB"):
         sym = out.loc[out["symbol"] == symbol]
         assert sym["target_eff"].tail(horizon).isna().all()
-        assert sym["target_ela"].tail(horizon).isna().all()
 
 
 def test_get_bounded_triad_has_high_valid_rate_on_long_multi_symbol_panel() -> None:
@@ -161,10 +160,10 @@ def test_get_bounded_triad_has_high_valid_rate_on_long_multi_symbol_panel() -> N
     )
 
     eff_valid_rate = float(np.isfinite(out["target_eff"]).mean())
-    ela_valid_rate = float(np.isfinite(out["target_ela"]).mean())
+    vame_valid_rate = float(np.isfinite(out["target_vame"]).mean())
 
     assert eff_valid_rate > 0.99
-    assert ela_valid_rate > 0.99
+    assert vame_valid_rate > 0.99
 
 
 def test_rescale_short_horizon_efficiency_compresses_h3_only() -> None:

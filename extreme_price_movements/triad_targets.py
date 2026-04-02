@@ -2,12 +2,11 @@
 Triad Targets Module for Regime Mining.
 
 This module implements the triad target system for identifying predictive regimes
-in price movements. The three targets (EFF, ELA, VAME) are independent continuous
+in price movements. The two targets (EFF, VAME) are independent continuous
 regressands bounded in [0, 1].
 
 Target Definitions:
 - target_eff: Trend Efficiency - measures how efficiently price moves toward a final level
-- target_ela: Elasticity - measures price stretch relative to ATR
 - target_vame: Expansion Sustainability - measures sustainability of price expansion
 
 Critical Constraints:
@@ -28,7 +27,7 @@ from extreme_price_movements.utils import tprint
 
 
 # Constants
-TRIAD_TARGET_NAMES: List[str] = ["target_eff", "target_ela", "target_vame"]
+TRIAD_TARGET_NAMES: List[str] = ["target_eff", "target_vame"]
 
 
 def _per_symbol_shift(series: pd.Series, symbol: pd.Series, periods: int) -> pd.Series:
@@ -265,21 +264,100 @@ def harmonic_mean(a: np.ndarray | float, b: np.ndarray | float) -> np.ndarray | 
     return (2 * a * b) / (a + b + 1e-9)
 
 
-def _rescale_short_horizon_efficiency(
-    efficiency: pd.Series, horizon: int
-) -> pd.Series:
+def compute_target_revert_weighted(
+    close_wide: pd.DataFrame,
+    anchor_wide: pd.DataFrame,
+    horizon: int,
+    min_dev_frac: float = 0.01,        # 1.0%
+    strong_dev_frac: float = 0.015,    # 1.5%
+    strong_k: float = 80.0,            # saturation speed above 1.5%
+    eps: float = 1e-12,
+) -> pd.DataFrame:
     """
-    Compress EFF on very short horizons where raw path efficiency is too generous.
+    Anchor-reversion target with explicit preference for larger initial dislocations.
 
-    The raw `final_disp / path_traveled` ratio tends to be structurally high on
-    3-bar windows. We keep longer horizons unchanged and apply a smooth power
-    compression only when `horizon < 10`.
+    Design:
+    - dislocations < 1.0%: not scored
+    - 1.0% to 1.5%: lower scores by amplitude weight
+    - 1.5%+: majority of score mass lives here
     """
-    clipped = efficiency.clip(0.0, 1.0).astype(np.float64)
-    if horizon >= 10:
-        return clipped
-    gamma = 1.0 + 0.75 * ((10.0 - float(max(horizon, 1))) / 9.0)
-    return clipped.pow(gamma)
+    close = close_wide.to_numpy(dtype=np.float64)
+    anchor = anchor_wide.to_numpy(dtype=np.float64)
+
+    T, N = close.shape
+
+    # Initial deviation
+    dev0 = close - anchor
+    abs_dev0 = np.abs(dev0)
+    dev_frac = abs_dev0 / np.maximum(np.abs(close), eps)
+
+    # Eligibility gate
+    valid_start = dev_frac >= min_dev_frac
+
+    # Forward horizon alignment
+    close_H = np.full((T, N), np.nan, dtype=np.float64)
+    anchor_H = np.full((T, N), np.nan, dtype=np.float64)
+    close_H[:-horizon] = close[horizon:]
+    anchor_H[:-horizon] = anchor[horizon:]
+
+    devH = close_H - anchor_H
+    abs_devH = np.abs(devH)
+
+    # Recovery fraction
+    recovered = np.maximum(0.0, abs_dev0 - abs_devH)
+    recovery_frac = recovered / np.maximum(abs_dev0, eps)
+    recovery_frac = np.clip(recovery_frac, 0.0, 1.0)
+
+    # Speed score: first bar where 50% of initial deviation is recovered
+    fwd_close = np.full((T, horizon, N), np.nan, dtype=np.float64)
+    fwd_anchor = np.full((T, horizon, N), np.nan, dtype=np.float64)
+    for k in range(1, horizon + 1):
+        fwd_close[:-k, k - 1, :] = close[k:]
+        fwd_anchor[:-k, k - 1, :] = anchor[k:]
+
+    fwd_abs_dev = np.abs(fwd_close - fwd_anchor)
+    fwd_recovery_frac = (abs_dev0[:, None, :] - fwd_abs_dev) / np.maximum(abs_dev0[:, None, :], eps)
+    fwd_recovery_frac = np.clip(fwd_recovery_frac, 0.0, 1.0)
+
+    hit_50 = fwd_recovery_frac >= 0.50
+    any_hit_50 = np.any(hit_50, axis=1)
+
+    first_hit_idx = np.argmax(hit_50, axis=1) + 1
+    first_hit_idx = first_hit_idx.astype(np.float64)
+    first_hit_idx[~any_hit_50] = np.nan
+
+    speed_score = 1.0 / np.sqrt(first_hit_idx)
+    speed_score[~any_hit_50] = 0.0
+
+    # Base revert quality
+    base = np.sqrt(recovery_frac * speed_score)
+
+    # Amplitude weight
+    amp_weight = np.zeros((T, N), dtype=np.float64)
+
+    # 1.0% to 1.5%: weakly weighted
+    mid_mask = (dev_frac >= min_dev_frac) & (dev_frac < strong_dev_frac)
+    x_mid = (dev_frac[mid_mask] - min_dev_frac) / max(strong_dev_frac - min_dev_frac, eps)
+    amp_weight[mid_mask] = 0.4 * (x_mid ** 2)
+
+    # 1.5%+: strong region, saturating toward 1
+    hi_mask = dev_frac >= strong_dev_frac
+    x_hi = dev_frac[hi_mask] - strong_dev_frac
+    amp_weight[hi_mask] = 0.5 + 0.5 * (1.0 - np.exp(-strong_k * x_hi))
+
+    # Final target
+    target = base * amp_weight
+    target = np.clip(target, 0.0, 1.0)
+
+    # Invalidate rows without enough forward horizon or insufficient initial dislocation
+    target[-horizon:] = np.nan
+    target[~valid_start] = np.nan
+
+    return pd.DataFrame(
+        target.astype(np.float32),
+        index=close_wide.index,
+        columns=close_wide.columns,
+    )
 
 
 def tail_weighted_geometric_mean(
@@ -533,7 +611,7 @@ def get_bounded_triad(
     Returns
     -------
     pd.DataFrame
-        Original df with added columns: target_eff, target_ela, target_vame
+        Original df with added columns: target_eff, target_vame
 
     CRITICAL CONSTRAINTS:
     - Do NOT use future-on-future persistence like: p_eff = s_eff.rolling(n).mean().shift(-n)
@@ -582,26 +660,24 @@ def get_bounded_triad(
     # Final displacement
     final_disp = (fwd_close - df["close"]).abs()
 
-    # 1) Trend Efficiency
-    path_traveled = grouped["close"].transform(
-        lambda x: x.diff().abs().rolling(n).sum().shift(-n)
+    # 1) Trend Efficiency - using anchor-reversion implementation
+    # Pivot to wide format for vectorized computation
+    close_wide = df.pivot(columns="symbol", values="close")
+
+    # Compute anchor as backward-looking moving average
+    anchor_wide = close_wide.rolling(window=n, min_periods=1).mean()
+
+    # Compute target_eff using anchor-reversion implementation
+    target_eff_wide = compute_target_revert_weighted(
+        close_wide=close_wide,
+        anchor_wide=anchor_wide,
+        horizon=n,
     )
 
-    s_eff = _rescale_short_horizon_efficiency(
-        final_disp / (path_traveled + 1e-9), n
-    )
-
-    # IMPORTANT: use backward persistence, not future-stacked persistence
-    p_eff = (
-        s_eff.groupby(df["symbol"], sort=False)
-        .transform(lambda x: x.shift(1).rolling(n).mean())
-    )
-
-    # Keep EFF harmonic-only. Tail weighting made h=3 materially less selective.
-    df["target_eff"] = harmonic_mean(
-        s_eff.clip(0, 1),
-        p_eff.clip(0, 1)
-    )
+    # Convert back to long format and assign back to DataFrame.
+    # Note: reset_index(level="symbol", drop=True) is safer than reindex(df.index)
+    # when dealing with RangeIndex and MultiIndex stacking in pandas 2.x.
+    df["target_eff"] = target_eff_wide.stack().reset_index(level="symbol", drop=True)
     _log_target_diagnostics(df, "target_eff")
 
     # 2) Elasticity
@@ -617,24 +693,6 @@ def get_bounded_triad(
     p_ela = 1 - (
         final_disp / (max_excursion + 1e-9)
     )
-
-    if use_tail_weighting:
-        ela_intermediate = tail_weighted_geometric_mean(
-            s_ela.clip(0, 1),
-            p_ela.clip(0, 1),
-            tail_boost=tail_boost,
-        )
-        df["target_ela"] = tail_weighted_geometric_mean(
-            ela_intermediate,
-            np.clip(time_to_extreme_score, 0, 1),
-            tail_boost=tail_boost,
-        )
-    else:
-        df["target_ela"] = harmonic_mean(
-            harmonic_mean(s_ela.clip(0, 1), p_ela.clip(0, 1)),
-            np.clip(time_to_extreme_score, 0, 1)
-        )
-    _log_target_diagnostics(df, "target_ela")
 
     # 3) Expansion Sustainability
     # IMPORTANT: use dominant excursion direction, not final close sign
@@ -783,7 +841,7 @@ def compute_triad_targets_for_horizons(
     Dict[int, pd.DataFrame]
         Dictionary mapping horizon -> DataFrame with target columns.
         Each DataFrame contains the original data plus target columns
-        suffixed with the horizon (e.g., 'target_eff_24', 'target_ela_24', 'target_vame_24')
+        suffixed with the horizon (e.g., 'target_eff_24', 'target_vame_24')
     """
     results: Dict[int, pd.DataFrame] = {}
 
@@ -818,10 +876,8 @@ def compute_triad_targets_for_horizons(
         # Rename target columns with horizon suffix
         rename_map = {
             "target_eff": f"target_eff_{horizon}",
-            "target_ela": f"target_ela_{horizon}",
             "target_vame": f"target_vame_{horizon}",
             "target_eff_surprisal": f"target_eff_surprisal_{horizon}",
-            "target_ela_surprisal": f"target_ela_surprisal_{horizon}",
             "target_vame_surprisal": f"target_vame_surprisal_{horizon}",
         }
         rename_map = {k: v for k, v in rename_map.items() if k in df_with_targets.columns}

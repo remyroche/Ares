@@ -2,11 +2,10 @@
 
 ## Overview
 
-This document describes the architecture for integrating the triad target system (`target_eff`, `target_ela`, `target_vame`) into [`lgbm_based_mask_generation.py`](lgbm_based_mask_generation.py).
+This document describes the architecture for integrating the triad target system (`target_eff`, `target_vame`) into [`lgbm_based_mask_generation.py`](lgbm_based_mask_generation.py).
 
 The triad targets are bounded [0,1] metrics that capture different aspects of extreme price movements:
 - **target_eff**: Efficiency - how efficiently price reaches extreme levels
-- **target_ela**: Elasticity - price behavior elasticity at extremes  
 - **target_vame**: Volume-adjusted momentum efficiency
 
 ---
@@ -43,7 +42,7 @@ def get_bounded_triad(
     Compute bounded triad targets in [0, 1] range.
     
     Returns:
-        Dict with keys: 'target_eff', 'target_ela', 'target_vame'
+        Dict with keys: 'target_eff', 'target_vame'
         Each value is np.ndarray of shape (n_times, n_symbols) with dtype float32
     """
     ...
@@ -109,8 +108,7 @@ flowchart TD
     subgraph Triad Target Generation
         D --> D1[get_bounded_triad]
         D1 --> D2[target_eff]
-        D1 --> D3[target_ela]
-        D1 --> D4[target_vame]
+        D1 --> D3[target_vame]
     end
 ```
 
@@ -173,8 +171,7 @@ flowchart TD
         H --> H2[horizon=100]
         H --> H3[horizon=200]
         T --> T1[target_eff]
-        T --> T2[target_ela]
-        T --> T3[target_vame]
+        T --> T2[target_vame]
         S --> S1[long]
         S --> S2[short]
     end
@@ -187,7 +184,7 @@ def run_two_stage_lgbm_mask_generation_triad(
     cfg: Dict[str, Any],
     root_output_dir: Path,
     horizons: List[int] = None,  # NEW: Default [50, 100, 200]
-    targets: List[str] = None,   # NEW: Default ["target_eff", "target_ela", "target_vame"]
+    targets: List[str] = None,   # NEW: Default ["target_eff", "target_vame"]
 ) -> Dict[str, Any]:
     """
     Main orchestrator with triad target support.
@@ -195,7 +192,7 @@ def run_two_stage_lgbm_mask_generation_triad(
     Runs Cartesian product: horizons × targets × sides
     """
     horizons = horizons or cfg.get("triad_horizons", [50, 100, 200])
-    targets = targets or cfg.get("triad_target_names", ["target_eff", "target_ela", "target_vame"])
+    targets = targets or cfg.get("triad_target_names", ["target_eff", "target_vame"])
     
     all_results = {}
     
@@ -306,9 +303,7 @@ def run_triad_hpo_for_target_horizon(
     """
     # Different search grids for different targets
     if target_name == "target_eff":
-        huber_alpha_grid = (0.1, 0.5, 1.0, 2.0)
-    elif target_name == "target_ela":
-        huber_alpha_grid = (0.5, 1.0, 2.0, 5.0)
+        huber_alpha_grid = (0.1, 0.3, 0.5, 1.0)
     else:  # target_vame
         huber_alpha_grid = (0.1, 0.3, 0.5, 1.0)
     
@@ -391,23 +386,14 @@ def train_fold(self, X_tr, y_tr, X_va, y_va, fold_id: int, seed: int):
 
 Store per-target configurations in a structured format:
 
-```python
-# In config.py or as a new config file
 
 TRIAD_TARGET_CONFIGS = {
     "target_eff": {
-        "huber_alpha": 1.0,
+        "huber_alpha": 0.5,
         "learning_rate": 0.03,
         "min_support_pct": 0.05,
         "ic_hurdle": 0.02,
         "description": "Efficiency: direct vs actual path ratio",
-    },
-    "target_ela": {
-        "huber_alpha": 2.0,
-        "learning_rate": 0.02,
-        "min_support_pct": 0.04,
-        "ic_hurdle": 0.015,
-        "description": "Elasticity: reversion tendency at extremes",
     },
     "target_vame": {
         "huber_alpha": 0.5,
@@ -595,8 +581,6 @@ def compute_target_quality_summary(
 │   │   │   └── side_metrics.json
 │   │   └── short/
 │   │       └── ...
-│   ├── target_ela/
-│   │   └── ...
 │   └── target_vame/
 │       └── ...
 │
@@ -619,7 +603,7 @@ MERGED_DISCOVERY_TABLE_COLUMNS = [
     *SCORER_REGISTRY_COLUMNS,
     
     # NEW: Provenance fields
-    "target_name",       # "target_eff", "target_ela", "target_vame", or "fwd_ret_norm"
+    "target_name",       # "target_eff", "target_vame", or "fwd_ret_norm"
     "horizon",           # 50, 100, 200, etc.
     "target_type",       # "triad" or "legacy"
     
@@ -851,7 +835,7 @@ Triad mode adds new directories and columns without modifying existing outputs.
 
 triad_targets:
   enabled: true
-  names: ["target_eff", "target_ela", "target_vame"]
+  names: ["target_eff", "target_vame"]
   horizons: [50, 100, 200]
   
   target_eff:
@@ -859,13 +843,7 @@ triad_targets:
     learning_rate: 0.03
     min_support_pct: 0.05
     ic_hurdle: 0.02
-    
-  target_ela:
-    huber_alpha: 2.0
-    learning_rate: 0.02
-    min_support_pct: 0.04
-    ic_hurdle: 0.015
-    
+
   target_vame:
     huber_alpha: 0.5
     learning_rate: 0.04
@@ -897,7 +875,7 @@ This architecture provides:
 1. **Minimal Invasive Changes**: New functions and optional parameters rather than rewrites
 2. **Preserved Semantics**: Rule generation logic unchanged, only targets differ
 3. **Backward Compatibility**: Legacy mode flag maintains existing behavior
-4. **No 4th Target**: Strictly three targets: `target_eff`, `target_ela`, `target_vame`
+4. **No 3rd Target**: Strictly two targets: `target_eff`, `target_vame`
 5. **Per-Target HPO**: Cartesian product of horizons × targets with independent optimization
 6. **Rich Metrics**: New target-quality metrics for better rule evaluation
 7. **Merged Output**: Unified discovery table with full provenance

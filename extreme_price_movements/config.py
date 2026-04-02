@@ -2774,6 +2774,28 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
     "max_allowed_dispersion_quantile": 0.75,
     # Time scaling
     "bars_per_hour": 4,  # assume 15m bars default
+    # --- Ridge candidate selection (global, all run modes) ---
+    # Max rules sent to Ridge learnability + PnL assessment (per side per horizon)
+    "max_ridge_candidates_total": 80,
+    # F1 overlap below this threshold is not penalised (diversity reward zone)
+    "ridge_overlap_free_zone": 0.30,
+    # Exponent applied to the cheap-rank score (higher = stronger preference for top-ranked)
+    "ridge_cheap_rank_exponent": 1.3,
+    # Exponent applied to the overlap-excess penalty
+    "ridge_overlap_penalty_exponent": 1.8,
+    # Minimum support ratio between two rules to qualify for overlap computation
+    "ridge_support_ratio_min": 0.70,
+    # Penalty/boost strength for rules away from TARGET_SUPPORT
+    "ridge_support_penalty_strength": 1.0,
+    "ridge_support_boost_strength": 1.0,
+    # Cross-bucket overlap discount multipliers (lower = rules from different buckets
+    # need much higher raw overlap before they suppress each other)
+    "ridge_cross_side_overlap_mult": 0.50,       # different long/short
+    "ridge_cross_horizon_overlap_mult": 0.70,    # same side, different horizon
+    # Cascade dedup thresholds (descending): stop when ≤ max_ridge_candidates_total rules remain
+    "ridge_dedup_thresholds": [0.95, 0.925, 0.90, 0.875, 0.85, 0.825, 0.80, 0.75, 0.70, 0.65, 0.60],
+    # Per-bucket structural dedup target (top-N kept per bucket before global Ridge cascade)
+    "overlap_dedup_bucket_top_target": 20,
 }
 
 

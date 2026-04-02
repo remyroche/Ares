@@ -2377,6 +2377,58 @@ def make_surprisal_sample_weights(
     return np.clip(weights, w_min, w_max).astype(np.float32, copy=False)
 
 
+def make_ridge_vol_weights(
+    fwd_ret: np.ndarray,
+    *,
+    window: int = 20,
+    w_min: float = 0.5,
+    w_max: float = 2.0,
+) -> np.ndarray:
+    """
+    Ridge sample weights by inverse rolling volatility.
+    
+    Heteroscedasticity correction: downweight high-volatility periods
+    where Ridge's homoscedasticity assumption is violated.
+    
+    Parameters
+    ----------
+    fwd_ret : np.ndarray
+        Forward returns array
+    window : int
+        Rolling window for volatility computation (default: 20)
+    w_min : float
+        Minimum weight (default: 0.5)
+    w_max : float
+        Maximum weight (default: 2.0)
+        
+    Returns
+    -------
+    np.ndarray
+        Sample weights in [w_min, w_max]
+    """
+    import pandas as pd
+    
+    n = len(fwd_ret)
+    if n == 0:
+        return np.empty(0, dtype=np.float32)
+    
+    # Compute rolling volatility using pandas
+    vol = pd.Series(fwd_ret).rolling(window=window, min_periods=max(5, window // 4)).std().values
+    
+    # Fill NaN with median volatility
+    vol_median = np.nanmedian(vol)
+    vol = np.nan_to_num(vol, nan=vol_median)
+    
+    # Inverse volatility weights
+    weights = 1.0 / (vol + 1e-6)
+    
+    # Normalize to median and clip
+    weights = weights / (np.median(weights) + 1e-9)
+    weights = np.clip(weights, w_min, w_max)
+    
+    return weights.astype(np.float32, copy=False)
+
+
 class InteractionModel:
     """
     LightGBM is trained without strict interaction constraints.
@@ -2607,7 +2659,7 @@ class InteractionModel:
         lambda_l2 = float(self.cfg.get("lambda_l2", 0.0))
         feature_fraction = float(self.cfg.get("feature_fraction", 0.7))
 
-        min_gain_to_split = float(self.cfg.get("min_gain_to_split", 0.0))
+        min_gain_to_split = float(self.cfg.get("min_gain_to_split", 0.00005))
         if "hpo_min_gain_to_split" in self.cfg:
             min_gain_to_split = float(self.cfg["hpo_min_gain_to_split"])
 
@@ -2617,7 +2669,7 @@ class InteractionModel:
             min_data_in_leaf = max(10, int(self.cfg["hpo_min_data_in_leaf"]))
 
         # Use quantile loss for all targets (triad targets work with quantile regression)
-        alpha_hpo = float(self.cfg.get("alpha_hpo", 0.90))
+        alpha_hpo = float(self.cfg.get("alpha_hpo", 0.7))
         alpha = alpha_hpo if self.side == "long" else (1.0 - alpha_hpo)
 
         # Override with dynamic HPO results if available
@@ -4399,14 +4451,7 @@ class RuleScorer:
             path_quality_elapsed = time.perf_counter() - path_quality_start
             self._path_quality_cache[canonical_key] = path_quality
         if path_quality_elapsed >= 1.0 or path_obs >= 5000:
-            tprint(
-                "Stage A: Trade path quality "
-                f"path_obs={path_obs} folds={path_folds} "
-                f"n_obs={path_quality.get('n_obs', 0)} n_folds={path_quality.get('n_folds', 0)} "
-                f"quality_stability_score={path_quality.get('quality_stability_score', np.nan):.4f} "
-                f"trade_path_quality_score={path_quality.get('trade_path_quality_score', np.nan):.4f} "
-                f"elapsed={path_quality_elapsed:.2f}s"
-            )
+            pass  # Trade path quality calculation (logging removed)
         trade_path_quality_score = float(
             path_quality.get("trade_path_quality_score", np.nan)
         )
@@ -4581,8 +4626,9 @@ class RuleScorer:
             or summary["directional_mean_ret"] <= 0
         ):
             rejected.append("non_positive_directional_ret")
-        if summary["hurdle_excess"] <= 0:
-            rejected.append("below_hurdle")
+        # Removed below_hurdle as a hard gate - kept downstream for scoring
+        # if summary["hurdle_excess"] <= 0:
+        #     rejected.append("below_hurdle")
         if require_uplift:
             if not np.isfinite(summary["mean_uplift"]):
                 rejected.append("missing_uplift")
@@ -5743,8 +5789,8 @@ def run_mining_stage(
 
         orig_tr_rows = len(tr_idx)
         orig_va_rows = len(va_idx)
-        tr_idx = _cap_fold_indices(tr_idx, int(cfg.get("fold_train_row_cap", 50_000)))
-        va_idx = _cap_fold_indices(va_idx, int(cfg.get("fold_val_row_cap", 10_000)))
+        tr_idx = _cap_fold_indices(tr_idx, int(cfg.get("fold_train_row_cap", 75_000)))
+        va_idx = _cap_fold_indices(va_idx, int(cfg.get("fold_val_row_cap", 15_000)))
 
         # Determine available features per group for logging
         group_to_features = collections.defaultdict(list)
@@ -6345,7 +6391,7 @@ def run_mining_stage(
         )
         finite_importance = finite_importance[np.isfinite(finite_importance)]
         if len(finite_importance) >= 2:
-            cutoff = float(np.nanquantile(finite_importance, 0.20))
+            cutoff = float(np.nanquantile(finite_importance, 0.30))
             before_count = len(scorer_accepted)
             scorer_accepted = scorer_accepted[
                 pd.to_numeric(scorer_accepted[importance_col], errors="coerce").fillna(
@@ -6700,6 +6746,10 @@ def run_side_pipeline(
         "Stage A row funnel: "
         + " -> ".join(f"{row['stage']}={row['rows']}" for row in stage_a_row_funnel)
     )
+
+    if int(complete_rows.sum()) == 0:
+        tprint(f"Skipping {target_name} @ H{horizon} [{side}] due to zero valid rows.")
+        return None
 
     run_step = str(cfg.get("run_step", "full")).lower()
     step1_input_dir: Optional[Path] = None
@@ -7201,6 +7251,8 @@ def run_lgbm_mask_generation_triad(
     data: pd.DataFrame,
     feature_dict: Dict[str, np.ndarray],
     triad_targets: Dict[str, Dict[int, np.ndarray]],
+    fwd_ret: np.ndarray,
+    fwd_ret_norm: np.ndarray,
     cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
@@ -7221,6 +7273,10 @@ def run_lgbm_mask_generation_triad(
     triad_targets : Dict[str, Dict[int, np.ndarray]]
         Nested dict of bounded targets: {target_name: {horizon: target_array}}
         e.g., {"target_eff": {5: array, 10: array, ...}, ...}
+    fwd_ret : np.ndarray
+        Array of forward returns for assessment
+    fwd_ret_norm : np.ndarray
+        Array of normalized forward returns for assessment
     cfg : Dict[str, Any]
         Configuration dictionary
 
@@ -7305,8 +7361,8 @@ def run_lgbm_mask_generation_triad(
             surprisal_key = f"{target_name}_surprisal"
             bounded_target_surprisal = None
             if (
-                surprisal_key in triad_targets
-                and horizon in triad_targets[surprisal_key]
+                triad_targets.get(surprisal_key) is not None
+                and horizon in triad_targets.get(surprisal_key, {})
             ):
                 bounded_target_surprisal = triad_targets[surprisal_key][horizon]
 
@@ -7373,26 +7429,27 @@ def run_lgbm_mask_generation_triad(
                 results_by_target_horizon[(target_name, horizon, side)] = side_results
 
                 if triad_run_step == "full":
-                    if x_ref is None and side_results.get("X_a") is not None:
-                        x_ref = side_results["X_a"]
-                        metadata_ref = side_results.get("metadata_a", []) or []
-                    step1_dir = resolve_stage_a_step1_dir(
-                        root_output_dir,
-                        target_name=target_name,
-                        horizon=horizon,
-                        side=side,
-                    )
-                    post_dedup_path = step1_dir / "step1_post_dedup_registry.csv"
-                    if post_dedup_path.exists():
-                        post_df = pd.read_csv(post_dedup_path)
-                        if not post_df.empty:
-                            post_df["source_target"] = target_name
-                            post_df["source_horizon"] = horizon
-                            post_df["side"] = side
-                            pooled_step1_frames.append(post_df)
+                    if side_results is not None:
+                        if x_ref is None and side_results.get("X_a") is not None:
+                            x_ref = side_results["X_a"]
+                            metadata_ref = side_results.get("metadata_a", []) or []
+                        step1_dir = resolve_stage_a_step1_dir(
+                            root_output_dir,
+                            target_name=target_name,
+                            horizon=horizon,
+                            side=side,
+                        )
+                        post_dedup_path = step1_dir / "step1_post_dedup_registry.csv"
+                        if post_dedup_path.exists():
+                            post_df = pd.read_csv(post_dedup_path)
+                            if not post_df.empty:
+                                post_df["source_target"] = target_name
+                                post_df["source_horizon"] = horizon
+                                post_df["side"] = side
+                                pooled_step1_frames.append(post_df)
                 else:
                     # Add provenance to registry
-                    if not side_results["stage_a"].empty:
+                    if side_results is not None and not side_results["stage_a"].empty:
                         stage_a_with_prov = side_results["stage_a"].copy()
                         stage_a_with_prov["source_target"] = target_name
                         stage_a_with_prov["source_horizon"] = horizon
@@ -7427,8 +7484,8 @@ def run_lgbm_mask_generation_triad(
                 surprisal_key = f"{target_name}_surprisal"
                 bounded_target_surprisal = None
                 if (
-                    surprisal_key in triad_targets
-                    and horizon in triad_targets[surprisal_key]
+                    triad_targets.get(surprisal_key) is not None
+                    and horizon in triad_targets.get(surprisal_key, {})
                 ):
                     bounded_target_surprisal = triad_targets[surprisal_key][horizon]
                 horizon_target_dir = root_output_dir / f"h{horizon}" / target_name
@@ -7478,7 +7535,7 @@ def run_lgbm_mask_generation_triad(
                     results_by_target_horizon[
                         (target_name, horizon, side)
                     ] = side_results
-                    if not side_results["stage_a"].empty:
+                    if side_results is not None and not side_results["stage_a"].empty:
                         stage_a_with_prov = side_results["stage_a"].copy()
                         stage_a_with_prov["source_target"] = target_name
                         stage_a_with_prov["source_horizon"] = horizon
@@ -7551,6 +7608,8 @@ def run_lgbm_mask_generation_triad(
     # Build discovery DataFrames for merge functions
     all_results: List[pd.DataFrame] = []
     for (t_name, h, side), result in results_by_target_horizon.items():
+        if result is None:
+            continue
         discovery_frames: List[pd.DataFrame] = []
         stage_a_result = result.get("stage_a_result", {})
         accepted_registry = stage_a_result.get("accepted_registry", pd.DataFrame())
@@ -8224,7 +8283,7 @@ def classify_rule_production_quality(
     }
     if not structural_check:
         reason = rule.get("rejection_reason", "not_structurally_sound")
-        diagnostics["failures"].append(f"structural_soundness_fail: {reason}")
+        diagnostics["failures"].append(f"rule_rejected: {reason}")
 
     # Check 7: Trade path quality score
     if not np.isfinite(trade_path_quality_score):
@@ -8655,6 +8714,79 @@ class MaskAssessor:
         return float(trades_per_day_per_symbol * 10.0)
 
     @staticmethod
+    def _compute_top_quartile_precision(
+        oof_preds: np.ndarray,
+        y: np.ndarray,
+        mask: np.ndarray,
+        tp_f: np.ndarray,
+        fwd_ret_threshold: float = 0.5,
+        top_pct: float = 0.75,
+        min_samples: int = 20,
+    ) -> float:
+        """
+        Compute precision of top-quartile Ridge predictions.
+        
+        Precision = % of predictions in top 25% (by rank) that either:
+        - Hit take-profit first (tp_f == 1), OR
+        - Have forward return > fwd_ret_threshold
+        
+        Parameters
+        ----------
+        oof_preds : np.ndarray
+            Ridge out-of-fold predictions
+        y : np.ndarray
+            Forward returns (for threshold check)
+        mask : np.ndarray
+            Boolean mask defining subset
+        tp_f : np.ndarray
+            Take-profit first hit flags (1=TP hit first)
+        fwd_ret_threshold : float
+            Forward return threshold for positive outcome (default 0.5)
+        top_pct : float
+            Percentile threshold for top predictions (default 0.75 = top 25%)
+        min_samples : int
+            Minimum samples required for valid computation
+            
+        Returns
+        -------
+        float
+            Top-quartile precision in [0, 1], or NaN if insufficient samples
+        """
+        # Get valid samples within mask
+        valid_mask = (
+            mask.astype(bool) 
+            & np.isfinite(oof_preds) 
+            & np.isfinite(y)
+            & np.isfinite(tp_f)
+        )
+        
+        if np.sum(valid_mask) < min_samples:
+            return np.nan
+        
+        # Get predictions within mask
+        preds_masked = oof_preds[valid_mask]
+        y_masked = y[valid_mask]
+        tp_f_masked = tp_f[valid_mask]
+        
+        # Compute percentile threshold (top 25% by default)
+        threshold = np.percentile(preds_masked, top_pct * 100)
+        
+        # Select top predictions
+        top_mask = preds_masked >= threshold
+        n_top = np.sum(top_mask)
+        
+        if n_top < 5:  # Need at least 5 samples in top quartile
+            return np.nan
+        
+        # Positive outcome: TP hit first OR fwd_ret > threshold
+        positive_outcome = (tp_f_masked == 1) | (y_masked > fwd_ret_threshold)
+        
+        # Precision = positive outcomes in top quartile / total in top quartile
+        precision = np.sum(positive_outcome[top_mask]) / n_top
+        
+        return float(precision)
+
+    @staticmethod
     def _compute_oof_learnability_score(
         oof_preds: np.ndarray,
         y: np.ndarray,
@@ -8880,7 +9012,7 @@ class MaskAssessor:
         # If not provided, it implies we are not using a bounded target and fwd_ret is the mining target.
         _mining = bounded_target if bounded_target is not None else fwd_ret
         mining_target_by_side = {"long": _mining, "short": -_mining}
-        target_ret_by_side = {"long": fwd_ret, "short": -fwd_ret}
+        target_ret_by_side = {"long": fwd_ret_norm, "short": -fwd_ret_norm}
         mean_ret_global_by_side = {
             "long": float(np.nanmean(fwd_ret)),
             "short": float(np.nanmean(-fwd_ret)),
@@ -9062,6 +9194,33 @@ class MaskAssessor:
             )
             return "|".join(families) if families else "none"
 
+        # Bucket-level floor calibration and protection list to avoid over-pruning.
+        bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
+        # Precompute bucket-level top-decile caps for density dispersion and tail risk.
+        bucket_density_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_tail_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_path_quality_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_stability_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_sign_consistency_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_mean_ret_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+        bucket_hurdle_values: Dict[
+            Tuple[str, int], List[Tuple[str, float]]
+        ] = collections.defaultdict(list)
+
+        rejected_by_support: set = set()
+
         if step_mode == "step2":
             if step1_checkpoint_dir is None:
                 raise ValueError("step2 requires step1_checkpoint_dir")
@@ -9109,32 +9268,6 @@ class MaskAssessor:
                 f"with {sum(len(v) for v in cheap_gate_rows.values())} post-dedup rules"
             )
         else:
-            # Bucket-level floor calibration and protection list to avoid over-pruning.
-            bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
-            # Precompute bucket-level top-decile caps for density dispersion and tail risk.
-            bucket_density_values: Dict[
-                Tuple[str, int], List[Tuple[str, float]]
-            ] = collections.defaultdict(list)
-            bucket_tail_values: Dict[
-                Tuple[str, int], List[Tuple[str, float]]
-            ] = collections.defaultdict(list)
-            bucket_path_quality_values: Dict[
-                Tuple[str, int], List[Tuple[str, float]]
-            ] = collections.defaultdict(list)
-            bucket_stability_values: Dict[
-                Tuple[str, int], List[Tuple[str, float]]
-            ] = collections.defaultdict(list)
-            bucket_sign_consistency_values: Dict[
-                Tuple[str, int], List[Tuple[str, float]]
-            ] = collections.defaultdict(list)
-            bucket_mean_ret_values: Dict[
-                Tuple[str, int], List[Tuple[str, float]]
-            ] = collections.defaultdict(list)
-            bucket_hurdle_values: Dict[
-                Tuple[str, int], List[Tuple[str, float]]
-            ] = collections.defaultdict(list)
-
-            rejected_by_support: set = set()
             seen_keys_per_bucket = collections.defaultdict(set)
             reg_trade_path_quality = (
                 pd.to_numeric(
@@ -9548,10 +9681,9 @@ class MaskAssessor:
             cheap_gate_result[(bucket_key, canonical_key)] = (False, "")
             cheap_gate_rows[bucket_key].append((cheap_rank, canonical_key))
 
-        OVERLAP_THRESHOLD = 0.95
+        OVERLAP_THRESHOLD = 0.975  # Structural dedup only: remove near-exact duplicates
         SUPPORT_RATIO_MIN = 0.70
         DEDUP_SUBSAMPLE_SIZE = 10000
-        DEDUP_STOP_TARGET = int(self.cfg.get("overlap_dedup_stop_target", 80))
         eps = 1e-8
 
         surviving_keys_by_bucket: Dict[
@@ -9649,154 +9781,92 @@ class MaskAssessor:
                     "n_subsample": n_subsample,
                 }
 
-                threshold_ladder = [0.975, 0.95, 0.925, 0.90, 0.875, 0.85]
-                final_keep = [True] * n_rules
-                initial_n_rules = n_rules
-                prev_keep = np.array(final_keep, dtype=bool)
+                # ---------------------------------------------------------------
+                # PER-BUCKET GREEDY CASCADE DEDUP: top-20 per bucket
+                # ---------------------------------------------------------------
+                # Sort rules in this bucket by cheap_rank descending (best first).
+                BUCKET_TOP_TARGET = int(self.cfg.get("overlap_dedup_bucket_top_target", 20))
+                bucket_thresholds = list(self.cfg.get(
+                    "ridge_dedup_thresholds",
+                    [0.975, 0.95, 0.925, 0.90, 0.875, 0.85, 0.825, 0.80, 0.75, 0.70, 0.65, 0.60],
+                ))
 
-                # Convert lists to numpy arrays for vectorized operations
-                mean_returns_arr = np.array(mean_returns, dtype=np.float32)
-                std_returns_arr = np.array(std_returns, dtype=np.float32)
-                supports_arr = np.array(supports, dtype=np.float32)
-                sub_supports_arr = np.array(sub_supports, dtype=np.float32)
+                # Score array for sorting (cheap_rank from cheap_gate_rows already computed)
+                rule_scores = np.array([
+                    bucket_cheap_ranks.get(bucket_key, {}).get(k, 0.0)
+                    for k in surviving_keys
+                ], dtype=np.float64)
+                score_order = np.argsort(-rule_scores)  # descending
+
+                def _bucket_f1(i: int, j: int) -> float:
+                    """F1 overlap between two rules using the subsampled intersection matrix."""
+                    supp_i = float(sub_supports[i])
+                    supp_j = float(sub_supports[j])
+                    if min(supp_i, supp_j) / max(supp_i, supp_j + 1e-9) < SUPPORT_RATIO_MIN:
+                        return 0.0
+                    inter = float(intersections[i, j])
+                    return 2.0 * inter / (supp_i + supp_j + 1e-9)
+
+                def _run_greedy_pass(threshold: float, order):
+                    """Greedy dedup: iterate in score order, keep rule only if its max
+                    effective F1 with every already-accepted rule is below threshold."""
+                    accepted = []
+                    rejected_out = []
+                    for idx in order:
+                        max_ov = max((_bucket_f1(idx, a) for a in accepted), default=0.0)
+                        if max_ov < threshold:
+                            accepted.append(idx)
+                        else:
+                            rejected_out.append(idx)
+                    return accepted, rejected_out
 
                 tprint(
-                    f"Stage A: Starting overlap deduplication threshold ladder for bucket {bucket_key}..."
+                    f"Stage A: Starting per-bucket greedy dedup for {bucket_key} "
+                    f"({n_rules} rules, target={BUCKET_TOP_TARGET})"
                 )
+                initial_n_rules = n_rules
 
-                for threshold in threshold_ladder:
-                    tprint(
-                        f"Stage A: Overlap dedup bucket {bucket_key} at threshold {threshold:.2f} "
-                        f"(active={int(np.sum(final_keep))}/{n_rules})"
-                    )
-                    prev_keep = np.asarray(final_keep, dtype=bool).copy()
-                    keep = np.ones(n_rules, dtype=bool)
+                accepted_indices = list(score_order)   # fallback: keep all
+                rejected_pool: List[int] = []
 
-                    # Vectorized overlap checking
-                    # Create mask for pairs with same sign returns
-                    sign_mask = (
-                        mean_returns_arr[:, None] * mean_returns_arr[None, :] >= 0
-                    )
-
-                    # Create mask for valid overlaps (intersection >= 1)
-                    valid_inter_mask = intersections >= 1
-
-                    # Compute overlap matrix
-                    min_supports = np.minimum(
-                        sub_supports_arr[:, None], sub_supports_arr[None, :]
-                    )
-                    overlap_matrix = intersections / np.maximum(min_supports, 1.0)
-
-                    # Compute support ratio matrix
-                    supp_ratio_matrix = np.minimum(
-                        supports_arr[:, None], supports_arr[None, :]
-                    ) / np.maximum(
-                        np.maximum(supports_arr[:, None], supports_arr[None, :]), 1e-9
-                    )
-
-                    # Create overlap threshold mask
-                    overlap_mask = overlap_matrix > threshold
-                    supp_ratio_mask = supp_ratio_matrix > SUPPORT_RATIO_MIN
-
-                    # Combined mask for pairs to check
-                    check_mask = (
-                        sign_mask & valid_inter_mask & overlap_mask & supp_ratio_mask
-                    )
-
-                    # Only check upper triangular (i < j)
-                    tri_mask = np.triu(np.ones((n_rules, n_rules), dtype=bool), k=1)
-                    check_mask = check_mask & tri_mask
-
-                    # Get indices of pairs to check
-                    i_indices, j_indices = np.where(check_mask)
-
-                    if len(i_indices) == 0:
-                        continue
-
-                    # Vectorized rule quality computation
-                    rq_i = np.abs(mean_returns_arr[i_indices]) / (
-                        std_returns_arr[i_indices] + eps
-                    )
-                    rq_j = np.abs(mean_returns_arr[j_indices]) / (
-                        std_returns_arr[j_indices] + eps
-                    )
-                    rq_i = np.where(
-                        std_returns_arr[i_indices] > eps,
-                        rq_i,
-                        np.abs(mean_returns_arr[i_indices]),
-                    )
-                    rq_j = np.where(
-                        std_returns_arr[j_indices] > eps,
-                        rq_j,
-                        np.abs(mean_returns_arr[j_indices]),
-                    )
-
-                    # Determine which to drop
-                    drop_i = (rq_i < rq_j) & keep[i_indices]
-                    drop_j = (rq_j < rq_i) & keep[j_indices]
-                    drop_both = (rq_i == rq_j) & keep[i_indices] & keep[j_indices]
-
-                    # Apply drops
-                    keep[i_indices[drop_i]] = False
-                    keep[j_indices[drop_j]] = False
-
-                    # For ties, drop the one with lower support
-                    if np.any(drop_both):
-                        tie_i = i_indices[drop_both]
-                        tie_j = j_indices[drop_both]
-                        drop_lower_support = supports_arr[tie_i] < supports_arr[tie_j]
-                        keep[tie_i[drop_lower_support]] = False
-                        keep[tie_j[~drop_lower_support]] = False
-
-                    candidate_keep = np.asarray(final_keep, dtype=bool) & keep
-                    candidate_count = int(np.sum(candidate_keep))
-                    prev_count = int(np.sum(prev_keep))
-
-                    if candidate_count <= DEDUP_STOP_TARGET:
-                        if prev_count > DEDUP_STOP_TARGET:
-                            ranked_prev = sorted(
-                                np.where(prev_keep)[0].tolist(),
-                                key=lambda i: bucket_cheap_ranks.get(
-                                    bucket_key, {}
-                                ).get(surviving_keys[i], -np.inf),
-                                reverse=True,
-                            )
-                            selected_prev = set(ranked_prev[:DEDUP_STOP_TARGET])
-                            final_keep = np.array(
-                                [i in selected_prev for i in range(n_rules)], dtype=bool
-                            )
-                            tprint(
-                                f"Stage A: Overlap dedup bucket {bucket_key} would undershoot target "
-                                f"at threshold {threshold:.2f}; trimming previous survivor set "
-                                f"from {prev_count} to {DEDUP_STOP_TARGET}"
-                            )
-                        else:
-                            final_keep = candidate_keep
-                            tprint(
-                                f"Stage A: Overlap dedup bucket {bucket_key} reached <={DEDUP_STOP_TARGET} survivors at "
-                                f"threshold {threshold:.2f}"
-                            )
-                        break
-
-                    final_keep = candidate_keep
-
-                surviving_indices = [i for i, k in enumerate(final_keep) if k]
-                if len(surviving_indices) > DEDUP_STOP_TARGET:
-
-                    def _score(i):
-                        rq = (
-                            abs(mean_returns[i]) / (std_returns[i] + eps)
-                            if std_returns[i] > eps
-                            else abs(mean_returns[i])
+                if n_rules > BUCKET_TOP_TARGET:
+                    for threshold in bucket_thresholds:
+                        kept, rejected = _run_greedy_pass(threshold, score_order)
+                        tprint(
+                            f"Stage A: Bucket {bucket_key} dedup @ {threshold:.3f} "
+                            f"-> kept={len(kept)} rejected={len(rejected)}"
                         )
-                        gain_b = min(max(np.sqrt(max(gains[i], 0.0)), 0.0), 1.0)
-                        sign_b = min(max(sign_consistencies[i], 0.0), 1.0)
-                        rq_b = min(max(rq, 0.0), 1.0)
-                        return gain_b * sign_b * rq_b
+                        if len(kept) <= BUCKET_TOP_TARGET:
+                            accepted_indices = kept
+                            rejected_pool = rejected
+                            break
+                        accepted_indices = kept
 
-                    surviving_indices.sort(key=_score, reverse=True)
-                    surviving_indices = surviving_indices[:DEDUP_STOP_TARGET]
+                    # Refill from rejected pool if below minimum threshold (diversity-aware)
+                    MIN_KEEP_THRESHOLD = 10
+                    if len(accepted_indices) < MIN_KEEP_THRESHOLD and rejected_pool:
+                        deficit = MIN_KEEP_THRESHOLD - len(accepted_indices)
+                        
+                        # Diversity-aware refill: balance quality vs overlap
+                        alpha = float(self.cfg.get("bucket_refill_diversity_alpha", 0.5))
+                        
+                        diversity_scores = []
+                        for idx in rejected_pool:
+                            rank_score = rule_scores[idx]
+                            max_ov = max((_bucket_f1(idx, a) for a in accepted_indices), default=0.0)
+                            div_score = rank_score * (1.0 - alpha * max_ov)
+                            diversity_scores.append((idx, div_score))
+                        
+                        diversity_scores.sort(key=lambda x: x[1], reverse=True)
+                        refill = [ds[0] for ds in diversity_scores[:deficit]]
+                        accepted_indices = accepted_indices + refill
+                        
+                        tprint(
+                            f"Stage A: Bucket {bucket_key} diversity refill +{len(refill)} "
+                            f"-> total={len(accepted_indices)} (alpha={alpha:.2f})"
+                        )
 
+                surviving_indices = accepted_indices
                 final_surviving_set = {surviving_keys[i] for i in surviving_indices}
 
                 for i, k in enumerate(surviving_keys):
@@ -9810,12 +9880,8 @@ class MaskAssessor:
                 final_surviving_keys = [surviving_keys[i] for i in surviving_indices]
 
                 tprint(
-                    f"Stage A: Overlap deduplication complete for bucket {bucket_key} - {len(final_surviving_keys)} rules survived (from {initial_n_rules})"
-                )
-                tprint(
-                    f"Stage A: Overlap dedup bucket summary {bucket_key} - "
-                    f"input_rules={initial_n_rules} output_rules={len(final_surviving_keys)} "
-                    f"rejected={initial_n_rules - len(final_surviving_keys)} "
+                    f"Stage A: Bucket {bucket_key} dedup complete - "
+                    f"{len(final_surviving_keys)} rules kept (from {initial_n_rules}), "
                     f"elapsed={time.perf_counter() - bucket_overlap_start_ts:.2f}s"
                 )
 
@@ -9892,6 +9958,9 @@ class MaskAssessor:
                 else np.nan,
                 "global_pr_auc": float(baseline_metrics["global_pr_auc"])
                 if np.isfinite(baseline_metrics["global_pr_auc"])
+                else np.nan,
+                "global_top_quartile_precision": float(baseline_metrics["global_top_quartile_precision"])
+                if np.isfinite(baseline_metrics["global_top_quartile_precision"])
                 else np.nan,
                 "global_cov": float(baseline_metrics["global_cov"]),
                 "global_entropy": float(self._compute_entropy(mining_target)),
@@ -9972,135 +10041,161 @@ class MaskAssessor:
                 for rank, canonical_key in entries
             ])
 
+        tprint(
+            f"Stage A: Ridge global pool size = {len(global_pool)} rules across "
+            f"{len(set(bk for bk, _, _ in global_pool))} buckets "
+            f"(target={max_ridge_candidates_total})"
+        )
+        for bk in sorted(set(bk for bk, _, _ in global_pool)):
+            n = sum(1 for b, _, _ in global_pool if b == bk)
+            tprint(f"  bucket {bk}: {n} rules in pool")
+
         self.bucket_ridge_keys = collections.defaultdict(set)
 
         if len(global_pool) <= max_ridge_candidates_total:
+            tprint("Stage A: Pool fits within target, skipping cascade dedup")
             for bucket_key, rank, canonical_key in global_pool:
                 self.bucket_ridge_keys[bucket_key].add(canonical_key)
         else:
-            # Prepare global matrices
+            # ----------------------------------------------------------------
+            # CASCADE DEDUP WITH GLOBAL MASKS + CROSS-BUCKET PENALTY
+            # ----------------------------------------------------------------
+            # 1. Build flat lists with raw boolean masks for ALL candidates.
+            # 2. Score rules and sort descending (best first).
+            # 3. Walk down overlap thresholds [0.95 → 0.6]; at each threshold,
+            #    run a greedy "keep if max effective overlap < threshold" pass.
+            #    Stop when ≤ max_ridge_candidates_total rules remain.
+            # 4. Refill from rejected pool (score-ordered) if we end up < target.
+            # Cross-bucket overlaps are discounted:
+            #   - different side:            multiplier = cross_side_overlap_mult
+            #   - same side, diff horizon:   multiplier = cross_horizon_overlap_mult
+            #   - same side + same horizon:  multiplier = 1.0
+            cross_side_overlap_mult = float(
+                self.cfg.get("ridge_cross_side_overlap_mult", 0.50)
+            )
+            cross_horizon_overlap_mult = float(
+                self.cfg.get("ridge_cross_horizon_overlap_mult", 0.70)
+            )
+            dedup_thresholds = list(
+                self.cfg.get(
+                    "ridge_dedup_thresholds",
+                    [0.95, 0.925, 0.90, 0.875, 0.85, 0.825, 0.80, 0.75, 0.70, 0.65, 0.60],
+                )
+            )
+
             global_valid_keys = []
             global_valid_ranks = []
             global_bucket_keys = []
-
-            # Since overlap matrix is per-bucket, we only compute overlap for rules in the same bucket.
-            # We can build a global list and just check overlap if the candidates are in the same bucket.
-            # Let's extract the necessary info
-
-            key_to_bucket_idx = {}
-            bucket_to_matrices = {}
-
-            for bucket_key in bucket_ridge_rows.keys():
-                matrices = stage_a_matrices.get(bucket_key)
-                if matrices:
-                    bucket_to_matrices[bucket_key] = matrices
-
-            w_mult_list = []
-            family_bonus_list = []
+            global_masks = []
+            global_supports = []
+            global_scores = []
 
             for bucket_key, rank, canonical_key in global_pool:
-                matrices = bucket_to_matrices.get(bucket_key)
-                if not matrices or canonical_key not in matrices["key_to_idx"]:
+                if canonical_key in mask_cache:
+                    rule_mask = mask_cache[canonical_key]
+                elif self.mask_resolver:
+                    rule_mask = self.mask_resolver.get_mask(canonical_key)
+                    mask_cache[canonical_key] = rule_mask
+                else:
+                    rule_mask = self._get_mask_for_rule(canonical_key, X)
+                    mask_cache[canonical_key] = rule_mask
+
+                supp = int(np.sum(rule_mask))
+                if supp < 1:
                     continue
 
-                idx = matrices["key_to_idx"][canonical_key]
-                s = matrices["supports"][idx] / matrices.get("n_subsample", 10000.0)
-
+                s = supp / max(len(rule_mask), 1)
                 if s < (center - half_width):
-                    w = 1.0 - penalty_strength * (center - half_width - s) / (
-                        center - half_width
-                    )
+                    w = 1.0 - penalty_strength * (center - half_width - s) / (center - half_width)
                 elif s < center:
                     w = 1.0 + boost_strength * (s - (center - half_width)) / half_width
                 elif s < (center + half_width):
                     w = 1.0 + boost_strength * ((center + half_width) - s) / half_width
                 else:
-                    w = 1.0 - penalty_strength * (s - (center + half_width)) / (
-                        center + half_width
-                    )
-                w = np.clip(w, 0.1, 2.0)
+                    w = 1.0 - penalty_strength * (s - (center + half_width)) / (center + half_width)
+                w = float(np.clip(w, 0.1, 2.0))
 
-                w_mult_list.append(w)
-                family_bonus_list.append(family_rarity_bonus_by_key.get(bucket_key, {}).get(canonical_key, 0.0))
+                family_bonus = family_rarity_bonus_by_key.get(bucket_key, {}).get(canonical_key, 0.0)
+                score = rank * (1.0 + w) * (1.0 + family_bonus)
 
                 global_valid_keys.append(canonical_key)
                 global_valid_ranks.append(rank)
                 global_bucket_keys.append(bucket_key)
-                key_to_bucket_idx[len(global_valid_keys) - 1] = idx
+                global_masks.append(rule_mask.astype(bool))
+                global_supports.append(supp)
+                global_scores.append(score)
 
-            w_mult_arr = np.array(w_mult_list)
-            family_bonus_arr = np.array(family_bonus_list)
-
-            raw_cr = np.array(global_valid_ranks)
-            min_cr = np.min(raw_cr)
-            max_cr = np.max(raw_cr)
-            if max_cr - min_cr < 1e-9:
-                norm_cr = np.full(len(global_valid_keys), 1.0)
+            if not global_valid_keys:
+                pass  # nothing to select
             else:
-                norm_cr = 0.05 + 0.95 * (raw_cr - min_cr) / (max_cr - min_cr)
+                supports_arr = np.array(global_supports, dtype=np.float32)
+                scores_arr = np.array(global_scores, dtype=np.float64)
 
-            max_candidates = min(max_ridge_candidates_total, len(global_valid_keys))
-            selected_indices = np.zeros(max_candidates, dtype=np.int32)
-            remaining_mask = np.ones(len(global_valid_keys), dtype=bool)
+                # Sort ALL candidates by score descending (highest quality first)
+                order = np.argsort(-scores_arr)
 
-            initial_scores = norm_cr * (1.0 + w_mult_arr) * (1.0 + family_bonus_arr)
-            best_idx = int(np.argmax(initial_scores))
-            selected_indices[0] = best_idx
-            remaining_mask[best_idx] = False
-            n_selected = 1
+                def effective_f1(i: int, j: int) -> float:
+                    """F1 overlap between rules i and j, with cross-bucket discount."""
+                    supp_i = supports_arr[i]
+                    supp_j = supports_arr[j]
+                    supp_ratio = min(supp_i, supp_j) / max(supp_i, supp_j + 1e-9)
+                    if supp_ratio < support_ratio_min:
+                        return 0.0
+                    inter = float(np.sum(global_masks[i] & global_masks[j]))
+                    raw_f1 = 2.0 * inter / (supp_i + supp_j + 1e-9)
+                    # Apply discount for cross-bucket pairs
+                    bi = global_bucket_keys[i]
+                    bj = global_bucket_keys[j]
+                    if bi[0] != bj[0]:  # different side
+                        return raw_f1 * cross_side_overlap_mult
+                    elif bi[1] != bj[1]:  # same side, different horizon
+                        return raw_f1 * cross_horizon_overlap_mult
+                    return raw_f1  # same bucket: full overlap
 
-            # Helper to calculate F1 overlap for same bucket only
-            def get_f1_overlap(i, j):
-                bucket_i = global_bucket_keys[i]
-                bucket_j = global_bucket_keys[j]
-                if bucket_i != bucket_j:
-                    return 0.0
+                def run_dedup_pass(threshold: float):
+                    """Greedy dedup: iterate in score order, keep rule if its
+                    effective overlap with every kept rule is below threshold."""
+                    kept = []
+                    rejected_pool = []
+                    for idx in order:
+                        max_ov = max(
+                            (effective_f1(idx, k) for k in kept), default=0.0
+                        )
+                        if max_ov < threshold:
+                            kept.append(idx)
+                        else:
+                            rejected_pool.append(idx)
+                    return kept, rejected_pool
 
-                matrices = bucket_to_matrices[bucket_i]
-                idx_i = key_to_bucket_idx[i]
-                idx_j = key_to_bucket_idx[j]
+                selected_indices = list(order)   # fallback: keep all (sorted)
+                rejected_pool_final: List[int] = []
 
-                inter = matrices["intersections"][idx_i, idx_j]
-                supp_i = matrices["supports"][idx_i]
-                supp_j = matrices["supports"][idx_j]
+                for threshold in dedup_thresholds:
+                    kept, rejected = run_dedup_pass(threshold)
+                    tprint(
+                        f"Stage A: Ridge dedup @ threshold={threshold:.3f} "
+                        f"-> kept={len(kept)} rejected={len(rejected)}"
+                    )
+                    if len(kept) <= max_ridge_candidates_total:
+                        selected_indices = kept
+                        rejected_pool_final = rejected
+                        break
 
-                supp_ratio = min(supp_i, supp_j) / max(supp_i, supp_j + 1e-9)
-                if supp_ratio < support_ratio_min:
-                    return 0.0
+                # Refill from rejected pool (score order) if below target
+                if len(selected_indices) < max_ridge_candidates_total:
+                    # rejected_pool_final is already in score order (from run_dedup_pass)
+                    deficit = max_ridge_candidates_total - len(selected_indices)
+                    refill = rejected_pool_final[:deficit]
+                    selected_indices = selected_indices + refill
+                    tprint(
+                        f"Stage A: Ridge refill added {len(refill)} rules "
+                        f"-> total={len(selected_indices)}"
+                    )
 
-                return 2.0 * inter / (supp_i + supp_j + 1e-9)
+                for i in selected_indices:
+                    self.bucket_ridge_keys[global_bucket_keys[i]].add(global_valid_keys[i])
 
-            while n_selected < max_candidates and remaining_mask.any():
-                remaining_indices = np.where(remaining_mask)[0]
-                if len(remaining_indices) == 0:
-                    break
 
-                selected_so_far = selected_indices[:n_selected]
-                max_f1_overlap = np.zeros(len(remaining_indices))
-
-                for r_idx, rem in enumerate(remaining_indices):
-                    overlaps = [get_f1_overlap(rem, sel) for sel in selected_so_far]
-                    max_f1_overlap[r_idx] = max(overlaps) if overlaps else 0.0
-
-                overlap_excess = np.maximum(0.0, max_f1_overlap - overlap_free_zone) / (
-                    1.0 - overlap_free_zone + 1e-9
-                )
-                adjusted_scores = (
-                    norm_cr[remaining_indices] ** cheap_rank_exponent
-                ) * ((1.0 - overlap_excess) ** overlap_penalty_exponent)
-                final_ranking = (
-                    adjusted_scores
-                    * (1.0 + w_mult_arr[remaining_indices])
-                    * (1.0 + family_bonus_arr[remaining_indices])
-                )
-
-                best_next_idx = remaining_indices[int(np.argmax(final_ranking))]
-                selected_indices[n_selected] = best_next_idx
-                remaining_mask[best_next_idx] = False
-                n_selected += 1
-
-            for i in selected_indices:
-                self.bucket_ridge_keys[global_bucket_keys[i]].add(global_valid_keys[i])
 
         total_ridge_selected = sum(
             len(keys) for keys in self.bucket_ridge_keys.values()
@@ -10174,11 +10269,39 @@ class MaskAssessor:
             global_auc = float(baseline_cache[side]["global_auc"])
             global_roc_auc = float(baseline_cache[side]["global_roc_auc"])
             global_pr_auc = float(baseline_cache[side]["global_pr_auc"])
+            global_top_quartile_precision = float(baseline_cache[side]["global_top_quartile_precision"])
             global_entropy = float(baseline_cache[side]["global_entropy"])
             baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
 
             # 1. Triple Barrier
-            rule_tp_f, rule_sl_f, rule_to_f = tbm_side_map[side]
+            # Check if adaptive TP/SL is enabled
+            adaptive_enabled = self.cfg.get("adaptive_tp_sl_enabled", False)
+            ridge_details: Dict[str, Any] = {}  # Initialized here; populated later in section 7 if run_ridge=True
+            
+            if adaptive_enabled:
+                # Compute adaptive TP/SL for this specific rule
+                adaptive_tp_atr, adaptive_sl_atr = self._compute_adaptive_tp_sl(
+                    mask=mask,
+                    fwd_ret=target_ret,
+                    atr=data["atr"].to_numpy(),
+                    oof_preds=ridge_details.get("oof_preds", np.full(len(data), np.nan)),
+                    close=data["close"].to_numpy(),
+                    horizon=horizon,
+                    side=side,
+                )
+                
+                # Compute TBM outcomes with adaptive TP/SL
+                tbm_outcomes = compute_tbm_outcomes_per_symbol(
+                    data=data,
+                    horizon=horizon,
+                    tp_atr=adaptive_tp_atr,
+                    sl_atr=adaptive_sl_atr,
+                    side=side,
+                )
+                rule_tp_f, rule_sl_f, rule_to_f = tbm_outcomes
+            else:
+                # Use global TBM outcomes
+                rule_tp_f, rule_sl_f, rule_to_f = tbm_side_map[side]
 
             tbm_metrics = self._compute_tbm_metrics(
                 mask, rule_tp_f, rule_sl_f, rule_to_f, target_ret
@@ -10209,7 +10332,9 @@ class MaskAssessor:
             mask_auc = np.nan
             mask_roc_auc = np.nan
             mask_pr_auc = np.nan
-            lift = np.nan
+            mask_top_quartile_precision = np.nan
+            auc_lift = np.nan
+            top_quartile_precision_lift = np.nan
             entropy_red = np.nan
             ridge_trade_metrics: Dict[str, Any] = {
                 "threshold_star": np.nan,
@@ -10247,11 +10372,12 @@ class MaskAssessor:
                         f"key={canonical_key[:120]}"
                     )
                     ridge_details = self._compute_subset_ridge_details(
-                        X, target_ret, mask, folds
+                        X, target_ret, mask, folds, tp_f=rule_tp_f
                     )
                     mask_auc = float(ridge_details["subset_auc"])
                     mask_roc_auc = float(ridge_details["subset_roc_auc"])
                     mask_pr_auc = float(ridge_details["subset_pr_auc"])
+                    mask_top_quartile_precision = float(ridge_details.get("top_quartile_precision", np.nan))
                     subset_oof_coverage = float(ridge_details["coverage"])
                     ridge_trade_metrics = self._compute_ranked_ridge_trade_metrics(
                         data=data,
@@ -10270,10 +10396,13 @@ class MaskAssessor:
                         f"elapsed={time.time() - ridge_start:.2f}s"
                     )
                     if np.isfinite(mask_auc) and np.isfinite(global_auc):
-                        lift = mask_auc - global_auc
+                        auc_lift = mask_auc - global_auc
+                    if np.isfinite(mask_top_quartile_precision) and np.isfinite(global_top_quartile_precision):
+                        top_quartile_precision_lift = mask_top_quartile_precision - global_top_quartile_precision
                 else:
                     subset_oof_coverage = float(np.mean(mask))
-                    lift = 0.0  # Neutral lift
+                    auc_lift = 0.0  # Neutral AUC lift
+                    top_quartile_precision_lift = 0.0  # Neutral lift
                     rejected, rejection_reason = True, "not_in_top_ridge_candidates"
 
                 mask_entropy = self._compute_entropy(target_ret[mask])
@@ -10283,10 +10412,12 @@ class MaskAssessor:
                         True,
                         "insufficient_subset_oof_coverage",
                     )
-                elif not np.isfinite(lift):
+                elif not np.isfinite(auc_lift):
                     rejected, rejection_reason = True, "missing_learnability"
-                elif run_ridge and lift <= 0.0:
-                    rejected, rejection_reason = True, "lift_less_than_or_equal_to_zero"
+                elif not np.isfinite(top_quartile_precision_lift):
+                    rejected, rejection_reason = True, "missing_top_quartile_precision"
+                elif run_ridge and top_quartile_precision_lift <= 0.0:
+                    rejected, rejection_reason = True, "top_quartile_precision_not_positive"
 
             # 8. Event-based Expected Value
             tp_payoff = tp_atr  # TP payoff in ATR units
@@ -10323,7 +10454,7 @@ class MaskAssessor:
             # 9. Final Regime Score
             regime_score = (
                 0.30 * cheap_rank
-                + 0.20 * lift
+                + 0.20 * top_quartile_precision_lift
                 + 0.20 * ret_uplift
                 + 0.20 * ev_per_event
                 + 0.10 * (mask_auc if np.isfinite(mask_auc) else 0.0)
@@ -10402,8 +10533,10 @@ class MaskAssessor:
                     "mean_ret_global": mean_ret_global,
                     "mean_ret_mask": mean_ret_mask,
                     "ret_uplift": ret_uplift,
-                    "lift": lift,
-                    "learn_eff_ratio": np.nan,  # Deprecated - same as lift
+                    "auc_lift": auc_lift,
+                    "top_quartile_precision": mask_top_quartile_precision,
+                    "top_quartile_precision_lift": top_quartile_precision_lift,
+                    "learn_eff_ratio": np.nan,  # Deprecated - same as auc_lift
                     "subset_oof_coverage": subset_oof_coverage,
                     "baseline_oof_coverage": baseline_oof_coverage,
                     "mask_oof_corr": mask_auc,
@@ -10497,7 +10630,7 @@ class MaskAssessor:
         # Normalize final-ranking inputs jointly across the assessed candidate table before scoring.
         _normalize_column("ridge_pnl_norm", "ridge_pnl_norm_norm")
         _normalize_column("ridge_trade_sortino_composite", "ridge_trade_sortino_composite_norm")
-        _normalize_column("lift", "lift_norm")
+        _normalize_column("auc_lift", "auc_lift_norm")
         _normalize_column("ev_per_event", "ev_per_event_norm")
 
         # 10. worst_penalty (computed from the fully normalized inputs)
@@ -10506,7 +10639,7 @@ class MaskAssessor:
             worst_malus = min(
                 row.get("ridge_pnl_norm_norm", 0.0),
                 row.get("ridge_trade_sortino_composite_norm", 0.0),
-                row.get("lift_norm", 0.0),
+                row.get("auc_lift_norm", 0.0),
                 row.get("ev_per_event_norm", 0.0)
             )
             return 1.0 - worst_malus
@@ -10518,7 +10651,7 @@ class MaskAssessor:
         assessment_df["base_regime_score"] = (
             0.3 * assessment_df["ridge_pnl_norm_norm"]
             + 0.3 * assessment_df["ridge_trade_sortino_composite_norm"]
-            + 0.2 * assessment_df["lift_norm"]
+            + 0.2 * assessment_df["auc_lift_norm"]
             + 0.1 * assessment_df["ev_per_event_norm"]
         )
 
@@ -10635,6 +10768,168 @@ class MaskAssessor:
 
         return assessment_df
 
+    def _simulate_tp_sl_ev_with_path(
+        self,
+        fwd_ret: np.ndarray,
+        atr_frac: np.ndarray,
+        tp_atr: float,
+        sl_atr: float,
+        horizon: int,
+        side: str,
+    ) -> float:
+        """
+        Simulate expected value given TP/SL parameters using actual path data.
+
+        Uses final return as approximation when path data is not available.
+        """
+        # Normalize returns by ATR
+        ret_atr = fwd_ret / (atr_frac + 1e-12)
+
+        # For long: positive return is profit, negative is loss
+        # For short: negative return is profit, positive is loss
+        if side == "long":
+            # TP hit if ret_atr >= tp_atr
+            # SL hit if ret_atr <= -sl_atr
+            tp_hit = ret_atr >= tp_atr
+            sl_hit = ret_atr <= -sl_atr
+            # Use final return as approximation of path
+            profit = np.where(tp_hit, tp_atr, np.where(sl_hit, -sl_atr, ret_atr))
+        else:
+            # Short: TP hit if ret_atr <= -tp_atr
+            # SL hit if ret_atr >= sl_atr
+            tp_hit = ret_atr <= -tp_atr
+            sl_hit = ret_atr >= sl_atr
+            # Use final return as approximation of path
+            profit = np.where(tp_hit, tp_atr, np.where(sl_hit, -sl_atr, -ret_atr))
+
+        return float(np.mean(profit))
+
+    def _compute_adaptive_tp_sl(
+        self,
+        mask: np.ndarray,
+        fwd_ret: np.ndarray,
+        atr: np.ndarray,
+        oof_preds: np.ndarray,
+        close: np.ndarray,
+        horizon: int,
+        side: str,
+        confidence_levels: list = None,
+        tp_grid_atr: list = None,
+        sl_ratio_grid: list = None,
+        raw_tp_min: float = 0.01,  # 1%
+        raw_tp_max: float = 0.03,  # 3%
+        min_valid: int = 100,
+        min_conf_samples: int = 20,
+    ) -> tuple:
+        """
+        Compute adaptive TP/SL for a rule based on historical performance.
+
+        TP is ATR-normalized but constrained to ~1-3% raw returns.
+        Uses fractional ATR (atr/price) for proper dimensional consistency.
+        """
+        if confidence_levels is None:
+            confidence_levels = self.cfg.get("adaptive_tp_sl_conf_levels", [0.8])
+        if tp_grid_atr is None:
+            tp_grid_atr = self.cfg.get("adaptive_tp_sl_grid", [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0])
+        if sl_ratio_grid is None:
+            sl_ratio_grid = self.cfg.get("adaptive_tp_sl_sl_ratio_grid", [0.3, 0.5, 0.7, 0.9])
+
+        if not np.any(mask):
+            return 1.25, 0.50  # Fallback to defaults
+
+        # Use fractional ATR (atr/price) for proper dimensional consistency
+        atr_frac = atr / (np.abs(close) + 1e-12)
+
+        valid_mask = mask & np.isfinite(fwd_ret) & np.isfinite(atr_frac) & np.isfinite(oof_preds) & np.isfinite(close)
+        if np.sum(valid_mask) < min_valid:
+            return 1.25, 0.50  # Insufficient data
+
+        optimal_tps = []
+        optimal_sls = []
+
+        for conf_level in confidence_levels:
+            # Side-specific confidence threshold
+            scores = oof_preds[valid_mask]
+            if side == "long":
+                # For long: top predictions (highest scores)
+                threshold = np.percentile(scores, conf_level * 100)
+                conf_mask = valid_mask & (oof_preds >= threshold)
+            else:
+                # For short: bottom predictions (lowest scores, most negative)
+                threshold = np.percentile(scores, (1.0 - conf_level) * 100)
+                conf_mask = valid_mask & (oof_preds <= threshold)
+
+            if np.sum(conf_mask) < min_conf_samples:
+                continue  # Skip if insufficient samples at this confidence level
+
+            # Compute median fractional ATR for this confidence subset
+            median_atr_frac = np.median(atr_frac[conf_mask])
+
+            # Filter TP candidates to ensure raw returns are in [1%, 3%]
+            tp_candidates = []
+            for tp_atr in tp_grid_atr:
+                tp_raw = tp_atr * median_atr_frac
+                if raw_tp_min <= tp_raw <= raw_tp_max:
+                    tp_candidates.append(tp_atr)
+
+            # If no candidates satisfy raw return constraint, find nearest valid values
+            if not tp_candidates:
+                def dist_to_band(x, lo, hi):
+                    if x < lo:
+                        return lo - x
+                    if x > hi:
+                        return x - hi
+                    return 0.0
+
+                # Compute distance for each candidate
+                candidates_with_dist = []
+                for tp_atr in tp_grid_atr:
+                    tp_raw = tp_atr * median_atr_frac
+                    dist = dist_to_band(tp_raw, raw_tp_min, raw_tp_max)
+                    candidates_with_dist.append((dist, tp_atr))
+
+                # Sort by distance and take closest
+                candidates_with_dist.sort(key=lambda x: x[0])
+                # Take all candidates with same distance as the closest
+                min_dist = candidates_with_dist[0][0]
+                tp_candidates = [tp for dist, tp in candidates_with_dist if dist == min_dist]
+
+            best_ev = -np.inf
+            best_tp = 1.25
+            best_sl = 0.50
+
+            # Grid search over valid TP candidates and SL ratios
+            for tp_atr in tp_candidates:
+                for sl_ratio in sl_ratio_grid:
+                    sl_atr = tp_atr * sl_ratio
+
+                    # Simulate trades with these TP/SL using actual path data
+                    ev = self._simulate_tp_sl_ev_with_path(
+                        fwd_ret[conf_mask],
+                        atr_frac[conf_mask],
+                        tp_atr,
+                        sl_atr,
+                        horizon,
+                        side,
+                    )
+
+                    if ev > best_ev:
+                        best_ev = ev
+                        best_tp = tp_atr
+                        best_sl = sl_atr
+
+            optimal_tps.append(best_tp)
+            optimal_sls.append(best_sl)
+
+        # Average optimal TP/SL across confidence levels
+        if optimal_tps:
+            tp_avg = np.mean(optimal_tps)
+            sl_avg = np.mean(optimal_sls)
+        else:
+            tp_avg, sl_avg = 1.25, 0.50
+
+        return tp_avg, sl_avg
+
     def _compute_tbm_metrics(self, mask, tp_f, sl_f, to_f, fwd_ret) -> Dict[str, float]:
         """Compute triple barrier metrics."""
         m = mask.astype(bool)
@@ -10715,13 +11010,16 @@ class MaskAssessor:
         details = self._compute_subset_ridge_details(X, fwd_ret, mask, folds)
         return float(details["subset_auc"]), float(details["coverage"])
 
-    def _compute_subset_ridge_details(self, X, fwd_ret, mask, folds) -> Dict[str, Any]:
+    def _compute_subset_ridge_details(
+        self, X, fwd_ret, mask, folds, tp_f: np.ndarray = None
+    ) -> Dict[str, Any]:
         """Compute Ridge OOF details for a subset of data defined by mask."""
         if not np.any(mask):
             return {
                 "subset_auc": np.nan,
                 "subset_roc_auc": np.nan,
                 "subset_pr_auc": np.nan,
+                "top_quartile_precision": np.nan,
                 "coverage": 0.0,
                 "oof_preds": np.full(len(X), np.nan, dtype=np.float32),
                 "folds_used": 0,
@@ -10734,6 +11032,7 @@ class MaskAssessor:
                 "subset_auc": np.nan,
                 "subset_roc_auc": np.nan,
                 "subset_pr_auc": np.nan,
+                "top_quartile_precision": np.nan,
                 "coverage": 0.0,
                 "oof_preds": np.full(len(X), np.nan, dtype=np.float32),
                 "folds_used": 0,
@@ -10743,6 +11042,24 @@ class MaskAssessor:
         X_ridge = np.asarray(X[:, ridge_feats], dtype=np.float32, order="C")
         y = np.asarray(fwd_ret, dtype=np.float32)
         y[~np.isfinite(fwd_ret)] = np.nan
+
+        # --- Defensive NaN Protection: Discard sparse features to save rows ---
+        final_ridge_feats_subset = np.arange(X_ridge.shape[1])
+        if np.any(mask):
+            X_mask = X_ridge[mask]
+            nan_rates = np.isnan(X_mask).mean(axis=0)
+            offenders = np.where(nan_rates > 0.10)[0]
+            if 0 < len(offenders) < (0.10 * X_ridge.shape[1]):
+                ridge_meta = [self.metadata[i] for i in ridge_feats] if hasattr(self, "metadata") else []
+                discard_names = []
+                for fi in offenders:
+                    name = ridge_meta[fi].source_name if fi < len(ridge_meta) else f"feat_{fi}"
+                    discard_names.append(name)
+                
+                tprint(f"  DEFENSIVE: Discarding {len(offenders)} Ridge features with >10% NaNs to save rows: {', '.join(discard_names)}")
+                final_ridge_feats_subset = np.delete(final_ridge_feats_subset, offenders)
+                X_ridge = X_ridge[:, final_ridge_feats_subset]
+
         (
             is_binary_target,
             min_train_req,
@@ -10773,6 +11090,40 @@ class MaskAssessor:
             valid_tr = np.isfinite(y_tr) & np.all(np.isfinite(X_tr), axis=1)
             valid_va = np.isfinite(y_va) & np.all(np.isfinite(X_va), axis=1)
 
+            # Log if many samples are dropped due to target or feature finiteness
+            n_tr_before = len(y_tr)
+            n_tr_after = np.sum(valid_tr)
+            if n_tr_before > 0 and n_tr_after < n_tr_before:
+                n_tr_target_nan = np.sum(~np.isfinite(y_tr))
+                n_tr_feat_nan = np.sum(np.isfinite(y_tr) & (~np.all(np.isfinite(X_tr), axis=1)))
+                
+                tprint(
+                    f"WARNING: Fold {fold_id} Ridge training: Dropped {n_tr_before - n_tr_after}/{n_tr_before} "
+                    f"({100*(1-n_tr_after/n_tr_before):.1f}%) samples. "
+                    f"[Target NaN: {n_tr_target_nan}, Feature NaN: {n_tr_feat_nan}]"
+                )
+                
+                if n_tr_feat_nan > 0:
+                    nan_rates = np.isnan(X_tr).mean(axis=0)
+                    bad_idx = np.where(nan_rates > 0.001)[0]
+                    if len(bad_idx) > 0:
+                        ridge_meta = [self.metadata[i] for i in ridge_feats] if hasattr(self, "metadata") else []
+                        sorted_bad = sorted(bad_idx, key=lambda i: nan_rates[i], reverse=True)
+                        for fi in sorted_bad[:5]:
+                            fname = ridge_meta[fi].source_name if fi < len(ridge_meta) else f"feat_{fi}"
+                            tprint(f"    - Offending Ridge Feature: {fname} ({nan_rates[fi]:.1%} NaN)")
+
+            n_va_before = len(y_va)
+            n_va_after = np.sum(valid_va)
+            if n_va_before > 0 and n_va_after < n_va_before:
+                n_va_target_nan = np.sum(~np.isfinite(y_va))
+                n_va_feat_nan = np.sum(np.isfinite(y_va) & (~np.all(np.isfinite(X_va), axis=1)))
+                tprint(
+                    f"WARNING: Fold {fold_id} Ridge validation: Dropped {n_va_before - n_va_after}/{n_va_before} "
+                    f"({100*(1-n_va_after/n_va_before):.1f}%) samples. "
+                    f"[Target NaN: {n_va_target_nan}, Feature NaN: {n_va_feat_nan}]"
+                )
+
             X_tr_clean = X_tr[valid_tr]
             y_tr_clean = y_tr[valid_tr]
             X_va_clean = X_va[valid_va]
@@ -10802,38 +11153,29 @@ class MaskAssessor:
                     folds_skipped += 1
                     continue
 
-            # Subsample to 50% of training data, capped at 50,000 samples
-            n_samples = len(X_tr_clean)
-            n_subsample = max(20, min(50000, int(n_samples * 0.5)))
-            subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
+            # Use all available training data (no subsampling)
+            X_tr_subsample = X_tr_clean
+            y_tr_subsample = y_tr_clean
 
-            y_tr_subsample_pre = y_tr_clean[subsample_idx]
-            pos_mask_pre = y_tr_subsample_pre == 1
-            neg_mask_pre = y_tr_subsample_pre == 0
+            # Fit Ridge on all data with RobustScaler
+            from sklearn.preprocessing import RobustScaler
+            from sklearn.linear_model import Ridge
+            from sklearn.pipeline import Pipeline
 
-            # Cap positive samples at 5000 and match negative samples to the same index
-            if np.sum(pos_mask_pre) > 5000:
-                pos_indices = np.where(pos_mask_pre)[0]
-                pos_keep = pos_indices[:5000]
-
-                # Maintain original positive/negative ratio within the subset but limit by the positive cutoff
-                neg_indices = np.where(neg_mask_pre)[0]
-                # Stop including negative samples once we've reached the positive cutoff's relative point in the array
-                max_neg_index = (
-                    pos_keep[-1] if len(pos_keep) > 0 else len(subsample_idx)
-                )
-                neg_keep = neg_indices[neg_indices < max_neg_index]
-
-                final_keep_idx = np.sort(np.concatenate([pos_keep, neg_keep]))
-                subsample_idx = subsample_idx[final_keep_idx]
-
-            X_tr_subsample = X_tr_clean[subsample_idx]
-            y_tr_subsample = y_tr_clean[subsample_idx]
-
-            # Fit Ridge on subsampled data
+            # Compute inverse-volatility sample weights for heteroscedasticity correction
+            ridge_sample_weight = make_ridge_vol_weights(
+                y_tr_subsample,
+                window=20,
+                w_min=0.5,
+                w_max=2.0,
+            )
+            
             fit_start = time.perf_counter()
-            model = Ridge(alpha=1.0, solver="auto")
-            model.fit(X_tr_subsample, y_tr_subsample)
+            model = Pipeline([
+                ("scaler", RobustScaler()),
+                ("ridge", Ridge(alpha=1.0, solver="auto")),
+            ])
+            model.fit(X_tr_subsample, y_tr_subsample, ridge__sample_weight=ridge_sample_weight)
             preds = model.predict(X_va_clean)
             fit_predict_time += time.perf_counter() - fit_start
             folds_used += 1
@@ -10847,6 +11189,20 @@ class MaskAssessor:
         class_metrics = self._compute_oof_classification_metrics(
             oof_preds, y, mask, min_predicted_points=min_pred_points
         )
+        
+        # Compute top-quartile precision if TP flags are provided
+        top_quartile_precision = np.nan
+        if tp_f is not None and tp_f.size > 0:
+            top_quartile_precision = self._compute_top_quartile_precision(
+                oof_preds=oof_preds,
+                y=y,
+                mask=mask,
+                tp_f=tp_f,
+                fwd_ret_threshold=0.5,
+                top_pct=0.75,
+                min_samples=20,
+            )
+        
         total_elapsed = time.perf_counter() - subset_auc_start
         if total_elapsed >= 0.20:
             tprint(
@@ -10865,6 +11221,11 @@ class MaskAssessor:
             "subset_pr_auc": (
                 float(class_metrics["pr_auc"])
                 if np.isfinite(class_metrics["pr_auc"])
+                else np.nan
+            ),
+            "top_quartile_precision": (
+                float(top_quartile_precision)
+                if np.isfinite(top_quartile_precision)
                 else np.nan
             ),
             "coverage": float(coverage),
@@ -10934,11 +11295,11 @@ class MaskAssessor:
         confidence_scores = confidence_scores[valid_ts]
         net_returns = net_returns[valid_ts]
         symbols = symbols[valid_ts]
-        timestamps = timestamps[valid_ts]
+        timestamps = timestamps[valid_ts].to_numpy()
 
         # Calculate total valid symbol days observed from the candidate's valid subset
         # Floor the valid timestamps to the day level before counting unique days to get true symbol-days
-        valid_days = timestamps.dt.floor("D")
+        valid_days = pd.Series(timestamps).dt.floor("D")
         valid_df = pd.DataFrame({"symbol": symbols, "day": valid_days.to_numpy()}).drop_duplicates()
         valid_symbol_days_observed = len(valid_df)
         valid_calendar_days_observed = valid_df["day"].nunique()
@@ -10954,7 +11315,7 @@ class MaskAssessor:
             valid_indices = valid_indices[valid_ts]
 
             # Fetch corresponding exit times from data
-            t1_vals = pd.to_datetime(data.loc[valid_indices, "t1"], errors="coerce", utc=True).to_numpy()
+            t1_vals = pd.to_datetime(data.iloc[valid_indices]["t1"], errors="coerce", utc=True).to_numpy()
         else:
             t1_vals = None
 
@@ -10988,7 +11349,7 @@ class MaskAssessor:
              ))
 
         # 3. threshold_star search via binary search
-        low, high = 0.60, 1.00
+        low, high = 0.60, 0.95
         threshold_star_lowest_positive = None
         threshold_star_optimal_pnl = None
         best_pnl_raw = -np.inf
@@ -11087,7 +11448,7 @@ class MaskAssessor:
         # Thus, this metric safely measures: "realized trades initiated per valid symbol-day".
         trades_per_symbol_day_above_threshold_star = total_trades / valid_symbol_days_observed
 
-        if trades_per_symbol_day_above_threshold_star < 0.1:
+        if trades_per_symbol_day_above_threshold_star < 0.05:
             res = _empty_metrics()
             res["reject_reason"] = {
                 "reason": "insufficient trades per symbol day",
@@ -11189,6 +11550,7 @@ class MaskAssessor:
                 "global_auc": np.nan,
                 "global_roc_auc": np.nan,
                 "global_pr_auc": np.nan,
+                "global_top_quartile_precision": np.nan,
                 "global_cov": 0.0,
             }
 
@@ -11247,37 +11609,28 @@ class MaskAssessor:
                     )
                     continue
 
-            # Subsample to 50% of training data, capped at 50,000 samples
-            n_samples = len(X_tr_clean)
-            n_subsample = max(20, min(50000, int(n_samples * 0.5)))
-            subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
+            # Use all available training data (no subsampling)
+            X_tr_subsample = X_tr_clean
+            y_tr_subsample = y_tr_clean
 
-            y_tr_subsample_pre = y_tr_clean[subsample_idx]
-            pos_mask_pre = y_tr_subsample_pre == 1
-            neg_mask_pre = y_tr_subsample_pre == 0
+            # Fit Ridge on all data with RobustScaler
+            from sklearn.preprocessing import RobustScaler
+            from sklearn.linear_model import Ridge
+            from sklearn.pipeline import Pipeline
 
-            # Cap positive samples at 5000 and match negative samples to the same index
-            if np.sum(pos_mask_pre) > 5000:
-                pos_indices = np.where(pos_mask_pre)[0]
-                pos_keep = pos_indices[:5000]
-
-                # Maintain original positive/negative ratio within the subset but limit by the positive cutoff
-                neg_indices = np.where(neg_mask_pre)[0]
-                # Stop including negative samples once we've reached the positive cutoff's relative point in the array
-                max_neg_index = (
-                    pos_keep[-1] if len(pos_keep) > 0 else len(subsample_idx)
-                )
-                neg_keep = neg_indices[neg_indices < max_neg_index]
-
-                final_keep_idx = np.sort(np.concatenate([pos_keep, neg_keep]))
-                subsample_idx = subsample_idx[final_keep_idx]
-
-            X_tr_subsample = X_tr_clean[subsample_idx]
-            y_tr_subsample = y_tr_clean[subsample_idx]
-
-            # Fit Ridge on subsampled data
-            model = Ridge(alpha=1.0, solver="auto")
-            model.fit(X_tr_subsample, y_tr_subsample)
+            # Compute inverse-volatility sample weights for heteroscedasticity correction
+            ridge_sample_weight = make_ridge_vol_weights(
+                y_tr_subsample,
+                window=20,
+                w_min=0.5,
+                w_max=2.0,
+            )
+            
+            model = Pipeline([
+                ("scaler", RobustScaler()),
+                ("ridge", Ridge(alpha=1.0, solver="auto")),
+            ])
+            model.fit(X_tr_subsample, y_tr_subsample, ridge__sample_weight=ridge_sample_weight)
             preds = model.predict(X_va_clean)
 
             # Store predictions
@@ -11289,6 +11642,17 @@ class MaskAssessor:
         class_metrics = self._compute_oof_classification_metrics(
             oof_preds, y, np.isfinite(y), min_predicted_points=min_pred_points
         )
+        
+        # Compute global top-quartile precision (no mask = all data)
+        global_top_quartile_precision = self._compute_top_quartile_precision(
+            oof_preds=oof_preds,
+            y=y,
+            mask=np.isfinite(y),  # All valid samples
+            tp_f=np.zeros(len(y), dtype=np.int8),  # No TP data for global, use fwd_ret threshold only
+            fwd_ret_threshold=0.5,
+            top_pct=0.75,
+            min_samples=20,
+        )
         return {
             "global_auc": float(global_auc) if np.isfinite(global_auc) else np.nan,
             "global_roc_auc": (
@@ -11299,6 +11663,11 @@ class MaskAssessor:
             "global_pr_auc": (
                 float(class_metrics["pr_auc"])
                 if np.isfinite(class_metrics["pr_auc"])
+                else np.nan
+            ),
+            "global_top_quartile_precision": (
+                float(global_top_quartile_precision)
+                if np.isfinite(global_top_quartile_precision)
                 else np.nan
             ),
             "global_cov": float(global_cov),
@@ -11643,20 +12012,37 @@ def select_top_diverse_rules(
                     eligible_pairwise_overlaps.append(effective_overlap)
 
             if eligible_pairwise_overlaps:
-                pairwise_raw_overlap = max(eligible_pairwise_overlaps)
+                pairwise_effective_overlap = max(eligible_pairwise_overlaps)
 
-            pairwise_overlap_penalty = pairwise_raw_overlap if pairwise_raw_overlap >= 0.30 else 0.0
+            pairwise_overlap_penalty = pairwise_effective_overlap if pairwise_effective_overlap >= 0.30 else 0.0
 
             union_raw_overlap = 0.0
+            union_effective_overlap = 0.0
             if accepted_union_mask is not None:
-                # We do not compute effective overlap for union mask as side/horizon
-                # could vary within the union. Leniency only applies to pairwise.
+                # Compute raw overlap with union mask
                 union_raw_overlap = dice_overlap(rule_mask, accepted_union_mask)
 
-            union_overlap_penalty = union_raw_overlap if union_raw_overlap >= 0.40 else 0.0
+                # Compute conservative leniency for union: if ANY selected rule differs
+                # in side or horizon from candidate, apply the full leniency
+                candidate_side = str(row.get("side"))
+                candidate_horizon = str(row.get("source_horizon"))
+                different_sides = any(
+                    str(working_reg.loc[s_idx, "side"]) != candidate_side
+                    for s_idx in selected_idx
+                )
+                different_horizons = any(
+                    str(working_reg.loc[s_idx, "source_horizon"]) != candidate_horizon
+                    for s_idx in selected_idx
+                )
+                side_factor = 0.3 if different_sides else 0.0
+                horizon_factor = 0.2 if different_horizons else 0.0
+                difference_leniency = max(0.0, side_factor + horizon_factor)
+                union_effective_overlap = union_raw_overlap * (1.0 - difference_leniency)
 
-            # Hard reject conditions
-            if pairwise_raw_overlap >= 0.50 or union_raw_overlap >= 0.75:
+            union_overlap_penalty = union_effective_overlap if union_effective_overlap >= 0.40 else 0.0
+
+            # Hard reject conditions - use effective_overlap consistently
+            if pairwise_effective_overlap >= 0.50 or union_effective_overlap >= 0.75:
                 to_remove.append(idx)
                 continue
 
@@ -12400,8 +12786,27 @@ def apply_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(cfg)
     out["n_folds"] = 3
     out["sliceplanner_outer_n_folds"] = 3
-    out["mask_opt_max_symbols"] = 200
+    out["mask_opt_max_symbols"] = 300
     out["mask_opt_lookback_years"] = 3.0
+    out["support_max_pct"] = 0.22
+    out["objective_support_max_pct"] = 0.22
+    out["max_support_pct"] = 0.22
+    out["test_mode"] = True
+    return out
+
+
+def apply_smoke_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Apply a very lightweight smoke-test profile.
+    - 3 folds
+    - 100 symbols
+    - 2 years of lookback
+    """
+    out = dict(cfg)
+    out["n_folds"] = 3
+    out["sliceplanner_outer_n_folds"] = 3
+    out["mask_opt_max_symbols"] = 100
+    out["mask_opt_lookback_years"] = 2.0
     out["support_max_pct"] = 0.22
     out["objective_support_max_pct"] = 0.22
     out["max_support_pct"] = 0.22
@@ -12893,7 +13298,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--test-mode",
         action="store_true",
-        help="Run the smaller smoke-test configuration",
+        help="Run the smaller configuration (300 symbols, 3y)",
+    )
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="Run the tiny configuration (100 symbols, 2y)",
     )
     parser.add_argument(
         "--run-step",
@@ -12922,8 +13332,19 @@ if __name__ == "__main__":
         cfg["step1_dir"] = args.step1_dir
     cfg.setdefault("sliceplanner_outer_n_folds", 8)
     cfg.setdefault("sliceplanner_warmup_days", 90)
-    if args.test_mode:
-        cfg = apply_test_mode(cfg)
+    
+    # Adaptive TP/SL configuration
+    cfg.setdefault("adaptive_tp_sl_enabled", True)
+    cfg.setdefault("adaptive_tp_sl_conf_levels", [0.8])
+    cfg.setdefault("adaptive_tp_sl_grid", [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0])
+    cfg.setdefault("adaptive_tp_sl_sl_ratio_grid", [0.3, 0.5, 0.7, 0.9])
+    
+    if args.test_mode or args.smoke_test:
+        if args.smoke_test:
+            cfg = apply_smoke_test_mode(cfg)
+        else:
+            cfg = apply_test_mode(cfg)
+
         if not args.max_symbols:
             args.max_symbols = int(cfg.get("mask_opt_max_symbols", 30))
         if not args.lookback_years:
@@ -13533,4 +13954,6 @@ if __name__ == "__main__":
                 )
 
     # Run triad-target mask generation
-    run_lgbm_mask_generation_triad(data_final, feat_final, triad_targets, cfg)
+    run_lgbm_mask_generation_triad(
+        data_final, feat_final, triad_targets, fwd_ret_final, fwd_ret_norm_final, cfg
+    )

@@ -10302,7 +10302,6 @@ class MaskAssessor:
                     "regime": slots.get("regime", "*"),
                     "regime_score": regime_score,
                     "is_structurally_sound": not rejected,
-                    "fold_pnls": ridge_trade_metrics.get("ridge_profitable_fold_pnls", []),
                     "rejection_reason": rejection_reason,
                     "support_pct": support_pct,
                     "directional_mean_ret": float(
@@ -10401,6 +10400,9 @@ class MaskAssessor:
         )
 
         # Helper to compute weekly metrics from realized trades
+        #
+        # ridge_trade_sortino: evaluates trade-level realized execution quality
+        # weekly_sortino: evaluates weekly aggregation stability / smoothness quality
         def _compute_weekly_metrics(row):
             realized_trades = row.get("realized_trades", [])
             net_returns = row.get("net_weighted_returns", [])
@@ -10415,9 +10417,13 @@ class MaskAssessor:
             if not isinstance(net_returns, list) or len(net_returns) == 0 or len(realized_trades) != len(net_returns):
                 return metrics
 
-            # Build a weekly PnL series from entry times floored to the week
+            # Build a weekly PnL series from entry times floored to the week safely
+            entry_times = pd.Series([t.entry_time for t in realized_trades])
+            if entry_times.dt.tz is not None:
+                entry_times = entry_times.dt.tz_convert("UTC").dt.tz_localize(None)
+
             df_trades = pd.DataFrame({
-                "week": [t.entry_time.to_period("W").start_time for t in realized_trades],
+                "week": entry_times.dt.to_period("W").dt.start_time,
                 "pnl": net_returns
             })
 
@@ -10458,17 +10464,14 @@ class MaskAssessor:
             0.0, 1.0
         )
 
-        # Compute lift normalization via MinMax scaling
-        lift_valid = assessment_df["lift"].dropna()
-        if not lift_valid.empty:
-            lift_min = lift_valid.min()
-            lift_max = lift_valid.max()
-        else:
-            lift_min = 0.0
-            lift_max = 1.0
+        # Compute lift normalization via fixed reference scale
+        # A lift of 5 points (0.05) over global AUC is considered very strong for intraday crypto.
+        # This replaces the previous cohort-relative MinMax scaling to ensure stability across runs.
+        lift_ref_low = 0.0
+        lift_ref_high = 0.05
+        lift_range = max(lift_ref_high - lift_ref_low, 1e-9)
 
-        lift_range = max(lift_max - lift_min, 1e-9)
-        assessment_df["lift_norm"] = np.clip((assessment_df["lift"] - lift_min) / lift_range, 0.0, 1.0).fillna(0.0)
+        assessment_df["lift_norm"] = np.clip((assessment_df["lift"] - lift_ref_low) / lift_range, 0.0, 1.0).fillna(0.0)
 
         # 10. worst_penalty
         def _compute_worst_penalty(row):
@@ -10882,10 +10885,11 @@ class MaskAssessor:
              entry_t = timestamps[i]
 
              # Prefer actual exit time if available, otherwise fallback to horizon proxy
-             if t1_vals is not None and not pd.isna(t1_vals[i]):
+             # Validate that t1 > entry_time and that it is not NaT
+             if t1_vals is not None and not pd.isna(t1_vals[i]) and t1_vals[i] > entry_t:
                  exit_t = t1_vals[i]
              else:
-                 # Fallback: estimate exit time using horizon proxy
+                 # Fallback: estimate exit time using horizon proxy safely
                  exit_t = entry_t + pd.Timedelta(hours=horizon)
 
              all_trades.append(EvaluatedTrade(
@@ -10965,6 +10969,11 @@ class MaskAssessor:
 
         final_trades = final_pnl_res["selected_trades"]
         total_trades = len(final_trades)
+
+        # Alignment Note:
+        # Numerator (`total_trades`) counts realized execution intervals defined by their entry_time.
+        # Denominator (`valid_symbol_days_observed`) counts unique (symbol, entry_day) combinations in the valid universe.
+        # Thus, this metric safely measures: "realized trades initiated per valid symbol-day".
         trades_per_symbol_day_above_threshold_star = total_trades / valid_symbol_days_observed
 
         if trades_per_symbol_day_above_threshold_star < 0.1:
@@ -11451,12 +11460,14 @@ def select_top_diverse_rules(
             if accepted_masks:
                 accepted_union_mask = np.logical_or.reduce(accepted_masks)
 
-        for idx in list(remaining_idx):
+        to_remove = []
+
+        for idx in remaining_idx:
             row = working_reg.loc[idx]
             key = str(row["canonical_key"])
             rule_mask = mask_map.get(key)
             if rule_mask is None:
-                remaining_idx.remove(idx)
+                to_remove.append(idx)
                 continue
 
             base_regime_score = float(row.get(score_col, 0.0))
@@ -11483,7 +11494,7 @@ def select_top_diverse_rules(
 
             # Hard reject conditions
             if pairwise_raw_overlap >= 0.50 or union_raw_overlap >= 0.75:
-                remaining_idx.remove(idx)
+                to_remove.append(idx)
                 continue
 
             overlap_penalty = max(
@@ -11505,6 +11516,9 @@ def select_top_diverse_rules(
                 best_score = selection_score
                 best_idx = idx
                 best_overlap_penalty = overlap_penalty
+
+        # Apply removals
+        remaining_idx.difference_update(to_remove)
 
         if best_idx is not None and np.isfinite(best_score):
             selected_idx.append(best_idx)

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 from math import sqrt
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -42,12 +42,12 @@ from extreme_price_movements.data_store import (
     to_panel,
 )
 from extreme_price_movements.hpo_lgbm_regime_miner import (
-    run_short_hpo_for_target_horizon,
-    TARGET_SUPPORT,
-    SUPPORT_MIN,
-    SUPPORT_MAX,
-    PREFERRED_SUPPORT_MIN,
     PREFERRED_SUPPORT_MAX,
+    PREFERRED_SUPPORT_MIN,
+    SUPPORT_MAX,
+    SUPPORT_MIN,
+    TARGET_SUPPORT,
+    run_short_hpo_for_target_horizon,
 )
 from extreme_price_movements.intraday_crypto_library import (
     INTRADAY_TRIGGER_COLUMNS,
@@ -211,9 +211,7 @@ def _drop_duplicate_columns(df: Optional[pd.DataFrame]) -> pd.DataFrame:
 
 
 def _build_row_funnel_df(rows: Sequence[Dict[str, Any]]) -> pd.DataFrame:
-    return pd.DataFrame(
-        rows, columns=["stage", "rows", "symbols", "fraction_of_prev"]
-    )
+    return pd.DataFrame(rows, columns=["stage", "rows", "symbols", "fraction_of_prev"])
 
 
 def build_run_output_dir(
@@ -850,7 +848,9 @@ def _compute_cheap_stats_batch_numba(
 
         # Support metrics
         support_pct = np.float32(n_active / n_samples)
-        support_ok = np.float32(1.0 if support_min <= support_pct <= support_max else 0.0)
+        support_ok = np.float32(
+            1.0 if support_min <= support_pct <= support_max else 0.0
+        )
 
         if preferred_support_min <= support_pct <= preferred_support_max:
             support_score = 1.0
@@ -3623,9 +3623,9 @@ class CanonicalRuleMaskResolver:
                 instr_source_idx = np.concatenate(instr_source_idx_chunks).astype(
                     np.int32, copy=False
                 )
-                instr_target_value = np.concatenate(
-                    instr_target_value_chunks
-                ).astype(np.int8, copy=False)
+                instr_target_value = np.concatenate(instr_target_value_chunks).astype(
+                    np.int8, copy=False
+                )
             else:
                 instr_source_type = np.empty(0, dtype=np.int8)
                 instr_source_idx = np.empty(0, dtype=np.int32)
@@ -4875,9 +4875,7 @@ def build_context_feature_dict_from_registry(
     return context_feature_dict, context_feature_to_stage_a_key
 
 
-def build_rule_model_importance_scores(
-    all_rules: List[ExtractedRule]
-) -> pd.DataFrame:
+def build_rule_model_importance_scores(all_rules: List[ExtractedRule]) -> pd.DataFrame:
     """
     Aggregate model-native feature gain/split into canonical rule importance scores.
     """
@@ -5478,9 +5476,7 @@ def run_mining_stage(
     )
 
     if candidate_registry_override is not None:
-        tprint(
-            f"{stage_name}: resuming from stored step1 outcome at {step1_input_dir}"
-        )
+        tprint(f"{stage_name}: resuming from stored step1 outcome at {step1_input_dir}")
         candidate_registry = candidate_registry_override.copy()
         candidate_registry["preset"] = cfg.get("preset", "exploration")
         candidate_registry = atomic_to_csv(
@@ -6044,16 +6040,14 @@ def run_mining_stage(
         fold_health_df["total_gain"] = pd.to_numeric(
             fold_health_df["total_gain"], errors="coerce"
         ).fillna(0.0)
-        min_healthy_best_iteration = int(
-            cfg.get("min_healthy_fold_best_iteration", 2)
-        )
+        min_healthy_best_iteration = int(cfg.get("min_healthy_fold_best_iteration", 2))
         min_healthy_total_splits = int(cfg.get("min_healthy_fold_total_splits", 20))
         min_healthy_total_gain = float(cfg.get("min_healthy_fold_total_gain", 10.0))
         fold_health_df["is_healthy_fold"] = (
             (
-                pd.to_numeric(
-                    fold_health_df["best_iteration"], errors="coerce"
-                ).fillna(0)
+                pd.to_numeric(fold_health_df["best_iteration"], errors="coerce").fillna(
+                    0
+                )
                 >= min_healthy_best_iteration
             )
             & (fold_health_df["total_splits"] >= min_healthy_total_splits)
@@ -6142,7 +6136,9 @@ def run_mining_stage(
         path_length=path_arrays["path_length"],
     )
     scorer_elapsed = time.perf_counter() - scorer_start
-    accepted_scored = int(scored_registry["accepted"].sum()) if not scored_registry.empty else 0
+    accepted_scored = (
+        int(scored_registry["accepted"].sum()) if not scored_registry.empty else 0
+    )
     tprint(
         f"{stage_name}: scorer done "
         f"keys={len(unique_keys)} scored={len(scored_registry)} accepted={accepted_scored} "
@@ -6190,9 +6186,7 @@ def run_mining_stage(
     )
 
     scorer_accepted = scored_registry[scored_registry["accepted"]]
-    rule_importance_df = build_rule_model_importance_scores(
-        all_extracted_rules
-    )
+    rule_importance_df = build_rule_model_importance_scores(all_extracted_rules)
     if not rule_importance_df.empty and not scorer_accepted.empty:
         scorer_accepted = scorer_accepted.merge(
             rule_importance_df, on="canonical_key", how="left"
@@ -6371,7 +6365,9 @@ def run_side_pipeline(
     side_output_dir.mkdir(parents=True, exist_ok=True)
 
     side_input_rows = int(len(data))
-    side_input_symbols = int(data["symbol"].nunique()) if "symbol" in data.columns else np.nan
+    side_input_symbols = (
+        int(data["symbol"].nunique()) if "symbol" in data.columns else np.nan
+    )
 
     # --- STAGE A: CONTEXT MINING ---
     tprint(f"STAGE A: Context Mining (Regime x Location) [{side}]")
@@ -6489,7 +6485,11 @@ def run_side_pipeline(
         ("side_input", side_input_rows, side_input_symbols),
         ("stage_a_feature_matrix", int(X_a.shape[0]), side_input_symbols),
         ("stage_a_target_finite", int(target_finite.sum()), side_input_symbols),
-        ("stage_a_any_feature_finite", int(feature_any_finite.sum()), side_input_symbols),
+        (
+            "stage_a_any_feature_finite",
+            int(feature_any_finite.sum()),
+            side_input_symbols,
+        ),
         ("stage_a_complete_rows", int(complete_rows.sum()), side_input_symbols),
     ]:
         stage_a_row_funnel.append(
@@ -6508,9 +6508,7 @@ def run_side_pipeline(
     )
     tprint(
         "Stage A row funnel: "
-        + " -> ".join(
-            f"{row['stage']}={row['rows']}" for row in stage_a_row_funnel
-        )
+        + " -> ".join(f"{row['stage']}={row['rows']}" for row in stage_a_row_funnel)
     )
 
     run_step = str(cfg.get("run_step", "full")).lower()
@@ -6572,9 +6570,7 @@ def run_side_pipeline(
     log_stage_gate_diagnostics("Stage A", stage_a_result, cfg)
 
     if run_step == "step1":
-        tprint(
-            f"Stage A step1 only complete for {target_name} @ H{horizon} [{side}]"
-        )
+        tprint(f"Stage A step1 only complete for {target_name} @ H{horizon} [{side}]")
         return {
             "stage_a": pd.DataFrame(),
             "stage_a_result": stage_a_result,
@@ -6909,7 +6905,8 @@ def build_global_stage_a_ridge_shortlist(
         return {}
 
     pooled = pooled.drop_duplicates(
-        subset=["canonical_key", "source_target", "source_horizon", "side"], keep="first"
+        subset=["canonical_key", "source_target", "source_horizon", "side"],
+        keep="first",
     ).copy()
     if "cheap_rank" not in pooled.columns:
         pooled["cheap_rank"] = 0.0
@@ -6920,15 +6917,25 @@ def build_global_stage_a_ridge_shortlist(
 
     rng = np.random.default_rng(42)
     n_rows = X_ref.shape[0]
-    subsample_size = int(min(max(int(cfg.get("global_overlap_subsample_size", 10000)), 1000), n_rows))
-    sub_idx = np.sort(rng.choice(n_rows, size=subsample_size, replace=False)) if n_rows > subsample_size else np.arange(n_rows)
-    mask_matrix = resolver.get_masks_matrix(unique_keys)[:, sub_idx].astype(np.int8, copy=False)
+    subsample_size = int(
+        min(max(int(cfg.get("global_overlap_subsample_size", 10000)), 1000), n_rows)
+    )
+    sub_idx = (
+        np.sort(rng.choice(n_rows, size=subsample_size, replace=False))
+        if n_rows > subsample_size
+        else np.arange(n_rows)
+    )
+    mask_matrix = resolver.get_masks_matrix(unique_keys)[:, sub_idx].astype(
+        np.int8, copy=False
+    )
     intersections = mask_matrix @ mask_matrix.T
     supports = np.diag(intersections).astype(np.float32)
 
     pooled["canonical_key"] = pooled["canonical_key"].astype(str)
     pooled["mask_idx"] = pooled["canonical_key"].map(key_to_idx).astype(np.int32)
-    pooled["cheap_rank"] = pd.to_numeric(pooled["cheap_rank"], errors="coerce").fillna(-np.inf)
+    pooled["cheap_rank"] = pd.to_numeric(pooled["cheap_rank"], errors="coerce").fillna(
+        -np.inf
+    )
     pooled["support_sub"] = pooled["mask_idx"].map(lambda i: float(supports[int(i)]))
     pooled = pooled[pooled["support_sub"] > 0].copy()
     pooled = pooled.sort_values(
@@ -6957,7 +6964,9 @@ def build_global_stage_a_ridge_shortlist(
                 continue
             min_support = max(min(cand_support, sel_support), 1.0)
             overlap = inter / min_support
-            support_ratio = min(cand_support, sel_support) / max(max(cand_support, sel_support), 1e-9)
+            support_ratio = min(cand_support, sel_support) / max(
+                max(cand_support, sel_support), 1e-9
+            )
             if support_ratio < support_ratio_min:
                 continue
             threshold = same_bucket_thr
@@ -6974,7 +6983,9 @@ def build_global_stage_a_ridge_shortlist(
         if keep:
             selected_rows.append(int(row_idx))
 
-    selected = pooled.iloc[selected_rows].copy() if selected_rows else pooled.iloc[0:0].copy()
+    selected = (
+        pooled.iloc[selected_rows].copy() if selected_rows else pooled.iloc[0:0].copy()
+    )
     tprint(
         "Global stage2 shortlist: "
         f"input={len(pooled)} selected={len(selected)} cap={global_cap}"
@@ -7110,7 +7121,9 @@ def run_lgbm_mask_generation_triad(
             horizon_cfg = cfg.copy()
             horizon_cfg["target_name"] = target_name
             horizon_cfg["horizon"] = horizon
-            horizon_cfg["run_step"] = "step1" if triad_run_step == "full" else triad_run_step
+            horizon_cfg["run_step"] = (
+                "step1" if triad_run_step == "full" else triad_run_step
+            )
 
             # Apply per-target config from TRIAD_TARGET_CONFIGS
             if target_name in TRIAD_TARGET_CONFIGS:
@@ -7201,7 +7214,8 @@ def run_lgbm_mask_generation_triad(
         tprint(
             "Global step2 shortlist by slice: "
             + ", ".join(
-                f"{k}={len(v)}" for k, v in sorted(global_selected_keys_by_slice.items())
+                f"{k}={len(v)}"
+                for k, v in sorted(global_selected_keys_by_slice.items())
             )
         )
 
@@ -7229,16 +7243,24 @@ def run_lgbm_mask_generation_triad(
                 horizon_cfg["horizon"] = horizon
                 horizon_cfg["run_step"] = "step2"
                 horizon_cfg["step1_dir"] = str(root_output_dir)
-                horizon_cfg["global_step2_selected_keys_by_slice"] = global_selected_keys_by_slice
+                horizon_cfg[
+                    "global_step2_selected_keys_by_slice"
+                ] = global_selected_keys_by_slice
                 if target_name in TRIAD_TARGET_CONFIGS:
                     target_config = TRIAD_TARGET_CONFIGS[target_name]
                     horizon_cfg["huber_alpha"] = target_config.get("huber_alpha", 0.9)
-                    horizon_cfg["learning_rate"] = target_config.get("learning_rate", 0.03)
-                    horizon_cfg["min_support_pct"] = target_config.get("min_support_pct", 0.05)
+                    horizon_cfg["learning_rate"] = target_config.get(
+                        "learning_rate", 0.03
+                    )
+                    horizon_cfg["min_support_pct"] = target_config.get(
+                        "min_support_pct", 0.05
+                    )
                     horizon_cfg["ic_hurdle"] = target_config.get("ic_hurdle", 0.02)
                 if horizon in HORIZON_CONFIGS:
                     horizon_config = HORIZON_CONFIGS[horizon]
-                    min_leaf_mult = horizon_config.get("min_data_in_leaf_multiplier", 1.0)
+                    min_leaf_mult = horizon_config.get(
+                        "min_data_in_leaf_multiplier", 1.0
+                    )
                     base_min_leaf = int(horizon_cfg.get("min_data_in_leaf", 64))
                     horizon_cfg["min_data_in_leaf"] = int(base_min_leaf * min_leaf_mult)
                 dummy_fwd_ret = bounded_target.astype(np.float32, copy=True)
@@ -7261,7 +7283,9 @@ def run_lgbm_mask_generation_triad(
                         bounded_target=bounded_target,
                         bounded_target_surprisal=bounded_target_surprisal,
                     )
-                    results_by_target_horizon[(target_name, horizon, side)] = side_results
+                    results_by_target_horizon[
+                        (target_name, horizon, side)
+                    ] = side_results
                     if not side_results["stage_a"].empty:
                         stage_a_with_prov = side_results["stage_a"].copy()
                         stage_a_with_prov["source_target"] = target_name
@@ -7295,9 +7319,6 @@ def run_lgbm_mask_generation_triad(
 
     # Save combined registry
     combined_registry["preset"] = cfg.get("preset", "triad_exploration")
-    combined_registry.to_csv(
-        root_output_dir / "triad_combined_registry.csv", index=False
-    )
     combined_registry.to_csv(root_output_dir / "final_rule_registry.csv", index=False)
 
     # Summary statistics
@@ -7349,7 +7370,10 @@ def run_lgbm_mask_generation_triad(
             accepted_df["side"] = side
             accepted_df["rule_status"] = "accepted"
             discovery_frames.append(accepted_df)
-        if isinstance(candidate_registry, pd.DataFrame) and not candidate_registry.empty:
+        if (
+            isinstance(candidate_registry, pd.DataFrame)
+            and not candidate_registry.empty
+        ):
             candidate_df = _drop_duplicate_columns(candidate_registry)
             candidate_df["source_target"] = t_name
             candidate_df["source_horizon"] = h
@@ -7584,7 +7608,15 @@ def deduplicate_rules_by_canonical_key(
     grouped = df.groupby("canonical_key", sort=False, dropna=False)
     agg_map: Dict[str, Any] = {}
 
-    for col in ["source_target", "source_horizon", "side", "display_arity", "composite_score", "hurdle_excess", "conditions"]:
+    for col in [
+        "source_target",
+        "source_horizon",
+        "side",
+        "display_arity",
+        "composite_score",
+        "hurdle_excess",
+        "conditions",
+    ]:
         if col in df.columns:
             agg_map[col] = "first"
 
@@ -7658,9 +7690,7 @@ def deduplicate_rules_by_canonical_key(
     ic_minmax_frames = []
     for col in [c for c in ic_metric_cols if c in df.columns]:
         ic_minmax = grouped[col].agg(["min", "max"]).reset_index()
-        ic_minmax = ic_minmax.rename(
-            columns={"min": f"{col}_min", "max": f"{col}_max"}
-        )
+        ic_minmax = ic_minmax.rename(columns={"min": f"{col}_min", "max": f"{col}_max"})
         ic_minmax_frames.append(ic_minmax)
     for frame in ic_minmax_frames:
         result_df = result_df.merge(frame, on="canonical_key", how="left")
@@ -8347,9 +8377,6 @@ def create_triad_run_summary(
     return summary
 
 
-
-
-
 class MaskAssessor:
     def __init__(
         self,
@@ -8387,7 +8414,9 @@ class MaskAssessor:
             return None
 
         symbols = data.loc[valid_rows, "symbol"].astype(str).to_numpy()
-        day_values = timestamps.loc[valid_rows].dt.floor("D").to_numpy(dtype="datetime64[ns]")
+        day_values = (
+            timestamps.loc[valid_rows].dt.floor("D").to_numpy(dtype="datetime64[ns]")
+        )
         symbol_codes, _ = pd.factorize(symbols, sort=False)
         day_codes, _ = pd.factorize(day_values, sort=False)
         pair_codes = np.stack(
@@ -8567,7 +8596,9 @@ class MaskAssessor:
         )
         tprint(f"Stage A: Starting assessment - preparing data and configuration...")
         fold_health_summary = dict(fold_health_summary or {})
-        total_fold_count = int(fold_health_summary.get("total_fold_count", len(folds)) or 0)
+        total_fold_count = int(
+            fold_health_summary.get("total_fold_count", len(folds)) or 0
+        )
         healthy_fold_count = int(
             fold_health_summary.get("healthy_fold_count", total_fold_count) or 0
         )
@@ -8669,8 +8700,12 @@ class MaskAssessor:
         support_min = float(self.cfg.get("support_min_pct", SUPPORT_MIN))
         support_max = float(self.cfg.get("support_max_pct", SUPPORT_MAX))
         target_support = float(self.cfg.get("target_support_pct", TARGET_SUPPORT))
-        preferred_support_min = float(self.cfg.get("objective_support_target_low_pct", PREFERRED_SUPPORT_MIN))
-        preferred_support_max = float(self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX))
+        preferred_support_min = float(
+            self.cfg.get("objective_support_target_low_pct", PREFERRED_SUPPORT_MIN)
+        )
+        preferred_support_max = float(
+            self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX)
+        )
 
         # Precompute day buckets once to avoid per-rule timestamp parsing/groupby.
         day_codes: Optional[np.ndarray] = None
@@ -8802,8 +8837,11 @@ class MaskAssessor:
                 "mfe": 0.0,
                 "mean_ret_global": mean_ret_global_by_side[side],
                 "mean_ret_mask": float(np.nanmean(target_ret_by_side[side][mask])),
-                "std_ret_mask": float(np.nanstd(_clip_returns(target_ret_by_side[side][mask]))),
-                "ret_uplift": float(np.nanmean(target_ret_by_side[side][mask])) - mean_ret_global_by_side[side],
+                "std_ret_mask": float(
+                    np.nanstd(_clip_returns(target_ret_by_side[side][mask]))
+                ),
+                "ret_uplift": float(np.nanmean(target_ret_by_side[side][mask]))
+                - mean_ret_global_by_side[side],
                 "sign_consistency": 0.5,
             }
 
@@ -8826,7 +8864,8 @@ class MaskAssessor:
             bucket_cheap_ranks = step1_payload["bucket_cheap_ranks"]
             stage_a_matrices = step1_payload["stage_a_matrices"]
             selected_keys_runtime = {
-                str(k) for k in registry.get("canonical_key", pd.Series(dtype=str)).astype(str)
+                str(k)
+                for k in registry.get("canonical_key", pd.Series(dtype=str)).astype(str)
             }
             if selected_keys_runtime:
                 cheap_gate_rows = {
@@ -8844,7 +8883,10 @@ class MaskAssessor:
                 }
                 cheap_gate_result = {
                     (bucket_key, canonical_key): outcome
-                    for (bucket_key, canonical_key), outcome in cheap_gate_result.items()
+                    for (
+                        bucket_key,
+                        canonical_key,
+                    ), outcome in cheap_gate_result.items()
                     if str(canonical_key) in selected_keys_runtime
                 }
                 bucket_cheap_ranks = {
@@ -8888,12 +8930,16 @@ class MaskAssessor:
             rejected_by_support: set = set()
             seen_keys_per_bucket = collections.defaultdict(set)
             reg_trade_path_quality = (
-                pd.to_numeric(registry["trade_path_quality_score"], errors="coerce").to_numpy()
+                pd.to_numeric(
+                    registry["trade_path_quality_score"], errors="coerce"
+                ).to_numpy()
                 if "trade_path_quality_score" in registry.columns
                 else np.full(len(registry), np.nan, dtype=np.float32)
             )
             reg_quality_stability = (
-                pd.to_numeric(registry["quality_stability_score"], errors="coerce").to_numpy()
+                pd.to_numeric(
+                    registry["quality_stability_score"], errors="coerce"
+                ).to_numpy()
                 if "quality_stability_score" in registry.columns
                 else np.full(len(registry), np.nan, dtype=np.float32)
             )
@@ -8958,9 +9004,13 @@ class MaskAssessor:
                 bucket_sign_consistency_values[bucket_key].append(
                     (canonical_key, sign_consistency)
                 )
-                bucket_mean_ret_values[bucket_key].append((canonical_key, mean_ret_mask))
+                bucket_mean_ret_values[bucket_key].append(
+                    (canonical_key, mean_ret_mask)
+                )
                 if np.isfinite(hurdle_excess):
-                    bucket_hurdle_values[bucket_key].append((canonical_key, hurdle_excess))
+                    bucket_hurdle_values[bucket_key].append(
+                        (canonical_key, hurdle_excess)
+                    )
 
         def _normalize_to_1_2(
             arr: np.ndarray, higher_is_better: bool = True
@@ -9499,9 +9549,9 @@ class MaskAssessor:
                         if prev_count > DEDUP_STOP_TARGET:
                             ranked_prev = sorted(
                                 np.where(prev_keep)[0].tolist(),
-                                key=lambda i: bucket_cheap_ranks.get(bucket_key, {}).get(
-                                    surviving_keys[i], -np.inf
-                                ),
+                                key=lambda i: bucket_cheap_ranks.get(
+                                    bucket_key, {}
+                                ).get(surviving_keys[i], -np.inf),
                                 reverse=True,
                             )
                             selected_prev = set(ranked_prev[:DEDUP_STOP_TARGET])
@@ -9649,9 +9699,7 @@ class MaskAssessor:
         family_rarity_bonus_strength = float(
             self.cfg.get("family_rarity_bonus_strength", 0.05)
         )
-        family_rarity_bonus_cap = float(
-            self.cfg.get("family_rarity_bonus_cap", 0.05)
-        )
+        family_rarity_bonus_cap = float(self.cfg.get("family_rarity_bonus_cap", 0.05))
         overlap_free_zone = float(self.cfg.get("ridge_overlap_free_zone", 0.30))
         cheap_rank_exponent = float(self.cfg.get("ridge_cheap_rank_exponent", 1.3))
         overlap_penalty_exponent = float(
@@ -9669,9 +9717,9 @@ class MaskAssessor:
         family_combo_count_by_bucket: Dict[
             Tuple[str, int], Dict[str, int]
         ] = collections.defaultdict(dict)
-        family_rarity_bonus_by_key: Dict[Tuple[str, int], Dict[str, float]] = (
-            collections.defaultdict(dict)
-        )
+        family_rarity_bonus_by_key: Dict[
+            Tuple[str, int], Dict[str, float]
+        ] = collections.defaultdict(dict)
         tprint(
             f"Stage A: Starting ridge regression selection for {len(cheap_gate_rows)} buckets..."
         )
@@ -9689,7 +9737,8 @@ class MaskAssessor:
                 continue
             bucket_ridge_rows[bucket_key].extend(entries)
             family_counts = collections.Counter(
-                _infer_regime_family_combo(canonical_key) for _, canonical_key in entries
+                _infer_regime_family_combo(canonical_key)
+                for _, canonical_key in entries
             )
             family_combo_count_by_bucket[bucket_key] = dict(family_counts)
             total_bucket = max(sum(family_counts.values()), 1)
@@ -10002,7 +10051,9 @@ class MaskAssessor:
                         data=data,
                         directional_returns=target_ret,
                         mask=mask,
-                        oof_preds=np.asarray(ridge_details["oof_preds"], dtype=np.float32),
+                        oof_preds=np.asarray(
+                            ridge_details["oof_preds"], dtype=np.float32
+                        ),
                     )
                     tprint(
                         f"Stage A: Ridge learnability done {assessed_progress}/{total_ridge_selected} "
@@ -10153,13 +10204,27 @@ class MaskAssessor:
                     "ev_per_event": ev_per_event,
                     "win_rate_conditional": tbm_metrics["win_rate_conditional"],
                     "win_rate_unconditional": tbm_metrics["win_rate_unconditional"],
-                    "ridge_profitable_top_pct": ridge_trade_metrics["ridge_profitable_top_pct"],
-                    "ridge_profitable_score_threshold": ridge_trade_metrics["ridge_profitable_score_threshold"],
-                    "ridge_profitable_trade_count": ridge_trade_metrics["ridge_profitable_trade_count"],
-                    "ridge_profitable_trades_per_day": ridge_trade_metrics["ridge_profitable_trades_per_day"],
-                    "ridge_profitable_win_rate": ridge_trade_metrics["ridge_profitable_win_rate"],
-                    "ridge_profitable_avg_net_ret": ridge_trade_metrics["ridge_profitable_avg_net_ret"],
-                    "ridge_profitable_avg_pnl_per_day": ridge_trade_metrics["ridge_profitable_avg_pnl_per_day"],
+                    "ridge_profitable_top_pct": ridge_trade_metrics[
+                        "ridge_profitable_top_pct"
+                    ],
+                    "ridge_profitable_score_threshold": ridge_trade_metrics[
+                        "ridge_profitable_score_threshold"
+                    ],
+                    "ridge_profitable_trade_count": ridge_trade_metrics[
+                        "ridge_profitable_trade_count"
+                    ],
+                    "ridge_profitable_trades_per_day": ridge_trade_metrics[
+                        "ridge_profitable_trades_per_day"
+                    ],
+                    "ridge_profitable_win_rate": ridge_trade_metrics[
+                        "ridge_profitable_win_rate"
+                    ],
+                    "ridge_profitable_avg_net_ret": ridge_trade_metrics[
+                        "ridge_profitable_avg_net_ret"
+                    ],
+                    "ridge_profitable_avg_pnl_per_day": ridge_trade_metrics[
+                        "ridge_profitable_avg_pnl_per_day"
+                    ],
                     "ridge_profitable_avg_pnl_per_active_symbol_day": ridge_trade_metrics[
                         "ridge_profitable_avg_pnl_per_active_symbol_day"
                     ],
@@ -10172,15 +10237,29 @@ class MaskAssessor:
                     "ridge_profitable_avg_position_weight": ridge_trade_metrics[
                         "ridge_profitable_avg_position_weight"
                     ],
-                    "ridge_profitable_total_net_pnl": ridge_trade_metrics["ridge_profitable_total_net_pnl"],
+                    "ridge_profitable_total_net_pnl": ridge_trade_metrics[
+                        "ridge_profitable_total_net_pnl"
+                    ],
                     "ridge_best_top_pct": ridge_trade_metrics["ridge_best_top_pct"],
-                    "ridge_best_total_net_pnl": ridge_trade_metrics["ridge_best_total_net_pnl"],
-                    "ridge_best_score_threshold": ridge_trade_metrics["ridge_best_score_threshold"],
-                    "ridge_best_trade_count": ridge_trade_metrics["ridge_best_trade_count"],
-                    "ridge_best_trades_per_day": ridge_trade_metrics["ridge_best_trades_per_day"],
+                    "ridge_best_total_net_pnl": ridge_trade_metrics[
+                        "ridge_best_total_net_pnl"
+                    ],
+                    "ridge_best_score_threshold": ridge_trade_metrics[
+                        "ridge_best_score_threshold"
+                    ],
+                    "ridge_best_trade_count": ridge_trade_metrics[
+                        "ridge_best_trade_count"
+                    ],
+                    "ridge_best_trades_per_day": ridge_trade_metrics[
+                        "ridge_best_trades_per_day"
+                    ],
                     "ridge_best_win_rate": ridge_trade_metrics["ridge_best_win_rate"],
-                    "ridge_best_avg_net_ret": ridge_trade_metrics["ridge_best_avg_net_ret"],
-                    "ridge_best_avg_pnl_per_day": ridge_trade_metrics["ridge_best_avg_pnl_per_day"],
+                    "ridge_best_avg_net_ret": ridge_trade_metrics[
+                        "ridge_best_avg_net_ret"
+                    ],
+                    "ridge_best_avg_pnl_per_day": ridge_trade_metrics[
+                        "ridge_best_avg_pnl_per_day"
+                    ],
                     "ridge_best_avg_pnl_per_active_symbol_day": ridge_trade_metrics[
                         "ridge_best_avg_pnl_per_active_symbol_day"
                     ],
@@ -10193,13 +10272,27 @@ class MaskAssessor:
                     "ridge_best_avg_position_weight": ridge_trade_metrics[
                         "ridge_best_avg_position_weight"
                     ],
-                    "ridge_midpoint_top_pct": ridge_trade_metrics["ridge_midpoint_top_pct"],
-                    "ridge_midpoint_score_threshold": ridge_trade_metrics["ridge_midpoint_score_threshold"],
-                    "ridge_midpoint_trade_count": ridge_trade_metrics["ridge_midpoint_trade_count"],
-                    "ridge_midpoint_trades_per_day": ridge_trade_metrics["ridge_midpoint_trades_per_day"],
-                    "ridge_midpoint_win_rate": ridge_trade_metrics["ridge_midpoint_win_rate"],
-                    "ridge_midpoint_avg_net_ret": ridge_trade_metrics["ridge_midpoint_avg_net_ret"],
-                    "ridge_midpoint_avg_pnl_per_day": ridge_trade_metrics["ridge_midpoint_avg_pnl_per_day"],
+                    "ridge_midpoint_top_pct": ridge_trade_metrics[
+                        "ridge_midpoint_top_pct"
+                    ],
+                    "ridge_midpoint_score_threshold": ridge_trade_metrics[
+                        "ridge_midpoint_score_threshold"
+                    ],
+                    "ridge_midpoint_trade_count": ridge_trade_metrics[
+                        "ridge_midpoint_trade_count"
+                    ],
+                    "ridge_midpoint_trades_per_day": ridge_trade_metrics[
+                        "ridge_midpoint_trades_per_day"
+                    ],
+                    "ridge_midpoint_win_rate": ridge_trade_metrics[
+                        "ridge_midpoint_win_rate"
+                    ],
+                    "ridge_midpoint_avg_net_ret": ridge_trade_metrics[
+                        "ridge_midpoint_avg_net_ret"
+                    ],
+                    "ridge_midpoint_avg_pnl_per_day": ridge_trade_metrics[
+                        "ridge_midpoint_avg_pnl_per_day"
+                    ],
                     "ridge_midpoint_avg_pnl_per_active_symbol_day": ridge_trade_metrics[
                         "ridge_midpoint_avg_pnl_per_active_symbol_day"
                     ],
@@ -10361,9 +10454,7 @@ class MaskAssessor:
         details = self._compute_subset_ridge_details(X, fwd_ret, mask, folds)
         return float(details["subset_auc"]), float(details["coverage"])
 
-    def _compute_subset_ridge_details(
-        self, X, fwd_ret, mask, folds
-    ) -> Dict[str, Any]:
+    def _compute_subset_ridge_details(self, X, fwd_ret, mask, folds) -> Dict[str, Any]:
         """Compute Ridge OOF details for a subset of data defined by mask."""
         if not np.any(mask):
             return {
@@ -10652,7 +10743,9 @@ class MaskAssessor:
                 1,
             )
             avg_pnl_per_active_symbol_day = float(total_net_pnl / active_symbol_days)
-            avg_position_weight = float(np.mean(weights)) if len(weights) > 0 else np.nan
+            avg_position_weight = (
+                float(np.mean(weights)) if len(weights) > 0 else np.nan
+            )
 
             current_metrics = {
                 "top_pct": float(top_pct),
@@ -10690,12 +10783,18 @@ class MaskAssessor:
         profitable_top_pct = profitable_metrics.get("top_pct", np.nan)
         if np.isfinite(profitable_top_pct):
             midpoint_top_pct = 0.5 * (float(profitable_top_pct) + 1.0)
-            eligible_midpoints = [p for p in ranked_top_pcts if float(p) >= midpoint_top_pct]
-            midpoint_choice = float(eligible_midpoints[0]) if eligible_midpoints else 1.0
+            eligible_midpoints = [
+                p for p in ranked_top_pcts if float(p) >= midpoint_top_pct
+            ]
+            midpoint_choice = (
+                float(eligible_midpoints[0]) if eligible_midpoints else 1.0
+            )
             midpoint_metrics = threshold_metrics.get(midpoint_choice, _empty_metrics())
 
         out = {
-            "ridge_best_top_pct": float(best_top_pct) if np.isfinite(best_top_pct) else np.nan,
+            "ridge_best_top_pct": float(best_top_pct)
+            if np.isfinite(best_top_pct)
+            else np.nan,
             "ridge_best_total_net_pnl": (
                 float(best_total_net_pnl) if np.isfinite(best_total_net_pnl) else np.nan
             ),
@@ -12258,7 +12357,9 @@ def create_target_quality_summary(
         return pd.DataFrame()
 
     # Concatenate all results into a single DataFrame for vectorized aggregation
-    all_df = pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
+    all_df = (
+        pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
+    )
     if all_df.empty:
         return pd.DataFrame()
 
@@ -12633,7 +12734,9 @@ if __name__ == "__main__":
             "excluded from this miner run."
         )
         test_feature_keys = set(CFG.get("TEST_FEATURE_KEYS", []))
-        missing_test_keys = sorted(test_feature_keys.intersection(missing_required_keys))
+        missing_test_keys = sorted(
+            test_feature_keys.intersection(missing_required_keys)
+        )
         if missing_test_keys:
             tprint(
                 f"WARNING: {len(missing_test_keys)} TEST_FEATURE_KEYS are also missing: "
@@ -12817,7 +12920,10 @@ if __name__ == "__main__":
                 sample_symbol_counts = []
                 sample_symbols = [str(sym) for sym in kept_syms[:5]]
                 for sample_sym in sample_symbols:
-                    sample_mask = data_final["symbol"].to_numpy(dtype=object, copy=False) == sample_sym
+                    sample_mask = (
+                        data_final["symbol"].to_numpy(dtype=object, copy=False)
+                        == sample_sym
+                    )
                     sample_symbol_counts.append(
                         f"{sample_sym}={int(np.isfinite(feat_final[k][sample_mask]).sum())}"
                     )
@@ -12847,9 +12953,9 @@ if __name__ == "__main__":
     availability_start = time.perf_counter()
     symbol_values = data_final["symbol"].to_numpy(dtype=object, copy=False)
     unique_symbols, symbol_codes = np.unique(symbol_values, return_inverse=True)
-    total_rows_by_symbol = np.bincount(symbol_codes, minlength=len(unique_symbols)).astype(
-        np.int64, copy=False
-    )
+    total_rows_by_symbol = np.bincount(
+        symbol_codes, minlength=len(unique_symbols)
+    ).astype(np.int64, copy=False)
     feature_availability_rows: List[Dict[str, Any]] = []
     feature_symbol_availability_rows: List[Dict[str, Any]] = []
     total_rows_pre_filter = max(len(data_final), 1)
@@ -12861,15 +12967,21 @@ if __name__ == "__main__":
             {
                 "feature": feature_name,
                 "overall_finite_row_count": overall_finite_count,
-                "overall_finite_row_pct": float(overall_finite_count / total_rows_pre_filter),
+                "overall_finite_row_pct": float(
+                    overall_finite_count / total_rows_pre_filter
+                ),
             }
         )
         if overall_finite_count == 0:
             continue
         counts_by_symbol = np.bincount(
-            symbol_codes, weights=finite_mask.astype(np.int32), minlength=len(unique_symbols)
+            symbol_codes,
+            weights=finite_mask.astype(np.int32),
+            minlength=len(unique_symbols),
         ).astype(np.int64, copy=False)
-        for idx, (sym, finite_count) in enumerate(zip(unique_symbols, counts_by_symbol)):
+        for idx, (sym, finite_count) in enumerate(
+            zip(unique_symbols, counts_by_symbol)
+        ):
             feature_symbol_availability_rows.append(
                 {
                     "feature": feature_name,
@@ -12891,7 +13003,9 @@ if __name__ == "__main__":
     )
     feature_symbol_availability_df = pd.DataFrame(
         feature_symbol_availability_rows
-    ).sort_values(["feature", "finite_row_count", "symbol"], ascending=[True, False, True])
+    ).sort_values(
+        ["feature", "finite_row_count", "symbol"], ascending=[True, False, True]
+    )
     atomic_to_csv(
         feature_symbol_availability_df,
         root_output_dir / "pre_robust_feature_symbol_availability.csv",

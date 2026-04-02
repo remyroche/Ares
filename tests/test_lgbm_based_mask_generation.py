@@ -14,19 +14,19 @@ from extreme_price_movements.lgbm_based_mask_generation import (
     RuleCondition,
     RuleExtractor,
     RuleScorer,
+    apply_test_mode,
     atomic_to_csv,
-    build_rule_model_importance_scores,
     build_label_step_sliceplanner_keep_idx,
+    build_rule_model_importance_scores,
     build_stage_a_rejection_map,
     build_walk_forward_folds,
     create_pre_global_registry,
     filter_complete_feature_rows,
     list_preload_training_symbols,
-    make_support_preference_weights,
     make_regime_weights,
+    make_support_preference_weights,
     make_surprisal_sample_weights,
     select_stage_a_contexts,
-    apply_test_mode,
 )
 
 
@@ -191,8 +191,6 @@ def test_independent_rule_pruner_default_hurdle_keeps_borderline_rule() -> None:
     assert out["canonical_key"].tolist() == ["rule"]
 
 
-
-
 def test_make_support_preference_weights_prefers_target_band_rows():
     x = np.array(
         [
@@ -350,16 +348,16 @@ def test_stage_b_uplift_uses_parent_context_oos():
 def test_support_objective_scores_preferred_band_and_excludes_outside_bounds():
     scorer = RuleScorer([], {})
 
+    assert scorer._compute_support_objective_score(0.10) == 1.0
+    assert scorer._compute_support_objective_score(0.125) == 1.0
     assert scorer._compute_support_objective_score(0.15) == 1.0
-    assert scorer._compute_support_objective_score(0.175) == 1.0
-    assert scorer._compute_support_objective_score(0.175) == 1.0
 
-    edge_low = scorer._compute_support_objective_score(0.10)
-    edge_high = scorer._compute_support_objective_score(0.20)
+    edge_low = scorer._compute_support_objective_score(0.075)
+    edge_high = scorer._compute_support_objective_score(0.175)
     assert 0.0 < edge_low < 1.0
     assert 0.0 < edge_high < 1.0
 
-    assert scorer._compute_support_objective_score(0.099) == -np.inf
+    assert scorer._compute_support_objective_score(0.049) == -np.inf
     assert scorer._compute_support_objective_score(0.201) == -np.inf
 
 
@@ -766,6 +764,7 @@ def test_mask_assessor_avg_trades_per_day_uses_unique_days():
 
 def test_mask_assessor_subset_auc_ignores_unscored_rows():
     from extreme_price_movements.config import TEST_FEATURE_KEYS
+
     rng = np.random.RandomState(0)
     n = 10000
     signal = rng.normal(size=n).astype(np.float32)
@@ -868,11 +867,11 @@ def test_mask_assessor_baseline_auc_supports_continuous_targets():
         },
     )
 
-    score, coverage = assessor._compute_baseline_auc(x, fwd_ret, folds)
+    res = assessor._compute_baseline_auc(x, fwd_ret, folds)
 
-    assert np.isfinite(score)
-    assert score > 0.2
-    assert coverage > 0.3
+    assert np.isfinite(res["global_auc"])
+    assert res["global_auc"] > 0.2
+    assert res["global_cov"] > 0.3
 
 
 def test_build_rule_model_importance_scores_aggregates_feature_gain_per_rule():

@@ -37,8 +37,8 @@ MAIN_MINER_PARAMS: Dict[str, Any] = {
 }
 
 # HPO grids
-ALPHA_GRID = (0.6, 0.65, 0.7, 0.75)
-MIN_GAIN_GRID = (1e-4, 5e-4, 1e-3, 2e-3)
+ALPHA_GRID = (0.6, 0.65, 0.7)
+MIN_GAIN_GRID = (5e-5, 1e-4, 5e-4)
 MIN_LEAF_FRAC_GRID = (0.0005, 0.0010, 0.0015)
 
 # Search controls
@@ -625,7 +625,7 @@ def run_short_hpo_for_target_horizon(
         # Fallback for very small datasets
         return {
             "best_alpha_result": EvalResult(
-                cfg=HPOConfig(alpha=0.75, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.7, min_gain_to_split=0.001, min_leaf_frac=0.0010),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,
@@ -636,7 +636,7 @@ def run_short_hpo_for_target_horizon(
                 reason="small_data_fallback_n<100",
             ),
             "best_final_result": EvalResult(
-                cfg=HPOConfig(alpha=0.75, min_gain_to_split=0.001, min_leaf_frac=0.0010),
+                cfg=HPOConfig(alpha=0.7, min_gain_to_split=0.001, min_leaf_frac=0.0010),
                 score=np.nan,
                 total_support=np.nan,
                 weighted_incremental_return=np.nan,

@@ -10363,8 +10363,10 @@ class MaskAssessor:
                     "threshold_star_optimal_pnl": ridge_trade_metrics.get("threshold_star_optimal_pnl", np.nan),
                     "ridge_pnl_raw": ridge_trade_metrics.get("ridge_pnl_raw", 0.0),
                     "ridge_pnl_raw_at_optimal_threshold": ridge_trade_metrics.get("ridge_pnl_raw_at_optimal_threshold", np.nan),
-                    "ridge_trade_sortino_raw": ridge_trade_metrics.get("ridge_trade_sortino_raw", 0.0),
-                    "ridge_trade_sortino": ridge_trade_metrics.get("ridge_trade_sortino", 0.0),
+                    "ridge_trade_sortino_7d": ridge_trade_metrics.get("ridge_trade_sortino_7d", 0.0),
+                    "ridge_trade_sortino_30d": ridge_trade_metrics.get("ridge_trade_sortino_30d", 0.0),
+                    "ridge_trade_sortino_90d": ridge_trade_metrics.get("ridge_trade_sortino_90d", 0.0),
+                    "ridge_trade_sortino_composite": ridge_trade_metrics.get("ridge_trade_sortino_composite", 0.0),
                     "trades_per_symbol_day_above_threshold_star": ridge_trade_metrics.get("trades_per_symbol_day_above_threshold_star", 0.0),
                     "valid_symbol_days_observed": ridge_trade_metrics.get("valid_symbol_days_observed", 0),
                     "total_trades": ridge_trade_metrics.get("total_trades", 0),
@@ -10390,18 +10392,73 @@ class MaskAssessor:
             )
             return assessment_df
 
-        # 6. Ridge PnL normalization and risk adjustment
+        # 6. Final Ranking Normalization
+        # We apply MinMax scaling to each final-ranking term across the entire candidate cohort.
+
+        def _normalize_column(col_name: str, new_col_name: str):
+            if col_name not in assessment_df.columns:
+                assessment_df[new_col_name] = 0.0
+                return
+
+            valid_vals = assessment_df[col_name].replace([np.inf, -np.inf], np.nan).dropna()
+            if valid_vals.empty:
+                assessment_df[new_col_name] = 0.0
+                return
+
+            c_min = float(valid_vals.min())
+            c_max = float(valid_vals.max())
+            span = max(c_max - c_min, 1e-9)
+
+            # Ensure stable fallback when max == min
+            if span <= 1e-9:
+                if c_max > 0:
+                    assessment_df[new_col_name] = 1.0
+                else:
+                    assessment_df[new_col_name] = 0.0
+                return
+
+            assessment_df[new_col_name] = np.clip(
+                (assessment_df[col_name] - c_min) / span, 0.0, 1.0
+            ).fillna(0.0)
+
+        # Base terms for final ranking
         # Heuristic default for intraday crypto. Raw ridge-pnl ~ 3% is meaningful.
         pnl_ref = 0.03
-
-        # Exponential transform replacing the cohort-relative scaling
         assessment_df["ridge_pnl_norm"] = 1.0 - np.exp(
             -np.maximum(assessment_df["ridge_pnl_raw"], 0.0) / pnl_ref
         )
 
+        # Normalize final-ranking inputs jointly across the assessed candidate table before scoring.
+        _normalize_column("ridge_pnl_norm", "ridge_pnl_norm_norm")
+        _normalize_column("ridge_trade_sortino_composite", "ridge_trade_sortino_composite_norm")
+        _normalize_column("lift", "lift_norm")
+        _normalize_column("ev_per_event", "ev_per_event_norm")
+
+        # 10. worst_penalty (computed from the fully normalized inputs)
+        def _compute_worst_penalty(row):
+            # All components are in [0,1]
+            worst_malus = min(
+                row.get("ridge_pnl_norm_norm", 0.0),
+                row.get("ridge_trade_sortino_composite_norm", 0.0),
+                row.get("lift_norm", 0.0),
+                row.get("ev_per_event_norm", 0.0)
+            )
+            return 1.0 - worst_malus
+
+        assessment_df["worst_penalty"] = assessment_df.apply(_compute_worst_penalty, axis=1)
+
+        # 1. Final base score (V2 update)
+        # Note: Weights sum to 0.9 intentionally in V2
+        assessment_df["base_regime_score"] = (
+            0.3 * assessment_df["ridge_pnl_norm_norm"]
+            + 0.3 * assessment_df["ridge_trade_sortino_composite_norm"]
+            + 0.2 * assessment_df["lift_norm"]
+            + 0.1 * assessment_df["ev_per_event_norm"]
+        )
+
         # Helper to compute weekly metrics from realized trades
         #
-        # ridge_trade_sortino: evaluates trade-level realized execution quality
+        # ridge_trade_sortino_*: evaluates trade-level realized execution quality
         # weekly_sortino: evaluates weekly aggregation stability / smoothness quality
         def _compute_weekly_metrics(row):
             realized_trades = row.get("realized_trades", [])
@@ -10450,58 +10507,10 @@ class MaskAssessor:
 
             return metrics
 
-        # Compute the weekly metrics
+        # Compute the weekly metrics for audit/analysis
         weekly_metrics_df = assessment_df.apply(_compute_weekly_metrics, axis=1)
         for col in ["weekly_volatility", "weekly_sortino_raw", "weekly_sortino"]:
             assessment_df[col] = weekly_metrics_df[col]
-
-        # Use bounded weekly Sortino as the stability factor for pnl_risk
-        # Fallback to 0 if it's missing or negative
-        weekly_sortino_good = np.clip(assessment_df["weekly_sortino"].fillna(0.0), 0.0, 1.0)
-
-        assessment_df["ridge_pnl_risk"] = np.clip(
-            assessment_df["ridge_pnl_norm"] * np.sqrt(weekly_sortino_good),
-            0.0, 1.0
-        )
-
-        # Compute lift normalization via fixed reference scale
-        # A lift of 5 points (0.05) over global AUC is considered very strong for intraday crypto.
-        # This replaces the previous cohort-relative MinMax scaling to ensure stability across runs.
-        lift_ref_low = 0.0
-        lift_ref_high = 0.05
-        lift_range = max(lift_ref_high - lift_ref_low, 1e-9)
-
-        assessment_df["lift_norm"] = np.clip((assessment_df["lift"] - lift_ref_low) / lift_range, 0.0, 1.0).fillna(0.0)
-
-        # 10. worst_penalty
-        def _compute_worst_penalty(row):
-            # All components must already be normalized to [0,1].
-            # ridge_pnl_risk is in [0,1]
-            # ridge_trade_sortino is in [0,1]
-            # lift_norm is in [0,1]
-            lift_n = row.get("lift_norm", 0.0)
-
-            # ev_per_event needs normalization
-            ev = np.clip(row.get("ev_per_event", 0.0) / 0.05, 0.0, 1.0) # Assume 5% is great
-
-            worst_malus = min(
-                row.get("ridge_pnl_risk", 0.0),
-                row.get("ridge_trade_sortino", 0.0),
-                lift_n,
-                ev
-            )
-            return 1.0 - worst_malus
-
-        assessment_df["worst_penalty"] = assessment_df.apply(_compute_worst_penalty, axis=1)
-
-        # 1. Final base score (V2 update)
-        # Note: Weights sum to 0.9 intentionally in V2
-        assessment_df["base_regime_score"] = (
-            0.3 * assessment_df["ridge_pnl_risk"]
-            + 0.3 * assessment_df["ridge_trade_sortino"]
-            + 0.2 * assessment_df["lift_norm"]
-            + 0.1 * np.clip(assessment_df["ev_per_event"] / 0.05, 0.0, 1.0)
-        )
 
         assessment_df["regime_score"] = assessment_df["base_regime_score"]
 
@@ -10985,14 +10994,33 @@ class MaskAssessor:
             return res
 
         # 5. compute metrics consistently using realized trades
-        sortino_res = compute_ridge_trade_sortino(
-            realized_trades=final_trades,
-            threshold_star=threshold_star,
-            round_fee=round_fee,
-            min_weight=min_weight,
-            max_weight=max_weight,
-            convex_power=convex_power
-        )
+        # We compute trade-level Sortino composites over multiple lookback windows.
+
+        # The latest entry time across all candidate's valid rows
+        latest_valid_entry = timestamps.max() if len(timestamps) > 0 else pd.Timestamp.now(tz="UTC")
+
+        def _get_sortino_for_window(days_lookback: int) -> float:
+            cutoff = latest_valid_entry - pd.Timedelta(days=days_lookback)
+            window_trades = [t for t in final_trades if t.entry_time >= cutoff]
+            if len(window_trades) < 2:
+                # Stable default if insufficient trades in the window
+                return 0.0
+
+            res = compute_ridge_trade_sortino(
+                realized_trades=window_trades,
+                threshold_star=threshold_star,
+                round_fee=round_fee,
+                min_weight=min_weight,
+                max_weight=max_weight,
+                convex_power=convex_power
+            )
+            return res["ridge_trade_sortino"]
+
+        sortino_7d = _get_sortino_for_window(7)
+        sortino_30d = _get_sortino_for_window(30)
+        sortino_90d = _get_sortino_for_window(90)
+
+        ridge_trade_sortino_composite = 0.3 * sortino_7d + 0.3 * sortino_30d + 0.3 * sortino_90d
 
         return {
             "threshold_star": threshold_star,
@@ -11000,8 +11028,10 @@ class MaskAssessor:
             "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
             "ridge_pnl_raw_at_optimal_threshold": best_pnl_raw,
             "ridge_pnl_raw": final_pnl_res["ridge_pnl_raw"],
-            "ridge_trade_sortino_raw": sortino_res["ridge_trade_sortino_raw"],
-            "ridge_trade_sortino": sortino_res["ridge_trade_sortino"],
+            "ridge_trade_sortino_7d": sortino_7d,
+            "ridge_trade_sortino_30d": sortino_30d,
+            "ridge_trade_sortino_90d": sortino_90d,
+            "ridge_trade_sortino_composite": ridge_trade_sortino_composite,
             "trades_per_symbol_day_above_threshold_star": trades_per_symbol_day_above_threshold_star,
             "valid_symbol_days_observed": valid_symbol_days_observed,
             "total_trades": total_trades,

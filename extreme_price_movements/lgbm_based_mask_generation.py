@@ -8787,9 +8787,10 @@ class MaskAssessor:
                 f"elapsed={batch_stats_elapsed:.2f}s"
             )
             mean_ret_global = mean_ret_global_by_side[side]
+            valid_samples = int(np.sum(np.isfinite(target_ret_arr)))
             for idx, canonical_key in enumerate(unique_rule_keys):
                 support_count = int(support_counts_arr[idx])
-                support_pct = float(support_count / max(len(data), 1))
+                support_pct = float(support_count / valid_samples) if valid_samples > 0 else 0.0
                 support_ok = support_min <= support_pct <= support_max
                 if preferred_support_min <= support_pct <= preferred_support_max:
                     support_score = 1.0
@@ -8834,7 +8835,10 @@ class MaskAssessor:
             cached_stats = cheap_stats_cache.get(cache_key)
             if cached_stats is not None:
                 return cached_stats
-            support_pct = float(np.mean(mask))
+            valid_mask = np.isfinite(target_ret_by_side[side])
+            n_active = int(np.sum(mask & valid_mask))
+            valid_samples = int(np.sum(valid_mask))
+            support_pct = float(n_active / valid_samples) if valid_samples > 0 else 0.0
             return {
                 "support_pct": support_pct,
                 "support_ok": float(support_min <= support_pct <= support_max),
@@ -10328,6 +10332,60 @@ class MaskAssessor:
             )
 
         assessment_df = pd.DataFrame(assessment_results)
+
+        # Integrity Validation Block
+        if not assessment_df.empty:
+            # Add mask hash for collision detection
+            mask_hashes = {}
+            for res, row in zip(assessment_results, selected_records):
+                k = res["canonical_key"]
+                mask_val = mask_cache.get(k)
+                if mask_val is not None:
+                    mask_hashes[k] = hash(mask_val.tobytes())
+
+            metric_hashes = {}
+            for idx, row in assessment_df.iterrows():
+                key = row["canonical_key"]
+                m_hash = mask_hashes.get(key)
+
+                # Check for identical metric vectors across distinct masks
+                metrics_only = row.drop(["canonical_key", "trigger", "location", "regime", "rejection_reason", "rule_type_class", "production_classification", "classification_diagnostics", "fold_pnls"]).to_dict()
+                # Create a frozen representation of metrics (ignoring NaN identity issues by rounding)
+                def _safe_round(v):
+                    if isinstance(v, float):
+                        return round(v, 6)
+                    return v
+                metric_key = tuple(sorted((k, _safe_round(v)) for k,v in metrics_only.items()))
+
+                if metric_key in metric_hashes:
+                    other_key, other_m_hash = metric_hashes[metric_key]
+                    if other_m_hash != m_hash:
+                        tprint(f"INTEGRITY WARNING: Distinct masks {key} and {other_key} share identical metrics!")
+                else:
+                    metric_hashes[metric_key] = (key, m_hash)
+            for idx, row in assessment_df.iterrows():
+                # 1. Support bounds
+                s_pct = row.get("support_pct", np.nan)
+                if np.isfinite(s_pct) and not (0.0 <= s_pct <= 1.0):
+                    tprint(f"INTEGRITY WARNING: Rule {row['canonical_key']} has out-of-bounds support_pct={s_pct}")
+
+                # 2. AUC bounds
+                m_roc = row.get("mask_roc_auc", np.nan)
+                if np.isfinite(m_roc) and not (0.0 <= m_roc <= 1.0):
+                    tprint(f"INTEGRITY WARNING: Rule {row['canonical_key']} has out-of-bounds mask_roc_auc={m_roc}")
+
+                m_pr = row.get("mask_pr_auc", np.nan)
+                if np.isfinite(m_pr) and not (0.0 <= m_pr <= 1.0):
+                    tprint(f"INTEGRITY WARNING: Rule {row['canonical_key']} has out-of-bounds mask_pr_auc={m_pr}")
+
+                # 3. PnL per day vs per active symbol day bounds
+                p_day = row.get("ridge_profitable_avg_pnl_per_day", np.nan)
+                p_sym_day = row.get("ridge_profitable_avg_pnl_per_active_symbol_day", np.nan)
+                if np.isfinite(p_day) and np.isfinite(p_sym_day):
+                    # Active symbol days >= Active days, so avg_pnl_per_active_symbol_day should be <= avg_pnl_per_day
+                    if p_day > 0 and p_sym_day > p_day * 1.01: # Small tolerance for float drift
+                        tprint(f"INTEGRITY WARNING: Rule {row['canonical_key']} has mathematically inconsistent PnL metrics: per_day={p_day}, per_active_symbol_day={p_sym_day}")
+
         if assessment_df.empty:
             tprint(f"Stage A: Final assessment complete - no rules passed all gates")
             tprint(
@@ -10805,8 +10863,10 @@ class MaskAssessor:
             trades_per_day = float(k / observed_days)
             trades_per_week = float(k / observed_weeks)
 
-            day_pnl = pd.Series(weighted_net).groupby(sel_days).sum()
-            avg_pnl_per_day = float(day_pnl.mean()) if len(day_pnl) > 0 else np.nan
+            avg_pnl_per_day = float(total_net_pnl / observed_days)
+
+            all_days = np.unique(days.to_numpy())
+            day_pnl = pd.Series(weighted_net).groupby(sel_days).sum().reindex(all_days, fill_value=0.0)
             daily_pnl_std = float(day_pnl.std(ddof=0)) if len(day_pnl) > 0 else np.nan
             if len(day_pnl) > 0:
                 downside = np.minimum(day_pnl.to_numpy(dtype=np.float32), 0.0)
@@ -10815,8 +10875,10 @@ class MaskAssessor:
             else:
                 daily_sortino = np.nan
 
-            week_pnl = pd.Series(weighted_net).groupby(sel_weeks).sum()
-            avg_pnl_per_week = float(week_pnl.mean()) if len(week_pnl) > 0 else np.nan
+            avg_pnl_per_week = float(total_net_pnl / observed_weeks)
+
+            all_weeks = np.unique(weeks.to_numpy())
+            week_pnl = pd.Series(weighted_net).groupby(sel_weeks).sum().reindex(all_weeks, fill_value=0.0)
             weekly_pnl_std = float(week_pnl.std(ddof=0)) if len(week_pnl) > 0 else np.nan
             if len(week_pnl) > 0:
                 downside_w = np.minimum(week_pnl.to_numpy(dtype=np.float32), 0.0)
@@ -10825,6 +10887,7 @@ class MaskAssessor:
             else:
                 weekly_sortino = np.nan
 
+            # Ensure active_symbol_days counts unique (symbol, day) combinations explicitly
             active_symbol_days = max(
                 int(
                     pd.DataFrame({"symbol": sel_symbols, "day": sel_days})
@@ -10833,6 +10896,7 @@ class MaskAssessor:
                 ),
                 1,
             )
+            # Consistent with definition: total pnl / active symbol days
             avg_pnl_per_active_symbol_day = float(total_net_pnl / active_symbol_days)
             avg_position_weight = (
                 float(np.mean(weights)) if len(weights) > 0 else np.nan
@@ -11007,33 +11071,15 @@ class MaskAssessor:
                     )
                     continue
 
-            # Subsample to 50% of training data, capped at 50,000 samples
+            # Use up to 50,000 samples for training speed, without unnecessary discarding
             n_samples = len(X_tr_clean)
-            n_subsample = max(20, min(50000, int(n_samples * 0.5)))
-            subsample_idx = rng.choice(n_samples, size=n_subsample, replace=False)
-
-            y_tr_subsample_pre = y_tr_clean[subsample_idx]
-            pos_mask_pre = y_tr_subsample_pre == 1
-            neg_mask_pre = y_tr_subsample_pre == 0
-
-            # Cap positive samples at 5000 and match negative samples to the same index
-            if np.sum(pos_mask_pre) > 5000:
-                pos_indices = np.where(pos_mask_pre)[0]
-                pos_keep = pos_indices[:5000]
-
-                # Maintain original positive/negative ratio within the subset but limit by the positive cutoff
-                neg_indices = np.where(neg_mask_pre)[0]
-                # Stop including negative samples once we've reached the positive cutoff's relative point in the array
-                max_neg_index = (
-                    pos_keep[-1] if len(pos_keep) > 0 else len(subsample_idx)
-                )
-                neg_keep = neg_indices[neg_indices < max_neg_index]
-
-                final_keep_idx = np.sort(np.concatenate([pos_keep, neg_keep]))
-                subsample_idx = subsample_idx[final_keep_idx]
-
-            X_tr_subsample = X_tr_clean[subsample_idx]
-            y_tr_subsample = y_tr_clean[subsample_idx]
+            if n_samples > 50000:
+                subsample_idx = rng.choice(n_samples, size=50000, replace=False)
+                X_tr_subsample = X_tr_clean[subsample_idx]
+                y_tr_subsample = y_tr_clean[subsample_idx]
+            else:
+                X_tr_subsample = X_tr_clean
+                y_tr_subsample = y_tr_clean
 
             # Fit Ridge on subsampled data
             model = Ridge(alpha=1.0, solver="auto")

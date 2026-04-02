@@ -1,5 +1,5 @@
 bucket,config_id,rank_in_bucket,source,k_tp,sl_as_tp_pct,base_atr_window,tp_base_pct,tp_abs_lo_pct,sl_abs_lo_pct,tp_abs_hi_pct,sl_abs_hi_pct,tp_method,sl_method,mode,horizon_base,horizon_scaling,bucket_auc,bucket_auc_bound,bucket_tp_sep,bucket_ap_lift,bucket_tp_over_sl,bucket_timeout,bucket_bind,bucket_ece,bucket_brier,bucket_ic_std_time,bucket_ic_std_asset,bucket_stage2_score,learnability_score,saved_at
-MR_long,CFGE9BCBAB081,99,per_bucket,0.3,0.42,840,0.03370675281597539,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-04-01T23:36:42.463228+00:00
-MR_short,CFGE9BCBAB081,99,per_bucket,0.3,0.42,840,0.03370675281597539,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-04-01T23:36:42.467617+00:00
-TF_long,CFGE9BCBAB081,99,per_bucket,0.3,0.42,840,0.03370675281597539,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-04-01T23:36:42.471873+00:00
-TF_short,CFGE9BCBAB081,99,per_bucket,0.3,0.42,840,0.03370675281597539,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-04-01T23:36:42.476136+00:00
+MR_long,CFGE9BCBAB081,99,per_bucket,0.3,0.42,840,0.03370675281597539,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-04-02T10:11:25.735329+00:00
+MR_short,CFGE9BCBAB081,99,per_bucket,0.3,0.42,840,0.03370675281597539,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-04-02T10:11:25.740592+00:00
+TF_long,CFGE9BCBAB081,99,per_bucket,0.3,0.42,840,0.03370675281597539,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-04-02T10:11:25.745685+00:00
+TF_short,CFGE9BCBAB081,99,per_bucket,0.3,0.42,840,0.03370675281597539,0.005,0.005,0.06,0.06,atr_norm,tp_pct,optuna_s1_Candidate_H4,4,sqrt,,,,,,,,,,,,,-inf,2026-04-02T10:11:25.750569+00:00

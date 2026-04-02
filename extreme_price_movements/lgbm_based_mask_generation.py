@@ -6197,7 +6197,7 @@ def run_mining_stage(
         )
         finite_importance = finite_importance[np.isfinite(finite_importance)]
         if len(finite_importance) >= 2:
-            cutoff = float(np.nanquantile(finite_importance, 0.30))
+            cutoff = float(np.nanquantile(finite_importance, 0.20))
             before_count = len(scorer_accepted)
             scorer_accepted = scorer_accepted[
                 pd.to_numeric(scorer_accepted[importance_col], errors="coerce").fillna(

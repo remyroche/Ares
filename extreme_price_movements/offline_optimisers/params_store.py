@@ -86,10 +86,25 @@ def _read_best_params_csv(path: Path) -> Dict[str, Any]:
 
 def load_inference_candidate_mask_params_per_bucket() -> list[dict[str, Any]]:
     """Load all dynamically generated strategy parameters from the mask-optimiser."""
-    path = Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
-    if not path.exists():
-        path = REPORTS_DIR / "lgbm_accepted_rule_registry.csv"
-    if not path.exists():
+    # Find the most recent final_rule_registry.csv in production_lgbm_outputs
+    import glob
+    import os
+
+    pattern = str(Path("production_lgbm_outputs") / "run_*" / "final_rule_registry.csv")
+    files = glob.glob(pattern)
+
+    path = None
+    if files:
+        # Sort by run directory name, which contains timestamp
+        files.sort(key=lambda x: os.path.basename(os.path.dirname(x)), reverse=True)
+        path = Path(files[0])
+    else:
+        # Fallback
+        path = Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
+        if not path.exists():
+            path = REPORTS_DIR / "lgbm_accepted_rule_registry.csv"
+
+    if not path or not path.exists():
         return []
     
     import pandas as pd

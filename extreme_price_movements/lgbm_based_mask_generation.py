@@ -2951,8 +2951,62 @@ class RuleExtractor:
         if best_iteration > 0:
             tree_info = tree_info[:best_iteration]
 
+        # Configs for pre-extraction pruning
+        min_leaf_support_for_extraction = float(
+            self.cfg.get("min_leaf_support_for_extraction", self.cfg.get("support_min_pct", SUPPORT_MIN))
+        )
+        max_leaf_support_for_extraction = float(
+            self.cfg.get("max_leaf_support_for_extraction", self.cfg.get("support_max_pct", SUPPORT_MAX))
+        )
+        preextract_topk = int(self.cfg.get("preextract_topk_by_abs_leaf_value", 1000))
+
+        # Pre-compile trees to find all candidate leaves
+        compiled_trees = []
+        all_leaves = []
         for tree_idx, tree in enumerate(tree_info):
             compiled_tree = self._compile_tree(tree["tree_structure"])
+            compiled_trees.append(compiled_tree)
+            total_samples = int(max(compiled_tree.leaf_count[0], 1))
+
+            for node_idx in range(len(compiled_tree.is_leaf)):
+                if compiled_tree.is_leaf[node_idx]:
+                    leaf_value = float(compiled_tree.leaf_value[node_idx])
+                    leaf_count = int(compiled_tree.leaf_count[node_idx])
+                    leaf_support = leaf_count / total_samples
+                    all_leaves.append((tree_idx, node_idx, leaf_value, leaf_support))
+
+        raw_leaf_count = len(all_leaves)
+
+        # Stage 1: Support-range filter
+        support_filtered_leaves = [
+            lf for lf in all_leaves
+            if min_leaf_support_for_extraction <= lf[3] <= max_leaf_support_for_extraction
+        ]
+        support_ok_count = len(support_filtered_leaves)
+
+        # Stage 2: Top-K by abs(leaf_value)
+        # Sort by abs(leaf_value) descending, then by tree_idx and node_idx for deterministic tie-breaking
+        support_filtered_leaves.sort(key=lambda x: (abs(x[2]), x[0], x[1]), reverse=True)
+        top_leaves = support_filtered_leaves[:preextract_topk]
+        top_abs_leaf_count = len(top_leaves)
+
+        # Create allowed set of (tree_idx, node_idx)
+        allowed_leaves = {(lf[0], lf[1]) for lf in top_leaves}
+
+        # Determine side for logging
+        if "short" in model_id.lower() or "short" in getattr(self, "side", "").lower():
+            side_str = "short"
+        elif "long" in model_id.lower() or "long" in getattr(self, "side", "").lower():
+            side_str = "long"
+        else:
+            side_str = "unknown"
+
+        tprint(
+            f"Pre-extract leaf prune {target_name} @ H{horizon} [{side_str}]: "
+            f"raw={raw_leaf_count} support_ok={support_ok_count} top_abs_leaf={top_abs_leaf_count}"
+        )
+
+        for tree_idx, compiled_tree in enumerate(compiled_trees):
             total_samples = int(max(compiled_tree.leaf_count[0], 1))
             self._traverse_compiled_tree(
                 compiled_tree,
@@ -2962,6 +3016,7 @@ class RuleExtractor:
                 seed,
                 rules,
                 total_samples=total_samples,
+                allowed_leaves=allowed_leaves,
             )
 
         reject_counts = collections.Counter(r["reason"] for r in self.rejection_audit)
@@ -3071,12 +3126,16 @@ class RuleExtractor:
         seed: int,
         rules: List[ExtractedRule],
         total_samples: int = 1,
+        allowed_leaves: Optional[Set[Tuple[int, int]]] = None,
     ) -> None:
         stack: List[Tuple[int, List[RuleCondition], float]] = [(0, [], 0.0)]
         while stack:
             node_idx, conditions, current_gain = stack.pop()
 
             if tree.is_leaf[node_idx]:
+                if allowed_leaves is not None and (tree_idx, node_idx) not in allowed_leaves:
+                    continue
+
                 self.total_leaf_paths += 1
                 if not conditions:
                     self.rejection_audit.append(
@@ -12852,7 +12911,7 @@ def apply_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(cfg)
     out["n_folds"] = 3
     out["sliceplanner_outer_n_folds"] = 3
-    out["mask_opt_max_symbols"] = 300
+    out["mask_opt_max_symbols"] = 200
     out["mask_opt_lookback_years"] = 3.0
     out["support_max_pct"] = 0.22
     out["objective_support_max_pct"] = 0.22

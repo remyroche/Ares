@@ -3005,10 +3005,34 @@ class RuleExtractor:
         ]
         support_ok_count = len(support_filtered_leaves)
 
-        # Stage 2: Top-K by abs(leaf_value)
-        # Sort by abs(leaf_value) descending, then by tree_idx and node_idx for deterministic tie-breaking
-        support_filtered_leaves.sort(key=lambda x: (abs(x[2]), x[0], x[1]), reverse=True)
-        top_leaves = support_filtered_leaves[:preextract_topk]
+        # Stage 2: Top-K by abs(leaf_value) with round-robin per tree
+        # To preserve temporal/structural diversity from the boosting process, we select the top leaves
+        # iteratively round-robin from each tree, rather than a global sort.
+        leaves_by_tree: Dict[int, List[Tuple[int, int, float, float]]] = collections.defaultdict(list)
+        for lf in support_filtered_leaves:
+            leaves_by_tree[lf[0]].append(lf)
+
+        for t_idx in leaves_by_tree:
+            # Sort each tree's leaves by abs(leaf_value) descending, then node_idx
+            leaves_by_tree[t_idx].sort(key=lambda x: (abs(x[2]), x[1]), reverse=True)
+
+        top_leaves = []
+        tree_indices = sorted(list(leaves_by_tree.keys()))
+        pos = 0
+        while len(top_leaves) < preextract_topk and tree_indices:
+            trees_to_remove = []
+            for t_idx in tree_indices:
+                if len(top_leaves) >= preextract_topk:
+                    break
+                if pos < len(leaves_by_tree[t_idx]):
+                    top_leaves.append(leaves_by_tree[t_idx][pos])
+                else:
+                    trees_to_remove.append(t_idx)
+
+            for t_idx in trees_to_remove:
+                tree_indices.remove(t_idx)
+            pos += 1
+
         top_abs_leaf_count = len(top_leaves)
 
         # Create allowed set of (tree_idx, node_idx)

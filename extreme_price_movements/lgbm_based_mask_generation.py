@@ -516,9 +516,15 @@ def compute_ridge_pnl(
     ridge_pnl_raw = capital - starting_capital
     ridge_pnl_raw_pre_fee = capital_gross - starting_capital
 
+    n_trades = len(selected_trades)
+    avg_pnl_per_trade = float(np.mean(weighted_net_returns)) if n_trades > 0 else 0.0
+    avg_pnl_per_trade_pre_fee = float(np.mean(weighted_gross_returns)) if n_trades > 0 else 0.0
+
     return {
         "ridge_pnl_raw": ridge_pnl_raw,
         "ridge_pnl_raw_pre_fee": ridge_pnl_raw_pre_fee,
+        "avg_pnl_per_trade": avg_pnl_per_trade,
+        "avg_pnl_per_trade_pre_fee": avg_pnl_per_trade_pre_fee,
         "selected_trades": selected_trades,
         "weighted_net_returns": weighted_net_returns,
         "ending_capital": capital,
@@ -8882,79 +8888,6 @@ class MaskAssessor:
         return float(trades_per_day_per_symbol * 10.0)
 
     @staticmethod
-    def _compute_top_quartile_precision(
-        oof_preds: np.ndarray,
-        y: np.ndarray,
-        mask: np.ndarray,
-        tp_f: np.ndarray,
-        fwd_ret_threshold: float = 0.5,
-        top_pct: float = 0.75,
-        min_samples: int = 20,
-    ) -> float:
-        """
-        Compute precision of top-quartile Ridge predictions.
-        
-        Precision = % of predictions in top 25% (by rank) that either:
-        - Hit take-profit first (tp_f == 1), OR
-        - Have forward return > fwd_ret_threshold
-        
-        Parameters
-        ----------
-        oof_preds : np.ndarray
-            Ridge out-of-fold predictions
-        y : np.ndarray
-            Forward returns (for threshold check)
-        mask : np.ndarray
-            Boolean mask defining subset
-        tp_f : np.ndarray
-            Take-profit first hit flags (1=TP hit first)
-        fwd_ret_threshold : float
-            Forward return threshold for positive outcome (default 0.5)
-        top_pct : float
-            Percentile threshold for top predictions (default 0.75 = top 25%)
-        min_samples : int
-            Minimum samples required for valid computation
-            
-        Returns
-        -------
-        float
-            Top-quartile precision in [0, 1], or NaN if insufficient samples
-        """
-        # Get valid samples within mask
-        valid_mask = (
-            mask.astype(bool) 
-            & np.isfinite(oof_preds) 
-            & np.isfinite(y)
-            & np.isfinite(tp_f)
-        )
-        
-        if np.sum(valid_mask) < min_samples:
-            return np.nan
-        
-        # Get predictions within mask
-        preds_masked = oof_preds[valid_mask]
-        y_masked = y[valid_mask]
-        tp_f_masked = tp_f[valid_mask]
-        
-        # Compute percentile threshold (top 25% by default)
-        threshold = np.percentile(preds_masked, top_pct * 100)
-        
-        # Select top predictions
-        top_mask = preds_masked >= threshold
-        n_top = np.sum(top_mask)
-        
-        if n_top < 5:  # Need at least 5 samples in top quartile
-            return np.nan
-        
-        # Positive outcome: TP hit first OR fwd_ret > threshold
-        positive_outcome = (tp_f_masked == 1) | (y_masked > fwd_ret_threshold)
-        
-        # Precision = positive outcomes in top quartile / total in top quartile
-        precision = np.sum(positive_outcome[top_mask]) / n_top
-        
-        return float(precision)
-
-    @staticmethod
     def _compute_oof_learnability_score(
         oof_preds: np.ndarray,
         y: np.ndarray,
@@ -9631,30 +9564,6 @@ class MaskAssessor:
                     bucket_hurdle_values_surviving[bucket_key].append(
                         (canonical_key, hurdle_excess)
                     )
-        for bucket_key, tuples in bucket_hurdle_values_surviving.items():
-            vals = np.asarray([v for _, v in tuples], dtype=float)
-            finite_vals = vals[np.isfinite(vals)]
-            bucket_hurdle_floor[bucket_key] = (
-                float(np.nanquantile(finite_vals, pctile_bottom_cut))
-                if finite_vals.size > 0
-                else -np.inf
-            )
-
-        rejected_by_hurdle: set = set()
-        for bucket_key, tuples in bucket_hurdle_values_surviving.items():
-            floor = bucket_hurdle_floor.get(bucket_key, -np.inf)
-            for canonical_key, hurdle_excess in tuples:
-                if hurdle_excess < floor:
-                    rejected_by_hurdle.add(canonical_key)
-
-        n_hurdle_rejected = len(rejected_by_hurdle)
-        if n_hurdle_rejected > 0:
-            tprint(
-                f"Stage A cheap gate (1.1): beats_hurdle "
-                f"  rejected {n_hurdle_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket)"
-            )
-        all_rejected |= rejected_by_hurdle
-
         bucket_stability_floor: Dict[Tuple[str, int], float] = {}
         for bucket_key, tuples in bucket_stability_values.items():
             vals = np.asarray(
@@ -10196,9 +10105,6 @@ class MaskAssessor:
                 "global_pr_auc": float(baseline_metrics["global_pr_auc"])
                 if np.isfinite(baseline_metrics["global_pr_auc"])
                 else np.nan,
-                "global_top_quartile_precision": float(baseline_metrics["global_top_quartile_precision"])
-                if np.isfinite(baseline_metrics["global_top_quartile_precision"])
-                else np.nan,
                 "global_cov": float(baseline_metrics["global_cov"]),
                 "global_entropy": float(self._compute_entropy(ridge_target)),
                 **uplift_baseline,
@@ -10518,7 +10424,6 @@ class MaskAssessor:
             global_auc = float(baseline_cache[side]["global_auc"])
             global_roc_auc = float(baseline_cache[side]["global_roc_auc"])
             global_pr_auc = float(baseline_cache[side]["global_pr_auc"])
-            global_top_quartile_precision = float(baseline_cache[side]["global_top_quartile_precision"])
             global_entropy = float(baseline_cache[side]["global_entropy"])
             baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
 
@@ -10626,7 +10531,6 @@ class MaskAssessor:
                     mask_auc = float(ridge_details["subset_auc"])
                     mask_roc_auc = float(ridge_details["subset_roc_auc"])
                     mask_pr_auc = float(ridge_details["subset_pr_auc"])
-                    mask_top_quartile_precision = float(ridge_details.get("top_quartile_precision", np.nan))
                     subset_oof_coverage = float(ridge_details["coverage"])
 
                     # We defer ridge_trade_metrics calculation to the TP/SL sweep below
@@ -10642,12 +10546,9 @@ class MaskAssessor:
                     )
                     if np.isfinite(mask_auc) and np.isfinite(global_auc):
                         auc_lift = mask_auc - global_auc
-                    if np.isfinite(mask_top_quartile_precision) and np.isfinite(global_top_quartile_precision):
-                        top_quartile_precision_lift = mask_top_quartile_precision - global_top_quartile_precision
                 else:
                     subset_oof_coverage = float(np.mean(mask))
                     auc_lift = 0.0  # Neutral AUC lift
-                    top_quartile_precision_lift = 0.0  # Neutral lift
                     rejected, rejection_reason = True, "not_in_top_ridge_candidates"
 
                 mask_entropy = self._compute_entropy(target_ret[mask])
@@ -10659,10 +10560,8 @@ class MaskAssessor:
                     )
                 elif not np.isfinite(auc_lift):
                     rejected, rejection_reason = True, "missing_learnability"
-                elif not np.isfinite(top_quartile_precision_lift):
-                    rejected, rejection_reason = True, "missing_top_quartile_precision"
-                elif run_ridge and top_quartile_precision_lift <= 0.0:
-                    rejected, rejection_reason = True, "top_quartile_precision_not_positive"
+                elif run_ridge and mean_75_uplift <= 0.0:
+                    rejected, rejection_reason = True, "mean_75_uplift_not_positive"
 
             # 8. Event-based Expected Value
             tp_payoff = tp_atr  # TP payoff in ATR units
@@ -10674,10 +10573,6 @@ class MaskAssessor:
                 - tbm_metrics["sl_rate"] * sl_payoff
                 + tbm_metrics["timeout_rate"] * timeout_payoff
             )
-
-            # Apply ev_per_event hard gate
-            if ev_per_event <= 0.0 and not rejected:
-                rejected, rejection_reason = True, "ev_per_event_less_than_or_equal_to_zero"
 
             # 8b. Best TP/SL Variation PnL hard gate
             tp_sweep_ran = False
@@ -10891,13 +10786,27 @@ class MaskAssessor:
 
                 if best_pnl_with_fees <= 0.0:
                     rejected = True
-                    rejection_reason = (
-                        f"best_pnl_with_fees_not_positive: best_pnl_with_fees={best_pnl_with_fees:.6f}, "
-                        f"best_pnl_without_fees={best_pnl_without_fees:.6f}, params={best_tp_sl_params}"
-                    )
+                    avg_pnl = float(ridge_trade_metrics.get("avg_pnl_per_trade", np.nan))
+                    avg_pnl_pre_fee = float(ridge_trade_metrics.get("avg_pnl_per_trade_pre_fee", np.nan))
+                    if best_pnl_without_fees > 0.0:
+                        rejection_reason = (
+                            f"accepted_without_fees_but_rejected_with_fees: best_pnl_with_fees={best_pnl_with_fees:.6f}, "
+                            f"best_pnl_without_fees={best_pnl_without_fees:.6f}, "
+                            f"avg_pnl/trade={avg_pnl:.6f}, avg_pnl/trade_pre_fee={avg_pnl_pre_fee:.6f}, "
+                            f"params={best_tp_sl_params}"
+                        )
+                    else:
+                        rejection_reason = (
+                            f"best_pnl_with_fees_not_positive: best_pnl_with_fees={best_pnl_with_fees:.6f}, "
+                            f"best_pnl_without_fees={best_pnl_without_fees:.6f}, "
+                            f"avg_pnl/trade={avg_pnl:.6f}, avg_pnl/trade_pre_fee={avg_pnl_pre_fee:.6f}, "
+                            f"params={best_tp_sl_params}"
+                        )
 
             # Append the requested fields to ridge_trade_metrics so they're output correctly
             if run_ridge:
+                ridge_trade_metrics["avg_pnl_per_trade"] = ridge_trade_metrics.get("avg_pnl_per_trade", 0.0)
+                ridge_trade_metrics["avg_pnl_per_trade_pre_fee"] = ridge_trade_metrics.get("avg_pnl_per_trade_pre_fee", 0.0)
                 ridge_trade_metrics["tp_sweep_ran"] = tp_sweep_ran
                 ridge_trade_metrics["tp_sweep_skip_reason"] = tp_sweep_skip_reason
                 ridge_trade_metrics["tp_sweep_valid_rows"] = tp_sweep_valid_rows
@@ -10933,7 +10842,7 @@ class MaskAssessor:
             # 9. Final Regime Score
             regime_score = (
                 0.30 * cheap_rank
-                + 0.20 * top_quartile_precision_lift
+                + 0.20 * mean_75_uplift
                 + 0.20 * ret_uplift
                 + 0.20 * ev_per_event
                 + 0.10 * (mask_auc if np.isfinite(mask_auc) else 0.0)
@@ -11013,8 +10922,6 @@ class MaskAssessor:
                     "mean_ret_mask": mean_ret_mask,
                     "ret_uplift": ret_uplift,
                     "auc_lift": auc_lift,
-                    "top_quartile_precision": mask_top_quartile_precision,
-                    "top_quartile_precision_lift": top_quartile_precision_lift,
                     "learn_eff_ratio": np.nan,  # Deprecated - same as auc_lift
                     "subset_oof_coverage": subset_oof_coverage,
                     "baseline_oof_coverage": baseline_oof_coverage,
@@ -11038,6 +10945,8 @@ class MaskAssessor:
                     "threshold_star_optimal_pnl": ridge_trade_metrics.get("threshold_star_optimal_pnl", np.nan),
                     "ridge_pnl_raw": ridge_trade_metrics.get("ridge_pnl_raw", 0.0),
                     "ridge_pnl_raw_at_optimal_threshold": ridge_trade_metrics.get("ridge_pnl_raw_at_optimal_threshold", np.nan),
+                    "avg_pnl_per_trade": ridge_trade_metrics.get("avg_pnl_per_trade", np.nan),
+                    "avg_pnl_per_trade_pre_fee": ridge_trade_metrics.get("avg_pnl_per_trade_pre_fee", np.nan),
                     "tp_sweep_ran": ridge_trade_metrics.get("tp_sweep_ran", False),
                     "tp_sweep_skip_reason": ridge_trade_metrics.get("tp_sweep_skip_reason", ""),
                     "tp_sweep_valid_rows": ridge_trade_metrics.get("tp_sweep_valid_rows", 0),
@@ -11132,16 +11041,22 @@ class MaskAssessor:
                 monthly_sortino_ratio = np.nan
                 sortino_monthly_uplift = np.nan
 
+            if np.isfinite(mask_auc) and np.isfinite(global_auc):
+                auc_uplift = 10.0 * (mask_auc - global_auc) / max(abs(mask_auc) + abs(global_auc), eps)
+            else:
+                auc_uplift = np.nan
+
             # Composite mask uplift
             uplift_components = [
                 tail_uplift,
                 mean_75_uplift,
                 sortino_weekly_uplift,
                 sortino_monthly_uplift,
+                auc_uplift,
             ]
             valid_uplifts = [u for u in uplift_components if np.isfinite(u)]
-            if len(valid_uplifts) == 4:
-                overall_mask_uplift = sum(valid_uplifts) / 4.0
+            if len(valid_uplifts) == 5:
+                overall_mask_uplift = sum(valid_uplifts) / 5.0
             else:
                 overall_mask_uplift = np.nan
 
@@ -11154,6 +11069,7 @@ class MaskAssessor:
                 "mean_75_uplift": mean_75_uplift,
                 "sortino_monthly_uplift": sortino_monthly_uplift,
                 "sortino_weekly_uplift": sortino_weekly_uplift,
+                "auc_uplift": auc_uplift,
                 "overall_mask_uplift": overall_mask_uplift,
                 # Store raw metrics for debugging/reporting
                 "p5_mask": p5_mask,
@@ -11260,8 +11176,8 @@ class MaskAssessor:
         # 1. Final base score (V3 update: replace auc_lift_norm with overall_mask_uplift_norm)
         assessment_df["base_regime_score"] = (
             0.25 * assessment_df["ridge_pnl_norm_norm"]
-            + 0.25 * assessment_df["ridge_trade_sortino_composite_norm"]
-            + 0.30 * assessment_df["overall_mask_uplift_norm"]
+            + 0.10 * assessment_df["ridge_trade_sortino_composite_norm"]
+            + 0.20 * assessment_df["overall_mask_uplift_norm"]
             + 0.10 * assessment_df["ev_per_event_norm"]
         )
 
@@ -11629,7 +11545,6 @@ class MaskAssessor:
                 "subset_auc": np.nan,
                 "subset_roc_auc": np.nan,
                 "subset_pr_auc": np.nan,
-                "top_quartile_precision": np.nan,
                 "coverage": 0.0,
                 "oof_preds": np.full(len(X), np.nan, dtype=np.float32),
                 "folds_used": 0,
@@ -11651,7 +11566,6 @@ class MaskAssessor:
                 "subset_auc": np.nan,
                 "subset_roc_auc": np.nan,
                 "subset_pr_auc": np.nan,
-                "top_quartile_precision": np.nan,
                 "coverage": 0.0,
                 "oof_preds": np.full(len(X), np.nan, dtype=np.float32),
                 "folds_used": 0,
@@ -11847,19 +11761,6 @@ class MaskAssessor:
             oof_preds, y, mask, min_predicted_points=min_pred_points
         )
         
-        # Compute top-quartile precision if TP flags are provided
-        top_quartile_precision = np.nan
-        if tp_f is not None and tp_f.size > 0:
-            top_quartile_precision = self._compute_top_quartile_precision(
-                oof_preds=oof_preds,
-                y=y,
-                mask=mask,
-                tp_f=tp_f,
-                fwd_ret_threshold=0.5,
-                top_pct=0.75,
-                min_samples=20,
-            )
-        
 
         # --- Compute Expanded Learnability Metrics ---
         mask_oof_corr = np.nan
@@ -11997,11 +11898,6 @@ class MaskAssessor:
                 if np.isfinite(class_metrics["pr_auc"])
                 else np.nan
             ),
-            "top_quartile_precision": (
-                float(top_quartile_precision)
-                if np.isfinite(top_quartile_precision)
-                else np.nan
-            ),
             "coverage": float(coverage),
             "oof_preds": oof_preds,
             "folds_used": int(folds_used),
@@ -12043,6 +11939,8 @@ class MaskAssessor:
                 "threshold_star": np.nan,
                 "ridge_pnl_raw": 0.0,
                 "ridge_pnl_raw_pre_fee": 0.0,
+                "avg_pnl_per_trade": 0.0,
+                "avg_pnl_per_trade_pre_fee": 0.0,
                 "trades_per_symbol_day_above_threshold_star": 0.0,
                 "total_trades": 0,
                 "rejected": True,
@@ -12244,6 +12142,8 @@ class MaskAssessor:
             "ridge_pnl_raw_at_optimal_threshold": final_pnl_res["ridge_pnl_raw"], # for compatibility
             "ridge_pnl_raw": ridge_pnl_raw,
             "ridge_pnl_raw_pre_fee": final_pnl_res["ridge_pnl_raw_pre_fee"],
+            "avg_pnl_per_trade": final_pnl_res["avg_pnl_per_trade"],
+            "avg_pnl_per_trade_pre_fee": final_pnl_res["avg_pnl_per_trade_pre_fee"],
             "avg_trades_per_day": avg_trades_per_day,
             "avg_pnl_per_day": avg_pnl_per_day,
             "avg_pnl_per_active_symbol_day": avg_pnl_per_active_symbol_day,
@@ -12288,7 +12188,6 @@ class MaskAssessor:
                 "global_auc": np.nan,
                 "global_roc_auc": np.nan,
                 "global_pr_auc": np.nan,
-                "global_top_quartile_precision": np.nan,
                 "global_cov": 0.0,
             }
 
@@ -12381,16 +12280,6 @@ class MaskAssessor:
             oof_preds, y, np.isfinite(y), min_predicted_points=min_pred_points
         )
         
-        # Compute global top-quartile precision (no mask = all data)
-        global_top_quartile_precision = self._compute_top_quartile_precision(
-            oof_preds=oof_preds,
-            y=y,
-            mask=np.isfinite(y),  # All valid samples
-            tp_f=np.zeros(len(y), dtype=np.int8),  # No TP data for global, use fwd_ret threshold only
-            fwd_ret_threshold=0.5,
-            top_pct=0.75,
-            min_samples=20,
-        )
         return {
             "global_auc": float(global_auc) if np.isfinite(global_auc) else np.nan,
             "global_roc_auc": (
@@ -12401,11 +12290,6 @@ class MaskAssessor:
             "global_pr_auc": (
                 float(class_metrics["pr_auc"])
                 if np.isfinite(class_metrics["pr_auc"])
-                else np.nan
-            ),
-            "global_top_quartile_precision": (
-                float(global_top_quartile_precision)
-                if np.isfinite(global_top_quartile_precision)
                 else np.nan
             ),
             "global_cov": float(global_cov),

@@ -153,6 +153,27 @@ SCORER_REGISTRY_COLUMNS: List[str] = [
 ]
 
 
+
+class TargetNaNReason:
+    HORIZON_EXCEEDED = "horizon_exceeded"
+    BARRIER_UNRESOLVED = "barrier_unresolved"
+    AMBIGUOUS_BAR = "ambiguous_bar"
+    OUTSIDE_SUPPORT_MASK = "outside_support_mask"
+    NEUTRAL_FILTERED = "neutral_filtered"
+    OTHER_TARGET_NAN = "other_target_nan"
+
+def generate_fwd_ret_with_reasons(panel: pd.DataFrame, fwd_hours: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Generates forward returns and a reason code array for Target NaNs."""
+    fwd_ret_wide = panel["close"].pct_change(fwd_hours, fill_method=None).shift(-fwd_hours)
+
+    reasons_wide = pd.DataFrame("", index=fwd_ret_wide.index, columns=fwd_ret_wide.columns)
+    reasons_wide[np.isnan(fwd_ret_wide)] = TargetNaNReason.OTHER_TARGET_NAN
+    if fwd_hours > 0 and len(reasons_wide) >= fwd_hours:
+        reasons_wide.iloc[-fwd_hours:] = TargetNaNReason.HORIZON_EXCEEDED
+
+    return fwd_ret_wide, reasons_wide
+
+
 def _with_expected_columns(
     df: Optional[pd.DataFrame], expected_columns: Sequence[str]
 ) -> pd.DataFrame:
@@ -5588,6 +5609,7 @@ def run_mining_stage(
     step1_input_dir: Optional[Path] = None,
     candidate_registry_override: Optional[pd.DataFrame] = None,
     bounded_target: Optional[np.ndarray] = None,
+    target_nan_reasons: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """
     Run a single mining stage.
@@ -7363,6 +7385,7 @@ def run_lgbm_mask_generation_triad(
     triad_targets: Dict[str, Dict[int, np.ndarray]],
     fwd_ret: np.ndarray,
     fwd_ret_norm: np.ndarray,
+    target_nan_reasons: Optional[np.ndarray],
     cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
@@ -7526,6 +7549,7 @@ def run_lgbm_mask_generation_triad(
                     feature_dict=feature_dict,
                     fwd_ret=fwd_ret,
                     fwd_ret_norm=fwd_ret_norm,
+                    target_nan_reasons=target_nan_reasons,
                     cfg=horizon_cfg,
                     folds=folds,
                     root_output_dir=horizon_target_dir,
@@ -10703,7 +10727,44 @@ class MaskAssessor:
                         classification_diagnostics
                     ),
                     "rule_type_class": rule_type_class,
+                    "mask_oof_corr": ridge_details.get("mask_oof_corr", np.nan),
+                    "mask_oof_r2": ridge_details.get("mask_oof_r2", np.nan),
+                    "fold_sign_consistency": ridge_details.get("fold_sign_consistency", np.nan),
+                    "positive_fold_fraction": ridge_details.get("positive_fold_fraction", np.nan),
+                    "negative_fold_fraction": ridge_details.get("negative_fold_fraction", np.nan),
+                    "decile_monotonic_spearman": ridge_details.get("decile_monotonic_spearman", np.nan),
+                    "top_decile_mean_target": ridge_details.get("top_decile_mean_target", np.nan),
+                    "bottom_decile_mean_target": ridge_details.get("bottom_decile_mean_target", np.nan),
+                    "decile_spread_mean": ridge_details.get("decile_spread_mean", np.nan),
+                    "target_nan_total_train": ridge_details.get("target_nan_total_train", 0),
+                    "target_nan_total_val": ridge_details.get("target_nan_total_val", 0),
                 }
+            )
+
+            if "train_target_nan_reasons" in ridge_details and ridge_details["train_target_nan_reasons"] is not None:
+                for k, v in ridge_details["train_target_nan_reasons"].items():
+                    assessment_results[-1][f"train_target_nan_{k}"] = v
+            if "val_target_nan_reasons" in ridge_details and ridge_details["val_target_nan_reasons"] is not None:
+                for k, v in ridge_details["val_target_nan_reasons"].items():
+                    assessment_results[-1][f"val_target_nan_{k}"] = v
+
+        # Print the per-candidate target-drop summary message
+        if "train_target_nan_reasons" in ridge_details:
+            train_reasons = ridge_details.get("train_target_nan_reasons", {})
+            val_reasons = ridge_details.get("val_target_nan_reasons", {})
+
+            # Helper to format the dict
+            def _format_reasons(r_dict):
+                return f"horizon_exceeded={r_dict.get('horizon_exceeded', 0)}, barrier_unresolved={r_dict.get('barrier_unresolved', 0)}, ambiguous_bar={r_dict.get('ambiguous_bar', 0)}, outside_support_mask={r_dict.get('outside_support_mask', 0)}, neutral_filtered={r_dict.get('neutral_filtered', 0)}, other_target_nan={r_dict.get('other_target_nan', 0)}"
+
+            # Merged reasons for print log
+            merged_reasons = {k: train_reasons.get(k, 0) + val_reasons.get(k, 0) for k in set(train_reasons) | set(val_reasons)}
+
+            tprint(
+                f"Stage A: Ridge target-drop summary key={canonical_key} "
+                f"train_target_nan={ridge_details.get('target_nan_total_train', 0)} "
+                f"val_target_nan={ridge_details.get('target_nan_total_val', 0)} "
+                f"reasons[{_format_reasons(merged_reasons)}]"
             )
 
         assessment_df = pd.DataFrame(assessment_results)
@@ -11135,7 +11196,7 @@ class MaskAssessor:
         return float(details["subset_auc"]), float(details["coverage"])
 
     def _compute_subset_ridge_details(
-        self, X, fwd_ret, mask, folds, tp_f: np.ndarray = None
+        self, X, fwd_ret, mask, folds, tp_f: np.ndarray = None, target_nan_reasons: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """Compute Ridge OOF details for a subset of data defined by mask."""
         if not np.any(mask):
@@ -11148,6 +11209,15 @@ class MaskAssessor:
                 "oof_preds": np.full(len(X), np.nan, dtype=np.float32),
                 "folds_used": 0,
                 "folds_skipped": 0,
+                "mask_oof_corr": np.nan,
+                "mask_oof_r2": np.nan,
+                "fold_sign_consistency": np.nan,
+                "positive_fold_fraction": np.nan,
+                "negative_fold_fraction": np.nan,
+                "decile_monotonic_spearman": np.nan,
+                "top_decile_mean_target": np.nan,
+                "bottom_decile_mean_target": np.nan,
+                "decile_spread_mean": np.nan,
             }
 
         ridge_feats = self._get_ridge_feature_indices()
@@ -11161,6 +11231,15 @@ class MaskAssessor:
                 "oof_preds": np.full(len(X), np.nan, dtype=np.float32),
                 "folds_used": 0,
                 "folds_skipped": 0,
+                "mask_oof_corr": np.nan,
+                "mask_oof_r2": np.nan,
+                "fold_sign_consistency": np.nan,
+                "positive_fold_fraction": np.nan,
+                "negative_fold_fraction": np.nan,
+                "decile_monotonic_spearman": np.nan,
+                "top_decile_mean_target": np.nan,
+                "bottom_decile_mean_target": np.nan,
+                "decile_spread_mean": np.nan,
             }
         subset_auc_start = time.perf_counter()
         X_ridge = np.asarray(X[:, ridge_feats], dtype=np.float32, order="C")
@@ -11218,13 +11297,27 @@ class MaskAssessor:
             n_tr_before = len(y_tr)
             n_tr_after = np.sum(valid_tr)
             if n_tr_before > 0 and n_tr_after < n_tr_before:
-                n_tr_target_nan = np.sum(~np.isfinite(y_tr))
-                n_tr_feat_nan = np.sum(np.isfinite(y_tr) & (~np.all(np.isfinite(X_tr), axis=1)))
+                target_nan_mask = ~np.isfinite(y_tr)
+                n_tr_target_nan = np.sum(target_nan_mask)
+                n_tr_feat_nan = np.sum((~target_nan_mask) & (~np.all(np.isfinite(X_tr), axis=1)))
+
+                target_reasons = {"horizon_exceeded": 0, "barrier_unresolved": 0, "ambiguous_bar": 0, "outside_support_mask": 0, "neutral_filtered": 0, "other_target_nan": 0}
+                if target_nan_reasons is not None and n_tr_target_nan > 0:
+                    fold_reasons = target_nan_reasons[tr_masked][target_nan_mask]
+                    unique_reasons, counts = np.unique(fold_reasons, return_counts=True)
+                    for reason, count in zip(unique_reasons, counts):
+                        if reason in target_reasons:
+                            target_reasons[reason] += count
+                        else:
+                            target_reasons["other_target_nan"] += count
+                else:
+                    target_reasons["other_target_nan"] += n_tr_target_nan
                 
                 tprint(
                     f"WARNING: Fold {fold_id} Ridge training: Dropped {n_tr_before - n_tr_after}/{n_tr_before} "
                     f"({100*(1-n_tr_after/n_tr_before):.1f}%) samples. "
-                    f"[Target NaN: {n_tr_target_nan}, Feature NaN: {n_tr_feat_nan}]"
+                    f"[Target NaN: {n_tr_target_nan}, Feature NaN: {n_tr_feat_nan}] "
+                    f"TargetNaNReasons[horizon_exceeded={target_reasons['horizon_exceeded']}, barrier_unresolved={target_reasons['barrier_unresolved']}, ambiguous_bar={target_reasons['ambiguous_bar']}, outside_support_mask={target_reasons['outside_support_mask']}, neutral_filtered={target_reasons['neutral_filtered']}, other_target_nan={target_reasons['other_target_nan']}]"
                 )
                 
                 if n_tr_feat_nan > 0:
@@ -11240,12 +11333,27 @@ class MaskAssessor:
             n_va_before = len(y_va)
             n_va_after = np.sum(valid_va)
             if n_va_before > 0 and n_va_after < n_va_before:
-                n_va_target_nan = np.sum(~np.isfinite(y_va))
-                n_va_feat_nan = np.sum(np.isfinite(y_va) & (~np.all(np.isfinite(X_va), axis=1)))
+                target_nan_mask = ~np.isfinite(y_va)
+                n_va_target_nan = np.sum(target_nan_mask)
+                n_va_feat_nan = np.sum((~target_nan_mask) & (~np.all(np.isfinite(X_va), axis=1)))
+
+                target_reasons = {"horizon_exceeded": 0, "barrier_unresolved": 0, "ambiguous_bar": 0, "outside_support_mask": 0, "neutral_filtered": 0, "other_target_nan": 0}
+                if target_nan_reasons is not None and n_va_target_nan > 0:
+                    fold_reasons = target_nan_reasons[va_masked][target_nan_mask]
+                    unique_reasons, counts = np.unique(fold_reasons, return_counts=True)
+                    for reason, count in zip(unique_reasons, counts):
+                        if reason in target_reasons:
+                            target_reasons[reason] += count
+                        else:
+                            target_reasons["other_target_nan"] += count
+                else:
+                    target_reasons["other_target_nan"] += n_va_target_nan
+
                 tprint(
                     f"WARNING: Fold {fold_id} Ridge validation: Dropped {n_va_before - n_va_after}/{n_va_before} "
                     f"({100*(1-n_va_after/n_va_before):.1f}%) samples. "
-                    f"[Target NaN: {n_va_target_nan}, Feature NaN: {n_va_feat_nan}]"
+                    f"[Target NaN: {n_va_target_nan}, Feature NaN: {n_va_feat_nan}] "
+                    f"TargetNaNReasons[horizon_exceeded={target_reasons['horizon_exceeded']}, barrier_unresolved={target_reasons['barrier_unresolved']}, ambiguous_bar={target_reasons['ambiguous_bar']}, outside_support_mask={target_reasons['outside_support_mask']}, neutral_filtered={target_reasons['neutral_filtered']}, other_target_nan={target_reasons['other_target_nan']}]"
                 )
 
             X_tr_clean = X_tr[valid_tr]
@@ -11327,6 +11435,123 @@ class MaskAssessor:
                 min_samples=20,
             )
         
+
+        # --- Compute Expanded Learnability Metrics ---
+        mask_oof_corr = np.nan
+        mask_oof_r2 = np.nan
+        fold_sign_consistency = np.nan
+        positive_fold_fraction = np.nan
+        negative_fold_fraction = np.nan
+        decile_monotonic_spearman = np.nan
+        top_decile_mean_target = np.nan
+        bottom_decile_mean_target = np.nan
+        decile_spread_mean = np.nan
+
+        target_nan_total_train = 0
+        target_nan_total_val = 0
+        train_target_nan_reasons = {"horizon_exceeded": 0, "barrier_unresolved": 0, "ambiguous_bar": 0, "outside_support_mask": 0, "neutral_filtered": 0, "other_target_nan": 0}
+        val_target_nan_reasons = {"horizon_exceeded": 0, "barrier_unresolved": 0, "ambiguous_bar": 0, "outside_support_mask": 0, "neutral_filtered": 0, "other_target_nan": 0}
+
+        for tr_idx, va_idx in folds:
+            tr_masked = tr_idx[mask[tr_idx]]
+            va_masked = va_idx[mask[va_idx]]
+
+            y_tr = y[tr_masked]
+            target_nan_mask_tr = ~np.isfinite(y_tr)
+            target_nan_total_train += np.sum(target_nan_mask_tr)
+
+            if target_nan_reasons is not None and np.sum(target_nan_mask_tr) > 0:
+                fold_reasons = target_nan_reasons[tr_masked][target_nan_mask_tr]
+                u_reasons, counts = np.unique(fold_reasons, return_counts=True)
+                for r, c in zip(u_reasons, counts):
+                    if r in train_target_nan_reasons:
+                        train_target_nan_reasons[r] += c
+                    else:
+                        train_target_nan_reasons["other_target_nan"] += c
+            else:
+                train_target_nan_reasons["other_target_nan"] += np.sum(target_nan_mask_tr)
+
+            y_va = y[va_masked]
+            target_nan_mask_va = ~np.isfinite(y_va)
+            target_nan_total_val += np.sum(target_nan_mask_va)
+
+            if target_nan_reasons is not None and np.sum(target_nan_mask_va) > 0:
+                fold_reasons = target_nan_reasons[va_masked][target_nan_mask_va]
+                u_reasons, counts = np.unique(fold_reasons, return_counts=True)
+                for r, c in zip(u_reasons, counts):
+                    if r in val_target_nan_reasons:
+                        val_target_nan_reasons[r] += c
+                    else:
+                        val_target_nan_reasons["other_target_nan"] += c
+            else:
+                val_target_nan_reasons["other_target_nan"] += np.sum(target_nan_mask_va)
+
+
+        valid_mask = mask.astype(bool) & np.isfinite(y) & np.isfinite(oof_preds)
+        effective_rows = int(np.sum(valid_mask))
+
+        if effective_rows > 0:
+            preds_valid = oof_preds[valid_mask]
+            targets_valid = y[valid_mask]
+
+            # B1. Masked OOF Correlation
+            if np.std(preds_valid) > 0 and np.std(targets_valid) > 0 and len(preds_valid) > 1:
+                mask_oof_corr = np.corrcoef(preds_valid, targets_valid)[0, 1]
+
+            # B2. Masked R2
+            mean_y = np.mean(targets_valid)
+            ss_tot = np.sum((targets_valid - mean_y) ** 2)
+            ss_res = np.sum((targets_valid - preds_valid) ** 2)
+            if ss_tot > 0:
+                mask_oof_r2 = 1.0 - (ss_res / ss_tot)
+            else:
+                tprint("WARNING: Cannot compute mask_oof_r2 due to zero variance in targets.")
+
+            # B3. Fold sign consistency
+            fold_means = []
+            for fold_id, (tr_idx, va_idx) in enumerate(folds):
+                va_masked_idx = va_idx[mask[va_idx]]
+                valid_fold_mask = np.isfinite(y[va_masked_idx]) & np.isfinite(oof_preds[va_masked_idx])
+                fold_targets = y[va_masked_idx][valid_fold_mask]
+                if len(fold_targets) > 0:
+                    fold_means.append(np.mean(fold_targets))
+
+            if fold_means:
+                n_pos = sum(1 for m in fold_means if m > 0)
+                n_neg = sum(1 for m in fold_means if m < 0)
+                n_nonzero = n_pos + n_neg
+
+                positive_fold_fraction = n_pos / len(fold_means)
+                negative_fold_fraction = n_neg / len(fold_means)
+
+                if n_nonzero > 0:
+                    fold_sign_consistency = max(n_pos, n_neg) / n_nonzero
+                else:
+                    tprint("WARNING: Cannot compute fold_sign_consistency due to zero fold means.")
+
+            # B4. Decile monotonicity
+            if effective_rows >= 10:
+                import scipy.stats
+                order = np.argsort(preds_valid)
+                binned = np.array_split(order, 10)
+                decile_means = []
+                for b in binned:
+                    if len(b) > 0:
+                        decile_means.append(np.mean(targets_valid[b]))
+
+                if len(decile_means) >= 5:
+                    top_decile_mean_target = decile_means[-1]
+                    bottom_decile_mean_target = decile_means[0]
+                    decile_spread_mean = top_decile_mean_target - bottom_decile_mean_target
+
+                    spearman_corr, _ = scipy.stats.spearmanr(np.arange(1, len(decile_means) + 1), decile_means)
+                    if np.isfinite(spearman_corr):
+                        decile_monotonic_spearman = float(spearman_corr)
+                else:
+                    tprint("WARNING: Cannot compute decile_monotonic_spearman due to insufficient populated deciles.")
+            else:
+                tprint("WARNING: Cannot compute decile_monotonic_spearman due to insufficient effective rows.")
+
         total_elapsed = time.perf_counter() - subset_auc_start
         if total_elapsed >= 0.20:
             tprint(
@@ -11356,6 +11581,19 @@ class MaskAssessor:
             "oof_preds": oof_preds,
             "folds_used": int(folds_used),
             "folds_skipped": int(folds_skipped),
+            "mask_oof_corr": float(mask_oof_corr) if np.isfinite(mask_oof_corr) else np.nan,
+            "mask_oof_r2": float(mask_oof_r2) if np.isfinite(mask_oof_r2) else np.nan,
+            "fold_sign_consistency": float(fold_sign_consistency) if np.isfinite(fold_sign_consistency) else np.nan,
+            "positive_fold_fraction": float(positive_fold_fraction) if np.isfinite(positive_fold_fraction) else np.nan,
+            "negative_fold_fraction": float(negative_fold_fraction) if np.isfinite(negative_fold_fraction) else np.nan,
+            "decile_monotonic_spearman": float(decile_monotonic_spearman) if np.isfinite(decile_monotonic_spearman) else np.nan,
+            "top_decile_mean_target": float(top_decile_mean_target) if np.isfinite(top_decile_mean_target) else np.nan,
+            "bottom_decile_mean_target": float(bottom_decile_mean_target) if np.isfinite(bottom_decile_mean_target) else np.nan,
+            "decile_spread_mean": float(decile_spread_mean) if np.isfinite(decile_spread_mean) else np.nan,
+            "target_nan_total_train": target_nan_total_train,
+            "target_nan_total_val": target_nan_total_val,
+            "train_target_nan_reasons": train_target_nan_reasons,
+            "val_target_nan_reasons": val_target_nan_reasons,
         }
 
     @staticmethod
@@ -12509,8 +12747,9 @@ def apply_robust_data_filtering(
     feature_dict: Dict[str, np.ndarray],
     fwd_ret: np.ndarray,
     fwd_ret_norm: np.ndarray,
+    target_nan_reasons: Optional[np.ndarray] = None,
     overlap_threshold: float = 0.8,
-) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray, np.ndarray, Dict[str, Any]]:
+) -> Tuple[pd.DataFrame, Dict[str, np.ndarray], np.ndarray, np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
     """
     Apply robust filtering strategy:
     1. Filter out rows with no feature availability.
@@ -12526,6 +12765,7 @@ def apply_robust_data_filtering(
             feature_dict,
             fwd_ret,
             fwd_ret_norm,
+            target_nan_reasons,
             {"dropped_features": [], "dropped_rows": 0},
         )
 
@@ -12538,6 +12778,8 @@ def apply_robust_data_filtering(
     feature_dict = {k: v[has_any_feature] for k, v in feature_dict.items()}
     fwd_ret = fwd_ret[has_any_feature]
     fwd_ret_norm = fwd_ret_norm[has_any_feature]
+    if target_nan_reasons is not None:
+        target_nan_reasons = target_nan_reasons[has_any_feature]
     n_rows_any = len(data)
 
     # 2. Identify reference feature (max availability)
@@ -12583,6 +12825,7 @@ def apply_robust_data_filtering(
             nan_features_detected.append(k)
     fwd_ret_final = fwd_ret[final_keep_mask]
     fwd_ret_norm_final = fwd_ret_norm[final_keep_mask]
+    target_nan_reasons_final = target_nan_reasons[final_keep_mask] if target_nan_reasons is not None else None
 
     meta = {
         "rows_initial": n_rows_initial,
@@ -12597,7 +12840,7 @@ def apply_robust_data_filtering(
         "nan_features_detected": nan_features_detected,
     }
 
-    return data_final, features_final, fwd_ret_final, fwd_ret_norm_final, meta
+    return data_final, features_final, fwd_ret_final, fwd_ret_norm_final, target_nan_reasons_final, meta
 
 
 def filter_complete_feature_rows(
@@ -13549,9 +13792,7 @@ if __name__ == "__main__":
 
     # 3. Prepare planner-bounded indices before loading features
     fwd_hours = int(cfg.get("mask_opt_forward_hours", 5))
-    fwd_ret_wide = (
-        panel["close"].pct_change(fwd_hours, fill_method=None).shift(-fwd_hours)
-    )
+    fwd_ret_wide, fwd_ret_reasons_wide = generate_fwd_ret_with_reasons(panel, fwd_hours)
 
     common_idx = panel["close"].index
     common_syms = panel["close"].columns
@@ -13757,11 +13998,16 @@ if __name__ == "__main__":
     fwd_ret_matrix = fwd_ret_wide.reindex(
         index=common_idx, columns=common_syms
     ).to_numpy(dtype=np.float32)
+    fwd_ret_reasons_matrix = fwd_ret_reasons_wide.reindex(
+        index=common_idx, columns=common_syms
+    ).to_numpy(dtype=object)
+
     target_signal = fwd_ret_matrix / np.maximum(np.sqrt(atr_pct_matrix), 1e-9)
 
     fwd_ret_norm_matrix = fwd_ret_matrix / np.maximum(atr_pct_matrix, 1e-9)
     fwd_ret_final = fwd_ret_matrix[time_idx, sym_idx]
     fwd_ret_norm_final = fwd_ret_norm_matrix[time_idx, sym_idx]
+    fwd_ret_reasons_final = fwd_ret_reasons_matrix[time_idx, sym_idx]
     tprint(
         f"Forward returns extracted for kept rows in {time.perf_counter() - fwd_ret_start:.1f}s"
     )
@@ -13951,12 +14197,14 @@ if __name__ == "__main__":
         feat_final,
         fwd_ret_final,
         fwd_ret_norm_final,
+        fwd_ret_reasons_final,
         robust_meta,
     ) = apply_robust_data_filtering(
         data_final,
         feat_final,
         fwd_ret_final,
         fwd_ret_norm_final,
+        target_nan_reasons=fwd_ret_reasons_final,
         overlap_threshold=0.8,
     )
 
@@ -14079,5 +14327,5 @@ if __name__ == "__main__":
 
     # Run triad-target mask generation
     run_lgbm_mask_generation_triad(
-        data_final, feat_final, triad_targets, fwd_ret_final, fwd_ret_norm_final, cfg
+        data_final, feat_final, triad_targets, fwd_ret_final, fwd_ret_norm_final, fwd_ret_reasons_final, cfg
     )

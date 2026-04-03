@@ -71,7 +71,7 @@ LOGGER = logging.getLogger(__name__)
 TRIAD_DEFAULT_HORIZONS: List[int] = [3, 10]
 
 # Default triad target names
-TRIAD_DEFAULT_TARGET_NAMES: List[str] = ["target_eff", "target_vame"]
+TRIAD_DEFAULT_TARGET_NAMES: List[str] = ["target_eff", "target_vame", "returns_target", "atr_norm_returns_target"]
 
 # Per-target configuration for triad targets
 TRIAD_TARGET_CONFIGS: Dict[str, Dict[str, Any]] = {
@@ -88,6 +88,20 @@ TRIAD_TARGET_CONFIGS: Dict[str, Dict[str, Any]] = {
         "min_support_pct": 0.06,
         "ic_hurdle": 0.025,
         "description": "Volume-adjusted momentum efficiency",
+    },
+    "returns_target": {
+        "huber_alpha": 1.0,
+        "learning_rate": 0.03,
+        "min_support_pct": 0.05,
+        "ic_hurdle": 0.02,
+        "description": "Log forward returns",
+    },
+    "atr_norm_returns_target": {
+        "huber_alpha": 1.0,
+        "learning_rate": 0.03,
+        "min_support_pct": 0.05,
+        "ic_hurdle": 0.02,
+        "description": "ATR-normalized log forward returns",
     },
 }
 
@@ -6905,6 +6919,13 @@ def run_side_pipeline(
     )
 
     if int(complete_rows.sum()) == 0:
+        # Developer Note:
+        # This skip condition checks if the MINER target (e.g. target_eff or target_vame)
+        # has valid rows after applying its required bounds. It is completely normal and
+        # legitimate for some miner targets to have 0 valid rows in a specific horizon/side combo
+        # if the domain filters all data. This is a miner-only skip and DOES NOT affect
+        # Ridge learnability, which safely and exclusively operates on `ridge_target_by_side`
+        # (the vol-normalized forward returns).
         tprint(f"Skipping {target_name} @ H{horizon} [{side}] due to zero valid rows.")
         return None
 
@@ -9164,22 +9185,19 @@ class MaskAssessor:
         min_sign_consistency = float(self.cfg.get("min_sign_consistency", 0.0))
         min_mean_target_value = float(self.cfg.get("min_mean_target_value", 0.003))
 
-        # bounded_target holds the target used for tree splits (e.g. bounded target_vame).
-        # If not provided, it implies we are not using a bounded target and fwd_ret is the mining target.
-        if bounded_target is not None:
-            mining_target_by_side = {"long": bounded_target, "short": bounded_target}
-        else:
-            mining_target_by_side = {"long": fwd_ret, "short": -fwd_ret}
-
         ridge_target_by_side = {"long": fwd_ret_norm, "short": -fwd_ret_norm}
+
+        # IMPORTANT: Ridge learnability always uses vol-normalized forward returns; do not substitute miner targets here.
+        # Assert to ensure the target container is indeed the vol-normalized forward returns
+        assert ridge_target_by_side["long"] is fwd_ret_norm
 
         tprint(f"Stage A Target Alignment:")
         tprint(f"  Miner target bounded: {bounded_target is not None}")
         tprint(f"  Baseline/Ridge learnability target: ridge_target_by_side (vol-normalized signed forward return)")
 
         mean_ret_global_by_side = {
-            "long": float(np.nanmean(fwd_ret)),
-            "short": float(np.nanmean(-fwd_ret)),
+            "long": float(np.nanmean(ridge_target_by_side["long"])),
+            "short": float(np.nanmean(ridge_target_by_side["short"])),
         }
         feature_to_regime_family = {
             m.feature_name: m.regime_family
@@ -10504,7 +10522,6 @@ class MaskAssessor:
             group_bucket_key = (side, horizon_key)
 
             target_ret = ridge_target_by_side[side]
-            mining_target = mining_target_by_side[side]
             global_auc = float(baseline_cache[side]["global_auc"])
             global_roc_auc = float(baseline_cache[side]["global_roc_auc"])
             global_pr_auc = float(baseline_cache[side]["global_pr_auc"])
@@ -14475,9 +14492,31 @@ if __name__ == "__main__":
         "target_vame": {},
         "target_eff_surprisal": {},
         "target_vame_surprisal": {},
+        "returns_target": {},
+        "atr_norm_returns_target": {},
     }
 
+    # Pre-compute close and atr for the new return-based miner targets.
+    # Note: since this is panel data (flattened via time_idx, sym_idx),
+    # using shift on close_wide is correct as it avoids cross-symbol leak.
     for horizon, df_targets in triad_results_by_horizon.items():
+        # Add new targets
+        close_wide_local = panel["close"].reindex(index=common_idx, columns=common_syms)
+        # Using log forward return: log(close[t+h] / close[t])
+        fwd_log_ret_wide = np.log(close_wide_local.shift(-horizon) / close_wide_local)
+        fwd_log_ret_final = fwd_log_ret_wide.to_numpy(dtype=np.float32)[time_idx, sym_idx]
+
+        # Compute ATR-normalized forward log returns
+        atr_frac = atr_wide[time_idx, sym_idx] / np.maximum(close_selected, 1e-12)
+        atr_frac = np.where(atr_frac == 0, np.nan, atr_frac)
+        fwd_log_ret_atr_norm_final = fwd_log_ret_final / atr_frac
+
+        triad_targets["returns_target"][horizon] = fwd_log_ret_final
+        triad_targets["atr_norm_returns_target"][horizon] = fwd_log_ret_atr_norm_final
+
+        tprint(f"  returns_target_{horizon}: {np.isfinite(fwd_log_ret_final).sum()}/{len(fwd_log_ret_final)} valid values")
+        tprint(f"  atr_norm_returns_target_{horizon}: {np.isfinite(fwd_log_ret_atr_norm_final).sum()}/{len(fwd_log_ret_atr_norm_final)} valid values")
+
         for target_base in [
             "target_eff",
             "target_vame",

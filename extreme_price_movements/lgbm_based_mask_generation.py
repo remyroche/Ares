@@ -1703,9 +1703,8 @@ class FeatureProcessor:
         def _add_binary_feature(
             src: str, group_name: str, raw_arr: np.ndarray, family: str
         ):
-            # Skip raw versions of features that have booleanized threshold versions
-            if src in ["ema20_gt_ema50", "ema50_gt_ema200", "price_lt_ema200"]:
-                return
+            # Skip ALL raw binary versions - use threshold-based boolean versions instead
+            return
 
             nan_rate_before = float(np.isnan(raw_arr).mean())
             self.rank_audit_rows.append(

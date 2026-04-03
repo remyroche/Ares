@@ -7106,9 +7106,9 @@ def run_lgbm_mask_generation_pipeline(
         for side, count in side_counts.items():
             tprint(f"  - {side}: {count}")
 
-        tprint("Top 15 Final Diverse Rules (Thorough Report):")
+        tprint("Top 160 Final Diverse Rules (Thorough Report):")
         top_final = select_top_diverse_rules(
-            combined_global_registry, combined_mask_map, top_n=15
+            combined_global_registry, combined_mask_map, top_n=160
         )
         for i, (_, row) in enumerate(top_final.iterrows(), start=1):
             tprint(
@@ -7141,7 +7141,7 @@ def build_global_stage_a_ridge_shortlist(
     metadata_ref: List[FeatureMetadata],
     cfg: Dict[str, Any],
 ) -> Dict[str, set[str]]:
-    global_cap = int(cfg.get("global_ridge_candidate_cap", 80))
+    global_cap = int(cfg.get("global_ridge_candidate_cap", 160))
     if not pooled_step1_frames or X_ref is None or len(metadata_ref) == 0:
         return {}
 
@@ -7207,8 +7207,7 @@ def build_global_stage_a_ridge_shortlist(
             inter = float(intersections[cand_mask_idx, sel_mask_idx])
             if inter < 1.0:
                 continue
-            min_support = max(min(cand_support, sel_support), 1.0)
-            raw_overlap = inter / min_support
+            raw_overlap = (2.0 * inter) / max(cand_support + sel_support, 1.0)
 
             different_sides = str(row["side"]) != str(sel["side"])
             different_horizons = str(row["source_horizon"]) != str(sel["source_horizon"])
@@ -12058,7 +12057,7 @@ def select_top_diverse_rules(
             union_overlap_penalty = union_effective_overlap if union_effective_overlap >= 0.40 else 0.0
 
             # Hard reject conditions - use effective_overlap consistently
-            if pairwise_effective_overlap >= 0.50 or union_effective_overlap >= 0.75:
+            if pairwise_effective_overlap >= 0.70 or union_effective_overlap >= 0.75:
                 to_remove.append(idx)
                 continue
 

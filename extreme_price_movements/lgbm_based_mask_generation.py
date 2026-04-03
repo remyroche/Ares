@@ -1704,7 +1704,7 @@ class FeatureProcessor:
             src: str, group_name: str, raw_arr: np.ndarray, family: str
         ):
             # Skip raw versions of features that have booleanized threshold versions
-            if src == "ema20_gt_ema50":
+            if src in ["ema20_gt_ema50", "ema50_gt_ema200", "price_lt_ema200"]:
                 return
 
             nan_rate_before = float(np.isnan(raw_arr).mean())
@@ -6237,6 +6237,7 @@ def run_mining_stage(
                             "feature_name": m.feature_name,
                             "group": m.group,
                             "regime_family": m.regime_family,
+                            "source_family": m.source_family,
                             "gain": gain,
                             "split": split,
                         }
@@ -6258,6 +6259,18 @@ def run_mining_stage(
                 )
                 tprint("Top 5 regime families by split count:")
                 for fam, count in top_fam.items():
+                    if pd.notna(fam):
+                        tprint(f"  - {fam}: {count}")
+
+                top_loc_fam = (
+                    fi_df[fi_df["group"] == "location"]
+                    .groupby("source_family")["split"]
+                    .sum()
+                    .sort_values(ascending=False)
+                    .head(5)
+                )
+                tprint("Top 5 location families by split count:")
+                for fam, count in top_loc_fam.items():
                     if pd.notna(fam):
                         tprint(f"  - {fam}: {count}")
             split_usage_df = collect_split_usage_from_model(

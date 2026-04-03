@@ -219,11 +219,15 @@ def _per_symbol_rolling_percentile_rank(
     min_periods: int = 100,
 ) -> pd.Series:
     """Compute strictly backward-looking rolling percentile rank per symbol."""
-    return symbol.groupby(symbol, sort=False).transform(
-        lambda sym: rolling_percentile_rank(
-            series.loc[sym.index], window=window, min_periods=min_periods
-        )
-    )
+    result = pd.Series(np.nan, index=series.index, dtype=np.float64)
+    positions = np.arange(len(symbol))
+    for sym in symbol.unique():
+        mask = (symbol == sym).values
+        idx_arr = positions[mask]
+        vals = series.iloc[idx_arr]
+        res = rolling_percentile_rank(vals, window=window, min_periods=min_periods)
+        result.iloc[idx_arr] = res.values
+    return result
 
 
 def _log_target_diagnostics(df: pd.DataFrame, target_name: str) -> None:
@@ -272,7 +276,7 @@ def compute_target_revert_weighted(
     strong_dev_frac: float = 0.015,    # 1.5%
     strong_k: float = 80.0,            # saturation speed above 1.5%
     eps: float = 1e-12,
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Anchor-reversion target with explicit preference for larger initial dislocations.
 
@@ -285,6 +289,8 @@ def compute_target_revert_weighted(
     anchor = anchor_wide.to_numpy(dtype=np.float64)
 
     T, N = close.shape
+
+    reasons = np.full((T, N), "valid", dtype=object)
 
     # Initial deviation
     dev0 = close - anchor
@@ -351,12 +357,23 @@ def compute_target_revert_weighted(
 
     # Invalidate rows without enough forward horizon or insufficient initial dislocation
     target[-horizon:] = np.nan
+
+    reasons[~valid_start] = "outside_support_mask"
+    reasons[-horizon:] = "horizon_exceeded"
+
     target[~valid_start] = np.nan
 
-    return pd.DataFrame(
-        target.astype(np.float32),
-        index=close_wide.index,
-        columns=close_wide.columns,
+    return (
+        pd.DataFrame(
+            target.astype(np.float32),
+            index=close_wide.index,
+            columns=close_wide.columns,
+        ),
+        pd.DataFrame(
+            reasons,
+            index=close_wide.index,
+            columns=close_wide.columns,
+        )
     )
 
 
@@ -518,9 +535,10 @@ def apply_surprisal_to_targets(
 
         surprisal = np.full(len(out), np.nan, dtype=np.float64)
         if symbol_col in out.columns:
-            grouped = out.groupby(symbol_col, sort=False).groups
-            for _, idx in grouped.items():
-                idx_arr = np.asarray(idx, dtype=np.int64)
+            positions = np.arange(len(out))
+            for sym in out[symbol_col].unique():
+                mask = (out[symbol_col] == sym).values
+                idx_arr = positions[mask]
                 values = out.iloc[idx_arr][col].to_numpy(dtype=np.float64)
                 surprisal[idx_arr] = compute_rolling_surprisal(
                     values,
@@ -668,7 +686,7 @@ def get_bounded_triad(
     anchor_wide = close_wide.rolling(window=n, min_periods=1).mean()
 
     # Compute target_eff using anchor-reversion implementation
-    target_eff_wide = compute_target_revert_weighted(
+    target_eff_wide, target_eff_reasons_wide = compute_target_revert_weighted(
         close_wide=close_wide,
         anchor_wide=anchor_wide,
         horizon=n,
@@ -677,7 +695,32 @@ def get_bounded_triad(
     # Convert back to long format and assign back to DataFrame.
     # Note: reset_index(level="symbol", drop=True) is safer than reindex(df.index)
     # when dealing with RangeIndex and MultiIndex stacking in pandas 2.x.
-    df["target_eff"] = target_eff_wide.stack().reset_index(level="symbol", drop=True)
+    if df.index.has_duplicates or isinstance(df.index, pd.RangeIndex):
+        time_col_name = target_eff_wide.index.name or "index"
+
+        eff_stacked = target_eff_wide.stack().reset_index()
+        eff_stacked.columns = [time_col_name, "symbol", "target_eff"]
+
+        reason_stacked = target_eff_reasons_wide.stack().reset_index()
+        reason_stacked.columns = [time_col_name, "symbol", "target_eff_reason"]
+
+        df_reset = df.reset_index(names=time_col_name)
+        df_merged = df_reset.merge(eff_stacked, on=[time_col_name, "symbol"], how="left")
+        df_merged = df_merged.merge(reason_stacked, on=[time_col_name, "symbol"], how="left")
+
+        df["target_eff"] = df_merged["target_eff"].values
+        df["target_eff_reason"] = df_merged["target_eff_reason"].values
+    else:
+        # MultiIndex creation aligns the stack back to the original df index correctly.
+        eff_series = target_eff_wide.stack()
+        reason_series = target_eff_reasons_wide.stack()
+
+        # When pivot happens, original unique index values form the row index.
+        # stack() creates a MultiIndex (time_index, symbol)
+        mi = df.set_index(["symbol"], append=True).index
+        df["target_eff"] = eff_series.reindex(mi).values
+        df["target_eff_reason"] = reason_series.reindex(mi).values
+
     _log_target_diagnostics(df, "target_eff")
 
     # 2) Elasticity
@@ -768,7 +811,19 @@ def get_bounded_triad(
             ),
         )
 
+    vame_reasons = np.full(len(df), "valid", dtype=object)
+
+    # We apply horizon check for VAME
+    # Check if fwd_close was NaN but current close was not, roughly indicating horizon exceeded
+    fwd_close_nan = fwd_close.isna() & ~df["close"].isna()
+    vame_reasons[fwd_close_nan] = "horizon_exceeded"
+
     df["target_vame"] = np.nan_to_num(vame_combined, nan=0.0)
+
+    # Apply horizon NaNs
+    df.loc[fwd_close_nan, "target_vame"] = np.nan
+    df["target_vame_reason"] = vame_reasons
+
     _log_target_diagnostics(df, "target_vame")
 
     if use_surprisal_selectivity:
@@ -879,6 +934,8 @@ def compute_triad_targets_for_horizons(
             "target_vame": f"target_vame_{horizon}",
             "target_eff_surprisal": f"target_eff_surprisal_{horizon}",
             "target_vame_surprisal": f"target_vame_surprisal_{horizon}",
+            "target_eff_reason": f"target_eff_reason_{horizon}",
+            "target_vame_reason": f"target_vame_reason_{horizon}",
         }
         rename_map = {k: v for k, v in rename_map.items() if k in df_with_targets.columns}
         df_with_targets = df_with_targets.rename(columns=rename_map)

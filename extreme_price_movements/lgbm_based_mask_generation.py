@@ -10404,12 +10404,36 @@ class MaskAssessor:
                             ridge_details["oof_preds"], dtype=np.float32
                         ),
                     )
+                    # Extract new learnability metrics
+                    mask_oof_r2 = ridge_details.get("mask_oof_r2", np.nan)
+                    fold_sign_consistency_metric = ridge_details.get("fold_sign_consistency", np.nan)
+                    decile_monotonic_spearman = ridge_details.get("decile_monotonic_spearman", np.nan)
+
                     tprint(
                         f"Stage A: Ridge learnability done {assessed_progress}/{total_ridge_selected} "
                         f"key={canonical_key[:120]} "
                         f"mask_oof_corr={mask_auc if np.isfinite(mask_auc) else np.nan:.6f} "
+                        f"mask_oof_r2={mask_oof_r2 if np.isfinite(mask_oof_r2) else np.nan:.6f} "
+                        f"fold_sign_consistency={fold_sign_consistency_metric if np.isfinite(fold_sign_consistency_metric) else np.nan:.3f} "
+                        f"decile_monotonic_spearman={decile_monotonic_spearman if np.isfinite(decile_monotonic_spearman) else np.nan:.3f} "
                         f"coverage={subset_oof_coverage:.4f} "
                         f"elapsed={time.time() - ridge_start:.2f}s"
+                    )
+
+                    train_reasons = ridge_details.get("train_nan_reasons", {})
+                    val_reasons = ridge_details.get("val_nan_reasons", {})
+                    n_train_nan = sum(train_reasons.values())
+                    n_val_nan = sum(val_reasons.values())
+
+                    def format_reasons(counts):
+                        return ", ".join([f"{k}={v}" for k, v in counts.items()])
+
+                    total_reasons = {k: train_reasons.get(k, 0) + val_reasons.get(k, 0) for k in set(train_reasons) | set(val_reasons)}
+
+                    tprint(
+                        f"Stage A: Ridge target-drop summary key={canonical_key[:120]} "
+                        f"train_target_nan={n_train_nan} val_target_nan={n_val_nan} "
+                        f"reasons[{format_reasons(total_reasons)}]"
                     )
                     if np.isfinite(mask_auc) and np.isfinite(global_auc):
                         auc_lift = mask_auc - global_auc
@@ -10556,6 +10580,28 @@ class MaskAssessor:
                     "subset_oof_coverage": subset_oof_coverage,
                     "baseline_oof_coverage": baseline_oof_coverage,
                     "mask_oof_corr": mask_auc,
+                    "mask_oof_r2": ridge_details.get("mask_oof_r2", np.nan),
+                    "fold_sign_consistency": ridge_details.get("fold_sign_consistency", np.nan),
+                    "positive_fold_fraction": ridge_details.get("positive_fold_fraction", np.nan),
+                    "negative_fold_fraction": ridge_details.get("negative_fold_fraction", np.nan),
+                    "decile_monotonic_spearman": ridge_details.get("decile_monotonic_spearman", np.nan),
+                    "top_decile_mean_target": ridge_details.get("top_decile_mean_target", np.nan),
+                    "bottom_decile_mean_target": ridge_details.get("bottom_decile_mean_target", np.nan),
+                    "decile_spread_mean": ridge_details.get("decile_spread_mean", np.nan),
+                    "target_nan_total_train": sum(ridge_details.get("train_nan_reasons", {}).values()) if isinstance(ridge_details, dict) else 0,
+                    "target_nan_total_val": sum(ridge_details.get("val_nan_reasons", {}).values()) if isinstance(ridge_details, dict) else 0,
+                    "train_target_nan_horizon_exceeded": ridge_details.get("train_nan_reasons", {}).get("horizon_exceeded", 0) if isinstance(ridge_details, dict) else 0,
+                    "val_target_nan_horizon_exceeded": ridge_details.get("val_nan_reasons", {}).get("horizon_exceeded", 0) if isinstance(ridge_details, dict) else 0,
+                    "train_target_nan_barrier_unresolved": ridge_details.get("train_nan_reasons", {}).get("barrier_unresolved", 0) if isinstance(ridge_details, dict) else 0,
+                    "val_target_nan_barrier_unresolved": ridge_details.get("val_nan_reasons", {}).get("barrier_unresolved", 0) if isinstance(ridge_details, dict) else 0,
+                    "train_target_nan_ambiguous_bar": ridge_details.get("train_nan_reasons", {}).get("ambiguous_bar", 0) if isinstance(ridge_details, dict) else 0,
+                    "val_target_nan_ambiguous_bar": ridge_details.get("val_nan_reasons", {}).get("ambiguous_bar", 0) if isinstance(ridge_details, dict) else 0,
+                    "train_target_nan_outside_support_mask": ridge_details.get("train_nan_reasons", {}).get("outside_support_mask", 0) if isinstance(ridge_details, dict) else 0,
+                    "val_target_nan_outside_support_mask": ridge_details.get("val_nan_reasons", {}).get("outside_support_mask", 0) if isinstance(ridge_details, dict) else 0,
+                    "train_target_nan_neutral_filtered": ridge_details.get("train_nan_reasons", {}).get("neutral_filtered", 0) if isinstance(ridge_details, dict) else 0,
+                    "val_target_nan_neutral_filtered": ridge_details.get("val_nan_reasons", {}).get("neutral_filtered", 0) if isinstance(ridge_details, dict) else 0,
+                    "train_target_nan_other": ridge_details.get("train_nan_reasons", {}).get("other_target_nan", 0) if isinstance(ridge_details, dict) else 0,
+                    "val_target_nan_other": ridge_details.get("val_nan_reasons", {}).get("other_target_nan", 0) if isinstance(ridge_details, dict) else 0,
                     "mask_roc_auc": mask_roc_auc,
                     "mask_pr_auc": mask_pr_auc,
                     "global_oof_corr": global_auc,
@@ -11030,6 +11076,20 @@ class MaskAssessor:
         self, X, fwd_ret, mask, folds, tp_f: np.ndarray = None
     ) -> Dict[str, Any]:
         """Compute Ridge OOF details for a subset of data defined by mask."""
+
+        def default_reasons():
+            return {
+                "horizon_exceeded": 0,
+                "barrier_unresolved": 0,
+                "ambiguous_bar": 0,
+                "outside_support_mask": 0,
+                "neutral_filtered": 0,
+                "other_target_nan": 0
+            }
+
+        train_nan_reasons = default_reasons()
+        val_nan_reasons = default_reasons()
+
         if not np.any(mask):
             return {
                 "subset_auc": np.nan,
@@ -11040,6 +11100,16 @@ class MaskAssessor:
                 "oof_preds": np.full(len(X), np.nan, dtype=np.float32),
                 "folds_used": 0,
                 "folds_skipped": 0,
+                "train_nan_reasons": train_nan_reasons,
+                "val_nan_reasons": val_nan_reasons,
+                "mask_oof_r2": np.nan,
+                "fold_sign_consistency": np.nan,
+                "positive_fold_fraction": np.nan,
+                "negative_fold_fraction": np.nan,
+                "decile_monotonic_spearman": np.nan,
+                "top_decile_mean_target": np.nan,
+                "bottom_decile_mean_target": np.nan,
+                "decile_spread_mean": np.nan,
             }
 
         ridge_feats = self._get_ridge_feature_indices()
@@ -11053,6 +11123,16 @@ class MaskAssessor:
                 "oof_preds": np.full(len(X), np.nan, dtype=np.float32),
                 "folds_used": 0,
                 "folds_skipped": 0,
+                "train_nan_reasons": train_nan_reasons,
+                "val_nan_reasons": val_nan_reasons,
+                "mask_oof_r2": np.nan,
+                "fold_sign_consistency": np.nan,
+                "positive_fold_fraction": np.nan,
+                "negative_fold_fraction": np.nan,
+                "decile_monotonic_spearman": np.nan,
+                "top_decile_mean_target": np.nan,
+                "bottom_decile_mean_target": np.nan,
+                "decile_spread_mean": np.nan,
             }
         subset_auc_start = time.perf_counter()
         X_ridge = np.asarray(X[:, ridge_feats], dtype=np.float32, order="C")
@@ -11106,6 +11186,20 @@ class MaskAssessor:
             valid_tr = np.isfinite(y_tr) & np.all(np.isfinite(X_tr), axis=1)
             valid_va = np.isfinite(y_va) & np.all(np.isfinite(X_va), axis=1)
 
+            def count_reasons(y_fold, target_nan_reasons_fold):
+                nan_mask = ~np.isfinite(y_fold)
+                fold_reasons = target_nan_reasons_fold[nan_mask]
+                counts = default_reasons()
+                for reason in fold_reasons:
+                    if reason in counts:
+                        counts[reason] += 1
+                    else:
+                        counts["other_target_nan"] += 1
+                return counts
+
+            def format_reasons(counts):
+                return ", ".join([f"{k}={v}" for k, v in counts.items()])
+
             # Log if many samples are dropped due to target or feature finiteness
             n_tr_before = len(y_tr)
             n_tr_after = np.sum(valid_tr)
@@ -11113,10 +11207,15 @@ class MaskAssessor:
                 n_tr_target_nan = np.sum(~np.isfinite(y_tr))
                 n_tr_feat_nan = np.sum(np.isfinite(y_tr) & (~np.all(np.isfinite(X_tr), axis=1)))
                 
+                fold_train_reasons = count_reasons(y_tr, target_nan_reasons[tr_masked] if target_nan_reasons is not None else np.full(len(y_tr), "other_target_nan", dtype=object))
+                for k, v in fold_train_reasons.items():
+                    train_nan_reasons[k] += v
+
                 tprint(
                     f"WARNING: Fold {fold_id} Ridge training: Dropped {n_tr_before - n_tr_after}/{n_tr_before} "
                     f"({100*(1-n_tr_after/n_tr_before):.1f}%) samples. "
-                    f"[Target NaN: {n_tr_target_nan}, Feature NaN: {n_tr_feat_nan}]"
+                    f"[Target NaN: {n_tr_target_nan}, Feature NaN: {n_tr_feat_nan}] "
+                    f"TargetNaNReasons[{format_reasons(fold_train_reasons)}]"
                 )
                 
                 if n_tr_feat_nan > 0:
@@ -11134,10 +11233,16 @@ class MaskAssessor:
             if n_va_before > 0 and n_va_after < n_va_before:
                 n_va_target_nan = np.sum(~np.isfinite(y_va))
                 n_va_feat_nan = np.sum(np.isfinite(y_va) & (~np.all(np.isfinite(X_va), axis=1)))
+
+                fold_val_reasons = count_reasons(y_va, target_nan_reasons[va_masked] if target_nan_reasons is not None else np.full(len(y_va), "other_target_nan", dtype=object))
+                for k, v in fold_val_reasons.items():
+                    val_nan_reasons[k] += v
+
                 tprint(
                     f"WARNING: Fold {fold_id} Ridge validation: Dropped {n_va_before - n_va_after}/{n_va_before} "
                     f"({100*(1-n_va_after/n_va_before):.1f}%) samples. "
-                    f"[Target NaN: {n_va_target_nan}, Feature NaN: {n_va_feat_nan}]"
+                    f"[Target NaN: {n_va_target_nan}, Feature NaN: {n_va_feat_nan}] "
+                    f"TargetNaNReasons[{format_reasons(fold_val_reasons)}]"
                 )
 
             X_tr_clean = X_tr[valid_tr]
@@ -11227,6 +11332,79 @@ class MaskAssessor:
                 f"filter_elapsed={fold_filter_time:.2f}s fit_predict_elapsed={fit_predict_time:.2f}s "
                 f"total_elapsed={total_elapsed:.2f}s"
             )
+
+        # --- B. Learnability metrics expansion ---
+        # Get effective OOF-scored rows
+        valid_mask = np.isfinite(oof_preds) & np.isfinite(y) & mask.astype(bool)
+
+        # B2. Masked R2
+        mask_oof_r2 = np.nan
+        if np.sum(valid_mask) >= min_pred_points:
+            y_valid = y[valid_mask]
+            preds_valid = oof_preds[valid_mask]
+            ss_res = np.sum((y_valid - preds_valid) ** 2)
+            ss_tot = np.sum((y_valid - np.mean(y_valid)) ** 2)
+            if ss_tot > 1e-12:
+                mask_oof_r2 = float(1.0 - ss_res / ss_tot)
+            else:
+                tprint("WARNING: subset_r2 denominator is zero (no variance in target).")
+
+        # B3. Fold sign consistency
+        fold_sign_consistency = np.nan
+        positive_fold_fraction = np.nan
+        negative_fold_fraction = np.nan
+
+        fold_means = []
+        for tr_idx, va_idx in folds:
+            va_masked = va_idx[mask[va_idx]]
+            y_va_fold = y[va_masked]
+            oof_preds_fold = oof_preds[va_masked]
+            valid_fold = np.isfinite(y_va_fold) & np.isfinite(oof_preds_fold)
+            if np.sum(valid_fold) > 0:
+                fold_means.append(np.mean(y_va_fold[valid_fold]))
+
+        if fold_means:
+            signs = np.sign(fold_means)
+            n_pos = np.sum(signs > 0)
+            n_neg = np.sum(signs < 0)
+            n_nonzero = np.sum(signs != 0)
+
+            if n_nonzero > 0:
+                fold_sign_consistency = float(max(n_pos, n_neg) / n_nonzero)
+
+            n_total = len(fold_means)
+            positive_fold_fraction = float(n_pos / n_total)
+            negative_fold_fraction = float(n_neg / n_total)
+
+        # B4. Decile monotonicity
+        decile_monotonic_spearman = np.nan
+        top_decile_mean_target = np.nan
+        bottom_decile_mean_target = np.nan
+        decile_spread_mean = np.nan
+
+        if np.sum(valid_mask) >= min_pred_points:
+            y_valid = y[valid_mask]
+            preds_valid = oof_preds[valid_mask]
+
+            # Sort by predictions
+            sort_idx = np.argsort(preds_valid)
+            y_sorted = y_valid[sort_idx]
+
+            # Bin into 10 buckets
+            n_samples = len(y_sorted)
+            if n_samples >= 10:
+                deciles = np.array_split(y_sorted, 10)
+                decile_means = [np.mean(d) for d in deciles if len(d) > 0]
+
+                if len(decile_means) >= 5:
+                    decile_idx = np.arange(1, len(decile_means) + 1)
+                    decile_monotonic_spearman = _safe_spearman(decile_idx, np.array(decile_means))
+
+                    if len(decile_means) == 10:
+                        top_decile_mean_target = float(decile_means[-1])
+                        bottom_decile_mean_target = float(decile_means[0])
+                        decile_spread_mean = top_decile_mean_target - bottom_decile_mean_target
+
         return {
             "subset_auc": float(subset_auc) if np.isfinite(subset_auc) else np.nan,
             "subset_roc_auc": (
@@ -11248,6 +11426,16 @@ class MaskAssessor:
             "oof_preds": oof_preds,
             "folds_used": int(folds_used),
             "folds_skipped": int(folds_skipped),
+            "train_nan_reasons": train_nan_reasons,
+            "val_nan_reasons": val_nan_reasons,
+            "mask_oof_r2": mask_oof_r2,
+            "fold_sign_consistency": fold_sign_consistency,
+            "positive_fold_fraction": positive_fold_fraction,
+            "negative_fold_fraction": negative_fold_fraction,
+            "decile_monotonic_spearman": decile_monotonic_spearman,
+            "top_decile_mean_target": top_decile_mean_target,
+            "bottom_decile_mean_target": bottom_decile_mean_target,
+            "decile_spread_mean": decile_spread_mean,
         }
 
     @staticmethod
@@ -12802,7 +12990,7 @@ def apply_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(cfg)
     out["n_folds"] = 3
     out["sliceplanner_outer_n_folds"] = 3
-    out["mask_opt_max_symbols"] = 300
+    out["mask_opt_max_symbols"] = 200
     out["mask_opt_lookback_years"] = 3.0
     out["support_max_pct"] = 0.22
     out["objective_support_max_pct"] = 0.22

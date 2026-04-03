@@ -1703,6 +1703,10 @@ class FeatureProcessor:
         def _add_binary_feature(
             src: str, group_name: str, raw_arr: np.ndarray, family: str
         ):
+            # Skip raw versions of features that have booleanized threshold versions
+            if src == "ema20_gt_ema50":
+                return
+
             nan_rate_before = float(np.isnan(raw_arr).mean())
             self.rank_audit_rows.append(
                 {
@@ -6168,7 +6172,7 @@ def run_mining_stage(
                 horizon=horizon,
                 mfe_atr_tr=mfe_atr[tr_idx] if mfe_atr is not None else None,
                 mae_atr_tr=mae_atr[tr_idx] if mae_atr is not None else None,
-                side=side,
+                side=explicit_side or "long",
             )
             fold_fit_elapsed = time.perf_counter() - fold_fit_start
             try:
@@ -6416,7 +6420,7 @@ def run_mining_stage(
                         regime_families.append(fam)
                 elif c.group == "location":
                     fam = (
-                        m.family
+                        m.source_family
                         if (m := metadata[c.feature_index])
                         else "unknown"
                     )
@@ -7858,8 +7862,6 @@ def run_lgbm_mask_generation_triad(
 
     if triad_run_step == "step1":
         tprint("TRIAD STEP1 COMPLETE")
-            "No post-dedup selection was run."
-        )
         return {
             "results_by_target_horizon": results_by_target_horizon,
             "combined_registry": pd.DataFrame(),

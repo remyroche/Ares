@@ -1746,7 +1746,7 @@ class FeatureProcessor:
                         out[nan_mask] = np.nan
                         return out
 
-                    for q in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
+                    for q in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
                         # Top quantiles (>= q)
                         bool_name_top = f"{group_name[:3]}_{src}_ts_top{int(q*100)}"
                         bool_arr_top = _bool_float(ts_ranks >= q)
@@ -1784,7 +1784,7 @@ class FeatureProcessor:
                         )
 
                     # Expanded median bands
-                    for q_band in [0.20, 0.25, 0.30, 0.40]:
+                    for q_band in [0.20, 0.25, 0.30]:
                         q_band_upper = 1.0 - q_band
                         band_name = f"{group_name[:3]}_{src}_ts_band{int(q_band*100)}_{int(q_band_upper*100)}"
                         band_arr = _bool_float(
@@ -5696,9 +5696,13 @@ def run_mining_stage(
         )
         if not assessment_df.empty:
             atomic_to_csv(assessment_df, output_dir / "final_mask_assessment_audit.csv")
-            accepted_registry = candidate_registry.merge(
+            
+            # Merge assessment metrics back into the candidate registry so they are preserved
+            # even for rules that ultimately fail the structural soundness check
+            candidate_registry = candidate_registry.merge(
                 assessment_df, on="canonical_key", how="left"
             )
+            accepted_registry = candidate_registry.copy()
         else:
             accepted_registry = candidate_registry.iloc[0:0].copy()
         if "is_structurally_sound" in accepted_registry.columns:
@@ -7986,7 +7990,7 @@ def deduplicate_rules_by_canonical_key(
     if "composite_score" in result_df.columns:
         sort_cols.append("composite_score")
     if sort_cols:
-        result_df = result_df.sort_values(sort_cols, ascending=[False, False])
+        result_df = result_df.sort_values(sort_cols, ascending=[False] * len(sort_cols))
 
     return result_df.reset_index(drop=True)
 
@@ -9848,13 +9852,14 @@ class MaskAssessor:
                         deficit = MIN_KEEP_THRESHOLD - len(accepted_indices)
                         
                         # Diversity-aware refill: balance quality vs overlap
-                        alpha = float(self.cfg.get("bucket_refill_diversity_alpha", 0.5))
+                        alpha = float(self.cfg.get("bucket_refill_diversity_alpha", 0.7))
                         
                         diversity_scores = []
                         for idx in rejected_pool:
                             rank_score = rule_scores[idx]
                             max_ov = max((_bucket_f1(idx, a) for a in accepted_indices), default=0.0)
-                            div_score = rank_score * (1.0 - alpha * max_ov)
+                            overlap_penalty = max(0.0, max_ov - 0.3)
+                            div_score = rank_score * (1.0 - alpha * (overlap_penalty ** 2))
                             diversity_scores.append((idx, div_score))
                         
                         diversity_scores.sort(key=lambda x: x[1], reverse=True)
@@ -10181,15 +10186,26 @@ class MaskAssessor:
                         rejected_pool_final = rejected
                         break
 
-                # Refill from rejected pool (score order) if below target
-                if len(selected_indices) < max_ridge_candidates_total:
-                    # rejected_pool_final is already in score order (from run_dedup_pass)
+                # Refill from rejected pool (diversity-aware, squared overlap penalty)
+                if len(selected_indices) < max_ridge_candidates_total and rejected_pool_final:
                     deficit = max_ridge_candidates_total - len(selected_indices)
-                    refill = rejected_pool_final[:deficit]
+                    alpha = float(self.cfg.get("ridge_refill_diversity_alpha", 0.3))
+                    
+                    diversity_scores = []
+                    for idx in rejected_pool_final:
+                        base_score = scores_arr[idx]
+                        max_ov = max((effective_f1(idx, k) for k in selected_indices), default=0.0)
+                        overlap_penalty = max(0.0, max_ov - 0.3)
+                        selection_score = base_score - alpha * (overlap_penalty ** 2)
+                        diversity_scores.append((idx, selection_score))
+                    
+                    diversity_scores.sort(key=lambda x: x[1], reverse=True)
+                    refill = [ds[0] for ds in diversity_scores[:deficit]]
                     selected_indices = selected_indices + refill
+                    
                     tprint(
-                        f"Stage A: Ridge refill added {len(refill)} rules "
-                        f"-> total={len(selected_indices)}"
+                        f"Stage A: Ridge diversity refill +{len(refill)} "
+                        f"-> total={len(selected_indices)} (alpha={alpha:.2f})"
                     )
 
                 for i in selected_indices:

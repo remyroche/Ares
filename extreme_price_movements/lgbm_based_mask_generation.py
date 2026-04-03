@@ -9164,15 +9164,19 @@ class MaskAssessor:
         min_sign_consistency = float(self.cfg.get("min_sign_consistency", 0.0))
         min_mean_target_value = float(self.cfg.get("min_mean_target_value", 0.003))
 
-        # We need both the mining target for the baseline calculations and the
-        # actual return for the trade simulation.
         # bounded_target holds the target used for tree splits (e.g. bounded target_vame).
         # If not provided, it implies we are not using a bounded target and fwd_ret is the mining target.
         if bounded_target is not None:
             mining_target_by_side = {"long": bounded_target, "short": bounded_target}
         else:
             mining_target_by_side = {"long": fwd_ret, "short": -fwd_ret}
-        target_ret_by_side = {"long": fwd_ret_norm, "short": -fwd_ret_norm}
+
+        ridge_target_by_side = {"long": fwd_ret_norm, "short": -fwd_ret_norm}
+
+        tprint(f"Stage A Target Alignment:")
+        tprint(f"  Miner target bounded: {bounded_target is not None}")
+        tprint(f"  Baseline/Ridge learnability target: ridge_target_by_side (vol-normalized signed forward return)")
+
         mean_ret_global_by_side = {
             "long": float(np.nanmean(fwd_ret)),
             "short": float(np.nanmean(-fwd_ret)),
@@ -9311,8 +9315,8 @@ class MaskAssessor:
                     "sign_consistency": float(sign_consistency_arr[idx]),
                 }
 
-        _batch_fill_cheap_stats_cache("long", target_ret_by_side["long"])
-        _batch_fill_cheap_stats_cache("short", target_ret_by_side["short"])
+        _batch_fill_cheap_stats_cache("long", ridge_target_by_side["long"])
+        _batch_fill_cheap_stats_cache("short", ridge_target_by_side["short"])
 
         def _get_or_compute_cheap_stats(
             canonical_key: str, side: str, mask: np.ndarray
@@ -9335,11 +9339,11 @@ class MaskAssessor:
                 "mae": 0.0,
                 "mfe": 0.0,
                 "mean_ret_global": mean_ret_global_by_side[side],
-                "mean_ret_mask": float(np.nanmean(target_ret_by_side[side][mask])),
+                "mean_ret_mask": float(np.nanmean(ridge_target_by_side[side][mask])),
                 "std_ret_mask": float(
-                    np.nanstd(_clip_returns(target_ret_by_side[side][mask]))
+                    np.nanstd(_clip_returns(ridge_target_by_side[side][mask]))
                 ),
-                "ret_uplift": float(np.nanmean(target_ret_by_side[side][mask]))
+                "ret_uplift": float(np.nanmean(ridge_target_by_side[side][mask]))
                 - mean_ret_global_by_side[side],
                 "sign_consistency": 0.5,
             }
@@ -9458,7 +9462,7 @@ class MaskAssessor:
             for row_idx in range(len(registry)):
                 canonical_key = reg_canonical_keys[row_idx]
                 side = str(reg_side[row_idx])
-                if side not in target_ret_by_side:
+                if side not in ridge_target_by_side:
                     side = "long"
 
                 horizon_raw = reg_source_horizon[row_idx]
@@ -9765,7 +9769,7 @@ class MaskAssessor:
         for pre_row in registry.to_dict("records"):
             canonical_key = str(pre_row["canonical_key"])
             side = str(pre_row["side"])
-            if side not in target_ret_by_side:
+            if side not in ridge_target_by_side:
                 side = "long"
 
             horizon_raw = pre_row.get("source_horizon", -1)
@@ -10162,14 +10166,14 @@ class MaskAssessor:
 
         valid_ts_mask = pd.notna(data["timestamp"])
         global_ts = pd.to_datetime(data.loc[valid_ts_mask, "timestamp"], errors="coerce", utc=True).to_numpy()
-
         # Cache baseline learnability once per side after cheap structural filtering.
-        # Baseline AUC must be evaluated on the bounded target used for mining.
-        for side, mining_target in mining_target_by_side.items():
-            baseline_metrics = self._compute_baseline_auc(X, mining_target, folds)
+        # Baseline metrics used for Ridge gating must be evaluated on the same Ridge target
+        # used for subset assessment: vol-normalized signed return.
+        for side, ridge_target in ridge_target_by_side.items():
+            baseline_metrics = self._compute_baseline_auc(X, ridge_target, folds)
 
-            directional_returns = fwd_ret if side == "long" else -fwd_ret
-            global_rets = directional_returns[valid_ts_mask]
+            # Universe-relative uplift baselines should also use the same evaluation return series.
+            global_rets = ridge_target[valid_ts_mask]
             uplift_baseline = _compute_baseline_population_metrics(global_rets, global_ts)
 
             baseline_cache[side] = {
@@ -10186,14 +10190,14 @@ class MaskAssessor:
                 if np.isfinite(baseline_metrics["global_top_quartile_precision"])
                 else np.nan,
                 "global_cov": float(baseline_metrics["global_cov"]),
-                "global_entropy": float(self._compute_entropy(mining_target)),
+                "global_entropy": float(self._compute_entropy(ridge_target)),
                 **uplift_baseline,
             }
-            if np.nanstd(mining_target) < 1e-9:
+            if np.nanstd(ridge_target) < 1e-9:
                 tprint(
                     f"WARNING: Root cause for degenerate metrics: {side} target has zero variance!"
                 )
-
+                
         max_ridge_candidates_total = int(
             self.cfg.get("max_ridge_candidates_total", 80)
         )
@@ -10487,7 +10491,7 @@ class MaskAssessor:
             )
 
             side = str(row.get("side", "long"))
-            if side not in target_ret_by_side:
+            if side not in ridge_target_by_side:
                 side = "long"
             horizon_raw = row.get("source_horizon", -1)
             try:
@@ -10499,7 +10503,7 @@ class MaskAssessor:
             # The bucket grouping is determined strictly by side and horizon
             group_bucket_key = (side, horizon_key)
 
-            target_ret = target_ret_by_side[side]
+            target_ret = ridge_target_by_side[side]
             mining_target = mining_target_by_side[side]
             global_auc = float(baseline_cache[side]["global_auc"])
             global_roc_auc = float(baseline_cache[side]["global_roc_auc"])

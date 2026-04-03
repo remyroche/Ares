@@ -10058,10 +10058,72 @@ class MaskAssessor:
                 tprint("Stage A: Step1 complete. Skipping post-dedup step2 assessment.")
                 return pd.DataFrame()
 
+        # Helper for universe-relative uplift baselines
+        def _compute_baseline_population_metrics(target_returns: np.ndarray, ts_array: np.ndarray):
+            res = {
+                "p5": np.nan,
+                "mean_p75_ret": np.nan,
+                "weekly_sortino": np.nan,
+                "monthly_sortino": np.nan,
+            }
+            valid = np.isfinite(target_returns)
+            if not np.any(valid):
+                return res
+
+            rets = target_returns[valid]
+            ts = ts_array[valid]
+
+            if len(rets) < 5:
+                return res
+
+            res["p5"] = float(np.percentile(rets, 5))
+
+            p75_thresh = float(np.percentile(rets, 75))
+            top_rets = rets[rets > p75_thresh]
+            if len(top_rets) > 0:
+                res["mean_p75_ret"] = float(np.mean(top_rets))
+
+            # Periodic Sortino helper
+            def _periodic_sortino(freq):
+                if len(rets) < 2:
+                    return np.nan
+                df = pd.DataFrame({"ts": ts, "ret": rets})
+                if df["ts"].dt.tz is not None:
+                    df["ts"] = df["ts"].dt.tz_convert("UTC").dt.tz_localize(None)
+
+                if freq == "W":
+                    df["period"] = df["ts"].dt.floor("D") - pd.to_timedelta(df["ts"].dt.dayofweek, unit="D")
+                else: # "M"
+                    df["period"] = df["ts"].dt.floor("D") - pd.to_timedelta(df["ts"].dt.day - 1, unit="D")
+
+                period_pnl = df.groupby("period")["ret"].sum()
+                if len(period_pnl) < 2:
+                    return np.nan
+
+                mean_ret = float(period_pnl.mean())
+                downside = np.minimum(period_pnl.to_numpy(dtype=np.float32), 0.0)
+                downside_dev = float(np.sqrt(np.mean(downside**2)))
+
+                if downside_dev > 1e-9:
+                    return float(mean_ret / downside_dev)
+                return np.nan
+
+            res["weekly_sortino"] = _periodic_sortino("W")
+            res["monthly_sortino"] = _periodic_sortino("M")
+            return res
+
+        valid_ts_mask = pd.notna(data["timestamp"])
+        global_ts = pd.to_datetime(data.loc[valid_ts_mask, "timestamp"], errors="coerce", utc=True).to_numpy()
+
         # Cache baseline learnability once per side after cheap structural filtering.
         # Baseline AUC must be evaluated on the bounded target used for mining.
         for side, mining_target in mining_target_by_side.items():
             baseline_metrics = self._compute_baseline_auc(X, mining_target, folds)
+
+            directional_returns = fwd_ret if side == "long" else -fwd_ret
+            global_rets = directional_returns[valid_ts_mask]
+            uplift_baseline = _compute_baseline_population_metrics(global_rets, global_ts)
+
             baseline_cache[side] = {
                 "global_auc": float(baseline_metrics["global_auc"])
                 if np.isfinite(baseline_metrics["global_auc"])
@@ -10077,6 +10139,7 @@ class MaskAssessor:
                 else np.nan,
                 "global_cov": float(baseline_metrics["global_cov"]),
                 "global_entropy": float(self._compute_entropy(mining_target)),
+                **uplift_baseline,
             }
             if np.nanstd(mining_target) < 1e-9:
                 tprint(
@@ -10706,6 +10769,83 @@ class MaskAssessor:
                 }
             )
 
+            # 5b. Compute Universe-Relative Uplift Metrics for the Mask
+            mask_ts = global_ts[mask[valid_ts_mask]]
+            mask_rets = target_ret[valid_ts_mask][mask[valid_ts_mask]]
+
+            mask_metrics = _compute_baseline_population_metrics(mask_rets, mask_ts)
+
+            eps = 1e-9
+
+            # Tail p5 ratio and uplift
+            p5_mask = mask_metrics["p5"]
+            p5_global = baseline_cache[side]["p5"]
+            if np.isfinite(p5_mask) and np.isfinite(p5_global):
+                tail_p5_ratio = float(p5_mask / p5_global) if abs(p5_global) > eps else np.nan
+                tail_uplift = 10.0 * (p5_mask - p5_global) / max(abs(p5_mask) + abs(p5_global), eps)
+            else:
+                tail_p5_ratio = np.nan
+                tail_uplift = np.nan
+
+            # Mean p75 ratio and uplift
+            p75_mask = mask_metrics["mean_p75_ret"]
+            p75_global = baseline_cache[side]["mean_p75_ret"]
+            if np.isfinite(p75_mask) and np.isfinite(p75_global):
+                mean_p75_ratio = float(p75_mask / p75_global) if abs(p75_global) > eps else np.nan
+                mean_75_uplift = 10.0 * (p75_mask - p75_global) / max(abs(p75_mask) + abs(p75_global), eps)
+            else:
+                mean_p75_ratio = np.nan
+                mean_75_uplift = np.nan
+
+            # Weekly sortino ratio and uplift
+            w_sort_mask = mask_metrics["weekly_sortino"]
+            w_sort_global = baseline_cache[side]["weekly_sortino"]
+            if np.isfinite(w_sort_mask) and np.isfinite(w_sort_global):
+                weekly_sortino_ratio = float(w_sort_mask / w_sort_global) if abs(w_sort_global) > eps else np.nan
+                sortino_weekly_uplift = 10.0 * (w_sort_mask - w_sort_global) / max(abs(w_sort_mask) + abs(w_sort_global), eps)
+            else:
+                weekly_sortino_ratio = np.nan
+                sortino_weekly_uplift = np.nan
+
+            # Monthly sortino ratio and uplift
+            m_sort_mask = mask_metrics["monthly_sortino"]
+            m_sort_global = baseline_cache[side]["monthly_sortino"]
+            if np.isfinite(m_sort_mask) and np.isfinite(m_sort_global):
+                monthly_sortino_ratio = float(m_sort_mask / m_sort_global) if abs(m_sort_global) > eps else np.nan
+                sortino_monthly_uplift = 10.0 * (m_sort_mask - m_sort_global) / max(abs(m_sort_mask) + abs(m_sort_global), eps)
+            else:
+                monthly_sortino_ratio = np.nan
+                sortino_monthly_uplift = np.nan
+
+            # Composite mask uplift
+            uplift_components = [tail_uplift, mean_75_uplift, sortino_weekly_uplift, sortino_monthly_uplift]
+            valid_uplifts = [u for u in uplift_components if np.isfinite(u)]
+            if len(valid_uplifts) == 4:
+                overall_mask_uplift = sum(valid_uplifts) / 4.0
+            else:
+                overall_mask_uplift = np.nan
+
+            assessment_results[-1].update({
+                "tail_p5_ratio": tail_p5_ratio,
+                "mean_p75_ratio": mean_p75_ratio,
+                "monthly_sortino_ratio": monthly_sortino_ratio,
+                "weekly_sortino_ratio": weekly_sortino_ratio,
+                "tail_uplift": tail_uplift,
+                "mean_75_uplift": mean_75_uplift,
+                "sortino_monthly_uplift": sortino_monthly_uplift,
+                "sortino_weekly_uplift": sortino_weekly_uplift,
+                "overall_mask_uplift": overall_mask_uplift,
+                # Store raw metrics for debugging/reporting
+                "p5_mask": p5_mask,
+                "p5_global": p5_global,
+                "p75_mask": p75_mask,
+                "p75_global": p75_global,
+                "w_sort_mask": w_sort_mask,
+                "w_sort_global": w_sort_global,
+                "m_sort_mask": m_sort_mask,
+                "m_sort_global": m_sort_global,
+            })
+
         assessment_df = pd.DataFrame(assessment_results)
         if assessment_df.empty:
             tprint(f"Stage A: Final assessment complete - no rules passed all gates")
@@ -10754,7 +10894,7 @@ class MaskAssessor:
         # Normalize final-ranking inputs jointly across the assessed candidate table before scoring.
         _normalize_column("ridge_pnl_norm", "ridge_pnl_norm_norm")
         _normalize_column("ridge_trade_sortino_composite", "ridge_trade_sortino_composite_norm")
-        _normalize_column("auc_lift", "auc_lift_norm")
+        _normalize_column("overall_mask_uplift", "overall_mask_uplift_norm")
         _normalize_column("ev_per_event", "ev_per_event_norm")
 
         # 10. worst_penalty (computed from the fully normalized inputs)
@@ -10763,20 +10903,19 @@ class MaskAssessor:
             worst_malus = min(
                 row.get("ridge_pnl_norm_norm", 0.0),
                 row.get("ridge_trade_sortino_composite_norm", 0.0),
-                row.get("auc_lift_norm", 0.0),
+                row.get("overall_mask_uplift_norm", 0.0),
                 row.get("ev_per_event_norm", 0.0)
             )
             return 1.0 - worst_malus
 
         assessment_df["worst_penalty"] = assessment_df.apply(_compute_worst_penalty, axis=1)
 
-        # 1. Final base score (V2 update)
-        # Note: Weights sum to 0.9 intentionally in V2
+        # 1. Final base score (V3 update: replace auc_lift_norm with overall_mask_uplift_norm)
         assessment_df["base_regime_score"] = (
-            0.3 * assessment_df["ridge_pnl_norm_norm"]
-            + 0.3 * assessment_df["ridge_trade_sortino_composite_norm"]
-            + 0.2 * assessment_df["auc_lift_norm"]
-            + 0.1 * assessment_df["ev_per_event_norm"]
+            0.25 * assessment_df["ridge_pnl_norm_norm"]
+            + 0.25 * assessment_df["ridge_trade_sortino_composite_norm"]
+            + 0.30 * assessment_df["overall_mask_uplift_norm"]
+            + 0.10 * assessment_df["ev_per_event_norm"]
         )
 
         # Helper to compute weekly metrics from realized trades

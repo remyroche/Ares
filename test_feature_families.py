@@ -1,4 +1,0 @@
-import json
-
-from extreme_price_movements.features import POSITION_SIZER_V2_FEATURE_CONFIG
-print(POSITION_SIZER_V2_FEATURE_CONFIG)

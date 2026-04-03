@@ -9865,21 +9865,19 @@ class MaskAssessor:
                 }
 
                 # ---------------------------------------------------------------
-                # PER-BUCKET GREEDY CASCADE DEDUP: top-20 per bucket
+                # PER-BUCKET GREEDY CASCADE DEDUP (Pareto Front Selection)
                 # ---------------------------------------------------------------
-                # Sort rules in this bucket by cheap_rank descending (best first).
-                BUCKET_TOP_TARGET = int(self.cfg.get("overlap_dedup_bucket_top_target", 20))
-                bucket_thresholds = list(self.cfg.get(
-                    "ridge_dedup_thresholds",
-                    [0.975, 0.95, 0.925, 0.90, 0.875, 0.85, 0.825, 0.80, 0.75, 0.70, 0.65, 0.60],
-                ))
+                # Use top 15 target per the new requirements
+                BUCKET_TOP_TARGET = 15
 
                 # Score array for sorting (cheap_rank from cheap_gate_rows already computed)
                 rule_scores = np.array([
                     bucket_cheap_ranks.get(bucket_key, {}).get(k, 0.0)
                     for k in surviving_keys
                 ], dtype=np.float64)
-                score_order = np.argsort(-rule_scores)  # descending
+
+                # We start with all indices sorted by rank descending
+                score_order = np.argsort(-rule_scores)
 
                 def _bucket_f1(i: int, j: int) -> float:
                     """F1 overlap between two rules using the subsampled intersection matrix."""
@@ -9890,67 +9888,59 @@ class MaskAssessor:
                     inter = float(intersections[i, j])
                     return 2.0 * inter / (supp_i + supp_j + 1e-9)
 
-                def _run_greedy_pass(threshold: float, order):
-                    """Greedy dedup: iterate in score order, keep rule only if its max
-                    effective F1 with every already-accepted rule is below threshold."""
-                    accepted = []
-                    rejected_out = []
-                    for idx in order:
-                        max_ov = max((_bucket_f1(idx, a) for a in accepted), default=0.0)
-                        if max_ov < threshold:
-                            accepted.append(idx)
-                        else:
-                            rejected_out.append(idx)
-                    return accepted, rejected_out
-
                 tprint(
-                    f"Stage A: Starting per-bucket greedy dedup for {bucket_key} "
-                    f"({n_rules} rules, target={BUCKET_TOP_TARGET})"
+                    f"Stage A: Starting per-bucket Pareto front selection for {bucket_key} "
+                    f"({n_rules} rules, max_target={BUCKET_TOP_TARGET})"
                 )
-                initial_n_rules = n_rules
 
-                accepted_indices = list(score_order)   # fallback: keep all
-                rejected_pool: List[int] = []
+                if n_rules <= BUCKET_TOP_TARGET:
+                    surviving_indices = list(score_order)
+                else:
+                    front = []
+                    best_obj2 = float("-inf")
 
-                if n_rules > BUCKET_TOP_TARGET:
-                    for threshold in bucket_thresholds:
-                        kept, rejected = _run_greedy_pass(threshold, score_order)
-                        tprint(
-                            f"Stage A: Bucket {bucket_key} dedup @ {threshold:.3f} "
-                            f"-> kept={len(kept)} rejected={len(rejected)}"
-                        )
-                        if len(kept) <= BUCKET_TOP_TARGET:
-                            accepted_indices = kept
-                            rejected_pool = rejected
-                            break
-                        accepted_indices = kept
+                    # We evaluate rules based on their rank (obj1).
+                    # To be added to the front, they must strictly improve upon
+                    # the worst diversity (obj2) seen so far in the front.
+                    # To exactly mimic the user's statically evaluated Pareto Front snippet,
+                    # we must first pre-calculate `overlap_penalty` for all rules.
+                    # We define overlap here as the maximum overlap a rule has with ANY
+                    # other rule in the bucket that has a strictly HIGHER score.
+                    # This yields a static "diversity" penalty (obj2) for each item.
+                    scored_items = []
 
-                    # Refill from rejected pool if below minimum threshold (diversity-aware)
-                    MIN_KEEP_THRESHOLD = 10
-                    if len(accepted_indices) < MIN_KEEP_THRESHOLD and rejected_pool:
-                        deficit = MIN_KEEP_THRESHOLD - len(accepted_indices)
+                    for i_idx, idx in enumerate(score_order):
+                        # Find max overlap with all higher-ranked rules
+                        # (since score_order is sorted descending by rank, higher ranked rules are earlier in the array)
+                        higher_ranked_indices = score_order[:i_idx]
                         
-                        # Diversity-aware refill: balance quality vs overlap
-                        alpha = float(self.cfg.get("bucket_refill_diversity_alpha", 0.7))
-                        
-                        diversity_scores = []
-                        for idx in rejected_pool:
-                            rank_score = rule_scores[idx]
-                            max_ov = max((_bucket_f1(idx, a) for a in accepted_indices), default=0.0)
-                            overlap_penalty = max(0.0, max_ov - 0.3)
-                            div_score = rank_score * (1.0 - alpha * (overlap_penalty ** 2))
-                            diversity_scores.append((idx, div_score))
-                        
-                        diversity_scores.sort(key=lambda x: x[1], reverse=True)
-                        refill = [ds[0] for ds in diversity_scores[:deficit]]
-                        accepted_indices = accepted_indices + refill
-                        
-                        tprint(
-                            f"Stage A: Bucket {bucket_key} diversity refill +{len(refill)} "
-                            f"-> total={len(accepted_indices)} (alpha={alpha:.2f})"
-                        )
+                        overlap = 0.0
+                        if len(higher_ranked_indices) > 0:
+                            overlap = max((_bucket_f1(idx, a) for a in higher_ranked_indices), default=0.0)
 
-                surviving_indices = accepted_indices
+                        effective_overlap = max(0.0, overlap - 0.4)
+                        
+                        obj1 = float(rule_scores[idx])
+                        obj2 = -effective_overlap
+                        scored_items.append((idx, obj1, obj2))
+                        
+                    # Now apply the exact static Pareto front algorithm
+                    # Sort by first objective descending, then second descending
+                    scored_items.sort(key=lambda x: (x[1], x[2]), reverse=True)
+
+                    front = []
+                    best_obj2 = float("-inf")
+
+                    for idx, obj1, obj2 in scored_items:
+                        if obj2 > best_obj2:
+                            front.append(idx)
+                            best_obj2 = obj2
+
+                            if len(front) >= BUCKET_TOP_TARGET:
+                                break
+
+                    surviving_indices = front
+
                 final_surviving_set = {surviving_keys[i] for i in surviving_indices}
 
                 for i, k in enumerate(surviving_keys):
@@ -10272,80 +10262,19 @@ class MaskAssessor:
             if not global_valid_keys:
                 pass  # nothing to select
             else:
-                supports_arr = np.array(global_supports, dtype=np.float32)
                 scores_arr = np.array(global_scores, dtype=np.float64)
 
                 # Sort ALL candidates by score descending (highest quality first)
                 order = np.argsort(-scores_arr)
 
-                def effective_f1(i: int, j: int) -> float:
-                    """F1 overlap between rules i and j, with cross-bucket discount."""
-                    supp_i = supports_arr[i]
-                    supp_j = supports_arr[j]
-                    supp_ratio = min(supp_i, supp_j) / max(supp_i, supp_j + 1e-9)
-                    if supp_ratio < support_ratio_min:
-                        return 0.0
-                    inter = float(np.sum(global_masks[i] & global_masks[j]))
-                    raw_f1 = 2.0 * inter / (supp_i + supp_j + 1e-9)
-                    # Apply discount for cross-bucket pairs
-                    bi = global_bucket_keys[i]
-                    bj = global_bucket_keys[j]
-                    if bi[0] != bj[0]:  # different side
-                        return raw_f1 * cross_side_overlap_mult
-                    elif bi[1] != bj[1]:  # same side, different horizon
-                        return raw_f1 * cross_horizon_overlap_mult
-                    return raw_f1  # same bucket: full overlap
+                # Per the user's request, remove the global dedup pass completely
+                # and directly feed all surviving bucket items (up to cap) into Ridge.
+                selected_indices = list(order[:max_ridge_candidates_total])
 
-                def run_dedup_pass(threshold: float):
-                    """Greedy dedup: iterate in score order, keep rule if its
-                    effective overlap with every kept rule is below threshold."""
-                    kept = []
-                    rejected_pool = []
-                    for idx in order:
-                        max_ov = max(
-                            (effective_f1(idx, k) for k in kept), default=0.0
-                        )
-                        if max_ov < threshold:
-                            kept.append(idx)
-                        else:
-                            rejected_pool.append(idx)
-                    return kept, rejected_pool
-
-                selected_indices = list(order)   # fallback: keep all (sorted)
-                rejected_pool_final: List[int] = []
-
-                for threshold in dedup_thresholds:
-                    kept, rejected = run_dedup_pass(threshold)
-                    tprint(
-                        f"Stage A: Ridge dedup @ threshold={threshold:.3f} "
-                        f"-> kept={len(kept)} rejected={len(rejected)}"
-                    )
-                    if len(kept) <= max_ridge_candidates_total:
-                        selected_indices = kept
-                        rejected_pool_final = rejected
-                        break
-
-                # Refill from rejected pool (diversity-aware, squared overlap penalty)
-                if len(selected_indices) < max_ridge_candidates_total and rejected_pool_final:
-                    deficit = max_ridge_candidates_total - len(selected_indices)
-                    alpha = float(self.cfg.get("ridge_refill_diversity_alpha", 0.3))
-                    
-                    diversity_scores = []
-                    for idx in rejected_pool_final:
-                        base_score = scores_arr[idx]
-                        max_ov = max((effective_f1(idx, k) for k in selected_indices), default=0.0)
-                        overlap_penalty = max(0.0, max_ov - 0.3)
-                        selection_score = base_score - alpha * (overlap_penalty ** 2)
-                        diversity_scores.append((idx, selection_score))
-                    
-                    diversity_scores.sort(key=lambda x: x[1], reverse=True)
-                    refill = [ds[0] for ds in diversity_scores[:deficit]]
-                    selected_indices = selected_indices + refill
-                    
-                    tprint(
-                        f"Stage A: Ridge diversity refill +{len(refill)} "
-                        f"-> total={len(selected_indices)} (alpha={alpha:.2f})"
-                    )
+                tprint(
+                    f"Stage A: Skipping global overlap dedup "
+                    f"-> total={len(selected_indices)} passed out of max={max_ridge_candidates_total}"
+                )
 
                 for i in selected_indices:
                     self.bucket_ridge_keys[global_bucket_keys[i]].add(global_valid_keys[i])
@@ -10560,8 +10489,6 @@ class MaskAssessor:
                     )
                 elif not np.isfinite(auc_lift):
                     rejected, rejection_reason = True, "missing_learnability"
-                elif run_ridge and mean_75_uplift <= 0.0:
-                    rejected, rejection_reason = True, "mean_75_uplift_not_positive"
 
             # 8. Event-based Expected Value
             tp_payoff = tp_atr  # TP payoff in ATR units
@@ -11059,6 +10986,12 @@ class MaskAssessor:
                 overall_mask_uplift = sum(valid_uplifts) / 5.0
             else:
                 overall_mask_uplift = np.nan
+
+            if run_ridge and not rejected and mean_75_uplift <= 0.0:
+                rejected = True
+                rejection_reason = "mean_75_uplift_not_positive"
+                assessment_results[-1]["rejected"] = rejected
+                assessment_results[-1]["rejection_reason"] = rejection_reason
 
             assessment_results[-1].update({
                 "tail_p5_ratio": tail_p5_ratio,

@@ -6708,9 +6708,10 @@ def run_side_pipeline(
             traceback.print_exc()
 
     # Use bounded_target as the real training target if provided.
-    # For short side, flip sign (higher target_eff = more favourable for that side).
+    # Bounded targets are already magnitude-based quality scores in [0, 1]
+    # and should NOT be sign-flipped for short sides.
     if bounded_target is not None:
-        side_target = -bounded_target if side == "short" else bounded_target
+        side_target = bounded_target
     else:
         side_target = (
             side_fwd_ret_norm  # legacy fallback only when no triad target is supplied
@@ -9014,8 +9015,10 @@ class MaskAssessor:
         # actual return for the trade simulation.
         # bounded_target holds the target used for tree splits (e.g. bounded target_vame).
         # If not provided, it implies we are not using a bounded target and fwd_ret is the mining target.
-        _mining = bounded_target if bounded_target is not None else fwd_ret
-        mining_target_by_side = {"long": _mining, "short": -_mining}
+        if bounded_target is not None:
+            mining_target_by_side = {"long": bounded_target, "short": bounded_target}
+        else:
+            mining_target_by_side = {"long": fwd_ret, "short": -fwd_ret}
         target_ret_by_side = {"long": fwd_ret_norm, "short": -fwd_ret_norm}
         mean_ret_global_by_side = {
             "long": float(np.nanmean(fwd_ret)),

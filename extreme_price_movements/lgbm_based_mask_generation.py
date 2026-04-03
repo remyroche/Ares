@@ -71,7 +71,7 @@ LOGGER = logging.getLogger(__name__)
 TRIAD_DEFAULT_HORIZONS: List[int] = [3, 10]
 
 # Default triad target names
-TRIAD_DEFAULT_TARGET_NAMES: List[str] = ["target_eff", "target_vame", "returns_target", "atr_norm_returns_target"]
+TRIAD_DEFAULT_TARGET_NAMES: List[str] = ["returns_target", "atr_norm_returns_target"]
 
 # Per-target configuration for triad targets
 TRIAD_TARGET_CONFIGS: Dict[str, Dict[str, Any]] = {
@@ -1756,6 +1756,10 @@ class FeatureProcessor:
                         family = LOC_CONTINUOUS_FAMILY_MAP.get(src, "context")
                     else:
                         family = src.split("_")[0] if "_" in src else group_name
+                    
+                    # Robust fallback for truncated or broken family names (e.g. "", "-", "_")
+                    if not family or len(family) < 2:
+                        family = group_name
 
                     ts_ranks = self._compute_rank_norm(raw_arr, symbol_codes)
 
@@ -1781,42 +1785,46 @@ class FeatureProcessor:
                         out[nan_mask] = np.nan
                         return out
 
-                    for q in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
-                        # Top quantiles (>= q)
-                        bool_name_top = f"{group_name[:3]}_{src}_ts_top{int(q*100)}"
-                        bool_arr_top = _bool_float(ts_ranks >= q)
-                        _register_boolean_column(
-                            source_arr=ts_ranks,
-                            bool_name=bool_name_top,
-                            bool_arr=bool_arr_top,
-                            group_name=group_name,
-                            src=src,
-                            family=family,
-                            booleanization_method="rank_norm",
-                            threshold_type="top_quantile",
-                            threshold_value=q,
-                            threshold_upper_value=None,
-                            description=f"TS Rank >= {q}",
-                            min_support=min_support,
-                        )
+                    for q in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
+                        # Top quantiles (>= q). Support is (1-q). We need (1-q) >= 0.3 => q <= 0.7.
+                        # Excludes top80
+                        if q <= 0.7:
+                            bool_name_top = f"{group_name[:3]}_{src}_ts_top{int(q*100)}"
+                            bool_arr_top = _bool_float(ts_ranks >= q)
+                            _register_boolean_column(
+                                source_arr=ts_ranks,
+                                bool_name=bool_name_top,
+                                bool_arr=bool_arr_top,
+                                group_name=group_name,
+                                src=src,
+                                family=family,
+                                booleanization_method="rank_norm",
+                                threshold_type="top_quantile",
+                                threshold_value=q,
+                                threshold_upper_value=None,
+                                description=f"TS Rank >= {q}",
+                                min_support=min_support,
+                            )
 
-                        # Bottom quantiles (<= q)
-                        bool_name_bot = f"{group_name[:3]}_{src}_ts_bot{int(q*100)}"
-                        bool_arr_bot = _bool_float(ts_ranks <= q)
-                        _register_boolean_column(
-                            source_arr=ts_ranks,
-                            bool_name=bool_name_bot,
-                            bool_arr=bool_arr_bot,
-                            group_name=group_name,
-                            src=src,
-                            family=family,
-                            booleanization_method="rank_norm",
-                            threshold_type="bot_quantile",
-                            threshold_value=q,
-                            threshold_upper_value=None,
-                            description=f"TS Rank <= {q}",
-                            min_support=min_support,
-                        )
+                        # Bottom quantiles (<= q). Support is q. We need q >= 0.3.
+                        # Excludes bot20
+                        if q >= 0.3:
+                            bool_name_bot = f"{group_name[:3]}_{src}_ts_bot{int(q*100)}"
+                            bool_arr_bot = _bool_float(ts_ranks <= q)
+                            _register_boolean_column(
+                                source_arr=ts_ranks,
+                                bool_name=bool_name_bot,
+                                bool_arr=bool_arr_bot,
+                                group_name=group_name,
+                                src=src,
+                                family=family,
+                                booleanization_method="rank_norm",
+                                threshold_type="bot_quantile",
+                                threshold_value=q,
+                                threshold_upper_value=None,
+                                description=f"TS Rank <= {q}",
+                                min_support=min_support,
+                            )
 
                     # Expanded median bands
                     for q_band in [0.20, 0.25, 0.30]:
@@ -2412,6 +2420,58 @@ def make_surprisal_sample_weights(
     return np.clip(weights, w_min, w_max).astype(np.float32, copy=False)
 
 
+def make_excursion_asymmetry_weights(
+    mfe_atr: np.ndarray,
+    mae_atr: np.ndarray,
+    side: str,
+    alpha: float = 0.15,
+    w_min: float = 0.85,
+    w_max: float = 1.20,
+    neutral_value: float = 1.0,
+) -> np.ndarray:
+    """
+    Mild miner-only weighting that prefers samples with directional excursion asymmetry.
+
+    Parameters
+    ----------
+    mfe_atr : array
+        Maximum favorable excursion in ATR units, non-negative.
+    mae_atr : array
+        Maximum adverse excursion in ATR units. Can be signed negative or absolute.
+    side : {"long", "short"}
+        Included for symmetry / future extensions. Current formulation is side-agnostic
+        because asymmetry is defined as favorable vs adverse excursion.
+    alpha : float
+        Strength of weighting. Keep small.
+    w_min, w_max : float
+        Clip range for the asymmetry weight.
+    neutral_value : float
+        Default weight for rows where asymmetry cannot be computed.
+
+    Returns
+    -------
+    np.ndarray
+        Per-sample multiplicative weights.
+    """
+    mfe = np.asarray(mfe_atr, dtype=np.float64)
+    mae = np.asarray(mae_atr, dtype=np.float64)
+
+    # Treat MAE as magnitude
+    mae_abs = np.abs(mae)
+
+    valid = np.isfinite(mfe) & np.isfinite(mae_abs)
+    w = np.full(mfe.shape, neutral_value, dtype=np.float64)
+
+    # Positive score means favorable excursion dominates adverse excursion
+    asym = np.zeros_like(mfe, dtype=np.float64)
+    asym[valid] = mfe[valid] - mae_abs[valid]
+
+    # Smooth bounded mapping; small alpha only
+    w[valid] = 1.0 + alpha * np.tanh(asym[valid])
+
+    return np.clip(w, w_min, w_max).astype(np.float32, copy=False)
+
+
 def make_ridge_vol_weights(
     fwd_ret: np.ndarray,
     *,
@@ -2591,6 +2651,9 @@ class InteractionModel:
         seed: int,
         target_type: str = "quantile",
         horizon: int = 10,
+        mfe_atr_tr=None,
+        mae_atr_tr=None,
+        side: str = "long",
     ):
         """
         Train a LightGBM model on a single fold.
@@ -2613,6 +2676,12 @@ class InteractionModel:
             Random seed
         target_type : str
             Target type (deprecated, always uses quantile regression)
+        mfe_atr_tr : np.ndarray, optional
+            Maximum favorable excursion in ATR units
+        mae_atr_tr : np.ndarray, optional
+            Maximum adverse excursion in ATR units
+        side : str
+            Trading side ("long" or "short")
 
         Returns
         -------
@@ -2631,6 +2700,11 @@ class InteractionModel:
             if surprisal_bits_tr is None
             else np.asarray(surprisal_bits_tr)[tr_mask]
         )
+        # Also filter mfe/mae if provided
+        if mfe_atr_tr is not None:
+            mfe_atr_tr = np.asarray(mfe_atr_tr)[tr_mask]
+        if mae_atr_tr is not None:
+            mae_atr_tr = np.asarray(mae_atr_tr)[tr_mask]
         X_va, y_va = X_va[va_mask], y_va[va_mask]
 
         if len(y_tr) < 100:
@@ -2674,6 +2748,27 @@ class InteractionModel:
                 w_min=float(self.cfg.get("surprisal_weight_min", 1.0)),
                 w_max=float(self.cfg.get("surprisal_weight_max", 1.20)),
             )
+
+        # Excursion asymmetry weighting (miner-only, not used in Ridge assessment)
+        use_excursion_asymmetry_weights = self.cfg.get("use_excursion_asymmetry_weights", True)
+        if use_excursion_asymmetry_weights and mfe_atr_tr is not None and mae_atr_tr is not None:
+            excursion_weights = make_excursion_asymmetry_weights(
+                mfe_atr=mfe_atr_tr,
+                mae_atr=mae_atr_tr,
+                side=side,
+                alpha=0.15,
+                w_min=0.85,
+                w_max=1.20,
+            )
+            sample_weight = sample_weight * excursion_weights
+            tprint(
+                f"Excursion weights [{side}] fold {fold_id} "
+                f"mean={np.nanmean(excursion_weights):.4f} "
+                f"p5={np.nanpercentile(excursion_weights, 5):.4f} "
+                f"p50={np.nanpercentile(excursion_weights, 50):.4f} "
+                f"p95={np.nanpercentile(excursion_weights, 95):.4f}"
+            )
+
         sample_weight = np.clip(
             sample_weight,
             float(self.cfg.get("sample_weight_final_min", 0.75)),
@@ -2704,7 +2799,7 @@ class InteractionModel:
             min_data_in_leaf = max(10, int(self.cfg["hpo_min_data_in_leaf"]))
 
         # Use quantile loss for all targets (triad targets work with quantile regression)
-        alpha_hpo = float(self.cfg.get("alpha_hpo", 0.7))
+        alpha_hpo = float(self.cfg.get("alpha_hpo", 0.65))
         alpha = alpha_hpo if self.side == "long" else (1.0 - alpha_hpo)
 
         # Override with dynamic HPO results if available
@@ -2764,7 +2859,7 @@ class InteractionModel:
             for dataset_name, metric_name, val, is_higher_better in evals_result[
                 best_iter
             ]:
-                if metric_name == "l2":
+                if metric_name == params["metric"]:
                     best_val_metric = val
                     break
 
@@ -5753,6 +5848,24 @@ def run_mining_stage(
         fallback_final_ret=fwd_ret,
     )
 
+    # Compute ATR-normalized mfe and mae for excursion asymmetry weighting
+    if "atr" in data.columns:
+        atr_array = data["atr"].to_numpy(dtype=np.float32)
+        mfe_atr = np.where(
+            np.isfinite(path_arrays["mfe"]) & (atr_array > 1e-12),
+            path_arrays["mfe"] / atr_array,
+            np.nan
+        ).astype(np.float32)
+        mae_atr = np.where(
+            np.isfinite(path_arrays["mae"]) & (atr_array > 1e-12),
+            path_arrays["mae"] / atr_array,
+            np.nan
+        ).astype(np.float32)
+    else:
+        # Fallback: use raw mfe/mae if ATR not available
+        mfe_atr = path_arrays["mfe"]
+        mae_atr = path_arrays["mae"]
+
     if folds is None:
         folds = build_walk_forward_folds(
             n_samples=len(data),
@@ -5934,11 +6047,13 @@ def run_mining_stage(
             tr_mean = tr_target_valid.mean()
             tr_std = tr_target_valid.std()
             tr_p1 = np.percentile(tr_target_valid, 1)
+            tr_p5 = np.percentile(tr_target_valid, 5)
             tr_p50 = np.percentile(tr_target_valid, 50)
+            tr_p95 = np.percentile(tr_target_valid, 95)
             tr_p99 = np.percentile(tr_target_valid, 99)
 
             # Check severe clipping
-            clipped = np.clip(tr_target_valid, tr_p1, tr_p99)
+            clipped = np.clip(tr_target_valid, -3.0, 3.0)
             clip_diff = (
                 np.abs(tr_target_valid - clipped).sum() / np.abs(tr_target_valid).sum()
             )
@@ -5948,7 +6063,9 @@ def run_mining_stage(
                 )
 
         else:
-            tr_mean, tr_std, tr_p1, tr_p50, tr_p99 = (
+            tr_mean, tr_std, tr_p1, tr_p5, tr_p50, tr_p95, tr_p99 = (
+                np.nan,
+                np.nan,
                 np.nan,
                 np.nan,
                 np.nan,
@@ -5964,13 +6081,15 @@ def run_mining_stage(
                 "target_mean": tr_mean,
                 "target_std": tr_std,
                 "target_p1": tr_p1,
+                "target_p5": tr_p5,
                 "target_p50": tr_p50,
+                "target_p95": tr_p95,
                 "target_p99": tr_p99,
             }
         )
 
         tprint(
-            f"Fold {fold_id}: Target {target_name} -> mean={tr_mean:.4f}, std={tr_std:.4f}, p1={tr_p1:.4f}, p50={tr_p50:.4f}, p99={tr_p99:.4f}"
+            f"Fold {fold_id}: Target {target_name} -> mean={tr_mean:.4f}, std={tr_std:.4f}, p1={tr_p1:.4f}, p5={tr_p5:.4f}, p50={tr_p50:.4f}, p95={tr_p95:.4f}, p99={tr_p99:.4f}"
         )
 
         # All rows in tr_idx and va_idx are already complete (pre-filtered upstream).
@@ -5994,11 +6113,38 @@ def run_mining_stage(
             )
             continue
 
-        y_tr_clip = np.clip(
-            y_tr_raw,
-            np.nanquantile(y_tr_raw, 0.01),
-            np.nanquantile(y_tr_raw, 0.99),
+        # Apply target post-processing (fold-based fitting)
+        # Fit on training fold only, then apply to both train and val
+        from extreme_price_movements.triad_targets import (
+            fit_target_postprocessor,
+            apply_target_postprocessor,
         )
+
+        # Check if this is a triad target (bounded_target provided)
+        is_triad_target = bounded_target is not None
+        if is_triad_target:
+            # Fit post-processor on training fold
+            pp = fit_target_postprocessor(target_name, y_tr_raw, mode="default")
+
+            # Apply to training and validation
+            y_tr_proc = apply_target_postprocessor(y_tr_raw, pp)
+            y_va_proc = apply_target_postprocessor(y_va_raw, pp)
+
+            # Log post-processing results
+            from extreme_price_movements.triad_targets import summarize_processed_target
+            summarize_processed_target(f"{target_name}_H{horizon}_fold{fold_id}_train", y_tr_proc)
+            summarize_processed_target(f"{target_name}_H{horizon}_fold{fold_id}_val", y_va_proc)
+
+            # Use post-processed target for training
+            y_tr_clip = y_tr_proc
+        else:
+            # For non-triad targets (legacy), keep the original clipping
+            y_tr_clip = np.clip(
+                y_tr_raw,
+                -3.0,
+                3.0,
+            )
+            y_va_proc = y_va_raw  # No post-processing for legacy targets
 
         for seed in seeds:
             # Use quantile regression for all targets (triad targets work with quantile regression)
@@ -6015,11 +6161,14 @@ def run_mining_stage(
                 symbol_id_tr,
                 surprisal_bits_tr,
                 X_va,
-                y_va_raw,
+                y_va_raw,  # Use raw validation target for evaluation
                 fold_id,
                 seed,
                 target_type=target_type,
                 horizon=horizon,
+                mfe_atr_tr=mfe_atr[tr_idx] if mfe_atr is not None else None,
+                mae_atr_tr=mae_atr[tr_idx] if mae_atr is not None else None,
+                side=side,
             )
             fold_fit_elapsed = time.perf_counter() - fold_fit_start
             try:
@@ -6094,8 +6243,8 @@ def run_mining_stage(
                 fi_df = pd.DataFrame(fi_records)
                 top_gain = fi_df.sort_values("gain", ascending=False).head(5)
                 tprint("Top 5 features by gain:")
-                for row in top_gain.itertuples(index=False, name=None):
-                    tprint(f"  - {row[0]}: {row[1]:.2f}")
+                for _, row in top_gain.iterrows():
+                    tprint(f"  - {row['feature_name']}: {row['gain']:.2f}")
 
                 top_fam = (
                     fi_df.groupby("regime_family")["split"]
@@ -6249,12 +6398,13 @@ def run_mining_stage(
         shape_records = []
         family_combos = collections.defaultdict(int)
         for r in all_extracted_rules:
-            # arity, structural depth, groups used, regime families used
+            # arity, structural depth, groups used, regime families used, location families used
             arity = display_arity_for_key(r.canonical_key)
             depth = structural_depth_for_key(r.canonical_key)
             groups_used = tuple(sorted(set(c.group for c in r.conditions)))
 
             regime_families = []
+            location_families = []
             for c in r.conditions:
                 if c.group == "regime":
                     fam = (
@@ -6264,9 +6414,20 @@ def run_mining_stage(
                     )
                     if fam:
                         regime_families.append(fam)
+                elif c.group == "location":
+                    fam = (
+                        m.family
+                        if (m := metadata[c.feature_index])
+                        else "unknown"
+                    )
+                    if fam:
+                        location_families.append(fam)
 
             regime_families_tuple = tuple(sorted(set(regime_families)))
-            family_combos[regime_families_tuple] += 1
+            location_families_tuple = tuple(sorted(set(location_families)))
+            # Combine regime and location families for the combo
+            all_families_tuple = tuple(sorted(set(regime_families + location_families)))
+            family_combos[all_families_tuple] += 1
 
             shape_records.append(
                 {
@@ -6275,6 +6436,8 @@ def run_mining_stage(
                     "structural_depth": depth,
                     "groups_used": "|".join(groups_used),
                     "regime_families_used": "|".join(regime_families_tuple),
+                    "location_families_used": "|".join(location_families_tuple),
+                    "all_families_used": "|".join(all_families_tuple),
                 }
             )
 
@@ -6284,7 +6447,7 @@ def run_mining_stage(
 
         family_df = pd.DataFrame(
             [
-                {"regime_families_combo": "|".join(k), "count": v}
+                {"families_combo": "|".join(k) if k else "none", "count": v}
                 for k, v in family_combos.items()
             ]
         )
@@ -6292,11 +6455,11 @@ def run_mining_stage(
             output_dir / "extracted_rule_family_combo_summary.csv", index=False
         )
 
-        tprint("Top valid family combinations:")
+        tprint("Top valid family combinations (regime + location):")
         for _, row in (
             family_df.sort_values("count", ascending=False).head(5).iterrows()
         ):
-            tprint(f"  - {row['regime_families_combo']}: {row['count']}")
+            tprint(f"  - {row['families_combo']}: {row['count']}")
 
     if all_split_usage:
         split_usage_all = pd.concat(all_split_usage, ignore_index=True)
@@ -6709,6 +6872,7 @@ def run_side_pipeline(
     horizon: int = 0,
     bounded_target: Optional[np.ndarray] = None,
     bounded_target_surprisal: Optional[np.ndarray] = None,
+    target_nan_reasons: Optional[Dict[str, int]] = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     Run the full side pipeline (long or short).
@@ -6856,10 +7020,16 @@ def run_side_pipeline(
             traceback.print_exc()
 
     # Use bounded_target as the real training target if provided.
-    # Bounded targets are already magnitude-based quality scores in [-3, 3]
-    # and should NOT be sign-flipped for short sides.
+    # Return-based targets (returns_target, atr_norm_returns_target) MUST be sign-flipped for short sides.
+    # Magnitude-based targets (target_eff, target_vame) should NOT be sign-flipped.
     if bounded_target is not None:
-        side_target = bounded_target
+        # Check if this is a return-based target that needs sign-flipping
+        return_based_targets = {"returns_target", "atr_norm_returns_target"}
+        if target_name in return_based_targets:
+            side_target = bounded_target if side == "long" else -bounded_target
+        else:
+            # Magnitude-based targets: no sign flip
+            side_target = bounded_target
     else:
         side_target = (
             side_fwd_ret_norm  # legacy fallback only when no triad target is supplied
@@ -6868,17 +7038,27 @@ def run_side_pipeline(
     # ROOT CAUSE OF ZERO VALID ROWS:
     # Previously, the code implicitly assumed `[0, 1]` operational bounds by
     # dropping any rows outside that range, or via upstream filtering producing NaNs.
-    # Downstream target bounding logic should now strictly allow the `[-3, 3]` domain.
-    # We enforce this operational bound in the validity check:
+    # Downstream target bounding logic: use target-specific domain validation
+    # Keep finite checks and target-specific sanity filters
+    # Do NOT use one universal [-4, 4] filter for all targets
     feature_any_finite = np.any(np.isfinite(X_a), axis=1)
 
     # Check what causes zero valid rows precisely
     _finite_target_only = np.isfinite(side_target)
 
-    # If using bounded target, apply operational [-3, 3] check
+    # If using bounded target, apply target-specific domain validation
+    # For signed targets (returns_target, atr_norm_returns_target), allow full range
+    # For positive-only targets (target_eff, target_vame), ensure non-negative
     if bounded_target is not None:
-        _domain_valid = _finite_target_only & (side_target >= -3.0) & (side_target <= 3.0)
+        signed_targets = {"returns_target", "atr_norm_returns_target"}
+        if target_name in signed_targets:
+            # Signed targets: only require finite (no bounds)
+            _domain_valid = _finite_target_only
+        else:
+            # Positive-only targets: require finite and non-negative
+            _domain_valid = _finite_target_only & (side_target >= 0.0)
     else:
+        # Legacy targets: only require finite
         _domain_valid = _finite_target_only
 
     target_finite = _domain_valid
@@ -6939,27 +7119,16 @@ def run_side_pipeline(
         step1_input_dir = resolve_stage_a_step1_dir(
             step1_base_dir, target_name=target_name, horizon=horizon, side=side
         )
-        candidate_registry_override = pd.read_csv(
-            step1_input_dir / "candidate_rule_registry.csv"
-        )
-        has_global_slice_filter = "global_step2_selected_keys_by_slice" in cfg
-        selected_keys_by_slice = cfg.get("global_step2_selected_keys_by_slice", {})
-        slice_sel_key = _make_slice_selection_key(
-            target_name or "unknown", int(horizon or -1), side
-        )
-        selected_keys = selected_keys_by_slice.get(slice_sel_key)
-        if has_global_slice_filter:
-            selected_keys = selected_keys or set()
-            selected_keys = {str(k) for k in selected_keys}
-            if "canonical_key" in candidate_registry_override.columns:
-                candidate_registry_override = candidate_registry_override[
-                    candidate_registry_override["canonical_key"]
-                    .astype(str)
-                    .isin(selected_keys)
-                ].copy()
+        
+        candidate_registry_override = cfg.get("global_step2_registry_override")
+        if candidate_registry_override is None:
+            # Fallback if no global override is provided
+            candidate_registry_override = pd.read_csv(
+                step1_input_dir / "candidate_rule_registry.csv"
+            )
         tprint(
-            f"Stage A: Loaded stored step1 candidate registry from {step1_input_dir} "
-            f"({len(candidate_registry_override)} rules)"
+            f"Stage A [{target_name} @ H{horizon} {side}]: Running step 2 over "
+            f"{len(candidate_registry_override)} registry rules."
         )
 
     stage_a_result = run_mining_stage(
@@ -6985,6 +7154,7 @@ def run_side_pipeline(
         step1_input_dir=step1_input_dir,
         candidate_registry_override=candidate_registry_override,
         bounded_target=bounded_target,
+        target_nan_reasons=target_nan_reasons,
     )
     log_stage_gate_diagnostics("Stage A", stage_a_result, cfg)
 
@@ -7314,14 +7484,14 @@ def build_global_stage_a_ridge_shortlist(
     X_ref: np.ndarray,
     metadata_ref: List[FeatureMetadata],
     cfg: Dict[str, Any],
-) -> Dict[str, set[str]]:
+) -> pd.DataFrame:
     global_cap = int(cfg.get("global_ridge_candidate_cap", 160))
     if not pooled_step1_frames or X_ref is None or len(metadata_ref) == 0:
-        return {}
+        return pd.DataFrame()
 
     pooled = pd.concat(pooled_step1_frames, ignore_index=True, copy=False)
     if pooled.empty:
-        return {}
+        return pd.DataFrame()
 
     pooled = pooled.drop_duplicates(
         subset=["canonical_key", "source_target", "source_horizon", "side"],
@@ -7415,13 +7585,7 @@ def build_global_stage_a_ridge_shortlist(
         f"input={len(pooled)} selected={len(selected)} cap={global_cap}"
     )
 
-    selected_by_slice: Dict[str, set[str]] = collections.defaultdict(set)
-    for row in selected.itertuples(index=False):
-        slice_key = _make_slice_selection_key(
-            str(row.source_target), int(row.source_horizon), str(row.side)
-        )
-        selected_by_slice[slice_key].add(str(row.canonical_key))
-    return dict(selected_by_slice)
+    return selected
 
 
 def run_lgbm_mask_generation_triad(
@@ -7607,123 +7771,93 @@ def run_lgbm_mask_generation_triad(
                 # Store results
                 results_by_target_horizon[(target_name, horizon, side)] = side_results
 
-                if triad_run_step == "full":
-                    if side_results is not None:
-                        if x_ref is None and side_results.get("X_a") is not None:
-                            x_ref = side_results["X_a"]
-                            metadata_ref = side_results.get("metadata_a", []) or []
-                        step1_dir = resolve_stage_a_step1_dir(
-                            root_output_dir,
-                            target_name=target_name,
-                            horizon=horizon,
-                            side=side,
-                        )
-                        post_dedup_path = step1_dir / "step1_post_dedup_registry.csv"
-                        if post_dedup_path.exists():
-                            post_df = pd.read_csv(post_dedup_path)
-                            if not post_df.empty:
-                                post_df["source_target"] = target_name
-                                post_df["source_horizon"] = horizon
-                                post_df["side"] = side
-                                pooled_step1_frames.append(post_df)
-                else:
-                    # Add provenance to registry
-                    if side_results is not None and not side_results["stage_a"].empty:
+                if side_results is not None:
+                    if x_ref is None and side_results.get("X_a") is not None:
+                        x_ref = side_results["X_a"]
+                        metadata_ref = side_results.get("metadata_a", []) or []
+                    
+                    if not side_results.get("stage_a", pd.DataFrame()).empty:
                         stage_a_with_prov = side_results["stage_a"].copy()
                         stage_a_with_prov["source_target"] = target_name
                         stage_a_with_prov["source_horizon"] = horizon
+                        stage_a_with_prov["side"] = side
                         all_registries.append(stage_a_with_prov)
 
-    if triad_run_step == "full":
-        global_selected_keys_by_slice = build_global_stage_a_ridge_shortlist(
+                    step1_dir = resolve_stage_a_step1_dir(
+                        root_output_dir,
+                        target_name=target_name,
+                        horizon=horizon,
+                        side=side,
+                    )
+                    post_dedup_path = step1_dir / "step1_post_dedup_registry.csv"
+                    if post_dedup_path.exists():
+                        post_df = pd.read_csv(post_dedup_path)
+                        if not post_df.empty:
+                            post_df["source_target"] = target_name
+                            post_df["source_horizon"] = horizon
+                            post_df["side"] = side
+                            pooled_step1_frames.append(post_df)
+
+    # GLOBAL CONSOLIDATED STEP 2
+    if triad_run_step in ["full", "step2"]:
+        global_stage_a_pooled_registry = build_global_stage_a_ridge_shortlist(
             pooled_step1_frames=pooled_step1_frames,
             X_ref=x_ref,
             metadata_ref=metadata_ref,
             cfg=cfg,
         )
         tprint(
-            "Global step2 shortlist by slice: "
-            + ", ".join(
-                f"{k}={len(v)}"
-                for k, v in sorted(global_selected_keys_by_slice.items())
-            )
+            f"Global consolidated Step 2 pooled registry: {len(global_stage_a_pooled_registry)} rules total."
         )
 
-        results_by_target_horizon = {}
-        all_registries = []
-        for horizon in horizons:
-            for target_name in target_names:
-                bounded_target = (
-                    triad_targets.get(target_name, {}).get(horizon)
-                    if target_name in triad_targets
-                    else None
-                )
-                if bounded_target is None:
-                    continue
-                surprisal_key = f"{target_name}_surprisal"
-                bounded_target_surprisal = None
-                if (
-                    triad_targets.get(surprisal_key) is not None
-                    and horizon in triad_targets.get(surprisal_key, {})
-                ):
-                    bounded_target_surprisal = triad_targets[surprisal_key][horizon]
-                horizon_target_dir = root_output_dir / f"h{horizon}" / target_name
-                horizon_cfg = cfg.copy()
-                horizon_cfg["target_name"] = target_name
-                horizon_cfg["horizon"] = horizon
-                horizon_cfg["run_step"] = "step2"
-                horizon_cfg["step1_dir"] = str(root_output_dir)
-                horizon_cfg[
-                    "global_step2_selected_keys_by_slice"
-                ] = global_selected_keys_by_slice
-                if target_name in TRIAD_TARGET_CONFIGS:
-                    target_config = TRIAD_TARGET_CONFIGS[target_name]
-                    horizon_cfg["huber_alpha"] = target_config.get("huber_alpha", 0.9)
-                    horizon_cfg["learning_rate"] = target_config.get(
-                        "learning_rate", 0.03
+        if not global_stage_a_pooled_registry.empty:
+            # Prepare consolidated parameters for the global assessor phase
+            global_horizon_target_dirs = {}
+            for h in horizons:
+                for t_name in target_names:
+                    global_horizon_target_dirs[(t_name, int(h))] = (
+                        root_output_dir / f"h{h}" / t_name
                     )
-                    horizon_cfg["min_support_pct"] = target_config.get(
-                        "min_support_pct", 0.05
-                    )
-                    horizon_cfg["ic_hurdle"] = target_config.get("ic_hurdle", 0.02)
-                if horizon in HORIZON_CONFIGS:
-                    horizon_config = HORIZON_CONFIGS[horizon]
-                    min_leaf_mult = horizon_config.get(
-                        "min_data_in_leaf_multiplier", 1.0
-                    )
-                    base_min_leaf = int(horizon_cfg.get("min_data_in_leaf", 64))
-                    horizon_cfg["min_data_in_leaf"] = int(base_min_leaf * min_leaf_mult)
-                for side in ["long", "short"]:
-                    tprint(
-                        f"\n--- Running GLOBAL STEP2 {side.upper()} side for {target_name} @ H{horizon} ---"
-                    )
-                    side_results = run_side_pipeline(
-                        side=side,
-                        data=data,
-                        feature_dict=feature_dict,
-                        fwd_ret=fwd_ret,
-                        fwd_ret_norm=fwd_ret_norm,
-                        cfg=horizon_cfg,
-                        folds=folds,
-                        root_output_dir=horizon_target_dir,
-                        target_name=target_name,
-                        horizon=horizon,
-                        bounded_target=bounded_target,
-                        bounded_target_surprisal=bounded_target_surprisal,
-                    )
-                    results_by_target_horizon[
-                        (target_name, horizon, side)
-                    ] = side_results
-                    if side_results is not None and not side_results["stage_a"].empty:
-                        stage_a_with_prov = side_results["stage_a"].copy()
-                        stage_a_with_prov["source_target"] = target_name
-                        stage_a_with_prov["source_horizon"] = horizon
-                        all_registries.append(stage_a_with_prov)
+
+            # Map of (target_name, horizon) -> target_array for dynamic resolution
+            # We also include surprisals if available
+            assessment_targets = {}
+            for t_name in target_names:
+                for h in horizons:
+                    if t_name in triad_targets and h in triad_targets[t_name]:
+                        assessment_targets[(t_name, int(h))] = triad_targets[t_name][h]
+                    
+                    surprisal_key = f"{t_name}_surprisal"
+                    if surprisal_key in triad_targets and h in triad_targets.get(surprisal_key, {}):
+                        assessment_targets[(surprisal_key, int(h))] = triad_targets[surprisal_key][h]
+
+            assessor = MaskAssessor(metadata_ref, cfg, mask_resolver=CanonicalRuleMaskResolver(x_ref, metadata_ref))
+            
+            # Pass all context necessary for sequential 'in bunches of 14' assessment
+            final_assessment_df = assessor.assess_rules(
+                global_stage_a_pooled_registry,
+                x_ref,
+                data,
+                fwd_ret, # fallback
+                fwd_ret_norm, # fallback
+                folds,
+                step_mode="step2",
+                checkpoint_output_dir=root_output_dir,
+                triad_targets_map=assessment_targets,
+                output_dirs_map=global_horizon_target_dirs,
+                batch_size=14, # "bunches of 14"
+            )
+
+            if not final_assessment_df.empty:
+                tprint(f"Global consolidated assessment complete. {len(final_assessment_df)} rules assessed.")
+                return {
+                    "results_by_target_horizon": {}, # Legacy compat
+                    "combined_registry": final_assessment_df,
+                    "global_results": final_assessment_df
+                }
 
     if triad_run_step == "step1":
         tprint("TRIAD STEP1 COMPLETE")
-        tprint(
-            "Stored stage_a_context step1 checkpoints for all processed slices. "
             "No post-dedup selection was run."
         )
         return {
@@ -9095,6 +9229,11 @@ class MaskAssessor:
         step1_checkpoint_dir: Optional[Path] = None,
         checkpoint_output_dir: Optional[Path] = None,
         bounded_target: Optional[np.ndarray] = None,
+        triad_targets_map: Optional[Dict[Tuple[str, int], np.ndarray]] = None,
+        output_dirs_map: Optional[Dict[Tuple[str, int], Path]] = None,
+        batch_size: int = 14,
+        target_nan_reasons: Optional[np.ndarray] = None,
+        **kwargs,
     ) -> pd.DataFrame:
         if registry.empty:
             return registry
@@ -9953,6 +10092,7 @@ class MaskAssessor:
                 )
                 intersections = context_matrix.T @ context_matrix
                 n_rules = len(surviving_keys)
+                initial_n_rules = n_rules  # Track initial count for logging
                 sub_supports = np.diag(intersections).astype(float)
 
                 # Store matrices for soft F1/Dice penalty downstream
@@ -9963,91 +10103,18 @@ class MaskAssessor:
                     "n_subsample": n_subsample,
                 }
 
+                # PER-BUCKET TOP-N SELECTION (No overlap deduplication)
                 # ---------------------------------------------------------------
-                # PER-BUCKET GREEDY CASCADE DEDUP: top-20 per bucket
-                # ---------------------------------------------------------------
-                # Sort rules in this bucket by cheap_rank descending (best first).
-                BUCKET_TOP_TARGET = int(self.cfg.get("overlap_dedup_bucket_top_target", 20))
-                bucket_thresholds = list(self.cfg.get(
-                    "ridge_dedup_thresholds",
-                    [0.975, 0.95, 0.925, 0.90, 0.875, 0.85, 0.825, 0.80, 0.75, 0.70, 0.65, 0.60],
-                ))
+                BUCKET_TOP_TARGET = int(self.cfg.get("overlap_dedup_bucket_top_target", 15))
 
-                # Score array for sorting (cheap_rank from cheap_gate_rows already computed)
-                rule_scores = np.array([
-                    bucket_cheap_ranks.get(bucket_key, {}).get(k, 0.0)
-                    for k in surviving_keys
-                ], dtype=np.float64)
-                score_order = np.argsort(-rule_scores)  # descending
+                # Sort rules by gain (descending) to get score order
+                score_order = np.argsort(-gains)
 
-                def _bucket_f1(i: int, j: int) -> float:
-                    """F1 overlap between two rules using the subsampled intersection matrix."""
-                    supp_i = float(sub_supports[i])
-                    supp_j = float(sub_supports[j])
-                    if min(supp_i, supp_j) / max(supp_i, supp_j + 1e-9) < SUPPORT_RATIO_MIN:
-                        return 0.0
-                    inter = float(intersections[i, j])
-                    return 2.0 * inter / (supp_i + supp_j + 1e-9)
-
-                def _run_greedy_pass(threshold: float, order):
-                    """Greedy dedup: iterate in score order, keep rule only if its max
-                    effective F1 with every already-accepted rule is below threshold."""
-                    accepted = []
-                    rejected_out = []
-                    for idx in order:
-                        max_ov = max((_bucket_f1(idx, a) for a in accepted), default=0.0)
-                        if max_ov < threshold:
-                            accepted.append(idx)
-                        else:
-                            rejected_out.append(idx)
-                    return accepted, rejected_out
-
-                tprint(
-                    f"Stage A: Starting per-bucket greedy dedup for {bucket_key} "
-                    f"({n_rules} rules, target={BUCKET_TOP_TARGET})"
-                )
-                initial_n_rules = n_rules
-
-                accepted_indices = list(score_order)   # fallback: keep all
-                rejected_pool: List[int] = []
-
+                # Simply keep top N rules by gain, no overlap deduplication
                 if n_rules > BUCKET_TOP_TARGET:
-                    for threshold in bucket_thresholds:
-                        kept, rejected = _run_greedy_pass(threshold, score_order)
-                        tprint(
-                            f"Stage A: Bucket {bucket_key} dedup @ {threshold:.3f} "
-                            f"-> kept={len(kept)} rejected={len(rejected)}"
-                        )
-                        if len(kept) <= BUCKET_TOP_TARGET:
-                            accepted_indices = kept
-                            rejected_pool = rejected
-                            break
-                        accepted_indices = kept
-
-                    # Refill from rejected pool if below minimum threshold (diversity-aware)
-                    MIN_KEEP_THRESHOLD = 10
-                    if len(accepted_indices) < MIN_KEEP_THRESHOLD and rejected_pool:
-                        deficit = MIN_KEEP_THRESHOLD - len(accepted_indices)
-                        
-                        # Diversity-aware refill: balance quality vs overlap
-                        alpha = float(self.cfg.get("bucket_refill_diversity_alpha", 0.7))
-                        
-                        diversity_scores = []
-                        for idx in rejected_pool:
-                            rank_score = rule_scores[idx]
-                            max_ov = max((_bucket_f1(idx, a) for a in accepted_indices), default=0.0)
-                            overlap_penalty = max(0.0, max_ov - 0.3)
-                            div_score = rank_score * (1.0 - alpha * (overlap_penalty ** 2))
-                            diversity_scores.append((idx, div_score))
-                        
-                        diversity_scores.sort(key=lambda x: x[1], reverse=True)
-                        refill = [ds[0] for ds in diversity_scores[:deficit]]
-                        accepted_indices = accepted_indices + refill
-                        
-                        tprint(
-                            f"Stage A: Bucket {bucket_key} diversity refill +{len(refill)} "
-                            f"-> total={len(accepted_indices)} (alpha={alpha:.2f})"
-                        )
+                    accepted_indices = list(score_order[:BUCKET_TOP_TARGET])
+                else:
+                    accepted_indices = list(score_order)
 
                 surviving_indices = accepted_indices
                 final_surviving_set = {surviving_keys[i] for i in surviving_indices}
@@ -10056,7 +10123,7 @@ class MaskAssessor:
                     if k not in final_surviving_set:
                         cheap_gate_result[(bucket_key, k)] = (
                             True,
-                            "deduplicated_overlap",
+                            "top_n_cutoff",
                         )
                         n_dedup_rejected += 1
 
@@ -10184,37 +10251,45 @@ class MaskAssessor:
 
         valid_ts_mask = pd.notna(data["timestamp"])
         global_ts = pd.to_datetime(data.loc[valid_ts_mask, "timestamp"], errors="coerce", utc=True).to_numpy()
-        # Cache baseline learnability once per side after cheap structural filtering.
-        # Baseline metrics used for Ridge gating must be evaluated on the same Ridge target
-        # used for subset assessment: vol-normalized signed return.
-        for side, ridge_target in ridge_target_by_side.items():
-            baseline_metrics = self._compute_baseline_auc(X, ridge_target, folds)
 
-            # Universe-relative uplift baselines should also use the same evaluation return series.
-            global_rets = ridge_target[valid_ts_mask]
+        # 0. Infrastructure: Component Extraction
+        # Pre-calculating baselines for all relevant (target, horizon, side) combinations
+        # that exist in the registry to avoid redundant expensive AUC/Entropy calculations.
+        unique_contexts = set()
+        selected_records = registry.to_dict("records")
+        for row in selected_records:
+            t_name = str(row.get("source_target", "unknown"))
+            h_key = int(row.get("source_horizon", -1))
+            s_side = str(row.get("side", "long"))
+            unique_contexts.add((t_name, h_key, s_side))
+            
+        tprint(f"Stage A: Pre-calculating baselines for {len(unique_contexts)} unique target contexts...")
+
+        baseline_cache = {}
+        for t_name, h_key, s_side in unique_contexts:
+            # Resolve the correct target array for this context
+            current_baseline_target = None
+            if triad_targets_map is not None:
+                current_baseline_target = triad_targets_map.get((t_name, h_key))
+            
+            if current_baseline_target is None:
+                # Fallback to local side-return if specific map missing
+                current_baseline_target = bounded_target if bounded_target is not None else fwd_ret
+            
+            # Baseline metrics must be evaluated on the specific target used for the rule
+            baseline_metrics = self._compute_baseline_auc(X, current_baseline_target, folds)
+            global_rets = current_baseline_target[valid_ts_mask]
             uplift_baseline = _compute_baseline_population_metrics(global_rets, global_ts)
 
-            baseline_cache[side] = {
-                "global_auc": float(baseline_metrics["global_auc"])
-                if np.isfinite(baseline_metrics["global_auc"])
-                else np.nan,
-                "global_roc_auc": float(baseline_metrics["global_roc_auc"])
-                if np.isfinite(baseline_metrics["global_roc_auc"])
-                else np.nan,
-                "global_pr_auc": float(baseline_metrics["global_pr_auc"])
-                if np.isfinite(baseline_metrics["global_pr_auc"])
-                else np.nan,
-                "global_top_quartile_precision": float(baseline_metrics["global_top_quartile_precision"])
-                if np.isfinite(baseline_metrics["global_top_quartile_precision"])
-                else np.nan,
+            baseline_cache[(t_name, h_key, s_side)] = {
+                "global_auc": float(baseline_metrics["global_auc"]),
+                "global_roc_auc": float(baseline_metrics["global_roc_auc"]),
+                "global_pr_auc": float(baseline_metrics["global_pr_auc"]),
+                "global_top_quartile_precision": float(baseline_metrics["global_top_quartile_precision"]),
                 "global_cov": float(baseline_metrics["global_cov"]),
-                "global_entropy": float(self._compute_entropy(ridge_target)),
+                "global_entropy": float(self._compute_entropy(current_baseline_target)),
                 **uplift_baseline,
             }
-            if np.nanstd(ridge_target) < 1e-9:
-                tprint(
-                    f"WARNING: Root cause for degenerate metrics: {side} target has zero variance!"
-                )
                 
         max_ridge_candidates_total = int(
             self.cfg.get("max_ridge_candidates_total", 80)
@@ -10291,15 +10366,15 @@ class MaskAssessor:
             f"Stage A: Ridge global pool size = {len(global_pool)} rules across "
             f"{len(set(bk for bk, _, _ in global_pool))} buckets "
             f"(target={max_ridge_candidates_total})"
-        )
+)
         for bk in sorted(set(bk for bk, _, _ in global_pool)):
             n = sum(1 for b, _, _ in global_pool if b == bk)
             tprint(f"  bucket {bk}: {n} rules in pool")
 
         self.bucket_ridge_keys = collections.defaultdict(set)
 
-        if len(global_pool) <= max_ridge_candidates_total:
-            tprint("Stage A: Pool fits within target, skipping cascade dedup")
+        if True: # Always skip cascade dedup as per user request to only dedup at bucket level
+            tprint("Stage A: Pool fits within target or cascade explicitly skipped, skipping cross-bucket cascade dedup")
             for bucket_key, rank, canonical_key in global_pool:
                 self.bucket_ridge_keys[bucket_key].add(canonical_key)
         else:
@@ -10461,34 +10536,77 @@ class MaskAssessor:
             f"Stage A: Ridge regression selection complete - {total_ridge_selected} rules selected for final assessment"
         )
 
-        final_assessment_start_ts = time.perf_counter()
-        tprint(
-            f"Stage A: Starting final assessment for {total_ridge_selected} rules..."
-        )
+        # 0. Infrastructure: Component Extraction
+        # Pre-calculating baselines and TBM outcomes for all relevant combinations
+        # that exist in the registry to avoid redundant expensive calculations.
+        unique_contexts = set()
+        unique_tbm_contexts = set()
+        selected_records = registry.to_dict("records")
+        for row in selected_records:
+            t_name = str(row.get("source_target", "unknown"))
+            h_key = int(row.get("source_horizon", -1))
+            s_side = str(row.get("side", "long"))
+            unique_contexts.add((t_name, h_key, s_side))
+            unique_tbm_contexts.add((h_key, s_side))
+            
+        tprint(f"Stage A: Pre-calculating baselines for {len(unique_contexts)} unique target contexts...")
 
-        selected_key_set = {
-            key for keys in self.bucket_ridge_keys.values() for key in keys
-        }
-        selected_registry = registry[
-            registry["canonical_key"].astype(str).isin(selected_key_set)
-        ].copy()
-        selected_records = selected_registry.to_dict("records")
+        valid_ts_mask = pd.notna(data["timestamp"])
+        global_ts = pd.to_datetime(data.loc[valid_ts_mask, "timestamp"], errors="coerce", utc=True).to_numpy()
 
+        baseline_cache = {}
+        for t_name, h_key, s_side in unique_contexts:
+            # Resolve the correct target array for this context
+            current_baseline_target = None
+            if triad_targets_map is not None:
+                current_baseline_target = triad_targets_map.get((t_name, h_key))
+            
+            if current_baseline_target is None:
+                current_baseline_target = bounded_target if bounded_target is not None else fwd_ret
+            
+            baseline_metrics = self._compute_baseline_auc(X, current_baseline_target, folds)
+            global_rets = current_baseline_target[valid_ts_mask]
+            uplift_baseline = _compute_baseline_population_metrics(global_rets, global_ts)
+
+            baseline_cache[(t_name, h_key, s_side)] = {
+                "global_auc": float(baseline_metrics["global_auc"]),
+                "global_roc_auc": float(baseline_metrics["global_roc_auc"]),
+                "global_pr_auc": float(baseline_metrics["global_pr_auc"]),
+                "global_top_quartile_precision": float(baseline_metrics["global_top_quartile_precision"]),
+                "global_cov": float(baseline_metrics["global_cov"]),
+                "global_entropy": float(self._compute_entropy(current_baseline_target)),
+                **uplift_baseline,
+            }
+
+        tprint(f"Stage A: Pre-calculating TBM outcomes for {len(unique_tbm_contexts)} unique (H, Side) pairs...")
+        tbm_outcome_cache = {}
+        for h_key, s_side in unique_tbm_contexts:
+            # Triad runs usually use default ATR multipliers from config
+            tp_atr = float(self.cfg.get("tp_atr", 2.0))
+            sl_atr = float(self.cfg.get("sl_atr", 2.0))
+            
+            tbm_outcomes = compute_tbm_outcomes_per_symbol(
+                data=data,
+                horizon=h_key,
+                tp_atr=tp_atr,
+                sl_atr=sl_atr,
+                side=s_side,
+            )
+            tbm_outcome_cache[(h_key, s_side)] = tbm_outcomes
+
+        total_ridge_selected = len(selected_records)
         tprint(
-            f"Stage A: Final assessment narrowed registry from {len(registry)} to {len(selected_records)} ridge-selected rules"
-        )
-        tprint(
-            "Stage A: Final assessment phase start - "
-            f"selected_rules={len(selected_records)} total_registry={len(registry)}"
+            f"Stage A: Starting final assessment for {total_ridge_selected} rules (batches of {batch_size})..."
         )
 
         assessed_progress = 0
         for row in selected_records:
+            ridge_details: Dict[str, Any] = {}
             assessed_progress += 1
-            if assessed_progress == 1 or assessed_progress % 25 == 0:
+            if assessed_progress == 1 or assessed_progress % batch_size == 0 or assessed_progress == total_ridge_selected:
                 tprint(
                     f"Stage A: Final assessment progress {assessed_progress}/{total_ridge_selected} "
-                    f"rules"
+                    f"rules (bunch of {batch_size})"
                 )
             canonical_key = str(row["canonical_key"])
             if canonical_key in mask_cache:
@@ -10499,7 +10617,8 @@ class MaskAssessor:
             else:
                 mask = self._get_mask_for_rule(canonical_key, X)
                 mask_cache[canonical_key] = mask
-            if np.sum(mask) < 20:
+            
+            if np.sum(mask) < 20: # Sanity check for rule support
                 continue
 
             # 0. Infrastructure: Component Extraction
@@ -10509,31 +10628,42 @@ class MaskAssessor:
             )
 
             side = str(row.get("side", "long"))
-            if side not in ridge_target_by_side:
-                side = "long"
             horizon_raw = row.get("source_horizon", -1)
             try:
                 horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
             except (TypeError, ValueError):
                 horizon_key = -1
-            target_key = str(row.get("source_target", "unknown"))
+            target_name = str(row.get("source_target", "unknown"))
+
+            # Dynamic Target Resolution:
+            # If a global triad_targets_map is provided, we pick the rules source target.
+            # Otherwise, we fallback to the provided bounded_target or fwd_ret.
+            current_target_ret = None
+            if triad_targets_map is not None:
+                current_target_ret = triad_targets_map.get((target_name, horizon_key))
+            
+            if current_target_ret is None:
+                current_target_ret = bounded_target if bounded_target is not None else fwd_ret
 
             # The bucket grouping is determined strictly by side and horizon
             group_bucket_key = (side, horizon_key)
 
-            target_ret = ridge_target_by_side[side]
-            global_auc = float(baseline_cache[side]["global_auc"])
-            global_roc_auc = float(baseline_cache[side]["global_roc_auc"])
-            global_pr_auc = float(baseline_cache[side]["global_pr_auc"])
-            global_top_quartile_precision = float(baseline_cache[side]["global_top_quartile_precision"])
-            global_entropy = float(baseline_cache[side]["global_entropy"])
-            baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
+            target_ret = current_target_ret
+            
+            # Context-aware baseline lookup
+            ctx_key = (target_name, horizon_key, side)
+            baseline_data = baseline_cache.get(ctx_key, {})
+            
+            global_auc = float(baseline_data.get("global_auc", 0.5))
+            global_roc_auc = float(baseline_data.get("global_roc_auc", 0.5))
+            global_pr_auc = float(baseline_data.get("global_pr_auc", 0.5))
+            global_top_quartile_precision = float(baseline_data.get("global_top_quartile_precision", 0.5))
+            global_entropy = float(baseline_data.get("global_entropy", 1.0))
+            baseline_oof_coverage = float(baseline_data.get("global_cov", 1.0))
 
             # 1. Triple Barrier
             # Check if adaptive TP/SL is enabled
             adaptive_enabled = self.cfg.get("adaptive_tp_sl_enabled", False)
-            ridge_details: Dict[str, Any] = {}  # Initialized here; populated later in section 7 if run_ridge=True
-            
             if adaptive_enabled:
                 # Compute adaptive TP/SL for this specific rule
                 adaptive_tp_atr, adaptive_sl_atr = self._compute_adaptive_tp_sl(
@@ -10556,8 +10686,20 @@ class MaskAssessor:
                 )
                 rule_tp_f, rule_sl_f, rule_to_f = tbm_outcomes
             else:
-                # Use global TBM outcomes
-                rule_tp_f, rule_sl_f, rule_to_f = tbm_side_map[side]
+                # Use pre-calculated TBM outcomes for this (horizon, side)
+                tbm_outcomes = tbm_outcome_cache.get((horizon_key, side))
+                if tbm_outcomes is None:
+                    # Final fallback if cache missing
+                    tbm_outcomes = compute_tbm_outcomes_per_symbol(
+                        data=data,
+                        horizon=horizon_key,
+                        tp_atr=float(self.cfg.get("tp_atr", 2.0)),
+                        sl_atr=float(self.cfg.get("sl_atr", 2.0)),
+                        side=side,
+                    )
+                    tbm_outcome_cache[(horizon_key, side)] = tbm_outcomes
+                
+                rule_tp_f, rule_sl_f, rule_to_f = tbm_outcomes
 
             tbm_metrics = self._compute_tbm_metrics(
                 mask, rule_tp_f, rule_sl_f, rule_to_f, target_ret
@@ -10628,7 +10770,7 @@ class MaskAssessor:
                         f"key={canonical_key[:120]}"
                     )
                     ridge_details = self._compute_subset_ridge_details(
-                        X, target_ret, mask, folds, tp_f=rule_tp_f
+                        X, target_ret, mask, folds, tp_f=rule_tp_f, target_nan_reasons=target_nan_reasons
                     )
                     mask_auc = float(ridge_details["subset_auc"])
                     mask_roc_auc = float(ridge_details["subset_roc_auc"])
@@ -10689,11 +10831,67 @@ class MaskAssessor:
             # Apply ev_per_event hard gate
             if ev_per_event <= 0.0 and not rejected:
                 rejected, rejection_reason = True, "ev_per_event_less_than_or_equal_to_zero"
+                
+                # Diagnostic logging for EV-based rejection
+                fee_frac = (0.0015 / abs(mean_ret_mask)) if abs(mean_ret_mask) > 1e-9 else np.nan
+                tprint(
+                    f"DIAGNOSTIC: Rule rejected (Low EV) key={canonical_key[:60]}... "
+                    f"GrossEV={ev_per_event:.6f} AvgMove={mean_ret_mask:.6f} HitRate={tbm_metrics['tp_rate']:.2%} "
+                    f"MAE={mae:.6f} MFE={mfe:.6f} FeeRatio={fee_frac:.2f} "
+                    f"PR-AUC={mask_pr_auc:.4f} ROC-AUC={mask_roc_auc:.4f}"
+                )
 
             # If the threshold finding logic failed
             if ridge_trade_metrics.get("rejected", False) and not rejected:
                 rejected = True
                 rejection_reason = ridge_trade_metrics.get("reject_reason", {}).get("reason", "threshold_star_search_failed")
+                
+                if rejection_reason == "no positive post-fee profit threshold":
+                    # Diagnostic logging for post-fee rejection
+                    fee_frac = (0.0015 / abs(mean_ret_mask)) if abs(mean_ret_mask) > 1e-9 else np.nan
+
+                    # Extract best TP/SL and profit information from reject_reason
+                    best_pnl_candidate = ridge_trade_metrics.get("reject_reason", {}).get("best_pnl_candidate", np.nan)
+                    threshold_star_optimal = ridge_trade_metrics.get("reject_reason", {}).get("threshold_star_optimal_pnl", np.nan)
+
+                    # Get TP/SL information (adaptive if enabled, otherwise use default)
+                    if adaptive_enabled:
+                        tp_atr_str = f"{adaptive_tp_atr:.2f}ATR"
+                        sl_atr_str = f"{adaptive_sl_atr:.2f}ATR"
+                    else:
+                        tp_atr_str = "default"
+                        sl_atr_str = "default"
+
+                    # Compute average profit per trade (gross and net)
+                    # Use total_trades from cheap stats which is more reliable
+                    avg_trades_est = cheap.get("avg_trades", np.nan)
+                    if np.isfinite(best_pnl_candidate) and np.isfinite(avg_trades_est) and avg_trades_est > 0:
+                        # Estimate total trades from support and avg_trades
+                        support_pct = cheap.get("support_pct", 0.0)
+                        n_samples = len(data)
+                        total_trades_est = n_samples * support_pct * avg_trades_est
+                        if total_trades_est > 0:
+                            avg_gross_profit_per_trade = best_pnl_candidate / total_trades_est
+                            avg_net_profit_per_trade = avg_gross_profit_per_trade - 0.0015  # subtract round fee
+                        else:
+                            avg_gross_profit_per_trade = np.nan
+                            avg_net_profit_per_trade = np.nan
+                    else:
+                        avg_gross_profit_per_trade = np.nan
+                        avg_net_profit_per_trade = np.nan
+
+                    # AvgMove should be absolute value (directional return)
+                    avg_move = abs(mean_ret_mask)
+
+                    tprint(
+                        f"DIAGNOSTIC: Rule rejected (Post-Fee) key={canonical_key[:60]}... "
+                        f"TP={tp_atr_str} SL={sl_atr_str} "
+                        f"BestThresh={threshold_star_optimal:.3f} BestGrossPnL={best_pnl_candidate:.6f} "
+                        f"AvgGrossProfit={avg_gross_profit_per_trade:.6f} AvgNetProfit={avg_net_profit_per_trade:.6f} "
+                        f"GrossEV={ev_per_event:.6f} AvgMove={avg_move:.6f} HitRate={tbm_metrics['tp_rate']:.2%} "
+                        f"MAE={mae:.6f} MFE={mfe:.6f} FeeRatio={fee_frac:.2f} "
+                        f"PR-AUC={mask_pr_auc:.4f} ROC-AUC={mask_roc_auc:.4f}"
+                    )
 
             # Fetch cheap_rank for Final Regime Score
             cheap_rank = bucket_cheap_ranks.get(group_bucket_key, {}).get(
@@ -10936,34 +11134,38 @@ class MaskAssessor:
                 for k, v in ridge_details["val_target_nan_reasons"].items():
                     assessment_results[-1][f"val_target_nan_{k}"] = v
 
-        # Print the per-candidate target-drop summary message
-        if "train_target_nan_reasons" in ridge_details:
-            train_reasons = ridge_details.get("train_target_nan_reasons", {})
-            val_reasons = ridge_details.get("val_target_nan_reasons", {})
+            # Print the per-candidate target-drop summary message
+            if "train_target_nan_reasons" in ridge_details:
+                train_reasons = ridge_details.get("train_target_nan_reasons", {})
+                val_reasons = ridge_details.get("val_target_nan_reasons", {})
 
-            # Helper to format the dict
-            def _format_reasons(r_dict):
-                return (
-                    f"horizon_exceeded={r_dict.get('horizon_exceeded', 0)}, "
-                    f"barrier_unresolved={r_dict.get('barrier_unresolved', 0)}, "
-                    f"ambiguous_bar={r_dict.get('ambiguous_bar', 0)}, "
-                    f"outside_support_mask={r_dict.get('outside_support_mask', 0)}, "
-                    f"neutral_filtered={r_dict.get('neutral_filtered', 0)}, "
-                    f"other_target_nan={r_dict.get('other_target_nan', 0)}"
+                # Helper to format the dict
+                def _format_reasons(r_dict):
+                    return (
+                        f"horizon_exceeded={r_dict.get('horizon_exceeded', 0)}, "
+                        f"barrier_unresolved={r_dict.get('barrier_unresolved', 0)}, "
+                        f"ambiguous_bar={r_dict.get('ambiguous_bar', 0)}, "
+                        f"outside_support_mask={r_dict.get('outside_support_mask', 0)}, "
+                        f"neutral_filtered={r_dict.get('neutral_filtered', 0)}, "
+                        f"other_target_nan={r_dict.get('other_target_nan', 0)}"
+                    )
+
+                # Merged reasons for print log
+                merged_reasons = {
+                    k: train_reasons.get(k, 0) + val_reasons.get(k, 0)
+                    for k in set(train_reasons) | set(val_reasons)
+                }
+
+                tprint(
+                    f"Stage A: Ridge target-drop summary key={canonical_key} "
+                    f"train_target_nan={ridge_details.get('target_nan_total_train', 0)} "
+                    f"val_target_nan={ridge_details.get('target_nan_total_val', 0)} "
+                    f"reasons[{_format_reasons(merged_reasons)}]"
                 )
-
-            # Merged reasons for print log
-            merged_reasons = {
-                k: train_reasons.get(k, 0) + val_reasons.get(k, 0)
-                for k in set(train_reasons) | set(val_reasons)
-            }
-
-            tprint(
-                f"Stage A: Ridge target-drop summary key={canonical_key} "
-                f"train_target_nan={ridge_details.get('target_nan_total_train', 0)} "
-                f"val_target_nan={ridge_details.get('target_nan_total_val', 0)} "
-                f"reasons[{_format_reasons(merged_reasons)}]"
-            )
+        assessment_df = pd.DataFrame(assessment_results)
+        if assessment_df.empty:
+            tprint("Stage A: No candidates to assess. Yielding empty dataframe.")
+            return assessment_df
             
         # 6. Final Ranking Normalization
         # We apply MinMax scaling to each final-ranking term across the entire candidate cohort.
@@ -11501,9 +11703,14 @@ class MaskAssessor:
                 else:
                     target_reasons["other_target_nan"] += n_tr_target_nan
                 
+                # Mask Enrichment Diagnostic
+                global_nan_rate = np.isnan(y[tr_idx]).mean()
+                mask_nan_rate = np.isnan(y_tr).mean()
+                
                 tprint(
                     f"WARNING: Fold {fold_id} Ridge training: Dropped {n_tr_before - n_tr_after}/{n_tr_before} "
                     f"({100*(1-n_tr_after/n_tr_before):.1f}%) samples. "
+                    f"NaN Enrichment: global={global_nan_rate:.1%} -> mask={mask_nan_rate:.1%} "
                     f"[Target NaN: {n_tr_target_nan}, Feature NaN: {n_tr_feat_nan}] "
                     f"TargetNaNReasons[horizon_exceeded={target_reasons['horizon_exceeded']}, barrier_unresolved={target_reasons['barrier_unresolved']}, ambiguous_bar={target_reasons['ambiguous_bar']}, outside_support_mask={target_reasons['outside_support_mask']}, neutral_filtered={target_reasons['neutral_filtered']}, other_target_nan={target_reasons['other_target_nan']}]"
                 )
@@ -11577,13 +11784,13 @@ class MaskAssessor:
             X_tr_subsample = X_tr_clean
             y_tr_subsample = y_tr_clean
 
-            # Fit Ridge on all data with RobustScaler
+            # Fit shallow LGBM (acting as proxy for former Ridge step)
             from sklearn.preprocessing import RobustScaler
-            from sklearn.linear_model import Ridge
+            from lightgbm import LGBMRegressor
             from sklearn.pipeline import Pipeline
 
             # Compute inverse-volatility sample weights for heteroscedasticity correction
-            ridge_sample_weight = make_ridge_vol_weights(
+            lgbm_sample_weight = make_ridge_vol_weights(
                 y_tr_subsample,
                 window=20,
                 w_min=0.5,
@@ -11593,9 +11800,16 @@ class MaskAssessor:
             fit_start = time.perf_counter()
             model = Pipeline([
                 ("scaler", RobustScaler()),
-                ("ridge", Ridge(alpha=1.0, solver="auto")),
+                ("lgbm", LGBMRegressor(
+                    max_depth=3, 
+                    n_estimators=5, 
+                    min_child_samples=20,
+                    min_data_in_leaf=20,
+                    random_state=42,
+                    n_jobs=max(1, min(4, int(self.cfg.get("lgbm_n_jobs", 3))))
+                )),
             ])
-            model.fit(X_tr_subsample, y_tr_subsample, ridge__sample_weight=ridge_sample_weight)
+            model.fit(X_tr_subsample, y_tr_subsample, lgbm__sample_weight=lgbm_sample_weight)
             preds = model.predict(X_va_clean)
             fit_predict_time += time.perf_counter() - fit_start
             folds_used += 1
@@ -12163,13 +12377,13 @@ class MaskAssessor:
             X_tr_subsample = X_tr_clean
             y_tr_subsample = y_tr_clean
 
-            # Fit Ridge on all data with RobustScaler
+            # Fit shallow LGBM (acting as proxy for former Ridge step)
             from sklearn.preprocessing import RobustScaler
-            from sklearn.linear_model import Ridge
+            from lightgbm import LGBMRegressor
             from sklearn.pipeline import Pipeline
 
             # Compute inverse-volatility sample weights for heteroscedasticity correction
-            ridge_sample_weight = make_ridge_vol_weights(
+            lgbm_sample_weight = make_ridge_vol_weights(
                 y_tr_subsample,
                 window=20,
                 w_min=0.5,
@@ -12178,9 +12392,16 @@ class MaskAssessor:
             
             model = Pipeline([
                 ("scaler", RobustScaler()),
-                ("ridge", Ridge(alpha=1.0, solver="auto")),
+                ("lgbm", LGBMRegressor(
+                    max_depth=3, 
+                    n_estimators=5, 
+                    min_child_samples=20,
+                    min_data_in_leaf=20,
+                    random_state=42,
+                    n_jobs=max(1, min(4, int(self.cfg.get("lgbm_n_jobs", 3))))
+                )),
             ])
-            model.fit(X_tr_subsample, y_tr_subsample, ridge__sample_weight=ridge_sample_weight)
+            model.fit(X_tr_subsample, y_tr_subsample, lgbm__sample_weight=lgbm_sample_weight)
             preds = model.predict(X_va_clean)
 
             # Store predictions
@@ -12979,7 +13200,7 @@ def apply_robust_data_filtering(
     retained_features = {}
     dropped_features = []
 
-    continuous_features_converted = 0
+    features_with_binary_values = 0
     total_features_initial = len(feature_dict)
 
     for k, v in feature_dict.items():
@@ -12987,11 +13208,10 @@ def apply_robust_data_filtering(
         if overlap >= overlap_threshold:
             retained_features[k] = v
 
-            # Heuristic to check if continuous feature transformed to binary (e.g. only 0/1/NaN)
+            # Heuristic to check if feature has only binary values (0/1/NaN)
             unique_vals = np.unique(v[np.isfinite(v)])
             if set(unique_vals).issubset({0.0, 1.0}):
-                # Assuming this implies it's been transformed into binaries successfully if it has binary values
-                continuous_features_converted += 1
+                features_with_binary_values += 1
         else:
             dropped_features.append((k, overlap))
 
@@ -13024,7 +13244,7 @@ def apply_robust_data_filtering(
         "dropped_features": dropped_features,
         "retained_count": len(retained_features),
         "total_features_initial": total_features_initial,
-        "continuous_features_converted": continuous_features_converted,
+        "features_with_binary_values": features_with_binary_values,
         "nan_features_detected": nan_features_detected,
     }
 
@@ -13335,14 +13555,14 @@ def apply_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     Test mode is intended for quicker end-to-end smoke runs:
     - 3 folds
-    - 200 symbols
-    - 3 years of lookback
+    - 300 symbols
+    - 4 years of lookback
     """
     out = dict(cfg)
     out["n_folds"] = 3
     out["sliceplanner_outer_n_folds"] = 3
-    out["mask_opt_max_symbols"] = 200
-    out["mask_opt_lookback_years"] = 3.0
+    out["mask_opt_max_symbols"] = 300
+    out["mask_opt_lookback_years"] = 4.0
     out["support_max_pct"] = 0.22
     out["objective_support_max_pct"] = 0.22
     out["max_support_pct"] = 0.22
@@ -13701,10 +13921,15 @@ def create_target_quality_summary(
         return pd.DataFrame()
 
     # Pre-calculating boolean flags for counts
-    all_df["is_accepted"] = all_df.get("accepted", False).fillna(False).astype(bool)
-    all_df["is_production"] = all_df["is_accepted"] & (
-        all_df.get("composite_score", -np.inf) > 0
-    )
+    if "accepted" in all_df.columns:
+        all_df["is_accepted"] = all_df["accepted"].fillna(False).astype(bool)
+    else:
+        all_df["is_accepted"] = False
+
+    if "composite_score" in all_df.columns:
+        all_df["is_production"] = all_df["is_accepted"] & (all_df["composite_score"] > 0)
+    else:
+        all_df["is_production"] = False
 
     # Aggregation map for vectorized summary
     agg_map = {
@@ -14397,15 +14622,14 @@ if __name__ == "__main__":
     )
 
     tprint(
-        "Robust Data Filter complete: "
-        f"rows_initial={robust_meta['rows_initial']} "
+        f"Robust Data Filter complete: rows_initial={robust_meta['rows_initial']} "
         f"rows_after_any_feat={robust_meta['rows_after_any_feat']} "
         f"rows_final={robust_meta['rows_final']} "
         f"dropped_rows={robust_meta['dropped_rows']} "
         f"retained_features={robust_meta['retained_count']} "
         f"reference={robust_meta['reference_feature']} "
         f"total_features_initial={robust_meta['total_features_initial']} "
-        f"continuous_features_converted={robust_meta['continuous_features_converted']}"
+        f"features_with_binary_values={robust_meta['features_with_binary_values']}"
     )
     global_row_funnel.append(
         {
@@ -14496,6 +14720,15 @@ if __name__ == "__main__":
         "atr_norm_returns_target": {},
     }
 
+    # Re-derive alignment indices after robust filtering to ensure target arrays match data_final
+    time_idx_final = np.searchsorted(common_idx, data_final["timestamp"])
+    sym_idx_final = np.searchsorted(common_syms, data_final["symbol"])
+    
+    # Use columns from data_final if available, fallback to panel if not.
+    # Note: data_final is already flat and aligned to 122040 rows.
+    close_final = data_final["close"].to_numpy(dtype=np.float32) if "close" in data_final.columns else panel["close"].to_numpy(dtype=np.float32)[time_idx_final, sym_idx_final]
+    atr_final = data_final["atr"].to_numpy(dtype=np.float32) if "atr" in data_final.columns else panel["close"].to_numpy(dtype=np.float32)[time_idx_final, sym_idx_final] * 0.01 # Fallback dummy if missing
+
     # Pre-compute close and atr for the new return-based miner targets.
     # Note: since this is panel data (flattened via time_idx, sym_idx),
     # using shift on close_wide is correct as it avoids cross-symbol leak.
@@ -14504,12 +14737,13 @@ if __name__ == "__main__":
         close_wide_local = panel["close"].reindex(index=common_idx, columns=common_syms)
         # Using log forward return: log(close[t+h] / close[t])
         fwd_log_ret_wide = np.log(close_wide_local.shift(-horizon) / close_wide_local)
-        fwd_log_ret_final = fwd_log_ret_wide.to_numpy(dtype=np.float32)[time_idx, sym_idx]
+        fwd_log_ret_final = fwd_log_ret_wide.to_numpy(dtype=np.float32)[time_idx_final, sym_idx_final]
 
         # Compute ATR-normalized forward log returns
-        atr_frac = atr_wide[time_idx, sym_idx] / np.maximum(close_selected, 1e-12)
-        atr_frac = np.where(atr_frac == 0, np.nan, atr_frac)
-        fwd_log_ret_atr_norm_final = fwd_log_ret_final / atr_frac
+        # Floor the ATR fraction at 0.001 (10bps) to prevent explosion from tiny ATR values.
+        # Clip the final target at [-10, 10] to ensure model stability across extreme outliers.
+        atr_frac = np.maximum(atr_final / np.maximum(close_final, 1e-12), 0.001)
+        fwd_log_ret_atr_norm_final = np.clip(fwd_log_ret_final / atr_frac, -10, 10)
 
         triad_targets["returns_target"][horizon] = fwd_log_ret_final
         triad_targets["atr_norm_returns_target"][horizon] = fwd_log_ret_atr_norm_final
@@ -14523,6 +14757,8 @@ if __name__ == "__main__":
             "target_eff_surprisal",
             "target_vame_surprisal",
         ]:
+            if target_base not in target_names:
+                continue
             col_name = f"{target_base}_{horizon}"
             if col_name in df_targets.columns:
                 triad_targets[target_base][horizon] = df_targets[col_name].to_numpy(

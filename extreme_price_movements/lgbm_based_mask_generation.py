@@ -6548,6 +6548,35 @@ def run_mining_stage(
     }
 
 
+def _summarize_target_distribution(name: str, arr: np.ndarray, horizon: Optional[int] = None, side: Optional[str] = None):
+    """
+    Helper to log distribution stats for targets, useful for debugging downstream bounded range issues.
+    """
+    finite = np.isfinite(arr)
+    frac_finite = finite.mean() if len(arr) > 0 else 0.0
+    prefix = f"Target stats {name}"
+    if horizon is not None:
+        prefix += f" @ H{horizon}"
+    if side is not None:
+        prefix += f" [{side}]"
+
+    if frac_finite == 0.0:
+        tprint(f"{prefix}: frac_finite=0.0000 | No finite rows to summarize.")
+        return
+
+    valid_arr = arr[finite]
+    p1 = np.percentile(valid_arr, 1)
+    p5 = np.percentile(valid_arr, 5)
+    p50 = np.median(valid_arr)
+    p95 = np.percentile(valid_arr, 95)
+    p99 = np.percentile(valid_arr, 99)
+    std = np.std(valid_arr)
+
+    tprint(
+        f"{prefix}: frac_finite={frac_finite:.4f} median={p50:.4f} std={std:.4f} "
+        f"p1={p1:.4f} p5={p5:.4f} p95={p95:.4f} p99={p99:.4f}"
+    )
+
 def run_side_pipeline(
     side: str,
     data: pd.DataFrame,
@@ -6708,7 +6737,7 @@ def run_side_pipeline(
             traceback.print_exc()
 
     # Use bounded_target as the real training target if provided.
-    # Bounded targets are already magnitude-based quality scores in [0, 1]
+    # Bounded targets are already magnitude-based quality scores in [-3, 3]
     # and should NOT be sign-flipped for short sides.
     if bounded_target is not None:
         side_target = bounded_target
@@ -6717,8 +6746,26 @@ def run_side_pipeline(
             side_fwd_ret_norm  # legacy fallback only when no triad target is supplied
         )
 
+    # ROOT CAUSE OF ZERO VALID ROWS:
+    # Previously, the code implicitly assumed `[0, 1]` operational bounds by
+    # dropping any rows outside that range, or via upstream filtering producing NaNs.
+    # Downstream target bounding logic should now strictly allow the `[-3, 3]` domain.
+    # We enforce this operational bound in the validity check:
     feature_any_finite = np.any(np.isfinite(X_a), axis=1)
-    target_finite = np.isfinite(side_target)
+
+    # Check what causes zero valid rows precisely
+    _finite_target_only = np.isfinite(side_target)
+
+    # If using bounded target, apply operational [-3, 3] check
+    if bounded_target is not None:
+        _domain_valid = _finite_target_only & (side_target >= -3.0) & (side_target <= 3.0)
+    else:
+        _domain_valid = _finite_target_only
+
+    target_finite = _domain_valid
+
+    # We log the target distribution to help identify why targets are being dropped or bounded
+    _summarize_target_distribution(target_name, side_target, horizon, side)
     complete_rows = feature_any_finite & target_finite
     stage_a_row_funnel = []
     prev_rows = max(side_input_rows, 1)

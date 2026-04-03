@@ -1,0 +1,2 @@
+from extreme_price_movements.lgbm_based_mask_generation import MaskAssessor
+print("Successfully imported MaskAssessor")

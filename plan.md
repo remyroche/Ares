@@ -1,3 +1,0 @@
-1. **Review usage of `mr` and `tf` across the codebase**: Check for remaining hardcodings of `mr` and `tf` in the pipeline steps and config that we might have missed.
-2. **Review filename structures**: Ensure the `ds_key`, model names, and output paths use the structure `train_{trade_side}_{strategy_id}_{H}` or `{trade_side}_{strategy_id}` correctly.
-3. **Verify non-horizon training steps**: Steps like `meta_models` (classifiers, utility regressors, early invalidation) don't train per-horizon, but they might still have `_H` hardcodings or assume the previous `{side}_{k}` format. We need to check if `{side}_{k}` accurately means `{trade_side}_{strategy_id}` now.

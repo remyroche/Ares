@@ -6721,6 +6721,7 @@ def run_side_pipeline(
 
     # --- STAGE A: CONTEXT MINING ---
     tprint(f"STAGE A: Context Mining (Regime x Location) [{side}]")
+    tprint(f"Stage A Ridge target fixed to vol-normalized forward returns")
     fp_a = FeatureProcessor()
     X_a, metadata_a, audits_a = fp_a.prepare_features(
         feature_dict,
@@ -6828,17 +6829,23 @@ def run_side_pipeline(
         )
 
     # ROOT CAUSE OF ZERO VALID ROWS:
-    # Previously, the code implicitly assumed `[0, 1]` operational bounds by
-    # dropping any rows outside that range, or via upstream filtering producing NaNs.
-    # Downstream target bounding logic should now strictly allow the `[-3, 3]` domain.
-    # We enforce this operational bound in the validity check:
+    # `target_eff` zero valid row skips occasionally happen because the bounded miner target itself
+    # evaluates strictly to NaNs on specific side/horizon combinations when its internal criteria
+    # (e.g. valid excursions, constraints, domain) are not met.
+    # IMPORTANT: The pipeline purposefully drops these invalid miner target rows to prevent
+    # training garbage trees. This logic correctly evaluates the *miner* target's valid
+    # subset. We have explicitly decoupled the Ridge Stage A learnability logic downstream
+    # so that Ridge only uses `vol_norm_fwd_ret` and never uses this `bounded_target`.
+    # Therefore, these legitimate miner skips will no longer accidentally fail Ridge.
     feature_any_finite = np.any(np.isfinite(X_a), axis=1)
 
     # Check what causes zero valid rows precisely
     _finite_target_only = np.isfinite(side_target)
 
     # If using bounded target, apply operational [-3, 3] check
-    if bounded_target is not None:
+    # Note: returns_target and atr_norm_returns_target are unconstrained, so only
+    # strictly bounded targets (like target_eff, target_vame) should enforce [-3, 3] domain
+    if bounded_target is not None and "returns_target" not in target_name:
         _domain_valid = _finite_target_only & (side_target >= -3.0) & (side_target <= 3.0)
     else:
         _domain_valid = _finite_target_only
@@ -9145,10 +9152,15 @@ class MaskAssessor:
         # bounded_target holds the target used for tree splits (e.g. bounded target_vame).
         # If not provided, it implies we are not using a bounded target and fwd_ret is the mining target.
         if bounded_target is not None:
-            mining_target_by_side = {"long": bounded_target, "short": bounded_target}
+            miner_target_by_side = {"long": bounded_target, "short": bounded_target}
         else:
-            mining_target_by_side = {"long": fwd_ret, "short": -fwd_ret}
-        target_ret_by_side = {"long": fwd_ret_norm, "short": -fwd_ret_norm}
+            miner_target_by_side = {"long": fwd_ret, "short": -fwd_ret}
+
+        # IMPORTANT: Ridge learnability always uses vol-normalized forward returns; do not substitute miner targets here.
+        ridge_target_by_side = {"long": fwd_ret_norm, "short": -fwd_ret_norm}
+
+        target_ret_by_side = ridge_target_by_side
+
         mean_ret_global_by_side = {
             "long": float(np.nanmean(fwd_ret)),
             "short": float(np.nanmean(-fwd_ret)),
@@ -10083,9 +10095,9 @@ class MaskAssessor:
                 return pd.DataFrame()
 
         # Cache baseline learnability once per side after cheap structural filtering.
-        # Baseline AUC must be evaluated on the bounded target used for mining.
-        for side, mining_target in mining_target_by_side.items():
-            baseline_metrics = self._compute_baseline_auc(X, mining_target, folds)
+        # Baseline AUC must be evaluated on the ridge target (vol-normalized forward returns), not the miner target.
+        for side, ridge_target in ridge_target_by_side.items():
+            baseline_metrics = self._compute_baseline_auc(X, ridge_target, folds)
             baseline_cache[side] = {
                 "global_auc": float(baseline_metrics["global_auc"])
                 if np.isfinite(baseline_metrics["global_auc"])
@@ -10100,9 +10112,9 @@ class MaskAssessor:
                 if np.isfinite(baseline_metrics["global_top_quartile_precision"])
                 else np.nan,
                 "global_cov": float(baseline_metrics["global_cov"]),
-                "global_entropy": float(self._compute_entropy(mining_target)),
+                "global_entropy": float(self._compute_entropy(ridge_target)),
             }
-            if np.nanstd(mining_target) < 1e-9:
+            if np.nanstd(ridge_target) < 1e-9:
                 tprint(
                     f"WARNING: Root cause for degenerate metrics: {side} target has zero variance!"
                 )
@@ -10413,7 +10425,7 @@ class MaskAssessor:
             group_bucket_key = (side, horizon_key)
 
             target_ret = target_ret_by_side[side]
-            mining_target = mining_target_by_side[side]
+            ridge_target = ridge_target_by_side[side]
             global_auc = float(baseline_cache[side]["global_auc"])
             global_roc_auc = float(baseline_cache[side]["global_roc_auc"])
             global_pr_auc = float(baseline_cache[side]["global_pr_auc"])
@@ -14304,6 +14316,8 @@ if __name__ == "__main__":
         "target_vame": {},
         "target_eff_surprisal": {},
         "target_vame_surprisal": {},
+        "returns_target": {},
+        "atr_norm_returns_target": {},
     }
 
     for horizon, df_targets in triad_results_by_horizon.items():
@@ -14312,6 +14326,8 @@ if __name__ == "__main__":
             "target_vame",
             "target_eff_surprisal",
             "target_vame_surprisal",
+            "returns_target",
+            "atr_norm_returns_target",
         ]:
             col_name = f"{target_base}_{horizon}"
             if col_name in df_targets.columns:

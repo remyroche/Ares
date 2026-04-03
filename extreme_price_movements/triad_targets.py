@@ -883,8 +883,23 @@ def compute_triad_targets_for_horizons(
         rename_map = {k: v for k, v in rename_map.items() if k in df_with_targets.columns}
         df_with_targets = df_with_targets.rename(columns=rename_map)
 
+        # Add new log-return based targets
+        df_with_targets[f"returns_target_{horizon}"] = np.log(
+            df_with_targets["close"].shift(-horizon) / df_with_targets["close"]
+        ).astype(np.float32)
+
+        atr_frac = df_with_targets["atr"] / df_with_targets["close"]
+        # Where atr_frac == 0, replace with NaN to avoid divide by zero warnings
+        atr_frac = atr_frac.replace(0.0, np.nan)
+        df_with_targets[f"atr_norm_returns_target_{horizon}"] = (
+            df_with_targets[f"returns_target_{horizon}"] / atr_frac
+        ).astype(np.float32)
+
         # Store only the target columns plus original data
-        target_cols = list(rename_map.values())
+        target_cols = list(rename_map.values()) + [
+            f"returns_target_{horizon}",
+            f"atr_norm_returns_target_{horizon}",
+        ]
         results[horizon] = df_with_targets[target_cols]
 
     return results

@@ -10628,15 +10628,11 @@ class MaskAssessor:
                     mask_pr_auc = float(ridge_details["subset_pr_auc"])
                     mask_top_quartile_precision = float(ridge_details.get("top_quartile_precision", np.nan))
                     subset_oof_coverage = float(ridge_details["coverage"])
-                    ridge_trade_metrics = self._compute_ranked_ridge_trade_metrics(
-                        data=data,
-                        directional_returns=target_ret,
-                        mask=mask,
-                        folds=folds,
-                        oof_preds=np.asarray(
-                            ridge_details["oof_preds"], dtype=np.float32
-                        ),
-                    )
+
+                    # We defer ridge_trade_metrics calculation to the TP/SL sweep below
+                    # to ensure all downstream metrics (PnL, Sortino, etc) are based on the best variation.
+                    ridge_trade_metrics = {}
+
                     tprint(
                         f"Stage A: Ridge learnability done {assessed_progress}/{total_ridge_selected} "
                         f"key={canonical_key[:120]} "
@@ -10727,102 +10723,173 @@ class MaskAssessor:
                     tp_sweep_skip_reason = "insufficient_valid_rows"
                     tprint(f"TP/SL sweep skipped key={canonical_key} reason={tp_sweep_skip_reason} valid_rows={tp_sweep_valid_rows}")
                     best_tp_sl_params = {"tp_atr": 1.25, "sl_atr": 0.50, "sl_ratio": 0.50 / 1.25}
-                    best_pnl_with_fees = 0.0  # Or evaluate defaults explicitly if desired
-                    best_pnl_without_fees = 0.0
+
+                    # Evaluate the fallback explicitly
+                    var_tp_f, var_sl_f, var_to_f = compute_tbm_outcomes_per_symbol(
+                        data=data,
+                        horizon=eval_horizon,
+                        tp_atr=best_tp_sl_params["tp_atr"],
+                        sl_atr=best_tp_sl_params["sl_atr"],
+                        side=side,
+                    )
+
+                    var_ridge_trade_metrics = self._compute_ranked_ridge_trade_metrics(
+                        data=data,
+                        directional_returns=np.where(
+                            var_to_f == 1,
+                            target_ret,
+                            np.where(var_tp_f == 1, best_tp_sl_params["tp_atr"] * atr_frac, -best_tp_sl_params["sl_atr"] * atr_frac)
+                        ),
+                        mask=mask,
+                        folds=folds,
+                        oof_preds=np.asarray(ridge_details["oof_preds"], dtype=np.float32),
+                        confidence_threshold=0.9
+                    )
+                    best_pnl_with_fees = float(var_ridge_trade_metrics.get("ridge_pnl_raw", 0.0))
+                    best_pnl_without_fees = float(var_ridge_trade_metrics.get("ridge_pnl_raw_pre_fee", 0.0))
+
+                    ridge_trade_metrics = var_ridge_trade_metrics
                 else:
-                    tp_sweep_ran = True
-                    tp_sweep_confidence_levels_used = [0.9]
+                    # Check confidence subset size
+                    scores = np.asarray(ridge_details["oof_preds"], dtype=np.float32)[valid_mask]
+                    if len(scores) > 0:
+                        conf_threshold_val = np.nanpercentile(scores, 0.9 * 100) # Using 0.9 directly for now or side specific if needed.
+                        conf_mask = valid_mask & (np.asarray(ridge_details["oof_preds"], dtype=np.float32) >= conf_threshold_val)
+                    else:
+                        conf_mask = valid_mask
 
-                    median_atr_frac = np.median(atr_frac[valid_mask])
-                    raw_tp_min = 0.01
-                    raw_tp_max = 0.035
+                    if np.sum(conf_mask) < min_rows_per_conf_subset:
+                        tp_sweep_skip_reason = "insufficient_conf_rows"
+                        tprint(f"TP/SL sweep skipped key={canonical_key} reason={tp_sweep_skip_reason} conf_rows={np.sum(conf_mask)}")
+                        best_tp_sl_params = {"tp_atr": 1.25, "sl_atr": 0.50, "sl_ratio": 0.50 / 1.25}
 
-                    tp_candidates = []
-                    for tp_c in tp_grid_atr:
-                        tp_raw = tp_c * median_atr_frac
-                        if raw_tp_min <= tp_raw <= raw_tp_max:
-                            tp_candidates.append(tp_c)
+                        # Evaluate the fallback explicitly
+                        var_tp_f, var_sl_f, var_to_f = compute_tbm_outcomes_per_symbol(
+                            data=data,
+                            horizon=eval_horizon,
+                            tp_atr=best_tp_sl_params["tp_atr"],
+                            sl_atr=best_tp_sl_params["sl_atr"],
+                            side=side,
+                        )
 
-                    if not tp_candidates:
-                        def dist_to_band(x, lo, hi):
-                            if x < lo:
-                                return lo - x
-                            if x > hi:
-                                return x - hi
-                            return 0.0
+                        var_ridge_trade_metrics = self._compute_ranked_ridge_trade_metrics(
+                            data=data,
+                            directional_returns=np.where(
+                                var_to_f == 1,
+                                target_ret,
+                                np.where(var_tp_f == 1, best_tp_sl_params["tp_atr"] * atr_frac, -best_tp_sl_params["sl_atr"] * atr_frac)
+                            ),
+                            mask=mask,
+                            folds=folds,
+                            oof_preds=np.asarray(ridge_details["oof_preds"], dtype=np.float32),
+                            confidence_threshold=0.9
+                        )
+                        best_pnl_with_fees = float(var_ridge_trade_metrics.get("ridge_pnl_raw", 0.0))
+                        best_pnl_without_fees = float(var_ridge_trade_metrics.get("ridge_pnl_raw_pre_fee", 0.0))
+                        ridge_trade_metrics = var_ridge_trade_metrics
+                    else:
+                        tp_sweep_ran = True
+                        tp_sweep_confidence_levels_used = [0.9]
 
-                        candidates_with_dist = []
+                        median_atr_frac = np.median(atr_frac[valid_mask])
+                        raw_tp_min = 0.01
+                        raw_tp_max = 0.035
+
+                        tp_candidates = []
                         for tp_c in tp_grid_atr:
                             tp_raw = tp_c * median_atr_frac
-                            dist = dist_to_band(tp_raw, raw_tp_min, raw_tp_max)
-                            candidates_with_dist.append((dist, tp_c))
+                            if raw_tp_min <= tp_raw <= raw_tp_max:
+                                tp_candidates.append(tp_c)
 
-                        candidates_with_dist.sort(key=lambda x: x[0])
-                        min_dist = candidates_with_dist[0][0]
-                        tp_candidates = [tp_c for dist, tp_c in candidates_with_dist if dist == min_dist]
+                        if not tp_candidates:
+                            def dist_to_band(x, lo, hi):
+                                if x < lo:
+                                    return lo - x
+                                if x > hi:
+                                    return x - hi
+                                return 0.0
 
-                    # Evaluate grid
-                    best_var_ridge_metrics = None
-                    best_tbm_outcomes = None
+                            candidates_with_dist = []
+                            for tp_c in tp_grid_atr:
+                                tp_raw = tp_c * median_atr_frac
+                                dist = dist_to_band(tp_raw, raw_tp_min, raw_tp_max)
+                                candidates_with_dist.append((dist, tp_c))
 
-                    tprint(f"TP/SL sweep subset key={canonical_key} conf=0.90 threshold=0.900000 subset_rows={tp_sweep_valid_rows}")
+                            candidates_with_dist.sort(key=lambda x: x[0])
+                            min_dist = candidates_with_dist[0][0]
+                            tp_candidates = [tp_c for dist, tp_c in candidates_with_dist if dist == min_dist]
 
-                    for tp_c in tp_candidates:
-                        for sl_r in sl_ratio_grid:
-                            sl_c = tp_c * sl_r
+                        # Evaluate grid
+                        best_var_ridge_metrics = None
+                        best_tbm_outcomes = None
+                        best_n_simulated = -1
 
-                            var_tp_f, var_sl_f, var_to_f = compute_tbm_outcomes_per_symbol(
-                                data=data,
-                                horizon=eval_horizon,
-                                tp_atr=tp_c,
-                                sl_atr=sl_c,
-                                side=side,
-                            )
+                        tprint(f"TP/SL sweep subset key={canonical_key} conf=0.90 threshold=0.900000 subset_rows={tp_sweep_valid_rows}")
 
-                            # Realized outcome convention for short space in directional returns
-                            # The target_ret is already side-adjusted forward return.
-                            # So TP hit is +tp_raw, SL hit is -sl_raw.
-                            var_ridge_trade_metrics = self._compute_ranked_ridge_trade_metrics(
-                                data=data,
-                                directional_returns=np.where(
-                                    var_to_f == 1,
-                                    target_ret,
-                                    np.where(var_tp_f == 1, tp_c * atr_frac, -sl_c * atr_frac)
-                                ),
-                                mask=mask,
-                                folds=folds,
-                                oof_preds=np.asarray(ridge_details["oof_preds"], dtype=np.float32),
-                                confidence_threshold=0.9
-                            )
+                        for tp_c in tp_candidates:
+                            for sl_r in sl_ratio_grid:
+                                sl_c = tp_c * sl_r
 
-                            var_pnl = float(var_ridge_trade_metrics.get("ridge_pnl_raw", 0.0))
-                            var_pnl_pre_fee = float(var_ridge_trade_metrics.get("ridge_pnl_raw_pre_fee", 0.0))
+                                var_tp_f, var_sl_f, var_to_f = compute_tbm_outcomes_per_symbol(
+                                    data=data,
+                                    horizon=eval_horizon,
+                                    tp_atr=tp_c,
+                                    sl_atr=sl_c,
+                                    side=side,
+                                )
 
-                            if var_pnl > best_pnl_with_fees:
-                                best_pnl_with_fees = var_pnl
-                                best_pnl_without_fees = var_pnl_pre_fee
-                                best_tp_sl_params = {"tp_atr": tp_c, "sl_atr": sl_c, "sl_ratio": sl_r}
-                                best_var_ridge_metrics = var_ridge_trade_metrics
-                                best_tbm_outcomes = (var_tp_f, var_sl_f, var_to_f)
+                                # Realized outcome convention for short space in directional returns
+                                # The target_ret is already side-adjusted forward return.
+                                # So TP hit is +tp_raw, SL hit is -sl_raw.
+                                var_ridge_trade_metrics = self._compute_ranked_ridge_trade_metrics(
+                                    data=data,
+                                    directional_returns=np.where(
+                                        var_to_f == 1,
+                                        target_ret,
+                                        np.where(var_tp_f == 1, tp_c * atr_frac, -sl_c * atr_frac)
+                                    ),
+                                    mask=mask,
+                                    folds=folds,
+                                    oof_preds=np.asarray(ridge_details["oof_preds"], dtype=np.float32),
+                                    confidence_threshold=0.9
+                                )
 
-                    if best_tp_sl_params:
-                        best_tp_atr = best_tp_sl_params["tp_atr"]
-                        best_sl_atr = best_tp_sl_params["sl_atr"]
-                        best_sl_ratio = best_tp_sl_params["sl_ratio"]
-                        best_tp_sl_objective = best_pnl_with_fees
-                        best_tp_sl_n = best_var_ridge_metrics.get("total_trades", 0) if best_var_ridge_metrics else 0
+                                var_pnl = float(var_ridge_trade_metrics.get("ridge_pnl_raw", 0.0))
+                                var_pnl_pre_fee = float(var_ridge_trade_metrics.get("ridge_pnl_raw_pre_fee", 0.0))
+                                var_n = var_ridge_trade_metrics.get("total_trades", 0)
 
-                        if best_tbm_outcomes and tp_sweep_valid_rows > 0:
-                            var_tp_f, var_sl_f, var_to_f = best_tbm_outcomes
-                            best_tp_hit_rate = float(np.sum(var_tp_f[valid_mask]) / tp_sweep_valid_rows)
-                            best_sl_hit_rate = float(np.sum(var_sl_f[valid_mask]) / tp_sweep_valid_rows)
-                            best_neither_hit_rate = float(np.sum(var_to_f[valid_mask]) / tp_sweep_valid_rows)
-                            best_tp_sl_win_rate = best_tp_hit_rate / max(best_tp_hit_rate + best_sl_hit_rate, 1e-9)
+                                # Apply objective and tie-breakers (n_simulated, smaller TP/SL distances inherently favored by iteration order if equivalent)
+                                if var_pnl > best_pnl_with_fees or (var_pnl == best_pnl_with_fees and var_n > best_n_simulated):
+                                    best_pnl_with_fees = var_pnl
+                                    best_pnl_without_fees = var_pnl_pre_fee
+                                    best_n_simulated = var_n
+                                    best_tp_sl_params = {"tp_atr": tp_c, "sl_atr": sl_c, "sl_ratio": sl_r}
+                                    best_var_ridge_metrics = var_ridge_trade_metrics
+                                    best_tbm_outcomes = (var_tp_f, var_sl_f, var_to_f)
 
-                        start_time_sweep = time.time() # Just to print elapsed, approximated
-                        tprint(f"TP/SL sweep done key={canonical_key} best_tp_atr={best_tp_atr:.3f} best_sl_atr={best_sl_atr:.3f} best_sl_ratio={best_sl_ratio:.3f} objective={best_tp_sl_objective:.6f} n={best_tp_sl_n} win_rate={best_tp_sl_win_rate:.3f} tp_hit_rate={best_tp_hit_rate:.3f} sl_hit_rate={best_sl_hit_rate:.3f} neither_hit_rate={best_neither_hit_rate:.3f} ambiguous_rate={best_ambiguous_rate:.3f} elapsed=0.00s")
+                        if best_tp_sl_params:
+                            best_tp_atr = best_tp_sl_params["tp_atr"]
+                            best_sl_atr = best_tp_sl_params["sl_atr"]
+                            best_sl_ratio = best_tp_sl_params["sl_ratio"]
+                            best_tp_sl_objective = best_pnl_with_fees
+                            best_tp_sl_n = best_var_ridge_metrics.get("total_trades", 0) if best_var_ridge_metrics else 0
 
-                if best_pnl_with_fees <= 0.0 and tp_sweep_ran:
+                            if best_tbm_outcomes and tp_sweep_valid_rows > 0:
+                                var_tp_f, var_sl_f, var_to_f = best_tbm_outcomes
+                                best_tp_hit_rate = float(np.sum(var_tp_f[valid_mask]) / tp_sweep_valid_rows)
+                                best_sl_hit_rate = float(np.sum(var_sl_f[valid_mask]) / tp_sweep_valid_rows)
+                                best_neither_hit_rate = float(np.sum(var_to_f[valid_mask]) / tp_sweep_valid_rows)
+                                best_tp_sl_win_rate = best_tp_hit_rate / max(best_tp_hit_rate + best_sl_hit_rate, 1e-9)
+
+                            # Replace the top-level ridge_trade_metrics with the metrics from the best variation
+                            # so that downstream uses the optimal variation for Sortino, Sharpe, etc.
+                            if best_var_ridge_metrics:
+                                ridge_trade_metrics = best_var_ridge_metrics
+
+                            start_time_sweep = time.time() # Just to print elapsed, approximated
+                            tprint(f"TP/SL sweep done key={canonical_key} best_tp_atr={best_tp_atr:.3f} best_sl_atr={best_sl_atr:.3f} best_sl_ratio={best_sl_ratio:.3f} objective={best_tp_sl_objective:.6f} n={best_tp_sl_n} win_rate={best_tp_sl_win_rate:.3f} tp_hit_rate={best_tp_hit_rate:.3f} sl_hit_rate={best_sl_hit_rate:.3f} neither_hit_rate={best_neither_hit_rate:.3f} ambiguous_rate={best_ambiguous_rate:.3f} elapsed=0.00s")
+
+                if best_pnl_with_fees <= 0.0:
                     rejected = True
                     rejection_reason = (
                         f"best_pnl_with_fees_not_positive: best_pnl_with_fees={best_pnl_with_fees:.6f}, "

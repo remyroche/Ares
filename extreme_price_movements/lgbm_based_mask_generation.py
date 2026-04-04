@@ -245,6 +245,11 @@ class TargetNaNReason:
     AMBIGUOUS_BAR = "ambiguous_bar"
     OUTSIDE_SUPPORT_MASK = "outside_support_mask"
     NEUTRAL_FILTERED = "neutral_filtered"
+    CURRENT_CLOSE_MISSING = "current_close_missing"
+    ATR_MISSING = "atr_missing"
+    TRANSFORMED_TARGET_NONFINITE = "transformed_target_nonfinite"
+    SYMBOL_ALIGNMENT_MISSING = "symbol_alignment_missing"
+    FUTURE_CLOSE_MISSING = "future_close_missing"
     OTHER_TARGET_NAN = "other_target_nan"
 
 def generate_fwd_ret_with_reasons(panel: pd.DataFrame, fwd_hours: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -252,7 +257,11 @@ def generate_fwd_ret_with_reasons(panel: pd.DataFrame, fwd_hours: int) -> Tuple[
     fwd_ret_wide = panel["close"].pct_change(fwd_hours, fill_method=None).shift(-fwd_hours)
 
     reasons_wide = pd.DataFrame("", index=fwd_ret_wide.index, columns=fwd_ret_wide.columns)
-    reasons_wide[np.isnan(fwd_ret_wide)] = TargetNaNReason.OTHER_TARGET_NAN
+    current_close_missing = panel["close"].isna()
+    future_close_missing = panel["close"].shift(-fwd_hours).isna()
+    reasons_wide[current_close_missing] = TargetNaNReason.CURRENT_CLOSE_MISSING
+    reasons_wide[future_close_missing] = TargetNaNReason.FUTURE_CLOSE_MISSING
+    reasons_wide[np.isnan(fwd_ret_wide) & (reasons_wide == "")] = TargetNaNReason.TRANSFORMED_TARGET_NONFINITE
     if fwd_hours > 0 and len(reasons_wide) >= fwd_hours:
         reasons_wide.iloc[-fwd_hours:] = TargetNaNReason.HORIZON_EXCEEDED
 
@@ -928,6 +937,9 @@ def compute_ridge_pnl(
 
     weighted_gross_returns = []
     weighted_net_returns = []
+    weighted_fee_returns = []
+    gross_trade_returns = []
+    sizing_weights = []
 
     for t in selected_trades:
         conf = t.confidence_score
@@ -938,14 +950,18 @@ def compute_ridge_pnl(
             min_weight
             + (max_weight - min_weight) * (normalized_conf ** convex_power)
         )
+        sizing_weights.append(float(position_weight))
+        gross_trade_returns.append(float(t.gross_trade_return))
 
         # Note: We assume gross_trade_return already incorporates the entry/exit logic,
         # but we must subtract the round-trip fee.
         weighted_gross_return = float(position_weight * t.gross_trade_return)
         net_trade_return = t.gross_trade_return - round_fee
         weighted_net_return = float(position_weight * net_trade_return)
+        weighted_fee_return = float(position_weight * round_fee)
         weighted_gross_returns.append(weighted_gross_return)
         weighted_net_returns.append(weighted_net_return)
+        weighted_fee_returns.append(weighted_fee_return)
 
     gross_capital = starting_capital
     for wr in weighted_gross_returns:
@@ -964,6 +980,10 @@ def compute_ridge_pnl(
         "selected_trades": selected_trades,
         "weighted_gross_returns": weighted_gross_returns,
         "weighted_net_returns": weighted_net_returns,
+        "weighted_fee_returns": weighted_fee_returns,
+        "avg_fee_per_trade": float(np.mean(weighted_fee_returns)) if weighted_fee_returns else 0.0,
+        "avg_gross_move_per_trade": float(np.mean(np.abs(gross_trade_returns))) if gross_trade_returns else 0.0,
+        "avg_position_weight": float(np.mean(sizing_weights)) if sizing_weights else 0.0,
         "ending_gross_capital": gross_capital,
         "ending_capital": capital,
     }
@@ -7726,7 +7746,7 @@ def run_side_pipeline(
     horizon: int = 0,
     bounded_target: Optional[np.ndarray] = None,
     bounded_target_surprisal: Optional[np.ndarray] = None,
-    target_nan_reasons: Optional[Dict[str, int]] = None,
+    target_nan_reasons: Optional[np.ndarray] = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     Run the full side pipeline (long or short).
@@ -8551,7 +8571,7 @@ def run_lgbm_mask_generation_triad(
     triad_targets: Dict[str, Dict[int, np.ndarray]],
     fwd_ret: np.ndarray,
     fwd_ret_norm: np.ndarray,
-    target_nan_reasons: Optional[np.ndarray],
+    target_nan_reasons: Optional[Union[np.ndarray, Dict[Tuple[str, int], np.ndarray]]],
     cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
@@ -8712,12 +8732,16 @@ def run_lgbm_mask_generation_triad(
                 )
 
                 side_results = run_side_pipeline(
+                    target_nan_reasons=(
+                        target_nan_reasons.get((target_name, horizon))
+                        if isinstance(target_nan_reasons, dict)
+                        else target_nan_reasons
+                    ),
                     side=side,
                     data=data,
                     feature_dict=feature_dict,
                     fwd_ret=fwd_ret,
                     fwd_ret_norm=fwd_ret_norm,
-                    target_nan_reasons=target_nan_reasons,
                     cfg=horizon_cfg,
                     folds=folds,
                     root_output_dir=horizon_target_dir,
@@ -8867,6 +8891,7 @@ def run_lgbm_mask_generation_triad(
                 triad_targets_map=assessment_targets,
                 output_dirs_map=global_horizon_target_dirs,
                 batch_size=1,
+                target_nan_reasons=target_nan_reasons,
                 skip_stage1_filtering=True,
             )
 
@@ -10573,13 +10598,36 @@ class MaskAssessor:
             + 0.10 * weekly_stability_rank
             + 0.05 * fold_stability
         )
+
         # Compute score_for_best_params if not already present
         if "score_for_best_params" not in result.columns:
             result = self._compute_score_for_best_params(result)
-        
-        # Use score_for_best_params as the base score for Pareto selection
-        eligible["final_candidate_rank_score"] = eligible["score_for_best_params"]
-        
+
+        if "score_for_best_params" in result.columns:
+            eligible["score_for_best_params"] = pd.to_numeric(
+                result.loc[eligible.index, "score_for_best_params"], errors="coerce"
+            )
+        else:
+            eligible["score_for_best_params"] = np.nan
+
+        # Use score_for_best_params as the base score for Pareto selection, with robust fallbacks
+        eligible["final_candidate_rank_score"] = pd.to_numeric(
+            eligible["score_for_best_params"], errors="coerce"
+        )
+        missing_rank = ~np.isfinite(eligible["final_candidate_rank_score"].to_numpy())
+        if np.any(missing_rank):
+            fallback_trade = pd.to_numeric(
+                eligible.get("trade_composite_score", np.nan), errors="coerce"
+            ).to_numpy()
+            fallback_stage = pd.to_numeric(
+                eligible.get("composite_score", np.nan), errors="coerce"
+            ).to_numpy()
+            final_rank = eligible["final_candidate_rank_score"].to_numpy(dtype=float, copy=True)
+            final_rank[missing_rank] = fallback_trade[missing_rank]
+            still_missing = ~np.isfinite(final_rank)
+            final_rank[still_missing] = fallback_stage[still_missing]
+            eligible["final_candidate_rank_score"] = final_rank
+
         eligible["fold_stability"] = fold_stability.astype(np.float32)
         
         overlap_penalty = float(self.cfg.get("final_selection_overlap_penalty", 0.35))
@@ -10634,13 +10682,48 @@ class MaskAssessor:
                         ic_overlap = max(ic_corr, 0.0)  # Only positive correlation is "overlap"
 
             total_weight = max(support_overlap_weight + ic_overlap_weight, 1e-12)
-            return float(
+            raw_overlap = float(
                 (
                     support_overlap_weight * support_overlap
                     + ic_overlap_weight * ic_overlap
                 )
                 / total_weight
             )
+
+            # Apply reduction if side or horizon differ (cumulative)
+            # Different side: 30% less penalty (multiply by 0.7)
+            # Different horizon: 20% less penalty (multiply by 0.8)
+            side_a = str(eligible.loc[idx_a, "side"]) if "side" in eligible.columns else ""
+            side_b = str(eligible.loc[idx_b, "side"]) if "side" in eligible.columns else ""
+            horizon_a = float(eligible.loc[idx_a, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
+            horizon_b = float(eligible.loc[idx_b, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
+
+            reduction_factor = 1.0
+            if side_a != side_b:
+                reduction_factor *= 0.7  # 30% less penalty
+            if abs(horizon_a - horizon_b) > 1e-6:
+                reduction_factor *= 0.8  # 20% less penalty
+
+            return raw_overlap * reduction_factor
+
+        quadrant_order = [("long", 3), ("long", 10), ("short", 3), ("short", 10)]
+        for side_name, horizon_value in quadrant_order:
+            if len(selected) >= top_k:
+                break
+            group_mask = (
+                eligible["side"].astype(str).eq(side_name)
+                & pd.to_numeric(
+                    eligible.get("source_horizon", np.nan), errors="coerce"
+                ).eq(float(horizon_value))
+            )
+            group_candidates = eligible.loc[group_mask].sort_values(
+                "final_candidate_rank_score", ascending=False
+            ).index.tolist()
+            for idx in group_candidates:
+                if idx in remaining and idx not in selected:
+                    selected.append(idx)
+                    remaining.remove(idx)
+                    break
 
         while remaining and len(selected) < top_k:
             best_idx = None
@@ -10682,7 +10765,9 @@ class MaskAssessor:
         triad_targets_map: Optional[Dict[Tuple[str, int], np.ndarray]] = None,
         output_dirs_map: Optional[Dict[Tuple[str, int], Path]] = None,
         batch_size: int = 14,
-        target_nan_reasons: Optional[np.ndarray] = None,
+        target_nan_reasons: Optional[
+            Union[np.ndarray, Dict[Tuple[str, int], np.ndarray]]
+        ] = None,
         **kwargs,
     ) -> pd.DataFrame:
         if registry.empty:
@@ -10731,45 +10816,7 @@ class MaskAssessor:
         )
         atr_frac_for_targets = atr / np.maximum(np.abs(close), 1e-12)
 
-        # TBM horizon should match assessment horizon + 2 bars
-        assessment_horizon = int(self.cfg.get("horizon", 100))
-        horizon = assessment_horizon + 2
-
-        # Use the maximum horizon in the current run as reference for TP/SL scaling
-        horizons = self.cfg.get("triad_horizons", [100])
-        h_ref = max(horizons) if horizons else 100
-
-        # Scale TP and SL by sqrt(H / H_ref)
-        scale_factor = np.sqrt(horizon / h_ref)
-
-        # Base TP/SL multipliers (at reference horizon)
-        base_tp_atr = float(self.cfg.get("tbm_tp_atr", 1.25))
-        base_sl_atr = float(self.cfg.get("tbm_sl_atr", 0.50))
-
-        # Scaled TP/SL for current horizon
-        tp_atr = base_tp_atr * scale_factor
-        sl_atr = base_sl_atr * scale_factor
-
-        tprint(
-            f"TBM Configuration: H={horizon} bars (assessment H={assessment_horizon}), "
-            f"TP={tp_atr:.3f} ATR, SL={sl_atr:.3f} ATR, scale_factor={scale_factor:.3f} (h_ref={h_ref})"
-        )
-
-        tp_f_long, sl_f_long, to_f_long = compute_tbm_outcomes_per_symbol(
-            data=data,
-            horizon=horizon,
-            tp_atr=tp_atr,
-            sl_atr=sl_atr,
-            side="long",
-        )
-
-        tp_f_short, sl_f_short, to_f_short = compute_tbm_outcomes_per_symbol(
-            data=data,
-            horizon=horizon,
-            tp_atr=tp_atr,
-            sl_atr=sl_atr,
-            side="short",
-        )
+        adaptive_enabled = bool(self.cfg.get("adaptive_tp_sl_enabled", False))
 
         min_oof_coverage = float(self.cfg.get("learnability_min_oof_coverage", 0.05))
         min_avg_trades = float(self.cfg.get("min_avg_trades_per_day_10_symbols", 0.1))
@@ -10800,10 +10847,6 @@ class MaskAssessor:
             m.feature_name: m.regime_family
             for m in self.metadata
             if getattr(m, "regime_family", None)
-        }
-        tbm_side_map = {
-            "long": (tp_f_long, sl_f_long, to_f_long),
-            "short": (tp_f_short, sl_f_short, to_f_short),
         }
         baseline_cache: Dict[str, Dict[str, float]] = {}
 
@@ -11870,6 +11913,58 @@ class MaskAssessor:
             h_key = int(row.get("source_horizon", -1))
             s_side = str(row.get("side", "long"))
             unique_contexts.add((t_name, h_key, s_side))
+
+        # TBM outcomes must respect each rule's own horizon (+2 bars flexibility) in pooled mode.
+        cfg_assessment_horizon = int(self.cfg.get("horizon", 100))
+        assessment_horizons = sorted(
+            {
+                max(int(h_key), 1)
+                for _, h_key, _ in unique_contexts
+                if pd.notna(h_key) and int(h_key) > 0
+            }
+        )
+        if not assessment_horizons:
+            assessment_horizons = [max(cfg_assessment_horizon, 1)]
+        unique_tbm_contexts = sorted(
+            {
+                (max(int(h_key), 1) + 2, str(s_side))
+                for _, h_key, s_side in unique_contexts
+                if pd.notna(h_key) and int(h_key) > 0
+            }
+        )
+        if not unique_tbm_contexts:
+            unique_tbm_contexts = [
+                (max(cfg_assessment_horizon, 1) + 2, "long"),
+                (max(cfg_assessment_horizon, 1) + 2, "short"),
+            ]
+
+        horizons_cfg = self.cfg.get("triad_horizons", assessment_horizons)
+        h_ref = max(horizons_cfg) if horizons_cfg else max(assessment_horizons)
+        base_tp_atr = float(self.cfg.get("tbm_tp_atr", 1.25))
+        base_sl_atr = float(self.cfg.get("tbm_sl_atr", 0.50))
+
+        tprint(
+            "TBM Configuration: per-rule assessment horizons="
+            f"{assessment_horizons} -> realized horizons={[h for h, _ in unique_tbm_contexts]} "
+            f"(rule horizon + 2), adaptive_tp_sl={adaptive_enabled}, h_ref={h_ref}"
+        )
+
+        tbm_outcome_cache: Dict[Tuple[int, str], Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+        if unique_tbm_contexts:
+            tprint(
+                f"Stage A: Pre-calculating TBM outcomes for {len(unique_tbm_contexts)} unique (H+2, Side) pairs..."
+            )
+            for tbm_horizon, tbm_side in unique_tbm_contexts:
+                scale_factor = np.sqrt(float(tbm_horizon) / max(float(h_ref), 1.0))
+                tp_atr = base_tp_atr * scale_factor
+                sl_atr = base_sl_atr * scale_factor
+                tbm_outcome_cache[(tbm_horizon, tbm_side)] = compute_tbm_outcomes_per_symbol(
+                    data=data,
+                    horizon=tbm_horizon,
+                    tp_atr=tp_atr,
+                    sl_atr=sl_atr,
+                    side=tbm_side,
+                )
             
         tprint(f"Stage A: Pre-calculating baselines for {len(unique_contexts)} unique target contexts...")
 
@@ -12289,24 +12384,6 @@ class MaskAssessor:
                 **uplift_baseline,
             }
 
-        tprint(
-            f"Stage A: Pre-calculating TBM outcomes for {len(unique_tbm_contexts)} unique (H+2, Side) pairs..."
-        )
-        tbm_outcome_cache = {}
-        for tbm_horizon, s_side in unique_tbm_contexts:
-            # Triad runs usually use default ATR multipliers from config
-            tp_atr = float(self.cfg.get("tp_atr", 2.0))
-            sl_atr = float(self.cfg.get("sl_atr", 2.0))
-            
-            tbm_outcomes = compute_tbm_outcomes_per_symbol(
-                data=data,
-                horizon=tbm_horizon,
-                tp_atr=tp_atr,
-                sl_atr=sl_atr,
-                side=s_side,
-            )
-            tbm_outcome_cache[(tbm_horizon, s_side)] = tbm_outcomes
-
         total_ridge_selected = len(selected_records)
         tprint(
             f"Stage A: Starting final assessment for {total_ridge_selected} rules (batches of {batch_size})..."
@@ -12376,6 +12453,11 @@ class MaskAssessor:
                 source_horizon=horizon_key,
                 triad_targets_map=triad_targets_map,
                 fallback_fwd_ret=fwd_ret,
+            )
+            current_target_nan_reasons = (
+                target_nan_reasons.get((target_name, horizon_key))
+                if isinstance(target_nan_reasons, dict)
+                else target_nan_reasons
             )
 
             # The bucket grouping is determined strictly by side and horizon
@@ -12531,14 +12613,13 @@ class MaskAssessor:
                         mask,
                         folds,
                         tp_f=rule_tp_f,
-                        target_nan_reasons=target_nan_reasons,
+                        target_nan_reasons=current_target_nan_reasons,
                         path_mfe=path_excursions.get("mfe"),
                         path_mae=path_excursions.get("mae"),
                         side=side,
                     )
-                    mask_auc = float(ridge_details["subset_auc"])
-                    mask_roc_auc = float(ridge_details["subset_roc_auc"])
-                    mask_pr_auc = float(ridge_details["subset_pr_auc"])
+                    mask_oof_corr = float(ridge_details["mask_oof_corr"])
+                    mask_oof_r2 = float(ridge_details["mask_oof_r2"])
                     mask_top_quartile_precision = float(ridge_details.get("top_quartile_precision", np.nan))
                     subset_oof_coverage = float(ridge_details["coverage"])
                     ridge_trade_metrics = self._compute_ranked_ridge_trade_metrics(
@@ -12555,12 +12636,10 @@ class MaskAssessor:
                     tprint(
                         f"Stage A: Ridge learnability done {assessed_progress}/{total_ridge_selected} "
                         f"key={canonical_key[:120]} "
-                        f"mask_oof_corr={mask_auc if np.isfinite(mask_auc) else np.nan:.6f} "
+                        f"mask_oof_corr={mask_oof_corr if np.isfinite(mask_oof_corr) else np.nan:.6f} "
                         f"coverage={subset_oof_coverage:.4f} "
                         f"elapsed={time.time() - ridge_start:.2f}s"
                     )
-                    if np.isfinite(mask_auc) and np.isfinite(global_auc):
-                        auc_lift = mask_auc - global_auc
                     mask_top_quartile_precision = self._compute_top_quartile_precision(
                         oof_preds=np.asarray(ridge_details["oof_preds"], dtype=np.float32),
                         y=np.asarray(current_gross_return_ret, dtype=np.float32),
@@ -12576,8 +12655,6 @@ class MaskAssessor:
                         top_quartile_precision_lift = mask_top_quartile_precision - global_top_quartile_precision
                 else:
                     subset_oof_coverage = float(np.mean(mask))
-                    auc_lift = 0.0  # Neutral AUC lift
-                    top_quartile_precision_lift = 0.0  # Neutral lift
                     rejected, rejection_reason = True, "not_in_top_ridge_candidates"
 
                 mask_entropy = self._compute_entropy(target_ret[mask])
@@ -12587,12 +12664,6 @@ class MaskAssessor:
                         True,
                         "insufficient_subset_oof_coverage",
                     )
-                elif not np.isfinite(auc_lift):
-                    rejected, rejection_reason = True, "missing_learnability"
-                elif not np.isfinite(top_quartile_precision_lift):
-                    rejected, rejection_reason = True, "missing_top_quartile_precision"
-                elif run_ridge and top_quartile_precision_lift <= 0.0:
-                    rejected, rejection_reason = True, "top_quartile_precision_not_positive"
 
             # 8. Event-based Expected Value
             if adaptive_enabled:
@@ -12618,8 +12689,7 @@ class MaskAssessor:
                 tprint(
                     f"DIAGNOSTIC: Rule rejected (Low EV) key={canonical_key[:60]}... "
                     f"GrossEV={ev_per_event:.6f} AvgMove={mean_ret_mask:.6f} HitRate={tbm_metrics['tp_rate']:.2%} "
-                    f"MAE={mae:.6f} MFE={mfe:.6f} FeeRatio={fee_frac:.2f} "
-                    f"PR-AUC={mask_pr_auc:.4f} ROC-AUC={mask_roc_auc:.4f}"
+                    f"MAE={mae:.6f} MFE={mfe:.6f} FeeRatio={fee_frac:.2f}"
                 )
 
             # If the threshold finding logic failed
@@ -12665,8 +12735,7 @@ class MaskAssessor:
                         f"BestThresh={threshold_star_optimal:.3f} BestNetPnL={best_pnl_candidate:.6f} "
                         f"AvgNetProfit={avg_net_profit_per_trade:.6f} "
                         f"GrossEV={ev_per_event:.6f} AvgMove={avg_move:.6f} HitRate={tbm_metrics['tp_rate']:.2%} "
-                        f"MAE={mae:.6f} MFE={mfe:.6f} FeeRatio={fee_frac:.2f} "
-                        f"PR-AUC={mask_pr_auc:.4f} ROC-AUC={mask_roc_auc:.4f}"
+                        f"MAE={mae:.6f} MFE={mfe:.6f} FeeRatio={fee_frac:.2f}"
                     )
 
             # Fetch cheap_rank for Final Regime Score
@@ -12687,6 +12756,7 @@ class MaskAssessor:
                 composite_score_step1 = 0.0
 
             # Compute new regime_score with overall_mask_uplift
+            overall_mask_uplift = np.nan
             regime_score = (
                 0.5 * overall_mask_uplift
                 + 0.25 * ret_uplift
@@ -12811,6 +12881,7 @@ class MaskAssessor:
                     "valid_symbol_days_observed": ridge_trade_metrics.get("valid_symbol_days_observed", 0),
                     "total_trades": ridge_trade_metrics.get("total_trades", 0),
                     "threshold_search_mode": ridge_trade_metrics.get("threshold_search_mode", "grid"),
+                    "threshold_selection_policy": ridge_trade_metrics.get("threshold_selection_policy", np.nan),
                     "n_quantiles_evaluated": ridge_trade_metrics.get("n_quantiles_evaluated", 0),
                     "n_thresholds_evaluated": ridge_trade_metrics.get("n_thresholds_evaluated", 0),
                     "n_unique_thresholds_evaluated": ridge_trade_metrics.get("n_unique_thresholds_evaluated", 0),
@@ -12821,6 +12892,10 @@ class MaskAssessor:
                     "realized_trades": ridge_trade_metrics.get("realized_trades", []),
                     "gross_weighted_returns": ridge_trade_metrics.get("gross_weighted_returns", []),
                     "net_weighted_returns": ridge_trade_metrics.get("net_weighted_returns", []),
+                    "weighted_fee_returns": ridge_trade_metrics.get("weighted_fee_returns", []),
+                    "avg_fee_per_trade": ridge_trade_metrics.get("avg_fee_per_trade", np.nan),
+                    "avg_gross_move_per_trade": ridge_trade_metrics.get("avg_gross_move_per_trade", np.nan),
+                    "avg_position_weight": ridge_trade_metrics.get("avg_position_weight", np.nan),
                     "learnability_step_c_score": float(
                         row.get("learnability_step_c_score", np.nan)
                     ),
@@ -12960,6 +13035,11 @@ class MaskAssessor:
                         f"ambiguous_bar={r_dict.get('ambiguous_bar', 0)}, "
                         f"outside_support_mask={r_dict.get('outside_support_mask', 0)}, "
                         f"neutral_filtered={r_dict.get('neutral_filtered', 0)}, "
+                        f"current_close_missing={r_dict.get('current_close_missing', 0)}, "
+                        f"atr_missing={r_dict.get('atr_missing', 0)}, "
+                        f"transformed_target_nonfinite={r_dict.get('transformed_target_nonfinite', 0)}, "
+                        f"symbol_alignment_missing={r_dict.get('symbol_alignment_missing', 0)}, "
+                        f"future_close_missing={r_dict.get('future_close_missing', 0)}, "
                         f"other_target_nan={r_dict.get('other_target_nan', 0)}"
                     )
 
@@ -13120,7 +13200,7 @@ class MaskAssessor:
                 mask,
                 folds,
                 tp_f=None,
-                target_nan_reasons=target_nan_reasons,
+                target_nan_reasons=current_target_nan_reasons,
                 path_mfe=path_excursions.get("mfe"),
                 path_mae=path_excursions.get("mae"),
                 model_profile="strong",
@@ -13210,15 +13290,6 @@ class MaskAssessor:
             if not strong_rejected and float(strong_details.get("coverage", 0.0)) < min_oof_coverage:
                 strong_rejected = True
                 strong_rejection_reason = "insufficient_subset_oof_coverage"
-            elif not strong_rejected and not np.isfinite(strong_auc_lift):
-                strong_rejected = True
-                strong_rejection_reason = "missing_learnability"
-            elif not strong_rejected and not np.isfinite(strong_top_q_lift):
-                strong_rejected = True
-                strong_rejection_reason = "missing_top_quartile_precision"
-            elif not strong_rejected and strong_top_q_lift <= 0.0:
-                strong_rejected = True
-                strong_rejection_reason = "top_quartile_precision_not_positive"
             elif not strong_rejected and strong_ev_per_event <= 0.0:
                 strong_rejected = True
                 strong_rejection_reason = "ev_per_event_less_than_or_equal_to_zero"
@@ -13277,6 +13348,7 @@ class MaskAssessor:
                 "valid_symbol_days_observed",
                 "total_trades",
                 "threshold_search_mode",
+                "threshold_selection_policy",
                 "n_quantiles_evaluated",
                 "n_thresholds_evaluated",
                 "n_unique_thresholds_evaluated",
@@ -13287,6 +13359,10 @@ class MaskAssessor:
                 "realized_trades",
                 "gross_weighted_returns",
                 "net_weighted_returns",
+                "weighted_fee_returns",
+                "avg_fee_per_trade",
+                "avg_gross_move_per_trade",
+                "avg_position_weight",
             ]:
                 assessment_df.at[df_idx, metric_col] = strong_trade_metrics.get(metric_col, assessment_df.at[df_idx, metric_col])
             strong_rescore_count += 1
@@ -13930,7 +14006,19 @@ class MaskAssessor:
                 n_tr_target_nan = np.sum(target_nan_mask)
                 n_tr_feat_nan = np.sum((~target_nan_mask) & (~np.all(np.isfinite(X_tr), axis=1)))
 
-                target_reasons = {"horizon_exceeded": 0, "barrier_unresolved": 0, "ambiguous_bar": 0, "outside_support_mask": 0, "neutral_filtered": 0, "other_target_nan": 0}
+                target_reasons = {
+                    "horizon_exceeded": 0,
+                    "barrier_unresolved": 0,
+                    "ambiguous_bar": 0,
+                    "outside_support_mask": 0,
+                    "neutral_filtered": 0,
+                    "current_close_missing": 0,
+                    "atr_missing": 0,
+                    "transformed_target_nonfinite": 0,
+                    "symbol_alignment_missing": 0,
+                    "future_close_missing": 0,
+                    "other_target_nan": 0,
+                }
                 if target_nan_reasons is not None and n_tr_target_nan > 0:
                     fold_reasons = target_nan_reasons[tr_masked][target_nan_mask]
                     unique_reasons, counts = np.unique(fold_reasons, return_counts=True)
@@ -13951,7 +14039,7 @@ class MaskAssessor:
                     f"({100*(1-n_tr_after/n_tr_before):.1f}%) samples. "
                     f"NaN Enrichment: global={global_nan_rate:.1%} -> mask={mask_nan_rate:.1%} "
                     f"[Target NaN: {n_tr_target_nan}, Feature NaN: {n_tr_feat_nan}] "
-                    f"TargetNaNReasons[horizon_exceeded={target_reasons['horizon_exceeded']}, barrier_unresolved={target_reasons['barrier_unresolved']}, ambiguous_bar={target_reasons['ambiguous_bar']}, outside_support_mask={target_reasons['outside_support_mask']}, neutral_filtered={target_reasons['neutral_filtered']}, other_target_nan={target_reasons['other_target_nan']}]"
+                    f"TargetNaNReasons[horizon_exceeded={target_reasons['horizon_exceeded']}, barrier_unresolved={target_reasons['barrier_unresolved']}, ambiguous_bar={target_reasons['ambiguous_bar']}, outside_support_mask={target_reasons['outside_support_mask']}, neutral_filtered={target_reasons['neutral_filtered']}, current_close_missing={target_reasons['current_close_missing']}, atr_missing={target_reasons['atr_missing']}, transformed_target_nonfinite={target_reasons['transformed_target_nonfinite']}, symbol_alignment_missing={target_reasons['symbol_alignment_missing']}, future_close_missing={target_reasons['future_close_missing']}, other_target_nan={target_reasons['other_target_nan']}]"
                 )
                 
                 if n_tr_feat_nan > 0:
@@ -13971,7 +14059,19 @@ class MaskAssessor:
                 n_va_target_nan = np.sum(target_nan_mask)
                 n_va_feat_nan = np.sum((~target_nan_mask) & (~np.all(np.isfinite(X_va), axis=1)))
 
-                target_reasons = {"horizon_exceeded": 0, "barrier_unresolved": 0, "ambiguous_bar": 0, "outside_support_mask": 0, "neutral_filtered": 0, "other_target_nan": 0}
+                target_reasons = {
+                    "horizon_exceeded": 0,
+                    "barrier_unresolved": 0,
+                    "ambiguous_bar": 0,
+                    "outside_support_mask": 0,
+                    "neutral_filtered": 0,
+                    "current_close_missing": 0,
+                    "atr_missing": 0,
+                    "transformed_target_nonfinite": 0,
+                    "symbol_alignment_missing": 0,
+                    "future_close_missing": 0,
+                    "other_target_nan": 0,
+                }
                 if target_nan_reasons is not None and n_va_target_nan > 0:
                     fold_reasons = target_nan_reasons[va_masked][target_nan_mask]
                     unique_reasons, counts = np.unique(fold_reasons, return_counts=True)
@@ -13987,7 +14087,7 @@ class MaskAssessor:
                     f"WARNING: Fold {fold_id} Ridge validation: Dropped {n_va_before - n_va_after}/{n_va_before} "
                     f"({100*(1-n_va_after/n_va_before):.1f}%) samples. "
                     f"[Target NaN: {n_va_target_nan}, Feature NaN: {n_va_feat_nan}] "
-                    f"TargetNaNReasons[horizon_exceeded={target_reasons['horizon_exceeded']}, barrier_unresolved={target_reasons['barrier_unresolved']}, ambiguous_bar={target_reasons['ambiguous_bar']}, outside_support_mask={target_reasons['outside_support_mask']}, neutral_filtered={target_reasons['neutral_filtered']}, other_target_nan={target_reasons['other_target_nan']}]"
+                    f"TargetNaNReasons[horizon_exceeded={target_reasons['horizon_exceeded']}, barrier_unresolved={target_reasons['barrier_unresolved']}, ambiguous_bar={target_reasons['ambiguous_bar']}, outside_support_mask={target_reasons['outside_support_mask']}, neutral_filtered={target_reasons['neutral_filtered']}, current_close_missing={target_reasons['current_close_missing']}, atr_missing={target_reasons['atr_missing']}, transformed_target_nonfinite={target_reasons['transformed_target_nonfinite']}, symbol_alignment_missing={target_reasons['symbol_alignment_missing']}, future_close_missing={target_reasons['future_close_missing']}, other_target_nan={target_reasons['other_target_nan']}]"
                 )
 
             X_tr_clean = X_tr[valid_tr]
@@ -14204,8 +14304,32 @@ class MaskAssessor:
 
         target_nan_total_train = 0
         target_nan_total_val = 0
-        train_target_nan_reasons = {"horizon_exceeded": 0, "barrier_unresolved": 0, "ambiguous_bar": 0, "outside_support_mask": 0, "neutral_filtered": 0, "other_target_nan": 0}
-        val_target_nan_reasons = {"horizon_exceeded": 0, "barrier_unresolved": 0, "ambiguous_bar": 0, "outside_support_mask": 0, "neutral_filtered": 0, "other_target_nan": 0}
+        train_target_nan_reasons = {
+            "horizon_exceeded": 0,
+            "barrier_unresolved": 0,
+            "ambiguous_bar": 0,
+            "outside_support_mask": 0,
+            "neutral_filtered": 0,
+            "current_close_missing": 0,
+            "atr_missing": 0,
+            "transformed_target_nonfinite": 0,
+            "symbol_alignment_missing": 0,
+            "future_close_missing": 0,
+            "other_target_nan": 0,
+        }
+        val_target_nan_reasons = {
+            "horizon_exceeded": 0,
+            "barrier_unresolved": 0,
+            "ambiguous_bar": 0,
+            "outside_support_mask": 0,
+            "neutral_filtered": 0,
+            "current_close_missing": 0,
+            "atr_missing": 0,
+            "transformed_target_nonfinite": 0,
+            "symbol_alignment_missing": 0,
+            "future_close_missing": 0,
+            "other_target_nan": 0,
+        }
 
         for tr_idx, va_idx in folds:
             tr_masked = tr_idx[mask[tr_idx]]
@@ -14242,11 +14366,10 @@ class MaskAssessor:
                 val_target_nan_reasons["other_target_nan"] += np.sum(target_nan_mask_va)
 
 
-        # --- IC Series for Pareto Overlap ---
-        ic_series = np.asarray(per_fold_ic, dtype=np.float32)
-        
         valid_mask = mask.astype(bool) & np.isfinite(y) & np.isfinite(oof_preds)
         effective_rows = int(np.sum(valid_mask))
+        per_fold_ic: List[float] = []
+        ic_series = np.asarray([], dtype=np.float32)
 
         if effective_rows > 0:
             preds_valid = oof_preds[valid_mask]
@@ -14267,7 +14390,6 @@ class MaskAssessor:
 
             # B3. Fold sign consistency and per-fold IC series
             fold_means = []
-            per_fold_ic: List[float] = []
             for fold_id, (tr_idx, va_idx) in enumerate(folds):
                 va_masked_idx = va_idx[mask[va_idx]]
                 valid_fold_mask = np.isfinite(y[va_masked_idx]) & np.isfinite(oof_preds[va_masked_idx])
@@ -14281,13 +14403,14 @@ class MaskAssessor:
                         per_fold_ic.append(fold_ic)
                     else:
                         per_fold_ic.append(np.nan)
-
-                if fold_means:
-                    n_pos = sum(1 for m in fold_means if m > 0)
-                    n_neg = sum(1 for m in fold_means if m < 0)
-                    n_nonzero = n_pos + n_neg
-                    fold_pnl_std = float(np.nanstd(np.asarray(fold_means, dtype=np.float32), ddof=0))
-                fold_pnl_std = float(np.nanstd(np.asarray(fold_means, dtype=np.float32), ddof=0))
+            ic_series = np.asarray(per_fold_ic, dtype=np.float32)
+            if fold_means:
+                n_pos = sum(1 for m in fold_means if m > 0)
+                n_neg = sum(1 for m in fold_means if m < 0)
+                n_nonzero = n_pos + n_neg
+                fold_pnl_std = float(
+                    np.nanstd(np.asarray(fold_means, dtype=np.float32), ddof=0)
+                )
 
                 positive_fold_fraction = n_pos / len(fold_means)
                 negative_fold_fraction = n_neg / len(fold_means)
@@ -14540,6 +14663,9 @@ class MaskAssessor:
         max_trials = max(1, int(self.cfg.get("ridge_threshold_search_trials", 7)))
         max_concurrent_per_symbol = 1
         max_concurrent_total = int(self.cfg.get("ridge_max_concurrent_total", 2))
+        threshold_selection_policy = str(
+            self.cfg.get("ridge_threshold_selection_policy", "best_net_pnl")
+        ).strip().lower()
 
         threshold_star_lowest_positive = None
         threshold_star_optimal_pnl = None
@@ -14679,7 +14805,18 @@ class MaskAssessor:
                 "n_unique_scores": n_unique_scores,
             }
         else:
-            threshold_star = float(threshold_star_lowest_positive)
+            if (
+                threshold_selection_policy == "lowest_positive"
+                and threshold_star_lowest_positive is not None
+            ):
+                threshold_star = float(threshold_star_lowest_positive)
+            else:
+                threshold_star = float(
+                    threshold_star_best_pnl_threshold
+                    if threshold_star_best_pnl_threshold is not None
+                    and np.isfinite(threshold_star_best_pnl_threshold)
+                    else threshold_star_lowest_positive
+                )
 
         # 4. Final Realization and Trade-rate hard gate
         final_pnl_res = compute_ridge_pnl(
@@ -14739,6 +14876,7 @@ class MaskAssessor:
                         valid_symbol_days_observed=valid_symbol_days_observed,
                         total_trades=total_trades,
                         threshold_search_mode="grid",
+                        threshold_selection_policy=threshold_selection_policy,
                         n_quantiles_evaluated=n_quantiles_evaluated,
                         n_thresholds_evaluated=n_thresholds_evaluated,
                         n_unique_thresholds_evaluated=n_unique_thresholds_evaluated,
@@ -14778,6 +14916,7 @@ class MaskAssessor:
                         valid_symbol_days_observed=valid_symbol_days_observed,
                         total_trades=total_trades,
                         threshold_search_mode="grid",
+                        threshold_selection_policy=threshold_selection_policy,
                         n_quantiles_evaluated=n_quantiles_evaluated,
                         n_thresholds_evaluated=n_thresholds_evaluated,
                         n_unique_thresholds_evaluated=n_unique_thresholds_evaluated,
@@ -14828,6 +14967,7 @@ class MaskAssessor:
                 valid_symbol_days_observed=valid_symbol_days_observed,
                 total_trades=total_trades,
                 threshold_search_mode="grid",
+                threshold_selection_policy=threshold_selection_policy,
                 n_quantiles_evaluated=n_quantiles_evaluated,
                 n_thresholds_evaluated=n_thresholds_evaluated,
                 n_unique_thresholds_evaluated=n_unique_thresholds_evaluated,
@@ -14907,6 +15047,7 @@ class MaskAssessor:
             "valid_symbol_days_observed": valid_symbol_days_observed,
             "total_trades": total_trades,
             "threshold_search_mode": "grid",
+            "threshold_selection_policy": threshold_selection_policy,
             "n_quantiles_evaluated": n_quantiles_evaluated,
             "n_thresholds_evaluated": n_thresholds_evaluated,
             "n_unique_thresholds_evaluated": n_unique_thresholds_evaluated,
@@ -14918,7 +15059,11 @@ class MaskAssessor:
             "reject_reason": forced_reject_reason,
             "realized_trades": final_trades,
             "gross_weighted_returns": final_pnl_res.get("weighted_gross_returns", []),
-            "net_weighted_returns": final_pnl_res.get("weighted_net_returns", [])
+            "net_weighted_returns": final_pnl_res.get("weighted_net_returns", []),
+            "weighted_fee_returns": final_pnl_res.get("weighted_fee_returns", []),
+            "avg_fee_per_trade": float(final_pnl_res.get("avg_fee_per_trade", 0.0)),
+            "avg_gross_move_per_trade": float(final_pnl_res.get("avg_gross_move_per_trade", 0.0)),
+            "avg_position_weight": float(final_pnl_res.get("avg_position_weight", 0.0)),
         }
 
     def _compute_entropy(self, y) -> float:
@@ -17440,22 +17585,75 @@ if __name__ == "__main__":
     # Pre-compute close and atr for the new return-based miner targets.
     # Note: since this is panel data (flattened via time_idx, sym_idx),
     # using shift on close_wide is correct as it avoids cross-symbol leak.
+    close_wide_local = panel["close"].reindex(index=common_idx, columns=common_syms)
+    triad_target_nan_reasons: Dict[Tuple[str, int], np.ndarray] = {}
     for horizon, df_targets in triad_results_by_horizon.items():
         # Add new targets
-        close_wide_local = panel["close"].reindex(index=common_idx, columns=common_syms)
         # Using percentage forward return aligned at time t:
         # (close[t+h] - close[t]) / close[t] = close[t+h] / close[t] - 1
         fwd_pct_ret_wide = close_wide_local.shift(-horizon) / close_wide_local - 1.0
         fwd_pct_ret_final = fwd_pct_ret_wide.to_numpy(dtype=np.float32)[time_idx_final, sym_idx_final]
+
+        ret_reason_wide = pd.DataFrame(
+            "",
+            index=fwd_pct_ret_wide.index,
+            columns=fwd_pct_ret_wide.columns,
+            dtype=object,
+        )
+        current_close_wide = close_wide_local
+        future_close_wide = close_wide_local.shift(-horizon)
+        ret_reason_wide = ret_reason_wide.mask(
+            current_close_wide.isna(),
+            TargetNaNReason.CURRENT_CLOSE_MISSING,
+        )
+        ret_reason_wide = ret_reason_wide.mask(
+            future_close_wide.isna() & (ret_reason_wide == ""),
+            TargetNaNReason.FUTURE_CLOSE_MISSING,
+        )
+        ret_reason_wide = ret_reason_wide.mask(
+            ~np.isfinite(fwd_pct_ret_wide) & (ret_reason_wide == ""),
+            TargetNaNReason.TRANSFORMED_TARGET_NONFINITE,
+        )
+        if horizon > 0 and len(ret_reason_wide) >= horizon:
+            ret_reason_wide.iloc[-horizon:, :] = TargetNaNReason.HORIZON_EXCEEDED
+        ret_reason_final = ret_reason_wide.to_numpy(dtype=object)[
+            time_idx_final, sym_idx_final
+        ]
+        aligned_close_final = current_close_wide.to_numpy(dtype=np.float32)[
+            time_idx_final, sym_idx_final
+        ]
+        symbol_alignment_missing_final = np.isfinite(close_final) & ~np.isfinite(
+            aligned_close_final
+        )
+        ret_reason_final[
+            symbol_alignment_missing_final & (ret_reason_final == "")
+        ] = TargetNaNReason.SYMBOL_ALIGNMENT_MISSING
+
+        current_close_missing_final = ~np.isfinite(close_final)
+        ret_reason_final[current_close_missing_final & (ret_reason_final == "")] = (
+            TargetNaNReason.CURRENT_CLOSE_MISSING
+        )
 
         # Compute ATR-normalized forward percentage returns
         # Floor the ATR fraction at 0.001 (10bps) to prevent explosion from tiny ATR values.
         # Clip the final target at [-10, 10] to ensure model stability across extreme outliers.
         atr_frac = np.maximum(atr_final / np.maximum(close_final, 1e-12), 0.001)
         fwd_pct_ret_atr_norm_final = np.clip(fwd_pct_ret_final / atr_frac, -10, 10)
+        atr_ret_reason_final = ret_reason_final.copy()
+        atr_ret_reason_final[~np.isfinite(atr_final) & (atr_ret_reason_final == "")] = (
+            TargetNaNReason.ATR_MISSING
+        )
+        atr_ret_reason_final[
+            ~np.isfinite(fwd_pct_ret_atr_norm_final)
+            & (atr_ret_reason_final == "")
+        ] = TargetNaNReason.TRANSFORMED_TARGET_NONFINITE
 
         triad_targets["returns_target"][horizon] = fwd_pct_ret_final
         triad_targets["atr_norm_returns_target"][horizon] = fwd_pct_ret_atr_norm_final
+        triad_target_nan_reasons[("returns_target", horizon)] = ret_reason_final
+        triad_target_nan_reasons[("atr_norm_returns_target", horizon)] = (
+            atr_ret_reason_final
+        )
 
         # Target variance diagnostics
         valid_mask = np.isfinite(fwd_pct_ret_final)
@@ -17494,5 +17692,11 @@ if __name__ == "__main__":
 
     # Run triad-target mask generation
     run_lgbm_mask_generation_triad(
-        data_final, feat_final, triad_targets, fwd_ret_final, fwd_ret_norm_final, fwd_ret_reasons_final, cfg
+        data_final,
+        feat_final,
+        triad_targets,
+        fwd_ret_final,
+        fwd_ret_norm_final,
+        triad_target_nan_reasons,
+        cfg,
     )

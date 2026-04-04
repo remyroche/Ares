@@ -85,13 +85,16 @@ def _read_best_params_csv(path: Path) -> Dict[str, Any]:
 
 
 def load_inference_candidate_mask_params_per_bucket(
-    top_n: int = 4,
+    top_n: int = 1,
     ranking_metric: str = "score_for_best_params",
 ) -> list[dict[str, Any]]:
     """Load top-N dynamically generated strategy parameters from the mask-optimiser.
+
+    By default this returns the top-1 rule per (side, horizon) group, ensuring
+    diversity across long/short and different horizons (e.g., H3, H10).
     
     Args:
-        top_n: Number of top rules to load (default: 15)
+        top_n: Number of top rules to load per (side, horizon) group (default: 1)
         ranking_metric: Metric to rank rules by (default: "score_for_best_params")
                       Options: "score_for_best_params", "composite_score", 
                             "learnability_step_c_score", "stage2_score", "mask_oof_corr"
@@ -132,40 +135,51 @@ def load_inference_candidate_mask_params_per_bucket(
     if df.empty:
         return []
     
+    # Ensure required columns exist
+    if "side" not in df.columns:
+        df["side"] = "long"
+    if "source_horizon" not in df.columns:
+        df["source_horizon"] = 100
+    
+    strategies = []
+    
     if ranking_metric not in df.columns:
         _log.warning(
             f"[params_store] ranking_metric '{ranking_metric}' not found in {path}, "
-            f"falling back to first {top_n} rows"
+            f"using default ranking"
         )
-        top_rules = df.head(top_n)
+        df_sorted = df
     else:
         df_sorted = df.sort_values(by=ranking_metric, ascending=False)
-        top_rules = df_sorted.head(top_n)
     
-    strategies = []
-    for _, row in top_rules.iterrows():
-        key = str(row.get("canonical_key", ""))
-        side = str(row.get("side", "long")).lower()
-        if side == "mixed":
-            side = "long"
-        if not key:
-            continue
-        
-        import re
-        safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', key)
-        safe_id = re.sub(r'_+', '_', safe_id)
-        safe_id = safe_id.strip('_')
-        
-        strategies.append({
-            "strategy_id": safe_id,
-            "trade_side": side,
-            "base_event_trigger": key,
-            "mask_params": {"canonical_key": key}
-        })
+    # Group by (side, source_horizon) and take top_n from each group
+    grouped = df_sorted.groupby(["side", "source_horizon"], sort=False)
+    
+    for (side, horizon), group in grouped:
+        top_rules = group.head(top_n)
+        for _, row in top_rules.iterrows():
+            key = str(row.get("canonical_key", ""))
+            side = str(row.get("side", "long")).lower()
+            if side == "mixed":
+                side = "long"
+            if not key:
+                continue
+            
+            import re
+            safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', key)
+            safe_id = re.sub(r'_+', '_', safe_id)
+            safe_id = safe_id.strip('_')
+            
+            strategies.append({
+                "strategy_id": safe_id,
+                "trade_side": side,
+                "base_event_trigger": key,
+                "mask_params": {"canonical_key": key}
+            })
     
     _log.info(
-        f"[params_store] Loaded top {len(strategies)} strategies from {path} "
-        f"(ranked by {ranking_metric})"
+        f"[params_store] Loaded {len(strategies)} strategies from {path} "
+        f"({len(grouped)} groups x top_{top_n}, ranked by {ranking_metric})"
     )
     
     return strategies

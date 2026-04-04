@@ -118,6 +118,7 @@ from extreme_price_movements.offline_optimisers.params_store import (
     TBM_BUCKET_NAMES,
     TBM_GEOMETRY_GRID_CSV,
     apply_offline_optimizer_best_params,
+    load_inference_candidate_mask_params_per_bucket,
     save_best_params_csv,
 )
 from extreme_price_movements.periods_symbols_management import (
@@ -8342,15 +8343,7 @@ def run(args: argparse.Namespace) -> None:
     # so build_bucket_masks uses the optimised values, not hardcoded defaults.
     runtime_cfg = apply_offline_optimizer_best_params(dict(runtime_cfg))
 
-    # Explicitly inject the 6 dynamic LGBM strategies AFTER clobbering calls
-    runtime_cfg["strategies"] = [
-        {"strategy_id": "long_reg_adx_zscore_ts_band30_70_1_reg_ema_velocity_divergence_ts_top60_0_reg_multi_timescale_volatility_shape_ts_bot60_0", "trade_side": "long", "base_event_trigger": "long_reg_adx_zscore_ts_band30_70_1_reg_ema_velocity_divergence_ts_top60_0_reg_multi_timescale_volatility_shape_ts_bot60_0"},
-        {"strategy_id": "long_reg_ema_velocity_divergence_ts_bot70_1_reg_multi_timescale_volatility_shape_ts_top60_1_reg_trend_persistence_vs_exhaustion_ts_band30_70_0", "trade_side": "long", "base_event_trigger": "long_reg_ema_velocity_divergence_ts_bot70_1_reg_multi_timescale_volatility_shape_ts_top60_1_reg_trend_persistence_vs_exhaustion_ts_band30_70_0"},
-        {"strategy_id": "short_reg_adx_zscore_ts_band40_60_1_reg_ema_velocity_divergence_ts_band25_75_0_reg_ema_velocity_divergence_ts_top80_0_reg_multi_timescale_volatility_shape_ts_bot30_0", "trade_side": "short", "base_event_trigger": "short_reg_adx_zscore_ts_band40_60_1_reg_ema_velocity_divergence_ts_band25_75_0_reg_ema_velocity_divergence_ts_top80_0_reg_multi_timescale_volatility_shape_ts_bot30_0"},
-        {"strategy_id": "short_reg_ema_velocity_divergence_ts_top60_1_reg_multi_timescale_volatility_shape_ts_bot30_0_reg_trend_persistence_vs_exhaustion_ts_bot40_0", "trade_side": "short", "base_event_trigger": "short_reg_ema_velocity_divergence_ts_top60_1_reg_multi_timescale_volatility_shape_ts_bot30_0_reg_trend_persistence_vs_exhaustion_ts_bot40_0"},
-        {"strategy_id": "short_reg_multi_timescale_volatility_shape_ts_top60_0_reg_trend_persistence_vs_exhaustion_ts_band25_75_1_reg_trend_persistence_vs_exhaustion_ts_bot50_0", "trade_side": "short", "base_event_trigger": "short_reg_multi_timescale_volatility_shape_ts_top60_0_reg_trend_persistence_vs_exhaustion_ts_band25_75_1_reg_trend_persistence_vs_exhaustion_ts_bot50_0"},
-        {"strategy_id": "short_reg_trend_persistence_vs_exhaustion_ts_band20_80_1_reg_trend_persistence_vs_exhaustion_ts_band40_60_1_reg_trend_persistence_vs_exhaustion_ts_bot50_1", "trade_side": "short", "base_event_trigger": "short_reg_trend_persistence_vs_exhaustion_ts_band20_80_1_reg_trend_persistence_vs_exhaustion_ts_band40_60_1_reg_trend_persistence_vs_exhaustion_ts_bot50_1"},
-    ]
+    runtime_cfg["strategies"] = load_inference_candidate_mask_params_per_bucket()
     tprint(f"[DIAGNOSTIC] Final injected strategies: {[s.get('strategy_id') for s in runtime_cfg['strategies']]}")
 
     bucket_masks = build_strategy_masks(artifacts, cfg_runtime=runtime_cfg)

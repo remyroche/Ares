@@ -111,6 +111,77 @@ HORIZON_CONFIGS: Dict[int, Dict[str, Any]] = {
     10: {"min_data_in_leaf_multiplier": 1.0, "description": "Short-term"},
 }
 
+MINER_TARGET_RESIDUALIZATION_COLUMNS: Tuple[str, ...] = (
+    "ema50_ema200_spread_continuous",
+    "atr_change_rate_ts_continuous",
+    "bars_in_high_vol_state_log_norm",
+    "volatility_of_volatility_48",
+    "trend_strength_percentile",
+    "volatility_autocorr_48",
+)
+
+MINER_TARGET_RESIDUALIZATION_ALIAS_MAP: Dict[str, Tuple[str, ...]] = {
+    "ema50_ema200_spread_continuous": (
+        "ema50_ema200_spread_continuous",
+        "ema50_ema200_spread_atr",
+    ),
+    "ema50_ema200_spread_atr": (
+        "ema50_ema200_spread_continuous",
+        "ema50_ema200_spread_atr",
+    ),
+    "atr_change_rate_ts_continuous": (
+        "atr_change_rate_ts_continuous",
+        "atr_change_rate_ts",
+        "atr_change_rate",
+    ),
+    "atr_change_rate_ts": (
+        "atr_change_rate_ts_continuous",
+        "atr_change_rate_ts",
+        "atr_change_rate",
+    ),
+    "atr_change_rate": (
+        "atr_change_rate_ts_continuous",
+        "atr_change_rate_ts",
+        "atr_change_rate",
+    ),
+    "bars_in_high_vol_state_log_norm": (
+        "bars_in_high_vol_state_log_norm",
+    ),
+    "volatility_of_volatility_48": (
+        "volatility_of_volatility_48",
+    ),
+    "trend_strength_percentile": (
+        "trend_strength_percentile",
+    ),
+    "volatility_autocorr_48": (
+        "volatility_autocorr_48",
+    ),
+}
+
+MINER_NUISANCE_REGIME_SOURCE_NAMES: Set[str] = {
+    "ema20_gt_ema50",
+    "ema50_gt_ema200",
+    "price_lt_ema200",
+    "ema50_ema200_spread_continuous",
+    "ema50_ema200_spread_atr",
+    "atr_change_rate_ts_continuous",
+    "atr_change_rate_ts",
+    "atr_change_rate",
+    "bars_in_high_vol_state_log_norm",
+    "volatility_of_volatility_48",
+    "trend_strength_percentile",
+    "volatility_autocorr_48",
+}
+
+MINER_CONTINUOUS_PASSTHROUGH_SOURCE_NAMES: Set[str] = {
+    "atr_compression_ratio",
+}
+
+MINER_OPTIONAL_LOCATION_NUISANCE_PREFIXES: Tuple[str, ...] = (
+    "dist_ema20_atr",
+    "dist_ema200_atr",
+)
+
 SCORER_REGISTRY_COLUMNS: List[str] = [
     "canonical_key",
     "trigger",
@@ -347,8 +418,16 @@ def save_stage_a_step1_checkpoint(
         pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     post_dedup_rows: List[Dict[str, Any]] = []
+    ordered_survivor_keys: List[str] = []
+    cheap_rank_map: Dict[str, float] = {}
+    bucket_side_map: Dict[str, str] = {}
+    bucket_horizon_map: Dict[str, int] = {}
     for (side, source_horizon), entries in cheap_gate_rows.items():
         for cheap_rank, canonical_key in entries:
+            ordered_survivor_keys.append(str(canonical_key))
+            cheap_rank_map[str(canonical_key)] = float(cheap_rank)
+            bucket_side_map[str(canonical_key)] = str(side)
+            bucket_horizon_map[str(canonical_key)] = int(source_horizon)
             post_dedup_rows.append(
                 {
                     "side": side,
@@ -357,9 +436,37 @@ def save_stage_a_step1_checkpoint(
                     "canonical_key": canonical_key,
                 }
             )
+    post_dedup_source_df = candidate_registry.copy()
+    if not post_dedup_source_df.empty:
+        post_dedup_source_df["canonical_key"] = post_dedup_source_df[
+            "canonical_key"
+        ].astype(str)
+        post_dedup_source_df = post_dedup_source_df.drop_duplicates(
+            subset=["canonical_key"], keep="first"
+        )
+        post_dedup_source_df = post_dedup_source_df.set_index("canonical_key", drop=False)
+        survivor_records: List[Dict[str, Any]] = []
+        for canonical_key in ordered_survivor_keys:
+            if canonical_key not in post_dedup_source_df.index:
+                continue
+            row_dict = post_dedup_source_df.loc[canonical_key].to_dict()
+            row_dict["cheap_rank"] = float(cheap_rank_map.get(canonical_key, -np.inf))
+            row_dict["step1_bucket_side"] = bucket_side_map.get(canonical_key, "unknown")
+            row_dict["step1_bucket_horizon"] = int(
+                bucket_horizon_map.get(canonical_key, -1)
+            )
+            survivor_records.append(row_dict)
+        post_dedup_df = pd.DataFrame(survivor_records)
+    else:
+        post_dedup_df = pd.DataFrame()
+    atomic_to_csv(
+        post_dedup_df,
+        output_dir / "step1_post_dedup_registry.csv",
+        expected_columns=list(post_dedup_df.columns) if not post_dedup_df.empty else None,
+    )
     atomic_to_csv(
         pd.DataFrame(post_dedup_rows),
-        output_dir / "step1_post_dedup_registry.csv",
+        output_dir / "step1_post_dedup_keys.csv",
         expected_columns=["side", "source_horizon", "cheap_rank", "canonical_key"],
     )
 
@@ -426,6 +533,322 @@ def _safe_tanh_scale(x: float, scale: float) -> float:
         return np.nan
     scale = max(float(scale), 1e-9)
     return float(np.tanh(x / scale))
+
+
+def _resolve_miner_nuisance_feature_arrays(
+    feature_dict: Dict[str, np.ndarray], cfg: Dict[str, Any]
+) -> Tuple[Dict[str, str], Dict[str, np.ndarray]]:
+    requested_columns = tuple(
+        cfg.get(
+            "miner_target_residualization_columns",
+            MINER_TARGET_RESIDUALIZATION_COLUMNS,
+        )
+    )
+    resolved: Dict[str, str] = {}
+    arrays: Dict[str, np.ndarray] = {}
+    missing: List[str] = []
+    for requested_name in requested_columns:
+        requested_name = str(requested_name)
+        candidates = MINER_TARGET_RESIDUALIZATION_ALIAS_MAP.get(
+            requested_name, (requested_name,)
+        )
+        resolved_name = next((name for name in candidates if name in feature_dict), None)
+        if resolved_name is None:
+            missing.append(requested_name)
+            continue
+        resolved[requested_name] = str(resolved_name)
+        arrays[requested_name] = np.asarray(feature_dict[resolved_name], dtype=np.float32)
+    if missing:
+        raise KeyError(
+            "Missing residualisation nuisance columns for miner target: "
+            + ", ".join(missing)
+        )
+    return resolved, arrays
+
+
+def _should_drop_miner_nuisance_source(
+    source_name: str, group_name: str, cfg: Dict[str, Any]
+) -> bool:
+    if not bool(cfg.get("drop_nuisance_features_from_miner", True)):
+        return False
+    if group_name == "regime" and source_name in MINER_NUISANCE_REGIME_SOURCE_NAMES:
+        return True
+    if group_name == "location" and bool(
+        cfg.get("drop_location_nuisance_features_from_miner", False)
+    ):
+        return any(
+            source_name.startswith(prefix)
+            for prefix in MINER_OPTIONAL_LOCATION_NUISANCE_PREFIXES
+        )
+    return False
+
+
+def _safe_finite_spearman(x: np.ndarray, y: np.ndarray) -> float:
+    valid = np.isfinite(x) & np.isfinite(y)
+    if int(valid.sum()) < 3:
+        return np.nan
+    return _safe_spearman(
+        np.asarray(x[valid], dtype=np.float32),
+        np.asarray(y[valid], dtype=np.float32),
+    )
+
+
+def _fit_linear_target_residualizer(
+    target: np.ndarray,
+    nuisance_arrays: Dict[str, np.ndarray],
+    nuisance_resolution: Dict[str, str],
+    sample_weight: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    fit_mask = np.isfinite(target)
+    for arr in nuisance_arrays.values():
+        fit_mask &= np.isfinite(arr)
+    fit_count = int(fit_mask.sum())
+    if fit_count < len(nuisance_arrays) + 2:
+        raise ValueError(
+            f"Insufficient residualiser support: fit_count={fit_count}, predictors={len(nuisance_arrays)}"
+        )
+    design = np.column_stack(
+        [
+            np.ones(fit_count, dtype=np.float64),
+            *[
+                np.asarray(arr[fit_mask], dtype=np.float64)
+                for arr in nuisance_arrays.values()
+            ],
+        ]
+    )
+    coeffs, _, _, _ = np.linalg.lstsq(
+        design,
+        np.asarray(target[fit_mask], dtype=np.float64),
+        rcond=None,
+    )
+    weight_summary = {
+        "weight_mean": np.nan,
+        "weight_p5": np.nan,
+        "weight_p50": np.nan,
+        "weight_p95": np.nan,
+    }
+    if sample_weight is not None:
+        weights_fit = np.asarray(sample_weight[fit_mask], dtype=np.float64)
+        weights_fit = np.where(np.isfinite(weights_fit), weights_fit, 0.0)
+        if np.sum(weights_fit > 0.0) < len(nuisance_arrays) + 2:
+            raise ValueError(
+                "Insufficient positive residualiser weights after filtering finite rows"
+            )
+        weighted_design = design * np.sqrt(weights_fit)[:, None]
+        weighted_target = np.asarray(target[fit_mask], dtype=np.float64) * np.sqrt(
+            weights_fit
+        )
+        coeffs, _, _, _ = np.linalg.lstsq(
+            weighted_design,
+            weighted_target,
+            rcond=None,
+        )
+        weight_summary = {
+            "weight_mean": float(np.mean(weights_fit)),
+            "weight_p5": float(np.percentile(weights_fit, 5)),
+            "weight_p50": float(np.percentile(weights_fit, 50)),
+            "weight_p95": float(np.percentile(weights_fit, 95)),
+        }
+    else:
+        coeffs, _, _, _ = np.linalg.lstsq(
+            design,
+            np.asarray(target[fit_mask], dtype=np.float64),
+            rcond=None,
+        )
+    return {
+        "intercept": float(coeffs[0]),
+        "coefficients": [float(v) for v in coeffs[1:]],
+        "fit_sample_count": fit_count,
+        "fit_support_definition": "finite(raw_target)&finite(all_nuisance_columns) on fold-train partition",
+        "nuisance_columns_requested": list(nuisance_arrays.keys()),
+        "nuisance_columns_resolved": [
+            nuisance_resolution[name] for name in nuisance_arrays.keys()
+        ],
+        **weight_summary,
+    }
+
+
+def _apply_linear_target_residualizer(
+    target: np.ndarray,
+    nuisance_arrays: Dict[str, np.ndarray],
+    residualizer: Dict[str, Any],
+) -> Tuple[np.ndarray, np.ndarray]:
+    valid_mask = np.isfinite(target)
+    for arr in nuisance_arrays.values():
+        valid_mask &= np.isfinite(arr)
+    out = np.full(target.shape, np.nan, dtype=np.float32)
+    if not valid_mask.any():
+        return out, valid_mask
+    pred = np.full(int(valid_mask.sum()), float(residualizer["intercept"]), dtype=np.float64)
+    for coef, arr in zip(residualizer["coefficients"], nuisance_arrays.values()):
+        pred += float(coef) * np.asarray(arr[valid_mask], dtype=np.float64)
+    out[valid_mask] = (
+        np.asarray(target[valid_mask], dtype=np.float64) - pred
+    ).astype(np.float32, copy=False)
+    return out, valid_mask
+
+
+def _prepare_fold_effective_target_views(
+    raw_target: np.ndarray,
+    folds: List[Tuple[np.ndarray, np.ndarray]],
+    target_name: str,
+    residualise_target: bool,
+    nuisance_feature_arrays: Optional[Dict[str, np.ndarray]],
+    nuisance_feature_resolution: Optional[Dict[str, str]],
+    apply_target_postprocessing: bool,
+    X: np.ndarray,
+    symbol_id: np.ndarray,
+    cfg: Dict[str, Any],
+    horizon: int,
+    surprisal_bits: Optional[np.ndarray] = None,
+    mfe_atr: Optional[np.ndarray] = None,
+    mae_atr: Optional[np.ndarray] = None,
+    side: str = "long",
+) -> Tuple[Dict[int, Dict[str, np.ndarray]], np.ndarray, List[Dict[str, Any]]]:
+    fold_views: Dict[int, Dict[str, np.ndarray]] = {}
+    effective_target_oof = np.full(len(raw_target), np.nan, dtype=np.float32)
+    residualizer_records: List[Dict[str, Any]] = []
+    if apply_target_postprocessing:
+        from extreme_price_movements.triad_targets import (
+            apply_target_postprocessor,
+            fit_target_postprocessor,
+        )
+
+    for fold_id, (tr_idx, va_idx) in enumerate(folds):
+        y_tr_raw = np.asarray(raw_target[tr_idx], dtype=np.float32)
+        y_va_raw = np.asarray(raw_target[va_idx], dtype=np.float32)
+        X_tr = np.asarray(X[tr_idx], dtype=np.float32)
+        symbol_id_tr = np.asarray(symbol_id[tr_idx])
+        y_tr_effective = y_tr_raw.copy()
+        y_va_effective = y_va_raw.copy()
+        record: Dict[str, Any] = {
+            "fold_id": fold_id,
+            "raw_target_name": target_name,
+            "effective_target_name": f"{target_name}_miner_effective",
+            "target_representation": "residualised" if residualise_target else "raw",
+            "residualisation_enabled": bool(residualise_target),
+            "fit_sample_count": 0,
+            "train_effective_valid_count": int(np.isfinite(y_tr_raw).sum()),
+            "val_effective_valid_count": int(np.isfinite(y_va_raw).sum()),
+            "train_excluded_missing_nuisance_pct": 0.0,
+            "val_excluded_missing_nuisance_pct": 0.0,
+            "nuisance_columns_requested": json.dumps(
+                list((nuisance_feature_arrays or {}).keys())
+            ),
+            "nuisance_columns_resolved": json.dumps(
+                [
+                    (nuisance_feature_resolution or {}).get(name, name)
+                    for name in (nuisance_feature_arrays or {}).keys()
+                ]
+            ),
+        }
+        if residualise_target:
+            if not nuisance_feature_arrays:
+                raise ValueError("Residualisation requested but no nuisance arrays were provided")
+            residualizer_sample_weight = build_miner_sample_weights(
+                y_tr_raw,
+                X_tr,
+                symbol_id_tr,
+                cfg,
+                horizon=horizon,
+                surprisal_bits=(
+                    None
+                    if surprisal_bits is None
+                    else np.asarray(surprisal_bits[tr_idx], dtype=np.float32)
+                ),
+                mfe_atr=(
+                    None
+                    if mfe_atr is None
+                    else np.asarray(mfe_atr[tr_idx], dtype=np.float32)
+                ),
+                mae_atr=(
+                    None
+                    if mae_atr is None
+                    else np.asarray(mae_atr[tr_idx], dtype=np.float32)
+                ),
+                side=side,
+            )
+            tr_nuisance = {
+                name: np.asarray(arr[tr_idx], dtype=np.float32)
+                for name, arr in nuisance_feature_arrays.items()
+            }
+            va_nuisance = {
+                name: np.asarray(arr[va_idx], dtype=np.float32)
+                for name, arr in nuisance_feature_arrays.items()
+            }
+            residualizer = _fit_linear_target_residualizer(
+                y_tr_raw,
+                tr_nuisance,
+                nuisance_feature_resolution or {},
+                sample_weight=residualizer_sample_weight,
+            )
+            y_tr_effective, tr_valid_mask = _apply_linear_target_residualizer(
+                y_tr_raw,
+                tr_nuisance,
+                residualizer,
+            )
+            y_va_effective, va_valid_mask = _apply_linear_target_residualizer(
+                y_va_raw,
+                va_nuisance,
+                residualizer,
+            )
+            record.update(
+                {
+                    "fit_sample_count": int(residualizer["fit_sample_count"]),
+                    "intercept": float(residualizer["intercept"]),
+                    "coefficients": json.dumps(residualizer["coefficients"]),
+                    "fit_support_definition": residualizer["fit_support_definition"],
+                    "train_effective_valid_count": int(tr_valid_mask.sum()),
+                    "val_effective_valid_count": int(va_valid_mask.sum()),
+                    "train_excluded_missing_nuisance_pct": float(
+                        1.0 - (tr_valid_mask.sum() / max(len(tr_valid_mask), 1))
+                    ),
+                    "val_excluded_missing_nuisance_pct": float(
+                        1.0 - (va_valid_mask.sum() / max(len(va_valid_mask), 1))
+                    ),
+                    "residualizer_weight_mean": float(residualizer["weight_mean"]),
+                    "residualizer_weight_p5": float(residualizer["weight_p5"]),
+                    "residualizer_weight_p50": float(residualizer["weight_p50"]),
+                    "residualizer_weight_p95": float(residualizer["weight_p95"]),
+                }
+            )
+            for requested_name, resolved_name in (
+                nuisance_feature_resolution or {}
+            ).items():
+                record[f"resolved__{requested_name}"] = resolved_name
+                record[f"corr_raw__{requested_name}"] = _safe_finite_spearman(
+                    np.asarray(tr_nuisance[requested_name], dtype=np.float32),
+                    y_tr_raw,
+                )
+                record[f"corr_effective__{requested_name}"] = _safe_finite_spearman(
+                    np.asarray(tr_nuisance[requested_name], dtype=np.float32),
+                    y_tr_effective,
+                )
+
+        if apply_target_postprocessing:
+            pp = fit_target_postprocessor(target_name, y_tr_effective, mode="default")
+            y_tr_processed = apply_target_postprocessor(y_tr_effective, pp)
+            y_va_processed = apply_target_postprocessor(y_va_effective, pp)
+        else:
+            y_tr_processed = np.clip(y_tr_effective, -3.0, 3.0).astype(
+                np.float32, copy=False
+            )
+            y_va_processed = np.asarray(y_va_effective, dtype=np.float32)
+
+        effective_target_oof[va_idx] = y_va_processed
+        record["train_processed_valid_count"] = int(np.isfinite(y_tr_processed).sum())
+        record["val_processed_valid_count"] = int(np.isfinite(y_va_processed).sum())
+        fold_views[fold_id] = {
+            "y_tr_raw": y_tr_raw,
+            "y_va_raw": y_va_raw,
+            "y_tr_effective": np.asarray(y_tr_effective, dtype=np.float32),
+            "y_va_effective": np.asarray(y_va_effective, dtype=np.float32),
+            "y_tr_processed": np.asarray(y_tr_processed, dtype=np.float32),
+            "y_va_processed": np.asarray(y_va_processed, dtype=np.float32),
+        }
+        residualizer_records.append(record)
+
+    return fold_views, effective_target_oof, residualizer_records
 
 
 @dataclass
@@ -696,7 +1119,8 @@ def _compute_masks_from_instruction_matrix_numba(
     context_values: np.ndarray,
     instr_source_type: np.ndarray,
     instr_source_idx: np.ndarray,
-    instr_target_value: np.ndarray,
+    instr_operator_code: np.ndarray,
+    instr_threshold_value: np.ndarray,
     rule_offsets: np.ndarray,
     rule_lengths: np.ndarray,
 ) -> np.ndarray:
@@ -713,18 +1137,27 @@ def _compute_masks_from_instruction_matrix_numba(
             instr_idx = offset + j
             source_type = int(instr_source_type[instr_idx])
             source_idx = int(instr_source_idx[instr_idx])
-            target_val = int(instr_target_value[instr_idx])
+            operator_code = int(instr_operator_code[instr_idx])
+            threshold_value = float(instr_threshold_value[instr_idx])
             if source_type == 0:
                 for sample_idx in range(n_samples):
                     if out[rule_idx, sample_idx]:
-                        out[rule_idx, sample_idx] = (
-                            x_values[sample_idx, source_idx] == target_val
-                        )
+                        x_val = x_values[sample_idx, source_idx]
+                        if operator_code == 0:
+                            out[rule_idx, sample_idx] = x_val == threshold_value
+                        elif operator_code == 1:
+                            out[rule_idx, sample_idx] = x_val <= threshold_value
+                        elif operator_code == 2:
+                            out[rule_idx, sample_idx] = x_val > threshold_value
+                        elif operator_code == 3:
+                            out[rule_idx, sample_idx] = x_val < threshold_value
+                        else:
+                            out[rule_idx, sample_idx] = x_val >= threshold_value
             else:
                 for sample_idx in range(n_samples):
                     if out[rule_idx, sample_idx]:
                         out[rule_idx, sample_idx] = (
-                            context_values[source_idx, sample_idx] == target_val
+                            context_values[source_idx, sample_idx] == threshold_value
                         )
     return out
 
@@ -1650,6 +2083,8 @@ class FeatureProcessor:
             active_groups = ("trigger", "location", "regime")
 
         raw_source_features_by_group = collections.defaultdict(set)
+        dropped_nuisance_sources_by_group = collections.defaultdict(set)
+        dropped_nuisance_generated_feature_count = {"count": 0}
 
         def _register_boolean_column(
             source_arr: np.ndarray,
@@ -1703,9 +2138,6 @@ class FeatureProcessor:
         def _add_binary_feature(
             src: str, group_name: str, raw_arr: np.ndarray, family: str
         ):
-            # Skip ALL raw binary versions - use threshold-based boolean versions instead
-            return
-
             nan_rate_before = float(np.isnan(raw_arr).mean())
             self.rank_audit_rows.append(
                 {
@@ -1715,26 +2147,17 @@ class FeatureProcessor:
                     "nan_rate_ts": nan_rate_before,
                 }
             )
-
-            nan_mask = np.isnan(raw_arr)
-            bool_arr = (raw_arr > 0.5).astype(np.float32, copy=False)
-            bool_arr = np.asarray(bool_arr, dtype=np.float32)
-            bool_arr[nan_mask] = np.nan
-            bool_name = f"{group_name[:3]}_{src}_raw"
-            _register_boolean_column(
-                source_arr=raw_arr,
-                bool_name=bool_name,
-                bool_arr=bool_arr,
-                group_name=group_name,
-                src=src,
-                family=family,
-                booleanization_method="raw_binary",
-                threshold_type="binary",
-                threshold_value=0.5,
-                threshold_upper_value=None,
-                description="Raw binary feature > 0.5",
-                min_support=int(cfg.get("min_feature_support", 10)),
+            raw_arr_f32 = np.asarray(raw_arr, dtype=np.float32)
+            self._add_metadata(
+                src,
+                group_name,
+                "boolean",
+                source_name=src,
+                source_family=family,
+                description=f"Raw binary passthrough feature {src}",
             )
+            raw_cols.append(raw_arr_f32)
+            raw_names.append(src)
 
         def _add_continuous_features_as_booleans(sources, group_name):
             min_support = int(cfg.get("min_feature_support", 10))
@@ -1744,6 +2167,11 @@ class FeatureProcessor:
                     tprint(
                         f"WARNING: skipping reserved target-side feature '{src}' in miner feature prep"
                     )
+                    continue
+                if _should_drop_miner_nuisance_source(src, group_name, cfg):
+                    dropped_nuisance_sources_by_group[group_name].add(src)
+                    if group_name in {"regime", "location"}:
+                        dropped_nuisance_generated_feature_count["count"] += 1
                     continue
                 if src in feature_dict:
                     raw_source_features_by_group[group_name].add(src)
@@ -1777,80 +2205,17 @@ class FeatureProcessor:
                         }
                     )
 
-                    # NaN-preserving booleanization.
-                    # ts_ranks is NaN wherever the raw feature was NaN for that symbol.
-                    # We must propagate NaN through to the boolean column so that
-                    # filter_complete_feature_rows correctly drops rows missing feature data.
-                    nan_mask = np.isnan(ts_ranks)
-
-                    def _bool_float(condition: np.ndarray) -> np.ndarray:
-                        out = condition.astype(np.float32)
-                        out[nan_mask] = np.nan
-                        return out
-
-                    for q in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]:
-                        # Top quantiles (>= q). Support is (1-q). We need (1-q) >= 0.3 => q <= 0.7.
-                        # Excludes top80
-                        if q <= 0.7:
-                            bool_name_top = f"{group_name[:3]}_{src}_ts_top{int(q*100)}"
-                            bool_arr_top = _bool_float(ts_ranks >= q)
-                            _register_boolean_column(
-                                source_arr=ts_ranks,
-                                bool_name=bool_name_top,
-                                bool_arr=bool_arr_top,
-                                group_name=group_name,
-                                src=src,
-                                family=family,
-                                booleanization_method="rank_norm",
-                                threshold_type="top_quantile",
-                                threshold_value=q,
-                                threshold_upper_value=None,
-                                description=f"TS Rank >= {q}",
-                                min_support=min_support,
-                            )
-
-                        # Bottom quantiles (<= q). Support is q. We need q >= 0.3.
-                        # Excludes bot20
-                        if q >= 0.3:
-                            bool_name_bot = f"{group_name[:3]}_{src}_ts_bot{int(q*100)}"
-                            bool_arr_bot = _bool_float(ts_ranks <= q)
-                            _register_boolean_column(
-                                source_arr=ts_ranks,
-                                bool_name=bool_name_bot,
-                                bool_arr=bool_arr_bot,
-                                group_name=group_name,
-                                src=src,
-                                family=family,
-                                booleanization_method="rank_norm",
-                                threshold_type="bot_quantile",
-                                threshold_value=q,
-                                threshold_upper_value=None,
-                                description=f"TS Rank <= {q}",
-                                min_support=min_support,
-                            )
-
-                    # Expanded median bands
-                    for q_band in [0.20, 0.25, 0.30]:
-                        q_band_upper = 1.0 - q_band
-                        band_name = f"{group_name[:3]}_{src}_ts_band{int(q_band*100)}_{int(q_band_upper*100)}"
-                        band_arr = _bool_float(
-                            (ts_ranks >= q_band) & (ts_ranks <= q_band_upper)
-                        )
-
-                        _register_boolean_column(
-                            source_arr=ts_ranks,
-                            bool_name=band_name,
-                            bool_arr=band_arr,
-                            group_name=group_name,
-                            src=src,
-                            family=family,
-                            booleanization_method="rank_norm",
-                            threshold_type="band_quantile",
-                            threshold_value=q_band,
-                            threshold_upper_value=q_band_upper,
-                            description=f"TS Rank inside {int(q_band*100)}-{int(q_band_upper*100)} band",
-                            min_support=min_support,
-                        )
+                    raw_arr_f32 = np.asarray(raw_arr, dtype=np.float32)
+                    self._add_metadata(
+                        src,
+                        group_name,
+                        "continuous",
+                        source_name=src,
+                        source_family=family,
+                        description=f"Continuous passthrough feature {src}",
+                    )
+                    raw_cols.append(raw_arr_f32)
+                    raw_names.append(src)
 
         # 1. Trigger Features — DISABLED (all trigger features removed from pipeline)
         if "trigger" in active_groups:
@@ -1943,6 +2308,18 @@ class FeatureProcessor:
             ):
                 X_clean = X_clean[:, interleave_order]
                 retained_names = [retained_names[i] for i in interleave_order]
+
+        if dropped_nuisance_sources_by_group:
+            removed_sources = sum(
+                len(sources) for sources in dropped_nuisance_sources_by_group.values()
+            )
+            removal_summary = ", ".join(
+                f"{group}={len(sorted(sources))}"
+                for group, sources in sorted(dropped_nuisance_sources_by_group.items())
+            )
+            tprint(
+                f"Miner nuisance feature exclusion active: removed_sources={removed_sources}, removed_generated_features~={dropped_nuisance_generated_feature_count['count']}, {removal_summary}"
+            )
 
         audit_df["group"] = [self.metadata[n].group for n in audit_df["feature_name"]]
         audit_df["regime_family"] = [
@@ -2184,39 +2561,64 @@ class FeatureProcessor:
 
         for i, name in enumerate(names):
             col = X[:, i]
-            n_ones = np.sum(col == 1)
-            n_zeros = np.sum(col == 0)
+            metadata = self.metadata[name]
+            finite_mask = np.isfinite(col)
+            finite_count = int(np.sum(finite_mask))
+            n_ones = int(np.sum(col == 1))
+            n_zeros = int(np.sum(col == 0))
 
             dropped = False
             reason = "retained"
 
-            if n_ones == 0:
-                dropped = True
-                reason = "all_zeros"
-            elif n_zeros == 0:
-                dropped = True
-                reason = "all_ones"
-            elif n_ones < min_support:
-                dropped = True
-                reason = f"low_support_{int(n_ones)}<{min_support}"
-            else:
-                # Duplicate check via hash, scoped to the originating source feature.
-                metadata = self.metadata[name]
-                dedupe_scope = (metadata.group, metadata.source_name)
-                col_hash = hashlib.sha1(col.tobytes()).hexdigest()
-                hash_key = (dedupe_scope, col_hash)
-                if hash_key in hash_registry:
+            if metadata.source_type == "continuous":
+                if finite_count == 0:
                     dropped = True
-                    reason = f"duplicate_of_{hash_registry[hash_key]}"
+                    reason = "all_nan"
+                elif finite_count < min_support:
+                    dropped = True
+                    reason = f"low_finite_support_{finite_count}<{min_support}"
                 else:
-                    hash_registry[hash_key] = name
+                    finite_vals = np.asarray(col[finite_mask], dtype=np.float32)
+                    if np.nanstd(finite_vals) <= 1e-12:
+                        dropped = True
+                        reason = "near_constant_continuous"
+                    else:
+                        dedupe_scope = (metadata.group, metadata.source_name)
+                        col_hash = hashlib.sha1(
+                            np.asarray(np.round(finite_vals, 6), dtype=np.float32).tobytes()
+                        ).hexdigest()
+                        hash_key = (dedupe_scope, col_hash)
+                        if hash_key in hash_registry:
+                            dropped = True
+                            reason = f"duplicate_of_{hash_registry[hash_key]}"
+                        else:
+                            hash_registry[hash_key] = name
+            else:
+                if n_ones == 0:
+                    dropped = True
+                    reason = "all_zeros"
+                elif n_zeros == 0:
+                    dropped = True
+                    reason = "all_ones"
+                elif n_ones < min_support:
+                    dropped = True
+                    reason = f"low_support_{int(n_ones)}<{min_support}"
+                else:
+                    dedupe_scope = (metadata.group, metadata.source_name)
+                    col_hash = hashlib.sha1(col.tobytes()).hexdigest()
+                    hash_key = (dedupe_scope, col_hash)
+                    if hash_key in hash_registry:
+                        dropped = True
+                        reason = f"duplicate_of_{hash_registry[hash_key]}"
+                    else:
+                        hash_registry[hash_key] = name
 
             audit_rows.append(
                 {
                     "feature_name": name,
                     "status": "dropped" if dropped else "retained",
                     "reason": reason,
-                    "support": int(n_ones),
+                    "support": int(finite_count if metadata.source_type == "continuous" else n_ones),
                 }
             )
 
@@ -2475,6 +2877,68 @@ def make_excursion_asymmetry_weights(
     return np.clip(w, w_min, w_max).astype(np.float32, copy=False)
 
 
+def build_miner_sample_weights(
+    target: np.ndarray,
+    X: np.ndarray,
+    symbol_id: np.ndarray,
+    cfg: Dict[str, Any],
+    *,
+    horizon: int,
+    surprisal_bits: Optional[np.ndarray] = None,
+    mfe_atr: Optional[np.ndarray] = None,
+    mae_atr: Optional[np.ndarray] = None,
+    side: str = "long",
+) -> np.ndarray:
+    symbol_codes_tr, _ = pd.factorize(symbol_id, sort=False)
+    sample_weight = make_regime_weights(
+        target,
+        symbol_codes_tr.astype(np.int32, copy=False),
+        horizon=horizon,
+    )
+    sample_weight = sample_weight * make_support_preference_weights(
+        X,
+        target_pct=float(cfg.get("support_preference_target_pct", TARGET_SUPPORT)),
+        preferred_low_pct=float(
+            cfg.get("support_preference_preferred_low_pct", PREFERRED_SUPPORT_MIN)
+        ),
+        preferred_high_pct=float(
+            cfg.get("support_preference_preferred_high_pct", PREFERRED_SUPPORT_MAX)
+        ),
+        strength=float(cfg.get("support_preference_strength", 0.20)),
+        w_min=float(cfg.get("support_preference_weight_min", 0.85)),
+        w_max=float(cfg.get("support_preference_weight_max", 1.25)),
+    )
+    if surprisal_bits is not None:
+        sample_weight = sample_weight * make_surprisal_sample_weights(
+            surprisal_bits,
+            alpha=float(cfg.get("surprisal_weight_alpha", 0.20)),
+            reference_bits=float(cfg.get("surprisal_weight_reference_bits", 3.0)),
+            w_min=float(cfg.get("surprisal_weight_min", 1.0)),
+            w_max=float(cfg.get("surprisal_weight_max", 1.20)),
+        )
+
+    use_excursion_asymmetry_weights = cfg.get("use_excursion_asymmetry_weights", True)
+    if (
+        use_excursion_asymmetry_weights
+        and mfe_atr is not None
+        and mae_atr is not None
+    ):
+        sample_weight = sample_weight * make_excursion_asymmetry_weights(
+            mfe_atr=mfe_atr,
+            mae_atr=mae_atr,
+            side=side,
+            alpha=0.15,
+            w_min=0.85,
+            w_max=1.20,
+        )
+
+    return np.clip(
+        sample_weight,
+        float(cfg.get("sample_weight_final_min", 0.75)),
+        float(cfg.get("sample_weight_final_max", 1.5)),
+    ).astype(np.float32, copy=False)
+
+
 def make_ridge_vol_weights(
     fwd_ret: np.ndarray,
     *,
@@ -2718,43 +3182,18 @@ class InteractionModel:
             raise ValueError(f"Fold {fold_id} has no finite validation samples")
 
         # Sample weights for regime mining
-        symbol_codes_tr, _ = pd.factorize(symbol_id_tr, sort=False)
-        sample_weight = make_regime_weights(
-            y_tr, symbol_codes_tr.astype(np.int32, copy=False), horizon=horizon
-        )
-        sample_weight = sample_weight * make_support_preference_weights(
+        sample_weight = build_miner_sample_weights(
+            y_tr,
             X_tr,
-            target_pct=float(
-                self.cfg.get("support_preference_target_pct", TARGET_SUPPORT)
-            ),
-            preferred_low_pct=float(
-                self.cfg.get(
-                    "support_preference_preferred_low_pct", PREFERRED_SUPPORT_MIN
-                )
-            ),
-            preferred_high_pct=float(
-                self.cfg.get(
-                    "support_preference_preferred_high_pct", PREFERRED_SUPPORT_MAX
-                )
-            ),
-            strength=float(self.cfg.get("support_preference_strength", 0.20)),
-            w_min=float(self.cfg.get("support_preference_weight_min", 0.85)),
-            w_max=float(self.cfg.get("support_preference_weight_max", 1.25)),
+            symbol_id_tr,
+            self.cfg,
+            horizon=horizon,
+            surprisal_bits=surprisal_bits_tr,
+            mfe_atr=mfe_atr_tr,
+            mae_atr=mae_atr_tr,
+            side=side,
         )
-        if surprisal_bits_tr is not None:
-            sample_weight = sample_weight * make_surprisal_sample_weights(
-                surprisal_bits_tr,
-                alpha=float(self.cfg.get("surprisal_weight_alpha", 0.20)),
-                reference_bits=float(
-                    self.cfg.get("surprisal_weight_reference_bits", 3.0)
-                ),
-                w_min=float(self.cfg.get("surprisal_weight_min", 1.0)),
-                w_max=float(self.cfg.get("surprisal_weight_max", 1.20)),
-            )
-
-        # Excursion asymmetry weighting (miner-only, not used in Ridge assessment)
-        use_excursion_asymmetry_weights = self.cfg.get("use_excursion_asymmetry_weights", True)
-        if use_excursion_asymmetry_weights and mfe_atr_tr is not None and mae_atr_tr is not None:
+        if mfe_atr_tr is not None and mae_atr_tr is not None:
             excursion_weights = make_excursion_asymmetry_weights(
                 mfe_atr=mfe_atr_tr,
                 mae_atr=mae_atr_tr,
@@ -2763,7 +3202,6 @@ class InteractionModel:
                 w_min=0.85,
                 w_max=1.20,
             )
-            sample_weight = sample_weight * excursion_weights
             tprint(
                 f"Excursion weights [{side}] fold {fold_id} "
                 f"mean={np.nanmean(excursion_weights):.4f} "
@@ -2771,12 +3209,6 @@ class InteractionModel:
                 f"p50={np.nanpercentile(excursion_weights, 50):.4f} "
                 f"p95={np.nanpercentile(excursion_weights, 95):.4f}"
             )
-
-        sample_weight = np.clip(
-            sample_weight,
-            float(self.cfg.get("sample_weight_final_min", 0.75)),
-            float(self.cfg.get("sample_weight_final_max", 1.5)),
-        ).astype(np.float32, copy=False)
 
         X_tr = np.asarray(X_tr, dtype=np.float32, order="C")
         X_va = np.asarray(X_va, dtype=np.float32, order="C")
@@ -3197,23 +3629,17 @@ class RuleExtractor:
         return thr
 
     def _normalize_predicate(
-        self, threshold: float, direction: int
+        self, metadata: FeatureMetadata, threshold: float, direction: int
     ) -> Optional[Tuple[int, str, float]]:
-        """
-        Simplified and hardened normalization for [0, 1] boolean features.
-        LightGBM JSON format:
-        Left child (direction 1) is 'value <= threshold'
-        Right child (direction 0) is 'value > threshold'
-        """
-        threshold = self._normalize_boolean_threshold(threshold)
-
-        # Direction 1: Left (<= 0.5) -> Feature is 0
-        if direction == 1:
-            return (0, "<=", threshold)
-
-        # Direction 0: Right (> 0.5) -> Feature is 1
-        else:
+        if metadata.source_type == "boolean":
+            threshold = self._normalize_boolean_threshold(threshold)
+            if direction == 1:
+                return (0, "<=", threshold)
             return (1, ">", threshold)
+        raw_threshold = float(threshold)
+        if direction == 1:
+            return (0, "<=", raw_threshold)
+        return (1, ">", raw_threshold)
 
     def _compile_tree(self, root_node: Dict[str, Any]) -> CompiledTree:
         split_feature: List[int] = []
@@ -3244,10 +3670,13 @@ class RuleExtractor:
                 leaf_count.append(int(node.get("leaf_count", 0)))
                 leaf_index.append(int(node.get("leaf_index", -1)))
             else:
-                split_feature.append(int(node["split_feature"]))
-                threshold.append(
-                    float(self._normalize_boolean_threshold(node.get("threshold", 0.5)))
-                )
+                split_feat_idx = int(node["split_feature"])
+                split_feature.append(split_feat_idx)
+                meta = self.metadata_lookup.get(split_feat_idx)
+                raw_threshold = float(node.get("threshold", 0.5))
+                if meta is not None and meta.source_type == "boolean":
+                    raw_threshold = float(self._normalize_boolean_threshold(raw_threshold))
+                threshold.append(raw_threshold)
                 split_gain.append(float(node.get("split_gain", 0.0)))
                 left_child.append(-1)
                 right_child.append(-1)
@@ -3404,7 +3833,7 @@ class RuleExtractor:
             raw_thr = float(tree.threshold[node_idx])
 
             for direction in (0, 1):
-                norm = self._normalize_predicate(raw_thr, direction)
+                norm = self._normalize_predicate(m, raw_thr, direction)
                 if norm is None:
                     continue
                 norm_val, raw_op, raw_thr = norm
@@ -3452,29 +3881,91 @@ class RuleExtractor:
         reduced: List[RuleCondition] = []
         for group in group_order:
             group_conditions = by_group[group]
+            bool_feat_map: Dict[int, int] = {}
+            continuous_bounds: Dict[int, Dict[str, Any]] = {}
             if group not in self.collapse_duplicate_groups:
-                feat_map: Dict[int, int] = {}
                 for c in group_conditions:
-                    prev = feat_map.get(c.feature_index)
+                    metadata = self.metadata_lookup.get(c.feature_index)
+                    if metadata is not None and metadata.source_type == "continuous":
+                        bound = continuous_bounds.setdefault(
+                            c.feature_index,
+                            {
+                                "feature_name": c.feature_name,
+                                "group": c.group,
+                                "lower": None,
+                                "upper": None,
+                            },
+                        )
+                        if c.raw_operator in {">", ">="}:
+                            prev = bound["lower"]
+                            if prev is None or float(c.raw_threshold) > float(prev.raw_threshold):
+                                bound["lower"] = c
+                        elif c.raw_operator in {"<=", "<"}:
+                            prev = bound["upper"]
+                            if prev is None or float(c.raw_threshold) < float(prev.raw_threshold):
+                                bound["upper"] = c
+                        elif c.raw_operator == "==":
+                            bound["lower"] = c
+                            bound["upper"] = c
+                        continue
+                    prev = bool_feat_map.get(c.feature_index)
                     if prev is not None:
                         if prev != c.normalized_value:
                             return None, f"contradiction_{c.feature_name}"
                         continue
-                    feat_map[c.feature_index] = c.normalized_value
+                    bool_feat_map[c.feature_index] = c.normalized_value
                     reduced.append(c)
+                for feature_index, bound in continuous_bounds.items():
+                    lower = bound["lower"]
+                    upper = bound["upper"]
+                    if lower is not None and upper is not None:
+                        if float(lower.raw_threshold) > float(upper.raw_threshold):
+                            return None, f"contradiction_{bound['feature_name']}"
+                    if lower is not None:
+                        reduced.append(lower)
+                    if upper is not None and upper is not lower:
+                        reduced.append(upper)
                 continue
 
-            # Point 14: Implement actual collapsing for duplicate groups
-            # For now, we take the FIRST condition for each unique feature in the group
-            # (or we could take the most restrictive, but first is safer for now)
-            feat_map: Dict[int, int] = {}
             for c in group_conditions:
-                if c.feature_index not in feat_map:
-                    feat_map[c.feature_index] = c.normalized_value
+                metadata = self.metadata_lookup.get(c.feature_index)
+                if metadata is not None and metadata.source_type == "continuous":
+                    bound = continuous_bounds.setdefault(
+                        c.feature_index,
+                        {
+                            "feature_name": c.feature_name,
+                            "group": c.group,
+                            "lower": None,
+                            "upper": None,
+                        },
+                    )
+                    if c.raw_operator in {">", ">="}:
+                        prev = bound["lower"]
+                        if prev is None or float(c.raw_threshold) > float(prev.raw_threshold):
+                            bound["lower"] = c
+                    elif c.raw_operator in {"<=", "<"}:
+                        prev = bound["upper"]
+                        if prev is None or float(c.raw_threshold) < float(prev.raw_threshold):
+                            bound["upper"] = c
+                    elif c.raw_operator == "==":
+                        bound["lower"] = c
+                        bound["upper"] = c
+                    continue
+                if c.feature_index not in bool_feat_map:
+                    bool_feat_map[c.feature_index] = c.normalized_value
                     reduced.append(c)
-                elif feat_map[c.feature_index] != c.normalized_value:
-                    # If duplicate features in same group have DIFFERENT values, it's a contradiction
+                elif bool_feat_map[c.feature_index] != c.normalized_value:
                     return None, f"contradiction_in_collapsed_group_{c.feature_name}"
+            for feature_index, bound in continuous_bounds.items():
+                lower = bound["lower"]
+                upper = bound["upper"]
+                if lower is not None and upper is not None:
+                    if float(lower.raw_threshold) > float(upper.raw_threshold):
+                        return None, f"contradiction_in_collapsed_group_{bound['feature_name']}"
+                if lower is not None:
+                    reduced.append(lower)
+                if upper is not None and upper is not lower:
+                    reduced.append(upper)
 
         return reduced, None
 
@@ -3500,11 +3991,11 @@ class RuleExtractor:
             #     return False, f"interaction_group_violation_{ig}"
             # seen_groups[ig] = c.feature_index
 
-            prev_val = seen_features.get(c.feature_index)
-            if prev_val is not None and prev_val != c.normalized_value:
-                return False, f"contradiction_{c.feature_name}"
-
-            seen_features[c.feature_index] = c.normalized_value
+            if m.source_type != "continuous":
+                prev_val = seen_features.get(c.feature_index)
+                if prev_val is not None and prev_val != c.normalized_value:
+                    return False, f"contradiction_{c.feature_name}"
+                seen_features[c.feature_index] = c.normalized_value
 
         # Polarity Check: reject only all-negative paths
         # A path is all-negative if NO condition has normalized_value == 1
@@ -3538,12 +4029,20 @@ class RuleExtractor:
                 out_slots.append("(*)")
             else:
                 # Sort by feature name for canonical ordering
-                group_conds.sort(key=lambda x: x.feature_name)
-                # Deduplicate same feature identical conditions
+                group_conds.sort(
+                    key=lambda x: (x.feature_name, x.raw_operator, float(x.raw_threshold))
+                )
                 seen = set()
                 joined = []
                 for c in group_conds:
-                    rep = f"{c.feature_name}=={int(c.normalized_value)}"
+                    metadata = self.metadata_lookup.get(c.feature_index)
+                    if metadata is not None and metadata.source_type == "continuous":
+                        rep = (
+                            f"{c.feature_name}{c.raw_operator}"
+                            f"{format_condition_value(c.raw_threshold)}"
+                        )
+                    else:
+                        rep = f"{c.feature_name}=={int(c.normalized_value)}"
                     if rep not in seen:
                         joined.append(rep)
                         seen.add(rep)
@@ -3560,6 +4059,29 @@ def split_composite_key(canonical_key: str) -> Optional[Tuple[str, str]]:
     if not match:
         return None
     return match.group(1), match.group(2)
+
+
+CONDITION_OPERATOR_PATTERN = re.compile(r"^(?P<name>.+?)(?P<op><=|>=|==|<|>)(?P<value>.+)$")
+
+
+def format_condition_value(value: float) -> str:
+    return np.format_float_positional(
+        float(value), precision=8, unique=True, fractional=False, trim="-"
+    )
+
+
+def parse_condition_string(cond_str: str) -> Optional[Tuple[str, str, str]]:
+    match = CONDITION_OPERATOR_PATTERN.match(cond_str.strip())
+    if match is None:
+        return None
+    return match.group("name"), match.group("op"), match.group("value")
+
+
+def condition_operator_code(operator: str) -> int:
+    mapping = {"==": 0, "<=": 1, ">": 2, "<": 3, ">=": 4}
+    if operator not in mapping:
+        raise ValueError(f"Unsupported condition operator: {operator}")
+    return mapping[operator]
 
 
 def parse_slot_map(
@@ -3608,9 +4130,10 @@ def extract_feature_names_from_key(canonical_key: str) -> List[str]:
             if slot_value == "*":
                 continue
             for cond_str in slot_value.split("&"):
-                if "==" not in cond_str:
+                parsed = parse_condition_string(cond_str)
+                if parsed is None:
                     continue
-                names.append(cond_str.split("==")[0])
+                names.append(parsed[0])
     return sorted(set(names))
 
 
@@ -3650,7 +4173,9 @@ def display_arity_for_key(canonical_key: str) -> int:
         slot_value = slot.strip("()")
         if slot_value == "*":
             continue
-        total += sum(1 for cond_str in slot_value.split("&") if "==" in cond_str)
+        total += sum(
+            1 for cond_str in slot_value.split("&") if parse_condition_string(cond_str)
+        )
     return total
 
 
@@ -3869,7 +4394,8 @@ class CanonicalRuleMaskResolver:
             slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
 
         feature_indices: List[int] = []
-        target_values: List[int] = []
+        feature_operator_codes: List[int] = []
+        feature_threshold_values: List[float] = []
         context_feature_names: List[str] = []
         context_target_values: List[int] = []
         unresolved: List[Tuple[str, str]] = []
@@ -3878,17 +4404,23 @@ class CanonicalRuleMaskResolver:
             if slot_value == "*":
                 continue
             for cond_str in slot_value.split("&"):
-                if "==" not in cond_str:
+                parsed = parse_condition_string(cond_str)
+                if parsed is None:
                     self.malformed_key_count += 1
                     raise ValueError(f"Malformed slot {cond_str} in {canonical_key}")
-                feature_name, target_val_raw = cond_str.split("==")
-                target_val = int(target_val_raw)
+                feature_name, operator, raw_value = parsed
                 if feature_name in self.name_to_idx:
-                    feature_indices.append(self.name_to_idx[feature_name])
-                    target_values.append(target_val)
+                    feature_idx = self.name_to_idx[feature_name]
+                    feature_indices.append(feature_idx)
+                    feature_operator_codes.append(condition_operator_code(operator))
+                    feature_threshold_values.append(float(raw_value))
                 elif feature_name in self.context_lookup:
+                    if operator != "==":
+                        raise ValueError(
+                            f"Context feature {feature_name} only supports == predicates"
+                        )
                     context_feature_names.append(feature_name)
-                    context_target_values.append(target_val)
+                    context_target_values.append(int(float(raw_value)))
                 else:
                     unresolved.append((group, feature_name))
                     self.unresolved_feature_count += 1
@@ -3918,7 +4450,10 @@ class CanonicalRuleMaskResolver:
         spec = {
             "is_composite": False,
             "feature_indices": np.asarray(feature_indices, dtype=np.int32),
-            "target_values": np.asarray(target_values, dtype=np.int8),
+            "feature_operator_codes": np.asarray(feature_operator_codes, dtype=np.int8),
+            "feature_threshold_values": np.asarray(
+                feature_threshold_values, dtype=np.float32
+            ),
             "context_feature_names": tuple(context_feature_names),
             "context_target_values": np.asarray(context_target_values, dtype=np.int8),
             "parent_context_name": parent_context_name,
@@ -3926,24 +4461,33 @@ class CanonicalRuleMaskResolver:
 
         instr_source_type: List[int] = []
         instr_source_idx: List[int] = []
-        instr_target_value: List[int] = []
-        for idx, target_val in zip(feature_indices, target_values):
+        instr_operator_code: List[int] = []
+        instr_threshold_value: List[float] = []
+        for idx, operator_code, threshold_value in zip(
+            feature_indices, feature_operator_codes, feature_threshold_values
+        ):
             instr_source_type.append(0)
             instr_source_idx.append(int(idx))
-            instr_target_value.append(int(target_val))
+            instr_operator_code.append(int(operator_code))
+            instr_threshold_value.append(float(threshold_value))
         for feature_name, target_val in zip(
             context_feature_names, context_target_values
         ):
             instr_source_type.append(1)
             instr_source_idx.append(int(self.context_name_to_idx[feature_name]))
-            instr_target_value.append(int(target_val))
+            instr_operator_code.append(0)
+            instr_threshold_value.append(float(target_val))
         if parent_context_name is not None:
             instr_source_type.append(1)
             instr_source_idx.append(int(self.context_name_to_idx[parent_context_name]))
-            instr_target_value.append(1)
+            instr_operator_code.append(0)
+            instr_threshold_value.append(1.0)
         spec["instr_source_type"] = np.asarray(instr_source_type, dtype=np.int8)
         spec["instr_source_idx"] = np.asarray(instr_source_idx, dtype=np.int32)
-        spec["instr_target_value"] = np.asarray(instr_target_value, dtype=np.int8)
+        spec["instr_operator_code"] = np.asarray(instr_operator_code, dtype=np.int8)
+        spec["instr_threshold_value"] = np.asarray(
+            instr_threshold_value, dtype=np.float32
+        )
 
         self._parsed_rule_cache[canonical_key] = spec
         return spec
@@ -3961,10 +4505,22 @@ class CanonicalRuleMaskResolver:
         mask = np.ones(n_samples, dtype=bool)
 
         feature_indices = spec["feature_indices"]
-        target_values = spec["target_values"]
-        for idx, target_val in zip(feature_indices, target_values):
+        feature_operator_codes = spec["feature_operator_codes"]
+        feature_threshold_values = spec["feature_threshold_values"]
+        for idx, operator_code, threshold_value in zip(
+            feature_indices, feature_operator_codes, feature_threshold_values
+        ):
             values = self.X[:, idx] if indices is None else self.X[indices, idx]
-            mask &= values == target_val
+            if int(operator_code) == 0:
+                mask &= values == threshold_value
+            elif int(operator_code) == 1:
+                mask &= values <= threshold_value
+            elif int(operator_code) == 2:
+                mask &= values > threshold_value
+            elif int(operator_code) == 3:
+                mask &= values < threshold_value
+            else:
+                mask &= values >= threshold_value
 
         for feature_name, target_val in zip(
             spec["context_feature_names"], spec["context_target_values"]
@@ -4007,7 +4563,8 @@ class CanonicalRuleMaskResolver:
         composite_positions: List[int] = []
         instr_source_type_chunks: List[np.ndarray] = []
         instr_source_idx_chunks: List[np.ndarray] = []
-        instr_target_value_chunks: List[np.ndarray] = []
+        instr_operator_code_chunks: List[np.ndarray] = []
+        instr_threshold_value_chunks: List[np.ndarray] = []
         rule_offsets: List[int] = []
         rule_lengths: List[int] = []
         offset = 0
@@ -4019,10 +4576,12 @@ class CanonicalRuleMaskResolver:
             non_composite_positions.append(pos)
             source_type = spec["instr_source_type"]
             source_idx = spec["instr_source_idx"]
-            target_value = spec["instr_target_value"]
+            operator_code = spec["instr_operator_code"]
+            threshold_value = spec["instr_threshold_value"]
             instr_source_type_chunks.append(source_type)
             instr_source_idx_chunks.append(source_idx)
-            instr_target_value_chunks.append(target_value)
+            instr_operator_code_chunks.append(operator_code)
+            instr_threshold_value_chunks.append(threshold_value)
             rule_offsets.append(offset)
             rule_lengths.append(int(len(source_type)))
             offset += int(len(source_type))
@@ -4036,20 +4595,25 @@ class CanonicalRuleMaskResolver:
                 instr_source_idx = np.concatenate(instr_source_idx_chunks).astype(
                     np.int32, copy=False
                 )
-                instr_target_value = np.concatenate(instr_target_value_chunks).astype(
+                instr_operator_code = np.concatenate(instr_operator_code_chunks).astype(
                     np.int8, copy=False
                 )
+                instr_threshold_value = np.concatenate(
+                    instr_threshold_value_chunks
+                ).astype(np.float32, copy=False)
             else:
                 instr_source_type = np.empty(0, dtype=np.int8)
                 instr_source_idx = np.empty(0, dtype=np.int32)
-                instr_target_value = np.empty(0, dtype=np.int8)
+                instr_operator_code = np.empty(0, dtype=np.int8)
+                instr_threshold_value = np.empty(0, dtype=np.float32)
 
             non_composite_masks = _compute_masks_from_instruction_matrix_numba(
                 x_values,
                 context_values,
                 instr_source_type,
                 instr_source_idx,
-                instr_target_value,
+                instr_operator_code,
+                instr_threshold_value,
                 np.asarray(rule_offsets, dtype=np.int32),
                 np.asarray(rule_lengths, dtype=np.int32),
             )
@@ -4074,7 +4638,12 @@ class CanonicalRuleMaskResolver:
             slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
 
         if "context" in slot_map and slot_map["context"] != "*":
-            ctx_name = slot_map["context"].split("==")[0]
+            parsed_context = parse_condition_string(slot_map["context"])
+            ctx_name = (
+                parsed_context[0]
+                if parsed_context is not None
+                else slot_map["context"].split("==")[0]
+            )
             return self.context_key_map.get(ctx_name)
 
         parent_key = build_stage_a_parent_key_from_slot_map(slot_map)
@@ -4907,10 +5476,29 @@ class RuleScorer:
         fast_path = False
         try:
             if isinstance(resolver, CanonicalRuleMaskResolver):
-                fast_registry = pd.DataFrame({"canonical_key": keys})
-                engine = NumbaRuleInferenceEngine(fast_registry, resolver.metadata)
-                mask_matrix = engine.apply(resolver.X)
-                fast_path = True
+                simple_boolean_keys = True
+                for key in keys:
+                    if "Composite" in str(key):
+                        simple_boolean_keys = False
+                        break
+                    for part in str(key).split("|"):
+                        slot_value = part.strip("()")
+                        if slot_value == "*":
+                            continue
+                        for cond_str in slot_value.split("&"):
+                            parsed = parse_condition_string(cond_str)
+                            if parsed is None or parsed[1] != "==":
+                                simple_boolean_keys = False
+                                break
+                        if not simple_boolean_keys:
+                            break
+                    if not simple_boolean_keys:
+                        break
+                if simple_boolean_keys:
+                    fast_registry = pd.DataFrame({"canonical_key": keys})
+                    engine = NumbaRuleInferenceEngine(fast_registry, resolver.metadata)
+                    mask_matrix = engine.apply(resolver.X)
+                    fast_path = True
         except KeyError:
             fast_path = False
 
@@ -5741,6 +6329,8 @@ def run_mining_stage(
     horizon: int = 0,
     primary_target_override: Optional[np.ndarray] = None,
     sample_weight_surprisal_override: Optional[np.ndarray] = None,
+    nuisance_feature_arrays: Optional[Dict[str, np.ndarray]] = None,
+    nuisance_feature_resolution: Optional[Dict[str, str]] = None,
     run_step: str = "full",
     step1_input_dir: Optional[Path] = None,
     candidate_registry_override: Optional[pd.DataFrame] = None,
@@ -5805,11 +6395,17 @@ def run_mining_stage(
     primary_target = (
         primary_target_override if primary_target_override is not None else fwd_ret_norm
     )
+    effective_target_name = f"{target_name}_miner_effective"
+    residualise_target = bool(cfg.get("residualise_target_for_miner", True))
 
     # Relaxed completeness check per user request.
     # We only require the target to be finite and at least ONE feature to be present.
     _feature_any_finite = np.any(np.isfinite(X), axis=1)
-    _complete = np.isfinite(primary_target) & _feature_any_finite
+    _nuisance_complete = np.ones(len(data), dtype=bool)
+    if residualise_target and nuisance_feature_arrays:
+        for arr in nuisance_feature_arrays.values():
+            _nuisance_complete &= np.isfinite(arr)
+    _complete = np.isfinite(primary_target) & _feature_any_finite & _nuisance_complete
 
     n_before = len(data)
     n_remain = int(_complete.sum())
@@ -5876,9 +6472,47 @@ def run_mining_stage(
             min_train_frac=float(cfg.get("cv_min_train_frac", 0.5)),
             embargo=int(cfg.get("cv_embargo", 0)),
         )
+    fold_orig_sizes: Dict[int, Tuple[int, int]] = {}
+    training_folds: List[Tuple[np.ndarray, np.ndarray]] = []
     for fold_id, (tr_idx, va_idx) in enumerate(folds):
         if tr_idx.size == 0 or va_idx.size == 0 or tr_idx.max() >= va_idx.min():
             raise ValueError(f"Invalid fold {fold_id} in {stage_name}")
+        fold_orig_sizes[fold_id] = (len(tr_idx), len(va_idx))
+        training_folds.append(
+            (
+                _cap_fold_indices(tr_idx, int(cfg.get("fold_train_row_cap", 75_000))),
+                _cap_fold_indices(va_idx, int(cfg.get("fold_val_row_cap", 15_000))),
+            )
+        )
+    folds = training_folds
+
+    fold_target_views, effective_target_oof, residualizer_records = (
+        _prepare_fold_effective_target_views(
+            raw_target=np.asarray(primary_target, dtype=np.float32),
+            folds=folds,
+            target_name=target_name,
+            residualise_target=residualise_target,
+            nuisance_feature_arrays=nuisance_feature_arrays,
+            nuisance_feature_resolution=nuisance_feature_resolution,
+            apply_target_postprocessing=bounded_target is not None,
+            X=X,
+            symbol_id=data["symbol"].to_numpy(),
+            cfg=cfg,
+            horizon=horizon,
+            surprisal_bits=sample_weight_surprisal_override,
+            mfe_atr=mfe_atr,
+            mae_atr=mae_atr,
+            side=explicit_side or "long",
+        )
+    )
+    if residualizer_records:
+        atomic_to_csv(
+            pd.DataFrame(residualizer_records),
+            output_dir / "fold_target_residualizer_summary.csv",
+        )
+    tprint(
+        f"Effective miner target: {effective_target_name} | residualised={residualise_target} | nuisance_columns={json.dumps(nuisance_feature_resolution or {}, sort_keys=True)}"
+    )
 
     model_engine = InteractionModel(
         metadata, cfg, side=explicit_side, allowed_group_pairs=allowed_group_pairs
@@ -5927,7 +6561,7 @@ def run_mining_stage(
             step_mode="step2",
             step1_checkpoint_dir=step1_input_dir,
             checkpoint_output_dir=output_dir,
-            bounded_target=bounded_target,
+            bounded_target=effective_target_oof,
         )
         if not assessment_df.empty:
             atomic_to_csv(assessment_df, output_dir / "final_mask_assessment_audit.csv")
@@ -6026,10 +6660,9 @@ def run_mining_stage(
             )
             continue
 
-        orig_tr_rows = len(tr_idx)
-        orig_va_rows = len(va_idx)
-        tr_idx = _cap_fold_indices(tr_idx, int(cfg.get("fold_train_row_cap", 75_000)))
-        va_idx = _cap_fold_indices(va_idx, int(cfg.get("fold_val_row_cap", 15_000)))
+        orig_tr_rows, orig_va_rows = fold_orig_sizes.get(
+            fold_id, (len(tr_idx), len(va_idx))
+        )
 
         # Determine available features per group for logging
         group_to_features = collections.defaultdict(list)
@@ -6043,8 +6676,8 @@ def run_mining_stage(
             f"train={orig_tr_rows}, val={orig_va_rows})"
         )
 
-        # Target distribution summary (using primary_target, which is the real training target)
-        _tr_tgt = primary_target[tr_idx]
+        fold_view = fold_target_views[fold_id]
+        _tr_tgt = fold_view["y_tr_processed"]
         tr_target_valid = _tr_tgt[~np.isnan(_tr_tgt)]
         if len(tr_target_valid) > 0:
             tr_mean = tr_target_valid.mean()
@@ -6081,6 +6714,11 @@ def run_mining_stage(
                 "fold_id": fold_id,
                 "tr_rows": len(tr_idx),
                 "va_rows": len(va_idx),
+                "raw_target_name": target_name,
+                "effective_target_name": effective_target_name,
+                "target_representation": (
+                    "residualised" if residualise_target else "raw"
+                ),
                 "target_mean": tr_mean,
                 "target_std": tr_std,
                 "target_p1": tr_p1,
@@ -6092,13 +6730,13 @@ def run_mining_stage(
         )
 
         tprint(
-            f"Fold {fold_id}: Target {target_name} -> mean={tr_mean:.4f}, std={tr_std:.4f}, p1={tr_p1:.4f}, p5={tr_p5:.4f}, p50={tr_p50:.4f}, p95={tr_p95:.4f}, p99={tr_p99:.4f}"
+            f"Fold {fold_id}: Target {effective_target_name} -> mean={tr_mean:.4f}, std={tr_std:.4f}, p1={tr_p1:.4f}, p5={tr_p5:.4f}, p50={tr_p50:.4f}, p95={tr_p95:.4f}, p99={tr_p99:.4f}"
         )
 
         # All rows in tr_idx and va_idx are already complete (pre-filtered upstream).
         X_tr, X_va = X[tr_idx], X[va_idx]
-        y_tr_raw = primary_target[tr_idx]
-        y_va_raw = primary_target[va_idx]
+        y_tr_raw = fold_view["y_tr_raw"]
+        y_va_raw = fold_view["y_va_raw"]
         symbol_id_tr = data["symbol"].to_numpy()[tr_idx]
         surprisal_bits_tr = (
             None
@@ -6106,8 +6744,8 @@ def run_mining_stage(
             else sample_weight_surprisal_override[tr_idx]
         )
 
-        tr_finite_mask = np.isfinite(y_tr_raw)
-        va_finite_mask = np.isfinite(y_va_raw)
+        tr_finite_mask = np.isfinite(fold_view["y_tr_processed"])
+        va_finite_mask = np.isfinite(fold_view["y_va_processed"])
         if not tr_finite_mask.any() or not va_finite_mask.any():
             tprint(
                 f"WARNING: Skipping fold {fold_id} because it has no finite "
@@ -6116,38 +6754,21 @@ def run_mining_stage(
             )
             continue
 
-        # Apply target post-processing (fold-based fitting)
-        # Fit on training fold only, then apply to both train and val
-        from extreme_price_movements.triad_targets import (
-            fit_target_postprocessor,
-            apply_target_postprocessor,
-        )
-
-        # Check if this is a triad target (bounded_target provided)
-        is_triad_target = bounded_target is not None
-        if is_triad_target:
-            # Fit post-processor on training fold
-            pp = fit_target_postprocessor(target_name, y_tr_raw, mode="default")
-
-            # Apply to training and validation
-            y_tr_proc = apply_target_postprocessor(y_tr_raw, pp)
-            y_va_proc = apply_target_postprocessor(y_va_raw, pp)
-
-            # Log post-processing results
+        y_tr_clip = fold_view["y_tr_processed"]
+        y_va_proc = fold_view["y_va_processed"]
+        if bounded_target is not None:
             from extreme_price_movements.triad_targets import summarize_processed_target
-            summarize_processed_target(f"{target_name}_H{horizon}_fold{fold_id}_train", y_tr_proc)
-            summarize_processed_target(f"{target_name}_H{horizon}_fold{fold_id}_val", y_va_proc)
-
-            # Use post-processed target for training
-            y_tr_clip = y_tr_proc
-        else:
-            # For non-triad targets (legacy), keep the original clipping
-            y_tr_clip = np.clip(
-                y_tr_raw,
-                -3.0,
-                3.0,
+            summarize_processed_target(
+                f"{effective_target_name}_H{horizon}_fold{fold_id}_train", y_tr_clip
             )
-            y_va_proc = y_va_raw  # No post-processing for legacy targets
+            summarize_processed_target(
+                f"{effective_target_name}_H{horizon}_fold{fold_id}_val", y_va_proc
+            )
+        if residualise_target and residualizer_records:
+            residualizer_row = residualizer_records[fold_id]
+            tprint(
+                f"{stage_name} fold {fold_id}: target residualised fit_n={int(residualizer_row.get('fit_sample_count', 0))} train_valid={int(residualizer_row.get('train_effective_valid_count', 0))} val_valid={int(residualizer_row.get('val_effective_valid_count', 0))}"
+            )
 
         for seed in seeds:
             # Use quantile regression for all targets (triad targets work with quantile regression)
@@ -6164,7 +6785,7 @@ def run_mining_stage(
                 symbol_id_tr,
                 surprisal_bits_tr,
                 X_va,
-                y_va_raw,  # Use raw validation target for evaluation
+                y_va_proc,
                 fold_id,
                 seed,
                 target_type=target_type,
@@ -6245,10 +6866,27 @@ def run_mining_stage(
 
             if fi_records:
                 fi_df = pd.DataFrame(fi_records)
+                total_gain = float(fi_df["gain"].sum())
                 top_gain = fi_df.sort_values("gain", ascending=False).head(5)
+                top10_gain = fi_df.sort_values("gain", ascending=False).head(10)
+                top5_gain_share = (
+                    float(top_gain["gain"].sum() / total_gain) if total_gain > 0.0 else np.nan
+                )
+                top10_gain_share = (
+                    float(top10_gain["gain"].sum() / total_gain) if total_gain > 0.0 else np.nan
+                )
                 tprint("Top 5 features by gain:")
                 for _, row in top_gain.iterrows():
-                    tprint(f"  - {row['feature_name']}: {row['gain']:.2f}")
+                    gain_pct = (
+                        (100.0 * float(row["gain"]) / total_gain) if total_gain > 0.0 else np.nan
+                    )
+                    tprint(
+                        f"  - {row['feature_name']}: {row['gain']:.2f} ({gain_pct:.2f}% of total gain)"
+                    )
+                tprint(
+                    "Feature gain concentration: "
+                    f"top5={100.0 * top5_gain_share:.2f}% top10={100.0 * top10_gain_share:.2f}%"
+                )
 
                 top_fam = (
                     fi_df.groupby("regime_family")["split"]
@@ -6622,7 +7260,7 @@ def run_mining_stage(
         n_instances_map=n_instances_map,
         pipeline_stage_map=pipeline_stage_map,
         side_map=side_map,
-        bounded_target=primary_target,
+        bounded_target=effective_target_oof,
         predictions=oof_predictions,
         path_mfe=path_arrays["mfe"],
         path_mae=path_arrays["mae"],
@@ -6746,7 +7384,7 @@ def run_mining_stage(
         step_mode=run_step,
         step1_checkpoint_dir=step1_input_dir,
         checkpoint_output_dir=output_dir,
-        bounded_target=bounded_target,
+        bounded_target=effective_target_oof,
     )
     if not assessment_df.empty:
         atomic_to_csv(assessment_df, output_dir / "final_mask_assessment_audit.csv")
@@ -6928,6 +7566,30 @@ def run_side_pipeline(
 
     side_fwd_ret = fwd_ret if side == "long" else -fwd_ret
     side_fwd_ret_norm = fwd_ret_norm if side == "long" else -fwd_ret_norm
+    residualise_target = bool(cfg.get("residualise_target_for_miner", True))
+    nuisance_feature_resolution: Dict[str, str] = {}
+    nuisance_feature_arrays: Dict[str, np.ndarray] = {}
+    nuisance_valid = np.ones(len(data), dtype=bool)
+    if residualise_target:
+        nuisance_feature_resolution, nuisance_feature_arrays = (
+            _resolve_miner_nuisance_feature_arrays(feature_dict, cfg)
+        )
+        for arr in nuisance_feature_arrays.values():
+            nuisance_valid &= np.isfinite(arr)
+    effective_target_name = (
+        f"{target_name}_miner_effective" if residualise_target else target_name
+    )
+    tprint(
+        f"Miner target mode: raw={target_name} effective={effective_target_name} residualised={residualise_target}"
+    )
+    if residualise_target:
+        tprint(
+            "Residualiser nuisance columns: "
+            + json.dumps(nuisance_feature_resolution, sort_keys=True)
+        )
+    tprint(
+        f"Miner nuisance drop flags: drop_nuisance={bool(cfg.get('drop_nuisance_features_from_miner', True))} drop_location={bool(cfg.get('drop_location_nuisance_features_from_miner', False))} drop_continuous_parents={bool(cfg.get('drop_continuous_nuisance_parents_from_miner', True))}"
+    )
 
     side_output_dir = root_output_dir / side
     side_output_dir.mkdir(parents=True, exist_ok=True)
@@ -7077,7 +7739,7 @@ def run_side_pipeline(
         # Legacy targets: only require finite
         _domain_valid = _finite_target_only
 
-    target_finite = _domain_valid
+    target_finite = _domain_valid & nuisance_valid
 
     # We log the target distribution to help identify why targets are being dropped or bounded
     _summarize_target_distribution(target_name, side_target, horizon, side)
@@ -7166,6 +7828,8 @@ def run_side_pipeline(
         horizon=horizon,
         primary_target_override=side_target,
         sample_weight_surprisal_override=bounded_target_surprisal,
+        nuisance_feature_arrays=nuisance_feature_arrays,
+        nuisance_feature_resolution=nuisance_feature_resolution,
         run_step=run_step,
         step1_input_dir=step1_input_dir,
         candidate_registry_override=candidate_registry_override,
@@ -7531,7 +8195,7 @@ def build_global_stage_a_ridge_shortlist(
         else np.arange(n_rows)
     )
     mask_matrix = resolver.get_masks_matrix(unique_keys)[:, sub_idx].astype(
-        np.int8, copy=False
+        np.int32, copy=False
     )
     intersections = mask_matrix @ mask_matrix.T
     supports = np.diag(intersections).astype(np.float32)
@@ -7547,6 +8211,13 @@ def build_global_stage_a_ridge_shortlist(
         ["cheap_rank", "source_target", "source_horizon", "side"],
         ascending=[False, True, True, True],
     ).reset_index(drop=True)
+
+    if len(pooled) <= global_cap:
+        tprint(
+            "Global stage2 shortlist: "
+            f"input={len(pooled)} selected={len(pooled)} cap={global_cap}"
+        )
+        return pooled
 
     selected_rows: List[int] = []
     support_ratio_min = float(cfg.get("global_overlap_support_ratio_min", 0.70))
@@ -7813,6 +8484,14 @@ def run_lgbm_mask_generation_triad(
                             post_df["source_horizon"] = horizon
                             post_df["side"] = side
                             pooled_step1_frames.append(post_df)
+
+    if pooled_step1_frames:
+        tprint(
+            "Collected Stage A post-dedup survivors: "
+            f"frames={len(pooled_step1_frames)} total_rules={sum(len(df) for df in pooled_step1_frames)}"
+        )
+    else:
+        tprint("Collected Stage A post-dedup survivors: frames=0 total_rules=0")
 
     # GLOBAL CONSOLIDATED STEP 2
     if triad_run_step in ["full", "step2"]:
@@ -8972,8 +9651,26 @@ class MaskAssessor:
         if cached is not None:
             return cached
         test_keys_set = set(TEST_FEATURE_KEYS)
+        requested_columns = tuple(
+            self.cfg.get(
+                "miner_target_residualization_columns",
+                MINER_TARGET_RESIDUALIZATION_COLUMNS,
+            )
+        )
+        residualization_source_names: Set[str] = set()
+        for requested_name in requested_columns:
+            candidates = MINER_TARGET_RESIDUALIZATION_ALIAS_MAP.get(
+                str(requested_name), (str(requested_name),)
+            )
+            for candidate in candidates:
+                if any(m.source_name == candidate for m in self.metadata):
+                    residualization_source_names.add(str(candidate))
+                    break
+        assessor_feature_names = test_keys_set | residualization_source_names
         ridge_feats = [
-            i for i, m in enumerate(self.metadata) if m.source_name in test_keys_set
+            i
+            for i, m in enumerate(self.metadata)
+            if m.source_name in assessor_feature_names
         ]
         cached = np.asarray(ridge_feats, dtype=np.int32)
         self._ridge_feature_indices_cache = cached
@@ -9338,15 +10035,21 @@ class MaskAssessor:
         min_sign_consistency = float(self.cfg.get("min_sign_consistency", 0.0))
         min_mean_target_value = float(self.cfg.get("min_mean_target_value", 0.003))
 
-        ridge_target_by_side = {"long": fwd_ret_norm, "short": -fwd_ret_norm}
-
-        # IMPORTANT: Ridge learnability always uses vol-normalized forward returns; do not substitute miner targets here.
-        # Assert to ensure the target container is indeed the vol-normalized forward returns
-        assert ridge_target_by_side["long"] is fwd_ret_norm
+        if bounded_target is not None:
+            ridge_target_by_side = {"long": bounded_target, "short": bounded_target}
+        else:
+            ridge_target_by_side = {"long": fwd_ret_norm, "short": -fwd_ret_norm}
 
         tprint(f"Stage A Target Alignment:")
         tprint(f"  Miner target bounded: {bounded_target is not None}")
-        tprint(f"  Baseline/Ridge learnability target: ridge_target_by_side (vol-normalized signed forward return)")
+        tprint(
+            "  Baseline/Ridge learnability target: "
+            + (
+                "bounded_target effective miner target"
+                if bounded_target is not None
+                else "ridge_target_by_side (vol-normalized signed forward return)"
+            )
+        )
 
         mean_ret_global_by_side = {
             "long": float(np.nanmean(ridge_target_by_side["long"])),
@@ -9556,9 +10259,15 @@ class MaskAssessor:
 
         rejected_by_support: set = set()
 
-        if step_mode == "step2":
-            if step1_checkpoint_dir is None:
-                raise ValueError("step2 requires step1_checkpoint_dir")
+        effective_step_mode = step_mode
+        if step_mode == "step2" and step1_checkpoint_dir is None:
+            tprint(
+                "Stage A: step2 requested without step1_checkpoint_dir; "
+                "falling back to in-memory cheap-gate recomputation."
+            )
+            effective_step_mode = "full"
+
+        if effective_step_mode == "step2":
             step1_payload = load_stage_a_step1_checkpoint(step1_checkpoint_dir)
             cheap_gate_rows = step1_payload["cheap_gate_rows"]
             cheap_gate_result = step1_payload["cheap_gate_result"]
@@ -10205,7 +10914,7 @@ class MaskAssessor:
                 )
                 tprint(f"Stage A: Step1 checkpoint saved to {checkpoint_path}")
 
-            if step_mode == "step1":
+            if effective_step_mode == "step1":
                 tprint("Stage A: Step1 complete. Skipping post-dedup step2 assessment.")
                 return pd.DataFrame()
 
@@ -12469,15 +13178,25 @@ class MaskAssessor:
             if p == "*":
                 continue
             for cond_str in p.split("&"):
-                if "==" not in cond_str:
+                parsed = parse_condition_string(cond_str)
+                if parsed is None:
                     continue
-                fname, val_part = cond_str.split("==")
-                val = int(val_part)
+                fname, operator, val_part = parsed
+                val = float(val_part)
                 # Find matching metadata for feature index
                 f_idx = next(
                     m.feature_index for m in self.metadata if m.feature_name == fname
                 )
-                mask &= X[:, f_idx] == val
+                if operator == "==":
+                    mask &= X[:, f_idx] == val
+                elif operator == "<=":
+                    mask &= X[:, f_idx] <= val
+                elif operator == ">":
+                    mask &= X[:, f_idx] > val
+                elif operator == "<":
+                    mask &= X[:, f_idx] < val
+                elif operator == ">=":
+                    mask &= X[:, f_idx] >= val
         return mask
 
 
@@ -13524,6 +14243,13 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "max_support_pct": SUPPORT_MAX,
             "stage_a_directional": True,
             "stage_a_relax_positive_groups": True,
+            "residualise_target_for_miner": True,
+            "miner_target_residualization_columns": list(
+                MINER_TARGET_RESIDUALIZATION_COLUMNS
+            ),
+            "drop_nuisance_features_from_miner": True,
+            "drop_continuous_nuisance_parents_from_miner": True,
+            "drop_location_nuisance_features_from_miner": False,
         },
         "production": {
             "min_feature_support": 5,
@@ -13547,6 +14273,13 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "max_support_pct": SUPPORT_MAX,
             "stage_a_directional": True,
             "stage_a_relax_positive_groups": True,
+            "residualise_target_for_miner": True,
+            "miner_target_residualization_columns": list(
+                MINER_TARGET_RESIDUALIZATION_COLUMNS
+            ),
+            "drop_nuisance_features_from_miner": True,
+            "drop_continuous_nuisance_parents_from_miner": True,
+            "drop_location_nuisance_features_from_miner": False,
         },
     }
     if preset not in defaults:
@@ -13613,6 +14346,12 @@ def run_lgbm_mask_generation(
     cfg = apply_cfg_preset(cfg)
     output_dir = Path(cfg.get("output_dir", "./lgbm_outputs"))
     output_dir.mkdir(parents=True, exist_ok=True)
+    nuisance_feature_resolution: Dict[str, str] = {}
+    nuisance_feature_arrays: Dict[str, np.ndarray] = {}
+    if bool(cfg.get("residualise_target_for_miner", True)):
+        nuisance_feature_resolution, nuisance_feature_arrays = (
+            _resolve_miner_nuisance_feature_arrays(feature_dict, cfg)
+        )
     fp = FeatureProcessor()
     X, metadata, audits = fp.prepare_features(
         feature_dict, data["timestamp"].to_numpy(), data["symbol"].to_numpy(), cfg
@@ -13644,6 +14383,8 @@ def run_lgbm_mask_generation(
         ),
         mask_resolver=CanonicalRuleMaskResolver(X, metadata),
         pipeline_stage_name="single_stage",
+        nuisance_feature_arrays=nuisance_feature_arrays,
+        nuisance_feature_resolution=nuisance_feature_resolution,
     )
     return result["accepted_registry"]
 

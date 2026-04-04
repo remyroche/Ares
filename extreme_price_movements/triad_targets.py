@@ -26,6 +26,426 @@ import pandas as pd
 from extreme_price_movements.utils import tprint
 
 
+# ============================================================
+# TARGET POST-PROCESSING SPEC FOR LGBM MINER
+# ============================================================
+# PURPOSE
+# -------
+# Fix miner target conditioning without destroying economic meaning.
+#
+# CRITICAL RULE
+# -------------
+# DO NOT map all targets into [0, 1].
+# Signed targets must remain signed and centered around 0.
+#
+# TARGET FAMILIES
+# ---------------
+# 1) SIGNED TARGETS
+#    - returns_target
+#    - atr_norm_returns_target
+#
+#    These must preserve:
+#    - sign
+#    - symmetry around 0
+#    - long/short meaning
+#
+# 2) POSITIVE-ONLY TARGETS
+#    - target_eff
+#    - target_vame
+#    - target_eff_surprisal
+#    - target_vame_surprisal
+#
+#    These are nonnegative intensity / quality / event-like targets.
+#    They should NOT be forced into [0, 1] via a shifted sigmoid/tanh.
+#
+# DOMAIN VALIDATION POLICY
+# ------------------------
+# Keep target-specific sanity/domain filters.
+# Do NOT blindly remove all bounds.
+# Do NOT use one universal [-3, 3] filter for every target unless justified.
+#
+# Keep:
+#   - finite checks
+#   - target-specific sanity filters
+#   - any guard against obvious pathological construction artifacts
+#
+# Remove:
+#   - unnecessary hard clipping/compression used only for shaping
+#
+# FITTING POLICY
+# --------------
+# All post-processing parameters MUST be fit on the training fold only.
+# Then apply to train / validation / test using frozen parameters.
+#
+# ============================================================
+
+EPS = 1e-8
+
+
+# ------------------------------------------------------------
+# Robust stats fit
+# ------------------------------------------------------------
+def fit_robust_stats(y_train, eps=EPS):
+    y_train = np.asarray(y_train, dtype=np.float64)
+    y_train = y_train[np.isfinite(y_train)]
+    if y_train.size == 0:
+        return {"median": 0.0, "iqr": 1.0}
+
+    med = float(np.nanmedian(y_train))
+    q25 = float(np.nanpercentile(y_train, 25))
+    q75 = float(np.nanpercentile(y_train, 75))
+    iqr = max(q75 - q25, eps)
+
+    return {
+        "median": med,
+        "iqr": iqr,
+    }
+
+
+# ------------------------------------------------------------
+# Signed target transform (robust stats scaling)
+# ------------------------------------------------------------
+# Use for:
+#   - returns_target
+#
+# Properties:
+#   - preserves sign
+#   - centered around 0
+#   - smooth bounded squash
+#   - good for long/short mining
+# ------------------------------------------------------------
+def postprocess_signed(y, stats, c=2.0, eps=EPS):
+    y = np.asarray(y, dtype=np.float64)
+    out = np.full_like(y, np.nan, dtype=np.float64)
+
+    mask = np.isfinite(y)
+    if not np.any(mask):
+        return out
+
+    med = stats["median"]
+    iqr = max(stats["iqr"], eps)
+
+    z = (y[mask] - med) / iqr
+    out[mask] = c * np.tanh(z / c)
+    return out
+
+
+# ------------------------------------------------------------
+# Signed target transform (direct tanh, no scaling)
+# ------------------------------------------------------------
+# Use for:
+#   - atr_norm_returns_target (already normalized)
+#
+# Properties:
+#   - preserves sign
+#   - centered around 0
+#   - smooth bounded squash
+#   - does NOT use robust stats scaling
+#   - direct tanh(y / scale_factor)
+# ------------------------------------------------------------
+def postprocess_signed_direct(y, scale_factor=3.0, eps=EPS):
+    y = np.asarray(y, dtype=np.float64)
+    out = np.full_like(y, np.nan, dtype=np.float64)
+
+    mask = np.isfinite(y)
+    if not np.any(mask):
+        return out
+
+    out[mask] = np.tanh(y[mask] / scale_factor)
+    return out
+
+
+# ------------------------------------------------------------
+# Positive-only target transform
+# ------------------------------------------------------------
+# Use for:
+#   - target_eff
+#   - target_vame
+#   - target_eff_surprisal
+#   - target_vame_surprisal
+#
+# Properties:
+#   - monotone
+#   - zero-centered AFTER robust centering, but not sign-semantic
+#   - does NOT shift into [0, 1]
+#   - improves dispersion without destroying rank structure
+# ------------------------------------------------------------
+def postprocess_positive(y, stats, s=2.0, eps=EPS):
+    y = np.asarray(y, dtype=np.float64)
+    out = np.full_like(y, np.nan, dtype=np.float64)
+
+    mask = np.isfinite(y)
+    if not np.any(mask):
+        return out
+
+    med = stats["median"]
+    iqr = max(stats["iqr"], eps)
+
+    z = (y[mask] - med) / iqr
+    out[mask] = np.tanh(z / s)
+    return out
+
+
+# ------------------------------------------------------------
+# Optional alternative for positive-only targets:
+# fold-local percentile transform
+#
+# Use only if positive-only targets still show poor dispersion
+# after postprocess_positive().
+#
+# Output is in [-1, 1], NOT [0, 1].
+# ------------------------------------------------------------
+def fit_percentile_reference(y_train):
+    y_train = np.asarray(y_train, dtype=np.float64)
+    y_train = y_train[np.isfinite(y_train)]
+    if y_train.size == 0:
+        return {"sorted_train": np.array([0.0], dtype=np.float64)}
+    return {"sorted_train": np.sort(y_train)}
+
+
+def postprocess_positive_percentile(y, ref):
+    y = np.asarray(y, dtype=np.float64)
+    out = np.full_like(y, np.nan, dtype=np.float64)
+
+    mask = np.isfinite(y)
+    if not np.any(mask):
+        return out
+
+    train_sorted = ref["sorted_train"]
+    n = train_sorted.size
+    if n == 1:
+        out[mask] = 0.0
+        return out
+
+    ranks = np.searchsorted(train_sorted, y[mask], side="left")
+    u = ranks / max(n - 1, 1)
+    out[mask] = 2.0 * u - 1.0
+    return out
+
+
+# ------------------------------------------------------------
+# Target family router
+# ------------------------------------------------------------
+SIGNED_TARGETS = {
+    "returns_target",
+    "atr_norm_returns_target",
+}
+
+POSITIVE_TARGETS = {
+    "target_eff",
+    "target_vame",
+    "target_eff_surprisal",
+    "target_vame_surprisal",
+}
+
+
+def fit_target_postprocessor(target_name, y_train, mode="default"):
+    """
+    mode:
+      - "default": signed -> signed squash, positive -> positive squash
+      - "positive_percentile": use percentile transform for positive-only targets
+    """
+    if target_name == "atr_norm_returns_target":
+        # atr_norm_returns_target is already normalized, use direct tanh
+        return {
+            "target_name": target_name,
+            "family": "signed",
+            "kind": "signed_direct_tanh",
+            "scale_factor": 3.0,
+        }
+
+    if target_name in SIGNED_TARGETS:
+        # For returns_target, use empirical percentiles instead of IQR
+        if target_name == "returns_target":
+            y_train_finite = y_train[np.isfinite(y_train)]
+            if y_train_finite.size == 0:
+                p0_5 = -3.0
+                p99_5 = 3.0
+            else:
+                p0_5 = float(np.nanpercentile(y_train_finite, 0.5))
+                p99_5 = float(np.nanpercentile(y_train_finite, 99.5))
+                # Ensure at least [-3, 3] range
+                p0_5 = min(p0_5, -3.0)
+                p99_5 = max(p99_5, 3.0)
+            stats = {
+                "p0_5": p0_5,
+                "p99_5": p99_5,
+                "median": float(np.nanmedian(y_train_finite)) if y_train_finite.size > 0 else 0.0,
+            }
+            return {
+                "target_name": target_name,
+                "family": "signed",
+                "kind": "signed_empirical_tanh",
+                "stats": stats,
+                "c": 3.0,  # Use c=3.0 for returns_target
+            }
+        else:
+            # Other signed targets use robust stats
+            stats = fit_robust_stats(y_train)
+            return {
+                "target_name": target_name,
+                "family": "signed",
+                "kind": "signed_tanh",
+                "stats": stats,
+            }
+
+    if target_name in POSITIVE_TARGETS:
+        if mode == "positive_percentile":
+            ref = fit_percentile_reference(y_train)
+            return {
+                "target_name": target_name,
+                "family": "positive",
+                "kind": "positive_percentile",
+                "ref": ref,
+            }
+        else:
+            stats = fit_robust_stats(y_train)
+            return {
+                "target_name": target_name,
+                "family": "positive",
+                "kind": "positive_tanh",
+                "stats": stats,
+            }
+
+    raise ValueError(f"Unknown target_name: {target_name}")
+
+
+def apply_target_postprocessor(y, pp):
+    kind = pp["kind"]
+
+    if kind == "signed_tanh":
+        c = pp.get("c", 2.0)
+        return postprocess_signed(y, pp["stats"], c=c)
+
+    if kind == "signed_direct_tanh":
+        scale_factor = pp.get("scale_factor", 3.0)
+        return postprocess_signed_direct(y, scale_factor=scale_factor)
+
+    if kind == "signed_empirical_tanh":
+        # For returns_target, clip to empirical percentiles then apply tanh
+        c = pp.get("c", 3.0)
+        stats = pp["stats"]
+        p0_5 = stats["p0_5"]
+        p99_5 = stats["p99_5"]
+        median = stats["median"]
+
+        y = np.asarray(y, dtype=np.float64)
+        out = np.full_like(y, np.nan, dtype=np.float64)
+
+        mask = np.isfinite(y)
+        if not np.any(mask):
+            return out
+
+        # Clip to empirical percentiles
+        y_clipped = np.clip(y[mask], p0_5, p99_5)
+
+        # Center around median
+        y_centered = y_clipped - median
+
+        # Scale to [-1, 1] based on range
+        range_width = p99_5 - p0_5
+        if range_width > 0:
+            y_scaled = y_centered / (range_width / 2.0)
+        else:
+            y_scaled = y_centered
+
+        # Apply tanh with c parameter
+        out[mask] = c * np.tanh(y_scaled / c)
+        return out
+
+    if kind == "positive_tanh":
+        return postprocess_positive(y, pp["stats"], s=2.0)
+
+    if kind == "positive_percentile":
+        return postprocess_positive_percentile(y, pp["ref"])
+
+    raise ValueError(f"Unknown postprocessor kind: {kind}")
+
+
+# ============================================================
+# REQUIRED VALIDATION CHECKS
+# ============================================================
+def summarize_processed_target(name, y):
+    y = np.asarray(y, dtype=np.float64)
+    y = y[np.isfinite(y)]
+    if y.size == 0:
+        print(f"{name}: no finite values")
+        return
+
+    p1 = np.nanpercentile(y, 1)
+    p5 = np.nanpercentile(y, 5)
+    p50 = np.nanpercentile(y, 50)
+    p95 = np.nanpercentile(y, 95)
+    p99 = np.nanpercentile(y, 99)
+
+    print(
+        f"{name}: n={y.size} "
+        f"mean={np.nanmean(y):.6f} std={np.nanstd(y):.6f} "
+        f"min={np.nanmin(y):.6f} p1={p1:.6f} p5={p5:.6f} "
+        f"p50={p50:.6f} p95={p95:.6f} p99={p99:.6f} max={np.nanmax(y):.6f}"
+    )
+
+
+# ============================================================
+# DEPRECATED OLD FUNCTIONS (kept for reference, will be removed)
+# ============================================================
+
+
+def scale_center_target(y: np.ndarray, y_train: np.ndarray) -> np.ndarray:
+    """
+    DEPRECATED: Use fit_target_postprocessor + apply_target_postprocessor instead.
+    Scale and center target using median and IQR.
+    """
+    med = np.nanmedian(y_train)
+    q25 = np.nanpercentile(y_train, 25)
+    q75 = np.nanpercentile(y_train, 75)
+    iqr = max(q75 - q25, 1e-8)
+
+    z = (y - med) / iqr
+    return z
+
+
+def smooth_squash_target(z: np.ndarray, c: float = 1.0) -> np.ndarray:
+    """
+    DEPRECATED: Use fit_target_postprocessor + apply_target_postprocessor instead.
+    Apply smooth squash transformation using tanh.
+    """
+    y_proc = c * np.tanh(z / 2)
+    return y_proc
+
+
+def transform_targets(
+    targets: Dict[str, np.ndarray],
+    training_stats: Dict[str, Dict[str, float]]
+) -> Dict[str, np.ndarray]:
+    """
+    DEPRECATED: Use fit_target_postprocessor + apply_target_postprocessor instead.
+    Apply scaling/centering and smooth squash to all targets.
+    """
+    transformed = {}
+    for target_name, y in targets.items():
+        if target_name in training_stats:
+            stats = training_stats[target_name]
+            med = stats["median"]
+            q25 = stats["q25"]
+            q75 = stats["q75"]
+            iqr = max(q75 - q25, 1e-8)
+
+            # Scale and center
+            z = (y - med) / iqr
+
+            # Smooth squash
+            y_proc = np.tanh(z / 2)
+
+            transformed[target_name] = y_proc
+        else:
+            # No training stats, just apply squash with identity scaling
+            y_proc = np.tanh(y / 2)
+            transformed[target_name] = y_proc
+
+    return transformed
+
+
 # Constants
 TRIAD_TARGET_NAMES: List[str] = ["target_eff", "target_vame"]
 
@@ -345,9 +765,8 @@ def compute_target_revert_weighted(
     x_hi = dev_frac[hi_mask] - strong_dev_frac
     amp_weight[hi_mask] = 0.5 + 0.5 * (1.0 - np.exp(-strong_k * x_hi))
 
-    # Final target
+    # Final target (no clipping - will be scaled/squashed downstream)
     target = base * amp_weight
-    target = np.clip(target, 0.0, 1.0)
 
     # Invalidate rows without enough forward horizon or insufficient initial dislocation
     target[-horizon:] = np.nan
@@ -661,8 +1080,10 @@ def get_bounded_triad(
     final_disp = (fwd_close - df["close"]).abs()
 
     # 1) Trend Efficiency - using anchor-reversion implementation
-    # Pivot to wide format for vectorized computation
-    close_wide = df.pivot(columns="symbol", values="close")
+    # Pivot to wide format for vectorized computation. Important: MUST index by timestamp to avoid N x M explosion!
+    # Because 'df' has a flat integer index and 'timestamp' might not be perfectly synchronized,
+    # we pivot using timestamp and symbol.
+    close_wide = df.pivot(index="timestamp", columns="symbol", values="close")
 
     # Compute anchor as backward-looking moving average
     anchor_wide = close_wide.rolling(window=n, min_periods=1).mean()
@@ -674,10 +1095,13 @@ def get_bounded_triad(
         horizon=n,
     )
 
-    # Convert back to long format and assign back to DataFrame.
-    # Note: reset_index(level="symbol", drop=True) is safer than reindex(df.index)
-    # when dealing with RangeIndex and MultiIndex stacking in pandas 2.x.
-    df["target_eff"] = target_eff_wide.stack().reset_index(level="symbol", drop=True)
+    # Convert back to long format and merge securely.
+    eff_series = target_eff_wide.stack().reset_index()
+    eff_series.rename(columns={0: "target_eff_temp"}, inplace=True)
+    df = df.merge(eff_series, on=["timestamp", "symbol"], how="left")
+    df["target_eff"] = df["target_eff_temp"]
+    df = df.drop(columns=["target_eff_temp"])
+    
     _log_target_diagnostics(df, "target_eff")
 
     # 2) Elasticity

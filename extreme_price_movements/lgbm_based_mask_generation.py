@@ -863,8 +863,8 @@ def compute_ridge_pnl(
     trades: List[EvaluatedTrade],
     threshold_star: float,
     round_fee: float = 0.0015,
-    min_weight: float = 0.10,
-    max_weight: float = 0.30,
+    min_weight: float = 0.05,
+    max_weight: float = 0.15,
     convex_power: float = 2.0,
     starting_capital: float = 1.0,
     forbid_concurrent: bool = True,
@@ -956,8 +956,8 @@ def compute_ridge_trade_sortino(
     realized_trades: List[EvaluatedTrade],
     threshold_star: float,
     round_fee: float = 0.0015,
-    min_weight: float = 0.10,
-    max_weight: float = 0.30,
+    min_weight: float = 0.05,
+    max_weight: float = 0.15,
     convex_power: float = 2.0,
     sortino_scale: float = 2.0,
     eps: float = 1e-9,
@@ -6574,7 +6574,11 @@ def run_mining_stage(
             accepted_registry = candidate_registry.copy()
         else:
             accepted_registry = candidate_registry.iloc[0:0].copy()
-        if "is_structurally_sound" in accepted_registry.columns:
+        if "selected_for_final_registry" in accepted_registry.columns:
+            accepted_registry = accepted_registry[
+                accepted_registry["selected_for_final_registry"].fillna(False)
+            ]
+        elif "is_structurally_sound" in accepted_registry.columns:
             accepted_registry = accepted_registry[
                 accepted_registry["is_structurally_sound"].fillna(False)
             ]
@@ -8577,9 +8581,14 @@ def run_lgbm_mask_generation_triad(
             )
 
             if not final_assessment_df.empty:
-                final_rule_registry = final_assessment_df.loc[
-                    final_assessment_df["is_structurally_sound"].fillna(False)
-                ].copy()
+                if "selected_for_final_registry" in final_assessment_df.columns:
+                    final_rule_registry = final_assessment_df.loc[
+                        final_assessment_df["selected_for_final_registry"].fillna(False)
+                    ].copy()
+                else:
+                    final_rule_registry = final_assessment_df.loc[
+                        final_assessment_df["is_structurally_sound"].fillna(False)
+                    ].copy()
                 final_rule_registry["preset"] = cfg.get("preset", "triad_exploration")
                 atomic_to_csv(
                     final_rule_registry,
@@ -9990,7 +9999,8 @@ class MaskAssessor:
     def _get_step2_model_profile_params(self, model_profile: str) -> Dict[str, Any]:
         profile = str(model_profile).lower()
         if profile == "strong":
-            return {
+            boosting_type = str(self.cfg.get("step2_strong_boosting_type", "goss"))
+            params = {
                 "max_depth": int(self.cfg.get("step2_strong_max_depth", 4)),
                 "n_estimators": int(self.cfg.get("step2_strong_n_estimators", 50)),
                 "min_child_samples": int(self.cfg.get("step2_strong_min_child_samples", 20)),
@@ -10001,8 +10011,12 @@ class MaskAssessor:
                 "subsample": float(self.cfg.get("step2_strong_subsample", 0.7)),
                 "subsample_freq": int(self.cfg.get("step2_strong_subsample_freq", 1)),
                 "feature_fraction": float(self.cfg.get("step2_strong_feature_fraction", 0.7)),
-                "boosting_type": str(self.cfg.get("step2_strong_boosting_type", "goss")),
+                "boosting_type": boosting_type,
             }
+            if boosting_type.lower() == "goss":
+                params["subsample"] = 1.0
+                params["subsample_freq"] = 0
+            return params
         return {
             "max_depth": int(self.cfg.get("step2_weak_max_depth", 3)),
             "n_estimators": int(self.cfg.get("step2_weak_n_estimators", 5)),
@@ -10094,23 +10108,70 @@ class MaskAssessor:
                 eligible = eligible.loc[keep_idx].copy()
 
         overlap_penalty = float(self.cfg.get("final_selection_overlap_penalty", 0.35))
-        top_k = int(self.cfg.get("final_selected_rule_cap", 6))
+        support_overlap_weight = float(self.cfg.get("final_selection_support_overlap_weight", 0.5))
+        pnl_overlap_weight = float(self.cfg.get("final_selection_pnl_overlap_weight", 0.5))
+        top_k = int(self.cfg.get("final_selected_rule_cap", 10))
         selected: List[Any] = []
         remaining = eligible.sort_values("final_candidate_rank_score", ascending=False).index.tolist()
+
+        def _daily_pnl_series(idx: Any) -> pd.Series:
+            realized_trades = eligible.loc[idx, "realized_trades"] if "realized_trades" in eligible.columns else []
+            net_returns = eligible.loc[idx, "net_weighted_returns"] if "net_weighted_returns" in eligible.columns else []
+            if (
+                not isinstance(realized_trades, list)
+                or not isinstance(net_returns, list)
+                or len(realized_trades) == 0
+                or len(realized_trades) != len(net_returns)
+            ):
+                return pd.Series(dtype=np.float32)
+            entry_times = pd.Series([t.entry_time for t in realized_trades])
+            if entry_times.empty:
+                return pd.Series(dtype=np.float32)
+            if entry_times.dt.tz is not None:
+                entry_times = entry_times.dt.tz_convert("UTC").dt.tz_localize(None)
+            day_buckets = entry_times.dt.floor("D")
+            day_pnl = pd.DataFrame(
+                {"day": day_buckets, "pnl": net_returns}
+            ).groupby("day")["pnl"].sum()
+            return day_pnl.astype(np.float32)
+
+        daily_pnl_cache = {idx: _daily_pnl_series(idx) for idx in eligible.index}
 
         def _pair_overlap(idx_a: Any, idx_b: Any) -> float:
             key_a = str(eligible.loc[idx_a, "canonical_key"])
             key_b = str(eligible.loc[idx_b, "canonical_key"])
             mask_a = np.asarray(mask_lookup.get(key_a), dtype=bool)
             mask_b = np.asarray(mask_lookup.get(key_b), dtype=bool)
-            if mask_a.size == 0 or mask_b.size == 0 or mask_a.shape != mask_b.shape:
-                return 0.0
-            supp_a = float(np.sum(mask_a))
-            supp_b = float(np.sum(mask_b))
-            if supp_a <= 0.0 or supp_b <= 0.0:
-                return 0.0
-            inter = float(np.sum(mask_a & mask_b))
-            return float((2.0 * inter) / max(supp_a + supp_b, 1.0))
+            support_overlap = 0.0
+            if mask_a.size > 0 and mask_b.size > 0 and mask_a.shape == mask_b.shape:
+                supp_a = float(np.sum(mask_a))
+                supp_b = float(np.sum(mask_b))
+                if supp_a > 0.0 and supp_b > 0.0:
+                    inter = float(np.sum(mask_a & mask_b))
+                    support_overlap = float((2.0 * inter) / max(supp_a + supp_b, 1.0))
+
+            pnl_overlap = 0.0
+            pnl_a = daily_pnl_cache.get(idx_a, pd.Series(dtype=np.float32))
+            pnl_b = daily_pnl_cache.get(idx_b, pd.Series(dtype=np.float32))
+            if not pnl_a.empty and not pnl_b.empty:
+                aligned = pd.concat([pnl_a.rename("a"), pnl_b.rename("b")], axis=1).fillna(0.0)
+                if len(aligned) >= 2:
+                    a_vals = aligned["a"].to_numpy(dtype=np.float32, copy=False)
+                    b_vals = aligned["b"].to_numpy(dtype=np.float32, copy=False)
+                    a_std = float(np.std(a_vals))
+                    b_std = float(np.std(b_vals))
+                    if a_std > 1e-12 and b_std > 1e-12:
+                        pnl_overlap = float(np.clip(np.corrcoef(a_vals, b_vals)[0, 1], -1.0, 1.0))
+                        pnl_overlap = max(pnl_overlap, 0.0)
+
+            total_weight = max(support_overlap_weight + pnl_overlap_weight, 1e-12)
+            return float(
+                (
+                    support_overlap_weight * support_overlap
+                    + pnl_overlap_weight * pnl_overlap
+                )
+                / total_weight
+            )
 
         while remaining and len(selected) < top_k:
             best_idx = None
@@ -11961,6 +12022,9 @@ class MaskAssessor:
             assessment_results.append(
                 {
                     "canonical_key": row["canonical_key"],
+                    "source_target": target_name,
+                    "source_horizon": horizon_key,
+                    "side": side,
                     "trigger": slots.get("trigger", "*"),
                     "location": slots.get("location", "*"),
                     "regime": slots.get("regime", "*"),
@@ -12055,12 +12119,18 @@ class MaskAssessor:
                     "fold_sign_consistency": ridge_details.get("fold_sign_consistency", np.nan),
                     "positive_fold_fraction": ridge_details.get("positive_fold_fraction", np.nan),
                     "negative_fold_fraction": ridge_details.get("negative_fold_fraction", np.nan),
+                    "fold_pnl_std": ridge_details.get("fold_pnl_std", np.nan),
                     "decile_monotonic_spearman": ridge_details.get("decile_monotonic_spearman", np.nan),
                     "top_decile_mean_target": ridge_details.get("top_decile_mean_target", np.nan),
                     "bottom_decile_mean_target": ridge_details.get("bottom_decile_mean_target", np.nan),
                     "decile_spread_mean": ridge_details.get("decile_spread_mean", np.nan),
                     "target_nan_total_train": ridge_details.get("target_nan_total_train", 0),
                     "target_nan_total_val": ridge_details.get("target_nan_total_val", 0),
+                    "stage1_model_profile": "weak",
+                    "stage2_model_profile": "weak",
+                    "stage2_rescored": False,
+                    "stage1_top70_survivor": False,
+                    "selected_for_final_registry": False,
                 }
             )            # 5b. Compute Universe-Relative Uplift Metrics for the Mask
             mask_ts = global_ts[mask[valid_ts_mask]]
@@ -12183,6 +12253,298 @@ class MaskAssessor:
         if assessment_df.empty:
             tprint("Stage A: No candidates to assess. Yielding empty dataframe.")
             return assessment_df
+
+        def _compute_trade_weekly_volatility(
+            realized_trades: Any,
+            net_returns: Any,
+        ) -> float:
+            if (
+                not isinstance(realized_trades, list)
+                or not isinstance(net_returns, list)
+                or len(realized_trades) == 0
+                or len(realized_trades) != len(net_returns)
+            ):
+                return np.nan
+            entry_times = pd.Series([t.entry_time for t in realized_trades])
+            if entry_times.empty:
+                return np.nan
+            if entry_times.dt.tz is not None:
+                entry_times = entry_times.dt.tz_convert("UTC").dt.tz_localize(None)
+            monday_floors = entry_times.dt.floor("D") - pd.to_timedelta(
+                entry_times.dt.dayofweek, unit="D"
+            )
+            week_pnl = pd.DataFrame(
+                {"week": monday_floors, "pnl": net_returns}
+            ).groupby("week")["pnl"].sum()
+            if len(week_pnl) < 2:
+                return np.nan
+            weekly_vol = week_pnl.std(ddof=0)
+            return float(weekly_vol) if not pd.isna(weekly_vol) else np.nan
+
+        assessment_df["stage1_ridge_pnl_raw"] = pd.to_numeric(
+            assessment_df.get("ridge_pnl_raw", 0.0), errors="coerce"
+        ).fillna(0.0)
+        assessment_df["stage1_weak_sortino"] = pd.to_numeric(
+            assessment_df.get("ridge_trade_sortino_composite", 0.0), errors="coerce"
+        ).fillna(0.0)
+        assessment_df["stage1_weak_weekly_std"] = assessment_df.apply(
+            lambda row: _compute_trade_weekly_volatility(
+                row.get("realized_trades", []),
+                row.get("net_weighted_returns", []),
+            ),
+            axis=1,
+        )
+        weak_pnl_rank = self._pct_rank(assessment_df["stage1_ridge_pnl_raw"])
+        weak_sortino_rank = self._pct_rank(assessment_df["stage1_weak_sortino"])
+        weak_weekly_std_rank = self._pct_rank(
+            assessment_df["stage1_weak_weekly_std"].fillna(
+                assessment_df["stage1_weak_weekly_std"].max()
+                if assessment_df["stage1_weak_weekly_std"].notna().any()
+                else 0.0
+            )
+        )
+        assessment_df["weak_filter_score"] = (
+            0.70 * weak_pnl_rank
+            + 0.20 * weak_sortino_rank
+            + 0.10 * (1.0 - weak_weekly_std_rank)
+        )
+        assessment_df = assessment_df.sort_values(
+            ["weak_filter_score", "stage1_ridge_pnl_raw", "canonical_key"],
+            ascending=[False, False, True],
+        ).reset_index(drop=True)
+        assessment_df["stage1_net_pnl_rank"] = (
+            assessment_df["stage1_ridge_pnl_raw"].rank(method="first", ascending=False).astype(np.int32)
+        )
+        assessment_df["stage1_weak_filter_rank"] = np.arange(1, len(assessment_df) + 1, dtype=np.int32)
+        survivor_frac = float(self.cfg.get("stage1_top_survivor_fraction", 0.60))
+        survivor_count = max(1, int(np.ceil(len(assessment_df) * survivor_frac)))
+        survivor_keys = set(
+            assessment_df.head(survivor_count)["canonical_key"].astype(str).tolist()
+        )
+        assessment_df["stage1_top70_survivor"] = assessment_df["canonical_key"].astype(str).isin(survivor_keys)
+        assessment_df["stage1_top60_weak_filter_survivor"] = assessment_df["stage1_top70_survivor"]
+
+        selected_records_by_key = {
+            str(record.get("canonical_key")): record for record in selected_records
+        }
+        learnability_reasons = {
+            "not_in_top_ridge_candidates",
+            "insufficient_subset_oof_coverage",
+            "missing_learnability",
+            "missing_top_quartile_precision",
+            "top_quartile_precision_not_positive",
+            "ev_per_event_less_than_or_equal_to_zero",
+            "no positive post-fee profit threshold",
+            "threshold_star_search_failed",
+            "insufficient trades per symbol day",
+        }
+        strong_rescore_count = 0
+        adaptive_enabled_global = bool(self.cfg.get("adaptive_tp_sl_enabled", False))
+        for df_idx in assessment_df.index[assessment_df["stage1_top70_survivor"]]:
+            canonical_key = str(assessment_df.at[df_idx, "canonical_key"])
+            row_dict = selected_records_by_key.get(canonical_key)
+            if row_dict is None:
+                continue
+
+            if canonical_key in mask_cache:
+                mask = mask_cache[canonical_key]
+            elif self.mask_resolver:
+                mask = self.mask_resolver.get_mask(canonical_key)
+                mask_cache[canonical_key] = mask
+            else:
+                mask = self._get_mask_for_rule(canonical_key, X)
+                mask_cache[canonical_key] = mask
+
+            if int(np.sum(mask)) < 20:
+                continue
+
+            side = str(row_dict.get("side", "long"))
+            horizon_raw = row_dict.get("source_horizon", -1)
+            try:
+                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+            except (TypeError, ValueError):
+                horizon_key = -1
+            target_name = str(row_dict.get("source_target", "unknown"))
+
+            current_target_ret = None
+            if triad_targets_map is not None:
+                current_target_ret = triad_targets_map.get((target_name, horizon_key))
+            if current_target_ret is None:
+                current_target_ret = bounded_target if bounded_target is not None else fwd_ret
+
+            ctx_key = (target_name, horizon_key, side)
+            baseline_data = baseline_cache.get(ctx_key, {})
+            global_auc = float(baseline_data.get("global_auc", 0.5))
+            global_top_quartile_precision = float(baseline_data.get("global_top_quartile_precision", 0.5))
+
+            path_excursions = path_excursion_cache.get((horizon_key, side), {})
+            strong_details = self._compute_subset_ridge_details(
+                X,
+                current_target_ret,
+                mask,
+                folds,
+                tp_f=None,
+                target_nan_reasons=target_nan_reasons,
+                path_mfe=path_excursions.get("mfe"),
+                path_mae=path_excursions.get("mae"),
+                model_profile="strong",
+            )
+
+            ridge_round_fee = float(self.cfg.get("label_round_trip_fee_pct", 0.0015))
+            if adaptive_enabled_global:
+                adaptive_tp_atr, adaptive_sl_atr = self._compute_adaptive_tp_sl(
+                    mask=mask,
+                    fwd_ret=current_target_ret,
+                    atr=data["atr"].to_numpy(),
+                    oof_preds=np.asarray(strong_details["oof_preds"], dtype=np.float32),
+                    close=data["close"].to_numpy(),
+                    horizon=horizon_key,
+                    side=side,
+                )
+                tbm_outcomes = compute_tbm_outcomes_per_symbol(
+                    data=data,
+                    horizon=horizon_key,
+                    tp_atr=adaptive_tp_atr,
+                    sl_atr=adaptive_sl_atr,
+                    side=side,
+                )
+                tp_payoff = float(adaptive_tp_atr)
+                sl_payoff = float(adaptive_sl_atr)
+            else:
+                tbm_outcomes = tbm_outcome_cache.get((horizon_key, side))
+                if tbm_outcomes is None:
+                    tbm_outcomes = compute_tbm_outcomes_per_symbol(
+                        data=data,
+                        horizon=horizon_key,
+                        tp_atr=float(self.cfg.get("tp_atr", 2.0)),
+                        sl_atr=float(self.cfg.get("sl_atr", 2.0)),
+                        side=side,
+                    )
+                    tbm_outcome_cache[(horizon_key, side)] = tbm_outcomes
+                tp_payoff = float(self.cfg.get("tp_atr", 2.0))
+                sl_payoff = float(self.cfg.get("sl_atr", 2.0))
+
+            rule_tp_f, rule_sl_f, rule_to_f = tbm_outcomes
+            strong_tbm_metrics = self._compute_tbm_metrics(
+                mask, rule_tp_f, rule_sl_f, rule_to_f, current_target_ret
+            )
+            strong_top_q = self._compute_top_quartile_precision(
+                oof_preds=np.asarray(strong_details["oof_preds"], dtype=np.float32),
+                y=np.asarray(current_target_ret, dtype=np.float32),
+                mask=mask,
+                tp_f=rule_tp_f,
+                fwd_ret_threshold=0.5,
+                top_pct=0.75,
+                min_samples=20,
+            )
+            strong_trade_metrics = self._compute_ranked_ridge_trade_metrics(
+                data=data,
+                directional_returns=current_target_ret,
+                mask=mask,
+                folds=folds,
+                horizon=horizon_key,
+                oof_preds=np.asarray(strong_details["oof_preds"], dtype=np.float32),
+                round_fee=ridge_round_fee,
+            )
+
+            strong_auc = float(strong_details.get("subset_auc", np.nan))
+            strong_auc_lift = (
+                strong_auc - global_auc
+                if np.isfinite(strong_auc) and np.isfinite(global_auc)
+                else np.nan
+            )
+            strong_top_q_lift = (
+                float(strong_top_q) - global_top_quartile_precision
+                if np.isfinite(strong_top_q) and np.isfinite(global_top_quartile_precision)
+                else np.nan
+            )
+            timeout_payoff = float(assessment_df.at[df_idx, "mean_ret_mask"])
+            strong_ev_per_event = (
+                strong_tbm_metrics["tp_rate"] * tp_payoff
+                - strong_tbm_metrics["sl_rate"] * sl_payoff
+                + strong_tbm_metrics["timeout_rate"] * timeout_payoff
+            )
+
+            current_reason = str(assessment_df.at[df_idx, "rejection_reason"] or "")
+            preserve_rejection = current_reason not in ("", *learnability_reasons)
+            strong_rejected = bool(preserve_rejection)
+            strong_rejection_reason = current_reason if preserve_rejection else ""
+            if not strong_rejected and float(strong_details.get("coverage", 0.0)) < min_oof_coverage:
+                strong_rejected = True
+                strong_rejection_reason = "insufficient_subset_oof_coverage"
+            elif not strong_rejected and not np.isfinite(strong_auc_lift):
+                strong_rejected = True
+                strong_rejection_reason = "missing_learnability"
+            elif not strong_rejected and not np.isfinite(strong_top_q_lift):
+                strong_rejected = True
+                strong_rejection_reason = "missing_top_quartile_precision"
+            elif not strong_rejected and strong_top_q_lift <= 0.0:
+                strong_rejected = True
+                strong_rejection_reason = "top_quartile_precision_not_positive"
+            elif not strong_rejected and strong_ev_per_event <= 0.0:
+                strong_rejected = True
+                strong_rejection_reason = "ev_per_event_less_than_or_equal_to_zero"
+            elif not strong_rejected and bool(strong_trade_metrics.get("rejected", False)):
+                strong_rejected = True
+                strong_rejection_reason = str(
+                    strong_trade_metrics.get("reject_reason", {}).get("reason", "threshold_star_search_failed")
+                )
+
+            assessment_df.at[df_idx, "is_structurally_sound"] = not strong_rejected
+            assessment_df.at[df_idx, "rejection_reason"] = strong_rejection_reason
+            assessment_df.at[df_idx, "stage2_model_profile"] = "strong"
+            assessment_df.at[df_idx, "stage2_rescored"] = True
+            assessment_df.at[df_idx, "auc_lift"] = strong_auc_lift
+            assessment_df.at[df_idx, "top_quartile_precision"] = float(strong_top_q) if np.isfinite(strong_top_q) else np.nan
+            assessment_df.at[df_idx, "top_quartile_precision_lift"] = strong_top_q_lift
+            assessment_df.at[df_idx, "subset_oof_coverage"] = float(strong_details.get("coverage", np.nan))
+            assessment_df.at[df_idx, "mask_oof_corr"] = strong_details.get("mask_oof_corr", np.nan)
+            assessment_df.at[df_idx, "mask_oof_r2"] = strong_details.get("mask_oof_r2", np.nan)
+            assessment_df.at[df_idx, "mask_roc_auc"] = strong_details.get("subset_roc_auc", np.nan)
+            assessment_df.at[df_idx, "mask_pr_auc"] = strong_details.get("subset_pr_auc", np.nan)
+            assessment_df.at[df_idx, "fold_sign_consistency"] = strong_details.get("fold_sign_consistency", np.nan)
+            assessment_df.at[df_idx, "positive_fold_fraction"] = strong_details.get("positive_fold_fraction", np.nan)
+            assessment_df.at[df_idx, "negative_fold_fraction"] = strong_details.get("negative_fold_fraction", np.nan)
+            assessment_df.at[df_idx, "fold_pnl_std"] = strong_details.get("fold_pnl_std", np.nan)
+            assessment_df.at[df_idx, "decile_monotonic_spearman"] = strong_details.get("decile_monotonic_spearman", np.nan)
+            assessment_df.at[df_idx, "top_decile_mean_target"] = strong_details.get("top_decile_mean_target", np.nan)
+            assessment_df.at[df_idx, "bottom_decile_mean_target"] = strong_details.get("bottom_decile_mean_target", np.nan)
+            assessment_df.at[df_idx, "decile_spread_mean"] = strong_details.get("decile_spread_mean", np.nan)
+            assessment_df.at[df_idx, "target_nan_total_train"] = strong_details.get("target_nan_total_train", 0)
+            assessment_df.at[df_idx, "target_nan_total_val"] = strong_details.get("target_nan_total_val", 0)
+            assessment_df.at[df_idx, "tp_rate"] = strong_tbm_metrics.get("tp_rate", np.nan)
+            assessment_df.at[df_idx, "sl_rate"] = strong_tbm_metrics.get("sl_rate", np.nan)
+            assessment_df.at[df_idx, "timeout_rate"] = strong_tbm_metrics.get("timeout_rate", np.nan)
+            assessment_df.at[df_idx, "ev_per_trade"] = strong_tbm_metrics.get("ev_per_trade", np.nan)
+            assessment_df.at[df_idx, "ev_per_event"] = strong_ev_per_event
+            assessment_df.at[df_idx, "win_rate_conditional"] = strong_tbm_metrics.get("win_rate_conditional", np.nan)
+            assessment_df.at[df_idx, "win_rate_unconditional"] = strong_tbm_metrics.get("win_rate_unconditional", np.nan)
+            for metric_col in [
+                "threshold_star",
+                "threshold_star_lowest_positive",
+                "threshold_star_optimal_pnl",
+                "ridge_pnl_raw",
+                "ridge_pnl_raw_at_optimal_threshold",
+                "avg_trades_per_day",
+                "avg_pnl_per_day",
+                "avg_pnl_per_active_symbol_day",
+                "ridge_trade_sortino_7d",
+                "ridge_trade_sortino_30d",
+                "ridge_trade_sortino_90d",
+                "ridge_trade_sortino_composite",
+                "trades_per_symbol_day_above_threshold_star",
+                "valid_symbol_days_observed",
+                "total_trades",
+                "realized_trades",
+                "net_weighted_returns",
+            ]:
+                assessment_df.at[df_idx, metric_col] = strong_trade_metrics.get(metric_col, assessment_df.at[df_idx, metric_col])
+            strong_rescore_count += 1
+
+        if strong_rescore_count > 0:
+            tprint(
+                f"Stage A: Strong Step2 rescoring complete for {strong_rescore_count}/{survivor_count} stage1 survivors"
+            )
             
         # 6. Final Ranking Normalization
         # We apply MinMax scaling to each final-ranking term across the entire candidate cohort.
@@ -12307,6 +12669,7 @@ class MaskAssessor:
             assessment_df[col] = weekly_metrics_df[col]
 
         assessment_df["regime_score"] = assessment_df["base_regime_score"]
+        assessment_df = self._apply_final_topk_selection(assessment_df, mask_cache)
 
         # Drop temporary lists from assessment df
         if "realized_trades" in assessment_df.columns:
@@ -12351,12 +12714,35 @@ class MaskAssessor:
                     regime_score
                 ):
                     tprint(
-                        f"  - {row.get('canonical_key', '<unknown>')}: {float(regime_score):.3f}"
+                        f"  - {row['canonical_key'][:120]} regime_score={float(regime_score):.6f}"
                     )
                 else:
                     tprint(
                         f"  - {row.get('canonical_key', '<unknown>')}: {regime_score}"
                     )
+
+        final_selected = assessment_df[
+            assessment_df["selected_for_final_registry"].fillna(False)
+        ].sort_values("final_selection_order", ascending=True)
+        if not final_selected.empty:
+            tprint("Final diversified top-k rules:")
+            for row in final_selected[
+                [
+                    "final_selection_order",
+                    "canonical_key",
+                    "ridge_pnl_raw",
+                    "ridge_trade_sortino_composite",
+                    "final_candidate_rank_score",
+                ]
+            ].to_dict("records"):
+                tprint(
+                    "  - "
+                    f"order={int(row['final_selection_order'])} "
+                    f"key={str(row['canonical_key'])[:120]} "
+                    f"net_pnl={float(row['ridge_pnl_raw']):.6f} "
+                    f"sortino={float(row['ridge_trade_sortino_composite']):.6f} "
+                    f"score={float(row['final_candidate_rank_score']):.6f}"
+                )
 
         return assessment_df
 
@@ -13069,8 +13455,8 @@ class MaskAssessor:
         folds: List[Tuple[np.ndarray, np.ndarray]] = None,
         *,
         round_fee: float = 0.0015,
-        min_weight: float = 0.10,
-        max_weight: float = 0.30,
+        min_weight: float = 0.05,
+        max_weight: float = 0.15,
         convex_power: float = 2.0,
         eps: float = 1e-9,
         forbid_concurrent: bool = True,

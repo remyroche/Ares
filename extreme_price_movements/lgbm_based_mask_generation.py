@@ -869,7 +869,7 @@ def compute_ridge_pnl(
     starting_capital: float = 1.0,
     forbid_concurrent: bool = True,
     max_concurrent_per_symbol: int = 1,
-    max_concurrent_total: int = 3
+    max_concurrent_total: int = 2
 ) -> Dict[str, Any]:
     eligible_trades = [
         t for t in trades
@@ -8165,7 +8165,7 @@ def build_global_stage_a_ridge_shortlist(
     metadata_ref: List[FeatureMetadata],
     cfg: Dict[str, Any],
 ) -> pd.DataFrame:
-    global_cap = int(cfg.get("global_ridge_candidate_cap", 160))
+    global_cap = int(cfg.get("global_ridge_candidate_cap", 120))
     if not pooled_step1_frames or X_ref is None or len(metadata_ref) == 0:
         return pd.DataFrame()
 
@@ -8267,6 +8267,39 @@ def build_global_stage_a_ridge_shortlist(
     selected = (
         pooled.iloc[selected_rows].copy() if selected_rows else pooled.iloc[0:0].copy()
     )
+
+    if len(selected) < min(global_cap, len(pooled)):
+        remaining_indices = [idx for idx in range(len(pooled)) if idx not in set(selected_rows)]
+        refill_alpha = float(cfg.get("global_shortlist_refill_diversity_alpha", 0.10))
+        refill_candidates: List[Tuple[float, int]] = []
+        for row_idx in remaining_indices:
+            row = pooled.iloc[row_idx]
+            cand_mask_idx = int(row["mask_idx"])
+            cand_support = float(row["support_sub"])
+            max_overlap = 0.0
+            for sel_idx in selected_rows:
+                sel = pooled.iloc[sel_idx]
+                sel_mask_idx = int(sel["mask_idx"])
+                sel_support = float(sel["support_sub"])
+                inter = float(intersections[cand_mask_idx, sel_mask_idx])
+                if inter < 1.0:
+                    continue
+                raw_overlap = (2.0 * inter) / max(cand_support + sel_support, 1.0)
+                different_sides = str(row["side"]) != str(sel["side"])
+                different_horizons = str(row["source_horizon"]) != str(sel["source_horizon"])
+                side_factor = 0.3 if different_sides else 0.0
+                horizon_factor = 0.2 if different_horizons else 0.0
+                effective_overlap = raw_overlap * (1.0 - max(0.0, side_factor + horizon_factor))
+                if effective_overlap > max_overlap:
+                    max_overlap = effective_overlap
+            selection_score = float(row["cheap_rank"]) - refill_alpha * (max_overlap**2)
+            refill_candidates.append((selection_score, row_idx))
+        refill_candidates.sort(key=lambda x: x[0], reverse=True)
+        deficit = min(global_cap, len(pooled)) - len(selected_rows)
+        refill_indices = [idx for _, idx in refill_candidates[:deficit]]
+        selected_rows.extend(refill_indices)
+        selected = pooled.iloc[selected_rows].copy()
+
     tprint(
         "Global stage2 shortlist: "
         f"input={len(pooled)} selected={len(selected)} cap={global_cap}"
@@ -8544,6 +8577,27 @@ def run_lgbm_mask_generation_triad(
             )
 
             if not final_assessment_df.empty:
+                final_rule_registry = final_assessment_df.loc[
+                    final_assessment_df["is_structurally_sound"].fillna(False)
+                ].copy()
+                final_rule_registry["preset"] = cfg.get("preset", "triad_exploration")
+                atomic_to_csv(
+                    final_rule_registry,
+                    root_output_dir / "final_rule_registry.csv",
+                )
+                atomic_to_csv(
+                    final_assessment_df,
+                    root_output_dir / "global_final_mask_assessment_audit.csv",
+                )
+                if hasattr(assessor, "rejection_summary") and assessor.rejection_summary:
+                    atomic_to_csv(
+                        pd.DataFrame(
+                            list(assessor.rejection_summary.items()),
+                            columns=["reason", "count"],
+                        ),
+                        root_output_dir / "global_mask_assessment_rejection_summary.csv",
+                        expected_columns=["reason", "count"],
+                    )
                 tprint(f"Global consolidated assessment complete. {len(final_assessment_df)} rules assessed.")
                 return {
                     "results_by_target_horizon": {}, # Legacy compat
@@ -9927,6 +9981,159 @@ class MaskAssessor:
             )
         return is_binary_target, min_train, min_val, min_pred
 
+    @staticmethod
+    def _pct_rank(series: pd.Series) -> pd.Series:
+        if series.empty:
+            return pd.Series(dtype=np.float32, index=series.index)
+        return series.rank(method="average", pct=True).astype(np.float32)
+
+    def _get_step2_model_profile_params(self, model_profile: str) -> Dict[str, Any]:
+        profile = str(model_profile).lower()
+        if profile == "strong":
+            return {
+                "max_depth": int(self.cfg.get("step2_strong_max_depth", 4)),
+                "n_estimators": int(self.cfg.get("step2_strong_n_estimators", 50)),
+                "min_child_samples": int(self.cfg.get("step2_strong_min_child_samples", 20)),
+                "min_data_in_leaf": int(self.cfg.get("step2_strong_min_data_in_leaf", 20)),
+                "lambda_l1": float(self.cfg.get("step2_strong_lambda_l1", 10.0)),
+                "lambda_l2": float(self.cfg.get("step2_strong_lambda_l2", 2.0)),
+                "min_gain_to_split": float(self.cfg.get("step2_strong_min_gain_to_split", 0.001)),
+                "subsample": float(self.cfg.get("step2_strong_subsample", 0.7)),
+                "subsample_freq": int(self.cfg.get("step2_strong_subsample_freq", 1)),
+                "feature_fraction": float(self.cfg.get("step2_strong_feature_fraction", 0.7)),
+                "boosting_type": str(self.cfg.get("step2_strong_boosting_type", "goss")),
+            }
+        return {
+            "max_depth": int(self.cfg.get("step2_weak_max_depth", 3)),
+            "n_estimators": int(self.cfg.get("step2_weak_n_estimators", 5)),
+            "min_child_samples": int(self.cfg.get("step2_weak_min_child_samples", 20)),
+            "min_data_in_leaf": int(self.cfg.get("step2_weak_min_data_in_leaf", 20)),
+            "lambda_l1": float(self.cfg.get("step2_weak_lambda_l1", 0.0)),
+            "lambda_l2": float(self.cfg.get("step2_weak_lambda_l2", 0.0)),
+            "min_gain_to_split": float(self.cfg.get("step2_weak_min_gain_to_split", 0.0)),
+            "subsample": float(self.cfg.get("step2_weak_subsample", 1.0)),
+            "subsample_freq": int(self.cfg.get("step2_weak_subsample_freq", 0)),
+            "feature_fraction": float(self.cfg.get("step2_weak_feature_fraction", 1.0)),
+            "boosting_type": str(self.cfg.get("step2_weak_boosting_type", "gbdt")),
+        }
+
+    def _apply_final_topk_selection(
+        self,
+        assessment_df: pd.DataFrame,
+        mask_lookup: Dict[str, np.ndarray],
+    ) -> pd.DataFrame:
+        if assessment_df.empty:
+            return assessment_df
+
+        result = assessment_df.copy()
+        result["selected_for_final_registry"] = False
+        result["final_candidate_rank_score"] = np.nan
+        result["final_selection_order"] = np.nan
+        result["stage1_top70_survivor"] = result.get(
+            "stage1_top70_survivor",
+            pd.Series(False, index=result.index),
+        ).fillna(False)
+
+        eligible = result[
+            result["stage1_top70_survivor"].fillna(False)
+            & result["is_structurally_sound"].fillna(False)
+            & (pd.to_numeric(result["ridge_pnl_raw"], errors="coerce") > 0.0)
+        ].copy()
+        if eligible.empty:
+            return result
+
+        weekly_vol = pd.to_numeric(eligible.get("weekly_volatility", np.nan), errors="coerce")
+        fold_pnl_std = pd.to_numeric(eligible.get("fold_pnl_std", np.nan), errors="coerce")
+        if fold_pnl_std.isna().all():
+            fold_pnl_std = weekly_vol.copy()
+
+        pnl_rank = self._pct_rank(pd.to_numeric(eligible["ridge_pnl_raw"], errors="coerce").fillna(-np.inf))
+        sortino_rank = self._pct_rank(pd.to_numeric(eligible["ridge_trade_sortino_composite"], errors="coerce").fillna(0.0))
+        weekly_rank = 1.0 - self._pct_rank(weekly_vol.fillna(weekly_vol.max() if weekly_vol.notna().any() else 0.0))
+        pos_fold_rank = self._pct_rank(pd.to_numeric(eligible.get("positive_fold_fraction", np.nan), errors="coerce").fillna(0.0))
+        fold_std_rank = 1.0 - self._pct_rank(fold_pnl_std.fillna(fold_pnl_std.max() if fold_pnl_std.notna().any() else 0.0))
+        fold_stability = 0.7 * pos_fold_rank + 0.3 * fold_std_rank
+
+        eligible["final_candidate_rank_score"] = (
+            0.40 * pnl_rank
+            + 0.25 * sortino_rank
+            + 0.20 * weekly_rank
+            + 0.15 * fold_stability
+        )
+
+        pareto_cols = ["ridge_pnl_raw", "ridge_trade_sortino_composite", "weekly_volatility", "fold_stability"]
+        eligible["fold_stability"] = fold_stability.astype(np.float32)
+        feasible = eligible.dropna(subset=pareto_cols).copy()
+        if len(feasible) > 1:
+            keep_idx: List[Any] = []
+            feasible_records = feasible[["ridge_pnl_raw", "ridge_trade_sortino_composite", "weekly_volatility", "fold_stability"]].to_dict("records")
+            feasible_index = list(feasible.index)
+            for i, row_i in enumerate(feasible_records):
+                dominated = False
+                for j, row_j in enumerate(feasible_records):
+                    if i == j:
+                        continue
+                    better_or_equal = (
+                        row_j["ridge_pnl_raw"] >= row_i["ridge_pnl_raw"]
+                        and row_j["ridge_trade_sortino_composite"] >= row_i["ridge_trade_sortino_composite"]
+                        and row_j["fold_stability"] >= row_i["fold_stability"]
+                        and row_j["weekly_volatility"] <= row_i["weekly_volatility"]
+                    )
+                    strictly_better = (
+                        row_j["ridge_pnl_raw"] > row_i["ridge_pnl_raw"]
+                        or row_j["ridge_trade_sortino_composite"] > row_i["ridge_trade_sortino_composite"]
+                        or row_j["fold_stability"] > row_i["fold_stability"]
+                        or row_j["weekly_volatility"] < row_i["weekly_volatility"]
+                    )
+                    if better_or_equal and strictly_better:
+                        dominated = True
+                        break
+                if not dominated:
+                    keep_idx.append(feasible_index[i])
+            if keep_idx:
+                eligible = eligible.loc[keep_idx].copy()
+
+        overlap_penalty = float(self.cfg.get("final_selection_overlap_penalty", 0.35))
+        top_k = int(self.cfg.get("final_selected_rule_cap", 6))
+        selected: List[Any] = []
+        remaining = eligible.sort_values("final_candidate_rank_score", ascending=False).index.tolist()
+
+        def _pair_overlap(idx_a: Any, idx_b: Any) -> float:
+            key_a = str(eligible.loc[idx_a, "canonical_key"])
+            key_b = str(eligible.loc[idx_b, "canonical_key"])
+            mask_a = np.asarray(mask_lookup.get(key_a), dtype=bool)
+            mask_b = np.asarray(mask_lookup.get(key_b), dtype=bool)
+            if mask_a.size == 0 or mask_b.size == 0 or mask_a.shape != mask_b.shape:
+                return 0.0
+            supp_a = float(np.sum(mask_a))
+            supp_b = float(np.sum(mask_b))
+            if supp_a <= 0.0 or supp_b <= 0.0:
+                return 0.0
+            inter = float(np.sum(mask_a & mask_b))
+            return float((2.0 * inter) / max(supp_a + supp_b, 1.0))
+
+        while remaining and len(selected) < top_k:
+            best_idx = None
+            best_score = -np.inf
+            for idx in remaining:
+                base_score = float(eligible.loc[idx, "final_candidate_rank_score"])
+                max_overlap = max((_pair_overlap(idx, s) for s in selected), default=0.0)
+                score = base_score - overlap_penalty * max_overlap
+                if score > best_score:
+                    best_score = score
+                    best_idx = idx
+            if best_idx is None:
+                break
+            selected.append(best_idx)
+            remaining.remove(best_idx)
+
+        if selected:
+            result.loc[selected, "selected_for_final_registry"] = True
+            result.loc[selected, "final_candidate_rank_score"] = eligible.loc[selected, "final_candidate_rank_score"].to_numpy()
+            result.loc[selected, "final_selection_order"] = np.arange(1, len(selected) + 1, dtype=np.int32)
+
+        return result
+
     def assess_rules(
         self,
         registry: pd.DataFrame,
@@ -11013,6 +11220,49 @@ class MaskAssessor:
                 "global_entropy": float(self._compute_entropy(current_baseline_target)),
                 **uplift_baseline,
             }
+
+        path_excursion_cache: Dict[Tuple[int, str], Dict[str, np.ndarray]] = {}
+        unique_path_contexts = {
+            (int(h_key), str(s_side))
+            for _, h_key, s_side in unique_contexts
+            if int(h_key) > 0
+        }
+        if unique_path_contexts and {"close", "high", "low"}.issubset(data.columns):
+            atr_array = None
+            if "atr" in data.columns:
+                atr_array = pd.to_numeric(data["atr"], errors="coerce").to_numpy(dtype=np.float32)
+            fallback_path_ret = np.asarray(fwd_ret, dtype=np.float32)
+            for h_key, s_side in unique_path_contexts:
+                try:
+                    path_arrays = _compute_path_arrays_from_ohlc(
+                        data=data,
+                        side=s_side,
+                        horizon=max(int(h_key), 1),
+                        fallback_final_ret=fallback_path_ret,
+                    )
+                except Exception as exc:
+                    tprint(
+                        f"WARNING: Step2 path excursion precompute failed for H{h_key} [{s_side}]: {exc}"
+                    )
+                    continue
+                if atr_array is not None:
+                    path_mfe_ctx = np.where(
+                        np.isfinite(path_arrays["mfe"]) & (atr_array > 1e-12),
+                        path_arrays["mfe"] / atr_array,
+                        np.nan,
+                    ).astype(np.float32)
+                    path_mae_ctx = np.where(
+                        np.isfinite(path_arrays["mae"]) & (atr_array > 1e-12),
+                        path_arrays["mae"] / atr_array,
+                        np.nan,
+                    ).astype(np.float32)
+                else:
+                    path_mfe_ctx = np.asarray(path_arrays["mfe"], dtype=np.float32)
+                    path_mae_ctx = np.asarray(path_arrays["mae"], dtype=np.float32)
+                path_excursion_cache[(h_key, s_side)] = {
+                    "mfe": path_mfe_ctx,
+                    "mae": path_mae_ctx,
+                }
                 
         max_ridge_candidates_total = int(
             self.cfg.get("max_ridge_candidates_total", 80)
@@ -11049,7 +11299,33 @@ class MaskAssessor:
 
         for bucket_key, entries in cheap_gate_rows.items():
             side = bucket_key[0]
-            baseline_oof_coverage = float(baseline_cache[side]["global_cov"])
+            bucket_context_coverages: List[float] = []
+            for _, canonical_key in entries:
+                matching_rows = registry.loc[
+                    registry["canonical_key"].astype(str) == str(canonical_key)
+                ]
+                if matching_rows.empty:
+                    continue
+                source_target = str(matching_rows.iloc[0].get("source_target", "unknown"))
+                source_horizon_raw = matching_rows.iloc[0].get("source_horizon", -1)
+                try:
+                    source_horizon = (
+                        int(source_horizon_raw)
+                        if pd.notna(source_horizon_raw)
+                        else int(bucket_key[1])
+                    )
+                except (TypeError, ValueError):
+                    source_horizon = int(bucket_key[1])
+                ctx_key = (source_target, source_horizon, side)
+                baseline_data = baseline_cache.get(ctx_key)
+                if baseline_data is not None:
+                    bucket_context_coverages.append(
+                        float(baseline_data.get("global_cov", np.nan))
+                    )
+            finite_coverages = [c for c in bucket_context_coverages if np.isfinite(c)]
+            baseline_oof_coverage = (
+                float(min(finite_coverages)) if finite_coverages else 1.0
+            )
             if baseline_oof_coverage < min_oof_coverage:
                 for _, canonical_key in entries:
                     cheap_gate_result[(bucket_key, canonical_key)] = (
@@ -11322,6 +11598,7 @@ class MaskAssessor:
             f"Stage A: Starting final assessment for {total_ridge_selected} rules (batches of {batch_size})..."
         )
 
+        final_assessment_start_ts = time.perf_counter()
         assessed_progress = 0
         for row in selected_records:
             ridge_details: Dict[str, Any] = {}
@@ -11457,6 +11734,7 @@ class MaskAssessor:
             auc_lift = np.nan
             top_quartile_precision_lift = np.nan
             entropy_red = np.nan
+            ridge_round_fee = float(self.cfg.get("label_round_trip_fee_pct", 0.0015))
             ridge_trade_metrics: Dict[str, Any] = {
                 "threshold_star": np.nan,
                 "threshold_star_lowest_positive": np.nan,
@@ -11492,8 +11770,18 @@ class MaskAssessor:
                         f"Stage A: Ridge learnability start {assessed_progress}/{total_ridge_selected} "
                         f"key={canonical_key[:120]}"
                     )
+                    source_horizon = int(row.get("source_horizon", bucket_key[1]))
+                    rule_side = str(row.get("side", side))
+                    path_excursions = path_excursion_cache.get((source_horizon, rule_side), {})
                     ridge_details = self._compute_subset_ridge_details(
-                        X, target_ret, mask, folds, tp_f=rule_tp_f, target_nan_reasons=target_nan_reasons
+                        X,
+                        target_ret,
+                        mask,
+                        folds,
+                        tp_f=rule_tp_f,
+                        target_nan_reasons=target_nan_reasons,
+                        path_mfe=path_excursions.get("mfe"),
+                        path_mae=path_excursions.get("mae"),
                     )
                     mask_auc = float(ridge_details["subset_auc"])
                     mask_roc_auc = float(ridge_details["subset_roc_auc"])
@@ -11505,9 +11793,11 @@ class MaskAssessor:
                         directional_returns=target_ret,
                         mask=mask,
                         folds=folds,
+                        horizon=source_horizon,
                         oof_preds=np.asarray(
                             ridge_details["oof_preds"], dtype=np.float32
                         ),
+                        round_fee=ridge_round_fee,
                     )
                     tprint(
                         f"Stage A: Ridge learnability done {assessed_progress}/{total_ridge_selected} "
@@ -11541,8 +11831,12 @@ class MaskAssessor:
                     rejected, rejection_reason = True, "top_quartile_precision_not_positive"
 
             # 8. Event-based Expected Value
-            tp_payoff = tp_atr  # TP payoff in ATR units
-            sl_payoff = sl_atr  # SL payoff in ATR units
+            if adaptive_enabled:
+                tp_payoff = float(adaptive_tp_atr)
+                sl_payoff = float(adaptive_sl_atr)
+            else:
+                tp_payoff = float(self.cfg.get("tp_atr", 2.0))
+                sl_payoff = float(self.cfg.get("sl_atr", 2.0))
             timeout_payoff = mean_ret_mask  # Average return for timeouts
 
             ev_per_event = (
@@ -11556,7 +11850,7 @@ class MaskAssessor:
                 rejected, rejection_reason = True, "ev_per_event_less_than_or_equal_to_zero"
                 
                 # Diagnostic logging for EV-based rejection
-                fee_frac = (0.0015 / abs(mean_ret_mask)) if abs(mean_ret_mask) > 1e-9 else np.nan
+                fee_frac = (ridge_round_fee / abs(mean_ret_mask)) if abs(mean_ret_mask) > 1e-9 else np.nan
                 tprint(
                     f"DIAGNOSTIC: Rule rejected (Low EV) key={canonical_key[:60]}... "
                     f"GrossEV={ev_per_event:.6f} AvgMove={mean_ret_mask:.6f} HitRate={tbm_metrics['tp_rate']:.2%} "
@@ -11571,7 +11865,7 @@ class MaskAssessor:
                 
                 if rejection_reason == "no positive post-fee profit threshold":
                     # Diagnostic logging for post-fee rejection
-                    fee_frac = (0.0015 / abs(mean_ret_mask)) if abs(mean_ret_mask) > 1e-9 else np.nan
+                    fee_frac = (ridge_round_fee / abs(mean_ret_mask)) if abs(mean_ret_mask) > 1e-9 else np.nan
 
                     # Extract best TP/SL and profit information from reject_reason
                     best_pnl_candidate = ridge_trade_metrics.get("reject_reason", {}).get("best_pnl_candidate", np.nan)
@@ -11595,7 +11889,7 @@ class MaskAssessor:
                         total_trades_est = n_samples * support_pct * avg_trades_est
                         if total_trades_est > 0:
                             avg_gross_profit_per_trade = best_pnl_candidate / total_trades_est
-                            avg_net_profit_per_trade = avg_gross_profit_per_trade - 0.0015  # subtract round fee
+                            avg_net_profit_per_trade = avg_gross_profit_per_trade - ridge_round_fee
                         else:
                             avg_gross_profit_per_trade = np.nan
                             avg_net_profit_per_trade = np.nan
@@ -11631,10 +11925,10 @@ class MaskAssessor:
             # 9. Final Regime Score
             regime_score = (
                 0.30 * cheap_rank
-                + 0.20 * top_quartile_precision_lift
-                + 0.20 * ret_uplift
-                + 0.20 * ev_per_event
-                + 0.10 * (mask_auc if np.isfinite(mask_auc) else 0.0)
+                + 0.15 * top_quartile_precision_lift
+                + 0.25 * ret_uplift
+                + 0.25 * ev_per_event
+                + 0.05 * (mask_auc if np.isfinite(mask_auc) else 0.0)
                 + family_rarity_bonus
             )
 
@@ -11778,7 +12072,7 @@ class MaskAssessor:
 
             # Tail p5 ratio and uplift
             p5_mask = mask_metrics["p5"]
-            p5_global = baseline_cache[side]["p5"]
+            p5_global = float(baseline_data.get("p5", np.nan))
             if np.isfinite(p5_mask) and np.isfinite(p5_global):
                 tail_p5_ratio = float(p5_mask / p5_global) if abs(p5_global) > eps else np.nan
                 tail_uplift = 10.0 * (p5_mask - p5_global) / max(abs(p5_mask) + abs(p5_global), eps)
@@ -11788,7 +12082,7 @@ class MaskAssessor:
 
             # Mean p75 ratio and uplift
             p75_mask = mask_metrics["mean_p75_ret"]
-            p75_global = baseline_cache[side]["mean_p75_ret"]
+            p75_global = float(baseline_data.get("mean_p75_ret", np.nan))
             if np.isfinite(p75_mask) and np.isfinite(p75_global):
                 mean_p75_ratio = float(p75_mask / p75_global) if abs(p75_global) > eps else np.nan
                 mean_75_uplift = 10.0 * (p75_mask - p75_global) / max(abs(p75_mask) + abs(p75_global), eps)
@@ -11798,7 +12092,7 @@ class MaskAssessor:
 
             # Weekly sortino ratio and uplift
             w_sort_mask = mask_metrics["weekly_sortino"]
-            w_sort_global = baseline_cache[side]["weekly_sortino"]
+            w_sort_global = float(baseline_data.get("weekly_sortino", np.nan))
             if np.isfinite(w_sort_mask) and np.isfinite(w_sort_global):
                 weekly_sortino_ratio = float(w_sort_mask / w_sort_global) if abs(w_sort_global) > eps else np.nan
                 sortino_weekly_uplift = 10.0 * (w_sort_mask - w_sort_global) / max(abs(w_sort_mask) + abs(w_sort_global), eps)
@@ -11808,7 +12102,7 @@ class MaskAssessor:
 
             # Monthly sortino ratio and uplift
             m_sort_mask = mask_metrics["monthly_sortino"]
-            m_sort_global = baseline_cache[side]["monthly_sortino"]
+            m_sort_global = float(baseline_data.get("monthly_sortino", np.nan))
             if np.isfinite(m_sort_mask) and np.isfinite(m_sort_global):
                 monthly_sortino_ratio = float(m_sort_mask / m_sort_global) if abs(m_sort_global) > eps else np.nan
                 sortino_monthly_uplift = 10.0 * (m_sort_mask - m_sort_global) / max(abs(m_sort_mask) + abs(m_sort_global), eps)
@@ -11947,8 +12241,8 @@ class MaskAssessor:
 
         # 1. Final base score (V3 update: replace auc_lift_norm with overall_mask_uplift_norm)
         assessment_df["base_regime_score"] = (
-            0.25 * assessment_df["ridge_pnl_norm_norm"]
-            + 0.25 * assessment_df["ridge_trade_sortino_composite_norm"]
+            0.30 * assessment_df["ridge_pnl_norm_norm"]
+            + 0.30 * assessment_df["ridge_trade_sortino_composite_norm"]
             + 0.30 * assessment_df["overall_mask_uplift_norm"]
             + 0.10 * assessment_df["ev_per_event_norm"]
         )
@@ -12309,7 +12603,16 @@ class MaskAssessor:
         return float(details["subset_auc"]), float(details["coverage"])
 
     def _compute_subset_ridge_details(
-        self, X, fwd_ret, mask, folds, tp_f: np.ndarray = None, target_nan_reasons: Optional[np.ndarray] = None
+        self,
+        X,
+        fwd_ret,
+        mask,
+        folds,
+        tp_f: np.ndarray = None,
+        target_nan_reasons: Optional[np.ndarray] = None,
+        path_mfe: Optional[np.ndarray] = None,
+        path_mae: Optional[np.ndarray] = None,
+        model_profile: str = "weak",
     ) -> Dict[str, Any]:
         """Compute Ridge OOF details for a subset of data defined by mask."""
         if not np.any(mask):
@@ -12382,6 +12685,8 @@ class MaskAssessor:
             min_val_req,
             min_pred_points,
         ) = self._ridge_learnability_thresholds(y)
+        model_profile = str(model_profile).lower()
+        model_params = self._get_step2_model_profile_params(model_profile)
 
         # Compute OOF predictions using Ridge
         from sklearn.linear_model import Ridge
@@ -12401,6 +12706,11 @@ class MaskAssessor:
 
             X_tr, X_va = X_ridge[tr_masked], X_ridge[va_masked]
             y_tr, y_va = y[tr_masked], y[va_masked]
+            mfe_tr = None
+            mae_tr = None
+            if path_mfe is not None and path_mae is not None:
+                mfe_tr = np.asarray(path_mfe[tr_masked], dtype=np.float32)
+                mae_tr = np.asarray(path_mae[tr_masked], dtype=np.float32)
 
             # Filter valid samples (y must be finite, and ALL ridge features must be finite)
             valid_tr = np.isfinite(y_tr) & np.all(np.isfinite(X_tr), axis=1)
@@ -12478,6 +12788,11 @@ class MaskAssessor:
             y_tr_clean = y_tr[valid_tr]
             X_va_clean = X_va[valid_va]
             y_va_clean = y_va[valid_va]
+            mfe_tr_clean = None
+            mae_tr_clean = None
+            if mfe_tr is not None and mae_tr is not None:
+                mfe_tr_clean = mfe_tr[valid_tr]
+                mae_tr_clean = mae_tr[valid_tr]
             fold_filter_time += time.perf_counter() - fold_stage_start
 
             # Defensive check for any remaining NaNs (should not happen with valid_tr/valid_va)
@@ -12519,15 +12834,36 @@ class MaskAssessor:
                 w_min=0.5,
                 w_max=2.0,
             )
+            if mfe_tr_clean is not None and mae_tr_clean is not None:
+                excursion_weights = make_excursion_asymmetry_weights(
+                    mfe_atr=mfe_tr_clean,
+                    mae_atr=mae_tr_clean,
+                    side="long",
+                    alpha=float(self.cfg.get("step2_excursion_weight_alpha", 0.35)),
+                    w_min=float(self.cfg.get("step2_excursion_weight_min", 0.75)),
+                    w_max=float(self.cfg.get("step2_excursion_weight_max", 1.75)),
+                )
+                lgbm_sample_weight = np.clip(
+                    lgbm_sample_weight * excursion_weights,
+                    float(self.cfg.get("step2_sample_weight_min", 0.25)),
+                    float(self.cfg.get("step2_sample_weight_max", 4.0)),
+                ).astype(np.float32, copy=False)
             
             fit_start = time.perf_counter()
             model = Pipeline([
                 ("scaler", RobustScaler()),
                 ("lgbm", LGBMRegressor(
-                    max_depth=3, 
-                    n_estimators=5, 
-                    min_child_samples=20,
-                    min_data_in_leaf=20,
+                    max_depth=int(model_params["max_depth"]), 
+                    n_estimators=int(model_params["n_estimators"]), 
+                    min_child_samples=int(model_params["min_child_samples"]),
+                    min_data_in_leaf=int(model_params["min_data_in_leaf"]),
+                    lambda_l1=float(model_params["lambda_l1"]),
+                    lambda_l2=float(model_params["lambda_l2"]),
+                    min_gain_to_split=float(model_params["min_gain_to_split"]),
+                    subsample=float(model_params["subsample"]),
+                    subsample_freq=int(model_params["subsample_freq"]),
+                    feature_fraction=float(model_params["feature_fraction"]),
+                    boosting_type=str(model_params["boosting_type"]),
                     random_state=42,
                     n_jobs=max(1, min(4, int(self.cfg.get("lgbm_n_jobs", 3))))
                 )),
@@ -12567,6 +12903,7 @@ class MaskAssessor:
         fold_sign_consistency = np.nan
         positive_fold_fraction = np.nan
         negative_fold_fraction = np.nan
+        fold_pnl_std = np.nan
         decile_monotonic_spearman = np.nan
         top_decile_mean_target = np.nan
         bottom_decile_mean_target = np.nan
@@ -12645,6 +12982,7 @@ class MaskAssessor:
                 n_pos = sum(1 for m in fold_means if m > 0)
                 n_neg = sum(1 for m in fold_means if m < 0)
                 n_nonzero = n_pos + n_neg
+                fold_pnl_std = float(np.nanstd(np.asarray(fold_means, dtype=np.float32), ddof=0))
 
                 positive_fold_fraction = n_pos / len(fold_means)
                 negative_fold_fraction = n_neg / len(fold_means)
@@ -12711,6 +13049,7 @@ class MaskAssessor:
             "fold_sign_consistency": float(fold_sign_consistency) if np.isfinite(fold_sign_consistency) else np.nan,
             "positive_fold_fraction": float(positive_fold_fraction) if np.isfinite(positive_fold_fraction) else np.nan,
             "negative_fold_fraction": float(negative_fold_fraction) if np.isfinite(negative_fold_fraction) else np.nan,
+            "fold_pnl_std": float(fold_pnl_std) if np.isfinite(fold_pnl_std) else np.nan,
             "decile_monotonic_spearman": float(decile_monotonic_spearman) if np.isfinite(decile_monotonic_spearman) else np.nan,
             "top_decile_mean_target": float(top_decile_mean_target) if np.isfinite(top_decile_mean_target) else np.nan,
             "bottom_decile_mean_target": float(bottom_decile_mean_target) if np.isfinite(bottom_decile_mean_target) else np.nan,
@@ -12721,8 +13060,8 @@ class MaskAssessor:
             "val_target_nan_reasons": val_target_nan_reasons,
         }
 
-    @staticmethod
     def _compute_ranked_ridge_trade_metrics(
+        self,
         data: pd.DataFrame,
         directional_returns: np.ndarray,
         mask: np.ndarray,
@@ -12769,7 +13108,7 @@ class MaskAssessor:
         else:
             confidence_scores = np.array([])
 
-        net_returns = np.asarray(directional_returns[valid], dtype=np.float32) - float(round_fee)
+        gross_returns = np.asarray(directional_returns[valid], dtype=np.float32)
         symbols = data.loc[valid, "symbol"].astype(str).to_numpy()
         timestamps = pd.to_datetime(
             data.loc[valid, "timestamp"], errors="coerce", utc=True
@@ -12780,7 +13119,7 @@ class MaskAssessor:
             return _empty_metrics()
 
         confidence_scores = confidence_scores[valid_ts]
-        net_returns = net_returns[valid_ts]
+        gross_returns = gross_returns[valid_ts]
         symbols = symbols[valid_ts]
         timestamps = timestamps[valid_ts].to_numpy()
 
@@ -12831,52 +13170,80 @@ class MaskAssessor:
                  entry_time=entry_t,
                  exit_time=exit_t,
                  confidence_score=float(confidence_scores[i]),
-                 gross_trade_return=float(net_returns[i] + round_fee), # restore gross
+                gross_trade_return=float(gross_returns[i]),
                  symbol=symbols[i]
              ))
 
-        # 3. threshold_star search via binary search
-        low, high = 0.60, 0.95
+        # 3. Per-rule threshold search on score quantiles, optimized against net PnL.
+        quantile_low = float(self.cfg.get("ridge_threshold_search_low_quantile", 0.50))
+        quantile_high = float(self.cfg.get("ridge_threshold_search_high_quantile", 0.95))
+        quantile_low = float(np.clip(quantile_low, 0.0, 1.0))
+        quantile_high = float(np.clip(max(quantile_high, quantile_low + 1e-3), 0.0, 1.0))
+        max_trials = max(1, int(self.cfg.get("ridge_threshold_search_trials", 7)))
+        max_concurrent_per_symbol = 1
+        max_concurrent_total = int(self.cfg.get("ridge_max_concurrent_total", 2))
+
         threshold_star_lowest_positive = None
         threshold_star_optimal_pnl = None
         best_pnl_raw = -np.inf
 
-        # We will track the lowest evaluated threshold that yielded a positive PnL
         current_lowest_positive = np.inf
+        threshold_eval_cache: Dict[float, Dict[str, Any]] = {}
 
-        for _ in range(7):
-            t = float((low + high) / 2.0)
+        def _evaluate_threshold_for_quantile(quantile_level: float) -> Dict[str, Any]:
+            quantile_level = float(np.clip(quantile_level, quantile_low, quantile_high))
+            threshold_value = float(np.nanquantile(confidence_scores, quantile_level))
+            threshold_key = float(np.round(threshold_value, 8))
+            cached = threshold_eval_cache.get(threshold_key)
+            if cached is not None:
+                return cached
 
             pnl_res = compute_ridge_pnl(
                 trades=all_trades,
-                threshold_star=t,
+                threshold_star=threshold_value,
                 round_fee=round_fee,
                 min_weight=min_weight,
                 max_weight=max_weight,
                 convex_power=convex_power,
                 starting_capital=1.0,
                 forbid_concurrent=forbid_concurrent,
-                max_concurrent_per_symbol=1,
-                max_concurrent_total=3
+                max_concurrent_per_symbol=max_concurrent_per_symbol,
+                max_concurrent_total=max_concurrent_total,
             )
+            result = {
+                "quantile": quantile_level,
+                "threshold": threshold_value,
+                "pnl_res": pnl_res,
+                "pnl_raw": float(pnl_res["ridge_pnl_raw"]),
+            }
+            threshold_eval_cache[threshold_key] = result
+            return result
 
-            pnl_raw = float(pnl_res["ridge_pnl_raw"])
-
-            # Track optimal PnL threshold
+        def _register_threshold_candidate(candidate: Dict[str, Any]) -> None:
+            nonlocal best_pnl_raw, threshold_star_optimal_pnl, current_lowest_positive, threshold_star_lowest_positive
+            pnl_raw = float(candidate["pnl_raw"])
+            threshold_value = float(candidate["threshold"])
             if pnl_raw > best_pnl_raw:
                 best_pnl_raw = pnl_raw
-                threshold_star_optimal_pnl = t
+                threshold_star_optimal_pnl = threshold_value
+            if pnl_raw > 0.0 and threshold_value < current_lowest_positive:
+                current_lowest_positive = threshold_value
+                threshold_star_lowest_positive = threshold_value
 
-            # Objective: lowest positive profit threshold based on weighted realized returns
-            if pnl_raw > 0:
-                if t < current_lowest_positive:
-                    current_lowest_positive = t
-                    threshold_star_lowest_positive = t
-                # We found a profitable threshold, so try to find a lower one
-                high = t
+        low_q = quantile_low
+        high_q = quantile_high
+        for boundary_q in (low_q, high_q):
+            _register_threshold_candidate(_evaluate_threshold_for_quantile(boundary_q))
+
+        for _ in range(max_trials):
+            mid_q = float((low_q + high_q) / 2.0)
+            candidate = _evaluate_threshold_for_quantile(mid_q)
+            _register_threshold_candidate(candidate)
+
+            if float(candidate["pnl_raw"]) > 0.0:
+                high_q = mid_q
             else:
-                # Not profitable (or exactly 0), must search higher
-                low = t
+                low_q = mid_q
 
         if threshold_star_lowest_positive is None:
             res = _empty_metrics()
@@ -12900,8 +13267,8 @@ class MaskAssessor:
             convex_power=convex_power,
             starting_capital=1.0,
             forbid_concurrent=forbid_concurrent,
-            max_concurrent_per_symbol=1,
-                max_concurrent_total=3
+            max_concurrent_per_symbol=max_concurrent_per_symbol,
+            max_concurrent_total=max_concurrent_total,
         )
 
         final_trades = final_pnl_res["selected_trades"]
@@ -12924,9 +13291,9 @@ class MaskAssessor:
                     res = _empty_metrics()
                     res["reject_reason"] = {"reason": "validation_failed: >1 trade per symbol"}
                     return res
-                if total_open > 3:
+                if total_open > max_concurrent_total:
                     res = _empty_metrics()
-                    res["reject_reason"] = {"reason": "validation_failed: >3 total concurrent trades"}
+                    res["reject_reason"] = {"reason": f"validation_failed: >{max_concurrent_total} total concurrent trades"}
                     return res
 
         # Alignment Note:
@@ -14250,6 +14617,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,
             "drop_location_nuisance_features_from_miner": False,
+            "global_ridge_candidate_cap": 120,
         },
         "production": {
             "min_feature_support": 5,
@@ -14280,6 +14648,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,
             "drop_location_nuisance_features_from_miner": False,
+            "global_ridge_candidate_cap": 120,
         },
     }
     if preset not in defaults:

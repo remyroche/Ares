@@ -2671,8 +2671,8 @@
     0.9
   ],
   "n_folds": 3,
-  "mask_opt_max_symbols": 100,
-  "mask_opt_lookback_years": 2.0,
+  "mask_opt_max_symbols": 300,
+  "mask_opt_lookback_years": 4.0,
   "support_max_pct": 0.22,
   "objective_support_max_pct": 0.22,
   "max_support_pct": 0.22,
@@ -2716,6 +2716,7 @@
   "drop_nuisance_features_from_miner": true,
   "drop_continuous_nuisance_parents_from_miner": true,
   "drop_location_nuisance_features_from_miner": false,
+  "global_ridge_candidate_cap": 120,
   "prune_complexity_bonus_map": {
     "1": 0.0,
     "2": 0.15,
@@ -2725,5 +2726,5 @@
     "6": 0.1
   },
   "pairwise_top_n": 20,
-  "_resolved_run_base_dir": "production_lgbm_outputs/run_20260404_002306_348872"
+  "_resolved_run_base_dir": "production_lgbm_outputs/run_20260404_014619_127140"
 }

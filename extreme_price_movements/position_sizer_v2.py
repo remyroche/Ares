@@ -142,10 +142,121 @@ def make_temporal_splits(
 
 
 def build_log_clipped_target(returns: np.ndarray, clip_L: float = 0.02) -> np.ndarray:
-    """T1 = log_clipped_winsorized_net"""
-    clipped = np.clip(returns, -clip_L, clip_L)
-    scale = np.std(clipped) if len(clipped) > 1 and np.std(clipped) > 1e-9 else 1.0
-    return np.sign(clipped) * np.log1p(np.abs(clipped) / scale)
+    """T1 = log_clipped_winsorized_net with soft-plus transform.
+
+    Uses symmetric soft-plus transformation with scaling to preserve relative ordering
+    and magnitude information for extreme returns.
+
+    For values within [-clip_L, clip_L], applies log1p transform directly.
+    For extreme values (outside [-clip_L, clip_L]), applies a soft-tanh-like scaling
+    that preserves relative ordering and    and compresses the tail without destroying information.
+    """
+    returns = np.asarray(returns, dtype=float)
+    if len(returns) == 0:
+        return np.array([], dtype=float)
+    if np.all(returns == 0):
+        return np.zeros_like(returns)
+
+    p01, p99 = np.percentile(returns, [1, 99])
+    scale = max(np.std(returns), 1e-9)
+
+    inner = np.abs(returns) <= clip_L
+    outer_lo = returns < -clip_L
+    outer_hi = returns > clip_L
+
+    result = np.empty_like(returns)
+    result[inner] = np.sign(returns[inner]) * np.log1p(np.abs(returns[inner]) / scale)
+
+    result[outer_lo] = (
+        -np.log1p(np.abs(-clip_L) / scale)
+        - np.log1p((np.abs(returns[outer_lo]) - clip_L) / scale)
+    )
+    result[outer_hi] = (
+        np.log1p(np.abs(clip_L) / scale)
+        + np.log1p((np.abs(returns[outer_hi]) - clip_L) / scale)
+    )
+
+    return result.astype(np.float32)
+
+
+def _soft_winsorize_downside(
+    y: np.ndarray, lower_pct: float = 0.0, upper_pct: float = 98.0, softness: float = 0.3
+) -> np.ndarray:
+    """Soft winsorization that preserves relative ordering while compressing tails.
+    
+    Args:
+        y: Input array
+        lower_pct: Lower percentile bound (default 0.0)
+        upper_pct: Upper percentile bound (default 98.0)
+        softness: Compression factor for tail values (default 0.3)
+    
+    Returns:
+        Transformed array with soft-compressed tails
+    """
+    y = np.asarray(y, dtype=float)
+    if len(y) == 0:
+        return y
+    p_lo = np.percentile(y, lower_pct)
+    p_hi = np.percentile(y, upper_pct)
+    scale = max(p_hi - p_lo, 1e-9)
+    result = y.copy()
+    outer_lo = y < p_lo
+    outer_hi = y > p_hi
+    result[outer_lo] = p_lo - scale * softness * np.tanh((p_lo - y[outer_lo]) / scale)
+    result[outer_hi] = p_hi + scale * softness * np.tanh((y[outer_hi] - p_hi) / scale)
+    return result.astype(np.float32)
+
+
+def _soft_clip_sample_weights(
+    weights: np.ndarray, lower: float = 0.01, upper_pct: float = 99.0, softness: float = 0.5
+) -> np.ndarray:
+    """Soft clip sample weights to preserve relative ordering while bounding extreme values.
+    
+    Args:
+        weights: Sample weight array
+        lower: Hard lower bound (default 0.01)
+        upper_pct: Upper percentile for soft bound (default 99.0)
+        softness: Compression factor for upper tail (default 0.5)
+    
+    Returns:
+        Transformed weights with soft upper bound
+    """
+    weights = np.asarray(weights, dtype=float)
+    if len(weights) == 0:
+        return weights
+    p_hi = np.percentile(weights, upper_pct)
+    scale = max(p_hi - lower, 1e-9)
+    result = weights.copy()
+    result = np.maximum(result, lower)
+    outer_hi = weights > p_hi
+    result[outer_hi] = p_hi + scale * softness * np.tanh((weights[outer_hi] - p_hi) / scale)
+    return result.astype(np.float32)
+
+
+def _soft_clip_offset(
+    offset: np.ndarray, offset_min: float, offset_max: float, softness: float = 0.3
+) -> np.ndarray:
+    """Soft clip offset targets to preserve relative ordering while bounding values.
+    
+    Args:
+        offset: Offset array
+        offset_min: Minimum offset bound
+        offset_max: Maximum offset bound
+        softness: Compression factor for bounds (default 0.3)
+    
+    Returns:
+        Transformed offsets with soft bounds
+    """
+    offset = np.asarray(offset, dtype=float)
+    if len(offset) == 0:
+        return offset
+    scale = max(offset_max - offset_min, 1e-9)
+    result = offset.copy()
+    outer_lo = offset < offset_min
+    outer_hi = offset > offset_max
+    result[outer_lo] = offset_min - scale * softness * np.tanh((offset_min - offset[outer_lo]) / scale)
+    result[outer_hi] = offset_max + scale * softness * np.tanh((offset[outer_hi] - offset_max) / scale)
+    return result.astype(np.float32)
 
 
 def build_rank_target(
@@ -554,8 +665,8 @@ class LayerAPredictor:
 
         for tr_idx, val_idx in splits:
             w_tr = sample_weight[tr_idx] if sample_weight is not None else None
-            y_tr_down = np.clip(
-                y_downside[tr_idx], 0.0, np.percentile(y_downside[tr_idx], 98)
+            y_tr_down = _soft_winsorize_downside(
+                y_downside[tr_idx], lower_pct=0.0, upper_pct=98.0, softness=0.3
             )
 
             sel_idx = np.arange(X.shape[1])
@@ -780,12 +891,11 @@ class LayerAPredictor:
         self.feature_coverage_report_["X1_shape"] = X1.shape
         self.feature_coverage_report_["X2_shape"] = X2.shape
 
-        # Bound/clip sample weights to prevent explosive leverage
+        # Soft-bound sample weights to prevent explosive leverage while preserving ordering
         if sample_weight is not None:
             sw_finite = sample_weight[np.isfinite(sample_weight) & (sample_weight > 0)]
             if len(sw_finite) > 0:
-                p99 = np.percentile(sw_finite, 99)
-                sample_weight = np.clip(sample_weight, 0.01, p99)
+                sample_weight = _soft_clip_sample_weights(sample_weight, lower=0.01, upper_pct=99.0, softness=0.5)
                 sample_weight[~np.isfinite(sample_weight)] = 0.01
             else:
                 sample_weight = None
@@ -1413,7 +1523,7 @@ class LayerCExecutionOptimizer:
             self.offset_n_samples_ = 0
             return self
 
-        y_train = np.clip(y_offset[valid], self.offset_min, self.offset_max)
+        y_train = _soft_clip_offset(y_offset[valid], self.offset_min, self.offset_max, softness=0.3)
         X_train = X[valid]
         w_train = sample_weight[valid] if sample_weight is not None else None
 
@@ -1437,7 +1547,7 @@ class LayerCExecutionOptimizer:
         offset = np.zeros_like(score)
         if self.is_fitted:
             offset = self.limit_model.predict(self.scaler.transform(X))
-            offset = np.clip(offset, self.offset_min, self.offset_max)
+            offset = _soft_clip_offset(offset, self.offset_min, self.offset_max, softness=0.3)
 
         sizes = np.zeros_like(score)
         active = score >= threshold

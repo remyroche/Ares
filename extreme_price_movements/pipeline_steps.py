@@ -99,6 +99,14 @@ FEATURE_HEALTH_CRITICAL_KEYS: tuple[str, ...] = (
     "prior_volatility",
     "trend_acceleration",
 )
+TRAINING_RESIDUALIZATION_FEATURE_KEYS: tuple[str, ...] = (
+    "ema50_ema200_spread_atr",
+    "atr_change_rate",
+    "bars_in_high_vol_state_log_norm",
+    "volatility_of_volatility_48",
+    "trend_strength_percentile",
+    "volatility_autocorr_48",
+)
 
 
 def _dedup_universe_by_base(symbols: list[str]) -> list[str]:
@@ -140,6 +148,7 @@ def _meta_feature_keys_union(cfg) -> set[str]:
     keys = set(cfg.get("meta_feature_keys", []) or [])
     keys.update(cfg.get("mr_meta_feature_keys", []) or [])
     keys.update(cfg.get("tf_meta_feature_keys", []) or [])
+    keys.update(TRAINING_RESIDUALIZATION_FEATURE_KEYS)
     return {k for k in keys if isinstance(k, str) and k}
 
 
@@ -156,7 +165,27 @@ def _base_feature_keys_union(cfg) -> set[str]:
             for v in vals:
                 if isinstance(v, str) and v:
                     keys.add(v)
+    keys.update(TRAINING_RESIDUALIZATION_FEATURE_KEYS)
     return keys
+
+
+def ensure_training_residualization_feature_keys(cfg: dict) -> dict:
+    out = dict(cfg)
+    for cfg_key in (
+        "tf_feature_keys",
+        "mr_feature_keys",
+        "meta_feature_keys",
+        "mr_meta_feature_keys",
+        "tf_meta_feature_keys",
+    ):
+        base_vals = list(out.get(cfg_key, []) or [])
+        seen = {v for v in base_vals if isinstance(v, str) and v}
+        for feature_name in TRAINING_RESIDUALIZATION_FEATURE_KEYS:
+            if feature_name not in seen:
+                base_vals.append(feature_name)
+                seen.add(feature_name)
+        out[cfg_key] = base_vals
+    return out
 
 
 def _cap_panel_rows(
@@ -1607,6 +1636,7 @@ def run_training_step(
 ):
     """Train all models from label artifacts. Saves trained state to disk."""
     cfg = apply_offline_optimizer_best_params(dict(cfg))
+    cfg = ensure_training_residualization_feature_keys(cfg)
     planner_preset = str(cfg.get("slice_planner_preset", "fast")).lower()
     cfg["slice_planner_preset"] = "robust" if planner_preset == "robust" else "fast"
     cfg["train_full_inference_models"] = bool(

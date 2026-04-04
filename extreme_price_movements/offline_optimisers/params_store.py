@@ -84,22 +84,40 @@ def _read_best_params_csv(path: Path) -> Dict[str, Any]:
     return out
 
 
-def load_inference_candidate_mask_params_per_bucket() -> list[dict[str, Any]]:
-    """Load all dynamically generated strategy parameters from the mask-optimiser."""
-    # Find the most recent final_rule_registry.csv in production_lgbm_outputs
+def load_inference_candidate_mask_params_per_bucket(
+    top_n: int = 4,
+    ranking_metric: str = "composite_score",
+) -> list[dict[str, Any]]:
+    """Load top-N dynamically generated strategy parameters from the mask-optimiser.
+    
+    Args:
+        top_n: Number of top rules to load (default: 4)
+        ranking_metric: Metric to rank rules by (default: "composite_score")
+                      Options: "composite_score", "learnability_step_c_score", 
+                            "stage2_score", "mask_oof_corr"
+    
+    Returns:
+        List of strategy dicts, each with keys:
+            - strategy_id: Safe identifier for the rule
+            - trade_side: "long" or "short"
+            - base_event_trigger: The canonical_key
+            - mask_params: Dict with canonical_key
+    """
     import glob
     import os
-
+    import pandas as pd
+    import logging as _logging
+    
+    _log = _logging.getLogger("params_store")
+    
     pattern = str(Path("production_lgbm_outputs") / "run_*" / "final_rule_registry.csv")
     files = glob.glob(pattern)
 
     path = None
     if files:
-        # Sort by run directory name, which contains timestamp
         files.sort(key=lambda x: os.path.basename(os.path.dirname(x)), reverse=True)
         path = Path(files[0])
     else:
-        # Fallback
         path = Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
         if not path.exists():
             path = REPORTS_DIR / "lgbm_accepted_rule_registry.csv"
@@ -107,7 +125,6 @@ def load_inference_candidate_mask_params_per_bucket() -> list[dict[str, Any]]:
     if not path or not path.exists():
         return []
     
-    import pandas as pd
     try:
         df = pd.read_csv(path)
     except pd.errors.EmptyDataError:
@@ -115,20 +132,28 @@ def load_inference_candidate_mask_params_per_bucket() -> list[dict[str, Any]]:
     if df.empty:
         return []
     
+    if ranking_metric not in df.columns:
+        _log.warning(
+            f"[params_store] ranking_metric '{ranking_metric}' not found in {path}, "
+            f"falling back to first {top_n} rows"
+        )
+        top_rules = df.head(top_n)
+    else:
+        df_sorted = df.sort_values(by=ranking_metric, ascending=False)
+        top_rules = df_sorted.head(top_n)
+    
     strategies = []
-    for _, row in df.iterrows():
+    for _, row in top_rules.iterrows():
         key = str(row.get("canonical_key", ""))
         side = str(row.get("side", "long")).lower()
         if side == "mixed":
-            side = "long" # fallback
+            side = "long"
         if not key:
             continue
-            
+        
         import re
         safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', key)
-        # remove duplicate underscores
         safe_id = re.sub(r'_+', '_', safe_id)
-        # trim trailing underscore
         safe_id = safe_id.strip('_')
         
         strategies.append({
@@ -137,6 +162,12 @@ def load_inference_candidate_mask_params_per_bucket() -> list[dict[str, Any]]:
             "base_event_trigger": key,
             "mask_params": {"canonical_key": key}
         })
+    
+    _log.info(
+        f"[params_store] Loaded top {len(strategies)} strategies from {path} "
+        f"(ranked by {ranking_metric})"
+    )
+    
     return strategies
 
 

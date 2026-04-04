@@ -878,9 +878,12 @@ def compute_ridge_pnl(
 
     if len(eligible_trades) == 0:
         return {
+            "ridge_pnl_gross_raw": 0.0,
             "ridge_pnl_raw": 0.0,
             "selected_trades": [],
+            "weighted_gross_returns": [],
             "weighted_net_returns": [],
+            "ending_gross_capital": starting_capital,
             "ending_capital": starting_capital,
         }
 
@@ -914,12 +917,16 @@ def compute_ridge_pnl(
 
     if len(selected_trades) == 0:
         return {
+            "ridge_pnl_gross_raw": 0.0,
             "ridge_pnl_raw": 0.0,
             "selected_trades": [],
+            "weighted_gross_returns": [],
             "weighted_net_returns": [],
+            "ending_gross_capital": starting_capital,
             "ending_capital": starting_capital,
         }
 
+    weighted_gross_returns = []
     weighted_net_returns = []
 
     for t in selected_trades:
@@ -934,20 +941,30 @@ def compute_ridge_pnl(
 
         # Note: We assume gross_trade_return already incorporates the entry/exit logic,
         # but we must subtract the round-trip fee.
+        weighted_gross_return = float(position_weight * t.gross_trade_return)
         net_trade_return = t.gross_trade_return - round_fee
         weighted_net_return = float(position_weight * net_trade_return)
+        weighted_gross_returns.append(weighted_gross_return)
         weighted_net_returns.append(weighted_net_return)
+
+    gross_capital = starting_capital
+    for wr in weighted_gross_returns:
+        gross_capital = gross_capital * (1.0 + wr)
 
     capital = starting_capital
     for wr in weighted_net_returns:
         capital = capital * (1.0 + wr)
 
+    ridge_pnl_gross_raw = gross_capital - starting_capital
     ridge_pnl_raw = capital - starting_capital
 
     return {
+        "ridge_pnl_gross_raw": ridge_pnl_gross_raw,
         "ridge_pnl_raw": ridge_pnl_raw,
         "selected_trades": selected_trades,
+        "weighted_gross_returns": weighted_gross_returns,
         "weighted_net_returns": weighted_net_returns,
+        "ending_gross_capital": gross_capital,
         "ending_capital": capital,
     }
 
@@ -2932,11 +2949,16 @@ def build_miner_sample_weights(
             w_max=1.20,
         )
 
-    return np.clip(
-        sample_weight,
-        float(cfg.get("sample_weight_final_min", 0.75)),
-        float(cfg.get("sample_weight_final_max", 1.5)),
-    ).astype(np.float32, copy=False)
+    # Rebalance weights to [0.5, 2.0] using MinMax scaling instead of simple clip
+    w_min_final = 0.5
+    w_max_final = 2.0
+    w_curr_min = np.min(sample_weight)
+    w_curr_max = np.max(sample_weight)
+    if w_curr_max > w_curr_min:
+        sample_weight = w_min_final + (sample_weight - w_curr_min) * (w_max_final - w_min_final) / (w_curr_max - w_curr_min)
+    else:
+        sample_weight = np.full_like(sample_weight, (w_min_final + w_max_final) / 2.0)
+    return sample_weight.astype(np.float32, copy=False)
 
 
 def make_ridge_vol_weights(
@@ -2988,6 +3010,45 @@ def make_ridge_vol_weights(
     weights = weights / (np.median(weights) + 1e-9)
     weights = np.clip(weights, w_min, w_max)
     
+    return weights.astype(np.float32, copy=False)
+
+
+def make_fee_aware_target_weights(
+    target: np.ndarray,
+    *,
+    fee_buffer: float = 0.002,
+    near_zero_weight: float = 0.25,
+    large_target_weight: float = 1.25,
+    large_target_multiple: float = 3.0,
+    eps: float = 1e-9,
+) -> np.ndarray:
+    """
+    Downweight targets that are too small to clear fees and modestly upweight
+    targets that are materially larger than the fee buffer.
+    """
+    target = np.asarray(target, dtype=np.float32)
+    if target.size == 0:
+        return np.empty(0, dtype=np.float32)
+
+    abs_target = np.abs(target)
+    safe_fee = max(float(fee_buffer), eps)
+    high_cutoff = max(float(large_target_multiple) * safe_fee, safe_fee + eps)
+    weights = np.ones(target.shape[0], dtype=np.float32)
+
+    near_mask = abs_target <= safe_fee
+    high_mask = abs_target >= high_cutoff
+    mid_mask = ~(near_mask | high_mask)
+
+    weights[near_mask] = np.float32(near_zero_weight)
+    weights[high_mask] = np.float32(large_target_weight)
+    if np.any(mid_mask):
+        rel = (abs_target[mid_mask] - safe_fee) / max(high_cutoff - safe_fee, eps)
+        weights[mid_mask] = np.float32(
+            near_zero_weight
+        ) + rel.astype(np.float32) * np.float32(
+            large_target_weight - near_zero_weight
+        )
+
     return weights.astype(np.float32, copy=False)
 
 
@@ -3229,7 +3290,11 @@ class InteractionModel:
             min_gain_to_split = float(self.cfg["hpo_min_gain_to_split"])
 
         min_leaf_frac = float(self.cfg.get("lgbm_min_leaf_frac", 0.001))
-        min_data_in_leaf = max(10, int(min_leaf_frac * X_tr.shape[0]))
+        miner_min_leaf_floor_frac = float(
+            self.cfg.get("miner_min_leaf_floor_frac", 0.05)
+        )
+        effective_min_leaf_frac = max(min_leaf_frac, miner_min_leaf_floor_frac)
+        min_data_in_leaf = max(10, int(effective_min_leaf_frac * X_tr.shape[0]))
         if "hpo_min_data_in_leaf" in self.cfg:
             min_data_in_leaf = max(10, int(self.cfg["hpo_min_data_in_leaf"]))
 
@@ -4693,14 +4758,24 @@ class RuleScorer:
         and anything outside the hard 5%-15% band is excluded entirely.
         """
 
-        hard_min = float(self.cfg.get("objective_support_min_pct", SUPPORT_MIN))
+        hard_min = float(
+            self.cfg.get(
+                "objective_support_min_pct",
+                self.cfg.get("support_min_pct", SUPPORT_MIN),
+            )
+        )
         target_low = float(
             self.cfg.get("objective_support_target_low_pct", PREFERRED_SUPPORT_MIN)
         )
         target_high = float(
             self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX)
         )
-        hard_max = float(self.cfg.get("objective_support_max_pct", SUPPORT_MAX))
+        hard_max = float(
+            self.cfg.get(
+                "objective_support_max_pct",
+                self.cfg.get("support_max_pct", SUPPORT_MAX),
+            )
+        )
         edge_floor = float(self.cfg.get("objective_support_edge_floor", 0.2))
 
         if (
@@ -5924,24 +5999,26 @@ def select_stage_a_contexts(
         return pd.DataFrame(), pd.DataFrame(columns=["reason", "count"])
 
     registry = registry.copy()
-    registry["reject_support"] = registry["mean_support_pct"] < float(
-        cfg.get("min_context_support_pct", 0.01)
+
+    def _resolve_metric_col(*base_names: str) -> pd.Series:
+        for base_name in base_names:
+            for candidate in (base_name, f"{base_name}_x", f"{base_name}_y"):
+                if candidate in registry.columns:
+                    return registry[candidate]
+        return pd.Series(np.nan, index=registry.index, dtype=np.float32)
+
+    support_floor = float(
+        cfg.get("min_context_support_pct", cfg.get("support_min_pct", SUPPORT_MIN))
     )
-    registry["reject_ret"] = registry["directional_mean_ret"] <= float(
+    registry["reject_support"] = _resolve_metric_col("mean_support_pct") < support_floor
+    registry["reject_ret"] = _resolve_metric_col("directional_mean_ret") <= float(
         cfg.get("min_context_mean_ret", 0.0)
     )
-    registry["reject_presence"] = registry["presence_freq"] < float(
-        cfg.get("min_context_presence_freq", cfg.get("min_presence_freq", 0.4))
-    )
-    registry["reject_sign"] = registry["sign_consistency"] < float(
-        cfg.get("min_context_sign_consistency", cfg.get("min_sign_consistency", 0.0))
-    )
-    registry["reject_arity"] = registry["display_arity"] < int(
-        cfg.get("min_context_display_arity", 2)
-    )
-    registry["reject_structural"] = ~registry.get(
-        "is_structurally_sound", pd.Series(True, index=registry.index)
-    ).fillna(False)
+    registry["reject_presence"] = False
+    registry["reject_sign"] = False
+    registry["reject_arity"] = False
+    structural_series = _resolve_metric_col("is_structurally_sound").fillna(False)
+    registry["reject_structural"] = ~structural_series.astype(bool)
 
     mask = ~(
         registry["reject_support"]
@@ -7517,6 +7594,125 @@ def _summarize_target_distribution(name: str, arr: np.ndarray, horizon: Optional
         f"p1={p1:.4f} p5={p5:.4f} p95={p95:.4f} p99={p99:.4f}"
     )
 
+
+def _resolve_requested_assessor_source_names(
+    cfg: Dict[str, Any], available_names: Set[str]
+) -> List[str]:
+    ordered_names: List[str] = []
+    seen: Set[str] = set()
+
+    for name in TEST_FEATURE_KEYS:
+        if name in available_names and name not in seen:
+            ordered_names.append(str(name))
+            seen.add(str(name))
+
+    requested_columns = tuple(
+        cfg.get(
+            "miner_target_residualization_columns",
+            MINER_TARGET_RESIDUALIZATION_COLUMNS,
+        )
+    )
+    for requested_name in requested_columns:
+        candidates = MINER_TARGET_RESIDUALIZATION_ALIAS_MAP.get(
+            str(requested_name), (str(requested_name),)
+        )
+        for candidate in candidates:
+            candidate = str(candidate)
+            if candidate in available_names and candidate not in seen:
+                ordered_names.append(candidate)
+                seen.add(candidate)
+                break
+
+    return ordered_names
+
+
+def build_requested_assessor_feature_matrix(
+    feature_dict: Dict[str, np.ndarray],
+    cfg: Dict[str, Any],
+) -> Tuple[np.ndarray, List[FeatureMetadata], List[str]]:
+    available_names = {str(name) for name in feature_dict.keys()}
+    selected_names = _resolve_requested_assessor_source_names(cfg, available_names)
+
+    if not selected_names:
+        return np.empty((0, 0), dtype=np.float32), [], []
+
+    cols: List[np.ndarray] = []
+    metadata: List[FeatureMetadata] = []
+    for idx, name in enumerate(selected_names):
+        arr = np.asarray(feature_dict[name], dtype=np.float32)
+        cols.append(arr)
+        group = "location" if name in CONTINUOUS_LOCATION_COLS else "regime"
+        source_family = (
+            LOC_CONTINUOUS_FAMILY_MAP.get(name, "location")
+            if group == "location"
+            else (name.split("_")[0] if "_" in name else "regime")
+        )
+        metadata.append(
+            FeatureMetadata(
+                feature_name=name,
+                feature_index=idx,
+                group=group,
+                source_name=name,
+                source_family=source_family,
+                source_type="continuous",
+                description=f"Requested assessor raw feature {name}",
+                regime_family=source_family if group == "regime" else None,
+            )
+        )
+
+    X = np.column_stack(cols).astype(np.float32, copy=False)
+    return X, metadata, selected_names
+
+
+def build_rule_resolver_feature_matrix(
+    feature_dict: Dict[str, np.ndarray],
+    canonical_keys: Sequence[str],
+) -> Tuple[np.ndarray, List[FeatureMetadata], List[str], List[str]]:
+    available_names = {str(name) for name in feature_dict.keys()}
+    requested_names: List[str] = []
+    seen: Set[str] = set()
+    unresolved_names: List[str] = []
+
+    for canonical_key in canonical_keys:
+        for name in extract_feature_names_from_key(str(canonical_key)):
+            feature_name = str(name)
+            if feature_name in available_names:
+                if feature_name not in seen:
+                    requested_names.append(feature_name)
+                    seen.add(feature_name)
+            elif feature_name not in unresolved_names:
+                unresolved_names.append(feature_name)
+
+    if not requested_names:
+        return np.empty((0, 0), dtype=np.float32), [], [], unresolved_names
+
+    cols: List[np.ndarray] = []
+    metadata: List[FeatureMetadata] = []
+    for idx, name in enumerate(requested_names):
+        arr = np.asarray(feature_dict[name], dtype=np.float32)
+        cols.append(arr)
+        group = "location" if name in CONTINUOUS_LOCATION_COLS else "regime"
+        source_family = (
+            LOC_CONTINUOUS_FAMILY_MAP.get(name, "location")
+            if group == "location"
+            else (name.split("_")[0] if "_" in name else "regime")
+        )
+        metadata.append(
+            FeatureMetadata(
+                feature_name=name,
+                feature_index=idx,
+                group=group,
+                source_name=name,
+                source_family=source_family,
+                source_type="continuous",
+                description=f"Rule resolver raw feature {name}",
+                regime_family=source_family if group == "regime" else None,
+            )
+        )
+
+    X = np.column_stack(cols).astype(np.float32, copy=False)
+    return X, metadata, requested_names, unresolved_names
+
 def run_side_pipeline(
     side: str,
     data: pd.DataFrame,
@@ -7602,6 +7798,11 @@ def run_side_pipeline(
     side_input_symbols = (
         int(data["symbol"].nunique()) if "symbol" in data.columns else np.nan
     )
+    atr_frac_for_targets = None
+    if "atr" in data.columns and "close" in data.columns:
+        atr_frac_for_targets = data["atr"].to_numpy(dtype=np.float32) / np.maximum(
+            np.abs(data["close"].to_numpy(dtype=np.float32)), 1e-12
+        )
 
     # --- STAGE A: CONTEXT MINING ---
     tprint(f"STAGE A: Context Mining (Regime x Location) [{side}]")
@@ -7612,6 +7813,13 @@ def run_side_pipeline(
         data["symbol"].to_numpy(),
         cfg,
         active_groups=("regime", "location"),
+    )
+    X_assessor, metadata_assessor, assessor_feature_names = (
+        build_requested_assessor_feature_matrix(feature_dict, cfg)
+    )
+    tprint(
+        "Assessor raw feature matrix: "
+        f"requested_loaded={len(assessor_feature_names)} shape={X_assessor.shape}"
     )
     stage_a_output_dir = side_output_dir / "stage_a_context"
     stage_a_output_dir.mkdir(parents=True, exist_ok=True)
@@ -7628,6 +7836,36 @@ def run_side_pipeline(
         allowed_group_pairs=(("regime", "location"),),
         slot_order=("trigger", "location", "regime"),
     )
+
+    run_step = str(cfg.get("run_step", "full")).lower()
+    if run_step == "step2":
+        step1_base_dir = cfg.get("step1_dir")
+        if not step1_base_dir:
+            raise ValueError("step2 requires cfg['step1_dir']")
+        step1_input_dir = resolve_stage_a_step1_dir(
+            step1_base_dir, target_name=target_name, horizon=horizon, side=side
+        )
+        candidate_registry_override = cfg.get("global_step2_registry_override")
+        if candidate_registry_override is None:
+            candidate_registry_override = pd.read_csv(
+                step1_input_dir / "step1_post_dedup_registry.csv"
+            )
+        tprint(
+            f"Stage A [{target_name} @ H{horizon} {side}]: Running step 2 over "
+            f"{len(candidate_registry_override)} registry rules."
+        )
+        tprint(
+            f"Stage A [{target_name} @ H{horizon} {side}]: "
+            "step2 resume mode active, skipping local mining/assessment and "
+            "deferring evaluation to the pooled global assessor."
+        )
+        return {
+            "stage_a": pd.DataFrame(),
+            "metadata_a": metadata_a,
+            "X_a": X_a,
+            "metadata_assessor": metadata_assessor,
+            "X_assessor": X_assessor,
+        }
 
     if cfg.get("use_dynamic_hpo", False):
         tprint(f"--- DYNAMIC HPO: Tuning Stage A for {side.upper()} ---")
@@ -7689,8 +7927,17 @@ def run_side_pipeline(
 
                 # Use train_n if available, otherwise fallback to full X_a size
                 train_n = hpo_results.get("train_n", len(X_a))
+                miner_min_leaf_floor_frac = float(
+                    cfg.get("miner_min_leaf_floor_frac", 0.05)
+                )
                 cfg["hpo_min_data_in_leaf"] = max(
-                    25, int(round(best_cfg.cfg.min_leaf_frac * train_n))
+                    25,
+                    int(
+                        round(
+                            max(best_cfg.cfg.min_leaf_frac, miner_min_leaf_floor_frac)
+                            * train_n
+                        )
+                    ),
                 )
             else:
                 tprint(
@@ -7705,13 +7952,27 @@ def run_side_pipeline(
     # Return-based targets (returns_target, atr_norm_returns_target) MUST be sign-flipped for short sides.
     # Magnitude-based targets (target_eff, target_vame) should NOT be sign-flipped.
     if bounded_target is not None:
-        # Check if this is a return-based target that needs sign-flipping
-        return_based_targets = {"returns_target", "atr_norm_returns_target"}
-        if target_name in return_based_targets:
-            side_target = bounded_target if side == "long" else -bounded_target
-        else:
-            # Magnitude-based targets: no sign flip
-            side_target = bounded_target
+        side_target = np.asarray(bounded_target, dtype=np.float32).copy()
+        if target_name in {"returns_target", "atr_norm_returns_target"}:
+            if side == "short":
+                side_target = -side_target
+            fee_pct = float(cfg.get("training_label_round_trip_fee_pct", 0.002))
+            if target_name == "returns_target":
+                side_target = side_target - fee_pct
+            else:
+                fee_in_target_units = fee_pct / np.maximum(
+                    np.asarray(atr_frac_for_targets, dtype=np.float32),
+                    1e-3,
+                )
+                side_target = side_target - fee_in_target_units
+            low_q = float(cfg.get("training_label_winsor_low_q", 0.01))
+            high_q = float(cfg.get("training_label_winsor_high_q", 0.99))
+            finite = np.isfinite(side_target)
+            if finite.sum() >= 20 and 0.0 <= low_q < high_q <= 1.0:
+                lo, hi = np.nanquantile(side_target[finite], [low_q, high_q])
+                side_target = np.clip(side_target, lo, hi).astype(
+                    np.float32, copy=False
+                )
     else:
         side_target = (
             side_fwd_ret_norm  # legacy fallback only when no triad target is supplied
@@ -7791,27 +8052,8 @@ def run_side_pipeline(
         tprint(f"Skipping {target_name} @ H{horizon} [{side}] due to zero valid rows.")
         return None
 
-    run_step = str(cfg.get("run_step", "full")).lower()
     step1_input_dir: Optional[Path] = None
     candidate_registry_override: Optional[pd.DataFrame] = None
-    if run_step == "step2":
-        step1_base_dir = cfg.get("step1_dir")
-        if not step1_base_dir:
-            raise ValueError("step2 requires cfg['step1_dir']")
-        step1_input_dir = resolve_stage_a_step1_dir(
-            step1_base_dir, target_name=target_name, horizon=horizon, side=side
-        )
-        
-        candidate_registry_override = cfg.get("global_step2_registry_override")
-        if candidate_registry_override is None:
-            # Fallback if no global override is provided
-            candidate_registry_override = pd.read_csv(
-                step1_input_dir / "candidate_rule_registry.csv"
-            )
-        tprint(
-            f"Stage A [{target_name} @ H{horizon} {side}]: Running step 2 over "
-            f"{len(candidate_registry_override)} registry rules."
-        )
 
     stage_a_result = run_mining_stage(
         data,
@@ -7849,6 +8091,8 @@ def run_side_pipeline(
             "stage_a_result": stage_a_result,
             "metadata_a": metadata_a,
             "X_a": X_a,
+            "metadata_assessor": metadata_assessor,
+            "X_assessor": X_assessor,
         }
 
     winning_contexts, stage_a_rejection_summary = select_stage_a_contexts(
@@ -7907,6 +8151,8 @@ def run_side_pipeline(
         "stage_a_result": stage_a_result,
         "metadata_a": metadata_a,
         "X_a": X_a,
+        "metadata_assessor": metadata_assessor,
+        "X_assessor": X_assessor,
     }
 
 
@@ -8170,12 +8416,33 @@ def build_global_stage_a_ridge_shortlist(
     cfg: Dict[str, Any],
 ) -> pd.DataFrame:
     global_cap = int(cfg.get("global_ridge_candidate_cap", 120))
-    if not pooled_step1_frames or X_ref is None or len(metadata_ref) == 0:
+    if not pooled_step1_frames:
         return pd.DataFrame()
 
     pooled = pd.concat(pooled_step1_frames, ignore_index=True, copy=False)
     if pooled.empty:
         return pd.DataFrame()
+
+    support_min = float(cfg.get("support_min_pct", SUPPORT_MIN))
+    support_max = float(cfg.get("max_support_pct", SUPPORT_MAX))
+    support_col = (
+        "mean_support_pct"
+        if "mean_support_pct" in pooled.columns
+        else ("support_pct" if "support_pct" in pooled.columns else None)
+    )
+    if support_col is not None:
+        pooled[support_col] = pd.to_numeric(pooled[support_col], errors="coerce")
+        pre_filter_n = len(pooled)
+        pooled = pooled.loc[
+            pooled[support_col].between(support_min, support_max, inclusive="both")
+        ].copy()
+        tprint(
+            "Global stage2 shortlist support filter: "
+            f"input={pre_filter_n} kept={len(pooled)} "
+            f"support_col={support_col} range=[{support_min:.3f}, {support_max:.3f}]"
+        )
+        if pooled.empty:
+            return pd.DataFrame()
 
     pooled = pooled.drop_duplicates(
         subset=["canonical_key", "source_target", "source_horizon", "side"],
@@ -8183,126 +8450,15 @@ def build_global_stage_a_ridge_shortlist(
     ).copy()
     if "cheap_rank" not in pooled.columns:
         pooled["cheap_rank"] = 0.0
-
-    resolver = CanonicalRuleMaskResolver(X_ref, metadata_ref)
-    unique_keys = list(dict.fromkeys(pooled["canonical_key"].astype(str).tolist()))
-    key_to_idx = {k: i for i, k in enumerate(unique_keys)}
-
-    rng = np.random.default_rng(42)
-    n_rows = X_ref.shape[0]
-    subsample_size = int(
-        min(max(int(cfg.get("global_overlap_subsample_size", 10000)), 1000), n_rows)
-    )
-    sub_idx = (
-        np.sort(rng.choice(n_rows, size=subsample_size, replace=False))
-        if n_rows > subsample_size
-        else np.arange(n_rows)
-    )
-    mask_matrix = resolver.get_masks_matrix(unique_keys)[:, sub_idx].astype(
-        np.int32, copy=False
-    )
-    intersections = mask_matrix @ mask_matrix.T
-    supports = np.diag(intersections).astype(np.float32)
-
-    pooled["canonical_key"] = pooled["canonical_key"].astype(str)
-    pooled["mask_idx"] = pooled["canonical_key"].map(key_to_idx).astype(np.int32)
     pooled["cheap_rank"] = pd.to_numeric(pooled["cheap_rank"], errors="coerce").fillna(
         -np.inf
     )
-    pooled["support_sub"] = pooled["mask_idx"].map(lambda i: float(supports[int(i)]))
-    pooled = pooled[pooled["support_sub"] > 0].copy()
     pooled = pooled.sort_values(
         ["cheap_rank", "source_target", "source_horizon", "side"],
         ascending=[False, True, True, True],
     ).reset_index(drop=True)
 
-    if len(pooled) <= global_cap:
-        tprint(
-            "Global stage2 shortlist: "
-            f"input={len(pooled)} selected={len(pooled)} cap={global_cap}"
-        )
-        return pooled
-
-    selected_rows: List[int] = []
-    support_ratio_min = float(cfg.get("global_overlap_support_ratio_min", 0.70))
-    same_bucket_thr = float(cfg.get("global_overlap_same_bucket_threshold", 0.975))
-    diff_dim_bonus = float(cfg.get("global_overlap_diff_dim_bonus", 0.01))
-    both_diff_bonus = float(cfg.get("global_overlap_both_diff_bonus", 0.01))
-
-    for row_idx, row in pooled.iterrows():
-        if len(selected_rows) >= global_cap:
-            break
-        cand_mask_idx = int(row["mask_idx"])
-        cand_support = float(row["support_sub"])
-        keep = True
-        for sel_idx in selected_rows:
-            sel = pooled.iloc[sel_idx]
-            sel_mask_idx = int(sel["mask_idx"])
-            sel_support = float(sel["support_sub"])
-            inter = float(intersections[cand_mask_idx, sel_mask_idx])
-            if inter < 1.0:
-                continue
-            raw_overlap = (2.0 * inter) / max(cand_support + sel_support, 1.0)
-
-            different_sides = str(row["side"]) != str(sel["side"])
-            different_horizons = str(row["source_horizon"]) != str(sel["source_horizon"])
-            side_factor = 0.3 if different_sides else 0.0
-            horizon_factor = 0.2 if different_horizons else 0.0
-            difference_leniency = max(0.0, side_factor + horizon_factor)
-            effective_overlap = raw_overlap * (1.0 - difference_leniency)
-
-            support_ratio = min(cand_support, sel_support) / max(
-                max(cand_support, sel_support), 1e-9
-            )
-            if support_ratio < support_ratio_min:
-                continue
-            threshold = same_bucket_thr
-            if different_sides or different_horizons:
-                threshold += diff_dim_bonus
-            if different_sides and different_horizons:
-                threshold += both_diff_bonus
-            threshold = min(threshold, 0.995)
-            if effective_overlap > threshold:
-                keep = False
-                break
-        if keep:
-            selected_rows.append(int(row_idx))
-
-    selected = (
-        pooled.iloc[selected_rows].copy() if selected_rows else pooled.iloc[0:0].copy()
-    )
-
-    if len(selected) < min(global_cap, len(pooled)):
-        remaining_indices = [idx for idx in range(len(pooled)) if idx not in set(selected_rows)]
-        refill_alpha = float(cfg.get("global_shortlist_refill_diversity_alpha", 0.10))
-        refill_candidates: List[Tuple[float, int]] = []
-        for row_idx in remaining_indices:
-            row = pooled.iloc[row_idx]
-            cand_mask_idx = int(row["mask_idx"])
-            cand_support = float(row["support_sub"])
-            max_overlap = 0.0
-            for sel_idx in selected_rows:
-                sel = pooled.iloc[sel_idx]
-                sel_mask_idx = int(sel["mask_idx"])
-                sel_support = float(sel["support_sub"])
-                inter = float(intersections[cand_mask_idx, sel_mask_idx])
-                if inter < 1.0:
-                    continue
-                raw_overlap = (2.0 * inter) / max(cand_support + sel_support, 1.0)
-                different_sides = str(row["side"]) != str(sel["side"])
-                different_horizons = str(row["source_horizon"]) != str(sel["source_horizon"])
-                side_factor = 0.3 if different_sides else 0.0
-                horizon_factor = 0.2 if different_horizons else 0.0
-                effective_overlap = raw_overlap * (1.0 - max(0.0, side_factor + horizon_factor))
-                if effective_overlap > max_overlap:
-                    max_overlap = effective_overlap
-            selection_score = float(row["cheap_rank"]) - refill_alpha * (max_overlap**2)
-            refill_candidates.append((selection_score, row_idx))
-        refill_candidates.sort(key=lambda x: x[0], reverse=True)
-        deficit = min(global_cap, len(pooled)) - len(selected_rows)
-        refill_indices = [idx for _, idx in refill_candidates[:deficit]]
-        selected_rows.extend(refill_indices)
-        selected = pooled.iloc[selected_rows].copy()
+    selected = pooled.head(global_cap).copy()
 
     tprint(
         "Global stage2 shortlist: "
@@ -8310,6 +8466,83 @@ def build_global_stage_a_ridge_shortlist(
     )
 
     return selected
+
+
+def load_step1_slice_basket(
+    step1_dir: Path,
+    target_name: str,
+    horizon: int,
+    side: str,
+    basket_size: int = 15,
+    support_min_pct: float = SUPPORT_MIN,
+    support_max_pct: float = SUPPORT_MAX,
+) -> pd.DataFrame:
+    post_dedup_path = step1_dir / "step1_post_dedup_registry.csv"
+    candidate_path = step1_dir / "candidate_rule_registry.csv"
+
+    frames: List[pd.DataFrame] = []
+    selected_keys: Set[str] = set()
+
+    def _filter_support_bounds(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+        support_col = (
+            "mean_support_pct"
+            if "mean_support_pct" in df.columns
+            else ("support_pct" if "support_pct" in df.columns else None)
+        )
+        if support_col is None:
+            return df
+        out = df.copy()
+        out[support_col] = pd.to_numeric(out[support_col], errors="coerce")
+        return out.loc[
+            out[support_col].between(
+                float(support_min_pct), float(support_max_pct), inclusive="both"
+            )
+        ].copy()
+
+    if post_dedup_path.exists():
+        post_df = pd.read_csv(post_dedup_path)
+        if not post_df.empty:
+            post_df = _filter_support_bounds(post_df)
+        if not post_df.empty:
+            post_df["canonical_key"] = post_df["canonical_key"].astype(str)
+            post_df["_basket_source"] = "post_dedup"
+            frames.append(post_df)
+            selected_keys = set(post_df["canonical_key"].tolist())
+
+    if len(selected_keys) < basket_size and candidate_path.exists():
+        cand_df = pd.read_csv(candidate_path)
+        if not cand_df.empty:
+            cand_df = _filter_support_bounds(cand_df)
+        if not cand_df.empty:
+            cand_df["canonical_key"] = cand_df["canonical_key"].astype(str)
+            cand_df = cand_df.loc[~cand_df["canonical_key"].isin(selected_keys)].copy()
+            if "cheap_rank" in cand_df.columns:
+                cand_df["cheap_rank"] = pd.to_numeric(
+                    cand_df["cheap_rank"], errors="coerce"
+                ).fillna(-np.inf)
+                cand_df = cand_df.sort_values("cheap_rank", ascending=False)
+            elif "composite_score" in cand_df.columns:
+                cand_df["composite_score"] = pd.to_numeric(
+                    cand_df["composite_score"], errors="coerce"
+                ).fillna(-np.inf)
+                cand_df = cand_df.sort_values("composite_score", ascending=False)
+            cand_df["_basket_source"] = "candidate_backfill"
+            needed = basket_size - len(selected_keys)
+            if needed > 0:
+                frames.append(cand_df.head(needed))
+
+    if not frames:
+        return pd.DataFrame()
+
+    basket = pd.concat(frames, ignore_index=True, copy=False)
+    basket = basket.drop_duplicates(subset=["canonical_key"], keep="first").copy()
+    basket = basket.head(basket_size).copy()
+    basket["source_target"] = target_name
+    basket["source_horizon"] = horizon
+    basket["side"] = side
+    return basket
 
 
 def run_lgbm_mask_generation_triad(
@@ -8391,6 +8624,8 @@ def run_lgbm_mask_generation_triad(
     pooled_step1_frames: List[pd.DataFrame] = []
     x_ref: Optional[np.ndarray] = None
     metadata_ref: List[FeatureMetadata] = []
+    assessor_x_ref: Optional[np.ndarray] = None
+    assessor_metadata_ref: List[FeatureMetadata] = []
 
     total_combinations = len(horizons) * len(target_names)
     current_combination = 0
@@ -8499,7 +8734,15 @@ def run_lgbm_mask_generation_triad(
                     if x_ref is None and side_results.get("X_a") is not None:
                         x_ref = side_results["X_a"]
                         metadata_ref = side_results.get("metadata_a", []) or []
-                    
+                    if (
+                        assessor_x_ref is None
+                        and side_results.get("X_assessor") is not None
+                    ):
+                        assessor_x_ref = side_results["X_assessor"]
+                        assessor_metadata_ref = (
+                            side_results.get("metadata_assessor", []) or []
+                        )
+
                     if not side_results.get("stage_a", pd.DataFrame()).empty:
                         stage_a_with_prov = side_results["stage_a"].copy()
                         stage_a_with_prov["source_target"] = target_name
@@ -8507,20 +8750,34 @@ def run_lgbm_mask_generation_triad(
                         stage_a_with_prov["side"] = side
                         all_registries.append(stage_a_with_prov)
 
-                    step1_dir = resolve_stage_a_step1_dir(
-                        root_output_dir,
-                        target_name=target_name,
-                        horizon=horizon,
-                        side=side,
-                    )
-                    post_dedup_path = step1_dir / "step1_post_dedup_registry.csv"
-                    if post_dedup_path.exists():
-                        post_df = pd.read_csv(post_dedup_path)
-                        if not post_df.empty:
-                            post_df["source_target"] = target_name
-                            post_df["source_horizon"] = horizon
-                            post_df["side"] = side
-                            pooled_step1_frames.append(post_df)
+                step1_base_dir_for_merge = (
+                    Path(cfg.get("step1_dir"))
+                    if str(cfg.get("run_step", "full")).lower() == "step2"
+                    and cfg.get("step1_dir")
+                    else root_output_dir
+                )
+                step1_dir = resolve_stage_a_step1_dir(
+                    step1_base_dir_for_merge,
+                    target_name=target_name,
+                    horizon=horizon,
+                    side=side,
+                )
+                basket_df = load_step1_slice_basket(
+                    step1_dir=step1_dir,
+                    target_name=target_name,
+                    horizon=horizon,
+                    side=side,
+                    basket_size=int(cfg.get("global_ridge_per_slice_basket_size", 15)),
+                    support_min_pct=float(cfg.get("support_min_pct", SUPPORT_MIN)),
+                    support_max_pct=float(cfg.get("max_support_pct", SUPPORT_MAX)),
+                )
+                tprint(
+                    "Stage A pooled basket load: "
+                    f"target={target_name} horizon={horizon} side={side} "
+                    f"rows={len(basket_df)} step1_dir={step1_dir}"
+                )
+                if not basket_df.empty:
+                    pooled_step1_frames.append(basket_df)
 
     if pooled_step1_frames:
         tprint(
@@ -8543,6 +8800,32 @@ def run_lgbm_mask_generation_triad(
         )
 
         if not global_stage_a_pooled_registry.empty:
+            assessor_x_runtime = assessor_x_ref if assessor_x_ref is not None else x_ref
+            assessor_metadata_runtime = (
+                assessor_metadata_ref if assessor_metadata_ref else metadata_ref
+            )
+            resolver_x_runtime, resolver_metadata_runtime, resolver_feature_names, unresolved_rule_features = (
+                build_rule_resolver_feature_matrix(
+                    feature_dict,
+                    global_stage_a_pooled_registry["canonical_key"]
+                    .astype(str)
+                    .tolist(),
+                )
+            )
+            tprint(
+                "Pooled Step 2 rule resolver matrix: "
+                f"loaded={len(resolver_feature_names)} shape={resolver_x_runtime.shape} "
+                f"unresolved={len(unresolved_rule_features)}"
+            )
+            if unresolved_rule_features:
+                tprint(
+                    "Pooled Step 2 unresolved rule features sample: "
+                    + ", ".join(unresolved_rule_features[:10])
+                )
+            if resolver_x_runtime.shape[1] == 0:
+                raise ValueError(
+                    "Pooled Step 2 rule resolver matrix is empty; cannot assess rules."
+                )
             # Prepare consolidated parameters for the global assessor phase
             global_horizon_target_dirs = {}
             for h in horizons:
@@ -8563,12 +8846,18 @@ def run_lgbm_mask_generation_triad(
                     if surprisal_key in triad_targets and h in triad_targets.get(surprisal_key, {}):
                         assessment_targets[(surprisal_key, int(h))] = triad_targets[surprisal_key][h]
 
-            assessor = MaskAssessor(metadata_ref, cfg, mask_resolver=CanonicalRuleMaskResolver(x_ref, metadata_ref))
+            assessor = MaskAssessor(
+                assessor_metadata_runtime,
+                cfg,
+                mask_resolver=CanonicalRuleMaskResolver(
+                    resolver_x_runtime, resolver_metadata_runtime
+                ),
+            )
             
             # Pass all context necessary for sequential 'in bunches of 14' assessment
             final_assessment_df = assessor.assess_rules(
                 global_stage_a_pooled_registry,
-                x_ref,
+                assessor_x_runtime,
                 data,
                 fwd_ret, # fallback
                 fwd_ret_norm, # fallback
@@ -8577,7 +8866,8 @@ def run_lgbm_mask_generation_triad(
                 checkpoint_output_dir=root_output_dir,
                 triad_targets_map=assessment_targets,
                 output_dirs_map=global_horizon_target_dirs,
-                batch_size=14, # "bunches of 14"
+                batch_size=1,
+                skip_stage1_filtering=True,
             )
 
             if not final_assessment_df.empty:
@@ -9188,8 +9478,10 @@ def classify_rule_type(
     if not np.isfinite(required_hurdle):
         required_hurdle = 0.0
 
+    min_directional_mean_ret = float(required_hurdle) + float(ranking_excess)
+
     if (
-        directional_mean_ret > (required_hurdle + ranking_excess)
+        directional_mean_ret > min_directional_mean_ret
         and sign_consistency >= min_sign_consistency
     ):
         return "ranking"
@@ -9259,15 +9551,13 @@ def classify_rule_production_quality(
     presence_freq = rule.get("presence_freq", 0.0)
     directional_mean_ret = rule.get("directional_mean_ret", np.nan)
     support_actual = rule.get("min_support_actual", 0)
-    hurdle_excess = rule.get("hurdle_excess", np.nan)
+    # hurdle_excess REMOVED - using directional returns instead
     is_structurally_sound = rule.get("is_structurally_sound", False)
     sign_consistency = rule.get("sign_consistency", 0.0)
     trade_path_quality_score = rule.get("trade_path_quality_score", np.nan)
 
     if not np.isfinite(directional_mean_ret):
         directional_mean_ret = -np.inf
-    if not np.isfinite(hurdle_excess):
-        hurdle_excess = -np.inf
 
     # Check 1: Fold count
     fold_check = n_folds >= min_folds
@@ -9322,15 +9612,6 @@ def classify_rule_production_quality(
         diagnostics["failures"].append(
             f"directional_mean_ret={directional_mean_ret:.6f} <= {min_directional_mean_ret:.6f}"
         )
-
-    # Check 4: Hurdle excess
-    # Keep this as a diagnostic only; it should not drive rejection.
-    hurdle_check = hurdle_excess > 0.0
-    diagnostics["checks"]["hurdle_excess"] = {
-        "value": hurdle_excess,
-        "threshold": 0.0,
-        "passed": hurdle_check,
-    }
 
     # Check 5: Support count
     support_check = support_actual >= min_support_threshold
@@ -9733,11 +10014,45 @@ class MaskAssessor:
         ridge_feats = [
             i
             for i, m in enumerate(self.metadata)
-            if m.source_name in assessor_feature_names
+            if (
+                getattr(m, "source_name", None) in assessor_feature_names
+                or getattr(m, "feature_name", None) in assessor_feature_names
+            )
         ]
+        tprint(
+            "MaskAssessor feature selector: "
+            f"requested_matches={len(ridge_feats)} requested_names={len(assessor_feature_names)} "
+            f"total_stage_a_features={len(self.metadata)}"
+        )
         cached = np.asarray(ridge_feats, dtype=np.int32)
         self._ridge_feature_indices_cache = cached
         return cached
+
+    def _build_ridge_design_matrix(self, X: np.ndarray) -> np.ndarray:
+        """
+        Build the assessor design matrix without re-slicing when X already matches
+        the assessor metadata one-for-one.
+        """
+        X_arr = np.asarray(X, dtype=np.float32)
+        if X_arr.ndim != 2:
+            raise ValueError(f"Expected 2D assessor matrix, got shape={X_arr.shape}")
+
+        ridge_feats = self._get_ridge_feature_indices()
+        if ridge_feats.size == 0:
+            return np.empty((len(X_arr), 0), dtype=np.float32)
+
+        if X_arr.shape[1] == len(self.metadata):
+            X_ridge = np.asarray(X_arr, dtype=np.float32, order="C")
+        else:
+            X_ridge = np.asarray(X_arr[:, ridge_feats], dtype=np.float32, order="C")
+
+        if X_ridge.shape[1] != ridge_feats.size:
+            raise ValueError(
+                "Assessor design-matrix width mismatch: "
+                f"expected={ridge_feats.size} actual={X_ridge.shape[1]}"
+            )
+
+        return X_ridge
 
     @staticmethod
     def _compute_total_symbol_days(data: pd.DataFrame) -> Optional[float]:
@@ -10002,7 +10317,7 @@ class MaskAssessor:
             boosting_type = str(self.cfg.get("step2_strong_boosting_type", "goss"))
             params = {
                 "max_depth": int(self.cfg.get("step2_strong_max_depth", 4)),
-                "n_estimators": int(self.cfg.get("step2_strong_n_estimators", 50)),
+                "n_estimators": int(self.cfg.get("step2_strong_n_estimators", 100)),
                 "min_child_samples": int(self.cfg.get("step2_strong_min_child_samples", 20)),
                 "min_data_in_leaf": int(self.cfg.get("step2_strong_min_data_in_leaf", 20)),
                 "lambda_l1": float(self.cfg.get("step2_strong_lambda_l1", 10.0)),
@@ -10024,7 +10339,7 @@ class MaskAssessor:
             "min_data_in_leaf": int(self.cfg.get("step2_weak_min_data_in_leaf", 20)),
             "lambda_l1": float(self.cfg.get("step2_weak_lambda_l1", 0.0)),
             "lambda_l2": float(self.cfg.get("step2_weak_lambda_l2", 0.0)),
-            "min_gain_to_split": float(self.cfg.get("step2_weak_min_gain_to_split", 0.0)),
+            "min_gain_to_split": float(self.cfg.get("step2_weak_min_gain_to_split", 0.001)),
             "subsample": float(self.cfg.get("step2_weak_subsample", 1.0)),
             "subsample_freq": int(self.cfg.get("step2_weak_subsample_freq", 0)),
             "feature_fraction": float(self.cfg.get("step2_weak_feature_fraction", 1.0)),
@@ -10043,74 +10358,78 @@ class MaskAssessor:
         result["selected_for_final_registry"] = False
         result["final_candidate_rank_score"] = np.nan
         result["final_selection_order"] = np.nan
-        result["stage1_top70_survivor"] = result.get(
-            "stage1_top70_survivor",
-            pd.Series(False, index=result.index),
-        ).fillna(False)
+        result["trade_composite_score"] = np.nan
+        if "stage1_composite_score" not in result.columns:
+            result["stage1_composite_score"] = pd.to_numeric(
+                result.get("composite_score", np.nan), errors="coerce"
+            )
 
-        eligible = result[
-            result["stage1_top70_survivor"].fillna(False)
-            & result["is_structurally_sound"].fillna(False)
-            & (pd.to_numeric(result["ridge_pnl_raw"], errors="coerce") > 0.0)
-        ].copy()
+        eligible = result.copy()
         if eligible.empty:
             return result
 
         weekly_vol = pd.to_numeric(eligible.get("weekly_volatility", np.nan), errors="coerce")
+        weekly_sortino = pd.to_numeric(eligible.get("weekly_sortino", np.nan), errors="coerce")
         fold_pnl_std = pd.to_numeric(eligible.get("fold_pnl_std", np.nan), errors="coerce")
         if fold_pnl_std.isna().all():
             fold_pnl_std = weekly_vol.copy()
 
         pnl_rank = self._pct_rank(pd.to_numeric(eligible["ridge_pnl_raw"], errors="coerce").fillna(-np.inf))
-        sortino_rank = self._pct_rank(pd.to_numeric(eligible["ridge_trade_sortino_composite"], errors="coerce").fillna(0.0))
-        weekly_rank = 1.0 - self._pct_rank(weekly_vol.fillna(weekly_vol.max() if weekly_vol.notna().any() else 0.0))
+        sortino_7d_rank = self._pct_rank(
+            pd.to_numeric(eligible.get("ridge_trade_sortino_7d", np.nan), errors="coerce").fillna(0.0)
+        )
+        sortino_30d_rank = self._pct_rank(
+            pd.to_numeric(eligible.get("ridge_trade_sortino_30d", np.nan), errors="coerce").fillna(0.0)
+        )
+        sortino_90d_rank = self._pct_rank(
+            pd.to_numeric(eligible.get("ridge_trade_sortino_90d", np.nan), errors="coerce").fillna(0.0)
+        )
+        sortino_composite_rank = self._pct_rank(
+            pd.to_numeric(eligible["ridge_trade_sortino_composite"], errors="coerce").fillna(0.0)
+        )
+        multi_horizon_sortino_rank = (
+            0.20 * sortino_7d_rank
+            + 0.30 * sortino_30d_rank
+            + 0.30 * sortino_90d_rank
+            + 0.20 * sortino_composite_rank
+        )
+        weekly_vol_rank = 1.0 - self._pct_rank(
+            weekly_vol.fillna(weekly_vol.max() if weekly_vol.notna().any() else 0.0)
+        )
+        weekly_sortino_rank = self._pct_rank(weekly_sortino.fillna(0.0))
         pos_fold_rank = self._pct_rank(pd.to_numeric(eligible.get("positive_fold_fraction", np.nan), errors="coerce").fillna(0.0))
         fold_std_rank = 1.0 - self._pct_rank(fold_pnl_std.fillna(fold_pnl_std.max() if fold_pnl_std.notna().any() else 0.0))
         fold_stability = 0.7 * pos_fold_rank + 0.3 * fold_std_rank
-
-        eligible["final_candidate_rank_score"] = (
-            0.40 * pnl_rank
-            + 0.25 * sortino_rank
-            + 0.20 * weekly_rank
-            + 0.15 * fold_stability
+        active_symbol_day_rank = self._pct_rank(
+            pd.to_numeric(
+                eligible.get("avg_pnl_per_active_symbol_day", np.nan),
+                errors="coerce",
+            ).fillna(-np.inf)
         )
+        trade_density_rank = self._pct_rank(
+            pd.to_numeric(
+                eligible.get("trades_per_symbol_day_above_threshold_star", np.nan),
+                errors="coerce",
+            ).fillna(0.0)
+        )
+        weekly_stability_rank = 0.5 * weekly_sortino_rank + 0.5 * weekly_vol_rank
 
-        pareto_cols = ["ridge_pnl_raw", "ridge_trade_sortino_composite", "weekly_volatility", "fold_stability"]
+        eligible["trade_composite_score"] = (
+            0.35 * pnl_rank
+            + 0.25 * multi_horizon_sortino_rank
+            + 0.15 * active_symbol_day_rank
+            + 0.10 * trade_density_rank
+            + 0.10 * weekly_stability_rank
+            + 0.05 * fold_stability
+        )
+        eligible["final_candidate_rank_score"] = eligible["trade_composite_score"]
+
         eligible["fold_stability"] = fold_stability.astype(np.float32)
-        feasible = eligible.dropna(subset=pareto_cols).copy()
-        if len(feasible) > 1:
-            keep_idx: List[Any] = []
-            feasible_records = feasible[["ridge_pnl_raw", "ridge_trade_sortino_composite", "weekly_volatility", "fold_stability"]].to_dict("records")
-            feasible_index = list(feasible.index)
-            for i, row_i in enumerate(feasible_records):
-                dominated = False
-                for j, row_j in enumerate(feasible_records):
-                    if i == j:
-                        continue
-                    better_or_equal = (
-                        row_j["ridge_pnl_raw"] >= row_i["ridge_pnl_raw"]
-                        and row_j["ridge_trade_sortino_composite"] >= row_i["ridge_trade_sortino_composite"]
-                        and row_j["fold_stability"] >= row_i["fold_stability"]
-                        and row_j["weekly_volatility"] <= row_i["weekly_volatility"]
-                    )
-                    strictly_better = (
-                        row_j["ridge_pnl_raw"] > row_i["ridge_pnl_raw"]
-                        or row_j["ridge_trade_sortino_composite"] > row_i["ridge_trade_sortino_composite"]
-                        or row_j["fold_stability"] > row_i["fold_stability"]
-                        or row_j["weekly_volatility"] < row_i["weekly_volatility"]
-                    )
-                    if better_or_equal and strictly_better:
-                        dominated = True
-                        break
-                if not dominated:
-                    keep_idx.append(feasible_index[i])
-            if keep_idx:
-                eligible = eligible.loc[keep_idx].copy()
 
         overlap_penalty = float(self.cfg.get("final_selection_overlap_penalty", 0.35))
         support_overlap_weight = float(self.cfg.get("final_selection_support_overlap_weight", 0.5))
         pnl_overlap_weight = float(self.cfg.get("final_selection_pnl_overlap_weight", 0.5))
-        top_k = int(self.cfg.get("final_selected_rule_cap", 10))
+        top_k = int(self.cfg.get("final_selected_rule_cap", 15))
         selected: List[Any] = []
         remaining = eligible.sort_values("final_candidate_rank_score", ascending=False).index.tolist()
 
@@ -10192,6 +10511,8 @@ class MaskAssessor:
             result.loc[selected, "selected_for_final_registry"] = True
             result.loc[selected, "final_candidate_rank_score"] = eligible.loc[selected, "final_candidate_rank_score"].to_numpy()
             result.loc[selected, "final_selection_order"] = np.arange(1, len(selected) + 1, dtype=np.int32)
+        result.loc[eligible.index, "trade_composite_score"] = eligible["trade_composite_score"].to_numpy()
+        result.loc[eligible.index, "composite_score"] = eligible["trade_composite_score"].to_numpy()
 
         return result
 
@@ -10242,6 +10563,7 @@ class MaskAssessor:
         step_mode = str(step_mode or "full").lower()
         if step_mode not in {"full", "step1", "step2"}:
             raise ValueError(f"Unsupported step mode: {step_mode}")
+        skip_stage1_filtering = bool(kwargs.get("skip_stage1_filtering", False))
         assessment_results = []
 
         # Prepare TBM data
@@ -10257,6 +10579,7 @@ class MaskAssessor:
             if "atr" in data.columns
             else np.full(len(data), 0.001)
         )
+        atr_frac_for_targets = atr / np.maximum(np.abs(close), 1e-12)
 
         # TBM horizon should match assessment horizon + 2 bars
         assessment_horizon = int(self.cfg.get("horizon", 100))
@@ -10336,6 +10659,9 @@ class MaskAssessor:
 
         mask_cache: Dict[str, np.ndarray] = {}
         cheap_stats_cache: Dict[Tuple[str, str], Dict[str, float]] = {}
+        contextual_cheap_stats_cache: Dict[
+            Tuple[str, str, str, int], Dict[str, float]
+        ] = {}
         directional_edge_floor = float(self.cfg.get("directional_edge_floor", 0.0))
         min_candidates_per_bucket = int(self.cfg.get("min_candidates_per_bucket", 50))
         support_min = float(self.cfg.get("support_min_pct", SUPPORT_MIN))
@@ -10460,35 +10786,98 @@ class MaskAssessor:
         _batch_fill_cheap_stats_cache("long", ridge_target_by_side["long"])
         _batch_fill_cheap_stats_cache("short", ridge_target_by_side["short"])
 
-        def _get_or_compute_cheap_stats(
-            canonical_key: str, side: str, mask: np.ndarray
+        def _compute_single_cheap_stats(
+            side: str,
+            mask: np.ndarray,
+            side_returns: np.ndarray,
         ) -> Dict[str, float]:
+            side_returns = np.asarray(side_returns, dtype=np.float32)
+            support_count = int(np.sum(mask))
+            support_pct = float(support_count / max(len(data), 1))
+            support_ok = float(support_min <= support_pct <= support_max)
+            if preferred_support_min <= support_pct <= preferred_support_max:
+                support_score = 1.0
+            elif support_pct < preferred_support_min:
+                span = max(preferred_support_min - support_min, 1e-9)
+                relative = np.clip((support_pct - support_min) / span, 0.0, 1.0)
+                support_score = float(0.2 + (1.0 - 0.2) * relative)
+            else:
+                span = max(support_max - preferred_support_max, 1e-9)
+                relative = np.clip((support_max - support_pct) / span, 0.0, 1.0)
+                support_score = float(0.2 + (1.0 - 0.2) * relative)
+
+            masked_returns = np.asarray(side_returns[mask], dtype=np.float32)
+            finite_returns = masked_returns[np.isfinite(masked_returns)]
+            mean_ret_global = float(np.nanmean(side_returns))
+            mean_ret_mask = float(np.nanmean(finite_returns)) if finite_returns.size else np.nan
+            std_ret_mask = (
+                float(np.nanstd(_clip_returns(finite_returns)))
+                if finite_returns.size
+                else np.nan
+            )
+            sign_consistency = (
+                compute_directional_sign_consistency(finite_returns)
+                if finite_returns.size
+                else 0.5
+            )
+            if finite_returns.size >= 20:
+                abs_returns = np.abs(finite_returns)
+                p95 = float(np.nanpercentile(abs_returns, 95))
+                p5 = float(np.nanpercentile(abs_returns, 5))
+                tail_ratio = p95 / (p5 + 1e-9)
+            else:
+                tail_ratio = 1.0
+
+            return {
+                "support_count": support_count,
+                "support_pct": support_pct,
+                "support_ok": support_ok,
+                "support_score": support_score,
+                "avg_trades": self._compute_avg_trades_per_day(mask, total_symbol_days),
+                "density_dispersion": 0.0,
+                "tail_ratio": float(tail_ratio),
+                "mae": 0.0,
+                "mfe": 0.0,
+                "mean_ret_global": mean_ret_global,
+                "mean_ret_mask": mean_ret_mask,
+                "std_ret_mask": std_ret_mask,
+                "ret_uplift": mean_ret_mask - mean_ret_global,
+                "sign_consistency": float(sign_consistency),
+            }
+
+        def _get_or_compute_cheap_stats(
+            canonical_key: str,
+            side: str,
+            mask: np.ndarray,
+            *,
+            target_name: Optional[str] = None,
+            horizon_key: Optional[int] = None,
+            side_returns: Optional[np.ndarray] = None,
+        ) -> Dict[str, float]:
+            if (
+                side_returns is not None
+                and target_name is not None
+                and horizon_key is not None
+                and triad_targets_map is not None
+            ):
+                contextual_key = (
+                    canonical_key,
+                    side,
+                    str(target_name),
+                    int(horizon_key),
+                )
+                cached_stats = contextual_cheap_stats_cache.get(contextual_key)
+                if cached_stats is not None:
+                    return cached_stats
+                stats = _compute_single_cheap_stats(side, mask, side_returns)
+                contextual_cheap_stats_cache[contextual_key] = stats
+                return stats
+
             cache_key = (canonical_key, side)
             cached_stats = cheap_stats_cache.get(cache_key)
             if cached_stats is not None:
                 return cached_stats
-
-            support_count = int(np.sum(mask))
-            support_pct = float(support_count / max(len(data), 1))
-            return {
-                "support_count": support_count,
-                "support_pct": support_pct,
-                "support_ok": float(support_min <= support_pct <= support_max),
-                "support_score": 1.0,
-                "avg_trades": self._compute_avg_trades_per_day(mask, total_symbol_days),
-                "density_dispersion": 0.0,
-                "tail_ratio": 1.0,
-                "mae": 0.0,
-                "mfe": 0.0,
-                "mean_ret_global": mean_ret_global_by_side[side],
-                "mean_ret_mask": float(np.nanmean(ridge_target_by_side[side][mask])),
-                "std_ret_mask": float(
-                    np.nanstd(_clip_returns(ridge_target_by_side[side][mask]))
-                ),
-                "ret_uplift": float(np.nanmean(ridge_target_by_side[side][mask]))
-                - mean_ret_global_by_side[side],
-                "sign_consistency": 0.5,
-            }
+            return _compute_single_cheap_stats(side, mask, ridge_target_by_side[side])
 
         def _infer_regime_family_combo(canonical_key: str) -> str:
             families = sorted(
@@ -10535,7 +10924,72 @@ class MaskAssessor:
             )
             effective_step_mode = "full"
 
-        if effective_step_mode == "step2":
+        if skip_stage1_filtering:
+            tprint(
+                "Stage A: step2 pooled assessment active; "
+                "skipping overlap pruning and ridge shortlist reduction, "
+                "but still enforcing support_out_of_range upstream."
+            )
+            cheap_gate_rows = collections.defaultdict(list)
+            cheap_gate_result = {}
+            bucket_cheap_ranks = collections.defaultdict(dict)
+            stage_a_matrices = {}
+            seen_keys_for_direct_assessment = set()
+            for pre_row in registry.to_dict("records"):
+                canonical_key = str(pre_row["canonical_key"])
+                side = str(pre_row.get("side", "long"))
+                if side not in ridge_target_by_side:
+                    side = "long"
+                horizon_raw = pre_row.get("source_horizon", -1)
+                try:
+                    horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+                except (TypeError, ValueError):
+                    horizon_key = -1
+                bucket_key = (side, horizon_key)
+                tracker = (bucket_key, canonical_key)
+                if tracker in seen_keys_for_direct_assessment:
+                    continue
+                seen_keys_for_direct_assessment.add(tracker)
+                mask = mask_cache.get(canonical_key)
+                if mask is None:
+                    if self.mask_resolver:
+                        mask = self.mask_resolver.get_mask(canonical_key)
+                    else:
+                        mask = self._get_mask_for_rule(canonical_key, X)
+                    mask_cache[canonical_key] = mask
+
+                if np.sum(mask) < 20:
+                    cheap_gate_result[(bucket_key, canonical_key)] = (
+                        True,
+                        "support_out_of_range",
+                    )
+                    continue
+
+                target_name = str(pre_row.get("source_target", "unknown"))
+                side_returns = ridge_target_by_side[side]
+                if triad_targets_map is not None:
+                    side_returns = triad_targets_map.get(
+                        (target_name, horizon_key), side_returns
+                    )
+                cheap = _get_or_compute_cheap_stats(
+                    canonical_key,
+                    side,
+                    mask,
+                    target_name=target_name,
+                    horizon_key=horizon_key,
+                    side_returns=side_returns,
+                )
+                if not bool(cheap["support_ok"]):
+                    cheap_gate_result[(bucket_key, canonical_key)] = (
+                        True,
+                        "support_out_of_range",
+                    )
+                    continue
+
+                cheap_gate_rows[bucket_key].append((0.0, canonical_key))
+                bucket_cheap_ranks[bucket_key][canonical_key] = 0.0
+                cheap_gate_result[(bucket_key, canonical_key)] = (False, "")
+        elif effective_step_mode == "step2":
             step1_payload = load_stage_a_step1_checkpoint(step1_checkpoint_dir)
             cheap_gate_rows = step1_payload["cheap_gate_rows"]
             cheap_gate_result = step1_payload["cheap_gate_result"]
@@ -10618,6 +11072,9 @@ class MaskAssessor:
                     horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
                 except (TypeError, ValueError):
                     horizon_key = -1
+                target_name = str(
+                    registry.iloc[row_idx].get("source_target", "unknown")
+                )
 
                 bucket_key = (side, horizon_key)
 
@@ -10630,7 +11087,19 @@ class MaskAssessor:
                 if np.sum(mask) < 20:
                     continue
 
-                cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
+                side_returns = ridge_target_by_side[side]
+                if triad_targets_map is not None:
+                    side_returns = triad_targets_map.get(
+                        (target_name, horizon_key), side_returns
+                    )
+                cheap = _get_or_compute_cheap_stats(
+                    canonical_key,
+                    side,
+                    mask,
+                    target_name=target_name,
+                    horizon_key=horizon_key,
+                    side_returns=side_returns,
+                )
                 if not bool(cheap["support_ok"]):
                     rejected_by_support.add(canonical_key)
 
@@ -10664,527 +11133,501 @@ class MaskAssessor:
                         (canonical_key, hurdle_excess)
                     )
 
-        def _normalize_to_1_2(
-            arr: np.ndarray, higher_is_better: bool = True
-        ) -> np.ndarray:
-            valid = np.isfinite(arr)
-            if not np.any(valid):
-                return np.full_like(arr, 1.5)
-            valid_vals = arr[valid]
-            if len(valid_vals) == 0:
-                return np.full_like(arr, 1.5)
-            p2 = np.percentile(valid_vals, 2)
-            p98 = np.percentile(valid_vals, 98)
-            clipped = np.clip(arr, p2, p98)
-            min_val = np.nanmin(clipped)
-            max_val = np.nanmax(clipped)
-            if max_val - min_val < 1e-9:
-                return np.full_like(arr, 1.5)
+        if not skip_stage1_filtering:
+            def _normalize_to_1_2(
+                arr: np.ndarray, higher_is_better: bool = True
+            ) -> np.ndarray:
+                valid = np.isfinite(arr)
+                if not np.any(valid):
+                    return np.full_like(arr, 1.5)
+                valid_vals = arr[valid]
+                if len(valid_vals) == 0:
+                    return np.full_like(arr, 1.5)
+                p2 = np.percentile(valid_vals, 2)
+                p98 = np.percentile(valid_vals, 98)
+                clipped = np.clip(arr, p2, p98)
+                min_val = np.nanmin(clipped)
+                max_val = np.nanmax(clipped)
+                if max_val - min_val < 1e-9:
+                    return np.full_like(arr, 1.5)
 
-            # Map so that the "best" raw value always becomes 2.0, and the "worst" raw value becomes 1.0.
-            if higher_is_better:
-                return 1.0 + (clipped - min_val) / (max_val - min_val)
-            else:
-                return 1.0 + (max_val - clipped) / (max_val - min_val)
-
-        bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
-        bucket_cheap_ranks: Dict[
-            Tuple[str, int, str], Dict[str, float]
-        ] = collections.defaultdict(dict)
-
-        all_bucket_keys = set(bucket_mean_ret_values.keys())
-        for b_key in all_bucket_keys:
-            keys = [k for k, v in bucket_mean_ret_values[b_key]]
-            if not keys:
-                continue
-
-            m_ret_dict = dict(bucket_mean_ret_values[b_key])
-            m_path_dict = dict(bucket_path_quality_values[b_key])
-            m_sign_dict = dict(bucket_sign_consistency_values[b_key])
-            m_tail_dict = dict(bucket_tail_values[b_key])
-            m_dens_dict = dict(bucket_density_values[b_key])
-
-            ret_arr = np.array([m_ret_dict.get(k, np.nan) for k in keys])
-            path_arr = np.array([m_path_dict.get(k, np.nan) for k in keys])
-            sign_arr = np.array([m_sign_dict.get(k, np.nan) for k in keys])
-            tail_arr = np.array([m_tail_dict.get(k, np.nan) for k in keys])
-            dens_arr = np.array([m_dens_dict.get(k, np.nan) for k in keys])
-
-            n_ret = _normalize_to_1_2(ret_arr, higher_is_better=True)
-            n_path = _normalize_to_1_2(path_arr, higher_is_better=True)
-            n_sign = _normalize_to_1_2(sign_arr, higher_is_better=True)
-
-            # For lower-is-better metrics, normalizing them this way maps their best (lowest) value to 2.0
-            n_tail = _normalize_to_1_2(tail_arr, higher_is_better=False)
-            n_dens = _normalize_to_1_2(dens_arr, higher_is_better=False)
-
-            # Because lower-is-better metrics are mapped such that 2.0 is BEST, we must put them
-            # in the numerator (multiplying them) rather than the denominator to maintain a monotonic score.
-            # Using directional_mean_ret directly instead of sqrt(directional_mean_ret).
-            ranks = n_sign * (n_path**1.5) * n_ret * np.sqrt(n_tail + n_dens)
-
-            ranked_items = []
-            for i, k in enumerate(keys):
-                rank_val = ranks[i]
-                if np.isnan(rank_val):
-                    rank_val = -np.inf
-                bucket_cheap_ranks[b_key][k] = float(rank_val)
-                ranked_items.append((rank_val, k))
-
-            ranked_items.sort(key=lambda x: x[0], reverse=True)
-            top_k = [k for r, k in ranked_items[: max(min_candidates_per_bucket, 0)]]
-            bucket_protected_keys[b_key] = set(top_k)
-
-        tprint(
-            f"Stage A: Pass 1 complete - computed cheap stats for {len(registry)} rules"
-        )
-
-        pctile_bottom_cut = float(self.cfg.get("cheap_gate_bottom_pctile", 0.20))
-
-        all_rejected = set(rejected_by_support)
-        if all_rejected:
-            tprint(
-                f"Stage A cheap gate (0): support_out_of_range rejected {len(all_rejected)} rules"
-            )
-
-        bucket_sign_consistency_floor: Dict[Tuple[str, int], float] = {}
-        for bucket_key, tuples in bucket_sign_consistency_values.items():
-            vals = np.asarray(
-                [v for k, v in tuples if k not in all_rejected], dtype=float
-            )
-            finite_vals = vals[np.isfinite(vals)]
-            bucket_sign_consistency_floor[bucket_key] = (
-                float(np.nanquantile(finite_vals, pctile_bottom_cut))
-                if finite_vals.size > 0
-                else -np.inf
-            )
-
-        bucket_hurdle_floor: Dict[Tuple[str, int], float] = {}
-        bucket_hurdle_values_surviving: Dict[
-            Tuple[str, int], List[Tuple[str, float]]
-        ] = collections.defaultdict(list)
-        for bucket_key, tuples in bucket_hurdle_values.items():
-            for canonical_key, hurdle_excess in tuples:
-                if canonical_key not in all_rejected:
-                    bucket_hurdle_values_surviving[bucket_key].append(
-                        (canonical_key, hurdle_excess)
-                    )
-        for bucket_key, tuples in bucket_hurdle_values_surviving.items():
-            vals = np.asarray([v for _, v in tuples], dtype=float)
-            finite_vals = vals[np.isfinite(vals)]
-            bucket_hurdle_floor[bucket_key] = (
-                float(np.nanquantile(finite_vals, pctile_bottom_cut))
-                if finite_vals.size > 0
-                else -np.inf
-            )
-
-        rejected_by_hurdle: set = set()
-        for bucket_key, tuples in bucket_hurdle_values_surviving.items():
-            floor = bucket_hurdle_floor.get(bucket_key, -np.inf)
-            for canonical_key, hurdle_excess in tuples:
-                if hurdle_excess < floor:
-                    rejected_by_hurdle.add(canonical_key)
-
-        n_hurdle_rejected = len(rejected_by_hurdle)
-        if n_hurdle_rejected > 0:
-            tprint(
-                f"Stage A cheap gate (1.1): beats_hurdle "
-                f"  rejected {n_hurdle_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket)"
-            )
-        all_rejected |= rejected_by_hurdle
-
-        bucket_stability_floor: Dict[Tuple[str, int], float] = {}
-        for bucket_key, tuples in bucket_stability_values.items():
-            vals = np.asarray(
-                [v for k, v in tuples if k not in all_rejected], dtype=float
-            )
-            finite_vals = vals[np.isfinite(vals)]
-            bucket_stability_floor[bucket_key] = (
-                float(np.nanquantile(finite_vals, 0.20))
-                if finite_vals.size > 0
-                else -np.inf
-            )
-
-        rejected_by_stability: set = set()
-        for bucket_key, tuples in bucket_stability_values.items():
-            floor = bucket_stability_floor.get(bucket_key, -np.inf)
-            protected = bucket_protected_keys.get(bucket_key, set())
-            for canonical_key, stability in tuples:
-                if (
-                    canonical_key not in all_rejected
-                    and stability < floor
-                    and canonical_key not in protected
-                ):
-                    rejected_by_stability.add(canonical_key)
-
-        n_stability_rejected = len(rejected_by_stability)
-        if n_stability_rejected > 0:
-            tprint(
-                f"Stage A cheap gate (1.5): quality_stability "
-                f"  rejected {n_stability_rejected} rules (bottom 20% per bucket)"
-            )
-
-        all_rejected |= rejected_by_stability
-
-        bucket_density_values_surviving: Dict[
-            Tuple[str, int], List[Tuple[str, float]]
-        ] = collections.defaultdict(list)
-        for bucket_key, tuples in bucket_density_values.items():
-            for canonical_key, val in tuples:
-                if canonical_key not in all_rejected:
-                    bucket_density_values_surviving[bucket_key].append(
-                        (canonical_key, val)
-                    )
-        bucket_density_cap: Dict[Tuple[str, int], float] = {}
-        for bucket_key, tuples in bucket_density_values_surviving.items():
-            vals = np.asarray([v for _, v in tuples], dtype=float)
-            finite_vals = vals[np.isfinite(vals)]
-            bucket_density_cap[bucket_key] = (
-                float(np.nanquantile(finite_vals, 0.90))
-                if finite_vals.size > 0
-                else np.inf
-            )
-
-        bucket_tail_values_surviving: Dict[
-            Tuple[str, int], List[Tuple[str, float]]
-        ] = collections.defaultdict(list)
-        for bucket_key, tuples in bucket_tail_values.items():
-            for canonical_key, val in tuples:
-                if canonical_key not in all_rejected:
-                    bucket_tail_values_surviving[bucket_key].append(
-                        (canonical_key, val)
-                    )
-        bucket_tail_cap: Dict[Tuple[str, int], float] = {}
-        for bucket_key, tuples in bucket_tail_values_surviving.items():
-            vals = np.asarray([v for _, v in tuples], dtype=float)
-            finite_vals = vals[np.isfinite(vals)]
-            bucket_tail_cap[bucket_key] = (
-                float(np.nanquantile(finite_vals, 0.90))
-                if finite_vals.size > 0
-                else np.inf
-            )
-
-        bucket_path_quality_surviving: Dict[
-            Tuple[str, int, str], List[Tuple[str, float]]
-        ] = collections.defaultdict(list)
-        for bucket_key, tuples in bucket_path_quality_values.items():
-            for canonical_key, val in tuples:
-                if canonical_key not in all_rejected:
-                    bucket_path_quality_surviving[bucket_key].append(
-                        (canonical_key, val)
-                    )
-        bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
-        for bucket_key, tuples in bucket_path_quality_surviving.items():
-            vals = np.asarray([v for _, v in tuples], dtype=float)
-            finite_vals = vals[np.isfinite(vals)]
-            bucket_path_floor[bucket_key] = (
-                float(np.nanquantile(finite_vals, pctile_bottom_cut))
-                if finite_vals.size > 0
-                else -np.inf
-            )
-
-        rejected_by_path: set = set()
-        for bucket_key, tuples in bucket_path_quality_values.items():
-            floor = bucket_path_floor.get(bucket_key, -np.inf)
-            protected = bucket_protected_keys.get(bucket_key, set())
-            for canonical_key, path in tuples:
-                if (
-                    canonical_key not in all_rejected
-                    and path < floor
-                    and canonical_key not in protected
-                ):
-                    rejected_by_path.add(canonical_key)
-
-        n_path_rejected = len(rejected_by_path)
-        if n_path_rejected > 0:
-            tprint(
-                f"Stage A cheap gate (2.5): path_quality "
-                f"  rejected {n_path_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket)"
-            )
-        all_rejected |= rejected_by_path
-
-        tprint(
-            f"Stage A: Cheap gates complete - {len(registry) - len(all_rejected)} rules survived cheap gates"
-        )
-
-        cheap_gate_rows: Dict[
-            Tuple[str, int], List[Tuple[float, str]]
-        ] = collections.defaultdict(list)
-        cheap_gate_result: Dict[Tuple[Tuple[str, int], str], Tuple[bool, str]] = {}
-
-        seen_keys_for_cheap_gate = set()
-
-        for pre_row in registry.to_dict("records"):
-            canonical_key = str(pre_row["canonical_key"])
-            side = str(pre_row["side"])
-            if side not in ridge_target_by_side:
-                side = "long"
-
-            horizon_raw = pre_row.get("source_horizon", -1)
-            try:
-                horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
-            except (TypeError, ValueError):
-                horizon_key = -1
-
-            bucket_key = (side, horizon_key)
-
-            # Ensure we only process each canonical key once per bucket_key since target metrics
-            # are inherently agnostic to triad targets
-            key_tracker = (bucket_key, canonical_key)
-            if key_tracker in seen_keys_for_cheap_gate:
-                continue
-            seen_keys_for_cheap_gate.add(key_tracker)
-
-            mask = mask_cache.get(canonical_key)
-            if mask is None:
-                if self.mask_resolver:
-                    mask = self.mask_resolver.get_mask(canonical_key)
+                if higher_is_better:
+                    return 1.0 + (clipped - min_val) / (max_val - min_val)
                 else:
-                    mask = self._get_mask_for_rule(canonical_key, X)
-                mask_cache[canonical_key] = mask
-            if np.sum(mask) < 20:
-                continue
+                    return 1.0 + (max_val - clipped) / (max_val - min_val)
 
-            cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
-            sign_consistency = float(cheap["sign_consistency"])
+            bucket_protected_keys: Dict[Tuple[str, int, str], set[str]] = {}
+            bucket_cheap_ranks = collections.defaultdict(dict)
 
-            rejected = False
-            rejection_reason = ""
-            if not bool(cheap["support_ok"]):
-                rejected, rejection_reason = True, "support_out_of_range"
-            elif float(
-                pre_row.get("quality_stability_score", np.nan)
-            ) < bucket_stability_floor.get(bucket_key, -np.inf):
-                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
-                    rejected, rejection_reason = True, "low_stability_floor"
-            elif float(
-                pre_row.get("trade_path_quality_score", np.nan)
-            ) < bucket_path_floor.get(bucket_key, -np.inf):
-                if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
-                    rejected, rejection_reason = True, "low_path_quality_floor"
-            elif float(cheap["density_dispersion"]) > bucket_density_cap.get(
-                bucket_key, np.inf
-            ):
-                rejected, rejection_reason = True, "high_density_dispersion_top_decile"
-            elif float(cheap["tail_ratio"]) > bucket_tail_cap.get(bucket_key, np.inf):
-                rejected, rejection_reason = True, "high_tail_risk_top_decile"
+            all_bucket_keys = set(bucket_mean_ret_values.keys())
+            for b_key in all_bucket_keys:
+                keys = [k for k, v in bucket_mean_ret_values[b_key]]
+                if not keys:
+                    continue
 
-            if (
-                rejected
-                and canonical_key in bucket_protected_keys.get(bucket_key, set())
-                and rejection_reason
-                in {
-                    "low_path_quality_floor",
-                    "low_stability_floor",
-                }
-            ):
-                rejected = False
+                m_ret_dict = dict(bucket_mean_ret_values[b_key])
+                m_path_dict = dict(bucket_path_quality_values[b_key])
+                m_sign_dict = dict(bucket_sign_consistency_values[b_key])
+                m_tail_dict = dict(bucket_tail_values[b_key])
+                m_dens_dict = dict(bucket_density_values[b_key])
 
-            if rejected:
-                cheap_gate_result[(bucket_key, canonical_key)] = (
-                    True,
-                    rejection_reason,
-                )
-                continue
+                ret_arr = np.array([m_ret_dict.get(k, np.nan) for k in keys])
+                path_arr = np.array([m_path_dict.get(k, np.nan) for k in keys])
+                sign_arr = np.array([m_sign_dict.get(k, np.nan) for k in keys])
+                tail_arr = np.array([m_tail_dict.get(k, np.nan) for k in keys])
+                dens_arr = np.array([m_dens_dict.get(k, np.nan) for k in keys])
 
-            cheap_rank = bucket_cheap_ranks.get(bucket_key, {}).get(
-                canonical_key, -np.inf
-            )
-            cheap_gate_result[(bucket_key, canonical_key)] = (False, "")
-            cheap_gate_rows[bucket_key].append((cheap_rank, canonical_key))
+                n_ret = _normalize_to_1_2(ret_arr, higher_is_better=True)
+                n_path = _normalize_to_1_2(path_arr, higher_is_better=True)
+                n_sign = _normalize_to_1_2(sign_arr, higher_is_better=True)
+                n_tail = _normalize_to_1_2(tail_arr, higher_is_better=False)
+                n_dens = _normalize_to_1_2(dens_arr, higher_is_better=False)
+                ranks = n_sign * (n_path**1.5) * n_ret * np.sqrt(n_tail + n_dens)
 
-        OVERLAP_THRESHOLD = 0.975  # Structural dedup only: remove near-exact duplicates
-        SUPPORT_RATIO_MIN = 0.70
-        DEDUP_SUBSAMPLE_SIZE = 10000
-        eps = 1e-8
+                ranked_items = []
+                for i, k in enumerate(keys):
+                    rank_val = ranks[i]
+                    if np.isnan(rank_val):
+                        rank_val = -np.inf
+                    bucket_cheap_ranks[b_key][k] = float(rank_val)
+                    ranked_items.append((rank_val, k))
 
-        surviving_keys_by_bucket: Dict[
-            Tuple[str, int, str], List[str]
-        ] = collections.defaultdict(list)
-        for bucket_key, entries in cheap_gate_rows.items():
-            for _, canonical_key in entries:
-                surviving_keys_by_bucket[bucket_key].append(canonical_key)
+                ranked_items.sort(key=lambda x: x[0], reverse=True)
+                top_k = [k for r, k in ranked_items[: max(min_candidates_per_bucket, 0)]]
+                bucket_protected_keys[b_key] = set(top_k)
 
-        stage_a_matrices = {}
-
-        n_total_surviving = sum(len(v) for v in surviving_keys_by_bucket.values())
-        if n_total_surviving > 0:
-            rng = np.random.default_rng(seed=42)
-            n_rows = X.shape[0]
-            if n_rows > DEDUP_SUBSAMPLE_SIZE:
-                sub_idx = rng.choice(n_rows, size=DEDUP_SUBSAMPLE_SIZE, replace=False)
-                sub_idx = np.sort(sub_idx)
-            else:
-                sub_idx = np.arange(n_rows)
-            n_subsample = float(len(sub_idx))
-
-            registry_key_to_row: Dict[str, int] = {}
-            for i, row_dict in enumerate(registry.to_dict("records")):
-                ck = str(row_dict.get("canonical_key", ""))
-                if ck:
-                    registry_key_to_row[ck] = i
-
-            n_dedup_rejected = 0
-            overlap_dedup_start_ts = time.perf_counter()
             tprint(
-                "Stage A: Overlap deduplication start - "
-                f"buckets={len(surviving_keys_by_bucket)} "
-                f"input_rules={sum(len(v) for v in surviving_keys_by_bucket.values())}"
+                f"Stage A: Pass 1 complete - computed cheap stats for {len(registry)} rules"
             )
-            for bucket_key, surviving_keys in surviving_keys_by_bucket.items():
-                bucket_overlap_start_ts = time.perf_counter()
-                n_rules = len(surviving_keys)
-                # Pre-allocate arrays for better performance
-                contexts = [None] * n_rules
-                gains = np.zeros(n_rules, dtype=np.float32)
-                sign_consistencies = np.zeros(n_rules, dtype=np.float32)
-                mean_returns = np.zeros(n_rules, dtype=np.float32)
-                std_returns = np.zeros(n_rules, dtype=np.float32)
-                supports = np.zeros(n_rules, dtype=np.float32)
 
-                for idx, canonical_key in enumerate(surviving_keys):
-                    mask = mask_cache.get(canonical_key)
-                    if mask is None:
-                        if self.mask_resolver:
-                            mask = self.mask_resolver.get_mask(canonical_key)
-                        else:
-                            mask = self._get_mask_for_rule(canonical_key, X)
-                        mask_cache[canonical_key] = mask
+            pctile_bottom_cut = float(self.cfg.get("cheap_gate_bottom_pctile", 0.20))
 
-                    mask_sub = mask[sub_idx]
-                    contexts[idx] = mask_sub
-                    supports[idx] = float(np.mean(mask_sub))
+            all_rejected = set(rejected_by_support)
+            if all_rejected:
+                tprint(
+                    f"Stage A cheap gate (0): support_out_of_range rejected {len(all_rejected)} rules"
+                )
 
-                    cheap = _get_or_compute_cheap_stats(
-                        canonical_key, bucket_key[0], mask
-                    )
+            bucket_sign_consistency_floor: Dict[Tuple[str, int], float] = {}
+            for bucket_key, tuples in bucket_sign_consistency_values.items():
+                vals = np.asarray(
+                    [v for k, v in tuples if k not in all_rejected], dtype=float
+                )
+                finite_vals = vals[np.isfinite(vals)]
+                bucket_sign_consistency_floor[bucket_key] = (
+                    float(np.nanquantile(finite_vals, pctile_bottom_cut))
+                    if finite_vals.size > 0
+                    else -np.inf
+                )
 
-                    row_idx = registry_key_to_row.get(canonical_key)
-                    if row_idx is not None:
-                        pre_row = registry.iloc[row_idx]
-                        gain_val = float(
-                            pre_row.get("rule_model_importance_score", 0.0)
+            bucket_hurdle_floor: Dict[Tuple[str, int], float] = {}
+            bucket_hurdle_values_surviving = collections.defaultdict(list)
+            for bucket_key, tuples in bucket_hurdle_values.items():
+                for canonical_key, hurdle_excess in tuples:
+                    if canonical_key not in all_rejected:
+                        bucket_hurdle_values_surviving[bucket_key].append(
+                            (canonical_key, hurdle_excess)
                         )
+            for bucket_key, tuples in bucket_hurdle_values_surviving.items():
+                vals = np.asarray([v for _, v in tuples], dtype=float)
+                finite_vals = vals[np.isfinite(vals)]
+                bucket_hurdle_floor[bucket_key] = (
+                    float(np.nanquantile(finite_vals, pctile_bottom_cut))
+                    if finite_vals.size > 0
+                    else -np.inf
+                )
+
+            rejected_by_hurdle: set = set()
+            for bucket_key, tuples in bucket_hurdle_values_surviving.items():
+                floor = bucket_hurdle_floor.get(bucket_key, -np.inf)
+                for canonical_key, hurdle_excess in tuples:
+                    if hurdle_excess < floor:
+                        rejected_by_hurdle.add(canonical_key)
+
+            n_hurdle_rejected = len(rejected_by_hurdle)
+            if n_hurdle_rejected > 0:
+                tprint(
+                    f"Stage A cheap gate (1.1): beats_hurdle "
+                    f"  rejected {n_hurdle_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket)"
+                )
+            all_rejected |= rejected_by_hurdle
+
+            bucket_stability_floor: Dict[Tuple[str, int], float] = {}
+            for bucket_key, tuples in bucket_stability_values.items():
+                vals = np.asarray(
+                    [v for k, v in tuples if k not in all_rejected], dtype=float
+                )
+                finite_vals = vals[np.isfinite(vals)]
+                bucket_stability_floor[bucket_key] = (
+                    float(np.nanquantile(finite_vals, 0.20))
+                    if finite_vals.size > 0
+                    else -np.inf
+                )
+
+            rejected_by_stability: set = set()
+            for bucket_key, tuples in bucket_stability_values.items():
+                floor = bucket_stability_floor.get(bucket_key, -np.inf)
+                protected = bucket_protected_keys.get(bucket_key, set())
+                for canonical_key, stability in tuples:
+                    if (
+                        canonical_key not in all_rejected
+                        and stability < floor
+                        and canonical_key not in protected
+                    ):
+                        rejected_by_stability.add(canonical_key)
+
+            n_stability_rejected = len(rejected_by_stability)
+            if n_stability_rejected > 0:
+                tprint(
+                    f"Stage A cheap gate (1.5): quality_stability "
+                    f"  rejected {n_stability_rejected} rules (bottom 20% per bucket)"
+                )
+
+            all_rejected |= rejected_by_stability
+
+            bucket_density_values_surviving = collections.defaultdict(list)
+            for bucket_key, tuples in bucket_density_values.items():
+                for canonical_key, val in tuples:
+                    if canonical_key not in all_rejected:
+                        bucket_density_values_surviving[bucket_key].append(
+                            (canonical_key, val)
+                        )
+            bucket_density_cap: Dict[Tuple[str, int], float] = {}
+            for bucket_key, tuples in bucket_density_values_surviving.items():
+                vals = np.asarray([v for _, v in tuples], dtype=float)
+                finite_vals = vals[np.isfinite(vals)]
+                bucket_density_cap[bucket_key] = (
+                    float(np.nanquantile(finite_vals, 0.90))
+                    if finite_vals.size > 0
+                    else np.inf
+                )
+
+            bucket_tail_values_surviving = collections.defaultdict(list)
+            for bucket_key, tuples in bucket_tail_values.items():
+                for canonical_key, val in tuples:
+                    if canonical_key not in all_rejected:
+                        bucket_tail_values_surviving[bucket_key].append(
+                            (canonical_key, val)
+                        )
+            bucket_tail_cap: Dict[Tuple[str, int], float] = {}
+            for bucket_key, tuples in bucket_tail_values_surviving.items():
+                vals = np.asarray([v for _, v in tuples], dtype=float)
+                finite_vals = vals[np.isfinite(vals)]
+                bucket_tail_cap[bucket_key] = (
+                    float(np.nanquantile(finite_vals, 0.90))
+                    if finite_vals.size > 0
+                    else np.inf
+                )
+
+            bucket_path_quality_surviving = collections.defaultdict(list)
+            for bucket_key, tuples in bucket_path_quality_values.items():
+                for canonical_key, val in tuples:
+                    if canonical_key not in all_rejected:
+                        bucket_path_quality_surviving[bucket_key].append(
+                            (canonical_key, val)
+                        )
+            bucket_path_floor: Dict[Tuple[str, int, str], float] = {}
+            for bucket_key, tuples in bucket_path_quality_surviving.items():
+                vals = np.asarray([v for _, v in tuples], dtype=float)
+                finite_vals = vals[np.isfinite(vals)]
+                bucket_path_floor[bucket_key] = (
+                    float(np.nanquantile(finite_vals, pctile_bottom_cut))
+                    if finite_vals.size > 0
+                    else -np.inf
+                )
+
+            rejected_by_path: set = set()
+            for bucket_key, tuples in bucket_path_quality_values.items():
+                floor = bucket_path_floor.get(bucket_key, -np.inf)
+                protected = bucket_protected_keys.get(bucket_key, set())
+                for canonical_key, path in tuples:
+                    if (
+                        canonical_key not in all_rejected
+                        and path < floor
+                        and canonical_key not in protected
+                    ):
+                        rejected_by_path.add(canonical_key)
+
+            n_path_rejected = len(rejected_by_path)
+            if n_path_rejected > 0:
+                tprint(
+                    f"Stage A cheap gate (2.5): path_quality "
+                    f"  rejected {n_path_rejected} rules (bottom {pctile_bottom_cut:.0%} per bucket)"
+                )
+            all_rejected |= rejected_by_path
+
+            tprint(
+                f"Stage A: Cheap gates complete - {len(registry) - len(all_rejected)} rules survived cheap gates"
+            )
+
+            cheap_gate_rows = collections.defaultdict(list)
+            cheap_gate_result = {}
+            seen_keys_for_cheap_gate = set()
+
+            for pre_row in registry.to_dict("records"):
+                canonical_key = str(pre_row["canonical_key"])
+                side = str(pre_row["side"])
+                if side not in ridge_target_by_side:
+                    side = "long"
+
+                horizon_raw = pre_row.get("source_horizon", -1)
+                try:
+                    horizon_key = int(horizon_raw) if pd.notna(horizon_raw) else -1
+                except (TypeError, ValueError):
+                    horizon_key = -1
+                target_name = str(pre_row.get("source_target", "unknown"))
+                bucket_key = (side, horizon_key)
+                key_tracker = (bucket_key, canonical_key)
+                if key_tracker in seen_keys_for_cheap_gate:
+                    continue
+                seen_keys_for_cheap_gate.add(key_tracker)
+
+                mask = mask_cache.get(canonical_key)
+                if mask is None:
+                    if self.mask_resolver:
+                        mask = self.mask_resolver.get_mask(canonical_key)
                     else:
-                        gain_val = 0.0
-                    gains[idx] = gain_val
-                    sign_consistencies[idx] = float(cheap["sign_consistency"])
-                    mean_returns[idx] = float(cheap.get("mean_ret_mask", 0.0))
-                    std_returns[idx] = float(cheap.get("std_ret_mask", 0.0))
+                        mask = self._get_mask_for_rule(canonical_key, X)
+                    mask_cache[canonical_key] = mask
+                if np.sum(mask) < 20:
+                    continue
 
-                tprint(
-                    f"Stage A: Overlap deduplication - processing {len(surviving_keys)} surviving rules in bucket {bucket_key}"
+                side_returns = ridge_target_by_side[side]
+                if triad_targets_map is not None:
+                    side_returns = triad_targets_map.get(
+                        (target_name, horizon_key), side_returns
+                    )
+                cheap = _get_or_compute_cheap_stats(
+                    canonical_key,
+                    side,
+                    mask,
+                    target_name=target_name,
+                    horizon_key=horizon_key,
+                    side_returns=side_returns,
                 )
 
-                # Build a dense subsample matrix directly. The current bucket sizes are
-                # small enough that this is safer than hand-assembling sparse COO indices.
-                context_matrix = np.column_stack(
-                    [c.astype(np.int32, copy=False) for c in contexts]
+                rejected = False
+                rejection_reason = ""
+                if not bool(cheap["support_ok"]):
+                    rejected, rejection_reason = True, "support_out_of_range"
+                elif float(
+                    pre_row.get("quality_stability_score", np.nan)
+                ) < bucket_stability_floor.get(bucket_key, -np.inf):
+                    if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
+                        rejected, rejection_reason = True, "low_stability_floor"
+                elif float(
+                    pre_row.get("trade_path_quality_score", np.nan)
+                ) < bucket_path_floor.get(bucket_key, -np.inf):
+                    if canonical_key not in bucket_protected_keys.get(bucket_key, set()):
+                        rejected, rejection_reason = True, "low_path_quality_floor"
+                elif float(cheap["density_dispersion"]) > bucket_density_cap.get(
+                    bucket_key, np.inf
+                ):
+                    rejected, rejection_reason = True, "high_density_dispersion_top_decile"
+                elif float(cheap["tail_ratio"]) > bucket_tail_cap.get(
+                    bucket_key, np.inf
+                ):
+                    rejected, rejection_reason = True, "high_tail_risk_top_decile"
+
+                if (
+                    rejected
+                    and canonical_key in bucket_protected_keys.get(bucket_key, set())
+                    and rejection_reason in {"low_path_quality_floor", "low_stability_floor"}
+                ):
+                    rejected = False
+
+                if rejected:
+                    cheap_gate_result[(bucket_key, canonical_key)] = (
+                        True,
+                        rejection_reason,
+                    )
+                    continue
+
+                cheap_rank = bucket_cheap_ranks.get(bucket_key, {}).get(
+                    canonical_key, -np.inf
                 )
-                intersections = context_matrix.T @ context_matrix
-                n_rules = len(surviving_keys)
-                initial_n_rules = n_rules  # Track initial count for logging
-                sub_supports = np.diag(intersections).astype(float)
+                cheap_gate_result[(bucket_key, canonical_key)] = (False, "")
+                cheap_gate_rows[bucket_key].append((cheap_rank, canonical_key))
 
-                # Store matrices for soft F1/Dice penalty downstream
-                stage_a_matrices[bucket_key] = {
-                    "key_to_idx": {k: idx for idx, k in enumerate(surviving_keys)},
-                    "intersections": intersections,
-                    "supports": sub_supports,
-                    "n_subsample": n_subsample,
-                }
+            OVERLAP_THRESHOLD = 0.975
+            SUPPORT_RATIO_MIN = 0.70
+            DEDUP_SUBSAMPLE_SIZE = 10000
+            eps = 1e-8
 
-                # PER-BUCKET TOP-N SELECTION (No overlap deduplication)
-                # ---------------------------------------------------------------
-                BUCKET_TOP_TARGET = int(self.cfg.get("overlap_dedup_bucket_top_target", 15))
+            surviving_keys_by_bucket = collections.defaultdict(list)
+            for bucket_key, entries in cheap_gate_rows.items():
+                for _, canonical_key in entries:
+                    surviving_keys_by_bucket[bucket_key].append(canonical_key)
 
-                # Sort rules by gain (descending) to get score order
-                score_order = np.argsort(-gains)
+            stage_a_matrices = {}
 
-                # Simply keep top N rules by gain, no overlap deduplication
-                if n_rules > BUCKET_TOP_TARGET:
-                    accepted_indices = list(score_order[:BUCKET_TOP_TARGET])
+            n_total_surviving = sum(len(v) for v in surviving_keys_by_bucket.values())
+            if n_total_surviving > 0:
+                rng = np.random.default_rng(seed=42)
+                n_rows = X.shape[0]
+                if n_rows > DEDUP_SUBSAMPLE_SIZE:
+                    sub_idx = rng.choice(n_rows, size=DEDUP_SUBSAMPLE_SIZE, replace=False)
+                    sub_idx = np.sort(sub_idx)
                 else:
-                    accepted_indices = list(score_order)
+                    sub_idx = np.arange(n_rows)
+                n_subsample = float(len(sub_idx))
 
-                surviving_indices = accepted_indices
-                final_surviving_set = {surviving_keys[i] for i in surviving_indices}
+                registry_key_to_row = {}
+                for i, row_dict in enumerate(registry.to_dict("records")):
+                    ck = str(row_dict.get("canonical_key", ""))
+                    if ck:
+                        registry_key_to_row[ck] = i
 
-                for i, k in enumerate(surviving_keys):
-                    if k not in final_surviving_set:
-                        cheap_gate_result[(bucket_key, k)] = (
-                            True,
-                            "top_n_cutoff",
-                        )
-                        n_dedup_rejected += 1
-
-                final_surviving_keys = [surviving_keys[i] for i in surviving_indices]
-
+                n_dedup_rejected = 0
+                overlap_dedup_start_ts = time.perf_counter()
                 tprint(
-                    f"Stage A: Bucket {bucket_key} dedup complete - "
-                    f"{len(final_surviving_keys)} rules kept (from {initial_n_rules}), "
-                    f"elapsed={time.perf_counter() - bucket_overlap_start_ts:.2f}s"
+                    "Stage A: Overlap deduplication start - "
+                    f"buckets={len(surviving_keys_by_bucket)} "
+                    f"input_rules={sum(len(v) for v in surviving_keys_by_bucket.values())}"
                 )
+                for bucket_key, surviving_keys in surviving_keys_by_bucket.items():
+                    bucket_overlap_start_ts = time.perf_counter()
+                    n_rules = len(surviving_keys)
+                    contexts = [None] * n_rules
+                    gains = np.zeros(n_rules, dtype=np.float32)
+                    sign_consistencies = np.zeros(n_rules, dtype=np.float32)
+                    mean_returns = np.zeros(n_rules, dtype=np.float32)
+                    std_returns = np.zeros(n_rules, dtype=np.float32)
+                    supports = np.zeros(n_rules, dtype=np.float32)
 
-                if final_surviving_keys:
+                    for idx, canonical_key in enumerate(surviving_keys):
+                        mask = mask_cache.get(canonical_key)
+                        if mask is None:
+                            if self.mask_resolver:
+                                mask = self.mask_resolver.get_mask(canonical_key)
+                            else:
+                                mask = self._get_mask_for_rule(canonical_key, X)
+                            mask_cache[canonical_key] = mask
+
+                        mask_sub = mask[sub_idx]
+                        contexts[idx] = mask_sub
+                        supports[idx] = float(np.mean(mask_sub))
+
+                        cheap = _get_or_compute_cheap_stats(
+                            canonical_key, bucket_key[0], mask
+                        )
+
+                        row_idx = registry_key_to_row.get(canonical_key)
+                        if row_idx is not None:
+                            pre_row = registry.iloc[row_idx]
+                            gain_val = float(
+                                pre_row.get("rule_model_importance_score", 0.0)
+                            )
+                        else:
+                            gain_val = 0.0
+                        gains[idx] = gain_val
+                        sign_consistencies[idx] = float(cheap["sign_consistency"])
+                        mean_returns[idx] = float(cheap.get("mean_ret_mask", 0.0))
+                        std_returns[idx] = float(cheap.get("std_ret_mask", 0.0))
+
+                    tprint(
+                        f"Stage A: Overlap deduplication - processing {len(surviving_keys)} surviving rules in bucket {bucket_key}"
+                    )
+
+                    context_matrix = np.column_stack(
+                        [c.astype(np.int32, copy=False) for c in contexts]
+                    )
+                    intersections = context_matrix.T @ context_matrix
+                    initial_n_rules = n_rules
+                    sub_supports = np.diag(intersections).astype(float)
+
                     stage_a_matrices[bucket_key] = {
-                        "key_to_idx": {
-                            k: idx for idx, k in enumerate(final_surviving_keys)
-                        },
-                        "intersections": intersections[
-                            np.ix_(surviving_indices, surviving_indices)
-                        ],
-                        "supports": sub_supports[surviving_indices],
+                        "key_to_idx": {k: idx for idx, k in enumerate(surviving_keys)},
+                        "intersections": intersections,
+                        "supports": sub_supports,
                         "n_subsample": n_subsample,
                     }
-                else:
-                    stage_a_matrices.pop(bucket_key, None)
 
-            if n_dedup_rejected > 0:
-                tprint(
-                    f"Stage A cheap gate (3): overlap deduplication "
-                    f"rejected {n_dedup_rejected} rules (overlap>{OVERLAP_THRESHOLD:.0%}, "
-                    f"support_ratio>{SUPPORT_RATIO_MIN:.0%})"
-                )
-
-            cheap_gate_rows_deduped: Dict[
-                Tuple[str, int], List[Tuple[float, str]]
-            ] = collections.defaultdict(list)
-            for bucket_key, entries in cheap_gate_rows.items():
-                for cheap_rank, canonical_key in entries:
-                    rejected, _ = cheap_gate_result.get(
-                        (bucket_key, canonical_key), (False, "")
+                    bucket_top_target = int(
+                        self.cfg.get("overlap_dedup_bucket_top_target", 15)
                     )
-                    if not rejected:
-                        cheap_gate_rows_deduped[bucket_key].append(
-                            (cheap_rank, canonical_key)
+                    score_order = np.argsort(-gains)
+                    if n_rules > bucket_top_target:
+                        accepted_indices = list(score_order[:bucket_top_target])
+                    else:
+                        accepted_indices = list(score_order)
+
+                    surviving_indices = accepted_indices
+                    final_surviving_set = {surviving_keys[i] for i in surviving_indices}
+
+                    for i, k in enumerate(surviving_keys):
+                        if k not in final_surviving_set:
+                            cheap_gate_result[(bucket_key, k)] = (
+                                True,
+                                "top_n_cutoff",
+                            )
+                            n_dedup_rejected += 1
+
+                    final_surviving_keys = [surviving_keys[i] for i in surviving_indices]
+
+                    tprint(
+                        f"Stage A: Bucket {bucket_key} dedup complete - "
+                        f"{len(final_surviving_keys)} rules kept (from {initial_n_rules}), "
+                        f"elapsed={time.perf_counter() - bucket_overlap_start_ts:.2f}s"
+                    )
+
+                    if final_surviving_keys:
+                        stage_a_matrices[bucket_key] = {
+                            "key_to_idx": {
+                                k: idx for idx, k in enumerate(final_surviving_keys)
+                            },
+                            "intersections": intersections[
+                                np.ix_(surviving_indices, surviving_indices)
+                            ],
+                            "supports": sub_supports[surviving_indices],
+                            "n_subsample": n_subsample,
+                        }
+                    else:
+                        stage_a_matrices.pop(bucket_key, None)
+
+                if n_dedup_rejected > 0:
+                    tprint(
+                        f"Stage A cheap gate (3): overlap deduplication "
+                        f"rejected {n_dedup_rejected} rules (overlap>{OVERLAP_THRESHOLD:.0%}, "
+                        f"support_ratio>{SUPPORT_RATIO_MIN:.0%})"
+                    )
+
+                cheap_gate_rows_deduped = collections.defaultdict(list)
+                for bucket_key, entries in cheap_gate_rows.items():
+                    for cheap_rank, canonical_key in entries:
+                        rejected, _ = cheap_gate_result.get(
+                            (bucket_key, canonical_key), (False, "")
                         )
-            cheap_gate_rows = cheap_gate_rows_deduped
+                        if not rejected:
+                            cheap_gate_rows_deduped[bucket_key].append(
+                                (cheap_rank, canonical_key)
+                            )
+                cheap_gate_rows = cheap_gate_rows_deduped
 
-            tprint(
-                f"Stage A: Overlap deduplication complete - {sum(len(v) for v in cheap_gate_rows.values())} rules total survived"
-            )
-            tprint(
-                "Stage A: Overlap deduplication end - "
-                f"total_survivors={sum(len(v) for v in cheap_gate_rows.values())} "
-                f"total_rejected={n_dedup_rejected} "
-                f"elapsed={time.perf_counter() - overlap_dedup_start_ts:.2f}s"
-            )
-
-            if checkpoint_output_dir is not None:
-                checkpoint_path = save_stage_a_step1_checkpoint(
-                    output_dir=checkpoint_output_dir,
-                    candidate_registry=registry,
-                    cheap_gate_rows=cheap_gate_rows,
-                    cheap_gate_result=cheap_gate_result,
-                    bucket_cheap_ranks=bucket_cheap_ranks,
-                    stage_a_matrices=stage_a_matrices,
+                tprint(
+                    f"Stage A: Overlap deduplication complete - {sum(len(v) for v in cheap_gate_rows.values())} rules total survived"
                 )
-                tprint(f"Stage A: Step1 checkpoint saved to {checkpoint_path}")
+                tprint(
+                    "Stage A: Overlap deduplication end - "
+                    f"total_survivors={sum(len(v) for v in cheap_gate_rows.values())} "
+                    f"total_rejected={n_dedup_rejected} "
+                    f"elapsed={time.perf_counter() - overlap_dedup_start_ts:.2f}s"
+                )
 
-            if effective_step_mode == "step1":
-                tprint("Stage A: Step1 complete. Skipping post-dedup step2 assessment.")
-                return pd.DataFrame()
+                if checkpoint_output_dir is not None:
+                    checkpoint_path = save_stage_a_step1_checkpoint(
+                        output_dir=checkpoint_output_dir,
+                        candidate_registry=registry,
+                        cheap_gate_rows=cheap_gate_rows,
+                        cheap_gate_result=cheap_gate_result,
+                        bucket_cheap_ranks=bucket_cheap_ranks,
+                        stage_a_matrices=stage_a_matrices,
+                    )
+                    tprint(f"Stage A: Step1 checkpoint saved to {checkpoint_path}")
+
+                if effective_step_mode == "step1":
+                    tprint("Stage A: Step1 complete. Skipping post-dedup step2 assessment.")
+                    return pd.DataFrame()
 
         # Helper for universe-relative uplift baselines
         def _compute_baseline_population_metrics(target_returns: np.ndarray, ts_array: np.ndarray):
@@ -11266,10 +11709,24 @@ class MaskAssessor:
             if current_baseline_target is None:
                 # Fallback to local side-return if specific map missing
                 current_baseline_target = bounded_target if bounded_target is not None else fwd_ret
+            current_baseline_gross = self._resolve_side_gross_returns(
+                side=s_side,
+                source_horizon=h_key,
+                triad_targets_map=triad_targets_map,
+                fallback_fwd_ret=fwd_ret,
+            )
             
             # Baseline metrics must be evaluated on the specific target used for the rule
-            baseline_metrics = self._compute_baseline_auc(X, current_baseline_target, folds)
-            global_rets = current_baseline_target[valid_ts_mask]
+            baseline_metrics = self._compute_baseline_auc(
+                X,
+                current_baseline_target,
+                folds,
+                eval_returns=current_baseline_gross,
+                positive_return_threshold=float(
+                    self.cfg.get("label_round_trip_fee_pct", 0.0015)
+                ),
+            )
+            global_rets = current_baseline_gross[valid_ts_mask]
             uplift_baseline = _compute_baseline_population_metrics(global_rets, global_ts)
 
             baseline_cache[(t_name, h_key, s_side)] = {
@@ -11607,7 +12064,7 @@ class MaskAssessor:
             h_key = int(row.get("source_horizon", -1))
             s_side = str(row.get("side", "long"))
             unique_contexts.add((t_name, h_key, s_side))
-            unique_tbm_contexts.add((h_key, s_side))
+            unique_tbm_contexts.add((max(int(h_key) + 2, 1), s_side))
             
         tprint(f"Stage A: Pre-calculating baselines for {len(unique_contexts)} unique target contexts...")
 
@@ -11623,9 +12080,29 @@ class MaskAssessor:
             
             if current_baseline_target is None:
                 current_baseline_target = bounded_target if bounded_target is not None else fwd_ret
+            current_baseline_target = self._transform_side_target(
+                target_name=t_name,
+                target_values=current_baseline_target,
+                side=s_side,
+                atr_frac=atr_frac_for_targets,
+            )
+            current_baseline_gross = self._resolve_side_gross_returns(
+                side=s_side,
+                source_horizon=h_key,
+                triad_targets_map=triad_targets_map,
+                fallback_fwd_ret=fwd_ret,
+            )
             
-            baseline_metrics = self._compute_baseline_auc(X, current_baseline_target, folds)
-            global_rets = current_baseline_target[valid_ts_mask]
+            baseline_metrics = self._compute_baseline_auc(
+                X,
+                current_baseline_target,
+                folds,
+                eval_returns=current_baseline_gross,
+                positive_return_threshold=float(
+                    self.cfg.get("label_round_trip_fee_pct", 0.0015)
+                ),
+            )
+            global_rets = current_baseline_gross[valid_ts_mask]
             uplift_baseline = _compute_baseline_population_metrics(global_rets, global_ts)
 
             baseline_cache[(t_name, h_key, s_side)] = {
@@ -11638,21 +12115,23 @@ class MaskAssessor:
                 **uplift_baseline,
             }
 
-        tprint(f"Stage A: Pre-calculating TBM outcomes for {len(unique_tbm_contexts)} unique (H, Side) pairs...")
+        tprint(
+            f"Stage A: Pre-calculating TBM outcomes for {len(unique_tbm_contexts)} unique (H+2, Side) pairs..."
+        )
         tbm_outcome_cache = {}
-        for h_key, s_side in unique_tbm_contexts:
+        for tbm_horizon, s_side in unique_tbm_contexts:
             # Triad runs usually use default ATR multipliers from config
             tp_atr = float(self.cfg.get("tp_atr", 2.0))
             sl_atr = float(self.cfg.get("sl_atr", 2.0))
             
             tbm_outcomes = compute_tbm_outcomes_per_symbol(
                 data=data,
-                horizon=h_key,
+                horizon=tbm_horizon,
                 tp_atr=tp_atr,
                 sl_atr=sl_atr,
                 side=s_side,
             )
-            tbm_outcome_cache[(h_key, s_side)] = tbm_outcomes
+            tbm_outcome_cache[(tbm_horizon, s_side)] = tbm_outcomes
 
         total_ridge_selected = len(selected_records)
         tprint(
@@ -11695,6 +12174,7 @@ class MaskAssessor:
             except (TypeError, ValueError):
                 horizon_key = -1
             target_name = str(row.get("source_target", "unknown"))
+            tbm_horizon = max(horizon_key + 2, 1)
 
             # Dynamic Target Resolution:
             # If a global triad_targets_map is provided, we pick the rules source target.
@@ -11705,6 +12185,24 @@ class MaskAssessor:
             
             if current_target_ret is None:
                 current_target_ret = bounded_target if bounded_target is not None else fwd_ret
+            current_target_ret = self._transform_side_target(
+                target_name=target_name,
+                target_values=current_target_ret,
+                side=side,
+                atr_frac=atr_frac_for_targets,
+            )
+            current_gross_return_ret = self._resolve_side_gross_returns(
+                side=side,
+                source_horizon=horizon_key,
+                triad_targets_map=triad_targets_map,
+                fallback_fwd_ret=fwd_ret,
+            )
+            current_gross_return_ret = self._resolve_side_gross_returns(
+                side=side,
+                source_horizon=horizon_key,
+                triad_targets_map=triad_targets_map,
+                fallback_fwd_ret=fwd_ret,
+            )
 
             # The bucket grouping is determined strictly by side and horizon
             group_bucket_key = (side, horizon_key)
@@ -11729,45 +12227,52 @@ class MaskAssessor:
                 # Compute adaptive TP/SL for this specific rule
                 adaptive_tp_atr, adaptive_sl_atr = self._compute_adaptive_tp_sl(
                     mask=mask,
-                    fwd_ret=target_ret,
+                    fwd_ret=current_gross_return_ret,
                     atr=data["atr"].to_numpy(),
                     oof_preds=ridge_details.get("oof_preds", np.full(len(data), np.nan)),
                     close=data["close"].to_numpy(),
-                    horizon=horizon,
+                    horizon=tbm_horizon,
                     side=side,
                 )
                 
                 # Compute TBM outcomes with adaptive TP/SL
                 tbm_outcomes = compute_tbm_outcomes_per_symbol(
                     data=data,
-                    horizon=horizon,
+                    horizon=tbm_horizon,
                     tp_atr=adaptive_tp_atr,
                     sl_atr=adaptive_sl_atr,
                     side=side,
                 )
                 rule_tp_f, rule_sl_f, rule_to_f = tbm_outcomes
             else:
-                # Use pre-calculated TBM outcomes for this (horizon, side)
-                tbm_outcomes = tbm_outcome_cache.get((horizon_key, side))
+                # Use pre-calculated TBM outcomes for this (horizon+2, side)
+                tbm_outcomes = tbm_outcome_cache.get((tbm_horizon, side))
                 if tbm_outcomes is None:
                     # Final fallback if cache missing
                     tbm_outcomes = compute_tbm_outcomes_per_symbol(
                         data=data,
-                        horizon=horizon_key,
+                        horizon=tbm_horizon,
                         tp_atr=float(self.cfg.get("tp_atr", 2.0)),
                         sl_atr=float(self.cfg.get("sl_atr", 2.0)),
                         side=side,
                     )
-                    tbm_outcome_cache[(horizon_key, side)] = tbm_outcomes
+                    tbm_outcome_cache[(tbm_horizon, side)] = tbm_outcomes
                 
                 rule_tp_f, rule_sl_f, rule_to_f = tbm_outcomes
 
             tbm_metrics = self._compute_tbm_metrics(
-                mask, rule_tp_f, rule_sl_f, rule_to_f, target_ret
+                mask, rule_tp_f, rule_sl_f, rule_to_f, current_gross_return_ret
             )
 
             # 2-6. Cached cheap stats (no Ridge work)
-            cheap = _get_or_compute_cheap_stats(canonical_key, side, mask)
+            cheap = _get_or_compute_cheap_stats(
+                canonical_key,
+                side,
+                mask,
+                target_name=target_name,
+                horizon_key=horizon_key,
+                side_returns=current_gross_return_ret,
+            )
 
             sign_consistency = float(cheap["sign_consistency"])
             support_pct = float(cheap["support_pct"])
@@ -11800,6 +12305,9 @@ class MaskAssessor:
                 "threshold_star": np.nan,
                 "threshold_star_lowest_positive": np.nan,
                 "threshold_star_optimal_pnl": np.nan,
+                "threshold_star_best_pnl_threshold": np.nan,
+                "ridge_pnl_gross_raw": 0.0,
+                "ridge_pnl_gross_raw_at_optimal_threshold": np.nan,
                 "ridge_pnl_raw": 0.0,
                 "ridge_pnl_raw_at_optimal_threshold": np.nan,
                 "avg_pnl_per_day": np.nan,
@@ -11811,9 +12319,18 @@ class MaskAssessor:
                 "trades_per_symbol_day_above_threshold_star": 0.0,
                 "valid_symbol_days_observed": 0,
                 "total_trades": 0,
+                "threshold_search_mode": "grid",
+                "n_quantiles_evaluated": 0,
+                "n_thresholds_evaluated": 0,
+                "n_unique_thresholds_evaluated": 0,
+                "score_min": np.nan,
+                "score_max": np.nan,
+                "score_std": np.nan,
+                "n_unique_scores": 0,
                 "rejected": True,
                 "reject_reason": {"reason": "did_not_run_ridge"},
                 "realized_trades": [],
+                "gross_weighted_returns": [],
                 "net_weighted_returns": []
             }
             if not rejected:
@@ -11843,6 +12360,7 @@ class MaskAssessor:
                         target_nan_reasons=target_nan_reasons,
                         path_mfe=path_excursions.get("mfe"),
                         path_mae=path_excursions.get("mae"),
+                        side=side,
                     )
                     mask_auc = float(ridge_details["subset_auc"])
                     mask_roc_auc = float(ridge_details["subset_roc_auc"])
@@ -11851,7 +12369,7 @@ class MaskAssessor:
                     subset_oof_coverage = float(ridge_details["coverage"])
                     ridge_trade_metrics = self._compute_ranked_ridge_trade_metrics(
                         data=data,
-                        directional_returns=target_ret,
+                        directional_returns=current_gross_return_ret,
                         mask=mask,
                         folds=folds,
                         horizon=source_horizon,
@@ -11869,6 +12387,17 @@ class MaskAssessor:
                     )
                     if np.isfinite(mask_auc) and np.isfinite(global_auc):
                         auc_lift = mask_auc - global_auc
+                    mask_top_quartile_precision = self._compute_top_quartile_precision(
+                        oof_preds=np.asarray(ridge_details["oof_preds"], dtype=np.float32),
+                        y=np.asarray(current_gross_return_ret, dtype=np.float32),
+                        mask=mask,
+                        tp_f=rule_tp_f,
+                        fwd_ret_threshold=float(
+                            self.cfg.get("label_round_trip_fee_pct", 0.0015)
+                        ),
+                        top_pct=0.75,
+                        min_samples=20,
+                    )
                     if np.isfinite(mask_top_quartile_precision) and np.isfinite(global_top_quartile_precision):
                         top_quartile_precision_lift = mask_top_quartile_precision - global_top_quartile_precision
                 else:
@@ -11898,7 +12427,7 @@ class MaskAssessor:
             else:
                 tp_payoff = float(self.cfg.get("tp_atr", 2.0))
                 sl_payoff = float(self.cfg.get("sl_atr", 2.0))
-            timeout_payoff = mean_ret_mask  # Average return for timeouts
+            timeout_payoff = float(np.nanmean(current_gross_return_ret[mask]))
 
             ev_per_event = (
                 tbm_metrics["tp_rate"] * tp_payoff
@@ -11940,22 +12469,17 @@ class MaskAssessor:
                         tp_atr_str = "default"
                         sl_atr_str = "default"
 
-                    # Compute average profit per trade (gross and net)
-                    # Use total_trades from cheap stats which is more reliable
+                    # Compute average post-fee profit per trade from the best threshold candidate.
                     avg_trades_est = cheap.get("avg_trades", np.nan)
                     if np.isfinite(best_pnl_candidate) and np.isfinite(avg_trades_est) and avg_trades_est > 0:
-                        # Estimate total trades from support and avg_trades
                         support_pct = cheap.get("support_pct", 0.0)
                         n_samples = len(data)
                         total_trades_est = n_samples * support_pct * avg_trades_est
                         if total_trades_est > 0:
-                            avg_gross_profit_per_trade = best_pnl_candidate / total_trades_est
-                            avg_net_profit_per_trade = avg_gross_profit_per_trade - ridge_round_fee
+                            avg_net_profit_per_trade = best_pnl_candidate / total_trades_est
                         else:
-                            avg_gross_profit_per_trade = np.nan
                             avg_net_profit_per_trade = np.nan
                     else:
-                        avg_gross_profit_per_trade = np.nan
                         avg_net_profit_per_trade = np.nan
 
                     # AvgMove should be absolute value (directional return)
@@ -11964,8 +12488,8 @@ class MaskAssessor:
                     tprint(
                         f"DIAGNOSTIC: Rule rejected (Post-Fee) key={canonical_key[:60]}... "
                         f"TP={tp_atr_str} SL={sl_atr_str} "
-                        f"BestThresh={threshold_star_optimal:.3f} BestGrossPnL={best_pnl_candidate:.6f} "
-                        f"AvgGrossProfit={avg_gross_profit_per_trade:.6f} AvgNetProfit={avg_net_profit_per_trade:.6f} "
+                        f"BestThresh={threshold_star_optimal:.3f} BestNetPnL={best_pnl_candidate:.6f} "
+                        f"AvgNetProfit={avg_net_profit_per_trade:.6f} "
                         f"GrossEV={ev_per_event:.6f} AvgMove={avg_move:.6f} HitRate={tbm_metrics['tp_rate']:.2%} "
                         f"MAE={mae:.6f} MFE={mfe:.6f} FeeRatio={fee_frac:.2f} "
                         f"PR-AUC={mask_pr_auc:.4f} ROC-AUC={mask_roc_auc:.4f}"
@@ -12092,6 +12616,9 @@ class MaskAssessor:
                     "threshold_star": ridge_trade_metrics.get("threshold_star", np.nan),
                     "threshold_star_lowest_positive": ridge_trade_metrics.get("threshold_star_lowest_positive", np.nan),
                     "threshold_star_optimal_pnl": ridge_trade_metrics.get("threshold_star_optimal_pnl", np.nan),
+                    "threshold_star_best_pnl_threshold": ridge_trade_metrics.get("threshold_star_best_pnl_threshold", np.nan),
+                    "ridge_pnl_gross_raw": ridge_trade_metrics.get("ridge_pnl_gross_raw", 0.0),
+                    "ridge_pnl_gross_raw_at_optimal_threshold": ridge_trade_metrics.get("ridge_pnl_gross_raw_at_optimal_threshold", np.nan),
                     "ridge_pnl_raw": ridge_trade_metrics.get("ridge_pnl_raw", 0.0),
                     "ridge_pnl_raw_at_optimal_threshold": ridge_trade_metrics.get("ridge_pnl_raw_at_optimal_threshold", np.nan),
                     "avg_trades_per_day": ridge_trade_metrics.get("avg_trades_per_day", np.nan),
@@ -12104,7 +12631,16 @@ class MaskAssessor:
                     "trades_per_symbol_day_above_threshold_star": ridge_trade_metrics.get("trades_per_symbol_day_above_threshold_star", 0.0),
                     "valid_symbol_days_observed": ridge_trade_metrics.get("valid_symbol_days_observed", 0),
                     "total_trades": ridge_trade_metrics.get("total_trades", 0),
+                    "threshold_search_mode": ridge_trade_metrics.get("threshold_search_mode", "grid"),
+                    "n_quantiles_evaluated": ridge_trade_metrics.get("n_quantiles_evaluated", 0),
+                    "n_thresholds_evaluated": ridge_trade_metrics.get("n_thresholds_evaluated", 0),
+                    "n_unique_thresholds_evaluated": ridge_trade_metrics.get("n_unique_thresholds_evaluated", 0),
+                    "score_min": ridge_trade_metrics.get("score_min", np.nan),
+                    "score_max": ridge_trade_metrics.get("score_max", np.nan),
+                    "score_std": ridge_trade_metrics.get("score_std", np.nan),
+                    "n_unique_scores": ridge_trade_metrics.get("n_unique_scores", 0),
                     "realized_trades": ridge_trade_metrics.get("realized_trades", []),
+                    "gross_weighted_returns": ridge_trade_metrics.get("gross_weighted_returns", []),
                     "net_weighted_returns": ridge_trade_metrics.get("net_weighted_returns", []),
                     "learnability_step_c_score": float(
                         row.get("learnability_step_c_score", np.nan)
@@ -12316,7 +12852,7 @@ class MaskAssessor:
             assessment_df["stage1_ridge_pnl_raw"].rank(method="first", ascending=False).astype(np.int32)
         )
         assessment_df["stage1_weak_filter_rank"] = np.arange(1, len(assessment_df) + 1, dtype=np.int32)
-        survivor_frac = float(self.cfg.get("stage1_top_survivor_fraction", 0.60))
+        survivor_frac = float(self.cfg.get("stage1_top_survivor_fraction", 0.70))
         survivor_count = max(1, int(np.ceil(len(assessment_df) * survivor_frac)))
         survivor_keys = set(
             assessment_df.head(survivor_count)["canonical_key"].astype(str).tolist()
@@ -12345,6 +12881,9 @@ class MaskAssessor:
             row_dict = selected_records_by_key.get(canonical_key)
             if row_dict is None:
                 continue
+            current_reason = str(assessment_df.at[df_idx, "rejection_reason"] or "")
+            if current_reason == "support_out_of_range":
+                continue
 
             if canonical_key in mask_cache:
                 mask = mask_cache[canonical_key]
@@ -12365,12 +12904,19 @@ class MaskAssessor:
             except (TypeError, ValueError):
                 horizon_key = -1
             target_name = str(row_dict.get("source_target", "unknown"))
+            tbm_horizon = max(horizon_key + 2, 1)
 
             current_target_ret = None
             if triad_targets_map is not None:
                 current_target_ret = triad_targets_map.get((target_name, horizon_key))
             if current_target_ret is None:
                 current_target_ret = bounded_target if bounded_target is not None else fwd_ret
+            current_target_ret = self._transform_side_target(
+                target_name=target_name,
+                target_values=current_target_ret,
+                side=side,
+                atr_frac=atr_frac_for_targets,
+            )
 
             ctx_key = (target_name, horizon_key, side)
             baseline_data = baseline_cache.get(ctx_key, {})
@@ -12388,22 +12934,23 @@ class MaskAssessor:
                 path_mfe=path_excursions.get("mfe"),
                 path_mae=path_excursions.get("mae"),
                 model_profile="strong",
+                side=side,
             )
 
             ridge_round_fee = float(self.cfg.get("label_round_trip_fee_pct", 0.0015))
             if adaptive_enabled_global:
                 adaptive_tp_atr, adaptive_sl_atr = self._compute_adaptive_tp_sl(
                     mask=mask,
-                    fwd_ret=current_target_ret,
+                    fwd_ret=current_gross_return_ret,
                     atr=data["atr"].to_numpy(),
                     oof_preds=np.asarray(strong_details["oof_preds"], dtype=np.float32),
                     close=data["close"].to_numpy(),
-                    horizon=horizon_key,
+                    horizon=tbm_horizon,
                     side=side,
                 )
                 tbm_outcomes = compute_tbm_outcomes_per_symbol(
                     data=data,
-                    horizon=horizon_key,
+                    horizon=tbm_horizon,
                     tp_atr=adaptive_tp_atr,
                     sl_atr=adaptive_sl_atr,
                     side=side,
@@ -12411,35 +12958,37 @@ class MaskAssessor:
                 tp_payoff = float(adaptive_tp_atr)
                 sl_payoff = float(adaptive_sl_atr)
             else:
-                tbm_outcomes = tbm_outcome_cache.get((horizon_key, side))
+                tbm_outcomes = tbm_outcome_cache.get((tbm_horizon, side))
                 if tbm_outcomes is None:
                     tbm_outcomes = compute_tbm_outcomes_per_symbol(
                         data=data,
-                        horizon=horizon_key,
+                        horizon=tbm_horizon,
                         tp_atr=float(self.cfg.get("tp_atr", 2.0)),
                         sl_atr=float(self.cfg.get("sl_atr", 2.0)),
                         side=side,
                     )
-                    tbm_outcome_cache[(horizon_key, side)] = tbm_outcomes
+                    tbm_outcome_cache[(tbm_horizon, side)] = tbm_outcomes
                 tp_payoff = float(self.cfg.get("tp_atr", 2.0))
                 sl_payoff = float(self.cfg.get("sl_atr", 2.0))
 
             rule_tp_f, rule_sl_f, rule_to_f = tbm_outcomes
             strong_tbm_metrics = self._compute_tbm_metrics(
-                mask, rule_tp_f, rule_sl_f, rule_to_f, current_target_ret
+                mask, rule_tp_f, rule_sl_f, rule_to_f, current_gross_return_ret
             )
             strong_top_q = self._compute_top_quartile_precision(
                 oof_preds=np.asarray(strong_details["oof_preds"], dtype=np.float32),
-                y=np.asarray(current_target_ret, dtype=np.float32),
+                y=np.asarray(current_gross_return_ret, dtype=np.float32),
                 mask=mask,
                 tp_f=rule_tp_f,
-                fwd_ret_threshold=0.5,
+                fwd_ret_threshold=float(
+                    self.cfg.get("label_round_trip_fee_pct", 0.0015)
+                ),
                 top_pct=0.75,
                 min_samples=20,
             )
             strong_trade_metrics = self._compute_ranked_ridge_trade_metrics(
                 data=data,
-                directional_returns=current_target_ret,
+                directional_returns=current_gross_return_ret,
                 mask=mask,
                 folds=folds,
                 horizon=horizon_key,
@@ -12458,14 +13007,13 @@ class MaskAssessor:
                 if np.isfinite(strong_top_q) and np.isfinite(global_top_quartile_precision)
                 else np.nan
             )
-            timeout_payoff = float(assessment_df.at[df_idx, "mean_ret_mask"])
+            timeout_payoff = float(np.nanmean(current_gross_return_ret[mask]))
             strong_ev_per_event = (
                 strong_tbm_metrics["tp_rate"] * tp_payoff
                 - strong_tbm_metrics["sl_rate"] * sl_payoff
                 + strong_tbm_metrics["timeout_rate"] * timeout_payoff
             )
 
-            current_reason = str(assessment_df.at[df_idx, "rejection_reason"] or "")
             preserve_rejection = current_reason not in ("", *learnability_reasons)
             strong_rejected = bool(preserve_rejection)
             strong_rejection_reason = current_reason if preserve_rejection else ""
@@ -12523,6 +13071,9 @@ class MaskAssessor:
                 "threshold_star",
                 "threshold_star_lowest_positive",
                 "threshold_star_optimal_pnl",
+                "threshold_star_best_pnl_threshold",
+                "ridge_pnl_gross_raw",
+                "ridge_pnl_gross_raw_at_optimal_threshold",
                 "ridge_pnl_raw",
                 "ridge_pnl_raw_at_optimal_threshold",
                 "avg_trades_per_day",
@@ -12535,7 +13086,16 @@ class MaskAssessor:
                 "trades_per_symbol_day_above_threshold_star",
                 "valid_symbol_days_observed",
                 "total_trades",
+                "threshold_search_mode",
+                "n_quantiles_evaluated",
+                "n_thresholds_evaluated",
+                "n_unique_thresholds_evaluated",
+                "score_min",
+                "score_max",
+                "score_std",
+                "n_unique_scores",
                 "realized_trades",
+                "gross_weighted_returns",
                 "net_weighted_returns",
             ]:
                 assessment_df.at[df_idx, metric_col] = strong_trade_metrics.get(metric_col, assessment_df.at[df_idx, metric_col])
@@ -12988,6 +13548,62 @@ class MaskAssessor:
         details = self._compute_subset_ridge_details(X, fwd_ret, mask, folds)
         return float(details["subset_auc"]), float(details["coverage"])
 
+    def _transform_side_target(
+        self,
+        target_name: str,
+        target_values: Optional[np.ndarray],
+        side: str,
+        atr_frac: Optional[np.ndarray] = None,
+    ) -> Optional[np.ndarray]:
+        if target_values is None:
+            return None
+        arr = np.asarray(target_values, dtype=np.float32).copy()
+        target_name = str(target_name)
+        side = str(side).lower()
+
+        if target_name not in {"returns_target", "atr_norm_returns_target"}:
+            return arr
+
+        signed = arr if side != "short" else -arr
+
+        fee_pct = float(self.cfg.get("training_label_round_trip_fee_pct", 0.002))
+        if target_name == "returns_target":
+            transformed = signed - fee_pct
+        else:
+            if atr_frac is None:
+                transformed = signed - fee_pct
+            else:
+                atr_frac_arr = np.asarray(atr_frac, dtype=np.float32)
+                fee_in_target_units = fee_pct / np.maximum(atr_frac_arr, 1e-3)
+                transformed = signed - fee_in_target_units
+
+        low_q = float(self.cfg.get("training_label_winsor_low_q", 0.01))
+        high_q = float(self.cfg.get("training_label_winsor_high_q", 0.99))
+        finite = np.isfinite(transformed)
+        if finite.sum() >= 20 and 0.0 <= low_q < high_q <= 1.0:
+            lo, hi = np.nanquantile(transformed[finite], [low_q, high_q])
+            transformed = np.clip(transformed, lo, hi)
+
+        return np.asarray(transformed, dtype=np.float32)
+
+    def _resolve_side_gross_returns(
+        self,
+        *,
+        side: str,
+        source_horizon: int,
+        triad_targets_map: Optional[Dict[Tuple[str, int], np.ndarray]],
+        fallback_fwd_ret: np.ndarray,
+    ) -> np.ndarray:
+        gross_target = None
+        if triad_targets_map is not None:
+            gross_target = triad_targets_map.get(("returns_target", int(source_horizon)))
+        if gross_target is None:
+            gross_target = fallback_fwd_ret
+        gross_arr = np.asarray(gross_target, dtype=np.float32).copy()
+        if str(side).lower() == "short":
+            gross_arr = -gross_arr
+        return gross_arr
+
     def _compute_subset_ridge_details(
         self,
         X,
@@ -12999,6 +13615,7 @@ class MaskAssessor:
         path_mfe: Optional[np.ndarray] = None,
         path_mae: Optional[np.ndarray] = None,
         model_profile: str = "weak",
+        side: str = "long",
     ) -> Dict[str, Any]:
         """Compute Ridge OOF details for a subset of data defined by mask."""
         if not np.any(mask):
@@ -13044,7 +13661,20 @@ class MaskAssessor:
                 "decile_spread_mean": np.nan,
             }
         subset_auc_start = time.perf_counter()
-        X_ridge = np.asarray(X[:, ridge_feats], dtype=np.float32, order="C")
+        X_ridge = self._build_ridge_design_matrix(X)
+
+        if X_ridge.shape[1] >= 2:
+            col0_data = X_ridge[:, 0]
+            all_same = all(
+                np.allclose(X_ridge[:, i], col0_data, equal_nan=True)
+                for i in range(X_ridge.shape[1])
+            )
+            if all_same:
+                tprint(
+                    "WARNING: Assessor design matrix columns are identical after "
+                    f"construction (shape={X_ridge.shape})."
+                )
+        
         y = np.asarray(fwd_ret, dtype=np.float32)
         y[~np.isfinite(fwd_ret)] = np.nan
 
@@ -13213,48 +13843,135 @@ class MaskAssessor:
             from lightgbm import LGBMRegressor
             from sklearn.pipeline import Pipeline
 
+            # Helper: MinMax scale to custom range
+            def _minmax_scale(arr, w_min, w_max):
+                arr_min, arr_max = np.min(arr), np.max(arr)
+                if arr_max > arr_min:
+                    return w_min + (arr - arr_min) * (w_max - w_min) / (arr_max - arr_min)
+                else:
+                    return np.full_like(arr, (w_min + w_max) / 2.0)
+
             # Compute inverse-volatility sample weights for heteroscedasticity correction
-            lgbm_sample_weight = make_ridge_vol_weights(
+            # Per-component MinMax to [0.5, 2.0]
+            vol_weights_raw = make_ridge_vol_weights(
                 y_tr_subsample,
                 window=20,
                 w_min=0.5,
                 w_max=2.0,
             )
+            vol_weights = _minmax_scale(vol_weights_raw, 0.5, 2.0)
+            
+            # Fee-aware weights get higher priority (wider range: 0.5 to 4.0)
+            fee_weights_raw = make_fee_aware_target_weights(
+                y_tr_subsample,
+                fee_buffer=float(
+                    self.cfg.get("training_label_round_trip_fee_pct", 0.002)
+                ),
+                near_zero_weight=float(
+                    self.cfg.get("step2_fee_buffer_near_zero_weight", 0.5)
+                ),
+                large_target_weight=float(
+                    self.cfg.get("step2_fee_buffer_large_target_weight", 2.0)
+                ),
+                large_target_multiple=float(
+                    self.cfg.get("step2_fee_buffer_large_target_multiple", 3.0)
+                ),
+            )
+            fee_weights = _minmax_scale(fee_weights_raw, 0.5, 4.0)
+            
+            # Excursion weights get reduced priority (narrower range: 0.5 to 2.0)
             if mfe_tr_clean is not None and mae_tr_clean is not None:
-                excursion_weights = make_excursion_asymmetry_weights(
+                exc_weights_raw = make_excursion_asymmetry_weights(
                     mfe_atr=mfe_tr_clean,
                     mae_atr=mae_tr_clean,
-                    side="long",
+                    side=side,
                     alpha=float(self.cfg.get("step2_excursion_weight_alpha", 0.35)),
-                    w_min=float(self.cfg.get("step2_excursion_weight_min", 0.75)),
-                    w_max=float(self.cfg.get("step2_excursion_weight_max", 1.75)),
+                    w_min=float(self.cfg.get("step2_excursion_weight_min", 0.8)),
+                    w_max=float(self.cfg.get("step2_excursion_weight_max", 1.3)),
                 )
-                lgbm_sample_weight = np.clip(
-                    lgbm_sample_weight * excursion_weights,
-                    float(self.cfg.get("step2_sample_weight_min", 0.25)),
-                    float(self.cfg.get("step2_sample_weight_max", 4.0)),
-                ).astype(np.float32, copy=False)
+                exc_weights = _minmax_scale(exc_weights_raw, 0.5, 2.0)
+            else:
+                exc_weights = np.ones_like(vol_weights)
+            
+            # Additive combination centered at 1.0
+            lgbm_sample_weight = 1.0 + (vol_weights - 1.0) + (fee_weights - 1.0) + (exc_weights - 1.0)
+            
+            # Final clip to [0.25, 4.0] to prevent extreme outliers
+            lgbm_sample_weight = np.clip(lgbm_sample_weight, 0.25, 4.0)
+            lgbm_sample_weight = lgbm_sample_weight.astype(np.float32, copy=False)
             
             fit_start = time.perf_counter()
-            model = Pipeline([
-                ("scaler", RobustScaler()),
-                ("lgbm", LGBMRegressor(
-                    max_depth=int(model_params["max_depth"]), 
-                    n_estimators=int(model_params["n_estimators"]), 
-                    min_child_samples=int(model_params["min_child_samples"]),
-                    min_data_in_leaf=int(model_params["min_data_in_leaf"]),
-                    lambda_l1=float(model_params["lambda_l1"]),
-                    lambda_l2=float(model_params["lambda_l2"]),
-                    min_gain_to_split=float(model_params["min_gain_to_split"]),
-                    subsample=float(model_params["subsample"]),
-                    subsample_freq=int(model_params["subsample_freq"]),
-                    feature_fraction=float(model_params["feature_fraction"]),
-                    boosting_type=str(model_params["boosting_type"]),
-                    random_state=42,
-                    n_jobs=max(1, min(4, int(self.cfg.get("lgbm_n_jobs", 3))))
-                )),
-            ])
-            model.fit(X_tr_subsample, y_tr_subsample, lgbm__sample_weight=lgbm_sample_weight)
+            # LGBM is a tree model - no scaling needed, removed RobustScaler
+            model = LGBMRegressor(
+                max_depth=int(model_params["max_depth"]), 
+                n_estimators=int(model_params["n_estimators"]), 
+                min_child_samples=int(model_params["min_child_samples"]),
+                min_data_in_leaf=int(model_params["min_data_in_leaf"]),
+                lambda_l1=float(model_params["lambda_l1"]),
+                lambda_l2=float(model_params["lambda_l2"]),
+                min_gain_to_split=float(model_params["min_gain_to_split"]),
+                subsample=float(model_params["subsample"]),
+                subsample_freq=int(model_params["subsample_freq"]),
+                feature_fraction=float(model_params["feature_fraction"]),
+                boosting_type=str(model_params["boosting_type"]),
+                random_state=42,
+                n_jobs=max(1, min(4, int(self.cfg.get("lgbm_n_jobs", 3)))),
+                verbosity=-1,
+            )
+            
+            # Feature-target correlation diagnostics - only on first fold
+            if fold_id == 0:
+                try:
+                    # Diagnostic: Verify feature matrix integrity
+                    tprint(f"  Feature matrix shape: {X_tr_subsample.shape}")
+                    feat_vars = np.nanvar(X_tr_subsample, axis=0)
+                    tprint(f"  Feature variance: min={feat_vars.min():.6f}, max={feat_vars.max():.6f}, n_zero_var={np.sum(feat_vars < 1e-12)}/{len(feat_vars)}")
+                    tprint(f"  Feature range: col0=[{X_tr_subsample[:,0].min():.4f}, {X_tr_subsample[:,0].max():.4f}], col1=[{X_tr_subsample[:,1].min():.4f}, {X_tr_subsample[:,1].max():.4f}]")
+                    
+                    feat_target_corr = np.array([
+                        np.corrcoef(X_tr_subsample[:, i], y_tr_subsample)[0, 1]
+                        for i in range(X_tr_subsample.shape[1])
+                    ])
+                    max_abs_corr = np.nanmax(np.abs(feat_target_corr))
+                    n_significant = np.sum(np.abs(feat_target_corr) > 0.05)
+                    tprint(f"  Feature-target correlation: max_abs={max_abs_corr:.4f}, "
+                           f"n_significant_5pct={n_significant}/{len(feat_target_corr)}")
+                    if max_abs_corr < 0.05:
+                        tprint(f"  WARNING: No features have significant correlation with target!")
+                except Exception as e:
+                    tprint(f"  Could not compute feature-target correlations: {e}")
+            
+            model.fit(X_tr_subsample, y_tr_subsample, sample_weight=lgbm_sample_weight)
+            
+            # Feature importance diagnostics - only on first fold to avoid spam
+            if fold_id == 0:
+                try:
+                    importances = model.feature_importances_
+                    ridge_meta = [self.metadata[i] for i in ridge_feats] if hasattr(self, "metadata") and self.metadata else []
+                    feature_names = [m.source_name if hasattr(m, 'source_name') else f"feat_{i}" 
+                                     for i, m in enumerate(ridge_meta)] if ridge_meta else [f"feat_{i}" for i in range(len(importances))]
+                    
+                    # Check if model is learning
+                    max_importance = np.max(importances) if len(importances) > 0 else 0
+                    if max_importance < 1e-6:
+                        tprint(f"  WARNING: Fold {fold_id} LGBM feature importances all near-zero - model not learning!")
+                    else:
+                        # Top 10 features by importance
+                        sorted_idx = np.argsort(importances)[::-1]
+                        top_n = min(10, len(sorted_idx))
+                        tprint(f"  Fold {fold_id} Top {top_n} LGBM features by importance (max={max_importance:.4f}):")
+                        for i in range(top_n):
+                            idx = sorted_idx[i]
+                            feat_name = feature_names[idx] if idx < len(feature_names) else f"feat_{idx}"
+                            tprint(f"    {i+1}. {feat_name}: {importances[idx]:.4f}")
+                        
+                        # Summary stats
+                        n_zero = np.sum(importances == 0)
+                        tprint(f"  Feature importance summary: mean={np.mean(importances):.4f}, "
+                               f"n_zero={n_zero}/{len(importances)}")
+                except Exception as e:
+                    tprint(f"  Could not extract feature importances: {e}")
+            
             preds = model.predict(X_va_clean)
             fit_predict_time += time.perf_counter() - fit_start
             folds_used += 1
@@ -13465,14 +14182,44 @@ class MaskAssessor:
         def _empty_metrics() -> Dict[str, Any]:
             return {
                 "threshold_star": np.nan,
+                "threshold_star_lowest_positive": np.nan,
+                "threshold_star_optimal_pnl": np.nan,
+                "threshold_star_best_pnl_threshold": np.nan,
+                "ridge_pnl_gross_raw_at_optimal_threshold": np.nan,
+                "ridge_pnl_gross_raw": 0.0,
+                "ridge_pnl_raw_at_optimal_threshold": np.nan,
                 "ridge_pnl_raw": 0.0,
+                "avg_trades_per_day": np.nan,
+                "avg_pnl_per_day": np.nan,
+                "avg_pnl_per_active_symbol_day": np.nan,
+                "ridge_trade_sortino_7d": 0.0,
+                "ridge_trade_sortino_30d": 0.0,
+                "ridge_trade_sortino_90d": 0.0,
+                "ridge_trade_sortino_composite": 0.0,
                 "trades_per_symbol_day_above_threshold_star": 0.0,
+                "valid_symbol_days_observed": 0,
                 "total_trades": 0,
+                "threshold_search_mode": "grid",
+                "n_quantiles_evaluated": 0,
+                "n_thresholds_evaluated": 0,
+                "n_unique_thresholds_evaluated": 0,
+                "score_min": np.nan,
+                "score_max": np.nan,
+                "score_std": np.nan,
+                "n_unique_scores": 0,
                 "rejected": True,
                 "reject_reason": {"reason": "no valid threshold_star or no trades"},
                 "realized_trades": [],
+                "gross_weighted_returns": [],
                 "net_weighted_returns": []
             }
+
+        def _reject_metrics(reason_payload: Dict[str, Any], **metric_overrides: Any) -> Dict[str, Any]:
+            res = _empty_metrics()
+            res.update(metric_overrides)
+            res["rejected"] = True
+            res["reject_reason"] = reason_payload
+            return res
 
         valid = (
             mask.astype(bool)
@@ -13483,12 +14230,22 @@ class MaskAssessor:
             return _empty_metrics()
 
         scores = np.asarray(oof_preds[valid], dtype=np.float32)
-        # Normalize scores to pseudo-confidence [0, 1] using min-max scaling for the threshold search
+        score_min = np.nan
+        score_max = np.nan
+        score_std = np.nan
+        n_unique_scores = 0
+        # Normalize scores to pseudo-confidence [0, 1] using rank-based scoring for robust threshold selection
         if len(scores) > 0:
             score_min = float(np.min(scores))
             score_max = float(np.max(scores))
+            score_std = float(np.std(scores))
+            n_unique_scores = int(np.unique(scores).size)
             if score_max > score_min:
-                confidence_scores = (scores - score_min) / (score_max - score_min)
+                # Use true rank-based scoring instead of min-max normalization
+                # This is more robust with low-variance predictions
+                ranks = scipy.stats.rankdata(scores, method='average')
+                # Normalize ranks to [0, 1] range (0 = lowest rank, 1 = highest rank)
+                confidence_scores = (ranks - 1.0) / (len(scores) - 1.0) if len(scores) > 1 else np.zeros_like(scores)
             else:
                 confidence_scores = np.zeros_like(scores)
         else:
@@ -13519,7 +14276,9 @@ class MaskAssessor:
         if valid_symbol_days_observed == 0 or valid_calendar_days_observed == 0:
              return _empty_metrics()
 
-        # Check if actual exit time 't1' is available in data
+        # Check if actual exit time 't1' is available in data.
+        # The event frame currently initializes a placeholder t1 = t0 + 1 second;
+        # that placeholder must not be used for concurrency-aware monetization.
         if "t1" in data.columns:
             # We must map back the valid_ts rows to the original data index to fetch t1 correctly.
             # valid_ts applies to the valid mask subset.
@@ -13528,6 +14287,16 @@ class MaskAssessor:
 
             # Fetch corresponding exit times from data
             t1_vals = pd.to_datetime(data.iloc[valid_indices]["t1"], errors="coerce", utc=True).to_numpy()
+            if len(t1_vals) > 0:
+                inferred_deltas = pd.to_timedelta(t1_vals - timestamps, errors="coerce")
+                finite_deltas = inferred_deltas[pd.notna(inferred_deltas)]
+                median_delta = (
+                    finite_deltas.median()
+                    if len(finite_deltas) > 0
+                    else pd.Timedelta(seconds=0)
+                )
+                if median_delta <= pd.Timedelta(minutes=1):
+                    t1_vals = None
         else:
             t1_vals = None
 
@@ -13571,14 +14340,19 @@ class MaskAssessor:
 
         threshold_star_lowest_positive = None
         threshold_star_optimal_pnl = None
+        threshold_star_best_pnl_threshold = None
         best_pnl_raw = -np.inf
+        best_pnl_gross_raw = np.nan
 
+        best_candidate: Optional[Dict[str, Any]] = None
         current_lowest_positive = np.inf
         threshold_eval_cache: Dict[float, Dict[str, Any]] = {}
 
-        def _evaluate_threshold_for_quantile(quantile_level: float) -> Dict[str, Any]:
-            quantile_level = float(np.clip(quantile_level, quantile_low, quantile_high))
-            threshold_value = float(np.nanquantile(confidence_scores, quantile_level))
+        def _evaluate_threshold_value(
+            threshold_value: float,
+            quantile_level: float = np.nan,
+        ) -> Dict[str, Any]:
+            threshold_value = float(np.clip(threshold_value, 0.0, 1.0))
             threshold_key = float(np.round(threshold_value, 8))
             cached = threshold_eval_cache.get(threshold_key)
             if cached is not None:
@@ -13600,48 +14374,109 @@ class MaskAssessor:
                 "quantile": quantile_level,
                 "threshold": threshold_value,
                 "pnl_res": pnl_res,
+                "pnl_gross_raw": float(pnl_res["ridge_pnl_gross_raw"]),
                 "pnl_raw": float(pnl_res["ridge_pnl_raw"]),
             }
             threshold_eval_cache[threshold_key] = result
             return result
 
+        def _evaluate_threshold_for_quantile(quantile_level: float) -> Dict[str, Any]:
+            quantile_level = float(np.clip(quantile_level, quantile_low, quantile_high))
+            threshold_value = float(np.nanquantile(confidence_scores, quantile_level))
+            return _evaluate_threshold_value(threshold_value, quantile_level)
+
         def _register_threshold_candidate(candidate: Dict[str, Any]) -> None:
-            nonlocal best_pnl_raw, threshold_star_optimal_pnl, current_lowest_positive, threshold_star_lowest_positive
+            nonlocal best_candidate
+            nonlocal best_pnl_raw
+            nonlocal best_pnl_gross_raw
+            nonlocal threshold_star_best_pnl_threshold
+            nonlocal threshold_star_optimal_pnl
+            nonlocal current_lowest_positive
+            nonlocal threshold_star_lowest_positive
             pnl_raw = float(candidate["pnl_raw"])
             threshold_value = float(candidate["threshold"])
             if pnl_raw > best_pnl_raw:
                 best_pnl_raw = pnl_raw
+                best_pnl_gross_raw = float(candidate.get("pnl_gross_raw", np.nan))
+                best_candidate = candidate
+                threshold_star_best_pnl_threshold = threshold_value
                 threshold_star_optimal_pnl = threshold_value
             if pnl_raw > 0.0 and threshold_value < current_lowest_positive:
                 current_lowest_positive = threshold_value
                 threshold_star_lowest_positive = threshold_value
 
-        low_q = quantile_low
-        high_q = quantile_high
-        for boundary_q in (low_q, high_q):
-            _register_threshold_candidate(_evaluate_threshold_for_quantile(boundary_q))
-
-        for _ in range(max_trials):
-            mid_q = float((low_q + high_q) / 2.0)
-            candidate = _evaluate_threshold_for_quantile(mid_q)
+        quantile_grid = np.linspace(
+            quantile_low,
+            quantile_high,
+            num=max_trials + 2,
+            dtype=np.float64,
+        )
+        _register_threshold_candidate(_evaluate_threshold_value(0.0, 0.0))
+        for quantile_level in quantile_grid:
+            candidate = _evaluate_threshold_for_quantile(float(quantile_level))
             _register_threshold_candidate(candidate)
 
-            if float(candidate["pnl_raw"]) > 0.0:
-                high_q = mid_q
-            else:
-                low_q = mid_q
+        n_quantiles_evaluated = int(len(quantile_grid) + 1)
+        n_thresholds_evaluated = int(len(threshold_eval_cache))
+        n_unique_thresholds_evaluated = n_thresholds_evaluated
 
+        forced_reject_reason = None
         if threshold_star_lowest_positive is None:
-            res = _empty_metrics()
-            res["reject_reason"] = {
+            if best_candidate is None:
+                return _reject_metrics(
+                    {
+                        "reason": "no positive post-fee profit threshold",
+                        "best_pnl_candidate": float(best_pnl_raw) if best_pnl_raw != -np.inf else 0.0,
+                        "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
+                        "threshold_star_best_pnl_threshold": threshold_star_best_pnl_threshold,
+                        "n_quantiles_evaluated": n_quantiles_evaluated,
+                        "n_thresholds_evaluated": n_thresholds_evaluated,
+                        "n_unique_thresholds_evaluated": n_unique_thresholds_evaluated,
+                        "score_min": score_min,
+                        "score_max": score_max,
+                        "score_std": score_std,
+                        "n_unique_scores": n_unique_scores,
+                    },
+                    threshold_star_optimal_pnl=(
+                        float(threshold_star_optimal_pnl)
+                        if threshold_star_optimal_pnl is not None and np.isfinite(threshold_star_optimal_pnl)
+                        else np.nan
+                    ),
+                    threshold_star_best_pnl_threshold=(
+                        float(threshold_star_best_pnl_threshold)
+                        if threshold_star_best_pnl_threshold is not None and np.isfinite(threshold_star_best_pnl_threshold)
+                        else np.nan
+                    ),
+                    ridge_pnl_raw_at_optimal_threshold=(
+                        float(best_pnl_raw) if best_pnl_raw != -np.inf else np.nan
+                    ),
+                    ridge_pnl_gross_raw_at_optimal_threshold=best_pnl_gross_raw,
+                    valid_symbol_days_observed=valid_symbol_days_observed,
+                    n_quantiles_evaluated=n_quantiles_evaluated,
+                    n_thresholds_evaluated=n_thresholds_evaluated,
+                    n_unique_thresholds_evaluated=n_unique_thresholds_evaluated,
+                    score_min=score_min,
+                    score_max=score_max,
+                    score_std=score_std,
+                    n_unique_scores=n_unique_scores,
+                )
+            threshold_star = float(best_candidate["threshold"])
+            forced_reject_reason = {
                 "reason": "no positive post-fee profit threshold",
                 "best_pnl_candidate": float(best_pnl_raw) if best_pnl_raw != -np.inf else 0.0,
                 "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
+                "threshold_star_best_pnl_threshold": threshold_star_best_pnl_threshold,
+                "threshold_star_fallback": threshold_star,
+                "n_quantiles_evaluated": n_quantiles_evaluated,
+                "n_thresholds_evaluated": n_thresholds_evaluated,
+                "n_unique_thresholds_evaluated": n_unique_thresholds_evaluated,
+                "score_min": score_min,
+                "score_max": score_max,
+                "score_std": score_std,
+                "n_unique_scores": n_unique_scores,
             }
-            return res
-
-        # The operational threshold is the lowest positive profit threshold
-        threshold_star = threshold_star_lowest_positive
+        else:
+            threshold_star = float(threshold_star_lowest_positive)
 
         # 4. Final Realization and Trade-rate hard gate
         final_pnl_res = compute_ridge_pnl(
@@ -13674,13 +14509,83 @@ class MaskAssessor:
                 symbol_open[sym] += delta
                 total_open += delta
                 if symbol_open[sym] > 1:
-                    res = _empty_metrics()
-                    res["reject_reason"] = {"reason": "validation_failed: >1 trade per symbol"}
-                    return res
+                    return _reject_metrics(
+                        {"reason": "validation_failed: >1 trade per symbol"},
+                        threshold_star=threshold_star,
+                        threshold_star_lowest_positive=(
+                            float(threshold_star_lowest_positive)
+                            if threshold_star_lowest_positive is not None and np.isfinite(threshold_star_lowest_positive)
+                            else np.nan
+                        ),
+                        threshold_star_optimal_pnl=(
+                            float(threshold_star_optimal_pnl)
+                            if threshold_star_optimal_pnl is not None and np.isfinite(threshold_star_optimal_pnl)
+                            else np.nan
+                        ),
+                        threshold_star_best_pnl_threshold=(
+                            float(threshold_star_best_pnl_threshold)
+                            if threshold_star_best_pnl_threshold is not None and np.isfinite(threshold_star_best_pnl_threshold)
+                            else np.nan
+                        ),
+                        ridge_pnl_raw_at_optimal_threshold=(
+                            float(best_pnl_raw) if best_pnl_raw != -np.inf else np.nan
+                        ),
+                        ridge_pnl_gross_raw_at_optimal_threshold=best_pnl_gross_raw,
+                        ridge_pnl_gross_raw=float(final_pnl_res.get("ridge_pnl_gross_raw", 0.0)),
+                        ridge_pnl_raw=float(final_pnl_res.get("ridge_pnl_raw", 0.0)),
+                        valid_symbol_days_observed=valid_symbol_days_observed,
+                        total_trades=total_trades,
+                        threshold_search_mode="grid",
+                        n_quantiles_evaluated=n_quantiles_evaluated,
+                        n_thresholds_evaluated=n_thresholds_evaluated,
+                        n_unique_thresholds_evaluated=n_unique_thresholds_evaluated,
+                        score_min=score_min,
+                        score_max=score_max,
+                        score_std=score_std,
+                        n_unique_scores=n_unique_scores,
+                        realized_trades=final_trades,
+                        gross_weighted_returns=final_pnl_res.get("weighted_gross_returns", []),
+                        net_weighted_returns=final_pnl_res.get("weighted_net_returns", []),
+                    )
                 if total_open > max_concurrent_total:
-                    res = _empty_metrics()
-                    res["reject_reason"] = {"reason": f"validation_failed: >{max_concurrent_total} total concurrent trades"}
-                    return res
+                    return _reject_metrics(
+                        {"reason": f"validation_failed: >{max_concurrent_total} total concurrent trades"},
+                        threshold_star=threshold_star,
+                        threshold_star_lowest_positive=(
+                            float(threshold_star_lowest_positive)
+                            if threshold_star_lowest_positive is not None and np.isfinite(threshold_star_lowest_positive)
+                            else np.nan
+                        ),
+                        threshold_star_optimal_pnl=(
+                            float(threshold_star_optimal_pnl)
+                            if threshold_star_optimal_pnl is not None and np.isfinite(threshold_star_optimal_pnl)
+                            else np.nan
+                        ),
+                        threshold_star_best_pnl_threshold=(
+                            float(threshold_star_best_pnl_threshold)
+                            if threshold_star_best_pnl_threshold is not None and np.isfinite(threshold_star_best_pnl_threshold)
+                            else np.nan
+                        ),
+                        ridge_pnl_raw_at_optimal_threshold=(
+                            float(best_pnl_raw) if best_pnl_raw != -np.inf else np.nan
+                        ),
+                        ridge_pnl_gross_raw_at_optimal_threshold=best_pnl_gross_raw,
+                        ridge_pnl_gross_raw=float(final_pnl_res.get("ridge_pnl_gross_raw", 0.0)),
+                        ridge_pnl_raw=float(final_pnl_res.get("ridge_pnl_raw", 0.0)),
+                        valid_symbol_days_observed=valid_symbol_days_observed,
+                        total_trades=total_trades,
+                        threshold_search_mode="grid",
+                        n_quantiles_evaluated=n_quantiles_evaluated,
+                        n_thresholds_evaluated=n_thresholds_evaluated,
+                        n_unique_thresholds_evaluated=n_unique_thresholds_evaluated,
+                        score_min=score_min,
+                        score_max=score_max,
+                        score_std=score_std,
+                        n_unique_scores=n_unique_scores,
+                        realized_trades=final_trades,
+                        gross_weighted_returns=final_pnl_res.get("weighted_gross_returns", []),
+                        net_weighted_returns=final_pnl_res.get("weighted_net_returns", []),
+                    )
 
         # Alignment Note:
         # Numerator (`total_trades`) counts realized execution intervals defined by their entry_time.
@@ -13689,12 +14594,48 @@ class MaskAssessor:
         trades_per_symbol_day_above_threshold_star = total_trades / valid_symbol_days_observed
 
         if trades_per_symbol_day_above_threshold_star < 0.05:
-            res = _empty_metrics()
-            res["reject_reason"] = {
-                "reason": "insufficient trades per symbol day",
-                "trades_per_symbol_day_above_threshold_star": trades_per_symbol_day_above_threshold_star
-            }
-            return res
+            return _reject_metrics(
+                {
+                    "reason": "insufficient trades per symbol day",
+                    "trades_per_symbol_day_above_threshold_star": trades_per_symbol_day_above_threshold_star,
+                },
+                threshold_star=threshold_star,
+                threshold_star_lowest_positive=(
+                    float(threshold_star_lowest_positive)
+                    if threshold_star_lowest_positive is not None and np.isfinite(threshold_star_lowest_positive)
+                    else np.nan
+                ),
+                threshold_star_optimal_pnl=(
+                    float(threshold_star_optimal_pnl)
+                    if threshold_star_optimal_pnl is not None and np.isfinite(threshold_star_optimal_pnl)
+                    else np.nan
+                ),
+                ridge_pnl_raw_at_optimal_threshold=(
+                    float(best_pnl_raw) if best_pnl_raw != -np.inf else np.nan
+                ),
+                ridge_pnl_gross_raw_at_optimal_threshold=best_pnl_gross_raw,
+                threshold_star_best_pnl_threshold=(
+                    float(threshold_star_best_pnl_threshold)
+                    if threshold_star_best_pnl_threshold is not None and np.isfinite(threshold_star_best_pnl_threshold)
+                    else np.nan
+                ),
+                ridge_pnl_gross_raw=float(final_pnl_res.get("ridge_pnl_gross_raw", 0.0)),
+                ridge_pnl_raw=float(final_pnl_res.get("ridge_pnl_raw", 0.0)),
+                trades_per_symbol_day_above_threshold_star=trades_per_symbol_day_above_threshold_star,
+                valid_symbol_days_observed=valid_symbol_days_observed,
+                total_trades=total_trades,
+                threshold_search_mode="grid",
+                n_quantiles_evaluated=n_quantiles_evaluated,
+                n_thresholds_evaluated=n_thresholds_evaluated,
+                n_unique_thresholds_evaluated=n_unique_thresholds_evaluated,
+                score_min=score_min,
+                score_max=score_max,
+                score_std=score_std,
+                n_unique_scores=n_unique_scores,
+                realized_trades=final_trades,
+                gross_weighted_returns=final_pnl_res.get("weighted_gross_returns", []),
+                net_weighted_returns=final_pnl_res.get("weighted_net_returns", []),
+            )
 
         # 5. compute metrics consistently using realized trades
         # We compute trade-level Sortino composites over multiple lookback windows.
@@ -13723,9 +14664,12 @@ class MaskAssessor:
         sortino_30d = _get_sortino_for_window(30)
         sortino_90d = _get_sortino_for_window(90)
 
-        ridge_trade_sortino_composite = 0.3 * sortino_7d + 0.3 * sortino_30d + 0.3 * sortino_90d
+        ridge_trade_sortino_composite = (
+            (sortino_7d + sortino_30d + sortino_90d) / 3.0
+        )
 
         # 6. Compute avg PnL metrics
+        ridge_pnl_gross_raw = final_pnl_res["ridge_pnl_gross_raw"]
         ridge_pnl_raw = final_pnl_res["ridge_pnl_raw"]
 
         # Denominators are purely derived from the candidate's valid universe
@@ -13744,6 +14688,9 @@ class MaskAssessor:
             "threshold_star": threshold_star,
             "threshold_star_lowest_positive": threshold_star_lowest_positive,
             "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
+            "threshold_star_best_pnl_threshold": threshold_star_best_pnl_threshold,
+            "ridge_pnl_gross_raw_at_optimal_threshold": best_pnl_gross_raw,
+            "ridge_pnl_gross_raw": ridge_pnl_gross_raw,
             "ridge_pnl_raw_at_optimal_threshold": best_pnl_raw,
             "ridge_pnl_raw": ridge_pnl_raw,
             "avg_trades_per_day": avg_trades_per_day,
@@ -13756,9 +14703,18 @@ class MaskAssessor:
             "trades_per_symbol_day_above_threshold_star": trades_per_symbol_day_above_threshold_star,
             "valid_symbol_days_observed": valid_symbol_days_observed,
             "total_trades": total_trades,
-            "rejected": False,
-            "reject_reason": None,
+            "threshold_search_mode": "grid",
+            "n_quantiles_evaluated": n_quantiles_evaluated,
+            "n_thresholds_evaluated": n_thresholds_evaluated,
+            "n_unique_thresholds_evaluated": n_unique_thresholds_evaluated,
+            "score_min": score_min,
+            "score_max": score_max,
+            "score_std": score_std,
+            "n_unique_scores": n_unique_scores,
+            "rejected": forced_reject_reason is not None,
+            "reject_reason": forced_reject_reason,
             "realized_trades": final_trades,
+            "gross_weighted_returns": final_pnl_res.get("weighted_gross_returns", []),
             "net_weighted_returns": final_pnl_res.get("weighted_net_returns", [])
         }
 
@@ -13779,6 +14735,8 @@ class MaskAssessor:
         X: np.ndarray,
         fwd_ret: np.ndarray,
         folds: List[Tuple[np.ndarray, np.ndarray]],
+        eval_returns: Optional[np.ndarray] = None,
+        positive_return_threshold: Optional[float] = None,
     ) -> Dict[str, float]:
         """
         Compute baseline AUC using ridge features across all folds.
@@ -13794,7 +14752,7 @@ class MaskAssessor:
                 "global_cov": 0.0,
             }
 
-        X_ridge = np.asarray(X[:, ridge_feats], dtype=np.float32, order="C")
+        X_ridge = self._build_ridge_design_matrix(X)
         y = np.asarray(fwd_ret, dtype=np.float32)
         y[~np.isfinite(fwd_ret)] = np.nan
         (
@@ -13865,19 +14823,43 @@ class MaskAssessor:
                 w_min=0.5,
                 w_max=2.0,
             )
+            lgbm_sample_weight = lgbm_sample_weight * make_fee_aware_target_weights(
+                y_tr_subsample,
+                fee_buffer=float(
+                    self.cfg.get("training_label_round_trip_fee_pct", 0.002)
+                ),
+                near_zero_weight=float(
+                    self.cfg.get("step2_fee_buffer_near_zero_weight", 0.5)
+                ),
+                large_target_weight=float(
+                    self.cfg.get("step2_fee_buffer_large_target_weight", 2.0)
+                ),
+                large_target_multiple=float(
+                    self.cfg.get("step2_fee_buffer_large_target_multiple", 3.0)
+                ),
+            )
+            # Rebalance weights to [0.5, 2.0] using MinMax scaling instead of simple clip
+            w_min_final = float(self.cfg.get("step2_sample_weight_min_final", 0.5))
+            w_max_final = float(self.cfg.get("step2_sample_weight_max_final", 2.0))
+            w_curr_min = np.min(lgbm_sample_weight)
+            w_curr_max = np.max(lgbm_sample_weight)
+            if w_curr_max > w_curr_min:
+                lgbm_sample_weight = w_min_final + (lgbm_sample_weight - w_curr_min) * (w_max_final - w_min_final) / (w_curr_max - w_curr_min)
+            else:
+                lgbm_sample_weight = np.full_like(lgbm_sample_weight, (w_min_final + w_max_final) / 2.0)
+            lgbm_sample_weight = lgbm_sample_weight.astype(np.float32, copy=False)
             
-            model = Pipeline([
-                ("scaler", RobustScaler()),
-                ("lgbm", LGBMRegressor(
-                    max_depth=3, 
-                    n_estimators=5, 
-                    min_child_samples=20,
-                    min_data_in_leaf=20,
-                    random_state=42,
-                    n_jobs=max(1, min(4, int(self.cfg.get("lgbm_n_jobs", 3))))
-                )),
-            ])
-            model.fit(X_tr_subsample, y_tr_subsample, lgbm__sample_weight=lgbm_sample_weight)
+            # LGBM is a tree model - no scaling needed, removed RobustScaler
+            model = LGBMRegressor(
+                max_depth=3, 
+                n_estimators=5, 
+                min_child_samples=20,
+                min_data_in_leaf=20,
+                random_state=42,
+                n_jobs=max(1, min(4, int(self.cfg.get("lgbm_n_jobs", 3)))),
+                verbosity=-1,
+            )
+            model.fit(X_tr_subsample, y_tr_subsample, sample_weight=lgbm_sample_weight)
             preds = model.predict(X_va_clean)
 
             # Store predictions
@@ -13890,13 +14872,23 @@ class MaskAssessor:
             oof_preds, y, np.isfinite(y), min_predicted_points=min_pred_points
         )
         
+        eval_y = (
+            np.asarray(eval_returns, dtype=np.float32)
+            if eval_returns is not None
+            else y
+        )
+        if positive_return_threshold is None:
+            positive_return_threshold = float(
+                self.cfg.get("label_round_trip_fee_pct", 0.0015)
+            )
+
         # Compute global top-quartile precision (no mask = all data)
         global_top_quartile_precision = self._compute_top_quartile_precision(
             oof_preds=oof_preds,
-            y=y,
-            mask=np.isfinite(y),  # All valid samples
+            y=eval_y,
+            mask=np.isfinite(eval_y),  # All valid samples
             tp_f=np.zeros(len(y), dtype=np.int8),  # No TP data for global, use fwd_ret threshold only
-            fwd_ret_threshold=0.5,
+            fwd_ret_threshold=float(positive_return_threshold),
             top_pct=0.75,
             min_samples=20,
         )
@@ -14710,7 +15702,9 @@ def apply_robust_data_filtering(
     final_keep_mask = all_finite
 
     data_final = data.loc[final_keep_mask].reset_index(drop=True)
-    features_final = {k: v[final_keep_mask] for k in retained_features}
+    features_final = {
+        k: retained_features[k][final_keep_mask] for k in retained_features
+    }
 
     # Check if there are any NaNs left after filtering
     nan_features_detected = []
@@ -15770,6 +16764,7 @@ if __name__ == "__main__":
     requested_feature_keys = sorted(
         set(
             list(CFG.get("FEATURE_SELECTION_KEYS", []))
+            + list(TEST_FEATURE_KEYS)
             + RIDGE_FEATURE_COLS
             + list(CONTINUOUS_LOCATION_COLS)
         )
@@ -16245,21 +17240,34 @@ if __name__ == "__main__":
     for horizon, df_targets in triad_results_by_horizon.items():
         # Add new targets
         close_wide_local = panel["close"].reindex(index=common_idx, columns=common_syms)
-        # Using log forward return: log(close[t+h] / close[t])
-        fwd_log_ret_wide = np.log(close_wide_local.shift(-horizon) / close_wide_local)
-        fwd_log_ret_final = fwd_log_ret_wide.to_numpy(dtype=np.float32)[time_idx_final, sym_idx_final]
+        # Using percentage forward return aligned at time t:
+        # (close[t+h] - close[t]) / close[t] = close[t+h] / close[t] - 1
+        fwd_pct_ret_wide = close_wide_local.shift(-horizon) / close_wide_local - 1.0
+        fwd_pct_ret_final = fwd_pct_ret_wide.to_numpy(dtype=np.float32)[time_idx_final, sym_idx_final]
 
-        # Compute ATR-normalized forward log returns
+        # Compute ATR-normalized forward percentage returns
         # Floor the ATR fraction at 0.001 (10bps) to prevent explosion from tiny ATR values.
         # Clip the final target at [-10, 10] to ensure model stability across extreme outliers.
         atr_frac = np.maximum(atr_final / np.maximum(close_final, 1e-12), 0.001)
-        fwd_log_ret_atr_norm_final = np.clip(fwd_log_ret_final / atr_frac, -10, 10)
+        fwd_pct_ret_atr_norm_final = np.clip(fwd_pct_ret_final / atr_frac, -10, 10)
 
-        triad_targets["returns_target"][horizon] = fwd_log_ret_final
-        triad_targets["atr_norm_returns_target"][horizon] = fwd_log_ret_atr_norm_final
+        triad_targets["returns_target"][horizon] = fwd_pct_ret_final
+        triad_targets["atr_norm_returns_target"][horizon] = fwd_pct_ret_atr_norm_final
 
-        tprint(f"  returns_target_{horizon}: {np.isfinite(fwd_log_ret_final).sum()}/{len(fwd_log_ret_final)} valid values")
-        tprint(f"  atr_norm_returns_target_{horizon}: {np.isfinite(fwd_log_ret_atr_norm_final).sum()}/{len(fwd_log_ret_atr_norm_final)} valid values")
+        # Target variance diagnostics
+        valid_mask = np.isfinite(fwd_pct_ret_final)
+        n_valid = valid_mask.sum()
+        if n_valid > 0:
+            std_raw = np.nanstd(fwd_pct_ret_final)
+            std_norm = np.nanstd(fwd_pct_ret_atr_norm_final)
+            min_raw, max_raw = np.nanmin(fwd_pct_ret_final), np.nanmax(fwd_pct_ret_final)
+            min_norm, max_norm = np.nanmin(fwd_pct_ret_atr_norm_final), np.nanmax(fwd_pct_ret_atr_norm_final)
+            tprint(f"  returns_target_{horizon}: {n_valid}/{len(fwd_pct_ret_final)} valid, "
+                   f"std={std_raw:.6f}, range=[{min_raw:.4f}, {max_raw:.4f}]")
+            tprint(f"  atr_norm_returns_target_{horizon}: {np.isfinite(fwd_pct_ret_atr_norm_final).sum()}/{len(fwd_pct_ret_atr_norm_final)} valid, "
+                   f"std={std_norm:.4f}, range=[{min_norm:.2f}, {max_norm:.2f}]")
+        else:
+            tprint(f"  WARNING: returns_target_{horizon}: 0 valid values!")
 
         for target_base in [
             "target_eff",

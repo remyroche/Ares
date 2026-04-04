@@ -266,6 +266,8 @@ def train_daily_base(ts_sig, margin_symbols, cfg, store, ex):
     """Train only base (alpha) models. Saves intermediate state for train_daily_meta."""
     tprint("DAILY BASE TRAINING START")
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    from extreme_price_movements.pipeline_steps import ensure_training_residualization_feature_keys
+    cfg = ensure_training_residualization_feature_keys(cfg)
     cfg["run_id"] = run_id
     datasets, found_count = _load_label_datasets(cfg, run_id)
 
@@ -302,6 +304,8 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
     """Train only meta models, loading base models from intermediate state."""
     tprint("DAILY META TRAINING START")
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    from extreme_price_movements.pipeline_steps import ensure_training_residualization_feature_keys
+    cfg = ensure_training_residualization_feature_keys(cfg)
     cfg["run_id"] = run_id
     datasets, found_count = _load_label_datasets(cfg, run_id)
 

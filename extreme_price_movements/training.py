@@ -5664,7 +5664,7 @@ def generate_label_datasets(
         k = strat["kind"]
         strategy_id = strat["strategy_id"]
         cand_filter, move_bucket, strategy_label = _strategy_bucket_context(side, k)
-        feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
+        feat_key = "base_feature_keys"
         fixed_tp = 0.05
         fixed_sl = 0.025
         for H in horizons:

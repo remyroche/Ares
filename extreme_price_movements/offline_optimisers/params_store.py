@@ -86,15 +86,15 @@ def _read_best_params_csv(path: Path) -> Dict[str, Any]:
 
 def load_inference_candidate_mask_params_per_bucket(
     top_n: int = 4,
-    ranking_metric: str = "composite_score",
+    ranking_metric: str = "score_for_best_params",
 ) -> list[dict[str, Any]]:
     """Load top-N dynamically generated strategy parameters from the mask-optimiser.
     
     Args:
-        top_n: Number of top rules to load (default: 4)
-        ranking_metric: Metric to rank rules by (default: "composite_score")
-                      Options: "composite_score", "learnability_step_c_score", 
-                            "stage2_score", "mask_oof_corr"
+        top_n: Number of top rules to load (default: 15)
+        ranking_metric: Metric to rank rules by (default: "score_for_best_params")
+                      Options: "score_for_best_params", "composite_score", 
+                            "learnability_step_c_score", "stage2_score", "mask_oof_corr"
     
     Returns:
         List of strategy dicts, each with keys:

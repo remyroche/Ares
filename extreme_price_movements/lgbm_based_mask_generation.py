@@ -5403,7 +5403,7 @@ class RuleScorer:
                 * (s_c_use + eps_score) ** w_c
                 * (s_support_use + eps_score) ** w_s
             )
-        composite_score = full_quality_score
+        composite_score_step1 = full_quality_score
 
         # Deconstruct for visibility
         slots = parse_slot_map(
@@ -5456,7 +5456,7 @@ class RuleScorer:
             "full_quality_score": full_quality_score,
             "source_target": target_name,
             "source_horizon": horizon,
-            "composite_score": composite_score,
+            "composite_score_step1": composite_score_step1,
             "required_hurdle": required_hurdle,
             "hurdle_excess": hurdle_excess,
             "n_folds": int(len(present)),
@@ -5614,7 +5614,7 @@ class RuleScorer:
             return pd.DataFrame(), pd.DataFrame(audits)
 
         summary_df = pd.DataFrame(summaries).sort_values(
-            ["accepted", "composite_score"], ascending=[False, False]
+            ["accepted", "composite_score_step1"], ascending=[False, False]
         )
 
         # Scorer Reporting Diagnostics
@@ -8879,6 +8879,11 @@ def run_lgbm_mask_generation_triad(
                     final_rule_registry = final_assessment_df.loc[
                         final_assessment_df["is_structurally_sound"].fillna(False)
                     ].copy()
+                # Sort by score_for_best_params as the main index
+                if "score_for_best_params" in final_rule_registry.columns:
+                    final_rule_registry = final_rule_registry.sort_values(
+                        "score_for_best_params", ascending=False
+                    ).reset_index(drop=True)
                 final_rule_registry["preset"] = cfg.get("preset", "triad_exploration")
                 atomic_to_csv(
                     final_rule_registry,
@@ -8905,6 +8910,45 @@ def run_lgbm_mask_generation_triad(
                 }
 
     if triad_run_step == "step1":
+        top_level_step1_registry = (
+            pd.concat(pooled_step1_frames, ignore_index=True, copy=False)
+            if pooled_step1_frames
+            else pd.DataFrame()
+        )
+        if not top_level_step1_registry.empty:
+            top_level_step1_registry = top_level_step1_registry.drop_duplicates(
+                subset=["canonical_key", "source_target", "source_horizon", "side"],
+                keep="first",
+            ).copy()
+            top_level_cheap_gate_rows = collections.defaultdict(list)
+            top_level_cheap_gate_result = {}
+            top_level_bucket_cheap_ranks = collections.defaultdict(dict)
+            for row in top_level_step1_registry.to_dict("records"):
+                canonical_key = str(row.get("canonical_key", ""))
+                side = str(row.get("side", "long"))
+                try:
+                    source_horizon = int(row.get("source_horizon", -1))
+                except (TypeError, ValueError):
+                    source_horizon = -1
+                bucket_key = (side, source_horizon)
+                cheap_rank = row.get("cheap_rank", row.get("composite_score", 0.0))
+                try:
+                    cheap_rank = float(cheap_rank)
+                except (TypeError, ValueError):
+                    cheap_rank = 0.0
+                top_level_cheap_gate_rows[bucket_key].append((cheap_rank, canonical_key))
+                top_level_bucket_cheap_ranks[bucket_key][canonical_key] = cheap_rank
+                top_level_cheap_gate_result[(bucket_key, canonical_key)] = (False, "")
+
+            checkpoint_path = save_stage_a_step1_checkpoint(
+                output_dir=root_output_dir,
+                candidate_registry=top_level_step1_registry,
+                cheap_gate_rows=top_level_cheap_gate_rows,
+                cheap_gate_result=top_level_cheap_gate_result,
+                bucket_cheap_ranks=top_level_bucket_cheap_ranks,
+                stage_a_matrices={},
+            )
+            tprint(f"TRIAD STEP1 top-level checkpoint saved to {checkpoint_path}")
         tprint("TRIAD STEP1 COMPLETE")
         return {
             "results_by_target_horizon": results_by_target_horizon,
@@ -10346,6 +10390,113 @@ class MaskAssessor:
             "boosting_type": str(self.cfg.get("step2_weak_boosting_type", "gbdt")),
         }
 
+    def _compute_score_for_best_params(
+        self,
+        assessment_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Compute score_for_best_params with 9 weighted components.
+        
+        Formula:
+        - 0.3 * overall_mask_uplift
+        - 0.075 * Directional accuracy @ ATR * (sqrt(horizon) / 2)
+        - 0.075 * Directional accuracy @ ATR * (sqrt(horizon))
+        - 0.1 * Directional accuracy (sign) at horizon time
+        - 0.1 * IC stability (across months & assets)
+        - 0.1 * Rank IC
+        - 0.1 * IC @ Top10% predictions
+        - 0.1 * Conditional mean return
+        - 0.1 * Return-per-risk inside regime (mean / downside deviation)
+        
+        Then: score_for_best_params = base_score × sqrt(support%)
+        
+        All terms: winsorize at p5/95th, MinMax 0.1-1 between all candidates.
+        """
+        if assessment_df.empty:
+            return assessment_df
+        
+        result = assessment_df.copy()
+        
+        # Helper to winsorize and minmax scale to [0.1, 1.0]
+        def _winsorize_minmax(series: pd.Series, low_p=5, high_p=95) -> pd.Series:
+            valid = series.replace([np.inf, -np.inf], np.nan).dropna()
+            if valid.empty:
+                return pd.Series(0.55, index=series.index)  # middle of 0.1-1.0
+            
+            p_low = np.percentile(valid, low_p)
+            p_high = np.percentile(valid, high_p)
+            clipped = np.clip(series, p_low, p_high)
+            
+            c_min = float(clipped.min())
+            c_max = float(clipped.max())
+            span = max(c_max - c_min, 1e-9)
+            
+            # Scale to [0.1, 1.0]
+            scaled = 0.1 + 0.9 * (clipped - c_min) / span
+            return scaled.fillna(0.55)
+        
+        # 1. overall_mask_uplift (weight: 0.3)
+        result["_s1_overall_mask_uplift"] = _winsorize_minmax(result.get("overall_mask_uplift", pd.Series(np.nan, index=result.index)))
+        
+        # 2 & 3. Directional accuracy @ ATR components (weights: 0.075 each)
+        # Using decile_monotonic_spearman as proxy for directional accuracy
+        horizon = result.get("source_horizon", pd.Series(100, index=result.index))
+        sqrt_h = np.sqrt(pd.to_numeric(horizon, errors="coerce").fillna(100))
+        
+        dir_acc = result.get("decile_monotonic_spearman", pd.Series(np.nan, index=result.index))
+        result["_s2_dir_acc_atr_half"] = _winsorize_minmax(dir_acc * (sqrt_h / 2))
+        result["_s3_dir_acc_atr_full"] = _winsorize_minmax(dir_acc * sqrt_h)
+        
+        # 4. Directional accuracy (sign) at horizon time (weight: 0.1)
+        # Using sign_consistency as proxy
+        result["_s4_dir_acc_sign"] = _winsorize_minmax(result.get("sign_consistency", pd.Series(np.nan, index=result.index)))
+        
+        # 5. IC stability (weight: 0.1)
+        # Using fold_sign_consistency as proxy for IC stability across folds
+        result["_s5_ic_stability"] = _winsorize_minmax(result.get("fold_sign_consistency", pd.Series(np.nan, index=result.index)))
+        
+        # 6. Rank IC (weight: 0.1)
+        # Using mask_oof_corr (the IC within mask) as proxy
+        result["_s6_rank_ic"] = _winsorize_minmax(result.get("mask_oof_corr", pd.Series(np.nan, index=result.index)))
+        
+        # 7. IC @ Top10% predictions (weight: 0.1)
+        # Using top_decile_mean_target correlation
+        result["_s7_ic_top10"] = _winsorize_minmax(result.get("top_decile_mean_target", pd.Series(np.nan, index=result.index)))
+        
+        # 8. Conditional mean return (weight: 0.1)
+        # Using mean_ret_mask
+        result["_s8_conditional_mean"] = _winsorize_minmax(result.get("mean_ret_mask", pd.Series(np.nan, index=result.index)))
+        
+        # 9. Return-per-risk inside regime (weight: 0.1)
+        # Computing mean_ret_mask / downside_std
+        mean_ret = pd.to_numeric(result.get("mean_ret_mask", pd.Series(np.nan, index=result.index)), errors="coerce")
+        # Use weekly_sortino as proxy for return-per-risk
+        ret_per_risk = pd.to_numeric(result.get("weekly_sortino", pd.Series(np.nan, index=result.index)), errors="coerce")
+        result["_s9_ret_per_risk"] = _winsorize_minmax(ret_per_risk)
+        
+        # Compute base score with weights
+        base_score = (
+            0.3 * result["_s1_overall_mask_uplift"]
+            + 0.075 * result["_s2_dir_acc_atr_half"]
+            + 0.075 * result["_s3_dir_acc_atr_full"]
+            + 0.1 * result["_s4_dir_acc_sign"]
+            + 0.1 * result["_s5_ic_stability"]
+            + 0.1 * result["_s6_rank_ic"]
+            + 0.1 * result["_s7_ic_top10"]
+            + 0.1 * result["_s8_conditional_mean"]
+            + 0.1 * result["_s9_ret_per_risk"]
+        )
+        
+        # Apply sqrt(support%) scaling
+        support_pct = pd.to_numeric(result.get("support_pct", pd.Series(0.0, index=result.index)), errors="coerce").fillna(0.0)
+        result["score_for_best_params"] = base_score * np.sqrt(support_pct.clip(0.0, 1.0))
+        
+        # Clean up temporary columns
+        temp_cols = [c for c in result.columns if c.startswith("_s")]
+        result = result.drop(columns=temp_cols)
+        
+        return result
+
     def _apply_final_topk_selection(
         self,
         assessment_df: pd.DataFrame,
@@ -10422,39 +10573,34 @@ class MaskAssessor:
             + 0.10 * weekly_stability_rank
             + 0.05 * fold_stability
         )
-        eligible["final_candidate_rank_score"] = eligible["trade_composite_score"]
-
+        # Compute score_for_best_params if not already present
+        if "score_for_best_params" not in result.columns:
+            result = self._compute_score_for_best_params(result)
+        
+        # Use score_for_best_params as the base score for Pareto selection
+        eligible["final_candidate_rank_score"] = eligible["score_for_best_params"]
+        
         eligible["fold_stability"] = fold_stability.astype(np.float32)
-
+        
         overlap_penalty = float(self.cfg.get("final_selection_overlap_penalty", 0.35))
         support_overlap_weight = float(self.cfg.get("final_selection_support_overlap_weight", 0.5))
-        pnl_overlap_weight = float(self.cfg.get("final_selection_pnl_overlap_weight", 0.5))
+        ic_overlap_weight = float(self.cfg.get("final_selection_ic_overlap_weight", 0.5))
         top_k = int(self.cfg.get("final_selected_rule_cap", 15))
         selected: List[Any] = []
         remaining = eligible.sort_values("final_candidate_rank_score", ascending=False).index.tolist()
 
-        def _daily_pnl_series(idx: Any) -> pd.Series:
-            realized_trades = eligible.loc[idx, "realized_trades"] if "realized_trades" in eligible.columns else []
-            net_returns = eligible.loc[idx, "net_weighted_returns"] if "net_weighted_returns" in eligible.columns else []
-            if (
-                not isinstance(realized_trades, list)
-                or not isinstance(net_returns, list)
-                or len(realized_trades) == 0
-                or len(realized_trades) != len(net_returns)
-            ):
-                return pd.Series(dtype=np.float32)
-            entry_times = pd.Series([t.entry_time for t in realized_trades])
-            if entry_times.empty:
-                return pd.Series(dtype=np.float32)
-            if entry_times.dt.tz is not None:
-                entry_times = entry_times.dt.tz_convert("UTC").dt.tz_localize(None)
-            day_buckets = entry_times.dt.floor("D")
-            day_pnl = pd.DataFrame(
-                {"day": day_buckets, "pnl": net_returns}
-            ).groupby("day")["pnl"].sum()
-            return day_pnl.astype(np.float32)
+        def _ic_series(idx: Any) -> np.ndarray:
+            """Get IC series for a rule, returning empty array if not available."""
+            ic_data = eligible.loc[idx, "ic_series"] if "ic_series" in eligible.columns else None
+            if ic_data is None:
+                return np.array([])
+            if isinstance(ic_data, np.ndarray):
+                return ic_data
+            if isinstance(ic_data, (list, tuple)):
+                return np.asarray(ic_data, dtype=np.float32)
+            return np.array([])
 
-        daily_pnl_cache = {idx: _daily_pnl_series(idx) for idx in eligible.index}
+        ic_series_cache = {idx: _ic_series(idx) for idx in eligible.index}
 
         def _pair_overlap(idx_a: Any, idx_b: Any) -> float:
             key_a = str(eligible.loc[idx_a, "canonical_key"])
@@ -10469,25 +10615,29 @@ class MaskAssessor:
                     inter = float(np.sum(mask_a & mask_b))
                     support_overlap = float((2.0 * inter) / max(supp_a + supp_b, 1.0))
 
-            pnl_overlap = 0.0
-            pnl_a = daily_pnl_cache.get(idx_a, pd.Series(dtype=np.float32))
-            pnl_b = daily_pnl_cache.get(idx_b, pd.Series(dtype=np.float32))
-            if not pnl_a.empty and not pnl_b.empty:
-                aligned = pd.concat([pnl_a.rename("a"), pnl_b.rename("b")], axis=1).fillna(0.0)
-                if len(aligned) >= 2:
-                    a_vals = aligned["a"].to_numpy(dtype=np.float32, copy=False)
-                    b_vals = aligned["b"].to_numpy(dtype=np.float32, copy=False)
-                    a_std = float(np.std(a_vals))
-                    b_std = float(np.std(b_vals))
-                    if a_std > 1e-12 and b_std > 1e-12:
-                        pnl_overlap = float(np.clip(np.corrcoef(a_vals, b_vals)[0, 1], -1.0, 1.0))
-                        pnl_overlap = max(pnl_overlap, 0.0)
+            # IC series correlation overlap (instead of PnL correlation)
+            ic_overlap = 0.0
+            ic_a = ic_series_cache.get(idx_a, np.array([]))
+            ic_b = ic_series_cache.get(idx_b, np.array([]))
+            if len(ic_a) > 0 and len(ic_b) > 0:
+                # Align to common length (both should be same number of folds)
+                min_len = min(len(ic_a), len(ic_b))
+                ic_a_aligned = ic_a[:min_len]
+                ic_b_aligned = ic_b[:min_len]
+                # Remove NaN pairs
+                valid_mask = np.isfinite(ic_a_aligned) & np.isfinite(ic_b_aligned)
+                if np.sum(valid_mask) >= 2:
+                    ic_a_valid = ic_a_aligned[valid_mask]
+                    ic_b_valid = ic_b_aligned[valid_mask]
+                    if np.std(ic_a_valid) > 1e-12 and np.std(ic_b_valid) > 1e-12:
+                        ic_corr = float(np.clip(np.corrcoef(ic_a_valid, ic_b_valid)[0, 1], -1.0, 1.0))
+                        ic_overlap = max(ic_corr, 0.0)  # Only positive correlation is "overlap"
 
-            total_weight = max(support_overlap_weight + pnl_overlap_weight, 1e-12)
+            total_weight = max(support_overlap_weight + ic_overlap_weight, 1e-12)
             return float(
                 (
                     support_overlap_weight * support_overlap
-                    + pnl_overlap_weight * pnl_overlap
+                    + ic_overlap_weight * ic_overlap
                 )
                 / total_weight
             )
@@ -10673,6 +10823,25 @@ class MaskAssessor:
         preferred_support_max = float(
             self.cfg.get("objective_support_target_high_pct", PREFERRED_SUPPORT_MAX)
         )
+        persisted_support_ok_by_key: Dict[str, bool] = {}
+        persisted_support_pct_by_key: Dict[str, float] = {}
+        support_source_col = None
+        for candidate_col in ("mean_support_pct", "support_pct"):
+            if candidate_col in registry.columns:
+                support_source_col = candidate_col
+                break
+        if support_source_col is not None:
+            support_series = pd.to_numeric(
+                registry[support_source_col], errors="coerce"
+            )
+            canonical_series = registry["canonical_key"].astype(str)
+            for canonical_key, support_val in zip(canonical_series, support_series):
+                if np.isfinite(support_val):
+                    support_float = float(support_val)
+                    persisted_support_pct_by_key[canonical_key] = support_float
+                    persisted_support_ok_by_key[canonical_key] = bool(
+                        support_min <= support_float <= support_max
+                    )
 
         # Precompute day buckets once to avoid per-rule timestamp parsing/groupby.
         day_codes: Optional[np.ndarray] = None
@@ -10879,6 +11048,11 @@ class MaskAssessor:
                 return cached_stats
             return _compute_single_cheap_stats(side, mask, ridge_target_by_side[side])
 
+        def _persisted_support_ok(canonical_key: str, cheap: Dict[str, float]) -> bool:
+            if canonical_key in persisted_support_ok_by_key:
+                return persisted_support_ok_by_key[canonical_key]
+            return bool(cheap["support_ok"])
+
         def _infer_regime_family_combo(canonical_key: str) -> str:
             families = sorted(
                 {
@@ -10979,7 +11153,7 @@ class MaskAssessor:
                     horizon_key=horizon_key,
                     side_returns=side_returns,
                 )
-                if not bool(cheap["support_ok"]):
+                if not _persisted_support_ok(canonical_key, cheap):
                     cheap_gate_result[(bucket_key, canonical_key)] = (
                         True,
                         "support_out_of_range",
@@ -11100,7 +11274,7 @@ class MaskAssessor:
                     horizon_key=horizon_key,
                     side_returns=side_returns,
                 )
-                if not bool(cheap["support_ok"]):
+                if not _persisted_support_ok(canonical_key, cheap):
                     rejected_by_support.add(canonical_key)
 
                 bucket_density_values[bucket_key].append(
@@ -11408,7 +11582,7 @@ class MaskAssessor:
 
                 rejected = False
                 rejection_reason = ""
-                if not bool(cheap["support_ok"]):
+                if not _persisted_support_ok(canonical_key, cheap):
                     rejected, rejection_reason = True, "support_out_of_range"
                 elif float(
                     pre_row.get("quality_stability_score", np.nan)
@@ -12507,15 +12681,20 @@ class MaskAssessor:
                 )
             )
 
-            # 9. Final Regime Score
+            # Use composite_score_step1 from row instead of computing regime_score
+            composite_score_step1 = float(row.get("composite_score_step1", np.nan))
+            if not np.isfinite(composite_score_step1):
+                composite_score_step1 = 0.0
+
+            # Compute new regime_score with overall_mask_uplift
             regime_score = (
-                0.30 * cheap_rank
-                + 0.15 * top_quartile_precision_lift
+                0.5 * overall_mask_uplift
                 + 0.25 * ret_uplift
                 + 0.25 * ev_per_event
-                + 0.05 * (mask_auc if np.isfinite(mask_auc) else 0.0)
                 + family_rarity_bonus
             )
+            if not np.isfinite(regime_score):
+                regime_score = composite_score_step1
 
             # Production classification
             rule_for_classification = {
@@ -12656,6 +12835,7 @@ class MaskAssessor:
                     "positive_fold_fraction": ridge_details.get("positive_fold_fraction", np.nan),
                     "negative_fold_fraction": ridge_details.get("negative_fold_fraction", np.nan),
                     "fold_pnl_std": ridge_details.get("fold_pnl_std", np.nan),
+                    "ic_series": ridge_details.get("ic_series", np.array([])),  # Per-fold IC for Pareto overlap
                     "decile_monotonic_spearman": ridge_details.get("decile_monotonic_spearman", np.nan),
                     "top_decile_mean_target": ridge_details.get("top_decile_mean_target", np.nan),
                     "bottom_decile_mean_target": ridge_details.get("bottom_decile_mean_target", np.nan),
@@ -12716,16 +12896,26 @@ class MaskAssessor:
                 monthly_sortino_ratio = np.nan
                 sortino_monthly_uplift = np.nan
 
-            # Composite mask uplift
+            # Rank IC uplift (same scaling formula as other uplift components)
+            rank_ic_mask = float(row.get("mask_ic_uplift", np.nan))
+            rank_ic_global = float(row.get("delta_within_mask_ic", 0.0))  # Baseline reference
+            if np.isfinite(rank_ic_mask):
+                # Scale similarly to other uplift components: 10.0 * (mask - reference) / normalization
+                rank_ic_uplift = 10.0 * rank_ic_mask
+            else:
+                rank_ic_uplift = np.nan
+
+            # Composite mask uplift with 5 components now
             uplift_components = [
                 tail_uplift,
                 mean_75_uplift,
                 sortino_weekly_uplift,
                 sortino_monthly_uplift,
+                rank_ic_uplift,
             ]
             valid_uplifts = [u for u in uplift_components if np.isfinite(u)]
-            if len(valid_uplifts) == 4:
-                overall_mask_uplift = sum(valid_uplifts) / 4.0
+            if len(valid_uplifts) == 5:
+                overall_mask_uplift = sum(valid_uplifts) / 5.0
             else:
                 overall_mask_uplift = np.nan
 
@@ -14052,6 +14242,9 @@ class MaskAssessor:
                 val_target_nan_reasons["other_target_nan"] += np.sum(target_nan_mask_va)
 
 
+        # --- IC Series for Pareto Overlap ---
+        ic_series = np.asarray(per_fold_ic, dtype=np.float32)
+        
         valid_mask = mask.astype(bool) & np.isfinite(y) & np.isfinite(oof_preds)
         effective_rows = int(np.sum(valid_mask))
 
@@ -14072,19 +14265,28 @@ class MaskAssessor:
             else:
                 tprint("WARNING: Cannot compute mask_oof_r2 due to zero variance in targets.")
 
-            # B3. Fold sign consistency
+            # B3. Fold sign consistency and per-fold IC series
             fold_means = []
+            per_fold_ic: List[float] = []
             for fold_id, (tr_idx, va_idx) in enumerate(folds):
                 va_masked_idx = va_idx[mask[va_idx]]
                 valid_fold_mask = np.isfinite(y[va_masked_idx]) & np.isfinite(oof_preds[va_masked_idx])
                 fold_targets = y[va_masked_idx][valid_fold_mask]
+                fold_preds = oof_preds[va_masked_idx][valid_fold_mask]
                 if len(fold_targets) > 0:
                     fold_means.append(np.mean(fold_targets))
+                    # Compute per-fold IC if we have enough samples
+                    if len(fold_targets) >= 10 and np.std(fold_targets) > 0 and np.std(fold_preds) > 0:
+                        fold_ic = float(np.corrcoef(fold_preds, fold_targets)[0, 1])
+                        per_fold_ic.append(fold_ic)
+                    else:
+                        per_fold_ic.append(np.nan)
 
-            if fold_means:
-                n_pos = sum(1 for m in fold_means if m > 0)
-                n_neg = sum(1 for m in fold_means if m < 0)
-                n_nonzero = n_pos + n_neg
+                if fold_means:
+                    n_pos = sum(1 for m in fold_means if m > 0)
+                    n_neg = sum(1 for m in fold_means if m < 0)
+                    n_nonzero = n_pos + n_neg
+                    fold_pnl_std = float(np.nanstd(np.asarray(fold_means, dtype=np.float32), ddof=0))
                 fold_pnl_std = float(np.nanstd(np.asarray(fold_means, dtype=np.float32), ddof=0))
 
                 positive_fold_fraction = n_pos / len(fold_means)
@@ -14153,6 +14355,7 @@ class MaskAssessor:
             "positive_fold_fraction": float(positive_fold_fraction) if np.isfinite(positive_fold_fraction) else np.nan,
             "negative_fold_fraction": float(negative_fold_fraction) if np.isfinite(negative_fold_fraction) else np.nan,
             "fold_pnl_std": float(fold_pnl_std) if np.isfinite(fold_pnl_std) else np.nan,
+            "ic_series": ic_series,  # Per-fold IC values for Pareto overlap
             "decile_monotonic_spearman": float(decile_monotonic_spearman) if np.isfinite(decile_monotonic_spearman) else np.nan,
             "top_decile_mean_target": float(top_decile_mean_target) if np.isfinite(top_decile_mean_target) else np.nan,
             "bottom_decile_mean_target": float(bottom_decile_mean_target) if np.isfinite(bottom_decile_mean_target) else np.nan,

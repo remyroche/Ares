@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any, Dict
 
 # Import canonical constants from central config
-from extreme_price_movements.config import CANON_BUCKETS, CANON_HORIZONS
+from extreme_price_movements.config import (
+    CANON_BUCKETS,
+    CANON_HORIZONS,
+    CANON_SIDES,
+    CANON_SIDE_HORIZON_CELLS,
+)
 
 
 OFFLINE_OPTIMISERS_DIR = Path(__file__).resolve().parent
@@ -19,12 +24,24 @@ INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV = (
 TBM_BEST_PARAMS_CSV = REPORTS_DIR / "tbm_best_params.csv"
 TBM_BEST_PARAMS_PER_BUCKET_CSV = REPORTS_DIR / "tbm_best_params_per_bucket.csv"
 TBM_BEST_PARAMS_PER_CELL_CSV = REPORTS_DIR / "tbm_best_params_per_cell.csv"
+TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV = REPORTS_DIR / "tbm_best_params_per_side_horizon.csv"
 TBM_GEOMETRY_GRID_CSV = REPORTS_DIR / "tbm_geometry_grid.csv"
 SAMPLE_WEIGHT_BEST_PARAMS_CSV = REPORTS_DIR / "sample_weight_best_params.csv"
 
+# Bucket to strategy_id mapping (new convention)
+BUCKET_TO_STRATEGY_ID = {
+    "MR_long": "long_mr",
+    "TF_long": "long_tf",
+    "MR_short": "short_mr",
+    "TF_short": "short_tf",
+}
+STRATEGY_ID_TO_BUCKET = {v: k for k, v in BUCKET_TO_STRATEGY_ID.items()}
+
 # Canonical constants - import from central config
-TBM_BUCKET_NAMES = CANON_BUCKETS
-TBM_HORIZONS = CANON_HORIZONS  # [2, 4] - H8 removed due to poor signal
+TBM_BUCKET_NAMES = CANON_BUCKETS  # Now uses strategy_ids: ["long_tf", "long_mr", "short_tf", "short_mr"]
+TBM_HORIZONS = CANON_HORIZONS  # [3, 8]
+TBM_SIDES = CANON_SIDES
+TBM_SIDE_HORIZON_CELLS = CANON_SIDE_HORIZON_CELLS
 
 
 def _to_scalar(v: Any) -> Any:
@@ -84,6 +101,23 @@ def _read_best_params_csv(path: Path) -> Dict[str, Any]:
     return out
 
 
+def load_inference_candidate_mask_params_by_mode() -> Dict[str, Dict[str, Any]]:
+    mode_to_path = {
+        "price_up_tf": REPORTS_DIR / "inference_candidate_mask_best_params_price_up_tf.csv",
+        "price_up_mr": REPORTS_DIR / "inference_candidate_mask_best_params_price_up_mr.csv",
+        "price_down_tf": REPORTS_DIR / "inference_candidate_mask_best_params_price_down_tf.csv",
+        "price_down_mr": REPORTS_DIR / "inference_candidate_mask_best_params_price_down_mr.csv",
+    }
+    out: Dict[str, Dict[str, Any]] = {}
+    for mode, path in mode_to_path.items():
+        row = _read_best_params_csv(path)
+        if not row:
+            continue
+        row.setdefault("mode", mode)
+        out[mode] = row
+    return out
+
+
 def load_inference_candidate_mask_params_per_bucket(
     top_n: int = 1,
     ranking_metric: str = "score_for_best_params",
@@ -113,13 +147,22 @@ def load_inference_candidate_mask_params_per_bucket(
     
     _log = _logging.getLogger("params_store")
     
-    pattern = str(Path("production_lgbm_outputs") / "run_*" / "final_rule_registry.csv")
-    files = glob.glob(pattern)
+    candidate_paths: list[Path] = []
+    candidate_paths.extend(
+        Path(p)
+        for p in glob.glob(
+            str(Path("production_lgbm_outputs") / "run_*" / "final_rule_registry.csv")
+        )
+    )
+    candidate_paths.extend(
+        Path(p)
+        for p in glob.glob(str(Path("tmp") / "lgbm_*_run*" / "run_*" / "final_rule_registry.csv"))
+    )
 
     path = None
-    if files:
-        files.sort(key=lambda x: os.path.basename(os.path.dirname(x)), reverse=True)
-        path = Path(files[0])
+    if candidate_paths:
+        candidate_paths.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        path = candidate_paths[0]
     else:
         path = Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
         if not path.exists():
@@ -169,13 +212,41 @@ def load_inference_candidate_mask_params_per_bucket(
             safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', key)
             safe_id = re.sub(r'_+', '_', safe_id)
             safe_id = safe_id.strip('_')
-            
-            strategies.append({
+
+            move_bucket = ""
+            explicit_move_bucket = str(row.get("move_bucket", "")).strip().lower()
+            if explicit_move_bucket in {"up", "down"}:
+                move_bucket = explicit_move_bucket
+            else:
+                trigger = str(row.get("trigger", "")).strip().lower()
+                if "price_up" in trigger:
+                    move_bucket = "up"
+                elif "price_down" in trigger:
+                    move_bucket = "down"
+
+            strategy = {
                 "strategy_id": safe_id,
                 "trade_side": side,
                 "base_event_trigger": key,
                 "mask_params": {"canonical_key": key}
-            })
+            }
+            if move_bucket:
+                strategy["move_bucket"] = move_bucket
+                strategy["candidate_bucket"] = (
+                    "best" if move_bucket == "up" else "worst"
+                )
+            
+            strategies.append(strategy)
+
+    if strategies and not any(
+        str(s.get("move_bucket", "")).lower() in {"up", "down"}
+        for s in strategies
+    ):
+        _log.warning(
+            "[params_store] Dynamic strategies from %s lack usable move-bucket metadata; falling back to legacy strategies",
+            path,
+        )
+        return []
     
     _log.info(
         f"[params_store] Loaded {len(strategies)} strategies from {path} "
@@ -324,11 +395,12 @@ def save_best_params_csv(
 
 
 def load_tbm_best_params_per_bucket() -> Dict[str, Dict[str, Any]]:
-    """Load per-bucket best TBM params from tbm_best_params_per_bucket.csv.
+    """Load per-strategy best TBM params from tbm_best_params_per_bucket.csv.
 
-    Returns a dict keyed by bucket name (e.g. 'TF_long', 'MR_short').
-    Each value is a dict of barrier params ready for injection into cfg.
-    Falls back to empty dict if the file does not exist.
+    Returns a dict keyed by strategy_id (e.g. 'long_tf', 'long_mr', 
+    'short_tf', 'short_mr'). Each value is a dict of barrier params 
+    ready for injection into cfg. Falls back to empty dict if the file 
+    does not exist.
     """
     import pandas as pd
 
@@ -340,10 +412,11 @@ def load_tbm_best_params_per_bucket() -> Dict[str, Dict[str, Any]]:
             return {}
         result: Dict[str, Dict[str, Any]] = {}
         for _, row in df.iterrows():
-            bkt = str(row.get("bucket", ""))
-            if not bkt:
+            # Support both old 'bucket' column and new 'strategy_id' column
+            strategy_id = str(row.get("strategy_id", row.get("bucket", "")))
+            if not strategy_id:
                 continue
-            result[bkt] = {
+            result[strategy_id] = {
                 k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()
             }
         return result
@@ -354,9 +427,9 @@ def load_tbm_best_params_per_bucket() -> Dict[str, Dict[str, Any]]:
 def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
     """Load per-cell best TBM params from tbm_best_params_per_cell.csv.
 
-    Returns a dict keyed by cell name (e.g. 'TF_long_H4', 'MR_short_H2').
+    Returns a dict keyed by cell name (e.g. 'long_tf_H3', 'long_mr_H8').
     Each value is a dict of barrier params ready for injection into cfg.
-    Falls back to per-bucket params if the cell-specific file is missing.
+    Falls back to per-strategy params if the cell-specific file is missing.
     """
     import pandas as pd
 
@@ -372,8 +445,8 @@ def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
         for _, row in df.iterrows():
             cell = str(row.get("cell_key", ""))
             if not cell:
-                # Fallback to bucket if cell_key is missing
-                cell = str(row.get("bucket", ""))
+                # Fallback to strategy_id if cell_key is missing
+                cell = str(row.get("strategy_id", row.get("bucket", "")))
             if not cell:
                 continue
             if cell in result:
@@ -400,7 +473,75 @@ def load_tbm_all_params_per_cell() -> Dict[str, list[Dict[str, Any]]]:
             df = df.sort_values(["cell_key", "rank_in_cell"], ascending=[True, True])
         result: Dict[str, list[Dict[str, Any]]] = {}
         for _, row in df.iterrows():
-            cell = str(row.get("cell_key", "")) or str(row.get("bucket", ""))
+            cell = str(row.get("cell_key", "")) or str(row.get("strategy_id", row.get("bucket", "")))
+            if not cell:
+                continue
+            result.setdefault(cell, []).append(
+                {k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()}
+            )
+        return result
+    except Exception:
+        return {}
+
+
+# =============================================================================
+# Side-Horizon TBM Params (agnostic to MR/TF distinction)
+# =============================================================================
+
+TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV = (
+    REPORTS_DIR / "tbm_best_params_per_side_horizon.csv"
+)
+
+
+def load_tbm_best_params_per_side_horizon() -> Dict[str, Dict[str, Any]]:
+    """Load per-(side, horizon) TBM params from tbm_best_params_per_side_horizon.csv.
+
+    Returns a dict keyed by cell name (e.g. 'long_H2', 'short_H4').
+    Each value is a dict of barrier params ready for injection into cfg.
+    Falls back to per-bucket params if the side-horizon file is missing.
+    """
+    import pandas as pd
+
+    if not TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV.exists():
+        return load_tbm_best_params_per_bucket()
+    try:
+        df = pd.read_csv(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV)
+        if df.empty:
+            return load_tbm_best_params_per_bucket()
+        if "rank_in_cell" in df.columns:
+            df = df.sort_values(["cell_key", "rank_in_cell"], ascending=[True, True])
+        result: Dict[str, Dict[str, Any]] = {}
+        for _, row in df.iterrows():
+            cell = str(row.get("cell_key", ""))
+            if not cell:
+                continue
+            result[cell] = {
+                k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()
+            }
+        return result
+    except Exception:
+        return load_tbm_best_params_per_bucket()
+
+
+def load_tbm_all_params_per_side_horizon() -> Dict[str, list[Dict[str, Any]]]:
+    """Load the full ranked per-(side, horizon) TBM params set from tbm_best_params_per_side_horizon.csv.
+
+    Returns dict keyed by cell name (e.g. 'long_H2', 'short_H4').
+    Each value is a list of param dicts (ranked by rank_in_cell).
+    """
+    import pandas as pd
+
+    if not TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV.exists():
+        return {}
+    try:
+        df = pd.read_csv(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV)
+        if df.empty:
+            return {}
+        if "rank_in_cell" in df.columns:
+            df = df.sort_values(["cell_key", "rank_in_cell"], ascending=[True, True])
+        result: Dict[str, list[Dict[str, Any]]] = {}
+        for _, row in df.iterrows():
+            cell = str(row.get("cell_key", ""))
             if not cell:
                 continue
             result.setdefault(cell, []).append(
@@ -429,25 +570,25 @@ _TBM_BUCKET_KEY_MAP = {
 
 
 def apply_per_bucket_tbm_params_to_cfg(
-    bucket: str,
+    strategy_id: str,
     cfg: Dict[str, Any],
     *,
-    per_bucket_params: Dict[str, Dict[str, Any]] | None = None,
+    per_strategy_params: Dict[str, Dict[str, Any]] | None = None,
     fallback_to_global: bool = True,
 ) -> Dict[str, Any]:
-    """Inject the winning TBM barrier geometry for ``bucket`` into ``cfg``.
+    """Inject the winning TBM barrier geometry for ``strategy_id`` into ``cfg``.
 
     Parameters
     ----------
-    bucket:
-        One of TBM_BUCKET_NAMES ('TF_long', 'TF_short', 'MR_long', 'MR_short').
+    strategy_id:
+        One of TBM_BUCKET_NAMES ('long_tf', 'long_mr', 'short_tf', 'short_mr').
     cfg:
         The run config dict to update in-place (a deepcopy is returned).
-    per_bucket_params:
+    per_strategy_params:
         Pre-loaded output of load_tbm_best_params_per_bucket() — avoids re-reading
         the CSV on every call.  If None, the file is read on demand.
     fallback_to_global:
-        If True and no per-bucket entry is found for ``bucket``, falls back to the
+        If True and no per-strategy entry is found for ``strategy_id``, falls back to the
         global TBM best params (apply_offline_optimizer_best_params).
 
     Returns
@@ -458,15 +599,15 @@ def apply_per_bucket_tbm_params_to_cfg(
 
     _log = _logging.getLogger("params_store")
 
-    if per_bucket_params is None:
-        per_bucket_params = load_tbm_best_params_per_bucket()
+    if per_strategy_params is None:
+        per_strategy_params = load_tbm_best_params_per_bucket()
 
-    bkt_params = per_bucket_params.get(bucket)
+    bkt_params = per_strategy_params.get(strategy_id)
     if not bkt_params:
         if fallback_to_global:
             _log.warning(
-                "[params_store] No per-bucket params for bucket=%s — falling back to global best",
-                bucket,
+                "[params_store] No per-strategy params for strategy_id=%s — falling back to global best",
+                strategy_id,
             )
             return apply_offline_optimizer_best_params(cfg)
         return cfg
@@ -480,11 +621,15 @@ def apply_per_bucket_tbm_params_to_cfg(
             merged[dst] = bkt_params[src]
             injected[dst] = bkt_params[src]
     _log.info(
-        "[params_store] Per-bucket TBM params for %s: %s",
-        bucket,
+        "[params_store] Per-strategy TBM params for %s: %s",
+        strategy_id,
         "  ".join(f"{k}={v}" for k, v in sorted(injected.items())),
     )
     return merged
+
+
+# Backward compatibility alias
+apply_per_strategy_tbm_params_to_cfg = apply_per_bucket_tbm_params_to_cfg
 
 
 def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -519,6 +664,10 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
         for key in ("family", "param", "z_hours", "conditioner_mode", "duration_hours"):
             if key in mask_opt and mask_opt[key] is not None:
                 merged[key] = mask_opt[key]
+
+    mode_mask_opt = load_inference_candidate_mask_params_by_mode()
+    if mode_mask_opt:
+        merged["candidate_mask_params_by_mode"] = mode_mask_opt
 
     dyn_strategies = load_inference_candidate_mask_params_per_bucket()
     if dyn_strategies:

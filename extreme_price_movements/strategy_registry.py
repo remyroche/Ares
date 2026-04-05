@@ -5,25 +5,25 @@ from typing import Any
 
 _LEGACY_STRATEGIES: tuple[dict[str, Any], ...] = (
     {
-        "strategy_id": "long_tf",
+        "strategy_id": "(price_up_tf==1)|(*)|(*)",  # Full canonical 3-slot key
         "trade_side": "long",
         "base_event_trigger": "price_up_tf",
         "regime_filters": [],
     },
     {
-        "strategy_id": "long_mr",
+        "strategy_id": "(price_down_mr==1)|(*)|(*)",  # Full canonical 3-slot key
         "trade_side": "long",
         "base_event_trigger": "price_down_mr",
         "regime_filters": [],
     },
     {
-        "strategy_id": "short_tf",
+        "strategy_id": "(price_down_tf==1)|(*)|(*)",  # Full canonical 3-slot key
         "trade_side": "short",
         "base_event_trigger": "price_down_tf",
         "regime_filters": [],
     },
     {
-        "strategy_id": "short_mr",
+        "strategy_id": "(price_up_mr==1)|(*)|(*)",  # Full canonical 3-slot key
         "trade_side": "short",
         "base_event_trigger": "price_up_mr",
         "regime_filters": [],
@@ -99,6 +99,10 @@ def get_strategies(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             "base_event_trigger": base_event_trigger,
             "regime_filters": norm_filters,
         }
+        if "move_bucket" in s:
+            parsed_s["move_bucket"] = s["move_bucket"]
+        if "candidate_bucket" in s:
+            parsed_s["candidate_bucket"] = s["candidate_bucket"]
         if "feature_keys" in s:
             parsed_s["feature_keys"] = s["feature_keys"]
         if "meta_feature_keys" in s:

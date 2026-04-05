@@ -66,24 +66,24 @@ def compute_prod_aligned_tp_params(
     atr_pct_samples: np.ndarray,
     fee_pct_total: float,
     horizon_scaling_fn: Callable[[int], float],
-    worst_horizon: int = 2,
+    worst_horizon: int = 3,
     q: float = 0.25,
     alpha: float = 0.45,
     margin_mult: float = 4.0,
     hard_min_tp: float = 0.02,
     inflate: float = 1.10,
     horizons: Sequence[int] = None,  # Will default to CANON_HORIZONS if None
-    h2_lower: float = 0.01,
-    h2_upper: float = 0.04,
+    base_horizon_lower: float = 0.01,
+    base_horizon_upper: float = 0.04,
     q_grid: Sequence[float] = (0.50, 0.75, 0.90),
     alpha_grid: Sequence[float] = (0.6, 0.8, 1.0, 1.2),
 ) -> Dict[str, Any]:
     """Compute production-aligned TP centering params and a TP-base candidate ladder.
 
-    Candidate generation follows the H1/H2/H4 centering rule:
-      tp_center_H2 = alpha * atr_q
-      tp_eff_H2 = clip(tp_center_H2, [h2_lower, h2_upper])
-      tp_base_pct = tp_eff_H2 / s(H2)
+    Candidate generation is anchored on the configured base/worst horizon:
+      tp_center_base = alpha * atr_q
+      tp_eff_base = clip(tp_center_base, [base_horizon_lower, base_horizon_upper])
+      tp_base_pct = tp_eff_base / s(base_horizon)
     with per-horizon implied diagnostics.
     """
     # Default horizons to CANON_HORIZONS if not provided
@@ -101,10 +101,7 @@ def compute_prod_aligned_tp_params(
         h_list = sorted(set(h_list + [int(worst_horizon)]))
 
     scales = {h: float(horizon_scaling_fn(int(h))) for h in h_list}
-    s2 = float(scales.get(2, horizon_scaling_fn(2)))
-    s4 = float(scales.get(4, horizon_scaling_fn(4)))
-    # Only compute s8 if H8 is in the horizons list
-    s8 = float(scales.get(8, horizon_scaling_fn(8))) if 8 in h_list else None
+    s_base = float(scales.get(int(worst_horizon), horizon_scaling_fn(int(worst_horizon))))
 
     quantile_vals = {float(qv): float(np.quantile(arr, float(np.clip(qv, 0.0, 1.0)))) for qv in q_grid}
 
@@ -118,26 +115,30 @@ def compute_prod_aligned_tp_params(
         atr_q = float(quantile_vals[qvf])
         for a in alpha_grid:
             alpha_i = float(a)
-            tp_center_h2 = alpha_i * atr_q
-            tp_eff_h2 = float(np.clip(tp_center_h2, float(h2_lower), float(h2_upper)))
-            tp_base_pct = tp_eff_h2 / max(abs(s2), 1e-12)
+            tp_center_base = alpha_i * atr_q
+            tp_eff_base = float(
+                np.clip(
+                    tp_center_base,
+                    float(base_horizon_lower),
+                    float(base_horizon_upper),
+                )
+            )
+            tp_base_pct = tp_eff_base / max(abs(s_base), 1e-12)
             tp_base_pct = max(tp_base_pct, tp_min_tradeable / s_worst_safe)
             tp_base_pct *= float(inflate)
-            tp_eff_h4 = tp_base_pct * s4
-            # Only compute tp_eff_h8 if H8 is in the horizons
-            tp_eff_h8 = tp_base_pct * s8 if s8 is not None else None
-            
-            # Build tp_eff_targets and tp_eff_bands
-            tp_eff_targets = {"H2": float(tp_eff_h2), "H4": float(tp_eff_h4)}
-            tp_eff_bands = {
-                "H2": [float(h2_lower), float(h2_upper)],
-                "H4": [float(h2_lower) * (s4 / max(abs(s2), 1e-12)), float(h2_upper) * (s4 / max(abs(s2), 1e-12))],
+            tp_eff_targets = {
+                f"H{int(h)}": float(tp_base_pct * float(scales[h])) for h in h_list
             }
-            if s8 is not None:
-                tp_eff_targets["H8"] = float(tp_eff_h8)
-                tp_eff_bands["H8"] = [float(h2_lower) * (s8 / max(abs(s2), 1e-12)), float(h2_upper) * (s8 / max(abs(s2), 1e-12))]
-            
-            scaling = {"s2": float(s2), "s4": float(s4), **({"s8": float(s8)} if s8 is not None else {})}
+            tp_eff_bands = {
+                f"H{int(h)}": [
+                    float(base_horizon_lower)
+                    * (float(scales[h]) / max(abs(s_base), 1e-12)),
+                    float(base_horizon_upper)
+                    * (float(scales[h]) / max(abs(s_base), 1e-12)),
+                ]
+                for h in h_list
+            }
+            scaling = {f"s{int(h)}": float(scales[h]) for h in h_list}
             
             candidates.append(
                 {
@@ -148,7 +149,7 @@ def compute_prod_aligned_tp_params(
                     "q": qvf,
                     "alpha": alpha_i,
                     "scaling": scaling,
-                    "tp_center_h2": float(tp_center_h2),
+                    "tp_center_base": float(tp_center_base),
                 }
             )
 
@@ -178,9 +179,11 @@ def compute_prod_aligned_tp_params(
         "inflate": float(inflate),
         "worst_horizon": int(worst_horizon),
         "s_worst": float(s_worst),
+        "s_base": float(s_base),
         "tp_atr_anchor": float(tp_atr_anchor),
         "tp_base_candidates": candidates_u,
-        "h2_band": [float(h2_lower), float(h2_upper)],
+        "base_horizon_band": [float(base_horizon_lower), float(base_horizon_upper)],
+        "h2_band": [float(base_horizon_lower), float(base_horizon_upper)],
         "horizons": h_list,
         "scaling": {f"s{h}": float(v) for h, v in scales.items() if v is not None},
         "atr_quantiles": {"q50": quantile_vals.get(0.5, float('nan')), "q75": quantile_vals.get(0.75, float('nan')), "q90": quantile_vals.get(0.9, float('nan'))},
@@ -452,6 +455,8 @@ def econ_guardrail_factor(
     tp_over_sl_floor: float = 1.05,
 ) -> float:
     """Returns an economic guardrail factor in [0, 1] using weak-link geometric mean."""
+    if not np.isfinite(tp_hit_agg) or not np.isfinite(sl_to_tp_agg) or not np.isfinite(tp_over_sl):
+        return 0.0
     g_tp = np.clip(tp_hit_agg / max(tp_hit_floor, EPS), 0.0, 1.0)
     g_bal = np.clip(sl_to_tp_cap / max(sl_to_tp_agg, EPS), 0.0, 1.0)
     g_edge = np.clip(tp_over_sl / max(tp_over_sl_floor, EPS), 0.0, 1.0)
@@ -469,6 +474,8 @@ def econ_admissible(
     min_factor: float = 0.85,
 ) -> bool:
     """Hard economic gate on each leg and composite guardrail factor."""
+    if not np.isfinite(tp_hit_agg) or not np.isfinite(sl_to_tp_agg) or not np.isfinite(tp_over_sl):
+        return False
     if tp_hit_agg < tp_hit_floor:
         return False
     if sl_to_tp_agg > sl_to_tp_cap:

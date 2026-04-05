@@ -44,6 +44,7 @@ from extreme_price_movements.data_store import (
 )
 from extreme_price_movements.offline_optimisers.params_store import (
     apply_offline_optimizer_best_params,
+    load_inference_candidate_mask_params_per_bucket,
 )
 import extreme_price_movements.mask_optimiser as mask_opt
 from extreme_price_movements.optimise import (
@@ -138,9 +139,19 @@ def _configure_report_roots(cfg: dict) -> None:
 
 
 def _load_mask_params_by_mode(cfg: dict) -> dict:
-    """Refresh cfg with persisted offline optimizer params (including mask params by mode)."""
+    """Refresh cfg with persisted offline optimizer params (including mask params by mode).
+    Also populates cfg['strategies'] from final_rule_registry.csv via load_inference_candidate_mask_params_per_bucket().
+    """
     merged = apply_offline_optimizer_best_params(dict(cfg))
     cfg.update(merged)
+
+    # Populate strategies from final_rule_registry.csv
+    strategies = load_inference_candidate_mask_params_per_bucket(top_n=1, ranking_metric="score_for_best_params")
+    if strategies:
+        cfg["strategies"] = strategies
+        from extreme_price_movements.utils import tprint
+        tprint(f"Loaded {len(strategies)} strategies from final_rule_registry.csv")
+
     return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
 
 

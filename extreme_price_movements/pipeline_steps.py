@@ -165,18 +165,16 @@ def _base_feature_keys_union(cfg) -> set[str]:
             for v in vals:
                 if isinstance(v, str) and v:
                     keys.add(v)
-    keys.update(TRAINING_RESIDUALIZATION_FEATURE_KEYS)
     return keys
 
 
 def ensure_training_residualization_feature_keys(cfg: dict) -> dict:
     out = dict(cfg)
+    # Only add residualization keys to base model keys (tf/mr), NOT to meta keys
+    # Meta models should see the raw target without residualization adjustments
     for cfg_key in (
         "tf_feature_keys",
         "mr_feature_keys",
-        "meta_feature_keys",
-        "mr_meta_feature_keys",
-        "tf_meta_feature_keys",
     ):
         base_vals = list(out.get(cfg_key, []) or [])
         seen = {v for v in base_vals if isinstance(v, str) and v}
@@ -1880,7 +1878,19 @@ def run_training_step(
         "k_trail_dist": cfg.get("risk_k_trail_dist", 1.0),
         "max_hold_hours": 24,
     }
-    _granular = {
+    # Build granular risk params dynamically from strategies
+    from extreme_price_movements.strategy_registry import get_strategies
+    strategies = get_strategies(cfg)
+
+    _granular = {}
+    for strat in strategies:
+        strat_id = strat["strategy_id"]
+        is_mr = strat.get("is_mr", "mr" in strat_id.lower())
+        risk_config = _mr_risk if is_mr else _tf_risk
+        _granular[f"risk_{strat_id}"] = risk_config
+
+    # Add legacy fallback keys for backward compatibility
+    _granular.update({
         "risk_mr_best": _mr_risk,
         "risk_mr_worst": _mr_risk,
         "risk_tf_best": _tf_risk,
@@ -1889,7 +1899,7 @@ def run_training_step(
         "risk_short_mr": _mr_risk,
         "risk_long_tf": _tf_risk,
         "risk_short_tf": _tf_risk,
-    }
+    })
     default_risk = {
         "k_sl": cfg.get("risk_k_sl", 2.0),
         "k_trail_start": cfg.get("risk_k_trail_start", 1.0),
@@ -2003,9 +2013,10 @@ def run_training_step(
 def run_ridge_sizer_step(ts_sig, cfg, state_file):
     """Run ridge position sizer to learn optimal meta model combination weights.
 
-    Processes each bucket (long_mr, long_tf, short_mr, short_tf) separately,
-    combining per-horizon regressors (H1, H2, H4) + classifier + agreement
-    features into a single Ridge combiner per bucket.
+    Processes each bucket (loaded dynamically from final_rule_registry.csv via
+    load_inference_candidate_mask_params_per_bucket) separately, combining
+    per-horizon regressors (H1, H2, H4) + classifier + agreement features into
+    a single Ridge combiner per bucket.
 
     Args:
         ts_sig: Timestamp for the training run
@@ -2105,10 +2116,15 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     os.makedirs(output_dir, exist_ok=True)
 
     # -------------------------------------------------------------------------
-    # Group buckets by direction: long_* = up-trend sizer, short_* = down-trend.
-    # A single combined sizer dilutes IC because long IC (~0.031) and short IC
-    # (~0.005) are incompatible, and short_mr has inverted IC (−0.011).
+    # Group buckets by direction using strategy definitions from final_rule_registry.csv
+    # Strategies loaded via load_inference_candidate_mask_params_per_bucket() provide
+    # strategy_id and trade_side for proper direction grouping.
     # -------------------------------------------------------------------------
+    # Load strategies to get trade_side for each bucket
+    from extreme_price_movements.offline_optimisers.params_store import load_inference_candidate_mask_params_per_bucket
+    strategies = load_inference_candidate_mask_params_per_bucket(top_n=1, ranking_metric="score_for_best_params")
+    strategy_side_map = {s["strategy_id"]: s["trade_side"] for s in strategies}
+
     _meta_cols = {
         "timestamp",
         "symbol",
@@ -2125,7 +2141,11 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     }
     direction_groups = {"long": {}, "short": {}}
     for bucket_name, oof_preds in strategy_oofs.items():
-        direction = "long" if bucket_name.startswith("long") else "short"
+        # Look up trade_side from strategy map, fallback to legacy naming convention
+        direction = strategy_side_map.get(bucket_name)
+        if direction is None:
+            # Legacy fallback: infer from bucket name
+            direction = "long" if bucket_name.startswith("long") else "short"
         direction_groups[direction][bucket_name] = oof_preds
 
     all_direction_results = {}
@@ -3822,40 +3842,47 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 )
             return c, s
 
-        lmr = side_all[side_all["side_key"] == "long"]["score_mr"].values
-        smr = side_all[side_all["side_key"] == "short"]["score_mr"].values
-        ltf = side_all[side_all["side_key"] == "long"]["score_tf"].values
-        stf = side_all[side_all["side_key"] == "short"]["score_tf"].values
+        # Get strategies for dynamic score scaling
+        from extreme_price_movements.strategy_registry import get_strategies
+        strategies = get_strategies(cfg)
 
-        lmr_c, lmr_s = _center_scale(lmr, "long_mr")
-        smr_c, smr_s = _center_scale(smr, "short_mr")
-        ltf_c, ltf_s = _center_scale(ltf, "long_tf")
-        stf_c, stf_s = _center_scale(stf, "short_tf")
+        score_scale_params = {}
+        score_diagnostics = []
 
-        score_scale_params = {
-            "long_mr_center": lmr_c,
-            "long_mr_scale": lmr_s,
-            "short_mr_center": smr_c,
-            "short_mr_scale": smr_s,
-            "long_tf_center": ltf_c,
-            "long_tf_scale": ltf_s,
-            "short_tf_center": stf_c,
-            "short_tf_scale": stf_s,
-        }
-        tprint(
-            f"Score scale params: lmr=({lmr_c:.4f},{lmr_s:.4f}) smr=({smr_c:.4f},{smr_s:.4f}) "
-            f"ltf=({ltf_c:.4f},{ltf_s:.4f}) stf=({stf_c:.4f},{stf_s:.4f})"
-        )
+        for strat in strategies:
+            strat_id = strat["strategy_id"]
+            side = strat["trade_side"]
+
+            # Determine score column: score_mr or score_tf based on strategy type
+            is_mr = strat.get("is_mr", "mr" in strat_id.lower())
+            score_col = "score_mr" if is_mr else "score_tf"
+
+            # Get scores for this side and strategy type
+            side_scores = side_all[side_all["side_key"] == side][score_col].values
+
+            if len(side_scores) > 0:
+                c, s = _center_scale(side_scores, f"{side}_{strat_id}")
+                score_scale_params[f"{strat_id}_center"] = c
+                score_scale_params[f"{strat_id}_scale"] = s
+                score_diagnostics.append((strat_id, side, len(side_scores), c, s))
+            else:
+                score_scale_params[f"{strat_id}_center"] = 0.0
+                score_scale_params[f"{strat_id}_scale"] = 1.0
+
+        # Log score scale params
+        diag_strs = [f"{sid}({side}):n={n},c={c:.4f},s={s:.4f}" for sid, side, n, c, s in score_diagnostics]
+        tprint(f"Score scale params: {' '.join(diag_strs)}")
+
         # Log raw score distributions for diagnostics
-        for name, arr in [
-            ("long_mr", lmr),
-            ("short_mr", smr),
-            ("long_tf", ltf),
-            ("short_tf", stf),
-        ]:
+        for strat in strategies:
+            strat_id = strat["strategy_id"]
+            side = strat["trade_side"]
+            is_mr = strat.get("is_mr", "mr" in strat_id.lower())
+            score_col = "score_mr" if is_mr else "score_tf"
+            arr = side_all[side_all["side_key"] == side][score_col].values
             if len(arr) > 0:
                 tprint(
-                    f"  {name} scores: n={len(arr)}, mean={np.mean(arr):.6f}, std={np.std(arr):.6f}, "
+                    f"  {strat_id} ({side}) scores: n={len(arr)}, mean={np.mean(arr):.6f}, std={np.std(arr):.6f}, "
                     f"q10={np.quantile(arr,0.1):.6f}, q50={np.quantile(arr,0.5):.6f}, q90={np.quantile(arr,0.9):.6f}"
                 )
     else:

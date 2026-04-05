@@ -551,6 +551,15 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
 
     from extreme_price_movements.strategy_registry import get_strategies
     from extreme_price_movements.lgbm_based_mask_generation import FeatureProcessor, CanonicalRuleMaskResolver
+    # Import legacy mask builder for fallback on legacy mode keys
+    try:
+        from extreme_price_movements.inference.candidate_selector import (
+            _build_mask_for_mode as _build_legacy_mode_mask,
+            _up_down_zones as _legacy_up_down_zones,
+        )
+    except Exception:
+        _build_legacy_mode_mask = None
+        _legacy_up_down_zones = None
 
     strategies = get_strategies(cfg_resolved)
 
@@ -575,25 +584,66 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
     )
     resolver = CanonicalRuleMaskResolver(X, metadata)
 
+    # Load per-mode mask params for legacy fallback
+    _legacy_mode_cfg = dict(cfg_resolved.get("candidate_mask_params_by_mode", {}) or {})
+
+    def _legacy_mode_mask(mode_name: str):
+        """Build mask for legacy mode keys like price_up_tf using per-mode config."""
+        if (
+            _build_legacy_mode_mask is None
+            or _legacy_up_down_zones is None
+            or mode_name not in _legacy_mode_cfg
+        ):
+            return None
+        try:
+            up_zone, down_zone = _legacy_up_down_zones(
+                feats,
+                panel,
+                metric=str(cfg_resolved.get("train_candidate_metric") or "ret12h"),
+            )
+            per_mode = _build_legacy_mode_mask(
+                panel,
+                feats,
+                _legacy_mode_cfg[mode_name],
+            )
+            if mode_name in {"price_up_tf", "price_up_mr"}:
+                return (up_zone & per_mode).fillna(False).astype(bool)
+            else:
+                return (down_zone & per_mode).fillna(False).astype(bool)
+        except Exception as e:
+            tprint(f"[WARNING] Legacy mode mask failed for {mode_name}: {e}")
+            return None
+
     mask_by_strategy = {}
     global_mask = None
 
     for strat in strategies:
         strat_id = strat['strategy_id']
         key = strat['base_event_trigger']
-        try:
-            mask_1d = resolver.get_mask(key)
-            mask_2d = mask_1d.reshape((n_ts, n_syms))
-            mask_df = pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns)
-            mask_by_strategy[strat_id] = mask_df
+        
+        # Try canonical resolver first, fall back to legacy mode builder for price_* keys
+        mask_df = None
+        if key.startswith("price_up") or key.startswith("price_down"):
+            mask_df = _legacy_mode_mask(key)
+            if mask_df is not None:
+                tprint(f"[DIAGNOSTIC] Strategy {strat_id} using LEGACY mode mask for {key}: {mask_df.sum().sum():,} active triggers")
+        
+        if mask_df is None:
+            try:
+                mask_1d = resolver.get_mask(key)
+                mask_2d = mask_1d.reshape((n_ts, n_syms))
+                mask_df = pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns)
+                tprint(f"[DIAGNOSTIC] Strategy {strat_id} using CANONICAL mask for {key}: {mask_df.sum().sum():,} active triggers")
+            except KeyError as e:
+                tprint(f"Failed to generate mask for {strat_id} with key {key}: {e}")
+                mask_df = pd.DataFrame(False, index=close_df.index, columns=close_df.columns)
+        
+        mask_by_strategy[strat_id] = mask_df
 
-            if global_mask is None:
-                global_mask = mask_df
-            else:
-                global_mask = global_mask | mask_df
-        except KeyError as e:
-            tprint(f"Failed to generate mask for {strat_id} with key {key}: {e}")
-            mask_by_strategy[strat_id] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns)
+        if global_mask is None:
+            global_mask = mask_df
+        else:
+            global_mask = global_mask | mask_df
 
     if global_mask is None:
         global_mask = pd.DataFrame(False, index=close_df.index, columns=close_df.columns)
@@ -2077,8 +2127,16 @@ def _strategy_bucket_context(
         s_id = str(strat.get("strategy_id", ""))
         mode = str(strat.get("base_event_trigger", "")).lower()
         if s_side == side and s_id == strat_id:
-            move_bucket = "up" if "price_up" in mode else "down"
-            cand_filter = "best" if move_bucket == "up" else "worst"
+            explicit_move_bucket = str(strat.get("move_bucket", "")).lower()
+            explicit_candidate_bucket = str(strat.get("candidate_bucket", "")).lower()
+            if explicit_move_bucket in {"up", "down"}:
+                move_bucket = explicit_move_bucket
+            else:
+                move_bucket = "up" if "price_up" in mode else "down"
+            if explicit_candidate_bucket in {"best", "worst"}:
+                cand_filter = explicit_candidate_bucket
+            else:
+                cand_filter = "best" if move_bucket == "up" else "worst"
             return cand_filter, move_bucket, s_id
 
     # Legacy fallback

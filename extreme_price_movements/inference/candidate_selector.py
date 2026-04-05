@@ -22,6 +22,7 @@ def _build_mask_for_mode(
     mask_cfg: Dict[str, Any],
 ) -> pd.DataFrame:
     from extreme_price_movements.lgbm_based_mask_generation import FeatureProcessor, CanonicalRuleMaskResolver
+    from extreme_price_movements.mask_optimiser import _compute_z_cache, _generate_event_masks, _generate_event_masks_fast
 
     close_df = panel['close']
     n_ts, n_syms = close_df.shape
@@ -43,11 +44,142 @@ def _build_mask_for_mode(
     resolver = CanonicalRuleMaskResolver(X, metadata)
 
     base = str(mask_cfg.get("base_event_trigger", "")).strip()
-    if not base:
+    if base:
+        try:
+            mask_1d = resolver.get_mask(base)
+            mask_2d = mask_1d.reshape((n_ts, n_syms))
+            return pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
+        except Exception:
+            pass
+
+    family = str(mask_cfg.get("family", "")).strip()
+    if not family:
         return pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+
+    idx = close_df.index
+    if len(idx) >= 2:
+        delta_seconds = max((idx[1] - idx[0]).total_seconds(), 1.0)
+        bph = max(int(round(3600.0 / delta_seconds)), 1)
+    else:
+        bph = 1
+
+    close_arr = close_df.to_numpy(dtype=np.float32, copy=False).ravel()
+    high_arr = panel["high"].reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
+    low_arr = panel["low"].reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
+    volume_df = panel.get("volume")
+    volume_arr = None
+    if isinstance(volume_df, pd.DataFrame):
+        volume_arr = volume_df.reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
+
+    ret1_df = feats.get("ret1h")
+    if isinstance(ret1_df, pd.DataFrame):
+        ret_1 = ret1_df.reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
+    else:
+        ret_1 = close_df.pct_change().fillna(0.0).to_numpy(dtype=np.float32, copy=False).ravel()
+
+    vol_df = feats.get("atr_pct_base") or feats.get("atr_pct")
+    if isinstance(vol_df, pd.DataFrame):
+        vol_g = vol_df.reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
+    else:
+        close_safe = np.maximum(close_df.to_numpy(dtype=np.float32, copy=False), 1e-6)
+        vol_g = ((panel["high"].reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False) - panel["low"].reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False)) / close_safe).astype(np.float32).ravel()
+
+    asset_groups = {
+        int(i): np.arange(i, n_ts * n_syms, n_syms, dtype=np.int32)
+        for i in range(n_syms)
+    }
+
+    z_hours = float(mask_cfg.get("z_hours", 1.0) or 1.0)
+    duration_hours = float(mask_cfg.get("duration_hours", 1.0) or 1.0)
+    z_bars = max(int(round(z_hours * bph)), 1)
+    duration_bars = max(int(round(duration_hours * bph)), 1)
+    zc = _compute_z_cache(
+        high=high_arr,
+        low=low_arr,
+        close=close_arr,
+        ret_1=ret_1,
+        vol_g=vol_g,
+        asset_groups=asset_groups,
+        z=z_bars,
+        bph=bph,
+        volume=volume_arr,
+    )
+
+    name = str(mask_cfg.get("name", "") or "")
+    feature_base = str(mask_cfg.get("feature_base", "") or "")
+    param_token = None
+    if name and "|p=" in name:
+        param_token = name.split("|p=", 1)[1].split("|", 1)[0]
+
+    candidate = None
+    parsed_token = param_token or str(mask_cfg.get("param", "") or "")
+    if parsed_token:
+        if "_gt_" in parsed_token:
+            parsed_feature_base, parsed_threshold = parsed_token.rsplit("_gt_", 1)
+            candidate = {
+                "family": family,
+                "feature_base": feature_base or parsed_feature_base,
+                "direction": "gt",
+                "threshold": float(parsed_threshold),
+            }
+        elif "_lt_" in parsed_token:
+            parsed_feature_base, parsed_threshold = parsed_token.rsplit("_lt_", 1)
+            candidate = {
+                "family": family,
+                "feature_base": feature_base or parsed_feature_base,
+                "direction": "lt",
+                "threshold": float(parsed_threshold),
+            }
+
+    if candidate is None and family in {"std_threshold", "abs_move_threshold", "std_plus_abs"}:
+        move_df = feats.get("ret12h")
+        if not isinstance(move_df, pd.DataFrame):
+            move_df = close_df.pct_change(12).fillna(0.0)
+        move_df = move_df.reindex(index=idx, columns=close_df.columns).fillna(0.0)
+        if family == "std_threshold":
+            threshold_df = move_df.rolling(24 * 30, min_periods=2).std().fillna(0.0) * float(mask_cfg.get("param", 0.0) or 0.0)
+            mask_h_df = move_df >= threshold_df
+            mask_l_df = (-move_df) >= threshold_df
+        elif family == "abs_move_threshold":
+            threshold = float(mask_cfg.get("param", 0.0) or 0.0) / 100.0
+            mask_h_df = move_df >= threshold
+            mask_l_df = (-move_df) >= threshold
+        else:
+            param_val = mask_cfg.get("param", (0.0, 0.0))
+            if isinstance(param_val, (list, tuple)) and len(param_val) >= 2:
+                std_val = float(param_val[0])
+                abs_val = float(param_val[1]) / 100.0
+            else:
+                std_val = 0.0
+                abs_val = float(param_val or 0.0) / 100.0
+            threshold_df = move_df.rolling(24 * 30, min_periods=2).std().fillna(0.0) * std_val
+            mask_h_df = (move_df >= threshold_df) & (move_df >= abs_val)
+            mask_l_df = ((-move_df) >= threshold_df) & ((-move_df) >= abs_val)
+
+        mask_df = (mask_h_df | mask_l_df).fillna(False).astype(bool)
+        if duration_bars > 1:
+            for lag in range(1, duration_bars):
+                mask_df = mask_df | mask_df.shift(lag, fill_value=False)
+        return mask_df.astype(bool)
+
     try:
-        mask_1d = resolver.get_mask(base)
-        mask_2d = mask_1d.reshape((n_ts, n_syms))
+        if candidate is not None:
+            mask_h, mask_l = _generate_event_masks_fast(candidate=candidate, zc=zc)
+        else:
+            param_val = mask_cfg.get("param")
+            if param_val is None:
+                return pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+            mask_h, mask_l = _generate_event_masks(
+                family=family,
+                param_val=param_val,
+                up_move=zc["up"],
+                dn_move=zc["dn"],
+                rolling_std_up=zc["std_up"],
+                rolling_std_dn=zc["std_dn"],
+                asset_groups=asset_groups,
+                duration_bars=duration_bars,
+            )
+        mask_2d = (mask_h | mask_l).reshape((n_ts, n_syms))
         return pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
     except Exception:
         return pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)

@@ -4,10 +4,18 @@ from extreme_price_movements.perp_features import get_perp_feature_names
 # =============================================================================
 # CANONICAL Horizons & Buckets - Single Source of Truth
 # =============================================================================
-# H8 removed: poor signal (MR_long_H8: 0.017, TF_short_H8: 0.023)
+# Canonical TBM horizons for current optimization/inference stack.
+# Legacy bucket naming (still used for grouping), but strategy_ids are canonical LGBM keys
 CANON_BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
-CANON_HORIZONS = [1, 2, 4]  # hours - H8 removed due to poor signal
+CANON_HORIZONS = [3, 8]  # hours
 CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_HORIZONS]
+CANON_HORIZONS = [3, 8]  # hours
+CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_HORIZONS]
+
+# Side-Horizon cells (agnostic to MR/TF distinction)
+# Used for TBM optimization and position sizing without structural bucket assumptions
+CANON_SIDES = ["long", "short"]
+CANON_SIDE_HORIZON_CELLS = [f"{side}_H{h}" for side in CANON_SIDES for h in CANON_HORIZONS]
 
 
 _PERP_COLLISION_RENAMES = {
@@ -238,11 +246,6 @@ MODEL_FEATURES = [
     "spike_score",
     "grind_score",
     "chop_score",
-    # Time
-    "sin_hod",
-    "cos_hod",
-    "sin_dow",
-    "cos_dow",
     # New regime-transition and entropy features for improved PR-AUC and robustness
     "regime_transition_entropy_12h",
     "regime_transition_entropy_48h",
@@ -347,6 +350,15 @@ MODEL_FEATURES = [
     "volatility_of_volatility_48",
     "trend_acceleration",
     "volatility_autocorr_48",
+]
+
+# Time-based features to exclude from LGBM mask generation
+# These are circular/seasonal features that can create spurious patterns
+TIME_FEATURE_KEYS = [
+    "sin_hod",
+    "cos_hod",
+    "sin_dow",
+    "cos_dow",
 ]
 
 RIDGE_FEATURE_META = {
@@ -1997,19 +2009,11 @@ CFG = {
                     "dir_path_short_2h",
                     "dir_path_edge_2h",
                     "donch_dist_48",
-                    "donch_dist_72",
-                    "donch_dist_120",
                     "pullback_48",
-                    "pullback_72",
-                    "pullback_120",
                     "dist_from_high_48h",
-                    "dist_from_high_120h",
+                    "dist_from_low_48h",
                     "trend_slope_48h",
-                    "trend_slope_120h",
-                    "trend_accel_120h",
-                    "rv_ratio_24_120",
                     "ret48h",
-                    "ret120h",
                     "downside_semivariance_24",
                     "upside_semivariance_8",
                     "upside_semivariance_24",
@@ -2028,7 +2032,6 @@ CFG = {
                     "adx_14_slope",
                     "vortex_diff_21",
                     "vp_air_pocket_score",
-                    "trapped_longs_96",
                     "vp_dist_hvn_above_atr",
                 ]
                 + [
@@ -2067,19 +2070,10 @@ CFG = {
                     "dir_path_risk_long_2h",
                     "dir_path_risk_short_2h",
                     "donch_dist_48",
-                    "donch_dist_72",
-                    "donch_dist_120",
                     "pullback_48",
-                    "pullback_72",
-                    "pullback_120",
                     "dist_from_low_48h",
-                    "dist_from_low_120h",
                     "trend_slope_48h",
-                    "trend_slope_120h",
-                    "trend_accel_120h",
-                    "rv_ratio_24_120",
                     "ret48h",
-                    "ret120h",
                     "downside_semivariance_24",
                     "upside_semivariance_8",
                     "upside_semivariance_24",
@@ -2096,7 +2090,6 @@ CFG = {
                     "volume_capitulation",
                     "trap_strength",
                     "entry_quality_composite",
-                    "trap_quality",
                     "mr_soft",
                     "mr_potential",
                     "mr_potential_exhaust",
@@ -2199,14 +2192,14 @@ CFG = {
         "dir_path_risk_short_2h",
         "dir_path_edge_2h",
         "dir_path_risk_skew_2h",
-        # Specialist features
+        # Specialist features (kept in meta only)
         "trap_quality",
         "predicted_vol_6h",
-        # Gated entry features
-        "bounce_signal",
-        "trap_strength",
+        # Gated entry features (MOVED to base_feature_keys)
+        # "bounce_signal",  # Now in base
+        # "trap_strength",  # Now in base
         "volume_capitulation",
-        "entry_quality_composite",
+        # "entry_quality_composite",  # Now in base
         # TF Meta Features (Report 2026-02-10)
         "trend_t",
         "trend_z_t",
@@ -2227,20 +2220,25 @@ CFG = {
         "mr_pct",
         "stall",
         "mr_failure",
-        # Multi-day regime context (meta learns regime-conditional weighting)
+        # Long-horizon regime context (meta learns regime-conditional weighting)
         "dist_from_high_48h",
         "dist_from_high_120h",
         "dist_from_low_48h",
         "dist_from_low_120h",
         "trend_slope_48h",
         "trend_slope_120h",
+        "trend_accel_120h",
         "rv_ratio_24_120",
         "rv_48h",
         "rv_120h",
         "ret48h",
         "ret120h",
         "donch_dist_48",
+        "donch_dist_72",
         "donch_dist_120",
+        "pullback_48",
+        "pullback_72",
+        "pullback_120",
         # FFD d-specific features for meta learner
         "ffd_rv_2h_04",
         "ffd_rv_6h_04",

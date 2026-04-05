@@ -37,6 +37,7 @@ from extreme_price_movements.ridge_position_sizer import (
 )
 from extreme_price_movements.utils import tprint, log_pipeline_warning
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
+from extreme_price_movements.offline_optimisers.params_store import load_inference_candidate_mask_params_per_bucket
 
 
 def format_return_as_pct(ret: float) -> str:
@@ -979,14 +980,21 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
     
     # -------------------------------------------------------------------------
-    # Group buckets by direction: long_* = up-trend sizer, short_* = down-trend
-    # Training a single sizer across both directions dilutes IC because the
-    # long and short signals have incompatible return distributions and the
-    # short_mr bucket has inverted IC.
+    # Group buckets by direction using strategy definitions from final_rule_registry.csv
+    # Strategies loaded via load_inference_candidate_mask_params_per_bucket() provide
+    # strategy_id and trade_side for proper direction grouping.
     # -------------------------------------------------------------------------
+    # Load strategies to get trade_side for each bucket
+    strategies = load_inference_candidate_mask_params_per_bucket(top_n=1, ranking_metric="score_for_best_params")
+    strategy_side_map = {s["strategy_id"]: s["trade_side"] for s in strategies}
+
     direction_groups = {"long": {}, "short": {}}
     for bucket_name, oof_preds in bucket_oofs.items():
-        direction = "long" if bucket_name.startswith("long") else "short"
+        # Look up trade_side from strategy map, fallback to legacy naming convention
+        direction = strategy_side_map.get(bucket_name)
+        if direction is None:
+            # Legacy fallback: infer from bucket name
+            direction = "long" if bucket_name.startswith("long") else "short"
         direction_groups[direction][bucket_name] = oof_preds
 
     all_direction_results = {}  # direction -> {weights, params, metrics, buckets}

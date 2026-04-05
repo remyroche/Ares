@@ -25,6 +25,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import resource
 import time
 from dataclasses import dataclass
@@ -117,6 +118,8 @@ from extreme_price_movements.offline_optimisers.params_store import (
     TBM_BEST_PARAMS_PER_CELL_CSV,
     TBM_BUCKET_NAMES,
     TBM_GEOMETRY_GRID_CSV,
+    TBM_SIDES,
+    _to_scalar,
     apply_offline_optimizer_best_params,
     load_inference_candidate_mask_params_per_bucket,
     save_best_params_csv,
@@ -157,6 +160,25 @@ ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS) + [
     "trend_persistence_vs_exhaustion",
     "trend_persistence"
 ]
+
+
+def _extract_canonical_rule_feature_names(rule: str) -> list[str]:
+    """Extract likely feature/source names from a canonical rule string."""
+    if not isinstance(rule, str) or not rule:
+        return []
+    tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", rule)
+    reserved = {"and", "or", "True", "False"}
+    out: list[str] = []
+    seen: set[str] = set()
+    for tok in tokens:
+        if tok in reserved:
+            continue
+        if tok in seen:
+            continue
+        seen.add(tok)
+        out.append(tok)
+    return out
+
 USE_15M_REFINEMENT = True  # Feature toggle to disable 15m data download/refinement
 _HF_15M_FAILED_SYMBOLS: set[str] = set()
 _HF_15M_MEMORY_CACHE: Dict[str, pd.DataFrame] = {}
@@ -1713,7 +1735,11 @@ def _read_symbol_parquet_dir(
     symbols: Optional[List[str]] = None,
     columns: Optional[List[str]] = None,
 ) -> Dict[str, pd.DataFrame]:
-    """Reads a directory of symbol parquets, with push-down filtering and parallelism."""
+    """Reads a directory of symbol parquets, with push-down filtering.
+
+    Use serial loading here for stability: joblib/loky process fan-out is fragile in the
+    desktop sandbox and has also shown worker churn / stalls on large feature directories.
+    """
     files = sorted(folder.glob("symbol=*.parquet"))
     if not files:
         files = sorted(folder.glob("symbol=*/**/*.parquet"))
@@ -1743,12 +1769,8 @@ def _read_symbol_parquet_dir(
     if not files:
         return {}
 
-    # Parallel loading
-    tprint(f"Parallel loading {len(files)} symbol files...")
-    n_jobs = _safe_parallel_jobs(len(files), cap=8)
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(_read_symbol_parquet_file)(f, columns=columns) for f in files
-    )
+    tprint(f"Serial loading {len(files)} symbol files...")
+    results = [_read_symbol_parquet_file(f, columns=columns) for f in files]
 
     by_symbol_parts: Dict[str, List[pd.DataFrame]] = {}
     for sym, df in results:
@@ -1803,13 +1825,16 @@ def load_panel(panel_path: Path) -> Dict[str, pd.DataFrame]:
     raise ValueError(f"Unsupported panel parquet layout for {panel_path}")
 
 
-def load_features(features_path: Path) -> Dict[str, pd.DataFrame]:
+def load_features(
+    features_path: Path,
+    symbols: Optional[List[str]] = None,
+) -> Dict[str, pd.DataFrame]:
     tprint(f"Loading features from: {features_path}")
     if features_path.is_file():
         raise ValueError(
             "--features expects a directory of symbol=*.parquet feature files"
         )
-    dfs = _read_symbol_parquet_dir(features_path)
+    dfs = _read_symbol_parquet_dir(features_path, symbols=symbols)
     feat_buf: Dict[str, Dict[str, pd.Series]] = {}
     for sym, df in dfs.items():
         for c in df.columns:
@@ -1938,8 +1963,6 @@ def align_artifacts(
         )
 
     tprint(f"Loading 15m high-fidelity panel for {len(cols)} symbols...")
-    from joblib import Parallel, delayed
-
     start_ts = idx.min()
     end_ts = idx.max() + pd.Timedelta(hours=48)
     allow_15m_download = bool(CFG.get("allow_15m_download", False))
@@ -1952,9 +1975,7 @@ def align_artifacts(
             allow_download=allow_15m_download,
         )
 
-    results = Parallel(n_jobs=_safe_parallel_jobs(len(cols), cap=8))(
-        delayed(_fetch)(sym) for sym in cols
-    )
+    results = [_fetch(sym) for sym in cols]
 
     sym_dfs = {sym: df for sym, df in results if df is not None and not df.empty}
     p15_out = None
@@ -2087,7 +2108,11 @@ def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
     m = np.isfinite(a) & np.isfinite(b)
     if m.sum() < 10:
         return 0.0
-    r = spearmanr(a[m], b[m]).correlation
+    a_m = a[m]
+    b_m = b[m]
+    if np.nanstd(a_m) < 1e-12 or np.nanstd(b_m) < 1e-12:
+        return 0.0
+    r = spearmanr(a_m, b_m).correlation
     return float(r) if np.isfinite(r) else 0.0
 
 
@@ -2630,11 +2655,122 @@ def build_strategy_masks(
     tprint(f"[DIAGNOSTIC] Raw feature keys available: {list(artifacts.features.keys())[:20]}")
     resolver = CanonicalRuleMaskResolver(X, metadata)
 
+    _cand_defaults = get_candidate_filter_defaults(cfg)
+    _legacy_move_mask_cache: dict[str, pd.DataFrame] = {}
+    _legacy_mode_mask_cache: dict[str, pd.DataFrame] = {}
+
+    try:
+        from extreme_price_movements.inference.candidate_selector import (
+            _build_mask_for_mode as _build_legacy_mode_mask,
+            _up_down_zones as _legacy_up_down_zones,
+        )
+    except Exception:
+        _build_legacy_mode_mask = None
+        _legacy_up_down_zones = None
+
+    _legacy_mode_cfg = dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
+
+    def _legacy_mode_mask(mode_name: str) -> pd.DataFrame | None:
+        cached = _legacy_mode_mask_cache.get(mode_name)
+        if cached is not None:
+            return cached
+        if (
+            _build_legacy_mode_mask is None
+            or _legacy_up_down_zones is None
+            or mode_name not in _legacy_mode_cfg
+        ):
+            return None
+        try:
+            up_zone, down_zone = _legacy_up_down_zones(
+                artifacts.features,
+                artifacts.panel,
+                metric=str(cfg.get("train_candidate_metric") or "ret12h"),
+            )
+            per_mode = _build_legacy_mode_mask(
+                artifacts.panel,
+                artifacts.features,
+                _legacy_mode_cfg[mode_name],
+            )
+            if mode_name in {"price_up_tf", "price_up_mr"}:
+                out_mask = (up_zone & per_mode).fillna(False).astype(bool)
+            else:
+                out_mask = (down_zone & per_mode).fillna(False).astype(bool)
+            _legacy_mode_mask_cache[mode_name] = out_mask
+            return out_mask
+        except Exception:
+            return None
+
+    def _legacy_move_mask(move_bucket: str) -> pd.DataFrame:
+        cached = _legacy_move_mask_cache.get(move_bucket)
+        if cached is not None:
+            return cached
+
+        base_candidate_mask = select_trade_candidates_vectorized(
+            artifacts.panel,
+            artifacts.features,
+            pct=float(_cand_defaults["train_extreme_pct_hourly"]),
+            metric=str(cfg.get("train_candidate_metric", "ret24h")),
+            min_move_12h_pct=float(_cand_defaults["train_min_move_12h_pct"]),
+            min_range_pct=float(_cand_defaults["train_min_range_pct"]),
+            min_vol_zscore=float(_cand_defaults["train_min_vol_zscore"]),
+            chop_thr=float(_cand_defaults["train_chop_thr"]),
+        )
+        if base_candidate_mask is None:
+            out_mask = pd.DataFrame(
+                False, index=close_df.index, columns=close_df.columns, dtype=bool
+            )
+            _legacy_move_mask_cache[move_bucket] = out_mask
+            return out_mask
+
+        trend_df = artifacts.features.get("trend_pct")
+        if not isinstance(trend_df, pd.DataFrame):
+            out_mask = base_candidate_mask.astype(bool)
+            _legacy_move_mask_cache[move_bucket] = out_mask
+            return out_mask
+
+        trend_aligned = trend_df.reindex(
+            index=base_candidate_mask.index,
+            columns=base_candidate_mask.columns,
+        )
+        if move_bucket == "up":
+            trend_mask = trend_aligned > 0
+        else:
+            trend_mask = trend_aligned <= 0
+        out_mask = (base_candidate_mask & trend_mask).fillna(False).astype(bool)
+        _legacy_move_mask_cache[move_bucket] = out_mask
+        return out_mask
+
     out = {}
+    strategy_sides: dict[str, str] = {}
+    strategy_move_dirs: dict[str, str] = {}
     for strat in strategies:
         sid = str(strat.get("strategy_id"))
         base = str(strat.get("base_event_trigger", "")).strip()
+        trade_side = str(strat.get("trade_side", "long")).strip().lower()
         if not base:
+            continue
+        strategy_sides[sid] = "short" if trade_side == "short" else "long"
+        base_l = base.lower()
+        explicit_move_bucket = str(strat.get("move_bucket", "")).strip().lower()
+        if explicit_move_bucket in {"up", "down"}:
+            strategy_move_dirs[sid] = explicit_move_bucket
+        else:
+            if "price_up" in base_l:
+                strategy_move_dirs[sid] = "up"
+            elif "price_down" in base_l:
+                strategy_move_dirs[sid] = "down"
+
+        if base_l.startswith("price_up") or base_l.startswith("price_down"):
+            move_dir = strategy_move_dirs.get(sid, "up")
+            legacy_mode_mask = _legacy_mode_mask(base_l)
+            out[sid] = (
+                legacy_mode_mask
+                if legacy_mode_mask is not None
+                else _legacy_move_mask(move_dir)
+            )
+            tprint(
+                f"[DIAGNOSTIC] Strategy {sid} LEGACY {move_dir}: {out[sid].sum().sum():,} active triggers"
+            )
             continue
 
         try:
@@ -2676,23 +2812,34 @@ def build_strategy_masks(
             else:
                 out[sid] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
 
-    # Add union buckets expected by evaluate_config based on strategy side prefixes
-    long_masks = [m for sid, m in out.items() if sid.startswith("long_")]
-    short_masks = [m for sid, m in out.items() if sid.startswith("short_")]
+    # Add union buckets expected by evaluate_config based on trigger move direction.
+    # This must align with training._strategy_bucket_context():
+    #   price_up_*   -> up   -> TF_long / MR_short
+    #   price_down_* -> down -> MR_long / TF_short
+    up_masks = [
+        m
+        for sid, m in out.items()
+        if strategy_move_dirs.get(sid) == "up"
+    ]
+    down_masks = [
+        m
+        for sid, m in out.items()
+        if strategy_move_dirs.get(sid) == "down"
+    ]
     
     if "up" not in out:
-        if long_masks:
-            union_up = long_masks[0]
-            for m in long_masks[1:]:
+        if up_masks:
+            union_up = up_masks[0]
+            for m in up_masks[1:]:
                 union_up = union_up | m
             out["up"] = union_up
         else:
             out["up"] = pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
             
     if "down" not in out:
-        if short_masks:
-            union_down = short_masks[0]
-            for m in short_masks[1:]:
+        if down_masks:
+            union_down = down_masks[0]
+            for m in down_masks[1:]:
                 union_down = union_down | m
             out["down"] = union_down
         else:
@@ -2833,7 +2980,44 @@ def _ridge_predict_oof_with_cache(
     warm_key: Optional[str] = None,
     rng_seed: int = 42,
 ) -> np.ndarray:
-    """OOF ridge on precomputed float32 arrays with optional warm-start cache."""
+    """OOF ridge on precomputed float32 arrays with chronological timestamp folds."""
+    def _solve_ridge_block(
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        w_train: np.ndarray,
+        X_test: np.ndarray,
+        *,
+        warm_key_local: Optional[str] = None,
+    ) -> np.ndarray:
+        q25 = np.percentile(X_train, 25, axis=0).astype(np.float32)
+        q75 = np.percentile(X_train, 75, axis=0).astype(np.float32)
+        iqr = np.where(q75 - q25 > 1e-8, q75 - q25, 1.0).astype(np.float32)
+        med = np.median(X_train, axis=0).astype(np.float32)
+        X_train_s = ((X_train - med) / iqr).astype(np.float32)
+        X_test_s = ((X_test - med) / iqr).astype(np.float32)
+
+        alpha = 3.0
+
+        y_mean = np.average(y_train, weights=w_train)
+        X_mean = np.average(X_train_s, axis=0, weights=w_train)
+        X_centered = X_train_s - X_mean
+        y_centered = y_train - y_mean
+
+        W_diag = w_train
+        A = (X_centered.T * W_diag) @ X_centered + alpha * np.eye(
+            X_train_s.shape[1], dtype=np.float32
+        )
+        b = (X_centered.T * W_diag) @ y_centered
+
+        try:
+            coef = np.linalg.solve(A, b)
+        except np.linalg.LinAlgError:
+            coef = np.linalg.lstsq(A, b, rcond=None)[0]
+
+        intercept = y_mean - np.dot(X_mean, coef)
+        p = (X_test_s @ coef + intercept).astype(np.float32, copy=False)
+        return np.clip(p, 0.0, 1.0).astype(np.float32, copy=False)
+
     y_bin = np.asarray(y_bin, dtype=np.float32)
     sample_weight = np.asarray(sample_weight, dtype=np.float32)
     # Convert timestamps to int64 (ns) to avoid dtype mismatch in np.isin
@@ -2845,115 +3029,50 @@ def _ridge_predict_oof_with_cache(
 
     n_folds = max(2, int(n_folds))  # keep OOF-only path (>=2 folds)
     pred = np.full(len(X), 0.5, dtype=np.float32)
+    covered = np.zeros(len(X), dtype=bool)
 
     if len(unique_ts_int) < n_folds + 5:
         n_folds = max(2, len(unique_ts_int) // 5)
 
-    # Convert to seconds for SlicePlanner
-    ts_seconds = ts_int / 1e9
-
-    # Extract horizon if present in kwargs/cfg, else default
-    # Note: since we don't pass cfg or horizon here directly, use a safe default like 4 hours
-    purge_seconds = 4 * 3600
-    embargo_seconds = int(purge_seconds * 0.5)
-
     try:
-        events = pd.DataFrame(
-            {
-                "event_id": np.arange(len(X), dtype=np.int64),
-                "symbol": np.repeat("ALL", len(X)),
-                "t0": pd.to_datetime(ts_values, utc=True, errors="coerce"),
-                "t1": pd.to_datetime(ts_values, utc=True, errors="coerce")
-                + pd.Timedelta(seconds=1),
-            }
-        )
-        p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
-        p_cfg = p_cfg.__class__(
-            **{
-                **p_cfg.__dict__,
-                "silent": True,
-                "min_rows_per_fold": 1,
-                "min_symbols_per_fold": 1,
-            }
-        )
-        bundle = SlicePlanner(p_cfg).build(events)
-        splits = []
-        for plan in bundle["consumer_plans"]["barrier_search"]:
-            if plan.fit_idx.size > 0 and plan.predict_idx.size > 0:
-                splits.append((plan.fit_idx, plan.predict_idx))
-        if not splits:
-            raise ValueError("No planner barrier_search splits")
+        fold_ts_groups = [g for g in np.array_split(unique_ts_int, n_folds) if len(g) > 0]
+        if len(fold_ts_groups) < 2:
+            return pred
 
-        for train_indices, test_indices in splits:
-            if len(train_indices) < 100 or len(test_indices) == 0:
+        base_rate = float(np.average(y_bin, weights=sample_weight))
+        for fold_idx, fold_ts in enumerate(fold_ts_groups):
+            test_mask = np.isin(ts_int, fold_ts)
+            train_mask = ~test_mask
+
+            if train_mask.sum() < 100 or test_mask.sum() == 0:
+                continue
+            if np.unique(y_bin[train_mask]).size < 2:
+                pred[test_mask] = np.float32(base_rate)
+                covered[test_mask] = True
                 continue
 
-            test_mask = np.zeros(len(X), dtype=bool)
-            test_mask[test_indices] = True
-
-            train_mask = np.zeros(len(X), dtype=bool)
-            train_mask[train_indices] = True
-
-            X_train = X[train_indices]
-            y_train = y_bin[train_indices]
-            w_train = sample_weight[train_indices]
-            X_test = X[test_indices]
-
-            # Robust standardisation: vectorised numpy (avoids sklearn object overhead per fold).
-            # median + IQR computed once over train set, applied to both train and test.
-            q25 = np.percentile(X_train, 25, axis=0).astype(np.float32)
-            q75 = np.percentile(X_train, 75, axis=0).astype(np.float32)
-            iqr = np.where(q75 - q25 > 1e-8, q75 - q25, 1.0).astype(np.float32)
-            med = np.median(X_train, axis=0).astype(np.float32)
-            X_train_s = ((X_train - med) / iqr).astype(np.float32)
-            X_test_s = ((X_test - med) / iqr).astype(np.float32)
-
-            # Higher alpha (3.0) for increased regularization/stability in noisy financial data.
-            alpha = 3.0
-
-            # P2 FIX: warm-cache — reuse coef/intercept from a previously solved similar fold
-            # to skip the expensive linalg.solve when a warm solution exists.
-            if warm_cache is not None and warm_key and warm_key in warm_cache:
-                coef_w, intercept_w = warm_cache[warm_key]
-                p = (X_test_s @ coef_w + intercept_w).astype(np.float32, copy=False)
-                pred[test_mask] = np.clip(p, 0.0, 1.0)
-                continue
-
-            # Compute weighted mean and covariance
-            y_mean = np.average(y_train, weights=w_train)
-            X_mean = np.average(X_train_s, axis=0, weights=w_train)
-            X_centered = X_train_s - X_mean
-            y_centered = y_train - y_mean
-
-            # Weighted covariance: X^T W X + lambda I
-            # Using robust regularisation (alpha * I) to handle multicollinearity
-            W_diag = w_train
-            A = (X_centered.T * W_diag) @ X_centered + alpha * np.eye(
-                X_train_s.shape[1], dtype=np.float32
+            X_train = X[train_mask]
+            y_train = y_bin[train_mask]
+            w_train = sample_weight[train_mask]
+            X_test = X[test_mask]
+            p_clipped = _solve_ridge_block(
+                X_train,
+                y_train,
+                w_train,
+                X_test,
+                warm_key_local=(
+                    f"{warm_key}:fold{fold_idx}" if warm_key is not None else None
+                ),
             )
-            b = (X_centered.T * W_diag) @ y_centered
+            pred[test_mask] = p_clipped
+            covered[test_mask] = True
 
-            try:
-                coef = np.linalg.solve(A, b)
-            except np.linalg.LinAlgError:
-                # Fallback for singular matrix
-                coef = np.linalg.lstsq(A, b, rcond=None)[0]
-
-            intercept = y_mean - np.dot(X_mean, coef)
-
-            p = (X_test_s @ coef + intercept).astype(np.float32, copy=False)
-            # For Ridge on binary targets, raw p is a better probability proxy than sigmoid(p).
-            p_clipped = np.clip(p, 0.0, 1.0)
-            pred[test_indices] = p_clipped.astype(np.float32, copy=False)
-
-            if warm_cache is not None and warm_key:
-                warm_cache[warm_key] = (
-                    coef.astype(np.float32, copy=True),
-                    float(intercept),
-                )
+        if not np.any(covered):
+            pred[:] = np.float32(base_rate)
 
         return pred
-    except Exception:
+    except Exception as exc:
+        tprint(f"[ridge_oof] WARNING chronological OOF failed: {exc}")
         return np.full(len(X), 0.5, dtype=np.float32)
 
 
@@ -3018,6 +3137,16 @@ def _optuna_n_jobs() -> int:
     # Conservative default to reduce first-wave cache miss contention/memory spikes.
     # Force sequential execution for debugging and reliability during large-scale strategy injection.
     return 1
+
+
+def _safe_median_finite(values: List[float], default: float = float("nan")) -> float:
+    if not values:
+        return float(default)
+    arr = np.asarray(values, dtype=np.float32)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return float(default)
+    return float(np.median(arr))
 
 
 def _build_equidistant_grid(
@@ -3932,6 +4061,10 @@ def evaluate_config(
                 qual_arr = qual_arr[valid_mask_flat]
                 tp_arr = tp_arr[valid_mask_flat]
                 sl_arr = sl_arr[valid_mask_flat]
+                mfe_arr = mfe_arr_flat[valid_mask_flat]
+                mae_arr = mae_arr_flat[valid_mask_flat]
+                t_mfe_arr = t_mfe_arr_flat[valid_mask_flat]
+                t_mae_arr = t_mae_arr_flat[valid_mask_flat]
 
                 if dyn_h is not None:
                     h_arr = dyn_h.to_numpy(dtype=np.float32, copy=False).ravel()[
@@ -3949,6 +4082,10 @@ def evaluate_config(
                     tp_arr,
                     sl_arr,
                     h_arr,
+                    mfe_arr,
+                    mae_arr,
+                    t_mfe_arr,
+                    t_mae_arr,
                 )
                 if len(stack_cache) > 256:
                     stack_cache.pop(next(iter(stack_cache)))
@@ -4105,11 +4242,11 @@ def evaluate_config(
     # Applied after bucket assignment but before heavy OOF/Admissibility to avoid KeyError
     if target_cell_filter:
         _bkt, _h = target_cell_filter
-        events = (
-            events[np.array((events["bucket"] == _bkt) & (events["horizon"] == _h))]
-            .copy()
-            .reset_index(drop=True)
-        )
+        if _bkt in local_bucket_map:
+            _cell_mask = np.array(local_bucket_map[_bkt], dtype=bool, copy=False)
+        else:
+            _cell_mask = np.array(events["bucket"] == _bkt)
+        events = events[np.array(_cell_mask & (events["horizon"] == _h))].copy().reset_index(drop=True)
         if events.empty:
             return _empty_result(
                 cfg,
@@ -4524,6 +4661,19 @@ def evaluate_config(
                     f"[eval:{cfg_id}] OOF direction flip applied for {_bkt}_H{_h}: "
                     f"auc_before={_auc_cell:.4f} < {flip_thr:.4f}"
                 )
+        _pred_std = float(np.nanstd(_pred_cell)) if len(_pred_cell) else 0.0
+        if _pred_std < 1e-6:
+            _x_cell = X_event[_bmask]
+            _feat_std = np.nanstd(_x_cell, axis=0) if _x_cell.size else np.array([0.0])
+            tprint(
+                f"[eval:{cfg_id}] WARNING flat OOF predictions for {_bkt}_H{_h}: "
+                f"n={int(_bmask.sum())} pred_min={float(np.nanmin(_pred_cell)):.6f} "
+                f"pred_max={float(np.nanmax(_pred_cell)):.6f} pred_std={_pred_std:.8f} "
+                f"tp_rate={float(np.nanmean(y_event[_bmask])):.4f} "
+                f"feat_std_min={float(np.nanmin(_feat_std)):.6f} "
+                f"feat_std_max={float(np.nanmax(_feat_std)):.6f} "
+                f"unique_ts={int(pd.Series(ts_event[_bmask]).nunique())}"
+            )
         pred_event[_bmask] = _pred_cell
 
     oof_flip_rate = (
@@ -4681,19 +4831,17 @@ def evaluate_config(
             if _sl_mask_cell.sum() > 0
             else float("nan")
         )
-        if not (math.isnan(_er_tp) or math.isnan(_er_sl)) and abs(_er_sl) > EPS:
-            _tp_over_sl = _er_tp / abs(_er_sl)
+        if not (math.isnan(_er_tp) or math.isnan(_er_sl)):
+            _tp_over_sl = _er_tp / max(abs(_er_sl), EPS)
         else:
-            _tp_over_sl = float("nan")
+            _tp_over_sl = 0.0
         bucket_h_metrics[(b, h)]["er_tp"] = (
             round(_er_tp, 6) if not math.isnan(_er_tp) else float("nan")
         )
         bucket_h_metrics[(b, h)]["er_sl"] = (
             round(_er_sl, 6) if not math.isnan(_er_sl) else float("nan")
         )
-        bucket_h_metrics[(b, h)]["tp_over_sl"] = (
-            round(_tp_over_sl, 4) if not math.isnan(_tp_over_sl) else float("nan")
-        )
+        bucket_h_metrics[(b, h)]["tp_over_sl"] = round(float(_tp_over_sl), 4)
 
         # 3. Directional superiority in top decile (secondary objective):
         #    E[r|TP, top_decile] >= abs(E[r|SL, top_decile]).
@@ -4939,11 +5087,9 @@ def evaluate_config(
     median_cell_ap_lift = (
         float(np.median(cell_ap_lifts)) if cell_ap_lifts else float("nan")
     )
-    min_cell_tp_over_sl = (
-        float(np.min(cell_tp_over_sls)) if cell_tp_over_sls else float("nan")
-    )
+    min_cell_tp_over_sl = float(np.min(cell_tp_over_sls)) if cell_tp_over_sls else 0.0
     median_cell_tp_over_sl = (
-        float(np.median(cell_tp_over_sls)) if cell_tp_over_sls else float("nan")
+        float(np.median(cell_tp_over_sls)) if cell_tp_over_sls else 0.0
     )
     min_cell_dir_superiority = (
         float(np.min(cell_dir_sups)) if cell_dir_sups else float("nan")
@@ -5318,11 +5464,41 @@ def evaluate_config(
     stage2_score *= max(0.70, max(bind_agg, 0.0))
 
     # Calculate path_quality_score
-    _median_mfe_mae_agg = float(np.median([v["median_mfe_mae"] for v in bucket_h_metrics.values() if math.isfinite(v.get("median_mfe_mae", float("nan")))]))
-    _p10_mfe_mae_agg = float(np.median([v["p10_mfe_mae"] for v in bucket_h_metrics.values() if math.isfinite(v.get("p10_mfe_mae", float("nan")))]))
-    _median_retention_agg = float(np.median([v["median_retention"] for v in bucket_h_metrics.values() if math.isfinite(v.get("median_retention", float("nan")))]))
-    _pct_MFE_before_MAE_agg = float(np.median([v["pct_MFE_before_MAE"] for v in bucket_h_metrics.values() if math.isfinite(v.get("pct_MFE_before_MAE", float("nan")))]))
-    _median_time_to_mfe_agg = float(np.median([v["median_time_to_mfe"] for v in bucket_h_metrics.values() if math.isfinite(v.get("median_time_to_mfe", float("nan")))]))
+    _median_mfe_mae_agg = _safe_median_finite(
+        [
+            float(v["median_mfe_mae"])
+            for v in bucket_h_metrics.values()
+            if math.isfinite(v.get("median_mfe_mae", float("nan")))
+        ]
+    )
+    _p10_mfe_mae_agg = _safe_median_finite(
+        [
+            float(v["p10_mfe_mae"])
+            for v in bucket_h_metrics.values()
+            if math.isfinite(v.get("p10_mfe_mae", float("nan")))
+        ]
+    )
+    _median_retention_agg = _safe_median_finite(
+        [
+            float(v["median_retention"])
+            for v in bucket_h_metrics.values()
+            if math.isfinite(v.get("median_retention", float("nan")))
+        ]
+    )
+    _pct_MFE_before_MAE_agg = _safe_median_finite(
+        [
+            float(v["pct_MFE_before_MAE"])
+            for v in bucket_h_metrics.values()
+            if math.isfinite(v.get("pct_MFE_before_MAE", float("nan")))
+        ]
+    )
+    _median_time_to_mfe_agg = _safe_median_finite(
+        [
+            float(v["median_time_to_mfe"])
+            for v in bucket_h_metrics.values()
+            if math.isfinite(v.get("median_time_to_mfe", float("nan")))
+        ]
+    )
 
     if all(math.isfinite(x) for x in [_median_mfe_mae_agg, _p10_mfe_mae_agg, _median_retention_agg, _pct_MFE_before_MAE_agg, _median_time_to_mfe_agg]):
         path_quality_score = (
@@ -5349,6 +5525,20 @@ def evaluate_config(
     # Keep stage2_score defined for sparse-trade/partial-metric runs; reserve missing only for invalid evals.
     stage2_missing = False
     if not math.isfinite(stage2_score):
+        tprint(
+            f"[stage2_nonfinite:{cfg_id}] "
+            f"reward={_reward:.6f} bounded_pen={_bounded_penalty:.6f} rr_pen={_rr_keep_pen:.6f} "
+            f"hcons_pen={_horizon_cons_pen:.6f} probe_gap_pen={probe_gap_penalty:.6f} "
+            f"coverage={coverage:.6f} bind={bind_agg:.6f} "
+            f"path_quality={path_quality_score:.6f} "
+            f"auc_score={_auc_score:.6f} sep_score={_sep_score:.6f} ap_lift_score={_ap_lift_score:.6f} "
+            f"sortino_score={_sortino_score:.6f} snr_score={_snr_score:.6f} "
+            f"dir_sup_score={_dir_sup_score:.6f} tp_over_sl_score={_tp_over_sl_score:.6f} "
+            f"payoff_edge_score={payoff_edge_score:.6f} "
+            f"mfe_mae={_median_mfe_mae_agg} p10_mfe_mae={_p10_mfe_mae_agg} "
+            f"retention={_median_retention_agg} mfe_before_mae={_pct_MFE_before_MAE_agg} "
+            f"time_to_mfe={_median_time_to_mfe_agg}"
+        )
         stage2_missing = True
         stage2_score = -1.0
     # Economic guardrail: hard constraints + bounded stage2 adjustment.
@@ -5381,6 +5571,11 @@ def evaluate_config(
         tp_over_sl_floor=_econ_tp_over_sl_floor,
     )
     if not math.isfinite(stage2_score):
+        tprint(
+            f"[stage2_nonfinite_post_econ:{cfg_id}] econ_ok={econ_ok} econ_G={econ_G} "
+            f"econ_multiplier={econ_multiplier} tp_hit={tp_hit_agg:.6f} "
+            f"sl_to_tp={sl_to_tp_agg:.6f} tp_over_sl={median_cell_tp_over_sl}"
+        )
         stage2_missing = True
         stage2_score = -1.0
     hard_gate = bool(hard_gate and econ_ok)
@@ -5803,14 +5998,24 @@ def _apply_prod_aligned_tp_centering(
     fee_pct_total = float(
         runtime.get("tbm_prod_aligned_fee_pct_total", runtime.get("fee_pct", 0.003))
     )
-    worst_h = int(runtime.get("tbm_prod_aligned_worst_horizon", 2))
+    worst_h = int(runtime.get("tbm_prod_aligned_worst_horizon", 3))
     q = float(runtime.get("tbm_prod_aligned_q", 0.25))
     alpha = float(runtime.get("tbm_prod_aligned_alpha", 0.45))
     margin_mult = float(runtime.get("tbm_prod_aligned_margin_mult", 4.0))
     hard_min_tp = float(runtime.get("tbm_prod_aligned_hard_min_tp", 0.02))
     inflate = float(runtime.get("tbm_prod_aligned_inflate", 1.10))
-    h2_l = float(runtime.get("tbm_prod_aligned_h2_l2", 0.01))
-    h2_u = float(runtime.get("tbm_prod_aligned_h2_u2", 0.04))
+    base_h_l = float(
+        runtime.get(
+            "tbm_prod_aligned_base_horizon_lo",
+            runtime.get("tbm_prod_aligned_h2_l2", 0.01),
+        )
+    )
+    base_h_u = float(
+        runtime.get(
+            "tbm_prod_aligned_base_horizon_hi",
+            runtime.get("tbm_prod_aligned_h2_u2", 0.04),
+        )
+    )
 
     anchor_cfg = cfgs[0] if cfgs else base_param_template(runtime)
     aligned = compute_prod_aligned_tp_params(
@@ -5823,9 +6028,9 @@ def _apply_prod_aligned_tp_centering(
         margin_mult=margin_mult,
         hard_min_tp=hard_min_tp,
         inflate=inflate,
-        horizons=(2, 4),
-        h2_lower=h2_l,
-        h2_upper=h2_u,
+        horizons=TBM_HORIZONS,
+        base_horizon_lower=base_h_l,
+        base_horizon_upper=base_h_u,
     )
 
     tp_lo_new = float(aligned["tp_abs_lo_pct"])
@@ -5863,7 +6068,7 @@ def _apply_prod_aligned_tp_centering(
             "margin_mult": float(aligned["margin_mult"]),
             "fee_pct_total": float(aligned["fee_pct_total"]),
             "tp_min_tradeable": float(aligned["tp_min_tradeable"]),
-            "s_H2": float(aligned.get("scaling", {}).get("s2", aligned["s_worst"])),
+            "s_base": float(aligned.get("s_base", aligned["s_worst"])),
             "tp_atr_anchor": float(aligned["tp_atr_anchor"]),
             "tp_base_pct_final": grid_tp_base,
             "tp_abs_lo_pct_final": c2["prod_tp_abs_lo_pct"],
@@ -5889,7 +6094,7 @@ def _apply_prod_aligned_tp_centering(
                 tprint(
                     f"[prod_sl_tp_policy] NOTE superiority_add={sup_add:.4f} is very high vs typical TP levels; "
                     "this can over-prune SL ladder."
-                )
+            )
             policy = SLTPPolicy(
                 sl_as_tp_pct_grid=tuple(
                     float(x)
@@ -5919,7 +6124,9 @@ def _apply_prod_aligned_tp_centering(
                 ),
             )
             tp_eff_ref = float(
-                (aligned.get("tp_eff_targets", {}) or {}).get("H2", float("nan"))
+                (aligned.get("tp_eff_targets", {}) or {}).get(
+                    f"H{int(worst_h)}", float("nan")
+                )
             )
             out.extend(
                 expand_configs_wide_sl_tp_additive_superiority(
@@ -5952,7 +6159,7 @@ def base_param_template(cfg_runtime: Optional[Dict[str, Any]] = None) -> Dict[st
         cfg_runtime if cfg_runtime is not None else CFG
     )
     return {
-        "tp_abs_lo_pct": 0.005,  # was tbm_defaults["tp_abs_lo_pct"]=0.02; 2% floor dominated ATR barriers at H2/H4
+        "tp_abs_lo_pct": 0.005,  # 2% floor was too dominant for the shorter base horizon ladder
         "tp_abs_hi_pct": float(tbm_defaults["tp_abs_hi_pct"]),
         "sl_abs_lo_pct": 0.005,  # same fix for SL floor
         "sl_abs_hi_pct": float(tbm_defaults["sl_abs_hi_pct"]),
@@ -6012,7 +6219,7 @@ def base_param_template(cfg_runtime: Optional[Dict[str, Any]] = None) -> Dict[st
         ),
         "tbm_prod_aligned_worst_horizon": int(
             (cfg_runtime if cfg_runtime is not None else CFG).get(
-                "tbm_prod_aligned_worst_horizon", 2
+                "tbm_prod_aligned_worst_horizon", 3
             )
         ),
         "tbm_prod_aligned_q": float(
@@ -6040,14 +6247,20 @@ def base_param_template(cfg_runtime: Optional[Dict[str, Any]] = None) -> Dict[st
                 "tbm_prod_aligned_inflate", 1.10
             )
         ),
-        "tbm_prod_aligned_h2_l2": float(
+        "tbm_prod_aligned_base_horizon_lo": float(
             (cfg_runtime if cfg_runtime is not None else CFG).get(
-                "tbm_prod_aligned_h2_l2", 0.01
+                "tbm_prod_aligned_base_horizon_lo",
+                (cfg_runtime if cfg_runtime is not None else CFG).get(
+                    "tbm_prod_aligned_h2_l2", 0.01
+                ),
             )
         ),
-        "tbm_prod_aligned_h2_u2": float(
+        "tbm_prod_aligned_base_horizon_hi": float(
             (cfg_runtime if cfg_runtime is not None else CFG).get(
-                "tbm_prod_aligned_h2_u2", 0.04
+                "tbm_prod_aligned_base_horizon_hi",
+                (cfg_runtime if cfg_runtime is not None else CFG).get(
+                    "tbm_prod_aligned_h2_u2", 0.04
+                ),
             )
         ),
         "prod_adm_tradeable_tp_min": float(
@@ -6109,10 +6322,13 @@ def base_param_template(cfg_runtime: Optional[Dict[str, Any]] = None) -> Dict[st
     }
 
 
-def _is_grid_tradeable_h2(
-    cfg: Dict[str, Any], *, min_ratio_to_floor: float = 1.35
+def _is_grid_tradeable_base_h(
+    cfg: Dict[str, Any],
+    *,
+    base_horizon: int,
+    min_ratio_to_floor: float = 1.35,
 ) -> bool:
-    """Static guard: reject configs whose median-vol H2 TP is too close to effective floor."""
+    """Reject configs whose base-horizon TP is too close to the effective floor."""
     tp_method = str(cfg.get("tp_method", ""))
     if tp_method not in {
         "atr_norm",
@@ -6122,18 +6338,20 @@ def _is_grid_tradeable_h2(
         "absolute",
     }:
         return True
-    h2_scale = 1.0
+    h_scale = 1.0
     scaling = str(cfg.get("horizon_scaling", "none"))
     if scaling == "sqrt":
-        h2_scale = (2.0 / max(float(cfg.get("horizon_base", 4.0)), EPS)) ** 0.5
+        h_scale = (
+            float(base_horizon) / max(float(cfg.get("horizon_base", 4.0)), EPS)
+        ) ** 0.5
     elif scaling == "power":
-        h2_scale = (2.0 / max(float(cfg.get("horizon_base", 4.0)), EPS)) ** float(
+        h_scale = (float(base_horizon) / max(float(cfg.get("horizon_base", 4.0)), EPS)) ** float(
             cfg.get("horizon_alpha", 0.5)
         )
     tp_anchor = (
         float(cfg.get("tp_base_pct", cfg.get("tp_abs_pct", 0.01)))
         * float(cfg.get("k_tp", 1.0))
-        * h2_scale
+        * h_scale
     )
     tp_floor_eff = effective_tp_floor(
         tp_abs_lo_pct=float(cfg.get("tp_abs_lo_pct", 0.005)),
@@ -6148,16 +6366,26 @@ def _filter_tradeability_guard(
 ) -> List[Dict[str, Any]]:
     if not cfgs:
         return cfgs
-    ratio = float((cfg_runtime or CFG).get("tbm_h2_tradeability_floor_ratio", 1.35))
+    runtime = cfg_runtime or CFG
+    base_horizon = int(runtime.get("tbm_prod_aligned_worst_horizon", 3))
+    ratio = float(
+        runtime.get(
+            "tbm_base_h_tradeability_floor_ratio",
+            runtime.get("tbm_h2_tradeability_floor_ratio", 1.35),
+        )
+    )
     kept, dropped = [], 0
     for c in cfgs:
-        if _is_grid_tradeable_h2(c, min_ratio_to_floor=ratio):
+        if _is_grid_tradeable_base_h(
+            c, base_horizon=base_horizon, min_ratio_to_floor=ratio
+        ):
             kept.append(c)
         else:
             dropped += 1
     if dropped > 0:
         tprint(
-            f"[grid_guard] dropped {dropped}/{len(cfgs)} configs: H2 TP anchor too close to effective floor (ratio<{ratio:.2f})"
+            f"[grid_guard] dropped {dropped}/{len(cfgs)} configs: "
+            f"H{base_horizon} TP anchor too close to effective floor (ratio<{ratio:.2f})"
         )
     return kept or cfgs
 
@@ -6165,25 +6393,19 @@ def _filter_tradeability_guard(
 def stage1_grid(cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     cfgs = []
 
-    # atr_norm only: atr_mult_rr is consistently degenerate (timeout>0.89, tp_hit<0.06)
-    # and wastes compute. atr_norm normalises by rolling median ATR so the barrier scales
-    # with the event's volatility spike rather than the absolute ATR level.
-    # tp_base_pct = base TP when atr/median_atr == 1.0.
-    # k_tp: [0.4, 0.5] added — tighter TP → higher tp_hit → lower sl_to_tp ratio.
-    # sl_as_tp_pct: [0.8, 1.0, 1.2] added — wider SL relative to TP → lower sl_to_tp ratio.
-    # tp_base_pct: [0.020] added — higher absolute TP floor.
-    # base_atr_window: [336, 504, 672, 840] (14d–35d). Prior run confirmed 672>504>336.
-    # 84/168 excluded: too short, produces high timeout + low bind + low coverage.
+    # atr_norm only: atr_mult_rr is consistently degenerate and wastes compute.
+    # With H3/H8, lift the base TP ladder slightly versus the old H2/H4 grid so the
+    # shorter horizon is not anchored on overly tiny moves.
     for k_tp, tp_base, sl_as_tp, atr_win in product(
         [0.4, 0.5, 0.7, 1.0, 1.25, 1.6],
         [
-            0.006,
-            0.010,
-            0.015,
-            0.020,
-            0.025,
+            0.008,
+            0.012,
+            0.018,
+            0.024,
             0.030,
-        ],  # 0.025/0.030 needed for k_tp=0.4 to clear H2 floor guard
+            0.038,
+        ],
         [0.4, 0.6, 0.7, 0.8, 1.0],
         [336, 504, 672, 840],  # 14d / 21d / 28d / 35d slow median reference
     ):
@@ -6331,9 +6553,10 @@ _MAX_TIMEOUT_RANGE: float = 0.50
 # These prevent metric-gaming: a geometry must first produce a healthy bound set
 # before its AUC/separation metrics are meaningful.
 _PROMOTE_MIN_COVERAGE: float = 0.45  # fraction of events surviving all filters
+_PROMOTE_MIN_COVERAGE_CELL: float = 0.15
 _PROMOTE_MIN_BIND: float = 0.50  # TP+SL rate — global/aggregate gate
 _PROMOTE_MIN_BIND_CELL: float = (
-    0.38  # per-cell bind floor (H2 is typically the limiter)
+    0.28  # per-cell bind floor (cell-level winners are materially sparser than aggregate)
 )
 _PROMOTE_MAX_TIMEOUT: float = 0.60  # aggregate timeout rate
 _PROMOTE_MIN_TP_SEP: float = 0.05  # min_cell_tp_sep floor (5pp)
@@ -6444,6 +6667,7 @@ def _build_feasible_set(
     for the bind gate, since H2 cells structurally have lower bind than the aggregate.
     Also applies sl_to_tp cap if the column is present.
     """
+    _cov_floor = _PROMOTE_MIN_COVERAGE_CELL if per_cell else _PROMOTE_MIN_COVERAGE
     _bind_floor = _PROMOTE_MIN_BIND_CELL if per_cell else _PROMOTE_MIN_BIND
     for tier, (
         cov_min,
@@ -6458,6 +6682,7 @@ def _build_feasible_set(
         eff_pos_min,
         eff_neg_min,
     ) in enumerate(_FEASIBLE_TIERS):
+        _cov_gate = max(min(cov_min, _cov_floor), _cov_floor) if per_cell else cov_min
         _bind_gate = (
             max(bind_min * (_PROMOTE_MIN_BIND_CELL / _PROMOTE_MIN_BIND), _bind_floor)
             if per_cell
@@ -6465,7 +6690,7 @@ def _build_feasible_set(
         )
         mask = pd.Series(True, index=df.index)
         if "coverage" in df.columns:
-            mask = mask & (df["coverage"] >= cov_min)
+            mask = mask & (df["coverage"] >= _cov_gate)
         if "bind" in df.columns:
             mask = mask & (df["bind"] >= _bind_gate)
         if "timeout_rate" in df.columns:
@@ -6737,8 +6962,13 @@ def _diverse_subset(
         tprint("[grr] no auc column; skipping")
         return feasible_df.head(0)
 
+    _score_input = work_df.get(score_col)
+    if _score_input is None:
+        _score_series = pd.Series(np.nan, index=work_df.index)
+    else:
+        _score_series = pd.Series(_score_input, index=work_df.index)
     work_df["_stage_score"] = pd.to_numeric(
-        work_df.get(score_col, np.nan), errors="coerce"
+        _score_series, errors="coerce"
     ).fillna(-np.inf)
     work_df["_auc_metric"] = pd.to_numeric(
         work_df.get(auc_col, np.nan), errors="coerce"
@@ -7086,7 +7316,7 @@ def promote_stage1(stage1_results: pd.DataFrame, top_k: int = 10) -> List[str]:
 # Per-cell feasible-set builder
 # ---------------------------
 _CELL_KEYS = [
-    f"{b}_H{h}" for b in ["MR_long", "MR_short", "TF_long", "TF_short"] for h in [2, 4]
+    f"{bucket}_H{h}" for bucket in TBM_BUCKET_NAMES for h in TBM_HORIZONS
 ]
 
 
@@ -7130,11 +7360,14 @@ def _build_per_cell_feasible_sets(
         base_df = out_df[out_df["hard_gate"] == True].copy()
     if base_df.empty:
         # hard_gate universally False (e.g. econ_ok blocks all) — fall back to
-        # configs that at least passed all 12 cells structurally.
-        base_df = out_df[out_df["pass_cells"] == out_df["total_cells"]].copy()
+        # configs that were actually evaluated at the cell level.
+        base_df = out_df[
+            pd.to_numeric(out_df.get("total_cells", 0), errors="coerce").fillna(0.0)
+            > 0
+        ].copy()
         if not base_df.empty:
             tprint(
-                f"[per_cell] hard_gate=False for all configs; using pass_cells==total_cells fallback ({len(base_df)} configs)"
+                f"[per_cell] hard_gate=False for all configs; using total_cells>0 fallback ({len(base_df)} configs)"
             )
     if base_df.empty:
         base_df = out_df.copy()
@@ -8248,7 +8481,7 @@ def run(args: argparse.Namespace) -> None:
         # It's better to just skip the Accelerate specific warning if we can't easily check.
     except Exception:
         pass
-    runtime_cfg = apply_offline_optimizer_best_params(dict(CFG))
+    runtime_cfg = dict(CFG)
     if args.data_root:
         runtime_cfg["data_root"] = str(args.data_root)
     if bool(args.perps):
@@ -8261,10 +8494,22 @@ def run(args: argparse.Namespace) -> None:
         runtime_cfg["test_feature_keys"] = list(
             dict.fromkeys(existing_test + list(PERP_FEATURE_KEYS))
         )
-    
+
+    _dyn_strategies = load_inference_candidate_mask_params_per_bucket()
+    if _dyn_strategies:
+        runtime_cfg["strategies"] = _dyn_strategies
+
     # [DIAGNOSTIC] Initial strategies check
     from extreme_price_movements.strategy_registry import get_strategies
     tprint(f"[DIAGNOSTIC] run-start strategies: {[s.get('strategy_id') for s in get_strategies(runtime_cfg)]}")
+
+    dyn_rule_feature_keys: list[str] = []
+    for strat in get_strategies(runtime_cfg):
+        dyn_rule_feature_keys.extend(
+            _extract_canonical_rule_feature_names(
+                str(strat.get("base_event_trigger", "")).strip()
+            )
+        )
 
     global ACTIVE_TEST_FEATURE_KEYS
     ACTIVE_TEST_FEATURE_KEYS = list(
@@ -8274,8 +8519,16 @@ def run(args: argparse.Namespace) -> None:
             "ema_velocity_divergence", 
             "multi_timescale_volatility_shape",
             "trend_persistence_vs_exhaustion",
-            "trend_persistence"
+            "trend_persistence",
+            "ret24h",
+            "trend_pct",
+            "range_12h_pct",
+            "volatility_zscore",
+            "mkt_rv_24h",
+            "mkt_rv_48h",
+            "chop_score",
         }
+        | set(dyn_rule_feature_keys)
     )
 
     # MONKEY-PATCH mask generator to include our new raw features
@@ -8313,15 +8566,15 @@ def run(args: argparse.Namespace) -> None:
 
     # Auto-detect features if not provided (only loads TEST_FEATURE_KEYS)
     if args.features:
-        features = load_features(Path(args.features))
+        features = load_features(Path(args.features), symbols=train_syms)
         # Filter to TEST_FEATURE_KEYS if present
         if features:
             available_keys = set(features.keys())
-            test_keys = set(TEST_FEATURE_KEYS)
+            test_keys = set(ACTIVE_TEST_FEATURE_KEYS)
             common_keys = available_keys & test_keys
             if common_keys:
                 tprint(
-                    f"Filtering features to TEST_FEATURE_KEYS: {len(common_keys)} features found"
+                    f"Filtering features to active compare feature set: {len(common_keys)} features found"
                 )
                 features = {k: features[k] for k in common_keys if k in features}
     else:
@@ -8341,9 +8594,25 @@ def run(args: argparse.Namespace) -> None:
     # Inject candidate-threshold best params (train_extreme_pct_hourly,
     # train_min_range_pct, train_min_vol_zscore) from CANDIDATE_BEST_PARAMS_CSV into runtime_cfg
     # so build_bucket_masks uses the optimised values, not hardcoded defaults.
-    runtime_cfg = apply_offline_optimizer_best_params(dict(runtime_cfg))
+    _offline_cfg = apply_offline_optimizer_best_params(dict(runtime_cfg))
+    for _k in (
+        "train_extreme_pct_hourly",
+        "train_min_move_12h_pct",
+        "train_min_range_pct",
+        "train_min_vol_zscore",
+        "train_candidate_metric",
+        "family",
+        "param",
+        "z_hours",
+        "conditioner_mode",
+        "duration_hours",
+        "candidate_mask_params_by_mode",
+        "strategies",
+    ):
+        if _k in _offline_cfg:
+            runtime_cfg[_k] = _offline_cfg[_k]
 
-    runtime_cfg["strategies"] = load_inference_candidate_mask_params_per_bucket()
+    runtime_cfg["strategies"] = _dyn_strategies or load_inference_candidate_mask_params_per_bucket()
     tprint(f"[DIAGNOSTIC] Final injected strategies: {[s.get('strategy_id') for s in runtime_cfg['strategies']]}")
 
     bucket_masks = build_strategy_masks(artifacts, cfg_runtime=runtime_cfg)
@@ -8356,12 +8625,12 @@ def run(args: argparse.Namespace) -> None:
     # Clear caches after loading data
     _clear_caches()
 
-    # Use the full TBM_HORIZONS set by default to match request for 4h and wider scans.
+    # Default to the canonical compare horizons unless the CLI overrides them explicitly.
     from extreme_price_movements.offline_optimisers.params_store import TBM_HORIZONS
-    # Expanded horizons as requested: [2, 3, 4, 7, 10, 13]
-    active_horizons = [2, 3, 4, 7, 10, 13]
     horizons = (
-        active_horizons if not args.horizons else [int(x) for x in args.horizons.split(",")]
+        list(TBM_HORIZONS)
+        if not args.horizons
+        else [int(x) for x in args.horizons.split(",")]
     )
 
     # Use bounded caches to prevent unbounded cache growth.
@@ -8425,17 +8694,12 @@ def run(args: argparse.Namespace) -> None:
     # --- Optuna Stage 1 (Cell-Specific) ---
     tprint("Starting Optuna Stage 1 optimization (Cell-Specific)...")
 
-    # Define canonical cells (4 buckets x N horizons)
-    # Define canonical cells (dynamic strategies x N horizons)
-    # Exclude unions from the base optimization set and then add them as baselines if needed?
-    # No, typically we optimize all of them.
-    canonical_cells = []
-    # Identify non-union strategies for primary optimization
-    base_strategies = sorted([k for k in bucket_masks.keys() if k not in {"up", "down", "Candidate"}])
-    # Also add the unions for comparison if needed
-    for b in (base_strategies + ["up", "down", "Candidate"]):
-        for h in horizons:
-            canonical_cells.append((b, h))
+    # Optimize canonical TBM buckets only.
+    # Dynamic strategy masks feed candidate generation upstream, but the evaluation
+    # layer and downstream training consume the 4 canonical buckets.
+    canonical_cells = [
+        (bucket, h) for bucket in TBM_BUCKET_NAMES for h in horizons
+    ]
 
     for bkt, hor in canonical_cells:
         tprint(f"--- Optimizing Cell: {bkt} H{hor} ---")
@@ -9055,6 +9319,9 @@ def run(args: argparse.Namespace) -> None:
         per_cell_grids = _build_per_cell_feasible_sets(
             out_df, details, min_distance=1.0, max_configs_per_cell=10
         )
+        per_bucket_grids = _build_per_bucket_feasible_sets(
+            out_df, details, min_distance=1.0, max_configs_per_bucket=10
+        )
 
         # ── Step 6: save geometry grid CSV (per-cell format) ─────────────────
         # Each row: cell_key, bucket, config_id, k_tp, sl_as_tp_pct, base_atr_window,
@@ -9269,7 +9536,7 @@ def run(args: argparse.Namespace) -> None:
             _bucket_best_rows: list = []
             per_cell_rows: list = []
             for _bkt in TBM_BUCKET_NAMES:
-                _bdf = _grid_df[_grid_df["bucket"] == _bkt].copy()
+                _bdf = per_bucket_grids.get(_bkt, pd.DataFrame()).copy()
                 if _bdf.empty:
                     tprint(
                         f"[bucket_best] {_bkt}: no valid configs — using global best fallback"
@@ -9307,49 +9574,67 @@ def run(args: argparse.Namespace) -> None:
                     )
                     continue
 
-                # ── Admissibility Filter (Production Guardrails) ───────────
-                # Only pick configs that are economically viable for production.
-                if "cell_sl_to_tp" in _bdf.columns and "cell_bind" in _bdf.columns:
-                    _bdf_valid = _bdf[
-                        (_bdf["cell_sl_to_tp"] <= 2.8)
-                        & (  # Allow slight wiggle room above 2.5
-                            _bdf["cell_bind"] >= 0.30
-                        )  # Minimum activity
-                    ].copy()
-                else:
-                    _bdf_valid = _bdf.copy()
-                if _bdf_valid.empty:
-                    _bdf_valid = _bdf.copy()  # Fallback
+                _bucket_rows = []
+                for _, _row in _bdf.iterrows():
+                    _cid = str(_row.get("config_id", ""))
+                    if not _cid:
+                        continue
+                    _agg_row = _per_bucket_metrics_from_details(_cid, details, _bkt, _row)
+                    if not _agg_row:
+                        continue
+                    _agg_row.update(
+                        {
+                            "rank": 1,
+                            "k_tp": float(_row.get("k_tp", float("nan"))),
+                            "sl_as_tp_pct": float(_row.get("sl_as_tp_pct", float("nan"))),
+                            "base_atr_window": int(_row.get("base_atr_window", _fallback_window)),
+                            "tp_base_pct": float(_row.get("tp_base_pct", float("nan"))),
+                            "tp_abs_lo_pct": float(_row.get("tp_abs_lo_pct", float("nan"))),
+                            "sl_abs_lo_pct": float(_row.get("sl_abs_lo_pct", float("nan"))),
+                            "mode": str(_row.get("mode", "")),
+                            "stage2_score": float(_row.get("stage2_score", float("nan"))),
+                        }
+                    )
+                    _bucket_rows.append(_agg_row)
 
-                # Aggregate per-config metrics across horizons (mean of valid cells)
-                _metr_cols = [
-                    "stage2_score",
-                    "cell_auc",
-                    "cell_tp_sep",
-                    "cell_ap_lift",
-                    "cell_tp_over_sl",
-                    "cell_auc_bound",
-                    "cell_timeout",
-                    "cell_bind",
-                    "cell_ece",
-                    "cell_brier",
-                    "cell_ic_std_time",
-                    "cell_ic_std_asset",
-                ]
-                _full_agg = {
-                    "rank": "min",
-                    "k_tp": "first",
-                    "sl_as_tp_pct": "first",
-                    "base_atr_window": "first",
-                    "tp_base_pct": "first",
-                    "tp_abs_lo_pct": "first",
-                    "sl_abs_lo_pct": "first",
-                    "mode": "first",
-                }
-                for c in _metr_cols:
-                    if c in _bdf_valid.columns:
-                        _full_agg[c] = "mean"
-                _bdf_agg = _bdf_valid.groupby("config_id").agg(_full_agg).reset_index()
+                _bdf_agg = pd.DataFrame(_bucket_rows)
+                if _bdf_agg.empty:
+                    tprint(
+                        f"[bucket_best] {_bkt}: aggregated bucket metrics empty — using global best fallback"
+                    )
+                    _bucket_best_rows.append(
+                        {
+                            "bucket": _bkt,
+                            "config_id": best_cid,
+                            "rank_in_bucket": 99,
+                            "source": "global_fallback",
+                            **{
+                                k: _to_scalar(v)
+                                for k, v in (
+                                    best_params if isinstance(best_params, dict) else {}
+                                ).items()
+                                if k
+                                in (
+                                    "k_tp",
+                                    "sl_as_tp_pct",
+                                    "base_atr_window",
+                                    "tp_base_pct",
+                                    "tp_abs_lo_pct",
+                                    "tp_abs_hi_pct",
+                                    "sl_abs_lo_pct",
+                                    "sl_abs_hi_pct",
+                                    "tp_method",
+                                    "sl_method",
+                                    "mode",
+                                    "horizon_base",
+                                    "horizon_scaling",
+                                )
+                            },
+                        }
+                    )
+                    continue
+
+                _bdf_valid = _grid_df[_grid_df["bucket"] == _bkt].copy()
 
                 # Per-cell ranked configs. Persist the full ranked set so downstream
                 # consumers can recover more than the top-1 winner for each cell.
@@ -9447,22 +9732,24 @@ def run(args: argparse.Namespace) -> None:
                 ).fillna(-np.inf)
                 _bdf_agg["_aucb"] = pd.to_numeric(
                     _bdf_agg.get(
-                        "cell_auc_bound", pd.Series(np.nan, index=_bdf_agg.index)
+                        "min_cell_auc_bound", pd.Series(np.nan, index=_bdf_agg.index)
                     ),
                     errors="coerce",
                 ).fillna(0.0)
                 _bdf_agg["_sep"] = pd.to_numeric(
                     _bdf_agg.get(
-                        "cell_tp_sep", pd.Series(np.nan, index=_bdf_agg.index)
+                        "min_cell_tp_sep", pd.Series(np.nan, index=_bdf_agg.index)
                     ),
                     errors="coerce",
                 ).fillna(0.0)
                 _bdf_agg["_ece"] = pd.to_numeric(
-                    _bdf_agg.get("cell_ece", pd.Series(np.nan, index=_bdf_agg.index)),
+                    _bdf_agg.get("min_cell_ece", pd.Series(np.nan, index=_bdf_agg.index)),
                     errors="coerce",
                 ).fillna(999.0)
                 _bdf_agg["_brier"] = pd.to_numeric(
-                    _bdf_agg.get("cell_brier", pd.Series(np.nan, index=_bdf_agg.index)),
+                    _bdf_agg.get(
+                        "min_cell_brier", pd.Series(np.nan, index=_bdf_agg.index)
+                    ),
                     errors="coerce",
                 ).fillna(999.0)
                 _bdf_agg = _bdf_agg.sort_values(
@@ -9510,30 +9797,30 @@ def run(args: argparse.Namespace) -> None:
                     if isinstance(_bkt_cfg, dict)
                     else "sqrt",
                     # Learnability metrics for this bucket
-                    "bucket_auc": float(_bkt_winner.get("cell_auc", float("nan"))),
+                    "bucket_auc": float(_bkt_winner.get("median_cell_auc", float("nan"))),
                     "bucket_auc_bound": float(
-                        _bkt_winner.get("cell_auc_bound", float("nan"))
+                        _bkt_winner.get("min_cell_auc_bound", float("nan"))
                     ),
                     "bucket_tp_sep": float(
-                        _bkt_winner.get("cell_tp_sep", float("nan"))
+                        _bkt_winner.get("min_cell_tp_sep", float("nan"))
                     ),
                     "bucket_ap_lift": float(
-                        _bkt_winner.get("cell_ap_lift", float("nan"))
+                        _bkt_winner.get("min_cell_ap_lift", float("nan"))
                     ),
                     "bucket_tp_over_sl": float(
-                        _bkt_winner.get("cell_tp_over_sl", float("nan"))
+                        _bkt_winner.get("min_cell_tp_over_sl", float("nan"))
                     ),
                     "bucket_timeout": float(
-                        _bkt_winner.get("cell_timeout", float("nan"))
+                        _bkt_winner.get("timeout_rate", float("nan"))
                     ),
-                    "bucket_bind": float(_bkt_winner.get("cell_bind", float("nan"))),
-                    "bucket_ece": float(_bkt_winner.get("cell_ece", float("nan"))),
-                    "bucket_brier": float(_bkt_winner.get("cell_brier", float("nan"))),
+                    "bucket_bind": float(_bkt_winner.get("bind", float("nan"))),
+                    "bucket_ece": float(_bkt_winner.get("min_cell_ece", float("nan"))),
+                    "bucket_brier": float(_bkt_winner.get("min_cell_brier", float("nan"))),
                     "bucket_ic_std_time": float(
-                        _bkt_winner.get("cell_ic_std_time", float("nan"))
+                        _bkt_winner.get("ic_std_time", float("nan"))
                     ),
                     "bucket_ic_std_asset": float(
-                        _bkt_winner.get("cell_ic_std_asset", float("nan"))
+                        _bkt_winner.get("ic_std_asset", float("nan"))
                     ),
                     "bucket_stage2_score": float(
                         _bkt_winner.get("stage2_score", float("nan"))
@@ -9600,7 +9887,7 @@ def _log_prod_aligned_wiring(cfgs: List[Dict[str, Any]], stage_name: str) -> Non
         if isinstance(c.get("prod_aligned_tp", None), dict)
         and bool(c.get("prod_aligned_tp"))
     )
-    h_vals = sorted(set(int(h) for h in (2, 4)))
+    h_vals = sorted(set(int(h) for h in TBM_HORIZONS))
     tprint(
         f"[prod_aligned_tp] {stage_name}: configs={len(cfgs)} with_prod_aligned_meta={n_with}/{len(cfgs)} "
         f"horizons={h_vals}"
@@ -9643,9 +9930,8 @@ def _build_prod_aligned_reports(
                 "sl_anchor_pct": tp_base * sl_as_tp
                 if (math.isfinite(tp_base) and math.isfinite(sl_as_tp))
                 else float("nan"),
-                "tp_eff_h1": float(targets.get("H1", float("nan"))),
-                "tp_eff_h2": float(targets.get("H2", float("nan"))),
-                "tp_eff_h4": float(targets.get("H4", float("nan"))),
+                "tp_eff_h3": float(targets.get("H3", float("nan"))),
+                "tp_eff_h8": float(targets.get("H8", float("nan"))),
                 "min_cell_auc_bound": float(
                     _r.get("min_cell_auc_bound", _r.get("min_cell_auc", float("nan")))
                 ),
@@ -9729,20 +10015,16 @@ def _build_prod_aligned_reports(
                     "tp_base_pct",
                     lambda x: int(pd.Series(x).dropna().round(6).nunique()),
                 ),
-                unique_tp_eff_h1=(
-                    "tp_eff_h1",
+                unique_tp_eff_h3=(
+                    "tp_eff_h3",
                     lambda x: int(pd.Series(x).dropna().round(6).nunique()),
                 ),
-                unique_tp_eff_h2=(
-                    "tp_eff_h2",
+                unique_tp_eff_h8=(
+                    "tp_eff_h8",
                     lambda x: int(pd.Series(x).dropna().round(6).nunique()),
                 ),
-                unique_tp_eff_h4=(
-                    "tp_eff_h4",
-                    lambda x: int(pd.Series(x).dropna().round(6).nunique()),
-                ),
-                h2_min=("tp_eff_h2", "min"),
-                h2_max=("tp_eff_h2", "max"),
+                h3_min=("tp_eff_h3", "min"),
+                h3_max=("tp_eff_h3", "max"),
                 min_auc_bound=("min_cell_auc_bound", "min"),
                 tp_base_span=("tp_base_pct", _span_ratio),
                 sl_anchor_span=("sl_anchor_pct", _span_ratio),
@@ -9754,9 +10036,9 @@ def _build_prod_aligned_reports(
         grp["tp_span_required"] = _min_tp_span
         grp["diversity_pass"] = (
             (grp["unique_tp_base_pct"] >= 4)
-            & (grp["unique_tp_eff_h2"] >= 4)
-            & (grp["h2_min"] <= 0.011)
-            & (grp["h2_max"] >= 0.03)
+            & (grp["unique_tp_eff_h3"] >= 4)
+            & (grp["h3_min"] <= 0.014)
+            & (grp["h3_max"] >= 0.035)
             & (grp["tp_base_span"] >= grp["tp_span_required"])
             & (grp["sl_anchor_span"] >= _min_sl_span)
         )
@@ -9811,7 +10093,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--winners", nargs="*", default=[], help="Explicit stage1 config IDs"
     )
     p.add_argument(
-        "--horizons", default="2,4", help="Comma-separated horizons in hours"
+        "--horizons",
+        default=None,
+        help="Comma-separated horizons in hours. Defaults to canonical TBM_HORIZONS.",
     )
     p.add_argument(
         "--max-configs", type=int, default=20, help="Max configs when --quick"

@@ -9,8 +9,6 @@ from extreme_price_movements.perp_features import get_perp_feature_names
 CANON_BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
 CANON_HORIZONS = [3, 8]  # hours
 CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_HORIZONS]
-CANON_HORIZONS = [3, 8]  # hours
-CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_HORIZONS]
 
 # Side-Horizon cells (agnostic to MR/TF distinction)
 # Used for TBM optimization and position sizing without structural bucket assumptions
@@ -688,12 +686,9 @@ TEST_FEATURE_KEYS = [
     "path_efficiency_12",
     "path_efficiency_24",
     # Liquidity + time-of-day
+    # Liquidity
     "amihud_illiq",
     "amihud_z",
-    "sin_hod",
-    "cos_hod",
-    # "sin_dow",
-    # "cos_dow",
     # Mid/long lookback context for 8-bar horizon learnability (16-24h + slower)
     "ret16h",
     "coherence_24",

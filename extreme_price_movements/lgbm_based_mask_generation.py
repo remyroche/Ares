@@ -35,6 +35,7 @@ from extreme_price_movements.config import (
     RIDGE_FEATURE_COLS,
     RIDGE_FEATURE_META,
     TEST_FEATURE_KEYS,
+    TIME_FEATURE_KEYS,
 )
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
@@ -2265,8 +2266,11 @@ class FeatureProcessor:
 
         # 3. Regime Features (continuous -> hybrid booleanize)
         if "regime" in active_groups:
+            time_keys_set = set(TIME_FEATURE_KEYS)
             regime_sources = sorted(
-                list(set(RIDGE_FEATURE_COLS) | set(TEST_FEATURE_KEYS))
+                list(
+                    (set(RIDGE_FEATURE_COLS) | set(TEST_FEATURE_KEYS)) - time_keys_set
+                )
             )
             _add_continuous_features_as_booleans(regime_sources, "regime")
 
@@ -10063,7 +10067,9 @@ class MaskAssessor:
         cached = self._ridge_feature_indices_cache
         if cached is not None:
             return cached
-        test_keys_set = set(TEST_FEATURE_KEYS)
+        # Exclude time-based features from ridge/assessor feature selection
+        time_keys_set = set(TIME_FEATURE_KEYS)
+        test_keys_set = set(TEST_FEATURE_KEYS) - time_keys_set
         requested_columns = tuple(
             self.cfg.get(
                 "miner_target_residualization_columns",
@@ -10512,9 +10518,12 @@ class MaskAssessor:
             + 0.1 * result["_s9_ret_per_risk"]
         )
         
-        # Apply sqrt(support%) scaling
-        support_pct = pd.to_numeric(result.get("support_pct", pd.Series(0.0, index=result.index)), errors="coerce").fillna(0.0)
-        result["score_for_best_params"] = base_score * np.sqrt(support_pct.clip(0.0, 1.0))
+        # Apply linear support scaling: 5% → 1.0, 20% → 1.2 (reward higher support)
+        support_pct = pd.to_numeric(result.get("support_pct", pd.Series(0.05, index=result.index)), errors="coerce").fillna(0.05)
+        # Normalize to [0, 1] range where 5% = 0 and 20% = 1
+        support_normalized = ((support_pct - 0.05) / 0.15).clip(0, 1)
+        support_factor = 1.0 + 0.2 * support_normalized
+        result["score_for_best_params"] = base_score * support_factor
         
         # Clean up temporary columns
         temp_cols = [c for c in result.columns if c.startswith("_s")]

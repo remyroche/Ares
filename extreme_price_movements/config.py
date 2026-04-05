@@ -7,7 +7,7 @@ from extreme_price_movements.perp_features import get_perp_feature_names
 # Canonical TBM horizons for current optimization/inference stack.
 # Legacy bucket naming (still used for grouping), but strategy_ids are canonical LGBM keys
 CANON_BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
-CANON_HORIZONS = [3, 8]  # hours
+CANON_HORIZONS = [3, 10]  # hours
 CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_HORIZONS]
 
 # Side-Horizon cells (agnostic to MR/TF distinction)

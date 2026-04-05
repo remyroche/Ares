@@ -154,8 +154,7 @@ from extreme_price_movements.utils import tprint
 EPS = 1e-12
 TBM_CACHE_VERSION = 2
 ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS) + [
-    "adx_zscore", 
-    "ema_velocity_divergence", 
+    "adx_14",
     "multi_timescale_volatility_shape",
     "trend_persistence_vs_exhaustion",
     "trend_persistence"
@@ -9690,15 +9689,15 @@ def run(args: argparse.Namespace) -> None:
                         _cell_payload["horizon"] = _cell_horizon
                         _cell_payload["config_id"] = _cid
                         _cell_payload["rank_in_cell"] = int(_rank_i + 1)
-                        _cell_payload["cell_auc"] = float(_row.get("cell_auc", 0.5))
+                        _cell_payload["cell_auc"] = float(_row.get("cell_auc", float("nan")))
                         _cell_payload["cell_auc_bound"] = float(
                             _row.get("cell_auc_bound", float("nan"))
                         )
                         _cell_payload["cell_tp_sep"] = float(
-                            _row.get("cell_tp_sep", 0.0)
+                            _row.get("cell_tp_sep", float("nan"))
                         )
                         _cell_payload["cell_ap_lift"] = float(
-                            _row.get("cell_ap_lift", 1.0)
+                            _row.get("cell_ap_lift", float("nan"))
                         )
                         _cell_payload["cell_ece"] = float(
                             _row.get("cell_ece", float("nan"))

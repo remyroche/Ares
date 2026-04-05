@@ -69,7 +69,7 @@ LOGGER = logging.getLogger(__name__)
 # =============================================================================
 
 # Default horizons for triad target training (in bars)
-TRIAD_DEFAULT_HORIZONS: List[int] = [3, 10]
+TRIAD_DEFAULT_HORIZONS: List[int] = [5, 10]
 
 # Default triad target names
 TRIAD_DEFAULT_TARGET_NAMES: List[str] = ["returns_target", "atr_norm_returns_target"]
@@ -108,7 +108,7 @@ TRIAD_TARGET_CONFIGS: Dict[str, Dict[str, Any]] = {
 
 # Horizon-specific configuration multipliers
 HORIZON_CONFIGS: Dict[int, Dict[str, Any]] = {
-    3: {"min_data_in_leaf_multiplier": 0.8, "description": "Very short-term"},
+    5: {"min_data_in_leaf_multiplier": 0.8, "description": "Very short-term"},
     10: {"min_data_in_leaf_multiplier": 1.0, "description": "Short-term"},
 }
 
@@ -2063,40 +2063,7 @@ class FeatureProcessor:
         name = str(source_name)
         return name.startswith("target_") or name.endswith("_surprisal")
 
-    def _compute_rank_norm(
-        self, arr: np.ndarray, symbol_codes: np.ndarray
-    ) -> np.ndarray:
-        """
-        Compute a rank-normalized source in [0, 1] per symbol.
 
-        We keep this fold-local and symbol-local so downstream thresholds can
-        be saved and replayed during OOF/OOS/inference without recomputing
-        any dynamic cut points.
-        """
-        values = np.asarray(arr, dtype=np.float32)
-        codes, _ = pd.factorize(symbol_codes, sort=False)
-        codes = np.asarray(codes, dtype=np.int32)
-        out = np.full(values.shape[0], np.nan, dtype=np.float32)
-
-        for code in np.unique(codes):
-            idx = np.flatnonzero(codes == code)
-            if idx.size == 0:
-                continue
-            g = values[idx]
-            valid = np.isfinite(g)
-            if int(np.sum(valid)) <= 1:
-                continue
-
-            g_valid = g[valid]
-            order = np.argsort(g_valid, kind="mergesort")
-            ranks = np.empty(g_valid.shape[0], dtype=np.float32)
-            ranks[order] = np.arange(1, g_valid.shape[0] + 1, dtype=np.float32)
-            norm = (ranks - 1.0) / max(float(g_valid.shape[0] - 1), 1.0)
-
-            out_idx = idx[valid]
-            out[out_idx] = norm.astype(np.float32, copy=False)
-
-        return out
 
     def prepare_features(
         self,
@@ -2230,9 +2197,13 @@ class FeatureProcessor:
                     if not family or len(family) < 2:
                         family = group_name
 
-                    ts_ranks = self._compute_rank_norm(raw_arr, symbol_codes)
+                    # Heartbeat every 20 features to avoid 10-minute silence
+                    if (len(raw_cols) + 1) % 20 == 0:
+                        tprint(f"FeaturePrep Progress: {group_name} feature {len(raw_cols) + 1} processing ({src})")
 
-                    nan_rate_ts = float(np.isnan(ts_ranks).mean())
+                    # Redundant rank-normalization removed to eliminate O(N^2) bottleneck.
+                    # nan_rate_ts falls back to raw NaN rate as no ranking transform is applied here.
+                    nan_rate_ts = nan_rate_before
 
                     self.rank_audit_rows.append(
                         {
@@ -2478,6 +2449,11 @@ class FeatureProcessor:
             tprint("Top 10 features with worst NaN rates:")
             for row in top_nan.itertuples(index=False, name=None):
                 tprint(f"  - {row[0]}:{row[1]} -> before={row[2]:.2%}, ts={row[3]:.2%}")
+        
+        # Additional diagnostics for FeaturePrep
+        tprint(f"DEBUG: audit_df size={len(audit_df)}, symbols={audit_df['symbol'].nunique() if 'symbol' in audit_df.columns else 'N/A'}")
+        if 'reason' in audit_df.columns:
+            tprint(f"DEBUG: Rejection reasons summary: {audit_df['reason'].value_counts().to_dict()}")
         else:
             rank_audit_df = pd.DataFrame()
 
@@ -2565,23 +2541,7 @@ class FeatureProcessor:
             regime_family=regime_family,
         )
 
-    def _compute_ts_ranks(
-        self, arr: np.ndarray, symbol_codes: np.ndarray
-    ) -> np.ndarray:
-        """
-        Time-series ranking using pandas for vectorization speed.
-        """
-        s = pd.Series(arr, index=symbol_codes)
 
-        # Fix root cause of 0.5 artifacts: if cross-section has no variance, return NaN
-        def _rank_safe(g):
-            if g.nunique() <= 1:
-                return np.full(len(g), np.nan)
-            return g.rank(pct=True)
-
-        # Using transform for speed while preserving index
-        ranks = s.groupby(level=0, sort=False).transform(_rank_safe)
-        return ranks.values
 
     def _run_feature_quality_checks(
         self, X: np.ndarray, names: List[str], cfg: Dict[str, Any]

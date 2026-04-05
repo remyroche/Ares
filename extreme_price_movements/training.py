@@ -11,6 +11,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.mixture import GaussianMixture
 
@@ -22,7 +23,7 @@ from .candidates import (
     select_trade_candidates_vectorized,
 )
 from .config import CANON_HORIZONS
-from .exhaustion import ExhaustionModel
+# from .exhaustion import ExhaustionModel
 from .feature_selection_extreme_events import mdi_feature_selection_v3
 from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 from .gate_metrics import compute_stage_gate_metrics
@@ -97,6 +98,17 @@ from .utils import tprint
 
 _EXP_INPUT_CLIP = 60.0
 _EXP_OUTPUT_MAX = 1e12
+
+# Features used for the miner target residualization.
+# Base models must residualize their targets against these and NOT use them as inputs.
+TRAINING_RESIDUALIZATION_FEATURE_KEYS: tuple[str, ...] = (
+    "ema50_ema200_spread_continuous",
+    "atr_change_rate_ts_continuous",
+    "bars_in_high_vol_state_log_norm",
+    "volatility_of_volatility_48",
+    "trend_strength_percentile",
+    "volatility_autocorr_48",
+)
 
 
 def _safe_exp_bounded(
@@ -2206,465 +2218,8 @@ def _meta_feature_keys_for_kind(cfg: dict, strategy: dict | None = None) -> list
     return out
 
 
-def build_exhaustion_Xy(
-    panel,
-    feats,
-    mkt_gates,
-    cfg,
-    ts_end,
-    lookback_hours,
-    syms,
-    trend_filter=None,
-    model_direction=None,
-):
-    """
-    Build exhaustion training data.
 
-    Parameters
-    ----------
-    model_direction : str, optional
-        'up' for UP model (predicts long reversals during downtrends)
-        'down' for DOWN model (predicts short reversals during uptrends)
-        If None, uses legacy behavior (deprecated).
-
-    Label Assignment Logic (FIXED):
-    - UP model (model_direction='up'): Looks for LONG reversals during DOWNTRENDS
-      - Uses trend_filter='down' to select downtrending samples
-      - Assigns is_long_rev labels (long reversal happened)
-    - DOWN model (model_direction='down'): Looks for SHORT reversals during UPTRENDS
-      - Uses trend_filter='up' to select uptrending samples
-      - Assigns is_short_rev labels (short reversal happened)
-    """
-    tprint(f"Entering function: build_exhaustion_Xy in training.py")
-    c = panel["close"]
-    idx = c.index
-    H = int(cfg["exh_horizon_hours"])
-    ts_train_end = ts_end - pd.Timedelta(hours=1)
-    ts_start = ts_train_end - pd.Timedelta(hours=int(lookback_hours))
-    if ts_train_end not in idx:
-        return None, None, None, None
-    mask = (idx >= ts_start) & (idx <= ts_train_end + pd.Timedelta(hours=H))
-    idx_slice = idx[mask]
-    valid_syms = [s for s in syms if s in c.columns]
-    # Also filter against feature columns to avoid KeyError on newly listed symbols
-    for fk in cfg.get("exh_feature_keys", []):
-        if fk in feats:
-            valid_syms = [s for s in valid_syms if s in feats[fk].columns]
-    if not valid_syms:
-        return None, None, None, None
-    t_index = idx[(idx >= ts_start) & (idx <= ts_train_end)]
-    current = c.loc[t_index, valid_syms]
-
-    label_type = cfg.get("exh_label_type", "simple")
-    tprint(f"Exhaustion Label Type: {label_type}")
-    if label_type == "peak":
-        use_atr = cfg.get("exh_use_atr", True)
-        if use_atr and "atr_pct" in feats:
-            atr_full = feats["atr_pct"] * panel["close"]
-            near_k = float(cfg.get("exh_atr_near_k", 0.5))
-            rev_k = float(cfg.get("exh_atr_rev_k", 2.0))
-        else:
-            atr_full = panel["close"]
-            near_k = float(cfg.get("exh_near_thr", 0.01))
-            rev_k = float(cfg.get("exh_rev_thr_pct", 0.04))
-
-        common_idx = panel["close"].index.intersection(atr_full.index)
-        c_full = panel["close"].loc[common_idx]
-        a_full = atr_full.loc[common_idx]
-
-        max_near = float(cfg.get("exh_near_dist_cap_pct", 0.02))
-        min_rev = float(cfg.get("exh_rev_dist_floor_pct", 0.005))
-
-        l_short, w_short = ff.compute_peak_labels_and_weights(
-            c_full, a_full, H, near_k, rev_k, True, max_near, min_rev
-        )
-        l_long, w_long = ff.compute_peak_labels_and_weights(
-            c_full, a_full, H, near_k, rev_k, False, max_near, min_rev
-        )
-
-        l_short_s = l_short.reindex(index=t_index, columns=valid_syms)
-        l_long_s = l_long.reindex(index=t_index, columns=valid_syms)
-        w_short_s = w_short.reindex(index=t_index, columns=valid_syms)
-        w_long_s = w_long.reindex(index=t_index, columns=valid_syms)
-
-        is_short_rev = l_short_s.fillna(0) > 0.5
-        is_long_rev = l_long_s.fillna(0) > 0.5
-
-    else:
-        close_sub = c.loc[idx_slice, valid_syms].astype(np.float32)
-        rev_close = close_sub.iloc[::-1]
-        fmax = rev_close.rolling(H).max().shift(1).iloc[::-1]
-        fmin = rev_close.rolling(H).min().shift(1).iloc[::-1]
-        fmax = fmax.loc[t_index]
-        fmin = fmin.loc[t_index]
-        thr = float(cfg["exh_reversal_thr"])
-        is_short_rev = ((fmin / (current + 1e-12)) - 1.0) <= -thr
-        is_long_rev = ((fmax / (current + 1e-12)) - 1.0) >= thr
-    ret24 = feats["ret24h"].reindex(index=t_index, columns=valid_syms)
-    dir_mat = np.sign(ret24).fillna(0).astype(np.int8)
-    y = np.zeros(current.shape, dtype=np.int8)
-    w = np.ones(current.shape, dtype=np.float32)
-
-    # FIXED: Label assignment based on model_direction
-    # UP model (model_direction='up'): Predicts LONG reversals during DOWNTRENDS
-    # DOWN model (model_direction='down'): Predicts SHORT reversals during UPTRENDS
-    if model_direction == "up":
-        # UP model: Look for long reversals (is_long_rev) during downtrends (dir_mat < 0)
-        mask_dn = dir_mat < 0
-        if mask_dn.values.any():
-            y[mask_dn] = is_long_rev.values[mask_dn].astype(np.int8)
-            if cfg.get("exh_label_type") == "peak":
-                w[mask_dn] = w_long_s.values[mask_dn].astype(np.float32)
-        tprint(f"UP model: Using LONG reversal labels during DOWNTRENDS")
-    elif model_direction == "down":
-        # DOWN model: Look for short reversals (is_short_rev) during uptrends (dir_mat > 0)
-        mask_up = dir_mat > 0
-        if mask_up.values.any():
-            y[mask_up] = is_short_rev.values[mask_up].astype(np.int8)
-            if cfg.get("exh_label_type") == "peak":
-                w[mask_up] = w_short_s.values[mask_up].astype(np.float32)
-        tprint(f"DOWN model: Using SHORT reversal labels during UPTRENDS")
-    else:
-        # Legacy behavior (deprecated - kept for backward compatibility)
-        # This was the buggy behavior that caused the imbalance
-        mask_up = dir_mat > 0
-        if mask_up.values.any():
-            y[mask_up] = is_short_rev.values[mask_up].astype(np.int8)
-            if cfg.get("exh_label_type") == "peak":
-                w[mask_up] = w_short_s.values[mask_up].astype(np.float32)
-
-        mask_dn = dir_mat < 0
-        if mask_dn.values.any():
-            y[mask_dn] = is_long_rev.values[mask_dn].astype(np.int8)
-            if cfg.get("exh_label_type") == "peak":
-                w[mask_dn] = w_long_s.values[mask_dn].astype(np.float32)
-
-    if cfg.get("exh_label_type") == "peak":
-        mask_boosted = w > 1.0
-        if mask_boosted.sum() > 10:
-            boosted_vals = w[mask_boosted]
-            cap = np.quantile(boosted_vals, 0.80)
-            w[w > cap] = cap
-    X_parts = []
-    # Exhaustion features are specific now
-    for k in cfg.get("exh_feature_keys", cfg.get("exh_feature_keys_legacy", [])):
-        if k in feats:
-            X_parts.append(
-                feats[k]
-                .reindex(index=t_index, columns=valid_syms)
-                .stack(future_stack=True)
-                .rename(k)
-            )
-    X = pd.concat(X_parts, axis=1)
-    X.index.names = ["ts", "symbol"]
-    if trend_filter:
-        trend_vals = (
-            feats["trend_pct"]
-            .reindex(index=t_index, columns=valid_syms)
-            .stack(future_stack=True)
-        )
-        common_idx = X.index.intersection(trend_vals.index)
-        X = X.loc[common_idx]
-        trend_vals = trend_vals.loc[common_idx]
-        keep = _trend_direction_keep_mask(trend_vals.values, trend_filter)
-        X = X[keep]
-        y_ser = (
-            pd.DataFrame(y, index=t_index, columns=valid_syms)
-            .stack(future_stack=True)
-            .rename("y")
-            .reindex(X.index)
-        )
-        y_arr = y_ser.values.astype(int)
-
-        w_ser = (
-            pd.DataFrame(w, index=t_index, columns=valid_syms)
-            .stack(future_stack=True)
-            .rename("w")
-            .reindex(X.index)
-        )
-        w_arr = w_ser.values.astype(np.float32)
-    else:
-        y_df = (
-            pd.DataFrame(y, index=t_index, columns=valid_syms)
-            .stack(future_stack=True)
-            .rename("y")
-        )
-        w_df = (
-            pd.DataFrame(w, index=t_index, columns=valid_syms)
-            .stack(future_stack=True)
-            .rename("w")
-        )
-        common_idx = X.index.intersection(y_df.index).intersection(w_df.index)
-        X = X.loc[common_idx].copy()
-        X["y"] = y_df.reindex(common_idx).values
-        X["w"] = w_df.reindex(common_idx).values
-        X = X.dropna()
-        y_arr = X.pop("y").astype(int).values
-        w_arr = X.pop("w").astype(np.float32).values
-
-    # Class imbalance correction: inverse-frequency weighting
-    n_pos = (y_arr == 1).sum()
-    n_neg = (y_arr == 0).sum()
-    if n_pos > 0 and n_neg > 0:
-        n_total = n_pos + n_neg
-        w_pos = n_total / (2.0 * n_pos)
-        w_neg = n_total / (2.0 * n_neg)
-        class_mult = np.where(y_arr == 1, w_pos, w_neg).astype(np.float32)
-        w_arr = w_arr * class_mult
-
-    tprint(f"Exhaustion X shape: {X.shape}, y shape: {y_arr.shape}")
-    tprint(f"Exhaustion class dist: {np.bincount(y_arr)}")
-
-    mg = mkt_gates.loc[
-        t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]
-    ]
-    for col in mg.columns:
-        vals = pd.Series(
-            X.index.get_level_values("ts").map(mg[col]).values, index=X.index
-        )
-        _std = vals.std()
-        if pd.notna(_std) and _std > 1e-9:
-            X[col] = vals
-
-    return X, y_arr, w_arr, list(X.columns)
-
-
-def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=None):
-    tprint(f"Entering function: compute_p_exhaustion_at_t in training.py")
-    t_index = pd.DatetimeIndex([ts], tz="UTC")
-    valid_syms = [s for s in syms if s in panel["close"].columns]
-    trend_vals = (
-        feats["trend_pct"].reindex(columns=valid_syms).loc[ts]
-        if ts in feats["trend_pct"].index
-        else pd.Series(0.0, index=valid_syms)
-    )
-    up_syms = trend_vals[trend_vals > 0].index.tolist()
-    dn_syms = trend_vals[trend_vals <= 0].index.tolist()
-    tprint(f"compute_p_exhaustion_at_t: {len(up_syms)} up, {len(dn_syms)} down")
-
-    out_probs = pd.Series(index=syms, dtype=float).fillna(0.0)
-    lookback = cfg["exh_train_lookback_hours"]
-    if up_syms:
-        if models and "up" in models:
-            model_up = models["up"]
-        else:
-            tprint("Training UP model...")
-            X, y, w, _ = build_exhaustion_Xy(
-                panel,
-                feats,
-                mkt_gates,
-                cfg,
-                ts,
-                lookback,
-                valid_syms,
-                model_direction="up",
-            )
-            if X is not None and len(y) > 100:
-                model_up = ExhaustionModel()
-                model_up.fit(X, y, sample_weight=w)
-            else:
-                tprint("Not enough data for UP model.")
-                model_up = None
-        if model_up and model_up.model:
-            Xp = _build_pred_X(
-                feats, mkt_gates, cfg, ts, up_syms, feature_key="exh_feature_keys"
-            )
-            if not Xp.empty:
-                # No manual scaling needed with calibration
-                probs = model_up.predict_proba(Xp)
-                out_probs.loc[up_syms] = probs
-    if dn_syms:
-        if models and "down" in models:
-            model_dn = models["down"]
-        else:
-            tprint("Training DOWN model...")
-            X, y, w, _ = build_exhaustion_Xy(
-                panel,
-                feats,
-                mkt_gates,
-                cfg,
-                ts,
-                lookback,
-                valid_syms,
-                model_direction="down",
-            )
-            if X is not None and len(y) > 100:
-                model_dn = ExhaustionModel()
-                model_dn.fit(X, y, sample_weight=w)
-            else:
-                tprint("Not enough data for DOWN model.")
-                model_dn = None
-        if model_dn and model_dn.model:
-            Xp = _build_pred_X(
-                feats, mkt_gates, cfg, ts, dn_syms, feature_key="exh_feature_keys"
-            )
-            if not Xp.empty:
-                preds = model_dn.predict_proba(Xp)
-                # No manual scaling needed
-                out_probs.loc[dn_syms] = preds
-    return out_probs.fillna(0.0)
-
-
-def _build_pred_X(feats, mkt_gates, cfg, ts, syms, feature_key="exh_feature_keys"):
-    tprint(f"Entering function: _build_pred_X in training.py")
-    t_index = pd.DatetimeIndex([ts], tz="UTC")
-    X_parts = []
-
-    keys = cfg.get(feature_key, [])
-
-    for k in keys:
-        if k in feats:
-            X_parts.append(
-                feats[k]
-                .reindex(index=t_index, columns=syms)
-                .stack(future_stack=True)
-                .rename(k)
-            )
-    if not X_parts:
-        return pd.DataFrame()
-
-    Xp = pd.concat(X_parts, axis=1)
-    Xp.index.names = ["ts", "symbol"]
-    mg = mkt_gates.loc[
-        t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]
-    ]
-    for col in mg.columns:
-        Xp[col] = Xp.index.get_level_values("ts").map(mg[col])
-    return Xp.fillna(0)
-
-
-def generate_exhaustion_history(
-    panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms
-):
-    tprint(f"Entering function: generate_exhaustion_history in training.py")
-    train_end = ts_end - pd.Timedelta(hours=lookback_hours)
-    train_len = cfg["exh_train_lookback_hours"]
-    tprint("Generating UP history...")
-    X_up, y_up, w_up, _ = build_exhaustion_Xy(
-        panel, feats, mkt_gates, cfg, train_end, train_len, syms, model_direction="up"
-    )
-    model_up = None
-    arr_oof_up = None
-    if X_up is not None and len(y_up) > 100:
-        model_up = ExhaustionModel()
-        model_up.fit(X_up, y_up, sample_weight=w_up)
-        # OOF Predictions for UP
-        tprint("Generating OOF predictions for UP model...")
-        oof_preds, _ = model_up.compute_oof_predictions(X_up, y_up)
-        s_oof = pd.Series(oof_preds, index=X_up.index)  # Store as s_oof for later use
-
-    tprint("Generating DOWN history...")
-    X_dn, y_dn, w_dn, _ = build_exhaustion_Xy(
-        panel, feats, mkt_gates, cfg, train_end, train_len, syms, model_direction="down"
-    )
-    model_dn = None
-    arr_oof_dn = None
-    if X_dn is not None and len(y_dn) > 100:
-        model_dn = ExhaustionModel()
-        model_dn.fit(X_dn, y_dn, sample_weight=w_dn)
-        # OOF Predictions for DOWN
-        tprint("Generating OOF predictions for DOWN model...")
-        oof_preds, _ = model_dn.compute_oof_predictions(X_dn, y_dn)
-        s_oof_dn = pd.Series(oof_preds, index=X_dn.index)
-
-    # --- Fast vectorized prediction over full window ---
-    t_idx = pd.date_range(train_end, ts_end, freq="h", tz="UTC")
-    t_idx = t_idx[t_idx.isin(panel["close"].index)]
-    valid_syms = [s for s in syms if s in panel["close"].columns]
-    n_t, n_s = len(t_idx), len(valid_syms)
-    tprint(
-        f"Exhaustion prediction window: {n_t} timestamps x {n_s} symbols = {n_t * n_s} cells"
-    )
-
-    # Prepare OOF arrays (n_t, n_s) aligned to prediction window
-    if model_up and "s_oof" in locals():
-        tprint("Aligning UP OOF predictions to grid...")
-        df_oof = s_oof.unstack(level="symbol").reindex(index=t_idx, columns=valid_syms)
-        arr_oof_up = df_oof.values.astype(np.float32)  # contains NaNs where OOF missing
-
-    if model_dn and "s_oof_dn" in locals():
-        tprint("Aligning DOWN OOF predictions to grid...")
-        df_oof = s_oof_dn.unstack(level="symbol").reindex(
-            index=t_idx, columns=valid_syms
-        )
-        arr_oof_dn = df_oof.values.astype(np.float32)
-
-    # Build feature+gate arrays as 2D (n_t, n_features) per symbol, predict per-symbol
-    keys = cfg.get("exh_feature_keys", [])
-    mkt_cols = ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]
-    mg = (
-        mkt_gates.reindex(t_idx)[mkt_cols].fillna(0).values.astype(np.float32)
-    )  # (n_t, 6)
-
-    # Pre-extract feature arrays aligned to t_idx: dict[key] -> DataFrame(n_t, n_s)
-    feat_aligned = {}
-    for k in keys:
-        if k in feats:
-            feat_aligned[k] = (
-                feats[k]
-                .reindex(index=t_idx, columns=valid_syms)
-                .fillna(0)
-                .values.astype(np.float32)
-            )
-
-    # Trend values for direction gating
-    if "trend_pct" in feats:
-        trend_arr = (
-            feats["trend_pct"].reindex(index=t_idx, columns=valid_syms).fillna(0).values
-        )
-    else:
-        trend_arr = np.ones((n_t, n_s), dtype=np.float32)
-
-    # Predict per-symbol (avoids 1.6M-row MultiIndex entirely)
-    result = np.zeros((n_t, n_s), dtype=np.float32)
-    n_feat_keys = len(feat_aligned)
-    n_cols = n_feat_keys + len(mkt_cols)
-
-    for j, sym in enumerate(valid_syms):
-        # Build X for this symbol: (n_t, n_feat_keys + n_mkt_cols)
-        x_parts = []
-        for k in keys:
-            if k in feat_aligned:
-                x_parts.append(feat_aligned[k][:, j : j + 1])
-        if x_parts:
-            x_feat = np.hstack(x_parts)  # (n_t, n_feat_keys)
-        else:
-            x_feat = np.zeros((n_t, 0), dtype=np.float32)
-        X_sym = np.hstack([x_feat, mg])  # (n_t, n_cols)
-        X_sym_df = pd.DataFrame(X_sym, columns=keys[: x_feat.shape[1]] + mkt_cols)
-
-        p_up_sym = np.zeros(n_t, dtype=np.float32)
-        if model_up and model_up.model:
-            # 1. Fitted prediction (fallback)
-            preds = model_up.predict_proba(X_sym_df)
-
-            # 2. Overlay OOF predictions where available
-            if arr_oof_up is not None:
-                oof_col = arr_oof_up[:, j]
-                valid_oof = ~np.isnan(oof_col)
-                if valid_oof.any():
-                    # OOF is already calibrated
-                    preds[valid_oof] = oof_col[valid_oof]
-            p_up_sym = preds
-
-        p_dn_sym = np.zeros(n_t, dtype=np.float32)
-        if model_dn and model_dn.model:
-            # 1. Fitted prediction
-            preds = model_dn.predict_proba(X_sym_df)
-
-            # 2. Overlay OOF predictions
-            if arr_oof_dn is not None:
-                oof_col = arr_oof_dn[:, j]
-                valid_oof = ~np.isnan(oof_col)
-                if valid_oof.any():
-                    preds[valid_oof] = oof_col[valid_oof]
-            p_dn_sym = preds
-
-        result[:, j] = np.where(trend_arr[:, j] > 0, p_up_sym, p_dn_sym)
-
-    res_df = pd.DataFrame(result, index=t_idx, columns=valid_syms)
-    res_df = res_df.reindex(columns=syms).fillna(0.0)
-    return res_df
+# Exhaustion model logic removed per user request.
 
 
 def _build_pred_X_window(
@@ -10402,21 +9957,43 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             "__barrier_pct__",
         ]
         X = df_variant.drop(columns=[c for c in drop_cols if c in df_variant.columns])
+        
+        # --- Target Residualization (Base Model Only) ---
+        # Per requirement: Ensure the target is residualized ONLY for base_model training
+        # and ensure the base models do NOT have access to the residualization features.
+        
+        # Define nuisance features for residuals (miner-aligned + market benchmarks)
+        nuisance_keys = list(TRAINING_RESIDUALIZATION_FEATURE_KEYS) + [
+            "mkt_ret24h", "mkt_rv", "mkt_trend", "G_VOL", "G_TREND"
+        ]
+        available_nuisance = [c for c in nuisance_keys if c in X.columns]
+        
+        if available_nuisance:
+            tprint(f"  Residualizing target against {len(available_nuisance)} nuisance features: {available_nuisance}")
+            # Use linear regression to find the nuisance component
+            lr = LinearRegression()
+            # Handle potential NaNs in nuisance features for the residual fit
+            X_nuis = X[available_nuisance].fillna(0.0)
+            lr.fit(X_nuis, y, sample_weight=w)
+            y_nuis_pred = lr.predict(X_nuis)
+            # Center residuals to preserve average hit rate (or let it float)
+            y = y - y_nuis_pred
+            tprint(f"  Target residualized: mean_orig={np.mean(df_variant['__y_bin__']):.4f}, mean_resid={np.mean(y):.4f}")
+
         # Use strategy dict to extract feature keys
         allowed_keys = set(strategy.get("feature_keys", [])) if strategy else set()
         std_inputs = {
-            "p_exh_lag1",
-            "G_VOL",
-            "G_TREND",
-            "mkt_ret24h",
-            "mkt_ret6h",
-            "mkt_trend",
-            "mkt_rv",
             "trap_score",
             "gamma_score",
+            "mkt_ret6h", # Keep some standard inputs if not in nuisance
         }
+        # Explicitly remove nuisance features from inputs
+        excluded_keys = set(nuisance_keys)
+        
         valid_cols = []
         for c in X.columns:
+            if c in excluded_keys:
+                continue
             if c in allowed_keys or c in std_inputs:
                 valid_cols.append(c)
                 continue
@@ -10427,7 +10004,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         valid_cols.append(c)
                         break
         if not valid_cols:
-            valid_cols = list(X.columns)
+            # Fallback but still exclude nuisance
+            valid_cols = [c for c in X.columns if c not in excluded_keys]
         X = X[valid_cols]
         from sklearn.ensemble import ExtraTreesRegressor
 

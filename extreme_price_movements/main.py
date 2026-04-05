@@ -25,7 +25,7 @@ from extreme_price_movements.candidates import select_trade_candidates_hourly, e
 from extreme_price_movements.time_utils import get_ts_sig, floor_to_hour, now_utc
 from extreme_price_movements.state import StateManager
 from extreme_price_movements.metrics import MetricsLogger
-from extreme_price_movements.training import select_best_horizon, compute_p_exhaustion_at_t, apply_interaction_toggles, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts
+from extreme_price_movements.training import select_best_horizon, apply_interaction_toggles, optimize_risk_params, train_models_from_artifacts
 from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.optimization_utils import filter_low_variance_assets
 from extreme_price_movements.pipeline_steps import run_label_generation_step_v2, run_risk_optimization_step, run_backtest_step
@@ -212,13 +212,6 @@ def _load_label_datasets(cfg, run_id):
                 if df is not None:
                     datasets[name] = df
                     found_count += 1
-
-    # Exhaustion
-    for d in ["up", "down"]:
-        name = f"exh_{d}"
-        df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
-        if df is not None:
-            datasets[name] = df
 
     # Specialist models
     for name in ["trap_model", "gamma_model"]:
@@ -467,11 +460,8 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
             state.set_position(sym, pos)
 
     tprint(f"Position updates complete. Exits: {exits_count}")
-    p_exh_cand = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, 24, list(dfs.keys()))
-    tprint("Exhaustion history for candidates generated")
-
     target_orders = generate_hourly_signals(
-        ts_sig, feats, mkt_gates, bundle, risk_conf, cfg, p_exh_cand, active_syms,
+        ts_sig, feats, mkt_gates, bundle, risk_conf, cfg, active_syms,
         tradeable_candidates=sorted(tradeable_basket)
     )
     tprint(f"Generated {len(target_orders) if target_orders else 0} signals")

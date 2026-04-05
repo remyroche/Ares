@@ -9,7 +9,6 @@ from extreme_price_movements.utils import tprint
 
 from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.training import (
-    compute_p_exhaustion_at_t,
     select_best_horizon,
     apply_interaction_toggles,
     scaled_atr_pct
@@ -918,7 +917,7 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
     return s, np.zeros(len(p_alpha), dtype=bool)
 
 
-def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=None):
+def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_positions_syms, tradeable_candidates=None):
     _dbg = bool(cfg.get("debug_signal_generation", False))
     if ts_sig not in mkt_gates.index:
         if _dbg:
@@ -1070,17 +1069,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
     base_df["G_TREND"] = int(mrk["G_TREND"])
     base_df["trend_dir"] = pd.Series({sym: int(trend_map[sym]) for sym in valid_symbols}, dtype=np.int8)
 
-    p_lag_series = pd.Series(0.5, index=base_df.index, dtype=np.float32)
-    if ts_lag in p_exh_cand.index:
-        shared_cols = [sym for sym in valid_symbols if sym in p_exh_cand.columns]
-        if shared_cols:
-            try:
-                p_lag_series.loc[shared_cols] = (
-                    p_exh_cand.loc[ts_lag, shared_cols].astype(np.float32).values
-                )
-            except Exception:
-                pass
-    base_df["p_exh_lag1"] = p_lag_series.values
+    base_df["p_exh_lag1"] = 0.5
 
     for k in sorted(bundle_feature_keys):
         fk = feats.get(k)
@@ -1373,7 +1362,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
 
     return pd.DataFrame(score_rows)
 
-def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=None):
+def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, current_positions_syms, tradeable_candidates=None):
     if ts_sig not in mkt_gates.index:
         if bool(cfg.get("debug_signal_generation", False)):
             tprint(f"    SignalGenDiag ts={ts_sig} dropped: ts not in mkt_gates.index")
@@ -1406,7 +1395,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
         "after_symbol_dedup": 0,
         "after_new_sizer": 0,
     }
-    sc_df = _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=tradeable_candidates)
+    sc_df = _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_positions_syms, tradeable_candidates=tradeable_candidates)
     if sc_df.empty:
         if _dbg:
             tprint(f"    SignalGenDiag ts={ts_sig} sc_rows=0 (no candidates from side-score stage)")

@@ -622,6 +622,24 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # Store calibrator for inference
                     "calibrator": calibrator,
                 }
+                
+                # --- Top-K Feature Importance Reporting ---
+                if hasattr(model_clone, "estimator"): inner_m = model_clone.estimator
+                else: inner_m = model_clone
+                
+                if hasattr(inner_m, "feature_importances_"):
+                    importances = inner_m.feature_importances_
+                    feat_names = X.columns if hasattr(X, "columns") else [f"f_{i}" for i in range(len(importances))]
+                    imp_df = pd.DataFrame({"feature": feat_names, "importance": importances}).sort_values("importance", ascending=False)
+                    
+                    top5 = imp_df.head(5)
+                    top10_pct_n = max(1, int(len(imp_df) * 0.10))
+                    top10_pct_sum = imp_df.head(top10_pct_n)["importance"].sum()
+                    
+                    tprint(f"  {name} Importance: Top10% CumSum={top10_pct_sum:.4f}")
+                    for _, row in top5.iterrows():
+                        tprint(f"    - {row['feature']}: {row['importance']:.4f}")
+
                 tprint(f"  {name}: OOF_Cal_Score={detailed_metrics[name]['score']:.4f} AUC={detailed_metrics[name]['AUC']:.4f} IC={detailed_metrics[name]['IC']:.4f} BSS={detailed_metrics[name]['BSS']:.4f} Prec10={detailed_metrics[name]['Prec10']:.4f}")
 
             except Exception as e:

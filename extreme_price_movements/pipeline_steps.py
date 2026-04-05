@@ -76,7 +76,7 @@ from extreme_price_movements.telemetry.tprint_hooks import (
     emit_run_header,
 )
 from extreme_price_movements.training import (
-    generate_exhaustion_history,
+    # generate_exhaustion_history,
     generate_label_datasets,
     optimize_risk_params,
     train_models_from_artifacts,
@@ -1404,21 +1404,10 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     }
     feats = _align_features_to_panel(feats, panel, valid_syms)
 
-    # 1. Exhaustion History
-    p_exh_hist = generate_exhaustion_history(
-        panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms
-    )
-
-    # Save Exhaustion History
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    save_artifact_df(
-        p_exh_hist, cfg["data_root"], run_id, "labels", "exhaustion_history"
-    )
-
-    # 2. Label Datasets
+    # 1. Label Datasets
     horizons = horizons or cfg.get("label_horizons_hours", list(CANON_HORIZONS))
     datasets = generate_label_datasets(
-        panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, horizons=horizons
+        panel, feats, mkt_gates, cfg, train_syms, ts_sig, None, horizons=horizons
     )
 
     # Use SlicePlanner to determine walk-forward test set and exclude it from training data
@@ -2671,26 +2660,7 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     cfg["granular_regime_boundaries"] = compute_regime_boundaries(feats)
 
     # We also need p_exh_hist. Load from artifacts (using run_ts).
-    run_id = run_ts.strftime("%Y%m%d_%H%M%S")
-    from extreme_price_movements.data_store import load_artifact_df
-
-    p_exh_hist = load_artifact_df(
-        cfg["data_root"], run_id, "labels", "exhaustion_history"
-    )
-
-    if p_exh_hist is None:
-        tprint("Exhaustion history artifact missing. Regenerating...")
-        # Generate up to opt_ts? Or regenerate full and slice?
-        # Typically we want history up to opt_ts for optimization.
-        p_exh_hist = generate_exhaustion_history(
-            panel,
-            feats,
-            mkt_gates,
-            cfg,
-            opt_ts,
-            cfg["train_lookback_hours"],
-            train_syms,
-        )
+    p_exh_hist = None
 
     alpha_models = bundle["alpha_models"]
     best_risk = optimize_risk_params(
@@ -2883,19 +2853,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     from extreme_price_movements.data_store import load_artifact_df
 
-    p_exh_hist = load_artifact_df(
-        cfg["data_root"], run_id, "labels", "exhaustion_history"
-    )
-    if p_exh_hist is None:
-        p_exh_hist = generate_exhaustion_history(
-            panel,
-            feats,
-            mkt_gates,
-            cfg,
-            ts_sig,
-            cfg["train_lookback_hours"],
-            train_syms,
-        )
+    p_exh_hist = None
 
     test_days_cfg = int(cfg.get("oos_holdout_days", 730))
     test_days = max(730, test_days_cfg)

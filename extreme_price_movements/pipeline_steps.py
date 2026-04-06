@@ -2,6 +2,7 @@ import glob
 import json
 import os
 import pickle
+import re
 import time
 
 import joblib
@@ -281,6 +282,19 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
 
     # 5. Core features that downstream logic assumes are present.
     keys.update({"ret1h", "ret24h"})
+
+    # 5b. Include all raw features referenced by dynamic strategy rule masks so
+    # pre-meta risk optimization can resolve canonical masks without falling
+    # back to zero-event default buckets.
+    for strat in get_strategies(cfg):
+        base_event_trigger = str(strat.get("base_event_trigger", "") or "")
+        if not base_event_trigger:
+            continue
+        for feat_name in re.findall(
+            r"([A-Za-z_][A-Za-z0-9_]*)\s*(?:<=|>=|==|<|>)", base_event_trigger
+        ):
+            if feat_name not in {"Composite"}:
+                keys.add(feat_name)
 
     # 6. Technical Regime (Ridge) Features
     from extreme_price_movements.config import RIDGE_FEATURE_COLS, CONTINUOUS_LOCATION_COLS
@@ -1288,7 +1302,14 @@ def _local_store_symbols(store) -> list[str]:
 
 def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizons=None):
     cfg = apply_offline_optimizer_best_params(dict(cfg))
+    run_id = pd.Timestamp(ts_sig).strftime("%Y%m%d_%H%M%S")
     tprint("STEP: LABEL GENERATION START")
+    _label_symbols_env = str(os.environ.get("EPM_LABEL_SYMBOLS", "")).strip()
+    _label_symbols_override = [
+        s.strip()
+        for s in _label_symbols_env.split(",")
+        if isinstance(s, str) and s.strip()
+    ]
     _labels_use_store_universe = False
     # Labels should be able to run fully offline from local store contents.
     # If margin_symbols is not provided, source it directly from store instead of
@@ -1335,6 +1356,18 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     tprint(
         f"Universe after base-asset dedup (USDT>USDC>BUSD>EUR): {len(train_syms)} symbols"
     )
+    if _label_symbols_override:
+        _override_set = set(_label_symbols_override)
+        _filtered_syms = [s for s in train_syms if s in _override_set]
+        tprint(
+            f"Label symbol override active: requested={len(_label_symbols_override)} matched={len(_filtered_syms)}"
+        )
+        train_syms = _filtered_syms
+        if not train_syms:
+            tprint(
+                f"ERROR: EPM_LABEL_SYMBOLS matched no symbols in label universe: {_label_symbols_override}"
+            )
+            return
 
     # Load Data & Features
     dfs = {}
@@ -1664,112 +1697,8 @@ def run_training_step(
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     datasets = {}
 
-    # Ensure we always have a margin universe for downstream specialist training
-    if margin_symbols is None:
-        try:
-            margin_cache = refresh_margin_universe_daily(
-                None, quotes=cfg.get("margin_quotes", ("USDT", "USDC", "BUSD", "EUR"))
-            )
-            margin_symbols = margin_cache.symbols if margin_cache else []
-        except Exception as exc:
-            tprint(
-                f"WARNING: Failed to refresh margin universe ({exc}); proceeding without specialist training"
-            )
-            margin_symbols = []
-
     # 1. Load label artifacts
     tprint("Loading label datasets from artifacts...")
-
-    # Spike anatomy
-    missing_spike = []
-    for mode in ["best", "worst"]:
-        name = f"spike_anatomy_{mode}"
-        df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", name)
-        if df_spike is not None:
-            datasets[
-                name
-            ] = df_spike  # Use all rows (already filtered by SlicePlanner in label step)
-        else:
-            missing_spike.append(mode)
-
-    if missing_spike:
-        tprint(
-            f"Adding Missing Spike artifacts: {missing_spike} (Generating in-memory...)"
-        )
-        if store is None:
-            tprint("ERROR: store is None, cannot generate missing spike artifacts.")
-            # Critical failure if we can't generate
-        else:
-            # Need features and panel. Load them.
-            # Mirror run_label_generation_step_v2 logic roughly but localized
-            tprint("Loading features and panel for Spike Anatomy generation...")
-            train_syms = get_training_universe(
-                margin_symbols, cfg, store, ts_sig=ts_sig
-            )
-            spike_feature_keys = set(cfg.get("spike_feature_keys", []))
-            spike_feature_keys.update(_meta_feature_keys_union(cfg))
-            spike_feature_keys.update({"atr_pct", "ret1h", "ret24h"})
-            feats = load_features_selected(
-                ts_sig,
-                cfg["data_root"],
-                feature_keys=sorted(spike_feature_keys),
-                symbols=train_syms,
-            )
-            if feats is None or len(feats) == 0:
-                tprint("ERROR: Features not found.")
-            else:
-                dfs = {}
-                lookback_days = max(90, int(cfg["fetch_years"] * 365))
-                for s in train_syms:
-                    df = store.load(s)
-                    if not df.empty:
-                        dfs[s] = df[df.index <= ts_sig].tail(24 * lookback_days)
-
-                if dfs:
-                    panel = to_panel(dfs)
-                    feats = _ensure_atr_pct_feature(
-                        feats, panel, cfg, symbols=train_syms
-                    )
-                    mkt_df = compute_market_features(panel, cfg["market_basket"])
-                    mkt_gates = add_regime_gates(
-                        mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"]
-                    )
-
-                    # Intersect symbols
-                    sample_feat = next(iter(feats.values()))
-                    valid_syms = sorted(
-                        set(sample_feat.columns)
-                        & set(panel["close"].columns)
-                        & set(train_syms)
-                    )
-                    panel = {
-                        k: v[valid_syms]
-                        for k, v in panel.items()
-                        if isinstance(v, pd.DataFrame)
-                    }
-
-                    from extreme_price_movements.training import (
-                        train_spike_anatomy_model,
-                    )
-
-                    # NOTE: Spike Anatomy generation disabled
-                    # for mode in missing_spike:
-                    #     tprint(f"Generating Spike Anatomy ({mode})...")
-                    #     df_spike = train_spike_anatomy_model(
-                    #         panel, feats, mkt_gates, cfg, valid_syms, ts_sig, mode=mode
-                    #     )
-                    #     if df_spike is not None:
-                    #         datasets[f"spike_anatomy_{mode}"] = df_spike
-                    #         save_artifact_df(
-                    #             df_spike,
-                    #             cfg["data_root"],
-                    #             run_id,
-                    #             "labels",
-                    #             f"spike_anatomy_{mode}",
-                    #         )
-                    #         tprint(
-                    #             f"Saved generated spike artifact: spike_anatomy_{mode}"
-                    #         )
 
     # Alpha models (Dynamic Strategies from get_strategies)
     strategies = get_strategies(cfg)
@@ -1805,24 +1734,7 @@ def run_training_step(
                     datasets[vname] = df_v
                     tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
 
-    # Exhaustion models
-    for d in ["up", "down"]:
-        name = f"exh_{d}"
-        df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
-        if df is not None:
-            datasets[
-                name
-            ] = df  # Use all rows (already filtered by SlicePlanner in label step)
-            tprint(f"  Loaded {name}: {len(datasets[name])} rows")
-
-    # Specialist models
-    for name in ["trap_model", "gamma_model"]:
-        df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
-        if df is not None:
-            datasets[
-                name
-            ] = df  # Use all rows (already filtered by SlicePlanner in label step)
-            tprint(f"  Loaded {name}: {len(datasets[name])} rows")
+    tprint("Spike anatomy, exhaustion, and specialist label datasets are disabled.")
 
     if not found_count:
         tprint("ERROR: No alpha label datasets found. Run 'labels' mode first.")
@@ -1898,7 +1810,6 @@ def run_training_step(
         "max_hold_hours": 24,
     }
     # Build granular risk params dynamically from strategies
-    from extreme_price_movements.strategy_registry import get_strategies
     strategies = get_strategies(cfg)
 
     _granular = {}
@@ -1943,13 +1854,17 @@ def run_training_step(
     bundle = trained_bundle
     if bundle:
         alpha = bundle.get("alpha_models", {})
-        for side in trade_sides:
-            for k in kinds:
-                m = alpha.get(side, {}).get(k)
-                if m:
-                    tprint(f"  {side} {k}: H={m['H']}, features={len(m['feat_cols'])}")
-                else:
-                    tprint(f"  {side} {k}: NO MODEL")
+        alpha_keys = []
+        for side, side_models in alpha.items():
+            for k, m in side_models.items():
+                alpha_keys.append((side, k, m))
+        for side, k, m in alpha_keys:
+            if m:
+                tprint(f"  {side} {k}: H={m['H']}, features={len(m['feat_cols'])}")
+            else:
+                tprint(f"  {side} {k}: NO MODEL")
+        if not alpha_keys:
+            tprint("  alpha_models: NONE")
 
         spike = bundle.get("spike_models", {})
         for mode in ["best", "worst"]:
@@ -1968,11 +1883,11 @@ def run_training_step(
             tprint(f"  exh_{d}: {'fitted' if m and m.model else 'NO MODEL'}")
 
         meta = bundle.get("meta_models", {})
-        for side in trade_sides:
-            for k in kinds:
-                key = f"{side}_{k}"
-                m = meta.get(key)
+        if meta:
+            for key, m in meta.items():
                 tprint(f"  meta_{key}: {'fitted' if m and m.model else 'NO MODEL'}")
+        else:
+            tprint("  meta_models: NONE")
 
     # Generate training report
     try:
@@ -2565,6 +2480,20 @@ def _extract_required_features(bundle, cfg):
     dev_metric = cfg.get("trade_deviation_metric", "dist_ema_fast")
     if dev_metric:
         req_feats.add(str(dev_metric))
+
+    for strat in get_strategies(cfg):
+        base_event_trigger = str(strat.get("base_event_trigger", "") or "")
+        if not base_event_trigger:
+            continue
+        for feat_name in re.findall(
+            r"([A-Za-z_][A-Za-z0-9_]*)\s*(?:<=|>=|==|<|>)", base_event_trigger
+        ):
+            if feat_name not in {"Composite"}:
+                req_feats.add(feat_name)
+
+    # Time features are often used by dynamic rule masks but may not appear in
+    # runtime model feature lists.
+    req_feats.update({"sin_hod", "cos_hod"})
 
     if isinstance(bundle, dict):
         _add_alpha_stack(req_feats, bundle.get("alpha_models", {}))

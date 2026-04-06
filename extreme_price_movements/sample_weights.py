@@ -133,6 +133,30 @@ def avg_uniqueness_on_grid(label_times: pd.DataFrame, grid: pd.DatetimeIndex, co
     return pd.Series(out, index=label_times.index)
 
 
+def avg_uniqueness_on_grid_array(
+    starts: np.ndarray, ends: np.ndarray, grid: np.ndarray, concurrent: np.ndarray
+) -> np.ndarray:
+    i0 = np.searchsorted(grid, starts, side="left")
+    i1 = np.searchsorted(grid, ends, side="right") - 1
+
+    i0 = np.clip(i0, 0, len(grid) - 1)
+    i1 = np.clip(i1, 0, len(grid) - 1)
+
+    inv = np.zeros_like(concurrent, dtype=np.float64)
+    nz = concurrent > 0
+    inv[nz] = 1.0 / concurrent[nz]
+    prefix = np.concatenate(([0.0], np.cumsum(inv)))
+
+    out = np.zeros(len(starts), dtype=np.float64)
+    valid = (~np.isnat(starts)) & (~np.isnat(ends)) & (i0 <= i1)
+    if np.any(valid):
+        idx = np.where(valid)[0]
+        sums = prefix[i1[idx] + 1] - prefix[i0[idx]]
+        counts = (i1[idx] - i0[idx] + 1).astype(np.float64)
+        out[idx] = sums / np.maximum(counts, 1.0)
+    return out
+
+
 def compute_avg_uniqueness(
     label_times: pd.DataFrame,
     num_concurrent_labels: Union[pd.Series, None] = None,
@@ -156,36 +180,58 @@ def compute_avg_uniqueness(
     if label_times.empty:
         return pd.Series(dtype=float)
     
-    # Use local copy to avoid mutating input index if it's not DatetimeIndex
-    # We actually don't need index to be datetime for the algo,
-    # but we need 't_start' and 't_end' columns to be datetime-like.
-    
-    # Ensure t_start/t_end are datetime
-    # We rely on .values.astype("datetime64[ns]") in helper functions,
-    # so we assume they are compatible.
-    
+    starts = pd.to_datetime(
+        label_times["t_start"], utc=True, errors="coerce"
+    ).values.astype("datetime64[ns]")
+    ends = pd.to_datetime(
+        label_times["t_end"], utc=True, errors="coerce"
+    ).values.astype("datetime64[ns]")
+
     if time_grid is None:
-        # Build event index (all unique timestamps where labels start or end)
-        # Optimized construction
-        t_starts = label_times['t_start'].dropna().values.astype("datetime64[ns]")
-        t_ends = label_times['t_end'].dropna().values.astype("datetime64[ns]")
-        
-        # Use numpy unique
-        all_times_ns = np.unique(np.concatenate([t_starts, t_ends]))
+        valid = (~np.isnat(starts)) & (~np.isnat(ends))
+        all_times_ns = np.unique(np.concatenate([starts[valid], ends[valid]]))
         time_grid = pd.DatetimeIndex(all_times_ns).sort_values()
     else:
-        # Ensure sorted unique
         if not time_grid.is_monotonic_increasing:
              time_grid = time_grid.sort_values()
-        # We assume grid is unique enough or searchsorted handles it gracefully
-    
-    # 1. Compute concurrency
+
     concurrent = concurrent_on_event_grid(label_times, time_grid)
-    
-    # 2. Compute uniqueness
-    uniqueness = avg_uniqueness_on_grid(label_times, time_grid, concurrent)
-    
-    return uniqueness
+    uniqueness = avg_uniqueness_on_grid_array(
+        starts, ends, time_grid.values.astype("datetime64[ns]"), concurrent
+    )
+
+    return pd.Series(uniqueness, index=label_times.index)
+
+
+def compute_avg_uniqueness_array(
+    label_times: pd.DataFrame, time_grid: Optional[pd.DatetimeIndex] = None
+) -> np.ndarray:
+    if label_times.empty:
+        return np.array([], dtype=float)
+    return compute_avg_uniqueness(label_times, time_grid=time_grid).values
+
+
+def _downsample_for_weight_opt(
+    X_np: np.ndarray,
+    qual_vals: np.ndarray,
+    label_times: pd.DataFrame,
+    max_samples: int,
+) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
+    if len(X_np) <= max_samples:
+        return X_np, qual_vals, label_times
+    idx = np.linspace(0, len(X_np) - 1, max_samples, dtype=np.int32)
+    return X_np[idx], qual_vals[idx], label_times.iloc[idx].reset_index(drop=True)
+
+
+def _percentile_scores(metric_values: np.ndarray) -> np.ndarray:
+    sorted_indices = np.argsort(metric_values, kind="mergesort")
+    percentile_ranks = np.empty_like(metric_values, dtype=np.float64)
+    percentile_ranks[sorted_indices] = (
+        np.arange(1, len(metric_values) + 1, dtype=np.float64) / max(len(metric_values), 1)
+    )
+    percentile_ranks = np.clip(percentile_ranks, 0.01, 0.99)
+    raw_scores = 1.0 / (1.0 - percentile_ranks + 0.01)
+    return 0.8 + 0.4 * (np.log1p(raw_scores - 1.0) / np.log1p(99.0))
 
 
 def compute_sample_weights_with_uniqueness(
@@ -197,45 +243,18 @@ def compute_sample_weights_with_uniqueness(
 ) -> np.ndarray:
     """
     Compute sample weights combining uniqueness, event intensity, and MFE/MAE base weights.
-    
-    Args:
-        label_times: DataFrame with ['t_start', 't_end'] columns
-        returns: Realized returns for reference (not used in magnitude weighting)
-        base_weights: MFE/MAE-based weights from compute_mfe_mae_weights() function
-        time_grid: Optional time grid for uniqueness calculation
-        selection_metric: Optional metric values used for candidate selection 
-                         (e.g., dist_ema_fast). If provided, event scoring will be
-                         based on this instead of realized returns.
-        
-    Returns:
-        Combined sample weights as numpy array
-        
-    Weight Components:
-    - Uniqueness: Addresses label overlap (AFML Chapter 4)
-    - Event Score: 1 / (1 - percentile) of selection metric intensity, 
-                   normalized to [0.8, 1.2], with percentile clamped to [0.01, 0.99]
-    - Base Weights: MFE/MAE-based weights based on decisive price movement relative to barriers
-    
-    Final formula: w = uniqueness * event_score * mfe_mae_base_weight
     """
-    # Compute uniqueness
-    uniqueness_ser = compute_avg_uniqueness(label_times, time_grid=time_grid)
-    uniqueness = uniqueness_ser.values
-    
-    # Compute event score based on selection metric intensity percentile
-    # More intense events (higher absolute metric values) get higher scores
+    uniqueness = compute_avg_uniqueness_array(label_times, time_grid=time_grid)
+
     if selection_metric is not None:
-        # Use the same metric that was used for candidate selection
         if isinstance(selection_metric, pd.Series):
             if not selection_metric.index.equals(label_times.index):
                 selection_metric = selection_metric.reindex(label_times.index).fillna(0.0)
             metric_values = np.abs(selection_metric.values)
         else:
             metric_values = np.abs(np.asarray(selection_metric))
-        
         tprint(f"Using selection metric for event scoring: mean={metric_values.mean():.3f}, std={metric_values.std():.3f}")
     else:
-        # Fallback to realized returns if no selection metric provided
         if isinstance(returns, pd.Series):
             if not returns.index.equals(label_times.index):
                 returns = returns.reindex(label_times.index).fillna(0.0)
@@ -243,31 +262,15 @@ def compute_sample_weights_with_uniqueness(
         else:
             returns_arr = np.asarray(returns)
         metric_values = np.abs(returns_arr)
-        tprint(f"Using realized returns for event scoring (fallback)")
-    
-    # Vectorized percentile calculation
-    # Get percentile ranks (0-1) for each metric value
-    sorted_indices = np.argsort(metric_values)
-    percentile_ranks = np.empty_like(metric_values)
-    percentile_ranks[sorted_indices] = np.arange(1, len(metric_values) + 1) / len(metric_values)
-    
-    # Clamp percentiles to [0.01, 0.99] to prevent extreme scores
-    percentile_ranks = np.clip(percentile_ranks, 0.01, 0.99)
-    
-    # Score = 1 / (1 - percentile), then normalize to [0.8, 1.2]
-    # This way: high intensity (high percentile) = higher score
-    raw_scores = 1.0 / (1.0 - percentile_ranks + 0.01)  # +0.01 to avoid division by zero
-    # Normalize: map typical range [1, 100] to [0.8, 1.2]
-    event_scores = 0.8 + 0.4 * (np.log1p(raw_scores - 1) / np.log1p(99))
-    
-    # Combine: w = uniqueness * event_score * base_weight
+        tprint("Using realized returns for event scoring (fallback)")
+
+    event_scores = _percentile_scores(metric_values.astype(np.float64, copy=False))
     combined = uniqueness * event_scores
-    
-    # Log weighting statistics for debugging
+
     tprint(f"Weight components - Uniqueness: mean={uniqueness.mean():.3f}, std={uniqueness.std():.3f}")
     tprint(f"Weight components - Event Score: mean={event_scores.mean():.3f}, std={event_scores.std():.3f}, min={event_scores.min():.3f}, max={event_scores.max():.3f}")
     tprint(f"Weight components - Combined (pre-normalization): mean={combined.mean():.3f}, std={combined.std():.3f}")
-    
+
     if base_weights is not None:
         if isinstance(base_weights, pd.Series):
             if not base_weights.index.equals(label_times.index):
@@ -275,25 +278,15 @@ def compute_sample_weights_with_uniqueness(
             base_arr = base_weights.values
         else:
             base_arr = np.asarray(base_weights)
-
         combined = combined * base_arr
-    
-    # Normalize to sum to N (standard practice)
-    # Handle degenerate case where sum is 0
+
     sum_w = combined.sum()
     if sum_w < 1e-12:
-        weights = np.ones_like(combined) * (len(combined) / len(combined)) # basically 1.0
-        # Wait, if everything is 0, we probably want uniform weights?
-        # Or if 0 return and 0 uniqueness?
-        # Let's stick to uniform if sum is 0
-        weights = np.ones(len(combined))
+        weights = np.ones(len(combined), dtype=np.float64)
     else:
         weights = combined * (len(combined) / sum_w)
-    
-    # Clip extremes
     weights = np.clip(weights, 0.1, 10.0)
-    
-    return weights
+    return weights.astype(np.float32, copy=False)
 
 
 
@@ -368,14 +361,17 @@ def compute_mfe_mae_weights(
     sl = np.maximum(sl, 1e-8)
     
     # Normalized excursions
-    r_mfe = np.maximum(mfe, 0.0) / tp  # How much of TP was within reach
-    r_mae = np.maximum(mae, 0.0) / sl  # How close to SL
-    
-    # Take the more extreme normalized excursion
-    d = np.maximum(r_mfe, r_mae)
-    
-    # Base weight: w_min + (1-w_min) * clip(d/tau, 0, 1)
-    w_base = w_min + (1.0 - w_min) * np.clip(d / tau, 0.0, 1.0)
+    r_mfe = np.maximum(mfe, 0.0) / tp
+    r_mae = np.maximum(mae, 0.0) / sl
+
+    # Use a smooth intensity term plus an excursion-dominance term.
+    # The previous hard clip on max(r_mfe, r_mae) saturated almost all rows at 1.0.
+    tau_eff = max(float(tau), 1e-6)
+    intensity = 1.0 - np.exp(-np.maximum(r_mfe, r_mae) / tau_eff)
+    dominance = np.abs(r_mfe - r_mae) / (r_mfe + r_mae + 1e-9)
+    quality = np.clip(0.65 * intensity + 0.35 * dominance, 0.0, 1.0)
+
+    w_base = w_min + (1.0 - w_min) * quality
     
     # Cost floor penalty: if touch margin < cost_floor, halve the weight
     if touch_margin is not None:
@@ -560,20 +556,19 @@ def compute_all_weights_vectorized(
         tp = np.maximum(tp, 1e-8)
         sl = np.maximum(sl, 1e-8)
         
-        # Normalized excursions
-        r_mfe = np.maximum(mfe, 0.0) / tp
-        r_mae = np.maximum(mae, 0.0) / sl
-        
-        # Take the more extreme normalized excursion
-        d = np.maximum(r_mfe, r_mae)
-        
-        # Base weight: w_min + (1-w_min) * clip(d/tau, 0, 1)
-        w_mfe_mae = w_min + (1.0 - w_min) * np.clip(d / tau, 0.0, 1.0)
-        
-        # Timeout cap: if timeout (y_labels == 1), cap weight at 0.7
+        w_mfe_mae = compute_mfe_mae_weights(
+            mfe=mfe,
+            mae=mae,
+            tp=tp,
+            sl=sl,
+            is_timeout=(np.asarray(y_labels, dtype=np.int8) == 1),
+            touch_margin=None,
+            w_min=w_min,
+            tau=tau,
+            cost_floor=0.0,
+        ).astype(np.float64)
+
         is_timeout = np.asarray(y_labels, dtype=np.int8) == 1
-        w_mfe_mae = np.where(is_timeout, np.minimum(w_mfe_mae, 0.7), w_mfe_mae)
-        
         # Normalize to mean=1
         w_mfe_mae = w_mfe_mae / max(np.mean(w_mfe_mae), 1e-12)
         w *= w_mfe_mae

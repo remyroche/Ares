@@ -52,6 +52,19 @@ def _cell_key(bucket: str, horizon: int) -> str:
     return f"{bucket}_H{int(horizon)}"
 
 
+def _expected_prod_cells(events_prod: pd.DataFrame, col_bucket: str, col_h: str) -> list[str]:
+    if col_bucket not in events_prod.columns or col_h not in events_prod.columns:
+        return list(CANON_CELLS)
+    keys = []
+    seen = set()
+    for b, h in events_prod[[col_bucket, col_h]].dropna().itertuples(index=False):
+        ck = _cell_key(str(b), int(h))
+        if ck not in seen:
+            keys.append(ck)
+            seen.add(ck)
+    return keys or list(CANON_CELLS)
+
+
 def compute_floor_binding(tp_eff: np.ndarray, tp_lo: float, tol: float = TOL) -> float:
     if tp_eff is None or len(tp_eff) == 0:
         return float("nan")
@@ -255,11 +268,12 @@ def production_admissibility_report(
     min_tp_over_sl = float("inf")
     max_tp_floor_bind_cell = 0.0
     max_sl_floor_bind_cell = 0.0
-    timeout_by_cell: Dict[str, float] = {ck: float("nan") for ck in CANON_CELLS}
+    expected_cells = _expected_prod_cells(events_prod, col_bucket, col_h)
+    timeout_by_cell: Dict[str, float] = {ck: float("nan") for ck in expected_cells}
 
     for (b, h), g in events_prod.groupby([col_bucket, col_h], observed=True):
         ck = _cell_key(str(b), int(h))
-        if ck not in CANON_CELLS:
+        if ck not in expected_cells:
             continue
         n_cell = int(len(g))
         min_n = min(min_n, n_cell)
@@ -346,7 +360,7 @@ def production_admissibility_report(
         }
 
     covered = set(out["per_cell_health"].keys())
-    missing = [ck for ck in CANON_CELLS if ck not in covered]
+    missing = [ck for ck in expected_cells if ck not in covered]
     if missing:
         failures.append(f"Missing canonical cells in U_prod: {missing}")
 
@@ -354,7 +368,11 @@ def production_admissibility_report(
         failures.append("No per-cell groups found (bucket,horizon) in U_prod.")
         return out
 
-    timeout_vals = [timeout_by_cell[ck] for ck in CANON_CELLS if math.isfinite(timeout_by_cell.get(ck, float("nan")))]
+    timeout_vals = [
+        timeout_by_cell[ck]
+        for ck in expected_cells
+        if math.isfinite(timeout_by_cell.get(ck, float("nan")))
+    ]
     timeout_range = float(np.max(timeout_vals) - np.min(timeout_vals)) if len(timeout_vals) >= 2 else float("nan")
     out["aggregates"]["timeout_range_prod"] = timeout_range
 

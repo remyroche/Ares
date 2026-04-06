@@ -1141,12 +1141,8 @@ def run_train_meta(cfg, ts_override=None, store=None):
     tprint("Optimising TP:SL before meta-training...")
     run_risk_opt(cfg, parsed_ts_sig=ts_sig, skip_maintenance=True, store=store)
 
-    ex = (
-        make_perp_exchange()
-        if bool(cfg.get("use_perps", False))
-        else make_spot_exchange()
-    )
-    result = train_daily_meta(ts_sig, None, cfg, store, ex)
+    # Meta training reuses local artifacts and does not require a live exchange.
+    result = train_daily_meta(ts_sig, None, cfg, store, None)
     if result:
         import gc
 

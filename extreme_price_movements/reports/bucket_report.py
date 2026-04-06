@@ -294,127 +294,195 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
     meta_oof_dir = Path(data_root) / "artifacts" / run_id / "meta_oof"
     rows_data = []
 
-    # Load downstream meta heads only (exclude legacy _reg/_clf and per-horizon files).
     import re as _re
-    _exclude_pat = _re.compile(r'(_H\d+|_dur|_reg|_clf)$')
-    _include_pat = _re.compile(r'(_utility|_mae_q70|_mfe|_early_inval)$')
-    oof_files = sorted([
-        f for f in (meta_oof_dir.glob("meta_oof_*.parquet") if meta_oof_dir.exists() else [])
-        if (not _exclude_pat.search(f.stem.replace("meta_oof_", "")))
-        and _include_pat.search(f.stem.replace("meta_oof_", ""))
-    ])
+    oof_files = sorted(
+        meta_oof_dir.glob("meta_oof_*.parquet") if meta_oof_dir.exists() else []
+    )
     lines.append(f"**Meta OOF files found**: {len(oof_files)}\n")
-
-    table_rows = []
-    headers = ["Model", "N samples", "IC (payoff)", "AUC", "Prec@10", "U_IC", "MAE_IC", "MFE_IC"]
 
     for pf in oof_files:
         model_name = pf.stem.replace("meta_oof_", "")
         try:
             df = pd.read_parquet(pf)
         except Exception:
-            table_rows.append([model_name, "ERR", "—", "—", "—", "—", "—", "—", "—"])
+            rows_data.append({"model": model_name, "load_error": True})
             continue
         n = len(df)
-        
-        # Payoff IC
-        pred = df["oof_pred"].values.astype(float) if "oof_pred" in df.columns else (df["oof_ev"].values.astype(float) if "oof_ev" in df.columns else None)
-        ic = float("nan")
-        if pred is not None and "return" in df.columns:
-            ret = df["return"].values.astype(float)
-            valid = np.isfinite(pred) & np.isfinite(ret)
-            if valid.sum() >= 10:
-                from scipy.stats import spearmanr
-                ic = float(spearmanr(pred[valid], ret[valid]).correlation)
-        
-        # AUC / Prec@10
-        auc = float("nan")
-        prec10 = float("nan")
-        if pred is not None and "label" in df.columns:
-            y = (df["label"].values == 1).astype(float)
-            n_pos = int(y.sum()); n_neg = len(y) - n_pos
-            if n_pos > 0 and n_neg > 0:
-                ranks = pd.Series(pred).rank(method="average").to_numpy(float)
-                u = ranks[y == 1].sum() - n_pos * (n_pos + 1) / 2.0
-                auc = float(u / (n_pos * n_neg))
-            if len(pred) >= 10:
-                top10 = pred >= np.quantile(pred, 0.90)
-                prec10 = float(y[top10].mean()) if top10.any() else float("nan")
-
-        # --- early_inval: score as AUC vs binary label (IC vs return is structurally negative) ---
-        if model_name.endswith("_early_inval") and pred is not None and "early_inval" in df.columns:
-            y_ei = df["early_inval"].values.astype(float)
-            valid_ei = np.isfinite(pred) & np.isfinite(y_ei)
-            if valid_ei.sum() >= 10:
-                n_pos_ei = int(y_ei[valid_ei].sum())
-                n_neg_ei = int(valid_ei.sum()) - n_pos_ei
-                if n_pos_ei > 0 and n_neg_ei > 0:
-                    ranks_ei = pd.Series(pred[valid_ei]).rank(method="average").to_numpy(float)
-                    u_ei = ranks_ei[y_ei[valid_ei] == 1].sum() - n_pos_ei * (n_pos_ei + 1) / 2.0
-                    auc = float(u_ei / (n_pos_ei * n_neg_ei))
-                    top10_ei = pred[valid_ei] >= np.quantile(pred[valid_ei], 0.90)
-                    prec10 = float(y_ei[valid_ei][top10_ei].mean()) if top10_ei.any() else float("nan")
-                    ic = float("nan")  # IC vs return is structurally misleading here
-
-        # Aux Heads ICs
-        # MAE and MFE are stored as absolute magnitudes (always positive)
-        # The model predictions are also positive (log of absolute values)
-        # Sign = 1.0 for both long and short (no flip needed)
-        mae_sign = 1.0
-        mfe_sign = 1.0
-        
-        u_ic = float("nan")
-        mae_ic = float("nan")
-        mfe_ic = float("nan")
         from scipy.stats import spearmanr
+
         def _sic(a, b):
             mask = np.isfinite(a) & np.isfinite(b)
-            if mask.sum() < 10: return float("nan")
+            if mask.sum() < 10:
+                return float("nan")
             return float(spearmanr(a[mask], b[mask]).correlation)
 
-        if "oof_u_hat" in df.columns and "u_policy_net" in df.columns:
-            u_ic = _sic(df["oof_u_hat"].values, df["u_policy_net"].values)
-        if "oof_log_mae_q70_hat" in df.columns and "mae_ret" in df.columns:
-            u_mae = df["mae_ret"].values / np.clip(df["__barrier_pct__"].values if "__barrier_pct__" in df.columns else 1.0, 1e-6, None)
-            mae_ic = _sic(df["oof_log_mae_q70_hat"].values, np.log1p(np.clip(mae_sign * u_mae, 0, None)))
-        if "oof_log_mfe_hat" in df.columns and "mfe_ret" in df.columns:
-            u_mfe = df["mfe_ret"].values / np.clip(df["__barrier_pct__"].values if "__barrier_pct__" in df.columns else 1.0, 1e-6, None)
-            mfe_ic = _sic(df["oof_log_mfe_hat"].values, np.log1p(np.clip(mfe_sign * u_mfe, 0, None)))
+        pred = (
+            df["oof_pred"].values.astype(float)
+            if "oof_pred" in df.columns
+            else (df["oof_ev"].values.astype(float) if "oof_ev" in df.columns else None)
+        )
+        ic_return = (
+            _sic(pred, df["return"].values.astype(float))
+            if pred is not None and "return" in df.columns
+            else float("nan")
+        )
+        ic_u = (
+            _sic(pred, df["u_policy_net"].values.astype(float))
+            if pred is not None and "u_policy_net" in df.columns
+            else float("nan")
+        )
 
-        table_rows.append([model_name, f"{n:,}", _fmt(ic), _fmt(auc), _fmt(prec10), _fmt(u_ic), _fmt(mae_ic), _fmt(mfe_ic)])
-        rows_data.append({"model": model_name, "n": n, "ic": ic, "auc": auc, "prec_at_10": prec10,
-                           "u_ic": u_ic, "mae_ic": mae_ic, "mfe_ic": mfe_ic})
+        head_type = "other"
+        horizon = None
+        geom = None
+        strategy = model_name
+        m = _re.match(r"^(?P<strategy>.+)_(tbm_500_250|tbm_250_125)_h(?P<h>\d+)$", model_name)
+        if m:
+            head_type = "tbm_clf"
+            strategy = m.group("strategy")
+            geom = model_name[len(strategy) + 1 :].rsplit("_h", 1)[0]
+            horizon = int(m.group("h"))
+        else:
+            m = _re.match(r"^(?P<strategy>.+)_(mae|mfe)_h(?P<h>\d+)$", model_name)
+            if m:
+                head_type = m.group(2)
+                strategy = m.group("strategy")
+                horizon = int(m.group("h"))
+            elif model_name.endswith("_reg"):
+                head_type = "reg"
+                strategy = model_name[: -len("_reg")]
 
-    lines.append("## Meta OOF Predictions per Model")
-    lines.extend(_md_table(headers, table_rows))
+        row = {
+            "model": model_name,
+            "strategy": strategy,
+            "head_type": head_type,
+            "geometry": geom,
+            "horizon": horizon,
+            "n": n,
+            "ic_return": ic_return,
+            "ic_u_policy": ic_u,
+        }
+
+        if head_type == "tbm_clf" and {"oof_p_sl", "oof_p_to", "oof_p_tp", "exit_code"}.issubset(df.columns):
+            y = df["exit_code"].values.astype(int)
+            p = df[["oof_p_sl", "oof_p_to", "oof_p_tp"]].values.astype(float)
+            valid = np.isfinite(p).all(axis=1) & np.isfinite(y)
+            y = y[valid]
+            p = p[valid]
+            if len(y) >= 10 and len(np.unique(y)) >= 2:
+                p = np.clip(p, 1e-9, 1.0)
+                p = p / np.clip(p.sum(axis=1, keepdims=True), 1e-9, None)
+                row["logloss"] = float((-np.log(p[np.arange(len(y)), y])).mean())
+                row["acc"] = float((np.argmax(p, axis=1) == y).mean())
+                y_tp = (y == 2).astype(float)
+                if y_tp.sum() > 0 and y_tp.sum() < len(y_tp):
+                    ranks = pd.Series(p[:, 2]).rank(method="average").to_numpy(float)
+                    n_pos = int(y_tp.sum())
+                    n_neg = int(len(y_tp) - n_pos)
+                    u = ranks[y_tp == 1].sum() - n_pos * (n_pos + 1) / 2.0
+                    row["auc_tp"] = float(u / (n_pos * n_neg))
+                    k10 = max(1, int(np.ceil(0.10 * len(y_tp))))
+                    idx10 = np.argsort(p[:, 2])[-k10:]
+                    row["prec10_tp"] = float(y_tp[idx10].mean())
+        elif head_type == "mae" and pred is not None and "mae_ret" in df.columns:
+            row["ic_target"] = _sic(pred, df["mae_ret"].values.astype(float))
+            if "mae_ret" in df.columns and len(df) >= 10:
+                k30 = max(1, int(np.ceil(0.30 * len(df))))
+                idx30 = np.argsort(pred)[-k30:]
+                row["top30_target_mean"] = float(np.nanmean(df["mae_ret"].values[idx30].astype(float)))
+        elif head_type == "mfe" and pred is not None and "mfe_ret" in df.columns:
+            row["ic_target"] = _sic(pred, df["mfe_ret"].values.astype(float))
+            if "mfe_ret" in df.columns and len(df) >= 10:
+                k30 = max(1, int(np.ceil(0.30 * len(df))))
+                idx30 = np.argsort(pred)[-k30:]
+                row["top30_target_mean"] = float(np.nanmean(df["mfe_ret"].values[idx30].astype(float)))
+        elif head_type == "reg" and pred is not None:
+            if "return" in df.columns and len(df) >= 10:
+                k30 = max(1, int(np.ceil(0.30 * len(df))))
+                idx30 = np.argsort(pred)[-k30:]
+                row["top30_return_mean"] = float(np.nanmean(df["return"].values[idx30].astype(float)))
+
+        rows_data.append(row)
+
+    detail_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
+
+    requested_order = ["tbm_500_250", "tbm_250_125", "mae", "mfe", "reg"]
+    detail_df = detail_df[
+        detail_df["head_type"].isin(["tbm_clf", "mae", "mfe", "reg"])
+    ].copy()
+
+    strategies = sorted(
+        {
+            str(v)
+            for v in detail_df.get("strategy", pd.Series(dtype=str)).dropna().tolist()
+            if v
+        }
+    )
+    for strategy in strategies:
+        sub = detail_df[detail_df["strategy"] == strategy].copy()
+        if sub.empty:
+            continue
+        lines.append(f"## {strategy}")
+        headers = [
+            "Head",
+            "H",
+            "N",
+            "LogLoss",
+            "Acc",
+            "AUC_TP",
+            "Prec@10_TP",
+            "IC_target",
+            "IC_return",
+            "IC_u",
+            "Top30_target",
+            "Top30_return",
+        ]
+        rows = []
+        for key in requested_order:
+            if key.startswith("tbm_"):
+                rows_sub = sub[(sub["head_type"] == "tbm_clf") & (sub["geometry"] == key)]
+            else:
+                rows_sub = sub[sub["head_type"] == key]
+            if rows_sub.empty:
+                rows.append([key, "—", "0", "—", "—", "—", "—", "—", "—", "—", "—", "—"])
+                continue
+            for _, r in rows_sub.sort_values(["horizon", "model"]).iterrows():
+                rows.append([
+                    key,
+                    _fmt(r.get("horizon"), 0),
+                    f"{int(r.get('n', 0)):,}",
+                    _fmt(r.get("logloss")),
+                    _fmt(r.get("acc")),
+                    _fmt(r.get("auc_tp")),
+                    _fmt(r.get("prec10_tp")),
+                    _fmt(r.get("ic_target")),
+                    _fmt(r.get("ic_return")),
+                    _fmt(r.get("ic_u_policy")),
+                    _fmt(r.get("top30_target_mean")),
+                    _fmt(r.get("top30_return_mean")),
+                ])
+        lines.extend(_md_table(headers, rows))
+        lines.append("")
+
+    lines.append("## Strategy Summary")
+    summary_headers = ["Strategy", "Heads", "Median IC_return", "Median IC_u", "Median AUC_TP"]
+    summary_rows = []
+    for strategy in strategies:
+        sub = detail_df[detail_df["strategy"] == strategy]
+        ic_ret = sub["ic_return"].dropna()
+        ic_u = sub["ic_u_policy"].dropna()
+        auc_tp = sub["auc_tp"].dropna() if "auc_tp" in sub.columns else pd.Series(dtype=float)
+        summary_rows.append([
+            strategy,
+            int(len(sub)),
+            _fmt(float(ic_ret.median())) if len(ic_ret) else "—",
+            _fmt(float(ic_u.median())) if len(ic_u) else "—",
+            _fmt(float(auc_tp.median())) if len(auc_tp) else "—",
+        ])
+    lines.extend(_md_table(summary_headers, summary_rows))
     lines.append("")
 
-    # Per-bucket summary: group by base bucket (strip all known model-type suffixes)
-    import re
-    _suffix_pat = re.compile(r'^(.+?)(_H\d+|_reg|_clf|_early_inval|_utility|_mae_q70|_mfe|_dur)$')
-    bucket_groups: Dict[str, List[Dict]] = {}
-    for r in rows_data:
-        m = _suffix_pat.match(r["model"])
-        bkt = m.group(1) if m else r["model"]
-        bucket_groups.setdefault(bkt, []).append(r)
-
-    lines.append("## Per-Bucket Summary")
-    bkt_headers = ["Bucket", "Models", "Median IC", "Median AUC", "Median Prec@10"]
-    bkt_rows = []
-    for bkt in sorted(bucket_groups.keys()):
-        grp = bucket_groups[bkt]
-        ics = [r["ic"] for r in grp if r["ic"] is not None and not math.isnan(r["ic"])]
-        aucs = [r["auc"] for r in grp if r["auc"] is not None and not math.isnan(r["auc"])]
-        precs = [r["prec_at_10"] for r in grp if r["prec_at_10"] is not None and not math.isnan(r["prec_at_10"])]
-        bkt_rows.append([bkt, len(grp),
-                         _fmt(float(np.median(ics))) if ics else "—",
-                         _fmt(float(np.median(aucs))) if aucs else "—",
-                         _fmt(float(np.median(precs))) if precs else "—"])
-    lines.extend(_md_table(bkt_headers, bkt_rows))
-    lines.append("")
-
-    out_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
-    return _save(run_id, "meta_training", lines, out_df, base_dir=base_dir)
+    return _save(run_id, "meta_training", lines, detail_df, base_dir=base_dir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -780,10 +780,16 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         
         # Winner selection: prioritize models passing most gates, use rank_score as tie-breaker
         # Sort by (n_passed, rank_score) descending
+        eligible_results = {
+            name: score for name, score in results.items() if name in gate_results
+        }
+        if not eligible_results:
+            raise RuntimeError("ModelRace: no eligible models remained after gating")
+
         sorted_candidates = sorted(
-            results.items(),
+            eligible_results.items(),
             key=lambda x: (gate_results[x[0]]["n_passed"], x[1]),
-            reverse=True
+            reverse=True,
         )
         best_name = sorted_candidates[0][0]
         best_n_passed = gate_results[best_name]["n_passed"]

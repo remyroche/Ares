@@ -31,6 +31,10 @@ from extreme_price_movements.optimization_utils import filter_low_variance_asset
 from extreme_price_movements.pipeline_steps import run_label_generation_step_v2, run_risk_optimization_step, run_backtest_step
 from extreme_price_movements.model_loader import load_model_bundle, load_full_state, find_latest_run_id, load_bucket_params
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
+from extreme_price_movements.strategy_registry import (
+    get_strategies,
+    strategy_runtime_horizons,
+)
 
 def reconcile_state(ex, state):
     tprint("Reconciling state...")
@@ -198,20 +202,44 @@ def _load_label_datasets(cfg, run_id):
         if df_spike is not None:
             datasets[name] = df_spike
 
-    # Alpha models
-    trade_sides = ["long", "short"]
-    kinds = ["mr", "tf"]
-    horizons = cfg["label_horizons_hours"]
-
     found_count = 0
-    for side in trade_sides:
-        for k in kinds:
-            for H in horizons:
-                name = f"train_{k}_{H}"
-                df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
-                if df is not None:
-                    datasets[name] = df
-                    found_count += 1
+    strategies = get_strategies(cfg)
+    base_geometry_archetypes = [
+        str(v)
+        for v in cfg.get("base_geometry_archetypes", ["tight", "wide"])
+        if str(v)
+    ]
+    for strat in strategies:
+        strategy_id = str(strat.get("strategy_id", ""))
+        if not strategy_id:
+            continue
+        for H in strategy_runtime_horizons(strat, cfg):
+            H_int = int(H)
+            name = f"train_{strategy_id}_{H_int}"
+            df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+            if df is not None:
+                datasets[name] = df
+                found_count += 1
+            for variant in base_geometry_archetypes:
+                if variant == "balanced":
+                    continue
+                vname = f"train_{strategy_id}_{H_int}_{variant}"
+                df_v = load_artifact_df(cfg["data_root"], run_id, "labels", vname)
+                if df_v is not None:
+                    datasets[vname] = df_v
+
+    # Backward-compatible fallback for older artifact layouts.
+    if not found_count:
+        for name in [
+            "train_long_mr_1",
+            "train_short_mr_1",
+            "train_long_tf_1",
+            "train_short_tf_1",
+        ]:
+            df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+            if df is not None:
+                datasets[name] = df
+                found_count += 1
 
     # Specialist models
     for name in ["trap_model", "gamma_model"]:

@@ -594,7 +594,9 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
     X, metadata, audits = fp.prepare_features(
         feats_1d, idx_flat, sym_flat, cfg_resolved
     )
+    tprint("Finished FeatureProcessor.prepare_features.")
     resolver = CanonicalRuleMaskResolver(X, metadata)
+    tprint("Finished CanonicalRuleMaskResolver initialization.")
 
     # Load per-mode mask params for legacy fallback
     _legacy_mode_cfg = dict(cfg_resolved.get("candidate_mask_params_by_mode", {}) or {})
@@ -608,16 +610,19 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
         ):
             return None
         try:
+            tprint(f"Building legacy mask for {mode_name}...")
             up_zone, down_zone = _legacy_up_down_zones(
                 feats,
                 panel,
                 metric=str(cfg_resolved.get("train_candidate_metric") or "ret12h"),
             )
+            tprint(f"Got up/down zones for {mode_name}...")
             per_mode = _build_legacy_mode_mask(
                 panel,
                 feats,
                 _legacy_mode_cfg[mode_name],
             )
+            tprint(f"Got per_mode legacy mask for {mode_name}...")
             if mode_name in {"price_up_tf", "price_up_mr"}:
                 return (up_zone & per_mode).fillna(False).astype(bool)
             else:
@@ -3859,8 +3864,8 @@ def _get_bucket_label_config(cfg, side, kind):
     return tp_vals, sl_vals, min_net_rr
 
 
-def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
-    """Build grid-aggregated triple-barrier labels shared across MR/TF for each (H, side)."""
+def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None):
+    """Build grid-aggregated triple-barrier labels shared across MR/TF for each (H, strategy)."""
     tb_cache = {}  # (H, side) -> (tb_labels, tb_returns)
     geom_cache = {}  # (H, side) -> {"n_tp", "n_sl", "n_to", "n_geom"}
 
@@ -4221,12 +4226,17 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
     strategies = get_strategies(cfg)
     for strat in strategies:
         side = strat["trade_side"]
-        k_label = strat["strategy_id"]
+        s_id = strat["strategy_id"]
+        # Resolve MR/TF kind from strategy flags, for cell_key lookup in geometry grid
+        kind = "MR" if strat.get("is_mr", False) else "TF"
+        k_label = s_id  # keep strategy_id for artifact keys
         for H in horizons:
             # _grid_for_cell must come first — _cell_tp_abs_lo is used in floor resolution below.
+            # Use the canonical kind key (MR/TF) for grid lookup
             tp_mults, sl_base_mults, _cell_tp_abs_lo = _grid_for_cell(
-                k_label, side, int(H)
+                kind, side, int(H)
             )
+            tprint(f"[TB Cache] H={H} strategy={s_id} kind={kind} side={side}: looking up geometry grid...")
 
             _default_tp_hit = min_tp_hit_h2 if int(H) == 2 else min_tp_hit
             min_tp_hit_eff = _resolve_cell_min_tp_hit(
@@ -4298,7 +4308,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
             # If per-cell winners exist (from current optimization run), use the
             # specific winning triplet for this exact bucket-horizon cell.
             # Bucket mapping: (long, tf) -> TF_long, (short, mr) -> MR_short, etc.
-            _bname = f"{k_label.upper()}_{side}"
+            # Use canonical kind prefix for cell key _bname
+            _bname = f"{kind}_{side}"
             _cell_key_exact = f"{_bname}_H{H}"
 
             # Load per-cell mapping for a diagnostic tag only; do NOT collapse to a single
@@ -4321,7 +4332,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 )
                 tprint(
                     f"  [{_tag}] {_cell_key_exact}: sweeping {len(_validated_triplets)} "
-                    f"validated geometry triplets (top-k TBM, no policy rollout). "
+                    f"validated geometry triplets (strat={s_id}). "
                     f"Best single config: k_tp={_cell_winner.get('k_tp')} sl={_cell_winner.get('sl_as_tp_pct')}"
                     )
 
@@ -4364,7 +4375,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
 
                 _cell_windows = sorted(set(t[2] for t in _validated_triplets))
                 tprint(
-                    f"Pre-computing geometry labels H={H} side={side} kind={k_label} "
+                    f"Pre-computing geometry labels H={H} strat={s_id} kind={kind} side={side} "
                     f"(triplets={len(_validated_triplets)}, atr_windows={_cell_windows})..."
                 )
 
@@ -4693,11 +4704,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
 
                 if not geom_runs:
                     tprint(
-                        f"No valid geometry for H={H} side={side} kind={k_label}; using fallback."
+                        f"No valid geometry for H={H} side={side} kind={kind} strat={s_id}; using fallback."
                     )
                     tprint(
                         "Geometry rejection breakdown: "
-                        f"H={H}, side={side}, kind={k_label}, total={total_geoms}, "
+                        f"H={H}, side={side}, kind={kind}, strat={s_id}, total={total_geoms}, "
                         f"rr_rejects={reject_counts['rr']}, n_events_rejects={reject_counts['n_events']}, "
                         f"tp_hit_guardrail_rejects={reject_counts['tp_hit']}, timeout_guardrail_rejects={reject_counts['timeout']}, "
                         f"min_tp_hit={min_tp_hit_eff:.4f}, tp_lo_search={tp_lo_eff_search:.4f}, tp_lo_prod={tp_lo_eff_prod:.4f}, "
@@ -4792,7 +4803,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                             f"n_candidates={_fmt_count(_g.get('n_candidates'))}, n_rr_kept={_fmt_count(_g.get('n_rr_kept'))})"
                         )
                     tprint(
-                        f"Accepted geometries H={H} side={side} kind={k_label}: {len(geom_runs)} | "
+                        f"Accepted geometries H={H} side={side} kind={kind} strat={s_id}: {len(geom_runs)} | "
                         + "; ".join(geom_desc)
                     )
                     tprint(
@@ -4854,7 +4865,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     _ret_s = _best_g["ret"].stack().reindex(_lbl_s.index)
                     _tp_s = _tp_df_a.stack().reindex(_lbl_s.index)
                     _sl_s = _sl_df_a.stack().reindex(_lbl_s.index)
-                    _bucket = f"{k_label.upper()}_{side}"
+                    _bucket = f"{kind}_{side}"
                     _y_prod = np.where(
                         _lbl_s.values == OUT_TP,
                         1,
@@ -4884,7 +4895,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                         _tp_df_a,
                         _sl_df_a,
                     )
-                    _prod_cell_metrics[f"{_bucket}_H{int(H)}"] = {
+                    _prod_cell_metrics[f"{kind}_{side}_H{int(H)}"] = {
                         "timeout": float(
                             _best_g.get(
                                 "timeout_raw", _best_g.get("to_rate", float("nan"))
@@ -4919,7 +4930,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                             )
                         )
                         tprint(
-                            f"[LABEL_DIAG][PRE_GEOM] side={side} kind={k_label} H={H} "
+                            f"[LABEL_DIAG][PRE_GEOM] side={side} kind={kind} strat={s_id} H={H} "
                             f"n_geom={len(_pre_src)} tp={_tp_pre:.3%} sl={_sl_pre:.3%} to={_to_pre:.3%}"
                         )
 
@@ -4962,7 +4973,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     ]
                 else:
                     _canonical_runs = list(geom_runs)
-                _materialize_geom_aggregate(_canonical_runs, (int(H), side, k_label))
+                _materialize_geom_aggregate(_canonical_runs, (int(H), s_id))
                 for _variant_name, _variant_triplets in _geom_variants.items():
                     if _variant_name == "balanced":
                         # canonical aggregate is now the balanced/default path
@@ -4984,7 +4995,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     if not _variant_runs:
                         continue
                     _materialize_geom_aggregate(
-                        _variant_runs, (int(H), side, k_label, _variant_name)
+                        _variant_runs, (int(H), s_id, _variant_name)
                     )
 
                 for _g in geom_runs:
@@ -5157,7 +5168,7 @@ def generate_label_datasets(
             feats=feats,
             cfg=cfg,
             horizons=miss_h,
-            strategies=[s for s in strategies if s["strategy_id"] in miss_s_ids],
+            strategies=strategies,
         )
         for H, s_id in missing_cells:
             key = (int(H), s_id)
@@ -5193,8 +5204,7 @@ def generate_label_datasets(
                 cfg=cfg,
                 horizons=sorted({c[0] for c in _missing_variant_keys}),
                 strategies=[
-                    s
-                    for s in strategies
+                    s for s in strategies
                     if s["strategy_id"] in {c[1] for c in _missing_variant_keys}
                 ],
             )
@@ -10096,7 +10106,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         )
         selected_feats = list(sel_res.selected_features)
         X_sel = X[selected_feats]
-        race = ModelRace(kind=kind_name, n_splits=2)
+        race = ModelRace(kind=kind_name, task="base", n_splits=2)
         groups = df_variant["__ts__"].values if "__ts__" in df_variant.columns else None
         symbols = (
             df_variant["__symbol__"].values
@@ -10417,7 +10427,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         f"1={int((y_hard_check==1).sum())} ({(y_hard_check==1).mean()*100:.1f}%)"
                     )
 
-                    race = ModelRace(kind=k, n_splits=2)
+                    race = ModelRace(kind=k, task="meta", n_splits=2)
                     groups = df["__ts__"].values if "__ts__" in df.columns else None
                     symbols = (
                         df["__symbol__"].values if "__symbol__" in df.columns else None

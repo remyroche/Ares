@@ -1149,25 +1149,25 @@ def build_intraday_crypto_library(
 
         out[f"loc_session_pos_{lb}"] = _safe_div(
             c - out["session_low"],
-            out["session_high"] - out["session_low"],
+            np.maximum(out["session_high"] - out["session_low"], out["atr"]),
             eps,
         ).astype("float32")
 
         out[f"loc_initial_balance_pos_{lb}"] = _safe_div(
             c - out["initial_balance_low"],
-            out["initial_balance_high"] - out["initial_balance_low"],
+            np.maximum(out["initial_balance_high"] - out["initial_balance_low"], out["atr"]),
             eps,
         ).astype("float32")
 
         out[f"loc_prev_day_range_pos_{lb}"] = _safe_div(
             c - out["prev_day_low"],
-            out["prev_day_high"] - out["prev_day_low"],
+            np.maximum(out["prev_day_high"] - out["prev_day_low"], out["atr"]),
             eps,
         ).astype("float32")
 
         out[f"loc_prev_week_range_pos_{lb}"] = _safe_div(
             c - out["prev_week_low"],
-            out["prev_week_high"] - out["prev_week_low"],
+            np.maximum(out["prev_week_high"] - out["prev_week_low"], out["atr"]),
             eps,
         ).astype("float32")
 

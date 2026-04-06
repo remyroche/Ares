@@ -204,8 +204,9 @@ class ScaledLogisticRegression(LogisticRegression):
 
 
 class ModelRace(BaseEstimator, ClassifierMixin):
-    def __init__(self, kind="long", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50, max_label_horizon_hours=8):
+    def __init__(self, kind="long", task="base", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50, max_label_horizon_hours=8):
         self.kind = kind
+        self.task = task
         self.n_splits = n_splits
         self.race_sample_frac = race_sample_frac
         self.race_early_stopping_rounds = race_early_stopping_rounds
@@ -248,20 +249,38 @@ class ModelRace(BaseEstimator, ClassifierMixin):
     def _get_candidates(self, race_mode=True):
         candidates = {}
 
-        # Base models are intentionally restricted to ExtraTrees only.
-        et_params = {
-            "n_estimators": 800,
-            "max_depth": 6,
-            "min_samples_leaf": 64,
-            "min_samples_split": 128,
-            "bootstrap": False,
-            "ccp_alpha": 1e-4,
-            "max_leaf_nodes": 512,
-            "max_features": "sqrt",
-            "n_jobs": 2,
-            "random_state": 42
-        }
-        candidates["extratrees"] = Float64Wrapper(ExtraTreesClassifier(**et_params))
+        if self.task == "base":
+            # Base models are restricted to ExtraTrees only.
+            et_params = {
+                "n_estimators": 800,
+                "max_depth": 6,
+                "min_samples_leaf": 64,
+                "min_samples_split": 128,
+                "bootstrap": False,
+                "ccp_alpha": 1e-4,
+                "max_leaf_nodes": 512,
+                "max_features": "sqrt",
+                "n_jobs": 2,
+                "random_state": 42
+            }
+            candidates["extratrees"] = Float64Wrapper(ExtraTreesClassifier(**et_params))
+        elif self.task == "meta":
+            # Meta models are restricted to XGBoost only.
+            xgb_params = {
+                "n_estimators": 800 if race_mode else 1200,
+                "max_depth": 4,
+                "learning_rate": 0.015,
+                "subsample": 0.85,
+                "colsample_bytree": 0.85,
+                "min_child_weight": 5,
+                "gamma": 0.5,
+                "tree_method": "hist",
+                "n_jobs": 2,
+                "random_state": 42
+            }
+            candidates["xgboost"] = Float64Wrapper(XGBClassifier(**xgb_params))
+        else:
+            raise ValueError(f"Unknown task: {self.task}")
 
         return candidates
 

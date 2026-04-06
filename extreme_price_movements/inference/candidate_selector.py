@@ -42,6 +42,7 @@ def _build_mask_for_mode(
         feats_1d, idx_flat, sym_flat, mask_cfg
     )
     resolver = CanonicalRuleMaskResolver(X, metadata)
+    tprint(f"candidate_selector: CanonicalRuleMaskResolver initialized for mask_cfg name {mask_cfg.get('name')}")
 
     base = str(mask_cfg.get("base_event_trigger", "")).strip()
     if base:
@@ -93,6 +94,7 @@ def _build_mask_for_mode(
     duration_hours = float(mask_cfg.get("duration_hours", 1.0) or 1.0)
     z_bars = max(int(round(z_hours * bph)), 1)
     duration_bars = max(int(round(duration_hours * bph)), 1)
+    tprint("candidate_selector: calling _compute_z_cache...")
     zc = _compute_z_cache(
         high=high_arr,
         low=low_arr,
@@ -104,6 +106,7 @@ def _build_mask_for_mode(
         bph=bph,
         volume=volume_arr,
     )
+    tprint("candidate_selector: _compute_z_cache complete.")
 
     name = str(mask_cfg.get("name", "") or "")
     feature_base = str(mask_cfg.get("feature_base", "") or "")
@@ -164,7 +167,9 @@ def _build_mask_for_mode(
 
     try:
         if candidate is not None:
+            tprint("candidate_selector: Calling _generate_event_masks_fast...")
             mask_h, mask_l = _generate_event_masks_fast(candidate=candidate, zc=zc)
+            tprint("candidate_selector: _generate_event_masks_fast complete.")
         else:
             param_val = mask_cfg.get("param")
             if param_val is None:
@@ -179,6 +184,7 @@ def _build_mask_for_mode(
                 asset_groups=asset_groups,
                 duration_bars=duration_bars,
             )
+            tprint("candidate_selector: _generate_event_masks complete.")
         mask_2d = (mask_h | mask_l).reshape((n_ts, n_syms))
         return pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
     except Exception:

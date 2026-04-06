@@ -496,9 +496,7 @@ def _label_artifacts_ready(cfg, ts_sig):
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     horizons = cfg.get("label_horizons_hours", [])
-    required = [
-        "exhaustion_history",
-    ]
+    required = []
     from extreme_price_movements.strategy_registry import get_strategies
 
     strategies = get_strategies(cfg)

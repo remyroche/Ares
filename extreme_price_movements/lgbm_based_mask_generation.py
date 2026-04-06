@@ -2440,6 +2440,7 @@ class FeatureProcessor:
                 tprint(f"  - {reason}: {count}")
 
         # Rank Audit tprints
+        rank_audit_df = pd.DataFrame()
         if self.rank_audit_rows:
             rank_audit_df = pd.DataFrame(self.rank_audit_rows)
             rank_audit_df["worst_nan"] = rank_audit_df[
@@ -2454,9 +2455,8 @@ class FeatureProcessor:
         tprint(f"DEBUG: audit_df size={len(audit_df)}, symbols={audit_df['symbol'].nunique() if 'symbol' in audit_df.columns else 'N/A'}")
         if 'reason' in audit_df.columns:
             tprint(f"DEBUG: Rejection reasons summary: {audit_df['reason'].value_counts().to_dict()}")
-        else:
-            rank_audit_df = pd.DataFrame()
 
+        bool_support_audit_df = pd.DataFrame()
         if self.bool_support_audit_rows:
             bool_support_audit_df = pd.DataFrame(self.bool_support_audit_rows)
             n_samples = len(timestamps)
@@ -2470,8 +2470,6 @@ class FeatureProcessor:
                 tprint(
                     f"  - {row[0]}:{row[1]}:{row[2]} -> support={row[3]}, usable={row[4]}"
                 )
-        else:
-            bool_support_audit_df = pd.DataFrame()
 
         if not rank_audit_df.empty and not bool_support_audit_df.empty:
             booleanization_support_audit = pd.merge(
@@ -4361,13 +4359,16 @@ class CanonicalRuleMaskResolver:
     ):
         self.X = X
         self.metadata = metadata
+        tprint("CanonicalRuleMaskResolver: processing context_lookup...")
         self.context_lookup = {
             key: np.asarray(val, dtype=bool)
             for key, val in (context_lookup or {}).items()
         }
         self.context_key_map = context_key_map or {}
         self.slot_order = tuple(slot_order)
+        tprint("CanonicalRuleMaskResolver: processing name_to_idx...")
         self.name_to_idx = {m.feature_name: m.feature_index for m in metadata}
+        tprint("CanonicalRuleMaskResolver: processing context_name_to_idx...")
         self.context_name_to_idx = {
             key: idx for idx, key in enumerate(self.context_lookup.keys())
         }
@@ -4380,6 +4381,7 @@ class CanonicalRuleMaskResolver:
         self.malformed_key_count = 0
         self.unresolved_feature_count = 0
         self.unresolved_feature_names: Set[str] = set()
+        tprint("CanonicalRuleMaskResolver: init complete.")
 
     def _slice_mask(
         self, mask: np.ndarray, indices: Optional[np.ndarray]

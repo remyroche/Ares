@@ -60,6 +60,10 @@ from extreme_price_movements.pipeline_steps import (
     run_sizer_step,
     run_training_step,
 )
+from extreme_price_movements.strategy_registry import (
+    get_strategies,
+    strategy_runtime_horizons,
+)
 from extreme_price_movements.universe import (
     build_fetch_universe,
     refresh_margin_universe_daily,
@@ -495,15 +499,18 @@ def _label_artifacts_ready(cfg, ts_sig):
     import os
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    horizons = cfg.get("label_horizons_hours", [])
+    horizons = sorted(
+        {
+            int(h)
+            for strat in get_strategies(cfg)
+            for h in strategy_runtime_horizons(strat, cfg)
+        }
+    )
     required = []
-    from extreme_price_movements.strategy_registry import get_strategies
-
     strategies = get_strategies(cfg)
-    for h in horizons:
-        for strat in strategies:
-            side = strat["trade_side"]
-            k = strat["strategy_id"]
+    for strat in strategies:
+        k = strat["strategy_id"]
+        for h in strategy_runtime_horizons(strat, cfg):
             required.append(f"train_{k}_{h}")
 
     for name in required:
@@ -574,7 +581,14 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         )
 
     # No exchange needed — data already in store, features already on disk
-    horizons = horizons or [2, 4, 8]
+    if horizons is None:
+        horizons = sorted(
+            {
+                int(h)
+                for strat in get_strategies(cfg)
+                for h in strategy_runtime_horizons(strat, cfg)
+            }
+        )
     run_label_generation_step_v2(ts_sig, None, cfg, store, None, horizons=horizons)
 
     tprint("LABELS PIPELINE COMPLETE")
@@ -1419,8 +1433,8 @@ def main():
         "--horizons",
         type=int,
         nargs="+",
-        default=[1, 2, 4],
-        help="Horizons to use for labels/training",
+        default=None,
+        help="Optional horizon override. If omitted, use per-strategy runtime horizons.",
     )
     parser.add_argument(
         "--ts", dest="ts_override", help="Timestamp override (YYYYMMDD_HHMMSS)"

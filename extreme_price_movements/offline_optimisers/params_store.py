@@ -44,6 +44,17 @@ TBM_SIDES = CANON_SIDES
 TBM_SIDE_HORIZON_CELLS = CANON_SIDE_HORIZON_CELLS
 
 
+def _side_horizon_alias_from_cell(cell_key: str) -> str | None:
+    parts = str(cell_key or "").split("_")
+    if len(parts) < 3:
+        return None
+    side = parts[1]
+    horizon = parts[2]
+    if side not in {"long", "short"} or not horizon.startswith("H"):
+        return None
+    return f"{side}_{horizon}"
+
+
 def _to_scalar(v: Any) -> Any:
     if isinstance(v, (int, float, str, bool)) or v is None:
         return v
@@ -228,26 +239,18 @@ def load_inference_candidate_mask_params_per_bucket(
                 "strategy_id": safe_id,
                 "trade_side": side,
                 "base_event_trigger": key,
-                "mask_params": {"canonical_key": key}
+                "mask_params": {"canonical_key": key},
+                "source_target": str(row.get("source_target", "")).strip(),
+                "source_horizon": int(row.get("source_horizon", horizon)),
             }
             if move_bucket:
                 strategy["move_bucket"] = move_bucket
                 strategy["candidate_bucket"] = (
                     "best" if move_bucket == "up" else "worst"
                 )
-            
+
             strategies.append(strategy)
 
-    if strategies and not any(
-        str(s.get("move_bucket", "")).lower() in {"up", "down"}
-        for s in strategies
-    ):
-        _log.warning(
-            "[params_store] Dynamic strategies from %s lack usable move-bucket metadata; falling back to legacy strategies",
-            path,
-        )
-        return []
-    
     _log.info(
         f"[params_store] Loaded {len(strategies)} strategies from {path} "
         f"({len(grouped)} groups x top_{top_n}, ranked by {ranking_metric})"
@@ -365,6 +368,42 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
                     "sl_abs_lo_pct": float(min(_sl_lo_vals)) if _sl_lo_vals else None,
                 }
 
+        # Side-only aliases: dynamic strategies no longer distinguish MR/TF.
+        side_groups: Dict[str, list[dict[str, Any]]] = {}
+        for cell_key, payload in list(per_cell.items()):
+            alias = _side_horizon_alias_from_cell(cell_key)
+            if alias is None:
+                continue
+            side_groups.setdefault(alias, []).append(payload)
+        for alias, cells in side_groups.items():
+            if alias in per_cell or not cells:
+                continue
+            triplets: list[tuple[float, float, int]] = []
+            for cell in cells:
+                for triplet in (cell.get("validated_triplets") or []):
+                    if triplet not in triplets:
+                        triplets.append(triplet)
+            tp_abs_vals = [
+                float(cell.get("tp_abs_lo_pct"))
+                for cell in cells
+                if cell.get("tp_abs_lo_pct") is not None
+            ]
+            sl_abs_vals = [
+                float(cell.get("sl_abs_lo_pct"))
+                for cell in cells
+                if cell.get("sl_abs_lo_pct") is not None
+            ]
+            per_cell[alias] = {
+                "k_tp_grid": sorted({float(t[0]) for t in triplets}),
+                "sl_base_grid": sorted({float(t[1]) for t in triplets}),
+                "validated_triplets": triplets,
+                "validated_pairs": [(t[0], t[1]) for t in triplets],
+                "atr_windows": sorted({int(t[2]) for t in triplets}),
+                "atr_window": int(triplets[0][2]) if triplets else atr_window,
+                "tp_abs_lo_pct": float(min(tp_abs_vals)) if tp_abs_vals else None,
+                "sl_abs_lo_pct": float(min(sl_abs_vals)) if sl_abs_vals else None,
+            }
+
         return {
             "per_cell": per_cell,
             "k_tp_grid": k_tp_grid,
@@ -454,6 +493,11 @@ def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
             result[cell] = {
                 k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()
             }
+        for cell, payload in list(result.items()):
+            alias = _side_horizon_alias_from_cell(cell)
+            if alias is None or alias in result:
+                continue
+            result[alias] = dict(payload)
         return result
     except Exception:
         return load_tbm_best_params_per_bucket()
@@ -479,6 +523,14 @@ def load_tbm_all_params_per_cell() -> Dict[str, list[Dict[str, Any]]]:
             result.setdefault(cell, []).append(
                 {k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()}
             )
+        for cell, rows in list(result.items()):
+            alias = _side_horizon_alias_from_cell(cell)
+            if alias is None:
+                continue
+            alias_rows = result.setdefault(alias, [])
+            for row in rows:
+                if row not in alias_rows:
+                    alias_rows.append(dict(row))
         return result
     except Exception:
         return {}

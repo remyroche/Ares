@@ -81,6 +81,10 @@ from extreme_price_movements.training import (
     optimize_risk_params,
     train_models_from_artifacts,
 )
+from extreme_price_movements.strategy_registry import (
+    get_strategies,
+    strategy_runtime_horizons,
+)
 from extreme_price_movements.universe import (
     apply_hardcoded_universe_exclusions,
     get_training_universe,
@@ -384,6 +388,22 @@ def _labeling_feature_keys(cfg) -> set[str]:
     exh_keys = cfg.get("exh_feature_keys", [])
     if isinstance(exh_keys, (list, tuple)):
         keys.update(exh_keys)
+
+    try:
+        from extreme_price_movements.lgbm_based_mask_generation import (
+            extract_feature_names_from_key,
+        )
+        from extreme_price_movements.strategy_registry import get_strategies
+
+        for strat in get_strategies(cfg):
+            rule_key = str(strat.get("base_event_trigger", "")).strip()
+            if not rule_key or rule_key.startswith("price_up") or rule_key.startswith(
+                "price_down"
+            ):
+                continue
+            keys.update(extract_feature_names_from_key(rule_key))
+    except Exception:
+        pass
     return keys
 
 
@@ -1405,7 +1425,14 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     feats = _align_features_to_panel(feats, panel, valid_syms)
 
     # 1. Label Datasets
-    horizons = horizons or cfg.get("label_horizons_hours", list(CANON_HORIZONS))
+    if horizons is None:
+        horizons = sorted(
+            {
+                int(h)
+                for strat in get_strategies(cfg)
+                for h in strategy_runtime_horizons(strat, cfg)
+            }
+        ) or list(CANON_HORIZONS)
     datasets = generate_label_datasets(
         panel, feats, mkt_gates, cfg, train_syms, ts_sig, None, horizons=horizons
     )
@@ -1746,7 +1773,10 @@ def run_training_step(
 
     # Alpha models (Dynamic Strategies from get_strategies)
     strategies = get_strategies(cfg)
-    horizons = horizons or cfg.get("label_horizons_hours", [1, 2, 4, 8])
+    strategy_horizons = {
+        s["strategy_id"]: strategy_runtime_horizons(s, cfg)
+        for s in strategies
+    }
 
     found_count = 0
     base_geometry_archetypes = [
@@ -1758,7 +1788,7 @@ def run_training_step(
         s_id = strat["strategy_id"]
         # Determine kind (mr/tf) for backward compatibility with naming if needed
         # but the actual name will be 'train_{s_id}_{H}'
-        for H in horizons:
+        for H in strategy_horizons.get(s_id, []):
             name = f"train_{s_id}_{H}"
             df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
             if df is not None:

@@ -1,8 +1,10 @@
 import hashlib
+import gc
 import json
 import os
 import pickle
 import platform
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -49,8 +51,10 @@ from .offline_optimisers.params_store import (
     CANDIDATE_BEST_PARAMS_CSV,
     apply_offline_optimizer_best_params,
     load_tbm_all_params_per_cell,
+    load_tbm_all_params_per_side_horizon,
     load_tbm_best_params_per_bucket,
     load_tbm_best_params_per_cell,
+    load_tbm_best_params_per_side_horizon,
     load_tbm_geometry_grid,
 )
 from .optimise_tpsl_ratio import (
@@ -61,7 +65,7 @@ from .optimise_tpsl_ratio import (
     scaled_atr_pct,
 )
 from .path_utils import resolve_reports_dir
-from .strategy_registry import get_strategies
+from .strategy_registry import get_strategies, strategy_runtime_horizons
 from .policy_ml import (
     MetaClassifierSelectionConfig,
     build_base_tp_vs_sl,
@@ -491,14 +495,18 @@ def compute_barrier_factory(
     sl_df = pd.DataFrame(sl_vals, index=atr_pct.index, columns=atr_pct.columns)
 
     if return_components:
+        z_arr = np.asarray(z_clipped, dtype=np.float32)
+        m_arr = np.asarray(m_clipped, dtype=np.float32)
+        sl_mult_arr = np.asarray(sl_mult, dtype=np.float32)
+        tp_arr = np.asarray(tp_vals, dtype=np.float32)
         # Per-asset diagnostics for cross-asset portability check
         asset_diagnostics = {}
         for col in atr_pct.columns:
             col_idx = atr_pct.columns.get_loc(col)
-            m_vals = m_clipped.values[:, col_idx]
-            sl_m = sl_mult.values[:, col_idx]
+            m_vals = m_arr[:, col_idx]
+            sl_m = sl_mult_arr[:, col_idx]
             atr_col = atr_pct[col].values
-            tp_col = tp_vals.values[:, col_idx]
+            tp_col = tp_arr[:, col_idx]
 
             # TP in ATR units: avoid division by zero
             tp_atr_ratio = np.divide(
@@ -514,23 +522,23 @@ def compute_barrier_factory(
             }
 
         diagnostics = {
-            "z_mean": float(np.nanmean(z_clipped.values)),
-            "z_p10": float(np.nanpercentile(z_clipped.values, 10)),
-            "z_p90": float(np.nanpercentile(z_clipped.values, 90)),
-            "z_below_gate_pct": float(np.mean(z_clipped.values < z_gate)),
-            "z_above_gate_pct": float(np.mean(z_clipped.values >= z_gate)),
-            "m_mean": float(np.nanmean(m_clipped.values)),
-            "m_p10": float(np.nanpercentile(m_clipped.values, 10)),
-            "m_p90": float(np.nanpercentile(m_clipped.values, 90)),
-            "m_at_m_lo_pct": float(np.mean(m_clipped.values == m_lo)),
-            "m_at_m_hi_pct": float(np.mean(m_clipped.values == m_hi)),
+            "z_mean": float(np.nanmean(z_arr)),
+            "z_p10": float(np.nanpercentile(z_arr, 10)),
+            "z_p90": float(np.nanpercentile(z_arr, 90)),
+            "z_below_gate_pct": float(np.mean(z_arr < z_gate)),
+            "z_above_gate_pct": float(np.mean(z_arr >= z_gate)),
+            "m_mean": float(np.nanmean(m_arr)),
+            "m_p10": float(np.nanpercentile(m_arr, 10)),
+            "m_p90": float(np.nanpercentile(m_arr, 90)),
+            "m_at_m_lo_pct": float(np.mean(m_arr == m_lo)),
+            "m_at_m_hi_pct": float(np.mean(m_arr == m_hi)),
             "sl_mult_mean": float(np.nanmean(sl_mult)),
             "sl_at_sl_lo_pct": float(np.mean(sl_mult == sl_lo)),
             "sl_at_sl_hi_pct": float(np.mean(sl_mult == sl_hi)),
             "tp_mean": float(np.nanmean(tp_vals)),
             "sl_mean": float(np.nanmean(sl_vals)),
-            "clip_low_pct": float(np.mean(m_clipped.values == m_lo)),
-            "clip_high_pct": float(np.mean(m_clipped.values == m_hi)),
+            "clip_low_pct": float(np.mean(m_arr == m_lo)),
+            "clip_high_pct": float(np.mean(m_arr == m_hi)),
             "asset_diagnostics": asset_diagnostics,
         }
         return tp_df, sl_df, diagnostics
@@ -562,7 +570,13 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
     cfg_resolved = _resolve_training_cfg_with_offline_optimisers(cfg)
 
     from extreme_price_movements.strategy_registry import get_strategies
-    from extreme_price_movements.lgbm_based_mask_generation import FeatureProcessor, CanonicalRuleMaskResolver
+    from extreme_price_movements.lgbm_based_mask_generation import (
+        CanonicalRuleMaskResolver,
+        FeatureProcessor,
+        parse_condition_string,
+        parse_slot_map,
+        split_composite_key,
+    )
     # Import legacy mask builder for fallback on legacy mode keys
     try:
         from extreme_price_movements.inference.candidate_selector import (
@@ -600,6 +614,55 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
 
     # Load per-mode mask params for legacy fallback
     _legacy_mode_cfg = dict(cfg_resolved.get("candidate_mask_params_by_mode", {}) or {})
+
+    def _eval_numeric_condition(
+        feature_df: pd.DataFrame, operator: str, raw_value: str
+    ) -> pd.DataFrame:
+        threshold = float(raw_value)
+        vals = feature_df.reindex(index=close_df.index, columns=close_df.columns)
+        if operator == "<=":
+            return vals <= threshold
+        if operator == "<":
+            return vals < threshold
+        if operator == ">":
+            return vals > threshold
+        if operator == ">=":
+            return vals >= threshold
+        if operator == "==":
+            return vals == threshold
+        raise ValueError(f"Unsupported canonical operator: {operator}")
+
+    def _direct_canonical_mask(canonical_key: str) -> pd.DataFrame | None:
+        _parts = split_composite_key(canonical_key)
+        if _parts is not None:
+            _left = _direct_canonical_mask(_parts[0])
+            _right = _direct_canonical_mask(_parts[1])
+            if _left is None or _right is None:
+                return None
+            return (_left | _right).fillna(False).astype(bool)
+
+        try:
+            slot_map = parse_slot_map(canonical_key, resolver.slot_order)
+        except ValueError:
+            slot_map = parse_slot_map(canonical_key, ("trigger", "location", "regime"))
+
+        mask_df = pd.DataFrame(True, index=close_df.index, columns=close_df.columns)
+        for slot_value in slot_map.values():
+            if slot_value in {"*", "Composite"}:
+                continue
+            for cond_str in slot_value.split("&"):
+                parsed = parse_condition_string(cond_str)
+                if parsed is None:
+                    return None
+                feature_name, operator, raw_value = parsed
+                feature_df = feats.get(feature_name)
+                if not isinstance(feature_df, pd.DataFrame):
+                    return None
+                mask_df &= _eval_numeric_condition(feature_df, operator, raw_value).fillna(
+                    False
+                )
+
+        return mask_df.fillna(False).astype(bool)
 
     def _legacy_mode_mask(mode_name: str):
         """Build mask for legacy mode keys like price_up_tf using per-mode config."""
@@ -652,9 +715,15 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
                 mask_df = pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns)
                 tprint(f"[DIAGNOSTIC] Strategy {strat_id} using CANONICAL mask for {key}: {mask_df.sum().sum():,} active triggers")
             except KeyError as e:
-                tprint(f"Failed to generate mask for {strat_id} with key {key}: {e}")
-                mask_df = pd.DataFrame(False, index=close_df.index, columns=close_df.columns)
-        
+                mask_df = _direct_canonical_mask(key)
+                if mask_df is not None:
+                    tprint(
+                        f"[DIAGNOSTIC] Strategy {strat_id} using DIRECT canonical mask for {key}: {mask_df.sum().sum():,} active triggers"
+                    )
+                else:
+                    tprint(f"Failed to generate mask for {strat_id} with key {key}: {e}")
+                    mask_df = pd.DataFrame(False, index=close_df.index, columns=close_df.columns)
+
         mask_by_strategy[strat_id] = mask_df
 
         if global_mask is None:
@@ -1664,22 +1733,24 @@ def _save_event_index_artifact(
 def _choose_parallel_cells(n_cells: int, cfg: dict) -> int:
     if n_cells <= 1:
         return 1
-    max_workers = int(cfg.get("label_parallel_max_workers", 4))
+    max_workers = int(cfg.get("label_parallel_max_workers", 3))
     # Default to modest thread fan-out on Apple Silicon; avoid memory spikes.
     if platform.system() == "Darwin" and platform.machine().lower() in {
         "arm64",
         "aarch64",
     }:
-        max_workers = min(max_workers, int(cfg.get("label_parallel_max_workers_m1", 4)))
+        max_workers = min(max_workers, int(cfg.get("label_parallel_max_workers_m1", 2)))
     max_workers = max(1, max_workers)
     return min(max_workers, n_cells)
 
 
-def _downcast_label_dataset_df(df: pd.DataFrame) -> pd.DataFrame:
+def _downcast_label_dataset_df(
+    df: pd.DataFrame, copy: bool = True
+) -> pd.DataFrame:
     """Downcast generated label datasets to compact dtypes (float32/int32) where safe."""
     if not isinstance(df, pd.DataFrame) or df.empty:
         return df
-    out = df.copy()
+    out = df.copy() if copy else df
     for col in out.columns:
         s = out[col]
         if pd.api.types.is_float_dtype(s.dtype):
@@ -2024,6 +2095,100 @@ def _fast_lookup(feat_df, event_ts, event_sym):
     return out
 
 
+def _datetime_index_to_ns(index: pd.DatetimeIndex) -> np.ndarray:
+    if getattr(index, "tz", None) is None:
+        return index.view("i8")
+    return index.tz_convert("UTC").tz_localize(None).view("i8")
+
+
+def _event_ts_to_ns(event_ts, target_tz=None) -> np.ndarray:
+    ts = pd.to_datetime(event_ts, utc=True)
+    if target_tz is not None:
+        ts = ts.tz_convert(target_tz)
+    else:
+        ts = ts.tz_localize(None)
+    if getattr(ts, "tz", None) is not None:
+        ts = ts.tz_localize(None)
+    return ts.view("i8")
+
+
+def _resolve_row_indexer(
+    feat_index,
+    event_ts,
+    lookup_cache: Optional[dict] = None,
+):
+    cache_key = ("row", id(feat_index), id(event_ts))
+    if lookup_cache is not None and cache_key in lookup_cache:
+        return lookup_cache[cache_key]
+
+    if isinstance(feat_index, pd.DatetimeIndex) and feat_index.is_monotonic_increasing:
+        idx_ns = _datetime_index_to_ns(feat_index)
+        key_ns = _event_ts_to_ns(event_ts, target_tz=getattr(feat_index, "tz", None))
+        pos = np.searchsorted(idx_ns, key_ns)
+        valid = (pos >= 0) & (pos < len(idx_ns))
+        row_idx = np.full(len(key_ns), -1, dtype=np.int32)
+        if valid.any():
+            exact = idx_ns[pos[valid]] == key_ns[valid]
+            row_idx_valid = pos[valid].astype(np.int32, copy=False)
+            row_idx[valid] = np.where(exact, row_idx_valid, -1)
+    else:
+        row_idx = feat_index.get_indexer(event_ts).astype(np.int32, copy=False)
+
+    if lookup_cache is not None:
+        lookup_cache[cache_key] = row_idx
+    return row_idx
+
+
+def _resolve_col_indexer(
+    columns: pd.Index,
+    event_sym,
+    lookup_cache: Optional[dict] = None,
+):
+    cache_key = ("col", id(columns), id(event_sym))
+    if lookup_cache is not None and cache_key in lookup_cache:
+        return lookup_cache[cache_key]
+
+    sym_arr = np.asarray(event_sym, dtype=object)
+    uniq_syms, inv = np.unique(sym_arr, return_inverse=True)
+    uniq_idx = columns.get_indexer(uniq_syms).astype(np.int32, copy=False)
+    col_idx = uniq_idx[inv]
+    if lookup_cache is not None:
+        lookup_cache[cache_key] = col_idx
+    return col_idx
+
+
+def _fast_lookup_cached(
+    feat_df,
+    event_ts,
+    event_sym,
+    lookup_cache: Optional[dict] = None,
+):
+    row_idx = _resolve_row_indexer(feat_df.index, event_ts, lookup_cache=lookup_cache)
+    col_idx = _resolve_col_indexer(
+        feat_df.columns, event_sym, lookup_cache=lookup_cache
+    )
+    vals = feat_df.values
+    valid = (row_idx >= 0) & (col_idx >= 0)
+    out = np.full(len(row_idx), np.nan, dtype=np.float32)
+    if valid.any():
+        out[valid] = vals[row_idx[valid], col_idx[valid]]
+    return out
+
+
+def _fast_series_lookup_cached(
+    series: pd.Series,
+    event_ts,
+    lookup_cache: Optional[dict] = None,
+) -> np.ndarray:
+    row_idx = _resolve_row_indexer(series.index, event_ts, lookup_cache=lookup_cache)
+    vals = np.asarray(series.values)
+    out = np.full(len(row_idx), np.nan, dtype=np.float32)
+    valid = row_idx >= 0
+    if valid.any():
+        out[valid] = vals[row_idx[valid]]
+    return out
+
+
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
     new_cols = {}
     for g in gate_cols:
@@ -2148,12 +2313,16 @@ def _strategy_bucket_context(
             explicit_candidate_bucket = str(strat.get("candidate_bucket", "")).lower()
             if explicit_move_bucket in {"up", "down"}:
                 move_bucket = explicit_move_bucket
-            else:
+            elif "price_up" in mode or "price_down" in mode:
                 move_bucket = "up" if "price_up" in mode else "down"
+            else:
+                move_bucket = None
             if explicit_candidate_bucket in {"best", "worst"}:
                 cand_filter = explicit_candidate_bucket
-            else:
+            elif move_bucket in {"up", "down"}:
                 cand_filter = "best" if move_bucket == "up" else "worst"
+            else:
+                cand_filter = None
             return cand_filter, move_bucket, s_id
 
     # Legacy fallback
@@ -2640,6 +2809,7 @@ def build_hourly_training_set_and_weights(
 ):
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
     empty_out = (None, None, None, None, None, None, None)
+    lookup_cache: dict = {}
     c = panel["close"]
     idx = c.index
 
@@ -2767,7 +2937,7 @@ def build_hourly_training_set_and_weights(
                     f"z_gate: below={diag['z_below_gate_pct']:.1%}, above={diag['z_above_gate_pct']:.1%}, "
                     f"sl_mult: lo={diag['sl_at_sl_lo_pct']:.1%}, hi={diag['sl_at_sl_hi_pct']:.1%})"
                 )
-                tb_labels, tb_returns, tb_quality = compute_triple_barrier_labels(
+                _tb_out = compute_triple_barrier_labels(
                     panel,
                     tp_df,
                     sl_df,
@@ -2776,6 +2946,7 @@ def build_hourly_training_set_and_weights(
                     return_outcomes=True,
                     horizons_frame=dyn_horizon,
                 )
+                tb_labels, tb_returns, tb_quality = _tb_out[:3]
                 if _tb_cache is not None:
                     _tb_cache[tb_cache_key] = (tb_labels, tb_returns, tb_quality)
 
@@ -2907,7 +3078,9 @@ def build_hourly_training_set_and_weights(
 
     # Trend filter (skip when already precomputed upstream for this side/kind)
     if _precomputed_events is None and trend_filter and "trend_pct" in feats:
-        trend_vals = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
+        trend_vals = _fast_lookup_cached(
+            feats["trend_pct"], event_ts, event_sym, lookup_cache=lookup_cache
+        )
         keep = _trend_direction_keep_mask(trend_vals, trend_filter)
         n_pre_trend = len(event_ts)
         n_trend_drop = int((~keep).sum())
@@ -2930,9 +3103,15 @@ def build_hourly_training_set_and_weights(
 
     # --- Fast numpy positional lookups (avoid stack/reindex) ---
     # Extract TB labels/returns at entry time
-    lbl_vals = _fast_lookup(tb_labels, entry_ts, event_sym)
-    ret_vals = _fast_lookup(tb_returns, entry_ts, event_sym)
-    qual_vals = _fast_lookup(tb_quality, entry_ts, event_sym)
+    lbl_vals = _fast_lookup_cached(
+        tb_labels, entry_ts, event_sym, lookup_cache=lookup_cache
+    )
+    ret_vals = _fast_lookup_cached(
+        tb_returns, entry_ts, event_sym, lookup_cache=lookup_cache
+    )
+    qual_vals = _fast_lookup_cached(
+        tb_quality, entry_ts, event_sym, lookup_cache=lookup_cache
+    )
 
     # Extract absolute TP/SL levels for dynamic timeout weighting
     if (
@@ -2940,8 +3119,12 @@ def build_hourly_training_set_and_weights(
         and "tp_vals" in _geom_frames
         and "sl_vals" in _geom_frames
     ):
-        tp_vals = _fast_lookup(_geom_frames["tp_vals"], entry_ts, event_sym)
-        sl_vals = _fast_lookup(_geom_frames["sl_vals"], entry_ts, event_sym)
+        tp_vals = _fast_lookup_cached(
+            _geom_frames["tp_vals"], entry_ts, event_sym, lookup_cache=lookup_cache
+        )
+        sl_vals = _fast_lookup_cached(
+            _geom_frames["sl_vals"], entry_ts, event_sym, lookup_cache=lookup_cache
+        )
     else:
         # Fallback context: reuse fixed_tp/fixed_sl or global cfg defaults if geom frames missing
         tp_vals = np.full_like(ret_vals, fixed_tp)
@@ -3006,7 +3189,13 @@ def build_hourly_training_set_and_weights(
                         _atr_s = pd.Series(0.02, index=_ohlc_sym.index)
                     _idx_cache[_sym] = (_ohlc_sym, _atr_s)
                 _ohlc_sym, _atr_s = _idx_cache[_sym]
-                _t0 = int(_ohlc_sym.index.get_indexer([pd.Timestamp(_ts_e)])[0])
+                _entry_ns = pd.to_datetime([_ts_e], utc=True).tz_localize(None).view(
+                    "i8"
+                )[0]
+                _ohlc_ns = _datetime_index_to_ns(_ohlc_sym.index)
+                _t0 = int(np.searchsorted(_ohlc_ns, _entry_ns))
+                if _t0 >= len(_ohlc_ns) or _ohlc_ns[_t0] != _entry_ns:
+                    _t0 = -1
                 if _t0 < 0:
                     continue
                 _entry_px = float(_ohlc_sym["open"].iloc[_t0])
@@ -3176,7 +3365,12 @@ def build_hourly_training_set_and_weights(
 
     # Base weight from move magnitude
     pa = np.abs(
-        np.nan_to_num(_fast_lookup(feats["ret24h"], event_ts, event_sym), nan=0.0)
+        np.nan_to_num(
+            _fast_lookup_cached(
+                feats["ret24h"], event_ts, event_sym, lookup_cache=lookup_cache
+            ),
+            nan=0.0,
+        )
     )
     w_base = np.log1p(pa)
     w_base = w_base * w_outcome
@@ -3194,13 +3388,19 @@ def build_hourly_training_set_and_weights(
     else:
         if "mfe_4h" in feats:
             mfe_vals = np.nan_to_num(
-                _fast_lookup(feats["mfe_4h"], event_ts, event_sym), nan=0.0
+                _fast_lookup_cached(
+                    feats["mfe_4h"], event_ts, event_sym, lookup_cache=lookup_cache
+                ),
+                nan=0.0,
             )
         else:
             mfe_vals = np.maximum(pnl, 0.0)
         if "mae_4h" in feats:
             mae_vals = np.nan_to_num(
-                _fast_lookup(feats["mae_4h"], event_ts, event_sym), nan=0.0
+                _fast_lookup_cached(
+                    feats["mae_4h"], event_ts, event_sym, lookup_cache=lookup_cache
+                ),
+                nan=0.0,
             )
         else:
             mae_vals = np.maximum(-pnl, 0.0)
@@ -3208,7 +3408,10 @@ def build_hourly_training_set_and_weights(
     # Get barrier distances (TP/SL) from ATR
     if "atr_pct" in feats:
         barrier_vals = np.nan_to_num(
-            _fast_lookup(feats["atr_pct"], event_ts, event_sym), nan=0.02
+            _fast_lookup_cached(
+                feats["atr_pct"], event_ts, event_sym, lookup_cache=lookup_cache
+            ),
+            nan=0.02,
         )
     else:
         barrier_vals = np.full(len(event_ts), 0.02, dtype=np.float32)
@@ -3280,8 +3483,18 @@ def build_hourly_training_set_and_weights(
             "n_sl", pd.DataFrame(0, index=tb_labels.index, columns=tb_labels.columns)
         )
 
-    n_tp = np.nan_to_num(_fast_lookup(_geom_tp_df, event_ts, event_sym), nan=0.0)
-    n_sl = np.nan_to_num(_fast_lookup(_geom_sl_df, event_ts, event_sym), nan=0.0)
+    n_tp = np.nan_to_num(
+        _fast_lookup_cached(
+            _geom_tp_df, event_ts, event_sym, lookup_cache=lookup_cache
+        ),
+        nan=0.0,
+    )
+    n_sl = np.nan_to_num(
+        _fast_lookup_cached(
+            _geom_sl_df, event_ts, event_sym, lookup_cache=lookup_cache
+        ),
+        nan=0.0,
+    )
     n_res = n_tp + n_sl
     c_cons = (n_tp - n_sl) / np.maximum(1.0, n_res)
     A = float(cfg.get("consensus_amp", 0.25))
@@ -3426,7 +3639,9 @@ def build_hourly_training_set_and_weights(
 
     # Store barrier_pct for risk-adjusted meta model target
     if "atr_pct" in feats:
-        barrier_vals = _fast_lookup(feats["atr_pct"], event_ts, event_sym)
+        barrier_vals = _fast_lookup_cached(
+            feats["atr_pct"], event_ts, event_sym, lookup_cache=lookup_cache
+        )
         barrier_vals = np.nan_to_num(barrier_vals, nan=0.02).astype(np.float32)
         parts["__barrier_pct__"] = np.clip(barrier_vals, 0.005, None)
 
@@ -3439,21 +3654,42 @@ def build_hourly_training_set_and_weights(
     lag_ts = event_ts - pd.Timedelta(hours=1)
     if p_exh_hist is not None:
         parts["p_exh_lag1"] = np.nan_to_num(
-            _fast_lookup(p_exh_hist, lag_ts, event_sym), nan=0.0
+            _fast_lookup_cached(
+                p_exh_hist, lag_ts, event_sym, lookup_cache=lookup_cache
+            ),
+            nan=0.0,
         ).astype(np.float32)
     else:
         parts["p_exh_lag1"] = np.zeros(len(event_ts), dtype=np.float32)
 
     # Feature columns — fast lookup
-    for k in feat_keys:
+    _feat_heartbeat_every = max(1, int(cfg.get("label_feature_heartbeat_every", 16)))
+    _feat_t0 = time.time()
+    for _feat_i, k in enumerate(feat_keys, start=1):
         if k == "p_exh_lag1":
             continue
         if k in feats:
-            parts[k] = _fast_lookup(feats[k], event_ts, event_sym)
+            parts[k] = _fast_lookup_cached(
+                feats[k], event_ts, event_sym, lookup_cache=lookup_cache
+            )
+        if (
+            _feat_i == 1
+            or _feat_i % _feat_heartbeat_every == 0
+            or _feat_i == len(feat_keys)
+        ):
+            tprint(
+                f"[label hb] H={H} side={side} kind={model_kind} "
+                f"features={min(_feat_i, len(feat_keys))}/{len(feat_keys)} "
+                f"events={len(event_ts):,} elapsed={time.time() - _feat_t0:.1f}s"
+            )
 
     # Market gates
-    parts["G_VOL"] = mkt_gates["G_VOL"].reindex(event_ts).values
-    parts["G_TREND"] = mkt_gates["G_TREND"].reindex(event_ts).values
+    parts["G_VOL"] = _fast_series_lookup_cached(
+        mkt_gates["G_VOL"], event_ts, lookup_cache=lookup_cache
+    )
+    parts["G_TREND"] = _fast_series_lookup_cached(
+        mkt_gates["G_TREND"], event_ts, lookup_cache=lookup_cache
+    )
 
     df = pd.DataFrame(parts)
 
@@ -3584,8 +3820,11 @@ def build_hourly_training_set_and_weights(
             "Fallback metrics are disabled by policy."
         )
 
-    metric_raw = _fast_lookup(
-        feats[selection_metric_name], df["ts"].values, df["symbol"].values
+    metric_raw = _fast_lookup_cached(
+        feats[selection_metric_name],
+        df["ts"].values,
+        df["symbol"].values,
+        lookup_cache={},
     )
     metric_raw = np.asarray(metric_raw, dtype=np.float32)
     finite = np.isfinite(metric_raw)
@@ -3896,14 +4135,50 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
         f"Geometry grid loaded: source={_grid_source}  per_cell_keys={sorted(_per_cell.keys())}"
     )
 
-    def _grid_for_cell(kind: str, side: str, H: int):
+    def _cell_keys_for_strategy(kind: str | None, side: str, H: int) -> list[str]:
+        side_l = str(side).lower()
+        if kind in {"MR", "TF"}:
+            return [f"{kind}_{side_l}_H{int(H)}"]
+        return [f"{side_l}_H{int(H)}"]
+
+    def _grid_for_cell(kind: str | None, side: str, H: int):
         """Return (k_tp_list, sl_list, tp_abs_lo_pct_or_None) for a specific (kind, side, H) cell.
-        kind is 'mr' or 'tf'; cell_key format is 'MR_long_H4'.
+        kind is 'MR'/'TF' or None; cell_key format is 'MR_long_H4'.
         Falls back to global grid, then cfg overrides, then hardcoded defaults.
         tp_abs_lo_pct_or_None is None when no per-cell value is available (caller uses global tp_lo).
         """
-        cell_key = f"{kind}_H{H}"
-        cell = _per_cell.get(cell_key)
+        cell_keys = _cell_keys_for_strategy(kind, side, H)
+        cells = [_per_cell.get(cell_key) for cell_key in cell_keys if cell_key in _per_cell]
+        if cells:
+            k_vals = sorted(
+                {
+                    float(v)
+                    for cell in cells
+                    for v in (cell.get("k_tp_grid") or [])
+                }
+            )
+            sl_vals = sorted(
+                {
+                    float(v)
+                    for cell in cells
+                    for v in (cell.get("sl_base_grid") or [])
+                }
+            )
+            tp_abs_vals = [
+                float(cell.get("tp_abs_lo_pct"))
+                for cell in cells
+                if cell.get("tp_abs_lo_pct") is not None
+            ]
+            if k_vals and sl_vals:
+                return (
+                    k_vals,
+                    sl_vals,
+                    min(tp_abs_vals) if tp_abs_vals else None,
+                )
+        if len(cell_keys) == 1:
+            cell = _per_cell.get(cell_keys[0])
+        else:
+            cell = None
         if cell and cell.get("k_tp_grid") and cell.get("sl_base_grid"):
             return (
                 sorted(cell["k_tp_grid"]),
@@ -4143,7 +4418,9 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
 
         atr_ratio_3d = np.expand_dims(atr_ratio, axis=0)
         k_tps_norm_3d = k_tps_norm.reshape(-1, 1, 1)
-        dynamic_modifier_3d = np.exp(0.5 * (atr_ratio_3d - 1.0) * k_tps_norm_3d)
+        _dyn_exp = 0.5 * (atr_ratio_3d - 1.0) * k_tps_norm_3d
+        _dyn_exp = np.clip(_dyn_exp, -20.0, 20.0)
+        dynamic_modifier_3d = np.exp(_dyn_exp, dtype=np.float32)
         rr_weights_3d = rr_weights.reshape(-1, 1, 1)
         w_3d = rr_weights_3d * dynamic_modifier_3d
 
@@ -4228,7 +4505,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
         side = strat["trade_side"]
         s_id = strat["strategy_id"]
         # Resolve MR/TF kind from strategy flags, for cell_key lookup in geometry grid
-        kind = "MR" if strat.get("is_mr", False) else "TF"
+        kind = (
+            "MR"
+            if strat.get("is_mr", False)
+            else ("TF" if strat.get("is_tf", False) else None)
+        )
         k_label = s_id  # keep strategy_id for artifact keys
         for H in horizons:
             # _grid_for_cell must come first — _cell_tp_abs_lo is used in floor resolution below.
@@ -4236,7 +4517,9 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
             tp_mults, sl_base_mults, _cell_tp_abs_lo = _grid_for_cell(
                 kind, side, int(H)
             )
-            tprint(f"[TB Cache] H={H} strategy={s_id} kind={kind} side={side}: looking up geometry grid...")
+            tprint(
+                f"[TB Cache] H={H} strategy={s_id} kind={kind or 'SIDE'} side={side}: looking up geometry grid..."
+            )
 
             _default_tp_hit = min_tp_hit_h2 if int(H) == 2 else min_tp_hit
             min_tp_hit_eff = _resolve_cell_min_tp_hit(
@@ -4309,21 +4592,33 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
             # specific winning triplet for this exact bucket-horizon cell.
             # Bucket mapping: (long, tf) -> TF_long, (short, mr) -> MR_short, etc.
             # Use canonical kind prefix for cell key _bname
-            _bname = f"{kind}_{side}"
-            _cell_key_exact = f"{_bname}_H{H}"
+            _cell_keys_exact = _cell_keys_for_strategy(kind, side, H)
+            _cell_key_exact = ",".join(_cell_keys_exact)
 
             # Load per-cell mapping for a diagnostic tag only; do NOT collapse to a single
             # triplet — let the full geometry grid validated_triplets drive the sweep.
-            _p_cell_best = load_tbm_best_params_per_cell()
-            _p_cell_all = load_tbm_all_params_per_cell()
-            _cell_winner = _p_cell_best.get(_cell_key_exact)
-            if not _cell_winner:
-                _cell_winner = _p_cell_best.get(_bname)  # Bucket-level fallback
-            _cell_ranked = _p_cell_all.get(_cell_key_exact, [])
+            if kind is None:
+                _p_cell_best = load_tbm_best_params_per_side_horizon()
+                _p_cell_all = load_tbm_all_params_per_side_horizon()
+            else:
+                _p_cell_best = load_tbm_best_params_per_cell()
+                _p_cell_all = load_tbm_all_params_per_cell()
+            _cell_winner = None
+            for _ck in _cell_keys_exact:
+                _cell_winner = _p_cell_best.get(_ck)
+                if _cell_winner:
+                    break
+            _cell_ranked = []
+            for _ck in _cell_keys_exact:
+                _cell_ranked.extend(_p_cell_all.get(_ck, []))
 
             # Check for validated triplets first (geometry grid — top-k per cell).
-            _cell_data = _per_cell.get(_cell_key_exact, {})
-            _validated_triplets = _cell_data.get("validated_triplets") or []
+            _validated_triplets = []
+            for _ck in _cell_keys_exact:
+                _cell_data = _per_cell.get(_ck, {})
+                for _triplet in (_cell_data.get("validated_triplets") or []):
+                    if _triplet not in _validated_triplets:
+                        _validated_triplets.append(_triplet)
 
             # Diagnostic: log how many validated triplets we're sweeping.
             if _cell_winner:
@@ -4339,7 +4634,14 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                 if not _validated_triplets:
                     _fallback_win = int(
                         (_cell_winner or {}).get("base_atr_window")
-                        or _cell_data.get("atr_window")
+                        or next(
+                            (
+                                _per_cell.get(_ck, {}).get("atr_window")
+                                for _ck in _cell_keys_exact
+                                if _per_cell.get(_ck, {}).get("atr_window") is not None
+                            ),
+                            None,
+                        )
                         or _tbm_grid.get("atr_window")
                         or int(cfg.get("barrier_atr_window", 24 * 30))
                     )
@@ -4381,6 +4683,12 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
 
                 geom_runs = []
                 relaxed_pool = []
+                _cell_start_ts = time.perf_counter()
+                _hb_last_ts = _cell_start_ts
+                _hb_every = max(1, int(cfg.get("label_geom_heartbeat_every", 2)))
+                _hb_secs = max(
+                    5.0, float(cfg.get("label_geom_heartbeat_secs", 30.0))
+                )
 
                 # OPTIMIZATION: Cache barrier factory outputs by (atr_window, k_tp, sl_base_mult, H, tp_lo, tp_hi)
                 # This avoids redundant computation when same geometry is used across different (side, kind) combinations
@@ -4390,7 +4698,23 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                     else _barrier_factory_cache
                 )
 
-                for k_tp, sl_base_mult, _atr_window in _validated_triplets:
+                for _triplet_idx, (k_tp, sl_base_mult, _atr_window) in enumerate(
+                    _validated_triplets, start=1
+                ):
+                    _now_ts = time.perf_counter()
+                    if (
+                        _triplet_idx == 1
+                        or _triplet_idx == len(_validated_triplets)
+                        or (_triplet_idx % _hb_every == 0)
+                        or ((_now_ts - _hb_last_ts) >= _hb_secs)
+                    ):
+                        tprint(
+                            f"[geom hb] strat={s_id} side={side} H={H} "
+                            f"triplet={_triplet_idx}/{len(_validated_triplets)} "
+                            f"accepted={len(relaxed_pool)} "
+                            f"elapsed={_now_ts - _cell_start_ts:.1f}s"
+                        )
+                        _hb_last_ts = _now_ts
                     _barrier_base = _barrier_base_cache[_atr_window]
                     total_geoms += 1
                     tp_lo_eval = _co_calibrate_tp_floor(
@@ -4452,9 +4776,10 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                     )
 
                     if raw_key not in _raw_tb_cache:
-                        lbl, ret, qual = compute_triple_barrier_labels(
+                        _tb_out = compute_triple_barrier_labels(
                             panel, tp_df, sl_df, H, side=side, return_outcomes=True
                         )
+                        lbl, ret, qual = _tb_out[:3]
                         _raw_tb_cache[raw_key] = (lbl, ret, qual)
 
                     lbl, ret, qual = _raw_tb_cache[raw_key]
@@ -4588,10 +4913,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                     keep_top_n = max(1, keep_top_n)
                     geom_runs_proxy = relaxed_pool[:keep_top_n]
 
-                    # Compute Exact Numba Ground Truth ONLY for the final Top N Winners
-                    prod_runs = []
+                    # The first-pass triplet loop already used the exact production
+                    # barrier factory + triple-barrier labels, so re-running the top-N
+                    # winners is redundant. Reuse the exact outputs directly.
+                    geom_runs = []
                     for _g in geom_runs_proxy:
-                        _k_tp = float(_g["k_tp"])
                         _sl_base = float(_g["sl_base_mult"])
                         _tp_lo_eval = _co_calibrate_tp_floor(
                             tp_lo_eff_search, _sl_base, tp_hi
@@ -4599,92 +4925,18 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         _tp_lo_prod_eval = _co_calibrate_tp_floor(
                             tp_lo_eff_prod, _sl_base, tp_hi
                         )
-
-                        _exact_key = (
-                            int(H),
-                            str(side),
-                            int(_atr_window),
-                            round(_k_tp, 4),
-                            round(_sl_base, 4),
-                            round(float(_tp_lo_eval), 6),
-                            round(float(tp_hi), 6),
-                            "exact",
-                        )
-                        if _exact_key not in _raw_tb_cache:
-                            _tp_df_e, _sl_df_e = compute_barrier_factory(
-                                atr_pct=atr_pct_local,
-                                window_size=_atr_window,
-                                k_tp=_k_tp,
-                                sl_base_mult=_sl_base,
-                                horizon=H,
-                                H_base=H_base,
-                                disp_floor=disp_floor,
-                                z_max=z_max,
-                                k_reg=k_reg,
-                                m_lo=m_lo,
-                                m_hi=m_hi,
-                                sl_mult_lo=sl_mult_lo,
-                                sl_mult_hi=sl_mult_hi,
-                                sl_lo=sl_lo,
-                                sl_hi=sl_hi,
-                                z_gate=z_gate,
-                                tp_lo=_tp_lo_eval,
-                                tp_hi=tp_hi,
-                                _base=_barrier_base,
-                            )
-                            _lbl_e, _ret_e, _qual_e = compute_triple_barrier_labels(
-                                panel,
-                                _tp_df_e,
-                                _sl_df_e,
-                                H,
-                                side=side,
-                                return_outcomes=True,
-                            )
-                            _raw_tb_cache[_exact_key] = (_lbl_e, _ret_e, _qual_e)
-                        _lbl_e, _ret_e, _qual_e = _raw_tb_cache[_exact_key]
-
-                        _n_events_e = _lbl_e.size
-                        _tp_hit_e = float((_lbl_e.values == OUT_TP).sum()) / max(
-                            1, _n_events_e
-                        )
-                        _sl_hit_e = float((_lbl_e.values == OUT_SL).sum()) / max(
-                            1, _n_events_e
-                        )
-                        _to_rate_e = float((_lbl_e.values == OUT_TO).sum()) / max(
-                            1, _n_events_e
-                        )
-                        (
-                            _auc_b_e,
-                            _tp_sep_e,
-                            _tp_over_sl_e,
-                        ) = _quality_metrics_from_proxy(_lbl_e, _ret_e, _qual_e)
-                        _bind_e = _tp_hit_e + _sl_hit_e
-
-                        # Use production floor overrides for logs if enabled
                         _tp_lo_final_prod = (
                             _tp_lo_prod_eval
                             if bool(cfg.get("label_use_production_tp_floor", True))
                             else _tp_lo_eval
                         )
-
-                        prod_runs.append(
+                        geom_runs.append(
                             {
                                 **_g,
-                                "lbl": _lbl_e,
-                                "ret": _ret_e,
-                                "qual": _qual_e,
-                                "tp_hit": _tp_hit_e,
-                                "sl_hit": _sl_hit_e,
-                                "to_rate": _to_rate_e,
-                                "auc_bound": _auc_b_e,
-                                "tp_sep_top10": _tp_sep_e,
-                                "tp_over_sl": _tp_over_sl_e,
-                                "bind": _bind_e,
-                                "tp_floor_search": float(tp_lo_eff_search),
+                                "tp_floor_search": float(_tp_lo_eval),
                                 "tp_floor_prod": float(_tp_lo_final_prod),
                             }
                         )
-                    geom_runs = prod_runs
 
                 if not geom_runs:
                     # Rescue path mirrored for H2/H4 with stricter fallbacks on longer horizons.
@@ -4741,9 +4993,10 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         tp_hi=tp_hi,
                         _base=_barrier_base,
                     )
-                    lbl, ret, qual = compute_triple_barrier_labels(
+                    _tb_out = compute_triple_barrier_labels(
                         panel, tp_df, sl_df, H, side=side, return_outcomes=True
                     )
+                    lbl, ret, qual = _tb_out[:3]
                     _tp_vals_fb = tp_df.values
                     _n_events_fb = lbl.size
                     _tp_hit_fb = float((lbl.values == OUT_TP).sum()) / max(
@@ -5131,16 +5384,29 @@ def generate_label_datasets(
     missing_cells: list[tuple[int, str]] = []
 
     strategies = get_strategies(cfg)
-    horizons = horizons or cfg["label_horizons_hours"]
+    requested_horizons = list(horizons) if horizons else None
     run_id = pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S")
+    strategy_horizons = {
+        s["strategy_id"]: strategy_runtime_horizons(
+            s, cfg, requested_horizons=requested_horizons
+        )
+        for s in strategies
+    }
+    active_horizons = sorted(
+        {
+            int(h)
+            for hs in strategy_horizons.values()
+            for h in hs
+        }
+    )
     # Hash based on horizons + strategy_ids
     cfg_hash = _stable_cfg_subset_hash(
-        cfg, horizons, [s["strategy_id"] for s in strategies]
+        cfg, active_horizons, [s["strategy_id"] for s in strategies]
     )
 
-    for H in horizons:
-        for strat in strategies:
-            s_id = strat["strategy_id"]
+    for strat in strategies:
+        s_id = strat["strategy_id"]
+        for H in strategy_horizons.get(s_id, []):
             p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, s_id, cfg_hash)
             if os.path.exists(p_tb) and os.path.exists(p_geom):
                 try:
@@ -5157,19 +5423,67 @@ def generate_label_datasets(
                     )
             missing_cells.append((int(H), s_id))
 
+    def _parallel_tb_build_for_strategies(_strategy_ids: set[str]):
+        _selected = [s for s in strategies if s["strategy_id"] in _strategy_ids]
+        if not _selected:
+            return {}, {}
+        _jobs = [
+            (
+                _s,
+                sorted({int(h) for h in strategy_horizons.get(_s["strategy_id"], [])}),
+            )
+            for _s in _selected
+        ]
+        _jobs = [j for j in _jobs if j[1]]
+        if not _jobs:
+            return {}, {}
+        _workers = min(
+            len(_jobs),
+            max(1, int(cfg.get("label_tb_cache_workers", _choose_parallel_cells(len(_jobs), cfg)))),
+        )
+        if _workers <= 1 or not bool(cfg.get("label_tb_cache_parallel", True)):
+            _tb_all, _geom_all = {}, {}
+            for _strat, _hs in _jobs:
+                _tb_i, _geom_i = build_grid_aggregated_tb_cache(
+                    panel=panel,
+                    feats=feats,
+                    cfg=cfg,
+                    horizons=_hs,
+                    strategies=[_strat],
+                )
+                _tb_all.update(_tb_i)
+                _geom_all.update(_geom_i)
+            return _tb_all, _geom_all
+
+        tprint(
+            f"Parallel TB cache build: strategies={len(_jobs)} workers={_workers}"
+        )
+        _tb_all, _geom_all = {}, {}
+        with ThreadPoolExecutor(max_workers=_workers) as _ex:
+            _futs = [
+                _ex.submit(
+                    build_grid_aggregated_tb_cache,
+                    panel,
+                    feats,
+                    cfg,
+                    _hs,
+                    [_strat],
+                )
+                for _strat, _hs in _jobs
+            ]
+            for _fut in as_completed(_futs):
+                _tb_i, _geom_i = _fut.result()
+                _tb_all.update(_tb_i)
+                _geom_all.update(_geom_i)
+        return _tb_all, _geom_all
+
     if missing_cells:
         miss_h = sorted({c[0] for c in missing_cells})
         miss_s_ids = sorted({c[1] for c in missing_cells})
         tprint(
             f"TB cache miss: {len(missing_cells)} cells; recomputing horizons={miss_h} strategy_ids={miss_s_ids}"
         )
-        _tb_new, _geom_new = build_grid_aggregated_tb_cache(
-            panel=panel,
-            feats=feats,
-            cfg=cfg,
-            horizons=miss_h,
-            strategies=strategies,
-        )
+        _tb_new, _geom_new = _parallel_tb_build_for_strategies(set(miss_s_ids))
         for H, s_id in missing_cells:
             key = (int(H), s_id)
             if key not in _tb_new or key not in _geom_new:
@@ -5185,9 +5499,9 @@ def generate_label_datasets(
 
     if bool(cfg.get("base_geometry_train_variants", True)):
         _missing_variant_keys = []
-        for H in horizons:
-            for strat in strategies:
-                s_id = strat["strategy_id"]
+        for strat in strategies:
+            s_id = strat["strategy_id"]
+            for H in strategy_horizons.get(s_id, []):
                 for _variant in cfg.get(
                     "base_geometry_archetypes", ["tight", "wide"]
                 ):
@@ -5198,15 +5512,8 @@ def generate_label_datasets(
             tprint(
                 f"Materializing grouped base-geometry variants in-memory for {len(_missing_variant_keys)} cells..."
             )
-            _tb_all, _geom_all = build_grid_aggregated_tb_cache(
-                panel=panel,
-                feats=feats,
-                cfg=cfg,
-                horizons=sorted({c[0] for c in _missing_variant_keys}),
-                strategies=[
-                    s for s in strategies
-                    if s["strategy_id"] in {c[1] for c in _missing_variant_keys}
-                ],
+            _tb_all, _geom_all = _parallel_tb_build_for_strategies(
+                {c[1] for c in _missing_variant_keys}
             )
             for _key, _val in _tb_all.items():
                 if isinstance(_key, tuple) and len(_key) == 3:  # (H, s_id, variant)
@@ -5216,8 +5523,12 @@ def generate_label_datasets(
                     geom_cache[_key] = _downcast_geom_payload(_val)
 
     def _prepare_events_once_for_strategy(_strategy: dict):
+        _prep_lookup_cache: dict = {}
         ts_start = ts - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
-        min_h = int(min(horizons))
+        _hs = strategy_horizons.get(_strategy["strategy_id"], [])
+        if not _hs:
+            return None
+        min_h = int(min(_hs))
         ts_end_adj = ts - pd.Timedelta(hours=min_h + 8)
         window_cand = cached_cand_mask.loc[
             (cached_cand_mask.index >= ts_start)
@@ -5264,14 +5575,20 @@ def generate_label_datasets(
 
         if "trend_pct" in feats:
             cand_filter, move_bucket, _ = _strategy_bucket_context(
-                _strategy["side"], _strategy["kind"], cfg
+                _strategy["trade_side"], _strategy["strategy_id"], cfg
             )
             del cand_filter
-            trend_vals = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
-            keep = _trend_direction_keep_mask(trend_vals, move_bucket)
-            event_ts = event_ts[keep]
-            event_sym = event_sym[keep]
-            entry_ts = entry_ts[keep]
+            if move_bucket in {"up", "down"}:
+                trend_vals = _fast_lookup_cached(
+                    feats["trend_pct"],
+                    event_ts,
+                    event_sym,
+                    lookup_cache=_prep_lookup_cache,
+                )
+                keep = _trend_direction_keep_mask(trend_vals, move_bucket)
+                event_ts = event_ts[keep]
+                event_sym = event_sym[keep]
+                entry_ts = entry_ts[keep]
 
         return (event_ts, event_sym, entry_ts)
 
@@ -5283,34 +5600,17 @@ def generate_label_datasets(
     tasks = []
     _required_geometry_variants = ("tight", "wide")
     for strat in strategies:
-        side = strat["side"]
-        k = strat["kind"]
+        side = strat["trade_side"]
+        k = strat["strategy_id"]
         strategy_id = strat["strategy_id"]
-        cand_filter, move_bucket, strategy_label = _strategy_bucket_context(side, k)
+        cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
+            side, strategy_id, cfg
+        )
         feat_key = "base_feature_keys"
         fixed_tp = 0.05
         fixed_sl = 0.025
-        for H in horizons:
+        for H in strategy_horizons.get(strategy_id, []):
             H_int = int(H)
-            # Keep the H1 regressor/canonical path untouched; for classifier horizons,
-            # require both tight + wide and do not emit a canonical cell.
-            if H_int == 1:
-                tasks.append(
-                    (
-                        H_int,
-                        side,
-                        k,
-                        strategy_id,
-                        None,  # variant
-                        move_bucket,
-                        strategy_label,
-                        cand_filter,
-                        feat_key,
-                        fixed_tp,
-                        fixed_sl,
-                    )
-                )
-                continue
 
             if not bool(cfg.get("base_geometry_train_variants", True)):
                 tprint(
@@ -5438,11 +5738,14 @@ def generate_label_datasets(
                         df_out["__ts__"] = meta_idx["ts"]
                         df_out["__symbol__"] = meta_idx["symbol"]
                     _ds_key = (
-                        f"train_{side}_{k}_{H}"
+                        f"train_{k}_{H}"
                         if variant is None
-                        else f"train_{side}_{k}_{H}_{variant}"
+                        else f"train_{k}_{H}_{variant}"
                     )
-                    datasets[_ds_key] = df_out
+                    datasets[_ds_key] = _downcast_label_dataset_df(df_out, copy=False)
+                    del df_out, X, y, y_ret, w, meta_idx, lbl_vals
+                    if bool(cfg.get("label_gc_after_each_dataset", True)):
+                        gc.collect()
     else:
         for t in tasks:
             H, side, k, variant, X, y, y_ret, w, meta_idx, lbl_vals = _run_one_cell(t)
@@ -5460,19 +5763,19 @@ def generate_label_datasets(
                     if variant is None
                     else f"train_{k}_{H}_{variant}"
                 )
-                datasets[_ds_key] = df_out
+                datasets[_ds_key] = _downcast_label_dataset_df(df_out, copy=False)
+                del df_out, X, y, y_ret, w, meta_idx, lbl_vals
+                if bool(cfg.get("label_gc_after_each_dataset", True)):
+                    gc.collect()
 
-    # For classifier horizons (>H1), synthesize the base training dataset by
-    # concatenating required tight/wide variants. We retain the canonical key
-    # name for downstream compatibility only.
+    # Synthesize the canonical base training dataset by concatenating required
+    # tight/wide variants. We retain the canonical key name for downstream
+    # compatibility.
     strategies = get_strategies(cfg)
     for strat in strategies:
-        side = strat["trade_side"]
         k = strat["strategy_id"]
-        for H in horizons:
+        for H in strategy_horizons.get(k, []):
             H_int = int(H)
-            if H_int == 1:
-                continue
             _tight_key = f"train_{k}_{H_int}_tight"
             _wide_key = f"train_{k}_{H_int}_wide"
             _base_key = f"train_{k}_{H_int}"
@@ -5509,8 +5812,8 @@ def generate_label_datasets(
         datasets["gamma_model"] = gamma_df
 
     for _k, _v in list(datasets.items()):
-        if isinstance(_v, pd.DataFrame):
-            datasets[_k] = _downcast_label_dataset_df(_v)
+        if isinstance(_v, pd.DataFrame) and _v.dtypes.eq(np.float64).any():
+            datasets[_k] = _downcast_label_dataset_df(_v, copy=False)
 
     return datasets
 
@@ -10127,6 +10430,10 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     if train_base:
         from extreme_price_movements.strategy_registry import get_strategies
         strats = get_strategies(cfg)
+        strategy_horizons = {
+            s["strategy_id"]: strategy_runtime_horizons(s, cfg)
+            for s in strats
+        }
         for s in strats:
             s_side = s["trade_side"]
             if s_side not in final_models:
@@ -10138,9 +10445,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 best_m = None
                 per_h_models = {}
                 feature_selection_by_h = {}
-                horizons = cfg["label_horizons_hours"]
-
-                for H in horizons:
+                for H in strategy_horizons.get(k, []):
                     key = f"train_{k}_{H}"
                     if key not in datasets:
                         continue
@@ -10795,7 +11100,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             for strat in strategies:
                 side = strat["trade_side"]
                 k = strat["strategy_id"]
-                for H in cfg["label_horizons_hours"]:
+                for H in strategy_horizons.get(k, []):
                     for variant in cfg.get(
                         "base_geometry_archetypes", ["tight", "wide"]
                     ):

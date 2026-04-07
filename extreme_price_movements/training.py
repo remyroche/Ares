@@ -4167,19 +4167,6 @@ def build_hourly_training_set_and_weights(
     parts["__mr_velocity_penalty__"] = np.asarray(
         _mr_velocity_penalty, dtype=np.float32
     )
-    parts["__early_inval__"] = np.asarray(
-        (lbl_vals == OUT_SL)
-        & (
-            np.asarray(
-                _policy_bars_vals
-                if _policy_bars_vals is not None
-                else np.zeros(len(lbl_vals)),
-                dtype=np.int16,
-            )
-            <= int(cfg.get("kill_min_bars", 2))
-        ),
-        dtype=np.int8,
-    )
 
     if _policy_bars_vals is not None:
         parts["__bars_policy__"] = np.asarray(_policy_bars_vals, dtype=np.int16)
@@ -8320,7 +8307,6 @@ def train_meta_models_from_artifacts(
             "__mfe_ret__",
             "__bars_to_mfe__",
             "__barrier_pct__",
-            "__early_inval__",
             "__mr_path_penalty__",
             "__mr_velocity_penalty__",
         ]:
@@ -9472,7 +9458,6 @@ def train_meta_models_from_artifacts(
                     "__mfe_ret__",
                     "__bars_to_mfe__",
                     "__barrier_pct__",
-                    "__early_inval__",
                     "__mr_path_penalty__",
                     "__mr_velocity_penalty__",
                 ]:
@@ -9577,7 +9562,6 @@ def train_meta_models_from_artifacts(
                 "__mfe_ret__",
                 "__bars_to_mfe__",
                 "__barrier_pct__",
-                "__early_inval__",
                 "__mr_path_penalty__",
                 "__mr_velocity_penalty__",
             ]:
@@ -9817,133 +9801,15 @@ def train_meta_models_from_artifacts(
                 f"Meta {k}_clf: skipped (meta_race_include_classifiers=False)"
             )
 
-        # --- 3. ALWAYS Train Early Invalidation head for downstream consumers ---
-        if "__early_inval__" in df.columns:
-            try:
-                from sklearn.linear_model import LogisticRegression
-                from extreme_price_movements.periods_symbols_management import (
-                    EventSchema,
-                    SlicePlanner,
-                    SlicePlannerConfig,
-                )
-
-                _y_ei = np.asarray(df["__early_inval__"].values, dtype=int)
-                _X_ei = (
-                    X_meta_base.select_dtypes(include=[np.number])
-                    .fillna(0.0)
-                    .to_numpy(dtype=float)
-                )
-                _oof_ei = np.full(len(_y_ei), 0.5, dtype=float)
-
-                # Use SlicePlanner for temporal CV
-                n_ei = len(_y_ei)
-                events = pd.DataFrame(
-                    {
-                        "event_id": np.arange(n_ei, dtype=np.int64),
-                        "symbol": np.repeat("ALL", n_ei),
-                        "t0": pd.to_datetime(
-                            df["__ts__"], utc=True, errors="coerce"
-                        ),
-                        "t1": pd.to_datetime(
-                            df["__ts__"], utc=True, errors="coerce"
-                        )
-                        + pd.Timedelta(seconds=int(cfg.get("cv_embargo_bars", 12))),
-                    }
-                )
-                p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
-                p_cfg = p_cfg.__class__(
-                    **{
-                        **p_cfg.__dict__,
-                        "preset": p_cfg.preset.__class__(
-                            preset_name=p_cfg.preset.preset_name,
-                            outer=p_cfg.preset.outer,
-                            inner=p_cfg.preset.inner.__class__(n_splits=3),
-                            sampling=p_cfg.preset.sampling,
-                            symbol_policy=p_cfg.preset.symbol_policy,
-                            purge_policy=p_cfg.preset.purge_policy,
-                        ),
-                        "silent": True,
-                        "min_rows_per_fold": 1,
-                        "min_symbols_per_fold": 1,
-                    }
-                )
-                bundle = SlicePlanner(p_cfg).build(events)
-                splits = [
-                    (plan.fit_idx, plan.predict_idx)
-                    for plan in bundle["consumer_plans"]["ridge_sizer_fit"]
-                    if plan.tag == "predict_outer_test"
-                    and plan.fit_idx.size > 0
-                    and plan.predict_idx.size > 0
-                ]
-                if not splits:
-                    raise ValueError(
-                        "SlicePlanner failed to generate early invalidation splits"
-                    )
-
-                for _tr, _va in splits:
-                    if len(np.unique(_y_ei[_tr])) < 2:
-                        continue
-                    _m_ei = LogisticRegression(
-                        max_iter=1000, class_weight="balanced", random_state=42
-                    )
-                    _m_ei.fit(_X_ei[_tr], _y_ei[_tr])
-                    _oof_ei[_va] = _m_ei.predict_proba(_X_ei[_va])[:, 1]
-                _m_ei_final = LogisticRegression(
-                    max_iter=1000, class_weight="balanced", random_state=42
-                )
-                if len(np.unique(_y_ei)) >= 2:
-                    _m_ei_final.fit(_X_ei, _y_ei)
-                meta_models[f"{side}_{k}_early_inval"] = SimpleNamespace(
-                    oof_probs=np.asarray(_oof_ei, dtype=np.float32),
-                    model={
-                        "kind": "early_inval_clf",
-                        "models": [_m_ei_final],
-                        "name": "early_inval",
-                    },
-                )
-                _bucket_y_ret[f"{k}_early_inval"] = np.asarray(
-                    _y_ei, dtype=float
-                )
-                _md = {}
-                for _cn in [
-                    "timestamp",
-                    "symbol",
-                    "asset",
-                    "__ts__",
-                    "__symbol__",
-                    "__y_bin__",
-                    "__y_ret__",
-                    "__u_policy_net__",
-                    "__u_policy__",
-                    "__y_outcome__",
-                    "exit_code",
-                    "__mae_ret__",
-                    "__mfe_ret__",
-                    "__bars_to_mfe__",
-                    "__barrier_pct__",
-                    "__early_inval__",
-                    "__mr_path_penalty__",
-                    "__mr_velocity_penalty__",
-                ]:
-                    if _cn in df.columns:
-                        _md[_cn] = df[_cn].values
-                for _cn in _ps_regime_cols:
-                    if _cn in df.columns:
-                        _md[_cn] = df[_cn].values
-                _bucket_metadata[f"{k}_early_inval"] = _md
-                tprint(f"Meta {k}_early_inval: fitted")
-            except Exception as _e_ei:
-                tprint(
-                    f"Warning: early invalidation model failed for {side}_{k}: {_e_ei}"
                 )
 
     # ── Downstream heads summary table (fed to users/sizers) ──
     tprint(f"\n{'═'*148}")
-    tprint("  META HEADS SUMMARY TABLE (Utility / MAE / MFE / Early-Inval)")
+    tprint("  META HEADS SUMMARY TABLE (Utility / MAE / MFE)")
     tprint(f"{'═'*148}")
     _tbl_hdr = (
         f"  {'Bucket':16s} {'U_IC':>7s} {'MAE_IC':>7s} {'MFE_IC':>7s} "
-        f"{'EI_AUC':>7s} {'EI_P@10':>8s} {'N':>8s}"
+        f"{'N':>8s}"
     )
     tprint(_tbl_hdr)
     tprint(f"  {'─'*146}")
@@ -9968,35 +9834,9 @@ def train_meta_models_from_artifacts(
             )
             n_samp = len(_aux.get("oof_u_hat", []))
 
-        ei_auc, ei_p10 = float("nan"), float("nan")
-        _ei_key = f"{_b}_early_inval"
-        _ei = meta_models.get(_ei_key)
-        _ei_md = _bucket_metadata.get(_ei_key, {})
-        if (
-            _ei is not None
-            and hasattr(_ei, "oof_probs")
-            and _ei.oof_probs is not None
-            and "__early_inval__" in _ei_md
-        ):
-            _p = np.asarray(_ei.oof_probs, dtype=float)
-            _y = np.asarray(_ei_md["__early_inval__"], dtype=float)[: len(_p)]
-            _m = np.isfinite(_p) & np.isfinite(_y)
-            if np.sum(_m) >= 10 and len(np.unique(_y[_m])) > 1:
-                _n_pos = int(np.sum(_y[_m] == 1))
-                _n_neg = int(np.sum(_y[_m] == 0))
-                if _n_pos > 0 and _n_neg > 0:
-                    _ranks = (
-                        pd.Series(_p[_m]).rank(method="average").to_numpy(float)
-                    )
-                    _u = _ranks[_y[_m] == 1].sum() - _n_pos * (_n_pos + 1) / 2.0
-                    ei_auc = float(_u / (_n_pos * _n_neg))
-                _k10 = max(1, int(np.ceil(0.10 * np.sum(_m))))
-                _idx10 = np.argsort(_p[_m])[-_k10:]
-                ei_p10 = float(np.mean(_y[_m][_idx10]))
-
         tprint(
             f"  {_b:16s} {u_ic:>7.4f} {mae_ic:>7.4f} {mfe_ic:>7.4f} "
-            f"{ei_auc:>7.4f} {ei_p10:>8.4f} {n_samp:>8d}"
+            f"{n_samp:>8d}"
         )
     tprint(f"{'═'*148}\n")
 
@@ -10064,19 +9904,7 @@ def train_meta_models_from_artifacts(
             _is_tbm_multiclass_key = bool(
                 re.match(r".*_(tbm_500_250|tbm_250_125)_h\d+$", key)
             )
-            _is_ei_key = key.endswith("_early_inval")
-            if _is_ei_key:
-                _oof_pred_1d = _fill_nonfinite_oof_vector(meta.oof_probs, neutral=0.5)
-                _n_meta = len(_oof_pred_1d)
-                oof_df = pd.DataFrame(
-                    {
-                        "oof_pred": _trim_1d(_oof_pred_1d, _n_meta),
-                        "oof_p_early_inval": _trim_1d(_oof_pred_1d, _n_meta),
-                        "index": range(_n_meta),
-                        "is_long": is_long,
-                    }
-                )
-            elif (_is_clf_key or _is_tbm_multiclass_key) and np.ndim(meta.oof_probs) == 2:
+            if (_is_clf_key or _is_tbm_multiclass_key) and np.ndim(meta.oof_probs) == 2:
                 p_sl = _fill_nonfinite_oof_vector(
                     meta.oof_probs[:, 0], neutral=1.0 / 3.0
                 )
@@ -10176,8 +10004,6 @@ def train_meta_models_from_artifacts(
                     oof_df["mr_velocity_penalty"] = _md["__mr_velocity_penalty__"][
                         :_n_meta
                     ]
-                if "__early_inval__" in _md:
-                    oof_df["early_inval"] = _md["__early_inval__"][:_n_meta]
                 for _cn in _ps_regime_cols:
                     if _cn in _md:
                         oof_df[_cn] = _md[_cn][:_n_meta]

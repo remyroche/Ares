@@ -761,28 +761,7 @@ class MetaClassifierModel:
 
         if kind == "ridge_clf":
             if y_tr.ndim == 2:
-                from sklearn.linear_model import Ridge
-                # Custom soft wrapper for Ridge
-                model = Pipeline([
-                    ("scaler", RobustScaler()),
-                    ("clf", Ridge(alpha=params.get("C", 1.0) * 10.0)),
-                ])
-                class SoftRidgeWrapper:
-                    def __init__(self, m):
-                        self.model = m
-                    def fit(self, X, y, **kwargs):
-                        self.model.fit(X, y, **kwargs)
-                        return self
-                    def predict_proba(self, X):
-                        preds = np.clip(self.model.predict(X), 0.0, 1.0)
-                        sums = preds.sum(axis=1, keepdims=True)
-                        return np.where(sums > 0, preds / sums, 1.0 / 3.0)
-                    @property
-                    def classes_(self):
-                        return np.array([0, 1, 2])
-                model = SoftRidgeWrapper(model)
-                model.fit(X_tr, y_tr, clf__sample_weight=sw)
-                return model
+                raise ValueError("ridge_clf does not support proper multiclass cross-entropy for soft labels. Use xgb_clf instead.")
             else:
                 model = Pipeline([
                     ("scaler", RobustScaler()),
@@ -792,25 +771,7 @@ class MetaClassifierModel:
                 return model
         if kind == "et_clf":
             if y_tr.ndim == 2:
-                from sklearn.ensemble import ExtraTreesRegressor
-                # Adapt ExtraTrees for soft labels
-                model = ExtraTreesRegressor(**{k: v for k, v in params.items() if k != "class_weight"})
-                class SoftETWrapper:
-                    def __init__(self, m):
-                        self.model = m
-                    def fit(self, X, y, sample_weight=None, **kwargs):
-                        self.model.fit(X, y, sample_weight=sample_weight)
-                        return self
-                    def predict_proba(self, X):
-                        preds = np.clip(self.model.predict(X), 0.0, 1.0)
-                        sums = preds.sum(axis=1, keepdims=True)
-                        return np.where(sums > 0, preds / sums, 1.0 / 3.0)
-                    @property
-                    def classes_(self):
-                        return np.array([0, 1, 2])
-                model = SoftETWrapper(model)
-                model.fit(X_tr, y_tr, sample_weight=sw)
-                return model
+                raise ValueError("et_clf does not support proper multiclass cross-entropy for soft labels. Use xgb_clf instead.")
             else:
                 model = ExtraTreesClassifier(**params)
                 model.fit(X_tr, y_tr, sample_weight=sw)
@@ -819,26 +780,7 @@ class MetaClassifierModel:
             import catboost
             p = dict(params)
             if y_tr.ndim == 2:
-                # Same strategy: train 3 regressors to act as probabilities
-                p["loss_function"] = "RMSE"
-                class SoftCatWrapper:
-                    def __init__(self, p_dict):
-                        self.models = [catboost.CatBoostRegressor(**p_dict) for _ in range(3)]
-                    def fit(self, X, y, sample_weight=None, eval_set=None, verbose=False, early_stopping_rounds=50):
-                        for i in range(3):
-                            es = (eval_set[0], eval_set[1][:, i]) if eval_set else None
-                            self.models[i].fit(X, y[:, i], sample_weight=sample_weight, eval_set=es, early_stopping_rounds=early_stopping_rounds, verbose=verbose)
-                        return self
-                    def predict_proba(self, X):
-                        preds = np.column_stack([np.clip(m.predict(X), 0.0, 1.0) for m in self.models])
-                        sums = preds.sum(axis=1, keepdims=True)
-                        return np.where(sums > 0, preds / sums, 1.0 / 3.0)
-                    @property
-                    def classes_(self):
-                        return np.array([0, 1, 2])
-                model = SoftCatWrapper(p)
-                model.fit(X_tr, y_tr, sample_weight=sw, eval_set=(X_va, y_va), early_stopping_rounds=50, verbose=False)
-                return model
+                raise ValueError("catboost_clf does not support proper multiclass cross-entropy for soft labels. Use xgb_clf instead.")
             else:
                 model = catboost.CatBoostClassifier(**p)
                 model.fit(X_tr, y_tr, sample_weight=sw,
@@ -847,30 +789,76 @@ class MetaClassifierModel:
         if kind == "xgb_clf":
             p = dict(params)
             if y_tr.ndim == 2:
-                # Soft target adaptation: train 3 regressors to handle soft probabilities natively.
-                p["objective"] = "reg:squarederror"
-                if "num_class" in p:
-                    del p["num_class"]
+                # Proper Soft-Target Multiclass Cross-Entropy for XGBoost
+                # Replace standard objective with a custom one
+                if "objective" in p:
+                    del p["objective"]
                 if "eval_metric" in p:
                     del p["eval_metric"]
+                p["disable_default_eval_metric"] = 1
 
-                class SoftXGBWrapper:
+                # Number of classes is assumed to be y_tr.shape[1] (which is 3)
+                n_classes = y_tr.shape[1]
+                p["num_class"] = n_classes
+
+                class TrueSoftXGBWrapper:
                     def __init__(self, p_dict):
-                        self.models = [xgb.XGBRegressor(**p_dict, early_stopping_rounds=50) for _ in range(3)]
+                        self.params = p_dict
+                        self.bst = None
+
+                    def _soft_crossentropy_obj(self, y_soft):
+                        def obj(preds, dtrain):
+                            if preds.ndim == 1:
+                                preds = preds.reshape(-1, n_classes)
+                            # softmax
+                            preds_shifted = preds - np.max(preds, axis=1, keepdims=True)
+                            exp_preds = np.exp(preds_shifted)
+                            prob = exp_preds / np.sum(exp_preds, axis=1, keepdims=True)
+
+                            # grad and hess for softmax cross-entropy
+                            grad = prob - y_soft
+                            hess = prob * (1.0 - prob)
+                            return grad, hess
+                        return obj
+
                     def fit(self, X, y, sample_weight=None, eval_set=None, verbose=False):
-                        for i in range(3):
-                            es = [(eval_set[0][0], eval_set[0][1][:, i])] if eval_set else None
-                            self.models[i].fit(X, y[:, i], sample_weight=sample_weight, eval_set=es, verbose=verbose)
+                        # Ensure inputs are valid
+                        # Create dummy DMatrix label because XGB custom obj handles soft labels directly
+                        dummy_y_tr = np.zeros(len(y))
+                        dtrain = xgb.DMatrix(X, label=dummy_y_tr, weight=sample_weight)
+
+                        evals = []
+                        if eval_set:
+                            X_va, y_va = eval_set[0]
+                            dummy_y_va = np.zeros(len(y_va))
+                            dvalid = xgb.DMatrix(X_va, label=dummy_y_va)
+                            evals = [(dtrain, "train"), (dvalid, "valid")]
+
+                        self.bst = xgb.train(
+                            self.params,
+                            dtrain,
+                            num_boost_round=self.params.get("n_estimators", 100),
+                            evals=evals,
+                            obj=self._soft_crossentropy_obj(y),
+                            verbose_eval=False
+                        )
                         return self
+
                     def predict_proba(self, X):
-                        preds = np.column_stack([np.clip(m.predict(X), 0.0, 1.0) for m in self.models])
-                        sums = preds.sum(axis=1, keepdims=True)
-                        return np.where(sums > 0, preds / sums, 1.0 / 3.0)
+                        dtest = xgb.DMatrix(X)
+                        preds = self.bst.predict(dtest, output_margin=True)
+                        if preds.ndim == 1:
+                            preds = preds.reshape(-1, n_classes)
+                        preds_shifted = preds - np.max(preds, axis=1, keepdims=True)
+                        exp_preds = np.exp(preds_shifted)
+                        prob = exp_preds / np.sum(exp_preds, axis=1, keepdims=True)
+                        return prob
+
                     @property
                     def classes_(self):
                         return np.array([0, 1, 2])
 
-                model = SoftXGBWrapper(p)
+                model = TrueSoftXGBWrapper(p)
                 model.fit(X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False)
                 return model
             else:
@@ -948,8 +936,12 @@ class MetaClassifierModel:
             try:
                 model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
                 pp = self._predict_proba(model, X_va)
+                if getattr(self, "_dynamic_labels", None) is not None:
+                    from extreme_price_movements.soft_labels import validate_probability_simplex
+                    pp = validate_probability_simplex(pp, "p_va")
                 oof[va] = pp
-            except Exception:
+            except Exception as e:
+                tprint(f"Warning: Fold evaluation failed ({e}). Returning 1/3 prior.")
                 oof[va] = 1.0 / 3.0
 
         # Purged/embargo CV may leave boundary rows without OOF predictions.
@@ -982,7 +974,11 @@ class MetaClassifierModel:
         from sklearn.metrics import log_loss
         try:
             oof_ll = self._sanitize_multiclass_proba(oof[mask], n_classes=3)
-            score = log_loss(y[mask], oof_ll, labels=[0, 1, 2])
+            if getattr(self, "_dynamic_labels", None) is not None:
+                p_safe = np.clip(oof_ll, 1e-12, 1 - 1e-12)
+                score = float(-np.mean(np.sum(y[mask] * np.log(p_safe), axis=1)))
+            else:
+                score = log_loss(y[mask], oof_ll, labels=[0, 1, 2])
         except Exception:
             score = 999.0
         return oof, score

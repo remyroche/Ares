@@ -2793,6 +2793,13 @@ CFG = {
     # Backward-compatible selector aliases
     "base_mdi_selector_target": "classification",
     "base_mdi_selector_loss": "binary_logloss",
+
+    # Layer A Ablations and Config
+    "model1_target_mode": "race", # "race" | "fixed"
+    "fixed_model1_target_name": "robust_utility_target",
+    "score_blend_mode": "train_scaled_components", # "legacy_raw" | "train_scaled_components"
+    "use_model3_uncertainty": True,
+
     # Unified learnability-test feature basket used by research comparison scripts
     "test_feature_keys": TEST_FEATURE_KEYS,
     # Inference dynamic-basket controls

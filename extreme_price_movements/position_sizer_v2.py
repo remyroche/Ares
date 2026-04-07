@@ -448,7 +448,7 @@ class LayerAPredictor:
     - Fits final models.
     """
 
-    def __init__(self, lambda_downside: float = 0.5, eta_uncertainty: float = 0.5):
+    def __init__(self, lambda_downside: float = 0.5, eta_uncertainty: float = 0.5, config: dict = None):
         self.edge_model = Model1Edge()
         self.downside_model = Model2Downside()
         self.uncertainty_model = Model3Uncertainty()
@@ -456,11 +456,32 @@ class LayerAPredictor:
         self.lambda_downside = lambda_downside
         self.eta_uncertainty = eta_uncertainty
         self.is_fitted = False
+        self.config = config or {}
+
+        # Component Scaling Artifacts
+        self.score_blend_mode = self.config.get("score_blend_mode", "legacy_raw")
+
+        # Ensure boolean parsing for config flags
+        use_m3 = self.config.get("use_model3_uncertainty", True)
+        if isinstance(use_m3, str):
+            use_m3 = use_m3.lower() in ("true", "1", "yes", "y")
+        self.use_model3_uncertainty = bool(use_m3)
+
+        self.model1_target_mode = self.config.get("model1_target_mode", "race")
+        self.fixed_model1_target_name = self.config.get("fixed_model1_target_name", "robust_utility_target")
+
+        self.scaler_edge_mean_ = 0.0
+        self.scaler_edge_scale_ = 1.0
+        self.scaler_downside_mean_ = 0.0
+        self.scaler_downside_scale_ = 1.0
+        self.scaler_uncertainty_mean_ = 0.0
+        self.scaler_uncertainty_scale_ = 1.0
 
         # Artifacts
         self.model1_target_race_results_ = None
         self.model1_best_target_name_ = None
         self.model1_oof_pred_ = None
+        self.model1_oof_target_used_ = None  # Crucial for fold-consistent Model 3 training
 
         self.model2_eval_results_ = None
         self.model2_oof_pred_ = None
@@ -484,7 +505,7 @@ class LayerAPredictor:
         timestamps: Optional[np.ndarray],
         sample_weight: Optional[np.ndarray],
     ):
-        """Evaluates T1, T2, T3, T4. Picks winner via temporal OOF edge target score."""
+        """Evaluates T1, T2, T3, T4. Picks winner via temporal OOF edge target score or uses fixed target."""
         splits, actual_n_splits = make_temporal_splits(
             timestamps, n_samples=len(X), n_splits=2
         )
@@ -507,7 +528,16 @@ class LayerAPredictor:
         race_results = []
         best_score = -1e9
         best_name = "log_clipped_winsorized_net"
-        best_oof = np.zeros(len(X))
+        best_oof = np.full(len(X), np.nan)
+        best_oof_target = np.full(len(X), np.nan) # Store the fold-local target
+
+        # If ablation mode is 'fixed', only evaluate that specific target
+        cands_to_eval = candidates.keys()
+        if self.model1_target_mode == "fixed":
+            best_name = self.fixed_model1_target_name
+            if best_name not in candidates:
+                best_name = "robust_utility_target" # Fallback
+            cands_to_eval = [best_name]
 
         # Pull FS Config
         fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
@@ -528,16 +558,24 @@ class LayerAPredictor:
             POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"], "X_linear"
         )
 
-        for name, y_cand in candidates.items():
+        for name in cands_to_eval:
+            y_cand = candidates[name]
             oof_preds = np.full(len(X), np.nan)
+            oof_targets = np.full(len(X), np.nan)
             fold_nets_10 = []
             fold_nets_20 = []
 
             for tr_idx, val_idx in splits:
                 if name == "rank_style_target":
+                    # Generate targets fold-locally
                     y_tr = build_rank_target(raw_returns[tr_idx], mode="fold_local")
+                    y_val = build_rank_target(raw_returns[val_idx], mode="fold_local")
                 else:
                     y_tr = y_cand[tr_idx]
+                    y_val = y_cand[val_idx]
+
+                # Store the exact target we are trying to predict
+                oof_targets[val_idx] = y_val
 
                 w_tr = sample_weight[tr_idx] if sample_weight is not None else None
 
@@ -589,15 +627,17 @@ class LayerAPredictor:
                 }
             )
 
-            if score > best_score:
+            if self.model1_target_mode == "fixed" or score > best_score:
                 best_score = score
                 best_name = name
                 best_oof = oof_preds
+                best_oof_target = oof_targets
 
         self.model1_target_race_results_ = pd.DataFrame(race_results)
         self.model1_best_target_name_ = best_name
         self.actual_n_splits_used_ = actual_n_splits
         self.model1_oof_pred_ = best_oof
+        self.model1_oof_target_used_ = best_oof_target
 
         # Fit final Edge
         self.edge_model = Model1Edge(target_name=best_name)
@@ -607,7 +647,7 @@ class LayerAPredictor:
             y_final = candidates[best_name]
         self.edge_model.fit(X, y_final, sample_weight)
 
-        # Save winning target for dimension-safe residual generation in Model 3
+        # We keep y_final, but it should NO LONGER be used for Model 3 residuals.
         self.model1_y_final_ = y_final
 
         # Perform Final Feature Selection for Model 1
@@ -635,6 +675,10 @@ class LayerAPredictor:
         self.edge_model.fit(
             X[:, self.final_selected_feature_idx_edge_], y_final, sample_weight
         )
+
+    def transform_model2_downside_target(self, y_downside: np.ndarray) -> np.ndarray:
+        """Centralized helper for Downside target transform to ensure OOF and final fit match."""
+        return _soft_winsorize_downside(y_downside, lower_pct=0.0, upper_pct=98.0, softness=0.3)
 
     def _run_model2_oof_eval(
         self,
@@ -667,9 +711,7 @@ class LayerAPredictor:
 
         for tr_idx, val_idx in splits:
             w_tr = sample_weight[tr_idx] if sample_weight is not None else None
-            y_tr_down = _soft_winsorize_downside(
-                y_downside[tr_idx], lower_pct=0.0, upper_pct=98.0, softness=0.3
-            )
+            y_tr_down = self.transform_model2_downside_target(y_downside[tr_idx])
 
             sel_idx = np.arange(X.shape[1])
 
@@ -702,8 +744,8 @@ class LayerAPredictor:
         }
         self.model2_oof_pred_ = oof_preds
 
-        # Fit final Downside model
-        y_final = np.clip(y_downside, 0.0, np.percentile(y_downside, 98))
+        # Fit final Downside model with consistent transform
+        y_final = self.transform_model2_downside_target(y_downside)
 
         if do_fs:
             final_fs_res = select_features_via_elasticnet(
@@ -730,22 +772,31 @@ class LayerAPredictor:
             X[:, self.final_selected_feature_idx_downside_], y_final, sample_weight
         )
 
+    def build_model3_residual_target_from_model1_oof(self) -> np.ndarray:
+        """Constructs Model 3 residual targets strictly from fold-consistent Model 1 targets."""
+        valid_oof = np.isfinite(self.model1_oof_pred_) & np.isfinite(self.model1_oof_target_used_)
+        residuals = np.full(len(self.model1_oof_pred_), np.nan)
+        if np.any(valid_oof):
+            residuals[valid_oof] = self.model1_oof_target_used_[valid_oof] - self.model1_oof_pred_[valid_oof]
+        return residuals
+
     def _run_model3_oof_eval(
         self,
         X: np.ndarray,
-        y_winning_target: np.ndarray,
         timestamps: Optional[np.ndarray],
         sample_weight: Optional[np.ndarray],
     ):
-        """OOF eval for Uncertainty. Fits on Model 1 OOF residuals."""
-        valid_oof = np.isfinite(self.model1_oof_pred_)
-        if not np.any(valid_oof):
+        """OOF eval for Uncertainty. Fits on Model 1 OOF residuals strictly from paired OOF target artifacts."""
+        all_residuals = self.build_model3_residual_target_from_model1_oof()
+        valid_res = np.isfinite(all_residuals)
+
+        if not np.any(valid_res):
+            logger.warning("No valid Model 3 residuals. Skipping Model 3 Uncertainty training.")
             return
 
-        y_true_for_res = y_winning_target[valid_oof]
-        residuals = y_true_for_res - self.model1_oof_pred_[valid_oof]
-        X_res = X[valid_oof]
-        w_res = sample_weight[valid_oof] if sample_weight is not None else None
+        residuals = all_residuals[valid_res]
+        X_res = X[valid_res]
+        w_res = sample_weight[valid_res] if sample_weight is not None else None
 
         splits, actual_n_splits = make_temporal_splits(
             timestamps[valid_oof] if timestamps is not None else None,
@@ -944,10 +995,86 @@ class LayerAPredictor:
         self.feature_coverage_report_["X3_shape"] = X3.shape
 
         # e) fit final Model 3 on OOF residual target using the dimensionally accurate winning target
-        self._run_model3_oof_eval(X3, self.model1_y_final_, timestamps, sample_weight)
+        if self.use_model3_uncertainty:
+            self._run_model3_oof_eval(X3, timestamps, sample_weight)
+        else:
+            self.model3_oof_pred_ = np.zeros(len(X3))
+            self.model3_eval_results_ = {}
+            self.final_selected_feature_idx_uncertainty_ = np.arange(X3.shape[1])
+            self.feature_selection_results_uncertainty_ = None
+
+        self.fit_layerA_component_scalers(self.model1_oof_pred_, self.model2_oof_pred_, self.model3_oof_pred_)
+
+        self.log_layerA_diagnostics()
 
         self.is_fitted = True
         return self
+
+    def log_layerA_diagnostics(self):
+        """Logs detailed component semantics, dominance, and target race outcomes."""
+        logger.info("=" * 80)
+        logger.info("LAYER A DIAGNOSTICS")
+        logger.info("=" * 80)
+
+        # Model 1 Diagnostics
+        logger.info(f"Model 1 (Edge) Target Mode: {self.model1_target_mode}")
+        if self.model1_target_race_results_ is not None and not self.model1_target_race_results_.empty:
+            race_df = self.model1_target_race_results_.sort_values(by="score", ascending=False)
+            logger.info("Target Race Standings:")
+            for i, row in race_df.iterrows():
+                logger.info(f"  {row['target']}: Score={row['score']:.4f} (Win Rate={row['top_decile_hit_rate_mean']:.2%})")
+            if len(race_df) > 1:
+                winner = race_df.iloc[0]
+                runner_up = race_df.iloc[1]
+                logger.info(f"  Winner Margin: {winner['score'] - runner_up['score']:.4f}")
+
+        logger.info(f"Selected Target: {self.model1_best_target_name_}")
+
+        def _stats(arr, name):
+            if arr is None or not np.any(np.isfinite(arr)):
+                logger.info(f"{name} Stats: N/A")
+                return
+            arr_f = arr[np.isfinite(arr)]
+            logger.info(f"{name} Stats: Mean={np.mean(arr_f):.4f}, Std={np.std(arr_f):.4f}, Min={np.min(arr_f):.4f}, Max={np.max(arr_f):.4f}")
+
+        _stats(self.model1_oof_pred_, "Model 1 OOF Pred (Raw)")
+
+        # Model 2 Diagnostics
+        logger.info("-" * 40)
+        _stats(self.model2_oof_pred_, "Model 2 OOF Pred (Raw)")
+
+        # Model 3 Diagnostics
+        logger.info("-" * 40)
+        logger.info(f"Model 3 Enabled: {self.use_model3_uncertainty}")
+        if self.use_model3_uncertainty:
+            residuals = self.build_model3_residual_target_from_model1_oof()
+            _stats(residuals, "Model 3 Residual Target")
+            _stats(self.model3_oof_pred_, "Model 3 OOF Pred (Raw)")
+
+        # Blending Diagnostics
+        logger.info("-" * 40)
+        logger.info(f"Score Blend Mode: {self.score_blend_mode}")
+
+        scaled = self.transform_layerA_components(self.model1_oof_pred_, self.model2_oof_pred_, self.model3_oof_pred_)
+        _stats(scaled["edge"], "Model 1 Scaled Component")
+        _stats(scaled["downside"], "Model 2 Scaled Component")
+        _stats(scaled["uncertainty"], "Model 3 Scaled Component")
+
+        # Correlations
+        valid = np.isfinite(self.model1_oof_pred_) & np.isfinite(self.model2_oof_pred_) & np.isfinite(self.model3_oof_pred_)
+        if np.sum(valid) > 2:
+            df = pd.DataFrame({
+                "Edge": scaled["edge"][valid],
+                "Downside": scaled["downside"][valid],
+                "Uncertainty": scaled["uncertainty"][valid]
+            })
+            corr = df.corr(method="spearman")
+            logger.info("Spearman Correlations between Scaled Components:")
+            logger.info(f"  Edge vs Downside:   {corr.loc['Edge', 'Downside']:.4f}")
+            logger.info(f"  Edge vs Uncertainty: {corr.loc['Edge', 'Uncertainty']:.4f}")
+            logger.info(f"  Downside vs Uncertainty: {corr.loc['Downside', 'Uncertainty']:.4f}")
+
+        logger.info("=" * 80)
 
     def predict_components(
         self, feature_dict: Dict[str, np.ndarray]
@@ -993,21 +1120,73 @@ class LayerAPredictor:
             ),
         )
 
+        if self.use_model3_uncertainty:
+            uncertainty_p = self.uncertainty_model.predict(X3[:, self.final_selected_feature_idx_uncertainty_])
+        else:
+            uncertainty_p = np.zeros_like(edge_p)
+
         return {
             "edge": edge_p,
             "downside": downside_p,
-            "uncertainty": self.uncertainty_model.predict(
-                X3[:, self.final_selected_feature_idx_uncertainty_]
-            ),
+            "uncertainty": uncertainty_p,
         }
+
+    def fit_layerA_component_scalers(
+        self, edge_pred: np.ndarray, downside_pred: np.ndarray, uncertainty_pred: np.ndarray
+    ):
+        """Fits robust standard scalers on the OOF predictions (training fold equivalents)."""
+        def _get_stats(arr):
+            valid = np.isfinite(arr)
+            if np.sum(valid) > 1:
+                mu = np.median(arr[valid])
+                p_75, p_25 = np.percentile(arr[valid], [75, 25])
+                scale = max((p_75 - p_25) / 1.349, 1e-9)  # IQR to std mapping
+                return mu, scale
+            return 0.0, 1.0
+
+        self.scaler_edge_mean_, self.scaler_edge_scale_ = _get_stats(edge_pred)
+        self.scaler_downside_mean_, self.scaler_downside_scale_ = _get_stats(downside_pred)
+        self.scaler_uncertainty_mean_, self.scaler_uncertainty_scale_ = _get_stats(uncertainty_pred)
+
+    def transform_layerA_components(
+        self, edge_pred: np.ndarray, downside_pred: np.ndarray, uncertainty_pred: np.ndarray
+    ) -> Dict[str, np.ndarray]:
+        """Applies the fitted robust scalers to predictions."""
+        e_scaled = (edge_pred - self.scaler_edge_mean_) / self.scaler_edge_scale_
+        d_scaled = (downside_pred - self.scaler_downside_mean_) / self.scaler_downside_scale_
+        u_scaled = (uncertainty_pred - self.scaler_uncertainty_mean_) / self.scaler_uncertainty_scale_
+
+        # Soft-clip to prevent crazy tails from destroying blend
+        def _clip(x):
+            return np.clip(x, -5.0, 5.0)
+
+        return {
+            "edge": _clip(e_scaled),
+            "downside": _clip(d_scaled),
+            "uncertainty": _clip(u_scaled)
+        }
+
+    def combine_layerA_score(self, comps: Dict[str, np.ndarray]) -> np.ndarray:
+        """Blends components according to configured mode."""
+        if self.score_blend_mode == "train_scaled_components":
+            scaled_comps = self.transform_layerA_components(
+                comps["edge"], comps["downside"], comps["uncertainty"]
+            )
+            return (
+                scaled_comps["edge"]
+                - (self.lambda_downside * scaled_comps["downside"])
+                - (self.eta_uncertainty * scaled_comps["uncertainty"])
+            )
+        else: # "legacy_raw"
+            return (
+                comps["edge"]
+                - (self.lambda_downside * comps["downside"])
+                - (self.eta_uncertainty * comps["uncertainty"])
+            )
 
     def predict_score(self, feature_dict: Dict[str, np.ndarray]) -> np.ndarray:
         comps = self.predict_components(feature_dict)
-        return (
-            comps["edge"]
-            - (self.lambda_downside * comps["downside"])
-            - (self.eta_uncertainty * comps["uncertainty"])
-        )
+        return self.combine_layerA_score(comps)
 
     def initial_sizing(
         self, score: np.ndarray, threshold: float = 0.0, base_size: float = 0.05
@@ -1802,8 +1981,9 @@ def run_bucketed_position_sizer_v2(
         sw_bucket = sample_weight[mask] if sample_weight is not None else None
 
         # --- Layer A ---
+        from extreme_price_movements.config import CFG
         predictor = LayerAPredictor(
-            lambda_downside=lambda_downside, eta_uncertainty=eta_uncertainty
+            lambda_downside=lambda_downside, eta_uncertainty=eta_uncertainty, config=CFG
         )
         predictor.fit(
             feature_dict=fd_bucket,

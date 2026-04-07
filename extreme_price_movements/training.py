@@ -7135,6 +7135,7 @@ def train_meta_models_from_artifacts(
                     "ece_top30": 1.0,
                     "stability": 0.0,
                     "stability_top30": 1.0,
+                    "mse": 9e9,
                     "score": -9e9,
                 }
             yt = y_true[mask]
@@ -7196,16 +7197,26 @@ def train_meta_models_from_artifacts(
                 for d in fold_stats
                 if np.isfinite(d.get("ic_top30", np.nan))
             ]
+            fold_mses = [
+                float(d.get("mse", np.nan))
+                for d in fold_stats
+                if np.isfinite(d.get("mse", np.nan))
+            ]
             stability = float(np.std(fold_ics)) if len(fold_ics) >= 2 else 1.0
             stability_top30 = (
                 float(np.std(fold_ics_top30)) if len(fold_ics_top30) >= 2 else 1.0
             )
-            w_top = float(cfg.get("aux_head_select_w_ic_top", 0.70))
-            w_all = float(cfg.get("aux_head_select_w_ic_all", 0.10))
-            w_mono = float(cfg.get("aux_head_select_w_mono", 0.10))
+            mse_val = float(np.mean(fold_mses)) if len(fold_mses) > 0 else float(np.mean((pr - yt) ** 2))
+
+            # Rebalance weights to focus less on pure top-tail and more on full-distribution and magnitude calibration
+            w_top = float(cfg.get("aux_head_select_w_ic_top", 0.35))
+            w_all = float(cfg.get("aux_head_select_w_ic_all", 0.30))
+            w_mono = float(cfg.get("aux_head_select_w_mono", 0.15))
             w_stab = float(cfg.get("aux_head_select_w_stability", 0.15))
-            w_stab_top30 = float(cfg.get("aux_head_select_w_stability_top30", 0.15))
-            w_ece = float(cfg.get("aux_head_select_w_ece_top", 0.20))
+            w_stab_top30 = float(cfg.get("aux_head_select_w_stability_top30", 0.10))
+            w_ece = float(cfg.get("aux_head_select_w_ece_top", 0.15))
+            w_mse = float(cfg.get("aux_head_select_w_mse", 0.50)) # new penalty term for MSE in log_raw space
+
             score = float(
                 w_top * ic_top30
                 + w_all * ic
@@ -7213,6 +7224,7 @@ def train_meta_models_from_artifacts(
                 - w_stab * stability
                 - w_stab_top30 * stability_top30
                 - w_ece * ece_top30
+                - w_mse * mse_val
             )
             return {
                 "ic": float(ic),
@@ -7223,6 +7235,7 @@ def train_meta_models_from_artifacts(
                 "ece_top30": float(ece_top30),
                 "stability": stability,
                 "stability_top30": stability_top30,
+                "mse": mse_val,
                 "score": score,
             }
 
@@ -7557,21 +7570,27 @@ def train_meta_models_from_artifacts(
                         dtype=float,
                     )
                     if target_choice != "log_raw":
-                        _qx, _qy = _rank_to_log_mapping(y_fit_log)
+                        # CRITICAL FIX: compute mapping ONLY on fold training targets to prevent leakage
+                        _qx, _qy = _rank_to_log_mapping(y_fit_log[tr_idx])
                         _pred_log = np.interp(np.clip(_pred, 0.0, 1.0), _qx, _qy)
                     else:
                         _pred_log = _pred
                     _oof[va_idx] = _pred_log
-                    _n30 = max(1, int(np.ceil(0.30 * len(_pred_log))))
-                    _idx30 = np.argpartition(_pred_log, -_n30)[-_n30:]
-                    _fold_stats.append(
-                        {
-                            "ic": _safe_spearman(_pred_log, y_fit_log[va_idx]),
-                            "ic_top30": _safe_spearman(
-                                _pred_log[_idx30], y_fit_log[va_idx][_idx30]
-                            ),
-                        }
-                    )
+
+                    _va_true_log = y_fit_log[va_idx]
+                    _mask_va = np.isfinite(_pred_log) & np.isfinite(_va_true_log)
+                    if _mask_va.sum() > 5:
+                        _n30 = max(1, int(np.ceil(0.30 * _mask_va.sum())))
+                        _idx30 = np.argpartition(_pred_log[_mask_va], -_n30)[-_n30:]
+                        _fold_stats.append(
+                            {
+                                "ic": _safe_spearman(_pred_log[_mask_va], _va_true_log[_mask_va]),
+                                "ic_top30": _safe_spearman(
+                                    _pred_log[_mask_va][_idx30], _va_true_log[_mask_va][_idx30]
+                                ),
+                                "mse": float(np.mean((_pred_log[_mask_va] - _va_true_log[_mask_va]) ** 2))
+                            }
+                        )
                 except Exception:
                     continue
             _fill = (
@@ -7818,6 +7837,57 @@ def train_meta_models_from_artifacts(
             base_w=_base_mfe_w,
         )
 
+        # ASYM HEAD UPGRADE
+        asym_target_variants = [
+            str(v).lower()
+            for v in list(cfg.get("aux_asym_target_variants", ["log_raw", "rank_pct", "qbin_mid"]))
+        ]
+        asym_weight_variants = [
+            str(v).lower()
+            for v in list(
+                cfg.get(
+                    "aux_asym_weight_variants",
+                    ["none", "asymmetric_tail", "symmetric_tail", "top30_tail"],
+                )
+            )
+        ]
+        _base_asym_w = _normalize_clip_weights(
+            valid_asym.astype(float) * tm.astype(float)
+        )
+        _asym_targets = {
+            "log_raw": y_asym_fit.astype(float),
+            "rank_pct": _rank_pct_target(y_asym_fit),
+            "qbin_mid": _qbin_mid_target(
+                y_asym_fit, n_bins=int(cfg.get("aux_asym_qbin_bins", 20))
+            ),
+        }
+        asym_target_choice, _asym_target_candidates = _select_target_stage(
+            head_name="asym",
+            idx_cols=idx_asym,
+            y_fit_log=y_asym_fit,
+            target_map=_asym_targets,
+            target_variants=asym_target_variants,
+            base_w=_base_asym_w,
+        )
+        _asym_target_train = _asym_targets.get(
+            asym_target_choice, _asym_targets["rank_pct"]
+        )
+        (
+            asym_weight_choice,
+            asym_weight_lambda,
+            oof_asym,
+            _asym_weight_candidates,
+        ) = _select_weight_stage(
+            head_name="asym",
+            idx_cols=idx_asym,
+            y_fit_log=y_asym_fit,
+            y_train_target=_asym_target_train,
+            target_choice=asym_target_choice,
+            weight_variants=asym_weight_variants,
+            base_w=_base_asym_w,
+        )
+
+
         def _fill(oof, y_fit):
             o = np.asarray(oof, dtype=float)
             fill = (
@@ -7843,6 +7913,13 @@ def train_meta_models_from_artifacts(
                 "target_choice": mfe_target_choice,
                 "weight_choice": mfe_weight_choice,
                 "weight_lambda": float(mfe_weight_lambda),
+            },
+            "asym": {
+                "n_in": int(_Xdf_in.shape[1]),
+                "n_selected": int(len(idx_asym)),
+                "target_choice": asym_target_choice,
+                "weight_choice": asym_weight_choice,
+                "weight_lambda": float(asym_weight_lambda),
             },
             "config": {
                 "weights": "per-head-validity+train-only-tail",
@@ -7923,6 +8000,44 @@ def train_meta_models_from_artifacts(
                 }
                 for c in _mfe_weight_candidates[:5]
             ]
+        if _asym_target_candidates:
+            _fs_report["asym"]["target_stage_top"] = [
+                {
+                    "target": c["target"],
+                    "ic": float(c["metrics"]["ic"]),
+                    "ic_top30": float(c["metrics"]["ic_top30"]),
+                    "ic_top20": float(c["metrics"].get("ic_top20", np.nan)),
+                    "ic_top10": float(c["metrics"].get("ic_top10", np.nan)),
+                    "ece_top30": float(c["metrics"]["ece_top30"]),
+                    "mono": float(c["metrics"]["mono"]),
+                    "stability": float(c["metrics"]["stability"]),
+                    "stability_top30": float(
+                        c["metrics"].get("stability_top30", np.nan)
+                    ),
+                    "score": float(c["metrics"]["score"]),
+                }
+                for c in _asym_target_candidates[:5]
+            ]
+        if _asym_weight_candidates:
+            _fs_report["asym"]["weight_stage_top"] = [
+                {
+                    "weights": c["weights"],
+                    "lambda": float(c.get("lambda", 0.0)),
+                    "ic": float(c["metrics"]["ic"]),
+                    "ic_top30": float(c["metrics"]["ic_top30"]),
+                    "ic_top20": float(c["metrics"].get("ic_top20", np.nan)),
+                    "ic_top10": float(c["metrics"].get("ic_top10", np.nan)),
+                    "ece_top30": float(c["metrics"]["ece_top30"]),
+                    "mono": float(c["metrics"]["mono"]),
+                    "stability": float(c["metrics"]["stability"]),
+                    "stability_top30": float(
+                        c["metrics"].get("stability_top30", np.nan)
+                    ),
+                    "score": float(c["metrics"]["score"]),
+                }
+                for c in _asym_weight_candidates[:5]
+            ]
+
         try:
             if bucket_id:
                 _rp = os.path.join(
@@ -7975,6 +8090,8 @@ def train_meta_models_from_artifacts(
             )
 
         utility_use_z = bool(cfg.get("meta_utility_smooth_use_zscore", True))
+
+        # Calculate full data stats ONLY for final wrapping
         _mfe_mean = (
             float(np.nanmean(y_mfe_fit)) if np.isfinite(y_mfe_fit).any() else 0.0
         )
@@ -7986,7 +8103,7 @@ def train_meta_models_from_artifacts(
         _mfe_std = max(_mfe_std, 1e-6)
         _mae_std = max(_mae_std, 1e-6)
 
-        def _utility_from_logs(_log_mfe, _log_mae, _alpha):
+        def _utility_from_logs_fold(_log_mfe, _log_mae, _alpha, _mf_mean, _mf_std, _ma_mean, _ma_std):
             if utility_use_z:
                 return smooth_utility_from_log_heads_standardized(
                     log_mfe=_log_mfe,
@@ -7994,10 +8111,10 @@ def train_meta_models_from_artifacts(
                     tp=utility_tp,
                     sl=utility_sl,
                     alpha=_alpha,
-                    mfe_mean=_mfe_mean,
-                    mfe_std=_mfe_std,
-                    mae_mean=_mae_mean,
-                    mae_std=_mae_std,
+                    mfe_mean=_mf_mean,
+                    mfe_std=_mf_std,
+                    mae_mean=_ma_mean,
+                    mae_std=_ma_std,
                 )
             return smooth_utility_from_log_heads(
                 log_mfe=_log_mfe,
@@ -8006,6 +8123,11 @@ def train_meta_models_from_artifacts(
                 sl=utility_sl,
                 alpha=_alpha,
             )
+
+        def _utility_from_logs(_log_mfe, _log_mae, _alpha):
+            # Used for wrapper and target calculation.
+            return _utility_from_logs_fold(_log_mfe, _log_mae, _alpha, _mfe_mean, _mfe_std, _mae_mean, _mae_std)
+
 
         _alpha_grid = cfg.get(
             "meta_utility_smooth_alpha_grid", [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
@@ -8019,11 +8141,25 @@ def train_meta_models_from_artifacts(
         _best_alpha = float(utility_alpha)
         _best_alpha_score = -9e9
         _u_eval = np.asarray(y_u_raw, dtype=float)
+
         for _a in _alpha_grid:
-            _u_tmp = np.asarray(
-                _utility_from_logs(oof_log_mfe_hat, oof_log_mae_q70_hat, _a),
-                dtype=float,
-            )
+            _u_tmp = np.full(n, np.nan, dtype=float)
+            for tr, va in _splits_shared:
+                tr_idx = tr[tm[tr]]
+                va_idx = va[tm[va]]
+                if len(tr_idx) < 5 or len(va_idx) == 0:
+                    continue
+                _fold_mfe_mean = float(np.nanmean(y_mfe_fit[tr_idx])) if np.isfinite(y_mfe_fit[tr_idx]).any() else 0.0
+                _fold_mfe_std = float(np.nanstd(y_mfe_fit[tr_idx])) if np.isfinite(y_mfe_fit[tr_idx]).any() else 1.0
+                _fold_mae_mean = float(np.nanmean(y_mae_fit[tr_idx])) if np.isfinite(y_mae_fit[tr_idx]).any() else 0.0
+                _fold_mae_std = float(np.nanstd(y_mae_fit[tr_idx])) if np.isfinite(y_mae_fit[tr_idx]).any() else 1.0
+
+                _u_tmp[va_idx] = _utility_from_logs_fold(
+                    oof_log_mfe_hat[va_idx], oof_log_mae_q70_hat[va_idx], _a,
+                    _fold_mfe_mean, max(_fold_mfe_std, 1e-6),
+                    _fold_mae_mean, max(_fold_mae_std, 1e-6)
+                )
+
             _m_eval = np.isfinite(_u_tmp) & np.isfinite(_u_eval)
             if np.sum(_m_eval) < 30:
                 continue
@@ -8035,12 +8171,27 @@ def train_meta_models_from_artifacts(
                 _best_alpha = float(_a)
         utility_alpha = _best_alpha
 
-        # IMPORTANT: utility OOF is derived strictly from OOF MAE/MFE predictions
+        # IMPORTANT: utility OOF is derived strictly from OOF MAE/MFE predictions AND fold-specific stats
         # (never from in-fold/final fits) to prevent leakage into ridge-sizer training.
-        oof_u_hat = np.asarray(
-            _utility_from_logs(oof_log_mfe_hat, oof_log_mae_q70_hat, utility_alpha),
-            dtype=float,
-        ).astype(np.float32)
+        oof_u_hat = np.full(n, np.nan, dtype=float)
+        for tr, va in _splits_shared:
+            tr_idx = tr[tm[tr]]
+            va_idx = va[tm[va]]
+            if len(tr_idx) < 5 or len(va_idx) == 0:
+                continue
+            _fold_mfe_mean = float(np.nanmean(y_mfe_fit[tr_idx])) if np.isfinite(y_mfe_fit[tr_idx]).any() else 0.0
+            _fold_mfe_std = float(np.nanstd(y_mfe_fit[tr_idx])) if np.isfinite(y_mfe_fit[tr_idx]).any() else 1.0
+            _fold_mae_mean = float(np.nanmean(y_mae_fit[tr_idx])) if np.isfinite(y_mae_fit[tr_idx]).any() else 0.0
+            _fold_mae_std = float(np.nanstd(y_mae_fit[tr_idx])) if np.isfinite(y_mae_fit[tr_idx]).any() else 1.0
+
+            oof_u_hat[va_idx] = _utility_from_logs_fold(
+                oof_log_mfe_hat[va_idx], oof_log_mae_q70_hat[va_idx], utility_alpha,
+                _fold_mfe_mean, max(_fold_mfe_std, 1e-6),
+                _fold_mae_mean, max(_fold_mae_std, 1e-6)
+            )
+
+        # Fill missing OOF values with global utility using median filling if needed
+        oof_u_hat = np.where(np.isfinite(oof_u_hat), oof_u_hat, _utility_from_logs(oof_log_mfe_hat, oof_log_mae_q70_hat, utility_alpha)).astype(np.float32)
         u_target = np.asarray(
             _utility_from_logs(y_mfe_fit, y_mae_fit, utility_alpha),
             dtype=float,
@@ -8113,6 +8264,31 @@ def train_meta_models_from_artifacts(
                 weight_lambda=mfe_weight_lambda,
             )
 
+        def _asym_train_target_full():
+            if asym_target_choice == "rank_pct":
+                return _rank_pct_target(y_asym_fit)
+            if asym_target_choice == "rank_tail_amp":
+                return _rank_tail_amp_target(
+                    y_asym_fit,
+                    top_start=float(cfg.get("aux_head_rank_tail_start", 0.70)),
+                    amp=float(cfg.get("aux_head_rank_tail_amp", 0.50)),
+                )
+            if asym_target_choice == "qbin_mid":
+                return _qbin_mid_target(
+                    y_asym_fit, n_bins=int(cfg.get("aux_asym_qbin_bins", 20))
+                )
+            return y_asym_fit
+
+        def _asym_train_weights_full():
+            w = _normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
+            return _head_weight_vector(
+                y_asym_fit,
+                w,
+                asym_weight_choice,
+                np.arange(n),
+                weight_lambda=asym_weight_lambda,
+            )
+
         _mae_ref_x, _mae_ref_y = _rank_to_log_mapping(y_mae_fit)
         mae_output_transform = {"kind": "identity"}
         if mae_target_choice != "log_raw":
@@ -8130,9 +8306,19 @@ def train_meta_models_from_artifacts(
                 "y": _mfe_ref_y,
             }
 
+        _asym_ref_x, _asym_ref_y = _rank_to_log_mapping(y_asym_fit)
+        asym_output_transform = {"kind": "identity"}
+        if asym_target_choice != "log_raw":
+            asym_output_transform = {
+                "kind": "rank_to_log",
+                "x": _asym_ref_x,
+                "y": _asym_ref_y,
+            }
+
         # Stage-2 race: compare model classes only on the chosen target/weights.
         mae_final_model_kind = "lgbm" if LGBMRegressor is not None else "extratrees"
         mfe_final_model_kind = "lgbm" if LGBMRegressor is not None else "extratrees"
+        asym_final_model_kind = "lgbm" if LGBMRegressor is not None else "extratrees"
         if bool(cfg.get("aux_head_run_model_race_on_winner", True)):
             _mae_race_target = _mae_train_target_full()
             _mae_race_w = _normalize_clip_weights(
@@ -8201,26 +8387,38 @@ def train_meta_models_from_artifacts(
                     for r in _mfe_model_race[:3]
                 ]
 
-            _asym_race_target = y_asym_fit.copy()
-            _asym_race_w = _normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
+            _asym_race_target = _asym_train_target_full()
+            _asym_race_w = _normalize_clip_weights(
+                valid_asym.astype(float) * tm.astype(float)
+            )
             asym_final_model_kind, _asym_model_race = _run_head_model_race(
                 head_name="asym",
                 idx_cols=idx_asym,
                 y_fit_log=y_asym_fit,
                 y_fit_train_target=_asym_race_target,
                 base_w=_asym_race_w,
-                target_choice="rank_pct",
-                weight_choice="asym_magnitude",
-                weight_lambda=1.0,
+
+                target_choice=asym_target_choice,
+                weight_choice=asym_weight_choice,
+                weight_lambda=asym_weight_lambda,
             )
             if _asym_model_race:
                 oof_asym = np.asarray(_asym_model_race[0]["oof"], dtype=float)
-                _fs_report["asym"] = {}
+                if "asym" not in _fs_report:
+                    _fs_report["asym"] = {}
                 _fs_report["asym"]["model_race_top"] = [
                     {
                         "model": r["model"],
                         "ic": float(r["metrics"]["ic"]),
                         "ic_top30": float(r["metrics"]["ic_top30"]),
+                        "ic_top20": float(r["metrics"].get("ic_top20", np.nan)),
+                        "ic_top10": float(r["metrics"].get("ic_top10", np.nan)),
+                        "ece_top30": float(r["metrics"]["ece_top30"]),
+                        "mono": float(r["metrics"]["mono"]),
+                        "stability": float(r["metrics"]["stability"]),
+                        "stability_top30": float(
+                            r["metrics"].get("stability_top30", np.nan)
+                        ),
                         "score": float(r["metrics"]["score"]),
                     }
                     for r in _asym_model_race[:3]
@@ -8351,28 +8549,26 @@ def train_meta_models_from_artifacts(
         }
 
         m_asym_final = None
-        if bool(cfg.get("train_full_inference_models", True)) and asym_final_model_kind:
-            # Simplified train full for asym
-            from sklearn.ensemble import ExtraTreesRegressor
-            m_asym_final = ExtraTreesRegressor(
-                n_estimators=int(cfg.get("meta_aux_trees", 200)),
-                max_depth=int(cfg.get("meta_aux_depth", 8)),
-                min_samples_leaf=int(cfg.get("meta_aux_min_leaf", 128)),
-                max_features="sqrt",
-                random_state=42,
-                n_jobs=2,
-            )
-            _asym_full_w = _normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
-            _asym_full_w = _head_weight_vector(
-                y_asym_fit,
-                _asym_full_w,
-                "asym_magnitude",
-                np.arange(len(y_asym_fit)),
-                weight_lambda=1.0,
-            )
-            m_asym_final.fit(
-                Xv[:, idx_asym], y_asym_fit, sample_weight=_asym_full_w
-            )
+        from sklearn.ensemble import ExtraTreesRegressor
+        m_asym_final = ExtraTreesRegressor(
+            n_estimators=int(cfg.get("meta_aux_trees", 200)),
+            max_depth=int(cfg.get("meta_aux_depth", 8)),
+            min_samples_leaf=int(cfg.get("meta_aux_min_leaf", 128)),
+            max_features="sqrt",
+            random_state=42,
+            n_jobs=2,
+        )
+        _asym_full_w = _normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
+        _asym_full_w = _head_weight_vector(
+            y_asym_fit,
+            _asym_full_w,
+            "asym_magnitude",
+            np.arange(len(y_asym_fit)),
+            weight_lambda=1.0,
+        )
+        m_asym_final.fit(
+            Xv[:, idx_asym], y_asym_fit, sample_weight=_asym_full_w
+        )
 
         heads_meta = {
             "mae_q70": AuxHeadWrapper(
@@ -8388,6 +8584,7 @@ def train_meta_models_from_artifacts(
             "asym": AuxHeadWrapper(
                 model=m_asym_final,
                 selected_features_idx=idx_asym,
+                output_transform=asym_output_transform,
             ),
         }
         heads_meta["utility"] = AuxHeadWrapper(

@@ -175,7 +175,17 @@ def summarize_soft_labels(arr: np.ndarray, name: str):
     mass = arr.mean(axis=0)
     eps = 1e-12
     p_safe = np.clip(arr, eps, 1 - eps)
-    entropy = -np.sum(p_safe * np.log2(p_safe), axis=1).mean()
-    tprint(f"Soft labels summary [{name}]: Entropy={entropy:.3f}, Class masses: {mass}")
+
+    # Measure entropy profile
+    entropies = -np.sum(p_safe * np.log2(p_safe), axis=1)
+    mean_entropy = entropies.mean()
+    var_entropy = entropies.var()
+
+    tprint(f"Soft labels summary [{name}]: Entropy Mean={mean_entropy:.3f}, Var={var_entropy:.4f}, Class masses: {mass}")
+
     if np.any(mass < 0.01):
         tprint(f"WARNING: {name} has an almost empty class support (mass < 1%). Model might be unstable.")
+    if mean_entropy < 0.2:
+        tprint(f"WARNING: Overconfidence detected in {name} soft targets (Entropy={mean_entropy:.3f}). Model may become indecisive/overfit.")
+    elif mean_entropy > 1.4:
+        tprint(f"WARNING: Uncertainty overload detected in {name} soft targets (Entropy={mean_entropy:.3f}). Model may become indecisive.")

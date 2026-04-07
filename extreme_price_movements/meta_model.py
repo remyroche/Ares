@@ -894,6 +894,9 @@ class MetaClassifierModel:
         row_sum = np.where(row_sum > 1e-12, row_sum, 1.0)
         out = out / row_sum
         assert out.shape[1] == 3, f"Expected 3 classes after alignment, got {out.shape}"
+
+        # Verify probability simplex invariant explicitly after any predict_proba
+        assert np.allclose(out.sum(axis=1), 1.0, atol=1e-6), "Predict_proba output must sum to 1.0 within tolerance"
         return out
 
     @staticmethod
@@ -1367,4 +1370,7 @@ class MetaClassifierModel:
         row_sums = out.sum(axis=1)
         assert out.shape[1] == 3, f"Expected multiclass probabilities of shape (N,3), got {out.shape}"
         assert np.all(np.abs(row_sums - 1.0) < 1e-3), "Predicted probabilities must sum to ~1"
+
+        # Runtime prediction assertion
+        assert np.allclose(out.sum(axis=1), 1.0, atol=1e-6), "predict_proba output must strictly sum to 1.0"
         return out

@@ -16,7 +16,7 @@ from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 
-_NS_PER_DAY = 86_400_000_000_000
+_NS_PER_DAY = 86_400_000_000_000 # DEPRECATED, kept for diff compat. Correct is 86400 * 1e9
 
 
 @dataclass(frozen=True)
@@ -170,19 +170,26 @@ def _daily_metrics_from_u(ts: np.ndarray, u_vals: np.ndarray, fee_roundtrip: flo
 def _daily_metrics_from_u_fast(ts: np.ndarray, u_vals: np.ndarray, fee_roundtrip: float = 0.002) -> Tuple[float, float]:
     if len(u_vals) == 0:
         return 0.0, 0.0
-    ts_ns = pd.to_datetime(ts, utc=True, errors="coerce").view("i8")
+    ts_dt = pd.to_datetime(ts, utc=True, errors="coerce")
+    ts_ns = ts_dt.view("i8")
     valid = np.isfinite(ts_ns.astype(np.float64)) & np.isfinite(u_vals)
     if not np.any(valid):
         return 0.0, 0.0
+
     ts_ns = ts_ns[valid]
+    # Fast path for robust daily flooring
+    days = ts_dt[valid].floor("D").view("i8")
+
     # `u_vals` are already net log-returns from `_simulate_policy_batch`.
     r_trade = np.expm1(np.asarray(u_vals, dtype=np.float64)[valid])
     uniq_ts, inv_ts = np.unique(ts_ns, return_inverse=True)
     ts_sum = np.bincount(inv_ts, weights=r_trade)
     ts_cnt = np.bincount(inv_ts)
     ts_mean = ts_sum / np.maximum(ts_cnt, 1)
-    days = uniq_ts // _NS_PER_DAY
-    uniq_days, inv_days = np.unique(days, return_inverse=True)
+
+    # Re-extract the days for the unique timestamps.
+    uniq_days_for_ts = days[np.unique(inv_ts, return_index=True)[1]]
+    uniq_days, inv_days = np.unique(uniq_days_for_ts, return_inverse=True)
     day_sum = np.bincount(inv_days, weights=ts_mean)
     r_day = day_sum.astype(np.float64, copy=False)
     if r_day.size == 0:

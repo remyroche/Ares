@@ -752,9 +752,12 @@ class MetaClassifierModel:
         from sklearn.ensemble import ExtraTreesClassifier
 
         if kind == "ridge_clf":
+            _p = dict(params)
+            if "multi_class" in _p:
+                del _p["multi_class"]
             model = Pipeline([
                 ("scaler", RobustScaler()),
-                ("clf", LogisticRegression(**params)),
+                ("clf", LogisticRegression(**_p)),
             ])
             model.fit(X_tr, y_tr, clf__sample_weight=sw)
             return model

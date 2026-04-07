@@ -351,7 +351,15 @@ class MetaModel:
 
         for tr, va in pkf.split(X):
             X_tr, X_va = X[tr], X[va]
-            y_tr, y_va = y[tr], y[va]
+            if getattr(self, "_dynamic_labels", None) is not None:
+                # Dynamic soft labels evaluated on train set to prevent leakage
+                dyn_tr = self._dynamic_labels[tr]
+                dyn_va = self._dynamic_labels[va]
+                retained = dyn_tr.get_retained_geometries()
+                y_tr = dyn_tr.build_soft_labels_with(retained).astype(np.float32)
+                y_va = dyn_va.build_soft_labels_with(retained).astype(np.float32)
+            else:
+                y_tr, y_va = y[tr], y[va]
             sw_tr = None if sw is None else sw[tr]
             model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
             oof[va] = model.predict(X_va)
@@ -752,28 +760,123 @@ class MetaClassifierModel:
         from sklearn.ensemble import ExtraTreesClassifier
 
         if kind == "ridge_clf":
-            model = Pipeline([
-                ("scaler", RobustScaler()),
-                ("clf", LogisticRegression(**params)),
-            ])
-            model.fit(X_tr, y_tr, clf__sample_weight=sw)
-            return model
+            if y_tr.ndim == 2:
+                from sklearn.linear_model import Ridge
+                # Custom soft wrapper for Ridge
+                model = Pipeline([
+                    ("scaler", RobustScaler()),
+                    ("clf", Ridge(alpha=params.get("C", 1.0) * 10.0)),
+                ])
+                class SoftRidgeWrapper:
+                    def __init__(self, m):
+                        self.model = m
+                    def fit(self, X, y, **kwargs):
+                        self.model.fit(X, y, **kwargs)
+                        return self
+                    def predict_proba(self, X):
+                        preds = np.clip(self.model.predict(X), 0.0, 1.0)
+                        sums = preds.sum(axis=1, keepdims=True)
+                        return np.where(sums > 0, preds / sums, 1.0 / 3.0)
+                    @property
+                    def classes_(self):
+                        return np.array([0, 1, 2])
+                model = SoftRidgeWrapper(model)
+                model.fit(X_tr, y_tr, clf__sample_weight=sw)
+                return model
+            else:
+                model = Pipeline([
+                    ("scaler", RobustScaler()),
+                    ("clf", LogisticRegression(**params)),
+                ])
+                model.fit(X_tr, y_tr, clf__sample_weight=sw)
+                return model
         if kind == "et_clf":
-            model = ExtraTreesClassifier(**params)
-            model.fit(X_tr, y_tr, sample_weight=sw)
-            return model
+            if y_tr.ndim == 2:
+                from sklearn.ensemble import ExtraTreesRegressor
+                # Adapt ExtraTrees for soft labels
+                model = ExtraTreesRegressor(**{k: v for k, v in params.items() if k != "class_weight"})
+                class SoftETWrapper:
+                    def __init__(self, m):
+                        self.model = m
+                    def fit(self, X, y, sample_weight=None, **kwargs):
+                        self.model.fit(X, y, sample_weight=sample_weight)
+                        return self
+                    def predict_proba(self, X):
+                        preds = np.clip(self.model.predict(X), 0.0, 1.0)
+                        sums = preds.sum(axis=1, keepdims=True)
+                        return np.where(sums > 0, preds / sums, 1.0 / 3.0)
+                    @property
+                    def classes_(self):
+                        return np.array([0, 1, 2])
+                model = SoftETWrapper(model)
+                model.fit(X_tr, y_tr, sample_weight=sw)
+                return model
+            else:
+                model = ExtraTreesClassifier(**params)
+                model.fit(X_tr, y_tr, sample_weight=sw)
+                return model
         if kind == "catboost_clf":
             import catboost
             p = dict(params)
-            model = catboost.CatBoostClassifier(**p)
-            model.fit(X_tr, y_tr, sample_weight=sw,
-                      eval_set=(X_va, y_va), early_stopping_rounds=50, verbose=False)
-            return model
+            if y_tr.ndim == 2:
+                # Same strategy: train 3 regressors to act as probabilities
+                p["loss_function"] = "RMSE"
+                class SoftCatWrapper:
+                    def __init__(self, p_dict):
+                        self.models = [catboost.CatBoostRegressor(**p_dict) for _ in range(3)]
+                    def fit(self, X, y, sample_weight=None, eval_set=None, verbose=False, early_stopping_rounds=50):
+                        for i in range(3):
+                            es = (eval_set[0], eval_set[1][:, i]) if eval_set else None
+                            self.models[i].fit(X, y[:, i], sample_weight=sample_weight, eval_set=es, early_stopping_rounds=early_stopping_rounds, verbose=verbose)
+                        return self
+                    def predict_proba(self, X):
+                        preds = np.column_stack([np.clip(m.predict(X), 0.0, 1.0) for m in self.models])
+                        sums = preds.sum(axis=1, keepdims=True)
+                        return np.where(sums > 0, preds / sums, 1.0 / 3.0)
+                    @property
+                    def classes_(self):
+                        return np.array([0, 1, 2])
+                model = SoftCatWrapper(p)
+                model.fit(X_tr, y_tr, sample_weight=sw, eval_set=(X_va, y_va), early_stopping_rounds=50, verbose=False)
+                return model
+            else:
+                model = catboost.CatBoostClassifier(**p)
+                model.fit(X_tr, y_tr, sample_weight=sw,
+                          eval_set=(X_va, y_va), early_stopping_rounds=50, verbose=False)
+                return model
         if kind == "xgb_clf":
             p = dict(params)
-            model = xgb.XGBClassifier(**p, early_stopping_rounds=50)
-            model.fit(X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False)
-            return model
+            if y_tr.ndim == 2:
+                # Soft target adaptation: train 3 regressors to handle soft probabilities natively.
+                p["objective"] = "reg:squarederror"
+                if "num_class" in p:
+                    del p["num_class"]
+                if "eval_metric" in p:
+                    del p["eval_metric"]
+
+                class SoftXGBWrapper:
+                    def __init__(self, p_dict):
+                        self.models = [xgb.XGBRegressor(**p_dict, early_stopping_rounds=50) for _ in range(3)]
+                    def fit(self, X, y, sample_weight=None, eval_set=None, verbose=False):
+                        for i in range(3):
+                            es = [(eval_set[0][0], eval_set[0][1][:, i])] if eval_set else None
+                            self.models[i].fit(X, y[:, i], sample_weight=sample_weight, eval_set=es, verbose=verbose)
+                        return self
+                    def predict_proba(self, X):
+                        preds = np.column_stack([np.clip(m.predict(X), 0.0, 1.0) for m in self.models])
+                        sums = preds.sum(axis=1, keepdims=True)
+                        return np.where(sums > 0, preds / sums, 1.0 / 3.0)
+                    @property
+                    def classes_(self):
+                        return np.array([0, 1, 2])
+
+                model = SoftXGBWrapper(p)
+                model.fit(X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False)
+                return model
+            else:
+                model = xgb.XGBClassifier(**p, early_stopping_rounds=50)
+                model.fit(X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False)
+                return model
         raise ValueError(f"Unknown classifier kind: {kind}")
 
     def _predict_proba(self, model, X):
@@ -832,7 +935,15 @@ class MetaClassifierModel:
 
         for tr, va in pkf.split(X):
             X_tr, X_va = X[tr], X[va]
-            y_tr, y_va = y[tr], y[va]
+            if getattr(self, "_dynamic_labels", None) is not None:
+                # Dynamic soft labels evaluated on train set to prevent leakage
+                dyn_tr = self._dynamic_labels[tr]
+                dyn_va = self._dynamic_labels[va]
+                retained = dyn_tr.get_retained_geometries()
+                y_tr = dyn_tr.build_soft_labels_with(retained).astype(np.float32)
+                y_va = dyn_va.build_soft_labels_with(retained).astype(np.float32)
+            else:
+                y_tr, y_va = y[tr], y[va]
             sw_tr = None if sw is None else sw[tr]
             try:
                 model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
@@ -890,16 +1001,41 @@ class MetaClassifierModel:
             return {"n": n}
         pred = MetaClassifierModel._sanitize_multiclass_proba(pred, n_classes=3)
 
-        # EV calculation: P(TP)*2 - P(SL)*1 (assuming 2:1 ratio standard)
-        # TP=class 2, SL=class 0.
-        ev_vec = pred[:, 2] * 2.0 - pred[:, 0] * 1.0
+        # Handle soft true targets gracefully
+        if y_c.ndim == 2:
+            # For these specific soft labels, the contract is 0=TP, 1=SL, 2=TO
+            # We map it back to 0=SL, 1=TO, 2=TP for accurate accuracy_score
+            y_c_hard = np.zeros(len(y_c), dtype=int)
+            am = np.argmax(y_c, axis=1)
+            y_c_hard[am == 0] = 2  # TP
+            y_c_hard[am == 1] = 0  # SL
+            y_c_hard[am == 2] = 1  # TO
+
+            # EV calculation: P(TP)*2 - P(SL)*1. Soft predictions are [TP, SL, TO]
+            ev_vec = pred[:, 0] * 2.0 - pred[:, 1] * 1.0
+        else:
+            y_c_hard = y_c
+            # EV calculation: P(TP)*2 - P(SL)*1. Hard predictions are [SL, TO, TP]
+            ev_vec = pred[:, 2] * 2.0 - pred[:, 0] * 1.0
 
         try:
-            ll = float(log_loss(y_c, pred, labels=[0, 1, 2]))
+            if y_c.ndim == 2:
+                p_safe = np.clip(pred, 1e-15, 1 - 1e-15)
+                ll = float(-np.mean(np.sum(y_c * np.log(p_safe), axis=1)))
+            else:
+                ll = float(log_loss(y_c, pred, labels=[0, 1, 2]))
         except Exception:
             ll = float("nan")
 
-        acc = float(accuracy_score(y_c, np.argmax(pred, axis=1)))
+        if y_c.ndim == 2:
+            pred_hard = np.zeros(len(pred), dtype=int)
+            pm = np.argmax(pred, axis=1)
+            pred_hard[pm == 0] = 2
+            pred_hard[pm == 1] = 0
+            pred_hard[pm == 2] = 1
+        else:
+            pred_hard = np.argmax(pred, axis=1)
+        acc = float(accuracy_score(y_c_hard, pred_hard))
 
         metrics = {"n": n, "logloss": ll, "accuracy": acc}
 
@@ -984,10 +1120,23 @@ class MetaClassifierModel:
         X_meta_work = X_meta
 
         # Build labels
+        self._dynamic_labels = None
         if y_class_override is not None:
-            y_class = np.asarray(y_class_override, dtype=np.int8)
-            w_barrier = np.ones(len(y_class), dtype=np.float32)
-            tprint(f"  Multiclass labels from engine (0=SL, 1=TO, 2=TP): {np.bincount(y_class, minlength=3)}")
+            if hasattr(y_class_override, "to_numpy") and hasattr(y_class_override, "get_retained_geometries"):
+                self._dynamic_labels = y_class_override
+                y_class = y_class_override.to_numpy().astype(np.float32)
+                w_barrier = np.ones(len(y_class), dtype=np.float32)
+                tprint(f"  Soft multiclass labels from engine shape: {y_class.shape}")
+            else:
+                y_class = np.asarray(y_class_override)
+                if y_class.ndim == 1:
+                    y_class = y_class.astype(np.int8)
+                    w_barrier = np.ones(len(y_class), dtype=np.float32)
+                    tprint(f"  Multiclass labels from engine (0=SL, 1=TO, 2=TP): {np.bincount(y_class, minlength=3)}")
+                else:
+                    y_class = y_class.astype(np.float32)
+                    w_barrier = np.ones(len(y_class), dtype=np.float32)
+                    tprint(f"  Soft multiclass labels from engine shape: {y_class.shape}")
         elif vol_proxy is not None and y_per_horizon:
             # Drop samples with undefined volatility (Task 5)
             valid_vol = np.isfinite(vol_proxy) & (vol_proxy > 1e-9)

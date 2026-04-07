@@ -33,6 +33,13 @@ from extreme_price_movements.periods_symbols_management import (
     SlicePlanner,
     SlicePlannerConfig,
 )
+from extreme_price_movements.offline_optimisers.params_store import (
+    load_inference_candidate_mask_params_per_bucket,
+)
+from extreme_price_movements.run_ridge_sizer import (
+    load_base_oof_predictions,
+    load_meta_oof_predictions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -577,7 +584,7 @@ def run_bucketed_simple_position_sizer(
     bucket_results = {}
     summary_rows = []
 
-    unique_buckets = np.unique(bucket_labels[~np.isnan(bucket_labels)])
+    unique_buckets = np.unique(bucket_labels[~pd.isna(bucket_labels)])
 
     for b in unique_buckets:
         mask = (bucket_labels == b)
@@ -609,3 +616,153 @@ def run_bucketed_simple_position_sizer(
     global_results["bucket_summary_table_"] = pd.DataFrame(summary_rows)
 
     return global_results
+
+
+def run_simple_position_sizer_from_artifacts(
+    data_root: str,
+    run_id: str,
+    top_fracs: Tuple[float, ...] = (0.1, 0.2),
+    use_ridge_head_sizer: bool = True
+) -> Dict[str, Any]:
+    """
+    Runs the simple position sizer directly on pipeline artifacts.
+    Loads base model OOF predictions and filters strictly to the exact strategy mask
+    (as optimized per-bucket) before running diagnostics.
+    """
+    from extreme_price_movements.run_ridge_sizer import load_trade_outcomes
+
+    # Load dynamic strategies (which rules are active per bucket)
+    strategies = load_inference_candidate_mask_params_per_bucket(top_n=1, ranking_metric="score_for_best_params")
+
+    if not strategies:
+        logger.warning("No strategies loaded from params_store.")
+        return {}
+
+    # Load base OOFs
+    base_oofs = load_base_oof_predictions(data_root, run_id)
+    if not base_oofs:
+        logger.warning(f"No base OOFs found in {data_root}/artifacts/{run_id}/oof.")
+        return {}
+
+    # Gather data across buckets, specifically filtering to the allowed rule/mask
+    all_returns = []
+    all_downside = []
+    all_timestamps = []
+    all_bucket_labels = []
+
+    global_feature_dict = {}
+
+    bucket_dataframes = []
+
+    for bucket, oof_df in base_oofs.items():
+        # Find strategy corresponding to this bucket
+        bucket_strategies = [s for s in strategies if f"{s['trade_side']}_{s['base_event_trigger']}" == bucket or s.get("strategy_id", "").startswith(bucket)]
+
+        if not bucket_strategies:
+            logger.info(f"Skipping bucket {bucket} (no matching strategy in registry).")
+            continue
+
+        strategy = bucket_strategies[0]
+        strategy_id = strategy.get("strategy_id", "")
+
+        # OOF DFS usually contain a mask column named mask_{strategy_id} or just 'mask'
+        # Let's filter to rows where the mask is active if the column exists
+        mask_col = f"mask_{strategy_id}"
+
+        if mask_col in oof_df.columns:
+            active_df = oof_df[oof_df[mask_col] == 1].copy()
+        elif "mask" in oof_df.columns:
+            # Fallback
+            active_df = oof_df[oof_df["mask"] == 1].copy()
+        else:
+            # If no mask explicitly provided, use all (assumes pre-filtered or pure bucket logic)
+            active_df = oof_df.copy()
+
+        if active_df.empty:
+            continue
+
+        # Get target outcomes
+        trade_outcomes = load_trade_outcomes(data_root, run_id, active_df)
+        if trade_outcomes is None or "return" not in trade_outcomes.columns:
+            continue
+
+        # Identify columns to use as heads
+        # Base models usually output things like base_H2, base_H4, etc. We will add them to feature_dict
+        # We must filter by strategy_id if present to satisfy: "uses ONLY the outputs from models trained under the same strategy_id"
+        head_cols = []
+        for c in active_df.columns:
+            # Typical columns we want to evaluate
+            if c.startswith("base_") or "pred" in c.lower() or "score" in c.lower() or "mae" in c.lower() or "mfe" in c.lower():
+                # If the column has a strategy_id appended (e.g. base_H2_StratX), we MUST match it
+                # If there's no strategy suffix in the column name, we allow it (e.g., standard base_H2)
+                if strategy_id and strategy_id in c:
+                    head_cols.append(c)
+                elif not any(s.get("strategy_id", "") in c for s in strategies if s.get("strategy_id")):
+                    # It's a generic column not tied to *any* other strategy
+                    head_cols.append(c)
+
+        bucket_dataframes.append((bucket, active_df, trade_outcomes, head_cols))
+
+    if not bucket_dataframes:
+        logger.warning("No valid bucket dataframes constructed.")
+        return {}
+
+    # We now evaluate per bucket rather than globally mapping mismatched columns.
+    # Since run_bucketed_simple_position_sizer normally takes a globally concatenated dataset,
+    # let's construct it.
+
+    # First, find all unique head columns across all active buckets
+    all_head_cols = set()
+    for _, _, _, head_cols in bucket_dataframes:
+        all_head_cols.update(head_cols)
+
+    # Concatenate
+    combined_dfs = []
+    combined_outcomes = []
+    combined_buckets = []
+    combined_timestamps = []
+
+    for bucket, active_df, trade_outcomes, _ in bucket_dataframes:
+        n_rows = len(active_df)
+        combined_buckets.extend([bucket] * n_rows)
+        combined_outcomes.append(trade_outcomes)
+
+        ts = active_df["timestamp"].values if "timestamp" in active_df.columns else np.zeros(n_rows)
+        combined_timestamps.append(ts)
+
+        # Ensure all head cols exist, fill with NaN if missing for this bucket
+        for hc in all_head_cols:
+            if hc not in active_df.columns:
+                active_df[hc] = np.nan
+        combined_dfs.append(active_df[list(all_head_cols)])
+
+    # Build global structures
+    global_df = pd.concat(combined_dfs, ignore_index=True)
+    global_outcomes = pd.concat(combined_outcomes, ignore_index=True)
+
+    y_raw_net_return = global_outcomes["return"].values
+
+    # Note: Downside might not be in trade_outcomes natively if not modeled. We proxy with 0.0 or actual if present.
+    if "downside" in global_outcomes.columns:
+        y_downside = global_outcomes["downside"].values
+    elif "mae" in global_df.columns:
+         y_downside = global_df["mae"].values
+    else:
+        # Fallback empty downside array
+        y_downside = np.zeros_like(y_raw_net_return)
+
+    timestamps = np.concatenate(combined_timestamps)
+    bucket_labels = np.array(combined_buckets)
+
+    feature_dict = {col: global_df[col].values for col in all_head_cols}
+
+    return run_bucketed_simple_position_sizer(
+        feature_dict=feature_dict,
+        trade_outcomes=global_outcomes,
+        y_raw_net_return=y_raw_net_return,
+        y_downside=y_downside,
+        timestamps=timestamps,
+        bucket_labels=bucket_labels,
+        top_fracs=top_fracs,
+        use_ridge_head_sizer=use_ridge_head_sizer
+    )

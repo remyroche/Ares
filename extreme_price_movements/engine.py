@@ -24,6 +24,7 @@ from extreme_price_movements.limit_order_pricer import (
     get_fee_for_order_type,
     create_limit_order_config,
 )
+from extreme_price_movements.execution_semantics import resolve_stop_fill, ExitReason
 # Import optimized prediction utilities
 try:
     from extreme_price_movements.optimized_predictions import OptimizedMetaCombiner, BatchPredictor
@@ -200,7 +201,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     if cost is not None:
         assert_units(cost)
     if np.isnan(entry_px) or entry_px <= 0:
-        return 0.0, ts_entry, "no_entry", _empty_extras
+        return 0.0, ts_entry, ExitReason.NO_ENTRY.value, _empty_extras
 
     ts_sig = ts_entry - pd.Timedelta(hours=1)
     atr = float(feats_s.loc[ts_sig]) if ts_sig in feats_s.index else 0.02
@@ -379,7 +380,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                 break
         
         if not filled:
-            return 0.0, ts_entry, "limit_not_filled", _empty_extras
+            return 0.0, ts_entry, ExitReason.LIMIT_NOT_FILLED.value, _empty_extras
         
         # Update entry price and start time to fill event
         entry_px = actual_fill_price
@@ -394,7 +395,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         filled_via_limit = False
     
     if len(path) == 0:
-        return 0.0, ts_entry, "no_path", _empty_extras
+        return 0.0, ts_entry, ExitReason.NO_PATH.value, _empty_extras
 
     # Exit limit offset logic
     use_exit_limit = cfg.get("use_exit_limit_orders", False)
@@ -537,7 +538,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                     "exit_stage": exit_stage,
                     "filled_via_limit": filled_via_limit,
                 }
-                return ret, ts, "giveback_exit", extras
+                return ret, ts, ExitReason.GIVEBACK_EXIT.value, extras
 
         # --- Early invalidation: kill trades showing adverse drift without MFE ---
         if exit_stage == 0 and bar_count >= kill_min_bars:
@@ -552,6 +553,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                     # Use proper high/low validation
                     is_long_side = (side == "long")
                     limit_px = get_limit_price_for_order(cc, exit_limit_offset_bps, is_long_side, hh, ll)
+                    # Note: cc is used as open_price here since this is triggered mid/end bar without gap semantics for limit
                     did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, cc)
                     if did_fill:
                         exit_price = actual_exit_px
@@ -569,32 +571,42 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                     "exit_filled_via_limit": exit_filled_via_limit,
                     "exit_limit_bonus": abs(exit_price - cc) / entry_px,
                 }
-                return ret, ts, "early_invalidation", extras
+                return ret, ts, ExitReason.EARLY_INVALIDATION.value, extras
 
         # Check stop-loss / trailing-stop hit
-        if side == "long":
-            hit_sl = ll <= sl_price
-        else:
-            hit_sl = hh >= sl_price
+        # Use proper gap execution semantics
+        is_long_side = (side == "long")
+        # open_price for gap check is current bar open (o_data isn't passed for some reason, we assume o_s exists)
+        # Wait, o_data is o_s but we need to index it
+        # The loop has o_s but we didn't index it. Let's fix that.
+        oo = o_s.loc[ts] if ts in o_s.index else cc # fallback
+
+        hit_sl, stop_fill_price = resolve_stop_fill(
+            open_price=oo,
+            high_price=hh,
+            low_price=ll,
+            stop_price=sl_price,
+            is_long=is_long_side
+        )
 
         if hit_sl:
-            # Apply exit limit padding
-            exit_price = sl_price
+            # Apply exit limit padding (if applicable, though usually stop losses are market orders)
+            # The current code tries to apply limit padding on stop hit.
+            exit_price = stop_fill_price
             exit_filled_via_limit = False
             if exit_limit_offset_pct > 0:
                 # Use proper high/low validation
-                is_long_side = (side == "long")
-                limit_px = get_limit_price_for_order(sl_price, exit_limit_offset_bps, is_long_side, hh, ll)
-                did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, sl_price)
+                limit_px = get_limit_price_for_order(stop_fill_price, exit_limit_offset_bps, is_long_side, hh, ll)
+                did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, stop_fill_price)
                 if did_fill:
                     exit_price = actual_exit_px
                     exit_filled_via_limit = True
             
             ret = (exit_price / entry_px) - 1.0 if side == "long" else (entry_px / exit_price) - 1.0
             if exit_stage >= 1:
-                reason = "trailing_stop"
+                reason = ExitReason.TRAILING_STOP.value
             else:
-                reason = "stop_loss"
+                reason = ExitReason.STOP_LOSS.value
             extras = {
                 "mae_pct": mae_px / entry_px,
                 "mfe_pct": mfe_px / entry_px,
@@ -606,7 +618,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                 "exit_stage": exit_stage,
                 "filled_via_limit": filled_via_limit,
                 "exit_filled_via_limit": exit_filled_via_limit,
-                "exit_limit_bonus": abs(exit_price - sl_price) / entry_px,
+                "exit_limit_bonus": abs(exit_price - stop_fill_price) / entry_px,
             }
             return ret, ts, reason, extras
 
@@ -640,9 +652,9 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         "exit_limit_bonus": abs(exit_price - last_close) / entry_px,
     }
     if side == "long":
-        return (exit_price / entry_px) - 1.0, last_ts, "time_exit", extras
+        return (exit_price / entry_px) - 1.0, last_ts, ExitReason.TIME_EXIT.value, extras
     else:
-        return (entry_px / exit_price) - 1.0, last_ts, "time_exit", extras
+        return (entry_px / exit_price) - 1.0, last_ts, ExitReason.TIME_EXIT.value, extras
 
 
 

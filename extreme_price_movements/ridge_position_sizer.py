@@ -396,27 +396,36 @@ def simulate_trade_exit(
                 trailing_hit = l <= trailing_price
 
             if tp_hit or sl_hit or trailing_hit:
-                # Resolve collisions by CLOSE proximity to barrier.
-                # Deterministic tie-break: worst outcome first (SL > TRAILING > TP).
+                # Same-bar tie-breaking precedence:
+                # 1. Compare absolute distance from bar Open to each triggered barrier.
+                # 2. Shortest distance wins (proxy for reaching it first intraday).
+                # 3. If distances are exactly equal, precedence is:
+                #    STOP_LOSS (1) > TRAILING_STOP (2) > TAKE_PROFIT (0).
                 best_price = c
                 best_reason = 3
                 best_dist = 1e100
                 best_rank = 10
 
                 if sl_hit:
+                    # Apply stop-gap execution pricing
+                    fill_px = o if o <= sl_price else sl_price
                     d = abs(o - sl_price)
                     if d < best_dist or (d == best_dist and 0 < best_rank):
-                        best_price, best_reason, best_dist, best_rank = sl_price, 1, d, 0
+                        best_price, best_reason, best_dist, best_rank = fill_px, 1, d, 0
 
                 if trailing_hit:
+                    # Apply stop-gap execution pricing
+                    fill_px = o if o <= trailing_price else trailing_price
                     d = abs(o - trailing_price)
                     if d < best_dist or (d == best_dist and 1 < best_rank):
-                        best_price, best_reason, best_dist, best_rank = trailing_price, 2, d, 1
+                        best_price, best_reason, best_dist, best_rank = fill_px, 2, d, 1
 
                 if tp_hit:
+                    # Apply limit-gap execution pricing
+                    fill_px = o if o >= tp_price else tp_price
                     d = abs(o - tp_price)
                     if d < best_dist or (d == best_dist and 2 < best_rank):
-                        best_price, best_reason, best_dist, best_rank = tp_price, 0, d, 2
+                        best_price, best_reason, best_dist, best_rank = fill_px, 0, d, 2
 
                 return best_price, bar, best_reason
         else:
@@ -436,25 +445,36 @@ def simulate_trade_exit(
                 trailing_hit = h >= trailing_price
 
             if tp_hit or sl_hit or trailing_hit:
+                # Same-bar tie-breaking precedence:
+                # 1. Compare absolute distance from bar Open to each triggered barrier.
+                # 2. Shortest distance wins (proxy for reaching it first intraday).
+                # 3. If distances are exactly equal, precedence is:
+                #    STOP_LOSS (1) > TRAILING_STOP (2) > TAKE_PROFIT (0).
                 best_price = c
                 best_reason = 3
                 best_dist = 1e100
                 best_rank = 10
 
                 if sl_hit:
+                    # Apply stop-gap execution pricing
+                    fill_px = o if o >= sl_price else sl_price
                     d = abs(o - sl_price)
                     if d < best_dist or (d == best_dist and 0 < best_rank):
-                        best_price, best_reason, best_dist, best_rank = sl_price, 1, d, 0
+                        best_price, best_reason, best_dist, best_rank = fill_px, 1, d, 0
 
                 if trailing_hit:
+                    # Apply stop-gap execution pricing
+                    fill_px = o if o >= trailing_price else trailing_price
                     d = abs(o - trailing_price)
                     if d < best_dist or (d == best_dist and 1 < best_rank):
-                        best_price, best_reason, best_dist, best_rank = trailing_price, 2, d, 1
+                        best_price, best_reason, best_dist, best_rank = fill_px, 2, d, 1
 
                 if tp_hit:
+                    # Apply limit-gap execution pricing
+                    fill_px = o if o <= tp_price else tp_price
                     d = abs(o - tp_price)
                     if d < best_dist or (d == best_dist and 2 < best_rank):
-                        best_price, best_reason, best_dist, best_rank = tp_price, 0, d, 2
+                        best_price, best_reason, best_dist, best_rank = fill_px, 0, d, 2
 
                 return best_price, bar, best_reason
     

@@ -7016,15 +7016,27 @@ def train_meta_models_from_artifacts(
                 f"  aux_head MDI[{bucket_id}]: feature selection failed ({_e_mdi}), using all features"
             )
 
-        def _normalize_clip_weights(w, lo=0.75, hi=1.25):
+        def _normalize_clip_weights(w, lo=0.1, hi=3.0, tr_idx=None):
             w = np.asarray(w, dtype=float)
             w = np.where(np.isfinite(w), w, 0.0)
             w = np.clip(w, 0.0, None)
             pos = w > 0
             if np.any(pos):
-                w[pos] = w[pos] / max(float(np.mean(w[pos])), 1e-12)
+                if tr_idx is not None:
+                    train_pos = np.zeros_like(pos)
+                    train_pos[tr_idx] = pos[tr_idx]
+                    mean_w = float(np.mean(w[train_pos])) if np.any(train_pos) else float(np.mean(w[pos]))
+                else:
+                    mean_w = float(np.mean(w[pos]))
+                w[pos] = w[pos] / max(mean_w, 1e-12)
                 w[pos] = np.clip(w[pos], lo, hi)
-                w[pos] = w[pos] / max(float(np.mean(w[pos])), 1e-12)
+
+                # Re-calculate mean after clipping
+                if tr_idx is not None:
+                    mean_w2 = float(np.mean(w[train_pos])) if np.any(train_pos) else float(np.mean(w[pos]))
+                else:
+                    mean_w2 = float(np.mean(w[pos]))
+                w[pos] = w[pos] / max(mean_w2, 1e-12)
             return w
 
         def _tail_multiplier(y_fit, w_base, tr_idx):
@@ -7038,8 +7050,8 @@ def train_meta_models_from_artifacts(
                     mult = np.clip(y_fit, p50, p95)
                     mult = np.where(np.isfinite(mult), mult, p50)
                     mult = mult / max(p50, 1e-9)
-                    w *= np.clip(mult, 0.75, 1.25)
-            return _normalize_clip_weights(w)
+                    w *= np.clip(mult, 0.1, 3.0)
+            return _normalize_clip_weights(w, tr_idx=tr_idx)
 
         def _tail_multiplier_asymmetric(y_fit, w_base, tr_idx):
             w = np.asarray(w_base, dtype=float).copy()
@@ -7348,10 +7360,16 @@ def train_meta_models_from_artifacts(
                 )
                 if np.isfinite(_thr):
                     _w_tail *= 1.0 + 0.25 * (y_fit_log >= _thr).astype(float)
-                    _w_tail = _normalize_clip_weights(_w_tail)
+                    _w_tail = _normalize_clip_weights(_w_tail, tr_idx=tr_idx)
+            elif _w_name == "asym_magnitude":
+                _mag = np.abs(y_fit_log)
+                _p50 = float(np.nanpercentile(_mag[tr_idx], 50)) if len(tr_idx) > 20 else 0.0
+                if np.isfinite(_p50) and _p50 > 1e-9:
+                    _w_tail *= np.clip(_mag / _p50, 0.5, 2.0)
+                    _w_tail = _normalize_clip_weights(_w_tail, tr_idx=tr_idx)
             _lam = float(np.clip(weight_lambda, 0.0, 1.0))
             _w = _w_base + _lam * (_w_tail - _w_base)
-            return _normalize_clip_weights(_w)
+            return _normalize_clip_weights(_w, tr_idx=tr_idx)
 
         def _available_head_models():
             raw = cfg.get(
@@ -8379,6 +8397,7 @@ def train_meta_models_from_artifacts(
                 y_fit_log=y_asym_fit,
                 y_fit_train_target=_asym_race_target,
                 base_w=_asym_race_w,
+
                 target_choice=asym_target_choice,
                 weight_choice=asym_weight_choice,
                 weight_lambda=asym_weight_lambda,
@@ -8530,50 +8549,26 @@ def train_meta_models_from_artifacts(
         }
 
         m_asym_final = None
-        if len(idx_asym) > 0 and np.any(valid_asym & tm) and do_full_inference_retrain:
-            y_asym_final_fit = _asym_train_target_full()
-            w_asym_full = _asym_train_weights_full()
-            if asym_final_model_kind == "lgbm" and LGBMRegressor is not None:
-                m_asym_final = LGBMRegressor(
-                    objective="regression",
-                    n_estimators=500,
-                    learning_rate=0.03,
-                    num_leaves=63,
-                    min_child_samples=50,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    random_state=42,
-                    n_jobs=2,
-                )
-                m_asym_final.fit(
-                    Xv[:, idx_asym], y_asym_final_fit, sample_weight=w_asym_full
-                )
-            elif asym_final_model_kind == "ridge":
-                from sklearn.linear_model import Ridge
-                from sklearn.pipeline import make_pipeline
-                from sklearn.preprocessing import RobustScaler
-
-                m_asym_final = make_pipeline(
-                    RobustScaler(),
-                    Ridge(
-                        alpha=float(cfg.get("aux_head_ridge_alpha_default", 1.0)),
-                        random_state=42,
-                    ),
-                )
-                m_asym_final.fit(
-                    Xv[:, idx_asym], y_asym_final_fit, ridge__sample_weight=w_asym_full
-                )
-            else:
-                m_asym_final = ExtraTreesRegressor(
-                    n_estimators=150,
-                    max_depth=5,
-                    min_samples_leaf=20,
-                    random_state=42,
-                    n_jobs=2,
-                )
-                m_asym_final.fit(
-                    Xv[:, idx_asym], y_asym_final_fit, sample_weight=w_asym_full
-                )
+        from sklearn.ensemble import ExtraTreesRegressor
+        m_asym_final = ExtraTreesRegressor(
+            n_estimators=int(cfg.get("meta_aux_trees", 200)),
+            max_depth=int(cfg.get("meta_aux_depth", 8)),
+            min_samples_leaf=int(cfg.get("meta_aux_min_leaf", 128)),
+            max_features="sqrt",
+            random_state=42,
+            n_jobs=2,
+        )
+        _asym_full_w = _normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
+        _asym_full_w = _head_weight_vector(
+            y_asym_fit,
+            _asym_full_w,
+            "asym_magnitude",
+            np.arange(len(y_asym_fit)),
+            weight_lambda=1.0,
+        )
+        m_asym_final.fit(
+            Xv[:, idx_asym], y_asym_fit, sample_weight=_asym_full_w
+        )
 
         heads_meta = {
             "mae_q70": AuxHeadWrapper(

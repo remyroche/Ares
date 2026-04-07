@@ -17,6 +17,48 @@ import numpy as np
 from typing import Dict, Optional, Tuple, Union
 
 
+def clip_offset_to_bounds(offset: float, cfg: Optional[Dict] = None) -> float:
+    """Clips an offset based on the semantic contract bounds."""
+    cfg = cfg or {}
+    min_offset = cfg.get("limit_offset_min", cfg.get("limit_offset_min_bps", 5.0))
+    max_offset = cfg.get("limit_offset_max", cfg.get("limit_offset_max_bps", 50.0))
+    return float(np.clip(offset, min_offset, max_offset))
+
+def predict_offset(
+    mae_hat: float,
+    mfe_hat: float,
+    u_hat: float,
+    confidence: float = 0.5,
+    fee_market: float = 0.0025,
+    fee_limit: float = 0.0010,
+    cfg: Optional[Dict] = None,
+) -> float:
+    """Predict execution offset. Validates contract and routes to heuristic logic."""
+    cfg = cfg or {}
+    mode = cfg.get("limit_offset_mode", "heuristic")
+
+    if mode == "disabled":
+        return 0.0
+
+    if mode == "ml":
+        # The ML path is disabled by default via config, but if reached here unexpectedly
+        # (e.g. bypass), fallback to heuristic but warn.
+        import logging
+        logging.getLogger(__name__).warning(
+            "ML offset mode accessed via direct heuristic call. "
+            "Falling back to heuristic estimation temporarily."
+        )
+
+    return estimate_entry_limit_offset(
+        mae_hat=mae_hat,
+        mfe_hat=mfe_hat,
+        u_hat=u_hat,
+        confidence=confidence,
+        fee_market=fee_market,
+        fee_limit=fee_limit,
+        cfg=cfg,
+    )
+
 def estimate_entry_limit_offset(
     mae_hat: float,
     mfe_hat: float,
@@ -47,8 +89,8 @@ def estimate_entry_limit_offset(
     """
     cfg = cfg or {}
     
-    min_offset = cfg.get("limit_offset_min_bps", 5.0)
-    max_offset = cfg.get("limit_offset_max_bps", 50.0)
+    min_offset = cfg.get("limit_offset_min", cfg.get("limit_offset_min_bps", 5.0))
+    max_offset = cfg.get("limit_offset_max", cfg.get("limit_offset_max_bps", 50.0))
     
     # Convert fees to bps
     fee_market_bps = fee_market * 10000
@@ -84,9 +126,7 @@ def estimate_entry_limit_offset(
         offset_bps = min_offset
     
     # Clamp to bounds
-    offset_bps = np.clip(offset_bps, min_offset, max_offset)
-    
-    return float(offset_bps)
+    return clip_offset_to_bounds(offset_bps, cfg)
 
 
 def estimate_exit_limit_offset(
@@ -110,8 +150,8 @@ def estimate_exit_limit_offset(
     """
     cfg = cfg or {}
     
-    min_offset = cfg.get("limit_offset_min_bps", 5.0)
-    max_offset = cfg.get("limit_offset_max_bps", 30.0)
+    min_offset = cfg.get("limit_offset_min", cfg.get("limit_offset_min_bps", 5.0))
+    max_offset = cfg.get("limit_offset_max", cfg.get("limit_offset_max_bps", 50.0))
     
     # Convert to fractions
     mfe_hat = _normalize_to_fraction(mfe_hat)
@@ -139,9 +179,7 @@ def estimate_exit_limit_offset(
     mfe_adjustment = -mfe_hat * 200 if mfe_hat > 0 else 0
     offset_bps += mfe_adjustment
     
-    offset_bps = np.clip(offset_bps, min_offset, max_offset)
-    
-    return float(offset_bps)
+    return clip_offset_to_bounds(offset_bps, cfg)
 
 
 def estimate_fill_probability(
@@ -757,7 +795,7 @@ def create_limit_order_config(
     fee_limit_exit = get_fee_for_order_type("limit", "exit", cfg)
     
     # Estimate entry offset
-    entry_offset = estimate_entry_limit_offset(
+    entry_offset = predict_offset(
         mae_hat=mae_hat,
         mfe_hat=mfe_hat,
         u_hat=u_hat,

@@ -1528,7 +1528,23 @@ class LayerCExecutionOptimizer:
         feature_dict: Dict[str, np.ndarray],
         y_offset: np.ndarray,
         sample_weight: Optional[np.ndarray] = None,
+        cfg: Optional[Dict] = None,
     ):
+        cfg = cfg or {}
+        offset_mode = cfg.get("limit_offset_mode", "heuristic")
+        if offset_mode != "ml":
+            self.is_fitted = False
+            self.offset_n_samples_ = 0
+            return self
+
+        target_mode = cfg.get("limit_offset_target_mode", "undefined")
+        if target_mode == "undefined":
+            raise ValueError(
+                "limit_offset_mode='ml' requires a valid limit_offset_target_mode "
+                "(e.g., 'utility_grid_search', 'simulated_fill_tradeoff'). "
+                "Hindsight-biased max excursion targets are invalid."
+            )
+
         X = assemble_feature_matrix(
             feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG.get("limit_offset_sizer", POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]), "X_linear")
         )
@@ -1554,15 +1570,21 @@ class LayerCExecutionOptimizer:
         score: np.ndarray,
         threshold: float = 0.0,
         base_size: float = 0.05,
+        cfg: Optional[Dict] = None,
     ):
+        cfg = cfg or {}
         X = assemble_feature_matrix(
             feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG.get("limit_offset_sizer", POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]), "X_linear")
         )
 
+        offset_mode = cfg.get("limit_offset_mode", "heuristic")
         offset = np.zeros_like(score)
-        if self.is_fitted:
+
+        if offset_mode == "ml" and self.is_fitted:
             offset = self.limit_model.predict(self.scaler.transform(X))
             offset = _soft_clip_offset(offset, self.offset_min, self.offset_max, softness=0.3)
+        elif offset_mode == "heuristic" and "entry_offset_bps" in cfg:
+            offset = np.full_like(score, cfg["entry_offset_bps"])
 
         sizes = np.zeros_like(score)
         active = score >= threshold

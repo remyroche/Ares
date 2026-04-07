@@ -2807,8 +2807,26 @@ CFG = {
     "allow_5m_download": True,  # Use 5m only for residual ambiguity solving after 15m refinement
     # Limit Order Simulation (Report 2026-02-22)
     "use_limit_orders": True,  # Enable limit orders per user request
-    "limit_offset_bps": 20.0,  # 0.2% entry offset (buy lower / sell higher)
-    "exit_limit_offset_bps": 20.0,  # 0.2% exit offset for testing
+
+    # ---------------------------------------------------------
+    # LIMIT OFFSET SEMANTIC CONTRACT
+    # ---------------------------------------------------------
+    # Units: Basis points (bps). 10000 bps = 1.0 = 100%.
+    # Sign convention: Positive means price improvement vs signal.
+    # Bounds: Applied globally to valid limit offset targets and predictions.
+    # Economics: Larger offset -> more price improvement, lower fill prob.
+    "limit_offset_unit": "bps",
+    "limit_offset_min": 5.0,
+    "limit_offset_max": 50.0,
+
+    # ML Offset Path
+    "limit_offset_mode": "heuristic", # "heuristic" | "ml" | "disabled"
+    "limit_offset_target_mode": "undefined", # requires definition before ML mode
+    "allow_heuristic_fallback_if_ml_unavailable": True,
+
+    "limit_offset_bps": 20.0,  # Default static entry offset (if fallback)
+    "exit_limit_offset_bps": 20.0,  # Default static exit offset
+
     "signal_opt_debug": True,  # Emit detailed signal-optimization diagnostics
     "debug_signal_generation": True,  # Emit per-timestamp signal-generation stage counts
     "fee_bps": 35.0,  # Default fee (used when not using limit orders)
@@ -2817,13 +2835,15 @@ CFG = {
     "fee_bps_limit_entry": 10.0,  # 0.10% per side for limit order entry (20 bps RT)
     "fee_bps_limit_exit": 10.0,  # 0.10% per side for limit order exit (20 bps RT)
     "fee_bps_market_exit": 25.0,  # 0.25% per side if using market order for exit
-    # Limit Order Price Estimation (MAE/MFE-based)
+
+    # Limit Order Price Estimation (MAE/MFE-based heuristics)
     "use_mae_mfe_limit_offset": True,  # Use MAE/MFE predictions for limit offset
-    "limit_offset_min_bps": 5.0,  # Minimum limit offset in bps
-    "limit_offset_max_bps": 50.0,  # Maximum limit offset in bps
+    "limit_offset_min_bps": 5.0,  # Legacy alias to limit_offset_min
+    "limit_offset_max_bps": 50.0,  # Legacy alias to limit_offset_max
     "limit_fill_model_type": "heuristic",  # heuristic | learned
     "limit_fill_vol_regime_weight": 0.3,  # How much vol regime reduces fill prob
     "limit_fill_liquidity_bonus": 0.2,  # Liquidity adjustment to fill prob
+
     # Exit Limit Orders
     "use_exit_limit_orders": True,  # Enable limit orders for exits
     "exit_limit_offset_adaptive": True,  # Adapt exit offset based on profit locked

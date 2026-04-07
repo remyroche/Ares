@@ -1204,7 +1204,7 @@ class LayerAPredictor:
 
 
 # ============================================================
-# Layer B: Policy Optimization
+# Shared Candidate Scoring Utilities (Layer B & Layer C)
 # ============================================================
 
 
@@ -1217,6 +1217,242 @@ def _standardize(x: np.ndarray) -> np.ndarray:
         return np.zeros_like(x_arr)
     return (x_arr - np.mean(x_arr)) / std
 
+
+def aggregate_candidate_fold_metrics(
+    fold_pnl_days: List[float],
+    fold_sortinos: List[float],
+    fold_maxdds: List[float],
+    fold_timeout_rates: List[float],
+    candidate_params: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Aggregate per-fold metrics for a candidate."""
+    if not fold_pnl_days:
+        return {
+            **candidate_params,
+            "net_pnl_day": 0.0,
+            "sortino": 0.0,
+            "maxDD": 1.0,
+            "worst_fold_maxdd": 1.0,
+            "mean_fold_maxdd": 1.0,
+            "instability": 0.0,
+            "timeout_rate": 1.0,
+            "mean_timeout_rate": 1.0,
+        }
+
+    return {
+        **candidate_params,
+        "net_pnl_day": float(np.mean(fold_pnl_days)),
+        "sortino": float(np.mean(fold_sortinos)),
+        "maxDD": float(np.mean(fold_maxdds)),  # Legacy mean for compatibility
+        "worst_fold_maxdd": float(np.max(fold_maxdds)),
+        "mean_fold_maxdd": float(np.mean(fold_maxdds)),
+        "instability": float(np.std(fold_pnl_days)),
+        "timeout_rate": float(np.mean(fold_timeout_rates)),
+        "mean_timeout_rate": float(np.mean(fold_timeout_rates)),
+    }
+
+
+def compute_candidate_utility(
+    results: List[Dict[str, Any]],
+    mode: str = "stable_absolute",
+    w_pnl: float = 1.0,
+    w_quality: float = 1.0,
+    w_dd: float = 1.0,
+    w_instab: float = 1.0,
+    w_to: float = 0.5,
+) -> List[Dict[str, Any]]:
+    """Compute utility score for each candidate.
+
+    Modes:
+    - "legacy_zscore": Uses batch-relative z-scoring (prone to rank reversal).
+    - "stable_absolute": Uses absolute metrics (preferred).
+    """
+    if not results:
+        return []
+
+    out = []
+
+    if mode == "legacy_zscore":
+        pnl_arr = np.array([r["net_pnl_day"] for r in results])
+        sortino_arr = np.array([r["sortino"] for r in results])
+        maxdd_arr = np.array([r["maxDD"] for r in results])  # Uses mean
+        instab_arr = np.array([r["instability"] for r in results])
+
+        z_pnl = _standardize(pnl_arr)
+        z_sortino = _standardize(sortino_arr)
+        z_maxdd = _standardize(maxdd_arr)
+        z_instab = _standardize(instab_arr)
+
+        for i, r in enumerate(results):
+            u = (
+                z_pnl[i]
+                + w_quality * z_sortino[i]
+                - w_dd * z_maxdd[i]
+                - w_instab * z_instab[i]
+            )
+            r_copy = dict(r)
+            r_copy["utility"] = float(u)
+            r_copy["legacy_utility_zscore"] = float(u)
+            r_copy["utility_mode"] = mode
+            out.append(r_copy)
+
+    elif mode == "stable_absolute":
+        # Compute both for diagnostic logging
+        pnl_arr = np.array([r["net_pnl_day"] for r in results])
+        sortino_arr = np.array([r["sortino"] for r in results])
+        maxdd_arr = np.array([r["maxDD"] for r in results])
+        instab_arr = np.array([r["instability"] for r in results])
+        z_pnl = _standardize(pnl_arr)
+        z_sortino = _standardize(sortino_arr)
+        z_maxdd = _standardize(maxdd_arr)
+        z_instab = _standardize(instab_arr)
+
+        for i, r in enumerate(results):
+            u_legacy = (
+                z_pnl[i]
+                + w_quality * z_sortino[i]
+                - w_dd * z_maxdd[i]
+                - w_instab * z_instab[i]
+            )
+
+            # Simple scale/clip norms for stability
+            pnl_score = r["net_pnl_day"] / 1000.0  # e.g., assuming $1000/day scale
+            quality_score = np.clip(r["sortino"], -5.0, 10.0)
+            dd_penalty = r["worst_fold_maxdd"]
+            instability_penalty = r["instability"] / 1000.0
+            to_penalty = r["mean_timeout_rate"]
+
+            u_abs = (
+                w_pnl * pnl_score
+                + w_quality * quality_score
+                - w_dd * dd_penalty
+                - w_instab * instability_penalty
+                - w_to * to_penalty
+            )
+
+            r_copy = dict(r)
+            r_copy["utility"] = float(u_abs)
+            r_copy["utility_abs"] = float(u_abs)
+            r_copy["legacy_utility_zscore"] = float(u_legacy)
+            r_copy["utility_mode"] = mode
+
+            # Tiebreak fields
+            r_copy["tie_break_rank_inputs"] = {
+                "worst_fold_maxdd": r["worst_fold_maxdd"],
+                "instability": r["instability"],
+                "mean_timeout_rate": r["mean_timeout_rate"],
+                "net_pnl_day": r["net_pnl_day"],
+            }
+            out.append(r_copy)
+    else:
+        raise ValueError(f"Unknown utility mode: {mode}")
+
+    return out
+
+
+def rank_candidates_with_tiebreak(
+    candidates: List[Dict[str, Any]], eps_utility: float = 1e-4
+) -> List[Dict[str, Any]]:
+    """Rank candidates with deterministic robustness tiebreaking."""
+    if not candidates:
+        return []
+
+    # Python's sort is stable. We sort by tiebreak features ascending (reverse=True makes them descending, so we negate penalties to make 'bigger is better' work for everything)
+
+    def _sort_key(c):
+        u = c["utility"]
+        # Round utility to epsilon to force ties
+        u_rounded = round(u / eps_utility) * eps_utility
+
+        # Tiebreakers:
+        # 1. lower worst_fold_maxdd -> higher -worst_fold_maxdd
+        # 2. lower instability -> higher -instability
+        # 3. lower mean_timeout_rate -> higher -mean_timeout_rate
+        # 4. higher pnl_score -> higher net_pnl_day
+
+        # Defensive fallback
+        maxdd = -c.get("worst_fold_maxdd", c.get("maxDD", 1.0))
+        instab = -c.get("instability", 0.0)
+        to_rate = -c.get("mean_timeout_rate", c.get("timeout_rate", 1.0))
+        pnl = c.get("net_pnl_day", 0.0)
+
+        return (u_rounded, maxdd, instab, to_rate, pnl)
+
+    return sorted(candidates, key=_sort_key, reverse=True)
+
+
+def build_candidate_diagnostics_row(c: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract standard diagnostic fields."""
+    return {
+        "net_pnl_day": c.get("net_pnl_day"),
+        "sortino": c.get("sortino"),
+        "maxDD": c.get("maxDD"),
+        "worst_fold_maxdd": c.get("worst_fold_maxdd"),
+        "mean_fold_maxdd": c.get("mean_fold_maxdd"),
+        "instability": c.get("instability"),
+        "timeout_rate": c.get("timeout_rate"),
+        "mean_timeout_rate": c.get("mean_timeout_rate"),
+        "utility": c.get("utility"),
+        "utility_abs": c.get("utility_abs"),
+        "legacy_utility_zscore": c.get("legacy_utility_zscore"),
+        "utility_mode": c.get("utility_mode"),
+    }
+
+
+def run_candidate_pool_sensitivity_check(
+    results: List[Dict[str, Any]], drop_fraction: float = 0.20
+) -> Dict[str, Any]:
+    """
+    Diagnostic helper to measure rank-invariance of stable vs legacy scoring
+    when removing candidates. Helps expose if relative utility drives rank shifts.
+    """
+    if len(results) < 5:
+        return {"status": "insufficient_candidates"}
+
+    full_legacy = compute_candidate_utility(results, mode="legacy_zscore")
+    full_stable = compute_candidate_utility(results, mode="stable_absolute")
+
+    full_legacy_ranked = rank_candidates_with_tiebreak(full_legacy)
+    full_stable_ranked = rank_candidates_with_tiebreak(full_stable)
+
+    win_legacy_full = full_legacy_ranked[0]
+    win_stable_full = full_stable_ranked[0]
+
+    # Remove bottom drop_fraction based on raw PnL
+    ordered_by_pnl = sorted(results, key=lambda x: x.get("net_pnl_day", 0.0))
+    keep_n = int(len(ordered_by_pnl) * (1.0 - drop_fraction))
+    reduced_results = ordered_by_pnl[-keep_n:]
+
+    reduced_legacy = compute_candidate_utility(reduced_results, mode="legacy_zscore")
+    reduced_stable = compute_candidate_utility(reduced_results, mode="stable_absolute")
+
+    reduced_legacy_ranked = rank_candidates_with_tiebreak(reduced_legacy)
+    reduced_stable_ranked = rank_candidates_with_tiebreak(reduced_stable)
+
+    win_legacy_reduced = reduced_legacy_ranked[0]
+    win_stable_reduced = reduced_stable_ranked[0]
+
+    # For a fair comparison, check if the exact candidate objects are equal by reference
+    # (or via a specific identifier if dicts were copied). Since we copy dicts, we compare
+    # underlying raw metrics representing identity (like net_pnl_day).
+
+    def same_candidate(a, b):
+        return abs(a.get("net_pnl_day", 0.0) - b.get("net_pnl_day", 0.0)) < 1e-5
+
+    return {
+        "status": "success",
+        "legacy_stable": same_candidate(win_legacy_full, win_legacy_reduced),
+        "absolute_stable": same_candidate(win_stable_full, win_stable_reduced),
+        "winner_legacy_full_pnl": win_legacy_full.get("net_pnl_day"),
+        "winner_legacy_reduced_pnl": win_legacy_reduced.get("net_pnl_day"),
+        "winner_stable_full_pnl": win_stable_full.get("net_pnl_day"),
+        "winner_stable_reduced_pnl": win_stable_reduced.get("net_pnl_day"),
+    }
+
+
+# ============================================================
+# Layer B: Policy Optimization
+# ============================================================
 
 class LayerBPolicyOptimizer:
     """
@@ -1232,6 +1468,13 @@ class LayerBPolicyOptimizer:
         cost_pct: float = 0.002,
         lambda_penalty: float = 0.5,
         annualization_factor: Optional[float] = None,
+        utility_mode: str = "stable_absolute",
+        w_pnl: float = 1.0,
+        w_quality: float = 1.0,
+        w_dd: float = 1.0,
+        w_instab: float = 1.0,
+        w_to: float = 0.0,
+        eps_utility: float = 1e-4,
     ):
         self.cost_pct = cost_pct
         self.lambda_penalty = lambda_penalty
@@ -1241,9 +1484,13 @@ class LayerBPolicyOptimizer:
         self.best_policy = {}
         self.best_j = -1e9
 
-        self.obj_a = 1.0  # Sortino weight
-        self.obj_b = 1.0  # MaxDD weight
-        self.obj_c = 1.0  # Instability weight
+        self.utility_mode = utility_mode
+        self.w_pnl = w_pnl
+        self.w_quality = w_quality
+        self.w_dd = w_dd
+        self.w_instab = w_instab
+        self.w_to = w_to
+        self.eps_utility = eps_utility
 
         self.layer_b_candidate_table_ = None
         self.layer_b_selected_objective_components_ = None
@@ -1257,7 +1504,7 @@ class LayerBPolicyOptimizer:
         splits: List[Tuple[np.ndarray, np.ndarray]],
         timestamps: np.ndarray,
         padded_paths: Optional[Dict[str, np.ndarray]] = None,
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Any]:
         """
         Evaluate a single LabelPolicy over temporal validation folds.
         _simulate_policy_batch returns log-return-like utility per trade (u).
@@ -1355,38 +1602,26 @@ class LayerBPolicyOptimizer:
             to_idx = min(TIMEOUT_REASON_IDX, len(reason_counts) - 1)
             fold_timeout_rates.append(reason_counts[to_idx] / len(u))
 
-        return {
-            "net_pnl_day": float(np.mean(fold_pnl_days)),
-            "sortino": float(np.mean(fold_sortinos)),
-            "maxDD": float(np.mean(fold_maxdds)),
-            "instability": float(np.std(fold_pnl_days)),
-            "timeout_rate": float(np.mean(fold_timeout_rates)),
-        }
+        candidate_params = {}
+        return aggregate_candidate_fold_metrics(
+            fold_pnl_days=fold_pnl_days,
+            fold_sortinos=fold_sortinos,
+            fold_maxdds=fold_maxdds,
+            fold_timeout_rates=fold_timeout_rates,
+            candidate_params=candidate_params,
+        )
 
     def _score_candidates(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if not results:
-            return []
-
-        pnl_arr = np.array([r["net_pnl_day"] for r in results])
-        sortino_arr = np.array([r["sortino"] for r in results])
-        maxdd_arr = np.array([r["maxDD"] for r in results])
-        instab_arr = np.array([r["instability"] for r in results])
-
-        z_pnl = _standardize(pnl_arr)
-        z_sortino = _standardize(sortino_arr)
-        z_maxdd = _standardize(maxdd_arr)
-        z_instab = _standardize(instab_arr)
-
-        for i, r in enumerate(results):
-            u = (
-                z_pnl[i]
-                + self.obj_a * z_sortino[i]
-                - self.obj_b * z_maxdd[i]
-                - self.obj_c * z_instab[i]
-            )
-            r["utility"] = float(u)
-
-        return sorted(results, key=lambda x: x["utility"], reverse=True)
+        scored = compute_candidate_utility(
+            results,
+            mode=self.utility_mode,
+            w_pnl=self.w_pnl,
+            w_quality=self.w_quality,
+            w_dd=self.w_dd,
+            w_instab=self.w_instab,
+            w_to=self.w_to,
+        )
+        return rank_candidates_with_tiebreak(scored, eps_utility=self.eps_utility)
 
     def optimize(
         self, scores: np.ndarray, trade_outcomes: pd.DataFrame, timestamps: np.ndarray
@@ -1395,6 +1630,9 @@ class LayerBPolicyOptimizer:
             timestamps, n_samples=len(scores), n_splits=3
         )
         candidate_table = []
+
+        # For simplicity and memory efficiency, fallback to dynamic paths per fold in Layer B.
+        padded_paths = None
 
         # --- Step 1: Exit Geometry (SL, Trailing, Giveback) ---
         sl_cands = [1.0, 1.5, 2.0]
@@ -1519,11 +1757,7 @@ class LayerBPolicyOptimizer:
                         "policy_obj"
                     ].early_exit_deadline_bars,
                     "early_exit_mfe_atr": r["policy_obj"].early_exit_mfe_atr,
-                    "net_pnl_day": r["net_pnl_day"],
-                    "sortino": r["sortino"],
-                    "maxDD": r["maxDD"],
-                    "instability": r["instability"],
-                    "utility": r["utility"],
+                    **build_candidate_diagnostics_row(r),
                 }
                 for r in candidate_table
             ]
@@ -1544,6 +1778,11 @@ class LayerBPolicyOptimizer:
             "early_exit_deadline_bars": best_pol.early_exit_deadline_bars,
             "early_exit_mfe_atr": best_pol.early_exit_mfe_atr,
         }
+
+        # Diagnostic tracking
+        self.winner_diagnostics_ = build_candidate_diagnostics_row(step3_scored[0])
+        self.runner_up_diagnostics_ = build_candidate_diagnostics_row(step3_scored[1]) if len(step3_scored) > 1 else None
+
         return self.best_policy
 
 
@@ -1641,6 +1880,13 @@ class LayerCExecutionOptimizer:
         offset_max: float = 50.0,
         offset_unit: str = "bps",
         annualization_factor: Optional[float] = None,
+        utility_mode: str = "stable_absolute",
+        w_pnl: float = 1.0,
+        w_quality: float = 1.0,
+        w_dd: float = 1.0,
+        w_instab: float = 1.0,
+        w_to: float = 0.0,
+        eps_utility: float = 1e-4,
         sizing_norm_mode: str = "train_distribution_absolute",
         max_size_cap: Optional[float] = None,
     ):
@@ -1659,29 +1905,27 @@ class LayerCExecutionOptimizer:
         self.max_size_cap = max_size_cap
         self.normalizer_state_ = {}
 
-        self.obj_a = 1.0  # Sortino
-        self.obj_b = 1.0  # MaxDD
-        self.obj_c = 1.0  # Instability
+        self.utility_mode = utility_mode
+        self.w_pnl = w_pnl
+        self.w_quality = w_quality
+        self.w_dd = w_dd
+        self.w_instab = w_instab
+        self.w_to = w_to
+        self.eps_utility = eps_utility
 
         self.layer_c_candidate_table_ = None
 
     def _score_candidates(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if not results:
-            return []
-        z_pnl = _standardize([r["net_pnl_day"] for r in results])
-        z_sortino = _standardize([r["sortino"] for r in results])
-        z_maxdd = _standardize([r["maxDD"] for r in results])
-        z_instab = _standardize([r["instability"] for r in results])
-
-        for i, r in enumerate(results):
-            u = (
-                z_pnl[i]
-                + self.obj_a * z_sortino[i]
-                - self.obj_b * z_maxdd[i]
-                - self.obj_c * z_instab[i]
-            )
-            r["utility"] = float(u)
-        return sorted(results, key=lambda x: x["utility"], reverse=True)
+        scored = compute_candidate_utility(
+            results,
+            mode=self.utility_mode,
+            w_pnl=self.w_pnl,
+            w_quality=self.w_quality,
+            w_dd=self.w_dd,
+            w_instab=self.w_instab,
+            w_to=self.w_to,
+        )
+        return rank_candidates_with_tiebreak(scored, eps_utility=self.eps_utility)
 
     def optimize_sizing(
         self,
@@ -1696,7 +1940,7 @@ class LayerCExecutionOptimizer:
         )
         modes = ["linear", "convex", "concave"]
         mode_results = {
-            m: {"fold_pnl_day": [], "fold_sortino": [], "fold_maxdd": []} for m in modes
+            m: {"fold_pnl_day": [], "fold_sortino": [], "fold_maxdd": [], "fold_timeout_rate": []} for m in modes
         }
 
         diagnostics = []
@@ -1750,6 +1994,7 @@ class LayerCExecutionOptimizer:
                     mode_results[m]["fold_pnl_day"].append(0.0)
                     mode_results[m]["fold_sortino"].append(0.0)
                     mode_results[m]["fold_maxdd"].append(1.0)
+                    mode_results[m]["fold_timeout_rate"].append(1.0)
                 continue
 
             s_act = s_val[active]
@@ -1800,26 +2045,45 @@ class LayerCExecutionOptimizer:
                 mode_results[m]["fold_pnl_day"].append(pnl_day)
                 mode_results[m]["fold_sortino"].append(sortino)
                 mode_results[m]["fold_maxdd"].append(mdd)
+                mode_results[m]["fold_timeout_rate"].append(0.0) # Sizing alone doesn't have a timeout context in the same way, stub out with 0
 
         eval_rows = []
         for m in modes:
             mr = mode_results[m]
-            eval_rows.append(
-                {
-                    "mode": m,
-                    "net_pnl_day": float(np.mean(mr["fold_pnl_day"])),
-                    "sortino": float(np.mean(mr["fold_sortino"])),
-                    "maxDD": float(np.mean(mr["fold_maxdd"])),
-                    "instability": float(np.std(mr["fold_pnl_day"])),
-                    "threshold": threshold,
-                    "base_size": base_size,
-                }
+
+            c_params = {
+                "mode": m,
+                "threshold": threshold,
+                "base_size": base_size,
+            }
+
+            row = aggregate_candidate_fold_metrics(
+                fold_pnl_days=mr["fold_pnl_day"],
+                fold_sortinos=mr["fold_sortino"],
+                fold_maxdds=mr["fold_maxdd"],
+                fold_timeout_rates=mr["fold_timeout_rate"],
+                candidate_params=c_params,
             )
 
+            eval_rows.append(row)
+
         scored = self._score_candidates(eval_rows)
-        self.layer_c_candidate_table_ = pd.DataFrame(scored)
+
+        self.layer_c_candidate_table_ = pd.DataFrame(
+            [
+                {
+                    "mode": r["mode"],
+                    "threshold": r["threshold"],
+                    "base_size": r["base_size"],
+                    **build_candidate_diagnostics_row(r),
+                }
+                for r in scored
+            ]
+        )
         self.sizing_mode = scored[0]["mode"]
 
+        self.winner_diagnostics_ = build_candidate_diagnostics_row(scored[0])
+        self.runner_up_diagnostics_ = build_candidate_diagnostics_row(scored[1]) if len(scored) > 1 else None
         # Fit final normalizer state on ALL scores
         self.normalizer_state_ = fit_sizing_normalizer(
             scores, threshold, mode=self.sizing_norm_mode
@@ -2012,6 +2276,8 @@ def generate_layer_b_deliverables(
     j_score: float,
     trade_outcomes: pd.DataFrame,
     start_equity: float = 100000.0,
+    runner_up: Optional[Dict[str, Any]] = None,
+    diagnostics: Optional[Dict[str, Any]] = None,
 ):
     tprint("=" * 80)
     tprint("LAYER B DELIVERABLES: POLICY OPTIMIZATION")
@@ -2024,6 +2290,15 @@ def generate_layer_b_deliverables(
             tprint(f"    {k}: {v}")
 
     tprint(f"  Composite Objective (Utility): {j_score:.4f}")
+    if diagnostics:
+        tprint("  Winner Diagnostics:")
+        tprint(f"    Worst Fold MaxDD: {diagnostics.get('worst_fold_maxdd', 1.0):.4%}")
+        tprint(f"    Timeout Rate:     {diagnostics.get('mean_timeout_rate', 1.0):.4%}")
+        tprint(f"    Instability:      {diagnostics.get('instability', 0.0):.4f}")
+
+    if runner_up:
+        gap = j_score - runner_up.get("utility", 0.0)
+        tprint(f"  Runner-up Utility:   {runner_up.get('utility', 0.0):.4f} (Gap: {gap:.4f})")
     tprint("=" * 80)
 
 
@@ -2159,6 +2434,15 @@ def run_bucketed_position_sizer_v2(
         # --- Layer B ---
         b_opt = LayerBPolicyOptimizer(cost_pct=cost_pct)
         best_policy = b_opt.optimize(scores, outcomes_bucket, ts_bucket)
+
+        generate_layer_b_deliverables(
+            best_policy=best_policy,
+            j_score=b_opt.best_j,
+            trade_outcomes=outcomes_bucket,
+            start_equity=start_equity,
+            runner_up=b_opt.runner_up_diagnostics_,
+            diagnostics=b_opt.winner_diagnostics_
+        )
 
         # --- Layer C ---
         c_opt = LayerCExecutionOptimizer(start_equity=start_equity)

@@ -134,6 +134,8 @@ def make_temporal_splits(
                 splits.append((tr, te))
         if splits:
             return splits, len(splits)
+    except Exception as e:
+        logger.warning(f"SlicePlanner exception: {e}")
 
     raise ValueError(
         f"SlicePlanner failed to generate {n_splits} temporal splits for ridge sizer. "
@@ -925,6 +927,13 @@ class LayerAPredictor:
             np.isfinite(self.model1_oof_pred_), np.abs(self.model1_oof_pred_), 0.0
         )
 
+        # Pull required OOF inputs from feature dict explicitly to avoid key errors in Model 3 assembly
+        if "oof_asym_hat" in feature_dict:
+            fd3["oof_asym_hat"] = feature_dict["oof_asym_hat"]
+        else:
+            # Fallback if missing upstream
+            fd3["oof_asym_hat"] = np.zeros(len(self.model1_oof_pred_))
+
         X3 = assemble_feature_matrix(
             fd3,
             get_feature_view(
@@ -970,6 +979,12 @@ class LayerAPredictor:
         fd3["downside_pred"] = downside_p
         fd3["edge_minus_downside"] = edge_p - self.lambda_downside * downside_p
         fd3["abs_edge_pred"] = np.abs(edge_p)
+
+        if "oof_asym_hat" in feature_dict:
+            fd3["oof_asym_hat"] = feature_dict["oof_asym_hat"]
+        else:
+            fd3["oof_asym_hat"] = np.zeros_like(edge_p)
+
         X3 = assemble_feature_matrix(
             fd3,
             get_feature_view(

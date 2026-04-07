@@ -1373,18 +1373,80 @@ class LayerBPolicyOptimizer:
 # ============================================================
 
 
-def _apply_sizing_mode(s_val: np.ndarray, base_size: float, mode: str) -> np.ndarray:
-    s_min, s_max = s_val.min(), s_val.max()
-    sizes = np.full_like(s_val, base_size)
-    if s_max > s_min:
-        s_norm = (s_val - s_min) / (s_max - s_min)
-        if mode == "linear":
-            sizes = base_size * (1.0 + s_norm)
-        elif mode == "convex":
-            sizes = base_size * (1.0 + s_norm**2)
-        elif mode == "concave":
-            sizes = base_size * (1.0 + np.sqrt(s_norm))
-    return sizes
+def fit_sizing_normalizer(
+    scores: np.ndarray,
+    threshold: float,
+    mode: str = "train_distribution_absolute",
+) -> Dict[str, Any]:
+    active = scores[scores >= threshold]
+    state = {"sizing_norm_mode": mode, "lower_anchor": threshold, "upper_anchor": threshold}
+
+    if mode == "legacy_batch_minmax":
+        # Anchors will be overwritten dynamically at transform time in legacy mode,
+        # but we capture the threshold as a fallback.
+        pass
+    elif mode == "train_distribution_absolute":
+        if len(active) > 0:
+            upper = np.percentile(active, 95)
+            if upper > threshold:
+                state["upper_anchor"] = float(upper)
+            else:
+                state["upper_anchor"] = threshold
+    else:
+        raise ValueError(f"Unknown sizing_norm_mode: {mode}")
+
+    return state
+
+
+def transform_scores_to_sizing_input(
+    scores: np.ndarray,
+    normalizer_state: Dict[str, Any],
+    fallback_threshold: float = 0.0,
+) -> np.ndarray:
+    mode = normalizer_state.get("sizing_norm_mode", "legacy_batch_minmax")
+    s_norm = np.zeros_like(scores, dtype=float)
+
+    if mode == "legacy_batch_minmax":
+        # Legacy behavior: dynamically normalizes based on the passed batch.
+        active_mask = scores >= fallback_threshold
+        if np.any(active_mask):
+            s_act = scores[active_mask]
+            s_min, s_max = s_act.min(), s_act.max()
+            if s_max > s_min:
+                s_norm[active_mask] = (s_act - s_min) / (s_max - s_min)
+            else:
+                s_norm[active_mask] = 0.0
+    elif mode == "train_distribution_absolute":
+        lower = normalizer_state["lower_anchor"]
+        upper = normalizer_state["upper_anchor"]
+        if upper > lower:
+            s_norm = np.clip((scores - lower) / (upper - lower), 0.0, 1.0)
+        else:
+            s_norm = np.zeros_like(scores, dtype=float)
+
+    return s_norm
+
+
+def apply_sizing_curve(
+    s_norm: np.ndarray,
+    base_size: float,
+    mode: str,
+    max_size: Optional[float] = None,
+) -> np.ndarray:
+    # If max_size is None, assume the original effective cap of 2 * base_size
+    multiplier = (max_size - base_size) if max_size is not None else base_size
+    sizes = np.full_like(s_norm, base_size)
+
+    if mode == "linear":
+        sizes = base_size + multiplier * s_norm
+    elif mode == "convex":
+        sizes = base_size + multiplier * (s_norm**2)
+    elif mode == "concave":
+        sizes = base_size + multiplier * np.sqrt(s_norm)
+    else:
+        raise ValueError(f"Unknown sizing curve mode: {mode}")
+
+    return np.clip(sizes, 0.0, 1.0)
 
 
 class LayerCExecutionOptimizer:
@@ -1400,6 +1462,8 @@ class LayerCExecutionOptimizer:
         offset_max: float = 5.0,
         offset_unit: str = "ticks",
         annualization_factor: Optional[float] = None,
+        sizing_norm_mode: str = "train_distribution_absolute",
+        max_size_cap: Optional[float] = None,
     ):
         self.sizing_mode = "linear"
         self.limit_model = Ridge(alpha=1.0)
@@ -1412,6 +1476,9 @@ class LayerCExecutionOptimizer:
         self.annualization_factor = (
             annualization_factor if annualization_factor is not None else 1.0
         )
+        self.sizing_norm_mode = sizing_norm_mode
+        self.max_size_cap = max_size_cap
+        self.normalizer_state_ = {}
 
         self.obj_a = 1.0  # Sortino
         self.obj_b = 1.0  # MaxDD
@@ -1453,18 +1520,53 @@ class LayerCExecutionOptimizer:
             m: {"fold_pnl_day": [], "fold_sortino": [], "fold_maxdd": []} for m in modes
         }
 
+        diagnostics = []
+
         min_days_floor = 1.0 / 24.0  # Fix floor logic
 
-        for _, val_idx in splits:
+        for fold_idx, (tr_idx, val_idx) in enumerate(splits):
             if len(val_idx) == 0:
                 continue
 
+            # 1. Fit normalizer strictly on the train fold
+            tr_scores = scores[tr_idx]
+            fold_normalizer = fit_sizing_normalizer(
+                tr_scores,
+                threshold,
+                mode=self.sizing_norm_mode,
+            )
+
+            # 2. Evaluate on the validation fold
             s_val = scores[val_idx]
             r_val = returns[val_idx]
             ts_val = pd.to_datetime(timestamps[val_idx])
 
             active = s_val >= threshold
+
+            # Record diagnostics
+            fold_diag = {
+                "fold": fold_idx,
+                "sizing_norm_mode": self.sizing_norm_mode,
+                "lower_anchor": fold_normalizer["lower_anchor"],
+                "upper_anchor": fold_normalizer["upper_anchor"],
+                "count_active_train": int(np.sum(tr_scores >= threshold)),
+                "count_active_val": int(np.sum(active)),
+            }
+
             if not np.any(active):
+                fold_diag.update({
+                    "normalization_fallback_triggered": True,
+                    "active_score_min": 0.0,
+                    "active_score_max": 0.0,
+                    "active_score_std": 0.0,
+                    "active_size_min": 0.0,
+                    "active_size_max": 0.0,
+                    "active_size_std": 0.0,
+                    "top1_size_share": 0.0,
+                    "top5_size_share": 0.0,
+                    "base_size_fraction": 0.0,
+                })
+                diagnostics.append(fold_diag)
                 for m in modes:
                     mode_results[m]["fold_pnl_day"].append(0.0)
                     mode_results[m]["fold_sortino"].append(0.0)
@@ -1477,11 +1579,32 @@ class LayerCExecutionOptimizer:
                 (ts_val.max() - ts_val.min()).total_seconds() / 86400.0, min_days_floor
             )
 
-            s_min, s_max = s_act.min(), s_act.max()
-            s_norm = (s_act - s_min) / max(s_max - s_min, 1e-9)
+            # Transform scores using fitted normalizer
+            s_norm_act = transform_scores_to_sizing_input(
+                s_act, fold_normalizer, fallback_threshold=threshold
+            )
+
+            fold_diag.update({
+                "normalization_fallback_triggered": (fold_normalizer["upper_anchor"] <= fold_normalizer["lower_anchor"]),
+                "active_score_min": float(s_act.min()),
+                "active_score_max": float(s_act.max()),
+                "active_score_std": float(np.std(s_act)),
+            })
+
+            # Calculate sizes for base/linear for diag
+            sample_sizes = apply_sizing_curve(s_norm_act, base_size, "linear", self.max_size_cap)
+            fold_diag.update({
+                "active_size_min": float(sample_sizes.min()),
+                "active_size_max": float(sample_sizes.max()),
+                "active_size_std": float(np.std(sample_sizes)),
+                "top1_size_share": float(np.max(sample_sizes) / np.sum(sample_sizes)),
+                "top5_size_share": float(np.sum(np.sort(sample_sizes)[-5:]) / np.sum(sample_sizes)) if len(sample_sizes) >= 5 else 1.0,
+                "base_size_fraction": float(np.mean(sample_sizes == base_size)),
+            })
+            diagnostics.append(fold_diag)
 
             for m in modes:
-                sizes = np.clip(_apply_sizing_mode(s_act, base_size, m), 0.0, 1.0)
+                sizes = apply_sizing_curve(s_norm_act, base_size, m, self.max_size_cap)
                 pnl_series = self.start_equity * sizes * r_act
                 pnl_total = float(np.sum(pnl_series))
                 pnl_day = pnl_total / days
@@ -1518,8 +1641,15 @@ class LayerCExecutionOptimizer:
         self.layer_c_candidate_table_ = pd.DataFrame(scored)
         self.sizing_mode = scored[0]["mode"]
 
+        # Fit final normalizer state on ALL scores
+        self.normalizer_state_ = fit_sizing_normalizer(
+            scores, threshold, mode=self.sizing_norm_mode
+        )
+        self.diagnostics_ = pd.DataFrame(diagnostics)
+
         tprint(
-            f"Layer C: Selected sizing mode '{self.sizing_mode}' with Utility={scored[0]['utility']:.4f}"
+            f"Layer C: Selected sizing mode '{self.sizing_mode}' with Utility={scored[0]['utility']:.4f} "
+            f"(Norm={self.sizing_norm_mode}, Anchor={self.normalizer_state_.get('upper_anchor', 0):.4f})"
         )
         return self.sizing_mode
 
@@ -1566,10 +1696,13 @@ class LayerCExecutionOptimizer:
 
         sizes = np.zeros_like(score)
         active = score >= threshold
+
         if np.any(active):
-            s_val = score[active]
-            s_min, s_max = s_val.min(), s_val.max()
-            sizes[active] = _apply_sizing_mode(s_val, base_size, self.sizing_mode)
+            s_act = score[active]
+            s_norm = transform_scores_to_sizing_input(
+                s_act, self.normalizer_state_, fallback_threshold=threshold
+            )
+            sizes[active] = apply_sizing_curve(s_norm, base_size, self.sizing_mode, self.max_size_cap)
 
         return np.clip(sizes, 0.0, 1.0), offset
 

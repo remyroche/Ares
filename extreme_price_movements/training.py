@@ -6515,6 +6515,37 @@ class AuxHeadWrapper:
             return pred
 
 
+
+def build_excursion_targets(
+    mfe: np.ndarray,
+    mae: np.ndarray,
+    atr_h: np.ndarray,
+    eps_atr: float = 1e-8,
+    eps_asym: float = 1e-6
+) -> dict:
+    """Shared helper to robustly compute MFE, MAE, and Asymmetry targets."""
+    mfe = np.asarray(mfe, dtype=float)
+    mae = np.asarray(mae, dtype=float)
+    atr = np.asarray(atr_h, dtype=float)
+
+    atr_safe = np.maximum(atr, eps_atr)
+
+    mfe_norm = np.maximum(mfe / atr_safe, 0.0)
+    mae_norm = np.maximum(mae / atr_safe, 0.0)
+
+    y_mfe = np.log1p(mfe_norm)
+    y_mae = np.log1p(mae_norm)
+
+    y_asym = np.log(mfe_norm + eps_asym) - np.log(mae_norm + eps_asym)
+
+    return {
+        "mfe_norm": mfe_norm,
+        "mae_norm": mae_norm,
+        "y_mfe": y_mfe,
+        "y_mae": y_mae,
+        "y_asym": y_asym,
+    }
+
 def train_meta_models_from_artifacts(
     datasets, cfg, alpha_models, base_variant_models=None
 ):
@@ -6656,6 +6687,7 @@ def train_meta_models_from_artifacts(
         y_u,
         y_mae,
         y_mfe,
+        y_asym,
         trade_mask,
         timestamps,
         cv_embargo_bars=12,
@@ -6708,15 +6740,19 @@ def train_meta_models_from_artifacts(
         y_u_raw = _arr(y_u)
         y_mae_raw = _arr(y_mae)
         y_mfe_raw = _arr(y_mfe)
+        y_asym_raw = _arr(y_asym)
         valid_mae = np.isfinite(y_mae_raw)
         valid_mfe = np.isfinite(y_mfe_raw)
+        valid_asym = np.isfinite(y_asym_raw)
 
         y_mae_fit = np.where(valid_mae, y_mae_raw, 0.0)
         y_mfe_fit = np.where(valid_mfe, y_mfe_raw, 0.0)
+        y_asym_fit = np.where(valid_asym, y_asym_raw, 0.0)
 
         oof_u = np.full(n, np.nan, dtype=float)
         oof_mae_q70 = np.full(n, np.nan, dtype=float)
         oof_mfe = np.full(n, np.nan, dtype=float)
+        oof_asym = np.full(n, np.nan, dtype=float)
 
         util_cfg_nested = (
             (cfg.get("meta", {}) or {}).get("utility_smooth", {})
@@ -6783,6 +6819,7 @@ def train_meta_models_from_artifacts(
         idx_q = np.arange(Xv.shape[1], dtype=int)
         idx_mfe = np.arange(Xv.shape[1], dtype=int)
         idx_u = np.arange(Xv.shape[1], dtype=int)
+        idx_asym = np.arange(Xv.shape[1], dtype=int)
 
         # --- MDI feature selection for MAE and MFE heads (independent per head) ---
         _mdi_n_target = int(cfg.get("aux_head_mdi_n_target", 50))
@@ -6973,6 +7010,7 @@ def train_meta_models_from_artifacts(
             idx_q = _run_aux_head_mdi("mae_q70", y_mae_fit, valid_mae)
             idx_mfe = _run_aux_head_mdi("mfe", y_mfe_fit, valid_mfe)
             idx_u = _run_aux_head_mdi("utility", y_u_raw, np.isfinite(y_u_raw) & tm)
+            idx_asym = _run_aux_head_mdi("asym", y_asym_fit, valid_asym)
         except Exception as _e_mdi:
             tprint(
                 f"  aux_head MDI[{bucket_id}]: feature selection failed ({_e_mdi}), using all features"
@@ -8144,8 +8182,36 @@ def train_meta_models_from_artifacts(
                     }
                     for r in _mfe_model_race[:3]
                 ]
+
+            _asym_race_target = y_asym_fit.copy()
+            _asym_race_w = _normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
+            asym_final_model_kind, _asym_model_race = _run_head_model_race(
+                head_name="asym",
+                idx_cols=idx_asym,
+                y_fit_log=y_asym_fit,
+                y_fit_train_target=_asym_race_target,
+                base_w=_asym_race_w,
+                target_choice="rank_pct",
+                weight_choice="none",
+                weight_lambda=0.0,
+            )
+            if _asym_model_race:
+                oof_asym = np.asarray(_asym_model_race[0]["oof"], dtype=float)
+                _fs_report["asym"] = {}
+                _fs_report["asym"]["model_race_top"] = [
+                    {
+                        "model": r["model"],
+                        "ic": float(r["metrics"]["ic"]),
+                        "ic_top30": float(r["metrics"]["ic_top30"]),
+                        "score": float(r["metrics"]["score"]),
+                    }
+                    for r in _asym_model_race[:3]
+                ]
+
         _fs_report["mae_q70"]["final_model_choice"] = mae_final_model_kind
         _fs_report["mfe"]["final_model_choice"] = mfe_final_model_kind
+        if _asym_model_race:
+            _fs_report["asym"]["final_model_choice"] = asym_final_model_kind
 
         if bool(cfg.get("train_full_inference_models", False)):
             tprint("Meta heads: robust mode => full inference retrain enabled")
@@ -8246,6 +8312,7 @@ def train_meta_models_from_artifacts(
             "oof_u_hat": oof_u_hat,
             "oof_log_mae_q70_hat": oof_log_mae_q70_hat,
             "oof_log_mfe_hat": oof_log_mfe_hat,
+            "oof_asym_hat": oof_asym,
             "oof_u_target": u_target.astype(np.float32),
             "utility_smooth_metrics": {
                 "loss": float(u_loss),
@@ -8265,6 +8332,22 @@ def train_meta_models_from_artifacts(
             "fs_report": _fs_report,
         }
 
+        m_asym_final = None
+        if bool(cfg.get("train_full_inference_models", True)) and asym_final_model_kind:
+            # Simplified train full for asym
+            from sklearn.ensemble import ExtraTreesRegressor
+            m_asym_final = ExtraTreesRegressor(
+                n_estimators=int(cfg.get("meta_aux_trees", 200)),
+                max_depth=int(cfg.get("meta_aux_depth", 8)),
+                min_samples_leaf=int(cfg.get("meta_aux_min_leaf", 128)),
+                max_features="sqrt",
+                random_state=42,
+                n_jobs=2,
+            )
+            m_asym_final.fit(
+                Xv[:, idx_asym], y_asym_fit, sample_weight=_normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
+            )
+
         heads_meta = {
             "mae_q70": AuxHeadWrapper(
                 model=m_mae_final,
@@ -8275,6 +8358,10 @@ def train_meta_models_from_artifacts(
                 model=m_mfe_final,
                 selected_features_idx=idx_mfe,
                 output_transform=mfe_output_transform,
+            ),
+            "asym": AuxHeadWrapper(
+                model=m_asym_final,
+                selected_features_idx=idx_asym,
             ),
         }
         heads_meta["utility"] = AuxHeadWrapper(
@@ -9521,22 +9608,18 @@ def train_meta_models_from_artifacts(
             _atr_ok = np.isfinite(_atr_norm) & (_atr_norm > 0)
 
             _y_u = _u_raw
-            _mae_norm = np.full(len(df), np.nan, dtype=float)
-            _mfe_norm = np.full(len(df), np.nan, dtype=float)
-            _mae_norm[_atr_ok] = (
-                np.clip(_mae_raw[_atr_ok], 0.0, None) / _atr_norm[_atr_ok]
-            )
-            _mfe_norm[_atr_ok] = (
-                np.clip(_mfe_raw[_atr_ok], 0.0, None) / _atr_norm[_atr_ok]
-            )
-            _y_mae = np.log1p(np.clip(_mae_norm, 0.0, None))
-            _y_mfe = np.log1p(np.clip(_mfe_norm, 0.0, None))
+
+            _targets = build_excursion_targets(_mfe_raw, _mae_raw, _atr_norm)
+            _y_mfe = _targets["y_mfe"]
+            _y_mae = _targets["y_mae"]
+            _y_asym = _targets["y_asym"]
 
             _aux_results, _aux_meta = _train_aux_heads_shared_folds(
                 X_num=X_meta_base.select_dtypes(include=[np.number]).fillna(0.0),
                 y_u=_y_u,
                 y_mae=_y_mae,
                 y_mfe=_y_mfe,
+                y_asym=_y_asym,
                 trade_mask=_trade_mask,
                 timestamps=df["__ts__"].values,
                 cv_embargo_bars=int(cfg.get("cv_embargo_bars", 12)),
@@ -9556,6 +9639,8 @@ def train_meta_models_from_artifacts(
                     _bucket_y_ret[_hkey] = np.asarray(_y_mae, dtype=float)
                 elif _hn == "mfe":
                     _bucket_y_ret[_hkey] = np.asarray(_y_mfe, dtype=float)
+                elif _hn == "asym":
+                    _bucket_y_ret[_hkey] = np.asarray(_y_asym, dtype=float)
                 else:
                     _bucket_y_ret[_hkey] = np.asarray(_y_u, dtype=float)
 
@@ -9586,7 +9671,7 @@ def train_meta_models_from_artifacts(
             for _cn in _ps_regime_cols:
                 if _cn in df.columns:
                     _md[_cn] = df[_cn].values
-            for _hn in ["utility", "mae_q70", "mfe"]:
+            for _hn in ["utility", "mae_q70", "mfe", "asym"]:
                 _bucket_metadata[f"{k}_{_hn}"] = _md
 
         except Exception as _e_aux:
@@ -9939,10 +10024,11 @@ def train_meta_models_from_artifacts(
 
     # ── Downstream heads summary table (fed to users/sizers) ──
     tprint(f"\n{'═'*148}")
-    tprint("  META HEADS SUMMARY TABLE (Utility / MAE / MFE / Early-Inval)")
+    tprint("  META HEADS SUMMARY TABLE (Utility / MAE / MFE / Asym / Early-Inval / TBM Corr)")
     tprint(f"{'═'*148}")
     _tbl_hdr = (
-        f"  {'Bucket':16s} {'U_IC':>7s} {'MAE_IC':>7s} {'MFE_IC':>7s} "
+        f"  {'Bucket':16s} {'U_IC':>7s} {'MAE_IC':>7s} {'MFE_IC':>7s} {'ASYM_IC':>7s} "
+        f"{'MAE~SL':>7s} {'MFE~TP':>7s} {'ASY~TP':>7s} {'ASY~SL':>7s} "
         f"{'EI_AUC':>7s} {'EI_P@10':>8s} {'N':>8s}"
     )
     tprint(_tbl_hdr)
@@ -9953,7 +10039,8 @@ def train_meta_models_from_artifacts(
         k = strat["strategy_id"]
         _b = f"{side}_{k}"
         _aux = _aux_head_oof.get(_b)
-        u_ic, mae_ic, mfe_ic = float("nan"), float("nan"), float("nan")
+        u_ic, mae_ic, mfe_ic, asym_ic = float("nan"), float("nan"), float("nan"), float("nan")
+        corr_mae_sl, corr_mfe_tp, corr_asym_tp, corr_asym_sl = float("nan"), float("nan"), float("nan"), float("nan")
         n_samp = 0
         if isinstance(_aux, dict):
             u_ic = _safe_spearman(
@@ -9966,7 +10053,24 @@ def train_meta_models_from_artifacts(
             mfe_ic = _safe_spearman(
                 _aux.get("oof_log_mfe_hat", []), _bucket_y_ret.get(f"{_b}_mfe", [])
             )
+            asym_ic = _safe_spearman(
+                _aux.get("oof_asym_hat", []), _bucket_y_ret.get(f"{_b}_asym", [])
+            )
             n_samp = len(_aux.get("oof_u_hat", []))
+
+            # TBM Correlation Diagnostics
+            _md = _bucket_metadata.get(f"{_b}_utility", {})
+            if "__y_outcome__" in _md:
+                _outcomes = np.asarray(_md["__y_outcome__"])[:n_samp]
+                if len(_outcomes) == n_samp:
+                    is_sl = (_outcomes == 0).astype(int)
+                    is_tp = (_outcomes == 2).astype(int)
+                    if len(np.unique(is_sl)) > 1:
+                        corr_mae_sl = _safe_spearman(_aux.get("oof_log_mae_q70_hat", []), is_sl)
+                        corr_asym_sl = _safe_spearman(_aux.get("oof_asym_hat", []), is_sl)
+                    if len(np.unique(is_tp)) > 1:
+                        corr_mfe_tp = _safe_spearman(_aux.get("oof_log_mfe_hat", []), is_tp)
+                        corr_asym_tp = _safe_spearman(_aux.get("oof_asym_hat", []), is_tp)
 
         ei_auc, ei_p10 = float("nan"), float("nan")
         _ei_key = f"{_b}_early_inval"
@@ -9995,7 +10099,8 @@ def train_meta_models_from_artifacts(
                 ei_p10 = float(np.mean(_y[_m][_idx10]))
 
         tprint(
-            f"  {_b:16s} {u_ic:>7.4f} {mae_ic:>7.4f} {mfe_ic:>7.4f} "
+            f"  {_b:16s} {u_ic:>7.4f} {mae_ic:>7.4f} {mfe_ic:>7.4f} {asym_ic:>7.4f} "
+            f"{corr_mae_sl:>7.4f} {corr_mfe_tp:>7.4f} {corr_asym_tp:>7.4f} {corr_asym_sl:>7.4f} "
             f"{ei_auc:>7.4f} {ei_p10:>8.4f} {n_samp:>8d}"
         )
     tprint(f"{'═'*148}\n")
@@ -10025,7 +10130,7 @@ def train_meta_models_from_artifacts(
         pass
     import re
 
-    _allowed_meta_suffixes = ["_utility", "_mae_q70", "_mfe", "_early_inval"]
+    _allowed_meta_suffixes = ["_utility", "_mae_q70", "_mfe", "_asym", "_early_inval"]
     if include_meta_reg:
         _allowed_meta_suffixes.append("_reg")
     if include_meta_clf:
@@ -10185,7 +10290,7 @@ def train_meta_models_from_artifacts(
             _bucket_base = "_".join(key.split("_")[:2])
             _aux = _aux_head_oof.get(_bucket_base)
             if isinstance(_aux, dict):
-                for _cn in ["oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat"]:
+                for _cn in ["oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_asym_hat"]:
                     if _cn in _aux and len(_aux[_cn]) == _n_meta:
                         oof_df[_cn] = _fill_nonfinite_oof_vector(
                             _aux[_cn], neutral=0.0
@@ -10242,13 +10347,15 @@ def train_meta_models_from_artifacts(
         is_long = 1 if side_parsed == "long" else 0
 
         # Save each aux head as a separate parquet file
-        for head_name in ["utility", "mae_q70", "mfe"]:
+        for head_name in ["utility", "mae_q70", "mfe", "asym"]:
             if head_name == "utility":
                 oof_key = "oof_u_hat"
             elif head_name == "mae_q70":
                 oof_key = "oof_log_mae_q70_hat"
             elif head_name == "mfe":
                 oof_key = "oof_log_mfe_hat"
+            elif head_name == "asym":
+                oof_key = "oof_asym_hat"
             else:
                 continue
 
@@ -10269,6 +10376,8 @@ def train_meta_models_from_artifacts(
                 oof_df["oof_log_mae_q70_hat"] = _oof_pred
             elif head_name == "mfe":
                 oof_df["oof_log_mfe_hat"] = _oof_pred
+            elif head_name == "asym":
+                oof_df["oof_asym_hat"] = _oof_pred
 
             # Attach metadata
             if _md:
@@ -10330,6 +10439,9 @@ def train_meta_models_from_artifacts(
                         ),
                         "oof_log_mfe_hat": np.asarray(
                             _aux.get("oof_log_mfe_hat", np.zeros(_n)), dtype=float
+                        ),
+                        "oof_asym_hat": np.asarray(
+                            _aux.get("oof_asym_hat", np.zeros(_n)), dtype=float
                         ),
                     }
                 )

@@ -539,38 +539,6 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                 }
                 return ret, ts, "giveback_exit", extras
 
-        # --- Early invalidation: kill trades showing adverse drift without MFE ---
-        if exit_stage == 0 and bar_count >= kill_min_bars:
-            mae_frac = mae_px / entry_px
-            mfe_frac = mfe_px / entry_px
-            kill_score = mae_frac + kill_a * bar_count - kill_b * mfe_frac - kill_c
-            if kill_score > 0:
-                # Apply exit limit padding
-                exit_price = cc
-                exit_filled_via_limit = False
-                if exit_limit_offset_pct > 0:
-                    # Use proper high/low validation
-                    is_long_side = (side == "long")
-                    limit_px = get_limit_price_for_order(cc, exit_limit_offset_bps, is_long_side, hh, ll)
-                    did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, cc)
-                    if did_fill:
-                        exit_price = actual_exit_px
-                        exit_filled_via_limit = True
-
-                ret = (exit_price / entry_px) - 1.0 if side == "long" else (entry_px / exit_price) - 1.0
-                extras = {
-                    "mae_pct": mae_frac,
-                    "mfe_pct": mfe_frac,
-                    "bars_to_mfe": bars_to_mfe,
-                    "sl_pct": sl_dist / entry_px,
-                    "tp_pct": activation_dist / entry_px,
-                    "exit_stage": exit_stage,
-                    "filled_via_limit": filled_via_limit,
-                    "exit_filled_via_limit": exit_filled_via_limit,
-                    "exit_limit_bonus": abs(exit_price - cc) / entry_px,
-                }
-                return ret, ts, "early_invalidation", extras
-
         # Check stop-loss / trailing-stop hit
         if side == "long":
             hit_sl = ll <= sl_price

@@ -2698,7 +2698,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             for _kind in ("mr", "tf"):
                 _base = f"{_side}_{_kind}"
                 _reg = _meta.get(f"{_base}_reg")
-                _clf = _meta.get(f"{_base}_clf") or _meta.get(f"{_base}_early_inval")
+                _clf = _meta.get(f"{_base}_clf")
                 if _base not in _meta and _reg is not None:
                     _meta[_base] = _reg
                 if f"{_base}_clf" not in _meta and _clf is not None:
@@ -3323,7 +3323,6 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 # Dynamic cost model: handle limit fills and conditional fee concessions
                 fee_reduction_reasons = [
                     "stop_loss",
-                    "early_invalidation",
                     "giveback_exit",
                 ]
 

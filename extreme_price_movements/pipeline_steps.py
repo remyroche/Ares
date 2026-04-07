@@ -2956,6 +2956,9 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     if bool(cfg.get("signal_opt_debug", True)):
         tprint(
             "SignalOptConfig: "
+            f"limit_offset_mode={cfg.get('limit_offset_mode', 'heuristic')} "
+            f"limit_offset_unit={cfg.get('limit_offset_unit', 'bps')} "
+            f"limit_offset_bounds=[{cfg.get('limit_offset_min', 5.0)}, {cfg.get('limit_offset_max', 50.0)}] "
             f"use_limit_orders={bool(cfg.get('use_limit_orders', False))} "
             f"limit_offset_bps={float(cfg.get('limit_offset_bps', 0.0)):.1f} "
             f"exit_limit_offset_bps={float(cfg.get('exit_limit_offset_bps', 0.0)):.1f} "

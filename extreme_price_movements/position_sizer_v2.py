@@ -1390,15 +1390,15 @@ def _apply_sizing_mode(s_val: np.ndarray, base_size: float, mode: str) -> np.nda
 class LayerCExecutionOptimizer:
     """
     Layer C: Sizing mapping and Ridge Limit offset optimizer.
-    Limit offset semantic bounds: 0.0 to 5.0 explicitly in percentage points or ticks based on input.
+    Limit offset semantic bounds: 5.0 to 50.0 explicitly in basis points to match operational logic.
     """
 
     def __init__(
         self,
         start_equity: float = 100000.0,
-        offset_min: float = 0.0,
-        offset_max: float = 5.0,
-        offset_unit: str = "ticks",
+        offset_min: float = 5.0,
+        offset_max: float = 50.0,
+        offset_unit: str = "bps",
         annualization_factor: Optional[float] = None,
     ):
         self.sizing_mode = "linear"
@@ -1530,7 +1530,7 @@ class LayerCExecutionOptimizer:
         sample_weight: Optional[np.ndarray] = None,
     ):
         X = assemble_feature_matrix(
-            feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]
+            feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG.get("limit_offset_sizer", POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]), "X_linear")
         )
         valid = np.isfinite(y_offset)
         if not np.any(valid):
@@ -1556,7 +1556,7 @@ class LayerCExecutionOptimizer:
         base_size: float = 0.05,
     ):
         X = assemble_feature_matrix(
-            feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]
+            feature_dict, get_feature_view(POSITION_SIZER_V2_FEATURE_CONFIG.get("limit_offset_sizer", POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]), "X_linear")
         )
 
         offset = np.zeros_like(score)

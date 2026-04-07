@@ -7016,15 +7016,27 @@ def train_meta_models_from_artifacts(
                 f"  aux_head MDI[{bucket_id}]: feature selection failed ({_e_mdi}), using all features"
             )
 
-        def _normalize_clip_weights(w, lo=0.75, hi=1.25):
+        def _normalize_clip_weights(w, lo=0.1, hi=3.0, tr_idx=None):
             w = np.asarray(w, dtype=float)
             w = np.where(np.isfinite(w), w, 0.0)
             w = np.clip(w, 0.0, None)
             pos = w > 0
             if np.any(pos):
-                w[pos] = w[pos] / max(float(np.mean(w[pos])), 1e-12)
+                if tr_idx is not None:
+                    train_pos = np.zeros_like(pos)
+                    train_pos[tr_idx] = pos[tr_idx]
+                    mean_w = float(np.mean(w[train_pos])) if np.any(train_pos) else float(np.mean(w[pos]))
+                else:
+                    mean_w = float(np.mean(w[pos]))
+                w[pos] = w[pos] / max(mean_w, 1e-12)
                 w[pos] = np.clip(w[pos], lo, hi)
-                w[pos] = w[pos] / max(float(np.mean(w[pos])), 1e-12)
+
+                # Re-calculate mean after clipping
+                if tr_idx is not None:
+                    mean_w2 = float(np.mean(w[train_pos])) if np.any(train_pos) else float(np.mean(w[pos]))
+                else:
+                    mean_w2 = float(np.mean(w[pos]))
+                w[pos] = w[pos] / max(mean_w2, 1e-12)
             return w
 
         def _tail_multiplier(y_fit, w_base, tr_idx):
@@ -7038,8 +7050,8 @@ def train_meta_models_from_artifacts(
                     mult = np.clip(y_fit, p50, p95)
                     mult = np.where(np.isfinite(mult), mult, p50)
                     mult = mult / max(p50, 1e-9)
-                    w *= np.clip(mult, 0.75, 1.25)
-            return _normalize_clip_weights(w)
+                    w *= np.clip(mult, 0.1, 3.0)
+            return _normalize_clip_weights(w, tr_idx=tr_idx)
 
         def _tail_multiplier_asymmetric(y_fit, w_base, tr_idx):
             w = np.asarray(w_base, dtype=float).copy()
@@ -7335,10 +7347,16 @@ def train_meta_models_from_artifacts(
                 )
                 if np.isfinite(_thr):
                     _w_tail *= 1.0 + 0.25 * (y_fit_log >= _thr).astype(float)
-                    _w_tail = _normalize_clip_weights(_w_tail)
+                    _w_tail = _normalize_clip_weights(_w_tail, tr_idx=tr_idx)
+            elif _w_name == "asym_magnitude":
+                _mag = np.abs(y_fit_log)
+                _p50 = float(np.nanpercentile(_mag[tr_idx], 50)) if len(tr_idx) > 20 else 0.0
+                if np.isfinite(_p50) and _p50 > 1e-9:
+                    _w_tail *= np.clip(_mag / _p50, 0.5, 2.0)
+                    _w_tail = _normalize_clip_weights(_w_tail, tr_idx=tr_idx)
             _lam = float(np.clip(weight_lambda, 0.0, 1.0))
             _w = _w_base + _lam * (_w_tail - _w_base)
-            return _normalize_clip_weights(_w)
+            return _normalize_clip_weights(_w, tr_idx=tr_idx)
 
         def _available_head_models():
             raw = cfg.get(
@@ -8192,8 +8210,8 @@ def train_meta_models_from_artifacts(
                 y_fit_train_target=_asym_race_target,
                 base_w=_asym_race_w,
                 target_choice="rank_pct",
-                weight_choice="none",
-                weight_lambda=0.0,
+                weight_choice="asym_magnitude",
+                weight_lambda=1.0,
             )
             if _asym_model_race:
                 oof_asym = np.asarray(_asym_model_race[0]["oof"], dtype=float)
@@ -8344,8 +8362,16 @@ def train_meta_models_from_artifacts(
                 random_state=42,
                 n_jobs=2,
             )
+            _asym_full_w = _normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
+            _asym_full_w = _head_weight_vector(
+                y_asym_fit,
+                _asym_full_w,
+                "asym_magnitude",
+                np.arange(len(y_asym_fit)),
+                weight_lambda=1.0,
+            )
             m_asym_final.fit(
-                Xv[:, idx_asym], y_asym_fit, sample_weight=_normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
+                Xv[:, idx_asym], y_asym_fit, sample_weight=_asym_full_w
             )
 
         heads_meta = {

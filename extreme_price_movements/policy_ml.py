@@ -384,20 +384,38 @@ def pick_meta_classifier_by_utility_top30(
     p_pred = p_pred / np.clip(p_pred.sum(axis=1, keepdims=True), 1e-12, None)
 
     try:
-        ll = float(log_loss(y_true[tm], p_pred[tm], labels=[0, 1, 2])) if np.any(tm) else 999.0
-    except Exception:
-        tprint("Warning: failed to compute classifier log_loss after probability sanitation")
+        if y_true.ndim == 2:
+            if np.any(tm):
+                p_safe = np.clip(p_pred[tm], 1e-15, 1 - 1e-15)
+                ll = float(-np.mean(np.sum(y_true[tm] * np.log(p_safe), axis=1)))
+            else:
+                ll = 999.0
+        else:
+            ll = float(log_loss(y_true[tm], p_pred[tm], labels=[0, 1, 2])) if np.any(tm) else 999.0
+    except Exception as exc:
+        tprint(f"Warning: failed to compute classifier log_loss after probability sanitation: {exc}")
         ll = 999.0
     passed_gate = ll <= float(cfg.max_logloss)
 
     # Dynamic utility weights from realized outcomes on this OOF vector.
     if bool(cfg.dynamic_utility_from_realized):
         def _class_mean(k: int, dflt: float) -> float:
-            m = (y_true == k) & tm
-            if np.any(m):
-                v = float(np.nanmean(realized_u_policy[m]))
-                if np.isfinite(v):
-                    return v
+            if y_true.ndim == 2:
+                # Soft labels mapping: k_hard -> k_soft (0:SL->1, 1:TO->2, 2:TP->0)
+                k_soft = 1 if k == 0 else (2 if k == 1 else 0)
+                # Soft labels: weight realized utility by probability
+                weights = y_true[:, k_soft] * tm.astype(float)
+                w_sum = np.sum(weights)
+                if w_sum > 1e-9:
+                    v = float(np.sum(realized_u_policy * weights) / w_sum)
+                    if np.isfinite(v):
+                        return v
+            else:
+                m = (y_true == k) & tm
+                if np.any(m):
+                    v = float(np.nanmean(realized_u_policy[m]))
+                    if np.isfinite(v):
+                        return v
             return dflt
         u_sl = _class_mean(0, float(cfg.u_sl))
         u_to = _class_mean(1, float(cfg.u_to))
@@ -405,7 +423,12 @@ def pick_meta_classifier_by_utility_top30(
     else:
         u_tp, u_to, u_sl = float(cfg.u_tp), float(cfg.u_to), float(cfg.u_sl)
 
-    U = expected_utility(p_pred, u_tp, u_to, u_sl)
+    if y_true.ndim == 2:
+        # p_pred has columns [TP, SL, TO]. We need them as [SL, TO, TP] for expected_utility
+        p_pred_mapped = np.column_stack([p_pred[:, 1], p_pred[:, 2], p_pred[:, 0]])
+        U = expected_utility(p_pred_mapped, u_tp, u_to, u_sl)
+    else:
+        U = expected_utility(p_pred, u_tp, u_to, u_sl)
     valid_idx = np.where(tm)[0]
     if len(valid_idx) == 0:
         return {"logloss": ll, "passed_gate": 0.0, "topU_mean": float("nan"), "top_realized_u_mean": float("nan"), "baseline_realized_u_mean": float("nan"), "realized_lift_vs_baseline": float("nan"), "top_n": 0.0, "top_n_ok": 0.0, "lift_ok": 0.0, "u_tp": float(u_tp), "u_to": float(u_to), "u_sl": float(u_sl), "passed_econ": 0.0, "selection_score": float("-inf") }

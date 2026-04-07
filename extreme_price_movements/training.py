@@ -8693,7 +8693,7 @@ def train_meta_models_from_artifacts(
         _mae_h = np.asarray(_mae_h, dtype=float)
         _t_mfe_h = np.asarray(_t_mfe_h, dtype=float)
         _t_mae_h = np.asarray(_t_mae_h, dtype=float)
-        _horizon_hours = float(_horizon_hours)
+        _horizon_hours = float(_horizon_hours) + 1e-5
 
         _hit_tp = (_mfe_h >= float(_tp_pct)) & (_t_mfe_h <= _horizon_hours)
         _hit_sl = (_mae_h >= float(_sl_pct)) & (_t_mae_h <= _horizon_hours)
@@ -8905,16 +8905,39 @@ def train_meta_models_from_artifacts(
                 _mfe_vec, _mae_vec, _t_mfe_vec, _t_mae_vec = _exc
 
                 # Use classification target instead of regression
-                _target_class = _tbm_proxy_target_class(
-                    _mfe_vec,
-                    _mae_vec,
-                    _t_mfe_vec,
-                    _t_mae_vec,
-                    _tp_pct,
-                    _sl_pct,
-                    float(_h)
-                )
+                if _g_name in ("tbm_500_250", "tbm_250_125"):
+                    # Use consensus soft labels without leakage
+                    from extreme_price_movements.soft_labels import DynamicSoftLabels
+                    _atr_1h = np.asarray(df["__meta_raw__atr_pct"].values, dtype=np.float32) if "__meta_raw__atr_pct" in df.columns else np.full(len(df), 0.005, dtype=np.float32)
+                    _target_class = DynamicSoftLabels(
+                        _mfe_vec,
+                        _mae_vec,
+                        _t_mfe_vec,
+                        _t_mae_vec,
+                        float(_h),
+                        _atr_1h
+                    )
+                else:
+                    _target_class = _tbm_proxy_target_class(
+                        _mfe_vec,
+                        _mae_vec,
+                        _t_mfe_vec,
+                        _t_mae_vec,
+                        _tp_pct,
+                        _sl_pct,
+                        float(_h)
+                    )
                 _weights = _meta_map_weights(_ret_h, df, trade_mask)
+                if _target_class.ndim == 1:
+                    from sklearn.utils.class_weight import compute_class_weight
+                    _u_classes = np.unique(_target_class)
+                    if len(_u_classes) > 1:
+                        _cw = compute_class_weight("balanced", classes=_u_classes, y=_target_class)
+                        _cw_map = {c: w for c, w in zip(_u_classes, _cw)}
+                        _class_w = np.array([_cw_map[y] for y in _target_class], dtype=np.float32)
+                        _weights = _weights * _class_w
+                    _weights = _weights / max(float(np.mean(_weights)), 1e-12)
+
                 _head_name = f"{_bucket_key}_{_g_name}_h{int(_h)}"
                 _model, _sel_cfg = _configure_meta_clf(_head_name, "meta_selector_cfg")
                 # Get realized utility for classifier

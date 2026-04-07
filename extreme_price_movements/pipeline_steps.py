@@ -3323,7 +3323,6 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 # Dynamic cost model: handle limit fills and conditional fee concessions
                 fee_reduction_reasons = [
                     "stop_loss",
-                    "early_invalidation",
                     "giveback_exit",
                 ]
 

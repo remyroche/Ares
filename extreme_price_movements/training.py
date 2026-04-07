@@ -9782,7 +9782,6 @@ def train_meta_models_from_artifacts(
                 "__mfe_ret__",
                 "__bars_to_mfe__",
                 "__barrier_pct__",
-                "__early_inval__",
                 "__mr_path_penalty__",
                 "__mr_velocity_penalty__",
             ]:
@@ -9865,7 +9864,7 @@ def train_meta_models_from_artifacts(
         pass
     import re
 
-    _allowed_meta_suffixes = ["_utility", "_mae_q70", "_mfe", "_early_inval"]
+    _allowed_meta_suffixes = ["_utility", "_mae_q70", "_mfe"]
     if include_meta_reg:
         _allowed_meta_suffixes.append("_reg")
     if include_meta_clf:

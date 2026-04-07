@@ -19,8 +19,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
-from sklearn.linear_model import Ridge
-from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import Ridge, HuberRegressor
+from sklearn.preprocessing import StandardScaler, RobustScaler
 
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.position_sizer_v2_metrics import (
@@ -74,8 +74,8 @@ def detect_meta_head_keys(feature_dict: Dict[str, np.ndarray], config_overrides:
 
     return heads
 
-def clean_and_standardize(X: np.ndarray, fit_medians: Optional[np.ndarray] = None, scaler: Optional[StandardScaler] = None, mean_1d: Optional[float] = None, std_1d: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, Any, Any, Any]:
-    """Standardizes features safely handling NaNs and Infs."""
+def clean_and_standardize(X: np.ndarray, fit_medians: Optional[np.ndarray] = None, scaler: Optional[RobustScaler] = None, center_1d: Optional[float] = None, scale_1d: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, Any, Any, Any]:
+    """Standardizes features safely handling NaNs and Infs, using robust statistics."""
     X_clean = X.copy()
     X_clean[np.isinf(X_clean)] = np.nan
 
@@ -91,25 +91,26 @@ def clean_and_standardize(X: np.ndarray, fit_medians: Optional[np.ndarray] = Non
         inds = np.isnan(X_clean)
         X_clean[inds] = fit_medians
 
-        if mean_1d is None or std_1d is None:
-            mean_1d = np.mean(X_clean)
-            std_1d = np.std(X_clean)
+        if center_1d is None or scale_1d is None:
+            center_1d = np.median(X_clean)
+            q75, q25 = np.percentile(X_clean, [75 ,25])
+            scale_1d = q75 - q25
 
-        if std_1d > 1e-9:
-            X_clean = (X_clean - mean_1d) / std_1d
+        if scale_1d > 1e-9:
+            X_clean = (X_clean - center_1d) / scale_1d
         else:
-            X_clean = X_clean - mean_1d
+            X_clean = X_clean - center_1d
     else:
         inds = np.where(np.isnan(X_clean))
         X_clean[inds] = np.take(fit_medians, inds[1])
 
         if scaler is None:
-            scaler = StandardScaler()
+            scaler = RobustScaler()
             X_clean = scaler.fit_transform(X_clean)
         else:
             X_clean = scaler.transform(X_clean)
 
-    return X_clean, fit_medians, scaler, mean_1d, std_1d
+    return X_clean, fit_medians, scaler, center_1d, scale_1d
 
 def simple_temporal_splits(
     timestamps: Optional[np.ndarray],
@@ -391,7 +392,7 @@ class SimpleHeadRidgeSizer:
     """
     def __init__(self, alpha: float = 1.0):
         self.alpha = alpha
-        self.model = Ridge(alpha=alpha, fit_intercept=True)
+        self.model = HuberRegressor(alpha=alpha, fit_intercept=True)
 
     def fit_predict_oof(
         self,
@@ -408,8 +409,8 @@ class SimpleHeadRidgeSizer:
             X_te = X[te_idx]
 
             # Fold-local scaling and NaN cleaning
-            X_tr_clean, medians, scaler, mean_1d, std_1d = clean_and_standardize(X_tr)
-            X_te_clean, _, _, _, _ = clean_and_standardize(X_te, fit_medians=medians, scaler=scaler, mean_1d=mean_1d, std_1d=std_1d)
+            X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(X_tr)
+            X_te_clean, _, _, _, _ = clean_and_standardize(X_te, fit_medians=medians, scaler=scaler, center_1d=center_1d, scale_1d=scale_1d)
 
             # Fit & predict
             self.model.fit(X_tr_clean, y_tr)

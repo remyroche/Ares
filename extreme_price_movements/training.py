@@ -8470,7 +8470,7 @@ def train_meta_models_from_artifacts(
         _mae_h = np.asarray(_mae_h, dtype=float)
         _t_mfe_h = np.asarray(_t_mfe_h, dtype=float)
         _t_mae_h = np.asarray(_t_mae_h, dtype=float)
-        _horizon_hours = float(_horizon_hours)
+        _horizon_hours = float(_horizon_hours) + 1e-5
 
         _hit_tp = (_mfe_h >= float(_tp_pct)) & (_t_mfe_h <= _horizon_hours)
         _hit_sl = (_mae_h >= float(_sl_pct)) & (_t_mae_h <= _horizon_hours)
@@ -8692,6 +8692,15 @@ def train_meta_models_from_artifacts(
                     float(_h)
                 )
                 _weights = _meta_map_weights(_ret_h, df, trade_mask)
+                from sklearn.utils.class_weight import compute_class_weight
+                _u_classes = np.unique(_target_class)
+                if len(_u_classes) > 1:
+                    _cw = compute_class_weight("balanced", classes=_u_classes, y=_target_class)
+                    _cw_map = {c: w for c, w in zip(_u_classes, _cw)}
+                    _class_w = np.array([_cw_map[y] for y in _target_class], dtype=np.float32)
+                    _weights = _weights * _class_w
+                _weights = _weights / max(float(np.mean(_weights)), 1e-12)
+
                 _head_name = f"{_bucket_key}_{_g_name}_h{int(_h)}"
                 _model, _sel_cfg = _configure_meta_clf(_head_name, "meta_selector_cfg")
                 # Get realized utility for classifier

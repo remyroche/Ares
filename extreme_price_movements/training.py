@@ -10405,20 +10405,129 @@ def train_meta_models_from_artifacts(
         r".*_(tbm_500_250|tbm_250_125)_h\d+$|.*_(mae|mfe)_h\d+$"
     )
 
-    def _fill_nonfinite_oof_vector(values, neutral: float = 0.0):
+    def _fill_nonfinite_oof_vector(values, global_neutral: float = 0.0, method: str = "median"):
         _arr = np.asarray(values, dtype=np.float64).reshape(-1).copy()
         _finite = np.isfinite(_arr)
         if _finite.all():
             return _arr
         if _finite.any():
-            _fill = float(np.nanmedian(_arr[_finite]))
+            if method == "mean":
+                _fill = float(np.nanmean(_arr[_finite]))
+            else:
+                _fill = float(np.nanmedian(_arr[_finite]))
         else:
-            _fill = float(neutral)
+            _fill = float(global_neutral)
+            tprint(f"    Fallback imputation triggered. Using global neutral: {_fill}")
         _arr[~_finite] = _fill
         return _arr
 
+    def validate_meta_oof_schema(df: pd.DataFrame, key: str):
+        required_cols = [
+            "index", "timestamp", "symbol", "is_long",
+            "return", "exit_code", "u_policy_net"
+        ]
+
+        # Determine expected prediction columns based on key
+        if key.endswith("_utility"):
+            required_cols.extend(["oof_u_hat"])
+        elif key.endswith("_mae_q70"):
+            required_cols.extend(["oof_log_mae_q70_hat", "oof_mae_q70_hat"])
+        elif key.endswith("_mfe"):
+            required_cols.extend(["oof_log_mfe_hat", "oof_mfe_hat"])
+        elif key.endswith("_asym"):
+            required_cols.extend(["oof_asym_hat"])
+        elif key.endswith("_clf"):
+            required_cols.extend(["oof_p_tp", "oof_p_sl", "oof_p_to", "oof_ev"])
+        elif key.endswith("_early_inval"):
+            required_cols.extend(["oof_p_early_inval"])
+
+        missing = [c for c in required_cols if c not in df.columns]
+        if missing:
+            tprint(f"    SCHEMA WARNING: {key} missing columns: {missing}")
+
+        for c in required_cols:
+            if c in df.columns:
+                if not pd.api.types.is_numeric_dtype(df[c]) and c not in ["timestamp", "symbol"]:
+                    tprint(f"    SCHEMA WARNING: {key} column {c} is not numeric")
+
+        if "oof_p_tp" in df.columns and "oof_p_sl" in df.columns and "oof_p_to" in df.columns:
+            simplex = df["oof_p_tp"] + df["oof_p_sl"] + df["oof_p_to"]
+            viol = np.sum(np.abs(simplex - 1.0) > 1e-5)
+            if viol > 0:
+                tprint(f"    SCHEMA WARNING: {key} has {viol} simplex violations")
+
+# Collect calibration metrics if configured
+    _validate_calib = bool(cfg.get("META_VALIDATE_CALIBRATION", False))
+    _calib_report = {}
+    _export_summary = {}
+
+    def record_export_stats(df, key):
+        stats = {}
+        for col in df.columns:
+            if pd.api.types.is_numeric_dtype(df[col]) and col not in ["timestamp", "symbol", "is_long", "index", "return", "exit_code", "u_policy_net"]:
+                arr = df[col].values
+                valid = np.isfinite(arr)
+                stats[col] = {
+                    "mean": float(np.mean(arr[valid])) if np.any(valid) else None,
+                    "std": float(np.std(arr[valid])) if np.any(valid) else None,
+                    "min": float(np.min(arr[valid])) if np.any(valid) else None,
+                    "max": float(np.max(arr[valid])) if np.any(valid) else None,
+                    "missing_fraction": float(1.0 - np.mean(valid))
+                }
+        _export_summary[key] = stats
+
+    def compute_prob_calibration(y_true, y_prob, n_bins=10):
+        from sklearn.metrics import brier_score_loss
+        valid = np.isfinite(y_true) & np.isfinite(y_prob)
+        if np.sum(valid) < n_bins:
+            return {}
+        y_t, y_p = y_true[valid], y_prob[valid]
+        brier = float(brier_score_loss(y_t, y_p))
+
+        # ECE and Reliability
+        bins = np.linspace(0.0, 1.0, n_bins + 1)
+        binids = np.digitize(y_p, bins) - 1
+        binids = np.clip(binids, 0, n_bins - 1)
+
+        ece = 0.0
+        reliability = []
+        for i in range(n_bins):
+            mask = (binids == i)
+            if np.any(mask):
+                mean_p = float(np.mean(y_p[mask]))
+                mean_t = float(np.mean(y_t[mask]))
+                count = int(np.sum(mask))
+                ece += np.abs(mean_p - mean_t) * (count / len(y_p))
+                reliability.append({"bin": i, "mean_pred": mean_p, "mean_true": mean_t, "count": count})
+
+        return {"brier_score": brier, "ece": float(ece), "reliability_curve": reliability}
+
+    def record_calibration(df, key):
+        if not _validate_calib:
+            return
+
+        calib_stats = {}
+        if "exit_code" in df.columns:
+            exit_code = df["exit_code"].values
+            valid_exit = np.isfinite(exit_code)
+            if "oof_p_tp" in df.columns:
+                calib_stats["tp_calibration"] = compute_prob_calibration((exit_code == 2).astype(float), df["oof_p_tp"].values)
+            if "oof_p_to" in df.columns:
+                calib_stats["to_calibration"] = compute_prob_calibration((exit_code == 1).astype(float), df["oof_p_to"].values)
+            if "oof_p_sl" in df.columns:
+                calib_stats["sl_calibration"] = compute_prob_calibration((exit_code == 0).astype(float), df["oof_p_sl"].values)
+
+        if "early_inval" in df.columns and "oof_p_early_inval" in df.columns:
+            ei_true = df["early_inval"].values
+            calib_stats["early_inval_calibration"] = compute_prob_calibration(ei_true, df["oof_p_early_inval"].values)
+
+        if calib_stats:
+            _calib_report[key] = calib_stats
     def _trim_1d(values, n: int):
         return np.asarray(values).reshape(-1)[: int(n)]
+
+    def compute_meta_expected_value(p_tp, p_sl, ratio):
+        return ratio * p_tp - p_sl
 
     for key, meta in meta_models.items():
         if not key.endswith(_allowed_meta_suffixes) and not _aligned_map_pat.match(key):
@@ -10436,7 +10545,7 @@ def train_meta_models_from_artifacts(
             )
             _is_ei_key = key.endswith("_early_inval")
             if _is_ei_key:
-                _oof_pred_1d = _fill_nonfinite_oof_vector(meta.oof_probs, neutral=0.5)
+                _oof_pred_1d = _fill_nonfinite_oof_vector(meta.oof_probs, global_neutral=0.5, method="mean")
                 _n_meta = len(_oof_pred_1d)
                 oof_df = pd.DataFrame(
                     {
@@ -10448,19 +10557,39 @@ def train_meta_models_from_artifacts(
                 )
             elif (_is_clf_key or _is_tbm_multiclass_key) and np.ndim(meta.oof_probs) == 2:
                 p_sl = _fill_nonfinite_oof_vector(
-                    meta.oof_probs[:, 0], neutral=1.0 / 3.0
+                    meta.oof_probs[:, 0], global_neutral=1.0 / 3.0, method="mean"
                 )
                 p_to = _fill_nonfinite_oof_vector(
-                    meta.oof_probs[:, 1], neutral=1.0 / 3.0
+                    meta.oof_probs[:, 1], global_neutral=1.0 / 3.0, method="mean"
                 )
                 p_tp = _fill_nonfinite_oof_vector(
-                    meta.oof_probs[:, 2], neutral=1.0 / 3.0
+                    meta.oof_probs[:, 2], global_neutral=1.0 / 3.0, method="mean"
                 )
                 _row_sum = np.clip(p_sl + p_to + p_tp, 1e-9, None)
                 p_sl = np.asarray(p_sl / _row_sum, dtype=np.float64).reshape(-1)
                 p_to = np.asarray(p_to / _row_sum, dtype=np.float64).reshape(-1)
                 p_tp = np.asarray(p_tp / _row_sum, dtype=np.float64).reshape(-1)
-                oof_ev = np.asarray(2.0 * p_tp - p_sl, dtype=np.float64).reshape(-1)
+
+                # Check simplex violations
+                _simplex_sum = p_sl + p_to + p_tp
+                _violations = np.abs(_simplex_sum - 1.0) > 1e-6
+                if np.any(_violations):
+                    _n_viol = int(np.sum(_violations))
+                    tprint(f"    WARNING: {_n_viol} probability simplex violations detected in {key} (renormalizing).")
+                    p_sl[_violations] /= _simplex_sum[_violations]
+                    p_to[_violations] /= _simplex_sum[_violations]
+                    p_tp[_violations] /= _simplex_sum[_violations]
+
+                # Resolve EV ratio source
+                _ev_source = cfg.get("META_EV_TP_SL_RATIO_SOURCE", "fixed")
+                _tp_sl_ratio = float(cfg.get("DEFAULT_TP_SL_RATIO", 2.0))
+                if _ev_source == "policy":
+                    _tp_sl_ratio = float(cfg.get("policy_label_tp_sl_ratio", _tp_sl_ratio))
+                # Future: fetch from per-horizon geometry metadata if _ev_source == "geometry"
+
+                tprint(f"    EV ratio resolution for {key}: source={_ev_source}, ratio={_tp_sl_ratio}")
+                oof_ev = np.asarray(compute_meta_expected_value(p_tp, p_sl, _tp_sl_ratio), dtype=np.float64).reshape(-1)
+
                 _n_meta = min(len(p_sl), len(p_to), len(p_tp), len(oof_ev))
                 oof_df = pd.DataFrame(
                     {
@@ -10474,7 +10603,7 @@ def train_meta_models_from_artifacts(
                     }
                 )
             else:
-                _oof_pred_1d = _fill_nonfinite_oof_vector(meta.oof_probs, neutral=0.0)
+                _oof_pred_1d = _fill_nonfinite_oof_vector(meta.oof_probs, global_neutral=0.0, method="median")
                 _n_meta = len(_oof_pred_1d)
                 oof_df = pd.DataFrame(
                     {
@@ -10485,6 +10614,14 @@ def train_meta_models_from_artifacts(
                 )
                 if key.endswith("_utility"):
                     oof_df["oof_u_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
+                elif key.endswith("_mae_q70"):
+                    oof_df["oof_log_mae_q70_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
+                    oof_df["oof_mae_q70_hat"] = np.expm1(_trim_1d(_oof_pred_1d, _n_meta))
+                elif key.endswith("_mfe"):
+                    oof_df["oof_log_mfe_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
+                    oof_df["oof_mfe_hat"] = np.expm1(_trim_1d(_oof_pred_1d, _n_meta))
+                elif key.endswith("_asym"):
+                    oof_df["oof_asym_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
 
             # Attach metadata from bucket-specific storage
             _md = _bucket_metadata.get(key, {})
@@ -10571,18 +10708,26 @@ def train_meta_models_from_artifacts(
                     and _clf_meta.oof_probs.shape[1] == 3
                 ):
                     _p_sl = _fill_nonfinite_oof_vector(
-                        _clf_meta.oof_probs[:, 0], neutral=1.0 / 3.0
+                        _clf_meta.oof_probs[:, 0], global_neutral=1.0 / 3.0, method="mean"
                     )
                     _p_to = _fill_nonfinite_oof_vector(
-                        _clf_meta.oof_probs[:, 1], neutral=1.0 / 3.0
+                        _clf_meta.oof_probs[:, 1], global_neutral=1.0 / 3.0, method="mean"
                     )
                     _p_tp = _fill_nonfinite_oof_vector(
-                        _clf_meta.oof_probs[:, 2], neutral=1.0 / 3.0
+                        _clf_meta.oof_probs[:, 2], global_neutral=1.0 / 3.0, method="mean"
                     )
                     _row_sum = np.clip(_p_sl + _p_to + _p_tp, 1e-9, None)
                     _p_sl = _p_sl / _row_sum
                     _p_to = _p_to / _row_sum
                     _p_tp = _p_tp / _row_sum
+
+                    _simplex_sum = _p_sl + _p_to + _p_tp
+                    _violations = np.abs(_simplex_sum - 1.0) > 1e-6
+                    if np.any(_violations):
+                        _p_sl[_violations] /= _simplex_sum[_violations]
+                        _p_to[_violations] /= _simplex_sum[_violations]
+                        _p_tp[_violations] /= _simplex_sum[_violations]
+
                     _n_clf = min(_n_meta, len(_p_sl), len(_p_to), len(_p_tp))
                     if _n_clf < len(oof_df):
                         oof_df = oof_df.iloc[:_n_clf].copy()
@@ -10594,10 +10739,36 @@ def train_meta_models_from_artifacts(
                         f"  Merged classifier probabilities from {_clf_key} into {key}"
                     )
 
+            record_export_stats(oof_df, key)
+            record_calibration(oof_df, key)
+            validate_meta_oof_schema(oof_df, key)
             oof_df.to_parquet(meta_oof_path, index=False)
             tprint(f"Saved meta OOF predictions for {key} to {meta_oof_path}")
 
     # Save auxiliary head OOF predictions as separate parquet files
+    meta_scale_contract = {
+        "oof_u_hat": "arcsinh(log-return normalized by ATR)",
+        "oof_log_mae_q70_hat": "log1p(MAE / ATR)",
+        "oof_mae_q70_hat": "MAE / ATR",
+        "oof_log_mfe_hat": "log1p(MFE / ATR)",
+        "oof_mfe_hat": "MFE / ATR",
+        "oof_asym_hat": "log(MFE / MAE)",
+        "oof_p_tp": "probability",
+        "oof_p_sl": "probability",
+        "oof_p_to": "probability",
+        "oof_p_early_inval": "probability",
+        "oof_ev": "expected payoff multiple"
+    }
+    import json
+
+    with open(os.path.join(meta_oof_dir, 'meta_export_summary.json'), 'w') as _f:
+        json.dump(_export_summary, _f, indent=2)
+    if _validate_calib:
+        with open(os.path.join(meta_oof_dir, 'meta_calibration_report.json'), 'w') as _f:
+            json.dump(_calib_report, _f, indent=2)
+    with open(os.path.join(meta_oof_dir, 'meta_scale_contract.json'), 'w') as _f:
+        json.dump(meta_scale_contract, _f, indent=2)
+
     for bucket_base, aux_data in _aux_head_oof.items():
         if not isinstance(aux_data, dict):
             continue
@@ -10627,7 +10798,7 @@ def train_meta_models_from_artifacts(
             if oof_key not in aux_data:
                 continue
 
-            _oof_pred = _fill_nonfinite_oof_vector(aux_data[oof_key], neutral=0.0)
+            _oof_pred = _fill_nonfinite_oof_vector(aux_data[oof_key], global_neutral=0.0, method="median")
             oof_df = pd.DataFrame(
                 {
                     "oof_pred": _oof_pred,
@@ -10639,8 +10810,10 @@ def train_meta_models_from_artifacts(
                 oof_df["oof_u_hat"] = _oof_pred
             elif head_name == "mae_q70":
                 oof_df["oof_log_mae_q70_hat"] = _oof_pred
+                oof_df["oof_mae_q70_hat"] = np.expm1(_oof_pred)
             elif head_name == "mfe":
                 oof_df["oof_log_mfe_hat"] = _oof_pred
+                oof_df["oof_mfe_hat"] = np.expm1(_oof_pred)
             elif head_name == "asym":
                 oof_df["oof_asym_hat"] = _oof_pred
 
@@ -10664,6 +10837,9 @@ def train_meta_models_from_artifacts(
             meta_oof_path = os.path.join(
                 meta_oof_dir, f"meta_oof_{bucket_base}_{head_name}.parquet"
             )
+            record_export_stats(oof_df, f"{bucket_base}_{head_name}")
+            record_calibration(oof_df, f"{bucket_base}_{head_name}")
+            validate_meta_oof_schema(oof_df, f"{bucket_base}_{head_name}")
             oof_df.to_parquet(meta_oof_path, index=False)
             tprint(
                 f"Saved meta OOF predictions for aux head {bucket_base}_{head_name} to {meta_oof_path}"

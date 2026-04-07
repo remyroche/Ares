@@ -8373,23 +8373,30 @@ def train_meta_models_from_artifacts(
         _out = np.where(_both & (_ret_h < 0.0), -float(_sl_pct), _out)
         return _out.astype(np.float32)
 
-    def _tbm_proxy_target_class(_ret_h, _mfe_h, _mae_h, _tp_pct, _sl_pct):
-        """Generate classification labels for TBM: 0=SL, 1=TO, 2=TP"""
-        _ret_h = np.asarray(_ret_h, dtype=float)
+    def _tbm_proxy_target_class(_mfe_h, _mae_h, _t_mfe_h, _t_mae_h, _tp_pct, _sl_pct, _horizon_hours):
+        """Generate classification labels for TBM: 0=SL, 1=TO, 2=TP
+        Uses time-to-barrier for strict first-touch ordering."""
+        if _t_mfe_h is None or _t_mae_h is None:
+            raise RuntimeError("time_to_mfe/time_to_mae required for strict TBM ordering in _tbm_proxy_target_class")
+
         _mfe_h = np.asarray(_mfe_h, dtype=float)
         _mae_h = np.asarray(_mae_h, dtype=float)
-        _hit_tp = _mfe_h >= float(_tp_pct)
-        _hit_sl = _mae_h >= float(_sl_pct)
+        _t_mfe_h = np.asarray(_t_mfe_h, dtype=float)
+        _t_mae_h = np.asarray(_t_mae_h, dtype=float)
+        _horizon_hours = float(_horizon_hours)
+
+        _hit_tp = (_mfe_h >= float(_tp_pct)) & (_t_mfe_h <= _horizon_hours)
+        _hit_sl = (_mae_h >= float(_sl_pct)) & (_t_mae_h <= _horizon_hours)
         _both = _hit_tp & _hit_sl
 
         # 0 = SL hit (and not TP)
         # 1 = Timeout (neither SL nor TP hit)
         # 2 = TP hit (and not SL)
-        _out = np.ones(len(_ret_h), dtype=np.int8)  # Default to TO (1)
+        _out = np.ones(len(_mfe_h), dtype=np.int8)  # Default to TO (1)
         _out[_hit_sl & ~_hit_tp] = 0  # SL
         _out[_hit_tp & ~_hit_sl] = 2  # TP
-        _out[_both & (_ret_h < 0.0)] = 0  # Both hit, negative return -> SL
-        _out[_both & (_ret_h >= 0.0)] = 2  # Both hit, positive return -> TP
+        _out[_both & (_t_mfe_h < _t_mae_h)] = 2  # Both hit, TP first -> TP
+        _out[_both & (_t_mfe_h >= _t_mae_h)] = 0  # Both hit, SL first or tied -> SL
         return _out
 
     def _fit_aligned_meta_map_heads(
@@ -8548,10 +8555,15 @@ def train_meta_models_from_artifacts(
         def _native_excursion_cols(_h: int):
             _mfe_col = f"__meta_raw__mfe_{int(_h)}h"
             _mae_col = f"__meta_raw__mae_{int(_h)}h"
-            if _mfe_col in df.columns and _mae_col in df.columns:
+            _t_mfe_col = f"__meta_raw__t_mfe_{int(_h)}h"
+            _t_mae_col = f"__meta_raw__t_mae_{int(_h)}h"
+
+            if _mfe_col in df.columns and _mae_col in df.columns and _t_mfe_col in df.columns and _t_mae_col in df.columns:
                 return (
                     np.asarray(df[_mfe_col].values, dtype=np.float32),
                     np.asarray(df[_mae_col].values, dtype=np.float32),
+                    np.asarray(df[_t_mfe_col].values, dtype=np.float32),
+                    np.asarray(df[_t_mae_col].values, dtype=np.float32),
                 )
             if (
                 _native_bucket_h is not None
@@ -8559,9 +8571,13 @@ def train_meta_models_from_artifacts(
                 and "__mfe_ret__" in df.columns
                 and "__mae_ret__" in df.columns
             ):
+                _t_mfe = np.asarray(df["__t_mfe__"].values, dtype=np.float32) if "__t_mfe__" in df.columns else None
+                _t_mae = np.asarray(df["__t_mae__"].values, dtype=np.float32) if "__t_mae__" in df.columns else None
                 return (
                     np.asarray(df["__mfe_ret__"].values, dtype=np.float32),
                     np.asarray(df["__mae_ret__"].values, dtype=np.float32),
+                    _t_mfe,
+                    _t_mae,
                 )
             return None
 
@@ -8576,14 +8592,17 @@ def train_meta_models_from_artifacts(
                 _exc = _native_excursion_cols(int(_h))
                 if _exc is None:
                     continue
-                _mfe_vec, _mae_vec = _exc
+                _mfe_vec, _mae_vec, _t_mfe_vec, _t_mae_vec = _exc
+
                 # Use classification target instead of regression
                 _target_class = _tbm_proxy_target_class(
-                    _ret_h,
                     _mfe_vec,
                     _mae_vec,
+                    _t_mfe_vec,
+                    _t_mae_vec,
                     _tp_pct,
                     _sl_pct,
+                    float(_h)
                 )
                 _weights = _meta_map_weights(_ret_h, df, trade_mask)
                 _head_name = f"{_bucket_key}_{_g_name}_h{int(_h)}"

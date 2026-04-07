@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
-from sklearn.linear_model import HuberRegressor, Ridge
+from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
 from extreme_price_movements.config import (
@@ -28,7 +28,6 @@ from extreme_price_movements.config import (
 )
 from extreme_price_movements.elasticnet_feature_selection_v2 import (
     select_features_via_elasticnet,
-    select_features_via_staged_en_rfe,
 )
 from extreme_price_movements.feature_views import get_feature_view
 from extreme_price_movements.features import (
@@ -88,8 +87,6 @@ def make_temporal_splits(
     timestamps: Optional[np.ndarray],
     n_samples: int,
     n_splits: int = 3,
-    purge_units: int = 43200,
-    embargo_units: int = 43200,
 ) -> Tuple[List[Tuple[np.ndarray, np.ndarray]], int]:
     """Build temporal splits via periods_symbols_management planner."""
     try:
@@ -436,7 +433,10 @@ class Model3Uncertainty:
         if not self.is_fitted:
             raise RuntimeError("Model3Uncertainty not fitted")
         pred_log = self.model.predict(self.scaler.transform(X))
-        return np.expm1(pred_log)
+        pred_raw = np.expm1(pred_log)
+        pred_clamped = np.maximum(pred_raw, 0.0)
+        self.last_fraction_clamped_ = float(np.mean(pred_raw < 0.0)) if len(pred_raw) > 0 else 0.0
+        return pred_clamped
 
 
 class LayerAPredictor:
@@ -511,7 +511,8 @@ class LayerAPredictor:
 
         # Pull FS Config
         fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
-        do_fs = fs_cfg.get("enabled", True)
+        # Feature selection disabled to align evaluation with training without fold-local complexity
+        do_fs = False
 
         # Choose grid size based on n_samples (small bucket relaxation)
         n_samples = len(X)
@@ -703,7 +704,7 @@ class LayerAPredictor:
         self.model2_oof_pred_ = oof_preds
 
         # Fit final Downside model
-        y_final = np.clip(y_downside, 0.0, np.percentile(y_downside, 98))
+        y_final = _soft_winsorize_downside(y_downside, lower_pct=0.0, upper_pct=98.0, softness=0.3)
 
         if do_fs:
             final_fs_res = select_features_via_elasticnet(
@@ -897,8 +898,11 @@ class LayerAPredictor:
         if sample_weight is not None:
             sw_finite = sample_weight[np.isfinite(sample_weight) & (sample_weight > 0)]
             if len(sw_finite) > 0:
+                old_weight = sample_weight.copy()
                 sample_weight = _soft_clip_sample_weights(sample_weight, lower=0.01, upper_pct=99.0, softness=0.5)
                 sample_weight[~np.isfinite(sample_weight)] = 0.01
+                frac_changed = float(np.mean(old_weight != sample_weight))
+                self.feature_coverage_report_["sample_weight_fraction_soft_clipped"] = frac_changed
             else:
                 sample_weight = None
 
@@ -926,13 +930,6 @@ class LayerAPredictor:
         fd3["abs_edge_pred"] = np.where(
             np.isfinite(self.model1_oof_pred_), np.abs(self.model1_oof_pred_), 0.0
         )
-
-        # Pull required OOF inputs from feature dict explicitly to avoid key errors in Model 3 assembly
-        if "oof_asym_hat" in feature_dict:
-            fd3["oof_asym_hat"] = feature_dict["oof_asym_hat"]
-        else:
-            # Fallback if missing upstream
-            fd3["oof_asym_hat"] = np.zeros(len(self.model1_oof_pred_))
 
         X3 = assemble_feature_matrix(
             fd3,
@@ -979,11 +976,6 @@ class LayerAPredictor:
         fd3["downside_pred"] = downside_p
         fd3["edge_minus_downside"] = edge_p - self.lambda_downside * downside_p
         fd3["abs_edge_pred"] = np.abs(edge_p)
-
-        if "oof_asym_hat" in feature_dict:
-            fd3["oof_asym_hat"] = feature_dict["oof_asym_hat"]
-        else:
-            fd3["oof_asym_hat"] = np.zeros_like(edge_p)
 
         X3 = assemble_feature_matrix(
             fd3,
@@ -1216,6 +1208,8 @@ class LayerBPolicyOptimizer:
             timestamps, n_samples=len(scores), n_splits=3
         )
         candidate_table = []
+
+        padded_paths = _precompute_padded_paths(trade_outcomes, max_b=48)
 
         # --- Step 1: Exit Geometry (SL, Trailing, Giveback) ---
         sl_cands = [1.0, 1.5, 2.0]

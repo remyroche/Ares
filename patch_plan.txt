@@ -1,0 +1,8 @@
+1. Fix LayerBPolicyOptimizer.optimize() padded_paths bug
+2. Model3Uncertainty.predict() clamp np.expm1
+3. Model 2 Downside target transform alignment
+4. Remove purge_units and embargo_units from make_temporal_splits
+5. Disable feature selection to align OOF and final training
+6. Audit Model 3 feature semantics (oof_asym_hat)
+7. Clean up unused code/comments (build_log_clipped_target, build_rank_target, s_norm, s_min, etc.)
+8. Add diagnostics (sample weights clipped, uncertainty clamped)

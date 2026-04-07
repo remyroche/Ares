@@ -393,7 +393,7 @@ class Model2Downside:
         self.scaler = PredictionScaler()
         self.is_fitted = False
         self.model_type_ = "Ridge"
-        self.target_transform_ = "log1p(abs(residuals))"
+        self.target_transform_ = "soft_winsorized_mae_atr"
 
     def fit(
         self,

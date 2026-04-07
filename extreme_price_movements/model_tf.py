@@ -108,7 +108,7 @@ class TFModel:
                 X_stage1, y,
                 base_model=base_selector,
                 sample_weight=sample_weight,
-                topk_weight=0.3
+                topk_weight=0.2
             )
             self.selected_features = sel_res.selected_features[:n_select]
         else:

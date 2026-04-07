@@ -280,44 +280,13 @@ class MetaModel:
             }
         candidates = {}
 
-        # 1. Ridge (RobustScaler + Ridge)
+        # Legacy fallback for ad hoc MetaModel usage.
+        # Main training paths set candidate_mode explicitly and do not rely on this.
         candidates["ridge"] = {
             "kind": "ridge",
             "params": {"alpha": 5.0, "fit_intercept": True},
             "tail_lambda": 0.0,
         }
-
-        # 2. ExtraTrees (baseline)
-        candidates["extratrees"] = {
-            "kind": "extratrees",
-            "params": {
-                "n_estimators": 300, "max_depth": 8, "min_samples_leaf": 40,
-                "max_features": "sqrt", "n_jobs": 3, "random_state": 42,
-            },
-            "tail_lambda": 0.0,
-        }
-
-        # 3. XGB basic (reg:squarederror) — regularised for small meta datasets
-        if xgb is not None:
-            _xgb_common = {
-                "max_depth": 6, "learning_rate": 0.03, "n_estimators": 600,
-                "subsample": 0.7, "colsample_bytree": 0.7,
-                "reg_alpha": 0.1, "reg_lambda": 1.0,
-                "min_child_weight": 10, "gamma": 0.5, "max_delta_step": 1.0,
-                "tree_method": "hist", "random_state": 42, "n_jobs": 3,
-                "verbosity": 0,
-            }
-            candidates["xgb_basic"] = {
-                "kind": "xgb",
-                "params": {"objective": "reg:squarederror", **_xgb_common},
-                "tail_lambda": 0.0,
-            }
-            # Robust objective candidate (MAE)
-            candidates["xgb_robust"] = {
-                "kind": "xgb",
-                "params": {"objective": "reg:absoluteerror", **_xgb_common},
-                "tail_lambda": 0.0,
-            }
 
         return candidates
 
@@ -333,6 +302,12 @@ class MetaModel:
         if kind == "extratrees":
             model = ExtraTreesRegressor(**params)
             model.fit(X_tr, y_tr, sample_weight=sw)
+            return model
+        if kind == "lgbm":
+            from lightgbm import LGBMRegressor
+            model = LGBMRegressor(**params)
+            model.fit(X_tr, y_tr, sample_weight=sw,
+                      eval_set=[(X_va, y_va)], callbacks=[])
             return model
         if kind == "xgb":
             p = dict(params)
@@ -473,6 +448,15 @@ class MetaModel:
                 p["n_estimators"] = trial.suggest_int("n_estimators", 200, 800)
                 p["max_depth"] = trial.suggest_int("max_depth", 4, 16)
                 p["min_samples_leaf"] = trial.suggest_int("min_samples_leaf", 10, 80)
+            elif kind == "lgbm":
+                p["num_leaves"] = trial.suggest_int("num_leaves", 20, 60)
+                p["max_depth"] = trial.suggest_int("max_depth", 4, 10)
+                p["learning_rate"] = trial.suggest_float("learning_rate", 0.01, 0.15, log=True)
+                p["n_estimators"] = trial.suggest_int("n_estimators", 300, 1000)
+                p["feature_fraction"] = trial.suggest_float("feature_fraction", 0.6, 0.9)
+                p["bagging_fraction"] = trial.suggest_float("bagging_fraction", 0.6, 0.9)
+                p["reg_alpha"] = trial.suggest_float("reg_alpha", 0.1, 10.0, log=True)
+                p["reg_lambda"] = trial.suggest_float("reg_lambda", 1.0, 50.0, log=True)
             elif kind == "xgb":
                 p["max_depth"] = trial.suggest_int("max_depth", 3, 7)
                 p["learning_rate"] = trial.suggest_float("learning_rate", 0.01, 0.15, log=True)

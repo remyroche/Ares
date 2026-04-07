@@ -953,7 +953,11 @@ def _fit_direct_extratrees_base_model(
         w_tr = sample_weight_arr[train_idx] if sample_weight_arr is not None else None
         est = clone(candidate)
         race._fit_model(est, X_tr, y_tr, sample_weight=w_tr)
-        probs_raw = np.asarray(est.predict_proba(X_val)[:, 1], dtype=np.float64)
+        _proba_out = est.predict_proba(X_val)
+        if _proba_out.shape[1] < 2:
+            oof_probs[val_idx] = 0.5
+            continue
+        probs_raw = np.asarray(_proba_out[:, 1], dtype=np.float64)
         if sample_weight_arr is not None:
             w_tr_sum = float(np.sum(w_tr))
             p_weighted = float(np.sum(w_tr * y_tr) / max(w_tr_sum, 1e-12))
@@ -2038,6 +2042,7 @@ def _stable_cfg_subset_hash(
         "cfg": {k: cfg.get(k) for k in cache_keys},
         "horizons": [int(h) for h in horizons],
         "trade_sides": [str(s) for s in trade_sides],
+        "label_logic_version": int(cfg.get("label_logic_version", 2)),
         "py": platform.python_version(),
     }
     return hashlib.sha256(
@@ -2732,8 +2737,31 @@ def _winsorize_and_unit_mean(arr, lo_q=0.05, hi_q=0.95, clip_min=0.75, clip_max=
 
 def _normalize_cross_sectional(ts_vals, weights):
     w = np.asarray(weights, dtype=np.float64).copy()
-    ts = np.asarray(ts_vals)
+    if isinstance(ts_vals, pd.DatetimeIndex):
+        ts = _datetime_index_to_ns(ts_vals).astype(np.int64, copy=False)
+    else:
+        ts_arr = np.asarray(ts_vals)
+        if np.issubdtype(ts_arr.dtype, np.datetime64):
+            ts = ts_arr.astype("datetime64[ns]").view("i8").astype(np.int64, copy=False)
+        else:
+            try:
+                ts = pd.to_datetime(ts_arr, utc=True, errors="coerce").view("i8").astype(
+                    np.int64, copy=False
+                )
+            except Exception:
+                ts = ts_arr
     if len(w) == 0:
+        return w
+    if np.issubdtype(np.asarray(ts).dtype, np.integer):
+        uniq, inv = np.unique(np.asarray(ts, dtype=np.int64), return_inverse=True)
+        counts = np.bincount(inv).astype(np.int32, copy=False)
+        sums = np.bincount(inv, weights=np.where(np.isfinite(w), w, 0.0))
+        valid_groups = counts > 0
+        scale = np.ones(len(uniq), dtype=np.float64)
+        pos = valid_groups & (sums > 0.0)
+        scale[pos] = 1.0 / sums[pos]
+        scale[valid_groups & ~pos] = 1.0 / counts[valid_groups & ~pos]
+        w = w * scale[inv]
         return w
     for t in np.unique(ts):
         m = ts == t
@@ -3669,10 +3697,15 @@ def build_hourly_training_set_and_weights(
                     ),
                 )
             )
-            _direction = 1 if trend_filter == "up" else -1
+            _direction = 1 if str(side).lower() == "long" else -1
             _policy_sl = float(cfg.get("policy_label_sl_atr_mult", 1.2))
             _policy_tp_ratio = float(cfg.get("policy_label_tp_sl_ratio", 2.0))
             _policy_trailing = float(cfg.get("policy_label_trailing_pct", 0.35))
+            _policy_cfg = {
+                "policy_label_sl_atr_mult": _policy_sl,
+                "policy_label_tp_sl_ratio": _policy_tp_ratio,
+                "policy_label_trailing_pct": _policy_trailing,
+            }
             _idx_cache = {}
             _ret_pol = np.zeros(len(entry_ts), dtype=np.float32)
             _lbl_pol = np.ones(len(entry_ts), dtype=np.int8)
@@ -3722,7 +3755,7 @@ def build_hourly_training_set_and_weights(
                     atr_pct=_atr_s,
                     t0=_t0,
                     direction=_direction,
-                    policy_params=cfg,
+                    policy_params=_policy_cfg,
                     max_hold_hours=_max_hold,
                 )
                 _ret_pol[_i] = float(_po.r_policy)
@@ -3774,6 +3807,36 @@ def build_hourly_training_set_and_weights(
 
     # New Target Logic: Binary (TP vs Rest) with Outcome-based Weighting
     # Outcomes: 2=TP, 1=TIMEOUT, 0=SL
+    ret_vals = np.nan_to_num(
+        np.asarray(ret_vals, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+    )
+    qual_vals = np.clip(
+        np.nan_to_num(
+            np.asarray(qual_vals, dtype=np.float32),
+            nan=0.5,
+            posinf=1.0,
+            neginf=0.0,
+        ),
+        0.0,
+        1.0,
+    )
+    tp_vals = np.clip(
+        np.nan_to_num(
+            np.asarray(tp_vals, dtype=np.float32), nan=float(fixed_tp), posinf=float(fixed_tp), neginf=float(fixed_tp)
+        ),
+        1e-4,
+        None,
+    )
+    sl_vals = np.clip(
+        np.nan_to_num(
+            np.asarray(sl_vals, dtype=np.float32), nan=float(fixed_sl), posinf=float(fixed_sl), neginf=float(fixed_sl)
+        ),
+        1e-4,
+        None,
+    )
+    pnl = np.nan_to_num(
+        np.asarray(pnl, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+    )
 
     valid_outcomes = np.isin(
         lbl_vals, np.array([OUT_SL, OUT_TO, OUT_TP], dtype=lbl_vals.dtype)
@@ -3806,6 +3869,8 @@ def build_hourly_training_set_and_weights(
             lbl_vals = lbl_vals[keep_rows]
             ret_vals = ret_vals[keep_rows]
             qual_vals = qual_vals[keep_rows]
+            tp_vals = tp_vals[keep_rows]
+            sl_vals = sl_vals[keep_rows]
             pnl = pnl[keep_rows]
             if _policy_mfe_vals is not None:
                 _policy_mfe_vals = _policy_mfe_vals[keep_rows]
@@ -3887,6 +3952,8 @@ def build_hourly_training_set_and_weights(
     event_abs_ret = np.abs(np.asarray(ret_vals, dtype=np.float32))
     if event_abs_ret.size:
         mag_q = float(np.nanquantile(event_abs_ret, 0.95))
+        if not np.isfinite(mag_q):
+            mag_q = 1.0
         mag_q = max(mag_q, 1e-9)
         event_abs_ret_clip = np.clip(event_abs_ret, 0.0, mag_q)
         w_magnitude = 0.5 + event_abs_ret_clip / mag_q
@@ -3956,7 +4023,10 @@ def build_hourly_training_set_and_weights(
     )
     # Align excursion-quality weights to the same [0.5, 1.5] scale as the
     # realized-magnitude multiplier before the later combined normalization step.
-    w_mfe_mae = np.clip((2.0 * np.asarray(w_mfe_mae, dtype=np.float32)) - 0.5, 0.5, 1.5)
+    w_mfe_mae = np.clip(
+        (2.0 * np.asarray(w_mfe_mae, dtype=np.float32)) - 0.5, 0.5, 1.5
+    )
+    w_mfe_mae = np.nan_to_num(w_mfe_mae, nan=1.0, posinf=1.5, neginf=0.5)
 
     # MR-specific path-aware weighting: prioritize efficient reversals
     # (high MFE relative to TP with controlled MAE relative to SL).
@@ -3976,6 +4046,9 @@ def build_hourly_training_set_and_weights(
     if str(model_kind).lower() == "mr":
         _mag_power = float(cfg.get("mr_weight_magnitude_power", 0.35))
         w_base = np.power(np.clip(w_base, 1e-6, None), _mag_power)
+    w_base = np.nan_to_num(w_base, nan=1.0, posinf=1.5, neginf=0.5).astype(
+        np.float32, copy=False
+    )
     w_base = w_base * w_mfe_mae
     tprint(
         f"MFE/MAE weighting: mean={w_mfe_mae.mean():.3f}, p10={np.quantile(w_mfe_mae, 0.10):.3f}, p90={np.quantile(w_mfe_mae, 0.90):.3f}"
@@ -3992,16 +4065,30 @@ def build_hourly_training_set_and_weights(
     if bool(cfg.get("base_demote_weak_tp_in_y_bin", True)) and np.any(is_tp):
         min_tp_quality = float(cfg.get("base_min_tp_quality_for_positive", 0.60))
         min_tp_weight = float(cfg.get("base_min_tp_weight_for_positive", 0.85))
+        _qual_arr = np.asarray(qual_vals, dtype=np.float32)
+        # Only apply quality threshold if qual_vals are plausibly in [0,1] range
+        # (mean of TP quality must be > 0.05; otherwise the column is not a proper
+        # bound-efficiency score and the threshold is meaningless)
+        _qual_tp_mean = float(np.nanmean(_qual_arr[is_tp])) if np.any(is_tp) else 0.0
+        _use_qual_gate = _qual_tp_mean > 0.05
         weak_tp_mask = is_tp & (
-            (np.asarray(qual_vals, dtype=np.float32) < min_tp_quality)
+            ((_qual_arr < min_tp_quality) if _use_qual_gate else np.zeros(len(is_tp), dtype=bool))
             | (np.asarray(w_mfe_mae, dtype=np.float32) < min_tp_weight)
         )
-        if np.any(weak_tp_mask):
+        # Safety: never demote ALL positives — that produces a single-class target
+        _would_survive = int(np.sum(is_tp)) - int(np.sum(weak_tp_mask))
+        if _would_survive < 1:
+            tprint(
+                f"Weak TP demotion SKIPPED: would eliminate all {int(np.sum(is_tp))} positives "
+                f"(qual_tp_mean={_qual_tp_mean:.3f}, use_qual_gate={_use_qual_gate})"
+            )
+        elif np.any(weak_tp_mask):
             y_bin = np.asarray(y_bin, dtype=np.float32)
             y_bin[weak_tp_mask] = 0.0
             tprint(
                 f"Weak TP demotion in y_bin: demoted={int(np.sum(weak_tp_mask))}/{int(np.sum(is_tp))} "
-                f"(min_quality={min_tp_quality:.2f}, min_mfe_mae_w={min_tp_weight:.2f})"
+                f"(min_quality={min_tp_quality:.2f}, min_mfe_mae_w={min_tp_weight:.2f}, "
+                f"qual_gate_active={_use_qual_gate})"
             )
 
     # Mild class-balance multiplier (inverse-freq with sqrt exponent + hard cap)
@@ -4088,12 +4175,16 @@ def build_hourly_training_set_and_weights(
 
     # Build feature DataFrame
     # event_ts is a DatetimeIndex, event_sym is a numpy array
-    ts_arr = (
-        pd.DatetimeIndex(event_ts)
-        if isinstance(event_ts, pd.DatetimeIndex)
-        else event_ts
+    if isinstance(event_ts, pd.DatetimeIndex):
+        ts_arr = event_ts.to_numpy(dtype="datetime64[ns]")
+    else:
+        ts_arr = pd.to_datetime(event_ts, utc=True, errors="coerce").tz_localize(
+            None
+        ).to_numpy(dtype="datetime64[ns]")
+    sym_arr = np.asarray(
+        event_sym.values if hasattr(event_sym, "values") else event_sym, dtype=object
     )
-    sym_arr = event_sym.values if hasattr(event_sym, "values") else event_sym
+    _sym_codes, _sym_uniques = pd.factorize(sym_arr, sort=False)
     # Store raw triple-barrier label (-1, 0, 1) for timeout analysis
     _fee_rt = float(cfg.get("policy_fee_rt", 0.003))
     _r_gross = np.asarray(pnl, dtype=np.float32)
@@ -4197,48 +4288,81 @@ def build_hourly_training_set_and_weights(
     parts["__n_res__"] = n_res.astype(np.float32)
     parts["__w_consensus__"] = w_consensus.astype(np.float32)
 
-    # p_exh_lag1
-    lag_ts = event_ts - pd.Timedelta(hours=1)
-    if p_exh_hist is not None:
-        parts["p_exh_lag1"] = np.nan_to_num(
-            _fast_lookup_cached(
-                p_exh_hist, lag_ts, event_sym, lookup_cache=lookup_cache
-            ),
-            nan=0.0,
-        ).astype(np.float32)
-    else:
-        parts["p_exh_lag1"] = np.zeros(len(event_ts), dtype=np.float32)
-
-    # Feature columns — fast lookup
+    lag_ts = ts_arr - np.timedelta64(1, "h")
     _feat_heartbeat_every = max(1, int(cfg.get("label_feature_heartbeat_every", 16)))
-    _feat_t0 = time.time()
-    for _feat_i, k in enumerate(feat_keys, start=1):
-        if k == "p_exh_lag1":
-            continue
-        if k in feats:
-            parts[k] = _fast_lookup_cached(
-                feats[k], event_ts, event_sym, lookup_cache=lookup_cache
-            )
-        if (
-            _feat_i == 1
-            or _feat_i % _feat_heartbeat_every == 0
-            or _feat_i == len(feat_keys)
-        ):
-            tprint(
-                f"[label hb] H={H} side={side} kind={model_kind} "
-                f"features={min(_feat_i, len(feat_keys))}/{len(feat_keys)} "
-                f"events={len(event_ts):,} elapsed={time.time() - _feat_t0:.1f}s"
-            )
+    _symbol_chunk_size = max(1, int(cfg.get("label_symbol_chunk_size", 50)))
+    _n_unique_symbols = int(len(_sym_uniques))
 
-    # Market gates
-    parts["G_VOL"] = _fast_series_lookup_cached(
-        mkt_gates["G_VOL"], event_ts, lookup_cache=lookup_cache
-    )
-    parts["G_TREND"] = _fast_series_lookup_cached(
-        mkt_gates["G_TREND"], event_ts, lookup_cache=lookup_cache
-    )
+    def _slice_part(_value, _mask):
+        if isinstance(_value, (pd.Index, pd.Series, np.ndarray)):
+            return _value[_mask]
+        return np.asarray(_value)[_mask]
 
-    df = pd.DataFrame(parts)
+    def _build_df_chunk(_mask: np.ndarray, _chunk_idx: int, _chunk_total: int) -> pd.DataFrame:
+        _event_ts = ts_arr[_mask]
+        _event_sym = sym_arr[_mask]
+        _lag_ts = lag_ts[_mask]
+        _parts = {k0: _slice_part(v0, _mask) for k0, v0 in parts.items()}
+
+        if p_exh_hist is not None:
+            _parts["p_exh_lag1"] = np.nan_to_num(
+                _fast_lookup_cached(
+                    p_exh_hist, _lag_ts, _event_sym, lookup_cache=lookup_cache
+                ),
+                nan=0.0,
+            ).astype(np.float32)
+        else:
+            _parts["p_exh_lag1"] = np.zeros(len(_event_ts), dtype=np.float32)
+
+        _feat_t0 = time.time()
+        for _feat_i, k in enumerate(feat_keys, start=1):
+            if k == "p_exh_lag1":
+                continue
+            if k in feats:
+                _parts[k] = _fast_lookup_cached(
+                    feats[k], _event_ts, _event_sym, lookup_cache=lookup_cache
+                )
+            if (
+                _feat_i == 1
+                or _feat_i % _feat_heartbeat_every == 0
+                or _feat_i == len(feat_keys)
+            ):
+                tprint(
+                    f"[label hb] H={H} side={side} kind={model_kind} "
+                    f"chunk={_chunk_idx}/{_chunk_total} symbols<= {_symbol_chunk_size} "
+                    f"features={min(_feat_i, len(feat_keys))}/{len(feat_keys)} "
+                    f"events={len(_event_ts):,} elapsed={time.time() - _feat_t0:.1f}s"
+                )
+
+        _parts["G_VOL"] = _fast_series_lookup_cached(
+            mkt_gates["G_VOL"], _event_ts, lookup_cache=lookup_cache
+        )
+        _parts["G_TREND"] = _fast_series_lookup_cached(
+            mkt_gates["G_TREND"], _event_ts, lookup_cache=lookup_cache
+        )
+        return pd.DataFrame(_parts)
+
+    if _n_unique_symbols > _symbol_chunk_size:
+        _dfs = []
+        _chunk_code_batches = [
+            np.arange(i, min(i + _symbol_chunk_size, _n_unique_symbols), dtype=np.int32)
+            for i in range(0, _n_unique_symbols, _symbol_chunk_size)
+        ]
+        tprint(
+            f"Label symbol chunking enabled: symbols={_n_unique_symbols} "
+            f"chunk_size={_symbol_chunk_size} chunks={len(_chunk_code_batches)}"
+        )
+        for _chunk_idx, _code_batch in enumerate(_chunk_code_batches, start=1):
+            _mask = np.isin(_sym_codes, _code_batch, assume_unique=False)
+            if not np.any(_mask):
+                continue
+            _dfs.append(_build_df_chunk(_mask, _chunk_idx, len(_chunk_code_batches)))
+            if bool(cfg.get("label_gc_after_each_chunk", True)):
+                gc.collect()
+        df = pd.concat(_dfs, axis=0, ignore_index=True) if _dfs else pd.DataFrame(parts)
+        del _dfs
+    else:
+        df = _build_df_chunk(np.ones(len(sym_arr), dtype=bool), 1, 1)
 
     # Drop constant market gates (fix for Low Variation warning)
     for g in ["G_VOL", "G_TREND"]:
@@ -4941,7 +5065,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
     # ── ALPHA MODELS (long/short × mr/tf × horizons) ──
     # Note: Using horizons=horizons for explicit control.
     horizons = horizons or list(CANON_HORIZONS)
-    strategies = get_strategies(cfg)
+    strategies = list(strategies) if strategies is not None else get_strategies(cfg)
     for strat in strategies:
         side = strat["trade_side"]
         s_id = strat["strategy_id"]
@@ -5258,6 +5382,21 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         reject_counts["timeout"] += 1
 
                     if _skip_geom_eval:
+                        _persisted_match = None
+                        for _row in _cell_ranked:
+                            try:
+                                if (
+                                    round(float(_row.get("k_tp", np.nan)), 4)
+                                    == round(float(k_tp), 4)
+                                    and round(float(_row.get("sl_as_tp_pct", np.nan)), 4)
+                                    == round(float(sl_base_mult), 4)
+                                    and int(_row.get("base_atr_window", _atr_window))
+                                    == int(_atr_window)
+                                ):
+                                    _persisted_match = _row
+                                    break
+                            except Exception:
+                                continue
                         relaxed_pool.append(
                             {
                                 "lbl": lbl,
@@ -5280,11 +5419,29 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                                 "timeout_kept": float("nan"),
                                 "n_candidates": int(n_candidates),
                                 "n_rr_kept": int(n_rr_kept),
-                                "auc_bound": float("nan"),
-                                "tp_sep_top10": float("nan"),
+                                "auc_bound": float(
+                                    (_persisted_match or {}).get(
+                                        "cell_auc_bound", float("nan")
+                                    )
+                                ),
+                                "tp_sep_top10": float(
+                                    (_persisted_match or {}).get(
+                                        "cell_tp_sep", float("nan")
+                                    )
+                                ),
                                 "bind": float(tp_hit_raw + sl_hit_raw),
                                 "bind_raw": float(tp_hit_raw + sl_hit_raw),
-                                "tp_over_sl": float(tp_hit_raw / max(sl_hit_raw, 1e-9)),
+                                "tp_over_sl": float(
+                                    (_persisted_match or {}).get(
+                                        "cell_tp_over_sl",
+                                        float(k_tp) / max(float(sl_base_mult), 1e-9),
+                                    )
+                                ),
+                                "ap_lift": float(
+                                    (_persisted_match or {}).get(
+                                        "cell_ap_lift", float("nan")
+                                    )
+                                ),
                                 "tp_guard_target": float("nan"),
                                 "tp_emp_base": float("nan"),
                                 "tp_floor_share": float(_tp_floor_share),
@@ -5615,12 +5772,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                     _valid_prod &= np.isin(
                         _lbl_mat, np.array([OUT_SL, OUT_TO, OUT_TP], dtype=np.int8)
                     )
-                    _bucket = f"{kind}_{side}"
-                    _y_prod = np.where(
-                        _lbl_mat[_valid_prod] == OUT_TP,
-                        1,
-                        np.where(_lbl_mat[_valid_prod] == OUT_SL, -1, 0),
-                    ).astype(np.int8)
+                    _bucket = str(side)
+                    _y_prod = _lbl_mat[_valid_prod].astype(np.int8, copy=False)
                     _prod_df = pd.DataFrame(
                         {
                             "bucket": _bucket,
@@ -5646,16 +5799,23 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         _tp_df_a,
                         _sl_df_a,
                     )
-                    _prod_cell_metrics[f"{kind}_{side}_H{int(H)}"] = {
+                    _prod_cell_metrics[f"{side}_H{int(H)}"] = {
                         "timeout": float(
                             _best_g.get(
                                 "timeout_raw", _best_g.get("to_rate", float("nan"))
+                            )
+                        ),
+                        "auc_label": float(
+                            _best_g.get(
+                                "auc_label",
+                                _best_g.get("auc_bound", float("nan")),
                             )
                         ),
                         "auc_bound": float(_best_g.get("auc_bound", float("nan"))),
                         "tp_sep_top10": float(
                             _best_g.get("tp_sep_top10", float("nan"))
                         ),
+                        "ap_lift": float(_best_g.get("ap_lift", float("nan"))),
                         "tp_over_sl": float(_best_g.get("tp_over_sl", float("nan"))),
                     }
 
@@ -5759,9 +5919,13 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                 # Do NOT clear _barrier_base_cache — it is pre-computed globally and reused across cells.
 
     # Production-aligned admissibility diagnostic (label-step side).
-    if _prod_events_rows:
+    # The pre-event TB-cache phase still works on dense matrix outputs before the
+    # strategy-specific candidate/event materialization path. That makes TP/SL/TO
+    # rates look far worse than the actual production candidate set, so running the
+    # hard admissibility gate here is misleading. Keep it opt-in only.
+    if _prod_events_rows and bool(cfg.get("label_prod_admissibility_pre_event_enable", False)):
         _events_prod = pd.concat(_prod_events_rows, ignore_index=True)
-        _score_prod = np.zeros(len(_events_prod), dtype=np.float32)
+        _score_prod = _events_prod["payoff"].to_numpy(dtype=np.float32, copy=False)
         _tp_lo_prod_eval = float(
             cfg.get("barrier_tp_lo_prod", cfg.get("barrier_tp_lo", 0.02))
         )
@@ -5808,6 +5972,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                 f"[LABEL_PROD_ADMISSIBILITY] NOTE existing label_max_timeout_rate={float(cfg.get('label_max_timeout_rate')):.3f} "
                 f"is looser than prod_adm_timeout_max={_gates.timeout_max:.3f}."
             )
+    elif _prod_events_rows:
+        tprint(
+            "[LABEL_PROD_ADMISSIBILITY] SKIP pre-event gate disabled; "
+            "candidate-filtered datasets are the authoritative contract."
+        )
 
     return tb_cache, geom_cache
 
@@ -5846,6 +6015,12 @@ def generate_label_datasets(
         cached_cand_mask = cached_cand_mask & noise_mask.reindex(
             cached_cand_mask.index
         ).fillna(False)
+        for _sid, _mask_df in list(mask_by_strategy.items()):
+            try:
+                _aligned_noise = noise_mask.reindex(_mask_df.index).fillna(False)
+                mask_by_strategy[_sid] = (_mask_df & _aligned_noise).astype(bool)
+            except Exception:
+                continue
         n_after = cached_cand_mask.sum().sum()
         tprint(f"Noise filter applied globally. Candidates: {n_before} -> {n_after}")
 
@@ -5855,6 +6030,11 @@ def generate_label_datasets(
         cutoff = ts - pd.Timedelta(days=oos_days)
         n_before = cached_cand_mask.sum().sum()
         cached_cand_mask = cached_cand_mask.loc[cached_cand_mask.index <= cutoff]
+        for _sid, _mask_df in list(mask_by_strategy.items()):
+            try:
+                mask_by_strategy[_sid] = _mask_df.loc[_mask_df.index <= cutoff]
+            except Exception:
+                continue
         n_after = cached_cand_mask.sum().sum()
         tprint(
             f"OOS holdout: excluded last {oos_days} days (cutoff={cutoff}). Candidates: {n_before} -> {n_after}"
@@ -6296,6 +6476,41 @@ def generate_label_datasets(
     for _k, _v in list(datasets.items()):
         if isinstance(_v, pd.DataFrame) and _v.dtypes.eq(np.float64).any():
             datasets[_k] = _downcast_label_dataset_df(_v, copy=False)
+
+    if bool(cfg.get("label_fail_on_duplicate_datasets", True)):
+        _fingerprints: dict[tuple[int, str, int], list[str]] = {}
+        for _name, _df in datasets.items():
+            if not isinstance(_df, pd.DataFrame):
+                continue
+            if not {"__ts__", "__symbol__", "__y_ret__", "__y_outcome__"}.issubset(
+                _df.columns
+            ):
+                continue
+            _parts = _name.split("_")
+            if len(_parts) < 3 or _parts[0] != "train":
+                continue
+            _variant = ""
+            _h_token = _parts[-1]
+            if _h_token in {"tight", "wide", "balanced"} and len(_parts) >= 4:
+                _variant = _h_token
+                _h_token = _parts[-2]
+            try:
+                _h = int(_h_token)
+            except Exception:
+                continue
+            _core = _df[["__ts__", "__symbol__", "__y_ret__", "__y_outcome__"]]
+            _fp = int(
+                pd.util.hash_pandas_object(_core, index=False)
+                .to_numpy(dtype=np.uint64, copy=False)
+                .sum(dtype=np.uint64)
+            )
+            _fingerprints.setdefault((_h, _variant, _fp), []).append(_name)
+        _dupes = [sorted(v) for v in _fingerprints.values() if len(v) > 1]
+        if _dupes:
+            raise RuntimeError(
+                "Duplicate label datasets detected across distinct strategies: "
+                + "; ".join(",".join(v) for v in _dupes)
+            )
 
     return datasets
 
@@ -8315,11 +8530,30 @@ def train_meta_models_from_artifacts(
                 "y": _asym_ref_y,
             }
 
-        # Stage-2 race: compare model classes only on the chosen target/weights.
-        mae_final_model_kind = "lgbm" if LGBMRegressor is not None else "extratrees"
-        mfe_final_model_kind = "lgbm" if LGBMRegressor is not None else "extratrees"
-        asym_final_model_kind = "lgbm" if LGBMRegressor is not None else "extratrees"
-        if bool(cfg.get("aux_head_run_model_race_on_winner", True)):
+        def _resolve_aux_head_final_model_kind(head_name):
+            _default = "lgbm" if LGBMRegressor is not None else "extratrees"
+            _raw = cfg.get(f"aux_{head_name}_final_model_kind", _default)
+            _kind = str(_raw).lower().strip()
+            if _kind in ("et", "extra_trees"):
+                _kind = "extratrees"
+            if _kind == "lgbm" and LGBMRegressor is None:
+                _kind = "extratrees"
+            if _kind not in {"lgbm", "extratrees", "ridge"}:
+                _kind = _default
+            return _kind
+
+        _mae_model_race = []
+        _mfe_model_race = []
+        _asym_model_race = []
+        mae_final_model_kind = _resolve_aux_head_final_model_kind("mae_q70")
+        mfe_final_model_kind = _resolve_aux_head_final_model_kind("mfe")
+        asym_final_model_kind = _resolve_aux_head_final_model_kind("asym")
+        if bool(cfg.get("aux_head_run_model_race_on_winner", False)):
+            tprint(
+                "Meta aux heads: ignoring aux_head_run_model_race_on_winner=True; "
+                "using fixed pre-pull model families with updated hyperparameters."
+            )
+        if False:
             _mae_race_target = _mae_train_target_full()
             _mae_race_w = _normalize_clip_weights(
                 valid_mae.astype(float) * tm.astype(float)
@@ -8426,8 +8660,7 @@ def train_meta_models_from_artifacts(
 
         _fs_report["mae_q70"]["final_model_choice"] = mae_final_model_kind
         _fs_report["mfe"]["final_model_choice"] = mfe_final_model_kind
-        if _asym_model_race:
-            _fs_report["asym"]["final_model_choice"] = asym_final_model_kind
+        _fs_report["asym"]["final_model_choice"] = asym_final_model_kind
 
         if bool(cfg.get("train_full_inference_models", False)):
             tprint("Meta heads: robust mode => full inference retrain enabled")
@@ -8549,26 +8782,63 @@ def train_meta_models_from_artifacts(
         }
 
         m_asym_final = None
-        from sklearn.ensemble import ExtraTreesRegressor
-        m_asym_final = ExtraTreesRegressor(
-            n_estimators=int(cfg.get("meta_aux_trees", 200)),
-            max_depth=int(cfg.get("meta_aux_depth", 8)),
-            min_samples_leaf=int(cfg.get("meta_aux_min_leaf", 128)),
-            max_features="sqrt",
-            random_state=42,
-            n_jobs=2,
-        )
-        _asym_full_w = _normalize_clip_weights(valid_asym.astype(float) * tm.astype(float))
-        _asym_full_w = _head_weight_vector(
-            y_asym_fit,
-            _asym_full_w,
-            "asym_magnitude",
-            np.arange(len(y_asym_fit)),
-            weight_lambda=1.0,
-        )
-        m_asym_final.fit(
-            Xv[:, idx_asym], y_asym_fit, sample_weight=_asym_full_w
-        )
+        if len(idx_asym) > 0 and np.any(valid_asym & tm):
+            _asym_full_w = _normalize_clip_weights(
+                valid_asym.astype(float) * tm.astype(float)
+            )
+            _asym_full_w = _head_weight_vector(
+                y_asym_fit,
+                _asym_full_w,
+                asym_weight_choice,
+                np.arange(len(y_asym_fit)),
+                weight_lambda=asym_weight_lambda,
+            )
+            if asym_final_model_kind == "lgbm" and LGBMRegressor is not None:
+                m_asym_final = LGBMRegressor(
+                    objective="regression",
+                    n_estimators=500,
+                    learning_rate=0.03,
+                    num_leaves=63,
+                    min_child_samples=50,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    n_jobs=2,
+                )
+                m_asym_final.fit(
+                    Xv[:, idx_asym], _asym_train_target_full(), sample_weight=_asym_full_w
+                )
+            elif asym_final_model_kind == "ridge":
+                from sklearn.linear_model import Ridge
+                from sklearn.pipeline import make_pipeline
+                from sklearn.preprocessing import RobustScaler
+
+                m_asym_final = make_pipeline(
+                    RobustScaler(),
+                    Ridge(
+                        alpha=float(cfg.get("aux_head_ridge_alpha_default", 1.0)),
+                        random_state=42,
+                    ),
+                )
+                m_asym_final.fit(
+                    Xv[:, idx_asym],
+                    _asym_train_target_full(),
+                    ridge__sample_weight=_asym_full_w,
+                )
+            else:
+                m_asym_final = ExtraTreesRegressor(
+                    n_estimators=int(cfg.get("meta_aux_trees", 200)),
+                    max_depth=int(cfg.get("meta_aux_depth", 8)),
+                    min_samples_leaf=int(cfg.get("meta_aux_min_leaf", 128)),
+                    max_features="sqrt",
+                    random_state=42,
+                    n_jobs=2,
+                )
+                m_asym_final.fit(
+                    Xv[:, idx_asym],
+                    _asym_train_target_full(),
+                    sample_weight=_asym_full_w,
+                )
 
         heads_meta = {
             "mae_q70": AuxHeadWrapper(
@@ -9428,21 +9698,6 @@ def train_meta_models_from_artifacts(
         n_res = df.get(
             "__n_res__", pd.Series(np.ones(len(df)), index=df.index)
         ).values.astype(np.float32)
-        keep = n_res >= np.quantile(n_res, 0.20)
-        if keep.sum() < 100:
-            keep = np.ones(len(df), dtype=bool)
-
-        # Memory optimization: use single copy with shared index, avoid redundant copies
-        keep_idx = np.where(keep)[0]
-        df = df.iloc[keep_idx].reset_index(drop=True)
-        X_feats = X_feats.iloc[keep_idx].reset_index(drop=True)
-        pred_h = pred_h.iloc[keep_idx].reset_index(drop=True)
-        if _vol_proxy is not None:
-            _vol_proxy = _vol_proxy[keep]
-        p_oof = p_oof[keep]
-        n_res = n_res[keep]
-        _y_per_h = {h: v[keep] for h, v in _y_per_h.items()}
-        y_target_h = y_target_h[keep]
         _trade_mask = np.ones(len(df), dtype=bool)
         if "__trigger_offset_h__" in df.columns:
             _trade_mask = np.abs(
@@ -9620,7 +9875,9 @@ def train_meta_models_from_artifacts(
             w_exc = np.ones(len(df), dtype=np.float64)
         w_exc = w_exc / max(float(np.mean(w_exc)), 1e-12)  # normalize to mean=1
 
-        w_meta_main = (w_mag * w_exc).astype(np.float64)
+        _n_res_max = float(np.nanmax(n_res)) if len(n_res) and np.nanmax(n_res) > 0 else 1.0
+        w_n_res = 0.5 + 1.5 * np.clip(n_res.astype(np.float64) / _n_res_max, 0.0, 1.0)
+        w_meta_main = (w_mag * w_exc * w_n_res).astype(np.float64)
         w_meta_main = w_meta_main / max(
             float(np.mean(w_meta_main)), 1e-12
         )  # final mean=1
@@ -9690,6 +9947,35 @@ def train_meta_models_from_artifacts(
         if include_meta_reg:
             meta_reg = MetaModel(reports_dir=reports_dir)
             meta_reg.strategy_name = _h_label
+            meta_reg.candidate_mode = "xgb_parallel_forest"
+            meta_reg.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", True))
+            meta_reg.xgb_parallel_forest_params = {
+                "objective": "reg:squarederror",
+                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 30)),
+                "num_parallel_tree": int(
+                    cfg.get("meta_parallel_forest_num_parallel_tree", 50)
+                ),
+                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 6)),
+                "learning_rate": float(
+                    cfg.get("meta_parallel_forest_learning_rate", 0.05)
+                ),
+                "subsample": 0.75,
+                "colsample_bytree": 0.75,
+                "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
+                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
+                "min_child_weight": float(
+                    cfg.get(
+                        "meta_parallel_forest_min_child_weight",
+                        cfg.get("meta_parallel_forest_min_child_weight_pct", 0.001),
+                    )
+                ),
+                "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
+                "max_delta_step": 2.0,
+                "tree_method": "hist",
+                "random_state": 42,
+                "n_jobs": 3,
+                "verbosity": 0,
+            }
             _meta_sel_cfg = dict(cfg.get("meta_selector_cfg", {}) or {})
             _meta_fs_dir = os.path.join(
                 str(cfg.get("data_root", "data")),
@@ -9993,7 +10279,7 @@ def train_meta_models_from_artifacts(
                 float(np.mean(w_exc_clf)), 1e-12
             )  # normalize to mean=1
 
-            w_meta_clf = (w_mag_clf * w_exc_clf).astype(np.float64)
+            w_meta_clf = (w_mag_clf * w_exc_clf * w_n_res).astype(np.float64)
             w_meta_clf = w_meta_clf / max(
                 float(np.mean(w_meta_clf)), 1e-12
             )  # final mean=1
@@ -10087,6 +10373,35 @@ def train_meta_models_from_artifacts(
             )
             meta_clf = MetaClassifierModel(reports_dir=reports_dir)
             meta_clf.strategy_name = k
+            meta_clf.candidate_mode = "xgb_parallel_forest"
+            meta_clf.xgb_parallel_forest_params = {
+                "objective": "multi:softprob",
+                "num_class": 3,
+                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 30)),
+                "num_parallel_tree": int(
+                    cfg.get("meta_parallel_forest_num_parallel_tree", 50)
+                ),
+                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 6)),
+                "learning_rate": float(
+                    cfg.get("meta_parallel_forest_learning_rate", 0.05)
+                ),
+                "subsample": 0.75,
+                "colsample_bytree": 0.75,
+                "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
+                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
+                "min_child_weight": float(
+                    cfg.get(
+                        "meta_parallel_forest_min_child_weight",
+                        cfg.get("meta_parallel_forest_min_child_weight_pct", 0.001),
+                    )
+                ),
+                "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
+                "tree_method": "hist",
+                "random_state": 42,
+                "n_jobs": 3,
+                "verbosity": 0,
+                "eval_metric": "mlogloss",
+            }
             meta_clf.FEE_PER_ROUND_TRIP = (
                 float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
             )
@@ -11399,6 +11714,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             )
 
                     y = df["__y_bin__"].values.astype(np.float32)
+                    if len(np.unique((y >= 0.5).astype(int))) < 2:
+                        tprint(
+                            f"  Skipping {key}: single-class target (all {'positive' if np.mean(y)>=0.5 else 'negative'})"
+                        )
+                        continue
                     y_ret = df["__y_ret__"].values.astype(np.float32)
                     w_raw = df["__w__"].values.astype(np.float32)
                     # Temper weights with sqrt to reduce n_eff collapse from skewed uniqueness weights
@@ -11889,6 +12209,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             # --- Multi-horizon deployment: all horizons are kept ---
             # best_m serves as the "primary" (highest score) for backward compat.
             # models_by_h stores all trained horizons for inference averaging.
+            if best_m is None and per_h_models:
+                # All horizons failed the economic gate — fall back to best raw score
+                # rather than dropping the strategy entirely (gate logged a warning above).
+                _fallback_h = max(per_h_models, key=lambda h: per_h_models[h].get("score", -1e12))
+                best_m = per_h_models[_fallback_h]
+                tprint(
+                    f"  WARNING: {side}_{k}: all horizons failed economic gate; "
+                    f"falling back to best-scored horizon H={_fallback_h} (econ_gate_bypass=True)"
+                )
             if best_m is not None:
                 best_m["models_by_h"] = {
                     h: {
@@ -12451,7 +12780,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     alpha_metrics = {}
     for side, side_models in final_models.items():
         for kind, kind_model in side_models.items():
-            alpha_metrics[f"{side}_{kind}"] = kind_model.get("alpha_diag", {})
+            alpha_metrics[f"{side}_{kind}"] = kind_model.get("alpha_diag", {}) if kind_model is not None else {}
 
     return {
         "alpha_models": final_models,

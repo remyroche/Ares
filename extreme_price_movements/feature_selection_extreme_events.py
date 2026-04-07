@@ -1798,7 +1798,7 @@ def mdi_feature_selection_v4_topk(
     base_model=None,
     sample_weight: Optional[np.ndarray] = None,
     k_frac: float = 0.20,
-    topk_weight: float = 0.3,
+    topk_weight: float = 0.2,
     **kwargs
 ) -> MDISelectionResult:
     """
@@ -1821,7 +1821,7 @@ def mdi_feature_selection_v4_topk(
     WEIGHTING:
     ==========
     - MDI importance: (1 - topk_weight) = 0.70 by default
-    - Decile ranking importance: topk_weight = 0.30 by default
+    - Decile ranking importance: topk_weight = 0.20 by default
     
     The decile component ensures features that exhibit monotonic relationship
     with the target get selected, even if they don't have the highest MDI.
@@ -1832,7 +1832,7 @@ def mdi_feature_selection_v4_topk(
         base_model: Base model for MDI (default: ExtraTreesRegressor)
         sample_weight: Optional sample weights
         k_frac: [DEPRECATED] Kept for API compatibility
-        topk_weight: Weight for decile ranking component (default 0.30)
+        topk_weight: Weight for decile ranking component (default 0.20)
         **kwargs: Additional arguments passed to mdi_feature_selection_v3
     
     Returns:

@@ -4405,13 +4405,21 @@ class RidgePositionSizer:
             List of (train_idx, test_idx) tuples
         """
         n = len(timestamps)
-        if n < min_train_size * 2:
-            tprint(f"  WARNING: Not enough samples for rolling walk-forward ({n} < {min_train_size * 2}), using single split")
-            return [np.arange(n), np.array([])]
-
-        # Sort by timestamp
         sort_idx = np.argsort(timestamps)
-        sorted_indices = np.arange(n)[sort_idx]
+        sorted_indices = np.arange(n, dtype=np.int64)[sort_idx]
+        if n < min_train_size * 2:
+            tprint(
+                f"  WARNING: Not enough samples for rolling walk-forward "
+                f"({n} < {min_train_size * 2}), using single chronological fallback split"
+            )
+            train_end = max(min_train_size, int(round(train_fraction * n)))
+            train_end = min(max(train_end, 1), max(n - 1, 1))
+            train_idx = sorted_indices[:train_end]
+            test_idx = sorted_indices[train_end:]
+            if len(test_idx) == 0 and n >= 2:
+                train_idx = sorted_indices[:-1]
+                test_idx = sorted_indices[-1:]
+            return [(np.asarray(train_idx, dtype=np.int64), np.asarray(test_idx, dtype=np.int64))]
 
         splits = []
         train_size = max(int(train_fraction * n), min_train_size)
@@ -4428,7 +4436,12 @@ class RidgePositionSizer:
             train_idx = sorted_indices[:train_end]
             test_idx = sorted_indices[test_start:test_end]
 
-            splits.append((train_idx, test_idx))
+            splits.append(
+                (
+                    np.asarray(train_idx, dtype=np.int64),
+                    np.asarray(test_idx, dtype=np.int64),
+                )
+            )
 
         return splits
 
@@ -4528,11 +4541,31 @@ class RidgePositionSizer:
             X_train, X_test = X[train_idx], X[test_idx]
             y_train_net, y_test_net = y_net[train_idx], y_net[test_idx]
             y_train_gross, y_test_gross = y_gross[train_idx], y_gross[test_idx]
-            to_train, to_test = (trade_outcomes.iloc[train_idx], trade_outcomes.iloc[test_idx]) if trade_outcomes is not None else (None, None)
-            ts_train, ts_test = timestamps[train_idx], timestamps[test_idx] if timestamps is not None else None
-            sym_train, sym_test = (symbols[train_idx], symbols[test_idx]) if symbols is not None else (None, None)
-            xb_train, xb_test = (exit_bars[train_idx], exit_bars[test_idx]) if exit_bars is not None else (None, None)
-            grp_train, grp_test = (groups[train_idx], groups[test_idx]) if groups is not None else (None, None)
+            to_train, to_test = (
+                (trade_outcomes.iloc[train_idx], trade_outcomes.iloc[test_idx])
+                if trade_outcomes is not None
+                else (None, None)
+            )
+            ts_train, ts_test = (
+                (timestamps[train_idx], timestamps[test_idx])
+                if timestamps is not None
+                else (None, None)
+            )
+            sym_train, sym_test = (
+                (symbols[train_idx], symbols[test_idx])
+                if symbols is not None
+                else (None, None)
+            )
+            xb_train, xb_test = (
+                (exit_bars[train_idx], exit_bars[test_idx])
+                if exit_bars is not None
+                else (None, None)
+            )
+            grp_train, grp_test = (
+                (groups[train_idx], groups[test_idx])
+                if groups is not None
+                else (None, None)
+            )
             inner_cv_cache = _build_cv_cache_local(
                 X_train,
                 ts_train,
@@ -6463,6 +6496,11 @@ class RidgePositionSizer:
             tprint(f"  {base_winner} won the sizer race. Launching two-layer tree HPO...")
             import optuna
 
+            tree_runtime_keys = {"eval_top_k_pct", "top_k_pct", "cooldown_hours"}
+
+            def _tree_model_kwargs(params: dict[str, Any]) -> dict[str, Any]:
+                return {k: v for k, v in dict(params or {}).items() if k not in tree_runtime_keys}
+
             # Setup aggressive pruner for both layers
             pruner = optuna.pruners.MedianPruner(n_startup_trials=10, n_warmup_steps=5, interval_steps=1)
             tree_hpo_splits = _build_time_cv_splits(
@@ -6632,13 +6670,13 @@ class RidgePositionSizer:
 
             def layer2_objective(trial):
                 # Suggest expanded search grid for winning architecture
-                # suggestion keys for top_k / cooldown
-                kwargs = {k: v for k, v in layer1_best_params.items()}
-                # Remove sizer parameters from model kwargs to avoid XGBoost warnings
-                for pk in ["top_k_pct", "cooldown_hours"]:
-                    if pk in kwargs: del kwargs[pk]
-
-                top_k = float(layer1_best_params.get("top_k_pct", 0.30))
+                kwargs = _tree_model_kwargs(layer1_best_params)
+                top_k = float(
+                    layer1_best_params.get(
+                        "eval_top_k_pct",
+                        layer1_best_params.get("top_k_pct", 0.30),
+                    )
+                )
                 cooldown = float(layer1_best_params.get("cooldown_hours", 1.0))
 
                 if base_winner in ["xgb", "lgbm"]:
@@ -6769,7 +6807,17 @@ class RidgePositionSizer:
             layer2_study = optuna.create_study(direction="maximize", pruner=pruner, sampler=optuna.samplers.TPESampler(seed=42))
 
             # Enqueue best layer 1 params as starting point for layer 2
-            layer2_study.enqueue_trial(layer1_best_params)
+            _layer2_warm = {}
+            if base_winner in ["xgb", "lgbm"]:
+                for key in ("min_child_weight", "reg_alpha", "reg_lambda"):
+                    if key in layer1_best_params:
+                        _layer2_warm[key] = layer1_best_params[key]
+            elif base_winner in ["et", "rf"]:
+                for key in ("min_samples_split", "min_samples_leaf", "ccp_alpha"):
+                    if key in layer1_best_params:
+                        _layer2_warm[key] = layer1_best_params[key]
+            if _layer2_warm:
+                layer2_study.enqueue_trial(_layer2_warm)
 
             layer2_trials = max(10, layer1_trials // 2)
             layer2_study.optimize(layer2_objective, n_trials=layer2_trials, n_jobs=self.n_jobs)

@@ -6028,9 +6028,12 @@ def generate_label_datasets(
             return None
         min_h = int(min(_hs))
         ts_end_adj = ts - pd.Timedelta(hours=min_h + 8)
-        window_cand = cached_cand_mask.loc[
-            (cached_cand_mask.index >= ts_start)
-            & (cached_cand_mask.index <= ts_end_adj)
+        _strategy_mask = mask_by_strategy.get(_strategy["strategy_id"], cached_cand_mask)
+        if _strategy_mask is None:
+            return None
+        window_cand = _strategy_mask.loc[
+            (_strategy_mask.index >= ts_start)
+            & (_strategy_mask.index <= ts_end_adj)
         ]
         if window_cand.empty:
             return None
@@ -6107,6 +6110,7 @@ def generate_label_datasets(
         feat_key = "base_feature_keys"
         fixed_tp = 0.05
         fixed_sl = 0.025
+        extra_feature_keys = _meta_feature_keys_for_kind(cfg, strat)
         for H in strategy_horizons.get(strategy_id, []):
             H_int = int(H)
 
@@ -6141,6 +6145,7 @@ def generate_label_datasets(
                         strategy_label,
                         cand_filter,
                         feat_key,
+                        extra_feature_keys,
                         fixed_tp,
                         fixed_sl,
                     )
@@ -6157,6 +6162,7 @@ def generate_label_datasets(
             strategy_label,
             cand_filter,
             feat_key,
+            extra_feature_keys,
             fixed_tp,
             fixed_sl,
         ) = task
@@ -6198,7 +6204,7 @@ def generate_label_datasets(
             k,
             trend_filter=move_bucket,
             feature_key=feat_key,
-            extra_feature_keys=_meta_feature_keys_for_kind(cfg, strat),
+            extra_feature_keys=extra_feature_keys,
             label_method="triple_barrier",
             fixed_tp=fixed_tp,
             fixed_sl=fixed_sl,
@@ -10055,6 +10061,9 @@ def train_meta_models_from_artifacts(
 
             meta_oof_path = os.path.join(meta_oof_dir, f"meta_oof_{key}.parquet")
             _is_clf_key = key.endswith("_clf")
+            _is_tbm_multiclass_key = bool(
+                re.match(r".*_(tbm_500_250|tbm_250_125)_h\d+$", key)
+            )
             _is_ei_key = key.endswith("_early_inval")
             if _is_ei_key:
                 _oof_pred_1d = _fill_nonfinite_oof_vector(meta.oof_probs, neutral=0.5)
@@ -10067,7 +10076,7 @@ def train_meta_models_from_artifacts(
                         "is_long": is_long,
                     }
                 )
-            elif _is_clf_key and np.ndim(meta.oof_probs) == 2:
+            elif (_is_clf_key or _is_tbm_multiclass_key) and np.ndim(meta.oof_probs) == 2:
                 p_sl = _fill_nonfinite_oof_vector(
                     meta.oof_probs[:, 0], neutral=1.0 / 3.0
                 )

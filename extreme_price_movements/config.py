@@ -3034,6 +3034,12 @@ POSITION_SIZER_V2_BUCKET_CONFIG = {
     "min_samples_total": 500,
     "min_samples_per_fold": 100,
     "min_active_trades_per_policy_eval": 30,
+    "bucket_fallback_mode": "global_model",  # "global_model", "reject_all", "safe_constant_policy"
+    "fit_global_baseline": True,
+    "enable_bucket_size_regularization_guard": True,
+    "unknown_bucket_mode": "fallback",
+    "fallback_constant_size": 0.0,
+    "bucket_similarity_diagnostics_enabled": True,
 }
 
 POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG = {

@@ -1739,6 +1739,69 @@ def generate_target_race_report(
 # ============================================================
 
 
+def fit_global_position_sizer_baseline(
+    feature_dict: Dict[str, np.ndarray],
+    trade_outcomes: pd.DataFrame,
+    y_raw_net_return: np.ndarray,
+    y_downside: np.ndarray,
+    timestamps: np.ndarray,
+    sample_weight: Optional[np.ndarray] = None,
+    lambda_downside: float = 0.5,
+    eta_uncertainty: float = 0.5,
+    cost_pct: float = 0.002,
+    start_equity: float = 100000.0,
+) -> Dict[str, Any]:
+    """Fits a single position sizer across all available data without partitioning."""
+    tprint("=" * 80)
+    tprint("FITTING GLOBAL BASELINE SIZER")
+    tprint("=" * 80)
+
+    # --- Layer A ---
+    predictor = LayerAPredictor(
+        lambda_downside=lambda_downside, eta_uncertainty=eta_uncertainty
+    )
+    predictor.fit(
+        feature_dict=feature_dict,
+        trade_outcomes=trade_outcomes,
+        y_raw_net_return=y_raw_net_return,
+        y_downside=y_downside,
+        timestamps=timestamps,
+        sample_weight=sample_weight,
+    )
+
+    scores = predictor.predict_score(feature_dict)
+
+    # --- Layer B ---
+    b_opt = LayerBPolicyOptimizer(cost_pct=cost_pct)
+    best_policy = b_opt.optimize(scores, trade_outcomes, timestamps)
+
+    # --- Layer C ---
+    c_opt = LayerCExecutionOptimizer(start_equity=start_equity)
+    sizing_mode = c_opt.optimize_sizing(
+        scores,
+        y_raw_net_return,
+        threshold=best_policy["score_threshold"],
+        timestamps=timestamps,
+    )
+    c_opt.sizing_mode = sizing_mode
+
+    return {
+        "layer_a": predictor,
+        "layer_b": b_opt,
+        "layer_c": c_opt,
+        "best_policy": best_policy,
+        "scores": scores,
+        "fallback_type": "global_model",
+    }
+
+
+def validate_bucket_labels(bucket_labels: np.ndarray, allowed_buckets: List[str]) -> None:
+    """Validates that all bucket labels are either missing or in the allowed list."""
+    unique_labels = np.unique(bucket_labels)
+    invalid = [L for L in unique_labels if L not in allowed_buckets and str(L) != "nan"]
+    if invalid:
+        tprint(f"WARNING: Found invalid bucket labels: {invalid}. They will be routed via unknown_bucket_mode.")
+
 def run_bucketed_position_sizer_v2(
     feature_dict: Dict[str, np.ndarray],
     trade_outcomes: pd.DataFrame,
@@ -1755,30 +1818,80 @@ def run_bucketed_position_sizer_v2(
     from extreme_price_movements.config import (
         POSITION_SIZER_V2_BUCKET_CONFIG,
         POSITION_SIZER_V2_BUCKETS,
+        POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG,
     )
+    import copy
 
     results = {}
     summary_rows = []
 
     min_samples = POSITION_SIZER_V2_BUCKET_CONFIG.get("min_samples_total", 500)
+    fallback_mode = POSITION_SIZER_V2_BUCKET_CONFIG.get("bucket_fallback_mode", "reject_all")
+    fit_global = POSITION_SIZER_V2_BUCKET_CONFIG.get("fit_global_baseline", False)
+    enable_size_guard = POSITION_SIZER_V2_BUCKET_CONFIG.get("enable_bucket_size_regularization_guard", False)
 
-    for bucket in POSITION_SIZER_V2_BUCKETS:
+    # Fallback default models
+    global_model_dict = None
+    if fit_global:
+        global_model_dict = fit_global_position_sizer_baseline(
+            feature_dict, trade_outcomes, y_raw_net_return, y_downside, timestamps,
+            sample_weight, lambda_downside, eta_uncertainty, cost_pct, start_equity
+        )
+        results["__global_baseline__"] = global_model_dict
+
+    unique_present_buckets = np.unique(bucket_labels).astype(str).tolist()
+    # Also iterate over defined buckets even if absent to generate fallback slots
+    all_target_buckets = POSITION_SIZER_V2_BUCKETS + [b for b in unique_present_buckets if b not in POSITION_SIZER_V2_BUCKETS]
+
+    validate_bucket_labels(bucket_labels, POSITION_SIZER_V2_BUCKETS)
+
+    for bucket in all_target_buckets:
+        if bucket == "nan":
+            continue
+
         tprint("=" * 80)
         tprint(f"PROCESSING BUCKET: {bucket}")
         tprint("=" * 80)
 
-        mask = bucket_labels == bucket
+        mask = (bucket_labels == bucket)
         n_bucket = int(np.sum(mask))
 
-        if n_bucket < min_samples:
+        # Helper to construct fallback result
+        def _get_fallback_result(reason: str, mode: str):
+            res = {}
+            if mode == "global_model" and global_model_dict is not None:
+                res = copy.copy(global_model_dict)
+                res["status"] = f"fallback_{reason}"
+            else:
+                # safe_constant_policy or reject_all
+                res = {
+                    "status": f"fallback_{reason}",
+                    "fallback_mode": mode,
+                    "layer_a": None,
+                    "layer_b": None,
+                    "layer_c": None,
+                    "best_policy": {"score_threshold": float('inf'), "policy": "reject_all" if mode == "reject_all" else "safe_constant"},
+                }
+            return res
+
+        if n_bucket < min_samples or bucket not in POSITION_SIZER_V2_BUCKETS:
+            reason = "insufficient_samples" if bucket in POSITION_SIZER_V2_BUCKETS else "unknown_bucket"
+            mode = fallback_mode if reason == "insufficient_samples" else POSITION_SIZER_V2_BUCKET_CONFIG.get("unknown_bucket_mode", "fallback")
+            if mode == "fallback":
+                mode = fallback_mode
+
             tprint(
-                f"  Skipping bucket {bucket} due to insufficient samples ({n_bucket} < {min_samples})"
+                f"  Skipping local fit for bucket {bucket} due to {reason} (n={n_bucket}). Using fallback mode: {mode}"
             )
+
+            results[bucket] = _get_fallback_result(reason, mode)
+
             summary_rows.append(
                 {
                     "bucket": bucket,
                     "n_samples": n_bucket,
-                    "status": "skipped_insufficient_samples",
+                    "status": f"fallback_{reason}",
+                    "fallback_mode": mode,
                     "model1_n_features": 0,
                     "model2_n_features": 0,
                     "model3_n_features": 0,
@@ -1801,18 +1914,46 @@ def run_bucketed_position_sizer_v2(
         ts_bucket = timestamps[mask]
         sw_bucket = sample_weight[mask] if sample_weight is not None else None
 
-        # --- Layer A ---
-        predictor = LayerAPredictor(
-            lambda_downside=lambda_downside, eta_uncertainty=eta_uncertainty
-        )
-        predictor.fit(
-            feature_dict=fd_bucket,
-            trade_outcomes=outcomes_bucket,
-            y_raw_net_return=y_ret_bucket,
-            y_downside=y_down_bucket,
-            timestamps=ts_bucket,
-            sample_weight=sw_bucket,
-        )
+        # Apply bucket-size-aware guardrail if enabled
+        bucket_fs_config = None
+        if enable_size_guard:
+            import extreme_price_movements.config as _cfg
+            from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
+            import math
+            bucket_fs_config = copy.deepcopy(POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG)
+            guard_cap = max(1, math.floor(math.sqrt(n_bucket)))
+            for k in bucket_fs_config.get("max_features_cap", {}):
+                bucket_fs_config["max_features_cap"][k] = min(
+                    bucket_fs_config["max_features_cap"][k], guard_cap
+                )
+            tprint(f"  Applied small-bucket regularization guard: cap={guard_cap} for n={n_bucket}")
+
+        # Temporarily patch the config dictionary in place so downstream imports see it
+        _orig_fs_state = None
+        if bucket_fs_config is not None:
+            from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
+            _orig_fs_state = copy.deepcopy(POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG)
+            POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG.clear()
+            POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG.update(bucket_fs_config)
+
+        try:
+            # --- Layer A ---
+            predictor = LayerAPredictor(
+                lambda_downside=lambda_downside, eta_uncertainty=eta_uncertainty
+            )
+            predictor.fit(
+                feature_dict=fd_bucket,
+                trade_outcomes=outcomes_bucket,
+                y_raw_net_return=y_ret_bucket,
+                y_downside=y_down_bucket,
+                timestamps=ts_bucket,
+                sample_weight=sw_bucket,
+            )
+        finally:
+            if bucket_fs_config is not None and _orig_fs_state is not None:
+                from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
+                POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG.clear()
+                POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG.update(_orig_fs_state)
 
         scores = predictor.predict_score(fd_bucket)
 
@@ -1843,6 +1984,7 @@ def run_bucketed_position_sizer_v2(
                 "bucket": bucket,
                 "n_samples": n_bucket,
                 "status": "success",
+                "fallback_mode": "none",
                 "model1_n_features": len(predictor.final_selected_feature_idx_edge_)
                 if fs1
                 else 0,

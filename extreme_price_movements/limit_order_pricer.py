@@ -294,6 +294,8 @@ def get_limit_price_for_order(
     return float(limit_price)
 
 
+from extreme_price_movements.execution_semantics import resolve_limit_fill
+
 def check_limit_order_fill(
     limit_price: float,
     is_long: bool,
@@ -315,18 +317,7 @@ def check_limit_order_fill(
             - did_fill: True if order filled
             - fill_price: Price at which fill occurred
     """
-    if is_long:
-        # Long fills when price drops to or below limit price
-        # Check: did low go below our limit?
-        fill_price = min(low_price, open_price)  # Use worse of open/low
-        did_fill = low_price <= limit_price
-    else:
-        # Short fills when price rises to or above limit price
-        # Check: did high go above our limit?
-        fill_price = max(high_price, open_price)  # Use worse of open/high
-        did_fill = high_price >= limit_price
-    
-    return bool(did_fill), float(fill_price)
+    return resolve_limit_fill(open_price, high_price, low_price, limit_price, is_long)
 
 
 def simulate_trade_with_limit_order(

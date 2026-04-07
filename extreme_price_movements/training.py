@@ -8446,6 +8446,8 @@ def train_meta_models_from_artifacts(
             _m.strategy_name = _head_name
             _m.candidate_mode = "xgb_parallel_forest"
             _m.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", True))
+            _n_fold = _bucket_n * 2.0 / 3.0
+            _mcw_pct = float(cfg.get("meta_parallel_forest_min_child_weight_pct", 0.001))
             _m.xgb_parallel_forest_params = {
                 "objective": "reg:squarederror",
                 "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 8)),
@@ -8460,9 +8462,7 @@ def train_meta_models_from_artifacts(
                 "colsample_bytree": 0.75,
                 "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
                 "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 20.0)),
-                "min_child_weight": float(
-                    cfg.get("meta_parallel_forest_min_child_weight", 48.0)
-                ),
+                "min_child_weight": max(1.0, float(_mcw_pct * _n_fold)),
                 "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
                 "max_delta_step": 2.0,
                 "tree_method": "hist",
@@ -8485,6 +8485,8 @@ def train_meta_models_from_artifacts(
             _m.strategy_name = _head_name
             _m.candidate_mode = "xgb_parallel_forest"
             _m.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", True))
+            _n_fold = _bucket_n * 2.0 / 3.0
+            _mcw_pct = float(cfg.get("meta_parallel_forest_min_child_weight_pct", 0.001))
             _m.xgb_parallel_forest_params = {
                 "objective": "multi:softprob",
                 "num_class": 3,
@@ -8500,9 +8502,7 @@ def train_meta_models_from_artifacts(
                 "colsample_bytree": 0.75,
                 "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
                 "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 20.0)),
-                "min_child_weight": float(
-                    cfg.get("meta_parallel_forest_min_child_weight", 48.0)
-                ),
+                "min_child_weight": max(1.0, float(_mcw_pct * _n_fold)),
                 "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
                 "tree_method": "hist",
                 "random_state": 42,

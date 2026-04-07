@@ -1460,7 +1460,7 @@ class LayerBPolicyOptimizer:
     Optimizes exit geometry, selection boundaries, and time management.
 
     Standardized empty fold behavior:
-    no active trades -> pnl_day = 0, sortino = 0, maxDD = 1, timeout_rate = 1
+    no active trades -> pnl_day = 0, sortino = 0, maxDD = 0, timeout_rate = 0, no_trade_fold = True
     """
 
     def __init__(
@@ -1468,19 +1468,30 @@ class LayerBPolicyOptimizer:
         cost_pct: float = 0.002,
         lambda_penalty: float = 0.5,
         annualization_factor: Optional[float] = None,
-        utility_mode: str = "stable_absolute",
+        layerB_score_mode: str = "stable_absolute",
         w_pnl: float = 1.0,
+        w_sort: float = 1.0,
         w_quality: float = 1.0,
         w_dd: float = 1.0,
+        w_inst: float = 1.0,
         w_instab: float = 1.0,
         w_to: float = 0.0,
-        eps_utility: float = 1e-4,
+        eps_policy_utility: float = 1e-4,
+
     ):
         self.cost_pct = cost_pct
         self.lambda_penalty = lambda_penalty
         self.annualization_factor = (
             annualization_factor if annualization_factor is not None else 1.0
         )  # default no annualization
+        self.layerB_score_mode = layerB_score_mode
+        self.w_pnl = w_pnl
+        self.w_sort = w_sort
+        self.w_dd = w_dd
+        self.w_inst = w_inst
+        self.w_to = w_to
+        self.eps_policy_utility = eps_policy_utility
+
         self.best_policy = {}
         self.best_j = -1e9
 
@@ -1514,6 +1525,8 @@ class LayerBPolicyOptimizer:
         fold_sortinos = []
         fold_maxdds = []
         fold_timeout_rates = []
+        fold_trade_counts = []
+        fold_no_trade_flags = []
 
         min_days_floor = (
             1.0 / 24.0
@@ -1523,6 +1536,9 @@ class LayerBPolicyOptimizer:
             if len(val_idx) == 0:
                 continue
 
+            ts_val_fold = pd.to_datetime(timestamps[val_idx])
+            days_fold = max((ts_val_fold.max() - ts_val_fold.min()).total_seconds() / 86400.0, min_days_floor)
+
             scores_val = scores[val_idx]
             fold_thresh = np.percentile(scores_val, score_quantile_fraction * 100)
             active_mask = scores_val >= fold_thresh
@@ -1531,8 +1547,10 @@ class LayerBPolicyOptimizer:
             if len(active_val_idx) == 0:
                 fold_pnl_days.append(0.0)
                 fold_sortinos.append(0.0)
-                fold_maxdds.append(1.0)
-                fold_timeout_rates.append(1.0)
+                fold_maxdds.append(0.0)
+                fold_timeout_rates.append(0.0)
+                fold_trade_counts.append(0)
+                fold_no_trade_flags.append(True)
                 continue
 
             entry_prices = trade_outcomes["entry_price"].values[active_val_idx]
@@ -1573,16 +1591,16 @@ class LayerBPolicyOptimizer:
             if len(u) == 0:
                 fold_pnl_days.append(0.0)
                 fold_sortinos.append(0.0)
-                fold_maxdds.append(1.0)
-                fold_timeout_rates.append(1.0)
+                fold_maxdds.append(0.0)
+                fold_timeout_rates.append(0.0)
+                fold_trade_counts.append(0)
+                fold_no_trade_flags.append(True)
                 continue
 
             ret = np.expm1(u)
             pnl = float(np.sum(ret))
 
-            ts = pd.to_datetime(timestamps[active_val_idx])
-            days = max((ts.max() - ts.min()).total_seconds() / 86400.0, min_days_floor)
-            pnl_day = pnl / days
+            pnl_day = pnl / days_fold
 
             # Defensive check for stable_equity function mapping (already globally imported)
             _, dd = _stable_equity_and_drawdown(ret)
@@ -1601,13 +1619,16 @@ class LayerBPolicyOptimizer:
             # Defensive index access for timeout reason code
             to_idx = min(TIMEOUT_REASON_IDX, len(reason_counts) - 1)
             fold_timeout_rates.append(reason_counts[to_idx] / len(u))
-
+            fold_trade_counts.append(len(u))
+            fold_no_trade_flags.append(False)
         candidate_params = {}
         return aggregate_candidate_fold_metrics(
             fold_pnl_days=fold_pnl_days,
             fold_sortinos=fold_sortinos,
             fold_maxdds=fold_maxdds,
             fold_timeout_rates=fold_timeout_rates,
+            fold_trade_counts=fold_trade_counts,
+            fold_no_trade_flags=fold_no_trade_flags,
             candidate_params=candidate_params,
         )
 
@@ -1621,7 +1642,10 @@ class LayerBPolicyOptimizer:
             w_instab=self.w_instab,
             w_to=self.w_to,
         )
-        return rank_candidates_with_tiebreak(scored, eps_utility=self.eps_utility)
+        return rank_candidates_with_tiebreak(
+            scored,
+            eps_utility=self.eps_utility,
+        )
 
     def optimize(
         self, scores: np.ndarray, trade_outcomes: pd.DataFrame, timestamps: np.ndarray
@@ -1642,38 +1666,43 @@ class LayerBPolicyOptimizer:
 
         tprint("Layer B Step 1: Optimizing exit geometry over temporal folds...")
         step1_results = []
-        for sl, tp, trail, gb in itertools.product(
-            sl_cands, tp_cands, trail_cands, giveback_cands
-        ):
-            pol = LabelPolicy(
-                sl_atr_mult=sl,
-                tp_sl_ratio=tp,
-                max_hold_bars=24,
-                trail_activate_atr=trail,
-                giveback_pct=gb,
-                early_exit_deadline_bars=0,
-                early_exit_mfe_atr=0.0,
-            )
-            res = self._eval_policy_over_folds(
-                pol,
-                trade_outcomes,
-                scores,
-                score_quantile_fraction=0.60,
-                splits=splits,
-                timestamps=timestamps,
-                padded_paths=padded_paths,
-            )
-            res["step"] = 1
-            res["policy_obj"] = pol
-            res["threshold_q"] = 0.60
-            step1_results.append(res)
+        # Sensitivity check: probe at different thresholds if enabled implicitly
+        # Actually task says "Option A: evaluate each geometry at two score thresholds (0.50 and 0.80)"
+        for q_anchor in [0.50, 0.60, 0.80]:
+            for sl, tp, trail, gb in itertools.product(
+                sl_cands, tp_cands, trail_cands, giveback_cands
+            ):
+                pol = LabelPolicy(
+                    sl_atr_mult=sl,
+                    tp_sl_ratio=tp,
+                    max_hold_bars=24,
+                    trail_activate_atr=trail,
+                    giveback_pct=gb,
+                    early_exit_deadline_bars=0,
+                    early_exit_mfe_atr=0.0,
+                )
+                res = self._eval_policy_over_folds(
+                    pol,
+                    trade_outcomes,
+                    scores,
+                    score_quantile_fraction=q_anchor,
+                    splits=splits,
+                    timestamps=timestamps,
+                    padded_paths=padded_paths,
+                )
+                res["step"] = 1
+                res["policy_obj"] = pol
+                res["score_quantile_fraction"] = q_anchor
+                step1_results.append(res)
 
         step1_scored = self._score_candidates(step1_results)
+        # We only carry forward geometries from the main anchor (0.60) to keep staged logic intact,
+        # but we record all in candidate_table for diagnostics
         candidate_table.extend(step1_scored)
-        best_geom = step1_scored[0]["policy_obj"]
 
-        # Staged pruning: top 2
-        top_k_step1 = step1_scored[:2]
+        # Staged pruning: top 2 from the 0.60 anchor
+        step1_060_scored = self._score_candidates([r for r in step1_results if r["score_quantile_fraction"] == 0.60])
+        top_k_step1 = step1_060_scored[:2]
 
         # --- Step 2: Selection Boundary ---
         tprint("Layer B Step 2: Optimizing selection boundary...")
@@ -1742,6 +1771,27 @@ class LayerBPolicyOptimizer:
         candidate_table.extend(step3_scored)
         best_pol = step3_scored[0]["policy_obj"]
 
+        # Advanced/pruned flags
+        for r in candidate_table:
+            r["pruned"] = True
+
+        # Mark advanced for top_k_step1
+        for top_cand in top_k_step1:
+            for r in candidate_table:
+                if r is top_cand:
+                    r["pruned"] = False
+
+        # Mark advanced for top_k_step2
+        for top_cand in top_k_step2:
+            for r in candidate_table:
+                if r is top_cand:
+                    r["pruned"] = False
+
+        # The winner is not pruned
+        for r in candidate_table:
+            if r is step3_scored[0]:
+                r["pruned"] = False
+
         # Artifact storage ensuring fully reconstructable records
         self.layer_b_candidate_table_ = pd.DataFrame(
             [
@@ -1753,10 +1803,25 @@ class LayerBPolicyOptimizer:
                     "trail_activate_atr": r["policy_obj"].trail_activate_atr,
                     "giveback_pct": r["policy_obj"].giveback_pct,
                     "max_hold_bars": r["policy_obj"].max_hold_bars,
-                    "early_exit_deadline_bars": r[
-                        "policy_obj"
-                    ].early_exit_deadline_bars,
+                    "early_exit_deadline_bars": r["policy_obj"].early_exit_deadline_bars,
                     "early_exit_mfe_atr": r["policy_obj"].early_exit_mfe_atr,
+                    "net_pnl_day": r["net_pnl_day"],
+                    "sortino": r["sortino"],
+                    "maxDD": r["maxDD"],
+                    "worst_fold_maxdd": r.get("worst_fold_maxdd", 0.0),
+                    "instability": r["instability"],
+                    "timeout_rate": r.get("timeout_rate", 0.0),
+                    "trade_count": r.get("trade_count", 0.0),
+                    "no_trade_fold_count": r.get("no_trade_fold_count", 0.0),
+                    "utility": r["utility"],
+                    "rank": r.get("rank", -1),
+                    "pruned": r.get("pruned", True),
+                    "fold_pnl_days": r.get("fold_pnl_days", []),
+                    "fold_sortinos": r.get("fold_sortinos", []),
+                    "fold_maxdds": r.get("fold_maxdds", []),
+                    "fold_timeout_rates": r.get("fold_timeout_rates", []),
+                    "fold_trade_counts": r.get("fold_trade_counts", []),
+                    "fold_no_trade_flags": r.get("fold_no_trade_flags", []),
                     **build_candidate_diagnostics_row(r),
                 }
                 for r in candidate_table

@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr, linregress
 from sklearn.linear_model import Ridge, HuberRegressor
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.preprocessing import StandardScaler, RobustScaler
 
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
@@ -295,50 +296,86 @@ def walk_forward_temporal_splits(
     n_samples: int,
     n_splits: int = 5,
     min_train_frac: float = 0.5,
-    embargo_pct: float = 0.01
+    embargo_pct: float = 0.01,
+    symbols: Optional[np.ndarray] = None,
 ) -> List[Tuple[np.ndarray, np.ndarray]]:
     """
-    Generates strict walk-forward (expanding window) temporal splits.
-    Ensures that max(train_ts) < min(test_ts) with an optional embargo.
+    Generates strict walk-forward temporal splits using SlicePlanner.
+    Ensures zero temporal leakage with proper purge and symbol-aware grouping.
     """
     if n_samples <= 0:
         return []
-    if timestamps is None or len(timestamps) == 0:
+
+    ts = timestamps if timestamps is not None and len(timestamps) > 0 else None
+    if ts is None:
         indices = np.arange(n_samples)
-    else:
-        indices = np.argsort(timestamps)
+        logger.warning("No timestamps provided; falling back to positional splits.")
+        splits = []
+        start_idx = int(n_samples * min_train_frac)
+        test_chunk_size = (n_samples - start_idx) // n_splits
+        for i in range(n_splits):
+            test_start = start_idx + i * test_chunk_size
+            test_end = test_start + test_chunk_size if i < n_splits - 1 else n_samples
+            if test_start < n_samples:
+                splits.append((indices[:test_start], indices[test_start:test_end]))
+        return splits if splits else [(indices[:int(n_samples * 0.8)], indices[int(n_samples * 0.8):])]
 
-    # Use SlicePlanner if possible, but force its preset to a walk-forward one if we can identify it.
-    # For now, we use a robust manual implementation to guarantee zero leakage.
-    
-    splits = []
-    
-    total_steps = n_splits
-    # Start testing after min_train_frac
+    ts_parsed = pd.to_datetime(ts, utc=True, errors="coerce")
+    sym_vals = symbols if symbols is not None else np.repeat("ALL", n_samples)
+
+    events = pd.DataFrame({
+        "event_id": np.arange(n_samples, dtype=np.int64),
+        "symbol": sym_vals,
+        "t0": ts_parsed,
+        "t1": ts_parsed + pd.Timedelta(hours=6),
+    })
+
+    p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+    p_cfg = p_cfg.__class__(
+        **{
+            **p_cfg.__dict__,
+            "preset": p_cfg.preset.__class__(
+                preset_name=p_cfg.preset.preset_name,
+                outer=p_cfg.preset.outer,
+                inner=p_cfg.preset.inner.__class__(n_splits=max(2, n_splits)),
+                sampling=p_cfg.preset.sampling,
+                symbol_policy=p_cfg.preset.symbol_policy,
+                purge_policy=p_cfg.preset.purge_policy,
+            ),
+            "silent": True,
+            "min_rows_per_fold": 1,
+            "min_symbols_per_fold": 1,
+        }
+    )
+
+    try:
+        bundle = SlicePlanner(p_cfg).build(events)
+        splits = [
+            (plan.fit_idx, plan.predict_idx)
+            for plan in bundle["consumer_plans"]["ridge_sizer_fit"]
+            if plan.tag == "predict_outer_test"
+            and plan.fit_idx.size > 0
+            and plan.predict_idx.size > 0
+        ]
+        if splits:
+            return splits
+    except Exception as e:
+        logger.warning(f"SlicePlanner failed ({e}), falling back to positional splits.")
+
+    indices = np.argsort(ts_parsed.values)
     start_idx = int(n_samples * min_train_frac)
-    test_chunk_size = (n_samples - start_idx) // total_steps
+    test_chunk_size = (n_samples - start_idx) // n_splits
     embargo_size = int(n_samples * embargo_pct)
-
-    for i in range(total_steps):
+    splits = []
+    for i in range(n_splits):
         test_start = start_idx + i * test_chunk_size
-        test_end = test_start + test_chunk_size if i < total_steps - 1 else n_samples
-        
+        test_end = test_start + test_chunk_size if i < n_splits - 1 else n_samples
         train_end = test_start - embargo_size
-        
-        if train_end <= 0:
-            continue
-            
-        train_idx = indices[:train_end]
-        test_idx = indices[test_start:test_end]
-        
-        if len(train_idx) > 0 and len(test_idx) > 0:
-            splits.append((train_idx, test_idx))
-            
+        if train_end > 0 and test_start < n_samples:
+            splits.append((indices[:train_end], indices[test_start:test_end]))
     if not splits:
-        logger.warning("Walk-Forward splits empty, falling back to final 20% test.")
         train_end = int(n_samples * 0.8)
         splits.append((indices[:train_end], indices[train_end:]))
-        
     return splits
 
 
@@ -743,7 +780,12 @@ def evaluate_selection_profit_proxy(
         wallet_rets = sorted_rets_net * allocations
         
         net_wallet_pnl_pct = float(np.sum(wallet_rets))
-        # -----------------------------------------------------------------
+
+        wallet_sensitivity = {}
+        for _wr_label, _wr in [("narrow", (0.05, 0.10)), ("wide", (0.05, 0.20)), ("flat", (0.10, 0.10))]:
+            _allocs = np.linspace(_wr[0], _wr[1], len(idx))
+            _wallet_rets_s = sorted_rets_net * _allocs
+            wallet_sensitivity[f"wallet_pnl_{_wr_label}"] = float(np.sum(_wallet_rets_s))
 
         _, dd_series = _stable_equity_and_drawdown(sized_rets)
         mdd_pct = float(np.max(dd_series)) if len(dd_series) > 0 else 0.0
@@ -815,7 +857,8 @@ def evaluate_selection_profit_proxy(
             "asset_group_pf_std": asset_stability["group_pf_std"],
             "stability": stability,
             "max_drawdown": mdd_pct,
-            "trades_selected": len(sized_rets)
+            "trades_selected": len(sized_rets),
+            **wallet_sensitivity,
         })
 
     df = pd.DataFrame(results)
@@ -851,15 +894,16 @@ def run_simple_position_sizer(
     cost_pct: float = 0.003,
     lambda_grid: Optional[List[float]] = None,
     top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
-    use_ridge_head_sizer: bool = True
+    use_ridge_head_sizer: bool = True,
+    use_et_head_sizer: bool = True,
 ) -> Dict[str, Any]:
     """
     Main orchestrator for the simple position sizer diagnostic framework.
+    By default runs both Ridge and ExtraTrees, compares them, and selects the best.
     """
     if lambda_grid is None:
         lambda_grid = [0.25, 0.5, 1.0, 2.0]
 
-    # 1. Detect Meta Heads
     detected_heads = detect_meta_head_keys(feature_dict)
     used_keys = [k for k in detected_heads.keys() if k in feature_dict]
     missing_keys = [k for k in detected_heads.keys() if k not in feature_dict]
@@ -868,21 +912,17 @@ def run_simple_position_sizer(
         "detected_candidates": list(detected_heads.keys()),
         "used_heads": used_keys,
         "missing_heads": missing_keys,
-        "head_classification": detected_heads
+        "head_classification": detected_heads,
     }
 
-    # 2. Stage 1 Diagnostics
     stage_1_df = run_stage_1_diagnostics(feature_dict, detected_heads, y_raw_net_return, y_downside)
 
-    # Use strict walk-forward splits to prevent lookahead leakage
     n_samples = len(y_raw_net_return)
-    splits = walk_forward_temporal_splits(timestamps, n_samples, n_splits=5)
+    splits = walk_forward_temporal_splits(timestamps, n_samples, n_splits=5, symbols=symbols)
 
-    # 3. Stage 2 Combo Race
     combo_candidates = build_combo_candidates(feature_dict, detected_heads, lambda_grid)
     stage_2_df, best_combo = run_stage_2_combo_race(combo_candidates, y_raw_net_return, y_downside, splits)
 
-    # Track the best score
     best_simple_score = None
     best_simple_score_name = None
 
@@ -890,65 +930,98 @@ def run_simple_position_sizer(
         best_simple_score_name = best_combo["combo_name"]
         best_simple_score = combo_candidates[best_simple_score_name]
 
-    # 4. Optional Ridge Sizer
-    results = {}
-    ridge_sizer_eval = {}
+    results: Dict[str, Any] = {}
+    t_diff = np.max(timestamps) - np.min(timestamps)
+    if hasattr(t_diff, "astype") and not isinstance(t_diff, float):
+        n_days = float(t_diff / np.timedelta64(1, "D"))
+    else:
+        n_days = float(t_diff) / 86400.0 if len(timestamps) > 1 else 0.0
+
+    _sym_vals = trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None
+
+    # --- Ridge Sizer ---
+    ridge_sizer_eval: Dict[str, Any] = {}
     ridge_importance_df = pd.DataFrame()
     ridge_profit_proxy_df = pd.DataFrame()
 
     if use_ridge_head_sizer and used_keys:
-        # Assemble X from used heads
         X_heads = np.column_stack([feature_dict[k] for k in used_keys])
         sizer = SimpleHeadRidgeSizer()
-        
-        # Fit OOF across temporal splits
         ridge_oof_preds = sizer.fit_predict_oof(X_heads, y_raw_net_return, splits, feature_names=used_keys)
         ridge_importance_df = sizer.get_feature_importance()
-
         ridge_metrics = evaluate_signal("Ridge_Head_Sizer", ridge_oof_preds, y_raw_net_return, y_downside, directionality="return-like")
         ridge_sizer_eval = ridge_metrics
-
-        # Evaluate Profit Proxy for Ridge Scores
-        t_diff = np.max(timestamps) - np.min(timestamps)
-        if hasattr(t_diff, 'astype') and not isinstance(t_diff, float):
-            n_days = float(t_diff / np.timedelta64(1, 'D'))
-        else:
-            n_days = float(t_diff) / 86400.0 if len(timestamps) > 1 else 0.0
-
         ridge_profit_proxy_df, ridge_opt_rets, ridge_opt_ts = evaluate_selection_profit_proxy(
-            ridge_oof_preds,
-            y_raw_net_return,
-            timestamps=timestamps,
-            symbols=trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None,
-            top_fracs=list(top_fracs),
-            cost_pct=cost_pct,
-            n_days=n_days,
+            ridge_oof_preds, y_raw_net_return, timestamps=timestamps, symbols=_sym_vals,
+            top_fracs=list(top_fracs), cost_pct=cost_pct, n_days=n_days,
         )
-        
         results["ridge_sizer_scores_"] = ridge_oof_preds
         results["ridge_importance_table_"] = ridge_importance_df
         results["ridge_profit_proxy_table_"] = ridge_profit_proxy_df
         results["ridge_opt_rets_"] = ridge_opt_rets
         results["ridge_opt_ts_"] = ridge_opt_ts
-
-        # Compare Ridge vs Best Combo
         if not best_combo or ridge_metrics.get("utility_score", 0) > best_combo.get("utility_score", -9999):
             best_simple_score = ridge_oof_preds
             best_simple_score_name = "Ridge_Head_Sizer"
 
-    # 5. Profit Proxy on Best Score
+    # --- ExtraTrees Sizer ---
+    et_sizer_eval: Dict[str, Any] = {}
+    et_importance_df = pd.DataFrame()
+    et_profit_proxy_df = pd.DataFrame()
+
+    if use_et_head_sizer and used_keys:
+        from extreme_price_movements.extratrees_position_sizer import SimpleHeadExtraTreesSizer
+
+        X_heads = X_heads if use_ridge_head_sizer and used_keys else np.column_stack([feature_dict[k] for k in used_keys])
+        et_model = ExtraTreesRegressor(
+            n_estimators=150, max_depth=5, min_samples_leaf=30, min_samples_split=60,
+            max_features="sqrt", bootstrap=True, oob_score=True, random_state=42, n_jobs=-1, verbose=0,
+        )
+        et_sizer = SimpleHeadExtraTreesSizer(model=et_model, calibration_method="isotonic")
+        et_oof_preds = et_sizer.fit_predict_oof(X_heads, y_raw_net_return, splits, feature_names=used_keys)
+        et_importance_df = et_sizer.get_feature_importance()
+        et_metrics = evaluate_signal("ExtraTrees_Head_Sizer", et_oof_preds, y_raw_net_return, y_downside, directionality="return-like")
+        et_sizer_eval = et_metrics
+        et_profit_proxy_df, et_opt_rets, et_opt_ts = evaluate_selection_profit_proxy(
+            et_oof_preds, y_raw_net_return, timestamps=timestamps, symbols=_sym_vals,
+            top_fracs=list(top_fracs), cost_pct=cost_pct, n_days=n_days,
+        )
+        results["et_sizer_scores_"] = et_oof_preds
+        results["et_importance_table_"] = et_importance_df
+        results["et_profit_proxy_table_"] = et_profit_proxy_df
+        results["et_opt_rets_"] = et_opt_rets
+        results["et_opt_ts_"] = et_opt_ts
+        if et_metrics.get("utility_score", 0) > (ridge_sizer_eval.get("utility_score", -9999) if ridge_sizer_eval else -9999):
+            if not best_combo or et_metrics.get("utility_score", 0) > best_combo.get("utility_score", -9999):
+                best_simple_score = et_oof_preds
+                best_simple_score_name = "ExtraTrees_Head_Sizer"
+
+    # --- Head-to-Head Comparison ---
+    comparison: Dict[str, Any] = {}
+    if ridge_sizer_eval and et_sizer_eval:
+        ridge_util = ridge_sizer_eval.get("utility_score", 0.0)
+        et_util = et_sizer_eval.get("utility_score", 0.0)
+        ridge_wallet = float(ridge_profit_proxy_df["wallet_pnl"].max()) if not ridge_profit_proxy_df.empty else 0.0
+        et_wallet = float(et_profit_proxy_df["wallet_pnl"].max()) if not et_profit_proxy_df.empty else 0.0
+        comparison = {
+            "ridge_utility": ridge_util,
+            "et_utility": et_util,
+            "ridge_best_wallet_pnl": ridge_wallet,
+            "et_best_wallet_pnl": et_wallet,
+            "winner": "ridge" if ridge_util >= et_util else "et",
+            "wallet_winner": "ridge" if ridge_wallet >= et_wallet else "et",
+        }
+        tprint(f"Head-to-Head: Ridge util={ridge_util:.4f} wallet={ridge_wallet:.4f} | ET util={et_util:.4f} wallet={et_wallet:.4f} | Winner={comparison['winner']}")
+    results["comparison_"] = comparison
+
+    # --- Profit Proxy on Best Score ---
     profit_proxy_df = pd.DataFrame()
     best_opt_rets = np.array([])
     best_opt_ts = np.array([])
     if best_simple_score is not None:
         profit_proxy_df, best_opt_rets, best_opt_ts = evaluate_selection_profit_proxy(
-            best_simple_score,
-            y_raw_net_return,
-            timestamps=timestamps,
-            symbols=trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None,
-            top_fracs=list(top_fracs) + [0.3],
-            start_equity=start_equity,
-            cost_pct=cost_pct
+            best_simple_score, y_raw_net_return, timestamps=timestamps, symbols=_sym_vals,
+            top_fracs=list(top_fracs) + [0.3], start_equity=start_equity, cost_pct=cost_pct,
         )
 
     return {
@@ -959,11 +1032,15 @@ def run_simple_position_sizer(
         "ridge_sizer_eval_": ridge_sizer_eval,
         "ridge_importance_table_": ridge_importance_df,
         "ridge_profit_proxy_table_": ridge_profit_proxy_df,
+        "et_sizer_eval_": et_sizer_eval,
+        "et_importance_table_": et_importance_df,
+        "et_profit_proxy_table_": et_profit_proxy_df,
+        "comparison_": comparison,
         "best_simple_score_": best_simple_score,
         "best_simple_score_name_": best_simple_score_name,
         "profit_proxy_table_": profit_proxy_df if not profit_proxy_df.empty else pd.DataFrame(),
         "opt_rets_": best_opt_rets,
-        "opt_ts_": best_opt_ts
+        "opt_ts_": best_opt_ts,
     }
 
 def run_bucketed_simple_position_sizer(

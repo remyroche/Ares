@@ -91,20 +91,31 @@ class DynamicSoftLabels:
             if not (mfe_tp > 1.2 * mfe_sl) or not (mae_tp < 0.85 * mae_sl):
                 reasons["excursion_stats"] += 1
                 continue
-            retained.append((tp_m, sl_m))
+            retained.append((tp_m, sl_m, float(rate_TP)))
 
         if len(retained) == 0:
             tprint(
                 f"WARNING: No valid geometries retained. Horizon={self.h}. "
                 f"Total candidates={len(candidates)}. Rejections: {reasons}. "
-                f"Returning empty list — soft-label head will be skipped."
+                f"Falling back to top-3 by TP hit rate."
             )
-            return []
-        if len(retained) < 3:
+            fallback = []
+            for tp_m, sl_m in candidates:
+                TP_v = tp_m * self.atr_h
+                SL_v = sl_m * self.atr_h
+                _hit_tp = (self.mfe >= TP_v) & (self.t_mfe <= self.h + 1e-5)
+                rate_TP = float(np.mean(_hit_tp))
+                fallback.append((tp_m, sl_m, rate_TP))
+            fallback.sort(key=lambda x: x[2], reverse=True)
+            retained = fallback[:3]
+            if not retained:
+                return []
+            tprint(f"  Fallback retained {len(retained)} geometries by TP hit rate: {[(r[0], r[1]) for r in retained]}")
+        elif len(retained) < 3:
             tprint(f"WARNING: Retained geometries < 3 for horizon={self.h}. Retained count={len(retained)}.")
 
         tprint(f"Horizon {self.h} geometries: Candidates={len(candidates)}, Retained={len(retained)}. Rejections: {reasons}")
-        return retained
+        return [(r[0], r[1]) for r in retained]
 
     def build_soft_labels_with(self, retained):
         soft = np.zeros((self.N, 3), dtype=np.float64)
@@ -127,17 +138,10 @@ class DynamicSoftLabels:
             soft[:, 2] += (y_g == 2)
 
         soft /= len(retained)
-        out_soft = np.zeros((self.N, 3), dtype=np.float64)
-        # Column 0: TP, 1: SL, 2: TO
-        out_soft[:, 0] = soft[:, 2]
-        out_soft[:, 1] = soft[:, 0]
-        out_soft[:, 2] = soft[:, 1]
 
-        out_soft = validate_probability_simplex(out_soft, f"built_soft_labels_h{self.h}")
+        out_soft = validate_probability_simplex(soft, f"built_soft_labels_h{self.h}")
         summarize_soft_labels(out_soft, f"horizon_{self.h}_soft_targets")
 
-        # Check for degeneracy
-        # If one class mass > 0.95 or entropy is very low
         eps = 1e-12
         p_safe = np.clip(out_soft, eps, 1 - eps)
         entropy = -np.sum(p_safe * np.log2(p_safe), axis=1).mean()

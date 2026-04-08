@@ -12,6 +12,7 @@ from extreme_price_movements.config import (
     CANON_SIDES,
     CANON_SIDE_HORIZON_CELLS,
 )
+from extreme_price_movements.strategy_registry import normalize_strategy_horizon
 
 
 OFFLINE_OPTIMISERS_DIR = Path(__file__).resolve().parent
@@ -241,7 +242,9 @@ def load_inference_candidate_mask_params_per_bucket(
                 "base_event_trigger": key,
                 "mask_params": {"canonical_key": key},
                 "source_target": str(row.get("source_target", "")).strip(),
-                "source_horizon": int(row.get("source_horizon", horizon)),
+                "source_horizon": normalize_strategy_horizon(
+                    row.get("source_horizon", horizon)
+                ),
             }
             if move_bucket:
                 strategy["move_bucket"] = move_bucket

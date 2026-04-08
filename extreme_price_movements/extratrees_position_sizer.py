@@ -83,12 +83,12 @@ class SimpleHeadExtraTreesSizer:
         if model is None:
             self.model = ExtraTreesRegressor(
                 n_estimators=150,
-                max_depth=7,
+                max_depth=5,
                 min_samples_leaf=30,
                 min_samples_split=60,
                 max_features="sqrt",
                 bootstrap=True,
-                oob_score=False,
+                oob_score=True,
                 random_state=42,
                 n_jobs=-1,
                 verbose=0,
@@ -118,10 +118,6 @@ class SimpleHeadExtraTreesSizer:
         self.fold_importances = []
         self.feature_names = feature_names or [f"head_{i}" for i in range(X.shape[1])]
         
-        # Store training predictions for calibration fitting
-        train_preds_list = []
-        train_y_list = []
-        
         for tr_idx, te_idx in splits:
             if len(tr_idx) == 0 or len(te_idx) == 0:
                 continue
@@ -147,27 +143,17 @@ class SimpleHeadExtraTreesSizer:
             preds = self.model.predict(X_te_clean)
             oof_preds[te_idx] = preds
             
-            # Store training predictions for calibration
-            train_preds_list.append(self.model.predict(X_tr_clean))
-            train_y_list.append(y_tr)
-            
         # Post-calibration using IsotonicRegression on OOF predictions
-        if self.calibration_method == "isotonic" and len(train_preds_list) > 0:
+        if self.calibration_method == "isotonic" and np.any(oof_preds != 0):
             try:
-                # Use training predictions to fit calibrator
-                all_train_preds = np.concatenate(train_preds_list)
-                all_train_y = np.concatenate(train_y_list)
-                
-                # Sort for isotonic regression (requires sorted input)
-                sort_idx = np.argsort(all_train_preds)
-                sorted_preds = all_train_preds[sort_idx]
-                sorted_y = all_train_y[sort_idx]
-                
-                self.calibrator = IsotonicRegression(out_of_bounds="clip")
-                self.calibrator.fit(sorted_preds.reshape(-1, 1), sorted_y)
-                
-                # Apply calibration to OOF predictions
-                oof_preds = self.calibrator.predict(oof_preds.reshape(-1, 1))
+                valid = np.isfinite(oof_preds) & np.isfinite(y)
+                if valid.sum() >= 20:
+                    oof_valid = oof_preds[valid]
+                    y_valid = y[valid]
+                    sort_idx = np.argsort(oof_valid)
+                    self.calibrator = IsotonicRegression(out_of_bounds="clip")
+                    self.calibrator.fit(oof_valid[sort_idx].reshape(-1, 1), y_valid[sort_idx])
+                    oof_preds = self.calibrator.predict(oof_preds.reshape(-1, 1))
             except Exception as e:
                 logger.warning(f"Calibration failed: {e}. Using raw predictions.")
                 
@@ -413,7 +399,7 @@ def run_extratrees_position_sizer_from_artifacts(
     top_n_strategies: int = 4,
     # ExtraTrees hyperparameters
     et_n_estimators: int = 150,
-    et_max_depth: int = 7,
+    et_max_depth: int = 5,
     et_min_samples_leaf: int = 30,
     et_min_samples_split: int = 60,
 ) -> Dict[str, Any]:
@@ -752,7 +738,7 @@ if __name__ == "__main__":
     parser.add_argument("--cost-pct", type=float, default=0.003, help="Cost per trade in decimal")
     parser.add_argument("--top-n", type=int, default=4, help="Top N strategies to evaluate")
     parser.add_argument("--n-estimators", type=int, default=150, help="ExtraTrees n_estimators")
-    parser.add_argument("--max-depth", type=int, default=7, help="ExtraTrees max_depth")
+    parser.add_argument("--max-depth", type=int, default=5, help="ExtraTrees max_depth")
     parser.add_argument("--min-samples-leaf", type=int, default=30, help="ExtraTrees min_samples_leaf")
     parser.add_argument("--calibration", type=str, default="isotonic", choices=["isotonic", "none"])
     

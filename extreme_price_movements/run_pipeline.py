@@ -36,6 +36,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+import extreme_price_movements.mask_optimiser as mask_opt
 from extreme_price_movements.config import CFG, enable_perp_feature_keys
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
@@ -46,7 +47,6 @@ from extreme_price_movements.offline_optimisers.params_store import (
     apply_offline_optimizer_best_params,
     load_inference_candidate_mask_params_per_bucket,
 )
-import extreme_price_movements.mask_optimiser as mask_opt
 from extreme_price_movements.optimise import (
     Policy,
     run_optimise_from_ridge_oof,
@@ -150,10 +150,13 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
     cfg.update(merged)
 
     # Populate strategies from final_rule_registry.csv
-    strategies = load_inference_candidate_mask_params_per_bucket(top_n=1, ranking_metric="score_for_best_params")
+    strategies = load_inference_candidate_mask_params_per_bucket(
+        top_n=1, ranking_metric="score_for_best_params"
+    )
     if strategies:
         cfg["strategies"] = strategies
         from extreme_price_movements.utils import tprint
+
         tprint(f"Loaded {len(strategies)} strategies from final_rule_registry.csv")
 
     return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
@@ -1134,7 +1137,9 @@ def run_train_meta(cfg, ts_override=None, store=None):
     try:
         run_risk_opt(cfg, parsed_ts_sig=ts_sig, skip_maintenance=True, store=store)
     except Exception as _e_risk:
-        tprint(f"WARNING: risk optimisation failed ({_e_risk}); proceeding with existing barrier params.")
+        tprint(
+            f"WARNING: risk optimisation failed ({_e_risk}); proceeding with existing barrier params."
+        )
 
     # Meta training reuses local artifacts and does not require a live exchange.
     result = train_daily_meta(ts_sig, None, cfg, store, None)
@@ -1406,6 +1411,7 @@ def main():
             "inference_backtest",
             "run",
             "breakdown_diagnostics",
+            "oos_eval",
         ],
         help="Pipeline mode to run",
     )
@@ -1454,6 +1460,12 @@ def main():
         "--optimise-use-ridge-oof",
         action="store_true",
         help="Run optimise in cheap Ridge/limit-offset OOF mode instead of using backtest_results.csv",
+    )
+    parser.add_argument(
+        "--n-assets",
+        type=int,
+        default=400,
+        help="Number of assets to sample for oos_eval basket (default: 400)",
     )
     args = parser.parse_args()
 
@@ -1520,6 +1532,10 @@ def main():
         run_inference_backtest(cfg, ts_override=args.ts_override)
     elif args.mode == "breakdown_diagnostics":
         run_breakdown_diagnostics_standalone(cfg, ts_override=args.ts_override)
+    elif args.mode == "oos_eval":
+        from extreme_price_movements.oos_pipeline import run_oos_eval_pipeline
+
+        run_oos_eval_pipeline(cfg, n_assets=args.n_assets, ts_override=args.ts_override)
     elif args.mode == "run":
         run_all(cfg, ts_override=args.ts_override)
 

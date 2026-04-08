@@ -221,11 +221,11 @@ class MetaModel:
                 selector_hysteresis_margin=float(_sel_cfg.get("selector_hysteresis_margin", 0.05)),
                 selector_min_overlap=float(_sel_cfg.get("selector_min_overlap", 0.70)),
                 composite_weights={
-                    "top30": float(_sel_cfg.get("top30", 0.0)),
-                    "global": float(_sel_cfg.get("global", 0.55)),
+                    "top30": float(_sel_cfg.get("top30", 0.20)),
+                    "global": float(_sel_cfg.get("global", 0.35)),
                     "stability": float(_sel_cfg.get("stability", 0.25)),
-                    "frequency": float(_sel_cfg.get("frequency", 0.15)),
-                    "interaction": float(_sel_cfg.get("interaction", 0.05)),
+                    "frequency": float(_sel_cfg.get("frequency", 0.10)),
+                    "interaction": float(_sel_cfg.get("interaction", 0.10)),
                 },
                 max_features_pct=0.90,
             )
@@ -1004,20 +1004,15 @@ class MetaClassifierModel:
         pred = MetaClassifierModel._sanitize_multiclass_proba(pred, n_classes=3)
 
         # Handle soft true targets gracefully
+        # Both soft and hard labels use canonical ordering: [SL=0, TO=1, TP=2]
         if y_c.ndim == 2:
-            # For these specific soft labels, the contract is 0=TP, 1=SL, 2=TO
-            # We map it back to 0=SL, 1=TO, 2=TP for accurate accuracy_score
-            y_c_hard = np.zeros(len(y_c), dtype=int)
-            am = np.argmax(y_c, axis=1)
-            y_c_hard[am == 0] = 2  # TP
-            y_c_hard[am == 1] = 0  # SL
-            y_c_hard[am == 2] = 1  # TO
+            y_c_hard = np.argmax(y_c, axis=1)
 
-            # EV calculation: P(TP)*2 - P(SL)*1. Soft predictions are [TP, SL, TO]
-            ev_vec = pred[:, 0] * 2.0 - pred[:, 1] * 1.0
+            # EV calculation: P(TP)*2 - P(SL)*1
+            ev_vec = pred[:, 2] * 2.0 - pred[:, 0] * 1.0
         else:
             y_c_hard = y_c
-            # EV calculation: P(TP)*2 - P(SL)*1. Hard predictions are [SL, TO, TP]
+            # EV calculation: P(TP)*2 - P(SL)*1
             ev_vec = pred[:, 2] * 2.0 - pred[:, 0] * 1.0
 
         try:
@@ -1030,11 +1025,7 @@ class MetaClassifierModel:
             ll = float("nan")
 
         if y_c.ndim == 2:
-            pred_hard = np.zeros(len(pred), dtype=int)
-            pm = np.argmax(pred, axis=1)
-            pred_hard[pm == 0] = 2
-            pred_hard[pm == 1] = 0
-            pred_hard[pm == 2] = 1
+            pred_hard = np.argmax(pred, axis=1)
         else:
             pred_hard = np.argmax(pred, axis=1)
         acc = float(accuracy_score(y_c_hard, pred_hard))
@@ -1212,15 +1203,18 @@ class MetaClassifierModel:
         self._dynamic_labels = None
         if y_class_override is not None:
             if hasattr(y_class_override, "to_numpy") and hasattr(y_class_override, "get_retained_geometries"):
-                self._dynamic_labels = y_class_override
                 _soft = y_class_override.to_numpy()
                 if _soft is None:
-                    tprint(f"  WARNING: soft-label head skipped (no retained geometries for H={getattr(y_class_override, 'h', '?')})")
-                    self._is_fitted = False
-                    return self
-                y_class = _soft.astype(np.float32)
-                w_barrier = np.ones(len(y_class), dtype=np.float32)
-                tprint(f"  Soft multiclass labels from engine shape: {y_class.shape}")
+                    tprint(
+                        f"  WARNING: soft-label head unavailable for H={getattr(y_class_override, 'h', '?')}; "
+                        "falling back to standard multiclass labels."
+                    )
+                    y_class_override = None
+                else:
+                    self._dynamic_labels = y_class_override
+                    y_class = _soft.astype(np.float32)
+                    w_barrier = np.ones(len(y_class), dtype=np.float32)
+                    tprint(f"  Soft multiclass labels from engine shape: {y_class.shape}")
             else:
                 y_class = np.asarray(y_class_override)
                 if y_class.ndim == 1:
@@ -1315,11 +1309,11 @@ class MetaClassifierModel:
                 selector_hysteresis_margin=float(_sel_cfg.get("selector_hysteresis_margin", 0.05)),
                 selector_min_overlap=float(_sel_cfg.get("selector_min_overlap", 0.70)),
                 composite_weights={
-                    "top30": float(_sel_cfg.get("top30", 0.0)),
-                    "global": float(_sel_cfg.get("global", 0.55)),
+                    "top30": float(_sel_cfg.get("top30", 0.20)),
+                    "global": float(_sel_cfg.get("global", 0.35)),
                     "stability": float(_sel_cfg.get("stability", 0.25)),
-                    "frequency": float(_sel_cfg.get("frequency", 0.15)),
-                    "interaction": float(_sel_cfg.get("interaction", 0.05)),
+                    "frequency": float(_sel_cfg.get("frequency", 0.10)),
+                    "interaction": float(_sel_cfg.get("interaction", 0.10)),
                 },
                 end_features=min(60, X_sel.shape[1]),
                 cumulative_cap=0.99,

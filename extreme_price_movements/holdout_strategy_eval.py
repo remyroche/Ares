@@ -26,6 +26,7 @@ from extreme_price_movements.data_store import load_features_selected
 from extreme_price_movements.ridge_position_sizer import prepare_policy_params_from_tpsl_optimiser
 from extreme_price_movements.simple_position_sizer import evaluate_selection_profit_proxy
 from extreme_price_movements.ridge_position_sizer import run_policy_aware_labeling_step
+from extreme_price_movements.universe import get_training_universe
 from extreme_price_movements.utils import tprint
 
 
@@ -398,24 +399,11 @@ def evaluate_holdout_symbol(
                 alpha_required_keys.update(model_info.get("feat_cols", []) or [])
     missing_alpha_keys = {k for k in alpha_required_keys if k not in feature_df.columns}
     if missing_alpha_keys:
-        tprint(
-            f"Backfilling {len(missing_alpha_keys)} missing alpha feature columns from snapshot"
+        raise FileNotFoundError(
+            f"Feature contract violation: {len(missing_alpha_keys)} required alpha features "
+            f"missing for {panel_symbol}. Missing: {sorted(missing_alpha_keys)[:10]}. "
+            f"Available: {len(feature_df.columns)}. Re-run feature generation."
         )
-        feature_df = _backfill_missing_feature_columns(
-            feature_df=feature_df,
-            data_root=data_root,
-            run_id=run_id,
-            symbol=panel_symbol,
-            missing_keys=missing_alpha_keys,
-        )
-        remaining_alpha_keys = {k for k in alpha_required_keys if k not in feature_df.columns}
-        if remaining_alpha_keys:
-            feature_df = _backfill_gated_interaction_columns(
-                feature_df=feature_df,
-                panel=panel,
-                panel_symbol=panel_symbol,
-                missing_keys=remaining_alpha_keys,
-            )
     frozen_rows: List[Dict[str, Any]] = []
     portfolio_score_parts: List[np.ndarray] = []
     portfolio_return_parts: List[np.ndarray] = []
@@ -519,13 +507,64 @@ def evaluate_holdout_symbol(
     }
 
 
+def _pick_best_model_per_strategy(freeze: Dict[str, Any]) -> Dict[str, Any]:
+    """Auto-pick the best model (ridge vs et) per strategy_id from freeze data."""
+    comparison_path = Path(freeze.get("_comparison_path_", ""))
+    if comparison_path.exists():
+        try:
+            comparison = json.loads(comparison_path.read_text())
+            winner = comparison.get("winner", "ridge")
+            tprint(f"Auto-picked best model from comparison: {winner}")
+        except Exception:
+            winner = "ridge"
+    else:
+        winner = "ridge"
+
+    best_freeze = dict(freeze)
+    strategies = best_freeze.get("strategies", [])
+    if winner == "et":
+        et_freeze_path = Path(str(_freeze_path("", "")).replace("ridge_sizer", "et_sizer"))
+        for alt_path in [
+            Path(best_freeze.get("_data_root_", "data")) / "artifacts" / best_freeze.get("_run_id_", "") / "et_sizer" / "strategy_params.json",
+        ]:
+            if alt_path.exists():
+                try:
+                    et_freeze = json.loads(alt_path.read_text())
+                    if et_freeze.get("strategies"):
+                        strategies = et_freeze["strategies"]
+                        best_freeze["strategies"] = strategies
+                        best_freeze["model_source"] = "et"
+                        tprint(f"Using ET strategy params from {alt_path}")
+                        break
+                except Exception:
+                    pass
+    else:
+        best_freeze["model_source"] = "ridge"
+    return best_freeze
+
+
+def _sample_random_symbols(n: int = 5, seed: int = 42) -> List[str]:
+    """Sample n random symbols from the training universe."""
+    rng = np.random.RandomState(seed)
+    try:
+        universe = get_training_universe()
+        symbols = list(universe.keys()) if isinstance(universe, dict) else list(universe)
+    except Exception:
+        symbols = ["AIXBT_USDC"]
+    if len(symbols) <= n:
+        return symbols
+    return list(rng.choice(symbols, size=n, replace=False))
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate frozen strategy thresholds on a holdout symbol.")
+    parser = argparse.ArgumentParser(description="Evaluate frozen strategy thresholds on holdout symbols.")
     parser.add_argument("--data-root", default="data")
     parser.add_argument("--run-id", default="20260321_140000")
-    parser.add_argument("--symbol", default="AIXBT_USDC")
+    parser.add_argument("--symbol", default="", help="Single symbol to evaluate (overrides --n-symbols)")
+    parser.add_argument("--n-symbols", type=int, default=5, help="Number of random symbols to evaluate")
     parser.add_argument("--freeze-json", default="")
     parser.add_argument("--output-json", default="")
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     freeze = (
@@ -533,18 +572,37 @@ def main() -> None:
         if args.freeze_json
         else _load_or_write_freeze_file(args.data_root, args.run_id)
     )
-    result = evaluate_holdout_symbol(args.data_root, args.run_id, args.symbol, freeze)
+
+    freeze = _pick_best_model_per_strategy(freeze)
+
+    if args.symbol:
+        symbols = [args.symbol]
+    else:
+        symbols = _sample_random_symbols(n=args.n_symbols, seed=args.seed)
+        tprint(f"Sampled {len(symbols)} holdout symbols: {symbols}")
+
+    all_results: List[Dict[str, Any]] = []
+    portfolio_parts: Dict[str, List] = {"scores": [], "returns": [], "ts": []}
+
+    for symbol in symbols:
+        try:
+            result = evaluate_holdout_symbol(args.data_root, args.run_id, symbol, freeze)
+            all_results.append(result)
+            if result.get("portfolio"):
+                tprint(f"  {symbol}: portfolio wallet_pnl={result['portfolio'].get('wallet_pnl', 'N/A')}")
+        except Exception as e:
+            tprint(f"  {symbol}: SKIPPED ({e})")
 
     output_path = (
         Path(args.output_json)
         if args.output_json
-        else Path(args.data_root) / "artifacts" / args.run_id / "ridge_sizer" / f"holdout_{args.symbol.replace('/', '_')}_metrics.json"
+        else Path(args.data_root) / "artifacts" / args.run_id / "ridge_sizer" / "holdout_multi_metrics.json"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(result, indent=2, default=str))
-    tprint(f"Wrote holdout metrics to {output_path}")
+    output_path.write_text(json.dumps(all_results, indent=2, default=str))
+    tprint(f"Wrote holdout metrics for {len(all_results)} symbols to {output_path}")
 
-    print(json.dumps(result, indent=2, default=str))
+    print(json.dumps(all_results, indent=2, default=str))
 
 
 if __name__ == "__main__":

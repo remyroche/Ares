@@ -5472,9 +5472,24 @@ class RuleScorer:
             or summary["directional_mean_ret"] <= 0
         ):
             rejected.append("non_positive_directional_ret")
-        # Removed below_hurdle as a hard gate - kept downstream for scoring
-        # if summary["hurdle_excess"] <= 0:
-        #     rejected.append("below_hurdle")
+
+        _cost_pct = float(self.cfg.get("rule_economic_cost_pct", 0.003))
+        _pooled_mask = np.zeros(len(fwd_ret), dtype=bool)
+        for _, va_idx in folds:
+            _pooled_mask[va_idx] |= resolver.get_mask(canonical_key, va_idx)
+        if _pooled_mask.sum() >= 10:
+            _masked_rets = fwd_ret[_pooled_mask]
+            _k10 = max(1, int(0.10 * len(_masked_rets)))
+            _top10_idx = np.argpartition(_masked_rets, -_k10)[-_k10:]
+            _top10_mean = float(np.mean(_masked_rets[_top10_idx]))
+            summary["top10_mean_ret"] = _top10_mean
+            summary["top10_net_ret"] = _top10_mean - _cost_pct
+            if _top10_mean - _cost_pct < 0:
+                rejected.append("negative_top10_net_ret")
+        else:
+            summary["top10_mean_ret"] = np.nan
+            summary["top10_net_ret"] = np.nan
+
         if require_uplift:
             if not np.isfinite(summary["mean_uplift"]):
                 rejected.append("missing_uplift")
@@ -11984,7 +11999,7 @@ class MaskAssessor:
                 triad_targets_map=triad_targets_map,
                 fallback_fwd_ret=fwd_ret,
             )
-            
+
             # Baseline metrics must be evaluated on the specific target used for the rule
             baseline_metrics = self._compute_baseline_auc(
                 X,
@@ -11992,7 +12007,7 @@ class MaskAssessor:
                 folds,
                 eval_returns=current_baseline_gross,
                 positive_return_threshold=float(
-                    self.cfg.get("label_round_trip_fee_pct", 0.0015)
+                    self.cfg.get("ridge_cost_pct", 0.003)
                 ),
             )
             global_rets = current_baseline_gross[valid_ts_mask]
@@ -12361,14 +12376,14 @@ class MaskAssessor:
                 triad_targets_map=triad_targets_map,
                 fallback_fwd_ret=fwd_ret,
             )
-            
+
             baseline_metrics = self._compute_baseline_auc(
                 X,
                 current_baseline_target,
                 folds,
                 eval_returns=current_baseline_gross,
                 positive_return_threshold=float(
-                    self.cfg.get("label_round_trip_fee_pct", 0.0015)
+                    self.cfg.get("ridge_cost_pct", 0.003)
                 ),
             )
             global_rets = current_baseline_gross[valid_ts_mask]
@@ -12556,7 +12571,7 @@ class MaskAssessor:
             auc_lift = np.nan
             top_quartile_precision_lift = np.nan
             entropy_red = np.nan
-            ridge_round_fee = float(self.cfg.get("label_round_trip_fee_pct", 0.0015))
+            ridge_round_fee = float(self.cfg.get("ridge_cost_pct", 0.003))
             ridge_trade_metrics: Dict[str, Any] = {
                 "threshold_star": np.nan,
                 "threshold_star_lowest_positive": np.nan,
@@ -12646,7 +12661,7 @@ class MaskAssessor:
                         mask=mask,
                         tp_f=rule_tp_f,
                         fwd_ret_threshold=float(
-                            self.cfg.get("label_round_trip_fee_pct", 0.0015)
+                            self.cfg.get("ridge_cost_pct", 0.003)
                         ),
                         top_pct=0.75,
                         min_samples=20,
@@ -13207,7 +13222,7 @@ class MaskAssessor:
                 side=side,
             )
 
-            ridge_round_fee = float(self.cfg.get("label_round_trip_fee_pct", 0.0015))
+            ridge_round_fee = float(self.cfg.get("ridge_cost_pct", 0.003))
             if adaptive_enabled_global:
                 adaptive_tp_atr, adaptive_sl_atr = self._compute_adaptive_tp_sl(
                     mask=mask,
@@ -13251,7 +13266,7 @@ class MaskAssessor:
                 mask=mask,
                 tp_f=rule_tp_f,
                 fwd_ret_threshold=float(
-                    self.cfg.get("label_round_trip_fee_pct", 0.0015)
+                    self.cfg.get("ridge_cost_pct", 0.003)
                 ),
                 top_pct=0.75,
                 min_samples=20,
@@ -14511,6 +14526,7 @@ class MaskAssessor:
                 "threshold_star_lowest_positive": np.nan,
                 "threshold_star_optimal_pnl": np.nan,
                 "threshold_star_best_pnl_threshold": np.nan,
+                "threshold_star_best_gross_pnl_threshold": np.nan,
                 "ridge_pnl_gross_raw_at_optimal_threshold": np.nan,
                 "ridge_pnl_gross_raw": 0.0,
                 "ridge_pnl_raw_at_optimal_threshold": np.nan,
@@ -14533,6 +14549,9 @@ class MaskAssessor:
                 "score_max": np.nan,
                 "score_std": np.nan,
                 "n_unique_scores": 0,
+                "mask_signal_mean": np.nan,
+                "mask_signal_std": np.nan,
+                "mask_sharpe": np.nan,
                 "rejected": True,
                 "reject_reason": {"reason": "no valid threshold_star or no trades"},
                 "realized_trades": [],
@@ -14670,6 +14689,7 @@ class MaskAssessor:
         threshold_star_lowest_positive = None
         threshold_star_optimal_pnl = None
         threshold_star_best_pnl_threshold = None
+        threshold_star_best_gross_pnl_threshold = None  # Track best gross PnL threshold
         best_pnl_raw = -np.inf
         best_pnl_gross_raw = np.nan
 
@@ -14719,17 +14739,23 @@ class MaskAssessor:
             nonlocal best_pnl_raw
             nonlocal best_pnl_gross_raw
             nonlocal threshold_star_best_pnl_threshold
+            nonlocal threshold_star_best_gross_pnl_threshold
             nonlocal threshold_star_optimal_pnl
             nonlocal current_lowest_positive
             nonlocal threshold_star_lowest_positive
             pnl_raw = float(candidate["pnl_raw"])
+            pnl_gross = float(candidate.get("pnl_gross_raw", np.nan))
             threshold_value = float(candidate["threshold"])
             if pnl_raw > best_pnl_raw:
                 best_pnl_raw = pnl_raw
-                best_pnl_gross_raw = float(candidate.get("pnl_gross_raw", np.nan))
+                best_pnl_gross_raw = pnl_gross
                 best_candidate = candidate
                 threshold_star_best_pnl_threshold = threshold_value
                 threshold_star_optimal_pnl = threshold_value
+            # Track best gross PnL threshold separately
+            if np.isfinite(pnl_gross) and pnl_gross > 0.0:
+                if threshold_star_best_gross_pnl_threshold is None:
+                    threshold_star_best_gross_pnl_threshold = threshold_value
             if pnl_raw > 0.0 and threshold_value < current_lowest_positive:
                 current_lowest_positive = threshold_value
                 threshold_star_lowest_positive = threshold_value
@@ -14749,15 +14775,35 @@ class MaskAssessor:
         n_thresholds_evaluated = int(len(threshold_eval_cache))
         n_unique_thresholds_evaluated = n_thresholds_evaluated
 
+        # Compute mask signal quality (Sharpe-like ratio within mask)
+        masked_returns = directional_returns[mask.astype(bool) & np.isfinite(directional_returns)]
+        mask_signal_mean = float(np.nanmean(masked_returns)) if len(masked_returns) > 0 else 0.0
+        mask_signal_std = float(np.nanstd(masked_returns)) if len(masked_returns) > 0 else 0.0
+        mask_sharpe = mask_signal_mean / (mask_signal_std + 1e-9) if mask_signal_std > 0 else 0.0
+        
+        # Configurable thresholds for research-grade acceptance
+        min_gross_pnl_threshold = float(self.cfg.get("ridge_min_gross_pnl_threshold", 0.0))  # Default: any positive gross
+        min_mask_sharpe_threshold = float(self.cfg.get("ridge_min_mask_sharpe_threshold", 0.3))  # Default: 0.3 Sharpe
+        
         forced_reject_reason = None
-        if threshold_star_lowest_positive is None:
+        # NEW: Accept if gross PnL is positive AND mask has sufficient signal quality
+        has_gross_profit = best_pnl_gross_raw > min_gross_pnl_threshold if np.isfinite(best_pnl_gross_raw) else False
+        has_signal_quality = mask_sharpe >= min_mask_sharpe_threshold
+        
+        # Reject only if no gross profit AND no positive post-fee threshold
+        if threshold_star_lowest_positive is None and not (has_gross_profit and has_signal_quality):
             if best_candidate is None:
                 return _reject_metrics(
                     {
                         "reason": "no positive post-fee profit threshold",
                         "best_pnl_candidate": float(best_pnl_raw) if best_pnl_raw != -np.inf else 0.0,
+                        "best_pnl_gross": float(best_pnl_gross_raw) if np.isfinite(best_pnl_gross_raw) else 0.0,
+                        "mask_signal_mean": mask_signal_mean,
+                        "mask_signal_std": mask_signal_std,
+                        "mask_sharpe": mask_sharpe,
                         "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
                         "threshold_star_best_pnl_threshold": threshold_star_best_pnl_threshold,
+                        "threshold_star_best_gross_pnl_threshold": threshold_star_best_gross_pnl_threshold,
                         "n_quantiles_evaluated": n_quantiles_evaluated,
                         "n_thresholds_evaluated": n_thresholds_evaluated,
                         "n_unique_thresholds_evaluated": n_unique_thresholds_evaluated,
@@ -14776,11 +14822,19 @@ class MaskAssessor:
                         if threshold_star_best_pnl_threshold is not None and np.isfinite(threshold_star_best_pnl_threshold)
                         else np.nan
                     ),
+                    threshold_star_best_gross_pnl_threshold=(
+                        float(threshold_star_best_gross_pnl_threshold)
+                        if threshold_star_best_gross_pnl_threshold is not None and np.isfinite(threshold_star_best_gross_pnl_threshold)
+                        else np.nan
+                    ),
                     ridge_pnl_raw_at_optimal_threshold=(
                         float(best_pnl_raw) if best_pnl_raw != -np.inf else np.nan
                     ),
                     ridge_pnl_gross_raw_at_optimal_threshold=best_pnl_gross_raw,
                     valid_symbol_days_observed=valid_symbol_days_observed,
+                    mask_signal_mean=mask_signal_mean,
+                    mask_signal_std=mask_signal_std,
+                    mask_sharpe=mask_sharpe,
                     n_quantiles_evaluated=n_quantiles_evaluated,
                     n_thresholds_evaluated=n_thresholds_evaluated,
                     n_unique_thresholds_evaluated=n_unique_thresholds_evaluated,
@@ -14789,13 +14843,23 @@ class MaskAssessor:
                     score_std=score_std,
                     n_unique_scores=n_unique_scores,
                 )
-            threshold_star = float(best_candidate["threshold"])
+            # Use gross PnL threshold if net PnL failed but gross passed
+            if threshold_star_lowest_positive is None and has_gross_profit and has_signal_quality:
+                threshold_star = float(threshold_star_best_gross_pnl_threshold if threshold_star_best_gross_pnl_threshold is not None else best_candidate["threshold"])
+            else:
+                threshold_star = float(best_candidate["threshold"])
             forced_reject_reason = {
-                "reason": "no positive post-fee profit threshold",
+                "reason": "no positive post-fee profit threshold (but passed gross+signal criteria)" if (has_gross_profit and has_signal_quality) else "no positive post-fee profit threshold",
                 "best_pnl_candidate": float(best_pnl_raw) if best_pnl_raw != -np.inf else 0.0,
+                "best_pnl_gross": float(best_pnl_gross_raw) if np.isfinite(best_pnl_gross_raw) else 0.0,
+                "mask_signal_mean": mask_signal_mean,
+                "mask_signal_std": mask_signal_std,
+                "mask_sharpe": mask_sharpe,
                 "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
                 "threshold_star_best_pnl_threshold": threshold_star_best_pnl_threshold,
+                "threshold_star_best_gross_pnl_threshold": threshold_star_best_gross_pnl_threshold,
                 "threshold_star_fallback": threshold_star,
+                "passed_gross_criteria": has_gross_profit and has_signal_quality,
                 "n_quantiles_evaluated": n_quantiles_evaluated,
                 "n_thresholds_evaluated": n_thresholds_evaluated,
                 "n_unique_thresholds_evaluated": n_unique_thresholds_evaluated,
@@ -15032,6 +15096,7 @@ class MaskAssessor:
             "threshold_star_lowest_positive": threshold_star_lowest_positive,
             "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
             "threshold_star_best_pnl_threshold": threshold_star_best_pnl_threshold,
+            "threshold_star_best_gross_pnl_threshold": threshold_star_best_gross_pnl_threshold,
             "ridge_pnl_gross_raw_at_optimal_threshold": best_pnl_gross_raw,
             "ridge_pnl_gross_raw": ridge_pnl_gross_raw,
             "ridge_pnl_raw_at_optimal_threshold": best_pnl_raw,
@@ -15055,6 +15120,9 @@ class MaskAssessor:
             "score_max": score_max,
             "score_std": score_std,
             "n_unique_scores": n_unique_scores,
+            "mask_signal_mean": mask_signal_mean,
+            "mask_signal_std": mask_signal_std,
+            "mask_sharpe": mask_sharpe,
             "rejected": forced_reject_reason is not None,
             "reject_reason": forced_reject_reason,
             "realized_trades": final_trades,
@@ -15227,7 +15295,7 @@ class MaskAssessor:
         )
         if positive_return_threshold is None:
             positive_return_threshold = float(
-                self.cfg.get("label_round_trip_fee_pct", 0.0015)
+                self.cfg.get("ridge_cost_pct", 0.003)
             )
 
         # Compute global top-quartile precision (no mask = all data)

@@ -834,8 +834,8 @@ CFG = {
     "meta_map_tbm_horizons": [1, 2, 4],
     "meta_map_mae_horizons": [2, 4],
     "meta_map_mfe_horizons": [2, 4],
-    "meta_map_weight_clip_lo": 0.85,
-    "meta_map_weight_clip_hi": 1.15,
+    "meta_map_weight_clip_lo": 0.5,
+    "meta_map_weight_clip_hi": 1.5,
     # Meta classifier utility-based winner selection (logloss remains a gate)
     "meta_clf_max_logloss": 1.10,
     "meta_clf_u_tp": 1.0,
@@ -3269,6 +3269,18 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
     "ridge_dedup_thresholds": [0.95, 0.925, 0.90, 0.875, 0.85, 0.825, 0.80, 0.75, 0.70, 0.65, 0.60],
     # Per-bucket structural dedup target (top-N kept per bucket before global Ridge cascade)
     "overlap_dedup_bucket_top_target": 20,
+    # --- Ridge validation criteria (research-grade vs production-grade) ---
+    # Minimum gross PnL threshold to accept a rule (before fees)
+    # Set to 0.0 to accept any positive gross PnL, higher values for stricter filtering
+    "ridge_min_gross_pnl_threshold": 0.0,
+    # Minimum Sharpe-like ratio (mean/std) of returns within the mask
+    # Rules with insufficient signal quality in the mask are rejected even with gross profit
+    # 0.3 = mild signal, 0.5 = moderate, 0.7 = strong (adjust based on your data)
+    "ridge_min_mask_sharpe_threshold": 0.3,
+    # Threshold selection policy for fallback when post-fee profit is not achieved
+    # "best_net_pnl" = use best net PnL threshold (default, strict)
+    # "best_gross_pnl" = use best gross PnL threshold when net fails (research mode)
+    "ridge_threshold_selection_policy": "best_gross_pnl",
 }
 
 

@@ -72,19 +72,18 @@ from extreme_price_movements.ridge_position_sizer import (
     run_ridge_position_sizer_step,
 )
 from extreme_price_movements.risk import TrailingStop
+from extreme_price_movements.strategy_registry import (
+    get_strategies,
+    strategy_runtime_horizons,
+)
 from extreme_price_movements.telemetry.tprint_hooks import (
     emit_bucket_summary,
     emit_run_header,
 )
-from extreme_price_movements.training import (
-    # generate_exhaustion_history,
+from extreme_price_movements.training import (  # generate_exhaustion_history,
     generate_label_datasets,
     optimize_risk_params,
     train_models_from_artifacts,
-)
-from extreme_price_movements.strategy_registry import (
-    get_strategies,
-    strategy_runtime_horizons,
 )
 from extreme_price_movements.universe import (
     apply_hardcoded_universe_exclusions,
@@ -273,11 +272,7 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
             set(INTRADAY_TRIGGER_COLUMNS)
         )
         for k in causal:
-            if (
-                isinstance(k, str)
-                and k
-                and k not in nonpersisted_intraday_rule_names
-            ):
+            if isinstance(k, str) and k and k not in nonpersisted_intraday_rule_names:
                 keys.add(k)
 
     # 5. Core features that downstream logic assumes are present.
@@ -297,7 +292,10 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
                 keys.add(feat_name)
 
     # 6. Technical Regime (Ridge) Features
-    from extreme_price_movements.config import RIDGE_FEATURE_COLS, CONTINUOUS_LOCATION_COLS
+    from extreme_price_movements.config import (
+        CONTINUOUS_LOCATION_COLS,
+        RIDGE_FEATURE_COLS,
+    )
 
     keys.update(RIDGE_FEATURE_COLS)
     keys.update(CONTINUOUS_LOCATION_COLS)
@@ -411,8 +409,10 @@ def _labeling_feature_keys(cfg) -> set[str]:
 
         for strat in get_strategies(cfg):
             rule_key = str(strat.get("base_event_trigger", "")).strip()
-            if not rule_key or rule_key.startswith("price_up") or rule_key.startswith(
-                "price_down"
+            if (
+                not rule_key
+                or rule_key.startswith("price_up")
+                or rule_key.startswith("price_down")
             ):
                 continue
             keys.update(extract_feature_names_from_key(rule_key))
@@ -590,7 +590,12 @@ def _generate_feature_health_reports(
         allowed_set = set(str(s) for s in allowed_symbols)
         filtered_files = []
         for f in files:
-            sym_from_file = os.path.basename(f).replace("symbol=", "").replace(".parquet", "").replace("_", "/", 1)
+            sym_from_file = (
+                os.path.basename(f)
+                .replace("symbol=", "")
+                .replace(".parquet", "")
+                .replace("_", "/", 1)
+            )
             if sym_from_file in allowed_set:
                 filtered_files.append(f)
         files = filtered_files
@@ -1022,7 +1027,9 @@ def _scan_feature_cache_light(
             try:
                 sample_df = pd.read_parquet(fpath, columns=feat_cols)
                 non_all_nan_cols = {
-                    c for c in feat_cols if c in sample_df.columns and not bool(sample_df[c].isna().all())
+                    c
+                    for c in feat_cols
+                    if c in sample_df.columns and not bool(sample_df[c].isna().all())
                 }
                 empty_cols = set(feat_cols) - non_all_nan_cols
                 if empty_cols:
@@ -1538,6 +1545,29 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
 
     try:
+        _manifest_path = os.path.join(
+            cfg["data_root"], "artifacts", run_id, "labels", "labels_manifest.json"
+        )
+        _manifest = {
+            "run_id": run_id,
+            "datasets": {
+                name: {
+                    "file": f"{name}.parquet",
+                    "rows": int(len(df)),
+                    "columns": list(df.columns),
+                }
+                for name, df in datasets.items()
+            },
+        }
+        with open(_manifest_path, "w") as _mf:
+            json.dump(_manifest, _mf, indent=2, sort_keys=True)
+        tprint(
+            f"Wrote labels manifest with {len(datasets)} entries to {_manifest_path}"
+        )
+    except Exception as _me:
+        tprint(f"WARNING: labels_manifest write failed: {_me}")
+
+    try:
         rp = report_labels(
             run_id, cfg["data_root"], cfg, base_dir=cfg.get("reports_root")
         )
@@ -1715,8 +1745,7 @@ def run_training_step(
     # Alpha models (Dynamic Strategies from get_strategies)
     strategies = get_strategies(cfg)
     strategy_horizons = {
-        s["strategy_id"]: strategy_runtime_horizons(s, cfg)
-        for s in strategies
+        s["strategy_id"]: strategy_runtime_horizons(s, cfg) for s in strategies
     }
 
     found_count = 0
@@ -1753,22 +1782,56 @@ def run_training_step(
         return None
 
     _train_symbols_env = str(os.environ.get("EPM_TRAIN_SYMBOLS", "")).strip()
-    _train_symbols_filter = [s.strip() for s in _train_symbols_env.split(",") if s.strip()]
+    _train_symbols_filter = [
+        s.strip() for s in _train_symbols_env.split(",") if s.strip()
+    ]
     if _train_symbols_filter:
         _filter_set = set(_train_symbols_filter)
         _filtered_datasets = {}
         for name, df in datasets.items():
             if "__symbol__" in df.columns:
-                df_filtered = df[df["__symbol__"].isin(_filter_set)].reset_index(drop=True)
+                df_filtered = df[df["__symbol__"].isin(_filter_set)].reset_index(
+                    drop=True
+                )
                 if len(df_filtered) > 0:
                     _filtered_datasets[name] = df_filtered
-                    tprint(f"  EPM_TRAIN_SYMBOLS filter: {name} {len(df)} -> {len(df_filtered)} rows")
+                    tprint(
+                        f"  EPM_TRAIN_SYMBOLS filter: {name} {len(df)} -> {len(df_filtered)} rows"
+                    )
                 else:
-                    tprint(f"  EPM_TRAIN_SYMBOLS filter: {name} dropped (no matching symbols)")
+                    tprint(
+                        f"  EPM_TRAIN_SYMBOLS filter: {name} dropped (no matching symbols)"
+                    )
             else:
                 _filtered_datasets[name] = df
         datasets = _filtered_datasets
-        tprint(f"EPM_TRAIN_SYMBOLS={_train_symbols_env}: {len(datasets)} datasets retained")
+        tprint(
+            f"EPM_TRAIN_SYMBOLS={_train_symbols_env}: {len(datasets)} datasets retained"
+        )
+
+    _oos_time_filter = cfg.get("oos_eval_time_filter")
+    if _oos_time_filter is not None:
+        _t_start, _t_end = _oos_time_filter
+        _tf_datasets = {}
+        for name, df in datasets.items():
+            if "__ts__" in df.columns:
+                import pandas as _pd
+
+                _ts = _pd.to_datetime(df["__ts__"], utc=True, errors="coerce")
+                _mask = np.ones(len(df), dtype=bool)
+                if _t_start is not None:
+                    _mask &= _ts >= _t_start
+                if _t_end is not None:
+                    _mask &= _ts < _t_end
+                df = df.loc[_mask].reset_index(drop=True)
+            if len(df) > 0:
+                _tf_datasets[name] = df
+            else:
+                tprint(f"  Time filter dropped: {name}")
+        datasets = _tf_datasets
+        tprint(
+            f"oos_eval_time_filter=[{_t_start}, {_t_end}): {len(datasets)} datasets retained"
+        )
 
     tprint(f"Loaded {len(datasets)} datasets total.")
 
@@ -1850,16 +1913,18 @@ def run_training_step(
         _granular[f"risk_{strat_id}"] = risk_config
 
     # Add legacy fallback keys for backward compatibility
-    _granular.update({
-        "risk_mr_best": _mr_risk,
-        "risk_mr_worst": _mr_risk,
-        "risk_tf_best": _tf_risk,
-        "risk_tf_worst": _tf_risk,
-        "risk_long_mr": _mr_risk,
-        "risk_short_mr": _mr_risk,
-        "risk_long_tf": _tf_risk,
-        "risk_short_tf": _tf_risk,
-    })
+    _granular.update(
+        {
+            "risk_mr_best": _mr_risk,
+            "risk_mr_worst": _mr_risk,
+            "risk_tf_best": _tf_risk,
+            "risk_tf_worst": _tf_risk,
+            "risk_long_mr": _mr_risk,
+            "risk_short_mr": _mr_risk,
+            "risk_long_tf": _tf_risk,
+            "risk_short_tf": _tf_risk,
+        }
+    )
     default_risk = {
         "k_sl": cfg.get("risk_k_sl", 2.0),
         "k_trail_start": cfg.get("risk_k_trail_start", 1.0),
@@ -2059,8 +2124,13 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     # strategy_id and trade_side for proper direction grouping.
     # -------------------------------------------------------------------------
     # Load strategies to get trade_side for each bucket
-    from extreme_price_movements.offline_optimisers.params_store import load_inference_candidate_mask_params_per_bucket
-    strategies = load_inference_candidate_mask_params_per_bucket(top_n=1, ranking_metric="score_for_best_params")
+    from extreme_price_movements.offline_optimisers.params_store import (
+        load_inference_candidate_mask_params_per_bucket,
+    )
+
+    strategies = load_inference_candidate_mask_params_per_bucket(
+        top_n=1, ranking_metric="score_for_best_params"
+    )
     strategy_side_map = {s["strategy_id"]: s["trade_side"] for s in strategies}
 
     _meta_cols = {
@@ -3768,6 +3838,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
 
         # Get strategies for dynamic score scaling
         from extreme_price_movements.strategy_registry import get_strategies
+
         strategies = get_strategies(cfg)
 
         score_scale_params = {}
@@ -3794,7 +3865,10 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 score_scale_params[f"{strat_id}_scale"] = 1.0
 
         # Log score scale params
-        diag_strs = [f"{sid}({side}):n={n},c={c:.4f},s={s:.4f}" for sid, side, n, c, s in score_diagnostics]
+        diag_strs = [
+            f"{sid}({side}):n={n},c={c:.4f},s={s:.4f}"
+            for sid, side, n, c, s in score_diagnostics
+        ]
         tprint(f"Score scale params: {' '.join(diag_strs)}")
 
         # Log raw score distributions for diagnostics
@@ -4574,7 +4648,9 @@ def run_feature_generation_step(
                     f"Features already exist and cover full target period: "
                     f"{_n_feats} features × {_n_syms} symbols. Skipping recomputation."
                 )
-                _generate_feature_health_reports(ts_sig, cfg["data_root"], allowed_symbols=train_syms)
+                _generate_feature_health_reports(
+                    ts_sig, cfg["data_root"], allowed_symbols=train_syms
+                )
                 tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
                 return
         else:
@@ -4786,7 +4862,9 @@ def run_feature_generation_step(
 
                 batch_health_keys = (
                     tuple(
-                        k for k in FEATURE_HEALTH_CRITICAL_KEYS if k in set(batch_backfill_keys)
+                        k
+                        for k in FEATURE_HEALTH_CRITICAL_KEYS
+                        if k in set(batch_backfill_keys)
                     )
                     if batch_backfill_keys
                     else FEATURE_HEALTH_CRITICAL_KEYS
@@ -4975,7 +5053,9 @@ def run_feature_generation_step(
         expected_keys=expected_keys,
         panel_close=completeness_panel,
     )
-    _generate_feature_health_reports(ts_sig, cfg["data_root"], allowed_symbols=train_syms)
+    _generate_feature_health_reports(
+        ts_sig, cfg["data_root"], allowed_symbols=train_syms
+    )
     health_feats = load_features_selected(
         ts_sig,
         cfg["data_root"],
@@ -5026,6 +5106,36 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         return datasets
 
     sorted_syms = sorted(all_syms)
+    max_symbols = int(cfg.get("feature_injection_max_symbols", 100))
+    if max_symbols > 0 and len(sorted_syms) > max_symbols:
+        tprint(
+            f"Capping feature injection to the first {max_symbols} symbols "
+            f"out of {len(sorted_syms)}."
+        )
+        sorted_syms = sorted_syms[:max_symbols]
+
+    # Precompute dataset metadata so the symbol loop does not repeatedly scan
+    # every dataset and every row. This keeps the hot path O(symbols × touched
+    # datasets) instead of O(symbols × all_datasets × rows).
+    dataset_meta = {}
+    datasets_by_symbol = {}
+    for name, df in datasets.items():
+        s_col = (
+            "symbol"
+            if "symbol" in df.columns
+            else ("__symbol__" if "__symbol__" in df.columns else None)
+        )
+        t_col = (
+            "ts"
+            if "ts" in df.columns
+            else ("__ts__" if "__ts__" in df.columns else None)
+        )
+        dataset_meta[name] = {"df": df, "s_col": s_col, "t_col": t_col}
+        if not s_col:
+            continue
+        syms = pd.Index(df[s_col].dropna().unique())
+        for sym in syms:
+            datasets_by_symbol.setdefault(sym, []).append(name)
 
     # Define per-dataset feature requirements to avoid OOM on large panels
     dataset_features = {}
@@ -5052,6 +5162,7 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
 
     meta_keys_all = set(_meta_feature_keys_union(cfg))
     sorted_missing_keys = sorted(all_needed_keys)
+    heartbeat_every = max(1, int(cfg.get("feature_injection_heartbeat_every", 25)))
 
     # Pre-allocate target arrays
     tprint(
@@ -5072,102 +5183,143 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     import time
 
     start_time = time.time()
+    files_loaded = 0
+    symbols_with_work = 0
+    cols_injected = 0
+    feature_schema_cols = None
 
-    for i, s in enumerate(sorted_syms, 1):
-        if i % 100 == 0 or i == len(sorted_syms):
-            elapsed = time.time() - start_time
-            tprint(
-                f"  Injection progress: {i}/{len(sorted_syms)} symbols (elapsed {elapsed:.1f}s)"
-            )
-
+    def _process_symbol(s: str) -> tuple[int, int, int]:
+        nonlocal feature_schema_cols
         fpath = get_feature_path(cfg["data_root"], ts_sig, s)
         if not os.path.exists(fpath):
-            continue
+            return 0, 0, 0
+
+        touched_datasets = datasets_by_symbol.get(s, [])
+        if not touched_datasets:
+            return 0, 0, 0
+
+        needed_for_this_sym = set()
+        for name in touched_datasets:
+            needed_for_this_sym.update(missing_keys_per_dataset.get(name, []))
+        if not needed_for_this_sym:
+            return 0, 0, 0
+
+        schema_cols = feature_schema_cols
+        if schema_cols is None:
+            schema_cols = set(pq.ParquetFile(fpath).schema.names)
+            feature_schema_cols = schema_cols
+        cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
+        if not cols_to_load:
+            return 0, 0, 0
 
         try:
-            # Determine which features to load for this symbol
-            needed_for_this_sym = set()
-            for name, missing in missing_keys_per_dataset.items():
-                df = datasets[name]
-                s_col = (
-                    "symbol"
-                    if "symbol" in df.columns
-                    else ("__symbol__" if "__symbol__" in df.columns else None)
-                )
-                if s_col and (df[s_col] == s).any():
-                    needed_for_this_sym.update(missing)
-
-            if not needed_for_this_sym:
-                continue
-
-            schema = pq.ParquetFile(fpath).schema.names
-            cols_to_load = [k for k in needed_for_this_sym if k in schema]
-            if not cols_to_load:
-                continue
-
             df_feat = pd.read_parquet(fpath, columns=cols_to_load)
-            if df_feat.empty:
+        except Exception:
+            schema_cols = set(pq.ParquetFile(fpath).schema.names)
+            cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
+            if not cols_to_load:
+                return 0, 0, 0
+            df_feat = pd.read_parquet(fpath, columns=cols_to_load)
+
+        if df_feat.empty:
+            return 1, 0, 0
+        if not df_feat.index.is_unique:
+            df_feat = df_feat[~df_feat.index.duplicated(keep="last")]
+
+        local_files = 1
+        local_cols = 0
+        for name in touched_datasets:
+            meta = dataset_meta.get(name, {})
+            df = meta.get("df")
+            s_col = meta.get("s_col")
+            t_col = meta.get("t_col")
+            if df is None or not s_col or not t_col:
                 continue
-            if not df_feat.index.is_unique:
-                df_feat = df_feat[~df_feat.index.duplicated(keep="last")]
 
-            for name, missing in missing_keys_per_dataset.items():
-                df = datasets[name]
-                s_col = (
-                    "symbol"
-                    if "symbol" in df.columns
-                    else ("__symbol__" if "__symbol__" in df.columns else None)
+            mask = df[s_col] == s
+            if not mask.any():
+                continue
+
+            cols_for_ds = [
+                k
+                for k in missing_keys_per_dataset.get(name, [])
+                if k in df_feat.columns
+            ]
+            if not cols_for_ds:
+                continue
+
+            idx_feat = df_feat.index
+            row_idx = pd.DatetimeIndex(df.loc[mask, t_col])
+            if hasattr(row_idx, "tz") and hasattr(idx_feat, "tz"):
+                if row_idx.tz is None and idx_feat.tz is not None:
+                    row_idx = pd.DatetimeIndex(pd.to_datetime(row_idx, utc=True)).tz_convert(
+                        idx_feat.tz
+                    )
+                elif row_idx.tz is not None and idx_feat.tz is None:
+                    idx_feat = idx_feat.tz_localize("UTC").tz_convert(row_idx.tz)
+                elif row_idx.tz is not None and idx_feat.tz is not None:
+                    row_idx = row_idx.tz_convert(idx_feat.tz)
+
+            feat_row_pos = idx_feat.get_indexer(row_idx)
+            valid = feat_row_pos >= 0
+            if not np.any(valid):
+                continue
+            buffer_pos = np.flatnonzero(mask)[valid]
+            feat_row_pos = feat_row_pos[valid]
+
+            for k in cols_for_ds:
+                vals = df_feat[k].to_numpy(dtype=np.float32, copy=False)[feat_row_pos]
+                target_buffers[name][k][buffer_pos] = vals
+                local_cols += 1
+                if k in meta_keys_all and f"__meta_raw__{k}" in target_buffers[name]:
+                    target_buffers[name][f"__meta_raw__{k}"][buffer_pos] = vals
+
+        return local_files, local_cols, 1
+
+    default_worker_count = 1 if (len(sorted_syms) >= 50 or len(sorted_missing_keys) >= 400) else min(2, os.cpu_count() or 1)
+    worker_count = max(1, int(cfg.get("feature_injection_workers", default_worker_count)))
+    if worker_count <= 1 or len(sorted_syms) < 8:
+        for i, s in enumerate(sorted_syms, 1):
+            try:
+                local_files, local_cols, local_work = _process_symbol(s)
+                files_loaded += local_files
+                cols_injected += local_cols
+                symbols_with_work += local_work
+            except Exception as e:
+                tprint(f"  WARNING: Error injecting features for {s}: {e}")
+
+            if i % heartbeat_every == 0 or i == len(sorted_syms):
+                elapsed = time.time() - start_time
+                tprint(
+                    f"  Heartbeat: {i}/{len(sorted_syms)} symbols "
+                    f"(work={symbols_with_work}, files={files_loaded}, cols={cols_injected}, elapsed={elapsed:.1f}s)"
                 )
-                t_col = (
-                    "ts"
-                    if "ts" in df.columns
-                    else ("__ts__" if "__ts__" in df.columns else None)
-                )
+            if i % heartbeat_every == 0:
+                import gc
 
-                if not s_col or not t_col:
-                    continue
+                gc.collect()
+    else:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-                mask = df[s_col] == s
-                if not mask.any():
-                    continue
+        tprint(f"Feature injection parallelism enabled: workers={worker_count}")
+        with ThreadPoolExecutor(max_workers=worker_count) as ex:
+            futs = {ex.submit(_process_symbol, s): s for s in sorted_syms}
+            for i, fut in enumerate(as_completed(futs), 1):
+                s = futs[fut]
+                try:
+                    local_files, local_cols, local_work = fut.result()
+                    files_loaded += local_files
+                    cols_injected += local_cols
+                    symbols_with_work += local_work
+                except Exception as e:
+                    tprint(f"  WARNING: Error injecting features for {s}: {e}")
 
-                subset_df = df.loc[mask, [t_col]]
-                cols_for_ds = [k for k in missing if k in df_feat.columns]
-                if not cols_for_ds:
-                    continue
-
-                # Align timezones if necessary to ensure merge works
-                idx_feat = df_feat.index
-                if hasattr(df[t_col], "dt") and hasattr(idx_feat, "tz"):
-                    if df[t_col].dt.tz is None and idx_feat.tz is not None:
-                        # Localize label ts to feature tz
-                        subset_df[t_col] = pd.to_datetime(
-                            subset_df[t_col], utc=True
-                        ).dt.tz_convert(idx_feat.tz)
-                    elif df[t_col].dt.tz is not None and idx_feat.tz is None:
-                        # Localize feature index to label tz
-                        idx_feat = idx_feat.tz_localize("UTC").tz_convert(
-                            df[t_col].dt.tz
-                        )
-                    elif df[t_col].dt.tz is not None and idx_feat.tz is not None:
-                        # Convert label ts to feature tz
-                        subset_df[t_col] = df[t_col].dt.tz_convert(idx_feat.tz)
-
-                merged = subset_df.merge(
-                    df_feat[cols_for_ds], left_on=t_col, right_index=True, how="left"
-                ).fillna(0.0)
-
-                for k in cols_for_ds:
-                    vals = merged[k].values.astype(np.float32)
-                    target_buffers[name][k][mask] = vals
-                    if (
-                        k in meta_keys_all
-                        and f"__meta_raw__{k}" in target_buffers[name]
-                    ):
-                        target_buffers[name][f"__meta_raw__{k}"][mask] = vals
-
-        except Exception as e:
-            tprint(f"  WARNING: Error injecting features for {s}: {e}")
+                if i % heartbeat_every == 0 or i == len(sorted_syms):
+                    elapsed = time.time() - start_time
+                    tprint(
+                        f"  Heartbeat: {i}/{len(sorted_syms)} symbols "
+                        f"(work={symbols_with_work}, files={files_loaded}, cols={cols_injected}, elapsed={elapsed:.1f}s)"
+                    )
 
     tprint("Concatenating injected features...")
     for name, cols_dict in target_buffers.items():

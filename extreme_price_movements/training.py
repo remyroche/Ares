@@ -3124,135 +3124,6 @@ def _optimize_training_sample_weights(
             alpha_quantile=float(cfg.get("sample_weight_meta_alpha_quantile", 0.5)),
         ).astype(np.float64, copy=False)
 
-    # 1. Time-Weighted Quality Component
-    if "__quality__" in df.columns:
-        qual_vals = np.clip(np.nan_to_num(df["__quality__"].values, nan=0.5), 0.0, 1.0)
-        components["time_weighted_quality"] = qual_vals.astype(np.float64, copy=False)
-
-    # 2. Dynamic Volatility Regime Component
-    if "atr_pct" in df.columns and "atr_median" in df.columns:
-        atr_pct = np.nan_to_num(df["atr_pct"].values, nan=0.02)
-        atr_med = np.nan_to_num(df["atr_median"].values, nan=0.02)
-        # Avoid division by zero
-        atr_ratio = np.divide(
-            atr_pct, atr_med, out=np.ones_like(atr_pct), where=atr_med > 1e-6
-        )
-        # We cap the ratio at realistic bounds (e.g., 0.2 to 5.0) to prevent outlier explosion in geometric blending
-        atr_ratio = np.clip(atr_ratio, 0.2, 5.0)
-        components["volatility_regime"] = atr_ratio.astype(np.float64, copy=False)
-
-    # 3. Continuous Ridge OOF Quality Predictions Component
-    if "__quality__" in df.columns:
-        qual_vals = np.clip(
-            np.nan_to_num(df["__quality__"].values, nan=0.5), 0.0, 1.0
-        ).astype(np.float32)
-        X_frame_test = select_test_feature_frame(X_frame)
-        X_np_test = np.asarray(X_frame_test, dtype=np.float32)
-
-        # We need a robust time-split for OOF predictions to prevent leakage
-        from extreme_price_movements.periods_symbols_management import (
-            EventSchema,
-            SlicePlanner,
-            SlicePlannerConfig,
-            SymbolPolicy,
-        )
-
-        n_splits_ridge = int(cfg.get("sample_weight_opt_n_splits", 3))
-        embargo_bars = int(cfg.get("sample_weight_opt_embargo_bars", 10))
-        ridge_max_samples = _bounded_sample_cap(
-            len(X_np_test),
-            absolute_cap=int(
-                cfg.get(
-                    "sample_weight_opt_ridge_max_samples",
-                    15000 if "meta" in stage_l else 25000,
-                )
-            ),
-            pct_cap=float(cfg.get("sample_weight_opt_ridge_max_pct", 1.0)),
-        )
-        _ridge_label_times = label_times
-        if len(X_np_test) > ridge_max_samples:
-            ridge_idx = np.linspace(
-                0, len(X_np_test) - 1, ridge_max_samples, dtype=np.int32
-            )
-            X_np_test = X_np_test[ridge_idx]
-            qual_vals = qual_vals[ridge_idx]
-            _ridge_label_times = label_times.iloc[ridge_idx].reset_index(drop=True)
-
-        # Build events for SlicePlanner
-        events = pd.DataFrame(
-            {
-                "event_id": np.arange(len(_ridge_label_times), dtype=np.int64),
-                "symbol": np.repeat("ALL", len(_ridge_label_times)),
-                "t0": pd.to_datetime(
-                    _ridge_label_times["t_start"], utc=True, errors="coerce"
-                ),
-                "t1": pd.to_datetime(
-                    _ridge_label_times["t_end"], utc=True, errors="coerce"
-                ),
-            }
-        )
-        p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
-        # We relax the symbol policy for ridge sizer weight optimization to prevent split failures
-        # on low-density horizons (H2, H4, H8). Fallback to all_symbols to ensure we get splits.
-        p_cfg = p_cfg.__class__(
-            **{
-                **p_cfg.__dict__,
-                "preset": p_cfg.preset.__class__(
-                    preset_name=p_cfg.preset.preset_name,
-                    outer=p_cfg.preset.outer,
-                    inner=p_cfg.preset.inner.__class__(n_splits=n_splits_ridge),
-                    sampling=p_cfg.preset.sampling,
-                    symbol_policy=SymbolPolicy(
-                        mode="all_symbols", min_symbols_per_split=1
-                    ),
-                    purge_policy=p_cfg.preset.purge_policy,
-                ),
-                "silent": True,
-                "min_rows_per_fold": 1,
-                "min_symbols_per_fold": 1,
-            }
-        )
-        bundle = SlicePlanner(p_cfg).build(events)
-        splits = [
-            (plan.fit_idx, plan.predict_idx)
-            for plan in bundle["consumer_plans"]["ridge_sizer_fit"]
-            if plan.tag == "predict_outer_test"
-            and plan.fit_idx.size > 0
-            and plan.predict_idx.size > 0
-        ]
-        if not splits:
-            raise ValueError("SlicePlanner failed to generate ridge sizer splits")
-
-        ridge_preds = np.full(n, 0.5, dtype=np.float32)
-
-        # Standardize features locally for Ridge to ensure rapid and stable convergence
-        X_np_std = X_np_test.copy()
-        mean = np.mean(X_np_std, axis=0, keepdims=True)
-        std = np.std(X_np_std, axis=0, keepdims=True)
-        std = np.maximum(std, 1e-6)
-        X_np_std -= mean
-        X_np_std /= std
-
-        for train_idx, test_idx in splits:
-            if len(train_idx) < 100 or len(test_idx) == 0:
-                continue
-            from sklearn.linear_model import (  # Import Ridge here to avoid circular dependency if it's in the top-level import block
-                Ridge,
-            )
-
-            model = Ridge(alpha=1.0, random_state=42)
-            model.fit(X_np_std[train_idx], qual_vals[train_idx])
-            p = model.predict(X_np_std[test_idx])
-            ridge_preds[test_idx] = p
-
-        # Bound valid probability ranges
-        ridge_preds = np.clip(ridge_preds, 0.0, 1.0)
-        # Shift range to 1.0 centered (e.g., [0.5, 1.5]) for valid sample weight geometric product
-        ridge_weight_component = 0.5 + ridge_preds
-        components["ridge_oof_quality"] = ridge_weight_component.astype(
-            np.float64, copy=False
-        )
-
     if extra_components:
         for k, v in extra_components.items():
             if v is None:
@@ -8929,7 +8800,7 @@ def train_meta_models_from_artifacts(
         if np.isfinite(_abs).any():
             _q = float(np.nanpercentile(_abs[np.isfinite(_abs)], 70))
             _s = max(float(np.nanstd(_abs[np.isfinite(_abs)])), 1e-6)
-            _w = 1.0 + 0.15 * _sigmoid((_abs - _q) / _s)
+            _w = 1.0 + 0.5 * _sigmoid((_abs - _q) / _s)
         else:
             _w = np.ones(len(_t), dtype=float)
         if "__barrier_pct__" in _df_local.columns:
@@ -8944,8 +8815,8 @@ def train_meta_models_from_artifacts(
             _w[_pos] = _w[_pos] / max(float(np.mean(_w[_pos])), 1e-12)
             _w[_pos] = np.clip(
                 _w[_pos],
-                float(cfg.get("meta_map_weight_clip_lo", 0.85)),
-                float(cfg.get("meta_map_weight_clip_hi", 1.15)),
+                float(cfg.get("meta_map_weight_clip_lo", 0.5)),
+                float(cfg.get("meta_map_weight_clip_hi", 1.5)),
             )
             _w[_pos] = _w[_pos] / max(float(np.mean(_w[_pos])), 1e-12)
         return _w.astype(np.float32)
@@ -9936,7 +9807,7 @@ def train_meta_models_from_artifacts(
         w_exc = w_exc / max(float(np.mean(w_exc)), 1e-12)  # normalize to mean=1
 
         _n_res_max = float(np.nanmax(n_res)) if len(n_res) and np.nanmax(n_res) > 0 else 1.0
-        w_n_res = 0.5 + 1.5 * np.clip(n_res.astype(np.float64) / _n_res_max, 0.0, 1.0)
+        w_n_res = 0.5 + 1.5 * np.sqrt(np.clip(n_res.astype(np.float64) / _n_res_max, 0.0, 1.0))
         w_meta_main = (w_mag * w_exc * w_n_res).astype(np.float64)
         w_meta_main = w_meta_main / max(
             float(np.mean(w_meta_main)), 1e-12

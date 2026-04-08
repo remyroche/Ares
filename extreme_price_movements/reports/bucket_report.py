@@ -224,61 +224,145 @@ def report_labels(run_id: str, data_root: str, cfg: Dict[str, Any], base_dir: st
 def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any], base_dir: str | Path | None = None) -> str:
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# Base Training Report — {run_id}", f"Generated: {ts}\n"]
-    horizons = cfg.get("label_horizons_hours", [2, 4, 8])
-    sides = ["long", "short"]
-    kinds = ["mr", "tf"]
-
     alpha_models = bundle.get("alpha_models", {}) if bundle else {}
-    alpha_metrics = bundle.get("alpha_oof_metrics", {}) if bundle else {}
+    quality_gate = bundle.get("quality_gate_report", {}) if bundle else {}
+    base_rows = list(quality_gate.get("base_models", []) or [])
 
     rows_data = []
     table_rows = []
-    headers = ["Bucket", "H", "Winner algo", "AUC (raw)", "AUC (weighted)", "IC", "Prec@10", "Prec@30", "N features"]
+    if base_rows:
+        headers = [
+            "Strategy ID",
+            "Side",
+            "H",
+            "Model",
+            "Winner",
+            "AUC",
+            "IC(bin)",
+            "IC(ret)",
+            "LogLoss",
+            "PR-AUC",
+            "Lift@20",
+            "Prec@10",
+            "Prec@30",
+            "N features",
+        ]
 
-    for side in sides:
-        for kind in kinds:
-            bkt_label = f"{'MR' if kind == 'mr' else 'TF'}_{'long' if side == 'long' else 'short'}"
-            side_models = alpha_models.get(side, {})
-            kind_model = side_models.get(kind, {})
-            for H in horizons:
-                cell_key = f"{bkt_label}_H{H}"
-                # Alpha metrics are keyed by (side, kind, H)
-                m_key = f"{side}/{kind}/H={H}"
-                m = alpha_metrics.get(m_key, {})
-                winner = m.get("winner", kind_model.get("winner_algo", "—"))
-                auc_raw = _fmt(m.get("auc_raw", float("nan")))
-                auc_w = _fmt(m.get("auc_weighted", float("nan")))
-                ic = _fmt(m.get("ic", float("nan")))
-                prec10 = _fmt(m.get("prec_at_10", float("nan")))
-                prec30 = _fmt(m.get("prec_at_30", float("nan")))
-                n_feats = m.get("n_features", kind_model.get("n_features", "—"))
-                table_rows.append([bkt_label, H, winner, auc_raw, auc_w, ic, prec10, prec30, n_feats])
-                rows_data.append({"bucket": bkt_label, "H": H, "winner": winner,
-                                   "auc_raw": m.get("auc_raw"), "auc_weighted": m.get("auc_weighted"),
-                                   "ic": m.get("ic"), "prec_at_10": m.get("prec_at_10"), "prec_at_30": m.get("prec_at_30")})
+        def _feature_count(side: str, strategy_id: str, horizon: int) -> int | str:
+            conf = alpha_models.get(side, {}).get(strategy_id, {})
+            h_conf = (conf.get("models_by_h", {}) or {}).get(int(horizon), {})
+            feats = h_conf.get("selected_features") or h_conf.get("feat_cols") or []
+            return len(feats) if feats else "—"
 
-    lines.append("## Alpha Model Performance per (Bucket, Horizon)")
-    lines.extend(_md_table(headers, table_rows))
-    lines.append("")
+        for r in base_rows:
+            metrics = r.get("metrics", {}) or {}
+            side = str(r.get("side", ""))
+            strategy_id = str(r.get("kind", ""))
+            horizon = int(r.get("H", 0) or 0)
+            model_name = str(r.get("model", ""))
+            candidate = model_name.split(":", 1)[-1] if ":" in model_name else model_name
+            winner = "✓" if bool(r.get("is_winner", False)) else ""
+            auc = _fmt(metrics.get("auc"))
+            ic_bin = _fmt(metrics.get("ic"))
+            ic_ret = _fmt(metrics.get("ic_ret"))
+            logloss = _fmt(metrics.get("logloss"))
+            pr_auc = _fmt(metrics.get("pr_auc"))
+            lift20 = _fmt(metrics.get("lift_at_20pct"))
+            prec10 = _fmt(metrics.get("prec_at_10pct"))
+            prec30 = _fmt(metrics.get("prec_at_30pct"))
+            n_feats = _feature_count(side, strategy_id, horizon)
+            table_rows.append(
+                [
+                    strategy_id,
+                    side,
+                    horizon,
+                    candidate,
+                    winner,
+                    auc,
+                    ic_bin,
+                    ic_ret,
+                    logloss,
+                    pr_auc,
+                    lift20,
+                    prec10,
+                    prec30,
+                    n_feats,
+                ]
+            )
+            rows_data.append(
+                {
+                    "strategy_id": strategy_id,
+                    "side": side,
+                    "H": horizon,
+                    "model": candidate,
+                    "is_winner": bool(r.get("is_winner", False)),
+                    "auc": metrics.get("auc"),
+                    "ic_bin": metrics.get("ic"),
+                    "ic_ret": metrics.get("ic_ret"),
+                    "logloss": metrics.get("logloss"),
+                    "pr_auc": metrics.get("pr_auc"),
+                    "lift_at_20pct": metrics.get("lift_at_20pct"),
+                    "prec_at_10pct": metrics.get("prec_at_10pct"),
+                    "prec_at_30pct": metrics.get("prec_at_30pct"),
+                    "n_features": n_feats,
+                }
+            )
 
-    # Per-bucket summary
-    lines.append("## Per-Bucket Summary (median across horizons)")
-    bkt_headers = ["Bucket", "Deployed Hs", "Primary H", "Median AUC (weighted)", "Median IC"]
-    bkt_rows = []
-    from extreme_price_movements.strategy_registry import get_strategies
-    strategies = get_strategies()
-    _bucket_map = {f"{strat['trade_side']}_{strat['strategy_id']}": (strat["trade_side"], strat["strategy_id"]) for strat in strategies}
-    for bkt, (s, k) in _bucket_map.items():
-        side_models = alpha_models.get(s, {})
-        kind_model = side_models.get(k, {})
-        deployed = kind_model.get("deployed_horizons", horizons)
-        primary_h = kind_model.get("H", "—")
-        bkt_data = [r for r in rows_data if r["bucket"] == bkt and r["auc_weighted"] is not None]
-        med_auc = _fmt(float(np.median([r["auc_weighted"] for r in bkt_data]))) if bkt_data else "—"
-        med_ic = _fmt(float(np.median([r["ic"] for r in bkt_data if r["ic"] is not None]))) if bkt_data else "—"
-        bkt_rows.append([bkt, str(deployed), str(primary_h), med_auc, med_ic])
-    lines.extend(_md_table(bkt_headers, bkt_rows))
-    lines.append("")
+        lines.append("## Alpha Model Performance per Strategy / Horizon")
+        lines.extend(_md_table(headers, table_rows))
+        lines.append("")
+
+        lines.append("## Per-Strategy Summary")
+        bkt_headers = ["Strategy ID", "Side", "Deployed Hs", "Primary H", "Median AUC", "Median IC", "Median PR-AUC"]
+        bkt_rows = []
+        for side in sorted({r["side"] for r in rows_data}):
+            side_rows = [r for r in rows_data if r["side"] == side]
+            for strategy_id in sorted({r["strategy_id"] for r in side_rows}):
+                sub = [r for r in side_rows if r["strategy_id"] == strategy_id]
+                if not sub:
+                    continue
+                deployed = sorted({int(r["H"]) for r in sub if r.get("H") is not None})
+                winners = [r for r in sub if r.get("is_winner")]
+                primary_h = winners[0]["H"] if winners else deployed[0]
+                auc_vals = [r["auc"] for r in sub if r.get("auc") is not None]
+                ic_vals = [r["ic_bin"] for r in sub if r.get("ic_bin") is not None]
+                pr_vals = [r["pr_auc"] for r in sub if r.get("pr_auc") is not None]
+                bkt_rows.append(
+                    [
+                        strategy_id,
+                        side,
+                        str(deployed),
+                        str(primary_h),
+                        _fmt(float(np.median(auc_vals))) if auc_vals else "—",
+                        _fmt(float(np.median(ic_vals))) if ic_vals else "—",
+                        _fmt(float(np.median(pr_vals))) if pr_vals else "—",
+                    ]
+                )
+        lines.extend(_md_table(bkt_headers, bkt_rows))
+        lines.append("")
+    else:
+        horizons = cfg.get("label_horizons_hours", [5, 10])
+        sides = ["long", "short"]
+        kinds = ["mr", "tf"]
+        headers = ["Bucket", "H", "Winner algo", "AUC (raw)", "AUC (weighted)", "IC", "Prec@10", "Prec@30", "N features"]
+        for side in sides:
+            for kind in kinds:
+                bkt_label = f"{'MR' if kind == 'mr' else 'TF'}_{'long' if side == 'long' else 'short'}"
+                side_models = alpha_models.get(side, {})
+                kind_model = side_models.get(kind, {})
+                for H in horizons:
+                    m = {}
+                    winner = kind_model.get("winner_algo", "—")
+                    auc_raw = _fmt(float("nan"))
+                    auc_w = _fmt(float("nan"))
+                    ic = _fmt(float("nan"))
+                    prec10 = _fmt(float("nan"))
+                    prec30 = _fmt(float("nan"))
+                    n_feats = kind_model.get("n_features", "—")
+                    table_rows.append([bkt_label, H, winner, auc_raw, auc_w, ic, prec10, prec30, n_feats])
+        lines.append("## Alpha Model Performance per (Bucket, Horizon)")
+        lines.extend(_md_table(headers, table_rows))
+        lines.append("")
 
     out_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
     return _save(run_id, "base_training", lines, out_df, base_dir=base_dir)
@@ -336,18 +420,24 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
         horizon = None
         geom = None
         strategy = model_name
-        m = _re.match(r"^(?P<strategy>.+)_(tbm_500_250|tbm_250_125)_h(?P<h>\d+)$", model_name)
+        m = _re.match(
+            r"^(?P<strategy>.+)_(?P<geom>tbm_\d+_\d+)_h(?P<h>\d+)$",
+            model_name,
+        )
         if m:
             head_type = "tbm_clf"
             strategy = m.group("strategy")
-            geom = model_name[len(strategy) + 1 :].rsplit("_h", 1)[0]
+            geom = m.group("geom")
             horizon = int(m.group("h"))
         else:
-            m = _re.match(r"^(?P<strategy>.+)_(mae|mfe)_h(?P<h>\d+)$", model_name)
+            m = _re.match(r"^(?P<strategy>.+)_(?P<kind>mae|mfe|asym)_h(?P<h>\d+)$", model_name)
             if m:
-                head_type = m.group(2)
+                head_type = m.group("kind")
                 strategy = m.group("strategy")
                 horizon = int(m.group("h"))
+            elif model_name.endswith("_clf"):
+                head_type = "clf"
+                strategy = model_name[: -len("_clf")]
             elif model_name.endswith("_reg"):
                 head_type = "reg"
                 strategy = model_name[: -len("_reg")]
@@ -406,7 +496,7 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
 
     detail_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
 
-    requested_order = ["tbm_500_250", "tbm_250_125", "mae", "mfe", "reg"]
+    requested_order = ["tbm_500_250", "tbm_250_125", "mae", "mfe", "asym", "clf", "reg"]
     detail_df = detail_df[
         detail_df["head_type"].isin(["tbm_clf", "mae", "mfe", "reg"])
     ].copy()

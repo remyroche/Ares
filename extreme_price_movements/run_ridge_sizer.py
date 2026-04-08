@@ -93,7 +93,7 @@ def find_latest_run_id(data_root: str) -> str:
         raise FileNotFoundError(f"No artifacts directory at {artifacts_dir}")
     
     import re
-    _ts_pat = re.compile(r"^\d{8}_\d{6}$")
+    _ts_pat = re.compile(r"^\d{8}_\d{6}.*$")
     run_dirs = sorted(
         [d for d in artifacts_dir.iterdir() if d.is_dir() and _ts_pat.match(d.name)],
         key=lambda x: x.name,
@@ -146,6 +146,8 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     DataFrame with base model prediction columns (base_H2, base_H4).
     """
     import re as re2
+    import re
+
     base_oof_dir = Path(data_root) / "artifacts" / run_id / "oof"
     
     if not base_oof_dir.exists():
@@ -184,9 +186,35 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         if bucket not in buckets:
             buckets[bucket] = {}
         buckets[bucket][col_name] = df
-    
-    result = {}
+
+    def _strip_side_prefix(name: str) -> str:
+        return re.sub(r'^(long|short)_', '', name)
+
+    # Merge side-prefixed buckets back into the canonical strategy id so a
+    # single strategy can consume all head families that were exported under
+    # side-specific filenames.
+    canonical_buckets: Dict[str, List[Tuple[str, Dict[str, pd.DataFrame]]]] = {}
     for bucket, model_dfs in buckets.items():
+        canonical = _strip_side_prefix(bucket)
+        canonical_buckets.setdefault(canonical, []).append((bucket, model_dfs))
+
+    result = {}
+    for bucket, grouped_model_dfs in canonical_buckets.items():
+        model_dfs: Dict[str, pd.DataFrame] = {}
+        source_sides: set[str] = set()
+        for source_bucket, source_model_dfs in grouped_model_dfs:
+            if source_bucket.startswith("long_"):
+                source_sides.add("long")
+            elif source_bucket.startswith("short_"):
+                source_sides.add("short")
+            for col_name, mdf in source_model_dfs.items():
+                # Keep the first occurrence for a family. In the current
+                # artifact layout the side-specific files supply distinct
+                # families (clf/mae/mfe/asym) while the canonical reg file
+                # carries the base score.
+                if col_name not in model_dfs:
+                    model_dfs[col_name] = mdf
+
         # Use first available df as base (for length and metadata)
         base_df = next(iter(model_dfs.values()))
         n = len(base_df)
@@ -195,19 +223,36 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         # Add all base prediction columns
         for col_name, mdf in sorted(model_dfs.items()):
             if len(mdf) == n:
-                # Use oof_prob as the base model prediction
-                combined[col_name] = mdf["oof_prob"].values
+                # Use oof_prob (classifier) or oof_pred (regressor)
+                if "oof_prob" in mdf.columns:
+                    combined[col_name] = mdf["oof_prob"].values
+                elif "oof_pred" in mdf.columns:
+                    combined[col_name] = mdf["oof_pred"].values
         
-        # Add metadata for joining with meta OOF
-        if "index" in base_df.columns:
-            combined["index"] = base_df["index"].values
-        else:
+        # Add metadata and outcomes for joining and diagnostics
+        meta_cols_to_pull = ["index", "timestamp", "symbol", "return", "is_long", "mae_ret", "mfe_ret", "duration", "exit_code", "y_ret", "y_bin"]
+        for col in meta_cols_to_pull:
+            if col not in combined.columns:
+                for mdf in model_dfs.values():
+                    if col in mdf.columns:
+                        combined[col] = mdf[col].values
+                        break
+        
+        # Mapping alternative names
+        if "return" not in combined.columns and "y_ret" in combined.columns:
+            combined["return"] = combined["y_ret"]
+        if "is_long" not in combined.columns and "y_bin" in combined.columns:
+            combined["is_long"] = combined["y_bin"]
+        elif "is_long" not in combined.columns:
+            # Fallback based on bucket name
+            if bucket.startswith("long"):
+                combined["is_long"] = 1
+            elif bucket.startswith("short"):
+                combined["is_long"] = 0
+
+        # Final metadata sanity check
+        if "index" not in combined.columns:
             combined["index"] = range(n)
-            
-        if "timestamp" in base_df.columns:
-            combined["timestamp"] = base_df["timestamp"].values
-        if "symbol" in base_df.columns:
-            combined["symbol"] = base_df["symbol"].values
         
         result[bucket] = combined
     
@@ -308,9 +353,35 @@ def load_meta_oof_predictions(
         if bucket not in buckets:
             buckets[bucket] = {}
         buckets[bucket][col_name] = df
+
+    def _strip_side_prefix(name: str) -> str:
+        return re.sub(r'^(long|short)_', '', name)
+
+    # Merge side-prefixed buckets back into the canonical strategy id so a
+    # single strategy can consume all head families that were exported under
+    # side-specific filenames.
+    canonical_buckets: Dict[str, List[Tuple[str, Dict[str, pd.DataFrame]]]] = {}
+    for bucket, model_dfs in buckets.items():
+        canonical = _strip_side_prefix(bucket)
+        canonical_buckets.setdefault(canonical, []).append((bucket, model_dfs))
     
     result = {}
-    for bucket, model_dfs in buckets.items():
+    for bucket, grouped_model_dfs in canonical_buckets.items():
+        model_dfs: Dict[str, pd.DataFrame] = {}
+        source_sides: set[str] = set()
+        for source_bucket, source_model_dfs in grouped_model_dfs:
+            if source_bucket.startswith("long_"):
+                source_sides.add("long")
+            elif source_bucket.startswith("short_"):
+                source_sides.add("short")
+            for col_name, mdf in source_model_dfs.items():
+                # Keep the first occurrence for a family. In the current
+                # artifact layout the side-specific files supply distinct
+                # families (clf/mae/mfe/asym) while the canonical reg file
+                # carries the base score.
+                if col_name not in model_dfs:
+                    model_dfs[col_name] = mdf
+
         # Use first available df as base (for length and metadata)
         base_df = next(iter(model_dfs.values()))
         n = len(base_df)
@@ -379,6 +450,11 @@ def load_meta_oof_predictions(
             _sigmoid_u = 1.0 / (1.0 + np.exp(-_u_hat))
             combined["high_utility_pred"] = combined["reg_mean"].values * _sigmoid_u
             combined["utility_disagreement"] = np.abs(combined["reg_mean"].values - _u_hat)
+
+        inferred_side = next(iter(source_sides), "")
+        if inferred_side:
+            combined.attrs["trade_side"] = inferred_side
+            combined["trade_side"] = inferred_side
 
         
         # Attach metadata and realized outcomes for diagnostics
@@ -594,12 +670,12 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
         DataFrame with columns [return, is_long] and optionally [timestamp, symbol]
     """
     # CRITICAL FIX: Detect if returns are in percentage points
-    # Percentage-point returns have mean > 0.01 (1%)
-    # Decimal returns for 15m bars typically have mean < 0.01
-    # However, utility scores might be in 0.1-0.5 range.
-    # We only divide by 100 if we are absolutely sure it's percent points (> 50% mean).
+    # Percentage-point returns have mean > 0.05 (5%)
+    # Decimal returns for 15m bars typically have mean < 0.005 (0.5%)
+    # Threshold set to 0.05 (5%) for 15m crypto bars - catches percentage points
+    # while avoiding false positives from high-volatility decimal returns.
     raw_returns = np.asarray(oof_df["return"].values, dtype=np.float32)
-    if np.abs(np.mean(raw_returns)) > 0.5:
+    if np.abs(np.mean(raw_returns)) > 0.05:
         tprint(f"  WARNING: Returns appear to be in percentage points (mean={np.mean(raw_returns):.6f}). Converting to decimal.")
         raw_returns = raw_returns / 100.0
 
@@ -616,21 +692,21 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
     if "u_policy_net" in oof_df.columns:
         # CRITICAL FIX: Detect if u_policy_net is in percentage points
         raw_u_policy_net = np.asarray(oof_df["u_policy_net"].values, dtype=np.float32)
-        if np.abs(np.mean(raw_u_policy_net)) > 0.5:
+        if np.abs(np.mean(raw_u_policy_net)) > 0.05:
             tprint(f"  WARNING: u_policy_net appears to be in percentage points (mean={np.mean(raw_u_policy_net):.6f}). Converting to decimal.")
             raw_u_policy_net = raw_u_policy_net / 100.0
         outcomes["u_policy_net"] = raw_u_policy_net
     if "u_policy" in oof_df.columns:
         # CRITICAL FIX: Detect if u_policy is in percentage points
         raw_u_policy = np.asarray(oof_df["u_policy"].values, dtype=np.float32)
-        if np.abs(np.mean(raw_u_policy)) > 0.5:
+        if np.abs(np.mean(raw_u_policy)) > 0.05:
             tprint(f"  WARNING: u_policy appears to be in percentage points (mean={np.mean(raw_u_policy):.6f}). Converting to decimal.")
             raw_u_policy = raw_u_policy / 100.0
         outcomes["u_policy"] = raw_u_policy
     for c in oof_df.columns:
         if c.startswith("u_tbm_"):
             raw_u_tbm = np.asarray(oof_df[c].values, dtype=np.float32)
-            if np.abs(np.mean(raw_u_tbm)) > 0.5:
+            if np.abs(np.mean(raw_u_tbm)) > 0.05:
                 tprint(f"  WARNING: {c} appears to be in percentage points (mean={np.mean(raw_u_tbm):.6f}). Converting to decimal.")
                 raw_u_tbm = raw_u_tbm / 100.0
             outcomes[c] = raw_u_tbm
@@ -1039,11 +1115,16 @@ def main():
             _bp_cfg = {}
 
             # If optimize params are present for this bucket, align sizer rows to entry policy place-order mask.
-            _run_models_path = Path(args.data_root) / "artifacts" / run_id / "models" / "bucket_params.json"
+            _run_models_path = Path(args.data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
             if _run_models_path.exists():
                 try:
                     _bp_blob = json.loads(_run_models_path.read_text())
-                    _bp_cfg = flatten_bucket_policy(_bp_blob.get("buckets", {}).get(bucket_name.upper(), {}))
+                    _bp_buckets = _bp_blob.get("buckets", {})
+                    _bp_cfg = flatten_bucket_policy(
+                        _bp_buckets.get(bucket_name, {})
+                        or _bp_buckets.get(bucket_name.lower(), {})
+                        or _bp_buckets.get(bucket_name.upper(), {})
+                    )
                     if _bp_cfg.get("entry_policy"):
                         _scores = np.asarray(oof_pred_df[pred_cols[0]].values, dtype=float)
                         _atr_vec = np.asarray(

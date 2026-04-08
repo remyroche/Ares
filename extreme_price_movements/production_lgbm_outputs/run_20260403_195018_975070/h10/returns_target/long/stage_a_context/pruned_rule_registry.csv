@@ -1,0 +1,9 @@
+side,source_horizon,cheap_rank,canonical_key,source_target,mask_idx,support_sub,preset
+long,3,7.1291094057306905,(*)|(loc_dist_ema20_atr_ts_bot80==1&loc_dist_ema20_atr_ts_top20==1&loc_dist_ema20_atr_ts_top50==0)|(reg_atr_change_rate_ts_band25_75==1&reg_atr_change_rate_ts_top40==0&reg_atr_change_rate_ts_top70==0),atr_norm_returns_target,25,20.0,production
+long,10,6.252103299530567,(*)|(*)|(reg_atr_change_rate_ts_band25_75==1&reg_atr_change_rate_ts_top20==1&reg_atr_change_rate_ts_top40==0),atr_norm_returns_target,76,20.0,production
+long,3,4.640169013956292,(*)|(loc_dist_ema20_atr_ts_top20==1)|(reg_atr_change_rate_ts_top30==1&reg_atr_change_rate_ts_top40==0),atr_norm_returns_target,26,45.0,production
+long,10,4.532124759449644,(*)|(loc_dist_ema20_atr_ts_band25_75==1&loc_dist_ema20_atr_ts_top70==0&loc_dist_ema50_atr_ts_top20==1)|(reg_atr_change_rate_ts_top50==1&reg_atr_change_rate_ts_top60==1),returns_target,57,5.0,production
+long,10,4.021170292716518,(*)|(loc_dist_ema20_atr_ts_top20==1)|(reg_atr_change_rate_ts_top30==1&reg_atr_change_rate_ts_top40==0),atr_norm_returns_target,26,45.0,production
+short,10,3.808347197288457,(*)|(loc_dist_ema20_atr_ts_top60==1)|(reg_atr_change_rate_ts_band25_75==1&reg_atr_change_rate_ts_top40==1&reg_atr_change_rate_ts_top70==0),atr_norm_returns_target,83,5.0,production
+long,3,2.147403929528308,(*)|(loc_dist_ema20_atr_ts_bot70==1&loc_dist_ema20_atr_ts_top20==1&loc_dist_ema20_atr_ts_top60==1)|(reg_atr_change_rate_ts_top40==1&reg_atr_change_rate_ts_top50==1),returns_target,8,5.0,production
+short,3,2.0200080162995624,(*)|(*)|(reg_atr_change_rate_ts_top40==1&reg_atr_change_rate_ts_top60==1&reg_atr_change_rate_ts_top70==0),atr_norm_returns_target,46,5.0,production

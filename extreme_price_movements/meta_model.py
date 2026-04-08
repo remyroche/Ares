@@ -229,9 +229,27 @@ class MetaModel:
                 },
                 max_features_pct=0.90,
             )
-            selected = list(fs1.selected_features)
-            if len(selected) < 30:
+            selected_stage1 = list(fs1.selected_features)
+            if len(selected_stage1) < 30:
                 selected = list(X.columns[:max_features])
+            else:
+                # Stage 2: v4_topk refinement for redundancy removal
+                n_stage2_target = max(30, min(max_features, len(selected_stage1) - 10))
+                if len(selected_stage1) > n_stage2_target:
+                    try:
+                        X_stage1 = X[selected_stage1]
+                        fs2 = mdi_feature_selection_v4_topk(
+                            X_stage1, y_scaled,
+                            topk_weight=0.3,
+                            base_model=None,
+                        )
+                        selected = list(fs2.selected_features)[:n_stage2_target]
+                        tprint(f"  Meta v4_topk refinement: {len(selected_stage1)} -> {len(selected)} features")
+                    except Exception as exc2:
+                        tprint(f"  v4_topk refinement failed ({exc2}), using stage1 selection")
+                        selected = selected_stage1[:max_features]
+                else:
+                    selected = selected_stage1[:max_features]
         except Exception as exc:
             tprint(f"  MDI feature selection failed ({exc}), using all columns")
             selected = list(X.columns[:max_features])
@@ -255,21 +273,21 @@ class MetaModel:
             if not _params:
                 _params = {
                     "objective": "reg:squarederror",
-                    "n_estimators": 8,
-                    "num_parallel_tree": 160,
-                    "max_depth": 6,
+                    "n_estimators": 100,
+                    "num_parallel_tree": 20,
+                    "max_depth": 5,
                     "learning_rate": 0.05,
                     "subsample": 0.75,
                     "colsample_bytree": 0.75,
                     "reg_alpha": 2.0,
-                    "reg_lambda": 20.0,
-                    "min_child_weight": 48.0,
-                    "gamma": 2.5,
-                    "max_delta_step": 2.0,
+                    "reg_lambda": 15.0,
+                    "min_child_weight": 40.0,
+                    "gamma": 1.5,
                     "tree_method": "hist",
                     "random_state": 42,
                     "n_jobs": 3,
                     "verbosity": 0,
+                    "early_stopping_rounds": 20,
                 }
             return {
                 "xgb_parallel_forest": {
@@ -487,7 +505,7 @@ class MetaModel:
 
         # Light feature selection: meta features are already curated (~100),
         # so keep most of them. Only prune clearly irrelevant ones.
-        n_target = max(30, min(40, X_meta.shape[1]))
+        n_target = max(30, min(50, X_meta.shape[1]))
         selected_cols = self._select_tail_features(X_meta, y_np, max_features=n_target)
         X_sel = X_meta[selected_cols]
         self.selected_features = selected_cols
@@ -679,21 +697,22 @@ class MetaClassifierModel:
                 _params = {
                     "objective": "multi:softprob",
                     "num_class": 3,
-                    "n_estimators": 8,
-                    "num_parallel_tree": 160,
-                    "max_depth": 6,
+                    "n_estimators": 100,
+                    "num_parallel_tree": 20,
+                    "max_depth": 5,
                     "learning_rate": 0.05,
                     "subsample": 0.75,
                     "colsample_bytree": 0.75,
                     "reg_alpha": 2.0,
-                    "reg_lambda": 20.0,
-                    "min_child_weight": 48.0,
-                    "gamma": 2.5,
+                    "reg_lambda": 15.0,
+                    "min_child_weight": 40.0,
+                    "gamma": 1.5,
                     "tree_method": "hist",
                     "random_state": 42,
                     "n_jobs": 3,
                     "verbosity": 0,
                     "eval_metric": "mlogloss",
+                    "early_stopping_rounds": 20,
                 }
             return {
                 "xgb_parallel_forest_clf": {
@@ -975,7 +994,7 @@ class MetaClassifierModel:
     def _compute_clf_metrics(oof: np.ndarray, y_class: np.ndarray,
                              y_ret: np.ndarray, groups=None,
                              fee: float = 0.005) -> dict:
-        """Compute classifier metrics: EV, Brier, Accuracy, PnL."""
+        """Compute classifier metrics: EV, Brier, Accuracy, PnL, and soft-label diagnostics."""
         from sklearn.metrics import log_loss, brier_score_loss, accuracy_score
         mask = np.isfinite(oof).all(axis=1) & np.isfinite(y_ret)
         pred, y_c, y_r = oof[mask], y_class[mask], y_ret[mask]
@@ -1044,7 +1063,80 @@ class MetaClassifierModel:
         except Exception:
             pass
 
+        soft_diag = MetaClassifierModel._compute_soft_label_diagnostics(pred, y_c)
+        metrics.update(soft_diag)
+
         return metrics
+
+    @staticmethod
+    def _compute_soft_label_diagnostics(
+        pred: np.ndarray,
+        y_true: np.ndarray,
+        n_bins: int = 10,
+    ) -> dict:
+        """Soft-label monitoring: simplex violation, entropy, KL divergence,
+        hard-label agreement, and P(TP) calibration."""
+        pred = np.asarray(pred, dtype=np.float64)
+        if pred.ndim != 2 or pred.shape[1] != 3:
+            return {}
+        n = pred.shape[0]
+        if n < 20:
+            return {}
+
+        row_sums = pred.sum(axis=1)
+        simplex_violation_rate = float(np.mean(np.abs(row_sums - 1.0) > 1e-4))
+
+        eps = 1e-12
+        p_safe = np.clip(pred, eps, 1.0 - eps)
+        entropy = -np.sum(p_safe * np.log(p_safe), axis=1)
+        max_entropy = np.log(3.0)
+
+        y_true_arr = np.asarray(y_true, dtype=np.float64)
+        is_soft = y_true_arr.ndim == 2 and y_true_arr.shape[1] == 3
+
+        if is_soft:
+            y_soft = np.clip(y_true_arr, eps, 1.0 - eps)
+            kl_per_row = np.sum(y_soft * (np.log(y_soft) - np.log(p_safe)), axis=1)
+            kl_divergence = float(np.mean(kl_per_row))
+
+            argmax_true = np.argmax(y_soft, axis=1)
+            argmax_pred = np.argmax(pred, axis=1)
+            hard_agreement_rate = float(np.mean(argmax_true == argmax_pred))
+
+            y_tp_true = y_soft[:, 2]
+        else:
+            kl_divergence = float("nan")
+            y_hard = np.asarray(y_true, dtype=np.int64)
+            argmax_pred = np.argmax(pred, axis=1)
+            hard_agreement_rate = float(np.mean(y_hard == argmax_pred))
+            y_tp_true = (y_hard == 2).astype(np.float64)
+
+        pred_tp = pred[:, 2]
+        n_ece = min(n_bins, n)
+        bin_edges = np.percentile(pred_tp, np.linspace(0, 100, n_ece + 1))
+        bin_edges[0] -= 1e-6
+        bin_edges[-1] += 1e-6
+        ece_tp = 0.0
+        for b in range(n_ece):
+            lo, hi = bin_edges[b], bin_edges[b + 1]
+            in_bin = (pred_tp >= lo) & (pred_tp < hi) if b < n_ece - 1 else (pred_tp >= lo) & (pred_tp <= hi)
+            n_bin = int(in_bin.sum())
+            if n_bin == 0:
+                continue
+            mean_pred = float(np.mean(pred_tp[in_bin]))
+            mean_true = float(np.mean(y_tp_true[in_bin]))
+            ece_tp += abs(mean_pred - mean_true) * (n_bin / n)
+
+        return {
+            "simplex_violation_rate": simplex_violation_rate,
+            "entropy_median": float(np.median(entropy)),
+            "entropy_p10": float(np.percentile(entropy, 10)),
+            "entropy_p90": float(np.percentile(entropy, 90)),
+            "entropy_max_possible": float(max_entropy),
+            "kl_divergence_mean": kl_divergence,
+            "hard_agreement_rate": hard_agreement_rate,
+            "ece_tp": float(ece_tp),
+        }
 
     # ── Multi-barrier label construction ────────────────────────────
     @staticmethod
@@ -1054,9 +1146,15 @@ class MetaClassifierModel:
         k_tp: float = 2.0,
         k_sl: float = 1.0,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Build 3-class labels (0=SL, 1=Timeout, 2=TP) using risk-unit thresholds."""
+        """Build 3-class labels (0=SL, 1=Timeout, 2=TP) using risk-unit thresholds.
+
+        Conflict resolution: when both TP and SL are hit, uses first-hit-wins
+        based on time-to-barrier information (approximated from return sign at
+        each horizon). If barrier timing is unavailable, defaults to TP-wins
+        (optimistic but avoids the previous conservative SL-override bug).
+        """
         n = len(vol_proxy)
-        y_class = np.ones(n, dtype=np.int8) # Default 1 (Timeout)
+        y_class = np.ones(n, dtype=np.int8)
 
         vp = np.clip(vol_proxy, 1e-9, None)
         tp_thresh = k_tp * vp
@@ -1064,21 +1162,29 @@ class MetaClassifierModel:
 
         max_ret = np.full(n, -999.0)
         min_ret = np.full(n, 999.0)
+        first_tp_h = np.full(n, np.inf)
+        first_sl_h = np.full(n, np.inf)
 
         for h, y_h in y_per_horizon.items():
+            y_h = np.asarray(y_h, dtype=np.float64)
             max_ret = np.maximum(max_ret, y_h)
             min_ret = np.minimum(min_ret, y_h)
+            hit_tp_h = y_h >= tp_thresh
+            hit_sl_h = y_h <= -sl_thresh
+            first_tp_h = np.where(hit_tp_h & (h < first_tp_h), h, first_tp_h)
+            first_sl_h = np.where(hit_sl_h & (h < first_sl_h), h, first_sl_h)
 
         hit_tp = max_ret >= tp_thresh
         hit_sl = min_ret <= -sl_thresh
+        hit_both = hit_tp & hit_sl
 
-        # Assign classes
-        # If hit_sl -> 0
-        # Else if hit_tp -> 2
-        # Else -> 1
+        y_class[hit_tp & ~hit_sl] = 2
+        y_class[hit_sl & ~hit_tp] = 0
 
-        y_class[hit_tp] = 2
-        y_class[hit_sl] = 0 # SL overrides TP (conservative)
+        first_tp_wins = hit_both & (first_tp_h <= first_sl_h)
+        first_sl_wins = hit_both & (first_tp_h > first_sl_h)
+        y_class[first_tp_wins] = 2
+        y_class[first_sl_wins] = 0
 
         w_class = np.ones(n, dtype=np.float32)
         return y_class, w_class
@@ -1107,7 +1213,12 @@ class MetaClassifierModel:
         if y_class_override is not None:
             if hasattr(y_class_override, "to_numpy") and hasattr(y_class_override, "get_retained_geometries"):
                 self._dynamic_labels = y_class_override
-                y_class = y_class_override.to_numpy().astype(np.float32)
+                _soft = y_class_override.to_numpy()
+                if _soft is None:
+                    tprint(f"  WARNING: soft-label head skipped (no retained geometries for H={getattr(y_class_override, 'h', '?')})")
+                    self._is_fitted = False
+                    return self
+                y_class = _soft.astype(np.float32)
                 w_barrier = np.ones(len(y_class), dtype=np.float32)
                 tprint(f"  Soft multiclass labels from engine shape: {y_class.shape}")
             else:

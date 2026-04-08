@@ -37,7 +37,8 @@ def load_trades_for_bucket(trades: pd.DataFrame, bucket: str, cfg: LoadTradesCon
     out = trades.copy()
     out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce")
     out = out.dropna(subset=["timestamp"]) 
-    out = out[out["bucket"].astype(str) == str(bucket)]
+    key_col = "strategy_id" if "strategy_id" in out.columns else "bucket"
+    out = out[out[key_col].astype(str) == str(bucket)]
 
     # Calculate threshold for Top 20%
     if not out.empty:

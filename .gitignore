@@ -272,3 +272,9 @@ versioned_artifacts/layer2_checkpoints/
 # /data/features/ - already ignored above
 ta-lib*
 cache/
+
+# =============================================================================
+# PRODUCTION OUTPUTS (LARGE RUN ARTIFACTS)
+# =============================================================================
+production_lgbm_outputs/
+tmp/

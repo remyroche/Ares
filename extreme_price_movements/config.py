@@ -7,7 +7,7 @@ from extreme_price_movements.perp_features import get_perp_feature_names
 # Canonical TBM horizons for current optimization/inference stack.
 # Legacy bucket naming (still used for grouping), but strategy_ids are canonical LGBM keys
 CANON_BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
-CANON_HORIZONS = [3, 10]  # hours
+CANON_HORIZONS = [5, 10]  # hours
 CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_HORIZONS]
 
 # Side-Horizon cells (agnostic to MR/TF distinction)
@@ -818,14 +818,15 @@ CFG = {
     "meta_training_pipeline_version": "aligned_map_v2",
     "meta_train_save_legacy_setup": True,
     "meta_parallel_forest_disable_hpo": True,
-    "meta_parallel_forest_num_parallel_tree": 50,
-    "meta_parallel_forest_rounds": 30,
-    "meta_parallel_forest_max_depth": 6,
+    "meta_parallel_forest_num_parallel_tree": 20,
+    "meta_parallel_forest_rounds": 100,
+    "meta_parallel_forest_max_depth": 5,
     "meta_parallel_forest_learning_rate": 0.05,
     "meta_parallel_forest_reg_alpha": 2.0,
     "meta_parallel_forest_reg_lambda": 15.0,
-    "meta_parallel_forest_min_child_weight_pct": 0.001,
-    "meta_parallel_forest_gamma": 2.5,
+    "meta_parallel_forest_min_child_weight": 40.0,
+    "meta_parallel_forest_gamma": 1.5,
+    "meta_parallel_forest_early_stopping_rounds": 20,
     "meta_map_tbm_geometries": [
         {"name": "tbm_500_250", "tp_pct": 0.05, "sl_pct": 0.025},
         {"name": "tbm_250_125", "tp_pct": 0.025, "sl_pct": 0.0125},
@@ -839,7 +840,7 @@ CFG = {
     "meta_clf_max_logloss": 1.10,
     "meta_clf_u_tp": 1.0,
     "meta_clf_u_to": 0.0,
-    "meta_clf_u_sl": -3.0,
+    "meta_clf_u_sl": -2.5,
     "meta_clf_top_frac": 0.30,
     "meta_clf_min_top_n": 50,
     "meta_clf_min_lift_vs_baseline": 0.0,

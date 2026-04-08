@@ -1155,8 +1155,16 @@ def _evaluate_target(score, y, cost=0.005):
         float(all_returns.mean() / all_returns.std()) if all_returns.std() > 0 else 0.0
     )
 
-    # Neutral composite objective
-    composite = 2.0 * ic_global + 1.0 * spread_q10_q1 + 2.0 * stability
+    k30 = max(1, int(0.30 * len(df_ev)))
+    idx_top30 = np.argpartition(df_ev["score"].values, -k30)[-k30:]
+    mean_ret_t30 = float(df_ev["y"].values[idx_top30].mean())
+
+    composite = (
+        2.0 * ic_global
+        + 3.0 * spread_q10_q1
+        + 2.0 * stability
+        + 1.0 * mean_ret_t30
+    )
     return float(composite)
 
 
@@ -1195,7 +1203,6 @@ def _build_target_variants(y_ret_raw, vol_proxy=None):
         "rank_pct": rk,
         "soft_top30": t_soft30,
         "qbin_mid": t_qbin,
-        "tail_amp": t_tail,
     }
 
     # Vol proxy for semi-vol normalization
@@ -4303,11 +4310,15 @@ def build_hourly_training_set_and_weights(
         _event_sym = sym_arr[_mask]
         _lag_ts = lag_ts[_mask]
         _parts = {k0: _slice_part(v0, _mask) for k0, v0 in parts.items()}
+        # Keep lookup caches local to the chunk. The global cache uses object ids
+        # for event arrays, which can be reused across chunks and yield stale
+        # row/column indexers with mismatched lengths late in materialization.
+        _chunk_lookup_cache = {}
 
         if p_exh_hist is not None:
             _parts["p_exh_lag1"] = np.nan_to_num(
                 _fast_lookup_cached(
-                    p_exh_hist, _lag_ts, _event_sym, lookup_cache=lookup_cache
+                    p_exh_hist, _lag_ts, _event_sym, lookup_cache=_chunk_lookup_cache
                 ),
                 nan=0.0,
             ).astype(np.float32)
@@ -4320,7 +4331,7 @@ def build_hourly_training_set_and_weights(
                 continue
             if k in feats:
                 _parts[k] = _fast_lookup_cached(
-                    feats[k], _event_ts, _event_sym, lookup_cache=lookup_cache
+                    feats[k], _event_ts, _event_sym, lookup_cache=_chunk_lookup_cache
                 )
             if (
                 _feat_i == 1
@@ -4335,10 +4346,10 @@ def build_hourly_training_set_and_weights(
                 )
 
         _parts["G_VOL"] = _fast_series_lookup_cached(
-            mkt_gates["G_VOL"], _event_ts, lookup_cache=lookup_cache
+            mkt_gates["G_VOL"], _event_ts, lookup_cache=_chunk_lookup_cache
         )
         _parts["G_TREND"] = _fast_series_lookup_cached(
-            mkt_gates["G_TREND"], _event_ts, lookup_cache=lookup_cache
+            mkt_gates["G_TREND"], _event_ts, lookup_cache=_chunk_lookup_cache
         )
         return pd.DataFrame(_parts)
 
@@ -9033,29 +9044,30 @@ def train_meta_models_from_artifacts(
             _m.strategy_name = _head_name
             _m.candidate_mode = "xgb_parallel_forest"
             _m.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", True))
-            _n_fold = _bucket_n * 2.0 / 3.0
-            _mcw_pct = float(cfg.get("meta_parallel_forest_min_child_weight_pct", 0.001))
+            _mcw = float(cfg.get("meta_parallel_forest_min_child_weight", 40.0))
             _m.xgb_parallel_forest_params = {
                 "objective": "reg:squarederror",
-                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 8)),
+                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
                 "num_parallel_tree": int(
-                    cfg.get("meta_parallel_forest_num_parallel_tree", 160)
+                    cfg.get("meta_parallel_forest_num_parallel_tree", 20)
                 ),
-                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 6)),
+                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 5)),
                 "learning_rate": float(
                     cfg.get("meta_parallel_forest_learning_rate", 0.05)
                 ),
                 "subsample": 0.75,
                 "colsample_bytree": 0.75,
                 "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
-                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 20.0)),
-                "min_child_weight": max(1.0, float(_mcw_pct * _n_fold)),
-                "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
-                "max_delta_step": 2.0,
+                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
+                "min_child_weight": max(1.0, float(_mcw)),
+                "gamma": float(cfg.get("meta_parallel_forest_gamma", 1.5)),
                 "tree_method": "hist",
                 "random_state": 42,
                 "n_jobs": 3,
                 "verbosity": 0,
+                "early_stopping_rounds": int(
+                    cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
+                ),
             }
             _m.selector_cfg = dict(cfg.get(_selector_cfg_key, {}) or {})
             _m.selector_report_dir = _fs_dir
@@ -9072,30 +9084,32 @@ def train_meta_models_from_artifacts(
             _m.strategy_name = _head_name
             _m.candidate_mode = "xgb_parallel_forest"
             _m.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", True))
-            _n_fold = _bucket_n * 2.0 / 3.0
-            _mcw_pct = float(cfg.get("meta_parallel_forest_min_child_weight_pct", 0.001))
+            _mcw = float(cfg.get("meta_parallel_forest_min_child_weight", 40.0))
             _m.xgb_parallel_forest_params = {
                 "objective": "multi:softprob",
                 "num_class": 3,
-                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 8)),
+                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
                 "num_parallel_tree": int(
-                    cfg.get("meta_parallel_forest_num_parallel_tree", 160)
+                    cfg.get("meta_parallel_forest_num_parallel_tree", 20)
                 ),
-                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 6)),
+                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 5)),
                 "learning_rate": float(
                     cfg.get("meta_parallel_forest_learning_rate", 0.05)
                 ),
                 "subsample": 0.75,
                 "colsample_bytree": 0.75,
                 "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
-                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 20.0)),
-                "min_child_weight": max(1.0, float(_mcw_pct * _n_fold)),
-                "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
+                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
+                "min_child_weight": max(1.0, float(_mcw)),
+                "gamma": float(cfg.get("meta_parallel_forest_gamma", 1.5)),
                 "tree_method": "hist",
                 "random_state": 42,
                 "n_jobs": 3,
                 "verbosity": 0,
                 "eval_metric": "mlogloss",
+                "early_stopping_rounds": int(
+                    cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
+                ),
             }
             _m.selector_cfg = dict(cfg.get(_selector_cfg_key, {}) or {})
             _m.selector_report_dir = _fs_dir
@@ -9308,6 +9322,49 @@ def train_meta_models_from_artifacts(
             _bucket_metadata[_head_name] = _md
             tprint(f"Meta {_head_name}: fitted aligned MFE head")
 
+        _asym_horizons = [
+            int(h) for h in cfg.get("meta_map_mfe_horizons", [2, 4]) if int(h) in _bucket_horizons
+        ] or list(_bucket_horizons)
+        for _h in _asym_horizons:
+            _exc = _native_excursion_cols(int(_h))
+            if _exc is None:
+                continue
+            _mfe_src, _mae_src = _exc[0], _exc[1]
+            _bp_asym = (
+                np.clip(
+                    np.asarray(df["__barrier_pct__"].values, dtype=np.float32), 1e-6, None
+                )
+                if "__barrier_pct__" in df.columns
+                else np.full(len(df), 0.02, dtype=np.float32)
+            )
+            _eps_asym = np.float32(1e-6)
+            _mfe_norm = np.maximum(
+                np.asarray(_mfe_src, dtype=np.float32) / _bp_asym, 0.0
+            )
+            _mae_norm = np.maximum(
+                np.asarray(_mae_src, dtype=np.float32) / _bp_asym, 0.0
+            )
+            _target_asym = (
+                np.log(_mfe_norm + _eps_asym) - np.log(_mae_norm + _eps_asym)
+            ).astype(np.float32)
+            _target_asym = np.where(
+                np.isfinite(_target_asym), _target_asym, 0.0
+            ).astype(np.float32)
+            _weights_asym = _meta_map_weights(_target_asym, df, trade_mask)
+            _head_name_asym = f"{_bucket_key}_asym_h{int(_h)}"
+            _model_asym = _configure_meta_reg(_head_name_asym, "aux_mfe_selector_cfg")
+            _model_asym.fit(
+                X_meta_base,
+                _target_asym,
+                sample_weight=_weights_asym,
+                groups=meta_groups,
+                y_per_horizon=None,
+            )
+            meta_models[_head_name_asym] = _model_asym
+            _bucket_y_ret[_head_name_asym] = np.asarray(_target_asym, dtype=float)
+            _bucket_metadata[_head_name_asym] = _md
+            tprint(f"Meta {_head_name_asym}: fitted aligned asym head")
+
         if include_meta_clf:
             _mid_h = (
                 _bucket_horizons[len(_bucket_horizons) // 2]
@@ -9329,27 +9386,30 @@ def train_meta_models_from_artifacts(
             _clf.xgb_parallel_forest_params = {
                 "objective": "multi:softprob",
                 "num_class": 3,
-                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 8)),
+                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
                 "num_parallel_tree": int(
-                    cfg.get("meta_parallel_forest_num_parallel_tree", 160)
+                    cfg.get("meta_parallel_forest_num_parallel_tree", 20)
                 ),
-                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 6)),
+                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 5)),
                 "learning_rate": float(
                     cfg.get("meta_parallel_forest_learning_rate", 0.05)
                 ),
                 "subsample": 0.75,
                 "colsample_bytree": 0.75,
                 "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
-                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 20.0)),
+                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
                 "min_child_weight": float(
-                    cfg.get("meta_parallel_forest_min_child_weight", 48.0)
+                    cfg.get("meta_parallel_forest_min_child_weight", 40.0)
                 ),
-                "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
+                "gamma": float(cfg.get("meta_parallel_forest_gamma", 1.5)),
                 "tree_method": "hist",
                 "random_state": 42,
                 "n_jobs": 3,
                 "verbosity": 0,
                 "eval_metric": "mlogloss",
+                "early_stopping_rounds": int(
+                    cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
+                ),
             }
             _clf.selector_cfg = dict(cfg.get("meta_selector_cfg", {}) or {})
             _clf.selector_report_dir = _fs_dir
@@ -9831,8 +9891,8 @@ def train_meta_models_from_artifacts(
         # ══════════════════════════════════════════════════════════════
         # MAIN META REGRESSOR (bucket-level)
         # ══════════════════════════════════════════════════════════════
-        # Pick a representative horizon for sample weighting / label context (e.g. 8h)
-        _h_main = 8 if 8 in _y_per_h else sorted(_y_per_h.keys())[-1]
+        # Pick a representative horizon from CANON_HORIZONS (prefer largest available)
+        _h_main = sorted([h for h in CANON_HORIZONS if h in _y_per_h])[-1] if any(h in _y_per_h for h in CANON_HORIZONS) else sorted(_y_per_h.keys())[-1]
         _h_label = f"{k}_reg"
         y_ret_raw_main = y_target_h.astype(np.float64)
 
@@ -9951,11 +10011,11 @@ def train_meta_models_from_artifacts(
             meta_reg.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", True))
             meta_reg.xgb_parallel_forest_params = {
                 "objective": "reg:squarederror",
-                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 30)),
+                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
                 "num_parallel_tree": int(
-                    cfg.get("meta_parallel_forest_num_parallel_tree", 50)
+                    cfg.get("meta_parallel_forest_num_parallel_tree", 20)
                 ),
-                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 6)),
+                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 5)),
                 "learning_rate": float(
                     cfg.get("meta_parallel_forest_learning_rate", 0.05)
                 ),
@@ -9964,17 +10024,16 @@ def train_meta_models_from_artifacts(
                 "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
                 "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
                 "min_child_weight": float(
-                    cfg.get(
-                        "meta_parallel_forest_min_child_weight",
-                        cfg.get("meta_parallel_forest_min_child_weight_pct", 0.001),
-                    )
+                    cfg.get("meta_parallel_forest_min_child_weight", 40.0)
                 ),
-                "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
-                "max_delta_step": 2.0,
+                "gamma": float(cfg.get("meta_parallel_forest_gamma", 1.5)),
                 "tree_method": "hist",
                 "random_state": 42,
                 "n_jobs": 3,
                 "verbosity": 0,
+                "early_stopping_rounds": int(
+                    cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
+                ),
             }
             _meta_sel_cfg = dict(cfg.get("meta_selector_cfg", {}) or {})
             _meta_fs_dir = os.path.join(
@@ -10015,17 +10074,29 @@ def train_meta_models_from_artifacts(
             tprint(
                 f"  Fitting MetaModel {_h_label} (n={len(df)}, feats={X_meta_base.shape[1]}) ({_time.monotonic()-_t0_meta:.1f}s)..."
             )
-            _meta_y_per_h = (
-                None
-                if bool(cfg.get("meta_use_policy_value_target", True))
-                else _y_per_h
+            # REG target: risk-normalized realized return log(1 + ret_h / barrier).
+            # Distinct from MFE (upside excursion only) and asym (MFE/MAE ratio):
+            # this captures signed directional edge per unit of volatility.
+            _ret_reg = _ret_for_h_aligned(int(_h_main))
+            _bp_reg = (
+                np.clip(df["__barrier_pct__"].values.astype(np.float32), 1e-6, None)
+                if "__barrier_pct__" in df.columns
+                else np.full(len(df), 0.02, dtype=np.float32)
+            )
+            _y_reg = np.sign(_ret_reg) * np.log1p(
+                np.abs(_ret_reg.astype(np.float32)) / _bp_reg
+            )
+            _y_reg = np.where(np.isfinite(_y_reg), _y_reg, 0.0).astype(np.float32)
+            tprint(
+                f"  REG target: log(1+|ret_h{_h_main}|/barrier)*sign "
+                f"mean={float(np.mean(_y_reg)):.4f} std={float(np.std(_y_reg)):.4f}"
             )
             meta_reg.fit(
                 X_meta_base,
-                y_target_h,
+                _y_reg,
                 sample_weight=w_meta_main,
                 groups=meta_groups,
-                y_per_horizon=_meta_y_per_h,
+                y_per_horizon=None,
             )
             meta_models[_h_label] = meta_reg
             _bucket_y_ret[_h_label] = y_ret_raw_main.copy()
@@ -10377,11 +10448,11 @@ def train_meta_models_from_artifacts(
             meta_clf.xgb_parallel_forest_params = {
                 "objective": "multi:softprob",
                 "num_class": 3,
-                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 30)),
+                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
                 "num_parallel_tree": int(
-                    cfg.get("meta_parallel_forest_num_parallel_tree", 50)
+                    cfg.get("meta_parallel_forest_num_parallel_tree", 20)
                 ),
-                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 6)),
+                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 5)),
                 "learning_rate": float(
                     cfg.get("meta_parallel_forest_learning_rate", 0.05)
                 ),
@@ -10390,17 +10461,17 @@ def train_meta_models_from_artifacts(
                 "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
                 "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
                 "min_child_weight": float(
-                    cfg.get(
-                        "meta_parallel_forest_min_child_weight",
-                        cfg.get("meta_parallel_forest_min_child_weight_pct", 0.001),
-                    )
+                    cfg.get("meta_parallel_forest_min_child_weight", 40.0)
                 ),
-                "gamma": float(cfg.get("meta_parallel_forest_gamma", 2.5)),
+                "gamma": float(cfg.get("meta_parallel_forest_gamma", 1.5)),
                 "tree_method": "hist",
                 "random_state": 42,
                 "n_jobs": 3,
                 "verbosity": 0,
                 "eval_metric": "mlogloss",
+                "early_stopping_rounds": int(
+                    cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
+                ),
             }
             meta_clf.FEE_PER_ROUND_TRIP = (
                 float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
@@ -10927,6 +10998,12 @@ def train_meta_models_from_artifacts(
                         "is_long": is_long,
                     }
                 )
+                if key.endswith("_reg"):
+                    _score_sign = int(getattr(meta, "score_sign", 1))
+                    oof_df["score_sign"] = _score_sign
+                    oof_df["oof_pred_oriented"] = (
+                        _score_sign * _trim_1d(_oof_pred_1d, _n_meta)
+                    )
                 if key.endswith("_utility"):
                     oof_df["oof_u_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
                 elif key.endswith("_mae_q70"):
@@ -10961,6 +11038,10 @@ def train_meta_models_from_artifacts(
                     oof_df["return"] = _md["__y_ret__"][:_n_meta]
                 elif "return" in _md:
                     oof_df["return"] = _md["return"][:_n_meta]
+                if "__y_bin__" in _md:
+                    oof_df["y_bin"] = np.asarray(_md["__y_bin__"], dtype=float)[:_n_meta]
+                elif "y_bin" in _md:
+                    oof_df["y_bin"] = np.asarray(_md["y_bin"], dtype=float)[:_n_meta]
 
                 _bucket_base = "_".join(key.split("_")[:2])
 
@@ -11012,6 +11093,13 @@ def train_meta_models_from_artifacts(
                         oof_df[_cn] = _fill_nonfinite_oof_vector(
                             _aux[_cn], neutral=0.0
                         ).astype(np.float32, copy=False)
+
+            if key.endswith("_reg") and "oof_pred_oriented" not in oof_df.columns:
+                _score_sign = int(getattr(meta, "score_sign", 1))
+                oof_df["score_sign"] = _score_sign
+                oof_df["oof_pred_oriented"] = (
+                    _score_sign * np.asarray(oof_df["oof_pred"], dtype=float)
+                )
 
             # Merge classifier probabilities from the classifier meta model (if exists)
             _clf_key = f"{_bucket_base}_clf"
@@ -11097,7 +11185,10 @@ def train_meta_models_from_artifacts(
         side_parsed = parts[0] if parts else "long"
         is_long = 1 if side_parsed == "long" else 0
 
-        # Save each aux head as a separate parquet file
+        # Save each aux head as a separate parquet file.
+        # If the explicit asym head is unavailable for a bucket, derive a
+        # stable proxy from the existing MFE/MAE aux heads so the Ridge stack
+        # still receives a dedicated asymmetry feature file.
         for head_name in ["utility", "mae_q70", "mfe", "asym"]:
             if head_name == "utility":
                 oof_key = "oof_u_hat"
@@ -11111,9 +11202,23 @@ def train_meta_models_from_artifacts(
                 continue
 
             if oof_key not in aux_data:
-                continue
+                if head_name == "asym" and all(
+                    k in aux_data for k in ("oof_log_mfe_hat", "oof_log_mae_q70_hat")
+                ):
+                    _oof_pred = (
+                        np.asarray(aux_data["oof_log_mfe_hat"], dtype=float)
+                        - np.asarray(aux_data["oof_log_mae_q70_hat"], dtype=float)
+                    ).astype(np.float32, copy=False)
+                    aux_data["oof_asym_hat"] = _oof_pred
+                    tprint(
+                        f"  WARNING: Derived missing asym aux head for {bucket_base} from MFE-MAE spread."
+                    )
+                else:
+                    continue
 
-            _oof_pred = _fill_nonfinite_oof_vector(aux_data[oof_key], global_neutral=0.0, method="median")
+            _oof_pred = _fill_nonfinite_oof_vector(
+                aux_data[oof_key], global_neutral=0.0, method="median"
+            )
             oof_df = pd.DataFrame(
                 {
                     "oof_pred": _oof_pred,
@@ -11148,6 +11253,10 @@ def train_meta_models_from_artifacts(
                     oof_df["return"] = _md["__y_ret__"][:_n]
                 elif "return" in _md:
                     oof_df["return"] = _md["return"][:_n]
+                if "__y_bin__" in _md:
+                    oof_df["y_bin"] = np.asarray(_md["__y_bin__"], dtype=float)[:_n]
+                elif "y_bin" in _md:
+                    oof_df["y_bin"] = np.asarray(_md["y_bin"], dtype=float)[:_n]
 
             meta_oof_path = os.path.join(
                 meta_oof_dir, f"meta_oof_{bucket_base}_{head_name}.parquet"
@@ -11206,6 +11315,9 @@ def train_meta_models_from_artifacts(
                         "return": np.asarray(
                             _md.get("__y_ret__", np.zeros(_n)), dtype=float
                         )[:_n],
+                        "y_bin": np.asarray(
+                            _md.get("__y_bin__", np.zeros(_n)), dtype=float
+                        )[:_n],
                         "mfe_ret": np.asarray(
                             _md.get("__mfe_ret__", np.zeros(_n)), dtype=float
                         )[:_n],
@@ -11236,6 +11348,10 @@ def train_meta_models_from_artifacts(
                     )
                     _df["pnl_label"] = np.asarray(
                         _out.get("return", pd.Series(np.zeros(len(_out)))).values,
+                        dtype=float,
+                    )
+                    _df["y_bin"] = np.asarray(
+                        _out.get("y_bin", pd.Series(np.zeros(len(_out)))).values,
                         dtype=float,
                     )
                     _df["mfe"] = np.asarray(

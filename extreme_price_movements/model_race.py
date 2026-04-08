@@ -252,11 +252,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         if self.task == "base":
             # Base models are restricted to ExtraTrees only.
             et_params = {
-                "n_estimators": 800,
+                "n_estimators": 400,
                 "max_depth": 6,
                 "min_samples_leaf": 64,
                 "min_samples_split": 128,
-                "bootstrap": False,
+                "bootstrap": True,
                 "ccp_alpha": 1e-4,
                 "max_leaf_nodes": 512,
                 "max_features": "sqrt",

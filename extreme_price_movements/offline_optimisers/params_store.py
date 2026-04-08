@@ -39,7 +39,7 @@ STRATEGY_ID_TO_BUCKET = {v: k for k, v in BUCKET_TO_STRATEGY_ID.items()}
 
 # Canonical constants - import from central config
 TBM_BUCKET_NAMES = CANON_BUCKETS  # Now uses strategy_ids: ["long_tf", "long_mr", "short_tf", "short_mr"]
-TBM_HORIZONS = CANON_HORIZONS  # [3, 8]
+TBM_HORIZONS = CANON_HORIZONS  # [5, 10]
 TBM_SIDES = CANON_SIDES
 TBM_SIDE_HORIZON_CELLS = CANON_SIDE_HORIZON_CELLS
 
@@ -130,16 +130,16 @@ def load_inference_candidate_mask_params_by_mode() -> Dict[str, Dict[str, Any]]:
 
 
 def load_inference_candidate_mask_params_per_bucket(
-    top_n: int = 1,
+    top_n: int = 2,
     ranking_metric: str = "score_for_best_params",
 ) -> list[dict[str, Any]]:
     """Load top-N dynamically generated strategy parameters from the mask-optimiser.
 
-    By default this returns the top-1 rule per (side, horizon) group, ensuring
+    By default this returns the top-2 rules per (side, horizon) group, ensuring
     diversity across long/short and different horizons (e.g., H3, H10).
     
     Args:
-        top_n: Number of top rules to load per (side, horizon) group (default: 1)
+        top_n: Number of top rules to load per (side, horizon) group (default: 2)
         ranking_metric: Metric to rank rules by (default: "score_for_best_params")
                       Options: "score_for_best_params", "composite_score", 
                             "learnability_step_c_score", "stage2_score", "mask_oof_corr"

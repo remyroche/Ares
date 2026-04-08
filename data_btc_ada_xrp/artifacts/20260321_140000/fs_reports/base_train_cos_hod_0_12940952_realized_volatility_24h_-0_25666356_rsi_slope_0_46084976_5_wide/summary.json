@@ -1,0 +1,20 @@
+{
+  "selector_head_name": "base_train_cos_hod_0_12940952_realized_volatility_24h_-0_25666356_rsi_slope_0_46084976_5_wide",
+  "selector_target": "classification",
+  "selector_top_metric": "ic",
+  "selector_focus_top_frac": 0.8,
+  "weights": {
+    "top30": 0.0,
+    "global": 0.55,
+    "stability": 0.25,
+    "frequency": 0.15,
+    "interaction": 0.05
+  },
+  "n_train_features": 60,
+  "n_selected": 48,
+  "anchor_count": 0,
+  "selected_anchor_count": 0,
+  "overlap_before": 1.0,
+  "overlap_after": 1.0,
+  "hysteresis_swaps": 0.0
+}

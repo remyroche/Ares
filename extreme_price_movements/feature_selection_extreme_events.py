@@ -1245,12 +1245,12 @@ def mdi_feature_selection_v3(
             break
 
         # Adaptive RFE drop schedule:
-        # linearly decay drop rate from 45% (at p = 6x target) to 8% (at p = 1x target),
-        # then add a fixed +6 bonus drop (bounded by target floor).
+        # linearly decay drop rate from 50% (at p = 6x target) to 15% (at p = 1x target),
+        # then add a fixed +15 bonus drop (bounded by target floor).
         _ratio = float(p) / max(float(end_features), 1.0)
         _ratio_c = float(np.clip(_ratio, 1.0, 6.0))
-        _drop_rate = 0.08 + ((_ratio_c - 1.0) * (0.45 - 0.08) / (6.0 - 1.0))
-        _bonus_drop = 6
+        _drop_rate = 0.15 + ((_ratio_c - 1.0) * (0.50 - 0.15) / (6.0 - 1.0))
+        _bonus_drop = 15
         n_to_drop = int(np.floor(float(p) * _drop_rate)) + _bonus_drop
         n_to_drop = max(1, n_to_drop)
         if p - n_to_drop < end_features:

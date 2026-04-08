@@ -192,8 +192,11 @@ def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
 
 def _load_label_datasets(cfg, run_id):
     """Load all label datasets from artifacts. Shared by train_daily / train_daily_base / train_daily_meta."""
+    import os as _os
     datasets = {}
     tprint("Loading label datasets from artifacts...")
+    _train_symbols_env = str(_os.environ.get("EPM_TRAIN_SYMBOLS", "")).strip()
+    _train_symbols_filter = set(s.strip() for s in _train_symbols_env.split(",") if s.strip())
 
     # Spike
     for mode in ["best", "worst"]:
@@ -218,15 +221,21 @@ def _load_label_datasets(cfg, run_id):
             name = f"train_{strategy_id}_{H_int}"
             df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
             if df is not None:
-                datasets[name] = df
-                found_count += 1
+                if _train_symbols_filter and "__symbol__" in df.columns:
+                    df = df[df["__symbol__"].isin(_train_symbols_filter)].reset_index(drop=True)
+                if len(df) > 0:
+                    datasets[name] = df
+                    found_count += 1
             for variant in base_geometry_archetypes:
                 if variant == "balanced":
                     continue
                 vname = f"train_{strategy_id}_{H_int}_{variant}"
                 df_v = load_artifact_df(cfg["data_root"], run_id, "labels", vname)
                 if df_v is not None:
-                    datasets[vname] = df_v
+                    if _train_symbols_filter and "__symbol__" in df_v.columns:
+                        df_v = df_v[df_v["__symbol__"].isin(_train_symbols_filter)].reset_index(drop=True)
+                    if len(df_v) > 0:
+                        datasets[vname] = df_v
 
     # Backward-compatible fallback for older artifact layouts.
     if not found_count:
@@ -248,6 +257,108 @@ def _load_label_datasets(cfg, run_id):
             datasets[name] = df
 
     return datasets, found_count
+
+
+def _load_base_oof_symbols(data_root: str, run_id: str) -> list[str]:
+    """Return the symbol universe covered by saved base-model OOF predictions."""
+    oof_dir = os.path.join(data_root, "artifacts", run_id, "oof")
+    if not os.path.isdir(oof_dir):
+        return []
+
+    preferred = os.path.join(oof_dir, "base_oof_all.parquet")
+    candidates = [preferred]
+
+    import glob as _glob
+
+    candidates.extend(sorted(_glob.glob(os.path.join(oof_dir, "oof_*.parquet"))))
+
+    seen: set[str] = set()
+    symbols: list[str] = []
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            df = pd.read_parquet(path, columns=["symbol"])
+        except Exception as exc:
+            tprint(f"WARNING: Could not read OOF symbols from {path}: {exc}")
+            continue
+        if "symbol" not in df.columns:
+            continue
+        for sym in df["symbol"].dropna().astype(str).values:
+            if not sym or sym == "nan" or sym in seen:
+                continue
+            seen.add(sym)
+            symbols.append(sym)
+        if path == preferred and symbols:
+            break
+
+    return sorted(symbols)
+
+
+def _filter_meta_training_to_base_oof_symbols(
+    datasets: dict[str, pd.DataFrame],
+    alpha_models: dict,
+    symbols: list[str],
+) -> dict[str, pd.DataFrame]:
+    """Filter datasets and cached base OOF vectors to the supplied symbol universe."""
+    if not symbols:
+        return datasets
+
+    symbol_set = {str(sym) for sym in symbols if str(sym)}
+    if not symbol_set:
+        return datasets
+
+    filtered: dict[str, pd.DataFrame] = {}
+    row_masks: dict[str, np.ndarray] = {}
+
+    for name, df in datasets.items():
+        if not isinstance(df, pd.DataFrame):
+            filtered[name] = df
+            continue
+        if "__symbol__" not in df.columns:
+            filtered[name] = df
+            continue
+
+        mask = df["__symbol__"].astype(str).isin(symbol_set).to_numpy()
+        row_masks[name] = mask
+        df_filtered = df.loc[mask].reset_index(drop=True)
+        if len(df_filtered) > 0:
+            filtered[name] = df_filtered
+            tprint(
+                f"Base OOF symbol filter: {name} {len(df)} -> {len(df_filtered)} rows"
+            )
+        else:
+            tprint(f"Base OOF symbol filter: {name} dropped (no matching symbols)")
+
+    for side_bundle in alpha_models.values():
+        if not isinstance(side_bundle, dict):
+            continue
+        for strategy_id, conf in side_bundle.items():
+            if not isinstance(conf, dict):
+                continue
+            models_by_h = conf.get("models_by_h", {})
+            if not isinstance(models_by_h, dict):
+                continue
+            for h, h_info in models_by_h.items():
+                if not isinstance(h_info, dict):
+                    continue
+                model = h_info.get("model")
+                if model is None or getattr(model, "oof_probs", None) is None:
+                    continue
+                ds_key = f"train_{strategy_id}_{int(h)}"
+                mask = row_masks.get(ds_key)
+                if mask is None:
+                    continue
+                oof_probs = np.asarray(model.oof_probs, dtype=np.float32)
+                if len(oof_probs) != len(mask):
+                    tprint(
+                        f"WARNING: {ds_key} OOF length {len(oof_probs)} != mask length {len(mask)}; "
+                        "skipping base OOF symbol filter for this model"
+                    )
+                    continue
+                model.oof_probs = oof_probs[mask]
+
+    return filtered
 
 
 def _default_risk(cfg):
@@ -349,6 +460,19 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
     if not alpha_models:
         tprint("ERROR: No alpha models found in intermediate state.")
         return None
+
+    base_oof_symbols = _load_base_oof_symbols(cfg["data_root"], run_id)
+    if base_oof_symbols:
+        tprint(
+            f"Filtering meta training to {len(base_oof_symbols)} symbols with base-model OOF predictions"
+        )
+        datasets = _filter_meta_training_to_base_oof_symbols(
+            datasets, alpha_models, base_oof_symbols
+        )
+    else:
+        tprint(
+            "WARNING: No base-model OOF symbol universe found; proceeding without symbol filtering"
+        )
 
     from extreme_price_movements.pipeline_steps import _expected_feature_keys_from_cfg, inject_features_into_datasets, _meta_feature_keys_union
     meta_req_keys = _meta_feature_keys_union(cfg)

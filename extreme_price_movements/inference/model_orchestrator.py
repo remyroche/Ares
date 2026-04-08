@@ -74,6 +74,55 @@ class ModelOrchestrator:
     def _normalize_bucket_key(self, side: str, kind: str) -> str:
         return f"{str(side).lower()}_{str(kind).lower()}"
 
+    def _align_alpha_feature_contract(
+        self,
+        features: pd.DataFrame,
+        feat_cols: List[str],
+    ) -> pd.DataFrame:
+        """Return a contract-aligned feature frame for an alpha model.
+
+        The alpha bundles were trained on a fixed feature contract. At
+        inference time we first try to synthesize missing gated features from
+        the shared market columns, then fall back to zero-filled reindexing so
+        the model always receives the expected width.
+        """
+        if features.empty or not feat_cols:
+            return features
+
+        aligned = features.copy()
+
+        if "G_VOL" in feat_cols and "G_VOL" not in aligned.columns:
+            if {"mkt_rv", "mkt_rv_med"}.issubset(aligned.columns):
+                aligned["G_VOL"] = (
+                    aligned["mkt_rv"].astype(float) > aligned["mkt_rv_med"].astype(float)
+                ).astype(np.float32)
+
+        if "G_TREND" in feat_cols and "G_TREND" not in aligned.columns:
+            if {"mkt_ret24h", "mkt_rv"}.issubset(aligned.columns):
+                daily_vol = aligned["mkt_rv"].astype(float) * np.sqrt(24.0)
+                dyn_thr = np.maximum(daily_vol * 1.5, 0.005)
+                aligned["G_TREND"] = (
+                    aligned["mkt_ret24h"].astype(float).abs() > dyn_thr
+                ).astype(np.float32)
+
+        for gate_name in ("G_VOL", "G_TREND"):
+            if gate_name not in aligned.columns:
+                continue
+            gate_series = aligned[gate_name].astype(np.float32)
+            for feat_name in feat_cols:
+                if feat_name in aligned.columns or f"_{gate_name}_" not in feat_name:
+                    continue
+                base_part, state_part = feat_name.rsplit(f"_{gate_name}_", 1)
+                if state_part not in {"0", "1"} or base_part not in aligned.columns:
+                    continue
+                base_vals = aligned[base_part].astype(np.float32)
+                if state_part == "1":
+                    aligned[feat_name] = (base_vals * gate_series).astype(np.float32)
+                else:
+                    aligned[feat_name] = (base_vals * (1.0 - gate_series)).astype(np.float32)
+
+        return aligned.reindex(columns=feat_cols, fill_value=0.0).fillna(0.0)
+
     def _get_bucket_policy(self, side: str, kind: str) -> Dict[str, Any]:
         bucket_key = self._normalize_bucket_key(side, kind)
         bucket_cfg = {}
@@ -105,25 +154,27 @@ class ModelOrchestrator:
         return pd.DataFrame(index=[symbol])
     
     def _extract_feature_columns(self) -> Dict[str, List[str]]:
-        """Extract feature column names from alpha models.
-        
+        """Extract feature column names from all loaded alpha models.
+
         Returns:
-            Dictionary mapping (side, kind) to feature columns
+            Dictionary mapping ``"{side}_{kind}"`` to feature columns.
         """
         columns = {}
-        
+
         for side in ["long", "short"]:
             if side not in self.alpha_models:
                 continue
-            
-            for kind in ["mr", "tf"]:
-                if kind not in self.alpha_models[side]:
+
+            side_models = self.alpha_models.get(side, {})
+            if not isinstance(side_models, dict):
+                continue
+
+            for kind, model_info in side_models.items():
+                if not isinstance(model_info, dict):
                     continue
-                
-                model_info = self.alpha_models[side][kind]
                 feat_cols = model_info.get("feat_cols", [])
                 columns[f"{side}_{kind}"] = feat_cols
-        
+
         return columns
     
     # =========================================================================
@@ -149,6 +200,9 @@ class ModelOrchestrator:
         Returns:
             Tuple of (pass_filter: bool, spike_info: dict with score details)
         """
+        if bool(self.cfg.get("disable_spike_filter", False)):
+            return True, {"reason": "spike_filter_disabled"}
+
         # Determine which spike model to use based on side
         # For long: use "best" spike model (higher density = better)
         # For short: use "worst" spike model (lower density = better for shorting worst spikes)
@@ -240,20 +294,19 @@ class ModelOrchestrator:
             tprint(f"Warning: Model not loaded for {key}")
             return pd.Series(dtype=float)
         
-        # Filter to available feature columns
-        available_cols = [c for c in feat_cols if c in features.columns]
+        aligned_features = self._align_alpha_feature_contract(features, feat_cols)
         
-        if not available_cols:
+        if aligned_features.empty:
             tprint(f"Warning: No matching features for {key}")
             return pd.Series(dtype=float)
         
         # Get feature matrix
-        X = features[available_cols].fillna(0)
+        X = aligned_features.reindex(columns=feat_cols, fill_value=0.0).fillna(0.0)
         
         # Predict
         try:
             preds = model.predict(X)
-            return pd.Series(preds, index=features.index)
+            return pd.Series(preds, index=aligned_features.index)
         except Exception as e:
             tprint(f"Error predicting alpha for {key}: {e}")
             return pd.Series(dtype=float)
@@ -263,18 +316,19 @@ class ModelOrchestrator:
         features: pd.DataFrame,
         side: str,
     ) -> Dict[str, pd.Series]:
-        """Run all alpha model predictions for a side (long_mr, long_tf, short_mr, short_tf).
+        """Run all loaded alpha model predictions for a side.
         
         Args:
             features: Feature DataFrame
             side: "long" or "short"
             
         Returns:
-            Dictionary with predictions for each horizon (long_mr, long_tf, etc.)
+            Dictionary with predictions for each strategy kind (e.g. long_compression_ratio, ...).
         """
         results = {}
-        
-        for kind in ["mr", "tf"]:
+
+        side_models = self.alpha_models.get(side, {}) if isinstance(self.alpha_models, dict) else {}
+        for kind in sorted(side_models.keys()):
             preds = self.predict_alpha(features, side, kind)
             # Defensive check: ensure preds is a DataFrame/Series
             if isinstance(preds, pd.DataFrame):
@@ -288,6 +342,14 @@ class ModelOrchestrator:
                 continue
         
         return results
+
+    def predict_alpha_all_kinds(
+        self,
+        features: pd.DataFrame,
+        side: str,
+    ) -> Dict[str, pd.Series]:
+        """Compatibility alias for code that expects a generic strategy fanout."""
+        return self.predict_alpha_all_horizons(features, side)
 
     def get_last_results(self) -> Dict[str, Any]:
         return dict(self._last_results) if isinstance(self._last_results, dict) else {}
@@ -347,7 +409,7 @@ class ModelOrchestrator:
             Series of meta predictions
         """
         key = f"{side}_{kind}"
-        
+
         if key not in self.meta_models:
             tprint(f"Warning: Meta model not found for {key}")
             return pd.Series(dtype=float)
@@ -521,6 +583,7 @@ class ModelOrchestrator:
         side: str,
         features: Any,
         panel: Any = None,
+        kind: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run predictions in proper order:
         
@@ -601,11 +664,21 @@ class ModelOrchestrator:
         # =====================================================================
         # STEP 4: Meta Model Prediction
         # =====================================================================
-        meta_pred = self.predict_meta(meta_base, side, "mr")
-        
+        if kind is None:
+            side_models = self.alpha_models.get(side, {}) if isinstance(self.alpha_models, dict) else {}
+            kind = "mr" if "mr" in side_models else (next(iter(sorted(side_models.keys())), "mr"))
+
+        meta_pred = self.predict_meta(meta_base, side, kind)
         if not isinstance(meta_pred, (pd.DataFrame, pd.Series)) or meta_pred.empty:
-            results["action"] = "no_meta_prediction"
-            return results
+            if not self.meta_models:
+                fallback_key = f"{side}_{kind}"
+                fallback_pred = alpha_preds.get(fallback_key)
+                if isinstance(fallback_pred, (pd.DataFrame, pd.Series)) and not fallback_pred.empty:
+                    meta_pred = fallback_pred if isinstance(fallback_pred, pd.Series) else fallback_pred.iloc[:, 0]
+                    results["meta_pred_fallback"] = "alpha_only"
+            if not isinstance(meta_pred, (pd.DataFrame, pd.Series)) or meta_pred.empty:
+                results["action"] = "no_meta_prediction"
+                return results
         
         meta_pred_val = float(meta_pred.iloc[0]) if len(meta_pred) > 0 else 0.0
         results["meta_pred"] = meta_pred_val
@@ -616,7 +689,7 @@ class ModelOrchestrator:
         ridge_features = meta_base.copy()
         ridge_features["meta_pred"] = meta_pred
         
-        position_size, confidence = self.compute_ridge_position_size(ridge_features, side, "mr")
+        position_size, confidence = self.compute_ridge_position_size(ridge_features, side, kind)
         
         position_val = float(position_size.iloc[0]) if len(position_size) > 0 else 0.0
         results["position_size"] = position_val
@@ -641,7 +714,7 @@ class ModelOrchestrator:
             meta_pred=meta_pred_val,
             features=features,
             position_result=position_result,
-            kind="mr",
+            kind=kind,
         )
         
         results["entry_policy"] = entry_decision

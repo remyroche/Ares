@@ -1304,6 +1304,30 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     cfg = apply_offline_optimizer_best_params(dict(cfg))
     run_id = pd.Timestamp(ts_sig).strftime("%Y%m%d_%H%M%S")
     tprint("STEP: LABEL GENERATION START")
+    _labels_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "labels")
+    os.makedirs(_labels_dir, exist_ok=True)
+    _stale_label_files = sorted(glob.glob(os.path.join(_labels_dir, "train_*.parquet")))
+    _stale_aux = [
+        os.path.join(_labels_dir, "label_verification.csv"),
+        os.path.join(_labels_dir, "label_verification.md"),
+    ]
+    _report_dir = os.path.join(cfg["reports_root"], run_id)
+    _stale_reports = [
+        os.path.join(_report_dir, "bucket_report_labels.md"),
+        os.path.join(_report_dir, "label_verification.csv"),
+        os.path.join(_report_dir, "label_verification.md"),
+    ]
+    _removed = 0
+    for _fp in _stale_label_files + _stale_aux + _stale_reports:
+        if not os.path.exists(_fp):
+            continue
+        try:
+            os.remove(_fp)
+            _removed += 1
+        except Exception as _e_rm:
+            tprint(f"WARNING: failed to clear stale label artifact {_fp}: {_e_rm}")
+    if _removed:
+        tprint(f"Cleared {_removed} stale label artifacts for run_id={run_id}")
     _label_symbols_env = str(os.environ.get("EPM_LABEL_SYMBOLS", "")).strip()
     _label_symbols_override = [
         s.strip()
@@ -1331,11 +1355,9 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             filter_low_variance_assets,
         )
 
-        syms_all = apply_hardcoded_universe_exclusions(
-            list(set(margin_symbols).union(set(cfg.get("market_basket", []))))
-        )
+        syms_all = apply_hardcoded_universe_exclusions(list(set(margin_symbols)))
         tprint(
-            f"Labels offline universe build: using local store symbols + basket ({len(syms_all)} symbols)"
+            f"Labels offline universe build: using local store symbols ({len(syms_all)} symbols)"
         )
         train_syms = filter_low_variance_assets(
             store,
@@ -1344,9 +1366,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             threshold_pct=cfg["variance_filter_pct"],
             ts_sig=ts_sig,
         )
-        train_syms = apply_hardcoded_universe_exclusions(
-            list(set(train_syms).union(set(cfg.get("market_basket", []))))
-        )
+        train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms)))
     else:
         train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     tprint(f"Universe before dedup: {len(train_syms)} symbols")
@@ -1458,14 +1478,6 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     feats = _align_features_to_panel(feats, panel, valid_syms)
 
     # 1. Label Datasets
-    if horizons is None:
-        horizons = sorted(
-            {
-                int(h)
-                for strat in get_strategies(cfg)
-                for h in strategy_runtime_horizons(strat, cfg)
-            }
-        ) or list(CANON_HORIZONS)
     datasets = generate_label_datasets(
         panel, feats, mkt_gates, cfg, train_syms, ts_sig, None, horizons=horizons
     )
@@ -1740,6 +1752,24 @@ def run_training_step(
         tprint("ERROR: No alpha label datasets found. Run 'labels' mode first.")
         return None
 
+    _train_symbols_env = str(os.environ.get("EPM_TRAIN_SYMBOLS", "")).strip()
+    _train_symbols_filter = [s.strip() for s in _train_symbols_env.split(",") if s.strip()]
+    if _train_symbols_filter:
+        _filter_set = set(_train_symbols_filter)
+        _filtered_datasets = {}
+        for name, df in datasets.items():
+            if "__symbol__" in df.columns:
+                df_filtered = df[df["__symbol__"].isin(_filter_set)].reset_index(drop=True)
+                if len(df_filtered) > 0:
+                    _filtered_datasets[name] = df_filtered
+                    tprint(f"  EPM_TRAIN_SYMBOLS filter: {name} {len(df)} -> {len(df_filtered)} rows")
+                else:
+                    tprint(f"  EPM_TRAIN_SYMBOLS filter: {name} dropped (no matching symbols)")
+            else:
+                _filtered_datasets[name] = df
+        datasets = _filtered_datasets
+        tprint(f"EPM_TRAIN_SYMBOLS={_train_symbols_env}: {len(datasets)} datasets retained")
+
     tprint(f"Loaded {len(datasets)} datasets total.")
 
     from extreme_price_movements.training import train_models_from_artifacts
@@ -1977,7 +2007,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
 
     _tpsl_params = {}
     _bp_path = os.path.join(
-        data_root, "artifacts", run_id, "models", "strategy_params.json"
+        data_root, "artifacts", run_id, "ridge_sizer", "strategy_params.json"
     )
     if os.path.exists(_bp_path):
         try:
@@ -1990,35 +2020,9 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
         except Exception as _e:
             tprint(f"  WARNING: Could not load tpsl params: {_e}")
     else:
-        # Try previous run's params
-        _art_dir = os.path.join(data_root, "artifacts")
-        if os.path.isdir(_art_dir):
-            _prev_runs = sorted(
-                [
-                    d
-                    for d in os.listdir(_art_dir)
-                    if d != run_id and os.path.isdir(os.path.join(_art_dir, d))
-                ],
-                reverse=True,
-            )
-            for _prev_id in _prev_runs:
-                _prev_bp = os.path.join(
-                    _art_dir, _prev_id, "models", "strategy_params.json"
-                )
-                if os.path.exists(_prev_bp):
-                    try:
-                        with open(_prev_bp) as _f:
-                            _bp_data = _json.load(_f)
-                        _tpsl_params = _bp_data.get("buckets", {})
-                        tprint(
-                            f"  Loaded tpsl_optimiser params from previous run {_prev_id} ({len(_tpsl_params)} buckets)"
-                        )
-                    except Exception:
-                        pass
-                    break
         if not _tpsl_params:
             tprint(
-                "  No tpsl_optimiser params found, Ridge sizer will use default exit policy"
+                "  No strategy params found, Ridge sizer will use default exit policy"
             )
 
     try:
@@ -4465,20 +4469,13 @@ def run_feature_generation_step(
             f"WARNING: get_training_universe failed ({exc}); falling back to local store symbol discovery"
         )
         train_syms = _local_store_symbols(store)
-        if cfg.get("market_basket"):
-            train_syms = apply_hardcoded_universe_exclusions(
-                list(set(train_syms).union(set(cfg["market_basket"])))
-            )
         if not train_syms:
             tprint("CRITICAL: no symbols available from local store fallback.")
             return
-    for s in cfg["market_basket"]:
-        if s in apply_hardcoded_universe_exclusions([s]) and s not in train_syms:
-            train_syms.append(s)
     # Universe diagnostics still logged below; downstream skip reasons are explicit.
 
     tprint(
-        f"Universe (Top {cfg['fetch_symbols_M']} Vol + Basket + VarianceFilter): {len(train_syms)} symbols"
+        f"Universe (Top {cfg['fetch_symbols_M']} Vol + VarianceFilter): {len(train_syms)} symbols"
     )
 
     lookback_days = max(180, int(cfg["fetch_years"] * 365))

@@ -581,14 +581,6 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         )
 
     # No exchange needed — data already in store, features already on disk
-    if horizons is None:
-        horizons = sorted(
-            {
-                int(h)
-                for strat in get_strategies(cfg)
-                for h in strategy_runtime_horizons(strat, cfg)
-            }
-        )
     run_label_generation_step_v2(ts_sig, None, cfg, store, None, horizons=horizons)
 
     tprint("LABELS PIPELINE COMPLETE")
@@ -1139,7 +1131,10 @@ def run_train_meta(cfg, ts_override=None, store=None):
 
     # Verify that before training the meta model, we optimise the TP & SL values.
     tprint("Optimising TP:SL before meta-training...")
-    run_risk_opt(cfg, parsed_ts_sig=ts_sig, skip_maintenance=True, store=store)
+    try:
+        run_risk_opt(cfg, parsed_ts_sig=ts_sig, skip_maintenance=True, store=store)
+    except Exception as _e_risk:
+        tprint(f"WARNING: risk optimisation failed ({_e_risk}); proceeding with existing barrier params.")
 
     # Meta training reuses local artifacts and does not require a live exchange.
     result = train_daily_meta(ts_sig, None, cfg, store, None)
@@ -1465,6 +1460,11 @@ def main():
     cfg = CFG.copy()
     _apply_fee_model(cfg, BASE_ROUND_TRIP_FEE_PCT)
     _normalize_cfg_paths(cfg)
+    _epm_data_root = str(os.environ.get("EPM_DATA_ROOT", "")).strip()
+    if _epm_data_root:
+        cfg["data_root"] = os.path.abspath(_epm_data_root)
+        cfg["reports_root"] = os.path.join(os.path.abspath(_epm_data_root), "reports")
+        tprint(f"EPM_DATA_ROOT override: data_root={cfg['data_root']}")
     if args.perps:
         cfg["use_perps"] = True
         cfg["data_root"] = _append_suffix(cfg.get("data_root", "data"), "_perp")

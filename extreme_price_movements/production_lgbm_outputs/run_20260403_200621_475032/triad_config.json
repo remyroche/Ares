@@ -1,0 +1,13 @@
+{
+  "horizons": [
+    3,
+    10
+  ],
+  "target_names": [
+    "returns_target",
+    "atr_norm_returns_target"
+  ],
+  "total_combinations": 4,
+  "completed_combinations": 4,
+  "total_rules": 0
+}

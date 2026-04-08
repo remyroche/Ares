@@ -3,7 +3,7 @@ from extreme_price_movements.utils import tprint
 
 
 
-CLASS_ORDER = ("TP", "SL", "TO")
+CLASS_ORDER = ("SL", "TO", "TP")
 
 def convert_class_order(arr, src_order, dst_order):
     if src_order == dst_order:
@@ -73,7 +73,7 @@ class DynamicSoftLabels:
             rate_SL = np.mean(y_g == 0)
             rate_TO = np.mean(y_g == 1)
 
-            if not (rate_TP >= 0.05 and rate_SL >= 0.05 and 0.10 <= rate_TO <= 0.80):
+            if not (rate_TP >= 0.02 and rate_SL >= 0.02):
                 reasons["base_rates"] += 1
                 continue
             if not (1.0 <= tp_m / sl_m <= 3.0 and sl_m < tp_m):
@@ -94,11 +94,12 @@ class DynamicSoftLabels:
             retained.append((tp_m, sl_m))
 
         if len(retained) == 0:
-            raise ValueError(
-                f"No valid geometries retained. Horizon={self.h}. "
-                f"Total candidates={len(candidates)}. "
-                f"Rejections: {reasons}."
+            tprint(
+                f"WARNING: No valid geometries retained. Horizon={self.h}. "
+                f"Total candidates={len(candidates)}. Rejections: {reasons}. "
+                f"Returning empty list — soft-label head will be skipped."
             )
+            return []
         if len(retained) < 3:
             tprint(f"WARNING: Retained geometries < 3 for horizon={self.h}. Retained count={len(retained)}.")
 
@@ -147,6 +148,8 @@ class DynamicSoftLabels:
 
     def to_numpy(self):
         retained = self.get_retained_geometries()
+        if not retained:
+            return None
         return self.build_soft_labels_with(retained)
 
 def validate_probability_simplex(arr: np.ndarray, name: str, atol: float = 1e-6) -> np.ndarray:

@@ -14,11 +14,14 @@ Focuses on:
 from __future__ import annotations
 
 import logging
+import json
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, linregress
 from sklearn.linear_model import Ridge, HuberRegressor
 from sklearn.preprocessing import StandardScaler, RobustScaler
 
@@ -39,9 +42,164 @@ from extreme_price_movements.offline_optimisers.params_store import (
 from extreme_price_movements.run_ridge_sizer import (
     load_base_oof_predictions,
     load_meta_oof_predictions,
+    load_trade_outcomes,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _strategy_params_path(data_root: str, run_id: str) -> Path:
+    return Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+
+
+def _frozen_strategy_thresholds_path(data_root: str, run_id: str) -> Path:
+    return Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "frozen_strategy_thresholds.json"
+
+
+def _extract_strategy_params_payload(
+    *,
+    run_id: str,
+    cost_pct: float,
+    strategy_results: Dict[str, Any],
+) -> Dict[str, Any]:
+    strategies: List[Dict[str, Any]] = []
+    for strategy_id, res in strategy_results.items():
+        opt_table = res.get("profit_proxy_table_", pd.DataFrame())
+        if not isinstance(opt_table, pd.DataFrame) or opt_table.empty:
+            continue
+        if "is_optimal" in opt_table.columns:
+            opt_rows = opt_table[opt_table["is_optimal"]]
+            opt_row = opt_rows.iloc[0] if not opt_rows.empty else opt_table.iloc[0]
+        else:
+            opt_row = opt_table.sort_values("wallet_pnl", ascending=False).iloc[0]
+
+        strategy_meta = res.get("_strategy_meta_", {})
+        side = str(strategy_meta.get("trade_side", strategy_meta.get("side", "")) or "")
+        source_target = str(strategy_meta.get("source_target", "") or "")
+        source_horizon = strategy_meta.get("source_horizon", np.nan)
+        row = {
+            "strategy_id": str(strategy_id),
+            "side": side,
+            "threshold_pct": _to_float_or_nan(opt_row.get("threshold_pct", np.nan)),
+            "selection_frac": _to_float_or_nan(opt_row.get("selection_frac", np.nan)),
+            "wallet_pnl": _to_float_or_nan(opt_row.get("wallet_pnl", np.nan)),
+            "net_pnl": _to_float_or_nan(opt_row.get("net_pnl", np.nan)),
+            "pnl_per_trade": _to_float_or_nan(opt_row.get("pnl_per_trade", np.nan)),
+            "profit_factor": _to_float_or_nan(opt_row.get("profit_factor", np.nan)),
+            "hit_rate": _to_float_or_nan(opt_row.get("hit_rate", np.nan)),
+            "trades_per_day": _to_float_or_nan(opt_row.get("trades_per_day", np.nan)),
+            "monthly_sortino": _to_float_or_nan(opt_row.get("monthly_sortino", np.nan)),
+            "monthly_pnl_std": _to_float_or_nan(opt_row.get("monthly_pnl_std", np.nan)),
+            "monthly_group_cv_pnl": _to_float_or_nan(opt_row.get("monthly_group_cv_pnl", np.nan)),
+            "asset_group_cv_pnl": _to_float_or_nan(opt_row.get("asset_group_cv_pnl", np.nan)),
+            "asset_group_positive_share": _to_float_or_nan(opt_row.get("asset_group_positive_share", np.nan)),
+            "stability": _to_float_or_nan(opt_row.get("stability", np.nan)),
+            "max_drawdown": _to_float_or_nan(opt_row.get("max_drawdown", np.nan)),
+            "source_target": source_target,
+            "source_horizon": _to_float_or_nan(source_horizon),
+        }
+        strategies.append(row)
+
+    strategies = sorted(
+        strategies,
+        key=lambda x: (
+            float(x.get("net_pnl", float("-inf"))),
+            float(x.get("profit_factor", float("-inf"))),
+            float(x.get("hit_rate", float("-inf"))),
+        ),
+        reverse=True,
+    )
+
+    payload = {
+        "schema_version": "v1",
+        "generated_by": "simple_position_sizer",
+        "run_id": str(run_id),
+        "fee_pct": float(cost_pct),
+        "strategies": strategies,
+        "buckets": {str(row["strategy_id"]): dict(row) for row in strategies},
+        "best_strategy_id": strategies[0]["strategy_id"] if strategies else None,
+        "best_threshold_pct": float(strategies[0]["threshold_pct"]) if strategies else None,
+    }
+    return payload
+
+
+def _save_strategy_params_payload(
+    *,
+    data_root: str,
+    run_id: str,
+    cost_pct: float,
+    strategy_results: Dict[str, Any],
+) -> Path | None:
+    payload = _extract_strategy_params_payload(
+        run_id=run_id,
+        cost_pct=cost_pct,
+        strategy_results=strategy_results,
+    )
+    if not payload["strategies"]:
+        return None
+    for path in (
+        _strategy_params_path(data_root, run_id),
+        _frozen_strategy_thresholds_path(data_root, run_id),
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    return _strategy_params_path(data_root, run_id)
+
+
+def _to_float_or_nan(value: Any) -> float:
+    if value is None:
+        return float("nan")
+    if isinstance(value, str):
+        s = value.strip()
+        if s.endswith("%"):
+            s = s[:-1].strip()
+        if not s:
+            return float("nan")
+        try:
+            return float(s)
+        except Exception:
+            return float("nan")
+    try:
+        return float(value)
+    except Exception:
+        return float("nan")
+
+_RIDGE_HEAD_EXACT = {
+    "reg",
+    "reg_mean",
+    "reg_std",
+    "reg_range",
+    "reg_sign_agree",
+    "reg_clf_agree",
+    "oof_pred",
+    "oof_pred_oriented",
+    "clf",
+    "oof_ev",
+    "oof_u_hat",
+    "oof_log_mae_q70_hat",
+    "oof_log_mfe_hat",
+    "oof_asym_hat",
+}
+_RIDGE_HEAD_PREFIXES = (
+    "base_h",
+    "tbm_",
+    "mae_h",
+    "mfe_h",
+    "oof_p_",
+)
+
+
+def collect_ridge_head_columns(df: pd.DataFrame) -> List[str]:
+    """Return prediction-head columns that should feed the Ridge stack."""
+    cols: List[str] = []
+    for col in df.columns:
+        if col in _RIDGE_HEAD_EXACT:
+            cols.append(col)
+            continue
+        col_l = col.lower()
+        if any(col_l.startswith(prefix) for prefix in _RIDGE_HEAD_PREFIXES):
+            cols.append(col)
+    return cols
 
 def detect_meta_head_keys(feature_dict: Dict[str, np.ndarray], config_overrides: Optional[List[str]] = None) -> Dict[str, str]:
     """Detects likely meta-model heads from the feature dictionary and classifies them."""
@@ -53,6 +211,26 @@ def detect_meta_head_keys(feature_dict: Dict[str, np.ndarray], config_overrides:
     heads = {}
     for k in keys:
         kl = k.lower()
+        # Exact OOF head names first so we do not confuse them with regime features
+        # like `regime_*`.
+        if kl in {
+            "reg",
+            "reg_mean",
+            "reg_std",
+            "oof_pred",
+            "oof_pred_oriented",
+            "reg_range",
+            "reg_sign_agree",
+            "reg_clf_agree",
+            "oof_ev",
+            "oof_u_hat",
+            "oof_log_mae_q70_hat",
+            "oof_log_mfe_hat",
+            "oof_asym_hat",
+        } or kl.startswith("base_h"):
+            heads[k] = "return-like"
+        elif kl in {"clf", "oof_p_tp", "oof_p_to", "oof_p_sl"}:
+            heads[k] = "classification-like"
         if "edge" in kl or "expected_return" in kl or "regressor" in kl or "reg_head" in kl:
             heads[k] = "return-like"
         elif "mae" in kl or "downside" in kl or "risk" in kl:
@@ -112,79 +290,55 @@ def clean_and_standardize(X: np.ndarray, fit_medians: Optional[np.ndarray] = Non
 
     return X_clean, fit_medians, scaler, center_1d, scale_1d
 
-def simple_temporal_splits(
+def walk_forward_temporal_splits(
     timestamps: Optional[np.ndarray],
     n_samples: int,
-    n_splits: int = 3
+    n_splits: int = 5,
+    min_train_frac: float = 0.5,
+    embargo_pct: float = 0.01
 ) -> List[Tuple[np.ndarray, np.ndarray]]:
-    """Generates simple temporal cross-validation splits."""
+    """
+    Generates strict walk-forward (expanding window) temporal splits.
+    Ensures that max(train_ts) < min(test_ts) with an optional embargo.
+    """
+    if n_samples <= 0:
+        return []
     if timestamps is None or len(timestamps) == 0:
-        # Fallback to simple chunking if no timestamps
         indices = np.arange(n_samples)
-        chunk_size = max(1, n_samples // n_splits)
-        splits = []
-        for i in range(n_splits):
-            start = i * chunk_size
-            end = (i + 1) * chunk_size if i < n_splits - 1 else n_samples
-            test_idx = indices[start:end]
-            train_idx = np.concatenate([indices[:start], indices[end:]]) if n_splits > 1 else test_idx
-            if len(train_idx) > 0 and len(test_idx) > 0:
-                splits.append((train_idx, test_idx))
-        return splits
+    else:
+        indices = np.argsort(timestamps)
 
-    # Try to use SlicePlanner for honest temporal splits if available
-    try:
-        ts = pd.to_datetime(pd.Series(timestamps), unit="s", utc=True, errors="coerce")
-        if ts.isna().all():
-            ts = pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce")
-        ts = ts.ffill().bfill()
-        events = pd.DataFrame({
-            "event_id": np.arange(n_samples, dtype=np.int64),
-            "symbol": np.repeat("ALL", n_samples),
-            "t0": ts.to_numpy(),
-            "t1": (ts + pd.Timedelta(seconds=1)).to_numpy(),
-        })
-        cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
-        cfg = cfg.__class__(**{
-            **cfg.__dict__,
-            "preset": cfg.preset.__class__(
-                preset_name=cfg.preset.preset_name,
-                outer=cfg.preset.outer,
-                inner=cfg.preset.inner.__class__(n_splits=max(1, int(n_splits))),
-                sampling=cfg.preset.sampling,
-                symbol_policy=cfg.preset.symbol_policy,
-                purge_policy=cfg.preset.purge_policy,
-            ),
-            "silent": True,
-            "min_rows_per_fold": 1,
-            "min_symbols_per_fold": 1,
-        })
-        bundle = SlicePlanner(cfg).build(events)
-        plans = bundle["consumer_plans"]["ridge_sizer_fit"]
-        splits = []
-        for plan in plans:
-            if plan.tag != "predict_outer_test":
-                continue
-            tr = np.asarray(plan.fit_idx, dtype=np.int64)
-            te = np.asarray(plan.predict_idx, dtype=np.int64)
-            if tr.size > 0 and te.size > 0:
-                splits.append((tr, te))
-        if splits:
-            return splits
-    except Exception as e:
-        logger.warning(f"SlicePlanner failed in simple splits: {e}. Falling back to simple chunking.")
-
-    # Fallback to simple temporal sort splitting
-    idx = np.argsort(timestamps)
-    chunk_size = max(1, n_samples // n_splits)
+    # Use SlicePlanner if possible, but force its preset to a walk-forward one if we can identify it.
+    # For now, we use a robust manual implementation to guarantee zero leakage.
+    
     splits = []
-    for i in range(n_splits):
-        start = i * chunk_size
-        end = (i + 1) * chunk_size if i < n_splits - 1 else n_samples
-        test_idx = idx[start:end]
-        train_idx = np.concatenate([idx[:start], idx[end:]]) if n_splits > 1 else test_idx
+    
+    total_steps = n_splits
+    # Start testing after min_train_frac
+    start_idx = int(n_samples * min_train_frac)
+    test_chunk_size = (n_samples - start_idx) // total_steps
+    embargo_size = int(n_samples * embargo_pct)
+
+    for i in range(total_steps):
+        test_start = start_idx + i * test_chunk_size
+        test_end = test_start + test_chunk_size if i < total_steps - 1 else n_samples
+        
+        train_end = test_start - embargo_size
+        
+        if train_end <= 0:
+            continue
+            
+        train_idx = indices[:train_end]
+        test_idx = indices[test_start:test_end]
+        
         if len(train_idx) > 0 and len(test_idx) > 0:
             splits.append((train_idx, test_idx))
+            
+    if not splits:
+        logger.warning("Walk-Forward splits empty, falling back to final 20% test.")
+        train_end = int(n_samples * 0.8)
+        splits.append((indices[:train_end], indices[train_end:]))
+        
     return splits
 
 
@@ -238,6 +392,104 @@ def evaluate_signal(
     metrics["utility_score"] = float(utility)
 
     return metrics
+
+
+def compute_period_aggregated_stats(
+    trade_rets: np.ndarray,
+    trade_ts: Optional[np.ndarray],
+    freq: str,
+) -> Tuple[float, float]:
+    """Return Sortino and standard deviation of period-aggregated PnL."""
+    if trade_ts is None or len(trade_ts) == 0 or len(trade_rets) == 0:
+        return 0.0, 0.0
+    try:
+        ts = pd.to_datetime(trade_ts, utc=True, errors="coerce")
+        if isinstance(ts, pd.Series):
+            valid = ts.notna().values
+            ts_idx = pd.DatetimeIndex(ts[valid])
+        else:
+            valid = pd.notna(ts)
+            ts_idx = pd.DatetimeIndex(ts[valid])
+        if np.sum(valid) == 0:
+            return 0.0, 0.0
+        rets = np.asarray(trade_rets, dtype=float)[valid]
+        period_vals = pd.Series(rets).groupby(ts_idx.to_period(freq)).sum().values
+        if len(period_vals) == 0:
+            return 0.0, 0.0
+        neg = period_vals[period_vals < 0]
+        downside_std = float(np.std(neg)) if len(neg) > 0 else 1e-6
+        mean_ret = float(np.mean(period_vals))
+        sortino = mean_ret / downside_std if downside_std > 1e-12 else 0.0
+        return sortino, float(np.std(period_vals))
+    except Exception:
+        return 0.0, 0.0
+
+
+def compute_group_stability_stats(
+    trade_rets: np.ndarray,
+    group_labels: Optional[np.ndarray],
+) -> Dict[str, float]:
+    """Return dispersion and consistency metrics for grouped trade PnL."""
+    if group_labels is None or len(trade_rets) == 0:
+        return {
+            "group_mean_pnl": 0.0,
+            "group_std_pnl": 0.0,
+            "group_cv_pnl": 0.0,
+            "group_positive_share": 0.0,
+            "group_pf_std": 0.0,
+        }
+
+    try:
+        vals = np.asarray(trade_rets, dtype=float)
+        labels = np.asarray(group_labels)
+        valid = np.isfinite(vals) & pd.notna(labels)
+        if not np.any(valid):
+            return {
+                "group_mean_pnl": 0.0,
+                "group_std_pnl": 0.0,
+                "group_cv_pnl": 0.0,
+                "group_positive_share": 0.0,
+                "group_pf_std": 0.0,
+            }
+        vals = vals[valid]
+        labels = labels[valid]
+        group_df = pd.DataFrame({"label": labels, "ret": vals})
+        agg = group_df.groupby("label")["ret"].agg(
+            group_pnl="sum",
+            group_hit_rate=lambda x: float(np.mean(x > 0)) if len(x) else 0.0,
+            group_pf=lambda x: (
+                float(np.sum(x[x > 0])) / float(np.abs(np.sum(x[x < 0])))
+                if np.abs(np.sum(x[x < 0])) > 0
+                else float(np.sum(x[x > 0]))
+            ),
+        )
+        group_pnl = agg["group_pnl"].values.astype(float)
+        if len(group_pnl) == 0:
+            return {
+                "group_mean_pnl": 0.0,
+                "group_std_pnl": 0.0,
+                "group_cv_pnl": 0.0,
+                "group_positive_share": 0.0,
+                "group_pf_std": 0.0,
+            }
+        group_mean = float(np.mean(group_pnl))
+        group_std = float(np.std(group_pnl))
+        group_cv = float(group_std / max(abs(group_mean), 1e-12))
+        return {
+            "group_mean_pnl": group_mean,
+            "group_std_pnl": group_std,
+            "group_cv_pnl": group_cv,
+            "group_positive_share": float(np.mean(group_pnl > 0)),
+            "group_pf_std": float(np.std(agg["group_pf"].values.astype(float))),
+        }
+    except Exception:
+        return {
+            "group_mean_pnl": 0.0,
+            "group_std_pnl": 0.0,
+            "group_cv_pnl": 0.0,
+            "group_positive_share": 0.0,
+            "group_pf_std": 0.0,
+        }
 
 def run_stage_1_diagnostics(
     feature_dict: Dict[str, np.ndarray],
@@ -390,23 +642,30 @@ class SimpleHeadRidgeSizer:
     A compact experimental component that tests if a linear model using
     only meta heads can beat fixed formulas.
     """
-    def __init__(self, alpha: float = 1.0):
-        self.alpha = alpha
-        self.model = HuberRegressor(alpha=alpha, fit_intercept=True)
+    def __init__(self, model=None):
+        from sklearn.linear_model import Ridge
+        self.model = model or Ridge(alpha=1.0)
+        self.fold_coefs = []
+        self.feature_names = []
 
-    def fit_predict_oof(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        splits: List[Tuple[np.ndarray, np.ndarray]]
-    ) -> np.ndarray:
-        """Runs Out-Of-Fold predictions using temporal splits."""
+    def fit_predict_oof(self, X: np.ndarray, y: np.ndarray, splits: List[Tuple[np.ndarray, np.ndarray]], feature_names: List[str] = None):
+        """
+        Fits locally on each train fold and predicts the next test fold.
+        Stores coefficients for interpretability.
+        """
         n_samples = len(y)
         oof_preds = np.zeros(n_samples)
+        self.fold_coefs = []
+        self.feature_names = feature_names or [f"head_{i}" for i in range(X.shape[1])]
 
         for tr_idx, te_idx in splits:
+            if len(tr_idx) == 0 or len(te_idx) == 0:
+                continue
             X_tr, y_tr = X[tr_idx], y[tr_idx]
             X_te = X[te_idx]
+
+            if X_tr.shape[0] == 0 or X_te.shape[0] == 0:
+                continue
 
             # Fold-local scaling and NaN cleaning
             X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(X_tr)
@@ -414,58 +673,170 @@ class SimpleHeadRidgeSizer:
 
             # Fit & predict
             self.model.fit(X_tr_clean, y_tr)
+            self.fold_coefs.append(self.model.coef_)
             oof_preds[te_idx] = self.model.predict(X_te_clean)
 
         return oof_preds
 
+    def get_feature_importance(self) -> pd.DataFrame:
+        """Returns the mean weight (coefficient) per meta-head across folds."""
+        if not self.fold_coefs:
+            return pd.DataFrame()
+        
+        coef_matrix = np.array(self.fold_coefs)
+        mean_coefs = np.mean(coef_matrix, axis=0)
+        std_coefs = np.std(coef_matrix, axis=0)
+        
+        df = pd.DataFrame({
+            "head_name": self.feature_names,
+            "mean_weight": mean_coefs,
+            "std_weight": std_coefs,
+            "abs_weight": np.abs(mean_coefs)
+        })
+        return df.sort_values("abs_weight", ascending=False)
+
 def evaluate_selection_profit_proxy(
     scores: np.ndarray,
     y_raw_net_return: np.ndarray,
-    top_fracs: List[float] = [0.1, 0.2, 0.3],
+    timestamps: Optional[np.ndarray] = None,
+    symbols: Optional[np.ndarray] = None,
+    top_fracs: List[float] = [0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.25, 0.3],
     start_equity: float = 100000.0,
-    cost_pct: float = 0.002
-) -> pd.DataFrame:
+    cost_pct: float = 0.003,
+    n_days: float = 365.0,
+    wallet_range: Tuple[float, float] = (0.05, 0.15)
+) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """
-    Evaluates "Could this generate profit?" by applying a simple top-fraction selection rule.
+    Evaluates "Could this generate profit?" using:
+    1. A confidence rank threshold grid (95% down to 70%).
+    2. Variable position sizing (e.g. 5% to 15% wallet allocation).
     """
     results = []
     n_samples = len(scores)
 
     if n_samples == 0:
-        return pd.DataFrame()
+        return pd.DataFrame(), np.array([]), np.array([])
 
     for frac in top_fracs:
         k = max(1, int(n_samples * frac))
         idx = np.argpartition(scores, -k)[-k:]
 
         selected_rets = y_raw_net_return[idx]
-
+        selected_ts = timestamps[idx] if timestamps is not None and len(timestamps) == n_samples else None
+        selected_syms = symbols[idx] if symbols is not None and len(symbols) == n_samples else None
         hit_rate = float(np.mean(selected_rets > 0)) if len(selected_rets) > 0 else 0.0
 
-        # Simple sizing: equal size for selected trades
-        # Assuming y_raw_net_return is already net of standard costs, but we apply an extra
-        # cost proxy if requested or just use it as is.
-        # Let's assume y_raw_net_return is exactly what we get per unit trade.
+        # Apply cost (fees + slippage)
         sized_rets = selected_rets - cost_pct
+
+        # --- 🏆 Advanced Sizing: Confidence-Weighted Allocation (5-15%) ---
+        # We assign higher size to the highest scores within the k-selection.
+        # Use rank-based sizing to be robust to score distributions.
+        slice_scores = scores[idx]
+        sorted_args = np.argsort(slice_scores) # idx of scores in ascending order
+        
+        # Rankings from 5% (min score in slice) to 15% (max score in slice)
+        allocations = np.linspace(wallet_range[0], wallet_range[1], len(idx))
+        
+        # Apply allocations to the sorted returns
+        sorted_rets_net = (selected_rets[sorted_args] - cost_pct)
+        wallet_rets = sorted_rets_net * allocations
+        
+        net_wallet_pnl_pct = float(np.sum(wallet_rets))
+        # -----------------------------------------------------------------
 
         _, dd_series = _stable_equity_and_drawdown(sized_rets)
         mdd_pct = float(np.max(dd_series)) if len(dd_series) > 0 else 0.0
         net_pnl = float(np.sum(sized_rets))
 
+        # Basic PF
         gross_profit = float(np.sum(sized_rets[sized_rets > 0]))
         gross_loss = float(np.abs(np.sum(sized_rets[sized_rets < 0])))
-        profit_factor = float(gross_profit / gross_loss) if gross_loss > 0 else float(gross_profit)
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else float(gross_profit)
 
+        # 📈 Advanced Risk Metrics
+        
+        # 1. Sortino Ratio (Downside-aware)
+        downside_rets = sized_rets[sized_rets < 0]
+        downside_std = np.std(downside_rets) if len(downside_rets) > 0 else 1e-6
+        mean_ret = np.mean(sized_rets)
+        sortino = mean_ret / downside_std
+
+        weekly_sortino, weekly_pnl_std = compute_period_aggregated_stats(
+            sized_rets, selected_ts, "W"
+        )
+        monthly_sortino, monthly_pnl_std = compute_period_aggregated_stats(
+            sized_rets, selected_ts, "M"
+        )
+        month_groups = None
+        if selected_ts is not None:
+            ts_idx = pd.to_datetime(selected_ts, utc=True, errors="coerce")
+            if isinstance(ts_idx, pd.Series):
+                ts_idx = pd.DatetimeIndex(ts_idx[ts_idx.notna()])
+            else:
+                ts_idx = pd.DatetimeIndex(ts_idx[pd.notna(ts_idx)])
+            if len(ts_idx) == len(sized_rets):
+                month_groups = ts_idx.to_period("M").astype(str)
+        month_stability = compute_group_stability_stats(sized_rets, month_groups)
+        asset_stability = compute_group_stability_stats(sized_rets, selected_syms)
+
+        # 2. PnL Stability (R-squared of linear equity curve)
+        equity = np.cumsum(sized_rets)
+        if len(equity) > 5:
+            _, _, r_val, _, _ = linregress(np.arange(len(equity)), equity)
+            stability = float(r_val**2)
+        else:
+            stability = 0.0
+
+        # 3. Frequency & Efficiency
+        pnl_per_trade_bps = (net_pnl / len(sized_rets)) * 10000 if len(sized_rets) > 0 else 0.0
+        trades_per_day = len(sized_rets) / n_days if n_days > 0 else 0.0
+        
         results.append({
             "selection_frac": frac,
+            "threshold_pct": f"{100*(1-frac):.1f}%",
             "net_pnl": net_pnl,
+            "wallet_pnl": net_wallet_pnl_pct,
+            "pnl_per_trade": pnl_per_trade_bps,
+            "trades_per_day": trades_per_day,
             "hit_rate": hit_rate,
             "profit_factor": profit_factor,
+            "sortino": sortino,
+            "weekly_sortino": weekly_sortino,
+            "monthly_sortino": monthly_sortino,
+            "weekly_pnl_std": weekly_pnl_std,
+            "monthly_pnl_std": monthly_pnl_std,
+            "monthly_group_std_pnl": month_stability["group_std_pnl"],
+            "monthly_group_cv_pnl": month_stability["group_cv_pnl"],
+            "monthly_group_pf_std": month_stability["group_pf_std"],
+            "asset_group_std_pnl": asset_stability["group_std_pnl"],
+            "asset_group_cv_pnl": asset_stability["group_cv_pnl"],
+            "asset_group_positive_share": asset_stability["group_positive_share"],
+            "asset_group_pf_std": asset_stability["group_pf_std"],
+            "stability": stability,
             "max_drawdown": mdd_pct,
-            "trades_selected": len(selected_rets)
+            "trades_selected": len(sized_rets)
         })
 
-    return pd.DataFrame(results)
+    df = pd.DataFrame(results)
+    
+    # Identify optimal threshold by Wallet PnL (since user asked for 5-15% sizing)
+    opt_rets = np.array([])
+    opt_ts = np.array([])
+    if not df.empty:
+        opt_idx = df["wallet_pnl"].idxmax()
+        df["is_optimal"] = False
+        df.loc[opt_idx, "is_optimal"] = True
+        
+        # Recalculate k for the optimal frac to get indexed returns
+        frac_opt = df.loc[opt_idx, "selection_frac"]
+        k_opt = max(1, int(n_samples * frac_opt))
+        idx_opt = np.argpartition(scores, -k_opt)[-k_opt:]
+        opt_rets = y_raw_net_return[idx_opt] - cost_pct
+        if timestamps is not None and len(timestamps) == n_samples:
+            opt_ts = np.asarray(timestamps)[idx_opt]
+
+    return df, opt_rets, opt_ts
 
 def run_simple_position_sizer(
     feature_dict: Dict[str, np.ndarray],
@@ -473,12 +844,13 @@ def run_simple_position_sizer(
     y_raw_net_return: np.ndarray,
     y_downside: np.ndarray,
     timestamps: np.ndarray,
+    symbols: Optional[np.ndarray] = None,
     bucket_labels: Optional[np.ndarray] = None,
     sample_weight: Optional[np.ndarray] = None,
     start_equity: float = 100000.0,
-    cost_pct: float = 0.002,
+    cost_pct: float = 0.003,
     lambda_grid: Optional[List[float]] = None,
-    top_fracs: Tuple[float, ...] = (0.1, 0.2),
+    top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
     use_ridge_head_sizer: bool = True
 ) -> Dict[str, Any]:
     """
@@ -502,9 +874,9 @@ def run_simple_position_sizer(
     # 2. Stage 1 Diagnostics
     stage_1_df = run_stage_1_diagnostics(feature_dict, detected_heads, y_raw_net_return, y_downside)
 
-    # Determine temporal splits for stability checking and OOF Ridge
+    # Use strict walk-forward splits to prevent lookahead leakage
     n_samples = len(y_raw_net_return)
-    splits = simple_temporal_splits(timestamps, n_samples)
+    splits = walk_forward_temporal_splits(timestamps, n_samples, n_splits=5)
 
     # 3. Stage 2 Combo Race
     combo_candidates = build_combo_candidates(feature_dict, detected_heads, lambda_grid)
@@ -519,21 +891,45 @@ def run_simple_position_sizer(
         best_simple_score = combo_candidates[best_simple_score_name]
 
     # 4. Optional Ridge Sizer
+    results = {}
     ridge_sizer_eval = {}
+    ridge_importance_df = pd.DataFrame()
+    ridge_profit_proxy_df = pd.DataFrame()
+
     if use_ridge_head_sizer and used_keys:
-        n_samples = len(y_raw_net_return)
         # Assemble X from used heads
         X_heads = np.column_stack([feature_dict[k] for k in used_keys])
-
-        # We also want to invert risk-like heads before fitting so Ridge
-        # doesn't have to learn negative coefficients as hard, but Ridge can handle it.
-        # However, to keep it simple, we just feed the standardized features.
-
-        ridge = SimpleHeadRidgeSizer(alpha=1.0)
-        ridge_oof_preds = ridge.fit_predict_oof(X_heads, y_raw_net_return, splits)
+        sizer = SimpleHeadRidgeSizer()
+        
+        # Fit OOF across temporal splits
+        ridge_oof_preds = sizer.fit_predict_oof(X_heads, y_raw_net_return, splits, feature_names=used_keys)
+        ridge_importance_df = sizer.get_feature_importance()
 
         ridge_metrics = evaluate_signal("Ridge_Head_Sizer", ridge_oof_preds, y_raw_net_return, y_downside, directionality="return-like")
         ridge_sizer_eval = ridge_metrics
+
+        # Evaluate Profit Proxy for Ridge Scores
+        t_diff = np.max(timestamps) - np.min(timestamps)
+        if hasattr(t_diff, 'astype') and not isinstance(t_diff, float):
+            n_days = float(t_diff / np.timedelta64(1, 'D'))
+        else:
+            n_days = float(t_diff) / 86400.0 if len(timestamps) > 1 else 0.0
+
+        ridge_profit_proxy_df, ridge_opt_rets, ridge_opt_ts = evaluate_selection_profit_proxy(
+            ridge_oof_preds,
+            y_raw_net_return,
+            timestamps=timestamps,
+            symbols=trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None,
+            top_fracs=list(top_fracs),
+            cost_pct=cost_pct,
+            n_days=n_days,
+        )
+        
+        results["ridge_sizer_scores_"] = ridge_oof_preds
+        results["ridge_importance_table_"] = ridge_importance_df
+        results["ridge_profit_proxy_table_"] = ridge_profit_proxy_df
+        results["ridge_opt_rets_"] = ridge_opt_rets
+        results["ridge_opt_ts_"] = ridge_opt_ts
 
         # Compare Ridge vs Best Combo
         if not best_combo or ridge_metrics.get("utility_score", 0) > best_combo.get("utility_score", -9999):
@@ -542,10 +938,14 @@ def run_simple_position_sizer(
 
     # 5. Profit Proxy on Best Score
     profit_proxy_df = pd.DataFrame()
+    best_opt_rets = np.array([])
+    best_opt_ts = np.array([])
     if best_simple_score is not None:
-        profit_proxy_df = evaluate_selection_profit_proxy(
+        profit_proxy_df, best_opt_rets, best_opt_ts = evaluate_selection_profit_proxy(
             best_simple_score,
             y_raw_net_return,
+            timestamps=timestamps,
+            symbols=trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None,
             top_fracs=list(top_fracs) + [0.3],
             start_equity=start_equity,
             cost_pct=cost_pct
@@ -557,9 +957,13 @@ def run_simple_position_sizer(
         "combo_race_table_": stage_2_df,
         "best_combo_": best_combo,
         "ridge_sizer_eval_": ridge_sizer_eval,
+        "ridge_importance_table_": ridge_importance_df,
+        "ridge_profit_proxy_table_": ridge_profit_proxy_df,
         "best_simple_score_": best_simple_score,
         "best_simple_score_name_": best_simple_score_name,
-        "profit_proxy_table_": profit_proxy_df
+        "profit_proxy_table_": profit_proxy_df if not profit_proxy_df.empty else pd.DataFrame(),
+        "opt_rets_": best_opt_rets,
+        "opt_ts_": best_opt_ts
     }
 
 def run_bucketed_simple_position_sizer(
@@ -579,6 +983,7 @@ def run_bucketed_simple_position_sizer(
     # Run global first
     global_results = run_simple_position_sizer(
         feature_dict, trade_outcomes, y_raw_net_return, y_downside, timestamps,
+        trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None,
         bucket_labels=None, sample_weight=sample_weight, **kwargs
     )
 
@@ -601,6 +1006,7 @@ def run_bucketed_simple_position_sizer(
 
         b_res = run_simple_position_sizer(
             b_feature_dict, b_trade_outcomes, b_y_raw_net_return, b_y_downside, b_timestamps,
+            b_trade_outcomes["symbol"].values if "symbol" in b_trade_outcomes.columns else None,
             bucket_labels=None, sample_weight=b_sample_weight, **kwargs
         )
         bucket_results[b] = b_res
@@ -622,10 +1028,10 @@ def run_bucketed_simple_position_sizer(
 def run_simple_position_sizer_from_artifacts(
     data_root: str,
     run_id: str,
-    top_fracs: Tuple[float, ...] = (0.1, 0.2),
+    top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
     use_ridge_head_sizer: bool = True,
-    top_n_strategies: int = 3
-) -> Dict[str, Dict[str, Any]]:
+    top_n_strategies: int = 4
+) -> Dict[str, Any]:
     """
     Runs the simple position sizer directly on pipeline artifacts, executing the pipeline
     once per strategy loaded.
@@ -635,20 +1041,57 @@ def run_simple_position_sizer_from_artifacts(
 
     Returns a dictionary mapping strategy_id to its respective position sizer results.
     """
-    from extreme_price_movements.run_ridge_sizer import load_trade_outcomes
+    from extreme_price_movements.run_ridge_sizer import (
+        load_trade_outcomes,
+        load_meta_oof_predictions,
+    )
 
     # Load dynamic strategies (which rules are active per bucket)
-    strategies = load_inference_candidate_mask_params_per_bucket(top_n=top_n_strategies, ranking_metric="score_for_best_params")
+    # load_inference_candidate_mask_params_per_bucket returns top_n PER (side, horizon) group.
+    # We load a large pool then take the true global top-N by score_for_best_params.
+    _pool = load_inference_candidate_mask_params_per_bucket(top_n=99, ranking_metric="score_for_best_params")
 
-    if not strategies:
+    if not _pool:
         logger.warning("No strategies loaded from params_store.")
         return {}
 
-    # Load base OOFs
+    # Deduplicate by strategy_id and take global top-N
+    _seen_ids: set = set()
+    strategies = []
+    for s in _pool:
+        sid = s.get("strategy_id", "")
+        if sid and sid not in _seen_ids:
+            _seen_ids.add(sid)
+            strategies.append(s)
+    strategies = strategies[:top_n_strategies]
+
+    logger.info(f"Loaded {len(strategies)} strategies (global top-{top_n_strategies}). IDs: {[s.get('strategy_id', '')[:40] for s in strategies]}")
+
+    # Load base and meta OOFs
     base_oofs = load_base_oof_predictions(data_root, run_id)
-    if not base_oofs:
-        logger.warning(f"No base OOFs found in {data_root}/artifacts/{run_id}/oof.")
+    try:
+        meta_oofs = load_meta_oof_predictions(data_root, run_id)
+    except Exception as e:
+        logger.warning(f"Could not load meta OOFs: {e}. Falling back to base-only.")
+        meta_oofs = {}
+
+    if not base_oofs and not meta_oofs:
+        logger.warning(f"No OOFs found in {data_root}/artifacts/{run_id}. Checking both base/ and meta_oof/.")
         return {}
+
+    # Supplement params_store strategies with any OOF-artifact buckets not already matched.
+    # This ensures isolated runs (e.g. single-symbol or small-universe) are evaluated even
+    # when their strategy IDs are absent from the full-universe params CSV.
+    import re as _re_sizer
+    _known_ids = {s.get("strategy_id", "") for s in strategies}
+    _all_oof_keys = set(base_oofs.keys()) | set(meta_oofs.keys())
+    for _oof_key in sorted(_all_oof_keys):
+        _stripped = _re_sizer.sub(r'^(long|short)_', '', _oof_key)
+        _side = "long" if _oof_key.startswith("long_") else ("short" if _oof_key.startswith("short_") else "")
+        if _stripped not in _known_ids and _oof_key not in _known_ids:
+            strategies.append({"strategy_id": _stripped, "trade_side": _side})
+            _known_ids.add(_stripped)
+            logger.info(f"OOF-derived strategy injected: side={_side!r} id={_stripped[:60]}")
 
     strategy_results = {}
 
@@ -656,55 +1099,295 @@ def run_simple_position_sizer_from_artifacts(
         strategy_id = strategy.get("strategy_id", "")
         if not strategy_id:
             continue
+        # --- 🚀 RESTORE FULL MASK COVERAGE ---
+        # 1. Load the Base Labels (The ground-truth of discovery)
+        labels_dir = Path(data_root) / "artifacts" / run_id / "labels"
+        logger.warning(f"DEBUG_PATH labels_dir: {labels_dir.absolute()} (Exists: {labels_dir.exists()})")
+        strat_id_raw = strategy.get("strategy_id", "")
+        
+        # FUZZY RESOLVER: Find label file on disk
+        # Names on disk use _ instead of . and may have different rounding
+        full_df = pd.DataFrame()
+        label_file = None
+        
+        if labels_dir.exists():
+            all_label_files = list(labels_dir.glob("train_*.parquet"))
+            import re
+            def normalize(s):
+                return re.sub(r'[^a-z0-9]', '', s.lower())
+            
+            target_norm = normalize(strat_id_raw)
+            
+            for f in all_label_files:
+                if "_tight" in f.name or "_wide" in f.name or "_balanced" in f.name:
+                    continue
+                
+                f_name_norm = normalize(f.stem.replace("train_", ""))
+                # Check for inclusion or high similarity
+                if target_norm in f_name_norm or f_name_norm in target_norm:
+                     label_file = f
+                     logger.warning(f"Fuzzy matched (norm): {f.name} for {strat_id_raw[:40]}...")
+                     break
+            
+            if not label_file:
+                logger.warning(f"Failed norm match for {strat_id_raw[:40]}... scanning tokens.")
+                # Fallback to token intersection
+                tokens = set(normalize(strat_id_raw)) # This is too granular, let's keep previous tokens but normalize them
+                tokens = set(re.split(r'[^a-z0-9]', strat_id_raw.lower()))
+                tokens.discard('')
+                
+                max_overlap = 0
+                for f in all_label_files:
+                    if "_tight" in f.name or "_wide" in f.name or "_balanced" in f.name:
+                        continue
+                    f_tokens = set(re.split(r'[^a-z0-9]', f.stem.lower().replace("train_", "")))
+                    f_tokens.discard('')
+                    overlap = len(tokens.intersection(f_tokens))
+                    if overlap > max_overlap:
+                        max_overlap = overlap
+                        best_match = f
+                
+                min_recall = 0.6  # at least 60% of strategy tokens must appear in the label filename
+                if best_match and len(tokens) > 0 and (max_overlap / len(tokens)) >= min_recall:
+                    label_file = best_match
+                    logger.warning(f"Fuzzy matched (token): {label_file.name} (Overlap: {max_overlap})")
 
-        bucket = f"{strategy.get('trade_side', '')}_{strategy.get('base_event_trigger', '')}"
+        if label_file and label_file.exists():
+            full_df = pd.read_parquet(label_file)
+            logger.info(f"Loaded full label coverage: {len(full_df)} rows.")
+            # Normalize column names in labels to match OOF metadata
+            if "__r_policy_net__" in full_df.columns:
+                full_df["return"] = full_df["__r_policy_net__"]
+            if "__ts__" in full_df.columns:
+                full_df["timestamp"] = full_df["__ts__"]
+            if "__symbol__" in full_df.columns:
+                full_df["symbol"] = full_df["__symbol__"]
+            if "__index__" in full_df.columns:
+                full_df["index"] = full_df["__index__"]
+        
+        trade_side = str(strategy.get('trade_side', '') or '')
 
-        if bucket not in base_oofs:
-            # Try to find a bucket that starts with this strategy_id if exact match fails
-            matching_buckets = [b for b in base_oofs.keys() if strategy_id.startswith(b) or b.startswith(strategy_id)]
-            if not matching_buckets:
-                logger.info(f"Skipping strategy {strategy_id}: no matching base OOF bucket found (tried {bucket}).")
-                continue
-            bucket = matching_buckets[0]
+        # 2. Resolve OOF bucket by matching strategy_id prefix against meta_oof keys
+        # meta_oofs keys look like: "short_compression_ratio_..." or "compression_ratio_..."
+        # strategy_id looks like: "compression_ratio_1_0376017_dist_ema_fast_..."
+        oof_df = pd.DataFrame()
+        resolved_meta_key = None
 
-        oof_df = base_oofs[bucket]
-
-        # OOF DFS usually contain a mask column named mask_{strategy_id} or just 'mask'
-        mask_col = f"mask_{strategy_id}"
-
-        if mask_col in oof_df.columns:
-            active_df = oof_df[oof_df[mask_col] == 1].copy()
-        elif "mask" in oof_df.columns:
-            # Fallback
-            active_df = oof_df[oof_df["mask"] == 1].copy()
+        # Priority 1: exact side-prefixed match (e.g. "short_<strategy_id>")
+        prefixed = f"{trade_side}_{strategy_id}" if trade_side else strategy_id
+        if prefixed in meta_oofs:
+            resolved_meta_key = prefixed
         else:
-            active_df = oof_df.copy()
+            # Priority 2: longest common prefix between strategy_id and each meta key (strip side prefix)
+            import re as _re
+            def _strip_side(k):
+                return _re.sub(r'^(long|short)_', '', k)
+
+            strat_norm = _re.sub(r'[^a-z0-9]', '', strategy_id.lower())
+            best_key, best_score = None, 0
+            for mk in meta_oofs.keys():
+                mk_norm = _re.sub(r'[^a-z0-9]', '', _strip_side(mk).lower())
+                # Score = length of matching prefix
+                plen = 0
+                for a, b in zip(strat_norm, mk_norm):
+                    if a == b:
+                        plen += 1
+                    else:
+                        break
+                if plen > best_score:
+                    best_score = plen
+                    best_key = mk
+            if best_key and best_score >= 20:  # require substantial prefix overlap
+                resolved_meta_key = best_key
+                logger.info(f"Fuzzy matched strategy '{strategy_id[:40]}' to meta_oof key '{best_key[:40]}' (prefix_len={best_score})")
+
+        if resolved_meta_key:
+            oof_df = meta_oofs[resolved_meta_key]
+            inferred_side = str(oof_df.attrs.get("trade_side", "") or "")
+            if not inferred_side:
+                inferred_side = "long" if str(resolved_meta_key).startswith("long_") else "short" if str(resolved_meta_key).startswith("short_") else ""
+            if inferred_side and not trade_side:
+                trade_side = inferred_side
+
+        # 3. Join OOF onto the Full Labels to ensure 100% coverage
+        # When full_df is available, it is always the left side (preserves all 1592 label hits)
+        # OOF enriches it for the 267 scored rows; the rest get NaN prediction columns.
+        if not full_df.empty:
+            if not oof_df.empty and "index" in oof_df.columns:
+                # Align on row-position index: meta_oof index 0..266 maps to its own rows
+                # We join on timestamp+symbol when available for a robust link
+                join_cols = [c for c in ["timestamp", "symbol"] if c in full_df.columns and c in oof_df.columns]
+                if join_cols:
+                    oof_clean = oof_df.drop(columns=[c for c in ["return", "y_ret", "y_bin"] if c in full_df.columns], errors="ignore")
+                    # Normalize timestamp timezones to avoid datetime64 tz mismatch
+                    if "timestamp" in join_cols:
+                        for _df in [full_df, oof_clean]:
+                            if "timestamp" in _df.columns and hasattr(_df["timestamp"].dtype, "tz") and _df["timestamp"].dt.tz is not None:
+                                _df["timestamp"] = _df["timestamp"].dt.tz_localize(None)
+                    # If OOF covers only one symbol, restrict label rows to that symbol
+                    # and join on timestamp alone (symbol formats may differ, e.g. BTC/USDT vs BTCUSDT)
+                    if "symbol" in join_cols and "symbol" in oof_clean.columns:
+                        oof_syms = set(oof_clean["symbol"].dropna().unique())
+                        if len(oof_syms) == 1:
+                            oof_sym = next(iter(oof_syms))
+                            # Normalise symbol for comparison (strip / and spaces)
+                            def _norm_sym(s): return str(s).replace("/", "").replace(" ", "").upper()
+                            oof_sym_norm = _norm_sym(oof_sym)
+                            label_sym_col = full_df["symbol"] if "symbol" in full_df.columns else (full_df["__symbol__"] if "__symbol__" in full_df.columns else None)
+                            if hasattr(label_sym_col, "map"):
+                                sym_mask = label_sym_col.map(_norm_sym) == oof_sym_norm
+                                if sym_mask.sum() > 0:
+                                    full_df = full_df[sym_mask].copy()
+                                    logger.info(f"Single-symbol OOF ({oof_sym}): filtered labels to {sym_mask.sum()} matching rows")
+                            join_cols = ["timestamp"]  # drop symbol from join key
+                    active_df = pd.merge(full_df, oof_clean, on=join_cols, how="left", suffixes=("", "_oof"))
+                else:
+                    # Positional join — label rows in same order as oof
+                    oof_clean = oof_df.drop(columns=[c for c in ["return", "y_ret", "y_bin"] if c in full_df.columns], errors="ignore")
+                    active_df = full_df.copy()
+                    for col in oof_clean.columns:
+                        if col not in active_df.columns:
+                            vals = np.full(len(active_df), np.nan)
+                            vals[:min(len(oof_clean), len(active_df))] = oof_clean[col].values[:len(active_df)]
+                            active_df[col] = vals
+            else:
+                # No OOF found — use full labels as-is (no prediction columns)
+                active_df = full_df.copy()
+        else:
+            active_df = oof_df
 
         if active_df.empty:
-            logger.info(f"Skipping strategy {strategy_id}: no active rows after mask filtering.")
+            logger.warning(f"Could not resolve data for strategy {strategy_id[:60]}. Skipping.")
             continue
+
+        # Preserve the full joined frame so outcome and feature masks stay aligned.
+        active_joined_df = active_df
 
         # Get target outcomes
-        trade_outcomes = load_trade_outcomes(data_root, run_id, active_df)
-        if trade_outcomes is None or "return" not in trade_outcomes.columns:
+        trade_outcomes = load_trade_outcomes(data_root, run_id, active_joined_df)
+        if trade_outcomes is None or "return" not in trade_outcomes.columns or len(trade_outcomes) == 0:
             logger.info(f"Skipping strategy {strategy_id}: could not load trade outcomes.")
             continue
+        
+        # Load and Filter OOF
+        # Diagnostic: Strategy Funnel
+        # 1. Labels Discovery (100% of discovered hits)
+        # 2. OOF Scorable (only the hits used for training/validation OOF)
+        # 3. Unscored Loss (dropout due to subsampling or non-resolution)
+        
+        n_raw_labels = len(full_df) if not full_df.empty else len(active_joined_df)
+        n_matched_labels = len(active_joined_df)
+        # Detect any OOF prediction column available (reg, clf, oof_pred, oof_prob, etc.)
+        _oof_score_cols = [c for c in active_joined_df.columns if c in ("oof_prob", "oof_pred", "reg", "clf") or c.startswith(("tbm_", "mae_h", "mfe_h"))]
+        if _oof_score_cols:
+            n_scorable = int(active_joined_df[_oof_score_cols[0]].notna().sum())
+            scorable_mask = active_joined_df[_oof_score_cols[0]].notna()
+            active_scored_df = active_joined_df[scorable_mask].copy()
+        else:
+            n_scorable = len(active_joined_df)
+            scorable_mask = np.ones(len(active_joined_df), dtype=bool)
+            active_scored_df = active_joined_df.copy()
 
-        # Identify columns to use as heads, STRICTLY matching the strategy_id
-        head_cols = []
-        for c in active_df.columns:
-            if c.startswith("base_") or "pred" in c.lower() or "score" in c.lower() or "mae" in c.lower() or "mfe" in c.lower():
-                if strategy_id in c:
-                    head_cols.append(c)
-                elif not any(s.get("strategy_id", "") in c for s in strategies if s.get("strategy_id") and s.get("strategy_id") != strategy_id):
-                    # It's a generic column not tied to ANY OTHER strategy
-                    head_cols.append(c)
+        # Diagnostic: Mask Pass Rate
+        print(f"\n" + "="*80)
+        print(f" TARGETING STRATEGY: {strategy_id[:65]}...")
+        print(f" " + "-"*78)
+        raw_to_matched = n_matched_labels / max(n_raw_labels, 1)
+        matched_to_scorable = n_scorable / max(n_matched_labels, 1)
+        print(f" STRATEGY FUNNEL (Coverage Restoration):")
+        print(f"   [1] Raw label rows:    {n_raw_labels}")
+        print(
+            f"   [1b] Matched rows:     {n_matched_labels} "
+            f"({raw_to_matched:.1%} of raw labels)"
+        )
+        print(
+            f"   [2] OOF scorable rows: {n_scorable} "
+            f"({matched_to_scorable:.1%} of matched rows)"
+        )
+        subsampling_loss = max(0, n_matched_labels - n_scorable)
+        extra_scored = max(0, n_scorable - n_matched_labels)
+        print(f"   [!] Subsampling Loss:  {subsampling_loss} trades dropped by technical subsampling (Step 3).")
+        if extra_scored > 0:
+            print(f"   [!] Matched rows warning: {extra_scored} scored rows exceeded the matched label rows after join.")
+        if n_matched_labels > n_raw_labels:
+            print(
+                f"   [!] Join expansion warning: matched rows exceeded raw label rows "
+                f"by {n_matched_labels - n_raw_labels}. This usually means the join "
+                f"key is not unique or the OOF frame was broadcast positionally."
+            )
+        # Detect symbol universe mismatch between labels and OOF
+        _label_syms = set(active_joined_df["symbol"].dropna().unique()) if "symbol" in active_joined_df.columns else set()
+        _oof_syms = set(oof_df["symbol"].dropna().unique()) if (not oof_df.empty and "symbol" in oof_df.columns) else set()
+        _sym_overlap = _label_syms & _oof_syms
+        if _oof_syms and not _sym_overlap:
+            logger.warning(
+                f"Strategy {strategy_id[:50]}: SYMBOL UNIVERSE MISMATCH — "
+                f"label symbols {sorted(_label_syms)[:3]} vs OOF symbols {sorted(_oof_syms)[:3]}. "
+                f"Meta OOF was trained on a different symbol scope. OOF predictions cannot be joined."
+            )
+        elif n_scorable < 500:
+            logger.warning(
+                f"Strategy {strategy_id[:50]}: only {n_scorable} OOF-scored rows out of "
+                f"{n_matched_labels} matched label rows. Meta model was likely trained on a heavily "
+                f"subsampled dataset — diagnostic results will have wide confidence intervals."
+            )
+        print(f"="*80 + "\n")
+
+        # Now pass the SCORED df to the sizer logic.
+        # Keep trade outcomes aligned with the same scored rows so score/return
+        # arrays refer to the exact same universe.
+        active_df = active_scored_df.reset_index(drop=True)
+        trade_outcomes = trade_outcomes.loc[np.asarray(scorable_mask)].reset_index(drop=True)
+
+        # Identify columns to use as heads.
+        # STRICT RULE: never use realized-outcome columns as predictive heads — they are
+        # hindsight by construction (MFE, MAE, bars_to_mfe, policy returns, labels).
+        _HINDSIGHT_COLS = {
+            "return", "is_long", "y_ret", "y_bin", "exit_code", "bars_to_mfe",
+            "mae_ret", "mfe_ret", "u_policy", "u_policy_net",
+        }
+        # Any column wrapped in __ is a label-side realized outcome
+        def _is_hindsight(col: str) -> bool:
+            return col in _HINDSIGHT_COLS or (col.startswith("__") and col.endswith("__"))
+
+        head_cols = [c for c in collect_ridge_head_columns(active_df) if not _is_hindsight(c)]
+
+        expected_families = {
+            "base": any(c.lower().startswith("base_h") for c in head_cols),
+            "classifier": any(c == "clf" or c.lower().startswith("oof_p_") for c in head_cols),
+            "mae": any(c.lower().startswith("mae_h") or c == "oof_log_mae_q70_hat" for c in head_cols),
+            "mfe": any(c.lower().startswith("mfe_h") or c == "oof_log_mfe_hat" for c in head_cols),
+            "reg": any(c in {"reg", "reg_mean", "oof_pred", "oof_pred_oriented"} for c in head_cols),
+            "asym": any(c == "oof_asym_hat" for c in head_cols),
+        }
+
+        # Remove columns that are all-NaN (e.g. unmatched OOF columns after left-join)
+        head_cols = [c for c in head_cols if active_df[c].notna().any()]
 
         if not head_cols:
-            logger.info(f"Skipping strategy {strategy_id}: no matching feature columns found.")
+            logger.warning(
+                f"Strategy {strategy_id[:50]}: no OOF prediction columns found after join. "
+                f"This strategy has no meta_oof match — skipping to avoid hindsight evaluation."
+            )
+            continue
+        missing_fams = [name for name, ok in expected_families.items() if not ok]
+        if missing_fams:
+            logger.warning(
+                f"Strategy {strategy_id[:50]}: missing expected head families after join: {missing_fams}"
+            )
+
+        _MIN_SCORED_ROWS = 30
+        if len(active_df) < _MIN_SCORED_ROWS:
+            logger.warning(
+                f"Strategy {strategy_id[:50]}: only {len(active_df)} scored rows after join "
+                f"(minimum {_MIN_SCORED_ROWS} required). Likely a symbol universe mismatch — skipping."
+            )
             continue
 
         y_raw_net_return = trade_outcomes["return"].values
+        if y_raw_net_return.size == 0:
+            logger.info(f"Skipping strategy {strategy_id}: empty aligned trade outcomes.")
+            continue
 
         if "downside" in trade_outcomes.columns:
             y_downside = trade_outcomes["downside"].values
@@ -724,11 +1407,221 @@ def run_simple_position_sizer_from_artifacts(
             y_raw_net_return=y_raw_net_return,
             y_downside=y_downside,
             timestamps=timestamps,
+            symbols=trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None,
             bucket_labels=None, # Running independently, no bucketing needed
             top_fracs=top_fracs,
             use_ridge_head_sizer=use_ridge_head_sizer
         )
 
+        res["_strategy_meta_"] = {
+            "trade_side": trade_side,
+            "source_target": strategy.get("source_target", ""),
+            "source_horizon": strategy.get("source_horizon", np.nan),
+        }
         strategy_results[strategy_id] = res
 
+    strategy_params_path = _save_strategy_params_payload(
+        data_root=data_root,
+        run_id=run_id,
+        cost_pct=0.003,
+        strategy_results=strategy_results,
+    )
+    if strategy_params_path is not None:
+        logger.info(f"Saved strategy params to {strategy_params_path}")
+
+    # Print Strategy Leaderboard after all strategies are processed
+    if strategy_results:
+        leaderboard_rows = []
+        for sid, res in strategy_results.items():
+            opt_table = res.get("profit_proxy_table_", pd.DataFrame())
+            if not opt_table.empty:
+                # Use the row marked as optimal
+                if "is_optimal" in opt_table.columns:
+                    opt_row = opt_table[opt_table["is_optimal"]].iloc[0]
+                else:
+                    opt_row = opt_table.iloc[0]
+                
+                leaderboard_rows.append({
+                    "strategy_id": sid[:40] + "...",
+                    "threshold": opt_row["threshold_pct"],
+                    "wallet_pnl": opt_row["wallet_pnl"],
+                    "net_pnl": opt_row["net_pnl"],
+                    "pnl/trade(bps)": opt_row["pnl_per_trade"],
+                    "trades/day": opt_row["trades_per_day"],
+                    "hit_rate": opt_row["hit_rate"],
+                    "pf": opt_row["profit_factor"],
+                    "monthly_sortino": opt_row.get("monthly_sortino", np.nan),
+                    "monthly_pnl_std": opt_row.get("monthly_pnl_std", np.nan),
+                    "monthly_group_cv_pnl": opt_row.get("monthly_group_cv_pnl", np.nan),
+                    "asset_group_cv_pnl": opt_row.get("asset_group_cv_pnl", np.nan),
+                    "asset_group_positive_share": opt_row.get("asset_group_positive_share", np.nan),
+                    "stability": opt_row["stability"],
+                    "mdd": opt_row["max_drawdown"]
+                })
+        
+        if leaderboard_rows:
+            # --- PORTFOLIO AGGREGATION ---
+            # Collect returns for all strategies with PF > 1.0
+            portfolio_rets_list = []
+            portfolio_ts_list = []
+            portfolio_wallet_pnls = []
+            max_days = 0
+            for sid, res in strategy_results.items():
+                pf = 0
+                opt_table = res.get("profit_proxy_table_", pd.DataFrame())
+                if not opt_table.empty:
+                    opt_row = opt_table[opt_table["is_optimal"]].iloc[0]
+                    pf = opt_row["profit_factor"]
+                    w_pnl = opt_row["wallet_pnl"]
+                
+                if pf > 1.0:
+                    strat_rets = res.get("opt_rets_", np.array([]))
+                    strat_ts = res.get("opt_ts_", np.array([]))
+                    if len(strat_rets) > 0:
+                        portfolio_rets_list.append(strat_rets)
+                        portfolio_wallet_pnls.append(w_pnl)
+                        if len(strat_ts) == len(strat_rets):
+                            portfolio_ts_list.append(strat_ts)
+            
+            if portfolio_rets_list:
+                all_portfolio_rets = np.concatenate(portfolio_rets_list)
+                all_portfolio_ts = (
+                    np.concatenate(portfolio_ts_list)
+                    if portfolio_ts_list and len(portfolio_ts_list) == len(portfolio_rets_list)
+                    else None
+                )
+                p_wallet_pnl_total = sum(portfolio_wallet_pnls)
+                
+                # Portfolio PnL
+                p_pnl = float(np.sum(all_portfolio_rets))
+                p_hit = float(np.mean(all_portfolio_rets > 0))
+                p_gp = float(np.sum(all_portfolio_rets[all_portfolio_rets > 0]))
+                p_gl = float(np.abs(np.sum(all_portfolio_rets[all_portfolio_rets < 0])))
+                p_pf = p_gp / p_gl if p_gl > 0 else p_gp
+                
+                # Stability (approximate on concatenated curve)
+                p_equity = np.cumsum(all_portfolio_rets)
+                p_stab = 0.0
+                if len(p_equity) > 5:
+                    _, _, r_val, _, _ = linregress(np.arange(len(p_equity)), p_equity)
+                    p_stab = float(r_val**2)
+                
+                # MDD
+                _, p_dd_series = _stable_equity_and_drawdown(all_portfolio_rets)
+                p_mdd = float(np.max(p_dd_series)) if len(p_dd_series) > 0 else 0.0
+
+                p_weekly_sortino, p_weekly_pnl_std = compute_period_aggregated_stats(
+                    all_portfolio_rets, all_portfolio_ts, "W"
+                )
+                p_monthly_sortino, p_monthly_pnl_std = compute_period_aggregated_stats(
+                    all_portfolio_rets, all_portfolio_ts, "M"
+                )
+                
+                leaderboard_rows.append({
+                    "strategy_id": "[PORTFOLIO - Positive PF Only]",
+                    "threshold": "Mixed",
+                    "wallet_pnl": p_wallet_pnl_total, # Need to calculate this
+                    "net_pnl": p_pnl,
+                    "pnl/trade(bps)": (p_pnl / len(all_portfolio_rets)) * 10000,
+                    "trades/day": len(all_portfolio_rets) / 725.0,
+                    "hit_rate": p_hit,
+                    "pf": p_pf,
+                    "monthly_sortino": p_monthly_sortino,
+                    "monthly_pnl_std": p_monthly_pnl_std,
+                    "monthly_group_cv_pnl": np.nan,
+                    "asset_group_cv_pnl": np.nan,
+                    "asset_group_positive_share": np.nan,
+                    "stability": p_stab,
+                    "mdd": p_mdd
+                })
+
+            print("\n" + "=" * 110)
+            print(" STRATEGY LEADERBOARD (Sorted by Net PnL - Optimal Confidence Threshold)")
+            print("=" * 110)
+            leaderboard_df = pd.DataFrame(leaderboard_rows)
+            # Sort non-portfolio rows only?
+            is_port = leaderboard_df["strategy_id"].str.contains("PORTFOLIO")
+            sorted_v = leaderboard_df[~is_port].sort_values("net_pnl", ascending=False)
+            leaderboard_df = pd.concat([sorted_v, leaderboard_df[is_port]])
+            
+            print(leaderboard_df.to_string(index=False))
+            print("=" * 110 + "\n")
+
     return strategy_results
+
+
+if __name__ == "__main__":
+    import os
+    import sys
+    import argparse
+    from extreme_price_movements.src_utils_tprint import tprint
+    from extreme_price_movements.run_ridge_sizer import find_latest_run_id
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s] %(levelname)s:%(name)s:%(message)s'
+    )
+
+    parser = argparse.ArgumentParser(description="Run Simple Position Sizer Diagnostics")
+    parser.add_argument("--run-id", type=str, help="Run ID to analyze (defaults to latest in artifacts/)")
+    parser.add_argument("--data-root", type=str, default=".", help="Root directory for data/artifacts")
+    parser.add_argument("--cost-pct", type=float, default=0.003, help="Cost per trade in decimal (default: 0.003 for 30bps)")
+    parser.add_argument("--top-n", type=int, default=4, help="Top N strategies to evaluate from params store")
+    
+    args = parser.parse_args()
+
+    data_root = args.data_root
+    run_id = args.run_id
+
+    if not run_id:
+        try:
+            run_id = find_latest_run_id(data_root)
+            tprint(f"Detected latest run: {run_id}")
+        except Exception as e:
+            tprint(f"Error detecting latest run: {e}")
+            sys.exit(1)
+
+    tprint(f"Starting Simple Position Sizer for run: {run_id} (data_root: {data_root})")
+    
+    try:
+        results = run_simple_position_sizer_from_artifacts(
+            data_root=data_root,
+            run_id=run_id,
+            top_n_strategies=args.top_n
+        )
+        
+        if not results:
+            tprint("No strategy results produced. Check if base OOFs and params_store are populated.")
+            sys.exit(0)
+            
+        for strategy_id, res in results.items():
+            print("-" * 60)
+            print(f"\n============================================================")
+            print(f" STRATEGY: {strategy_id}")
+            print(f"============================================================\n")
+            
+            if "head_diagnostics_table_" in res:
+                print(f"\nTop 5 Meta-Heads by Utility:")
+                print(res["head_diagnostics_table_"].head(5).to_string(index=False))
+            
+            if "ridge_importance_table_" in res:
+                print(f"\nMeta-Head Importance (Ridge Weights - Strictly Walk-Forward OOF):")
+                print(res["ridge_importance_table_"].to_string(index=False))
+
+            print(f"\nBest Combo Found: {res.get('best_combo_name_', 'N/A')}")
+            print(f"  Utility Score: {res.get('best_combo_', {}).get('utility_score', 0.0):.4f}")
+            print(f"  Spearman (Ret): {res.get('best_combo_', {}).get('spearman_ret', 0.0):.4f}")
+
+            cost_display = args.cost_pct if 'args' in locals() else 0.003
+            print(f"\nConfidence Grid (Sizing: 5% to 15% Rank-Based):")
+            print(res.get("profit_proxy_table_", pd.DataFrame()).to_string(index=False))
+            print("-" * 60)
+
+    except KeyboardInterrupt:
+        tprint("Execution interrupted by user.")
+    except Exception as e:
+        tprint(f"CRITICAL ERROR: {e}")
+        import traceback
+        tprint(traceback.format_exc())
+        sys.exit(1)

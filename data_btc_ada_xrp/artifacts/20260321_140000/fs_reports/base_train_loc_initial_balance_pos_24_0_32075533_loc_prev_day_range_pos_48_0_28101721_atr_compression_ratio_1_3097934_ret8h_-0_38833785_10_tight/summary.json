@@ -1,0 +1,20 @@
+{
+  "selector_head_name": "base_train_loc_initial_balance_pos_24_0_32075533_loc_prev_day_range_pos_48_0_28101721_atr_compression_ratio_1_3097934_ret8h_-0_38833785_10_tight",
+  "selector_target": "classification",
+  "selector_top_metric": "ic",
+  "selector_focus_top_frac": 0.8,
+  "weights": {
+    "top30": 0.0,
+    "global": 0.55,
+    "stability": 0.25,
+    "frequency": 0.15,
+    "interaction": 0.05
+  },
+  "n_train_features": 60,
+  "n_selected": 48,
+  "anchor_count": 0,
+  "selected_anchor_count": 0,
+  "overlap_before": 1.0,
+  "overlap_after": 1.0,
+  "hysteresis_swaps": 0.0
+}

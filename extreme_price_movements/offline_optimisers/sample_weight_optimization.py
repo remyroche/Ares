@@ -172,7 +172,12 @@ def combine_weights_safely(
     min_n_eff_ratio: float = 0.30,
     eps: float = 1e-6,
 ) -> np.ndarray:
-    """Robustly combine weight components using clipped log-space geometric blending."""
+    """Robustly combine weight components using clipped log-space geometric blending.
+
+    Each component is winsorized at p0.5/p99.5 before blending.
+    The final weight is MinMax-scaled to [0.5, 4.0] instead of mean-normalised
+    with a wide clip, preventing fat-tailed weight distributions.
+    """
     if not components:
         raise ValueError("components must not be empty")
 
@@ -182,17 +187,17 @@ def combine_weights_safely(
 
     for name, w in components.items():
         arr = np.asarray(w, dtype=np.float32)
-        p5 = float(np.nanpercentile(arr, 5))
-        p95 = float(np.nanpercentile(arr, 95))
-        span = p95 - p5
-        ratio = p95 / (p5 + 1e-12)
+        p05 = float(np.nanpercentile(arr, 0.5))
+        p995 = float(np.nanpercentile(arr, 99.5))
+        span = p995 - p05
+        ratio = p995 / (p05 + 1e-12)
 
         if not np.isfinite(span) or span < 1e-6 or ratio < 1.05:
             clipped[name] = np.ones_like(arr, dtype=np.float32)
             local_weights[name] = 0.0
         else:
             base = np.maximum(arr, eps, dtype=np.float32)
-            clipped[name] = np.clip(base, p5, p95).astype(np.float32, copy=False)
+            clipped[name] = np.clip(base, p05, p995).astype(np.float32, copy=False)
         if template is None:
             template = clipped[name]
 
@@ -211,7 +216,6 @@ def combine_weights_safely(
     n_eff = compute_n_eff(w_final)
 
     if n_eff < target_n_eff:
-        # temperature flattening: w^(1/T), T>=1.0
         lo, hi = 1.0, 8.0
         for _ in range(24):
             mid = 0.5 * (lo + hi)
@@ -223,7 +227,14 @@ def combine_weights_safely(
                 lo = mid
         w_final = np.power(np.maximum(w_final, eps), 1.0 / hi, dtype=np.float32)
 
-    w_final /= max(float(np.mean(w_final, dtype=np.float64)), eps)
+    w_min, w_max = float(np.min(w_final)), float(np.max(w_final))
+    if w_max - w_min > eps:
+        w_final = np.float32(0.5) + np.float32(3.5) * (
+            (w_final - np.float32(w_min)) / np.float32(w_max - w_min)
+        )
+    else:
+        w_final = np.ones_like(w_final, dtype=np.float32)
+
     return w_final
 
 

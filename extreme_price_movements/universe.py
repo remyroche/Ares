@@ -274,9 +274,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         if not base_syms:
             base_syms = list(cfg.get("market_basket", []))
         # In offline mode, use all available symbols (no volume data to remove bottom 30)
-        train_syms = deduplicate_symbols_by_base(
-            list(set(base_syms).union(set(cfg["market_basket"])))
-        )
+        train_syms = deduplicate_symbols_by_base(list(set(base_syms)))
         train_syms = apply_hardcoded_universe_exclusions(train_syms)
         M = int(cfg.get("fetch_symbols_M", 9999))
         if len(train_syms) > M:
@@ -298,9 +296,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
                 margin_symbols = list(cfg.get("market_basket", []))
 
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
-    train_syms = deduplicate_symbols_by_base(
-        list(set(syms_all).union(set(cfg["market_basket"])))
-    )
+    train_syms = deduplicate_symbols_by_base(list(set(syms_all)))
     train_syms = apply_hardcoded_universe_exclusions(train_syms)
     return train_syms
 

@@ -46,6 +46,28 @@ DEFAULT_GATE_TREND_THR = 0.0
 DEFAULT_TAIL_WARMUP_BUFFER_HOURS = 72
 
 
+def _requires_gated_feature_generation(
+    required_feature_keys: Optional[Set[str]],
+) -> bool:
+    """Return True when the requested feature set needs gated feature families.
+
+    The alpha bundles for some strategies include gate-conditioned columns such
+    as ``*_G_VOL_0`` and ``*_G_VOL_1``. Those are only generated when gated
+    feature construction is enabled in the shared feature pipeline.
+    """
+    if not required_feature_keys:
+        return False
+
+    for key in required_feature_keys:
+        if not isinstance(key, str) or not key:
+            continue
+        if key in {"G_VOL", "G_TREND"}:
+            return True
+        if "_G_VOL_" in key or "_G_TREND_" in key:
+            return True
+    return False
+
+
 def _required_tail_warmup_hours(
     lookback_hours: int,
     trend_sma_hours: int,
@@ -100,6 +122,96 @@ def _merge_feature_dicts(
     return merged
 
 
+def _backfill_missing_requested_keys(
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    cfg: Dict[str, Any],
+    merged_feats: Dict[str, pd.DataFrame],
+    missing_keys: Set[str],
+) -> Dict[str, pd.DataFrame]:
+    """Compute and merge any requested feature keys that are still missing.
+
+    This is the self-corrective step for inference: if the cached feature cache
+    and the lightweight selector cache do not satisfy the exact model contract,
+    we recompute the missing feature family directly from the panel.
+    """
+    if not missing_keys:
+        return merged_feats
+
+    compute_panel: Dict[str, pd.DataFrame] = {}
+    for key, df in panel.items():
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            compute_panel[key] = df.copy()
+    if not compute_panel:
+        return merged_feats
+
+    local_cfg = dict(cfg or {})
+    if _requires_gated_feature_generation(missing_keys):
+        local_cfg["enable_gated_features"] = True
+
+    # Compute only the missing keys, then merge them into the existing feature map.
+    mkt_df = compute_market_features(compute_panel, basket_syms, trend_sma_hours=DEFAULT_TREND_SMA_HOURS)
+    mkt_gates = add_regime_gates(
+        mkt_df,
+        gate_vol_lookback_hours=DEFAULT_GATE_VOL_LOOKBACK_HOURS,
+        gate_trend_thr=DEFAULT_GATE_TREND_THR,
+    )
+    missing_feats, missing_index, missing_columns = compute_features_hourly(
+        compute_panel,
+        mkt_gates,
+        local_cfg,
+        requested_feature_keys=sorted(missing_keys),
+    )
+
+    if not missing_feats:
+        return merged_feats
+
+    ref_index = None
+    for df in compute_panel.values():
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            ref_index = df.index
+            break
+    if ref_index is None:
+        for df in merged_feats.values():
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                ref_index = df.index
+                break
+    if ref_index is None:
+        return merged_feats
+
+    missing_frames: Dict[str, pd.DataFrame] = {}
+    for feat_name, feat_value in missing_feats.items():
+        if isinstance(feat_value, pd.DataFrame):
+            missing_frames[feat_name] = feat_value
+            continue
+        arr = np.asarray(feat_value)
+        if arr.size == 0:
+            continue
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        value_index = ref_index
+        if (
+            missing_index is not None
+            and hasattr(missing_index, "__len__")
+            and len(missing_index) == arr.shape[0]
+        ):
+            value_index = missing_index
+        missing_frames[feat_name] = pd.DataFrame(
+            arr,
+            index=value_index,
+            columns=(
+                missing_columns
+                if missing_columns is not None and len(missing_columns) == arr.shape[1]
+                else (basket_syms[: arr.shape[1]] if arr.shape[1] <= len(basket_syms) else None)
+            ),
+        )
+
+    if not missing_frames:
+        return merged_feats
+
+    return _merge_feature_dicts(merged_feats, missing_frames)
+
+
 def load_cached_features_for_inference(
     run_id: str,
     data_root: str,
@@ -131,6 +243,10 @@ def load_or_compute_features(
     if not isinstance(close, pd.DataFrame) or close.empty:
         return {}
 
+    cfg = dict(cfg or {})
+    if _requires_gated_feature_generation(required_feature_keys):
+        cfg["enable_gated_features"] = True
+
     end_ts = close.index.max()
     start_ts = end_ts - pd.Timedelta(hours=lookback_hours)
     cached_feats = load_cached_features_for_inference(
@@ -158,7 +274,17 @@ def load_or_compute_features(
         tprint(
             f"Loaded stored inference features for {len(basket_syms)} symbols through {cached_last_ts}"
         )
-        return _merge_feature_dicts(cached_feats, selector_feats)
+        merged = _merge_feature_dicts(cached_feats, selector_feats)
+        if required_feature_keys:
+            missing = {k for k in required_feature_keys if k not in merged}
+            merged = _backfill_missing_requested_keys(
+                panel=panel,
+                basket_syms=basket_syms,
+                cfg=cfg,
+                merged_feats=merged,
+                missing_keys=missing,
+            )
+        return merged
 
     tail_warmup_hours = _required_tail_warmup_hours(
         lookback_hours=lookback_hours,
@@ -201,6 +327,15 @@ def load_or_compute_features(
     merged_feats = _merge_feature_dicts(cached_feats, full_tail_feats)
     merged_feats = _merge_feature_dicts(merged_feats, selector_feats)
     merged_feats = _slice_feature_window(merged_feats, start_ts=start_ts, end_ts=end_ts)
+    if required_feature_keys:
+        missing = {k for k in required_feature_keys if k not in merged_feats}
+        merged_feats = _backfill_missing_requested_keys(
+            panel=panel,
+            basket_syms=basket_syms,
+            cfg=cfg,
+            merged_feats=merged_feats,
+            missing_keys=missing,
+        )
     new_rows = 0
     if full_tail_feats:
         for df in full_tail_feats.values():

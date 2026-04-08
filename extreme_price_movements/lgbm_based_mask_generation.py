@@ -10604,7 +10604,7 @@ class MaskAssessor:
         overlap_penalty = float(self.cfg.get("final_selection_overlap_penalty", 0.35))
         support_overlap_weight = float(self.cfg.get("final_selection_support_overlap_weight", 0.5))
         ic_overlap_weight = float(self.cfg.get("final_selection_ic_overlap_weight", 0.5))
-        top_k = int(self.cfg.get("final_selected_rule_cap", 15))
+        top_k = int(self.cfg.get("final_selected_rule_cap", 20))
         selected: List[Any] = []
         remaining = eligible.sort_values("final_candidate_rank_score", ascending=False).index.tolist()
 
@@ -10678,6 +10678,7 @@ class MaskAssessor:
             return raw_overlap * reduction_factor
 
         quadrant_order = [("long", 3), ("long", 10), ("short", 3), ("short", 10)]
+        min_per_quadrant = 3
         for side_name, horizon_value in quadrant_order:
             if len(selected) >= top_k:
                 break
@@ -10690,18 +10691,42 @@ class MaskAssessor:
             group_candidates = eligible.loc[group_mask].sort_values(
                 "final_candidate_rank_score", ascending=False
             ).index.tolist()
+            selected_count = 0
             for idx in group_candidates:
+                if len(selected) >= top_k:
+                    break
                 if idx in remaining and idx not in selected:
                     selected.append(idx)
                     remaining.remove(idx)
-                    break
+                    selected_count += 1
+                    if selected_count >= min_per_quadrant:
+                        break
 
+        # Group remaining by (side, horizon) for overlap-constrained selection
+        from collections import defaultdict
+        remaining_by_group = defaultdict(list)
+        for idx in remaining:
+            side_val = str(eligible.loc[idx, "side"]) if "side" in eligible.columns else "unknown"
+            horizon_val = float(eligible.loc[idx, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
+            remaining_by_group[(side_val, horizon_val)].append(idx)
+        
+        # Pre-group selected by (side, horizon)
+        selected_by_group = defaultdict(list)
+        for s_idx in selected:
+            side_val = str(eligible.loc[s_idx, "side"]) if "side" in eligible.columns else "unknown"
+            horizon_val = float(eligible.loc[s_idx, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
+            selected_by_group[(side_val, horizon_val)].append(s_idx)
+        
         while remaining and len(selected) < top_k:
             best_idx = None
             best_score = -np.inf
             for idx in remaining:
                 base_score = float(eligible.loc[idx, "final_candidate_rank_score"])
-                max_overlap = max((_pair_overlap(idx, s) for s in selected), default=0.0)
+                # Only compute overlap against strategies with same (side, horizon)
+                side_val = str(eligible.loc[idx, "side"]) if "side" in eligible.columns else "unknown"
+                horizon_val = float(eligible.loc[idx, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
+                same_group_selected = selected_by_group.get((side_val, horizon_val), [])
+                max_overlap = max((_pair_overlap(idx, s) for s in same_group_selected), default=0.0)
                 score = base_score - overlap_penalty * max_overlap
                 if score > best_score:
                     best_score = score
@@ -10710,6 +10735,10 @@ class MaskAssessor:
                 break
             selected.append(best_idx)
             remaining.remove(best_idx)
+            # Update selected_by_group
+            side_val = str(eligible.loc[best_idx, "side"]) if "side" in eligible.columns else "unknown"
+            horizon_val = float(eligible.loc[best_idx, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
+            selected_by_group[(side_val, horizon_val)].append(best_idx)
 
         if selected:
             result.loc[selected, "selected_for_final_registry"] = True
@@ -16376,7 +16405,7 @@ def apply_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(cfg)
     out["n_folds"] = 3
     out["sliceplanner_outer_n_folds"] = 3
-    out["mask_opt_max_symbols"] = 300
+    out["mask_opt_max_symbols"] = 400
     out["mask_opt_lookback_years"] = 4.0
     out["support_max_pct"] = 0.22
     out["objective_support_max_pct"] = 0.22
@@ -16921,8 +16950,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--triad-horizons",
         type=str,
-        default="3,10",
-        help="Comma-separated list of horizons for triad targets (default: 3,10)",
+        default="5,10",
+        help="Comma-separated list of horizons for triad targets (default: 5,10)",
     )
     args = parser.parse_args()
 

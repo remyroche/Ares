@@ -600,7 +600,8 @@ def run_optimise_step(
                 elif df_15m is not None and not df_15m.empty:
                     df_15m_dict[asset] = df_15m
 
-    buckets = list(pd.Series(trades["bucket"].astype(str).unique()).sort_values())[:4]
+    bucket_key_col = "strategy_id" if "strategy_id" in trades.columns else "bucket"
+    buckets = list(pd.Series(trades[bucket_key_col].astype(str).unique()).sort_values())[:4]
     all_out = {}
 
     # List to collect all trials across all buckets and steps
@@ -830,6 +831,7 @@ def run_optimise_step(
             "profit_exit": profit,
             "position_sizing": sizing,
             "evaluation": report,
+            "strategy_id": str(bucket),
         }
         
         # Add ridge weights to output if available
@@ -839,7 +841,7 @@ def run_optimise_step(
             combined["ridge_offset_model"] = ridge_offset_model
         
         all_out[bucket] = combined
-        mw.merge_and_write_params(output_path, bucket, combined)
+        mw.merge_and_write_params(output_path, str(bucket), combined)
 
         store = store_best_params(
             store=store,

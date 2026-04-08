@@ -1,0 +1,4 @@
+fold_id,seed,best_iteration,best_val_metric,max_depth,num_leaves,min_data_in_leaf,objective,alpha,metric,target_type,target_name,horizon,total_splits,total_gain,is_healthy_fold,health_reason
+0,42,2,0.33814502163762866,6,64,43,quantile,0.35,quantile,quantile,atr_norm_returns_target,10,17,61.411903,False,low_iterations_or_gain
+1,42,2,0.3404369488279657,6,64,54,quantile,0.35,quantile,quantile,atr_norm_returns_target,10,18,56.113197,False,low_iterations_or_gain
+2,42,137,0.34112333819031765,6,64,55,quantile,0.35,quantile,quantile,atr_norm_returns_target,10,1142,376.17612,True,healthy

@@ -1103,11 +1103,6 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
         tmp = np.log1p(feats["trend_age_hours"])
         feats["trend_age_hours"] = ff.numba_rolling_rank_pct(tmp.to_numpy(), 480).astype(np.float32)
 
-    # 6) Asset baseline descriptors
-    for f in ["asset_atr_level", "asset_vol_level"]:
-        if f in feats:
-            feats[f] = ff.numba_rolling_rank_pct(feats[f].to_numpy(), 480).astype(np.float32)
-
     # =========================================================================
 
 

@@ -7057,9 +7057,7 @@ def train_meta_models_from_artifacts(
                     analysis_n_estimators=int(
                         _head_cfg.get("analysis_n_estimators", 160)
                     ),
-                    analysis_max_samples=int(
-                        _head_cfg.get("analysis_max_samples", 2500)
-                    ),
+                    analysis_max_samples=int(min(len(_X_clean), _head_cfg.get("analysis_max_samples", 2500))),
                     min_samples_leaf_pct=float(
                         _head_cfg.get("min_samples_leaf_pct", 0.02)
                     ),
@@ -11582,7 +11580,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             ),
             selector_emit_report=bool(_base_sel_cfg.get("selector_emit_report", True)),
             analysis_n_estimators=int(_base_sel_cfg.get("analysis_n_estimators", 192)),
-            analysis_max_samples=int(_base_sel_cfg.get("analysis_max_samples", 3000)),
+            analysis_max_samples=int(min(len(X.iloc[_sel_idx]), _base_sel_cfg.get("analysis_max_samples", 3000))),
             min_samples_leaf_pct=float(
                 _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
             ),
@@ -11941,9 +11939,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         analysis_n_estimators=int(
                             _base_sel_cfg.get("analysis_n_estimators", 192)
                         ),
-                        analysis_max_samples=int(
-                            _base_sel_cfg.get("analysis_max_samples", 3000)
-                        ),
+                        analysis_max_samples=int(min(len(X.iloc[_sel_idx]), _base_sel_cfg.get("analysis_max_samples", 3000))),
                         min_samples_leaf_pct=float(
                             _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
                         ),

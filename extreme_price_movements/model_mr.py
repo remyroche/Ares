@@ -86,6 +86,7 @@ class MRModel:
             selector_target="regression",
             selector_loss="huber",
             analysis_n_estimators=500,
+            analysis_max_samples=int(min(X.shape[0], 3000)),
             end_features=n_stage1,
             cumulative_cap=0.98,
             min_share=0.001,

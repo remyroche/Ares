@@ -13,32 +13,32 @@ Focuses on:
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr, linregress
-from sklearn.linear_model import Ridge, HuberRegressor
+from scipy.stats import linregress, spearmanr
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.linear_model import HuberRegressor, Ridge
+from sklearn.preprocessing import RobustScaler, StandardScaler
 
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
-from extreme_price_movements.position_sizer_v2_metrics import (
-    compute_bucket_monotonicity,
-    compute_false_safe_rate,
-    compute_top_slice_metrics,
+from extreme_price_movements.offline_optimisers.params_store import (
+    load_inference_candidate_mask_params_per_bucket,
 )
 from extreme_price_movements.periods_symbols_management import (
     EventSchema,
     SlicePlanner,
     SlicePlannerConfig,
 )
-from extreme_price_movements.offline_optimisers.params_store import (
-    load_inference_candidate_mask_params_per_bucket,
+from extreme_price_movements.position_sizer_v2_metrics import (
+    compute_bucket_monotonicity,
+    compute_false_safe_rate,
+    compute_top_slice_metrics,
 )
 from extreme_price_movements.run_ridge_sizer import (
     load_base_oof_predictions,
@@ -50,11 +50,19 @@ logger = logging.getLogger(__name__)
 
 
 def _strategy_params_path(data_root: str, run_id: str) -> Path:
-    return Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+    return (
+        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+    )
 
 
 def _frozen_strategy_thresholds_path(data_root: str, run_id: str) -> Path:
-    return Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "frozen_strategy_thresholds.json"
+    return (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "ridge_sizer"
+        / "frozen_strategy_thresholds.json"
+    )
 
 
 def _extract_strategy_params_payload(
@@ -91,9 +99,15 @@ def _extract_strategy_params_payload(
             "trades_per_day": _to_float_or_nan(opt_row.get("trades_per_day", np.nan)),
             "monthly_sortino": _to_float_or_nan(opt_row.get("monthly_sortino", np.nan)),
             "monthly_pnl_std": _to_float_or_nan(opt_row.get("monthly_pnl_std", np.nan)),
-            "monthly_group_cv_pnl": _to_float_or_nan(opt_row.get("monthly_group_cv_pnl", np.nan)),
-            "asset_group_cv_pnl": _to_float_or_nan(opt_row.get("asset_group_cv_pnl", np.nan)),
-            "asset_group_positive_share": _to_float_or_nan(opt_row.get("asset_group_positive_share", np.nan)),
+            "monthly_group_cv_pnl": _to_float_or_nan(
+                opt_row.get("monthly_group_cv_pnl", np.nan)
+            ),
+            "asset_group_cv_pnl": _to_float_or_nan(
+                opt_row.get("asset_group_cv_pnl", np.nan)
+            ),
+            "asset_group_positive_share": _to_float_or_nan(
+                opt_row.get("asset_group_positive_share", np.nan)
+            ),
             "stability": _to_float_or_nan(opt_row.get("stability", np.nan)),
             "max_drawdown": _to_float_or_nan(opt_row.get("max_drawdown", np.nan)),
             "source_target": source_target,
@@ -119,7 +133,9 @@ def _extract_strategy_params_payload(
         "strategies": strategies,
         "buckets": {str(row["strategy_id"]): dict(row) for row in strategies},
         "best_strategy_id": strategies[0]["strategy_id"] if strategies else None,
-        "best_threshold_pct": float(strategies[0]["threshold_pct"]) if strategies else None,
+        "best_threshold_pct": float(strategies[0]["threshold_pct"])
+        if strategies
+        else None,
     }
     return payload
 
@@ -147,6 +163,72 @@ def _save_strategy_params_payload(
     return _strategy_params_path(data_root, run_id)
 
 
+def _persist_head_to_head_winner(
+    data_root: str,
+    run_id: str,
+    strategy_results: Dict[str, Any],
+) -> None:
+    comparison_rows: List[Dict[str, Any]] = []
+    et_winner_rows: List[Dict[str, Any]] = []
+    for strategy_id, res in strategy_results.items():
+        comp = res.get("comparison_", {})
+        if not comp:
+            continue
+        comparison_rows.append({"strategy_id": strategy_id, **comp})
+        if comp.get("winner") == "et":
+            et_profit = res.get("et_profit_proxy_table_", pd.DataFrame())
+            if et_profit.empty:
+                continue
+            if "is_optimal" in et_profit.columns:
+                opt = et_profit[et_profit["is_optimal"]].iloc[0]
+            else:
+                opt = et_profit.sort_values("wallet_pnl", ascending=False).iloc[0]
+            meta = res.get("_strategy_meta_", {})
+            et_winner_rows.append(
+                {
+                    "strategy_id": str(strategy_id),
+                    "side": str(meta.get("trade_side", "")),
+                    "threshold_pct": _to_float_or_nan(opt.get("threshold_pct", np.nan)),
+                    "selection_frac": _to_float_or_nan(
+                        opt.get("selection_frac", np.nan)
+                    ),
+                    "wallet_pnl": _to_float_or_nan(opt.get("wallet_pnl", np.nan)),
+                    "net_pnl": _to_float_or_nan(opt.get("net_pnl", np.nan)),
+                    "profit_factor": _to_float_or_nan(opt.get("profit_factor", np.nan)),
+                    "hit_rate": _to_float_or_nan(opt.get("hit_rate", np.nan)),
+                    "model_source": "et",
+                }
+            )
+
+    if comparison_rows:
+        comp_path = (
+            Path(data_root)
+            / "artifacts"
+            / run_id
+            / "ridge_sizer"
+            / "head_to_head_comparison.json"
+        )
+        comp_path.parent.mkdir(parents=True, exist_ok=True)
+        comp_path.write_text(json.dumps(comparison_rows, indent=2, default=str))
+
+    if et_winner_rows:
+        et_params_path = (
+            Path(data_root) / "artifacts" / run_id / "et_sizer" / "strategy_params.json"
+        )
+        et_params_path.parent.mkdir(parents=True, exist_ok=True)
+        et_payload = {
+            "schema_version": "v1",
+            "generated_by": "simple_position_sizer",
+            "run_id": run_id,
+            "fee_pct": 0.003,
+            "strategies": et_winner_rows,
+        }
+        et_params_path.write_text(json.dumps(et_payload, indent=2))
+        logger.info(
+            f"Persisted ET winner params ({len(et_winner_rows)} strategies) to {et_params_path}"
+        )
+
+
 def _to_float_or_nan(value: Any) -> float:
     if value is None:
         return float("nan")
@@ -164,6 +246,7 @@ def _to_float_or_nan(value: Any) -> float:
         return float(value)
     except Exception:
         return float("nan")
+
 
 _RIDGE_HEAD_EXACT = {
     "reg",
@@ -202,7 +285,10 @@ def collect_ridge_head_columns(df: pd.DataFrame) -> List[str]:
             cols.append(col)
     return cols
 
-def detect_meta_head_keys(feature_dict: Dict[str, np.ndarray], config_overrides: Optional[List[str]] = None) -> Dict[str, str]:
+
+def detect_meta_head_keys(
+    feature_dict: Dict[str, np.ndarray], config_overrides: Optional[List[str]] = None
+) -> Dict[str, str]:
     """Detects likely meta-model heads from the feature dictionary and classifies them."""
     if config_overrides:
         keys = [k for k in config_overrides if k in feature_dict]
@@ -232,7 +318,12 @@ def detect_meta_head_keys(feature_dict: Dict[str, np.ndarray], config_overrides:
             heads[k] = "return-like"
         elif kl in {"clf", "oof_p_tp", "oof_p_to", "oof_p_sl"}:
             heads[k] = "classification-like"
-        if "edge" in kl or "expected_return" in kl or "regressor" in kl or "reg_head" in kl:
+        if (
+            "edge" in kl
+            or "expected_return" in kl
+            or "regressor" in kl
+            or "reg_head" in kl
+        ):
             heads[k] = "return-like"
         elif "mae" in kl or "downside" in kl or "risk" in kl:
             heads[k] = "risk-like"
@@ -242,7 +333,13 @@ def detect_meta_head_keys(feature_dict: Dict[str, np.ndarray], config_overrides:
             heads[k] = "asymmetry-like"
         elif "uncert" in kl or "confid" in kl:
             heads[k] = "uncertainty-like"
-        elif "prob" in kl or "logit" in kl or "class" in kl or "meta_clf" in kl or "multi_obj" in kl:
+        elif (
+            "prob" in kl
+            or "logit" in kl
+            or "class" in kl
+            or "meta_clf" in kl
+            or "multi_obj" in kl
+        ):
             heads[k] = "classification-like"
 
     # Include keys that were requested via override but missed the heuristic (if any).
@@ -253,7 +350,14 @@ def detect_meta_head_keys(feature_dict: Dict[str, np.ndarray], config_overrides:
 
     return heads
 
-def clean_and_standardize(X: np.ndarray, fit_medians: Optional[np.ndarray] = None, scaler: Optional[RobustScaler] = None, center_1d: Optional[float] = None, scale_1d: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, Any, Any, Any]:
+
+def clean_and_standardize(
+    X: np.ndarray,
+    fit_medians: Optional[np.ndarray] = None,
+    scaler: Optional[RobustScaler] = None,
+    center_1d: Optional[float] = None,
+    scale_1d: Optional[float] = None,
+) -> Tuple[np.ndarray, np.ndarray, Any, Any, Any]:
     """Standardizes features safely handling NaNs and Infs, using robust statistics."""
     X_clean = X.copy()
     X_clean[np.isinf(X_clean)] = np.nan
@@ -272,7 +376,7 @@ def clean_and_standardize(X: np.ndarray, fit_medians: Optional[np.ndarray] = Non
 
         if center_1d is None or scale_1d is None:
             center_1d = np.median(X_clean)
-            q75, q25 = np.percentile(X_clean, [75 ,25])
+            q75, q25 = np.percentile(X_clean, [75, 25])
             scale_1d = q75 - q25
 
         if scale_1d > 1e-9:
@@ -290,6 +394,7 @@ def clean_and_standardize(X: np.ndarray, fit_medians: Optional[np.ndarray] = Non
             X_clean = scaler.transform(X_clean)
 
     return X_clean, fit_medians, scaler, center_1d, scale_1d
+
 
 def walk_forward_temporal_splits(
     timestamps: Optional[np.ndarray],
@@ -318,17 +423,23 @@ def walk_forward_temporal_splits(
             test_end = test_start + test_chunk_size if i < n_splits - 1 else n_samples
             if test_start < n_samples:
                 splits.append((indices[:test_start], indices[test_start:test_end]))
-        return splits if splits else [(indices[:int(n_samples * 0.8)], indices[int(n_samples * 0.8):])]
+        return (
+            splits
+            if splits
+            else [(indices[: int(n_samples * 0.8)], indices[int(n_samples * 0.8) :])]
+        )
 
     ts_parsed = pd.to_datetime(ts, utc=True, errors="coerce")
     sym_vals = symbols if symbols is not None else np.repeat("ALL", n_samples)
 
-    events = pd.DataFrame({
-        "event_id": np.arange(n_samples, dtype=np.int64),
-        "symbol": sym_vals,
-        "t0": ts_parsed,
-        "t1": ts_parsed + pd.Timedelta(hours=6),
-    })
+    events = pd.DataFrame(
+        {
+            "event_id": np.arange(n_samples, dtype=np.int64),
+            "symbol": sym_vals,
+            "t0": ts_parsed,
+            "t1": ts_parsed + pd.Timedelta(hours=6),
+        }
+    )
 
     p_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
     p_cfg = p_cfg.__class__(
@@ -384,7 +495,7 @@ def evaluate_signal(
     scores: np.ndarray,
     y_raw_net_return: np.ndarray,
     y_downside: np.ndarray,
-    directionality: str
+    directionality: str,
 ) -> Dict[str, Any]:
     """
     Evaluates a single signal or formula.
@@ -405,17 +516,23 @@ def evaluate_signal(
         metrics["spearman_ret"] = 0.0
 
     # Top slice metrics
-    top_metrics = compute_top_slice_metrics(eval_scores, y_raw_net_return, top_fracs=(0.1, 0.2))
+    top_metrics = compute_top_slice_metrics(
+        eval_scores, y_raw_net_return, top_fracs=(0.1, 0.2)
+    )
     metrics.update(top_metrics)
 
     # Bucket monotonicity
-    metrics["monotonicity"] = compute_bucket_monotonicity(eval_scores, y_raw_net_return, n_buckets=10)
+    metrics["monotonicity"] = compute_bucket_monotonicity(
+        eval_scores, y_raw_net_return, n_buckets=10
+    )
 
     # Downside false safe
     # Note: For false safe, we want to know if "safe" predictions (high eval_score) lead to high downside.
     # We pass -eval_scores so that lower values mean "predicted safe" for the helper logic
     # which assumes 'lower predicted downside == safer'.
-    metrics["false_safe_rate"] = compute_false_safe_rate(-eval_scores, y_downside, low_q=0.2, high_q=0.8)
+    metrics["false_safe_rate"] = compute_false_safe_rate(
+        -eval_scores, y_downside, low_q=0.2, high_q=0.8
+    )
 
     # Calculate simple utility score for ranking:
     # Reward high top 10% returns, high monotonicity, low false safe rate.
@@ -425,7 +542,7 @@ def evaluate_signal(
     fs_penalty = metrics["false_safe_rate"]
 
     # Very simple empirical utility proxy:
-    utility = (np.sign(top10_ret) * (np.abs(top10_ret)**0.5) * 10) + mono - fs_penalty
+    utility = (np.sign(top10_ret) * (np.abs(top10_ret) ** 0.5) * 10) + mono - fs_penalty
     metrics["utility_score"] = float(utility)
 
     return metrics
@@ -528,11 +645,12 @@ def compute_group_stability_stats(
             "group_pf_std": 0.0,
         }
 
+
 def run_stage_1_diagnostics(
     feature_dict: Dict[str, np.ndarray],
     detected_heads: Dict[str, str],
     y_raw_net_return: np.ndarray,
-    y_downside: np.ndarray
+    y_downside: np.ndarray,
 ) -> pd.DataFrame:
     """Runs single-head diagnostics for all detected meta heads."""
     results = []
@@ -543,7 +661,9 @@ def run_stage_1_diagnostics(
         if len(scores) != len(y_raw_net_return):
             continue
 
-        metrics = evaluate_signal(head_key, scores, y_raw_net_return, y_downside, head_type)
+        metrics = evaluate_signal(
+            head_key, scores, y_raw_net_return, y_downside, head_type
+        )
         results.append(metrics)
 
     df = pd.DataFrame(results)
@@ -555,7 +675,7 @@ def run_stage_1_diagnostics(
 def build_combo_candidates(
     feature_dict: Dict[str, np.ndarray],
     detected_heads: Dict[str, str],
-    lambda_grid: List[float] = [0.25, 0.5, 1.0, 2.0]
+    lambda_grid: List[float] = [0.25, 0.5, 1.0, 2.0],
 ) -> Dict[str, np.ndarray]:
     """
     Generates a small family of fixed-form score combinations from available heads.
@@ -564,11 +684,25 @@ def build_combo_candidates(
     candidates = {}
 
     # Organize heads by type
-    edge_heads = [k for k, v in detected_heads.items() if v == "return-like" and k in feature_dict]
-    mae_heads = [k for k, v in detected_heads.items() if v == "risk-like" and k in feature_dict]
-    mfe_heads = [k for k, v in detected_heads.items() if v == "upside-like" and k in feature_dict]
-    clf_heads = [k for k, v in detected_heads.items() if v == "classification-like" and k in feature_dict]
-    asym_heads = [k for k, v in detected_heads.items() if v == "asymmetry-like" and k in feature_dict]
+    edge_heads = [
+        k for k, v in detected_heads.items() if v == "return-like" and k in feature_dict
+    ]
+    mae_heads = [
+        k for k, v in detected_heads.items() if v == "risk-like" and k in feature_dict
+    ]
+    mfe_heads = [
+        k for k, v in detected_heads.items() if v == "upside-like" and k in feature_dict
+    ]
+    clf_heads = [
+        k
+        for k, v in detected_heads.items()
+        if v == "classification-like" and k in feature_dict
+    ]
+    asym_heads = [
+        k
+        for k, v in detected_heads.items()
+        if v == "asymmetry-like" and k in feature_dict
+    ]
 
     def _norm(x):
         x_c, _, _, _, _ = clean_and_standardize(x)
@@ -629,11 +763,12 @@ def build_combo_candidates(
 
     return candidates
 
+
 def run_stage_2_combo_race(
     candidates: Dict[str, np.ndarray],
     y_raw_net_return: np.ndarray,
     y_downside: np.ndarray,
-    splits: Optional[List[Tuple[np.ndarray, np.ndarray]]] = None
+    splits: Optional[List[Tuple[np.ndarray, np.ndarray]]] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """Runs race evaluation across all combinations."""
     results = []
@@ -644,14 +779,18 @@ def run_stage_2_combo_race(
 
         # Combos are pre-aligned so higher score = better expected outcome.
         # We pass directionality "return-like" because we built them that way.
-        metrics = evaluate_signal(name, scores, y_raw_net_return, y_downside, directionality="return-like")
+        metrics = evaluate_signal(
+            name, scores, y_raw_net_return, y_downside, directionality="return-like"
+        )
 
         # Calculate fold-level stability
         if splits:
             fold_spearmans = []
             for tr_idx, te_idx in splits:
                 if len(te_idx) > 0:
-                    corr, _ = spearmanr(scores[te_idx], y_raw_net_return[te_idx], nan_policy="omit")
+                    corr, _ = spearmanr(
+                        scores[te_idx], y_raw_net_return[te_idx], nan_policy="omit"
+                    )
                     if pd.notna(corr):
                         fold_spearmans.append(float(corr))
             if fold_spearmans:
@@ -679,13 +818,21 @@ class SimpleHeadRidgeSizer:
     A compact experimental component that tests if a linear model using
     only meta heads can beat fixed formulas.
     """
+
     def __init__(self, model=None):
         from sklearn.linear_model import Ridge
+
         self.model = model or Ridge(alpha=1.0)
         self.fold_coefs = []
         self.feature_names = []
 
-    def fit_predict_oof(self, X: np.ndarray, y: np.ndarray, splits: List[Tuple[np.ndarray, np.ndarray]], feature_names: List[str] = None):
+    def fit_predict_oof(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        splits: List[Tuple[np.ndarray, np.ndarray]],
+        feature_names: List[str] = None,
+    ):
         """
         Fits locally on each train fold and predicts the next test fold.
         Stores coefficients for interpretability.
@@ -705,8 +852,16 @@ class SimpleHeadRidgeSizer:
                 continue
 
             # Fold-local scaling and NaN cleaning
-            X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(X_tr)
-            X_te_clean, _, _, _, _ = clean_and_standardize(X_te, fit_medians=medians, scaler=scaler, center_1d=center_1d, scale_1d=scale_1d)
+            X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(
+                X_tr
+            )
+            X_te_clean, _, _, _, _ = clean_and_standardize(
+                X_te,
+                fit_medians=medians,
+                scaler=scaler,
+                center_1d=center_1d,
+                scale_1d=scale_1d,
+            )
 
             # Fit & predict
             self.model.fit(X_tr_clean, y_tr)
@@ -719,18 +874,21 @@ class SimpleHeadRidgeSizer:
         """Returns the mean weight (coefficient) per meta-head across folds."""
         if not self.fold_coefs:
             return pd.DataFrame()
-        
+
         coef_matrix = np.array(self.fold_coefs)
         mean_coefs = np.mean(coef_matrix, axis=0)
         std_coefs = np.std(coef_matrix, axis=0)
-        
-        df = pd.DataFrame({
-            "head_name": self.feature_names,
-            "mean_weight": mean_coefs,
-            "std_weight": std_coefs,
-            "abs_weight": np.abs(mean_coefs)
-        })
+
+        df = pd.DataFrame(
+            {
+                "head_name": self.feature_names,
+                "mean_weight": mean_coefs,
+                "std_weight": std_coefs,
+                "abs_weight": np.abs(mean_coefs),
+            }
+        )
         return df.sort_values("abs_weight", ascending=False)
+
 
 def evaluate_selection_profit_proxy(
     scores: np.ndarray,
@@ -741,7 +899,7 @@ def evaluate_selection_profit_proxy(
     start_equity: float = 100000.0,
     cost_pct: float = 0.003,
     n_days: float = 365.0,
-    wallet_range: Tuple[float, float] = (0.05, 0.15)
+    wallet_range: Tuple[float, float] = (0.05, 0.15),
 ) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """
     Evaluates "Could this generate profit?" using:
@@ -759,8 +917,14 @@ def evaluate_selection_profit_proxy(
         idx = np.argpartition(scores, -k)[-k:]
 
         selected_rets = y_raw_net_return[idx]
-        selected_ts = timestamps[idx] if timestamps is not None and len(timestamps) == n_samples else None
-        selected_syms = symbols[idx] if symbols is not None and len(symbols) == n_samples else None
+        selected_ts = (
+            timestamps[idx]
+            if timestamps is not None and len(timestamps) == n_samples
+            else None
+        )
+        selected_syms = (
+            symbols[idx] if symbols is not None and len(symbols) == n_samples else None
+        )
         hit_rate = float(np.mean(selected_rets > 0)) if len(selected_rets) > 0 else 0.0
 
         # Apply cost (fees + slippage)
@@ -770,22 +934,28 @@ def evaluate_selection_profit_proxy(
         # We assign higher size to the highest scores within the k-selection.
         # Use rank-based sizing to be robust to score distributions.
         slice_scores = scores[idx]
-        sorted_args = np.argsort(slice_scores) # idx of scores in ascending order
-        
+        sorted_args = np.argsort(slice_scores)  # idx of scores in ascending order
+
         # Rankings from 5% (min score in slice) to 15% (max score in slice)
         allocations = np.linspace(wallet_range[0], wallet_range[1], len(idx))
-        
+
         # Apply allocations to the sorted returns
-        sorted_rets_net = (selected_rets[sorted_args] - cost_pct)
+        sorted_rets_net = selected_rets[sorted_args] - cost_pct
         wallet_rets = sorted_rets_net * allocations
-        
+
         net_wallet_pnl_pct = float(np.sum(wallet_rets))
 
         wallet_sensitivity = {}
-        for _wr_label, _wr in [("narrow", (0.05, 0.10)), ("wide", (0.05, 0.20)), ("flat", (0.10, 0.10))]:
+        for _wr_label, _wr in [
+            ("narrow", (0.05, 0.10)),
+            ("wide", (0.05, 0.20)),
+            ("flat", (0.10, 0.10)),
+        ]:
             _allocs = np.linspace(_wr[0], _wr[1], len(idx))
             _wallet_rets_s = sorted_rets_net * _allocs
-            wallet_sensitivity[f"wallet_pnl_{_wr_label}"] = float(np.sum(_wallet_rets_s))
+            wallet_sensitivity[f"wallet_pnl_{_wr_label}"] = float(
+                np.sum(_wallet_rets_s)
+            )
 
         _, dd_series = _stable_equity_and_drawdown(sized_rets)
         mdd_pct = float(np.max(dd_series)) if len(dd_series) > 0 else 0.0
@@ -794,10 +964,12 @@ def evaluate_selection_profit_proxy(
         # Basic PF
         gross_profit = float(np.sum(sized_rets[sized_rets > 0]))
         gross_loss = float(np.abs(np.sum(sized_rets[sized_rets < 0])))
-        profit_factor = gross_profit / gross_loss if gross_loss > 0 else float(gross_profit)
+        profit_factor = (
+            gross_profit / gross_loss if gross_loss > 0 else float(gross_profit)
+        )
 
         # 📈 Advanced Risk Metrics
-        
+
         # 1. Sortino Ratio (Downside-aware)
         downside_rets = sized_rets[sized_rets < 0]
         downside_std = np.std(downside_rets) if len(downside_rets) > 0 else 1e-6
@@ -831,38 +1003,42 @@ def evaluate_selection_profit_proxy(
             stability = 0.0
 
         # 3. Frequency & Efficiency
-        pnl_per_trade_bps = (net_pnl / len(sized_rets)) * 10000 if len(sized_rets) > 0 else 0.0
+        pnl_per_trade_bps = (
+            (net_pnl / len(sized_rets)) * 10000 if len(sized_rets) > 0 else 0.0
+        )
         trades_per_day = len(sized_rets) / n_days if n_days > 0 else 0.0
-        
-        results.append({
-            "selection_frac": frac,
-            "threshold_pct": f"{100*(1-frac):.1f}%",
-            "net_pnl": net_pnl,
-            "wallet_pnl": net_wallet_pnl_pct,
-            "pnl_per_trade": pnl_per_trade_bps,
-            "trades_per_day": trades_per_day,
-            "hit_rate": hit_rate,
-            "profit_factor": profit_factor,
-            "sortino": sortino,
-            "weekly_sortino": weekly_sortino,
-            "monthly_sortino": monthly_sortino,
-            "weekly_pnl_std": weekly_pnl_std,
-            "monthly_pnl_std": monthly_pnl_std,
-            "monthly_group_std_pnl": month_stability["group_std_pnl"],
-            "monthly_group_cv_pnl": month_stability["group_cv_pnl"],
-            "monthly_group_pf_std": month_stability["group_pf_std"],
-            "asset_group_std_pnl": asset_stability["group_std_pnl"],
-            "asset_group_cv_pnl": asset_stability["group_cv_pnl"],
-            "asset_group_positive_share": asset_stability["group_positive_share"],
-            "asset_group_pf_std": asset_stability["group_pf_std"],
-            "stability": stability,
-            "max_drawdown": mdd_pct,
-            "trades_selected": len(sized_rets),
-            **wallet_sensitivity,
-        })
+
+        results.append(
+            {
+                "selection_frac": frac,
+                "threshold_pct": f"{100*(1-frac):.1f}%",
+                "net_pnl": net_pnl,
+                "wallet_pnl": net_wallet_pnl_pct,
+                "pnl_per_trade": pnl_per_trade_bps,
+                "trades_per_day": trades_per_day,
+                "hit_rate": hit_rate,
+                "profit_factor": profit_factor,
+                "sortino": sortino,
+                "weekly_sortino": weekly_sortino,
+                "monthly_sortino": monthly_sortino,
+                "weekly_pnl_std": weekly_pnl_std,
+                "monthly_pnl_std": monthly_pnl_std,
+                "monthly_group_std_pnl": month_stability["group_std_pnl"],
+                "monthly_group_cv_pnl": month_stability["group_cv_pnl"],
+                "monthly_group_pf_std": month_stability["group_pf_std"],
+                "asset_group_std_pnl": asset_stability["group_std_pnl"],
+                "asset_group_cv_pnl": asset_stability["group_cv_pnl"],
+                "asset_group_positive_share": asset_stability["group_positive_share"],
+                "asset_group_pf_std": asset_stability["group_pf_std"],
+                "stability": stability,
+                "max_drawdown": mdd_pct,
+                "trades_selected": len(sized_rets),
+                **wallet_sensitivity,
+            }
+        )
 
     df = pd.DataFrame(results)
-    
+
     # Identify optimal threshold by Wallet PnL (since user asked for 5-15% sizing)
     opt_rets = np.array([])
     opt_ts = np.array([])
@@ -870,7 +1046,7 @@ def evaluate_selection_profit_proxy(
         opt_idx = df["wallet_pnl"].idxmax()
         df["is_optimal"] = False
         df.loc[opt_idx, "is_optimal"] = True
-        
+
         # Recalculate k for the optimal frac to get indexed returns
         frac_opt = df.loc[opt_idx, "selection_frac"]
         k_opt = max(1, int(n_samples * frac_opt))
@@ -880,6 +1056,7 @@ def evaluate_selection_profit_proxy(
             opt_ts = np.asarray(timestamps)[idx_opt]
 
     return df, opt_rets, opt_ts
+
 
 def run_simple_position_sizer(
     feature_dict: Dict[str, np.ndarray],
@@ -915,13 +1092,19 @@ def run_simple_position_sizer(
         "head_classification": detected_heads,
     }
 
-    stage_1_df = run_stage_1_diagnostics(feature_dict, detected_heads, y_raw_net_return, y_downside)
+    stage_1_df = run_stage_1_diagnostics(
+        feature_dict, detected_heads, y_raw_net_return, y_downside
+    )
 
     n_samples = len(y_raw_net_return)
-    splits = walk_forward_temporal_splits(timestamps, n_samples, n_splits=5, symbols=symbols)
+    splits = walk_forward_temporal_splits(
+        timestamps, n_samples, n_splits=5, symbols=symbols
+    )
 
     combo_candidates = build_combo_candidates(feature_dict, detected_heads, lambda_grid)
-    stage_2_df, best_combo = run_stage_2_combo_race(combo_candidates, y_raw_net_return, y_downside, splits)
+    stage_2_df, best_combo = run_stage_2_combo_race(
+        combo_candidates, y_raw_net_return, y_downside, splits
+    )
 
     best_simple_score = None
     best_simple_score_name = None
@@ -937,7 +1120,9 @@ def run_simple_position_sizer(
     else:
         n_days = float(t_diff) / 86400.0 if len(timestamps) > 1 else 0.0
 
-    _sym_vals = trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None
+    _sym_vals = (
+        trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None
+    )
 
     # --- Ridge Sizer ---
     ridge_sizer_eval: Dict[str, Any] = {}
@@ -947,20 +1132,39 @@ def run_simple_position_sizer(
     if use_ridge_head_sizer and used_keys:
         X_heads = np.column_stack([feature_dict[k] for k in used_keys])
         sizer = SimpleHeadRidgeSizer()
-        ridge_oof_preds = sizer.fit_predict_oof(X_heads, y_raw_net_return, splits, feature_names=used_keys)
+        ridge_oof_preds = sizer.fit_predict_oof(
+            X_heads, y_raw_net_return, splits, feature_names=used_keys
+        )
         ridge_importance_df = sizer.get_feature_importance()
-        ridge_metrics = evaluate_signal("Ridge_Head_Sizer", ridge_oof_preds, y_raw_net_return, y_downside, directionality="return-like")
+        ridge_metrics = evaluate_signal(
+            "Ridge_Head_Sizer",
+            ridge_oof_preds,
+            y_raw_net_return,
+            y_downside,
+            directionality="return-like",
+        )
         ridge_sizer_eval = ridge_metrics
-        ridge_profit_proxy_df, ridge_opt_rets, ridge_opt_ts = evaluate_selection_profit_proxy(
-            ridge_oof_preds, y_raw_net_return, timestamps=timestamps, symbols=_sym_vals,
-            top_fracs=list(top_fracs), cost_pct=cost_pct, n_days=n_days,
+        (
+            ridge_profit_proxy_df,
+            ridge_opt_rets,
+            ridge_opt_ts,
+        ) = evaluate_selection_profit_proxy(
+            ridge_oof_preds,
+            y_raw_net_return,
+            timestamps=timestamps,
+            symbols=_sym_vals,
+            top_fracs=list(top_fracs),
+            cost_pct=cost_pct,
+            n_days=n_days,
         )
         results["ridge_sizer_scores_"] = ridge_oof_preds
         results["ridge_importance_table_"] = ridge_importance_df
         results["ridge_profit_proxy_table_"] = ridge_profit_proxy_df
         results["ridge_opt_rets_"] = ridge_opt_rets
         results["ridge_opt_ts_"] = ridge_opt_ts
-        if not best_combo or ridge_metrics.get("utility_score", 0) > best_combo.get("utility_score", -9999):
+        if not best_combo or ridge_metrics.get("utility_score", 0) > best_combo.get(
+            "utility_score", -9999
+        ):
             best_simple_score = ridge_oof_preds
             best_simple_score_name = "Ridge_Head_Sizer"
 
@@ -970,29 +1174,62 @@ def run_simple_position_sizer(
     et_profit_proxy_df = pd.DataFrame()
 
     if use_et_head_sizer and used_keys:
-        from extreme_price_movements.extratrees_position_sizer import SimpleHeadExtraTreesSizer
-
-        X_heads = X_heads if use_ridge_head_sizer and used_keys else np.column_stack([feature_dict[k] for k in used_keys])
-        et_model = ExtraTreesRegressor(
-            n_estimators=150, max_depth=5, min_samples_leaf=30, min_samples_split=60,
-            max_features="sqrt", bootstrap=True, oob_score=True, random_state=42, n_jobs=-1, verbose=0,
+        from extreme_price_movements.extratrees_position_sizer import (
+            SimpleHeadExtraTreesSizer,
         )
-        et_sizer = SimpleHeadExtraTreesSizer(model=et_model, calibration_method="isotonic")
-        et_oof_preds = et_sizer.fit_predict_oof(X_heads, y_raw_net_return, splits, feature_names=used_keys)
+
+        X_heads = (
+            X_heads
+            if use_ridge_head_sizer and used_keys
+            else np.column_stack([feature_dict[k] for k in used_keys])
+        )
+        et_model = ExtraTreesRegressor(
+            n_estimators=150,
+            max_depth=5,
+            min_samples_leaf=30,
+            min_samples_split=60,
+            max_features="sqrt",
+            bootstrap=True,
+            oob_score=True,
+            random_state=42,
+            n_jobs=-1,
+            verbose=0,
+        )
+        et_sizer = SimpleHeadExtraTreesSizer(
+            model=et_model, calibration_method="isotonic"
+        )
+        et_oof_preds = et_sizer.fit_predict_oof(
+            X_heads, y_raw_net_return, splits, feature_names=used_keys
+        )
         et_importance_df = et_sizer.get_feature_importance()
-        et_metrics = evaluate_signal("ExtraTrees_Head_Sizer", et_oof_preds, y_raw_net_return, y_downside, directionality="return-like")
+        et_metrics = evaluate_signal(
+            "ExtraTrees_Head_Sizer",
+            et_oof_preds,
+            y_raw_net_return,
+            y_downside,
+            directionality="return-like",
+        )
         et_sizer_eval = et_metrics
         et_profit_proxy_df, et_opt_rets, et_opt_ts = evaluate_selection_profit_proxy(
-            et_oof_preds, y_raw_net_return, timestamps=timestamps, symbols=_sym_vals,
-            top_fracs=list(top_fracs), cost_pct=cost_pct, n_days=n_days,
+            et_oof_preds,
+            y_raw_net_return,
+            timestamps=timestamps,
+            symbols=_sym_vals,
+            top_fracs=list(top_fracs),
+            cost_pct=cost_pct,
+            n_days=n_days,
         )
         results["et_sizer_scores_"] = et_oof_preds
         results["et_importance_table_"] = et_importance_df
         results["et_profit_proxy_table_"] = et_profit_proxy_df
         results["et_opt_rets_"] = et_opt_rets
         results["et_opt_ts_"] = et_opt_ts
-        if et_metrics.get("utility_score", 0) > (ridge_sizer_eval.get("utility_score", -9999) if ridge_sizer_eval else -9999):
-            if not best_combo or et_metrics.get("utility_score", 0) > best_combo.get("utility_score", -9999):
+        if et_metrics.get("utility_score", 0) > (
+            ridge_sizer_eval.get("utility_score", -9999) if ridge_sizer_eval else -9999
+        ):
+            if not best_combo or et_metrics.get("utility_score", 0) > best_combo.get(
+                "utility_score", -9999
+            ):
                 best_simple_score = et_oof_preds
                 best_simple_score_name = "ExtraTrees_Head_Sizer"
 
@@ -1001,8 +1238,16 @@ def run_simple_position_sizer(
     if ridge_sizer_eval and et_sizer_eval:
         ridge_util = ridge_sizer_eval.get("utility_score", 0.0)
         et_util = et_sizer_eval.get("utility_score", 0.0)
-        ridge_wallet = float(ridge_profit_proxy_df["wallet_pnl"].max()) if not ridge_profit_proxy_df.empty else 0.0
-        et_wallet = float(et_profit_proxy_df["wallet_pnl"].max()) if not et_profit_proxy_df.empty else 0.0
+        ridge_wallet = (
+            float(ridge_profit_proxy_df["wallet_pnl"].max())
+            if not ridge_profit_proxy_df.empty
+            else 0.0
+        )
+        et_wallet = (
+            float(et_profit_proxy_df["wallet_pnl"].max())
+            if not et_profit_proxy_df.empty
+            else 0.0
+        )
         comparison = {
             "ridge_utility": ridge_util,
             "et_utility": et_util,
@@ -1011,7 +1256,9 @@ def run_simple_position_sizer(
             "winner": "ridge" if ridge_util >= et_util else "et",
             "wallet_winner": "ridge" if ridge_wallet >= et_wallet else "et",
         }
-        tprint(f"Head-to-Head: Ridge util={ridge_util:.4f} wallet={ridge_wallet:.4f} | ET util={et_util:.4f} wallet={et_wallet:.4f} | Winner={comparison['winner']}")
+        tprint(
+            f"Head-to-Head: Ridge util={ridge_util:.4f} wallet={ridge_wallet:.4f} | ET util={et_util:.4f} wallet={et_wallet:.4f} | Winner={comparison['winner']}"
+        )
     results["comparison_"] = comparison
 
     # --- Profit Proxy on Best Score ---
@@ -1020,8 +1267,13 @@ def run_simple_position_sizer(
     best_opt_ts = np.array([])
     if best_simple_score is not None:
         profit_proxy_df, best_opt_rets, best_opt_ts = evaluate_selection_profit_proxy(
-            best_simple_score, y_raw_net_return, timestamps=timestamps, symbols=_sym_vals,
-            top_fracs=list(top_fracs) + [0.3], start_equity=start_equity, cost_pct=cost_pct,
+            best_simple_score,
+            y_raw_net_return,
+            timestamps=timestamps,
+            symbols=_sym_vals,
+            top_fracs=list(top_fracs) + [0.3],
+            start_equity=start_equity,
+            cost_pct=cost_pct,
         )
 
     return {
@@ -1038,10 +1290,13 @@ def run_simple_position_sizer(
         "comparison_": comparison,
         "best_simple_score_": best_simple_score,
         "best_simple_score_name_": best_simple_score_name,
-        "profit_proxy_table_": profit_proxy_df if not profit_proxy_df.empty else pd.DataFrame(),
+        "profit_proxy_table_": profit_proxy_df
+        if not profit_proxy_df.empty
+        else pd.DataFrame(),
         "opt_rets_": best_opt_rets,
         "opt_ts_": best_opt_ts,
     }
+
 
 def run_bucketed_simple_position_sizer(
     feature_dict: Dict[str, np.ndarray],
@@ -1052,16 +1307,22 @@ def run_bucketed_simple_position_sizer(
     bucket_labels: np.ndarray,
     sample_weight: Optional[np.ndarray] = None,
     min_bucket_samples: int = 50,
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """
     Runs the simple position sizer independently per bucket.
     """
     # Run global first
     global_results = run_simple_position_sizer(
-        feature_dict, trade_outcomes, y_raw_net_return, y_downside, timestamps,
+        feature_dict,
+        trade_outcomes,
+        y_raw_net_return,
+        y_downside,
+        timestamps,
         trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None,
-        bucket_labels=None, sample_weight=sample_weight, **kwargs
+        bucket_labels=None,
+        sample_weight=sample_weight,
+        **kwargs,
     )
 
     bucket_results = {}
@@ -1070,7 +1331,7 @@ def run_bucketed_simple_position_sizer(
     unique_buckets = np.unique(bucket_labels[~pd.isna(bucket_labels)])
 
     for b in unique_buckets:
-        mask = (bucket_labels == b)
+        mask = bucket_labels == b
         if np.sum(mask) < min_bucket_samples:
             continue
 
@@ -1082,19 +1343,29 @@ def run_bucketed_simple_position_sizer(
         b_sample_weight = sample_weight[mask] if sample_weight is not None else None
 
         b_res = run_simple_position_sizer(
-            b_feature_dict, b_trade_outcomes, b_y_raw_net_return, b_y_downside, b_timestamps,
-            b_trade_outcomes["symbol"].values if "symbol" in b_trade_outcomes.columns else None,
-            bucket_labels=None, sample_weight=b_sample_weight, **kwargs
+            b_feature_dict,
+            b_trade_outcomes,
+            b_y_raw_net_return,
+            b_y_downside,
+            b_timestamps,
+            b_trade_outcomes["symbol"].values
+            if "symbol" in b_trade_outcomes.columns
+            else None,
+            bucket_labels=None,
+            sample_weight=b_sample_weight,
+            **kwargs,
         )
         bucket_results[b] = b_res
 
         # Build summary row
-        summary_rows.append({
-            "bucket": b,
-            "samples": np.sum(mask),
-            "best_model_name": b_res.get("best_simple_score_name_"),
-            "best_utility": b_res.get("best_combo_", {}).get("utility_score", 0.0)
-        })
+        summary_rows.append(
+            {
+                "bucket": b,
+                "samples": np.sum(mask),
+                "best_model_name": b_res.get("best_simple_score_name_"),
+                "best_utility": b_res.get("best_combo_", {}).get("utility_score", 0.0),
+            }
+        )
 
     global_results["bucket_results"] = bucket_results
     global_results["bucket_summary_table_"] = pd.DataFrame(summary_rows)
@@ -1107,7 +1378,8 @@ def run_simple_position_sizer_from_artifacts(
     run_id: str,
     top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
     use_ridge_head_sizer: bool = True,
-    top_n_strategies: int = 4
+    top_n_strategies: int = 4,
+    time_filter: Optional[Tuple[Any, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Runs the simple position sizer directly on pipeline artifacts, executing the pipeline
@@ -1119,14 +1391,16 @@ def run_simple_position_sizer_from_artifacts(
     Returns a dictionary mapping strategy_id to its respective position sizer results.
     """
     from extreme_price_movements.run_ridge_sizer import (
-        load_trade_outcomes,
         load_meta_oof_predictions,
+        load_trade_outcomes,
     )
 
     # Load dynamic strategies (which rules are active per bucket)
     # load_inference_candidate_mask_params_per_bucket returns top_n PER (side, horizon) group.
     # We load a large pool then take the true global top-N by score_for_best_params.
-    _pool = load_inference_candidate_mask_params_per_bucket(top_n=99, ranking_metric="score_for_best_params")
+    _pool = load_inference_candidate_mask_params_per_bucket(
+        top_n=99, ranking_metric="score_for_best_params"
+    )
 
     if not _pool:
         logger.warning("No strategies loaded from params_store.")
@@ -1142,7 +1416,9 @@ def run_simple_position_sizer_from_artifacts(
             strategies.append(s)
     strategies = strategies[:top_n_strategies]
 
-    logger.info(f"Loaded {len(strategies)} strategies (global top-{top_n_strategies}). IDs: {[s.get('strategy_id', '')[:40] for s in strategies]}")
+    logger.info(
+        f"Loaded {len(strategies)} strategies (global top-{top_n_strategies}). IDs: {[s.get('strategy_id', '')[:40] for s in strategies]}"
+    )
 
     # Load base and meta OOFs
     base_oofs = load_base_oof_predictions(data_root, run_id)
@@ -1153,22 +1429,31 @@ def run_simple_position_sizer_from_artifacts(
         meta_oofs = {}
 
     if not base_oofs and not meta_oofs:
-        logger.warning(f"No OOFs found in {data_root}/artifacts/{run_id}. Checking both base/ and meta_oof/.")
+        logger.warning(
+            f"No OOFs found in {data_root}/artifacts/{run_id}. Checking both base/ and meta_oof/."
+        )
         return {}
 
     # Supplement params_store strategies with any OOF-artifact buckets not already matched.
     # This ensures isolated runs (e.g. single-symbol or small-universe) are evaluated even
     # when their strategy IDs are absent from the full-universe params CSV.
     import re as _re_sizer
+
     _known_ids = {s.get("strategy_id", "") for s in strategies}
     _all_oof_keys = set(base_oofs.keys()) | set(meta_oofs.keys())
     for _oof_key in sorted(_all_oof_keys):
-        _stripped = _re_sizer.sub(r'^(long|short)_', '', _oof_key)
-        _side = "long" if _oof_key.startswith("long_") else ("short" if _oof_key.startswith("short_") else "")
+        _stripped = _re_sizer.sub(r"^(long|short)_", "", _oof_key)
+        _side = (
+            "long"
+            if _oof_key.startswith("long_")
+            else ("short" if _oof_key.startswith("short_") else "")
+        )
         if _stripped not in _known_ids and _oof_key not in _known_ids:
             strategies.append({"strategy_id": _stripped, "trade_side": _side})
             _known_ids.add(_stripped)
-            logger.info(f"OOF-derived strategy injected: side={_side!r} id={_stripped[:60]}")
+            logger.info(
+                f"OOF-derived strategy injected: side={_side!r} id={_stripped[:60]}"
+            )
 
     strategy_results = {}
 
@@ -1179,60 +1464,76 @@ def run_simple_position_sizer_from_artifacts(
         # --- 🚀 RESTORE FULL MASK COVERAGE ---
         # 1. Load the Base Labels (The ground-truth of discovery)
         labels_dir = Path(data_root) / "artifacts" / run_id / "labels"
-        logger.warning(f"DEBUG_PATH labels_dir: {labels_dir.absolute()} (Exists: {labels_dir.exists()})")
+        logger.warning(
+            f"DEBUG_PATH labels_dir: {labels_dir.absolute()} (Exists: {labels_dir.exists()})"
+        )
         strat_id_raw = strategy.get("strategy_id", "")
-        
+
         # FUZZY RESOLVER: Find label file on disk
         # Names on disk use _ instead of . and may have different rounding
         full_df = pd.DataFrame()
         label_file = None
-        
+
         if labels_dir.exists():
             all_label_files = list(labels_dir.glob("train_*.parquet"))
             import re
+
             def normalize(s):
-                return re.sub(r'[^a-z0-9]', '', s.lower())
-            
+                return re.sub(r"[^a-z0-9]", "", s.lower())
+
             target_norm = normalize(strat_id_raw)
-            
+
             for f in all_label_files:
                 if "_tight" in f.name or "_wide" in f.name or "_balanced" in f.name:
                     continue
-                
+
                 f_name_norm = normalize(f.stem.replace("train_", ""))
                 # Check for inclusion or high similarity
                 if target_norm in f_name_norm or f_name_norm in target_norm:
-                     label_file = f
-                     logger.warning(f"Fuzzy matched (norm): {f.name} for {strat_id_raw[:40]}...")
-                     break
-            
+                    label_file = f
+                    logger.warning(
+                        f"Fuzzy matched (norm): {f.name} for {strat_id_raw[:40]}..."
+                    )
+                    break
+
             if not label_file:
-                logger.warning(f"Failed norm match for {strat_id_raw[:40]}... scanning tokens.")
+                logger.warning(
+                    f"Failed norm match for {strat_id_raw[:40]}... scanning tokens."
+                )
                 # Fallback to token intersection
-                tokens = set(normalize(strat_id_raw)) # This is too granular, let's keep previous tokens but normalize them
-                tokens = set(re.split(r'[^a-z0-9]', strat_id_raw.lower()))
-                tokens.discard('')
-                
+                tokens = set(
+                    normalize(strat_id_raw)
+                )  # This is too granular, let's keep previous tokens but normalize them
+                tokens = set(re.split(r"[^a-z0-9]", strat_id_raw.lower()))
+                tokens.discard("")
+
                 max_overlap = 0
                 for f in all_label_files:
                     if "_tight" in f.name or "_wide" in f.name or "_balanced" in f.name:
                         continue
-                    f_tokens = set(re.split(r'[^a-z0-9]', f.stem.lower().replace("train_", "")))
-                    f_tokens.discard('')
+                    f_tokens = set(
+                        re.split(r"[^a-z0-9]", f.stem.lower().replace("train_", ""))
+                    )
+                    f_tokens.discard("")
                     overlap = len(tokens.intersection(f_tokens))
                     if overlap > max_overlap:
                         max_overlap = overlap
                         best_match = f
-                
+
                 min_recall = 0.6  # at least 60% of strategy tokens must appear in the label filename
-                if best_match and len(tokens) > 0 and (max_overlap / len(tokens)) >= min_recall:
+                if (
+                    best_match
+                    and len(tokens) > 0
+                    and (max_overlap / len(tokens)) >= min_recall
+                ):
                     label_file = best_match
-                    logger.warning(f"Fuzzy matched (token): {label_file.name} (Overlap: {max_overlap})")
+                    logger.warning(
+                        f"Fuzzy matched (token): {label_file.name} (Overlap: {max_overlap})"
+                    )
 
         if label_file and label_file.exists():
             full_df = pd.read_parquet(label_file)
             logger.info(f"Loaded full label coverage: {len(full_df)} rows.")
-            # Normalize column names in labels to match OOF metadata
             if "__r_policy_net__" in full_df.columns:
                 full_df["return"] = full_df["__r_policy_net__"]
             if "__ts__" in full_df.columns:
@@ -1241,8 +1542,21 @@ def run_simple_position_sizer_from_artifacts(
                 full_df["symbol"] = full_df["__symbol__"]
             if "__index__" in full_df.columns:
                 full_df["index"] = full_df["__index__"]
-        
-        trade_side = str(strategy.get('trade_side', '') or '')
+
+            if time_filter is not None and "timestamp" in full_df.columns:
+                _tf_start, _tf_end = time_filter
+                _tf_ts = pd.to_datetime(full_df["timestamp"], utc=True, errors="coerce")
+                _tf_mask = np.ones(len(full_df), dtype=bool)
+                if _tf_start is not None:
+                    _tf_mask &= _tf_ts >= pd.Timestamp(_tf_start)
+                if _tf_end is not None:
+                    _tf_mask &= _tf_ts < pd.Timestamp(_tf_end)
+                full_df = full_df.loc[_tf_mask].reset_index(drop=True)
+                logger.info(
+                    f"Time filter [{_tf_start}, {_tf_end}): {len(full_df)} rows retained"
+                )
+
+        trade_side = str(strategy.get("trade_side", "") or "")
 
         # 2. Resolve OOF bucket by matching strategy_id prefix against meta_oof keys
         # meta_oofs keys look like: "short_compression_ratio_..." or "compression_ratio_..."
@@ -1257,13 +1571,14 @@ def run_simple_position_sizer_from_artifacts(
         else:
             # Priority 2: longest common prefix between strategy_id and each meta key (strip side prefix)
             import re as _re
-            def _strip_side(k):
-                return _re.sub(r'^(long|short)_', '', k)
 
-            strat_norm = _re.sub(r'[^a-z0-9]', '', strategy_id.lower())
+            def _strip_side(k):
+                return _re.sub(r"^(long|short)_", "", k)
+
+            strat_norm = _re.sub(r"[^a-z0-9]", "", strategy_id.lower())
             best_key, best_score = None, 0
             for mk in meta_oofs.keys():
-                mk_norm = _re.sub(r'[^a-z0-9]', '', _strip_side(mk).lower())
+                mk_norm = _re.sub(r"[^a-z0-9]", "", _strip_side(mk).lower())
                 # Score = length of matching prefix
                 plen = 0
                 for a, b in zip(strat_norm, mk_norm):
@@ -1276,13 +1591,21 @@ def run_simple_position_sizer_from_artifacts(
                     best_key = mk
             if best_key and best_score >= 20:  # require substantial prefix overlap
                 resolved_meta_key = best_key
-                logger.info(f"Fuzzy matched strategy '{strategy_id[:40]}' to meta_oof key '{best_key[:40]}' (prefix_len={best_score})")
+                logger.info(
+                    f"Fuzzy matched strategy '{strategy_id[:40]}' to meta_oof key '{best_key[:40]}' (prefix_len={best_score})"
+                )
 
         if resolved_meta_key:
             oof_df = meta_oofs[resolved_meta_key]
             inferred_side = str(oof_df.attrs.get("trade_side", "") or "")
             if not inferred_side:
-                inferred_side = "long" if str(resolved_meta_key).startswith("long_") else "short" if str(resolved_meta_key).startswith("short_") else ""
+                inferred_side = (
+                    "long"
+                    if str(resolved_meta_key).startswith("long_")
+                    else "short"
+                    if str(resolved_meta_key).startswith("short_")
+                    else ""
+                )
             if inferred_side and not trade_side:
                 trade_side = inferred_side
 
@@ -1293,13 +1616,28 @@ def run_simple_position_sizer_from_artifacts(
             if not oof_df.empty and "index" in oof_df.columns:
                 # Align on row-position index: meta_oof index 0..266 maps to its own rows
                 # We join on timestamp+symbol when available for a robust link
-                join_cols = [c for c in ["timestamp", "symbol"] if c in full_df.columns and c in oof_df.columns]
+                join_cols = [
+                    c
+                    for c in ["timestamp", "symbol"]
+                    if c in full_df.columns and c in oof_df.columns
+                ]
                 if join_cols:
-                    oof_clean = oof_df.drop(columns=[c for c in ["return", "y_ret", "y_bin"] if c in full_df.columns], errors="ignore")
+                    oof_clean = oof_df.drop(
+                        columns=[
+                            c
+                            for c in ["return", "y_ret", "y_bin"]
+                            if c in full_df.columns
+                        ],
+                        errors="ignore",
+                    )
                     # Normalize timestamp timezones to avoid datetime64 tz mismatch
                     if "timestamp" in join_cols:
                         for _df in [full_df, oof_clean]:
-                            if "timestamp" in _df.columns and hasattr(_df["timestamp"].dtype, "tz") and _df["timestamp"].dt.tz is not None:
+                            if (
+                                "timestamp" in _df.columns
+                                and hasattr(_df["timestamp"].dtype, "tz")
+                                and _df["timestamp"].dt.tz is not None
+                            ):
                                 _df["timestamp"] = _df["timestamp"].dt.tz_localize(None)
                     # If OOF covers only one symbol, restrict label rows to that symbol
                     # and join on timestamp alone (symbol formats may differ, e.g. BTC/USDT vs BTCUSDT)
@@ -1307,25 +1645,53 @@ def run_simple_position_sizer_from_artifacts(
                         oof_syms = set(oof_clean["symbol"].dropna().unique())
                         if len(oof_syms) == 1:
                             oof_sym = next(iter(oof_syms))
+
                             # Normalise symbol for comparison (strip / and spaces)
-                            def _norm_sym(s): return str(s).replace("/", "").replace(" ", "").upper()
+                            def _norm_sym(s):
+                                return str(s).replace("/", "").replace(" ", "").upper()
+
                             oof_sym_norm = _norm_sym(oof_sym)
-                            label_sym_col = full_df["symbol"] if "symbol" in full_df.columns else (full_df["__symbol__"] if "__symbol__" in full_df.columns else None)
+                            label_sym_col = (
+                                full_df["symbol"]
+                                if "symbol" in full_df.columns
+                                else (
+                                    full_df["__symbol__"]
+                                    if "__symbol__" in full_df.columns
+                                    else None
+                                )
+                            )
                             if hasattr(label_sym_col, "map"):
                                 sym_mask = label_sym_col.map(_norm_sym) == oof_sym_norm
                                 if sym_mask.sum() > 0:
                                     full_df = full_df[sym_mask].copy()
-                                    logger.info(f"Single-symbol OOF ({oof_sym}): filtered labels to {sym_mask.sum()} matching rows")
+                                    logger.info(
+                                        f"Single-symbol OOF ({oof_sym}): filtered labels to {sym_mask.sum()} matching rows"
+                                    )
                             join_cols = ["timestamp"]  # drop symbol from join key
-                    active_df = pd.merge(full_df, oof_clean, on=join_cols, how="left", suffixes=("", "_oof"))
+                    active_df = pd.merge(
+                        full_df,
+                        oof_clean,
+                        on=join_cols,
+                        how="left",
+                        suffixes=("", "_oof"),
+                    )
                 else:
                     # Positional join — label rows in same order as oof
-                    oof_clean = oof_df.drop(columns=[c for c in ["return", "y_ret", "y_bin"] if c in full_df.columns], errors="ignore")
+                    oof_clean = oof_df.drop(
+                        columns=[
+                            c
+                            for c in ["return", "y_ret", "y_bin"]
+                            if c in full_df.columns
+                        ],
+                        errors="ignore",
+                    )
                     active_df = full_df.copy()
                     for col in oof_clean.columns:
                         if col not in active_df.columns:
                             vals = np.full(len(active_df), np.nan)
-                            vals[:min(len(oof_clean), len(active_df))] = oof_clean[col].values[:len(active_df)]
+                            vals[: min(len(oof_clean), len(active_df))] = oof_clean[
+                                col
+                            ].values[: len(active_df)]
                             active_df[col] = vals
             else:
                 # No OOF found — use full labels as-is (no prediction columns)
@@ -1334,28 +1700,53 @@ def run_simple_position_sizer_from_artifacts(
             active_df = oof_df
 
         if active_df.empty:
-            logger.warning(f"Could not resolve data for strategy {strategy_id[:60]}. Skipping.")
+            logger.warning(
+                f"Could not resolve data for strategy {strategy_id[:60]}. Skipping."
+            )
             continue
 
-        # Preserve the full joined frame so outcome and feature masks stay aligned.
+        if time_filter is not None and "timestamp" in active_df.columns:
+            _tf_start, _tf_end = time_filter
+            _tf_ts = pd.to_datetime(active_df["timestamp"], utc=True, errors="coerce")
+            _tf_mask = np.ones(len(active_df), dtype=bool)
+            if _tf_start is not None:
+                _tf_mask &= _tf_ts >= pd.Timestamp(_tf_start)
+            if _tf_end is not None:
+                _tf_mask &= _tf_ts < pd.Timestamp(_tf_end)
+            active_df = active_df.loc[_tf_mask].reset_index(drop=True)
+            logger.info(
+                f"OOF time filter [{_tf_start}, {_tf_end}): {len(active_df)} rows retained"
+            )
+
         active_joined_df = active_df
 
         # Get target outcomes
         trade_outcomes = load_trade_outcomes(data_root, run_id, active_joined_df)
-        if trade_outcomes is None or "return" not in trade_outcomes.columns or len(trade_outcomes) == 0:
-            logger.info(f"Skipping strategy {strategy_id}: could not load trade outcomes.")
+        if (
+            trade_outcomes is None
+            or "return" not in trade_outcomes.columns
+            or len(trade_outcomes) == 0
+        ):
+            logger.info(
+                f"Skipping strategy {strategy_id}: could not load trade outcomes."
+            )
             continue
-        
+
         # Load and Filter OOF
         # Diagnostic: Strategy Funnel
         # 1. Labels Discovery (100% of discovered hits)
         # 2. OOF Scorable (only the hits used for training/validation OOF)
         # 3. Unscored Loss (dropout due to subsampling or non-resolution)
-        
+
         n_raw_labels = len(full_df) if not full_df.empty else len(active_joined_df)
         n_matched_labels = len(active_joined_df)
         # Detect any OOF prediction column available (reg, clf, oof_pred, oof_prob, etc.)
-        _oof_score_cols = [c for c in active_joined_df.columns if c in ("oof_prob", "oof_pred", "reg", "clf") or c.startswith(("tbm_", "mae_h", "mfe_h"))]
+        _oof_score_cols = [
+            c
+            for c in active_joined_df.columns
+            if c in ("oof_prob", "oof_pred", "reg", "clf")
+            or c.startswith(("tbm_", "mae_h", "mfe_h"))
+        ]
         if _oof_score_cols:
             n_scorable = int(active_joined_df[_oof_score_cols[0]].notna().sum())
             scorable_mask = active_joined_df[_oof_score_cols[0]].notna()
@@ -1366,9 +1757,9 @@ def run_simple_position_sizer_from_artifacts(
             active_scored_df = active_joined_df.copy()
 
         # Diagnostic: Mask Pass Rate
-        print(f"\n" + "="*80)
+        print(f"\n" + "=" * 80)
         print(f" TARGETING STRATEGY: {strategy_id[:65]}...")
-        print(f" " + "-"*78)
+        print(f" " + "-" * 78)
         raw_to_matched = n_matched_labels / max(n_raw_labels, 1)
         matched_to_scorable = n_scorable / max(n_matched_labels, 1)
         print(f" STRATEGY FUNNEL (Coverage Restoration):")
@@ -1383,9 +1774,13 @@ def run_simple_position_sizer_from_artifacts(
         )
         subsampling_loss = max(0, n_matched_labels - n_scorable)
         extra_scored = max(0, n_scorable - n_matched_labels)
-        print(f"   [!] Subsampling Loss:  {subsampling_loss} trades dropped by technical subsampling (Step 3).")
+        print(
+            f"   [!] Subsampling Loss:  {subsampling_loss} trades dropped by technical subsampling (Step 3)."
+        )
         if extra_scored > 0:
-            print(f"   [!] Matched rows warning: {extra_scored} scored rows exceeded the matched label rows after join.")
+            print(
+                f"   [!] Matched rows warning: {extra_scored} scored rows exceeded the matched label rows after join."
+            )
         if n_matched_labels > n_raw_labels:
             print(
                 f"   [!] Join expansion warning: matched rows exceeded raw label rows "
@@ -1393,8 +1788,16 @@ def run_simple_position_sizer_from_artifacts(
                 f"key is not unique or the OOF frame was broadcast positionally."
             )
         # Detect symbol universe mismatch between labels and OOF
-        _label_syms = set(active_joined_df["symbol"].dropna().unique()) if "symbol" in active_joined_df.columns else set()
-        _oof_syms = set(oof_df["symbol"].dropna().unique()) if (not oof_df.empty and "symbol" in oof_df.columns) else set()
+        _label_syms = (
+            set(active_joined_df["symbol"].dropna().unique())
+            if "symbol" in active_joined_df.columns
+            else set()
+        )
+        _oof_syms = (
+            set(oof_df["symbol"].dropna().unique())
+            if (not oof_df.empty and "symbol" in oof_df.columns)
+            else set()
+        )
         _sym_overlap = _label_syms & _oof_syms
         if _oof_syms and not _sym_overlap:
             logger.warning(
@@ -1408,33 +1811,59 @@ def run_simple_position_sizer_from_artifacts(
                 f"{n_matched_labels} matched label rows. Meta model was likely trained on a heavily "
                 f"subsampled dataset — diagnostic results will have wide confidence intervals."
             )
-        print(f"="*80 + "\n")
+        print(f"=" * 80 + "\n")
 
         # Now pass the SCORED df to the sizer logic.
         # Keep trade outcomes aligned with the same scored rows so score/return
         # arrays refer to the exact same universe.
         active_df = active_scored_df.reset_index(drop=True)
-        trade_outcomes = trade_outcomes.loc[np.asarray(scorable_mask)].reset_index(drop=True)
+        trade_outcomes = trade_outcomes.loc[np.asarray(scorable_mask)].reset_index(
+            drop=True
+        )
 
         # Identify columns to use as heads.
         # STRICT RULE: never use realized-outcome columns as predictive heads — they are
         # hindsight by construction (MFE, MAE, bars_to_mfe, policy returns, labels).
         _HINDSIGHT_COLS = {
-            "return", "is_long", "y_ret", "y_bin", "exit_code", "bars_to_mfe",
-            "mae_ret", "mfe_ret", "u_policy", "u_policy_net",
+            "return",
+            "is_long",
+            "y_ret",
+            "y_bin",
+            "exit_code",
+            "bars_to_mfe",
+            "mae_ret",
+            "mfe_ret",
+            "u_policy",
+            "u_policy_net",
         }
+
         # Any column wrapped in __ is a label-side realized outcome
         def _is_hindsight(col: str) -> bool:
-            return col in _HINDSIGHT_COLS or (col.startswith("__") and col.endswith("__"))
+            return col in _HINDSIGHT_COLS or (
+                col.startswith("__") and col.endswith("__")
+            )
 
-        head_cols = [c for c in collect_ridge_head_columns(active_df) if not _is_hindsight(c)]
+        head_cols = [
+            c for c in collect_ridge_head_columns(active_df) if not _is_hindsight(c)
+        ]
 
         expected_families = {
             "base": any(c.lower().startswith("base_h") for c in head_cols),
-            "classifier": any(c == "clf" or c.lower().startswith("oof_p_") for c in head_cols),
-            "mae": any(c.lower().startswith("mae_h") or c == "oof_log_mae_q70_hat" for c in head_cols),
-            "mfe": any(c.lower().startswith("mfe_h") or c == "oof_log_mfe_hat" for c in head_cols),
-            "reg": any(c in {"reg", "reg_mean", "oof_pred", "oof_pred_oriented"} for c in head_cols),
+            "classifier": any(
+                c == "clf" or c.lower().startswith("oof_p_") for c in head_cols
+            ),
+            "mae": any(
+                c.lower().startswith("mae_h") or c == "oof_log_mae_q70_hat"
+                for c in head_cols
+            ),
+            "mfe": any(
+                c.lower().startswith("mfe_h") or c == "oof_log_mfe_hat"
+                for c in head_cols
+            ),
+            "reg": any(
+                c in {"reg", "reg_mean", "oof_pred", "oof_pred_oriented"}
+                for c in head_cols
+            ),
             "asym": any(c == "oof_asym_hat" for c in head_cols),
         }
 
@@ -1463,17 +1892,23 @@ def run_simple_position_sizer_from_artifacts(
 
         y_raw_net_return = trade_outcomes["return"].values
         if y_raw_net_return.size == 0:
-            logger.info(f"Skipping strategy {strategy_id}: empty aligned trade outcomes.")
+            logger.info(
+                f"Skipping strategy {strategy_id}: empty aligned trade outcomes."
+            )
             continue
 
         if "downside" in trade_outcomes.columns:
             y_downside = trade_outcomes["downside"].values
         elif "mae" in active_df.columns:
-             y_downside = active_df["mae"].values
+            y_downside = active_df["mae"].values
         else:
             y_downside = np.zeros_like(y_raw_net_return)
 
-        timestamps = active_df["timestamp"].values if "timestamp" in active_df.columns else np.zeros(len(y_raw_net_return))
+        timestamps = (
+            active_df["timestamp"].values
+            if "timestamp" in active_df.columns
+            else np.zeros(len(y_raw_net_return))
+        )
 
         feature_dict = {col: active_df[col].values for col in head_cols}
 
@@ -1484,10 +1919,12 @@ def run_simple_position_sizer_from_artifacts(
             y_raw_net_return=y_raw_net_return,
             y_downside=y_downside,
             timestamps=timestamps,
-            symbols=trade_outcomes["symbol"].values if "symbol" in trade_outcomes.columns else None,
-            bucket_labels=None, # Running independently, no bucketing needed
+            symbols=trade_outcomes["symbol"].values
+            if "symbol" in trade_outcomes.columns
+            else None,
+            bucket_labels=None,  # Running independently, no bucketing needed
             top_fracs=top_fracs,
-            use_ridge_head_sizer=use_ridge_head_sizer
+            use_ridge_head_sizer=use_ridge_head_sizer,
         )
 
         res["_strategy_meta_"] = {
@@ -1506,6 +1943,8 @@ def run_simple_position_sizer_from_artifacts(
     if strategy_params_path is not None:
         logger.info(f"Saved strategy params to {strategy_params_path}")
 
+    _persist_head_to_head_winner(data_root, run_id, strategy_results)
+
     # Print Strategy Leaderboard after all strategies are processed
     if strategy_results:
         leaderboard_rows = []
@@ -1517,25 +1956,31 @@ def run_simple_position_sizer_from_artifacts(
                     opt_row = opt_table[opt_table["is_optimal"]].iloc[0]
                 else:
                     opt_row = opt_table.iloc[0]
-                
-                leaderboard_rows.append({
-                    "strategy_id": sid[:40] + "...",
-                    "threshold": opt_row["threshold_pct"],
-                    "wallet_pnl": opt_row["wallet_pnl"],
-                    "net_pnl": opt_row["net_pnl"],
-                    "pnl/trade(bps)": opt_row["pnl_per_trade"],
-                    "trades/day": opt_row["trades_per_day"],
-                    "hit_rate": opt_row["hit_rate"],
-                    "pf": opt_row["profit_factor"],
-                    "monthly_sortino": opt_row.get("monthly_sortino", np.nan),
-                    "monthly_pnl_std": opt_row.get("monthly_pnl_std", np.nan),
-                    "monthly_group_cv_pnl": opt_row.get("monthly_group_cv_pnl", np.nan),
-                    "asset_group_cv_pnl": opt_row.get("asset_group_cv_pnl", np.nan),
-                    "asset_group_positive_share": opt_row.get("asset_group_positive_share", np.nan),
-                    "stability": opt_row["stability"],
-                    "mdd": opt_row["max_drawdown"]
-                })
-        
+
+                leaderboard_rows.append(
+                    {
+                        "strategy_id": sid[:40] + "...",
+                        "threshold": opt_row["threshold_pct"],
+                        "wallet_pnl": opt_row["wallet_pnl"],
+                        "net_pnl": opt_row["net_pnl"],
+                        "pnl/trade(bps)": opt_row["pnl_per_trade"],
+                        "trades/day": opt_row["trades_per_day"],
+                        "hit_rate": opt_row["hit_rate"],
+                        "pf": opt_row["profit_factor"],
+                        "monthly_sortino": opt_row.get("monthly_sortino", np.nan),
+                        "monthly_pnl_std": opt_row.get("monthly_pnl_std", np.nan),
+                        "monthly_group_cv_pnl": opt_row.get(
+                            "monthly_group_cv_pnl", np.nan
+                        ),
+                        "asset_group_cv_pnl": opt_row.get("asset_group_cv_pnl", np.nan),
+                        "asset_group_positive_share": opt_row.get(
+                            "asset_group_positive_share", np.nan
+                        ),
+                        "stability": opt_row["stability"],
+                        "mdd": opt_row["max_drawdown"],
+                    }
+                )
+
         if leaderboard_rows:
             # --- PORTFOLIO AGGREGATION ---
             # Collect returns for all strategies with PF > 1.0
@@ -1550,7 +1995,7 @@ def run_simple_position_sizer_from_artifacts(
                     opt_row = opt_table[opt_table["is_optimal"]].iloc[0]
                     pf = opt_row["profit_factor"]
                     w_pnl = opt_row["wallet_pnl"]
-                
+
                 if pf > 1.0:
                     strat_rets = res.get("opt_rets_", np.array([]))
                     strat_ts = res.get("opt_ts_", np.array([]))
@@ -1559,30 +2004,31 @@ def run_simple_position_sizer_from_artifacts(
                         portfolio_wallet_pnls.append(w_pnl)
                         if len(strat_ts) == len(strat_rets):
                             portfolio_ts_list.append(strat_ts)
-            
+
             if portfolio_rets_list:
                 all_portfolio_rets = np.concatenate(portfolio_rets_list)
                 all_portfolio_ts = (
                     np.concatenate(portfolio_ts_list)
-                    if portfolio_ts_list and len(portfolio_ts_list) == len(portfolio_rets_list)
+                    if portfolio_ts_list
+                    and len(portfolio_ts_list) == len(portfolio_rets_list)
                     else None
                 )
                 p_wallet_pnl_total = sum(portfolio_wallet_pnls)
-                
+
                 # Portfolio PnL
                 p_pnl = float(np.sum(all_portfolio_rets))
                 p_hit = float(np.mean(all_portfolio_rets > 0))
                 p_gp = float(np.sum(all_portfolio_rets[all_portfolio_rets > 0]))
                 p_gl = float(np.abs(np.sum(all_portfolio_rets[all_portfolio_rets < 0])))
                 p_pf = p_gp / p_gl if p_gl > 0 else p_gp
-                
+
                 # Stability (approximate on concatenated curve)
                 p_equity = np.cumsum(all_portfolio_rets)
                 p_stab = 0.0
                 if len(p_equity) > 5:
                     _, _, r_val, _, _ = linregress(np.arange(len(p_equity)), p_equity)
                     p_stab = float(r_val**2)
-                
+
                 # MDD
                 _, p_dd_series = _stable_equity_and_drawdown(all_portfolio_rets)
                 p_mdd = float(np.max(p_dd_series)) if len(p_dd_series) > 0 else 0.0
@@ -1593,34 +2039,38 @@ def run_simple_position_sizer_from_artifacts(
                 p_monthly_sortino, p_monthly_pnl_std = compute_period_aggregated_stats(
                     all_portfolio_rets, all_portfolio_ts, "M"
                 )
-                
-                leaderboard_rows.append({
-                    "strategy_id": "[PORTFOLIO - Positive PF Only]",
-                    "threshold": "Mixed",
-                    "wallet_pnl": p_wallet_pnl_total, # Need to calculate this
-                    "net_pnl": p_pnl,
-                    "pnl/trade(bps)": (p_pnl / len(all_portfolio_rets)) * 10000,
-                    "trades/day": len(all_portfolio_rets) / 725.0,
-                    "hit_rate": p_hit,
-                    "pf": p_pf,
-                    "monthly_sortino": p_monthly_sortino,
-                    "monthly_pnl_std": p_monthly_pnl_std,
-                    "monthly_group_cv_pnl": np.nan,
-                    "asset_group_cv_pnl": np.nan,
-                    "asset_group_positive_share": np.nan,
-                    "stability": p_stab,
-                    "mdd": p_mdd
-                })
+
+                leaderboard_rows.append(
+                    {
+                        "strategy_id": "[PORTFOLIO - Positive PF Only]",
+                        "threshold": "Mixed",
+                        "wallet_pnl": p_wallet_pnl_total,  # Need to calculate this
+                        "net_pnl": p_pnl,
+                        "pnl/trade(bps)": (p_pnl / len(all_portfolio_rets)) * 10000,
+                        "trades/day": len(all_portfolio_rets) / 725.0,
+                        "hit_rate": p_hit,
+                        "pf": p_pf,
+                        "monthly_sortino": p_monthly_sortino,
+                        "monthly_pnl_std": p_monthly_pnl_std,
+                        "monthly_group_cv_pnl": np.nan,
+                        "asset_group_cv_pnl": np.nan,
+                        "asset_group_positive_share": np.nan,
+                        "stability": p_stab,
+                        "mdd": p_mdd,
+                    }
+                )
 
             print("\n" + "=" * 110)
-            print(" STRATEGY LEADERBOARD (Sorted by Net PnL - Optimal Confidence Threshold)")
+            print(
+                " STRATEGY LEADERBOARD (Sorted by Net PnL - Optimal Confidence Threshold)"
+            )
             print("=" * 110)
             leaderboard_df = pd.DataFrame(leaderboard_rows)
             # Sort non-portfolio rows only?
             is_port = leaderboard_df["strategy_id"].str.contains("PORTFOLIO")
             sorted_v = leaderboard_df[~is_port].sort_values("net_pnl", ascending=False)
             leaderboard_df = pd.concat([sorted_v, leaderboard_df[is_port]])
-            
+
             print(leaderboard_df.to_string(index=False))
             print("=" * 110 + "\n")
 
@@ -1628,24 +2078,42 @@ def run_simple_position_sizer_from_artifacts(
 
 
 if __name__ == "__main__":
+    import argparse
     import os
     import sys
-    import argparse
-    from extreme_price_movements.src_utils_tprint import tprint
+
     from extreme_price_movements.run_ridge_sizer import find_latest_run_id
+    from extreme_price_movements.src_utils_tprint import tprint
 
     # Configure logging
     logging.basicConfig(
-        level=logging.INFO,
-        format='[%(asctime)s] %(levelname)s:%(name)s:%(message)s'
+        level=logging.INFO, format="[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
     )
 
-    parser = argparse.ArgumentParser(description="Run Simple Position Sizer Diagnostics")
-    parser.add_argument("--run-id", type=str, help="Run ID to analyze (defaults to latest in artifacts/)")
-    parser.add_argument("--data-root", type=str, default=".", help="Root directory for data/artifacts")
-    parser.add_argument("--cost-pct", type=float, default=0.003, help="Cost per trade in decimal (default: 0.003 for 30bps)")
-    parser.add_argument("--top-n", type=int, default=4, help="Top N strategies to evaluate from params store")
-    
+    parser = argparse.ArgumentParser(
+        description="Run Simple Position Sizer Diagnostics"
+    )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        help="Run ID to analyze (defaults to latest in artifacts/)",
+    )
+    parser.add_argument(
+        "--data-root", type=str, default=".", help="Root directory for data/artifacts"
+    )
+    parser.add_argument(
+        "--cost-pct",
+        type=float,
+        default=0.003,
+        help="Cost per trade in decimal (default: 0.003 for 30bps)",
+    )
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=4,
+        help="Top N strategies to evaluate from params store",
+    )
+
     args = parser.parse_args()
 
     data_root = args.data_root
@@ -1660,37 +2128,43 @@ if __name__ == "__main__":
             sys.exit(1)
 
     tprint(f"Starting Simple Position Sizer for run: {run_id} (data_root: {data_root})")
-    
+
     try:
         results = run_simple_position_sizer_from_artifacts(
-            data_root=data_root,
-            run_id=run_id,
-            top_n_strategies=args.top_n
+            data_root=data_root, run_id=run_id, top_n_strategies=args.top_n
         )
-        
+
         if not results:
-            tprint("No strategy results produced. Check if base OOFs and params_store are populated.")
+            tprint(
+                "No strategy results produced. Check if base OOFs and params_store are populated."
+            )
             sys.exit(0)
-            
+
         for strategy_id, res in results.items():
             print("-" * 60)
             print(f"\n============================================================")
             print(f" STRATEGY: {strategy_id}")
             print(f"============================================================\n")
-            
+
             if "head_diagnostics_table_" in res:
                 print(f"\nTop 5 Meta-Heads by Utility:")
                 print(res["head_diagnostics_table_"].head(5).to_string(index=False))
-            
+
             if "ridge_importance_table_" in res:
-                print(f"\nMeta-Head Importance (Ridge Weights - Strictly Walk-Forward OOF):")
+                print(
+                    f"\nMeta-Head Importance (Ridge Weights - Strictly Walk-Forward OOF):"
+                )
                 print(res["ridge_importance_table_"].to_string(index=False))
 
             print(f"\nBest Combo Found: {res.get('best_combo_name_', 'N/A')}")
-            print(f"  Utility Score: {res.get('best_combo_', {}).get('utility_score', 0.0):.4f}")
-            print(f"  Spearman (Ret): {res.get('best_combo_', {}).get('spearman_ret', 0.0):.4f}")
+            print(
+                f"  Utility Score: {res.get('best_combo_', {}).get('utility_score', 0.0):.4f}"
+            )
+            print(
+                f"  Spearman (Ret): {res.get('best_combo_', {}).get('spearman_ret', 0.0):.4f}"
+            )
 
-            cost_display = args.cost_pct if 'args' in locals() else 0.003
+            cost_display = args.cost_pct if "args" in locals() else 0.003
             print(f"\nConfidence Grid (Sizing: 5% to 15% Rank-Based):")
             print(res.get("profit_proxy_table_", pd.DataFrame()).to_string(index=False))
             print("-" * 60)
@@ -1700,5 +2174,6 @@ if __name__ == "__main__":
     except Exception as e:
         tprint(f"CRITICAL ERROR: {e}")
         import traceback
+
         tprint(traceback.format_exc())
         sys.exit(1)

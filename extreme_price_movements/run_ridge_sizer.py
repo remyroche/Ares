@@ -1061,7 +1061,7 @@ def main():
     # strategy_id and trade_side for proper direction grouping.
     # -------------------------------------------------------------------------
     # Load strategies to get trade_side for each bucket
-    strategies = load_inference_candidate_mask_params_per_bucket(top_n=1, ranking_metric="score_for_best_params")
+    strategies = load_inference_candidate_mask_params_per_bucket(top_n=2, ranking_metric="score_for_best_params")
     strategy_side_map = {s["strategy_id"]: s["trade_side"] for s in strategies}
 
     direction_groups = {"long": {}, "short": {}}

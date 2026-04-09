@@ -1598,6 +1598,24 @@ def save_artifact_df(df: pd.DataFrame, root_dir: str, run_id: str, category: str
     tprint(f"Saving artifact: {fpath}")
     df.to_parquet(fpath, engine="pyarrow", compression="zstd")
 
+def load_artifact_manifest(root_dir: str, run_id: str, category: str) -> dict | None:
+    """Load the JSON manifest for a saved artifact category if present."""
+    if category == "labels":
+        fpath = os.path.join(
+            root_dir, "artifacts", run_id, category, "labels_manifest.json"
+        )
+    else:
+        fpath = os.path.join(
+            root_dir, "artifacts", run_id, category, "manifest.json"
+        )
+    if not os.path.exists(fpath):
+        return None
+    try:
+        with open(fpath, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
 def load_artifact_df(root_dir: str, run_id: str, category: str, name: str) -> pd.DataFrame:
     """
     Load an artifact DataFrame. Returns None if not found.

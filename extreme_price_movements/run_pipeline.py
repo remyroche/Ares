@@ -151,7 +151,7 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
 
     # Populate strategies from final_rule_registry.csv
     strategies = load_inference_candidate_mask_params_per_bucket(
-        top_n=1, ranking_metric="score_for_best_params"
+        top_n=2, ranking_metric="score_for_best_params"
     )
     if strategies:
         cfg["strategies"] = strategies

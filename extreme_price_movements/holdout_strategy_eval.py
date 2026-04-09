@@ -9,23 +9,27 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-from extreme_price_movements.hf_data_loader import _load_existing_data
 from extreme_price_movements.config import CFG as DEFAULT_CFG
+from extreme_price_movements.data_store import load_features_selected
+from extreme_price_movements.features import (
+    add_regime_gates,
+    compute_features_hourly,
+    compute_market_features,
+)
+from extreme_price_movements.hf_data_loader import _load_existing_data
 from extreme_price_movements.inference.feature_generator import (
     get_inference_required_feature_keys,
     load_or_compute_features,
 )
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.model_loader import load_model_bundle
-from extreme_price_movements.features import (
-    add_regime_gates,
-    compute_features_hourly,
-    compute_market_features,
+from extreme_price_movements.ridge_position_sizer import (
+    prepare_policy_params_from_tpsl_optimiser,
+    run_policy_aware_labeling_step,
 )
-from extreme_price_movements.data_store import load_features_selected
-from extreme_price_movements.ridge_position_sizer import prepare_policy_params_from_tpsl_optimiser
-from extreme_price_movements.simple_position_sizer import evaluate_selection_profit_proxy
-from extreme_price_movements.ridge_position_sizer import run_policy_aware_labeling_step
+from extreme_price_movements.simple_position_sizer import (
+    evaluate_selection_profit_proxy,
+)
 from extreme_price_movements.universe import get_training_universe
 from extreme_price_movements.utils import tprint
 
@@ -43,7 +47,9 @@ def _fill_nonfinite(values: np.ndarray, neutral: float = 0.0) -> np.ndarray:
 
 
 def _freeze_path(data_root: str, run_id: str) -> Path:
-    return Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+    return (
+        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+    )
 
 
 def _load_or_write_freeze_file(data_root: str, run_id: str) -> Dict[str, Any]:
@@ -101,7 +107,7 @@ def _load_symbol_features(
         cfg=feature_cfg,
         lookback_hours=lookback_hours,
         required_feature_keys=required_feature_keys,
-        )
+    )
     if feature_map:
         feat_df = pd.DataFrame()
         for feat_name, feat_series_df in feature_map.items():
@@ -118,7 +124,9 @@ def _load_symbol_features(
             if feat_df.empty:
                 feat_df = pd.DataFrame(index=series.index)
             feat_df[feat_name] = series.astype(np.float32)
-        missing_required = {k for k in required_feature_keys if k not in feat_df.columns}
+        missing_required = {
+            k for k in required_feature_keys if k not in feat_df.columns
+        }
         if len(feat_df.columns) >= 20 and not missing_required:
             feat_df = feat_df.sort_index()
             if not isinstance(feat_df.index, pd.DatetimeIndex):
@@ -137,9 +145,7 @@ def _load_symbol_features(
     # The selected feature cache only carries the lightweight selector set on
     # some runs. Recompute the full alpha feature matrix directly when needed.
     compute_panel = {
-        key: df.copy()
-        for key, df in panel.items()
-        if isinstance(df, pd.DataFrame)
+        key: df.copy() for key, df in panel.items() if isinstance(df, pd.DataFrame)
     }
     mkt_df = compute_market_features(compute_panel, [symbol.replace("_", "/")])
     mkt_gates = add_regime_gates(
@@ -151,7 +157,9 @@ def _load_symbol_features(
         compute_panel,
         mkt_gates,
         feature_cfg,
-        requested_feature_keys=sorted(required_feature_keys) if required_feature_keys else None,
+        requested_feature_keys=sorted(required_feature_keys)
+        if required_feature_keys
+        else None,
     )
     feat_df = pd.DataFrame()
     for feat_name, feat_value in full_feats.items():
@@ -254,10 +262,14 @@ def _backfill_missing_feature_columns(
     if not updates:
         return feature_df
 
-    return pd.concat([feature_df, pd.DataFrame(updates, index=feature_df.index)], axis=1)
+    return pd.concat(
+        [feature_df, pd.DataFrame(updates, index=feature_df.index)], axis=1
+    )
 
 
-_GATED_INTERACTION_RE = re.compile(r"^(?P<base>.+)_(?P<gate>G_[A-Z0-9_]+)_(?P<state>[01])$")
+_GATED_INTERACTION_RE = re.compile(
+    r"^(?P<base>.+)_(?P<gate>G_[A-Z0-9_]+)_(?P<state>[01])$"
+)
 
 
 def _backfill_gated_interaction_columns(
@@ -282,7 +294,9 @@ def _backfill_gated_interaction_columns(
         for key in missing_keys
     )
     if needs_gate_cols:
-        compute_panel = {key: df.copy() for key, df in panel.items() if isinstance(df, pd.DataFrame)}
+        compute_panel = {
+            key: df.copy() for key, df in panel.items() if isinstance(df, pd.DataFrame)
+        }
         mkt_df = compute_market_features(compute_panel, [panel_symbol])
         mkt_gates = add_regime_gates(
             mkt_df,
@@ -322,7 +336,9 @@ def _backfill_gated_interaction_columns(
     if not updates:
         return feature_df
 
-    return pd.concat([feature_df, pd.DataFrame(updates, index=feature_df.index)], axis=1)
+    return pd.concat(
+        [feature_df, pd.DataFrame(updates, index=feature_df.index)], axis=1
+    )
 
 
 def _build_candidates(
@@ -356,12 +372,20 @@ def _build_candidates(
 
 def _compute_policy_params(feature_df: pd.DataFrame, symbol: str) -> Dict[str, Any]:
     if "atr_pct" in feature_df.columns:
-        atr_val = float(np.nanmedian(np.asarray(feature_df["atr_pct"].values, dtype=np.float64)))
+        atr_val = float(
+            np.nanmedian(np.asarray(feature_df["atr_pct"].values, dtype=np.float64))
+        )
     elif "prior_volatility" in feature_df.columns:
-        atr_val = float(np.nanmedian(np.asarray(feature_df["prior_volatility"].values, dtype=np.float64)))
+        atr_val = float(
+            np.nanmedian(
+                np.asarray(feature_df["prior_volatility"].values, dtype=np.float64)
+            )
+        )
     else:
         atr_val = 0.02
-    atr_val = float(np.clip(atr_val if np.isfinite(atr_val) and atr_val > 0 else 0.02, 1e-4, 0.2))
+    atr_val = float(
+        np.clip(atr_val if np.isfinite(atr_val) and atr_val > 0 else 0.02, 1e-4, 0.2)
+    )
 
     seed = {
         "tp_mult": 2.0,
@@ -442,7 +466,9 @@ def evaluate_holdout_symbol(
         if score_series.empty:
             continue
 
-        aligned_scores = score_series.reindex(pd.DatetimeIndex(outcomes["timestamp"].values))
+        aligned_scores = score_series.reindex(
+            pd.DatetimeIndex(outcomes["timestamp"].values)
+        )
         score_values = _fill_nonfinite(aligned_scores.to_numpy(dtype=np.float64))
         raw_returns = np.asarray(outcomes["label"].values, dtype=np.float64)
         ts_values = np.asarray(outcomes["timestamp"].values)
@@ -483,10 +509,17 @@ def evaluate_holdout_symbol(
         portfolio_scores = np.concatenate(portfolio_score_parts)
         portfolio_returns = np.concatenate(portfolio_return_parts)
         portfolio_ts = np.concatenate(portfolio_ts_parts)
-        portfolio_days = float(
-            (pd.to_datetime(portfolio_ts.max()) - pd.to_datetime(portfolio_ts.min()))
-            / np.timedelta64(1, "D")
-        ) if len(portfolio_ts) > 1 else 0.0
+        portfolio_days = (
+            float(
+                (
+                    pd.to_datetime(portfolio_ts.max())
+                    - pd.to_datetime(portfolio_ts.min())
+                )
+                / np.timedelta64(1, "D")
+            )
+            if len(portfolio_ts) > 1
+            else 0.0
+        )
         portfolio_metrics, _, _ = evaluate_selection_profit_proxy(
             portfolio_scores,
             portfolio_returns,
@@ -509,37 +542,62 @@ def evaluate_holdout_symbol(
 
 def _pick_best_model_per_strategy(freeze: Dict[str, Any]) -> Dict[str, Any]:
     """Auto-pick the best model (ridge vs et) per strategy_id from freeze data."""
-    comparison_path = Path(freeze.get("_comparison_path_", ""))
+    data_root = freeze.get("_data_root_", "data")
+    run_id = freeze.get("_run_id_", "")
+
+    per_strategy_winner: Dict[str, str] = {}
+    comparison_path = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "ridge_sizer"
+        / "head_to_head_comparison.json"
+    )
     if comparison_path.exists():
         try:
-            comparison = json.loads(comparison_path.read_text())
-            winner = comparison.get("winner", "ridge")
-            tprint(f"Auto-picked best model from comparison: {winner}")
+            comparisons = json.loads(comparison_path.read_text())
+            if isinstance(comparisons, list):
+                for row in comparisons:
+                    per_strategy_winner[row.get("strategy_id", "")] = row.get(
+                        "winner", "ridge"
+                    )
+                et_count = sum(1 for w in per_strategy_winner.values() if w == "et")
+                tprint(
+                    f"Loaded head-to-head comparison: {len(per_strategy_winner)} strategies, {et_count} ET winners"
+                )
         except Exception:
-            winner = "ridge"
-    else:
-        winner = "ridge"
+            pass
+
+    et_freeze_path = (
+        Path(data_root) / "artifacts" / run_id / "et_sizer" / "strategy_params.json"
+    )
+    et_strategies: Dict[str, Dict] = {}
+    if et_freeze_path.exists():
+        try:
+            et_freeze = json.loads(et_freeze_path.read_text())
+            for s in et_freeze.get("strategies", []):
+                et_strategies[s.get("strategy_id", "")] = s
+        except Exception:
+            pass
 
     best_freeze = dict(freeze)
-    strategies = best_freeze.get("strategies", [])
-    if winner == "et":
-        et_freeze_path = Path(str(_freeze_path("", "")).replace("ridge_sizer", "et_sizer"))
-        for alt_path in [
-            Path(best_freeze.get("_data_root_", "data")) / "artifacts" / best_freeze.get("_run_id_", "") / "et_sizer" / "strategy_params.json",
-        ]:
-            if alt_path.exists():
-                try:
-                    et_freeze = json.loads(alt_path.read_text())
-                    if et_freeze.get("strategies"):
-                        strategies = et_freeze["strategies"]
-                        best_freeze["strategies"] = strategies
-                        best_freeze["model_source"] = "et"
-                        tprint(f"Using ET strategy params from {alt_path}")
-                        break
-                except Exception:
-                    pass
-    else:
-        best_freeze["model_source"] = "ridge"
+    merged_strategies = []
+    for strat in best_freeze.get("strategies", []):
+        sid = strat.get("strategy_id", "")
+        if per_strategy_winner.get(sid) == "et" and sid in et_strategies:
+            merged = dict(strat)
+            merged.update(et_strategies[sid])
+            merged["model_source"] = "et"
+            merged_strategies.append(merged)
+        else:
+            merged = dict(strat)
+            merged["model_source"] = "ridge"
+            merged_strategies.append(merged)
+
+    if merged_strategies:
+        best_freeze["strategies"] = merged_strategies
+
+    best_freeze["model_source"] = "mixed" if per_strategy_winner else "ridge"
     return best_freeze
 
 
@@ -548,7 +606,9 @@ def _sample_random_symbols(n: int = 5, seed: int = 42) -> List[str]:
     rng = np.random.RandomState(seed)
     try:
         universe = get_training_universe()
-        symbols = list(universe.keys()) if isinstance(universe, dict) else list(universe)
+        symbols = (
+            list(universe.keys()) if isinstance(universe, dict) else list(universe)
+        )
     except Exception:
         symbols = ["AIXBT_USDC"]
     if len(symbols) <= n:
@@ -557,11 +617,17 @@ def _sample_random_symbols(n: int = 5, seed: int = 42) -> List[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate frozen strategy thresholds on holdout symbols.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate frozen strategy thresholds on holdout symbols."
+    )
     parser.add_argument("--data-root", default="data")
     parser.add_argument("--run-id", default="20260321_140000")
-    parser.add_argument("--symbol", default="", help="Single symbol to evaluate (overrides --n-symbols)")
-    parser.add_argument("--n-symbols", type=int, default=5, help="Number of random symbols to evaluate")
+    parser.add_argument(
+        "--symbol", default="", help="Single symbol to evaluate (overrides --n-symbols)"
+    )
+    parser.add_argument(
+        "--n-symbols", type=int, default=5, help="Number of random symbols to evaluate"
+    )
     parser.add_argument("--freeze-json", default="")
     parser.add_argument("--output-json", default="")
     parser.add_argument("--seed", type=int, default=42)
@@ -586,17 +652,25 @@ def main() -> None:
 
     for symbol in symbols:
         try:
-            result = evaluate_holdout_symbol(args.data_root, args.run_id, symbol, freeze)
+            result = evaluate_holdout_symbol(
+                args.data_root, args.run_id, symbol, freeze
+            )
             all_results.append(result)
             if result.get("portfolio"):
-                tprint(f"  {symbol}: portfolio wallet_pnl={result['portfolio'].get('wallet_pnl', 'N/A')}")
+                tprint(
+                    f"  {symbol}: portfolio wallet_pnl={result['portfolio'].get('wallet_pnl', 'N/A')}"
+                )
         except Exception as e:
             tprint(f"  {symbol}: SKIPPED ({e})")
 
     output_path = (
         Path(args.output_json)
         if args.output_json
-        else Path(args.data_root) / "artifacts" / args.run_id / "ridge_sizer" / "holdout_multi_metrics.json"
+        else Path(args.data_root)
+        / "artifacts"
+        / args.run_id
+        / "ridge_sizer"
+        / "holdout_multi_metrics.json"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(all_results, indent=2, default=str))

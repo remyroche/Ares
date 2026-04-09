@@ -1742,6 +1742,11 @@ def run_training_step(
     # 1. Load label artifacts
     tprint("Loading label datasets from artifacts...")
 
+    from extreme_price_movements.data_store import load_artifact_manifest
+
+    labels_manifest = load_artifact_manifest(cfg["data_root"], run_id, "labels") or {}
+    available_label_names = set((labels_manifest.get("datasets") or {}).keys())
+
     # Alpha models (Dynamic Strategies from get_strategies)
     strategies = get_strategies(cfg)
     strategy_horizons = {
@@ -1749,6 +1754,19 @@ def run_training_step(
     }
 
     found_count = 0
+    dataset_cache: dict[str, pd.DataFrame] = {}
+
+    def _load_label_dataset(name: str) -> pd.DataFrame | None:
+        cached = dataset_cache.get(name)
+        if cached is not None:
+            return cached
+        if available_label_names and name not in available_label_names:
+            return None
+        df_local = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        if df_local is not None:
+            dataset_cache[name] = df_local
+        return df_local
+
     base_geometry_archetypes = [
         str(v)
         for v in cfg.get("base_geometry_archetypes", ["tight", "balanced", "wide"])
@@ -1760,7 +1778,7 @@ def run_training_step(
         # but the actual name will be 'train_{s_id}_{H}'
         for H in strategy_horizons.get(s_id, []):
             name = f"train_{s_id}_{H}"
-            df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+            df = _load_label_dataset(name)
             if df is not None:
                 datasets[name] = df
                 found_count += 1
@@ -1770,7 +1788,7 @@ def run_training_step(
                 if variant == "balanced":
                     continue
                 vname = f"train_{s_id}_{H}_{variant}"
-                df_v = load_artifact_df(cfg["data_root"], run_id, "labels", vname)
+                df_v = _load_label_dataset(vname)
                 if df_v is not None:
                     datasets[vname] = df_v
                     tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
@@ -2129,7 +2147,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     )
 
     strategies = load_inference_candidate_mask_params_per_bucket(
-        top_n=1, ranking_metric="score_for_best_params"
+        top_n=2, ranking_metric="score_for_best_params"
     )
     strategy_side_map = {s["strategy_id"]: s["trade_side"] for s in strategies}
 
@@ -5106,7 +5124,7 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         return datasets
 
     sorted_syms = sorted(all_syms)
-    max_symbols = int(cfg.get("feature_injection_max_symbols", 100))
+    max_symbols = int(cfg.get("feature_injection_max_symbols", 75))
     if max_symbols > 0 and len(sorted_syms) > max_symbols:
         tprint(
             f"Capping feature injection to the first {max_symbols} symbols "
@@ -5114,9 +5132,8 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         )
         sorted_syms = sorted_syms[:max_symbols]
 
-    # Precompute dataset metadata so the symbol loop does not repeatedly scan
-    # every dataset and every row. This keeps the hot path O(symbols × touched
-    # datasets) instead of O(symbols × all_datasets × rows).
+    # Precompute dataset metadata so the symbol loop can stay lazy and avoid
+    # repeating expensive per-row scans across all datasets.
     dataset_meta = {}
     datasets_by_symbol = {}
     for name, df in datasets.items():
@@ -5137,7 +5154,7 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         for sym in syms:
             datasets_by_symbol.setdefault(sym, []).append(name)
 
-    # Define per-dataset feature requirements to avoid OOM on large panels
+    # Define per-dataset feature requirements.
     dataset_features = {}
     for name in datasets.keys():
         if name == "trap_model":
@@ -5161,13 +5178,20 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         return datasets
 
     meta_keys_all = set(_meta_feature_keys_union(cfg))
-    sorted_missing_keys = sorted(all_needed_keys)
-    heartbeat_every = max(1, int(cfg.get("feature_injection_heartbeat_every", 25)))
+    heartbeat_every = max(1, int(cfg.get("feature_injection_heartbeat_every", 50)))
 
-    # Pre-allocate target arrays
     tprint(
-        f"Pre-allocating injection buffers for {len(sorted_missing_keys)} features across {len(missing_keys_per_dataset)} datasets..."
+        f"Injecting features symbol-by-symbol for {len(sorted_syms)} symbols..."
     )
+    import time
+
+    start_time = time.time()
+    files_loaded = 0
+    symbols_with_work = 0
+    cols_injected = 0
+    feature_schema_cols = {}
+    dataset_symbol_positions: dict[str, dict[str, np.ndarray]] = {}
+    dataset_ts_index: dict[str, pd.DatetimeIndex] = {}
     target_buffers = {}
     for name, missing in missing_keys_per_dataset.items():
         df = datasets[name]
@@ -5179,35 +5203,81 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                     len(df), dtype=np.float32
                 )
 
-    tprint(f"Injecting features symbol-by-symbol for {len(sorted_syms)} symbols...")
-    import time
+    for name, meta in dataset_meta.items():
+        df = meta.get("df")
+        s_col = meta.get("s_col")
+        t_col = meta.get("t_col")
+        if df is None or not s_col or not t_col:
+            continue
+        symbol_values = df[s_col].to_numpy(copy=False)
+        dataset_ts_index[name] = pd.DatetimeIndex(
+            pd.to_datetime(df[t_col], utc=True, errors="coerce")
+        )
+        symbol_positions = (
+            pd.Series(np.arange(len(df), dtype=np.int32))
+            .groupby(symbol_values, sort=False)
+            .indices
+        )
+        dataset_symbol_positions[name] = {
+            s: np.asarray(pos, dtype=np.int32)
+            for s, pos in symbol_positions.items()
+            if s in datasets_by_symbol and name in datasets_by_symbol.get(s, [])
+        }
 
-    start_time = time.time()
-    files_loaded = 0
-    symbols_with_work = 0
-    cols_injected = 0
-    feature_schema_cols = None
+    def _load_symbol_features(
+        s: str, needed_for_this_sym: set[str]
+    ) -> tuple[pd.DataFrame | None, int]:
 
-    def _process_symbol(s: str) -> tuple[int, int, int]:
-        nonlocal feature_schema_cols
         fpath = get_feature_path(cfg["data_root"], ts_sig, s)
         if not os.path.exists(fpath):
-            return 0, 0, 0
+            return None, 0
 
+        schema_cols = feature_schema_cols.get(s)
+        if schema_cols is None:
+            schema_cols = set(pq.ParquetFile(fpath).schema.names)
+            feature_schema_cols[s] = schema_cols
+
+        cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
+        if not cols_to_load:
+            return None, 1
+
+        try:
+            df_feat = pd.read_parquet(fpath, columns=cols_to_load)
+        except Exception:
+            schema_cols = set(pq.ParquetFile(fpath).schema.names)
+            feature_schema_cols[s] = schema_cols
+            cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
+            if not cols_to_load:
+                return None, 1
+            df_feat = pd.read_parquet(fpath, columns=cols_to_load)
+
+        if df_feat.empty:
+            return None, 1
+        if not df_feat.index.is_unique:
+            df_feat = df_feat[~df_feat.index.duplicated(keep="last")]
+
+        return df_feat, 1
+
+    def _process_symbol(s: str) -> tuple[int, int, int]:
         touched_datasets = datasets_by_symbol.get(s, [])
         if not touched_datasets:
             return 0, 0, 0
 
-        needed_for_this_sym = set()
+        needed_for_this_sym: set[str] = set()
         for name in touched_datasets:
             needed_for_this_sym.update(missing_keys_per_dataset.get(name, []))
         if not needed_for_this_sym:
             return 0, 0, 0
 
-        schema_cols = feature_schema_cols
+        fpath = get_feature_path(cfg["data_root"], ts_sig, s)
+        if not os.path.exists(fpath):
+            return 0, 0, 0
+
+        schema_cols = feature_schema_cols.get(s)
         if schema_cols is None:
             schema_cols = set(pq.ParquetFile(fpath).schema.names)
-            feature_schema_cols = schema_cols
+            feature_schema_cols[s] = schema_cols
+
         cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
         if not cols_to_load:
             return 0, 0, 0
@@ -5216,6 +5286,7 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             df_feat = pd.read_parquet(fpath, columns=cols_to_load)
         except Exception:
             schema_cols = set(pq.ParquetFile(fpath).schema.names)
+            feature_schema_cols[s] = schema_cols
             cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
             if not cols_to_load:
                 return 0, 0, 0
@@ -5228,16 +5299,12 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
 
         local_files = 1
         local_cols = 0
+        local_work = 0
         for name in touched_datasets:
             meta = dataset_meta.get(name, {})
             df = meta.get("df")
-            s_col = meta.get("s_col")
-            t_col = meta.get("t_col")
-            if df is None or not s_col or not t_col:
-                continue
-
-            mask = df[s_col] == s
-            if not mask.any():
+            row_pos = dataset_symbol_positions.get(name, {}).get(s)
+            if df is None or row_pos is None or row_pos.size == 0:
                 continue
 
             cols_for_ds = [
@@ -5249,12 +5316,12 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                 continue
 
             idx_feat = df_feat.index
-            row_idx = pd.DatetimeIndex(df.loc[mask, t_col])
+            row_idx = dataset_ts_index[name].take(row_pos)
             if hasattr(row_idx, "tz") and hasattr(idx_feat, "tz"):
                 if row_idx.tz is None and idx_feat.tz is not None:
-                    row_idx = pd.DatetimeIndex(pd.to_datetime(row_idx, utc=True)).tz_convert(
-                        idx_feat.tz
-                    )
+                    row_idx = pd.DatetimeIndex(
+                        pd.to_datetime(row_idx, utc=True)
+                    ).tz_convert(idx_feat.tz)
                 elif row_idx.tz is not None and idx_feat.tz is None:
                     idx_feat = idx_feat.tz_localize("UTC").tz_convert(row_idx.tz)
                 elif row_idx.tz is not None and idx_feat.tz is not None:
@@ -5264,19 +5331,22 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             valid = feat_row_pos >= 0
             if not np.any(valid):
                 continue
-            buffer_pos = np.flatnonzero(mask)[valid]
-            feat_row_pos = feat_row_pos[valid]
 
+            buffer_pos = row_pos[valid]
+            feat_row_pos = feat_row_pos[valid]
             for k in cols_for_ds:
                 vals = df_feat[k].to_numpy(dtype=np.float32, copy=False)[feat_row_pos]
                 target_buffers[name][k][buffer_pos] = vals
                 local_cols += 1
                 if k in meta_keys_all and f"__meta_raw__{k}" in target_buffers[name]:
                     target_buffers[name][f"__meta_raw__{k}"][buffer_pos] = vals
+            local_work += 1
 
-        return local_files, local_cols, 1
+        return local_files, local_cols, local_work
 
-    default_worker_count = 1 if (len(sorted_syms) >= 50 or len(sorted_missing_keys) >= 400) else min(2, os.cpu_count() or 1)
+    default_worker_count = (
+        1
+    )
     worker_count = max(1, int(cfg.get("feature_injection_workers", default_worker_count)))
     if worker_count <= 1 or len(sorted_syms) < 8:
         for i, s in enumerate(sorted_syms, 1):
@@ -5320,7 +5390,6 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                         f"  Heartbeat: {i}/{len(sorted_syms)} symbols "
                         f"(work={symbols_with_work}, files={files_loaded}, cols={cols_injected}, elapsed={elapsed:.1f}s)"
                     )
-
     tprint("Concatenating injected features...")
     for name, cols_dict in target_buffers.items():
         if cols_dict:

@@ -26,6 +26,7 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import HuberRegressor, Ridge
 from sklearn.preprocessing import RobustScaler, StandardScaler
 
+from extreme_price_movements.src_utils_tprint import tprint
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.offline_optimisers.params_store import (
     load_inference_candidate_mask_params_per_bucket,
@@ -1115,8 +1116,11 @@ def run_simple_position_sizer(
 
     results: Dict[str, Any] = {}
     t_diff = np.max(timestamps) - np.min(timestamps)
-    if hasattr(t_diff, "astype") and not isinstance(t_diff, float):
-        n_days = float(t_diff / np.timedelta64(1, "D"))
+    if hasattr(t_diff, "astype") and not isinstance(t_diff, float) and not isinstance(t_diff, int) and not isinstance(t_diff, np.integer):
+        try:
+            n_days = float(t_diff / np.timedelta64(1, "D"))
+        except Exception:
+            n_days = float(t_diff) / 86400.0 if len(timestamps) > 1 else 0.0
     else:
         n_days = float(t_diff) / 86400.0 if len(timestamps) > 1 else 0.0
 
@@ -1378,6 +1382,7 @@ def run_simple_position_sizer_from_artifacts(
     run_id: str,
     top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
     use_ridge_head_sizer: bool = True,
+    use_et_head_sizer: bool = True,
     top_n_strategies: int = 4,
     time_filter: Optional[Tuple[Any, Any]] = None,
 ) -> Dict[str, Any]:
@@ -1925,6 +1930,7 @@ def run_simple_position_sizer_from_artifacts(
             bucket_labels=None,  # Running independently, no bucketing needed
             top_fracs=top_fracs,
             use_ridge_head_sizer=use_ridge_head_sizer,
+            use_et_head_sizer=use_et_head_sizer,
         )
 
         res["_strategy_meta_"] = {
@@ -2114,7 +2120,17 @@ if __name__ == "__main__":
         help="Top N strategies to evaluate from params store",
     )
 
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--ridge", action="store_true", help="Use only Ridge model")
+    group.add_argument("--et", action="store_true", help="Use only ExtraTrees model")
+    group.add_argument("--compare", action="store_true", help="Run both and compare (default)")
+
     args = parser.parse_args()
+
+    # Determine which models to run (default to compare if none specified)
+    use_ridge = args.ridge or args.compare or (not args.ridge and not args.et and not args.compare)
+    use_et = args.et or args.compare or (not args.ridge and not args.et and not args.compare)
+
 
     data_root = args.data_root
     run_id = args.run_id
@@ -2131,7 +2147,8 @@ if __name__ == "__main__":
 
     try:
         results = run_simple_position_sizer_from_artifacts(
-            data_root=data_root, run_id=run_id, top_n_strategies=args.top_n
+            data_root=data_root, run_id=run_id, top_n_strategies=args.top_n,
+            use_ridge_head_sizer=use_ridge, use_et_head_sizer=use_et
         )
 
         if not results:

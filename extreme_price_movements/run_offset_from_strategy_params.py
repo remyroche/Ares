@@ -14,9 +14,14 @@ from extreme_price_movements.simple_position_sizer import run_simple_position_si
 from extreme_price_movements.simple_offset_generator import run_simple_offset_generator_from_sizer
 
 
-def load_strategy_params(run_id: str, data_root: str = "data") -> dict:
-    """Load strategy_params.json from ridge_sizer directory."""
-    path = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+def load_strategy_params(run_id: str, data_root: str = "data", model_type: str = "ridge") -> dict:
+    """Load strategy_params.json from the appropriate directory based on model type."""
+    sizer_dir = "et_sizer" if model_type == "et" else "ridge_sizer"
+    path = Path(data_root) / "artifacts" / run_id / sizer_dir / "strategy_params.json"
+    if not path.exists():
+        if model_type == "et":
+            print(f"Warning: {path} not found. Ensure ET sizer completed successfully. Falling back to ridge_sizer.")
+            path = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
     with open(path) as f:
         return json.load(f)
 
@@ -52,6 +57,7 @@ def run_offset_from_strategy_params(
     base_offset_ret: float = 0.0001,
     max_offset_ret: float = 0.0003,
     invert_offset: bool = True,
+    model_type: str = "ridge",
 ) -> dict:
     """Run offset generator using strategy_params.json.
     
@@ -67,17 +73,29 @@ def run_offset_from_strategy_params(
         Dictionary with results for each strategy tested
     """
     # Load strategy parameters
-    params = load_strategy_params(run_id, data_root)
+    params = load_strategy_params(run_id, data_root, model_type=model_type)
     
     if use_best_only:
-        strategies_to_test = [params["best_strategy_id"]]
+        if "best_strategy_id" in params and params["best_strategy_id"]:
+            strategies_to_test = [params["best_strategy_id"]]
+        elif "strategies" in params and len(params["strategies"]) > 0:
+            strategies_to_test = [params["strategies"][0]["strategy_id"]]
+        else:
+            strategies_to_test = []
     else:
         strategies_to_test = list(params["buckets"].keys())
     
     results = {}
     
     for strategy_id in strategies_to_test:
-        bucket_params = params["buckets"][strategy_id]
+        if "buckets" in params and strategy_id in params["buckets"]:
+            bucket_params = params["buckets"][strategy_id]
+        else:
+            # Reconstruct from strategies list if buckets dict is missing
+            bucket_params = next((s for s in params.get("strategies", []) if s.get("strategy_id") == strategy_id), None)
+            if not bucket_params:
+                print(f"Strategy {strategy_id} not found in params.")
+                continue
         
         print(f"\n{'='*70}")
         print(f"Testing strategy: {strategy_id}")
@@ -110,14 +128,22 @@ def run_offset_from_strategy_params(
         })
         
         # Run sizer to get thresholds and confidence scores
+        use_ridge = model_type == "ridge" or model_type == "compare"
+        use_et = model_type == "et" or model_type == "compare"
+
         sizer_results = run_simple_position_sizer(
             feature_dict=feature_dict,
             trade_outcomes=trade_outcomes,
             y_raw_net_return=df['return'].values,
             y_downside=np.abs(np.minimum(df['return'].values, 0)),
             timestamps=df['timestamp'].values,
+            use_ridge_head_sizer=use_ridge,
+            use_et_head_sizer=use_et,
         )
         
+        if model_type in ["ridge", "et"]:
+            sizer_results["_force_model_"] = model_type
+
         # Run offset generator
         offset_results = run_simple_offset_generator_from_sizer(
             sizer_results=sizer_results,
@@ -150,13 +176,32 @@ def run_offset_from_strategy_params(
 
 
 if __name__ == "__main__":
-    # Run on the 20260321_140000 run
+    import argparse
+    parser = argparse.ArgumentParser(description="Run offset generator from strategy parameters")
+    parser.add_argument("--run-id", default="20260321_140000", help="Run ID")
+    parser.add_argument("--data-root", default="data", help="Data root directory")
+    parser.add_argument("--all", action="store_true", help="Test all strategies instead of just the best one")
+    parser.add_argument("--base-offset", type=float, default=0.0001, help="Base offset return")
+    parser.add_argument("--max-offset", type=float, default=0.0003, help="Max offset return")
+    parser.add_argument("--no-invert", action="store_true", help="Don't invert offset (high conf = higher offset)")
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--ridge", action="store_true", help="Use Ridge model")
+    group.add_argument("--et", action="store_true", help="Use ExtraTrees model")
+    group.add_argument("--compare", action="store_true", help="Compare models (defaults to ridge logic if not specified)")
+
+    args = parser.parse_args()
+
+    model_type = "et" if args.et else "ridge"
+
     results = run_offset_from_strategy_params(
-        run_id="20260321_140000",
-        use_best_only=True,  # Test only the best strategy
-        base_offset_ret=0.0001,  # 10 bps
-        max_offset_ret=0.0003,     # 30 bps
-        invert_offset=True,       # High conf = lower offset
+        run_id=args.run_id,
+        data_root=args.data_root,
+        use_best_only=not args.all,
+        base_offset_ret=args.base_offset,
+        max_offset_ret=args.max_offset,
+        invert_offset=not args.no_invert,
+        model_type=model_type,
     )
     
     print("\n" + "="*70)

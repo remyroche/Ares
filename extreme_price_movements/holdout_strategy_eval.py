@@ -540,8 +540,8 @@ def evaluate_holdout_symbol(
     }
 
 
-def _pick_best_model_per_strategy(freeze: Dict[str, Any]) -> Dict[str, Any]:
-    """Auto-pick the best model (ridge vs et) per strategy_id from freeze data."""
+def _pick_best_model_per_strategy(freeze: Dict[str, Any], force_model: str = "") -> Dict[str, Any]:
+    """Auto-pick the best model (ridge vs et) per strategy_id from freeze data, or force a specific one."""
     data_root = freeze.get("_data_root_", "data")
     run_id = freeze.get("_run_id_", "")
 
@@ -584,7 +584,16 @@ def _pick_best_model_per_strategy(freeze: Dict[str, Any]) -> Dict[str, Any]:
     merged_strategies = []
     for strat in best_freeze.get("strategies", []):
         sid = strat.get("strategy_id", "")
-        if per_strategy_winner.get(sid) == "et" and sid in et_strategies:
+
+        # Determine winner based on force_model flag or head-to-head comparison
+        if force_model == "ridge":
+            winner = "ridge"
+        elif force_model == "et":
+            winner = "et"
+        else:
+            winner = per_strategy_winner.get(sid, "ridge")
+
+        if winner == "et" and sid in et_strategies:
             merged = dict(strat)
             merged.update(et_strategies[sid])
             merged["model_source"] = "et"
@@ -597,7 +606,7 @@ def _pick_best_model_per_strategy(freeze: Dict[str, Any]) -> Dict[str, Any]:
     if merged_strategies:
         best_freeze["strategies"] = merged_strategies
 
-    best_freeze["model_source"] = "mixed" if per_strategy_winner else "ridge"
+    best_freeze["model_source"] = force_model if force_model else ("mixed" if per_strategy_winner else "ridge")
     return best_freeze
 
 
@@ -631,6 +640,12 @@ def main() -> None:
     parser.add_argument("--freeze-json", default="")
     parser.add_argument("--output-json", default="")
     parser.add_argument("--seed", type=int, default=42)
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--ridge", action="store_true", help="Force use of Ridge model only")
+    group.add_argument("--et", action="store_true", help="Force use of ExtraTrees model only")
+    group.add_argument("--compare", action="store_true", help="Auto-pick best model (default)")
+
     args = parser.parse_args()
 
     freeze = (
@@ -639,7 +654,8 @@ def main() -> None:
         else _load_or_write_freeze_file(args.data_root, args.run_id)
     )
 
-    freeze = _pick_best_model_per_strategy(freeze)
+    force_model = "ridge" if args.ridge else ("et" if args.et else "")
+    freeze = _pick_best_model_per_strategy(freeze, force_model=force_model)
 
     if args.symbol:
         symbols = [args.symbol]

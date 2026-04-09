@@ -571,12 +571,31 @@ def run_simple_offset_generator_from_sizer(
     else:
         logger.info(f"Using ATR% offsets: base={base_offset_atr_pct}, max={max_offset_atr_pct}")
     # 1. Extract from sizer results
-    # Use best_simple_score_ which is the Ridge scores if Ridge wins, else best combo
-    ridge_scores = sizer_results.get("best_simple_score_")
-    # Use ridge_profit_proxy_table_ if Ridge was used, otherwise use profit_proxy_table_
-    profit_proxy_df = sizer_results.get("ridge_profit_proxy_table_")
-    if profit_proxy_df is None or profit_proxy_df.empty:
-        profit_proxy_df = sizer_results.get("profit_proxy_table_")
+
+    # We may be forcing a specific model's scores to be used.
+    # Check if this is passed via kwargs or in the sizer_results directly
+    # If not specified, default to best_simple_score_
+    force_model = sizer_results.get("_force_model_", None)
+
+    if force_model == "ridge":
+        ridge_scores = sizer_results.get("ridge_sizer_scores_")
+        profit_proxy_df = sizer_results.get("ridge_profit_proxy_table_")
+    elif force_model == "et":
+        ridge_scores = sizer_results.get("et_sizer_scores_")
+        profit_proxy_df = sizer_results.get("et_profit_proxy_table_")
+    else:
+        # Auto mode
+        ridge_scores = sizer_results.get("best_simple_score_")
+        # Use ridge_profit_proxy_table_ if Ridge was used, otherwise use profit_proxy_table_
+        # (Though best_simple_score_ could also be ET, we should check best_simple_score_name_)
+        best_name = sizer_results.get("best_simple_score_name_")
+        if best_name == "ExtraTrees_Head_Sizer":
+            profit_proxy_df = sizer_results.get("et_profit_proxy_table_")
+        else:
+            profit_proxy_df = sizer_results.get("ridge_profit_proxy_table_")
+
+        if profit_proxy_df is None or profit_proxy_df.empty:
+            profit_proxy_df = sizer_results.get("profit_proxy_table_")
     baseline_rets = sizer_results.get("opt_rets_")
     baseline_ts = sizer_results.get("opt_ts_")
     

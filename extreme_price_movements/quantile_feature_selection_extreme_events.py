@@ -171,12 +171,21 @@ def mdi_feature_selection_v3(
     alpha: float = 0.85,
     dual_alpha: Sequence[float] = (0.7, 0.85),
     tail_q: float = 0.80,
+    analysis_max_samples: int = 3000,
     **_: dict,
 ) -> MDISelectionResult:
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame")
     y_np = np.asarray(y, dtype=float)
     target = end_features if end_features is not None else max(min_features, min(max_features, int(np.sqrt(max(1, X.shape[1])) * 3)))
+
+    N = len(X)
+    # Ensure requested samples do not exceed available rows, quantile is considered regression
+    n_star = int(min(N, max(256, analysis_max_samples)))
+    if n_star < N:
+        indices_sub = np.linspace(0, N - 1, n_star, dtype=int)
+        X = X.iloc[indices_sub].copy()
+        y_np = y_np[indices_sub]
 
     uni = _univariate_tail_screen(X, y_np, target_count=target, tail_q=tail_q)
     pre_cols = uni.index.tolist()

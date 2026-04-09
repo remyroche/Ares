@@ -1836,7 +1836,8 @@ CFG = {
         "neutral_feature_keys",
         "MODEL_FEATURES",
         "RIDGE_FEATURE_COLS",
-        "HELPER_BASE_FEATURES"
+        "HELPER_BASE_FEATURES",
+        "CONTINUOUS_LOCATION_COLS",
     ],
     "base_long_feature_keys": [
         "retest_accept",
@@ -2030,7 +2031,10 @@ CFG = {
         "bars_outside_ema20_atr_band_log_norm",
         "up_down_semivol_ratio_tanh",
         "up_down_return_mass_ratio_tanh",
-        "tail_asymmetry_q90_q10_atr_norm"
+        "tail_asymmetry_q90_q10_atr_norm",
+        "CONTINUOUS_LOCATION_COLS",
+        "FEATURE_SELECTION_KEYS",
+        "TRAINING_RESIDUALIZATION_FEATURE_KEYS",
     ],
     "meta_reg_feature_keys": [
         "ret1h",

@@ -1,3 +1,4 @@
+import pandas as pd
 
 from typing import List, Dict, Any
 
@@ -23,6 +24,10 @@ def expand_feature_group_refs(keys: List[str], cfg: Dict[str, Any], visited=None
         # Support dict-like or object-like config access
         if isinstance(cfg, dict):
             val = cfg.get(k)
+            if val is None:
+                # Check module level imports just in case
+                import extreme_price_movements.config as cfg_mod
+                val = getattr(cfg_mod, k, None)
         else:
             val = getattr(cfg, k, None)
 
@@ -110,7 +115,12 @@ def audit_feature_coverage(df: pd.DataFrame, cfg: Dict[str, Any]) -> Dict[str, L
 
     stale_orphans = []
     for f in global_unused:
-        if f.startswith("tf_") or f.startswith("mr_") or "gt_" in f or "lt_" in f or "legacy" in f.lower() or f.startswith("loc_") or f.startswith("short_") or f.startswith("long_"):
+        if (
+            f.startswith("tf_")
+            or f.startswith("mr_")
+            or "legacy" in f.lower()
+            or f in {"tf_feature_keys", "mr_feature_keys", "meta_feature_keys"}
+        ):
             stale_orphans.append(f)
 
     return {

@@ -4,10 +4,15 @@ import pickle
 import re
 import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import math
   
-import numpy as np
+
 import pandas as pd
+import numpy as np
+from numba import njit, prange
+from typing import Dict, List, Tuple
+
+
+
 import scipy.special
 from joblib import Memory
 
@@ -18,11 +23,6 @@ from extreme_price_movements.frac_diff_adaptive import (
     frac_diff_ffd,
     get_weights_ffd,
 )
-from extreme_price_movements.gated_features import (
-    add_accept_gate_features,
-    add_gate_features,
-    add_gate_interaction_panel,
-)
 from extreme_price_movements.intraday_crypto_library import (
     PERSISTED_INTRADAY_LIBRARY_COLUMNS,
     build_intraday_crypto_library,
@@ -31,7 +31,7 @@ from extreme_price_movements.perp_features import (
     compute_features as compute_perp_features,
 )
 from extreme_price_movements.time_utils import ensure_utc
-from extreme_price_movements.utils import check_inf_nan, tprint
+from extreme_price_movements.utils import tprint
 from extreme_price_movements.validation import validate_panel
 
 # Suppress expected RuntimeWarnings from nanmin/nanmean/nanmax on all-NaN slices
@@ -543,7 +543,7 @@ def time_sin_cos(index: pd.DatetimeIndex):
 
 
 def compute_market_features(panel, basket_syms, trend_sma_hours=24 * 14):
-    tprint(f"Entering function: compute_market_features in features.py")
+    tprint("Entering function: compute_market_features in features.py")
     c = panel["close"]
     h = panel["high"]
     l = panel["low"]
@@ -602,7 +602,7 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24 * 14):
 def add_regime_gates(
     mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_trend_thr: float
 ):
-    tprint(f"Entering function: add_regime_gates in features.py")
+    tprint("Entering function: add_regime_gates in features.py")
     df = mkt_df.copy()
     rv_med_df = ff.numba_rolling_median(df[["mkt_rv"]], gate_vol_lookback_hours)
     df["mkt_rv_med"] = rv_med_df["mkt_rv"]
@@ -945,21 +945,21 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
 
     # seasonality_strength = |return_this_hour − hourly_avg_return|
     # hourly avg return can be rolling mean of ret1h
-    hourly_avg_ret = _roll_mean("ret1h", feats["ret1h"], 24)
-    feats["seasonality_strength"] = (feats["ret1h"] - hourly_avg_ret).abs().astype(np.float32)
+    hourly_avg_ret = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_mean_nan_safe, 24).astype(np.float32)
+    feats["seasonality_strength"] = (ret1h - hourly_avg_ret).abs().astype(np.float32)
 
     # hour_vol / rolling_daily_vol
-    # rolling_daily_vol can be ret1h_std_96
-    hour_vol = _roll_std("ret1h", feats["ret1h"], 4)
-    feats["hour_vol_ratio"] = (hour_vol / (ret1h_std_96 + 1e-12)).astype(np.float32)
+    # rolling_daily_vol can be ff.numba_rolling_std(ret1h, 96)
+    hour_vol = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 4).astype(np.float32)
+    feats["hour_vol_ratio"] = (hour_vol / (rv_24 + 1e-12)).astype(np.float32)
 
     # jump_intensity = rolling_mean(jump_t, window=48)
-    jump_t = (feats["ret1h"].abs() > 3 * ret1h_std_96).astype(np.float32)
+    jump_t = (ret1h.abs() > 3 * rv_24).astype(np.float32)
     feats["jump_intensity"] = ff.numba_rolling_mean(jump_t.to_numpy(), 48).astype(np.float32)
 
     # vol_regime = short_vol / long_vol
-    short_vol = _roll_std("ret1h", feats["ret1h"], 12)
-    long_vol = ret1h_std_96
+    short_vol = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12).astype(np.float32)
+    long_vol = rv_24
     feats["vol_regime_ratio"] = (short_vol / (long_vol + 1e-12)).astype(np.float32)
 
     # Base
@@ -970,142 +970,11 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     ema_slow = ff.numba_ema_nan_safe(c.to_numpy(), 50)
     ema_slow = pd.DataFrame(ema_slow, index=c.index, columns=c.columns)
 
-    feats["trend_strength"] = ((ema_fast - ema_slow).abs() / (ret1h_std_96 + 1e-12)).astype(np.float32)
+    feats["trend_strength"] = ((ema_fast - ema_slow).abs() / (rv_24 + 1e-12)).astype(np.float32)
 
     # log(volume / rolling_volume)
-    rolling_volume = _roll_mean("volume", v, 24)
+    rolling_volume = ff.apply_to_frame(v, ff._numba_rolling_mean_nan_safe, 24).astype(np.float32)
     feats["volume_surge"] = np.log((v / (rolling_volume + 1e-12)).clip(lower=1e-5)).astype(np.float32)
-    # =========================================================================
-    # PORTABILITY HARDENING (IN-PLACE)
-    # =========================================================================
-
-    # 1) Excursion / path-risk family
-
-    # We use event-time RV (rv_24h) for scaling.
-    scale_rv = feats.get("rv_24h")
-    if scale_rv is not None:
-        for f in ["mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "dir_path_long_2h", "dir_path_short_2h"]:
-            if f in feats:
-                feats[f] = _safe_div(feats[f], scale_rv).astype(np.float32)
-
-        for f in ["dir_path_risk_long_2h", "dir_path_risk_short_2h"]:
-            if f in feats:
-                tmp = _safe_div(feats[f], scale_rv)
-                # robustify if heavy-tailed
-                tmp_rz = ff.numba_rolling_robust_zscore(tmp.to_numpy(), 96)
-                feats[f] = tmp_rz.astype(np.float32)
-
-        if "dir_path_edge_2h" in feats:
-            # mfe_scaled / (mae_scaled + eps) -- assume we can just use raw mfe_2h/mae_2h since scales cancel
-            if "mfe_2h" in feats and "mae_2h" in feats:
-                feats["dir_path_edge_2h"] = _safe_div(feats["mfe_2h"], feats["mae_2h"]).astype(np.float32)
-
-        if "dir_path_risk_skew_2h" in feats:
-            feats["dir_path_risk_skew_2h"] = np.tanh(feats["dir_path_risk_skew_2h"]).astype(np.float32)
-
-        if "giveback" in feats:
-            feats["giveback"] = _safe_div(feats["giveback"], scale_rv).clip(0, 5.0).astype(np.float32)
-
-        if "tail_against" in feats:
-            feats["tail_against"] = _safe_div(feats["tail_against"], scale_rv).astype(np.float32)
-
-        if "dip_velocity" in feats:
-            feats["dip_velocity"] = _safe_div(feats["dip_velocity"], scale_rv).astype(np.float32)
-
-        if "reversion_target_distance" in feats:
-            feats["reversion_target_distance"] = _safe_div(feats["reversion_target_distance"], scale_rv).astype(np.float32)
-
-    # 2) Medium / long horizon returns
-    if scale_rv is not None:
-        for f in ["ret2h", "ret4h", "ret6h", "ret8h"]:
-            if f in feats:
-                feats[f] = _safe_div(feats[f], scale_rv).astype(np.float32)
-
-    scale_rv_long = feats.get("rv_120h")
-    if scale_rv_long is not None:
-        for f in ["ret48h", "ret72h"]:
-            if f in feats:
-                feats[f] = _safe_div(feats[f], scale_rv_long).astype(np.float32)
-    else:
-        for f in ["ret48h", "ret72h"]:
-            if f in feats:
-                feats[f] = ff.numba_rolling_robust_zscore(feats[f].to_numpy(), 480).astype(np.float32)
-
-    if "ret120h" in feats:
-        feats["ret120h"] = ff.numba_rolling_robust_zscore(feats["ret120h"].to_numpy(), 480).astype(np.float32)
-
-    # 3) RV / ATR level features
-    if scale_rv is not None:
-        for f in ["rv_2h", "rv_4h", "rv_6h", "rv_8h"]:
-            if f in feats:
-                feats[f] = _safe_log_ratio(feats[f], scale_rv).astype(np.float32)
-
-    scale_rv_48 = feats.get("rv_48h")
-    if scale_rv_48 is not None and "rv_12h" in feats:
-        feats["rv_12h"] = _safe_log_ratio(feats["rv_12h"], scale_rv_48).astype(np.float32)
-
-    if "rv_24h" in feats:
-        feats["rv_24h"] = ff.numba_rolling_robust_zscore(np.log1p(feats["rv_24h"]).to_numpy(), 96).astype(np.float32)
-
-    if scale_rv_long is not None and "rv_48h" in feats:
-        feats["rv_48h"] = _safe_div(feats["rv_48h"], scale_rv_long).astype(np.float32)
-
-    if "rv_120h" in feats:
-        feats["rv_120h"] = ff.numba_rolling_rank_pct(feats["rv_120h"].to_numpy(), 480).astype(np.float32)
-
-    if "atr_pct_change" in feats:
-        feats["atr_pct_change"] = ff.numba_rolling_robust_zscore(feats["atr_pct_change"].to_numpy(), 96).astype(np.float32)
-
-    if "atr_expansion" in feats:
-        feats["atr_expansion"] = ff.numba_rolling_robust_zscore(feats["atr_expansion"].to_numpy(), 96).astype(np.float32)
-
-    # 4) Heavy-tailed flow / liquidity / divergence
-    # Need to robustify if still raw
-    flow_rz = ["flow_persistence", "cumulative_delta_stall", "delta_stall_6", "vol_price_div", "vol_price_diverge", "return_per_volume", "volume_trend_48"]
-    for f in flow_rz:
-        if f in feats:
-            feats[f] = ff.numba_rolling_robust_zscore(feats[f].to_numpy(), 96).astype(np.float32)
-
-    if "signed_vol" in feats:
-        baseline_vol = ff.numba_rolling_mean(feats["volume"].to_numpy() if "volume" in feats else np.abs(feats["signed_vol"].to_numpy()), 96)
-        feats["signed_vol"] = _safe_div(feats["signed_vol"], pd.DataFrame(baseline_vol, index=feats["signed_vol"].index, columns=feats["signed_vol"].columns)).astype(np.float32)
-
-    for f in ["up_vol", "dn_vol", "up_vol_6", "dn_vol_6"]:
-        if f in feats:
-            baseline = ff.numba_rolling_quantile(feats[f].to_numpy(), 96, 0.5)
-            feats[f] = _safe_log_ratio(feats[f], pd.DataFrame(baseline, index=feats[f].index, columns=feats[f].columns)).astype(np.float32)
-
-    if "churn" in feats:
-        baseline = ff.numba_rolling_quantile(feats["churn"].to_numpy(), 96, 0.5)
-        feats["churn"] = _safe_log_ratio(feats["churn"], pd.DataFrame(baseline, index=feats["churn"].index, columns=feats["churn"].columns)).astype(np.float32)
-
-    if "v_power" in feats:
-        feats["v_power"] = _signed_log1p(feats["v_power"]).astype(np.float32)
-        feats["v_power"] = ff.numba_rolling_robust_zscore(feats["v_power"].to_numpy(), 96).astype(np.float32)
-
-    if "amihud_illiq" in feats:
-        tmp = np.log1p(feats["amihud_illiq"])
-        feats["amihud_illiq"] = ff.numba_rolling_robust_zscore(tmp.to_numpy(), 96).astype(np.float32)
-
-    for f in ["impact_12", "impact_24", "impact_12_perp", "impact_24_perp"]:
-        if f in feats:
-            feats[f] = ff.numba_rolling_robust_zscore(feats[f].to_numpy(), 96).astype(np.float32)
-
-    if "vol_price_spread" in feats:
-        tmp = _signed_log1p(feats["vol_price_spread"])
-        feats["vol_price_spread"] = ff.numba_rolling_robust_zscore(tmp.to_numpy(), 96).astype(np.float32)
-
-    if "volume_price_corr_10h" in feats:
-        feats["volume_price_corr_10h"] = np.tanh(feats["volume_price_corr_10h"]).astype(np.float32)
-
-    # 5) Duration / age
-    if "trend_age_hours" in feats:
-        tmp = np.log1p(feats["trend_age_hours"])
-        feats["trend_age_hours"] = ff.numba_rolling_rank_pct(tmp.to_numpy(), 480).astype(np.float32)
-
-    # =========================================================================
-
-
     return feats
 
 
@@ -1131,6 +1000,29 @@ def compute_features_hourly(panel, mkt_gates, cfg, requested_feature_keys=None):
     Compute features. Joblib caching removed — features are persisted to parquet
     by save_features, and the joblib serialization doubled peak memory.
     """
+    if requested_feature_keys is None:
+        import extreme_price_movements.training_utils as tu
+        import extreme_price_movements.config as cfg_mod
+
+        all_keys = set()
+
+        # Base features
+        all_keys.update(tu.get_base_feature_keys("long", cfg))
+        all_keys.update(tu.get_base_feature_keys("short", cfg))
+
+        # Meta features
+        for head in ["reg", "clf", "mfe", "mae", "asym"]:
+            all_keys.update(tu.get_meta_feature_keys(head, cfg))
+
+        # Other runtimes
+        for group in ["RIDGE_FEATURE_COLS", "CONTINUOUS_LOCATION_COLS", "TEST_FEATURE_KEYS", "FEATURE_SELECTION_KEYS", "TRAINING_RESIDUALIZATION_FEATURE_KEYS", "MODEL_FEATURES"]:
+            if group in cfg_mod.CFG:
+                all_keys.update(tu.expand_feature_group_refs(cfg_mod.CFG[group], cfg))
+            elif hasattr(cfg_mod, group):
+                all_keys.update(tu.expand_feature_group_refs(getattr(cfg_mod, group), cfg))
+
+        requested_feature_keys = list(all_keys)
+
     return _compute_features_impl(
         panel, mkt_gates, cfg, requested_feature_keys=requested_feature_keys
     )
@@ -1304,6 +1196,28 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             primitive_cache[key] = ff.numba_rolling_min(src, int(window)).astype(
                 np.float32
             )
+        return primitive_cache[key]
+
+    def _roll_robust_zscore(name: str, src: pd.DataFrame, window: int) -> pd.DataFrame:
+        key = ("roll_robust_zscore", name, int(window))
+        if key not in primitive_cache:
+            # We must pass numpy array to numba_rolling_robust_zscore in fast_funcs ?
+            # Wait, `numba_rolling_robust_zscore` takes a df but the caller code passed `.to_numpy()`.
+            primitive_cache[key] = pd.DataFrame(
+                ff.numba_rolling_robust_zscore(src.to_numpy() if hasattr(src, 'to_numpy') else src, int(window)),
+                index=src.index if hasattr(src, 'index') else None,
+                columns=src.columns if hasattr(src, 'columns') else None
+            ).astype(np.float32)
+        return primitive_cache[key]
+
+    def _roll_rank_pct(name: str, src: pd.DataFrame, window: int) -> pd.DataFrame:
+        key = ("roll_rank_pct", name, int(window))
+        if key not in primitive_cache:
+            primitive_cache[key] = pd.DataFrame(
+                ff.numba_rolling_rank_pct(src.to_numpy() if hasattr(src, 'to_numpy') else src, int(window)),
+                index=src.index if hasattr(src, 'index') else None,
+                columns=src.columns if hasattr(src, 'columns') else None
+            ).astype(np.float32)
         return primitive_cache[key]
 
     def _ewma(
@@ -1844,8 +1758,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # Calculate rv_24h and use it for realized_volatility_24h too
     feats["rv_24h"] = _roll_std("ret1h", feats["ret1h"], 24)
     # realized_volatility_24h is 24h (96 15m bars). Note rv_24h is standard 24 bars.
-    ret1h_std_96 = _roll_std("ret1h", feats["ret1h"], 96)
-    feats["realized_volatility_24h"] = ret1h_std_96  # 24h = 96 * 15m
+    ret1h_std_96_temp = _roll_std("ret1h", feats["ret1h"], 96)
+    feats["realized_volatility_24h"] = ret1h_std_96_temp  # 24h = 96 * 15m
     feats["atr_change_rate"] = (
         feats["atr_ln"] / feats["atr_ln"].shift(1) - 1.0
     ).astype(np.float32)
@@ -2059,10 +1973,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # rv_24h calculated earlier
     feats["rv_2h"] = _roll_std("ret1h", feats["ret1h"], 2)
-    feats["rv_4h"] = _roll_std("ret1h", feats["ret1h"], 4)
+    feats["rv_4h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 4).astype(np.float32)
     feats["rv_6h"] = _roll_std("ret1h", feats["ret1h"], 6)
     feats["rv_8h"] = _roll_std("ret1h", feats["ret1h"], 8)
-    feats["rv_12h"] = _roll_std("ret1h", feats["ret1h"], 12)
+    feats["rv_12h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12).astype(np.float32)
 
     # New Filter Features (Range & Vol Z-score)
     h_24 = _roll_max("h", h, 24)
@@ -4307,9 +4221,138 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     if requested_feature_set:
         feats = {k: v for k, v in feats.items() if k in requested_feature_set}
-    tprint(
-        f"Features: {len(feats)} features before CausalTransform. Applying transforms..."
-    )
+    tprint(f"Features: {len(feats)} features before CausalTransform. Applying transforms...")
+    # =========================================================================
+    # PORTABILITY HARDENING (IN-PLACE)
+    # =========================================================================
+
+    # 1) Excursion / path-risk family
+
+    # We use event-time RV (rv_24h) for scaling.
+    scale_rv = feats.get("rv_24h")
+    if scale_rv is not None:
+        for f in ["mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "dir_path_long_2h", "dir_path_short_2h"]:
+            if f in feats:
+                feats[f] = _safe_div(feats[f], scale_rv).astype(np.float32)
+
+        for f in ["dir_path_risk_long_2h", "dir_path_risk_short_2h"]:
+            if f in feats:
+                tmp = _safe_div(feats[f], scale_rv)
+                # robustify if heavy-tailed
+                tmp_rz = ff.numba_rolling_robust_zscore(tmp.to_numpy() if hasattr(tmp, "to_numpy") else tmp, 96)
+                feats[f] = tmp_rz.astype(np.float32)
+
+        if "dir_path_edge_2h" in feats:
+            # mfe_scaled / (mae_scaled + eps) -- assume we can just use raw mfe_2h/mae_2h since scales cancel
+            if "mfe_2h" in feats and "mae_2h" in feats:
+                feats["dir_path_edge_2h"] = _safe_div(feats["mfe_2h"], feats["mae_2h"]).astype(np.float32)
+
+        if "dir_path_risk_skew_2h" in feats:
+            feats["dir_path_risk_skew_2h"] = np.tanh(feats["dir_path_risk_skew_2h"]).astype(np.float32)
+
+        if "giveback" in feats:
+            feats["giveback"] = _safe_div(feats["giveback"], scale_rv).clip(0, 5.0).astype(np.float32)
+
+        if "tail_against" in feats:
+            feats["tail_against"] = _safe_div(feats["tail_against"], scale_rv).astype(np.float32)
+
+        if "dip_velocity" in feats:
+            feats["dip_velocity"] = _safe_div(feats["dip_velocity"], scale_rv).astype(np.float32)
+
+        if "reversion_target_distance" in feats:
+            feats["reversion_target_distance"] = _safe_div(feats["reversion_target_distance"], scale_rv).astype(np.float32)
+
+    # 2) Medium / long horizon returns
+    if scale_rv is not None:
+        for f in ["ret2h", "ret4h", "ret6h", "ret8h"]:
+            if f in feats:
+                feats[f] = _safe_div(feats[f], scale_rv).astype(np.float32)
+
+    scale_rv_long = feats.get("rv_120h")
+    if scale_rv_long is not None:
+        for f in ["ret48h", "ret72h"]:
+            if f in feats:
+                feats[f] = _safe_div(feats[f], scale_rv_long).astype(np.float32)
+    else:
+        for f in ["ret48h", "ret72h"]:
+            if f in feats:
+                feats[f] = _roll_robust_zscore(f, feats[f], 480)
+
+    if "ret120h" in feats:
+        feats["ret120h"] = _roll_robust_zscore("ret120h", feats["ret120h"], 480)
+
+    # 3) RV / ATR level features
+    if scale_rv is not None:
+        for f in ["rv_2h", "rv_4h", "rv_6h", "rv_8h"]:
+            if f in feats:
+                feats[f] = _safe_log_ratio(feats[f], scale_rv).astype(np.float32)
+
+    scale_rv_48 = feats.get("rv_48h")
+    if scale_rv_48 is not None and "rv_12h" in feats:
+        feats["rv_12h"] = _safe_log_ratio(feats["rv_12h"], scale_rv_48).astype(np.float32)
+
+    if "rv_24h" in feats:
+        feats["rv_24h"] = ff.numba_rolling_robust_zscore(np.log1p(feats["rv_24h"]).to_numpy(), 96).astype(np.float32)
+
+    if scale_rv_long is not None and "rv_48h" in feats:
+        feats["rv_48h"] = _safe_log_ratio(feats["rv_48h"], scale_rv_long).astype(np.float32)
+
+    if "rv_120h" in feats:
+        feats["rv_120h"] = _roll_rank_pct("rv_120h", feats["rv_120h"], 480)
+
+    if "atr_pct_change" in feats:
+        feats["atr_pct_change"] = _roll_robust_zscore("atr_pct_change", feats["atr_pct_change"], 96)
+
+    if "atr_expansion" in feats:
+        feats["atr_expansion"] = _roll_robust_zscore("atr_expansion", feats["atr_expansion"], 96)
+
+    # 4) Heavy-tailed flow / liquidity / divergence
+    # Need to robustify if still raw
+    flow_rz = ["flow_persistence", "cumulative_delta_stall", "delta_stall_6", "vol_price_div", "vol_price_diverge", "return_per_volume", "volume_trend_48"]
+    for f in flow_rz:
+        if f in feats:
+            feats[f] = _roll_robust_zscore(f, feats[f], 96)
+
+    if "signed_vol" in feats:
+        baseline_vol = ff.numba_rolling_mean(feats["volume"].to_numpy() if "volume" in feats else np.abs(feats["signed_vol"].to_numpy()), 96)
+        feats["signed_vol"] = _safe_div(feats["signed_vol"], pd.DataFrame(baseline_vol, index=feats["signed_vol"].index, columns=feats["signed_vol"].columns)).astype(np.float32)
+
+    for f in ["up_vol", "dn_vol", "up_vol_6", "dn_vol_6"]:
+        if f in feats:
+            baseline = ff.numba_rolling_quantile(feats[f].to_numpy(), 96, 0.5)
+            feats[f] = _safe_log_ratio(feats[f], pd.DataFrame(baseline, index=feats[f].index, columns=feats[f].columns)).astype(np.float32)
+
+    if "churn" in feats:
+        baseline = ff.numba_rolling_quantile(feats["churn"].to_numpy(), 96, 0.5)
+        feats["churn"] = _safe_log_ratio(feats["churn"], pd.DataFrame(baseline, index=feats["churn"].index, columns=feats["churn"].columns)).astype(np.float32)
+
+    if "v_power" in feats:
+        feats["v_power"] = _signed_log1p(feats["v_power"]).astype(np.float32)
+        feats["v_power"] = ff.numba_rolling_robust_zscore(feats["v_power"].to_numpy(), 96).astype(np.float32)
+
+    if "amihud_illiq" in feats:
+        tmp = np.log1p(feats["amihud_illiq"])
+        feats["amihud_illiq"] = ff.numba_rolling_robust_zscore(tmp.to_numpy(), 96).astype(np.float32)
+
+    for f in ["impact_12", "impact_24", "impact_12_perp", "impact_24_perp"]:
+        if f in feats:
+            feats[f] = _roll_robust_zscore(f, feats[f], 96)
+
+    if "vol_price_spread" in feats:
+        tmp = _signed_log1p(feats["vol_price_spread"])
+        feats["vol_price_spread"] = ff.numba_rolling_robust_zscore(tmp.to_numpy(), 96).astype(np.float32)
+
+    if "volume_price_corr_10h" in feats:
+        feats["volume_price_corr_10h"] = np.tanh(feats["volume_price_corr_10h"]).astype(np.float32)
+
+    # 5) Duration / age
+    if "trend_age_hours" in feats:
+        tmp = np.log1p(feats["trend_age_hours"])
+        feats["trend_age_hours"] = ff.numba_rolling_rank_pct(tmp.to_numpy(), 480).astype(np.float32)
+
+    # =========================================================================
+
+
     # Transform cache can be enabled for incremental/tail-only runs to persist parquet transforms.
     transform_cache_enabled = bool(cfg.get("feature_transform_cache_enabled", False))
     transform_cache_dir = cfg.get(
@@ -4930,13 +4973,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     return feats, _feat_index, _feat_columns
 
 
-from typing import Dict, List, Tuple
+
 
 # ============================================================
 # Position Sizer V2 Numba/Numpy Feature Builders
 # ============================================================
-import numpy as np
-from numba import njit
+
+
 
 
 @njit(cache=True)
@@ -4997,7 +5040,7 @@ def _median_inplace_nb(values: np.ndarray, length: int) -> float:
     return 0.5 * (tmp[mid - 1] + tmp[mid])
 
 
-from numba import prange
+
 
 
 @njit(parallel=True, cache=True)

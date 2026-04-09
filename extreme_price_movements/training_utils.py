@@ -1,4 +1,3 @@
-import pandas as pd
 
 from typing import List, Dict, Any
 
@@ -70,7 +69,8 @@ def get_meta_feature_keys(head: str, cfg: Dict[str, Any]) -> List[str]:
     elif head == "asym":
         mfe_specific = expand_feature_group_refs(cfg.get("meta_mfe_feature_keys", []), cfg)
         mae_specific = expand_feature_group_refs(cfg.get("meta_mae_feature_keys", []), cfg)
-        return dedupe_keep_order(shared + mfe_specific + mae_specific)
+        asym_specific = expand_feature_group_refs(cfg.get("meta_asym_feature_keys", []), cfg)
+        return dedupe_keep_order(shared + mfe_specific + mae_specific + asym_specific)
 
 def validate_feature_keys_exist(df, keys: List[str], context: str) -> None:
     missing = [k for k in keys if k not in df.columns]
@@ -82,14 +82,14 @@ def compute_unused_features(all_feature_columns: List[str], configured_feature_k
     unused = [c for c in all_feature_columns if c not in configured]
     return sorted(unused)
 
-def audit_feature_coverage(df: pd.DataFrame, cfg: Dict[str, Any]) -> Dict[str, List[str]]:
+def audit_feature_coverage(all_feature_columns: List[str], cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     exclude_prefixes = [
         "__y", "__w", "id", "timestamp", "symbol",
         "fold_", "oof_", "p_", "pred_", "is_up"
     ]
 
     all_cols = []
-    for c in df.columns:
+    for c in all_feature_columns:
         if c in {"id", "timestamp", "symbol"}:
             continue
         if any(c.startswith(p) for p in exclude_prefixes) and not c.startswith("p_vol_high") and not c.startswith("p_cusum_high") and not c.startswith("p_liq_low"):
@@ -123,9 +123,23 @@ def audit_feature_coverage(df: pd.DataFrame, cfg: Dict[str, Any]) -> Dict[str, L
         ):
             stale_orphans.append(f)
 
+    computed_but_unused = sorted(list(set(all_cols) - global_all))
+    configured_but_missing = sorted(list(global_all - set(all_cols)))
+
     return {
+        "computed_but_unused": computed_but_unused,
+        "configured_but_missing": configured_but_missing,
         "base_unused": base_unused,
         "meta_unused": meta_unused,
-        "global_unused": global_unused,
-        "stale_orphans": stale_orphans
+        "stale_orphans": stale_orphans,
+        "base_all": sorted(list(base_all)),
+        "meta_all": sorted(list(meta_all)),
+        "global_all": sorted(list(global_all)),
+        "base_long": sorted(list(base_long)),
+        "base_short": sorted(list(base_short)),
+        "meta_reg": sorted(list(meta_reg)),
+        "meta_clf": sorted(list(meta_clf)),
+        "meta_mfe": sorted(list(meta_mfe)),
+        "meta_mae": sorted(list(meta_mae)),
+        "meta_asym": sorted(list(meta_asym))
     }

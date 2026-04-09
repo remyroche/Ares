@@ -1008,7 +1008,7 @@ def mdi_feature_selection_v3(
 
         # Subsampling Logic - Limit to 5K events max for MDI
         n_star = min(
-            int(max(256, analysis_max_samples)),
+            min(N, int(max(256, analysis_max_samples))),
             max(1200, 150 * p, 80 * end_features),
         )
 

@@ -5180,29 +5180,18 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     meta_keys_all = set(_meta_feature_keys_union(cfg))
     heartbeat_every = max(1, int(cfg.get("feature_injection_heartbeat_every", 50)))
 
-    tprint(
-        f"Injecting features symbol-by-symbol for {len(sorted_syms)} symbols..."
-    )
     import time
+    import warnings
+    from pandas.errors import PerformanceWarning
 
     start_time = time.time()
-    files_loaded = 0
-    symbols_with_work = 0
-    cols_injected = 0
-    feature_schema_cols = {}
-    dataset_symbol_positions: dict[str, dict[str, np.ndarray]] = {}
-    dataset_ts_index: dict[str, pd.DatetimeIndex] = {}
-    target_buffers = {}
-    for name, missing in missing_keys_per_dataset.items():
-        df = datasets[name]
-        target_buffers[name] = {}
-        for k in missing:
-            target_buffers[name][k] = np.zeros(len(df), dtype=np.float32)
-            if k in meta_keys_all:
-                target_buffers[name][f"__meta_raw__{k}"] = np.zeros(
-                    len(df), dtype=np.float32
-                )
 
+    tprint(f"Precomputing row mappings for {len(sorted_syms)} symbols...")
+    symbol_mappings = {}
+
+    # Precompute dataset_ts_index for timezone logic
+    dataset_ts_index: dict[str, pd.DatetimeIndex] = {}
+    dataset_symbol_positions: dict[str, dict[str, np.ndarray]] = {}
     for name, meta in dataset_meta.items():
         df = meta.get("df")
         s_col = meta.get("s_col")
@@ -5224,93 +5213,35 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             if s in datasets_by_symbol and name in datasets_by_symbol.get(s, [])
         }
 
-    def _load_symbol_features(
-        s: str, needed_for_this_sym: set[str]
-    ) -> tuple[pd.DataFrame | None, int]:
-
+    for i, s in enumerate(sorted_syms, 1):
         fpath = get_feature_path(cfg["data_root"], ts_sig, s)
         if not os.path.exists(fpath):
-            return None, 0
-
-        schema_cols = feature_schema_cols.get(s)
-        if schema_cols is None:
-            schema_cols = set(pq.ParquetFile(fpath).schema.names)
-            feature_schema_cols[s] = schema_cols
-
-        cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
-        if not cols_to_load:
-            return None, 1
-
-        try:
-            df_feat = pd.read_parquet(fpath, columns=cols_to_load)
-        except Exception:
-            schema_cols = set(pq.ParquetFile(fpath).schema.names)
-            feature_schema_cols[s] = schema_cols
-            cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
-            if not cols_to_load:
-                return None, 1
-            df_feat = pd.read_parquet(fpath, columns=cols_to_load)
-
-        if df_feat.empty:
-            return None, 1
-        if not df_feat.index.is_unique:
-            df_feat = df_feat[~df_feat.index.duplicated(keep="last")]
-
-        return df_feat, 1
-
-    def _process_symbol(s: str) -> tuple[int, int, int]:
-        touched_datasets = datasets_by_symbol.get(s, [])
-        if not touched_datasets:
-            return 0, 0, 0
-
-        needed_for_this_sym: set[str] = set()
-        for name in touched_datasets:
-            needed_for_this_sym.update(missing_keys_per_dataset.get(name, []))
-        if not needed_for_this_sym:
-            return 0, 0, 0
-
-        fpath = get_feature_path(cfg["data_root"], ts_sig, s)
-        if not os.path.exists(fpath):
-            return 0, 0, 0
-
-        schema_cols = feature_schema_cols.get(s)
-        if schema_cols is None:
-            schema_cols = set(pq.ParquetFile(fpath).schema.names)
-            feature_schema_cols[s] = schema_cols
-
-        cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
-        if not cols_to_load:
-            return 0, 0, 0
+            continue
 
         try:
             df_index = pd.read_parquet(fpath, columns=[])
+            schema_cols = set(pq.ParquetFile(fpath).schema.names)
         except Exception:
-            # Fallback if empty columns fails for some reason
             try:
-                df_index = pd.read_parquet(fpath, columns=[cols_to_load[0]])
+                pq_file = pq.ParquetFile(fpath)
+                schema_cols = set(pq_file.schema.names)
+                if not schema_cols:
+                    continue
+                df_index = pd.read_parquet(fpath, columns=[list(schema_cols)[0]])
             except Exception:
-                schema_cols = set(pq.ParquetFile(fpath).schema.names)
-                feature_schema_cols[s] = schema_cols
-                cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
-                if not cols_to_load:
-                    return 0, 0, 0
-                df_index = pd.read_parquet(fpath, columns=[cols_to_load[0]])
+                continue
 
         if df_index.empty:
-            return 1, 0, 0
+            continue
 
-        if not df_index.index.is_unique:
-            df_index = df_index[~df_index.index.duplicated(keep="last")]
+        keep_mask = ~df_index.index.duplicated(keep="last")
+        idx_feat = df_index.index[keep_mask]
 
-        idx_feat = df_index.index
-
-        # Precompute mappings per dataset
         dataset_mappings = {}
+        touched_datasets = datasets_by_symbol.get(s, [])
         for name in touched_datasets:
-            meta = dataset_meta.get(name, {})
-            df = meta.get("df")
             row_pos = dataset_symbol_positions.get(name, {}).get(s)
-            if df is None or row_pos is None or row_pos.size == 0:
+            if row_pos is None or row_pos.size == 0:
                 continue
 
             row_idx = dataset_ts_index[name].take(row_pos)
@@ -5336,96 +5267,102 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                 "feat_row_pos": feat_row_pos[valid]
             }
 
-        if not dataset_mappings:
-            return 1, 0, 0
+        if dataset_mappings:
+            symbol_mappings[s] = {
+                "schema_cols": schema_cols,
+                "mappings": dataset_mappings,
+                "fpath": fpath,
+                "keep_mask": keep_mask.to_numpy()
+            }
 
-        local_files = 1
-        local_cols = 0
-        local_work = 0
+    all_keys_list = list(all_needed_keys)
+    batch_size = max(1, int(cfg.get("feature_injection_batch_size", 50)))
 
-        batch_size = 50
-        for i in range(0, len(cols_to_load), batch_size):
-            batch = cols_to_load[i:i + batch_size]
-            df_feat = pd.read_parquet(fpath, columns=batch)
-            if not df_feat.index.is_unique:
-                df_feat = df_feat[~df_feat.index.duplicated(keep="last")]
-
-            for name, mapping in dataset_mappings.items():
-                cols_for_ds = [k for k in missing_keys_per_dataset.get(name, []) if k in df_feat.columns]
-                if not cols_for_ds:
-                    continue
-
-                buffer_pos = mapping["buffer_pos"]
-                feat_row_pos = mapping["feat_row_pos"]
-
-                for k in cols_for_ds:
-                    vals = df_feat[k].to_numpy(dtype=np.float32, copy=False)[feat_row_pos]
-                    target_buffers[name][k][buffer_pos] = vals
-                    local_cols += 1
-                    if k in meta_keys_all and f"__meta_raw__{k}" in target_buffers[name]:
-                        target_buffers[name][f"__meta_raw__{k}"][buffer_pos] = vals
-                local_work += 1
-
-        return local_files, local_cols, local_work
-
-    default_worker_count = (
-        1
-    )
-    worker_count = max(1, int(cfg.get("feature_injection_workers", default_worker_count)))
-    if worker_count <= 1 or len(sorted_syms) < 8:
-        for i, s in enumerate(sorted_syms, 1):
-            try:
-                local_files, local_cols, local_work = _process_symbol(s)
-                files_loaded += local_files
-                cols_injected += local_cols
-                symbols_with_work += local_work
-            except Exception as e:
-                tprint(f"  WARNING: Error injecting features for {s}: {e}")
-
-            if i % heartbeat_every == 0 or i == len(sorted_syms):
-                elapsed = time.time() - start_time
-                tprint(
-                    f"  Heartbeat: {i}/{len(sorted_syms)} symbols "
-                    f"(work={symbols_with_work}, files={files_loaded}, cols={cols_injected}, elapsed={elapsed:.1f}s)"
-                )
-            if i % heartbeat_every == 0:
-                import gc
-
-                gc.collect()
-    else:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        tprint(f"Feature injection parallelism enabled: workers={worker_count}")
-        with ThreadPoolExecutor(max_workers=worker_count) as ex:
-            futs = {ex.submit(_process_symbol, s): s for s in sorted_syms}
-            for i, fut in enumerate(as_completed(futs), 1):
-                s = futs[fut]
-                try:
-                    local_files, local_cols, local_work = fut.result()
-                    files_loaded += local_files
-                    cols_injected += local_cols
-                    symbols_with_work += local_work
-                except Exception as e:
-                    tprint(f"  WARNING: Error injecting features for {s}: {e}")
-
-                if i % heartbeat_every == 0 or i == len(sorted_syms):
-                    elapsed = time.time() - start_time
-                    tprint(
-                        f"  Heartbeat: {i}/{len(sorted_syms)} symbols "
-                        f"(work={symbols_with_work}, files={files_loaded}, cols={cols_injected}, elapsed={elapsed:.1f}s)"
-                    )
-    tprint("Concatenating injected features...")
-    import warnings
-    from pandas.errors import PerformanceWarning
+    tprint(f"Injecting {len(all_keys_list)} features in batches of {batch_size} using PyArrow...")
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=PerformanceWarning)
-        for name, cols_dict in target_buffers.items():
-            if cols_dict:
+
+        for i in range(0, len(all_keys_list), batch_size):
+            batch_keys = all_keys_list[i : i + batch_size]
+            batch_keys_set = set(batch_keys)
+
+            # 1. Allocate temporary buffer for just this batch
+            target_buffers = {}
+            for name, missing in missing_keys_per_dataset.items():
+                batch_missing = [k for k in missing if k in batch_keys_set]
+                if batch_missing:
+                    target_buffers[name] = {}
+                    df_len = len(datasets[name])
+                    for k in batch_missing:
+                        target_buffers[name][k] = np.zeros(df_len, dtype=np.float32)
+                        if k in meta_keys_all:
+                            target_buffers[name][f"__meta_raw__{k}"] = np.zeros(df_len, dtype=np.float32)
+
+            if not target_buffers:
+                continue
+
+            # 2. Extract data for this batch from each symbol
+            for s, s_data in symbol_mappings.items():
+                schema_cols = s_data["schema_cols"]
+                fpath = s_data["fpath"]
+                mappings = s_data["mappings"]
+                keep_mask = s_data["keep_mask"]
+
+                cols_to_load = [k for k in batch_keys if k in schema_cols]
+                if not cols_to_load:
+                    continue
+
+                relevant_datasets = []
+                for name, mapping in mappings.items():
+                    if name in target_buffers:
+                        ds_missing = [k for k in cols_to_load if k in target_buffers[name]]
+                        if ds_missing:
+                            relevant_datasets.append((name, mapping, ds_missing))
+
+                if not relevant_datasets:
+                    continue
+
+                try:
+                    table = pq.read_table(fpath, columns=cols_to_load)
+                except Exception as e:
+                    tprint(f"  WARNING: Error reading {fpath}: {e}")
+                    continue
+
+                # Extract and deduplicate columns using pyarrow
+                col_arrays = {}
+                for k in cols_to_load:
+                    try:
+                        arr = table.column(k).to_numpy()
+                        if arr.dtype != np.float32:
+                            arr = arr.astype(np.float32)
+                        col_arrays[k] = arr[keep_mask]
+                    except Exception as e:
+                        # Fallback if column cannot be easily cast or read
+                        col_arrays[k] = None
+
+                for name, mapping, ds_missing in relevant_datasets:
+                    buffer_pos = mapping["buffer_pos"]
+                    feat_row_pos = mapping["feat_row_pos"]
+
+                    for k in ds_missing:
+                        arr_dedup = col_arrays.get(k)
+                        if arr_dedup is not None:
+                            vals = arr_dedup[feat_row_pos]
+                            target_buffers[name][k][buffer_pos] = vals
+                            if k in meta_keys_all and f"__meta_raw__{k}" in target_buffers[name]:
+                                target_buffers[name][f"__meta_raw__{k}"][buffer_pos] = vals
+
+            # 3. Inject batch columns directly into datasets to avoid memory spike
+            for name, cols_dict in target_buffers.items():
                 df = datasets[name]
-                # Avoid memory spike by assigning columns directly instead of using pd.concat
                 for col_name, col_data in cols_dict.items():
                     df[col_name] = col_data
+
+            elapsed = time.time() - start_time
+            tprint(f"  Completed batch {i//batch_size + 1}/{(len(all_keys_list) + batch_size - 1)//batch_size} (elapsed={elapsed:.1f}s)")
+            import gc
+            gc.collect()
 
     tprint("Feature injection complete.")
     import gc

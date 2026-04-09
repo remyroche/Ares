@@ -302,51 +302,6 @@ def _precompute_padded_paths(
     }
 
 
-def build_robust_utility_target(
-    trade_outcomes: pd.DataFrame,
-    cost_pct: float = 0.002,
-    padded_paths: Optional[Dict[str, np.ndarray]] = None,
-) -> np.ndarray:
-    max_b = 24
-    n = len(trade_outcomes)
-
-    if padded_paths is None:
-        padded_paths = _precompute_padded_paths(trade_outcomes, max_b)
-
-    opens = padded_paths["opens_2d"]
-    highs = padded_paths["highs_2d"]
-    lows = padded_paths["lows_2d"]
-    closes = padded_paths["closes_2d"]
-    path_lens = padded_paths["path_lens"]
-
-    entry_px = trade_outcomes["entry_price"].values
-    atr = trade_outcomes["atr_12_15m"].values
-    is_long = trade_outcomes["is_long"].values
-
-    geometries = [
-        (1.0, 1.5),
-        (1.0, 2.0),
-        (1.5, 1.5),
-        (1.5, 2.0),
-    ]
-
-    u_acc = np.zeros(n, dtype=np.float32)
-    for sl, tp_ratio in geometries:
-        pol = LabelPolicy(
-            sl_atr_mult=sl,
-            tp_sl_ratio=tp_ratio,
-            max_hold_bars=max_b,
-            trail_activate_atr=1e9,  # disabled
-            giveback_pct=0.0,
-            early_exit_deadline_bars=0,
-            early_exit_mfe_atr=0.0,
-        )
-        u, _ = _simulate_policy_batch(
-            entry_px, atr, is_long, opens, highs, lows, closes, path_lens, pol, cost_pct
-        )
-        u_acc += u
-
-    return u_acc / len(geometries)
 
 
 def build_volatility_normalized_target(
@@ -468,7 +423,7 @@ class LayerAPredictor:
         self.use_model3_uncertainty = bool(use_m3)
 
         self.model1_target_mode = self.config.get("model1_target_mode", "race")
-        self.fixed_model1_target_name = self.config.get("fixed_model1_target_name", "robust_utility_target")
+        self.fixed_model1_target_name = self.config.get("fixed_model1_target_name", "log_clipped_winsorized_net")
 
         self.scaler_edge_mean_ = 0.0
         self.scaler_edge_scale_ = 1.0
@@ -497,7 +452,21 @@ class LayerAPredictor:
         self.feature_selection_results_downside_ = None
         self.feature_selection_results_uncertainty_ = None
 
+
+
+    def _get_dynamic_atr(self, trade_outcomes: pd.DataFrame) -> np.ndarray:
+        horizon = self.config.get("label_horizon_base", 4)
+        if horizon == 24 and "atr_1h" in trade_outcomes.columns:
+            return trade_outcomes["atr_1h"].values
+        elif "atr_12_15m" in trade_outcomes.columns:
+            return trade_outcomes["atr_12_15m"].values
+        elif "atr" in trade_outcomes.columns:
+            return trade_outcomes["atr"].values
+        else:
+            return np.ones(len(trade_outcomes), dtype=np.float64) * 0.01
+
     def _run_model1_target_race(
+
         self,
         X: np.ndarray,
         trade_outcomes: pd.DataFrame,
@@ -515,14 +484,13 @@ class LayerAPredictor:
             "rank_style_target": build_rank_target(
                 raw_returns, timestamps, mode="fold_local"
             ),
-            "robust_utility_target": build_robust_utility_target(
-                trade_outcomes, padded_paths=_precompute_padded_paths(trade_outcomes)
-            ),
+
             "volatility_normalized_target": build_volatility_normalized_target(
                 raw_returns,
-                trade_outcomes["atr_12_15m"].values,
+                self._get_dynamic_atr(trade_outcomes),
                 trade_outcomes["entry_price"].values,
             ),
+
         }
 
         race_results = []
@@ -536,7 +504,7 @@ class LayerAPredictor:
         if self.model1_target_mode == "fixed":
             best_name = self.fixed_model1_target_name
             if best_name not in candidates:
-                best_name = "robust_utility_target" # Fallback
+                best_name = "log_clipped_winsorized_net" # Fallback
             cands_to_eval = [best_name]
 
         # Pull FS Config

@@ -5283,23 +5283,29 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             return 0, 0, 0
 
         try:
-            df_feat = pd.read_parquet(fpath, columns=cols_to_load)
+            df_index = pd.read_parquet(fpath, columns=[])
         except Exception:
-            schema_cols = set(pq.ParquetFile(fpath).schema.names)
-            feature_schema_cols[s] = schema_cols
-            cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
-            if not cols_to_load:
-                return 0, 0, 0
-            df_feat = pd.read_parquet(fpath, columns=cols_to_load)
+            # Fallback if empty columns fails for some reason
+            try:
+                df_index = pd.read_parquet(fpath, columns=[cols_to_load[0]])
+            except Exception:
+                schema_cols = set(pq.ParquetFile(fpath).schema.names)
+                feature_schema_cols[s] = schema_cols
+                cols_to_load = [k for k in needed_for_this_sym if k in schema_cols]
+                if not cols_to_load:
+                    return 0, 0, 0
+                df_index = pd.read_parquet(fpath, columns=[cols_to_load[0]])
 
-        if df_feat.empty:
+        if df_index.empty:
             return 1, 0, 0
-        if not df_feat.index.is_unique:
-            df_feat = df_feat[~df_feat.index.duplicated(keep="last")]
 
-        local_files = 1
-        local_cols = 0
-        local_work = 0
+        if not df_index.index.is_unique:
+            df_index = df_index[~df_index.index.duplicated(keep="last")]
+
+        idx_feat = df_index.index
+
+        # Precompute mappings per dataset
+        dataset_mappings = {}
         for name in touched_datasets:
             meta = dataset_meta.get(name, {})
             df = meta.get("df")
@@ -5307,40 +5313,58 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             if df is None or row_pos is None or row_pos.size == 0:
                 continue
 
-            cols_for_ds = [
-                k
-                for k in missing_keys_per_dataset.get(name, [])
-                if k in df_feat.columns
-            ]
-            if not cols_for_ds:
-                continue
-
-            idx_feat = df_feat.index
             row_idx = dataset_ts_index[name].take(row_pos)
-            if hasattr(row_idx, "tz") and hasattr(idx_feat, "tz"):
-                if row_idx.tz is None and idx_feat.tz is not None:
+
+            idx_feat_tmp = idx_feat
+            if hasattr(row_idx, "tz") and hasattr(idx_feat_tmp, "tz"):
+                if row_idx.tz is None and idx_feat_tmp.tz is not None:
                     row_idx = pd.DatetimeIndex(
                         pd.to_datetime(row_idx, utc=True)
-                    ).tz_convert(idx_feat.tz)
-                elif row_idx.tz is not None and idx_feat.tz is None:
-                    idx_feat = idx_feat.tz_localize("UTC").tz_convert(row_idx.tz)
-                elif row_idx.tz is not None and idx_feat.tz is not None:
-                    row_idx = row_idx.tz_convert(idx_feat.tz)
+                    ).tz_convert(idx_feat_tmp.tz)
+                elif row_idx.tz is not None and idx_feat_tmp.tz is None:
+                    idx_feat_tmp = idx_feat_tmp.tz_localize("UTC").tz_convert(row_idx.tz)
+                elif row_idx.tz is not None and idx_feat_tmp.tz is not None:
+                    row_idx = row_idx.tz_convert(idx_feat_tmp.tz)
 
-            feat_row_pos = idx_feat.get_indexer(row_idx)
+            feat_row_pos = idx_feat_tmp.get_indexer(row_idx)
             valid = feat_row_pos >= 0
             if not np.any(valid):
                 continue
 
-            buffer_pos = row_pos[valid]
-            feat_row_pos = feat_row_pos[valid]
-            for k in cols_for_ds:
-                vals = df_feat[k].to_numpy(dtype=np.float32, copy=False)[feat_row_pos]
-                target_buffers[name][k][buffer_pos] = vals
-                local_cols += 1
-                if k in meta_keys_all and f"__meta_raw__{k}" in target_buffers[name]:
-                    target_buffers[name][f"__meta_raw__{k}"][buffer_pos] = vals
-            local_work += 1
+            dataset_mappings[name] = {
+                "buffer_pos": row_pos[valid],
+                "feat_row_pos": feat_row_pos[valid]
+            }
+
+        if not dataset_mappings:
+            return 1, 0, 0
+
+        local_files = 1
+        local_cols = 0
+        local_work = 0
+
+        batch_size = 50
+        for i in range(0, len(cols_to_load), batch_size):
+            batch = cols_to_load[i:i + batch_size]
+            df_feat = pd.read_parquet(fpath, columns=batch)
+            if not df_feat.index.is_unique:
+                df_feat = df_feat[~df_feat.index.duplicated(keep="last")]
+
+            for name, mapping in dataset_mappings.items():
+                cols_for_ds = [k for k in missing_keys_per_dataset.get(name, []) if k in df_feat.columns]
+                if not cols_for_ds:
+                    continue
+
+                buffer_pos = mapping["buffer_pos"]
+                feat_row_pos = mapping["feat_row_pos"]
+
+                for k in cols_for_ds:
+                    vals = df_feat[k].to_numpy(dtype=np.float32, copy=False)[feat_row_pos]
+                    target_buffers[name][k][buffer_pos] = vals
+                    local_cols += 1
+                    if k in meta_keys_all and f"__meta_raw__{k}" in target_buffers[name]:
+                        target_buffers[name][f"__meta_raw__{k}"][buffer_pos] = vals
+                local_work += 1
 
         return local_files, local_cols, local_work
 
@@ -5391,11 +5415,17 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                         f"(work={symbols_with_work}, files={files_loaded}, cols={cols_injected}, elapsed={elapsed:.1f}s)"
                     )
     tprint("Concatenating injected features...")
-    for name, cols_dict in target_buffers.items():
-        if cols_dict:
-            df = datasets[name]
-            new_df_cols = pd.DataFrame(cols_dict, index=df.index)
-            datasets[name] = pd.concat([df, new_df_cols], axis=1)
+    import warnings
+    from pandas.errors import PerformanceWarning
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=PerformanceWarning)
+        for name, cols_dict in target_buffers.items():
+            if cols_dict:
+                df = datasets[name]
+                # Avoid memory spike by assigning columns directly instead of using pd.concat
+                for col_name, col_data in cols_dict.items():
+                    df[col_name] = col_data
 
     tprint("Feature injection complete.")
     import gc

@@ -11722,6 +11722,32 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     ]
                     X = df.drop(columns=[c for c in drop_cols if c in df.columns])
 
+                    # --- Target Residualization (Base Model Only) ---
+                    # Per requirement: Ensure the target is residualized ONLY for base_model training
+                    # and ensure the base models do NOT have access to the residualization features.
+
+                    # Define nuisance features for residuals (miner-aligned + market benchmarks)
+                    nuisance_keys = list(TRAINING_RESIDUALIZATION_FEATURE_KEYS) + [
+                        "mkt_ret24h", "mkt_rv", "mkt_trend", "G_VOL", "G_TREND"
+                    ]
+                    available_nuisance = [c for c in nuisance_keys if c in X.columns]
+
+                    if available_nuisance:
+                        tprint(f"  Residualizing target against {len(available_nuisance)} nuisance features: {available_nuisance}")
+                        from sklearn.linear_model import LinearRegression
+                        # Use linear regression to find the nuisance component
+                        lr = LinearRegression()
+                        # Handle potential NaNs in nuisance features for the residual fit
+                        X_nuis = X[available_nuisance].fillna(0.0)
+                        lr.fit(X_nuis, y, sample_weight=w)
+                        y_nuis_pred = lr.predict(X_nuis)
+                        # Center residuals to preserve average hit rate (or let it float)
+                        y = y - y_nuis_pred
+                        tprint(f"  Target residualized: mean_orig={np.mean(df['__y_bin__']):.4f}, mean_resid={np.mean(y):.4f}")
+
+                    # Explicitly remove nuisance features from inputs
+                    excluded_keys = set(nuisance_keys)
+
                     # Filter features strictly for the Alpha Model (exclude meta-only features)
                     # We need to know which feature_key was used.
                     # k is strategy_id
@@ -11754,6 +11780,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     }
 
                     for c in X.columns:
+                        if c in excluded_keys:
+                            continue
                         # Check exact match
                         if c in allowed_keys or c in std_inputs:
                             valid_cols.append(c)

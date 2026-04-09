@@ -934,6 +934,48 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     assert float(feats["cusum_high"].min().min()) >= -1e-6
     assert float(feats["liq_low"].min().min()) >= -1e-6
 
+
+
+    # --- New Features ---
+    # Meta
+    # trendiness = variance(return_12h) / (12 * variance(return_1h))
+    ret12h_var = ff.numba_rolling_std(feats["ret12h"].to_numpy(), 48)**2
+    ret1h_var = ff.numba_rolling_std(feats["ret1h"].to_numpy(), 48)**2
+    feats["trendiness"] = (ret12h_var / (12 * ret1h_var + 1e-12)).astype(np.float32)
+
+    # seasonality_strength = |return_this_hour − hourly_avg_return|
+    # hourly avg return can be rolling mean of ret1h
+    hourly_avg_ret = _roll_mean("ret1h", feats["ret1h"], 24)
+    feats["seasonality_strength"] = (feats["ret1h"] - hourly_avg_ret).abs().astype(np.float32)
+
+    # hour_vol / rolling_daily_vol
+    # rolling_daily_vol can be ret1h_std_96
+    hour_vol = _roll_std("ret1h", feats["ret1h"], 4)
+    feats["hour_vol_ratio"] = (hour_vol / (ret1h_std_96 + 1e-12)).astype(np.float32)
+
+    # jump_intensity = rolling_mean(jump_t, window=48)
+    jump_t = (feats["ret1h"].abs() > 3 * ret1h_std_96).astype(np.float32)
+    feats["jump_intensity"] = ff.numba_rolling_mean(jump_t.to_numpy(), 48).astype(np.float32)
+
+    # vol_regime = short_vol / long_vol
+    short_vol = _roll_std("ret1h", feats["ret1h"], 12)
+    long_vol = ret1h_std_96
+    feats["vol_regime_ratio"] = (short_vol / (long_vol + 1e-12)).astype(np.float32)
+
+    # Base
+    # trend_strength = |EMA_fast − EMA_slow| / rolling_vol
+    # we already have ema(c, 12) and ema(c, 24) perhaps? Let's compute them locally.
+    ema_fast = ff.numba_ema_nan_safe(c.to_numpy(), 12)
+    ema_fast = pd.DataFrame(ema_fast, index=c.index, columns=c.columns)
+    ema_slow = ff.numba_ema_nan_safe(c.to_numpy(), 50)
+    ema_slow = pd.DataFrame(ema_slow, index=c.index, columns=c.columns)
+
+    feats["trend_strength"] = ((ema_fast - ema_slow).abs() / (ret1h_std_96 + 1e-12)).astype(np.float32)
+
+    # log(volume / rolling_volume)
+    rolling_volume = _roll_mean("volume", v, 24)
+    feats["volume_surge"] = np.log((v / (rolling_volume + 1e-12)).clip(lower=1e-5)).astype(np.float32)
+
     return feats
 
 

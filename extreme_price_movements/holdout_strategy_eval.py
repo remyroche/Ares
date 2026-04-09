@@ -4,7 +4,7 @@ import argparse
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -396,6 +396,54 @@ def _compute_policy_params(feature_df: pd.DataFrame, symbol: str) -> Dict[str, A
     return prepare_policy_params_from_tpsl_optimiser(seed, atr_values={symbol: atr_val})
 
 
+def _load_best_policy_params(data_root: str, run_id: str) -> Optional[Dict[str, Any]]:
+    for candidate in [
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "policy_params"
+        / "best_policy_params.json",
+        Path(data_root) / "artifacts" / run_id / "best_policy_params.json",
+    ]:
+        if candidate.exists():
+            try:
+                payload = json.loads(candidate.read_text())
+                strategies = payload.get("strategies", [])
+                if strategies:
+                    return strategies[0]
+            except Exception:
+                pass
+    return None
+
+
+def _apply_policy_params_to_seed(
+    policy: Dict[str, Any], symbol: str, atr_val: float
+) -> Dict[str, Any]:
+    tp_mult = float(policy.get("tp_mult", 2.0))
+    sl_mult = float(policy.get("sl_mult", 1.6))
+    activation_frac = float(policy.get("activation_frac", 0.5))
+    giveback_frac = float(policy.get("giveback_frac", 0.3))
+
+    trailing_pct = max(0.01, activation_frac - giveback_frac)
+
+    result = {
+        "tp_mult": tp_mult,
+        "sl_mult": sl_mult,
+        "trailing_pct": trailing_pct,
+        "atr": {symbol: atr_val},
+        "source": "policy_optimiser",
+        "base_offset_atr_pct": float(policy.get("base_offset_atr_pct", 0.0)),
+        "max_offset_atr_pct": float(policy.get("max_offset_atr_pct", 0.0)),
+        "mfe_exit_frac": float(policy.get("mfe_exit_frac", 0.0)),
+        "min_hold_bars": int(policy.get("min_hold_bars", 0)),
+        "activation_frac": activation_frac,
+        "giveback_frac": giveback_frac,
+        "mae_gate_frac": policy.get("mae_gate_frac"),
+        "better_rule": policy.get("better_rule", "trailing"),
+    }
+    return result
+
+
 def evaluate_holdout_symbol(
     data_root: str,
     run_id: str,
@@ -434,6 +482,29 @@ def evaluate_holdout_symbol(
     portfolio_ts_parts: List[np.ndarray] = []
 
     policy_params = _compute_policy_params(feature_df, panel_symbol)
+
+    best_policy = _load_best_policy_params(data_root, run_id)
+    if best_policy is not None:
+        if "atr_pct" in feature_df.columns:
+            atr_val = float(
+                np.nanmedian(np.asarray(feature_df["atr_pct"].values, dtype=np.float64))
+            )
+        else:
+            atr_val = 0.02
+        atr_val = float(
+            np.clip(
+                atr_val if np.isfinite(atr_val) and atr_val > 0 else 0.02,
+                1e-4,
+                0.2,
+            )
+        )
+        policy_params = _apply_policy_params_to_seed(best_policy, panel_symbol, atr_val)
+        tprint(
+            f"  Loaded policy params: tp={policy_params['tp_mult']:.2f} "
+            f"sl={policy_params['sl_mult']:.2f} "
+            f"trailing={policy_params.get('trailing_pct', 0):.2f} "
+            f"rule={policy_params.get('better_rule', 'N/A')}"
+        )
 
     for strat in freeze.get("strategies", []):
         strategy_id = str(strat["strategy_id"])
@@ -540,7 +611,9 @@ def evaluate_holdout_symbol(
     }
 
 
-def _pick_best_model_per_strategy(freeze: Dict[str, Any], force_model: str = "") -> Dict[str, Any]:
+def _pick_best_model_per_strategy(
+    freeze: Dict[str, Any], force_model: str = ""
+) -> Dict[str, Any]:
     """Auto-pick the best model (ridge vs et) per strategy_id from freeze data, or force a specific one."""
     data_root = freeze.get("_data_root_", "data")
     run_id = freeze.get("_run_id_", "")
@@ -606,7 +679,9 @@ def _pick_best_model_per_strategy(freeze: Dict[str, Any], force_model: str = "")
     if merged_strategies:
         best_freeze["strategies"] = merged_strategies
 
-    best_freeze["model_source"] = force_model if force_model else ("mixed" if per_strategy_winner else "ridge")
+    best_freeze["model_source"] = (
+        force_model if force_model else ("mixed" if per_strategy_winner else "ridge")
+    )
     return best_freeze
 
 
@@ -642,9 +717,15 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--ridge", action="store_true", help="Force use of Ridge model only")
-    group.add_argument("--et", action="store_true", help="Force use of ExtraTrees model only")
-    group.add_argument("--compare", action="store_true", help="Auto-pick best model (default)")
+    group.add_argument(
+        "--ridge", action="store_true", help="Force use of Ridge model only"
+    )
+    group.add_argument(
+        "--et", action="store_true", help="Force use of ExtraTrees model only"
+    )
+    group.add_argument(
+        "--compare", action="store_true", help="Auto-pick best model (default)"
+    )
 
     args = parser.parse_args()
 

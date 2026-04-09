@@ -373,6 +373,14 @@ def _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps):
 
 def numba_rolling_robust_zscore(df, window, quantile=0.45, eps=1e-12):
     tprint(f"Entering function: numba_rolling_robust_zscore in fast_funcs.py")
+    if isinstance(df, np.ndarray):
+        mat = np.asarray(df, dtype=np.float32)
+        was_1d = mat.ndim == 1
+        if mat.ndim == 1:
+            mat = mat.reshape(-1, 1)
+        res = _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps)
+        return res[:, 0] if was_1d else res
+
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()
@@ -1873,6 +1881,14 @@ def numba_rolling_mad(df, n):
 
 def numba_rolling_quantile(df, n, q):
     # tprint(f"Entering function: numba_rolling_quantile in fast_funcs.py")
+    if isinstance(df, np.ndarray):
+        mat = np.asarray(df, dtype=np.float32)
+        was_1d = mat.ndim == 1
+        if mat.ndim == 1:
+            mat = mat.reshape(-1, 1)
+        res = _numba_rolling_quantile_parallel(mat, n, q)
+        return res[:, 0] if was_1d else res
+
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()
@@ -1967,17 +1983,46 @@ def numba_rolling_corr(df1, df2, n):
 
 def numba_rolling_mean(df, n):
     # tprint(f"Entering function: numba_rolling_mean in fast_funcs.py")
+    if isinstance(df, np.ndarray):
+        mat = np.asarray(df, dtype=np.float32)
+        was_1d = mat.ndim == 1
+        if mat.ndim == 1:
+            mat = mat.reshape(-1, 1)
+        res = _numba_rolling_mean_parallel(mat, n)
+        return res[:, 0] if was_1d else res
     return numba_rolling_mean_parallel(df, n)
 
 
 def numba_rolling_std(df, n):
     # tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
+    if isinstance(df, np.ndarray):
+        mat = np.asarray(df, dtype=np.float32)
+        was_1d = mat.ndim == 1
+        if mat.ndim == 1:
+            mat = mat.reshape(-1, 1)
+        res = _numba_rolling_std_parallel(mat, n)
+        return res[:, 0] if was_1d else res
     return numba_rolling_std_parallel(df, n)
 
 
 def numba_ewma(df, alpha, adjust=False):
     """Public EWMA wrapper for DataFrame/Series."""
     return numba_ewma_parallel(df, alpha=np.float32(alpha), adjust=adjust)
+
+
+def numba_ema_nan_safe(df, window):
+    """NaN-safe EMA wrapper for DataFrame/Series/ndarray inputs."""
+    tprint(f"Entering function: numba_ema_nan_safe in fast_funcs.py")
+    alpha = np.float32(2.0 / (window + 1.0))
+    if isinstance(df, np.ndarray):
+        mat = np.asarray(df, dtype=np.float32)
+        was_1d = mat.ndim == 1
+        if mat.ndim == 1:
+            mat = mat.reshape(-1, 1)
+        res = _numba_ewma_parallel(mat, alpha, False)
+        return res[:, 0] if was_1d else res
+
+    return numba_ewma(df, alpha, False)
 
 
 def compute_peak_labels_and_weights(
@@ -3295,6 +3340,14 @@ def _numba_rolling_rank_pct_parallel(mat, window):
 
 def numba_rolling_rank_pct(df, window):
     """Wrapper for parallel rolling percentile rank."""
+    if isinstance(df, np.ndarray):
+        mat = np.asarray(df, dtype=np.float32)
+        was_1d = mat.ndim == 1
+        if mat.ndim == 1:
+            mat = mat.reshape(-1, 1)
+        res = _numba_rolling_rank_pct_parallel(mat, window)
+        return res[:, 0] if was_1d else res
+
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()

@@ -30,6 +30,7 @@ CONSUMER_ROLES: tuple[str, ...] = (
     "meta_model_fit",
     "ridge_sizer_fit",
     "utility_policy_tuning",
+    "policy_optimiser",
     "backtest_eval",
     "full_inference_fit",
 )
@@ -152,6 +153,7 @@ class SlicePlannerConfig:
     timezone: Optional[str] = "UTC"
     min_rows_per_fold: int = 100
     min_symbols_per_fold: int = 5
+    policy_optimiser_holdout_frac: float = 0.10
     strict_validation: bool = True
     silent: bool = False
     tprint: Optional[Callable[[str], None]] = None
@@ -367,15 +369,25 @@ def _deduplicate_alike_symbols(
     keep_symbols: set[str] = set()
     removed_symbols: list[str] = []
 
-    eligible_view = work.loc[eligible, [symbol_col, "_dedup_base", "_dedup_quote"]].copy()
-    counts = eligible_view.groupby([symbol_col, "_dedup_base", "_dedup_quote"], observed=False).size().reset_index(name="n_rows")
+    eligible_view = work.loc[
+        eligible, [symbol_col, "_dedup_base", "_dedup_quote"]
+    ].copy()
+    counts = (
+        eligible_view.groupby(
+            [symbol_col, "_dedup_base", "_dedup_quote"], observed=False
+        )
+        .size()
+        .reset_index(name="n_rows")
+    )
 
     for base, grp in counts.groupby("_dedup_base", sort=False):
         if grp.shape[0] <= 1:
             keep_symbols.add(str(grp.iloc[0][symbol_col]))
             continue
         ranked = grp.assign(
-            _quote_rank=grp["_dedup_quote"].map(lambda q: DEDUP_QUOTE_PRIORITY.get(str(q), 999))
+            _quote_rank=grp["_dedup_quote"].map(
+                lambda q: DEDUP_QUOTE_PRIORITY.get(str(q), 999)
+            )
         ).sort_values(
             ["n_rows", "_quote_rank", symbol_col],
             ascending=[False, True, True],
@@ -383,7 +395,9 @@ def _deduplicate_alike_symbols(
         )
         winner = str(ranked.iloc[0][symbol_col])
         keep_symbols.add(winner)
-        removed_symbols.extend([str(sym) for sym in ranked.iloc[1:][symbol_col].tolist()])
+        removed_symbols.extend(
+            [str(sym) for sym in ranked.iloc[1:][symbol_col].tolist()]
+        )
 
     drop_mask = eligible & ~work[symbol_col].astype(str).isin(keep_symbols)
     if drop_mask.any():
@@ -746,14 +760,14 @@ def _resolve_outer_partition(
         # Ensure we don't try to pick more than available (handles edge cases where min_symbols > total)
         n_pick = max(policy.min_symbols_per_split, min(n_pick, universe_codes.size))
         n_pick = min(n_pick, universe_codes.size)
-        
+
         if n_pick >= universe_codes.size:
             subset = universe_codes
         else:
-            subset = np.sort(rng.choice(universe_codes, size=n_pick, replace=False)).astype(
-                np.int32
-            )
-        
+            subset = np.sort(
+                rng.choice(universe_codes, size=n_pick, replace=False)
+            ).astype(np.int32)
+
         train_codes = subset
         valid_codes = subset
         test_codes = subset
@@ -1491,7 +1505,7 @@ def build_consumer_slice_plan(
                 of.metadata.get("test_window_end"),
             )
 
-        elif consumer_role in {"meta_model_fit", "ridge_sizer_fit"}:
+        elif consumer_role == "meta_model_fit":
             add(
                 "fit_outer_oof_only",
                 oof_covered,
@@ -1519,6 +1533,42 @@ def build_consumer_slice_plan(
                 of.metadata.get("train_window_end"),
                 of.metadata.get("test_window_start"),
                 of.metadata.get("test_window_end"),
+            )
+
+        elif consumer_role == "ridge_sizer_fit":
+            add(
+                "fit_outer_oof_only",
+                oof_covered,
+                oof_covered,
+                None,
+                "outer_train_oof_eligible",
+                "outer_train_oof_eligible",
+                of.metadata.get("train_window_start"),
+                of.metadata.get("train_window_end"),
+                of.metadata.get("train_window_start"),
+                of.metadata.get("train_window_end"),
+                extra={
+                    "outer_train_all_idx": of.train_idx,
+                    "outer_train_oof_eligible_idx": oof_covered,
+                },
+            )
+            n_test = len(of.test_idx)
+            n_policy = max(0, int(n_test * config.policy_optimiser_holdout_frac))
+            sizer_test_idx = (
+                of.test_idx[: n_test - n_policy] if n_policy > 0 else of.test_idx
+            )
+            add(
+                "predict_outer_test",
+                of.train_idx,
+                sizer_test_idx,
+                None,
+                "full_outer_train",
+                "outer_test",
+                of.metadata.get("train_window_start"),
+                of.metadata.get("train_window_end"),
+                of.metadata.get("test_window_start"),
+                of.metadata.get("test_window_end"),
+                extra={"held_out_for_policy": n_policy},
             )
 
         elif consumer_role == "utility_policy_tuning":
@@ -1552,6 +1602,28 @@ def build_consumer_slice_plan(
                         extra={"policy_tuning_mode": "inner_oof"},
                     )
 
+        elif consumer_role == "policy_optimiser":
+            n_test = len(of.test_idx)
+            n_policy = max(1, int(n_test * config.policy_optimiser_holdout_frac))
+            policy_idx = of.test_idx[-n_policy:] if n_policy <= n_test else of.test_idx
+            add(
+                "predict_policy_holdout",
+                of.train_idx,
+                policy_idx,
+                None,
+                "full_outer_train",
+                "policy_holdout_tail",
+                of.metadata.get("train_window_start"),
+                of.metadata.get("train_window_end"),
+                of.metadata.get("test_window_end")
+                if pd.notna(of.metadata.get("test_window_end"))
+                else of.metadata.get("test_window_start"),
+                of.metadata.get("test_window_end"),
+                extra={
+                    "policy_optimiser_holdout_frac": config.policy_optimiser_holdout_frac
+                },
+            )
+
         elif consumer_role == "backtest_eval":
             add(
                 "predict_outer_test",
@@ -1579,16 +1651,40 @@ def build_consumer_slice_plan(
         for p in plans:
             all_symbols.update(p.symbols_fit)
             all_symbols.update(p.symbols_predict)
-        
+
         # Calculate overall period
-        all_fit_starts = [p.metadata.get("fit_actual_start") for p in plans if p.metadata.get("fit_actual_start")]
-        all_fit_ends = [p.metadata.get("fit_actual_end") for p in plans if p.metadata.get("fit_actual_end")]
-        all_pred_starts = [p.metadata.get("predict_actual_start") for p in plans if p.metadata.get("predict_actual_start")]
-        all_pred_ends = [p.metadata.get("predict_actual_end") for p in plans if p.metadata.get("predict_actual_end")]
-        
-        overall_start = min(all_fit_starts + all_pred_starts) if (all_fit_starts + all_pred_starts) else None
-        overall_end = max(all_fit_ends + all_pred_ends) if (all_fit_ends + all_pred_ends) else None
-        
+        all_fit_starts = [
+            p.metadata.get("fit_actual_start")
+            for p in plans
+            if p.metadata.get("fit_actual_start")
+        ]
+        all_fit_ends = [
+            p.metadata.get("fit_actual_end")
+            for p in plans
+            if p.metadata.get("fit_actual_end")
+        ]
+        all_pred_starts = [
+            p.metadata.get("predict_actual_start")
+            for p in plans
+            if p.metadata.get("predict_actual_start")
+        ]
+        all_pred_ends = [
+            p.metadata.get("predict_actual_end")
+            for p in plans
+            if p.metadata.get("predict_actual_end")
+        ]
+
+        overall_start = (
+            min(all_fit_starts + all_pred_starts)
+            if (all_fit_starts + all_pred_starts)
+            else None
+        )
+        overall_end = (
+            max(all_fit_ends + all_pred_ends)
+            if (all_fit_ends + all_pred_ends)
+            else None
+        )
+
         log(
             f"[slice_planner] SUMMARY for consumer={consumer_role}: "
             f"period={overall_start} to {overall_end}, "
@@ -1716,6 +1812,15 @@ def build_optimisation_slices(
 ) -> list[ConsumerSlicePlan]:
     all_plans = plans or build_all_consumer_slices(events, config)
     return all_plans["utility_policy_tuning"]
+
+
+def build_policy_optimiser_slices(
+    events: pd.DataFrame,
+    config: SlicePlannerConfig,
+    plans: Optional[dict[str, list[ConsumerSlicePlan]]] = None,
+) -> list[ConsumerSlicePlan]:
+    all_plans = plans or build_all_consumer_slices(events, config)
+    return all_plans["policy_optimiser"]
 
 
 def build_full_inference_slices(

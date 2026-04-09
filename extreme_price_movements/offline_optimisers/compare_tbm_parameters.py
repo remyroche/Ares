@@ -156,7 +156,6 @@ TBM_CACHE_VERSION = 2
 ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS) + [
     "adx_14",
     "multi_timescale_volatility_shape",
-    "trend_persistence_vs_exhaustion",
     "trend_persistence"
 ]
 

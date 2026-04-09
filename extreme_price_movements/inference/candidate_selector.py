@@ -105,6 +105,7 @@ def _build_mask_for_mode(
         z=z_bars,
         bph=bph,
         volume=volume_arr,
+        precomputed=feats_1d,
     )
     tprint("candidate_selector: _compute_z_cache complete.")
 

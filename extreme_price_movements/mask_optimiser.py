@@ -3407,6 +3407,7 @@ def _compute_z_cache(
     z: int,
     bph: int,
     volume: Optional[np.ndarray] = None,
+    precomputed: Optional[Dict[str, np.ndarray]] = None,
 ) -> Dict[str, np.ndarray]:
     n = close.shape[0]
     cache = {
@@ -3442,6 +3443,38 @@ def _compute_z_cache(
         "vwap_z": np.zeros(n, dtype=np.float32),
     }
 
+    done_keys = set()
+    if precomputed is not None:
+        # Map pre-computed features (which are usually for standard z=24)
+        mapping = {
+            "z_hl_range": "hl_range",
+            "z_intrabar_range_atr": "intrabar_range_atr",
+            "z_compression_expansion": "compression_expansion_transition",
+            "z_volume": "volume_robust_z",
+        }
+        # Features that specifically depend on z
+        if z == 24 or z == (24 * bph):
+            mapping.update({
+                "z_breakout_up_24": "breakout_distance_up_atr",
+                "z_breakout_dn_24": "breakout_distance_down_atr",
+                "z_dist_ema_24": "distance_from_ema_atr",
+                "z_dist_vwap_24": "distance_from_vwap_atr",
+                "z_atr_norm_ret_24": "atr_normalized_trailing_return",
+                "z_sm_momentum_24": "short_minus_long_momentum",
+                "z_slope_change_24": "slope_change",
+                "z_path_efficiency_24": "path_efficiency_ratio",
+            })
+
+        for p_key, c_key in mapping.items():
+            if p_key in precomputed:
+                cached_val = precomputed[p_key]
+                if cached_val.shape[0] == n:
+                    cache[c_key] = np.asarray(cached_val, dtype=np.float32)
+                    done_keys.add(c_key)
+        
+        if len(done_keys) > 0:
+            tprint(f"  [Z-CACHE] Using {len(done_keys)} pre-computed robust features (skipped ad-hoc median calculations).")
+
     for _, idxs in asset_groups.items():
         ast_high = high[idxs]
         ast_low = low[idxs]
@@ -3475,7 +3508,32 @@ def _compute_z_cache(
         cache["m_dn"][idxs] = m_d
         cache["v_exp"][idxs] = v_e
 
-        # --- New Features ---
+        # 0. Check if work is already done
+        all_new_structural = {
+            "hl_range", "intrabar_range_atr", "compression_expansion_transition",
+            "volume_robust_z", "breakout_distance_up_atr", "breakout_distance_down_atr",
+            "distance_from_ema_atr", "distance_from_vwap_atr", "atr_normalized_trailing_return",
+            "short_minus_long_momentum", "slope_change", "path_efficiency_ratio"
+        }
+        if all_new_structural.issubset(done_keys):
+            # Special case: trailing_high_prev/trailing_low_prev are not Z-normalized but 
+            # are usually needed. They are fast though.
+            if "trailing_high_prev" not in done_keys:
+                ast_trailing_high, _ = rolling_max_index_nb(ast_high, z)
+                cache["trailing_high_prev"][idxs] = np.roll(ast_trailing_high, 1).astype(np.float32)
+            if "trailing_low_prev" not in done_keys:
+                ast_trailing_low, _ = rolling_min_index_nb(ast_low, z)
+                cache["trailing_low_prev"][idxs] = np.roll(ast_trailing_low, 1).astype(np.float32)
+            if "sma_z" not in done_keys:
+                sma_z = np.convolve(ast_close, np.ones(z)/z, mode='valid')
+                cache["sma_z"][idxs] = np.concatenate([np.full(z-1, np.nan), sma_z]).astype(np.float32)
+            if "vwap_z" not in done_keys:
+                vol_w = volume[idxs] if volume is not None else np.ones_like(ast_close)
+                sum_pv = np.convolve(ast_close * vol_w, np.ones(z), mode='valid')
+                sum_v = np.convolve(vol_w, np.ones(z), mode='valid')
+                cache["vwap_z"][idxs] = np.concatenate([np.full(z-1, np.nan), sum_pv / np.maximum(sum_v, 1e-6)]).astype(np.float32)
+            continue
+
         # Window must be smaller than the available data slice for fast iteration
         window_14d = int(14 * 24 * bph)
         window_adaptive = max(20, min(window_14d, int(ast_close.shape[0] * 0.5)))
@@ -3551,27 +3609,19 @@ def _compute_z_cache(
         cache["atr_normalized_trailing_return"][idxs] = _rolling_robust_z_1d(ast_atr_norm_ret, window_14d)
 
         # Short minus long
-        short_ret = (ast_close - np.roll(ast_close, max(1, z//3))) / np.maximum(np.roll(ast_close, max(1, z//3)), 1e-6)
-        cache["short_minus_long_momentum"][idxs] = _rolling_robust_z_1d(short_ret - ast_trailing_ret, window_14d)
+        if "atr_normalized_trailing_return" not in done_keys:
+            ast_atr_norm_ret = ast_trailing_ret / np.maximum(ast_vol, 1e-6)
+            cache["atr_normalized_trailing_return"][idxs] = _rolling_robust_z_1d(ast_atr_norm_ret, window_14d)
 
-        # Slope change (diff of rolling return)
-        ast_slope_change = ast_trailing_ret - np.roll(ast_trailing_ret, 1)
-        cache["slope_change"][idxs] = _rolling_robust_z_1d(ast_slope_change, window_14d)
+        if "short_minus_long_momentum" not in done_keys:
+            short_ret = (ast_close - np.roll(ast_close, max(1, z//3))) / np.maximum(np.roll(ast_close, max(1, z//3)), 1e-6)
+            cache["short_minus_long_momentum"][idxs] = _rolling_robust_z_1d(short_ret - ast_trailing_ret, window_14d)
+
+        if "slope_change" not in done_keys:
+            ast_slope_change = ast_trailing_ret - np.roll(ast_trailing_ret, 1)
+            cache["slope_change"][idxs] = _rolling_robust_z_1d(ast_slope_change, window_14d)
 
         # 5. Path Structure
-        # path efficiency = net move / sum of abs moves
-        ast_abs_moves = np.abs(ast_close - np.roll(ast_close, 1))
-        # We need a rolling sum for path efficiency. Safe rolling sum:
-        rolling_abs_moves = np.convolve(ast_abs_moves, np.ones(z, dtype=int), 'valid')
-        rolling_abs_moves = np.concatenate([np.full(z-1, np.nan), rolling_abs_moves])
-
-        ast_path_eff = np.where(rolling_abs_moves > 1e-6, (ast_close - np.roll(ast_close, z)) / (rolling_abs_moves + 1e-9), 0.0)
-        cache["path_efficiency_ratio"][idxs] = _rolling_robust_z_1d(ast_path_eff, window_14d)
-
-
-    return cache
-
-
 def _balanced_sample_indices(
     idx_a: np.ndarray,
     idx_b: np.ndarray,
@@ -5385,6 +5435,7 @@ def _run_mode_search(
                             z=z,
                             bph=bph,
                             volume=shared.get("volume"),
+                            precomputed=shared.get("feature_dict"),
                         )
                     zc_local = _slice_z_cache(phase1_z_cache[z], phase1_mask)
                 m_high_local, m_low_local = _generate_event_masks_fast(
@@ -5765,6 +5816,7 @@ def _run_mode_search(
                         z=z,
                         bph=bph,
                         volume=shared.get("volume"),
+                        precomputed=shared.get("feature_dict"),
                     )
                 zc = global_z_cache[z]
             m_high, m_low = _generate_event_masks_fast(
@@ -6854,6 +6906,7 @@ def _run_mode_search(
                     z=z,
                     bph=bph,
                     volume=shared.get("volume"),
+                    precomputed=shared.get("feature_dict"),
                 )
             zc = global_z_cache[z]
             base_masks = candidate_masks[cand_name]

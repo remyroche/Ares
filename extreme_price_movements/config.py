@@ -13,7 +13,9 @@ CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_HORIZONS]
 # Side-Horizon cells (agnostic to MR/TF distinction)
 # Used for TBM optimization and position sizing without structural bucket assumptions
 CANON_SIDES = ["long", "short"]
-CANON_SIDE_HORIZON_CELLS = [f"{side}_H{h}" for side in CANON_SIDES for h in CANON_HORIZONS]
+CANON_SIDE_HORIZON_CELLS = [
+    f"{side}_H{h}" for side in CANON_SIDES for h in CANON_HORIZONS
+]
 
 
 _PERP_COLLISION_RENAMES = {
@@ -501,7 +503,6 @@ TRAINING_RESIDUALIZATION_FEATURE_KEYS = [
 ]
 
 
-
 LOC_CONTINUOUS_FAMILY_MAP = {
     "loc_ema_stack_pos_24": "trend",
     "loc_ema_stack_pos_48": "trend",
@@ -801,6 +802,12 @@ CFG = {
     "train_lookback_hours": 24 * 365 * 4,  # 4 years
     "val_lookback_hours": 24 * 7,  # 7d validation (time-split, no leakage)
     "min_train_samples": 200,
+    # Sample caps (symbol-balanced subsampling when exceeded)
+    "base_fit_max_samples": 150000,
+    "base_selector_max_samples": 30000,
+    "base_variant_fit_max_samples": 100000,
+    "base_variant_selector_max_samples": 25000,
+    "meta_fit_max_samples": 50000,
     # MFE/MAE-based sample weighting (Report 2026-02-12)
     # Weight samples by how "decisive" the price movement was relative to barriers
     # w = w_min + (1-w_min) * clip(max(MFE/TP, MAE/SL) / tau, 0, 1)
@@ -1337,7 +1344,6 @@ CFG = {
         "G_EXH_GIVEBACK",
         "G_EXH_TAIL_FAIL",
         "G_MR_SPIKE",
-        "G_TF_TREND",
         # New Model Features
         "overext",
         "overext_weak",
@@ -1360,9 +1366,8 @@ CFG = {
         "dir_path_risk_long_2h",
         "dir_path_risk_short_2h",
         "dir_path_edge_2h",
-        "dir_path_risk_skew_2h"
+        "dir_path_risk_skew_2h",
         # OHLCV-based trend quality features (Report 2026-02-12)
-        ,
         "trend_age_hours",
         "higher_highs_count_48h",
         "trend_retest_success_rate",
@@ -1410,12 +1415,6 @@ CFG = {
         "p_vol_high",
         "p_cusum_high",
         "p_liq_low",
-        "dir_path_long_2h",
-        "dir_path_short_2h",
-        "dir_path_risk_long_2h",
-        "dir_path_risk_short_2h",
-        "dir_path_edge_2h",
-        "dir_path_risk_skew_2h",
         # Orthogonal features (structurally independent dimensions)
         "mtf_divergence",
         "mtf_div_mag",
@@ -1757,55 +1756,6 @@ CFG = {
     "risk_k_sl": 2.0,  # stop distance in ATR multiples
     "risk_k_trail_start": 1.0,  # profit distance to start trailing
     "risk_k_trail_dist": 1.0,  # trailing distance
-    # Exhaustion model (hourly sensor)
-    "exh_horizon_hours": 8,
-    "exh_reversal_thr": 0.03,  # Relaxed from 0.04 to capture more reversals
-    # Peak Targeting Labeling (Option A/B)
-    "exh_label_type": "peak",  # "simple" or "peak"
-    "exh_use_atr": True,  # Use ATR-based thresholds
-    "exh_atr_rev_k": 1.5,  # Reversal size in ATRs (relaxed from 2.0)
-    "exh_atr_near_k": 1.5,  # Proximity to peak in ATRs (relaxed from 1.0)
-    # Clipping for Peak Targeting
-    "exh_near_dist_cap_pct": 0.05,  # Max proximity distance (5%) - relaxed for crypto volatility
-    "exh_rev_dist_floor_pct": 0.01,  # Min reversal distance (1%) - relaxed for crypto volatility
-    "exh_near_thr": 0.03,  # Fallback % proximity
-    "exh_rev_thr_pct": 0.02,  # Fallback % reversal (3%)
-    # Soft Labels (Target Smoothing)
-    "label_use_soft": True,
-    "label_soft_alpha_max": 0.15,  # Reverted to 0.15
-    "exh_train_lookback_hours": 24 * 14,
-    "min_exh_samples": 6000,
-    "exh_C": 1.0,
-    "exh_l1_ratio": 0.30,
-    # which features go into exhaustion ML (plus sin/cos time features) (3)
-    "exh_feature_keys": [
-        "donch_dist_12",
-        "excess_6h",
-        "overext",
-        "overext_weak",
-        "effort_gate",
-        "stall_ext",
-        "tail_fail",
-        "blowoff_risk",
-        "clv_mean_4",
-        "pullback_2",
-        "pullback_4",
-        "giveback",
-        "evr_6",
-        "progress",
-        "delta_stall_6",
-        "tail_against",
-        # Context features (Volatility & Regime)
-        "vol_z",
-        "rsi",
-        "mkt_rv_ratio",
-        "dist_vwap_norm",
-        "accel",
-        # Interaction Features
-        "dist_ext_x_vol",
-        "regime_x_vol",
-        "rsi_x_vol",
-    ],
     # Spike / Regime Head
     "spike_feature_keys": [
         "S",
@@ -1821,8 +1771,8 @@ CFG = {
         "donch_dist_12",
     ],
     # TF Head (Specifics + Global) — includes trend maturity features
-        # Kind-specific overlays for meta models (kept for backward compatibility)
-            "base_shared_feature_keys": [
+    # Kind-specific overlays for meta models (kept for backward compatibility)
+    "base_shared_feature_keys": [
         "coherence_24",
         "impulse_ratio_24",
         "clv_mean_4",
@@ -1852,6 +1802,21 @@ CFG = {
         "vol_shock_asym_8_24",
         "vol_shock_asym_4_12",
         "vol_shock_asym_4_212",
+        # Multi-horizon returns / momentum
+        "ret3h",
+        "ret5h",
+        "ret10h",
+        "ret12h",
+        "ret20h",
+        "ret28h",
+        "impulse",
+        "jump_intensity",
+        "lr_1h",
+        "lr_2h",
+        "lr_4h",
+        "lr_6h",
+        "lr_12h",
+        "lr_24h",
         "neutral_feature_keys",
         "MODEL_FEATURES",
         "RIDGE_FEATURE_COLS",
@@ -1886,7 +1851,7 @@ CFG = {
         "vortex_diff_21",
         "vp_air_pocket_score",
         "trapped_longs_96",
-        "vp_dist_hvn_above_atr"
+        "vp_dist_hvn_above_atr",
     ],
     "base_short_feature_keys": [
         "overext",
@@ -1896,7 +1861,6 @@ CFG = {
         "mr_tape",
         "giveback",
         "blowoff_risk",
-        "exh_qual",
         "tail_fail",
         "tail_against",
         "dir_path_risk_long_2h",
@@ -1918,9 +1882,7 @@ CFG = {
         "trap_quality",
         "mr_soft",
         "mr_potential",
-        "mr_potential_exhaust",
         "climax",
-        "vol_exhaust",
         "mr_climax",
         "shock_decay",
         "pct_extreme",
@@ -1936,18 +1898,10 @@ CFG = {
         "vp_dist_poc_atr",
         "vp_in_poc_zone",
         "vortex_diff_14",
-        "adx_7"
+        "adx_7",
     ],
     "meta_shared_feature_keys": [
         "ambig",
-        "exh_qual",
-        "rv_ratio_6_24",
-        "mkt_rv_ratio",
-        "mkt_rv_pct",
-        "qv",
-        "signed_vol",
-        "vol_z",
-        "trend_pct",
         "spike_score",
         "grind_score",
         "chop_score",
@@ -2051,10 +2005,54 @@ CFG = {
         "up_down_semivol_ratio_tanh",
         "up_down_return_mass_ratio_tanh",
         "tail_asymmetry_q90_q10_atr_norm",
+        # Time features (circular seasonal)
+        "sin_hod",
+        "cos_hod",
+        "sin_dow",
+        "cos_dow",
+        "hour_sin",
+        "hour_cos",
+        "dow_sin",
+        "dow_cos",
+        # Regime / state features
+        "regime_trend_score",
+        "regime_vol_score",
+        "regime_liquidity_score",
+        "trend_regime",
+        "vol_regime_ratio",
+        "vol_regime_shift",
+        "vol_regime_transition",
+        "stage_mr",
+        "stage_tf",
+        "stage_blowoff",
+        # Position sizer V2 features
+        "beta_24h",
+        "hour_vol_ratio",
+        "liquidity_ratio",
+        "seasonality_strength",
+        "session_progress",
+        # Residual / surprise variants
+        "volume_z_12",
+        "volume_z_24",
+        "vol_z24",
+        "ffd_mr_z_06",
+        "xs_rank_vol_z",
         "CONTINUOUS_LOCATION_COLS",
         "FEATURE_SELECTION_KEYS",
         "TRAINING_RESIDUALIZATION_FEATURE_KEYS",
-            "TRAINING_RESIDUALIZATION_FEATURE_KEYS",
+        # Structural Z-Normalization Features (Mask Optimiser Pre-calc)
+        "z_hl_range",
+        "z_intrabar_range_atr",
+        "z_compression_expansion",
+        "z_volume",
+        "z_breakout_up_24",
+        "z_breakout_dn_24",
+        "z_dist_ema_24",
+        "z_dist_vwap_24",
+        "z_atr_norm_ret_24",
+        "z_sm_momentum_24",
+        "z_slope_change_24",
+        "z_path_efficiency_24",
     ],
     "meta_reg_feature_keys": [
         "ret1h",
@@ -2074,7 +2072,8 @@ CFG = {
         "meta_signal_x_accel",
         "dir_path_edge_2h",
         "dir_path_risk_skew_2h",
-        "predicted_vol_6h"
+        "predicted_vol_6h",
+        "resid_ret_6h",
     ],
     "meta_clf_feature_keys": [
         "ret1h",
@@ -2088,7 +2087,7 @@ CFG = {
         "dir_path_risk_skew_2h",
         "meta_alignment",
         "meta_signal_x_accel",
-        "predicted_vol_6h"
+        "predicted_vol_6h",
     ],
     "meta_mfe_feature_keys": [
         "tf_tape",
@@ -2128,12 +2127,13 @@ CFG = {
         "impulse_ratio_24",
         "breakout_t",
         "vol_expansion_ratio",
-        "vol_z_x_regime_trend"
+        "vol_z_x_regime_trend",
+        "adx_zscore",
+        "convexity_z_t",
     ],
     "meta_mae_feature_keys": [
         "mr_soft",
         "mr_potential",
-        "mr_potential_exhaust",
         "climax",
         "vol_exhaust",
         "mr_climax",
@@ -2168,7 +2168,8 @@ CFG = {
         "dir_path_risk_short_2h",
         "dir_path_risk_skew_2h",
         "volume_capitulation",
-        "trap_quality"
+        "trap_quality",
+        "move_magnitude_z",
     ],
     "meta_asym_feature_keys": [
         "vol_asym",
@@ -2178,7 +2179,7 @@ CFG = {
         "tail_against",
         "asym_ratio",
         "asym_ft",
-        "vol_shock_asym_8_24"
+        "vol_shock_asym_8_24",
     ],
     # Selector v3 configs (top30-focused, per-head)
     "selector_feature_family_map": {},
@@ -2295,13 +2296,11 @@ CFG = {
     # Backward-compatible selector aliases
     "base_mdi_selector_target": "classification",
     "base_mdi_selector_loss": "binary_logloss",
-
     # Layer A Ablations and Config
-    "model1_target_mode": "race", # "race" | "fixed"
+    "model1_target_mode": "race",  # "race" | "fixed"
     "fixed_model1_target_name": "robust_utility_target",
-    "score_blend_mode": "train_scaled_components", # "legacy_raw" | "train_scaled_components"
+    "score_blend_mode": "train_scaled_components",  # "legacy_raw" | "train_scaled_components"
     "use_model3_uncertainty": True,
-
     # Unified learnability-test feature basket used by research comparison scripts
     "test_feature_keys": TEST_FEATURE_KEYS,
     # Inference dynamic-basket controls
@@ -2316,7 +2315,6 @@ CFG = {
     "allow_5m_download": True,  # Use 5m only for residual ambiguity solving after 15m refinement
     # Limit Order Simulation (Report 2026-02-22)
     "use_limit_orders": True,  # Enable limit orders per user request
-
     # ---------------------------------------------------------
     # LIMIT OFFSET SEMANTIC CONTRACT
     # ---------------------------------------------------------
@@ -2327,15 +2325,12 @@ CFG = {
     "limit_offset_unit": "bps",
     "limit_offset_min": 5.0,
     "limit_offset_max": 50.0,
-
     # ML Offset Path
-    "limit_offset_mode": "heuristic", # "heuristic" | "ml" | "disabled"
-    "limit_offset_target_mode": "undefined", # requires definition before ML mode
+    "limit_offset_mode": "heuristic",  # "heuristic" | "ml" | "disabled"
+    "limit_offset_target_mode": "undefined",  # requires definition before ML mode
     "allow_heuristic_fallback_if_ml_unavailable": True,
-
     "limit_offset_bps": 20.0,  # Default static entry offset (if fallback)
     "exit_limit_offset_bps": 20.0,  # Default static exit offset
-
     "signal_opt_debug": True,  # Emit detailed signal-optimization diagnostics
     "debug_signal_generation": True,  # Emit per-timestamp signal-generation stage counts
     "fee_bps": 35.0,  # Default fee (used when not using limit orders)
@@ -2344,7 +2339,6 @@ CFG = {
     "fee_bps_limit_entry": 10.0,  # 0.10% per side for limit order entry (20 bps RT)
     "fee_bps_limit_exit": 10.0,  # 0.10% per side for limit order exit (20 bps RT)
     "fee_bps_market_exit": 25.0,  # 0.25% per side if using market order for exit
-
     # Limit Order Price Estimation (MAE/MFE-based heuristics)
     "use_mae_mfe_limit_offset": True,  # Use MAE/MFE predictions for limit offset
     "limit_offset_min_bps": 5.0,  # Legacy alias to limit_offset_min
@@ -2352,7 +2346,6 @@ CFG = {
     "limit_fill_model_type": "heuristic",  # heuristic | learned
     "limit_fill_vol_regime_weight": 0.3,  # How much vol regime reduces fill prob
     "limit_fill_liquidity_bonus": 0.2,  # Liquidity adjustment to fill prob
-
     # Exit Limit Orders
     "use_exit_limit_orders": True,  # Enable limit orders for exits
     "exit_limit_offset_adaptive": True,  # Adapt exit offset based on profit locked
@@ -2378,7 +2371,11 @@ def enable_perp_feature_keys(cfg: dict) -> dict:
     Spot pipeline remains unchanged unless this helper is called.
     """
     out = dict(cfg)
-    for k in ("base_long_feature_keys", "base_short_feature_keys", "meta_shared_feature_keys"):
+    for k in (
+        "base_long_feature_keys",
+        "base_short_feature_keys",
+        "meta_shared_feature_keys",
+    ):
         out[k] = _append_missing(out.get(k, []), PERP_FEATURE_KEYS)
     return out
 
@@ -2409,7 +2406,6 @@ CFG = apply_15m_feature_toggle(CFG)
 # ============================================================
 # Position Sizer V2 Feature Config
 # ============================================================
-
 
 
 POSITION_SIZER_V2_FEATURE_CONFIG = {
@@ -2760,10 +2756,22 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
     "ridge_support_boost_strength": 1.0,
     # Cross-bucket overlap discount multipliers (lower = rules from different buckets
     # need much higher raw overlap before they suppress each other)
-    "ridge_cross_side_overlap_mult": 0.50,       # different long/short
-    "ridge_cross_horizon_overlap_mult": 0.70,    # same side, different horizon
+    "ridge_cross_side_overlap_mult": 0.50,  # different long/short
+    "ridge_cross_horizon_overlap_mult": 0.70,  # same side, different horizon
     # Cascade dedup thresholds (descending): stop when ≤ max_ridge_candidates_total rules remain
-    "ridge_dedup_thresholds": [0.95, 0.925, 0.90, 0.875, 0.85, 0.825, 0.80, 0.75, 0.70, 0.65, 0.60],
+    "ridge_dedup_thresholds": [
+        0.95,
+        0.925,
+        0.90,
+        0.875,
+        0.85,
+        0.825,
+        0.80,
+        0.75,
+        0.70,
+        0.65,
+        0.60,
+    ],
     # Per-bucket structural dedup target (top-N kept per bucket before global Ridge cascade)
     "overlap_dedup_bucket_top_target": 20,
     # --- Ridge validation criteria (research-grade vs production-grade) ---
@@ -2779,5 +2787,3 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
     # "best_gross_pnl" = use best gross PnL threshold when net fails (research mode)
     "ridge_threshold_selection_policy": "best_gross_pnl",
 }
-
-

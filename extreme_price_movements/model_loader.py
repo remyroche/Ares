@@ -74,7 +74,6 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
     - Meta models (from pickle)
     - Spike models (from pickle)
     - Specialist models (from pickle)
-    - Exhaustion models (from pickle)
     - Alpha OOF metrics (from pickle)
     - Quality gate report (from pickle)
     - EV decomposition (from pickle)
@@ -94,7 +93,6 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
             "meta_models": {...},
             "spike_models": {...},
             "specialist_models": {...},
-            "exh_models": {...},
             "alpha_oof_metrics": {...},
             "quality_gate_report": {...},
             "ev_decomposition": {...},
@@ -110,7 +108,6 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
         "specialist_models": {},
         "ridge_weights": {},
         "ridge_offset_model": {},
-        "exh_models": {},
         "alpha_oof_metrics": {},
         "quality_gate_report": {},
         "ev_decomposition": {},
@@ -152,13 +149,6 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
             bundle["specialist_models"] = specialist_models
         else:
             tprint("WARNING: No specialist models found in trained_state.pkl")
-        
-        # Load exhaustion models (up/down)
-        exh_models = load_exh_models(trained_state_path)
-        if exh_models:
-            bundle["exh_models"] = exh_models
-        else:
-            tprint("WARNING: No exhaustion models found in trained_state.pkl")
         
         # Load alpha OOF metrics
         alpha_oof_metrics = load_alpha_oof_metrics(trained_state_path)
@@ -212,7 +202,6 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
     tprint(f"  Meta models: {list(bundle['meta_models'].keys())}")
     tprint(f"  Spike models: {list(bundle['spike_models'].keys())}")
     tprint(f"  Specialist models: {list(bundle['specialist_models'].keys())}")
-    tprint(f"  Exhaustion models: {list(bundle['exh_models'].keys())}")
     tprint(f"  Alpha OOF metrics: {list(bundle['alpha_oof_metrics'].keys())}")
     tprint(f"  Quality gate report: {'present' if bundle['quality_gate_report'] else 'missing'}")
     tprint(f"  EV decomposition: {'present' if bundle['ev_decomposition'] else 'missing'}")
@@ -542,42 +531,6 @@ def load_specialist_models(trained_state_path: str) -> dict:
         
     except Exception as e:
         tprint(f"  WARNING: Failed to load specialist models: {e}")
-        return {}
-
-
-def load_exh_models(trained_state_path: str) -> dict:
-    """Load exhaustion models from trained_state.pkl.
-    
-    Args:
-        trained_state_path: Path to trained_state.pkl file
-        
-    Returns:
-        Dict of exhaustion models:
-        {
-            "up": ExhaustionModel,
-            "down": ExhaustionModel
-        }
-    """
-    if not os.path.exists(trained_state_path):
-        tprint(f"WARNING: Trained state file not found: {trained_state_path}")
-        return {}
-    
-    try:
-        with open(trained_state_path, "rb") as f:
-            state = pickle.load(f)
-        
-        bundle = state.get("bundle", state)
-        exh_models = bundle.get("exh_models", {})
-        
-        if not exh_models:
-            tprint("  No exh_models found in trained state")
-            return {}
-        
-        tprint(f"  Loaded {len(exh_models)} exhaustion models")
-        return exh_models
-        
-    except Exception as e:
-        tprint(f"  WARNING: Failed to load exhaustion models: {e}")
         return {}
 
 

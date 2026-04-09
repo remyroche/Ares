@@ -1116,7 +1116,12 @@ def run_simple_position_sizer(
 
     results: Dict[str, Any] = {}
     t_diff = np.max(timestamps) - np.min(timestamps)
-    if hasattr(t_diff, "astype") and not isinstance(t_diff, float) and not isinstance(t_diff, int) and not isinstance(t_diff, np.integer):
+    if (
+        hasattr(t_diff, "astype")
+        and not isinstance(t_diff, float)
+        and not isinstance(t_diff, int)
+        and not isinstance(t_diff, np.integer)
+    ):
         try:
             n_days = float(t_diff / np.timedelta64(1, "D"))
         except Exception:
@@ -1725,6 +1730,24 @@ def run_simple_position_sizer_from_artifacts(
 
         active_joined_df = active_df
 
+        _sizer_cap = 50000
+        if _sizer_cap > 0 and len(active_joined_df) > _sizer_cap:
+            from extreme_price_movements.training import subsample_symbol_balanced
+
+            _pre_sizer = len(active_joined_df)
+            _sym_col = (
+                "symbol" if "symbol" in active_joined_df.columns else "__symbol__"
+            )
+            _ts_col = (
+                "timestamp" if "timestamp" in active_joined_df.columns else "__ts__"
+            )
+            active_joined_df = subsample_symbol_balanced(
+                active_joined_df, _sizer_cap, symbol_col=_sym_col, ts_col=_ts_col
+            )
+            logger.info(
+                f"Sizer symbol-balanced subsample {_pre_sizer} -> {len(active_joined_df)} (cap={_sizer_cap})"
+            )
+
         # Get target outcomes
         trade_outcomes = load_trade_outcomes(data_root, run_id, active_joined_df)
         if (
@@ -2123,14 +2146,21 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--ridge", action="store_true", help="Use only Ridge model")
     group.add_argument("--et", action="store_true", help="Use only ExtraTrees model")
-    group.add_argument("--compare", action="store_true", help="Run both and compare (default)")
+    group.add_argument(
+        "--compare", action="store_true", help="Run both and compare (default)"
+    )
 
     args = parser.parse_args()
 
     # Determine which models to run (default to compare if none specified)
-    use_ridge = args.ridge or args.compare or (not args.ridge and not args.et and not args.compare)
-    use_et = args.et or args.compare or (not args.ridge and not args.et and not args.compare)
-
+    use_ridge = (
+        args.ridge
+        or args.compare
+        or (not args.ridge and not args.et and not args.compare)
+    )
+    use_et = (
+        args.et or args.compare or (not args.ridge and not args.et and not args.compare)
+    )
 
     data_root = args.data_root
     run_id = args.run_id
@@ -2147,8 +2177,11 @@ if __name__ == "__main__":
 
     try:
         results = run_simple_position_sizer_from_artifacts(
-            data_root=data_root, run_id=run_id, top_n_strategies=args.top_n,
-            use_ridge_head_sizer=use_ridge, use_et_head_sizer=use_et
+            data_root=data_root,
+            run_id=run_id,
+            top_n_strategies=args.top_n,
+            use_ridge_head_sizer=use_ridge,
+            use_et_head_sizer=use_et,
         )
 
         if not results:

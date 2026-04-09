@@ -18,18 +18,5 @@ def make_elasticnet_reg(alpha=1e-3, l1_ratio=0.2):
         ))
     ])
 
-def make_exhaustion_model(C=1.0, l1_ratio=0.3):
-    tprint(f"Entering function: make_exhaustion_model in {__name__}")
-    tprint(f"make_exhaustion_model params: C={C}, l1_ratio={l1_ratio}")
-    return Pipeline([
-        ("scaler", StandardScaler(with_mean=True, with_std=True)),
-        ("clf", LogisticRegression(
-            penalty="elasticnet",
-            solver="saga",
-            l1_ratio=float(l1_ratio),
-            C=float(C),
-            max_iter=2000,
-            random_state=42
-        ))
-    ])
+
 

@@ -829,7 +829,7 @@ def tune_global_kalman_lambda(
     return float(best_lam)
 
 
-def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
+def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None, input_feats=None):
     """
     Compute regime conditioning features (cusum, vol, etc.).
     Returns a dict of new features.
@@ -839,7 +839,18 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     # 1. CUSUM Strength (Trend Persistence)
     # Detects if price is persistently drifting away from mean
     # Normalized by volatility
-    ret1h = c.diff(1).fillna(0.0)
+    # --- Pipeline Hardening: Resolve return features from input_feats or recompute ---
+    ret1h = (
+        input_feats["ret1h"]
+        if (input_feats is not None and "ret1h" in input_feats)
+        else c.diff(1).fillna(0.0)
+    )
+    ret12h = (
+        input_feats["ret12h"]
+        if (input_feats is not None and "ret12h" in input_feats)
+        else ff.numba_rolling_sum(c, 12)
+    )
+
     if rv_24_cache is not None:
         rv_24 = rv_24_cache
     else:
@@ -939,18 +950,23 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     # --- New Features ---
     # Meta
     # trendiness = variance(return_12h) / (12 * variance(return_1h))
-    ret12h_var = ff.numba_rolling_std(feats["ret12h"].to_numpy(), 48)**2
-    ret1h_var = ff.numba_rolling_std(feats["ret1h"].to_numpy(), 48)**2
+    # Pipeline Hardening: Use locally resolved ret1h/ret12h variables
+    ret12h_var = ff.numba_rolling_std(ret12h.to_numpy(), 48).astype(np.float32) ** 2
+    ret1h_var = ff.numba_rolling_std(ret1h.to_numpy(), 48).astype(np.float32) ** 2
     feats["trendiness"] = (ret12h_var / (12 * ret1h_var + 1e-12)).astype(np.float32)
 
     # seasonality_strength = |return_this_hour − hourly_avg_return|
     # hourly avg return can be rolling mean of ret1h
-    hourly_avg_ret = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_mean_nan_safe, 24).astype(np.float32)
+    hourly_avg_ret = ff.apply_to_frame(
+        ret1h, ff._numba_rolling_mean_nan_safe, 24
+    ).astype(np.float32)
     feats["seasonality_strength"] = (ret1h - hourly_avg_ret).abs().astype(np.float32)
 
     # hour_vol / rolling_daily_vol
     # rolling_daily_vol can be ff.numba_rolling_std(ret1h, 96)
-    hour_vol = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 4).astype(np.float32)
+    hour_vol = ff.apply_to_frame(
+        ret1h, ff._numba_rolling_std_nan_safe, 4
+    ).astype(np.float32)
     feats["hour_vol_ratio"] = (hour_vol / (rv_24 + 1e-12)).astype(np.float32)
 
     # jump_intensity = rolling_mean(jump_t, window=48)
@@ -958,7 +974,9 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None):
     feats["jump_intensity"] = ff.numba_rolling_mean(jump_t.to_numpy(), 48).astype(np.float32)
 
     # vol_regime = short_vol / long_vol
-    short_vol = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12).astype(np.float32)
+    short_vol = ff.apply_to_frame(ret1h, ff._numba_rolling_std_nan_safe, 12).astype(
+        np.float32
+    )
     long_vol = rv_24
     feats["vol_regime_ratio"] = (short_vol / (long_vol + 1e-12)).astype(np.float32)
 
@@ -2479,7 +2497,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     if bool(cfg.get("use_regime_features", True)):
         feats.update(
             compute_regime_features(
-                c, h, l, v, atr_base, mkt_gates, rv_24_cache=feats["rv_24h"]
+                c, h, l, v, atr_base, mkt_gates, rv_24_cache=feats["rv_24h"], input_feats=feats
             )
         )
 
@@ -4866,11 +4884,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         )
         # Now delete base price/volume DataFrames and intermediates after all features are computed
         del o, h, l, c, v
-        del atr_base, atr, dir_s, rv6, rv12, rv_ratio, mkt_gates
+        del atr, dir_s, rv6, rv12, rv_ratio, mkt_gates
         gc.collect()
-
-    del h_raw, l_raw, c_raw, v_raw
-    gc.collect()
 
     tprint(f"Features: done ({len(feats)} keys)")
 
@@ -4920,8 +4935,115 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         rounded = np.round(finite)
         return bool(np.all(np.abs(finite - rounded) <= 1e-6))
 
+    # --- Structural Z-Normalization Features (Pre-calculated for Mask Optimiser) ---
+    # These are computationally intensive robust Z-scores (median/MAD) computed once per symbol.
+    bph = int(cfg.get("bars_per_hour", 4))
+    window_14d = int(14 * 24 * bph)
+
+    if _needs_feature(
+        "z_hl_range",
+        "z_intrabar_range_atr",
+        "z_compression_expansion",
+        "z_volume",
+        "z_breakout_up_24",
+        "z_breakout_dn_24",
+        "z_dist_ema_24",
+        "z_dist_vwap_24",
+        "z_atr_norm_ret_24",
+        "z_sm_momentum_24",
+        "z_slope_change_24",
+        "z_path_efficiency_24",
+    ):
+        # 1. Volatility / Range
+        ast_hl_range = (h_raw - l_raw).astype(np.float32)
+        safe_close_vol = (c_raw * atr_base).clip(lower=1e-6).astype(np.float32)
+        
+        if _needs_feature("z_hl_range"):
+            feats["z_hl_range"] = _roll_robust_zscore("hl_range", ast_hl_range, window_14d)
+
+        # Intrabar range normalized by ATR-units
+        ast_intrabar_range_atr = (ast_hl_range / safe_close_vol).astype(np.float32)
+        if _needs_feature("z_intrabar_range_atr"):
+            feats["z_intrabar_range_atr"] = _roll_robust_zscore(
+                "intrabar_range_atr", ast_intrabar_range_atr, window_14d
+            )
+
+        # Compression/Expansion: Range Spike vs Bollinger Width
+        if _needs_feature("z_compression_expansion"):
+            bb_width = (_roll_std("close", c_raw, 20) / c_raw.clip(lower=1e-6)).astype(np.float32)
+            ast_comp_exp = (ast_intrabar_range_atr / bb_width.clip(lower=1e-6)).astype(np.float32)
+            feats["z_compression_expansion"] = _roll_robust_zscore(
+                "compression_expansion", ast_comp_exp, window_14d
+            )
+
+        # 2. Volume
+        if _needs_feature("z_volume"):
+            feats["z_volume"] = _roll_robust_zscore("volume", v_raw, window_14d)
+
+        # 3. Breakout / Structure (using z=24 as standard)
+        z_win = 24
+        if _needs_feature("z_breakout_up_24", "z_breakout_dn_24", "z_dist_ema_24", "z_dist_vwap_24"):
+            trailing_high_24 = _roll_max("high", h_raw, z_win).shift(1)
+            trailing_low_24 = _roll_min("low", l_raw, z_win).shift(1)
+            
+            if _needs_feature("z_breakout_up_24"):
+                ast_breakout_up = ((c_raw - trailing_high_24) / safe_close_vol).astype(np.float32)
+                feats["z_breakout_up_24"] = _roll_robust_zscore("brk_up", ast_breakout_up, window_14d)
+            
+            if _needs_feature("z_breakout_dn_24"):
+                ast_breakout_dn = ((trailing_low_24 - c_raw) / safe_close_vol).astype(np.float32)
+                feats["z_breakout_dn_24"] = _roll_robust_zscore("brk_dn", ast_breakout_dn, window_14d)
+
+            # Stretch Location (EMA/VWAP)
+            if _needs_feature("z_dist_ema_24"):
+                ema_24 = (ff.numba_ema_nan_safe(c_raw.to_numpy(), z_win)).astype(np.float32)
+                ema_24 = pd.DataFrame(ema_24, index=c_raw.index, columns=c_raw.columns)
+                ast_dist_ema = ((c_raw - ema_24) / safe_close_vol).astype(np.float32)
+                feats["z_dist_ema_24"] = _roll_robust_zscore("dist_ema", ast_dist_ema, window_14d)
+
+            if _needs_feature("z_dist_vwap_24"):
+                # VWAP proxy
+                sum_v = _roll_sum("vol", v_raw, z_win)
+                sum_pv = _roll_sum("pv", (c_raw * v_raw), z_win)
+                vwap_24 = (sum_pv / sum_v.clip(lower=1e-6)).astype(np.float32)
+                ast_dist_vwap = ((c_raw - vwap_24) / safe_close_vol).astype(np.float32)
+                feats["z_dist_vwap_24"] = _roll_robust_zscore("dist_vwap", ast_dist_vwap, window_14d)
+
+        # 4. Momentum (ATR-normalized)
+        if _needs_feature("z_atr_norm_ret_24", "z_sm_momentum_24", "z_slope_change_24"):
+            ret_24 = (c_raw / c_raw.shift(z_win) - 1.0).astype(np.float32)
+            ast_atr_norm_ret = (ret_24 / atr_base.clip(lower=1e-6)).astype(np.float32)
+            
+            if _needs_feature("z_atr_norm_ret_24"):
+                feats["z_atr_norm_ret_24"] = _roll_robust_zscore("atr_norm_ret", ast_atr_norm_ret, window_14d)
+            
+            if _needs_feature("z_sm_momentum_24"):
+                ret_8 = (c_raw / c_raw.shift(8) - 1.0).astype(np.float32)
+                feats["z_sm_momentum_24"] = _roll_robust_zscore("sm_momentum", (ret_8 - ret_24), window_14d)
+            
+            if _needs_feature("z_slope_change_24"):
+                ast_slope_change = (ret_24 - ret_24.shift(1)).astype(np.float32)
+                feats["z_slope_change_24"] = _roll_robust_zscore("slope_change", ast_slope_change, window_14d)
+
+        # 5. Path Structure (Efficiency Ratio)
+        if _needs_feature("z_path_efficiency_24"):
+            ast_abs_moves = (c_raw - c_raw.shift(1)).abs().astype(np.float32)
+            sum_abs_moves = _roll_sum("abs_moves", ast_abs_moves, z_win)
+            net_move = (c_raw - c_raw.shift(z_win)).astype(np.float32)
+            ast_path_eff = (net_move / sum_abs_moves.clip(lower=1e-9)).astype(np.float32)
+            feats["z_path_efficiency_24"] = _roll_robust_zscore("path_eff", ast_path_eff, window_14d)
+
+        # Add to skip transform set (Z-scores are already normalized)
+        for k in feats:
+            if k.startswith("z_"):
+                skip_transform_set.add(k)
+
+    del h_raw, l_raw, c_raw, v_raw, atr_base
+    gc.collect()
+
     # Capture shared index/columns ONCE before converting to numpy
     _feat_index = c_log.index
+
     _feat_columns = list(c_log.columns)
 
     feat_keys_list = list(feats.keys())

@@ -489,7 +489,7 @@ def load_meta_oof_predictions(
                 # Find a label file to join with
                 labels_dir = Path(data_root) / "artifacts" / run_id / "labels"
                 if labels_dir.exists():
-                    # Prefer the bucket-specific training labels; generic exhaustion labels
+                    # Prefer the bucket-specific training labels; generic labels
                     # can have unrelated row layouts and produce degenerate timestamp recovery.
                     bucket_label_files = sorted(labels_dir.glob(f"train_{bucket}_*.parquet"))
                     label_file = bucket_label_files[0] if bucket_label_files else next(labels_dir.glob("*.parquet"), None)

@@ -370,6 +370,57 @@ _SUGGEST_FN = {
 }
 
 
+def suggest_extratrees_base(
+    trial: optuna.Trial,
+    *,
+    base_random_state: int = 42,
+    n_pos: int = 1000,
+) -> Dict[str, Any]:
+    """Narrow ExtraTrees search space for base-model HPO.
+
+    Search space (user-specified):
+        max_depth          ∈ {5, 6, 7, 8}
+        min_samples_leaf   ∈ {0.5%, 1%, 2%} of positive samples
+        min_samples_split  = 2 × min_samples_leaf  (deterministic)
+        max_features       ∈ {"sqrt", 0.25, 0.33, 0.5}
+        ccp_alpha          ∈ {1e-5, 1e-6}
+        min_impurity_decrease ∈ {1e-5, 1e-4}
+    """
+    max_depth = trial.suggest_categorical("max_depth", [5, 6, 7, 8])
+
+    leaf_frac = trial.suggest_categorical(
+        "min_samples_leaf_frac", [0.005, 0.01, 0.02]
+    )
+    min_samples_leaf = max(20, int(np.ceil(n_pos * leaf_frac)))
+    min_samples_split = max(2, 2 * min_samples_leaf)
+
+    max_features = trial.suggest_categorical(
+        "max_features", ["sqrt", 0.25, 0.33, 0.5]
+    )
+    ccp_alpha = trial.suggest_categorical("ccp_alpha", [1e-5, 1e-6])
+    min_impurity_decrease = trial.suggest_categorical(
+        "min_impurity_decrease", [1e-5, 1e-4]
+    )
+
+    return {
+        "n_estimators": 400,
+        "max_depth": max_depth,
+        "min_samples_leaf": min_samples_leaf,
+        "min_samples_split": min_samples_split,
+        "max_features": max_features,
+        "bootstrap": False,
+        "oob_score": False,
+        "max_samples": None,
+        "criterion": "gini",
+        "class_weight": None,
+        "min_impurity_decrease": min_impurity_decrease,
+        "ccp_alpha": ccp_alpha,
+        "max_leaf_nodes": 512,
+        "n_jobs": 2,
+        "random_state": base_random_state,
+    }
+
+
 # ---------------------------
 # CV objective with early stopping + pruning
 # ---------------------------
@@ -859,6 +910,201 @@ def run_hpo(
 
     result["out_dir"] = out_dir
     return result
+
+
+# ---------------------------
+# Base ExtraTrees HPO (narrow search, shared JSON warm-start)
+# ---------------------------
+_BASE_HPO_JSON = "best_base_extratrees_params.json"
+
+
+def _load_base_hpo_json(out_dir: str) -> Optional[Dict[str, Any]]:
+    path = os.path.join(out_dir, _BASE_HPO_JSON)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _save_base_hpo_json(out_dir: str, payload: Dict[str, Any]) -> None:
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, _BASE_HPO_JSON)
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
+
+
+def load_best_base_extratrees_params(out_dir: str = "./hpo_out") -> Optional[Dict[str, Any]]:
+    """Public API for training.py to load best params."""
+    data = _load_base_hpo_json(out_dir)
+    if data is None:
+        return None
+    return data.get("best_params")
+
+
+def _subsample_diverse(
+    X: np.ndarray,
+    y: np.ndarray,
+    symbols: Optional[np.ndarray],
+    max_rows: int = 5000,
+    rng_seed: int = 42,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Subsample up to *max_rows* rows, balanced across symbols and time."""
+    n = X.shape[0]
+    if n <= max_rows:
+        return X, y
+
+    rng = np.random.RandomState(rng_seed)
+
+    if symbols is not None and len(symbols) == n:
+        unique_syms = np.unique(symbols)
+        per_sym = max(1, max_rows // len(unique_syms))
+        idx_parts: list[np.ndarray] = []
+        for sym in unique_syms:
+            sym_idx = np.flatnonzero(symbols == sym)
+            if len(sym_idx) <= per_sym:
+                idx_parts.append(sym_idx)
+            else:
+                idx_parts.append(rng.choice(sym_idx, size=per_sym, replace=False))
+        idx = np.concatenate(idx_parts)
+        if len(idx) > max_rows:
+            idx = rng.choice(idx, size=max_rows, replace=False)
+        idx.sort()
+    else:
+        idx = rng.choice(n, size=max_rows, replace=False)
+        idx.sort()
+
+    return X[idx], y[idx]
+
+
+def run_base_extratrees_hpo(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    symbols: Optional[np.ndarray] = None,
+    sample_weight: Optional[np.ndarray] = None,
+    n_trials: int = 40,
+    n_splits: int = 3,
+    purge: int = 12,
+    embargo: int = 2,
+    max_rows: int = 5000,
+    random_state: int = 42,
+    out_dir: str = "./hpo_out",
+    study_name: str = "base_extratrees_hpo",
+) -> Dict[str, Any]:
+    """Run HPO for the base ExtraTrees classifier with a narrow search space.
+
+    - 40 Optuna trials, MedianPruner (prune after 30 % of CV rounds)
+    - Max 5 000 samples, sourced from diverse periods / assets
+    - Shared ``best_base_extratrees_params.json`` for warm-start
+    """
+    X = _as_2d(X)
+    y_raw = _as_1d(y)
+    y_hard = (y_raw >= 0.5).astype(np.int32)
+    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32)
+
+    X, y_hard = _subsample_diverse(X, y_hard, symbols, max_rows=max_rows, rng_seed=random_state)
+    if sw is not None and sw.shape[0] != y_hard.shape[0]:
+        sw = None
+    tprint(f"Base HPO: {X.shape[0]} rows, {X.shape[1]} features after diverse subsample")
+
+    n_pos = int(np.sum(y_hard > 0))
+    tprint(f"Base HPO: n_positive={n_pos}, n_negative={int(np.sum(y_hard == 0))}")
+
+    cv = PurgedKFold(n_splits=n_splits, purge=purge, embargo=embargo)
+    splits = cv.split(X)
+    if len(splits) < 2:
+        raise ValueError("Not enough CV splits — reduce purge/embargo or increase n_splits.")
+
+    total_rounds = n_splits
+    warmup_steps = max(1, int(np.ceil(0.30 * total_rounds)))
+
+    sampler = TPESampler(seed=random_state, multivariate=True, group=True)
+    pruner = MedianPruner(
+        n_startup_trials=10,
+        n_warmup_steps=warmup_steps,
+        interval_steps=1,
+    )
+
+    existing = _load_base_hpo_json(out_dir)
+    storage_path = os.path.join(out_dir, f"{study_name}.db")
+    storage = f"sqlite:///{storage_path}"
+
+    study = optuna.create_study(
+        direction="maximize",
+        study_name=study_name,
+        sampler=sampler,
+        pruner=pruner,
+        storage=storage,
+        load_if_exists=True,
+    )
+
+    def objective(trial: optuna.Trial) -> float:
+        params = suggest_extratrees_base(
+            trial, base_random_state=random_state, n_pos=n_pos
+        )
+        params["random_state"] = random_state
+
+        fold_ics: List[float] = []
+        for fold_i, (tr, va) in enumerate(splits):
+            X_tr, y_tr = X[tr], y_hard[tr]
+            X_va, y_va = X[va], y_hard[va]
+            sw_tr = None if sw is None else sw[tr]
+
+            clf = build_extratrees(params)
+            clf.fit(X_tr, y_tr, sample_weight=sw_tr)
+            proba = clf.predict_proba(X_va)[:, 1].astype(np.float32)
+
+            if len(proba) > 10:
+                ranks = rankdata(proba) / len(proba)
+                t30 = ranks >= 0.70
+                if t30.sum() > 2:
+                    ic = float(spearmanr(proba[t30], y_va[t30]).statistic)
+                else:
+                    ic = 0.0
+            else:
+                ic = 0.0
+            if not np.isfinite(ic):
+                ic = 0.0
+
+            fold_ics.append(ic)
+            trial.report(ic, step=fold_i)
+
+        mean_ic = float(np.mean(fold_ics))
+        std_ic = float(np.std(fold_ics))
+        return mean_ic - 1.0 * std_ic
+
+    study.optimize(objective, n_trials=n_trials, gc_after_trial=True, show_progress_bar=True)
+
+    best_value = float(study.best_value)
+    best_trial = study.best_trial
+    best_params = suggest_extratrees_base(
+        best_trial, base_random_state=random_state, n_pos=n_pos
+    )
+    best_params.pop("n_jobs", None)
+    best_params.pop("random_state", None)
+
+    payload = {
+        "best_value": best_value,
+        "best_params": best_params,
+        "n_trials_completed": len(study.trials),
+        "n_pos_at_optimisation": n_pos,
+        "search_space": "base_narrow",
+    }
+
+    if existing is not None and existing.get("best_value", -np.inf) >= best_value:
+        tprint(
+            f"Base HPO: existing best_value={existing['best_value']:.6f} >= "
+            f"new={best_value:.6f}. Keeping existing params."
+        )
+    else:
+        _save_base_hpo_json(out_dir, payload)
+        tprint(f"Base HPO: new best_value={best_value:.6f}. Saved to {_BASE_HPO_JSON}")
+
+    payload["out_dir"] = out_dir
+    return payload
 
 
 # ---------------------------

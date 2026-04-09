@@ -14,24 +14,22 @@ from extreme_price_movements.feature_selection_extreme_events import (
 
 def compute_mr_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     """
-    Computes sample weights for MR model favoring exhaustion and snapback.
-    w_mr = 1 + a * p_exh_lag1 + b * clip(|ret1h_z|,0,zmax) + c * clip(vol_z24,0,vmax)
+    Computes sample weights for MR model favoring large deviations.
+    w_mr = 1 + b * clip(|ret1h_z|,0,zmax) + c * clip(vol_z24,0,vmax)
     Optionally downweight strong trend.
     """
     tprint(f"Entering function: compute_mr_weights in model_mr.py")
     # defaults
-    a = 2.0  # weight for exhaustion
     b = 0.5  # weight for return deviation
     c = 0.5  # weight for vol
     zmax = 4.0
     vmax = 4.0
 
-    p_exh = df.get("p_exh_lag1", 0.0)
     ret_z = df.get("a_ret1h_z", df.get("ret1h_z", 0.0)).abs().clip(upper=zmax)
     vol_z = df.get("a_volz", df.get("vol_z", 0.0)).clip(upper=vmax)
     g_trend = df.get("G_TREND", 0.0)
 
-    w = 1.0 + (a * p_exh) + (b * ret_z) + (c * vol_z)
+    w = 1.0 + (b * ret_z) + (c * vol_z)
 
     # downweight strong trend
     w *= (1.0 - 0.5 * g_trend)

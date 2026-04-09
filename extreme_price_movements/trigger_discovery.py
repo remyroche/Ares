@@ -89,8 +89,7 @@ class TriggerDiscoveryConfig:
     enable_pullback_recovery: bool = True
     enable_breakout: bool = True
     enable_sweep_reversal: bool = True
-    enable_exhaustion: bool = False
-    enable_compression_release: bool = False
+
     enable_ema_reclaim_touch: bool = True
     enable_simple_close_breakout: bool = True
     enable_expansion_bar_triggers: bool = True
@@ -142,8 +141,7 @@ class TriggerDiscoveryConfig:
             enable_pullback_recovery=bool(cfg.get("enable_pullback_recovery", True)),
             enable_breakout=bool(cfg.get("enable_breakout", True)),
             enable_sweep_reversal=bool(cfg.get("enable_sweep_reversal", True)),
-            enable_exhaustion=bool(cfg.get("enable_exhaustion", False)),
-            enable_compression_release=bool(cfg.get("enable_compression_release", False)),
+
             enable_ema_reclaim_touch=bool(cfg.get("enable_ema_reclaim_touch", True)),
             enable_simple_close_breakout=bool(cfg.get("enable_simple_close_breakout", True)),
             enable_expansion_bar_triggers=bool(cfg.get("enable_expansion_bar_triggers", True)),

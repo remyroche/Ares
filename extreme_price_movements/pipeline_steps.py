@@ -80,10 +80,14 @@ from extreme_price_movements.telemetry.tprint_hooks import (
     emit_bucket_summary,
     emit_run_header,
 )
-from extreme_price_movements.training import (  # generate_exhaustion_history,
+from extreme_price_movements.training import (  # generate_spike_anatomy_history,
     generate_label_datasets,
     optimize_risk_params,
     train_models_from_artifacts,
+)
+from extreme_price_movements.training_utils import (
+    get_base_feature_keys,
+    get_meta_feature_keys,
 )
 from extreme_price_movements.universe import (
     apply_hardcoded_universe_exclusions,
@@ -1793,7 +1797,7 @@ def run_training_step(
                     datasets[vname] = df_v
                     tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
 
-    tprint("Spike anatomy, exhaustion, and specialist label datasets are disabled.")
+    tprint("Spike anatomy and specialist label datasets are disabled.")
 
     if not found_count:
         tprint("ERROR: No alpha label datasets found. Run 'labels' mode first.")
@@ -2481,6 +2485,28 @@ def run_sizer_step(ts_sig, cfg, state_file):
         f"STEP: SIZER START (ridge, planner_preset={planner_preset}, full_inference_retrain={full_inference_retrain})"
     )
     return run_ridge_sizer_step(ts_sig, cfg, state_file)
+
+
+def run_policy_optimiser_step(ts_sig, cfg):
+    """Run the 4-step policy optimiser (TP/SL, offset, MFE early exit, trailing)."""
+    from extreme_price_movements.policy_optimiser import run_policy_optimisation
+
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    data_root = cfg.get("data_root", "data")
+    cost_pct = float(cfg.get("ridge_cost_pct", cfg.get("fee_bps", 50.0) / 10000.0))
+    holdout_frac = float(cfg.get("policy_optimiser_holdout_frac", 0.10))
+    tprint(f"STEP: POLICY OPTIMISER START (holdout_frac={holdout_frac})")
+    result = run_policy_optimisation(
+        data_root=data_root,
+        run_id=run_id,
+        holdout_frac=holdout_frac,
+        cost_pct=cost_pct,
+    )
+    if result:
+        tprint("POLICY OPTIMISER COMPLETE")
+    else:
+        tprint("POLICY OPTIMISER: no results produced")
+    return result
 
 
 def compute_regime_boundaries(feats):
@@ -5053,24 +5079,29 @@ def run_feature_generation_step(
         if close_panel_light is not None and not close_panel_light.empty
         else panel_close_ref
     )
-    if not is_incremental_backfill:
-        _enforce_feature_snapshot_completeness(
+    if bool(cfg.get("skip_feature_snapshot_validation", False)):
+        tprint(
+            "Feature snapshot completeness validation skipped for limited-universe run"
+        )
+    else:
+        if not is_incremental_backfill:
+            _enforce_feature_snapshot_completeness(
+                ts_sig=ts_sig,
+                data_root=cfg["data_root"],
+                expected_keys=expected_keys,
+                panel_close=completeness_panel,
+            )
+        else:
+            tprint(
+                "Incremental backfill mode: skipping placeholder completeness normalization "
+                "and validating persisted completeness directly"
+            )
+        _validate_feature_snapshot_completeness(
             ts_sig=ts_sig,
             data_root=cfg["data_root"],
             expected_keys=expected_keys,
             panel_close=completeness_panel,
         )
-    else:
-        tprint(
-            "Incremental backfill mode: skipping placeholder completeness normalization "
-            "and validating persisted completeness directly"
-        )
-    _validate_feature_snapshot_completeness(
-        ts_sig=ts_sig,
-        data_root=cfg["data_root"],
-        expected_keys=expected_keys,
-        panel_close=completeness_panel,
-    )
     _generate_feature_health_reports(
         ts_sig, cfg["data_root"], allowed_symbols=train_syms
     )
@@ -5182,6 +5213,7 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
 
     import time
     import warnings
+
     from pandas.errors import PerformanceWarning
 
     start_time = time.time()
@@ -5253,7 +5285,9 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                         pd.to_datetime(row_idx, utc=True)
                     ).tz_convert(idx_feat_tmp.tz)
                 elif row_idx.tz is not None and idx_feat_tmp.tz is None:
-                    idx_feat_tmp = idx_feat_tmp.tz_localize("UTC").tz_convert(row_idx.tz)
+                    idx_feat_tmp = idx_feat_tmp.tz_localize("UTC").tz_convert(
+                        row_idx.tz
+                    )
                 elif row_idx.tz is not None and idx_feat_tmp.tz is not None:
                     row_idx = row_idx.tz_convert(idx_feat_tmp.tz)
 
@@ -5264,7 +5298,7 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
 
             dataset_mappings[name] = {
                 "buffer_pos": row_pos[valid],
-                "feat_row_pos": feat_row_pos[valid]
+                "feat_row_pos": feat_row_pos[valid],
             }
 
         if dataset_mappings:
@@ -5272,13 +5306,15 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                 "schema_cols": schema_cols,
                 "mappings": dataset_mappings,
                 "fpath": fpath,
-                "keep_mask": keep_mask.to_numpy()
+                "keep_mask": keep_mask.to_numpy(),
             }
 
     all_keys_list = list(all_needed_keys)
     batch_size = max(1, int(cfg.get("feature_injection_batch_size", 50)))
 
-    tprint(f"Injecting {len(all_keys_list)} features in batches of {batch_size} using PyArrow...")
+    tprint(
+        f"Injecting {len(all_keys_list)} features in batches of {batch_size} using PyArrow..."
+    )
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=PerformanceWarning)
@@ -5297,7 +5333,9 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                     for k in batch_missing:
                         target_buffers[name][k] = np.zeros(df_len, dtype=np.float32)
                         if k in meta_keys_all:
-                            target_buffers[name][f"__meta_raw__{k}"] = np.zeros(df_len, dtype=np.float32)
+                            target_buffers[name][f"__meta_raw__{k}"] = np.zeros(
+                                df_len, dtype=np.float32
+                            )
 
             if not target_buffers:
                 continue
@@ -5316,7 +5354,9 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                 relevant_datasets = []
                 for name, mapping in mappings.items():
                     if name in target_buffers:
-                        ds_missing = [k for k in cols_to_load if k in target_buffers[name]]
+                        ds_missing = [
+                            k for k in cols_to_load if k in target_buffers[name]
+                        ]
                         if ds_missing:
                             relevant_datasets.append((name, mapping, ds_missing))
 
@@ -5350,8 +5390,13 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                         if arr_dedup is not None:
                             vals = arr_dedup[feat_row_pos]
                             target_buffers[name][k][buffer_pos] = vals
-                            if k in meta_keys_all and f"__meta_raw__{k}" in target_buffers[name]:
-                                target_buffers[name][f"__meta_raw__{k}"][buffer_pos] = vals
+                            if (
+                                k in meta_keys_all
+                                and f"__meta_raw__{k}" in target_buffers[name]
+                            ):
+                                target_buffers[name][f"__meta_raw__{k}"][
+                                    buffer_pos
+                                ] = vals
 
             # 3. Inject batch columns directly into datasets to avoid memory spike
             for name, cols_dict in target_buffers.items():
@@ -5360,8 +5405,11 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                     df[col_name] = col_data
 
             elapsed = time.time() - start_time
-            tprint(f"  Completed batch {i//batch_size + 1}/{(len(all_keys_list) + batch_size - 1)//batch_size} (elapsed={elapsed:.1f}s)")
+            tprint(
+                f"  Completed batch {i//batch_size + 1}/{(len(all_keys_list) + batch_size - 1)//batch_size} (elapsed={elapsed:.1f}s)"
+            )
             import gc
+
             gc.collect()
 
     tprint("Feature injection complete.")

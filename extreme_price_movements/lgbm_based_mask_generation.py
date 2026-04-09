@@ -4403,7 +4403,11 @@ class CanonicalRuleMaskResolver:
         if feature_name in self.context_lookup:
             base_mask = self._slice_mask(self.context_lookup[feature_name], indices)
             return base_mask if target_val == 1 else ~base_mask
-        raise KeyError(f"Unknown feature {feature_name} in canonical key")
+        
+        # Pipeline Hardening: Return all-False mask for unknown features
+        tprint(f"  WARNING: CanonicalRuleMaskResolver: Unknown feature {feature_name}. Returning all-False mask.")
+        n_samples = self.X.shape[0] if indices is None else len(indices)
+        return np.zeros(n_samples, dtype=bool)
 
     def _resolve_context_parent_mask(
         self, canonical_key: str, indices: Optional[np.ndarray]
@@ -4492,11 +4496,10 @@ class CanonicalRuleMaskResolver:
                 f.startswith("ctx__") for f in unresolved_features
             )
             if parent_context_name is None and not allow_context_fallback:
-                raise KeyError(
-                    f"Unresolved features {unresolved_features} in key {canonical_key}"
-                )
+                # Pipeline Hardening: Log and continue instead of raising KeyError
+                tprint(f"  WARNING: CanonicalRuleMaskResolver: Unresolved features {unresolved_features} in key {canonical_key}. Rule will never trigger.")
             if allow_context_fallback and parent_context_name is None:
-                raise KeyError(f"Cannot map {canonical_key} to a saved Stage A context")
+                tprint(f"  WARNING: CanonicalRuleMaskResolver: Cannot map {canonical_key} to Stage A context. Rule will never trigger.")
 
         spec = {
             "is_composite": False,
@@ -4508,6 +4511,7 @@ class CanonicalRuleMaskResolver:
             "context_feature_names": tuple(context_feature_names),
             "context_target_values": np.asarray(context_target_values, dtype=np.int8),
             "parent_context_name": parent_context_name,
+            "unresolved_count": len(unresolved),
         }
 
         instr_source_type: List[int] = []
@@ -4585,6 +4589,11 @@ class CanonicalRuleMaskResolver:
                 self.context_lookup[parent_context_name], indices
             )
             mask &= context_mask
+
+        # Pipeline Hardening: Handle unresolved features by yielding empty mask
+        unresolved = spec.get("unresolved_count", 0)
+        if unresolved > 0:
+            mask[:] = False
 
         return mask
 

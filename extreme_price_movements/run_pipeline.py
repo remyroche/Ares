@@ -56,6 +56,7 @@ from extreme_price_movements.pipeline_steps import (
     run_backtest_step,
     run_feature_generation_step,
     run_label_generation_step_v2,
+    run_policy_optimiser_step,
     run_risk_optimization_step,
     run_sizer_step,
     run_training_step,
@@ -590,13 +591,24 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
     _maintenance_checkpoint("labels:end")
 
 
-def run_features(cfg, ts_override=None, force_recompute: bool = False, store=None):
+def run_features(
+    cfg,
+    ts_override=None,
+    force_recompute: bool = False,
+    store=None,
+    max_assets: int | None = None,
+):
     _maintenance_checkpoint("features:start")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
     if ts_sig is None:
         ts_sig = pd.Timestamp.utcnow().floor("h")
     tprint(f"Features mode. Target ts_sig={ts_sig}")
     _load_mask_params_by_mode(cfg)
+
+    if max_assets is not None:
+        cfg["fetch_symbols_M"] = int(max_assets)
+        cfg["skip_feature_snapshot_validation"] = True
+        tprint(f"Features mode: limiting universe to {int(max_assets)} assets")
 
     if store is None:
         store = PartitionedOHLCVStore(
@@ -1057,6 +1069,16 @@ def run_all(cfg, ts_override=None):
         return
     _maintenance_checkpoint("run_all:after_optimise_phase2")
 
+    # 4. Policy optimiser: 4-step exit-param optimisation on held-out 10%
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig:
+        tprint("STEP: POLICY OPTIMISER")
+        try:
+            run_policy_optimiser_step(ts_sig, cfg)
+        except Exception as e:
+            tprint(f"WARNING: Policy optimiser failed: {e}")
+    _maintenance_checkpoint("run_all:after_policy_optimiser")
+
     # Final Summary
     ts_sig = _resolve_ts_sig(cfg, ts_override)
 
@@ -1406,6 +1428,7 @@ def main():
             "train_base",
             "train_meta",
             "sizer",
+            "policy_optimiser",
             "optimise",
             "backtest",
             "inference_backtest",
@@ -1467,6 +1490,12 @@ def main():
         default=400,
         help="Number of assets to sample for oos_eval basket (default: 400)",
     )
+    parser.add_argument(
+        "--feature-assets",
+        type=int,
+        default=None,
+        help="Limit features mode to the first N assets in the training universe",
+    )
     args = parser.parse_args()
 
     cfg = CFG.copy()
@@ -1510,6 +1539,7 @@ def main():
             cfg,
             ts_override=args.ts_override,
             force_recompute=bool(args.force_feature_recompute),
+            max_assets=args.feature_assets,
         )
     elif args.mode == "train":
         run_train(
@@ -1524,6 +1554,12 @@ def main():
         run_train_meta(cfg, ts_override=args.ts_override)
     elif args.mode == "sizer":
         run_sizer(cfg, ts_override=args.ts_override)
+    elif args.mode == "policy_optimiser":
+        ts_sig = _resolve_ts_sig(cfg, args.ts_override)
+        if ts_sig:
+            run_policy_optimiser_step(ts_sig, cfg)
+        else:
+            tprint("ERROR: No feature directories found.")
     elif args.mode == "optimise":
         run_optimise(cfg, ts_override=args.ts_override)
     elif args.mode == "backtest":

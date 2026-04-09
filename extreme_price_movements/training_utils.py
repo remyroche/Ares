@@ -10,12 +10,24 @@ def dedupe_keep_order(xs: List[str]) -> List[str]:
             out.append(x)
     return out
 
-def expand_feature_group_refs(keys: List[str], cfg: Dict[str, Any]) -> List[str]:
+def expand_feature_group_refs(keys: List[str], cfg: Dict[str, Any], visited=None) -> List[str]:
+    if visited is None:
+        visited = set()
+
     expanded = []
     for k in keys:
-        if k in cfg and isinstance(cfg[k], list):
-            # Symbol reference
-            expanded.extend(expand_feature_group_refs(cfg[k], cfg))
+        if k in visited:
+            continue
+        visited.add(k)
+
+        # Support dict-like or object-like config access
+        if isinstance(cfg, dict):
+            val = cfg.get(k)
+        else:
+            val = getattr(cfg, k, None)
+
+        if isinstance(val, list):
+            expanded.extend(expand_feature_group_refs(val, cfg, visited.copy()))
         else:
             expanded.append(k)
     return expanded
@@ -65,18 +77,17 @@ def compute_unused_features(all_feature_columns: List[str], configured_feature_k
     unused = [c for c in all_feature_columns if c not in configured]
     return sorted(unused)
 
-def audit_feature_coverage(df, cfg: Dict[str, Any]) -> Dict[str, List[str]]:
+def audit_feature_coverage(df: pd.DataFrame, cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     exclude_prefixes = [
-        "target_", "split_", "id", "timestamp", "row_id", "symbol",
-        "fold_", "oof_", "meta_", "__y", "__w", "p_", "pred_", "is_up",
-        "loc_", "long_", "short_", "exit_"
+        "__y", "__w", "id", "timestamp", "symbol",
+        "fold_", "oof_", "p_", "pred_", "is_up"
     ]
-    # We might miss some, let's keep it simple
+
     all_cols = []
     for c in df.columns:
         if c in {"id", "timestamp", "symbol"}:
             continue
-        if any(c.startswith(p) for p in exclude_prefixes) and not c.startswith("meta_alignment") and not c.startswith("meta_signal_x") and not c.startswith("meta_abs"):
+        if any(c.startswith(p) for p in exclude_prefixes) and not c.startswith("p_vol_high") and not c.startswith("p_cusum_high") and not c.startswith("p_liq_low"):
             continue
         all_cols.append(c)
 
@@ -97,8 +108,14 @@ def audit_feature_coverage(df, cfg: Dict[str, Any]) -> Dict[str, List[str]]:
     meta_unused = sorted(list(set(all_cols) - meta_all))
     global_unused = sorted(list(set(all_cols) - global_all))
 
+    stale_orphans = []
+    for f in global_unused:
+        if f.startswith("tf_") or f.startswith("mr_") or "gt_" in f or "lt_" in f or "legacy" in f.lower() or f.startswith("loc_") or f.startswith("short_") or f.startswith("long_"):
+            stale_orphans.append(f)
+
     return {
         "base_unused": base_unused,
         "meta_unused": meta_unused,
-        "global_unused": global_unused
+        "global_unused": global_unused,
+        "stale_orphans": stale_orphans
     }

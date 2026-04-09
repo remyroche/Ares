@@ -7,10 +7,11 @@ It defines bar types and construction parameters for different data formats.
 
 from enum import Enum
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any
 import pandas as pd
 import numpy as np
 import logging
+from numba import njit
 
 
 class BarType(Enum):
@@ -47,6 +48,191 @@ class BarConstructionConfig:
             'gap_threshold': self.gap_threshold,
             'session_filter': self.session_filter
         }
+
+
+
+
+@njit(cache=True)
+def _construct_volume_bars_numba(timestamps, opens, highs, lows, closes, volumes, volume_threshold):
+    n = len(volumes)
+    out_timestamps = np.empty(n, dtype=np.int64)
+    out_opens = np.empty(n, dtype=np.float64)
+    out_highs = np.empty(n, dtype=np.float64)
+    out_lows = np.empty(n, dtype=np.float64)
+    out_closes = np.empty(n, dtype=np.float64)
+    out_volumes = np.empty(n, dtype=np.float64)
+
+    bar_idx = 0
+    cum_vol = 0.0
+    curr_open = 0.0
+    curr_high = -np.inf
+    curr_low = np.inf
+    is_new_bar = True
+
+    for i in range(n):
+        if is_new_bar:
+            curr_open = opens[i]
+            curr_high = highs[i]
+            curr_low = lows[i]
+            cum_vol = volumes[i]
+            start_timestamp = timestamps[i]
+            is_new_bar = False
+        else:
+            if highs[i] > curr_high:
+                curr_high = highs[i]
+            if lows[i] < curr_low:
+                curr_low = lows[i]
+            cum_vol += volumes[i]
+
+        if cum_vol >= volume_threshold:
+            out_timestamps[bar_idx] = start_timestamp
+            out_opens[bar_idx] = curr_open
+            out_highs[bar_idx] = curr_high
+            out_lows[bar_idx] = curr_low
+            out_closes[bar_idx] = closes[i]
+            out_volumes[bar_idx] = cum_vol
+            bar_idx += 1
+            is_new_bar = True
+            cum_vol = 0.0
+
+    if not is_new_bar and cum_vol > 0:
+        out_timestamps[bar_idx] = start_timestamp
+        out_opens[bar_idx] = curr_open
+        out_highs[bar_idx] = curr_high
+        out_lows[bar_idx] = curr_low
+        out_closes[bar_idx] = closes[n-1]
+        out_volumes[bar_idx] = cum_vol
+        bar_idx += 1
+
+    return (out_timestamps[:bar_idx], out_opens[:bar_idx], out_highs[:bar_idx],
+            out_lows[:bar_idx], out_closes[:bar_idx], out_volumes[:bar_idx])
+
+@njit(cache=True)
+def _construct_dollar_bars_numba(timestamps, opens, highs, lows, closes, volumes, prices, dollar_threshold):
+    n = len(volumes)
+    out_timestamps = np.empty(n, dtype=np.int64)
+    out_opens = np.empty(n, dtype=np.float64)
+    out_highs = np.empty(n, dtype=np.float64)
+    out_lows = np.empty(n, dtype=np.float64)
+    out_closes = np.empty(n, dtype=np.float64)
+    out_volumes = np.empty(n, dtype=np.float64)
+    out_dollar_volumes = np.empty(n, dtype=np.float64)
+
+    bar_idx = 0
+    cum_vol = 0.0
+    cum_dollar_vol = 0.0
+    curr_open = 0.0
+    curr_high = -np.inf
+    curr_low = np.inf
+    is_new_bar = True
+
+    for i in range(n):
+        dollar_vol = prices[i] * volumes[i]
+
+        if is_new_bar:
+            curr_open = opens[i]
+            curr_high = highs[i]
+            curr_low = lows[i]
+            cum_vol = volumes[i]
+            cum_dollar_vol = dollar_vol
+            start_timestamp = timestamps[i]
+            is_new_bar = False
+        else:
+            if highs[i] > curr_high:
+                curr_high = highs[i]
+            if lows[i] < curr_low:
+                curr_low = lows[i]
+            cum_vol += volumes[i]
+            cum_dollar_vol += dollar_vol
+
+        if cum_dollar_vol >= dollar_threshold:
+            out_timestamps[bar_idx] = start_timestamp
+            out_opens[bar_idx] = curr_open
+            out_highs[bar_idx] = curr_high
+            out_lows[bar_idx] = curr_low
+            out_closes[bar_idx] = closes[i]
+            out_volumes[bar_idx] = cum_vol
+            out_dollar_volumes[bar_idx] = cum_dollar_vol
+            bar_idx += 1
+            is_new_bar = True
+            cum_vol = 0.0
+            cum_dollar_vol = 0.0
+
+    if not is_new_bar and cum_dollar_vol > 0:
+        out_timestamps[bar_idx] = start_timestamp
+        out_opens[bar_idx] = curr_open
+        out_highs[bar_idx] = curr_high
+        out_lows[bar_idx] = curr_low
+        out_closes[bar_idx] = closes[n-1]
+        out_volumes[bar_idx] = cum_vol
+        out_dollar_volumes[bar_idx] = cum_dollar_vol
+        bar_idx += 1
+
+    return (out_timestamps[:bar_idx], out_opens[:bar_idx], out_highs[:bar_idx],
+            out_lows[:bar_idx], out_closes[:bar_idx], out_volumes[:bar_idx], out_dollar_volumes[:bar_idx])
+
+@njit(cache=True)
+def _construct_tick_bars_numba(timestamps, opens, highs, lows, closes, tick_prices, tick_threshold, price_change_threshold):
+    n = len(opens)
+    out_timestamps = np.empty(n, dtype=np.int64)
+    out_opens = np.empty(n, dtype=np.float64)
+    out_highs = np.empty(n, dtype=np.float64)
+    out_lows = np.empty(n, dtype=np.float64)
+    out_closes = np.empty(n, dtype=np.float64)
+    out_ticks = np.empty(n, dtype=np.int64)
+
+    bar_idx = 0
+    tick_count = 0
+    curr_open = 0.0
+    curr_high = -np.inf
+    curr_low = np.inf
+    last_price = np.nan
+    is_new_bar = True
+
+    for i in range(n):
+        curr_price = tick_prices[i]
+
+        if not np.isnan(last_price):
+            if abs(curr_price - last_price) >= price_change_threshold:
+                tick_count += 1
+
+        if is_new_bar:
+            curr_open = opens[i]
+            curr_high = highs[i]
+            curr_low = lows[i]
+            start_timestamp = timestamps[i]
+            is_new_bar = False
+        else:
+            if highs[i] > curr_high:
+                curr_high = highs[i]
+            if lows[i] < curr_low:
+                curr_low = lows[i]
+
+        last_price = curr_price
+
+        if tick_count >= tick_threshold:
+            out_timestamps[bar_idx] = start_timestamp
+            out_opens[bar_idx] = curr_open
+            out_highs[bar_idx] = curr_high
+            out_lows[bar_idx] = curr_low
+            out_closes[bar_idx] = closes[i]
+            out_ticks[bar_idx] = tick_count
+            bar_idx += 1
+            is_new_bar = True
+            tick_count = 0
+            last_price = np.nan
+
+    if not is_new_bar:
+        out_timestamps[bar_idx] = start_timestamp
+        out_opens[bar_idx] = curr_open
+        out_highs[bar_idx] = curr_high
+        out_lows[bar_idx] = curr_low
+        out_closes[bar_idx] = closes[n-1]
+        out_ticks[bar_idx] = tick_count
+        bar_idx += 1
+
+    return (out_timestamps[:bar_idx], out_opens[:bar_idx], out_highs[:bar_idx],
+            out_lows[:bar_idx], out_closes[:bar_idx], out_ticks[:bar_idx])
 
 
 class BarConstructor:
@@ -189,47 +375,29 @@ class BarConstructor:
         data = data.sort_index()
         
         volume_threshold = self.config.bar_size
-        bars = []
-        current_bar = None
-        cumulative_volume = 0.0
         
-        for idx, row in data.iterrows():
-            if current_bar is None:
-                # Start new bar
-                current_bar = {
-                    'timestamp': idx,
-                    'open': row['open'],
-                    'high': row['high'],
-                    'low': row['low'],
-                    'close': row['close'],
-                    'volume': row['volume']
-                }
-                cumulative_volume = row['volume']
-            else:
-                # Update current bar
-                current_bar['high'] = max(current_bar['high'], row['high'])
-                current_bar['low'] = min(current_bar['low'], row['low'])
-                current_bar['close'] = row['close']
-                current_bar['volume'] += row['volume']
-                cumulative_volume += row['volume']
-            
-            # Check if we've reached the volume threshold
-            if cumulative_volume >= volume_threshold:
-                bars.append(current_bar)
-                current_bar = None
-                cumulative_volume = 0.0
+        timestamps = data.index.astype(np.int64).values
+        opens = data['open'].values.astype(np.float64)
+        highs = data['high'].values.astype(np.float64)
+        lows = data['low'].values.astype(np.float64)
+        closes = data['close'].values.astype(np.float64)
+        volumes = data['volume'].values.astype(np.float64)
         
-        # Add the last incomplete bar if it exists and has minimum volume
-        if current_bar is not None and current_bar['volume'] > 0:
-            bars.append(current_bar)
+        ts_arr, o_arr, h_arr, l_arr, c_arr, v_arr = _construct_volume_bars_numba(
+            timestamps, opens, highs, lows, closes, volumes, float(volume_threshold)
+        )
         
-        if not bars:
+        if len(ts_arr) == 0:
             self.logger.warning("No volume bars could be constructed")
             return pd.DataFrame(columns=required_columns)
-        
-        # Convert to DataFrame
-        result = pd.DataFrame(bars)
-        result.set_index('timestamp', inplace=True)
+
+        result = pd.DataFrame({
+            'open': o_arr,
+            'high': h_arr,
+            'low': l_arr,
+            'close': c_arr,
+            'volume': v_arr
+        }, index=pd.to_datetime(ts_arr))
         
         self.logger.info(f"Constructed {len(result)} volume bars with threshold {volume_threshold}")
         return result
@@ -268,54 +436,31 @@ class BarConstructor:
         data = data.sort_index()
         
         dollar_threshold = self.config.bar_size
-        bars = []
-        current_bar = None
-        cumulative_dollar_volume = 0.0
         
-        for idx, row in data.iterrows():
-            # Calculate dollar volume for this row
-            price = row[price_column]
-            volume = row['volume']
-            dollar_volume = price * volume
-            
-            if current_bar is None:
-                # Start new bar
-                current_bar = {
-                    'timestamp': idx,
-                    'open': row['open'],
-                    'high': row['high'],
-                    'low': row['low'],
-                    'close': row['close'],
-                    'volume': row['volume'],
-                    'dollar_volume': dollar_volume
-                }
-                cumulative_dollar_volume = dollar_volume
-            else:
-                # Update current bar
-                current_bar['high'] = max(current_bar['high'], row['high'])
-                current_bar['low'] = min(current_bar['low'], row['low'])
-                current_bar['close'] = row['close']
-                current_bar['volume'] += row['volume']
-                current_bar['dollar_volume'] += dollar_volume
-                cumulative_dollar_volume += dollar_volume
-            
-            # Check if we've reached the dollar volume threshold
-            if cumulative_dollar_volume >= dollar_threshold:
-                bars.append(current_bar)
-                current_bar = None
-                cumulative_dollar_volume = 0.0
+        timestamps = data.index.astype(np.int64).values
+        opens = data['open'].values.astype(np.float64)
+        highs = data['high'].values.astype(np.float64)
+        lows = data['low'].values.astype(np.float64)
+        closes = data['close'].values.astype(np.float64)
+        volumes = data['volume'].values.astype(np.float64)
+        prices = data[price_column].values.astype(np.float64)
         
-        # Add the last incomplete bar if it exists and has minimum dollar volume
-        if current_bar is not None and current_bar['dollar_volume'] > 0:
-            bars.append(current_bar)
+        ts_arr, o_arr, h_arr, l_arr, c_arr, v_arr, dv_arr = _construct_dollar_bars_numba(
+            timestamps, opens, highs, lows, closes, volumes, prices, float(dollar_threshold)
+        )
         
-        if not bars:
+        if len(ts_arr) == 0:
             self.logger.warning("No dollar bars could be constructed")
             return pd.DataFrame(columns=required_columns + ['dollar_volume'])
-        
-        # Convert to DataFrame
-        result = pd.DataFrame(bars)
-        result.set_index('timestamp', inplace=True)
+
+        result = pd.DataFrame({
+            'open': o_arr,
+            'high': h_arr,
+            'low': l_arr,
+            'close': c_arr,
+            'volume': v_arr,
+            'dollar_volume': dv_arr
+        }, index=pd.to_datetime(ts_arr))
         
         self.logger.info(f"Constructed {len(result)} dollar bars with threshold {dollar_threshold} {quote_currency}")
         return result
@@ -354,57 +499,30 @@ class BarConstructor:
         data = data.sort_index()
         
         tick_threshold = int(self.config.bar_size)
-        bars = []
-        current_bar = None
-        tick_count = 0
-        last_price = None
         
-        for idx, row in data.iterrows():
-            current_price = row[tick_column]
-            
-            # Count ticks based on price changes
-            if last_price is not None:
-                price_change = abs(current_price - last_price)
-                if price_change >= price_change_threshold:
-                    tick_count += 1
-            
-            if current_bar is None:
-                # Start new bar
-                current_bar = {
-                    'timestamp': idx,
-                    'open': row['open'],
-                    'high': row['high'],
-                    'low': row['low'],
-                    'close': row['close'],
-                    'tick_count': 0
-                }
-                last_price = current_price
-            else:
-                # Update current bar
-                current_bar['high'] = max(current_bar['high'], row['high'])
-                current_bar['low'] = min(current_bar['low'], row['low'])
-                current_bar['close'] = row['close']
-                current_bar['tick_count'] = tick_count
-                last_price = current_price
-            
-            # Check if we've reached the tick threshold
-            if tick_count >= tick_threshold:
-                bars.append(current_bar)
-                current_bar = None
-                tick_count = 0
-                last_price = None
+        timestamps = data.index.astype(np.int64).values
+        opens = data['open'].values.astype(np.float64)
+        highs = data['high'].values.astype(np.float64)
+        lows = data['low'].values.astype(np.float64)
+        closes = data['close'].values.astype(np.float64)
+        tick_prices = data[tick_column].values.astype(np.float64)
         
-        # Add the last incomplete bar if it exists
-        if current_bar is not None:
-            bars.append(current_bar)
+        ts_arr, o_arr, h_arr, l_arr, c_arr, ticks_arr = _construct_tick_bars_numba(
+            timestamps, opens, highs, lows, closes, tick_prices,
+            tick_threshold, float(price_change_threshold)
+        )
         
-        if not bars:
+        if len(ts_arr) == 0:
             self.logger.warning("No tick bars could be constructed")
             return pd.DataFrame(columns=required_columns + ['tick_count'])
-        
-        # Convert to DataFrame
-        result = pd.DataFrame(bars)
-        result.set_index('timestamp', inplace=True)
+
+        result = pd.DataFrame({
+            'open': o_arr,
+            'high': h_arr,
+            'low': l_arr,
+            'close': c_arr,
+            'tick_count': ticks_arr
+        }, index=pd.to_datetime(ts_arr))
         
         self.logger.info(f"Constructed {len(result)} tick bars with threshold {tick_threshold} ticks")
         return result

@@ -149,9 +149,9 @@ def _dedup_universe_by_base(symbols: list[str]) -> list[str]:
 
 
 def _meta_feature_keys_union(cfg) -> set[str]:
-    keys = set(cfg.get("meta_feature_keys", []) or [])
-    keys.update(cfg.get("mr_meta_feature_keys", []) or [])
-    keys.update(cfg.get("tf_meta_feature_keys", []) or [])
+    keys = set()
+    for head in ["reg", "clf", "mfe", "mae", "asym"]:
+        keys.update(get_meta_feature_keys(head, cfg))
     keys.update(TRAINING_RESIDUALIZATION_FEATURE_KEYS)
     return {k for k in keys if isinstance(k, str) and k}
 
@@ -161,14 +161,16 @@ def _base_feature_keys_union(cfg) -> set[str]:
     for name in (
         "exh_feature_keys",
         "spike_feature_keys",
-        "tf_feature_keys",
-        "mr_feature_keys",
     ):
         vals = cfg.get(name, [])
         if isinstance(vals, (list, tuple)):
             for v in vals:
                 if isinstance(v, str) and v:
                     keys.add(v)
+
+    keys.update(get_base_feature_keys("long", cfg))
+    keys.update(get_base_feature_keys("short", cfg))
+    return keys
     return keys
 
 
@@ -231,8 +233,6 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
     for name in (
         "exh_feature_keys",
         "spike_feature_keys",
-        "tf_feature_keys",
-        "mr_feature_keys",
         "test_feature_keys",
     ):
         vals = cfg.get(name, [])
@@ -241,7 +241,7 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
                 if isinstance(v, str) and v:
                     keys.add(v)
 
-    # 1. Meta feature union
+    keys.update(_base_feature_keys_union(cfg))
     keys.update(_meta_feature_keys_union(cfg))
 
     # 2. Position Sizer V2 features that are computable offline during the

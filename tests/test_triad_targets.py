@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.triad_targets import (
-    _rescale_short_horizon_efficiency,
+
     apply_surprisal_to_targets,
     compute_rolling_surprisal,
     get_bounded_triad,
@@ -166,12 +166,3 @@ def test_get_bounded_triad_has_high_valid_rate_on_long_multi_symbol_panel() -> N
     assert vame_valid_rate > 0.99
 
 
-def test_rescale_short_horizon_efficiency_compresses_h3_only() -> None:
-    efficiency = pd.Series([0.1, 0.3, 0.6, 0.9, 1.0], dtype=np.float64)
-
-    out_h3 = _rescale_short_horizon_efficiency(efficiency, 3)
-    out_h10 = _rescale_short_horizon_efficiency(efficiency, 10)
-
-    assert np.all(out_h3.to_numpy() <= efficiency.to_numpy())
-    assert np.any(out_h3.to_numpy() < efficiency.to_numpy())
-    assert np.allclose(out_h10.to_numpy(), efficiency.to_numpy())

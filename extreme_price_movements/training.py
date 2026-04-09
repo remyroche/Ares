@@ -6169,7 +6169,7 @@ def generate_label_datasets(
         cand_filter, move_bucket, strategy_label = _strategy_bucket_context(
             side, strategy_id, cfg
         )
-        feat_key = "base_feature_keys"
+
         fixed_tp = 0.05
         fixed_sl = 0.025
         extra_feature_keys = _meta_feature_keys_for_kind(cfg, strat)

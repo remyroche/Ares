@@ -347,6 +347,7 @@ MODEL_FEATURES = [
     "volatility_of_volatility_48",
     "trend_acceleration",
     "volatility_autocorr_48",
+    "ret24h",
 ]
 
 # Time-based features to exclude from LGBM mask generation
@@ -482,6 +483,24 @@ CONTINUOUS_LOCATION_COLS = [
     "up_down_return_mass_ratio_tanh",
     "tail_asymmetry_q90_q10_atr_norm",
 ]
+
+
+FEATURE_SELECTION_KEYS = [
+    "base_shared_feature_keys",
+    "meta_shared_feature_keys",
+]
+
+
+TRAINING_RESIDUALIZATION_FEATURE_KEYS = [
+    "ema50_ema200_spread_continuous",
+    "atr_change_rate_ts_continuous",
+    "bars_in_high_vol_state_log_norm",
+    "volatility_of_volatility_48",
+    "trend_strength_percentile",
+    "volatility_autocorr_48",
+]
+
+
 
 LOC_CONTINUOUS_FAMILY_MAP = {
     "loc_ema_stack_pos_24": "trend",
@@ -2035,6 +2054,7 @@ CFG = {
         "CONTINUOUS_LOCATION_COLS",
         "FEATURE_SELECTION_KEYS",
         "TRAINING_RESIDUALIZATION_FEATURE_KEYS",
+            "TRAINING_RESIDUALIZATION_FEATURE_KEYS",
     ],
     "meta_reg_feature_keys": [
         "ret1h",
@@ -2150,7 +2170,16 @@ CFG = {
         "volume_capitulation",
         "trap_quality"
     ],
-    "meta_asym_feature_keys": [],
+    "meta_asym_feature_keys": [
+        "vol_asym",
+        "vol_asym_6",
+        "tail_asymmetry_q90_q10_atr_norm",
+        "dir_path_risk_skew_2h",
+        "tail_against",
+        "asym_ratio",
+        "asym_ft",
+        "vol_shock_asym_8_24"
+    ],
     # Selector v3 configs (top30-focused, per-head)
     "selector_feature_family_map": {},
     "base_selector_cfg": {
@@ -2382,7 +2411,6 @@ CFG = apply_15m_feature_toggle(CFG)
 # ============================================================
 
 
-from .feature_views import get_feature_view
 
 POSITION_SIZER_V2_FEATURE_CONFIG = {
     "shared_feature_keys": [
@@ -2753,9 +2781,3 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
 }
 
 
-# Legacy cleanup: stop requesting upstream boolean LOC/trigger columns.
-CFG["FEATURE_SELECTION_KEYS"] = [
-    k
-    for k in CFG.get("FEATURE_SELECTION_KEYS", [])
-    if not (k.startswith("LOC_") or k.startswith("LONG_") or k.startswith("SHORT_"))
-]

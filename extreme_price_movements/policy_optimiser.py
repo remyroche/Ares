@@ -28,7 +28,9 @@ from extreme_price_movements.utils import tprint
 EPS = 1e-9
 
 
-def _metric_score(rets: np.ndarray, cost_pct: float = 0.003) -> Dict[str, float]:
+def _metric_score(
+    rets: np.ndarray, cost_pct: float = 0.003, already_net: bool = False
+) -> Dict[str, float]:
     if len(rets) == 0:
         return {
             "net_pnl": 0.0,
@@ -38,7 +40,11 @@ def _metric_score(rets: np.ndarray, cost_pct: float = 0.003) -> Dict[str, float]
             "max_drawdown": 0.0,
             "n_trades": 0,
         }
-    net_rets = rets.astype(np.float64) - float(cost_pct)
+    # Avoid double-counting costs if returns already include them
+    if already_net:
+        net_rets = rets.astype(np.float64)
+    else:
+        net_rets = rets.astype(np.float64) - float(cost_pct)
     downside = net_rets[net_rets < 0]
     ds_std = float(np.std(downside)) if len(downside) > 1 else 1e-6
     gross_win = float(np.sum(net_rets[net_rets > 0]))
@@ -280,6 +286,9 @@ def replay_exit_policy(
     ae_vel = np.asarray(
         context.get("AE_vel", mae / np.maximum(bars, 1)), dtype=np.float32
     )
+    # NOTE: pressure uses cumulative formula here for backward compatibility,
+    # but the policy_optimiser overwrites this with delta-based pressure from path_bundle.
+    # Ensure OOS replay uses path_bundle-based context to get consistent delta-pressure.
     pressure = np.asarray(context.get("pressure", mae / (mfe + EPS)), dtype=np.float32)
     path_quality = np.asarray(context.get("path_quality", mfe - mae), dtype=np.float32)
     progress = np.asarray(
@@ -298,6 +307,10 @@ def replay_exit_policy(
     d_path = int(params.get("d_path", 1))
     k_early = int(params.get("K_early", 3))
 
+    p_tp = np.asarray(context.get("p_tp", np.full(len(rets), np.nan)), dtype=np.float32)
+    p_sl = np.asarray(context.get("p_sl", np.full(len(rets), np.nan)), dtype=np.float32)
+    has_barrier_proba = np.any(np.isfinite(p_tp)) and np.any(p_tp > 0)
+
     trend = np.asarray(context.get("trend", np.zeros(len(rets))), dtype=np.float32)
     asym = np.asarray(context.get("asym", np.full(len(rets), 0.5)), dtype=np.float32)
     choppy = np.asarray(
@@ -315,7 +328,15 @@ def replay_exit_policy(
     s_fail = (a1 * ae_vel + a2 * pressure) * fail_scale
     s_path = b1 * path_quality + b2 * progress
 
-    fail_exit = (bars <= k_early) & (s_fail > theta_fail)
+    tp_gate = float(params.get("tp_conf_threshold", 0.5))
+    sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
+
+    if has_barrier_proba:
+        p_sl_safe = np.where(np.isfinite(p_sl), p_sl, 0.5)
+        fail_exit = (bars <= k_early) & (p_sl_safe >= sl_gate)
+    else:
+        fail_exit = (bars <= k_early) & (s_fail > theta_fail)
+
     path_exit = (
         (bars >= max(3, d_path))
         & (progress >= float(params.get("progress_threshold", 0.0)))
@@ -325,7 +346,16 @@ def replay_exit_policy(
 
     mfe_norm = mfe / np.maximum(tp_dist, 1e-4)
     c_start = float(params.get("compression_start", 0.5))
-    c_full = max(c_start + 1e-6, float(params.get("compression_full", 1.0)))
+    c_full_raw = float(params.get("compression_full", 1.0))
+    if c_full_raw <= c_start:
+        import warnings
+
+        warnings.warn(
+            f"compression_full ({c_full_raw}) <= compression_start ({c_start}). "
+            f"Adjusting to compression_start + 1e-6. Review your parameter grid.",
+            UserWarning,
+        )
+    c_full = max(c_start + 1e-6, c_full_raw)
     c_max = float(params.get("compression_max_fraction", 0.5))
     c_alpha = np.clip((mfe_norm - c_start) / (c_full - c_start), 0.0, 1.0) * c_max
     sl_eff = sl_dist * (1.0 - c_alpha)
@@ -335,8 +365,14 @@ def replay_exit_policy(
     trail_gb = float(params.get("trail_giveback_atr", 0.5)) * (1.0 + 0.8 * (m - 1.0))
     trail_on = mfe >= trail_act * barrier
     trail_floor = mfe - trail_gb * barrier
-    cont_thr = float(params.get("continuation_conf_threshold", 0.5))
-    high_cont = conf >= cont_thr
+
+    if has_barrier_proba:
+        p_tp_safe = np.where(np.isfinite(p_tp), p_tp, 0.5)
+        high_cont = p_tp_safe >= tp_gate
+    else:
+        cont_thr = float(params.get("continuation_conf_threshold", 0.5))
+        high_cont = conf >= cont_thr
+
     with_tp = np.minimum(np.maximum(rets, trail_floor), tp_dist)
     no_tp = np.maximum(rets, trail_floor)
     rets = np.where(trail_on & high_cont, no_tp, np.where(trail_on, with_tp, rets))
@@ -361,6 +397,8 @@ def _sequential_optimise(
         ("theta_path", np.linspace(-1.5, 1.0, 11).tolist()),
         ("d_path", [1, 2, 3]),
         ("progress_threshold", [0.00, 0.05, 0.10, 0.15, 0.20, 0.25]),
+        ("tp_conf_threshold", [0.3, 0.4, 0.5, 0.6, 0.7]),
+        ("sl_early_exit_threshold", [0.2, 0.3, 0.4, 0.5]),
         ("compression_start", [0.30, 0.50, 0.70]),
         ("compression_full", [0.80, 1.00, 1.20]),
         ("compression_max_fraction", [0.20, 0.40, 0.60]),
@@ -388,7 +426,9 @@ def _sequential_optimise(
             else:
                 trial[name] = cand
             rets = replay_exit_policy(base_returns, context, trial)
-            score = _metric_score(rets[val_mask], cost_pct=cost_pct)["net_pnl"]
+            score = _metric_score(
+                rets[train_mask], cost_pct=cost_pct, already_net=True
+            )["net_pnl"]
             if score > best_metric:
                 best_metric = score
                 best_val = cand
@@ -403,10 +443,12 @@ def _sequential_optimise(
         else:
             params[name] = best_val
     params["metrics_baseline"] = _metric_score(
-        base_returns[val_mask], cost_pct=cost_pct
+        base_returns[val_mask], cost_pct=cost_pct, already_net=True
     )
     final_rets = replay_exit_policy(base_returns, context, params)
-    params["metrics_final"] = _metric_score(final_rets[val_mask], cost_pct=cost_pct)
+    params["metrics_final"] = _metric_score(
+        final_rets[val_mask], cost_pct=cost_pct, already_net=True
+    )
     return params
 
 
@@ -443,7 +485,8 @@ def run_policy_optimisation(
         selected=selected,
     )
     k = max(1, int(len(conf) * frac))
-    selected_idx = np.argpartition(conf, -k)[-k:]
+    # Use stable sort to ensure deterministic selection
+    selected_idx = np.argsort(conf, kind="stable")[-k:]
 
     sizer_stub = {
         "best_simple_score_": conf,
@@ -471,9 +514,8 @@ def run_policy_optimisation(
     offset_result = run_simple_offset_generator_from_sizer(
         sizer_results=sizer_stub, trade_outcomes=outcomes, cost_pct=cost_pct
     )
-    path_bundle = build_policy_path_state_bundle(
-        outcomes, selected_idx=offset_result.get("above_threshold_idx")
-    )
+    # CRITICAL: Use the same indices as the sizer stub to ensure alignment
+    path_bundle = build_policy_path_state_bundle(outcomes, selected_idx=selected_idx)
 
     base_rets = np.asarray(
         outcomes.get("return", pd.Series(np.zeros(len(outcomes)))).values,
@@ -524,6 +566,8 @@ def run_policy_optimisation(
     context["pressure"] = _robust_apply(path_bundle["pressure"], pr_fit)
     context["path_quality"] = _robust_apply(path_bundle["path_quality"], pq_fit)
     context["progress_per_bar"] = _robust_apply(path_bundle["progress_per_bar"], pg_fit)
+    context["p_tp"] = path_bundle.get("p_tp", np.full(len(base_rets), np.nan))
+    context["p_sl"] = path_bundle.get("p_sl", np.full(len(base_rets), np.nan))
 
     fixed = {
         "strategy_id": selected["strategy_id"],
@@ -545,7 +589,7 @@ def run_policy_optimisation(
         base_rets, context, train_mask, val_mask, fixed=fixed, cost_pct=cost_pct
     )
     payload = {
-        "schema_version": "v3",
+        "schema_version": "v4",
         "generated_by": "policy_optimiser",
         "run_id": run_id,
         "cost_pct": float(cost_pct),

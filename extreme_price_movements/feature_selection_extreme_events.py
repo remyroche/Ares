@@ -691,6 +691,28 @@ def mdi_feature_selection_v3(
             return MDISelectionResult(pd.DataFrame(), [], [])
         X = X[list(candidate_cols)].copy()
 
+    # Label artifacts and other internal bookkeeping columns must never reach
+    # MDI. They are not predictive features and can cause leakage if exposed.
+    leak_cols = [c for c in X.columns if str(c).startswith("__")]
+    if leak_cols:
+        tprint(f"MDI: Dropping {len(leak_cols)} internal columns before selection.")
+        X = X.drop(columns=leak_cols, errors="ignore")
+        if X.empty:
+            return MDISelectionResult(pd.DataFrame(), [], [])
+
+    # MDI is only defined on numeric feature blocks. Keep this filter early so
+    # timestamp / identifier columns do not leak into variance checks or tree
+    # fitting, which can otherwise surface as Timestamp arithmetic errors.
+    numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    non_numeric_cols = [c for c in X.columns if c not in set(numeric_cols)]
+    if non_numeric_cols:
+        tprint(
+            f"MDI: Dropping {len(non_numeric_cols)} non-numeric features before selection."
+        )
+        X = X[numeric_cols].copy()
+        if X.empty:
+            return MDISelectionResult(pd.DataFrame(), [], [])
+
     missing_frac = X.isna().mean(axis=0)
     drop_missing_cols = missing_frac[missing_frac > float(selector_max_missing_frac)].index.tolist()
     if drop_missing_cols:

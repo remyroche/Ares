@@ -848,7 +848,7 @@ CFG = {
     "meta_parallel_forest_learning_rate": 0.05,
     "meta_parallel_forest_reg_alpha": 2.0,
     "meta_parallel_forest_reg_lambda": 15.0,
-    "meta_parallel_forest_min_child_weight": 40.0,
+    "meta_parallel_forest_min_child_weight": 20.0,
     "meta_parallel_forest_gamma": 1.5,
     "meta_parallel_forest_early_stopping_rounds": 20,
     "meta_map_tbm_geometries": [
@@ -952,8 +952,11 @@ CFG = {
     "position_sizer_pwin_soft_label_loss": "bce",
     "position_sizer_pwin_soft_label_use_log_excursions": False,
     "position_sizer_pwin_soft_label_log_eps": 1e-12,
-    # Position-sizer features from meta OOF + regime context.
-    "position_sizer_feature_priority": [
+    # Position-sizer features (meta OOF prediction heads + market microstructure).
+    # Used by Ridge sizer, ExtraTrees sizer, and barrier classifier.
+    # Regime features removed — regime context is handled by the multiplier_band
+    # mechanism in replay_exit_policy, not by inflating the feature space.
+    "position_sizer_features": [
         "impact_z",
         "dv_z",
         "rng_z",
@@ -971,15 +974,9 @@ CFG = {
         "oof_log_mfe_hat",
         "oof_asym_hat",
         "mfe_mae_ratio_hat",
-        "vol_regime_z",
-        "regime_stability_24h",
-        "complexity_regime_24h",
-        "vol_regime_z_4d",
-        "trend_strength_4d",
-        "regime_stability_4d",
-        "vol_persistence_4d",
-        "trend_regime_duration_4d",
-        "regime_transition_entropy_48h",
+        "oof_p_tp",
+        "oof_p_sl",
+        "oof_p_time",
         "vol_concentration_12",
         "volume_entropy_12",
         "volatility_zscore",
@@ -1000,63 +997,9 @@ CFG = {
         "risk_adjusted_pred",
         "utility_disagreement",
     ],
-    "limit_offset_sizer": [
-        "impact_z",
-        "dv_z",
-        "rng_z",
-        "score",
-        "reg",
-        "reg_mean",
-        "reg_std",
-        "reg_range",
-        "utility",
-        "mae_q70",
-        "mfe",
-        "early_inval",
-        "oof_u_hat",
-        "oof_log_mae_q70_hat",
-        "oof_log_mfe_hat",
-        "oof_asym_hat",
-        "mfe_mae_ratio_hat",
-        "vol_regime_z",
-        "regime_stability_24h",
-        "complexity_regime_24h",
-        "vol_regime_z_4d",
-        "trend_strength_4d",
-        "regime_stability_4d",
-        "vol_persistence_4d",
-        "trend_regime_duration_4d",
-        "regime_transition_entropy_48h",
-        "vol_concentration_12",
-        "volume_entropy_12",
-        "volatility_zscore",
-        "clv_t",
-        "body_ratio_15m",
-        "rejection_proxy",
-        "range_norm_12",
-        "sv_imb_24",
-        "press_24",
-        "impact_24",
-        "ts_24",
-        "atr_12_15m",
-        "Upside",
-        "Downside",
-        "EdgeSharpe",
-        "risk_reward_ratio",
-        "high_utility_pred",
-        "risk_adjusted_pred",
-        "utility_disagreement",
-    ],
-    "position_sizer_regime_feature_keys": [
-        "vol_regime_z",
-        "regime_stability_24h",
-        "complexity_regime_24h",
-        "vol_regime_z_4d",
-        "trend_strength_4d",
-        "regime_stability_4d",
-        "vol_persistence_4d",
-        "trend_regime_duration_4d",
-    ],
+    # Backward-compatible aliases (point to the same list at runtime)
+    "position_sizer_feature_priority": None,
+    "limit_offset_sizer": None,
     # When running `run_pipeline.py sizer`, also run OOS backtest to emit
     # financial metrics (PnL/Sortino/etc.) with the freshly trained sizer.
     "sizer_run_oos_backtest": True,
@@ -1773,7 +1716,6 @@ CFG = {
     # TF Head (Specifics + Global) — includes trend maturity features
     # Kind-specific overlays for meta models (kept for backward compatibility)
     "base_shared_feature_keys": [
-        "coherence_24",
         "impulse_ratio_24",
         "clv_mean_4",
         "pullback_2",
@@ -1794,7 +1736,6 @@ CFG = {
         "vov_fast_slow_ratio",
         "accel_5h",
         "breakout_24h",
-        "ret48h",
         "downside_semivariance_24",
         "upside_semivariance_8",
         "upside_semivariance_24",
@@ -1834,17 +1775,9 @@ CFG = {
         "donch_dist_48",
         "pullback_48",
         "dist_from_high_48h",
-        "dist_from_high_120h",
-        "trend_slope_48h",
-        "trend_slope_120h",
-        "trend_accel_120h",
-        "rv_ratio_24_120",
         "trend_age_hours",
-        "higher_highs_count_48h",
         "trend_retest_success_rate",
         "trend_overextension_z",
-        "volume_trend_alignment",
-        "trend_regime_stability",
         "ker_16",
         "adx_14",
         "adx_14_slope",
@@ -1929,6 +1862,7 @@ CFG = {
         "liq_score",
         "rng_z",
         "impact_z",
+        "coherence_24",
         "time_since_peak_12h",
         "time_since_trough_12h",
         "time_since_event_extreme_12h",
@@ -1985,6 +1919,7 @@ CFG = {
         "z_r_12",
         "bb_pos_12",
         "range_norm_24",
+        "entropy_jump_24h",
         "sv_imb_24",
         "press_24",
         "impact_24",
@@ -1999,6 +1934,8 @@ CFG = {
         "z_vwap_24",
         "z_r_24",
         "bb_pos_24",
+        "regime_stability_24h",
+        "complexity_regime_24h",
         "bars_since_ema20_ema50_cross_log_norm",
         "bars_in_high_vol_state_log_norm",
         "bars_outside_ema20_atr_band_log_norm",
@@ -2388,6 +2325,7 @@ def apply_15m_feature_toggle(cfg: dict) -> dict:
         "base_long_feature_keys",
         "base_short_feature_keys",
         "meta_shared_feature_keys",
+        "position_sizer_features",
         "limit_offset_sizer",
     )
 
@@ -2402,6 +2340,10 @@ def apply_15m_feature_toggle(cfg: dict) -> dict:
 
 
 CFG = apply_15m_feature_toggle(CFG)
+
+# Resolve feature-list aliases to the canonical single source
+CFG["position_sizer_feature_priority"] = CFG["position_sizer_features"]
+CFG["limit_offset_sizer"] = CFG["position_sizer_features"]
 
 # ============================================================
 # Position Sizer V2 Feature Config

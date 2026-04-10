@@ -24,27 +24,29 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
 from numba import jit, prange
+from scipy.stats import spearmanr
 
-from extreme_price_movements.simple_position_sizer import (
-    SimpleHeadRidgeSizer,
-    evaluate_selection_profit_proxy,
-    walk_forward_temporal_splits,
-    clean_and_standardize,
-    collect_ridge_head_columns,
-    detect_meta_head_keys,
-)
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.run_ridge_sizer import (
     load_base_oof_predictions,
     load_meta_oof_predictions,
     load_trade_outcomes,
 )
+from extreme_price_movements.simple_position_sizer import (
+    SimpleHeadRidgeSizer,
+    clean_and_standardize,
+    collect_ridge_head_columns,
+    detect_meta_head_keys,
+    evaluate_selection_profit_proxy,
+    walk_forward_temporal_splits,
+)
 
 logger = logging.getLogger(__name__)
 
 
+# NOTE: This function is currently unused. The probabilistic fallback path uses
+# direct np.exp() calculation instead (line ~830). Retained for potential future use.
 @jit(nopython=True, cache=True)
 def _compute_fill_probability(
     offset_ticks: np.ndarray,
@@ -431,11 +433,14 @@ def evaluate_offset_strategy(
 
     net_pnl = np.sum(executed_rets)
 
-    # Sortino
-    downside_rets = executed_rets[executed_rets < 0]
-    downside_std = np.std(downside_rets) if len(downside_rets) > 0 else 1e-6
-    mean_ret = np.mean(executed_rets)
-    sortino = mean_ret / downside_std
+    # Compute Sortino-like metric (downside deviation)
+    rets = executed_rets
+    downside_rets = rets[rets < 0]
+    if len(downside_rets) > 1:
+        downside_std = np.std(downside_rets)
+    else:
+        downside_std = 1e-6  # Small positive to avoid division by zero (need >1 sample for meaningful std)
+    sortino = np.mean(rets) / downside_std
 
     # Drawdown
     _, dd_series = _stable_equity_and_drawdown(executed_rets)
@@ -563,16 +568,17 @@ def run_simple_offset_generator_from_sizer(
     sizer_results: Dict[str, Any],
     trade_outcomes: pd.DataFrame,
     future_prices: Optional[Dict[str, np.ndarray]] = None,
-    base_offset_atr_pct: Optional[float] = None,  # 0.1% - if None, use raw return mode
-    max_offset_atr_pct: Optional[float] = None,  # 0.3% - if None, use raw return mode
-    base_offset_ret: float = 0.0001,  # 1 bps (for raw return mode)
-    max_offset_ret: float = 0.001,  # 10 bps (for raw return mode)
-    use_raw_return_offset: bool = False,  # If True, use raw return offsets instead of ATR%
-    invert_offset: bool = False,  # If True: higher confidence = LOWER offset
+    base_offset_atr_pct: Optional[float] = None,
+    max_offset_atr_pct: Optional[float] = None,
+    base_offset_ret: float = 0.0001,
+    max_offset_ret: float = 0.001,
+    use_raw_return_offset: bool = False,
+    invert_offset: bool = False,
     offset_scaling: str = "linear",
     cost_pct: float = 0.003,
     max_wait_bars: int = 4,
     use_atr_values: Optional[np.ndarray] = None,
+    barrier_conf_alpha: float = 0.5,
 ) -> Dict[str, Any]:
     """
     Main orchestrator for offset generation - takes simple_position_sizer.py results directly.
@@ -679,6 +685,16 @@ def run_simple_offset_generator_from_sizer(
 
     # Normalize confidence scores to [0, 1] using sigmoid (for ALL samples first)
     confidence_scores = 1.0 / (1.0 + np.exp(-ridge_scores))
+
+    _oof_p_tp = sizer_results.get("oof_p_tp_")
+    if _oof_p_tp is not None and len(_oof_p_tp) == n_samples:
+        p_tp_full = np.asarray(_oof_p_tp, dtype=np.float32)
+        blended = (
+            barrier_conf_alpha * confidence_scores
+            + (1.0 - barrier_conf_alpha) * p_tp_full
+        )
+        confidence_scores = np.clip(blended, 0.0, 1.0).astype(np.float32)
+
     # Then extract for thresholded trades
     thresh_confidence = confidence_scores[above_thresh_idx]
 
@@ -774,11 +790,12 @@ def run_simple_offset_generator_from_sizer(
             if "entry_price" in trade_outcomes.columns
             else np.ones(len(thresh_returns))
         )
-        is_longs = (
-            trade_outcomes["is_long"].values[above_thresh_idx]
-            if "is_long" in trade_outcomes.columns
-            else np.ones(len(thresh_returns), dtype=bool)
-        )
+        if "is_long" not in trade_outcomes.columns:
+            raise ValueError(
+                "Missing required 'is_long' column in trade_outcomes. "
+                "Direction is critical for correct limit order placement."
+            )
+        is_longs = trade_outcomes["is_long"].values[above_thresh_idx]
 
         # Use ATR values if provided, else estimate from entry price
         if use_atr_values is not None:
@@ -820,20 +837,23 @@ def run_simple_offset_generator_from_sizer(
         )
     else:
         # Probabilistic fill model based on offset size
-        is_longs = (
-            trade_outcomes["is_long"].values[above_thresh_idx]
-            if "is_long" in trade_outcomes.columns
-            else np.ones(len(thresh_returns), dtype=bool)
-        )
+        if "is_long" not in trade_outcomes.columns:
+            raise ValueError(
+                "Missing required 'is_long' column in trade_outcomes. "
+                "Direction is critical for correct limit order placement."
+            )
+        is_longs = trade_outcomes["is_long"].values[above_thresh_idx]
 
         if use_raw_return_offset and offset_raw is not None:
             fill_probs = np.exp(-offset_raw * 1000)  # Exponential decay with raw offset
         else:
             fill_probs = np.exp(-offset_atr_pct * 100)  # Exponential decay with ATR%
         fill_probs = np.clip(fill_probs, 0.3, 0.95)
-        executed = np.random.random(len(thresh_returns)) < fill_probs
+        # Set seed for reproducibility when future_prices unavailable
+        rng = np.random.default_rng(seed=42)
+        executed = rng.random(len(thresh_returns)) < fill_probs
         fill_bars = np.where(
-            executed, np.random.randint(0, max_wait_bars, len(thresh_returns)), -1
+            executed, rng.integers(0, max_wait_bars, len(thresh_returns)), -1
         )
 
         # Estimate entry improvements for non-simulation case
@@ -946,6 +966,9 @@ def build_policy_path_state_bundle(
     trend = _col("trend_strength_percentile", 0.0)
     choppiness = _col("choppiness", 0.0)
     confidence = _col("oof_u_hat", 0.0)
+    p_tp = _col("oof_p_tp", 0.33)
+    p_sl = _col("oof_p_sl", 0.33)
+    p_time = _col("oof_p_time", 0.34)
 
     timestamps = np.asarray(
         trade_outcomes.get("timestamp", pd.Series(np.arange(n_total))).values
@@ -965,6 +988,9 @@ def build_policy_path_state_bundle(
         "trend": trend.astype(np.float32),
         "choppiness": choppiness.astype(np.float32),
         "confidence": confidence.astype(np.float32),
+        "p_tp": p_tp.astype(np.float32),
+        "p_sl": p_sl.astype(np.float32),
+        "p_time": p_time.astype(np.float32),
         "timestamps": timestamps,
     }
 

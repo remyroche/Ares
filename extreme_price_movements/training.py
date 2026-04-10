@@ -915,6 +915,22 @@ def _fit_direct_extratrees_base_model(
     groups_arr = None if groups is None else np.asarray(groups)
     symbols_arr = None if symbols is None else np.asarray(symbols)
 
+    # Base model fitting only accepts numeric inputs. Keep this boundary clean so
+    # timestamp / identifier columns cannot leak through feature selection or
+    # grouped variant assembly.
+    if hasattr(X, "select_dtypes"):
+        numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+        non_numeric_cols = [c for c in X.columns if c not in set(numeric_cols)]
+        if non_numeric_cols:
+            tprint(
+                f"Direct ExtraTrees: Dropping {len(non_numeric_cols)} non-numeric features before fit."
+            )
+        X = X[numeric_cols].copy()
+        if X.empty:
+            raise ValueError(
+                "Direct ExtraTrees: no numeric features available after filtering."
+            )
+
     if hasattr(X, "iloc"):
         try:
             X_np = X.to_numpy(dtype=np.float32, copy=False)
@@ -938,7 +954,9 @@ def _fit_direct_extratrees_base_model(
 
     hpo_params = None
     if _hpo_dir is not None:
-        hpo_params = load_best_base_extratrees_params(_hpo_dir)
+        hpo_params = load_best_base_extratrees_params(_hpo_dir, scope_key=kind_name)
+        if hpo_params is None:
+            hpo_params = load_best_base_extratrees_params(_hpo_dir)
 
     if hpo_params is not None:
         p = dict(hpo_params)
@@ -949,8 +967,9 @@ def _fit_direct_extratrees_base_model(
         p.setdefault("ccp_alpha", 1e-4)
         p.setdefault("max_leaf_nodes", 512)
         inner.set_params(**{k: v for k, v in p.items() if k in inner.get_params()})
+        hpo_scope = kind_name
         tprint(
-            f"Direct ExtraTrees: using HPO params: "
+            f"Direct ExtraTrees[{hpo_scope}]: using HPO params: "
             f"max_depth={inner.max_depth}, min_samples_leaf={inner.min_samples_leaf}, "
             f"min_samples_split={inner.min_samples_split}, max_features={inner.max_features}, "
             f"ccp_alpha={inner.ccp_alpha}, min_impurity_decrease={inner.min_impurity_decrease}"
@@ -1022,6 +1041,7 @@ def _fit_direct_extratrees_base_model(
         )
 
     oof_probs = np.nan_to_num(oof_probs, nan=0.5)
+    oof_probs_raw = np.asarray(oof_probs, dtype=np.float32).copy()
     p_unweighted_all, p_weighted_all = compute_prevalences(y_hard, sample_weight_arr)
     race._used_sample_weight_ = sample_weight_arr is not None
     race.calibration_state_ = race._build_bias_state(
@@ -1186,8 +1206,21 @@ def _fit_direct_extratrees_base_model(
         "calibration_curve": curve,
         "calibration_profile": calibration_profile(curve),
         "oof_probs": np.asarray(race.oof_probs, dtype=np.float32).copy(),
-        "oof_raw": np.asarray(race.oof_probs, dtype=np.float32).copy(),
+        "oof_raw": np.asarray(oof_probs_raw, dtype=np.float32).copy(),
     }
+    degeneracy = _base_oof_degeneracy_summary(oof_probs_raw, race.oof_probs)
+    dm["degeneracy"] = degeneracy
+    race.is_degenerate_ = bool(degeneracy.get("is_degenerate", False))
+    race.degeneracy_info_ = degeneracy
+    if race.is_degenerate_:
+        tprint(
+            f"CRITICAL: Degenerate base classifier [{kind_name}] "
+            f"raw_unique={degeneracy['raw']['unique_count']} "
+            f"cal_unique={degeneracy['calibrated']['unique_count']} "
+            f"raw_std={degeneracy['raw']['std']:.6f} "
+            f"cal_std={degeneracy['calibrated']['std']:.6f} "
+            f"reasons={degeneracy['reasons']}"
+        )
     race.best_model_name = "extratrees"
     race.metrics = {"extratrees": float(sel.get("Selection_Score", 0.0))}
     race.detailed_metrics = {"extratrees": dm}
@@ -1541,8 +1574,81 @@ def _fold_stats_from_groups(y, pred, groups, fn):
     return out
 
 
+def _base_oof_degeneracy_summary(
+    raw_probs,
+    calibrated_probs,
+    *,
+    decimals: int = 8,
+    min_unique: int = 3,
+    min_std: float = 1e-4,
+):
+    raw = np.asarray(raw_probs, dtype=np.float64)
+    cal = np.asarray(calibrated_probs, dtype=np.float64)
+    raw = raw[np.isfinite(raw)]
+    cal = cal[np.isfinite(cal)]
+
+    def _stats(arr):
+        if arr.size == 0:
+            return {
+                "n": 0,
+                "unique_count": 0,
+                "std": 0.0,
+                "min": float("nan"),
+                "max": float("nan"),
+                "range": 0.0,
+                "dominant_share": 1.0,
+            }
+        rounded = np.round(arr, decimals=decimals)
+        uniq, counts = np.unique(rounded, return_counts=True)
+        dom = float(np.max(counts) / max(arr.size, 1))
+        arr_min = float(np.min(arr))
+        arr_max = float(np.max(arr))
+        return {
+            "n": int(arr.size),
+            "unique_count": int(len(uniq)),
+            "std": float(np.std(arr)),
+            "min": arr_min,
+            "max": arr_max,
+            "range": float(arr_max - arr_min),
+            "dominant_share": dom,
+        }
+
+    raw_stats = _stats(raw)
+    cal_stats = _stats(cal)
+    reasons = []
+    if cal_stats["unique_count"] < min_unique:
+        reasons.append(f"cal_unique_lt_{min_unique}")
+    if raw_stats["unique_count"] < min_unique:
+        reasons.append(f"raw_unique_lt_{min_unique}")
+    if cal_stats["std"] < min_std:
+        reasons.append(f"cal_std_lt_{min_std:g}")
+    if raw_stats["std"] < min_std:
+        reasons.append(f"raw_std_lt_{min_std:g}")
+    if cal_stats["dominant_share"] >= 0.995:
+        reasons.append("cal_dominant_share_ge_0.995")
+    if raw_stats["dominant_share"] >= 0.995:
+        reasons.append("raw_dominant_share_ge_0.995")
+    return {
+        "is_degenerate": bool(reasons),
+        "reasons": reasons,
+        "raw": raw_stats,
+        "calibrated": cal_stats,
+        "thresholds": {"min_unique": int(min_unique), "min_std": float(min_std)},
+    }
+
+
 def _base_model_report_entry(
-    model_name, side, kind, dm, y_bin, oof_probs, y_ret, groups, y_lbl=None
+    model_name,
+    side,
+    kind,
+    dm,
+    y_bin,
+    oof_probs,
+    y_ret,
+    groups,
+    y_lbl=None,
+    top5_features=None,
+    top10_features=None,
 ):
     prev = float(np.mean(y_bin))
     prev = float(np.clip(prev, 1e-7, 1 - 1e-7))
@@ -1553,6 +1659,11 @@ def _base_model_report_entry(
     from sklearn.metrics import log_loss as _log_loss
 
     p_clip = np.clip(oof_probs, 1e-7, 1 - 1e-7)
+    raw_probs = dm.get("oof_raw")
+    if raw_probs is None:
+        raw_probs = oof_probs
+    raw_probs = np.asarray(raw_probs, dtype=float)
+    raw_clip = np.clip(raw_probs, 1e-7, 1 - 1e-7)
     brier = float(brier_score_loss(y_bin, p_clip))
     ll = float(_log_loss(y_bin, p_clip))
     brier_imp = (base_brier - brier) / max(base_brier, 1e-9)
@@ -1670,17 +1781,28 @@ def _base_model_report_entry(
 
     try:
         raw_auc = (
-            float(_roc_auc_score(y_bin, p_clip)) if len(np.unique(y_bin)) > 1 else 0.5
+            float(_roc_auc_score(y_bin, raw_clip))
+            if len(np.unique(y_bin)) > 1
+            else 0.5
         )
     except Exception:
         raw_auc = 0.5
+    try:
+        calibrated_auc = (
+            float(_roc_auc_score(y_bin, p_clip)) if len(np.unique(y_bin)) > 1 else 0.5
+        )
+    except Exception:
+        calibrated_auc = 0.5
     raw_ic_bin = _safe_spearman(oof_probs, y_bin)
     raw_ic_ret = _safe_spearman(oof_probs, y_ret)
 
     metrics = {
-        "auc": raw_auc,
+        "auc": calibrated_auc,
+        "raw_auc": raw_auc,
+        "calibrated_auc": calibrated_auc,
         "ic": raw_ic_bin,
         "ic_ret": raw_ic_ret,
+        "brier": float(brier),
         "logloss": float(ll),
         "pr_auc": pr_auc,
         "pr_auc_threshold": pr_auc_threshold,
@@ -1694,6 +1816,7 @@ def _base_model_report_entry(
         **info_metrics,
         **timeout_metrics,
     }
+    degeneracy = dm.get("degeneracy", {})
 
     return {
         "model": model_name,
@@ -1702,7 +1825,13 @@ def _base_model_report_entry(
         "score": float(dm.get("rank_score", dm.get("score", 0.0))),
         "checks": {k: {"pass": bool(v), "emoji": _emoji(v)} for k, v in checks.items()},
         "metrics": metrics,
+        "raw_auc": raw_auc,
+        "calibrated_auc": calibrated_auc,
+        "degenerate": bool(degeneracy.get("is_degenerate", False)),
+        "degeneracy": degeneracy,
         "passed": bool(all(checks.values())),
+        "top5_features": list(top5_features or []),
+        "top10_features": list(top10_features or []),
     }
 
 
@@ -1992,22 +2121,30 @@ def print_training_gate_report(report_payload):
         winners = base_items  # fallback: show all if no winner flag
     if winners:
         tprint("\n--- BASE MODELS (Race Winners) ---")
-        hdr = f"{'Model':<32} {'AUC':>7} {'IC_bin':>7} {'IC_ret':>7} {'LogLoss':>8} {'PR-AUC':>7} {'Lift@20':>8} {'BrierImp':>9}"
+        hdr = f"{'Model':<32} {'RawAUC':>7} {'CalAUC':>7} {'IC_bin':>7} {'IC_ret':>7} {'LogLoss':>8} {'PR-AUC':>7} {'Lift@20':>8} {'BrierImp':>9} {'Deg':>4}"
         tprint(hdr)
         tprint("-" * len(hdr))
         for it in winners:
             m = it.get("metrics", {})
             name = it.get("model", "?")
-            auc = m.get("auc", float("nan"))
+            raw_auc = m.get("raw_auc", m.get("auc", float("nan")))
+            cal_auc = m.get("calibrated_auc", m.get("auc", float("nan")))
             ic = m.get("ic", float("nan"))
             ic_ret = m.get("ic_ret", float("nan"))
             ll = m.get("logloss", float("nan"))
             prauc = m.get("pr_auc", float("nan"))
             lift = m.get("lift_at_20pct", float("nan"))
             brimp = m.get("brier_improvement", float("nan"))
+            deg = "Y" if it.get("degenerate", False) else "N"
             tprint(
-                f"{name:<32} {auc:>7.4f} {ic:>7.4f} {ic_ret:>7.4f} {ll:>8.4f} {prauc:>7.4f} {lift:>8.3f} {brimp:>8.1%}"
+                f"{name:<32} {raw_auc:>7.4f} {cal_auc:>7.4f} {ic:>7.4f} {ic_ret:>7.4f} {ll:>8.4f} {prauc:>7.4f} {lift:>8.3f} {brimp:>8.1%} {deg:>4}"
             )
+    blocked = report_payload.get("blocked_strategy_ids", [])
+    if blocked:
+        tprint(
+            f"\nBlocked downstream strategy_ids ({len(blocked)}): "
+            + ", ".join(str(x) for x in blocked)
+        )
     else:
         tprint("\n--- BASE MODELS: none ---")
 
@@ -2802,6 +2939,33 @@ def _cap_selected_features(
     return (out + fallback)[: max(min_features, min(target_cap, len(available_cols)))]
 
 
+def _mdi_top_feature_lists(sel_res, selected_feats: list[str]) -> tuple[list[str], list[str]]:
+    """Return selector top-5 and top-10 lists, preferring the MDI ranking table."""
+    # The selector already returns a ranked feature list in `selected_feats`.
+    # Some selector artifacts also expose a `metrics_table`, but that table can
+    # be a separate diagnostic view and is not reliable as the source of the
+    # final model feature ordering. Use the selected feature order directly.
+    ranked = [str(v) for v in selected_feats if isinstance(v, str)]
+    if len(ranked) < 10:
+        try:
+            metrics_table = getattr(sel_res, "metrics_table", None)
+            if metrics_table is not None and not getattr(metrics_table, "empty", True):
+                df = metrics_table.copy()
+                if "final_rank" in df.columns:
+                    df = df.sort_values("final_rank", ascending=True)
+                elif "final_score" in df.columns:
+                    df = df.sort_values("final_score", ascending=False)
+                for idx in df.index.tolist():
+                    if isinstance(idx, str) and idx not in ranked:
+                        ranked.append(str(idx))
+                        if len(ranked) >= 10:
+                            break
+        except Exception:
+            pass
+
+    return ranked[:5], ranked[:10]
+
+
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
     new_cols = {}
     for g in gate_cols:
@@ -3002,32 +3166,15 @@ def _meta_feature_keys_for_kind(cfg: dict, strategy: dict | None = None) -> list
                 seen.add(k)
         return out
 
-    # Fallback to old behavior if no strategy dict is passed
-    base = list(cfg.get("meta_feature_keys", []) or [])
+    from .training_utils import dedupe_keep_order, get_meta_feature_keys
 
-    # Try to guess from strategy definition
-    is_mr = False
-    is_tf = False
-    if strategy:
-        is_mr = strategy.get("is_mr", False)
-        is_tf = strategy.get("is_tf", False)
-
-    if is_mr:
-        extra = list(cfg.get("mr_meta_feature_keys", []) or [])
-    elif is_tf:
-        extra = list(cfg.get("tf_meta_feature_keys", []) or [])
-    else:
-        extra = list(cfg.get("mr_meta_feature_keys", []) or []) + list(
-            cfg.get("tf_meta_feature_keys", []) or []
-        )
-
-    out = []
-    seen = set()
-    for k in base + extra:
-        if isinstance(k, str) and k and k not in seen:
-            out.append(k)
-            seen.add(k)
-    return out
+    return dedupe_keep_order(
+        get_meta_feature_keys("reg", cfg)
+        + get_meta_feature_keys("clf", cfg)
+        + get_meta_feature_keys("mfe", cfg)
+        + get_meta_feature_keys("mae", cfg)
+        + get_meta_feature_keys("asym", cfg)
+    )
 
 
 # Exhaustion model logic removed per user request.
@@ -5351,11 +5498,33 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                     )
 
                     if raw_key not in _raw_tb_cache:
+                        if (
+                            _triplet_idx == 1
+                            or _triplet_idx == len(_validated_triplets)
+                            or (_triplet_idx % _hb_every == 0)
+                            or ((_now_ts - _hb_last_ts) >= _hb_secs)
+                        ):
+                            tprint(
+                                f"[geom raw] strat={s_id} side={side} H={H} "
+                                f"triplet={_triplet_idx}/{len(_validated_triplets)} "
+                                f"computing raw triple-barrier labels..."
+                            )
                         _tb_out = compute_triple_barrier_labels(
                             panel, tp_df, sl_df, H, side=side, return_outcomes=True
                         )
                         lbl, ret, qual = _tb_out[:3]
                         _raw_tb_cache[raw_key] = (lbl, ret, qual)
+                        if (
+                            _triplet_idx == 1
+                            or _triplet_idx == len(_validated_triplets)
+                            or (_triplet_idx % _hb_every == 0)
+                            or ((_now_ts - _hb_last_ts) >= _hb_secs)
+                        ):
+                            tprint(
+                                f"[geom raw] strat={s_id} side={side} H={H} "
+                                f"triplet={_triplet_idx}/{len(_validated_triplets)} "
+                                f"raw labels ready ({lbl.size} events)"
+                            )
 
                     lbl, ret, qual = _raw_tb_cache[raw_key]
 
@@ -6862,6 +7031,17 @@ def train_meta_models_from_artifacts(
             return {}, {
                 **{int(h): "missing_alpha_bucket" for h in _expected_horizons},
             }
+        if bool(conf_local.get("downstream_blocked", False)):
+            reason = str(
+                (conf_local.get("alpha_diag", {}) or {}).get(
+                    "blocked_reason", "base_strategy_blocked"
+                )
+            )
+            tprint(
+                f"Meta training: skipping blocked strategy_id={strategy_id} "
+                f"trade_side={trade_side} reason={reason}"
+            )
+            return {}, {**{int(h): reason for h in _expected_horizons}}
         models_by_h_local = conf_local.get("models_by_h", {})
         out = {}
         skip = {}
@@ -11463,6 +11643,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     final_models = {}
     spike_models = {}
     exh_models = {}
+    degenerate_strategy_ids = set()
 
     alpha_gate_results = []
     meta_gate_results = []
@@ -11479,6 +11660,34 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     # 2. Train Alpha Models
     final_models = {}
     base_variant_models = {}
+    min_base_fit_features = int(cfg.get("base_min_fit_features_guard", 8))
+
+    def _log_feature_matrix_state(label, X_df, selected=None):
+        cols_now = list(X_df.columns) if hasattr(X_df, "columns") else []
+        n_cols = len(cols_now)
+        n_unique = len(set(cols_now))
+        tprint(
+            f"{label}: rows={len(X_df)} cols={n_cols} unique_cols={n_unique}"
+        )
+        if cols_now:
+            tprint(f"  {label} columns sample: {cols_now[:12]}")
+        if selected is not None:
+            selected = list(selected)
+            tprint(
+                f"{label}: selected_features={len(selected)} final_fit_features={len(selected)}"
+            )
+            if selected:
+                tprint(f"  {label} selected sample: {selected[:12]}")
+
+    def _feature_guard_ok(label, cols):
+        n_cols = len(list(cols))
+        if n_cols < min_base_fit_features:
+            tprint(
+                f"CRITICAL: {label} has only {n_cols} usable features "
+                f"(guard={min_base_fit_features}). Skipping as broken config."
+            )
+            return False
+        return True
 
     def _train_base_variant_dataset(
         side_name, kind_name, horizon, dataset_key, df_variant, strategy=None
@@ -11505,51 +11714,28 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             "__barrier_pct__",
         ]
         X = df_variant.drop(columns=[c for c in drop_cols if c in df_variant.columns])
-
-        # --- Target Residualization (Base Model Only) ---
-        # Per requirement: Ensure the target is residualized ONLY for base_model training
-        # and ensure the base models do NOT have access to the residualization features.
-
-        # Define nuisance features for residuals (miner-aligned + market benchmarks)
-        nuisance_keys = list(TRAINING_RESIDUALIZATION_FEATURE_KEYS) + [
-            "mkt_ret24h",
-            "mkt_rv",
-            "mkt_trend",
-            "G_VOL",
-            "G_TREND",
-        ]
-        available_nuisance = [c for c in nuisance_keys if c in X.columns]
-
-        if available_nuisance:
+        leak_cols = [c for c in X.columns if str(c).startswith("__")]
+        if leak_cols:
             tprint(
-                f"  Residualizing target against {len(available_nuisance)} nuisance features: {available_nuisance}"
+                f"  Dropping {len(leak_cols)} internal label columns from base variant features: {leak_cols}"
             )
-            # Use linear regression to find the nuisance component
-            lr = LinearRegression()
-            # Handle potential NaNs in nuisance features for the residual fit
-            X_nuis = X[available_nuisance].fillna(0.0)
-            lr.fit(X_nuis, y, sample_weight=w)
-            y_nuis_pred = lr.predict(X_nuis)
-            # Center residuals to preserve average hit rate (or let it float)
-            y = y - y_nuis_pred
-            tprint(
-                f"  Target residualized: mean_orig={np.mean(df_variant['__y_bin__']):.4f}, mean_resid={np.mean(y):.4f}"
-            )
+            X = X.drop(columns=leak_cols, errors="ignore")
 
         # Use strategy dict to extract feature keys
         allowed_keys = set(strategy.get("feature_keys", [])) if strategy else set()
         std_inputs = {
             "trap_score",
             "gamma_score",
-            "mkt_ret6h",  # Keep some standard inputs if not in nuisance
+            "mkt_ret6h",
+            "mkt_ret24h",
+            "mkt_rv",
+            "mkt_trend",
+            "G_VOL",
+            "G_TREND",
         }
-        # Explicitly remove nuisance features from inputs
-        excluded_keys = set(nuisance_keys)
 
         valid_cols = []
         for c in X.columns:
-            if c in excluded_keys:
-                continue
             if c in allowed_keys or c in std_inputs:
                 valid_cols.append(c)
                 continue
@@ -11569,9 +11755,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             valid_cols = [c for c in valid_cols if c in X.columns]
 
         if not valid_cols:
-            # Fallback but still exclude nuisance
-            valid_cols = [c for c in X.columns if c not in excluded_keys]
+            valid_cols = list(X.columns)
         X = X[valid_cols]
+        _log_feature_matrix_state(f"Base variant pre-MDI [{dataset_key}]", X)
+        if not _feature_guard_ok(f"Base variant pre-MDI [{dataset_key}]", X.columns):
+            return None
         _sel_idx = _subsample_indices_time_balanced(len(X), variant_sel_max, y)
         _fit_idx = _subsample_indices_time_balanced(len(X), variant_fit_max, y)
         from sklearn.ensemble import ExtraTreesRegressor
@@ -11595,6 +11783,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         sel_res = mdi_feature_selection_v3(
             X.iloc[_sel_idx],
             y[_sel_idx],
+            candidate_cols=list(X.columns),
             base_model=mdi_base,
             sample_weight=w[_sel_idx],
             selector_y=y[_sel_idx],
@@ -11667,6 +11856,17 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             target_cap=int(cfg.get("base_variant_mdi_target_features", 60)),
             min_features=int(cfg.get("base_variant_mdi_min_features", 30)),
         )
+        top5_feats, top10_feats = _mdi_top_feature_lists(sel_res, selected_feats)
+        _log_feature_matrix_state(
+            f"Base variant post-MDI [{dataset_key}]",
+            X.iloc[_fit_idx][selected_feats] if selected_feats else X.iloc[_fit_idx][[]],
+            selected_feats,
+        )
+        if not _feature_guard_ok(
+            f"Base variant post-MDI [{dataset_key}]",
+            selected_feats,
+        ):
+            return None
         X_sel = X.iloc[_fit_idx][selected_feats]
         groups = (
             df_variant["__ts__"].values[_fit_idx]
@@ -11694,6 +11894,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             "H": int(horizon),
             "feat_cols": selected_feats,
             "selected_features": selected_feats,
+            "top5_features": top5_feats,
+            "top10_features": top10_feats,
             "dataset_key": dataset_key,
         }
 
@@ -11714,6 +11916,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 best_ic = -1.0
                 best_m = None
                 per_h_models = {}
+                deployable_h_models = {}
                 feature_selection_by_h = {}
                 for H in strategy_horizons.get(k, []):
                     key = f"train_{k}_{H}"
@@ -11781,41 +11984,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         "__barrier_pct__",
                     ]
                     X = df.drop(columns=[c for c in drop_cols if c in df.columns])
-
-                    # --- Target Residualization (Base Model Only) ---
-                    # Per requirement: Ensure the target is residualized ONLY for base_model training
-                    # and ensure the base models do NOT have access to the residualization features.
-
-                    # Define nuisance features for residuals (miner-aligned + market benchmarks)
-                    nuisance_keys = list(TRAINING_RESIDUALIZATION_FEATURE_KEYS) + [
-                        "mkt_ret24h",
-                        "mkt_rv",
-                        "mkt_trend",
-                        "G_VOL",
-                        "G_TREND",
-                    ]
-                    available_nuisance = [c for c in nuisance_keys if c in X.columns]
-
-                    if available_nuisance:
+                    leak_cols = [c for c in X.columns if str(c).startswith("__")]
+                    if leak_cols:
                         tprint(
-                            f"  Residualizing target against {len(available_nuisance)} nuisance features: {available_nuisance}"
+                            f"  Dropping {len(leak_cols)} internal label columns from base features: {leak_cols}"
                         )
-                        from sklearn.linear_model import LinearRegression
-
-                        # Use linear regression to find the nuisance component
-                        lr = LinearRegression()
-                        # Handle potential NaNs in nuisance features for the residual fit
-                        X_nuis = X[available_nuisance].fillna(0.0)
-                        lr.fit(X_nuis, y, sample_weight=w)
-                        y_nuis_pred = lr.predict(X_nuis)
-                        # Center residuals to preserve average hit rate (or let it float)
-                        y = y - y_nuis_pred
-                        tprint(
-                            f"  Target residualized: mean_orig={np.mean(df['__y_bin__']):.4f}, mean_resid={np.mean(y):.4f}"
-                        )
-
-                    # Explicitly remove nuisance features from inputs
-                    excluded_keys = set(nuisance_keys)
+                        X = X.drop(columns=leak_cols, errors="ignore")
 
                     # Filter features strictly for the Alpha Model (exclude meta-only features)
                     # We need to know which feature_key was used.
@@ -11849,8 +12023,6 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     }
 
                     for c in X.columns:
-                        if c in excluded_keys:
-                            continue
                         # Check exact match
                         if c in allowed_keys or c in std_inputs:
                             valid_cols.append(c)
@@ -11875,6 +12047,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         valid_cols = list(X.columns)
 
                     X = X[valid_cols]
+                    _log_feature_matrix_state(f"Base pre-MDI [{key}]", X)
+                    if not _feature_guard_ok(f"Base pre-MDI [{key}]", X.columns):
+                        continue
                     base_sel_max = int(cfg.get("base_selector_max_samples", 30000))
                     base_fit_max = int(cfg.get("base_fit_max_samples", 150000))
                     _sel_idx = _subsample_indices_time_balanced(len(X), base_sel_max, y)
@@ -11951,6 +12126,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     sel_res = mdi_feature_selection_v3(
                         X.iloc[_sel_idx],
                         y[_sel_idx],
+                        candidate_cols=list(X.columns),
                         base_model=mdi_base,
                         sample_weight=w[_sel_idx],
                         selector_y=y[_sel_idx],
@@ -12046,10 +12222,20 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         target_cap=int(cfg.get("base_mdi_target_features", 60)),
                         min_features=int(cfg.get("base_mdi_min_features", 30)),
                     )
+                    top5_feats, top10_feats = _mdi_top_feature_lists(
+                        sel_res, selected_feats
+                    )
                     feature_selection_by_h[H] = list(selected_feats)
                     tprint(
                         f"MDI selected {len(selected_feats)} features (from {X.shape[1]}) for H={H}."
                     )
+                    _log_feature_matrix_state(
+                        f"Base post-MDI [{key}]",
+                        X.iloc[_fit_idx][selected_feats] if selected_feats else X.iloc[_fit_idx][[]],
+                        selected_feats,
+                    )
+                    if not _feature_guard_ok(f"Base post-MDI [{key}]", selected_feats):
+                        continue
 
                     X_sel = X.iloc[_fit_idx][selected_feats]
                     y_fit = y[_fit_idx]
@@ -12086,6 +12272,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     )
                     score = race.metrics.get(race.best_model_name, -1.0)
                     dm = race.detailed_metrics.get(race.best_model_name, {})
+                    degeneracy_info = dm.get("degeneracy", {})
+                    is_degenerate = bool(degeneracy_info.get("is_degenerate", False))
                     # Race CV AUC = fold-averaged AUC during model selection
                     # OOF AUC = AUC on full post-calibration OOF vector (canonical)
                     oof_auc_canonical = 0.5
@@ -12129,6 +12317,17 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         f"RcIC={dm.get('IC',0):.4f}, RcBSS={dm.get('BSS',0):.4f}, "
                         f"OOF_Brier={_bs_oof:.4f}, OOF_BSS={oof_bss:.4f}"
                     )
+                    if is_degenerate:
+                        tprint(
+                            f"  CRITICAL: base model degenerate for {side}/{k}/H={H}; "
+                            f"reasons={degeneracy_info.get('reasons', [])} "
+                            f"raw={degeneracy_info.get('raw', {})} "
+                            f"cal={degeneracy_info.get('calibrated', {})}"
+                        )
+                        tprint(
+                            f"  Degenerate config context ({side}/{k}/H={H}): "
+                            f"selected={len(selected_feats)} top10={top10_feats[:10]}"
+                        )
 
                     if race.oof_probs is not None:
                         tprint(
@@ -12220,6 +12419,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             "calibration_profile": dm_best.get(
                                 "calibration_profile", "n/a"
                             ),
+                            "degenerate": bool(
+                                dm_best.get("degeneracy", {}).get("is_degenerate", False)
+                            ),
+                            "degeneracy_reasons": list(
+                                dm_best.get("degeneracy", {}).get("reasons", [])
+                            ),
                         }
                     if race.oof_probs is not None:
                         groups_v = (
@@ -12263,7 +12468,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             f"  Base economic gate ({side}/{k}/H={H}): top{int(_econ_top_frac*100)} mean_ret={_econ_mean:.6f} pass={_econ_ok}"
                         )
 
-                    _score_for_select = score if _econ_ok else -1e12
+                    _deployable = bool(_econ_ok) and not is_degenerate
+                    _score_for_select = score if _deployable else -1e12
                     if _score_for_select > best_ic:
                         best_ic = _score_for_select
                         best_m = {
@@ -12280,26 +12486,33 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         "feat_cols": cols,
                         "per_regime": per_regime,
                         "alpha_diag": alpha_diag,
+                        "top5_features": top5_feats,
+                        "top10_features": top10_feats,
                         "score": score,
                         "econ_ok": bool(_econ_ok),
+                        "degenerate": is_degenerate,
+                        "degeneracy": degeneracy_info,
+                        "deployable": _deployable,
                         "econ_top_mean_ret": float(_econ_mean)
                         if np.isfinite(_econ_mean)
                         else float("nan"),
                     }
+                    if _deployable:
+                        deployable_h_models[H] = per_h_models[H]
 
             # --- Multi-horizon deployment: all horizons are kept ---
             # best_m serves as the "primary" (highest score) for backward compat.
             # models_by_h stores all trained horizons for inference averaging.
-            if best_m is None and per_h_models:
-                # All horizons failed the economic gate — fall back to best raw score
-                # rather than dropping the strategy entirely (gate logged a warning above).
+            strategy_degenerate = bool(per_h_models) and not bool(deployable_h_models)
+            if best_m is None and per_h_models and not strategy_degenerate:
                 _fallback_h = max(
-                    per_h_models, key=lambda h: per_h_models[h].get("score", -1e12)
+                    deployable_h_models,
+                    key=lambda h: deployable_h_models[h].get("score", -1e12),
                 )
-                best_m = per_h_models[_fallback_h]
+                best_m = deployable_h_models[_fallback_h]
                 tprint(
-                    f"  WARNING: {side}_{k}: all horizons failed economic gate; "
-                    f"falling back to best-scored horizon H={_fallback_h} (econ_gate_bypass=True)"
+                    f"  WARNING: {side}_{k}: all deployable horizons failed selection score gate; "
+                    f"falling back to best deployable horizon H={_fallback_h}"
                 )
             if best_m is not None:
                 best_m["models_by_h"] = {
@@ -12310,11 +12523,62 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         "selected_features": feature_selection_by_h.get(
                             h, v["feat_cols"]
                         ),
+                        "top5_features": v.get("top5_features", [])[:5],
+                        "top10_features": v.get("top10_features", [])[:10],
+                    }
+                    for h, v in deployable_h_models.items()
+                }
+                best_m["all_models_by_h"] = {
+                    h: {
+                        "model": v["model"],
+                        "feat_cols": v["feat_cols"],
+                        "H": v["H"],
+                        "selected_features": feature_selection_by_h.get(
+                            h, v["feat_cols"]
+                        ),
+                        "top5_features": v.get("top5_features", [])[:5],
+                        "top10_features": v.get("top10_features", [])[:10],
+                        "degenerate": bool(v.get("degenerate", False)),
+                        "degeneracy": v.get("degeneracy", {}),
+                        "deployable": bool(v.get("deployable", False)),
                     }
                     for h, v in per_h_models.items()
                 }
+                best_m["downstream_blocked"] = False
                 tprint(
-                    f"  {side}_{k}: Deploying {len(per_h_models)} horizons: {sorted(per_h_models.keys())} (primary H={best_m['H']})"
+                    f"  {side}_{k}: Deploying {len(deployable_h_models)} horizons: {sorted(deployable_h_models.keys())} "
+                    f"(primary H={best_m['H']})"
+                )
+            elif strategy_degenerate:
+                degenerate_strategy_ids.add(k)
+                _fallback_h = max(
+                    per_h_models, key=lambda h: per_h_models[h].get("score", -1e12)
+                )
+                best_m = dict(per_h_models[_fallback_h])
+                best_m["models_by_h"] = {}
+                best_m["all_models_by_h"] = {
+                    h: {
+                        "model": v["model"],
+                        "feat_cols": v["feat_cols"],
+                        "H": v["H"],
+                        "selected_features": feature_selection_by_h.get(
+                            h, v["feat_cols"]
+                        ),
+                        "top5_features": v.get("top5_features", [])[:5],
+                        "top10_features": v.get("top10_features", [])[:10],
+                        "degenerate": bool(v.get("degenerate", False)),
+                        "degeneracy": v.get("degeneracy", {}),
+                        "deployable": False,
+                    }
+                    for h, v in per_h_models.items()
+                }
+                best_m["downstream_blocked"] = True
+                best_m.setdefault("alpha_diag", {})
+                best_m["alpha_diag"]["degenerate_strategy"] = True
+                best_m["alpha_diag"]["blocked_reason"] = "all_base_horizons_degenerate"
+                tprint(
+                    f"CRITICAL: Blocking downstream training for {side}_{k}; "
+                    f"all base horizons are degenerate."
                 )
 
             # --- Save OOF predictions for fast meta loading + richer diagnostics ---
@@ -12322,7 +12586,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             _run_id = cfg.get("run_id", "default")
             oof_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "oof")
             os.makedirs(oof_dir, exist_ok=True)
-            for _h, _v in per_h_models.items():
+            for _h, _v in deployable_h_models.items():
                 _race = _v["model"]
                 if _race.oof_probs is None:
                     continue
@@ -12387,7 +12651,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             models_dir = os.path.join(
                 cfg["data_root"], "artifacts", _run_id, "models", "native"
             )
-            for _h, _v in per_h_models.items():
+            for _h, _v in deployable_h_models.items():
                 _race = _v["model"]
                 _model_dir = os.path.join(models_dir, f"{side}_{k}_H{_h}")
                 _race.save_native(_model_dir)
@@ -12404,11 +12668,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         _cf,
                     )
             # Strip for pickle fallback
-            for _h, _v in per_h_models.items():
+            for _h, _v in deployable_h_models.items():
                 _v["model"].strip_for_serialization()
 
             # --- Stage Gate Check (Alpha) — per horizon ---
-            for _gate_H, _gate_v in per_h_models.items():
+            for _gate_H, _gate_v in deployable_h_models.items():
                 _gate_race = _gate_v["model"]
                 _gate_key = f"train_{k}_{_gate_H}"
                 if _gate_key not in datasets or _gate_race.oof_probs is None:
@@ -12445,7 +12709,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 gate_res["Model"] = f"{side}_{k}_H{_gate_H}"
                 alpha_gate_results.append(gate_res)
 
-            final_models[side][k] = best_m
+            if best_m is not None:
+                final_models[side][k] = best_m
 
         if bool(cfg.get("base_geometry_train_variants", True)):
             tprint("Training grouped base-geometry variant models (tight/wide)...")
@@ -12519,6 +12784,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             "base_variant_models": base_variant_models,
             "spike_models": spike_models,
             "specialist_models": specialist_models,
+            "blocked_strategy_ids": sorted(str(s) for s in degenerate_strategy_ids),
         }
         with open(_intermediate_path, "wb") as _f:
             _pkl_save.dump(_base_bundle, _f)
@@ -12625,6 +12891,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 conf.get("H", 4): {
                     "model": conf["model"],
                     "feat_cols": conf["feat_cols"],
+                    "top5_features": conf.get("top5_features", []),
+                    "top10_features": conf.get("top10_features", []),
+                    "deployable": not bool(conf.get("downstream_blocked", False)),
                 }
             }
         for H_rep, h_info in models_by_h.items():
@@ -12672,10 +12941,56 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     y_ret=y_ret_model,
                     groups=groups_model,
                     y_lbl=y_lbl_model,
+                    top5_features=h_info.get("top5_features", []),
+                    top10_features=h_info.get("top10_features", []),
                 )
                 entry["H"] = H_rep
                 entry["is_winner"] = cand_name == race.best_model_name
+                entry["downstream_blocked"] = bool(conf.get("downstream_blocked", False))
+                entry["variant"] = "primary"
                 base_quality_rows.append(entry)
+
+    for (side, kind, horizon, variant), variant_info in (base_variant_models or {}).items():
+        race = variant_info.get("model")
+        if race is None or race.oof_probs is None:
+            continue
+        ds_key = f"train_{kind}_{int(horizon)}_{variant}"
+        if ds_key not in datasets:
+            continue
+        dfm = datasets[ds_key]
+        y_bin = (dfm["__y_bin__"].values >= 0.5).astype(int)
+        y_ret = dfm["__y_ret__"].values.astype(float)
+        y_lbl = (
+            dfm["__y_lbl__"].values.astype(int)
+            if "__y_lbl__" in dfm.columns
+            else None
+        )
+        groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
+        for cand_name, dm in race.detailed_metrics.items():
+            oof_probs = dm.get("oof_probs")
+            if oof_probs is None:
+                oof_probs = np.asarray(race.oof_probs, dtype=float)
+            else:
+                oof_probs = np.asarray(oof_probs, dtype=float)
+            n = min(len(y_bin), len(oof_probs), len(y_ret))
+            entry = _base_model_report_entry(
+                model_name=f"{side}_{kind}_H{int(horizon)}_{variant}:{cand_name}",
+                side=side,
+                kind=kind,
+                dm=dm,
+                y_bin=y_bin[:n],
+                oof_probs=oof_probs[:n],
+                y_ret=y_ret[:n],
+                groups=np.asarray(groups)[:n] if groups is not None else None,
+                y_lbl=y_lbl[:n] if y_lbl is not None else None,
+                top5_features=variant_info.get("top5_features", []),
+                top10_features=variant_info.get("top10_features", []),
+            )
+            entry["H"] = int(horizon)
+            entry["variant"] = str(variant)
+            entry["is_winner"] = cand_name == race.best_model_name
+            entry["downstream_blocked"] = False
+            base_quality_rows.append(entry)
 
     meta_quality_rows = []
     for key, meta in meta_models.items():
@@ -12838,6 +13153,13 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "base_models": winners_base + others_base,
         "meta_models": winners_meta + others_meta,
+        "blocked_strategy_ids": sorted(
+            {
+                r.get("kind")
+                for r in base_quality_rows
+                if bool(r.get("downstream_blocked", False))
+            }
+        ),
         "winners": {
             "base": [r["model"] for r in winners_base],
             "meta": [r["model"] for r in winners_meta],

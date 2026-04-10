@@ -1121,7 +1121,18 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
     else:
         sl_df = sl
 
-    def _process_asset(asset):
+    asset_progress_every = max(1, len(assets) // 4)
+
+    def _process_asset(asset, asset_idx: int | None = None):
+        if asset_idx is not None and (
+            asset_idx == 1
+            or asset_idx == len(assets)
+            or asset_idx % asset_progress_every == 0
+        ):
+            tprint(
+                f"labeling: triple-barrier asset {asset_idx}/{len(assets)} "
+                f"({asset}) horizon={horizon} side={side}"
+            )
         c_arr = c[asset].to_numpy(dtype=np.float32)
         o_arr = o[asset].to_numpy(dtype=np.float32)
         h_arr = h[asset].to_numpy(dtype=np.float32)
@@ -1155,8 +1166,13 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         # Keep memory pressure bounded on Apple Silicon unified memory.
         n_jobs_cap = 2
     n_jobs = min(cpu_count(), len(assets), n_jobs_cap)
-    results = Parallel(n_jobs=n_jobs, prefer="threads")(
-        delayed(_process_asset)(asset) for asset in assets
+    tprint(
+        f"labeling: triple-barrier parallel dispatch assets={len(assets)} "
+        f"workers={n_jobs} horizon={horizon} side={side}"
+    )
+    results = Parallel(n_jobs=n_jobs, prefer="threads", return_as="generator_unordered")(
+        delayed(_process_asset)(asset, idx)
+        for idx, asset in enumerate(assets, start=1)
     )
 
     horizon_ns = int(float(horizon) * 3600 * 1_000_000_000)
@@ -1183,7 +1199,14 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
     out_t_mfe = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
     out_t_mae = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
 
-    for asset, lbs_or_out, rets, qual, conflict_j, tp_arr, sl_arr, mfe_arr, mae_arr, t_mfe, t_mae in results:
+    for result_idx, (asset, lbs_or_out, rets, qual, conflict_j, tp_arr, sl_arr, mfe_arr, mae_arr, t_mfe, t_mae) in enumerate(
+        results, start=1
+    ):
+        if result_idx == 1 or result_idx % asset_progress_every == 0 or result_idx == len(assets):
+            tprint(
+                f"labeling: triple-barrier merge {result_idx}/{len(assets)} "
+                f"({asset}) horizon={horizon} side={side}"
+            )
         # Check for conflicts
         ambiguous_indices = np.where(conflict_j != -1)[0]
         if len(ambiguous_indices) > 0 and resolve_conflicts:
@@ -1247,6 +1270,11 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         out_t_mae[asset] = t_mae
         if return_outcomes and qual is not None:
             out_quality[asset] = qual
+
+    tprint(
+        f"labeling: triple-barrier parallel complete assets={len(assets)} "
+        f"horizon={horizon} side={side}"
+    )
 
     if return_outcomes:
         return out_labels, out_returns, out_quality, out_mfe, out_mae, out_t_mfe, out_t_mae

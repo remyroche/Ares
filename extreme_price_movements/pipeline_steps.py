@@ -121,6 +121,60 @@ TRAINING_RESIDUALIZATION_FEATURE_KEYS: tuple[str, ...] = (
 )
 
 
+def load_features_for_stage_or_all(
+    cfg: dict,
+    ts_sig: pd.Timestamp,
+    root_dir: str,
+    feature_keys: list[str] | set[str] | tuple[str, ...] | None = None,
+    symbols: list[str] | set[str] | tuple[str, ...] | None = None,
+    start_ts: pd.Timestamp | None = None,
+    end_ts: pd.Timestamp | None = None,
+):
+    """Load features with optional active-stage restrictions."""
+    stage_view = cfg.get("_active_stage_view")
+    if stage_view:
+        allowed_symbols = stage_view.get("symbols") or None
+        if allowed_symbols is not None and symbols is not None:
+            allowed_set = {str(sym) for sym in allowed_symbols}
+            requested_set = {str(sym) for sym in symbols}
+            symbols = sorted(allowed_set & requested_set)
+            if not symbols:
+                tprint(
+                    f"Stage view {stage_view.get('stage_name', 'stage')}: "
+                    "no overlapping symbols after restriction."
+                )
+                return None
+        elif allowed_symbols is not None:
+            symbols = allowed_symbols
+
+        view_start = stage_view.get("allowed_start_ts")
+        view_end = stage_view.get("allowed_end_ts")
+        if view_start:
+            view_start_ts = pd.to_datetime(view_start)
+            start_ts = (
+                view_start_ts if start_ts is None else max(start_ts, view_start_ts)
+            )
+        if view_end:
+            view_end_ts = pd.to_datetime(view_end)
+            end_ts = view_end_ts if end_ts is None else min(end_ts, view_end_ts)
+
+        tprint(
+            f"Loading features for stage {stage_view.get('stage_name', 'stage')}: "
+            f"{len(symbols) if symbols is not None else 'ALL'} symbols, "
+            f"from {start_ts} to {end_ts}"
+        )
+
+    return load_features_selected(
+        ts=ts_sig,
+        root_dir=root_dir,
+        feature_keys=feature_keys,
+        symbols=symbols,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        allowed_periods=stage_view.get("allowed_periods") if stage_view else None,
+    )
+
+
 def _dedup_universe_by_base(symbols: list[str]) -> list[str]:
     """Return at most one symbol per base asset, preferring the highest-priority quote.
 
@@ -183,21 +237,7 @@ def _base_feature_keys_union(cfg) -> set[str]:
 
 
 def ensure_training_residualization_feature_keys(cfg: dict) -> dict:
-    out = dict(cfg)
-    # Only add residualization keys to base model keys (tf/mr), NOT to meta keys
-    # Meta models should see the raw target without residualization adjustments
-    for cfg_key in (
-        "tf_feature_keys",
-        "mr_feature_keys",
-    ):
-        base_vals = list(out.get(cfg_key, []) or [])
-        seen = {v for v in base_vals if isinstance(v, str) and v}
-        for feature_name in TRAINING_RESIDUALIZATION_FEATURE_KEYS:
-            if feature_name not in seen:
-                base_vals.append(feature_name)
-                seen.add(feature_name)
-        out[cfg_key] = base_vals
-    return out
+    return dict(cfg)
 
 
 def _cap_panel_rows(
@@ -595,7 +635,9 @@ def _generate_feature_health_reports(
     files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
 
     if allowed_symbols is not None:
-        allowed_set = set(str(s) for s in allowed_symbols)
+        allowed_set = set(
+            apply_hardcoded_universe_exclusions([str(s) for s in allowed_symbols])
+        )
         filtered_files = []
         for f in files:
             sym_from_file = (
@@ -604,7 +646,8 @@ def _generate_feature_health_reports(
                 .replace(".parquet", "")
                 .replace("_", "/", 1)
             )
-            if sym_from_file in allowed_set:
+            sym_norm = apply_hardcoded_universe_exclusions([sym_from_file])
+            if sym_norm and sym_norm[0] in allowed_set:
                 filtered_files.append(f)
         files = filtered_files
     if not files:
@@ -2523,9 +2566,9 @@ def run_policy_optimiser_step(ts_sig, cfg):
 def run_base_hpo_step(ts_sig, cfg):
     """Run Optuna HPO for the base ExtraTrees classifier.
 
-    Pools label data across strategies and horizons, subsamples to 5 000 rows,
-    then runs 40 trials with a narrow search space.  Best params are saved to a
-    shared JSON consumed by ``_fit_direct_extratrees_base_model``.
+    Runs one HPO job per strategy family, pooling that strategy's horizons and
+    geometry variants. Best params are saved to strategy-scoped JSON files
+    consumed by ``_fit_direct_extratrees_base_model``.
     """
     from extreme_price_movements.post_race_hpo import run_base_extratrees_hpo
 
@@ -2545,22 +2588,15 @@ def run_base_hpo_step(ts_sig, cfg):
         s["strategy_id"]: strategy_runtime_horizons(s, cfg) for s in strategies
     }
 
-    parts_y: list[np.ndarray] = []
-    parts_sym: list[np.ndarray] = []
-    X_blocks: list[np.ndarray] = []
-    drop_cols = {
-        "__y_bin__",
-        "__y_ret__",
-        "__w__",
-        "__ts__",
-        "__symbol__",
-        "__barrier_pct__",
-        "ts",
-        "symbol",
-    }
+    hpo_out_dir = os.path.join(data_root, "hpo_out")
+    os.makedirs(hpo_out_dir, exist_ok=True)
+    cfg["base_hpo_out_dir"] = hpo_out_dir
 
+    results = {}
     for strat in strategies:
         s_id = strat["strategy_id"]
+        strategy_datasets: dict[str, pd.DataFrame] = {}
+
         for H in strategy_horizons.get(s_id, []):
             for suffix in ("", "_tight", "_wide"):
                 name = f"train_{s_id}_{H}{suffix}"
@@ -2572,51 +2608,147 @@ def run_base_hpo_step(ts_sig, cfg):
                     continue
                 if "__y_bin__" not in df.columns:
                     continue
-                keep = [c for c in df.columns if c not in drop_cols]
-                X_parts = df[keep].select_dtypes(include=[np.number]).astype(np.float32)
-                X_blocks.append(X_parts.values)
-                parts_y.append(df["__y_bin__"].values.astype(np.float32))
-                sym_col = (
-                    df["__symbol__"].values
-                    if "__symbol__" in df.columns
-                    else np.full(len(df), "unknown", dtype=object)
-                )
-                parts_sym.append(sym_col)
+                strategy_datasets[name] = df
 
-    if not X_blocks:
-        tprint("BASE HPO: no data rows loaded from label datasets.")
+        if not strategy_datasets:
+            tprint(f"BASE HPO: no data rows loaded for strategy {s_id}.")
+            continue
+
+        base_req_keys = set(str(v) for v in (strat.get("feature_keys") or []) if isinstance(v, str) and v)
+        base_req_keys.update(
+            {
+                "p_exh_lag1",
+                "G_VOL",
+                "G_TREND",
+                "mkt_ret24h",
+                "mkt_ret6h",
+                "mkt_trend",
+                "mkt_rv",
+                "trap_score",
+                "gamma_score",
+            }
+        )
+        strategy_datasets = inject_features_into_datasets(
+            strategy_datasets,
+            ts_sig,
+            cfg,
+            sorted(base_req_keys),
+        )
+
+        parts_y: list[np.ndarray] = []
+        parts_sym: list[np.ndarray] = []
+        X_blocks: list[np.ndarray] = []
+        allowed_keys = set(strat.get("feature_keys") or [])
+        std_inputs = {
+            "p_exh_lag1",
+            "G_VOL",
+            "G_TREND",
+            "mkt_ret24h",
+            "mkt_ret6h",
+            "mkt_trend",
+            "mkt_rv",
+            "trap_score",
+            "gamma_score",
+        }
+
+        for name, df in strategy_datasets.items():
+            if df is None or df.empty or "__y_bin__" not in df.columns:
+                continue
+            feature_cols: list[str] = []
+            for c in df.columns:
+                if not isinstance(c, str):
+                    continue
+                if c.startswith("__") or c in {"ts", "timestamp", "symbol", "asset"}:
+                    continue
+                if c in allowed_keys or c in std_inputs:
+                    feature_cols.append(c)
+                    continue
+                for g in ("G_VOL", "G_TREND"):
+                    if f"_{g}_0" in c or f"_{g}_1" in c:
+                        base = c.split(f"_{g}_")[0]
+                        if base in allowed_keys:
+                            feature_cols.append(c)
+                            break
+
+            if not feature_cols:
+                continue
+
+            X_parts = (
+                df[feature_cols]
+                .select_dtypes(include=[np.number])
+                .astype(np.float32, copy=False)
+            )
+            if X_parts.empty:
+                continue
+            X_blocks.append(X_parts.values)
+            parts_y.append(df["__y_bin__"].values.astype(np.float32))
+            sym_col = (
+                df["__symbol__"].values
+                if "__symbol__" in df.columns
+                else np.full(len(df), "unknown", dtype=object)
+            )
+            parts_sym.append(sym_col)
+
+        if not X_blocks:
+            tprint(f"BASE HPO[{s_id}]: no usable feature matrix after injection/filtering.")
+            continue
+
+        X_all = np.vstack(X_blocks)
+        y_all = np.concatenate(parts_y)
+        sym_all = np.concatenate(parts_sym)
+        del X_blocks, parts_y, parts_sym, strategy_datasets
+        gc.collect()
+
+        valid_y_mask = np.isfinite(y_all)
+        if not valid_y_mask.all():
+            X_all = X_all[valid_y_mask]
+            y_all = y_all[valid_y_mask]
+            sym_all = sym_all[valid_y_mask]
+
+        if X_all.size == 0 or y_all.size == 0:
+            tprint(f"BASE HPO[{s_id}]: empty pooled matrix after target filtering.")
+            continue
+
+        missing_frac = float(np.mean(~np.isfinite(X_all)))
+        if missing_frac > 0.0:
+            col_medians = np.nanmedian(X_all, axis=0)
+            col_medians = np.where(np.isfinite(col_medians), col_medians, 0.0).astype(
+                np.float32,
+                copy=False,
+            )
+            nan_rows, nan_cols = np.where(~np.isfinite(X_all))
+            X_all = X_all.astype(np.float32, copy=False)
+            X_all[nan_rows, nan_cols] = col_medians[nan_cols]
+            tprint(
+                f"BASE HPO[{s_id}]: imputed non-finite feature values "
+                f"(missing_frac={missing_frac:.2%})."
+            )
+
+        tprint(
+            f"BASE HPO[{s_id}]: pooled {X_all.shape[0]} rows, {X_all.shape[1]} features "
+            f"from {len(available)} datasets"
+        )
+
+        result = run_base_extratrees_hpo(
+            X_all,
+            y_all,
+            symbols=sym_all,
+            n_trials=int(cfg.get("base_hpo_n_trials", 40)),
+            n_splits=int(cfg.get("base_hpo_n_splits", 3)),
+            max_rows=int(cfg.get("base_hpo_max_rows", 5000)),
+            out_dir=hpo_out_dir,
+            study_name=f"base_extratrees_hpo_{s_id}",
+            scope_key=s_id,
+        )
+        results[s_id] = result
+        tprint(
+            f"BASE HPO[{s_id}] COMPLETE: best_value={result.get('best_value', 'n/a')}"
+        )
+
+    if not results:
+        tprint("BASE HPO: no strategy-level results were produced.")
         return None
-
-    X_all = np.vstack(X_blocks)
-    y_all = np.concatenate(parts_y)
-    sym_all = np.concatenate(parts_sym)
-    del X_blocks, parts_y, parts_sym
-    gc.collect()
-
-    finite_mask = np.isfinite(X_all).all(axis=1)
-    X_all = X_all[finite_mask]
-    y_all = y_all[finite_mask]
-    sym_all = sym_all[finite_mask]
-
-    tprint(
-        f"BASE HPO: pooled {X_all.shape[0]} rows, {X_all.shape[1]} features "
-        f"from {len(available)} datasets"
-    )
-
-    hpo_out_dir = os.path.join(data_root, "hpo_out")
-    cfg["base_hpo_out_dir"] = hpo_out_dir
-
-    result = run_base_extratrees_hpo(
-        X_all,
-        y_all,
-        symbols=sym_all,
-        n_trials=int(cfg.get("base_hpo_n_trials", 40)),
-        n_splits=int(cfg.get("base_hpo_n_splits", 3)),
-        max_rows=int(cfg.get("base_hpo_max_rows", 5000)),
-        out_dir=hpo_out_dir,
-    )
-    tprint(f"BASE HPO COMPLETE: best_value={result.get('best_value', 'n/a')}")
-    return result
+    return results
 
 
 def compute_regime_boundaries(feats):
@@ -5237,16 +5369,236 @@ def run_feature_generation_step(
 
 
 def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
-    import os
-
     import numpy as np
     import pandas as pd
     import pyarrow.parquet as pq
 
     from extreme_price_movements.data_store import get_feature_path
-    from extreme_price_movements.gamma_specialist import GAMMA_FEATURE_KEYS
-    from extreme_price_movements.trap_specialist import TRAP_FEATURE_KEYS
     from extreme_price_movements.utils import tprint
+    if not datasets or not req_keys:
+        return datasets
+
+    req_keys = sorted(
+        {
+            str(k)
+            for k in req_keys
+            if isinstance(k, str)
+            and k
+            and not k.startswith("__")
+            and not k.startswith("pred_")
+        }
+    )
+    if not req_keys:
+        return datasets
+
+    all_syms: set[str] = set()
+    dataset_meta: dict[str, dict[str, object]] = {}
+    missing_keys_per_dataset: dict[str, list[str]] = {}
+    requested_keys_per_dataset: dict[str, list[str]] = {}
+    datasets_by_symbol: dict[str, list[str]] = {}
+
+    for name, df in datasets.items():
+        if df is None or df.empty:
+            continue
+        s_col = (
+            "__symbol__"
+            if "__symbol__" in df.columns
+            else ("symbol" if "symbol" in df.columns else None)
+        )
+        t_col = (
+            "__ts__" if "__ts__" in df.columns else ("ts" if "ts" in df.columns else None)
+        )
+        if not s_col or not t_col:
+            continue
+        dataset_meta[name] = {"df": df, "s_col": s_col, "t_col": t_col}
+        missing = [k for k in req_keys if k not in df.columns]
+        requested_keys_per_dataset[name] = list(missing)
+        if not missing:
+            continue
+        missing_keys_per_dataset[name] = missing
+        syms = pd.Series(df[s_col]).dropna().astype(str).unique().tolist()
+        for sym in syms:
+            all_syms.add(sym)
+            datasets_by_symbol.setdefault(sym, []).append(name)
+
+    if not missing_keys_per_dataset:
+        tprint("Feature injection: all requested features already present in datasets.")
+        return datasets
+
+    meta_keys_all = set(_meta_feature_keys_union(cfg))
+    for name, missing in missing_keys_per_dataset.items():
+        meta = dataset_meta.get(name)
+        if not meta:
+            continue
+        df = meta["df"]
+        add_cols: dict[str, np.ndarray] = {}
+        for col in missing:
+            if col not in df.columns:
+                add_cols[col] = np.full(len(df), np.nan, dtype=np.float32)
+            if col in meta_keys_all:
+                raw_col = f"__meta_raw__{col}"
+                if raw_col not in df.columns:
+                    add_cols[raw_col] = np.full(len(df), np.nan, dtype=np.float32)
+        if add_cols:
+            df = pd.concat(
+                [df, pd.DataFrame(add_cols, index=df.index, copy=False)],
+                axis=1,
+                copy=False,
+            )
+            datasets[name] = df
+            meta["df"] = df
+
+    injected_keys = 0
+    loaded_symbols = 0
+    injection_stats: dict[str, dict[str, object]] = {
+        name: {
+            "requested_missing": list(requested_keys_per_dataset.get(name, [])),
+            "loaded_keys": set(),
+            "missing_after": set(),
+            "n_rows": int(len(meta["df"])) if meta and meta.get("df") is not None else 0,
+        }
+        for name, meta in dataset_meta.items()
+    }
+    for sym in sorted(all_syms):
+        target_datasets = [
+            name
+            for name in datasets_by_symbol.get(sym, [])
+            if name in missing_keys_per_dataset
+        ]
+        if not target_datasets:
+            continue
+
+        keys_for_symbol = sorted(
+            {
+                key
+                for name in target_datasets
+                for key in missing_keys_per_dataset.get(name, [])
+            }
+        )
+        if not keys_for_symbol:
+            continue
+
+        fpath = get_feature_path(cfg["data_root"], ts_sig, sym)
+        if not os.path.exists(fpath):
+            continue
+
+        try:
+            pf = pq.ParquetFile(fpath)
+            available_cols = set(pf.schema.names)
+        except Exception as exc:
+            tprint(f"Feature injection: failed to inspect {fpath}: {exc}")
+            continue
+
+        load_cols = [k for k in keys_for_symbol if k in available_cols]
+        if not load_cols or "ts" not in available_cols:
+            continue
+
+        try:
+            feat_df = pd.read_parquet(fpath, columns=["ts", *load_cols])
+        except Exception as exc:
+            tprint(f"Feature injection: failed to load {fpath}: {exc}")
+            continue
+
+        if feat_df.empty:
+            continue
+
+        if "ts" in feat_df.columns:
+            feat_df["ts"] = pd.to_datetime(feat_df["ts"], utc=True, errors="coerce")
+            feat_df = feat_df.dropna(subset=["ts"]).drop_duplicates(
+                subset=["ts"], keep="last"
+            )
+            feat_df = feat_df.set_index("ts")
+        else:
+            feat_df.index = pd.to_datetime(feat_df.index, utc=True, errors="coerce")
+            feat_df = feat_df[~feat_df.index.isna()]
+            feat_df = feat_df[~feat_df.index.duplicated(keep="last")]
+        if feat_df.empty:
+            continue
+
+        loaded_symbols += 1
+        for name in target_datasets:
+            meta = dataset_meta.get(name)
+            if not meta:
+                continue
+            df = meta["df"]
+            s_col = meta["s_col"]
+            t_col = meta["t_col"]
+            mask = pd.Series(df[s_col]).astype(str).eq(sym).to_numpy()
+            if not mask.any():
+                continue
+            needed = [
+                k
+                for k in missing_keys_per_dataset.get(name, [])
+                if k in feat_df.columns
+            ]
+            if not needed:
+                continue
+
+            row_idx = np.flatnonzero(mask)
+            ts_vals = pd.to_datetime(df.iloc[row_idx][t_col], utc=True, errors="coerce")
+            aligned = feat_df.reindex(ts_vals)[needed]
+            block = aligned.to_numpy(dtype=np.float32, copy=False)
+            for j, col in enumerate(needed):
+                df.iloc[row_idx, df.columns.get_loc(col)] = block[:, j]
+                injection_stats.setdefault(name, {}).setdefault("loaded_keys", set()).add(col)
+                if col in meta_keys_all:
+                    raw_col = f"__meta_raw__{col}"
+                    if raw_col in df.columns:
+                        df.iloc[row_idx, df.columns.get_loc(raw_col)] = block[:, j]
+                injected_keys += 1
+
+    variant_base_groups: dict[str, dict[str, set[str]]] = {}
+    for name, stat in injection_stats.items():
+        req_missing = set(stat.get("requested_missing", []))
+        loaded = set(stat.get("loaded_keys", set()))
+        missing_after = req_missing - loaded
+        stat["missing_after"] = missing_after
+        tprint(
+            f"Feature injection [{name}]: rows={stat.get('n_rows', 0)} "
+            f"requested_missing={len(req_missing)} loaded={len(loaded)} missing_after={len(missing_after)}"
+        )
+        if missing_after:
+            tprint(
+                f"  Feature injection [{name}] missing_after sample: "
+                f"{sorted(list(missing_after))[:12]}"
+            )
+
+        base_name = name
+        variant_tag = "primary"
+        if name.endswith("_tight"):
+            base_name = name[: -len("_tight")]
+            variant_tag = "tight"
+        elif name.endswith("_wide"):
+            base_name = name[: -len("_wide")]
+            variant_tag = "wide"
+        variant_base_groups.setdefault(base_name, {})[variant_tag] = loaded
+
+    for base_name, grp in sorted(variant_base_groups.items()):
+        primary = grp.get("primary")
+        if primary is None:
+            continue
+        for variant_tag in ("tight", "wide"):
+            if variant_tag not in grp:
+                continue
+            variant_keys = grp.get(variant_tag, set())
+            missing_vs_primary = sorted(list(primary - variant_keys))
+            extra_vs_primary = sorted(list(variant_keys - primary))
+            tprint(
+                f"Feature injection parity [{base_name} vs {variant_tag}]: "
+                f"primary={len(primary)} variant={len(variant_keys)} "
+                f"missing_vs_primary={len(missing_vs_primary)} "
+                f"extra_vs_primary={len(extra_vs_primary)}"
+            )
+            if missing_vs_primary:
+                tprint(
+                    f"  Parity missing [{base_name}/{variant_tag}] sample: "
+                    f"{missing_vs_primary[:12]}"
+                )
+
+    tprint(
+        f"Feature injection: loaded {loaded_symbols} symbol files and injected requested features into {len(missing_keys_per_dataset)} datasets."
+    )
+    return datasets
 
 def _filter_artifact_by_stage_view(df, cfg):
     view = cfg.get("_active_stage_view")
@@ -5260,6 +5612,27 @@ def _filter_artifact_by_stage_view(df, cfg):
         sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
         if sym_col:
             df = df[df[sym_col].isin(view["symbols"])]
+
+    periods = view.get("allowed_periods") or None
+    if periods:
+        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
+        if ts_col:
+            df_ts = pd.to_datetime(df[ts_col], utc=True, errors="coerce")
+            mask = np.zeros(len(df), dtype=bool)
+            for period in periods:
+                if isinstance(period, dict):
+                    p_start = period.get("start_ts") or period.get("start")
+                    p_end = period.get("end_ts") or period.get("end")
+                elif isinstance(period, (list, tuple)) and len(period) >= 2:
+                    p_start, p_end = period[0], period[1]
+                else:
+                    continue
+                p_start = pd.to_datetime(p_start, utc=True, errors="coerce")
+                p_end = pd.to_datetime(p_end, utc=True, errors="coerce")
+                if pd.isna(p_start) or pd.isna(p_end) or p_end <= p_start:
+                    continue
+                mask |= (df_ts >= p_start) & (df_ts < p_end)
+            df = df.loc[mask]
 
     if view.get("allowed_start_ts") or view.get("allowed_end_ts"):
         ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
@@ -5484,10 +5857,12 @@ def _filter_artifact_by_stage_view(df, cfg):
                     target_buffers[name] = {}
                     df_len = len(datasets[name])
                     for k in batch_missing:
-                        target_buffers[name][k] = np.zeros(df_len, dtype=np.float32)
+                        target_buffers[name][k] = np.full(
+                            df_len, np.nan, dtype=np.float32
+                        )
                         if k in meta_keys_all:
-                            target_buffers[name][f"__meta_raw__{k}"] = np.zeros(
-                                df_len, dtype=np.float32
+                            target_buffers[name][f"__meta_raw__{k}"] = np.full(
+                                df_len, np.nan, dtype=np.float32
                             )
 
             if not target_buffers:
@@ -5553,9 +5928,14 @@ def _filter_artifact_by_stage_view(df, cfg):
 
             # 3. Inject batch columns directly into datasets to avoid memory spike
             for name, cols_dict in target_buffers.items():
+                if not cols_dict:
+                    continue
                 df = datasets[name]
-                for col_name, col_data in cols_dict.items():
-                    df[col_name] = col_data
+                batch_df = pd.DataFrame(cols_dict, index=df.index, copy=False)
+                df = pd.concat([df, batch_df], axis=1, copy=False)
+                datasets[name] = df
+                if name in dataset_meta:
+                    dataset_meta[name]["df"] = df
 
             elapsed = time.time() - start_time
             tprint(

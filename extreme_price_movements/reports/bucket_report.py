@@ -225,6 +225,7 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# Base Training Report — {run_id}", f"Generated: {ts}\n"]
     alpha_models = bundle.get("alpha_models", {}) if bundle else {}
+    base_variant_models = bundle.get("base_variant_models", {}) if bundle else {}
     quality_gate = bundle.get("quality_gate_report", {}) if bundle else {}
     base_rows = list(quality_gate.get("base_models", []) or [])
 
@@ -235,6 +236,7 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
             "Strategy ID",
             "Side",
             "H",
+            "Variant",
             "Model",
             "Winner",
             "AUC",
@@ -248,7 +250,11 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
             "N features",
         ]
 
-        def _feature_count(side: str, strategy_id: str, horizon: int) -> int | str:
+        def _feature_count(side: str, strategy_id: str, horizon: int, variant: str) -> int | str:
+            if variant and variant != "primary":
+                v_conf = base_variant_models.get((side, strategy_id, int(horizon), variant), {})
+                feats = v_conf.get("selected_features") or v_conf.get("feat_cols") or []
+                return len(feats) if feats else "—"
             conf = alpha_models.get(side, {}).get(strategy_id, {})
             h_conf = (conf.get("models_by_h", {}) or {}).get(int(horizon), {})
             feats = h_conf.get("selected_features") or h_conf.get("feat_cols") or []
@@ -259,6 +265,7 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
             side = str(r.get("side", ""))
             strategy_id = str(r.get("kind", ""))
             horizon = int(r.get("H", 0) or 0)
+            variant = str(r.get("variant", "primary") or "primary")
             model_name = str(r.get("model", ""))
             candidate = model_name.split(":", 1)[-1] if ":" in model_name else model_name
             winner = "✓" if bool(r.get("is_winner", False)) else ""
@@ -270,12 +277,13 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
             lift20 = _fmt(metrics.get("lift_at_20pct"))
             prec10 = _fmt(metrics.get("prec_at_10pct"))
             prec30 = _fmt(metrics.get("prec_at_30pct"))
-            n_feats = _feature_count(side, strategy_id, horizon)
+            n_feats = _feature_count(side, strategy_id, horizon, variant)
             table_rows.append(
                 [
                     strategy_id,
                     side,
                     horizon,
+                    variant,
                     candidate,
                     winner,
                     auc,
@@ -294,6 +302,7 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
                     "strategy_id": strategy_id,
                     "side": side,
                     "H": horizon,
+                    "variant": variant,
                     "model": candidate,
                     "is_winner": bool(r.get("is_winner", False)),
                     "auc": metrics.get("auc"),
@@ -313,31 +322,34 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
         lines.append("")
 
         lines.append("## Per-Strategy Summary")
-        bkt_headers = ["Strategy ID", "Side", "Deployed Hs", "Primary H", "Median AUC", "Median IC", "Median PR-AUC"]
+        bkt_headers = ["Strategy ID", "Side", "Variant", "Deployed Hs", "Primary H", "Median AUC", "Median IC", "Median PR-AUC"]
         bkt_rows = []
         for side in sorted({r["side"] for r in rows_data}):
             side_rows = [r for r in rows_data if r["side"] == side]
             for strategy_id in sorted({r["strategy_id"] for r in side_rows}):
-                sub = [r for r in side_rows if r["strategy_id"] == strategy_id]
-                if not sub:
-                    continue
-                deployed = sorted({int(r["H"]) for r in sub if r.get("H") is not None})
-                winners = [r for r in sub if r.get("is_winner")]
-                primary_h = winners[0]["H"] if winners else deployed[0]
-                auc_vals = [r["auc"] for r in sub if r.get("auc") is not None]
-                ic_vals = [r["ic_bin"] for r in sub if r.get("ic_bin") is not None]
-                pr_vals = [r["pr_auc"] for r in sub if r.get("pr_auc") is not None]
-                bkt_rows.append(
-                    [
-                        strategy_id,
-                        side,
-                        str(deployed),
-                        str(primary_h),
-                        _fmt(float(np.median(auc_vals))) if auc_vals else "—",
-                        _fmt(float(np.median(ic_vals))) if ic_vals else "—",
-                        _fmt(float(np.median(pr_vals))) if pr_vals else "—",
-                    ]
-                )
+                sub_all = [r for r in side_rows if r["strategy_id"] == strategy_id]
+                for variant in sorted({str(r.get("variant", "primary")) for r in sub_all}):
+                    sub = [r for r in sub_all if str(r.get("variant", "primary")) == variant]
+                    if not sub:
+                        continue
+                    deployed = sorted({int(r["H"]) for r in sub if r.get("H") is not None})
+                    winners = [r for r in sub if r.get("is_winner")]
+                    primary_h = winners[0]["H"] if winners else deployed[0]
+                    auc_vals = [r["auc"] for r in sub if r.get("auc") is not None]
+                    ic_vals = [r["ic_bin"] for r in sub if r.get("ic_bin") is not None]
+                    pr_vals = [r["pr_auc"] for r in sub if r.get("pr_auc") is not None]
+                    bkt_rows.append(
+                        [
+                            strategy_id,
+                            side,
+                            variant,
+                            str(deployed),
+                            str(primary_h),
+                            _fmt(float(np.median(auc_vals))) if auc_vals else "—",
+                            _fmt(float(np.median(ic_vals))) if ic_vals else "—",
+                            _fmt(float(np.median(pr_vals))) if pr_vals else "—",
+                        ]
+                    )
         lines.extend(_md_table(bkt_headers, bkt_rows))
         lines.append("")
     else:

@@ -22,11 +22,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress, spearmanr
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.linear_model import HuberRegressor, Ridge
+from sklearn.linear_model import HuberRegressor, Ridge, RidgeClassifier
 from sklearn.preprocessing import RobustScaler, StandardScaler
 
-from extreme_price_movements.src_utils_tprint import tprint
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.offline_optimisers.params_store import (
     load_inference_candidate_mask_params_per_bucket,
@@ -46,6 +46,7 @@ from extreme_price_movements.run_ridge_sizer import (
     load_meta_oof_predictions,
     load_trade_outcomes,
 )
+from extreme_price_movements.src_utils_tprint import tprint
 
 logger = logging.getLogger(__name__)
 
@@ -891,6 +892,149 @@ class SimpleHeadRidgeSizer:
         return df.sort_values("abs_weight", ascending=False)
 
 
+class SimpleHeadBarrierClassifier:
+    """Dual-head classifier predicting triple-barrier outcomes: 0=SL, 1=TIME, 2=TP."""
+
+    def __init__(
+        self,
+        alpha: float = 1.0,
+        class_weight: Optional[str] = "balanced",
+    ):
+        self.alpha = alpha
+        self.class_weight = class_weight
+        self.fold_coefs: List[np.ndarray] = []
+        self.feature_names: List[str] = []
+        self.n_classes_: int = 3
+
+    def fit_predict_oof_proba(
+        self,
+        X: np.ndarray,
+        y_labels: np.ndarray,
+        splits: List[Tuple[np.ndarray, np.ndarray]],
+        feature_names: Optional[List[str]] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """OOF probability predictions for each barrier class.
+
+        Returns:
+            oof_proba: shape (n_samples, n_classes) — class probabilities
+            oof_preds: shape (n_samples,) — hard class predictions
+        """
+        n_samples = len(y_labels)
+        classes = np.unique(y_labels)
+        self.n_classes_ = max(3, int(classes.max()) + 1)
+        oof_proba = np.zeros((n_samples, self.n_classes_), dtype=np.float32)
+        oof_preds = np.full(n_samples, -1, dtype=np.int8)
+        self.fold_coefs = []
+        self.feature_names = feature_names or [f"head_{i}" for i in range(X.shape[1])]
+
+        for tr_idx, te_idx in splits:
+            if len(tr_idx) == 0 or len(te_idx) == 0:
+                continue
+            X_tr, y_tr = X[tr_idx], y_labels[tr_idx]
+            X_te = X[te_idx]
+            if X_tr.shape[0] < 5 or X_te.shape[0] == 0:
+                continue
+
+            X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(
+                X_tr
+            )
+            X_te_clean, _, _, _, _ = clean_and_standardize(
+                X_te,
+                fit_medians=medians,
+                scaler=scaler,
+                center_1d=center_1d,
+                scale_1d=scale_1d,
+            )
+
+            base_clf = RidgeClassifier(alpha=self.alpha, class_weight=self.class_weight)
+            calibrated = CalibratedClassifierCV(
+                estimator=base_clf, cv=3, method="sigmoid"
+            )
+            try:
+                calibrated.fit(X_tr_clean, y_tr)
+                proba = calibrated.predict_proba(X_te_clean)
+                preds = calibrated.predict(X_te_clean)
+                if proba.shape[1] == self.n_classes_:
+                    oof_proba[te_idx] = proba.astype(np.float32)
+                else:
+                    full_proba = np.zeros(
+                        (len(te_idx), self.n_classes_), dtype=np.float32
+                    )
+                    for ci, cls in enumerate(calibrated.classes_):
+                        col = int(cls)
+                        if 0 <= col < self.n_classes_:
+                            full_proba[:, col] = proba[:, ci]
+                    oof_proba[te_idx] = full_proba
+                oof_preds[te_idx] = preds.astype(np.int8)
+                if hasattr(calibrated, "estimators_"):
+                    est = calibrated.estimators_[0]
+                    if hasattr(est, "coef_"):
+                        self.fold_coefs.append(est.coef_)
+            except Exception as e:
+                logger.warning(f"Barrier classifier fold failed: {e}")
+                oof_proba[te_idx, 1] = 1.0
+                oof_preds[te_idx] = 1
+
+        row_sums = oof_proba.sum(axis=1, keepdims=True)
+        oof_proba = np.where(row_sums > 1e-6, oof_proba / row_sums, oof_proba)
+        return oof_proba, oof_preds
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        if not self.fold_coefs:
+            return pd.DataFrame()
+        coef_matrix = np.array(self.fold_coefs)
+        if coef_matrix.ndim == 3:
+            mean_coefs = np.mean(np.abs(coef_matrix), axis=(0, 1))
+        else:
+            mean_coefs = np.mean(np.abs(coef_matrix), axis=0)
+        df = pd.DataFrame(
+            {
+                "head_name": self.feature_names,
+                "mean_abs_weight": mean_coefs,
+            }
+        )
+        return df.sort_values("mean_abs_weight", ascending=False)
+
+
+def calibrate_barrier_probabilities(
+    oof_proba: np.ndarray,
+    y_labels: np.ndarray,
+    method: str = "platt",
+) -> np.ndarray:
+    """Post-hoc calibration of barrier probabilities.
+
+    Applies Platt (sigmoid) scaling per-class using the full OOF predictions.
+    """
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.linear_model import LogisticRegression
+
+    n_samples, n_classes = oof_proba.shape
+    calibrated = np.zeros_like(oof_proba)
+    for cls in range(n_classes):
+        y_binary = (y_labels == cls).astype(np.int32)
+        pos_count = int(y_binary.sum())
+        neg_count = n_samples - pos_count
+        if pos_count < 10 or neg_count < 10:
+            calibrated[:, cls] = oof_proba[:, cls]
+            continue
+        try:
+            if method == "isotonic" and n_samples > 500:
+                cal = IsotonicRegression(out_of_bounds="clip")
+                cal.fit(oof_proba[:, cls], y_binary)
+                calibrated[:, cls] = np.clip(cal.transform(oof_proba[:, cls]), 0.0, 1.0)
+            else:
+                cal = LogisticRegression(C=1.0, max_iter=500)
+                cal.fit(oof_proba[:, cls].reshape(-1, 1), y_binary)
+                calibrated[:, cls] = cal.predict_proba(
+                    oof_proba[:, cls].reshape(-1, 1)
+                )[:, 1]
+        except Exception:
+            calibrated[:, cls] = oof_proba[:, cls]
+    row_sums = calibrated.sum(axis=1, keepdims=True)
+    calibrated = np.where(row_sums > 1e-6, calibrated / row_sums, calibrated)
+    return calibrated.astype(np.float32)
+
+
 def evaluate_selection_profit_proxy(
     scores: np.ndarray,
     y_raw_net_return: np.ndarray,
@@ -1074,6 +1218,8 @@ def run_simple_position_sizer(
     top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
     use_ridge_head_sizer: bool = True,
     use_et_head_sizer: bool = True,
+    use_barrier_classifier: bool = True,
+    config_feature_keys: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Main orchestrator for the simple position sizer diagnostic framework.
@@ -1082,7 +1228,9 @@ def run_simple_position_sizer(
     if lambda_grid is None:
         lambda_grid = [0.25, 0.5, 1.0, 2.0]
 
-    detected_heads = detect_meta_head_keys(feature_dict)
+    detected_heads = detect_meta_head_keys(
+        feature_dict, config_overrides=config_feature_keys
+    )
     used_keys = [k for k in detected_heads.keys() if k in feature_dict]
     missing_keys = [k for k in detected_heads.keys() if k not in feature_dict]
 
@@ -1177,7 +1325,58 @@ def run_simple_position_sizer(
             best_simple_score = ridge_oof_preds
             best_simple_score_name = "Ridge_Head_Sizer"
 
-    # --- ExtraTrees Sizer ---
+    # --- Barrier Classifier (dual-head) ---
+    barrier_clf_importance_df = pd.DataFrame()
+    barrier_clf_oof_proba: Optional[np.ndarray] = None
+    barrier_clf_oof_preds: Optional[np.ndarray] = None
+
+    _tbm_labels = None
+    if "tbm_label" in trade_outcomes.columns:
+        _tbm_labels = np.asarray(trade_outcomes["tbm_label"].values, dtype=np.int8)
+    elif all(c in trade_outcomes.columns for c in ("mfe_ret", "mae_ret", "return")):
+        _mfe = np.abs(np.asarray(trade_outcomes["mfe_ret"].values, dtype=np.float32))
+        _mae = np.abs(np.asarray(trade_outcomes["mae_ret"].values, dtype=np.float32))
+        _barrier = np.clip(np.maximum(_mae * 2.5, 1e-4), 0.005, 0.2)
+        _tp_dist = 0.50 * _barrier - cost_pct
+        _sl_dist = 0.18 * _barrier + cost_pct
+        _is_tp = _mfe >= np.maximum(_tp_dist, 1e-6)
+        _is_sl = _mae >= np.maximum(_sl_dist, 1e-6)
+        _tbm_labels = np.ones(n_samples, dtype=np.int8)
+        _tbm_labels[_is_sl & ~_is_tp] = 0
+        _tbm_labels[_is_tp] = 2
+
+    if (
+        use_barrier_classifier
+        and used_keys
+        and _tbm_labels is not None
+        and len(np.unique(_tbm_labels)) >= 2
+    ):
+        if "X_heads" not in dir() or X_heads is None:
+            X_heads = np.column_stack([feature_dict[k] for k in used_keys])
+        barrier_clf = SimpleHeadBarrierClassifier()
+        (
+            barrier_clf_oof_proba,
+            barrier_clf_oof_preds,
+        ) = barrier_clf.fit_predict_oof_proba(
+            X_heads, _tbm_labels, splits, feature_names=used_keys
+        )
+        barrier_clf_importance_df = barrier_clf.get_feature_importance()
+        barrier_clf_oof_proba = calibrate_barrier_probabilities(
+            barrier_clf_oof_proba, _tbm_labels
+        )
+        results["barrier_clf_oof_proba_"] = barrier_clf_oof_proba
+        results["barrier_clf_oof_preds_"] = barrier_clf_oof_preds
+        results["barrier_clf_importance_"] = barrier_clf_importance_df
+        results["oof_p_tp_"] = barrier_clf_oof_proba[:, 2].astype(np.float32)
+        results["oof_p_sl_"] = barrier_clf_oof_proba[:, 0].astype(np.float32)
+        results["oof_p_time_"] = barrier_clf_oof_proba[:, 1].astype(np.float32)
+        _class_counts = np.bincount(_tbm_labels.astype(int), minlength=3)
+        tprint(
+            f"Barrier Classifier: classes={dict(zip(['SL', 'TIME', 'TP'], _class_counts))} | "
+            f"mean P(TP)={np.mean(barrier_clf_oof_proba[:, 2]):.3f} "
+            f"P(SL)={np.mean(barrier_clf_oof_proba[:, 0]):.3f} "
+            f"P(TIME)={np.mean(barrier_clf_oof_proba[:, 1]):.3f}"
+        )
     et_sizer_eval: Dict[str, Any] = {}
     et_importance_df = pd.DataFrame()
     et_profit_proxy_df = pd.DataFrame()
@@ -1304,6 +1503,11 @@ def run_simple_position_sizer(
         else pd.DataFrame(),
         "opt_rets_": best_opt_rets,
         "opt_ts_": best_opt_ts,
+        "barrier_clf_importance_": barrier_clf_importance_df,
+        "barrier_clf_oof_proba_": barrier_clf_oof_proba,
+        "oof_p_tp_": results.get("oof_p_tp_"),
+        "oof_p_sl_": results.get("oof_p_sl_"),
+        "oof_p_time_": results.get("oof_p_time_"),
     }
 
 

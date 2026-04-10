@@ -94,6 +94,87 @@ def _normalize_feature_index(
     return normalized, filtered_values, "coerced_index"
 
 
+def _coerce_feature_values_float32(values) -> np.ndarray:
+    series = values if isinstance(values, pd.Series) else pd.Series(values)
+    if pd.api.types.is_numeric_dtype(series):
+        return series.to_numpy(dtype=np.float32, copy=False)
+    return pd.to_numeric(series, errors="coerce").to_numpy(dtype=np.float32, copy=False)
+
+
+def _normalize_allowed_periods(allowed_periods) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    normalized: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    if not allowed_periods:
+        return normalized
+    for period in allowed_periods:
+        if isinstance(period, dict):
+            start = period.get("start_ts") or period.get("start")
+            end = period.get("end_ts") or period.get("end")
+        elif isinstance(period, (list, tuple)) and len(period) >= 2:
+            start, end = period[0], period[1]
+        else:
+            continue
+        start_ts = pd.to_datetime(start, utc=True, errors="coerce")
+        end_ts = pd.to_datetime(end, utc=True, errors="coerce")
+        if pd.isna(start_ts) or pd.isna(end_ts) or end_ts <= start_ts:
+            continue
+        normalized.append((start_ts.tz_localize(None), end_ts.tz_localize(None)))
+    return normalized
+
+
+def _apply_allowed_periods_mask(
+    df: pd.DataFrame,
+    allowed_periods,
+) -> pd.DataFrame:
+    periods = _normalize_allowed_periods(allowed_periods)
+    if not periods or df.empty:
+        return df
+    idx = pd.to_datetime(df.index, utc=True, errors="coerce").tz_localize(None)
+    mask = np.zeros(len(df), dtype=bool)
+    for start_ts, end_ts in periods:
+        mask |= (idx >= start_ts) & (idx < end_ts)
+    if mask.any():
+        return df.loc[mask]
+    return df.iloc[0:0]
+
+
+def _build_parquet_ts_filters(
+    start_ts: pd.Timestamp | None = None,
+    end_ts: pd.Timestamp | None = None,
+    allowed_periods=None,
+):
+    """Build pyarrow parquet filters for timestamp pushdown when possible."""
+    periods = _normalize_allowed_periods(allowed_periods)
+    start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
+    end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
+
+    if start_ts is not None or end_ts is not None:
+        if not periods:
+            periods = [(start_ts, end_ts)]
+        else:
+            clipped: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+            for period_start, period_end in periods:
+                if start_ts is not None:
+                    period_start = max(period_start, start_ts)
+                if end_ts is not None:
+                    period_end = min(period_end, end_ts)
+                if period_end > period_start:
+                    clipped.append((period_start, period_end))
+            periods = clipped
+
+    if not periods:
+        return None
+
+    filters = []
+    for period_start, period_end in periods:
+        filters.append(
+            [
+                ("ts", ">=", period_start.to_pydatetime()),
+                ("ts", "<", period_end.to_pydatetime()),
+            ]
+        )
+    return filters
+
+
 def _ensure_feature_frame_index(
     df: pd.DataFrame,
     parquet_path: str | None = None,
@@ -1197,7 +1278,7 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
             for k in df.columns:
                 if k not in feat_buffers:
                     feat_buffers[k] = {}
-                feat_buffers[k][real_sym] = pd.to_numeric(df[k], errors="coerce").astype(np.float32, copy=False)
+                feat_buffers[k][real_sym] = _coerce_feature_values_float32(df[k])
 
             del df
             if i % progress_every == 0 or i == total_files:
@@ -1229,8 +1310,9 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
 
 
 class LazyFeatureDict:
-    def __init__(self, raw_data_buffers):
+    def __init__(self, raw_data_buffers, symbol_indices=None):
         self._raw = raw_data_buffers
+        self._symbol_indices = symbol_indices or {}
         self._assembled = {}
 
     def _assemble_key(self, k, log=True):
@@ -1244,7 +1326,15 @@ class LazyFeatureDict:
             clean_data = {}
             skipped_symbols = []
             normalized_symbols = []
-            for sym, (idx_vals, val_array) in data.items():
+            for sym, payload in data.items():
+                if isinstance(payload, tuple) and len(payload) == 2:
+                    idx_vals, val_array = payload
+                else:
+                    idx_vals = self._symbol_indices.get(sym)
+                    val_array = payload
+                if idx_vals is None:
+                    skipped_symbols.append(f"{sym}:missing_index")
+                    continue
                 normalized_idx, normalized_vals, reason = _normalize_feature_index(
                     idx_vals,
                     val_array,
@@ -1254,7 +1344,7 @@ class LazyFeatureDict:
                     continue
                 if reason is not None:
                     normalized_symbols.append(f"{sym}:{reason}")
-                series = pd.Series(normalized_vals, index=normalized_idx)
+                series = pd.Series(normalized_vals, index=normalized_idx, copy=False)
                 if not series.index.is_unique:
                     series = series[~series.index.duplicated(keep="last")]
                 clean_data[sym] = series
@@ -1321,6 +1411,7 @@ class LazyFeatureDict:
     def copy(self):
         cloned = LazyFeatureDict({})
         cloned._assembled = dict(self._assembled)
+        cloned._symbol_indices = dict(self._symbol_indices)
         cloned._raw = {
             k: dict(v) if isinstance(v, dict) else v
             for k, v in self._raw.items()
@@ -1350,6 +1441,7 @@ def load_features_selected(
     symbols: list[str] | set[str] | tuple[str, ...] | None = None,
     start_ts: pd.Timestamp | None = None,
     end_ts: pd.Timestamp | None = None,
+    allowed_periods=None,
 ) -> dict:
     """
     Load a subset of features/symbols from disk.
@@ -1370,6 +1462,12 @@ def load_features_selected(
     symbol_set = {_normalize_spot_symbol(str(sym)) for sym in symbols} if symbols else None
     start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
     end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
+    normalized_periods = _normalize_allowed_periods(allowed_periods)
+    parquet_filters = _build_parquet_ts_filters(
+        start_ts=start_ts,
+        end_ts=end_ts,
+        allowed_periods=normalized_periods,
+    )
     if symbol_set is not None:
         files = []
         seen = set()
@@ -1392,7 +1490,8 @@ def load_features_selected(
             tprint(f"load_features_selected: no symbol=*.parquet files found in {in_dir}")
             return None
 
-    feat_buffers: dict[str, dict[str, tuple]] = {}
+    feat_buffers: dict[str, dict[str, np.ndarray]] = {}
+    symbol_indices: dict[str, np.ndarray] = {}
 
     tprint(
         f"Found {len(files)} feature files in {in_dir}. "
@@ -1446,19 +1545,29 @@ def load_features_selected(
                 continue
 
             read_kwargs = {"columns": cols_to_read}
-            # Avoid parquet pushdown filters here. On the current per-symbol
-            # feature snapshot layout, pyarrow can return the requested rows
-            # while materializing numeric feature columns as all-NaN.
-            # Slice safely after index restoration instead.
-            df = pd.read_parquet(fpath, **read_kwargs)
+            if parquet_filters is not None and "ts" in schema_names:
+                read_kwargs["filters"] = parquet_filters
+            try:
+                df = pd.read_parquet(fpath, **read_kwargs)
+            except Exception as e:
+                if parquet_filters is not None and "ts" in schema_names:
+                    tprint(
+                        f"Parquet ts pushdown failed for {fpath}: {e}. Falling back to post-load slicing."
+                    )
+                    read_kwargs.pop("filters", None)
+                    df = pd.read_parquet(fpath, **read_kwargs)
+                else:
+                    raise
             df, index_reason = _ensure_feature_frame_index(df, parquet_path=fpath)
             if index_reason == "invalid_ts_column":
                 tprint(f"Skipping feature file {fpath}: invalid ts column")
                 continue
-            if start_ts is not None:
+            if start_ts is not None and parquet_filters is None:
                 df = df[df.index >= start_ts]
-            if end_ts is not None:
+            if end_ts is not None and parquet_filters is None:
                 df = df[df.index <= end_ts]
+            if normalized_periods and parquet_filters is None:
+                df = _apply_allowed_periods_mask(df, normalized_periods)
             if df.empty:
                 if i % progress_every == 0 or i == total_files:
                     elapsed = time.time() - start_load
@@ -1501,13 +1610,14 @@ def load_features_selected(
             df.index = normalized_idx
             if not df.index.is_unique:
                 df = df[~df.index.duplicated(keep='last')]
-            idx_vals = df.index.values
+            idx_vals = df.index.to_numpy(copy=False)
+            symbol_indices[real_sym] = idx_vals
             for k in df.columns:
                 if feature_set is not None and k not in feature_set:
                     continue
                 if k not in feat_buffers:
                     feat_buffers[k] = {}
-                feat_buffers[k][real_sym] = (idx_vals, pd.to_numeric(df[k], errors="coerce").astype(np.float32, copy=False).values)
+                feat_buffers[k][real_sym] = _coerce_feature_values_float32(df[k])
 
             del df
             if i % progress_every == 0 or i == total_files:
@@ -1523,7 +1633,7 @@ def load_features_selected(
         return None
 
     tprint(f"Loaded raw arrays for {len(feat_buffers)} features. Returning LazyFeatureDict proxy.")
-    return LazyFeatureDict(feat_buffers)
+    return LazyFeatureDict(feat_buffers, symbol_indices=symbol_indices)
 
 
 def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:

@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from extreme_price_movements.training_utils import (
+    dedupe_keep_order,
+    get_base_feature_keys,
+    get_meta_feature_keys,
+)
+
 
 _LEGACY_STRATEGIES: tuple[dict[str, Any], ...] = (
     {
@@ -50,6 +56,7 @@ def get_strategies(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         cfg_dict = cfg or {}
         sid = s["strategy_id"].lower()
         trigger = s["base_event_trigger"].lower()
+        trade_side = str(s.get("trade_side", "long")).lower()
         is_mr_raw = s.get("is_mr")
         is_tf_raw = s.get("is_tf")
         is_mr = (
@@ -65,23 +72,19 @@ def get_strategies(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
 
         feat_keys = s.get("feature_keys")
         if not feat_keys:
-            if is_mr:
-                feat_keys = cfg_dict.get("mr_feature_keys", [])
-            elif is_tf:
-                feat_keys = cfg_dict.get("tf_feature_keys", [])
-            else:
-                feat_keys = cfg_dict.get("base_feature_keys", [])
+            feat_keys = get_base_feature_keys(
+                "short" if trade_side == "short" else "long", cfg_dict
+            )
 
         meta_keys = s.get("meta_feature_keys")
         if not meta_keys:
-            base = list(cfg_dict.get("meta_feature_keys", []))
-            if is_mr:
-                extra = list(cfg_dict.get("mr_meta_feature_keys", []))
-            elif is_tf:
-                extra = list(cfg_dict.get("tf_meta_feature_keys", []))
-            else:
-                extra = []
-            meta_keys = list(dict.fromkeys(base + extra))
+            meta_keys = dedupe_keep_order(
+                get_meta_feature_keys("reg", cfg_dict)
+                + get_meta_feature_keys("clf", cfg_dict)
+                + get_meta_feature_keys("mfe", cfg_dict)
+                + get_meta_feature_keys("mae", cfg_dict)
+                + get_meta_feature_keys("asym", cfg_dict)
+            )
 
         return {
             **s,

@@ -26,6 +26,8 @@ from scipy.stats import rankdata, spearmanr
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import roc_auc_score
 
+from extreme_price_movements.utils import tprint
+
 try:
     from xgboost import XGBClassifier
 except Exception:
@@ -989,13 +991,29 @@ def run_hpo(
 
 
 # ---------------------------
-# Base ExtraTrees HPO (narrow search, shared JSON warm-start)
+# Base ExtraTrees HPO (narrow search, scope-aware JSON warm-start)
 # ---------------------------
 _BASE_HPO_JSON = "best_base_extratrees_params.json"
 
 
-def _load_base_hpo_json(out_dir: str) -> Optional[Dict[str, Any]]:
-    path = os.path.join(out_dir, _BASE_HPO_JSON)
+def _scope_suffix(scope_key: Optional[str]) -> str:
+    if not scope_key:
+        return ""
+    safe = str(scope_key).strip().replace(os.sep, "_").replace(" ", "_")
+    safe = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in safe)
+    return f"__{safe}" if safe else ""
+
+
+def _base_hpo_json_path(out_dir: str, scope_key: Optional[str] = None) -> str:
+    suffix = _scope_suffix(scope_key)
+    stem, ext = os.path.splitext(_BASE_HPO_JSON)
+    return os.path.join(out_dir, f"{stem}{suffix}{ext}")
+
+
+def _load_base_hpo_json(
+    out_dir: str, scope_key: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    path = _base_hpo_json_path(out_dir, scope_key=scope_key)
     if not os.path.exists(path):
         return None
     try:
@@ -1005,18 +1023,21 @@ def _load_base_hpo_json(out_dir: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _save_base_hpo_json(out_dir: str, payload: Dict[str, Any]) -> None:
+def _save_base_hpo_json(
+    out_dir: str, payload: Dict[str, Any], scope_key: Optional[str] = None
+) -> None:
     os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, _BASE_HPO_JSON)
+    path = _base_hpo_json_path(out_dir, scope_key=scope_key)
     with open(path, "w") as f:
         json.dump(payload, f, indent=2, default=str)
 
 
 def load_best_base_extratrees_params(
     out_dir: str = "./hpo_out",
+    scope_key: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Public API for training.py to load best params."""
-    data = _load_base_hpo_json(out_dir)
+    """Public API for training.py to load previously saved best params."""
+    data = _load_base_hpo_json(out_dir, scope_key=scope_key)
     if data is None:
         return None
     return data.get("best_params")
@@ -1071,17 +1092,20 @@ def run_base_extratrees_hpo(
     random_state: int = 42,
     out_dir: str = "./hpo_out",
     study_name: str = "base_extratrees_hpo",
+    scope_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run HPO for the base ExtraTrees classifier with a narrow search space.
 
     - 40 Optuna trials, MedianPruner (prune after 30 % of CV rounds)
     - Max 5 000 samples, sourced from diverse periods / assets
-    - Shared ``best_base_extratrees_params.json`` for warm-start
+    - Saves best params for later training reuse
     """
     X = _as_2d(X)
     y_raw = _as_1d(y)
     y_hard = (y_raw >= 0.5).astype(np.int32)
     sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32)
+
+    os.makedirs(out_dir, exist_ok=True)
 
     X, y_hard = _subsample_diverse(
         X, y_hard, symbols, max_rows=max_rows, rng_seed=random_state
@@ -1112,17 +1136,11 @@ def run_base_extratrees_hpo(
         interval_steps=1,
     )
 
-    existing = _load_base_hpo_json(out_dir)
-    storage_path = os.path.join(out_dir, f"{study_name}.db")
-    storage = f"sqlite:///{storage_path}"
-
     study = optuna.create_study(
         direction="maximize",
         study_name=study_name,
         sampler=sampler,
         pruner=pruner,
-        storage=storage,
-        load_if_exists=True,
     )
 
     def objective(trial: optuna.Trial) -> float:
@@ -1173,22 +1191,17 @@ def run_base_extratrees_hpo(
     best_params.pop("random_state", None)
 
     payload = {
-        "best_value": best_value,
         "best_params": best_params,
         "n_trials_completed": len(study.trials),
         "n_pos_at_optimisation": n_pos,
         "search_space": "base_narrow",
     }
 
-    if existing is not None and existing.get("best_value", -np.inf) >= best_value:
-        tprint(
-            f"Base HPO: existing best_value={existing['best_value']:.6f} >= "
-            f"new={best_value:.6f}. Keeping existing params."
-        )
-    else:
-        _save_base_hpo_json(out_dir, payload)
-        tprint(f"Base HPO: new best_value={best_value:.6f}. Saved to {_BASE_HPO_JSON}")
+    _save_base_hpo_json(out_dir, payload, scope_key=scope_key)
+    save_name = os.path.basename(_base_hpo_json_path(out_dir, scope_key=scope_key))
+    tprint(f"Base HPO: saved params from current run to {save_name}")
 
+    payload["best_value"] = best_value
     payload["out_dir"] = out_dir
     return payload
 

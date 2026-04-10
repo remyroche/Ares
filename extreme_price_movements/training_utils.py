@@ -1,5 +1,63 @@
-
 from typing import List, Dict, Any
+
+
+_BASE_NON_LOCATION_48H_PLUS_EXACT = {
+    "ret48h",
+    "ret72h",
+    "ret120h",
+    "rv_48h",
+    "rv_120h",
+    "spectral_entropy_ret_48",
+    "ffd_donch_dist_04_48",
+    "ffd_donch_dist_06_48",
+    "regime_transition_entropy_48h",
+    "hurst_proxy_x_regime_trend_48h",
+    "trapped_longs_96",
+    "ema20_gt_ema50",
+    "ema50_gt_ema200",
+    "ema50_ema200_spread_atr",
+    "price_lt_ema200",
+    "ema50_slope",
+    "volume_zscore_48h",
+    "return_autocorr_48",
+    "variance_ratio_10_48",
+    "volume_trend_48",
+    "volume_autocorr_48",
+    "volatility_of_volatility_48",
+    "volatility_autocorr_48",
+    "trend_slope_48h",
+    "trend_slope_120h",
+    "trend_accel_120h",
+    "rv_ratio_24_120",
+    "higher_highs_count_48h",
+    "volume_trend_alignment",
+    "trend_regime_stability",
+}
+
+_BASE_META_ONLY_EXACT = {
+    "regime_stability_24h",
+    "complexity_regime_24h",
+    "entropy_jump_24h",
+    "coherence_24",
+    "pers_24",
+    "ts_24",
+    "prog_eff_24",
+}
+
+_BASE_LOCATION_PREFIXES = (
+    "loc_",
+    "dist_from_",
+    "donch_dist_",
+    "pullback_",
+    "dist_vwap_",
+    "dist_ema",
+    "zscore_price_",
+    "dist_prior_",
+    "dist_rolling_",
+    "dist_local_",
+    "dist_range_",
+    "distance_to_",
+)
 
 def dedupe_keep_order(xs: List[str]) -> List[str]:
     seen = set()
@@ -9,6 +67,31 @@ def dedupe_keep_order(xs: List[str]) -> List[str]:
             seen.add(x)
             out.append(x)
     return out
+
+
+def _is_location_feature(name: str) -> bool:
+    if name.startswith(_BASE_LOCATION_PREFIXES):
+        return True
+    if name in {
+        "dist_weekly_vwap",
+        "bars_since_ema20_ema50_cross_log_norm",
+        "bars_in_high_vol_state_log_norm",
+        "bars_outside_ema20_atr_band_log_norm",
+        "loc_pullback_depth_48",
+    }:
+        return True
+    return False
+
+
+def _filter_base_feature_keys(keys: List[str]) -> List[str]:
+    filtered: List[str] = []
+    for key in keys:
+        if key in _BASE_META_ONLY_EXACT:
+            continue
+        if key in _BASE_NON_LOCATION_48H_PLUS_EXACT and not _is_location_feature(key):
+            continue
+        filtered.append(key)
+    return filtered
 
 def expand_feature_group_refs(keys: List[str], cfg: Dict[str, Any], visited=None) -> List[str]:
     if visited is None:
@@ -46,7 +129,7 @@ def get_base_feature_keys(side: str, cfg: Dict[str, Any]) -> List[str]:
     else:
         specific = expand_feature_group_refs(cfg.get("base_short_feature_keys", []), cfg)
 
-    return dedupe_keep_order(shared + specific)
+    return dedupe_keep_order(_filter_base_feature_keys(shared + specific))
 
 def get_meta_feature_keys(head: str, cfg: Dict[str, Any]) -> List[str]:
     if head not in {"reg", "clf", "mfe", "mae", "asym"}:

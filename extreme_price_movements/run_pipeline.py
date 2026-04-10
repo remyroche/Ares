@@ -929,6 +929,13 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         )
         return
 
+    if not meta_only:
+        tprint("STEP: BASE HPO")
+        try:
+            run_base_hpo_step(ts_sig, cfg)
+        except Exception as e:
+            tprint(f"WARNING: Base HPO failed: {e}")
+
     state = run_training_step(
         ts_sig,
         cfg,
@@ -939,13 +946,6 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
     )
     if state:
         tprint("TRAINING PIPELINE COMPLETE")
-
-        if base_only and not meta_only:
-            tprint("STEP: BASE HPO")
-            try:
-                run_base_hpo_step(ts_sig, cfg)
-            except Exception as e:
-                tprint(f"WARNING: Base HPO failed: {e}")
 
         # Run breakdown diagnostics after base training
         try:
@@ -1220,16 +1220,6 @@ def run_all(cfg, ts_override=None):
 
     run_train(cfg, ts_override=ts_override, store=store)
     _maintenance_checkpoint("run_all:after_train")
-
-    # Base HPO: optimise ExtraTrees hyper-parameters from pooled label data
-    ts_sig = _resolve_ts_sig(cfg, ts_override)
-    if ts_sig:
-        tprint("STEP: BASE HPO")
-        try:
-            run_base_hpo_step(ts_sig, cfg)
-        except Exception as e:
-            tprint(f"WARNING: Base HPO failed: {e}")
-    _maintenance_checkpoint("run_all:after_base_hpo")
 
     # 1. Optimise: learn entry policy (fill model + delta) using default sizing/risk
     #    This ensures ridge_sizer sees the correct trade filter.

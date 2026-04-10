@@ -92,6 +92,8 @@ def compute_event_fingerprint(events_df: pd.DataFrame) -> dict:
 def slice_plan_is_stale(existing: dict, current_fingerprint: dict, planner_cfg: dict, allocation_targets: dict = None) -> bool:
     if not existing:
         return True
+    if int(existing.get("version", 0) or 0) != 2:
+        return True
     if existing.get("event_fingerprint") != current_fingerprint:
         return True
 
@@ -110,7 +112,11 @@ def _serialize_consumer_plan(cp: ConsumerSlicePlan) -> dict:
         "tag": cp.tag,
         "fit_idx": cp.fit_idx.tolist() if cp.fit_idx is not None else [],
         "predict_idx": cp.predict_idx.tolist() if cp.predict_idx is not None else [],
-        "val_idx": cp.val_idx.tolist() if cp.val_idx is not None else None,
+        "val_idx": (
+            getattr(cp, "val_idx", None).tolist()
+            if getattr(cp, "val_idx", None) is not None
+            else None
+        ),
         "symbols_fit": list(cp.symbols_fit) if cp.symbols_fit else [],
         "symbols_predict": list(cp.symbols_predict) if cp.symbols_predict else [],
         "metadata": cp.metadata,
@@ -155,6 +161,119 @@ def _build_stage_view(stage_name: str, consumer_plans: list[ConsumerSlicePlan], 
     }
 
 
+def _stable_hash_int(text: str) -> int:
+    return int(hashlib.md5(text.encode("utf-8")).hexdigest()[:8], 16)
+
+
+def _build_week_windows(start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> list[dict]:
+    if start_ts is None or end_ts is None or pd.isna(start_ts) or pd.isna(end_ts):
+        return []
+    start_ts = pd.to_datetime(start_ts, utc=True)
+    end_ts = pd.to_datetime(end_ts, utc=True)
+    if end_ts <= start_ts:
+        return []
+
+    windows: list[dict] = []
+    cur = start_ts
+    step = pd.Timedelta(days=7)
+    while cur < end_ts:
+        nxt = min(cur + step, end_ts)
+        windows.append({"start_ts": cur.isoformat(), "end_ts": nxt.isoformat()})
+        cur = nxt
+    return windows
+
+
+def _largest_remainder_counts(weights: list[float], total: int) -> list[int]:
+    if total <= 0 or not weights:
+        return [0 for _ in weights]
+    weight_sum = float(sum(max(float(w), 0.0) for w in weights))
+    if weight_sum <= 0.0:
+        weight_sum = float(len(weights))
+        weights = [1.0 for _ in weights]
+    raw = [max(float(w), 0.0) / weight_sum * float(total) for w in weights]
+    counts = [int(np.floor(x)) for x in raw]
+    remainder = int(total - sum(counts))
+    if remainder > 0:
+        order = sorted(
+            range(len(weights)),
+            key=lambda i: (raw[i] - counts[i], weights[i], -i),
+            reverse=True,
+        )
+        for i in order[:remainder]:
+            counts[i] += 1
+    return counts
+
+
+def _assign_interleaved_week_periods(
+    materialized_views: dict,
+    allocation_targets: dict,
+    run_id: str,
+) -> None:
+    stage_order = [
+        "train_base",
+        "train_meta",
+        "sizer_train",
+        "utility_policy_optimisation",
+        "holdout_strategy_eval",
+    ]
+    stage_names = [s for s in stage_order if s in materialized_views]
+    if not stage_names:
+        return
+
+    starts = []
+    ends = []
+    for stage_name in stage_names:
+        view = materialized_views.get(stage_name, {})
+        if view.get("allowed_start_ts"):
+            starts.append(pd.to_datetime(view["allowed_start_ts"], utc=True))
+        if view.get("allowed_end_ts"):
+            ends.append(pd.to_datetime(view["allowed_end_ts"], utc=True))
+
+    if not starts or not ends:
+        return
+
+    global_start = min(starts)
+    global_end = max(ends)
+    week_windows = _build_week_windows(global_start, global_end)
+    if not week_windows:
+        return
+
+    weights = [float(allocation_targets.get(stage_name, 0.0) or 0.0) for stage_name in stage_names]
+    counts = _largest_remainder_counts(weights, len(week_windows))
+    if sum(counts) <= 0:
+        counts = _largest_remainder_counts([1.0 for _ in stage_names], len(week_windows))
+
+    permuted_week_idxs = sorted(
+        range(len(week_windows)),
+        key=lambda i: _stable_hash_int(f"{run_id}:{i}"),
+    )
+    remaining = {stage_name: counts[idx] for idx, stage_name in enumerate(stage_names)}
+    assigned_periods: dict[str, list[dict]] = {stage_name: [] for stage_name in stage_names}
+
+    for week_idx in permuted_week_idxs:
+        candidates = [s for s in stage_names if remaining.get(s, 0) > 0]
+        if not candidates:
+            break
+        chosen = max(
+            candidates,
+            key=lambda s: (
+                remaining.get(s, 0),
+                float(allocation_targets.get(s, 0.0) or 0.0),
+                -stage_names.index(s),
+            ),
+        )
+        assigned_periods[chosen].append(week_windows[week_idx])
+        remaining[chosen] -= 1
+
+    for stage_name in stage_names:
+        materialized_views[stage_name]["allowed_periods"] = assigned_periods[stage_name]
+        materialized_views[stage_name]["week_allocation"] = {
+            "mode": "interleaved_weeks",
+            "allocated_weeks": len(assigned_periods[stage_name]),
+            "total_weeks": len(week_windows),
+        }
+
+
 def build_slice_plan(
     events_df: pd.DataFrame,
     planner_config: SlicePlannerConfig,
@@ -196,8 +315,10 @@ def build_slice_plan(
 
     fingerprint = compute_event_fingerprint(events_df)
 
+    _assign_interleaved_week_periods(materialized_views, allocation_targets, run_id)
+
     payload = {
-        "version": 1,
+        "version": 2,
         "run_id": run_id,
         "ts_sig": ts_sig.isoformat(),
         "planner": {
@@ -305,7 +426,25 @@ def restrict_stage_period(stage_view: dict, max_months: Optional[int]) -> dict:
     duration = pd.DateOffset(months=max_months)
     new_start_ts = max(start_ts, end_ts - duration)
 
+    def _intersect_period(period: dict) -> dict | None:
+        p_start = pd.to_datetime(period.get("start_ts") or period.get("start"), utc=True, errors="coerce")
+        p_end = pd.to_datetime(period.get("end_ts") or period.get("end"), utc=True, errors="coerce")
+        if pd.isna(p_start) or pd.isna(p_end):
+            return None
+        p_start = max(p_start, new_start_ts)
+        p_end = min(p_end, end_ts)
+        if p_end <= p_start:
+            return None
+        return {"start_ts": p_start.isoformat(), "end_ts": p_end.isoformat()}
+
     new_view = dict(stage_view)
+    if stage_view.get("allowed_periods"):
+        new_periods = []
+        for period in stage_view["allowed_periods"]:
+            clipped = _intersect_period(period)
+            if clipped is not None:
+                new_periods.append(clipped)
+        new_view["allowed_periods"] = new_periods
     new_view["allowed_start_ts"] = new_start_ts.isoformat()
     tprint(f"[{stage_view.get('stage_name', 'stage')}] Downscaled period from {start_ts_str} to {new_start_ts.isoformat()} (effective start), end {end_ts_str} based on max_months={max_months}")
     return new_view
@@ -332,6 +471,7 @@ def load_features_for_stage(
 
     start_ts = pd.to_datetime(start_ts_str) if start_ts_str else None
     end_ts = pd.to_datetime(end_ts_str) if end_ts_str else None
+    allowed_periods = stage_view.get("allowed_periods") or None
 
     if start_ts and lookback_pad:
         start_ts = start_ts - lookback_pad
@@ -346,5 +486,6 @@ def load_features_for_stage(
         feature_keys=feature_keys,
         symbols=symbols,
         start_ts=start_ts,
-        end_ts=end_ts
+        end_ts=end_ts,
+        allowed_periods=allowed_periods,
     )

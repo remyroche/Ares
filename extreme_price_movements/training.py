@@ -6758,10 +6758,13 @@ def build_excursion_targets(
     mfe_norm = np.maximum(mfe / atr_safe, 0.0)
     mae_norm = np.maximum(mae / atr_safe, 0.0)
 
-    y_mfe = np.log1p(mfe_norm)
+    mfe_cap = np.clip(mfe_norm, 0.0, 3.0)
+    y_mfe = np.log1p(np.maximum(mfe_cap - 0.1, 0.0))
     y_mae = np.log1p(mae_norm)
 
-    y_asym = np.log(mfe_norm + eps_asym) - np.log(mae_norm + eps_asym)
+    # Use a bounded continuous ratio for asymmetry
+    c = 0.5  # scaling constant
+    y_asym = (mfe_norm - mae_norm) / (mfe_norm + mae_norm + c)
 
     return {
         "mfe_norm": mfe_norm,
@@ -7996,7 +7999,7 @@ def train_meta_models_from_artifacts(
 
         mae_target_variants = [
             str(v).lower()
-            for v in list(cfg.get("aux_mae_target_variants", ["rank_pct", "qbin_mid"]))
+            for v in list(cfg.get("aux_mae_target_variants", ["log_raw"]))
         ]
         mae_weight_variants = [
             str(v).lower()
@@ -8045,7 +8048,7 @@ def train_meta_models_from_artifacts(
 
         mfe_target_variants = [
             str(v).lower()
-            for v in list(cfg.get("aux_mfe_target_variants", ["rank_pct", "qbin_mid"]))
+            for v in list(cfg.get("aux_mfe_target_variants", ["log_raw"]))
         ]
         mfe_weight_variants = [
             str(v).lower()
@@ -8096,7 +8099,7 @@ def train_meta_models_from_artifacts(
         asym_target_variants = [
             str(v).lower()
             for v in list(
-                cfg.get("aux_asym_target_variants", ["log_raw", "rank_pct", "qbin_mid"])
+                cfg.get("aux_asym_target_variants", ["log_raw"])
             )
         ]
         asym_weight_variants = [
@@ -8518,18 +8521,6 @@ def train_meta_models_from_artifacts(
         )
 
         def _mae_train_target_full():
-            if mae_target_choice == "rank_pct":
-                return _rank_pct_target(y_mae_fit)
-            if mae_target_choice == "rank_tail_amp":
-                return _rank_tail_amp_target(
-                    y_mae_fit,
-                    top_start=float(cfg.get("aux_head_rank_tail_start", 0.70)),
-                    amp=float(cfg.get("aux_head_rank_tail_amp", 0.50)),
-                )
-            if mae_target_choice == "qbin_mid":
-                return _qbin_mid_target(
-                    y_mae_fit, n_bins=int(cfg.get("aux_mae_qbin_bins", 20))
-                )
             return y_mae_fit
 
         def _mae_train_weights_full():
@@ -8543,18 +8534,6 @@ def train_meta_models_from_artifacts(
             )
 
         def _mfe_train_target_full():
-            if mfe_target_choice == "rank_pct":
-                return _rank_pct_target(y_mfe_fit)
-            if mfe_target_choice == "rank_tail_amp":
-                return _rank_tail_amp_target(
-                    y_mfe_fit,
-                    top_start=float(cfg.get("aux_head_rank_tail_start", 0.70)),
-                    amp=float(cfg.get("aux_head_rank_tail_amp", 0.50)),
-                )
-            if mfe_target_choice == "qbin_mid":
-                return _qbin_mid_target(
-                    y_mfe_fit, n_bins=int(cfg.get("aux_mfe_qbin_bins", 20))
-                )
             return y_mfe_fit
 
         def _mfe_train_weights_full():
@@ -8568,18 +8547,6 @@ def train_meta_models_from_artifacts(
             )
 
         def _asym_train_target_full():
-            if asym_target_choice == "rank_pct":
-                return _rank_pct_target(y_asym_fit)
-            if asym_target_choice == "rank_tail_amp":
-                return _rank_tail_amp_target(
-                    y_asym_fit,
-                    top_start=float(cfg.get("aux_head_rank_tail_start", 0.70)),
-                    amp=float(cfg.get("aux_head_rank_tail_amp", 0.50)),
-                )
-            if asym_target_choice == "qbin_mid":
-                return _qbin_mid_target(
-                    y_asym_fit, n_bins=int(cfg.get("aux_asym_qbin_bins", 20))
-                )
             return y_asym_fit
 
         def _asym_train_weights_full():
@@ -8618,133 +8585,9 @@ def train_meta_models_from_artifacts(
                 "y": _asym_ref_y,
             }
 
-        def _resolve_aux_head_final_model_kind(head_name):
-            _default = "lgbm" if LGBMRegressor is not None else "extratrees"
-            _raw = cfg.get(f"aux_{head_name}_final_model_kind", _default)
-            _kind = str(_raw).lower().strip()
-            if _kind in ("et", "extra_trees"):
-                _kind = "extratrees"
-            if _kind == "lgbm" and LGBMRegressor is None:
-                _kind = "extratrees"
-            if _kind not in {"lgbm", "extratrees", "ridge"}:
-                _kind = _default
-            return _kind
-
-        _mae_model_race = []
-        _mfe_model_race = []
-        _asym_model_race = []
-        mae_final_model_kind = _resolve_aux_head_final_model_kind("mae_q70")
-        mfe_final_model_kind = _resolve_aux_head_final_model_kind("mfe")
-        asym_final_model_kind = _resolve_aux_head_final_model_kind("asym")
-        if bool(cfg.get("aux_head_run_model_race_on_winner", False)):
-            tprint(
-                "Meta aux heads: ignoring aux_head_run_model_race_on_winner=True; "
-                "using fixed pre-pull model families with updated hyperparameters."
-            )
-        if False:
-            _mae_race_target = _mae_train_target_full()
-            _mae_race_w = _normalize_clip_weights(
-                valid_mae.astype(float) * tm.astype(float)
-            )
-            mae_final_model_kind, _mae_model_race = _run_head_model_race(
-                head_name="mae_q70",
-                idx_cols=idx_q,
-                y_fit_log=y_mae_fit,
-                y_fit_train_target=_mae_race_target,
-                base_w=_mae_race_w,
-                target_choice=mae_target_choice,
-                weight_choice=mae_weight_choice,
-                weight_lambda=mae_weight_lambda,
-            )
-            if _mae_model_race:
-                oof_mae_q70 = np.asarray(_mae_model_race[0]["oof"], dtype=float)
-                _fs_report["mae_q70"]["model_race_top"] = [
-                    {
-                        "model": r["model"],
-                        "ic": float(r["metrics"]["ic"]),
-                        "ic_top30": float(r["metrics"]["ic_top30"]),
-                        "ic_top20": float(r["metrics"].get("ic_top20", np.nan)),
-                        "ic_top10": float(r["metrics"].get("ic_top10", np.nan)),
-                        "ece_top30": float(r["metrics"]["ece_top30"]),
-                        "mono": float(r["metrics"]["mono"]),
-                        "stability": float(r["metrics"]["stability"]),
-                        "stability_top30": float(
-                            r["metrics"].get("stability_top30", np.nan)
-                        ),
-                        "score": float(r["metrics"]["score"]),
-                    }
-                    for r in _mae_model_race[:3]
-                ]
-            _mfe_race_target = _mfe_train_target_full()
-            _mfe_race_w = _normalize_clip_weights(
-                valid_mfe.astype(float) * tm.astype(float)
-            )
-            mfe_final_model_kind, _mfe_model_race = _run_head_model_race(
-                head_name="mfe",
-                idx_cols=idx_mfe,
-                y_fit_log=y_mfe_fit,
-                y_fit_train_target=_mfe_race_target,
-                base_w=_mfe_race_w,
-                target_choice=mfe_target_choice,
-                weight_choice=mfe_weight_choice,
-                weight_lambda=mfe_weight_lambda,
-            )
-            if _mfe_model_race:
-                oof_mfe = np.asarray(_mfe_model_race[0]["oof"], dtype=float)
-                _fs_report["mfe"]["model_race_top"] = [
-                    {
-                        "model": r["model"],
-                        "ic": float(r["metrics"]["ic"]),
-                        "ic_top30": float(r["metrics"]["ic_top30"]),
-                        "ic_top20": float(r["metrics"].get("ic_top20", np.nan)),
-                        "ic_top10": float(r["metrics"].get("ic_top10", np.nan)),
-                        "ece_top30": float(r["metrics"]["ece_top30"]),
-                        "mono": float(r["metrics"]["mono"]),
-                        "stability": float(r["metrics"]["stability"]),
-                        "stability_top30": float(
-                            r["metrics"].get("stability_top30", np.nan)
-                        ),
-                        "score": float(r["metrics"]["score"]),
-                    }
-                    for r in _mfe_model_race[:3]
-                ]
-
-            _asym_race_target = _asym_train_target_full()
-            _asym_race_w = _normalize_clip_weights(
-                valid_asym.astype(float) * tm.astype(float)
-            )
-            asym_final_model_kind, _asym_model_race = _run_head_model_race(
-                head_name="asym",
-                idx_cols=idx_asym,
-                y_fit_log=y_asym_fit,
-                y_fit_train_target=_asym_race_target,
-                base_w=_asym_race_w,
-                target_choice=asym_target_choice,
-                weight_choice=asym_weight_choice,
-                weight_lambda=asym_weight_lambda,
-            )
-            if _asym_model_race:
-                oof_asym = np.asarray(_asym_model_race[0]["oof"], dtype=float)
-                if "asym" not in _fs_report:
-                    _fs_report["asym"] = {}
-                _fs_report["asym"]["model_race_top"] = [
-                    {
-                        "model": r["model"],
-                        "ic": float(r["metrics"]["ic"]),
-                        "ic_top30": float(r["metrics"]["ic_top30"]),
-                        "ic_top20": float(r["metrics"].get("ic_top20", np.nan)),
-                        "ic_top10": float(r["metrics"].get("ic_top10", np.nan)),
-                        "ece_top30": float(r["metrics"]["ece_top30"]),
-                        "mono": float(r["metrics"]["mono"]),
-                        "stability": float(r["metrics"]["stability"]),
-                        "stability_top30": float(
-                            r["metrics"].get("stability_top30", np.nan)
-                        ),
-                        "score": float(r["metrics"]["score"]),
-                    }
-                    for r in _asym_model_race[:3]
-                ]
-
+        mae_final_model_kind = "xgb_parallel_forest"
+        mfe_final_model_kind = "xgb_parallel_forest"
+        asym_final_model_kind = "xgb_parallel_forest"
         _fs_report["mae_q70"]["final_model_choice"] = mae_final_model_kind
         _fs_report["mfe"]["final_model_choice"] = mfe_final_model_kind
         _fs_report["asym"]["final_model_choice"] = asym_final_model_kind
@@ -8762,87 +8605,21 @@ def train_meta_models_from_artifacts(
         if len(idx_q) > 0 and np.any(valid_mae & tm) and do_full_inference_retrain:
             y_mae_final_fit = _mae_train_target_full()
             w_mae_full = _mae_train_weights_full()
-            if mae_final_model_kind == "lgbm" and LGBMRegressor is not None:
-                m_mae_final = LGBMRegressor(
-                    objective="regression",
-                    n_estimators=500,
-                    learning_rate=0.03,
-                    num_leaves=63,
-                    min_child_samples=50,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    random_state=42,
-                    n_jobs=2,
-                )
-                m_mae_final.fit(Xv[:, idx_q], y_mae_final_fit, sample_weight=w_mae_full)
-            elif mae_final_model_kind == "ridge":
-                from sklearn.linear_model import Ridge
-                from sklearn.pipeline import make_pipeline
-                from sklearn.preprocessing import RobustScaler
-
-                m_mae_final = make_pipeline(
-                    RobustScaler(),
-                    Ridge(
-                        alpha=float(cfg.get("aux_head_ridge_alpha_default", 1.0)),
-                        random_state=42,
-                    ),
-                )
-                m_mae_final.fit(
-                    Xv[:, idx_q], y_mae_final_fit, ridge__sample_weight=w_mae_full
-                )
-            else:
-                m_mae_final = ExtraTreesRegressor(
-                    n_estimators=150,
-                    max_depth=5,
-                    min_samples_leaf=20,
-                    random_state=42,
-                    n_jobs=2,
-                )
-                m_mae_final.fit(Xv[:, idx_q], y_mae_final_fit, sample_weight=w_mae_full)
+            m_mae_final = _configure_meta_reg(f"mae_q70_final_{bucket_id}", "aux_mae_selector_cfg")
+            m_mae_final.fit(
+                pd.DataFrame(Xv[:, idx_q], columns=[f"f_{i}" for i in range(len(idx_q))]),
+                y_mae_final_fit,
+                sample_weight=w_mae_full,
+            )
         if len(idx_mfe) > 0 and np.any(valid_mfe & tm) and do_full_inference_retrain:
             y_mfe_final_fit = _mfe_train_target_full()
             w_mfe_full = _mfe_train_weights_full()
-            if mfe_final_model_kind == "lgbm" and LGBMRegressor is not None:
-                m_mfe_final = LGBMRegressor(
-                    objective="regression",
-                    n_estimators=500,
-                    learning_rate=0.03,
-                    num_leaves=63,
-                    min_child_samples=50,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    random_state=42,
-                    n_jobs=2,
-                )
-                m_mfe_final.fit(
-                    Xv[:, idx_mfe], y_mfe_final_fit, sample_weight=w_mfe_full
-                )
-            elif mfe_final_model_kind == "ridge":
-                from sklearn.linear_model import Ridge
-                from sklearn.pipeline import make_pipeline
-                from sklearn.preprocessing import RobustScaler
-
-                m_mfe_final = make_pipeline(
-                    RobustScaler(),
-                    Ridge(
-                        alpha=float(cfg.get("aux_head_ridge_alpha_default", 1.0)),
-                        random_state=42,
-                    ),
-                )
-                m_mfe_final.fit(
-                    Xv[:, idx_mfe], y_mfe_final_fit, ridge__sample_weight=w_mfe_full
-                )
-            else:
-                m_mfe_final = ExtraTreesRegressor(
-                    n_estimators=150,
-                    max_depth=5,
-                    min_samples_leaf=20,
-                    random_state=42,
-                    n_jobs=2,
-                )
-                m_mfe_final.fit(
-                    Xv[:, idx_mfe], y_mfe_final_fit, sample_weight=w_mfe_full
-                )
+            m_mfe_final = _configure_meta_reg(f"mfe_final_{bucket_id}", "aux_mfe_selector_cfg")
+            m_mfe_final.fit(
+                pd.DataFrame(Xv[:, idx_mfe], columns=[f"f_{i}" for i in range(len(idx_mfe))]),
+                y_mfe_final_fit,
+                sample_weight=w_mfe_full,
+            )
 
         _heads_out = {
             "oof_u_hat": oof_u_hat,
@@ -8880,54 +8657,12 @@ def train_meta_models_from_artifacts(
                 np.arange(len(y_asym_fit)),
                 weight_lambda=asym_weight_lambda,
             )
-            if asym_final_model_kind == "lgbm" and LGBMRegressor is not None:
-                m_asym_final = LGBMRegressor(
-                    objective="regression",
-                    n_estimators=500,
-                    learning_rate=0.03,
-                    num_leaves=63,
-                    min_child_samples=50,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    random_state=42,
-                    n_jobs=2,
-                )
-                m_asym_final.fit(
-                    Xv[:, idx_asym],
-                    _asym_train_target_full(),
-                    sample_weight=_asym_full_w,
-                )
-            elif asym_final_model_kind == "ridge":
-                from sklearn.linear_model import Ridge
-                from sklearn.pipeline import make_pipeline
-                from sklearn.preprocessing import RobustScaler
-
-                m_asym_final = make_pipeline(
-                    RobustScaler(),
-                    Ridge(
-                        alpha=float(cfg.get("aux_head_ridge_alpha_default", 1.0)),
-                        random_state=42,
-                    ),
-                )
-                m_asym_final.fit(
-                    Xv[:, idx_asym],
-                    _asym_train_target_full(),
-                    ridge__sample_weight=_asym_full_w,
-                )
-            else:
-                m_asym_final = ExtraTreesRegressor(
-                    n_estimators=int(cfg.get("meta_aux_trees", 200)),
-                    max_depth=int(cfg.get("meta_aux_depth", 8)),
-                    min_samples_leaf=int(cfg.get("meta_aux_min_leaf", 128)),
-                    max_features="sqrt",
-                    random_state=42,
-                    n_jobs=2,
-                )
-                m_asym_final.fit(
-                    Xv[:, idx_asym],
-                    _asym_train_target_full(),
-                    sample_weight=_asym_full_w,
-                )
+            m_asym_final = _configure_meta_reg(f"asym_final_{bucket_id}", "aux_asym_selector_cfg")
+            m_asym_final.fit(
+                pd.DataFrame(Xv[:, idx_asym], columns=[f"f_{i}" for i in range(len(idx_asym))]),
+                _asym_train_target_full(),
+                sample_weight=_asym_full_w,
+            )
 
         heads_meta = {
             "mae_q70": AuxHeadWrapper(
@@ -9460,7 +9195,7 @@ def train_meta_models_from_artifacts(
             ).astype(np.float32)
             _weights_asym = _meta_map_weights(_target_asym, df, trade_mask)
             _head_name_asym = f"{_bucket_key}_asym_h{int(_h)}"
-            _model_asym = _configure_meta_reg(_head_name_asym, "aux_mfe_selector_cfg")
+            _model_asym = _configure_meta_reg(_head_name_asym, "aux_asym_selector_cfg")
             _model_asym.fit(
                 X_meta_base,
                 _target_asym,

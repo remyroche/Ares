@@ -16,17 +16,15 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, Tuple, Optional, List, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from sklearn.metrics import roc_auc_score
-from scipy.stats import spearmanr, rankdata
-
 import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
-
+from scipy.stats import rankdata, spearmanr
 from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.metrics import roc_auc_score
 
 try:
     from xgboost import XGBClassifier
@@ -53,7 +51,13 @@ except Exception:
 # Purged K-Fold (count-based)
 # ---------------------------
 class PurgedKFold:
-    def __init__(self, n_splits: int = 5, purge: int = 5, embargo: int = 0, min_train_size: Optional[int] = None):
+    def __init__(
+        self,
+        n_splits: int = 5,
+        purge: int = 5,
+        embargo: int = 0,
+        min_train_size: Optional[int] = None,
+    ):
         if n_splits < 2:
             raise ValueError("n_splits must be >=2")
         self.n_splits = int(n_splits)
@@ -111,9 +115,11 @@ def _as_2d(X: np.ndarray) -> np.ndarray:
         raise ValueError(f"X must be 2D, got {X.shape}")
     return X
 
+
 def _as_1d(y: np.ndarray) -> np.ndarray:
     y = np.asarray(y).ravel()
     return y
+
 
 def get_class_weight_balanced(y01: np.ndarray) -> Dict[int, float]:
     y = np.asarray(y01, dtype=np.int32)
@@ -131,15 +137,18 @@ def get_class_weight_balanced(y01: np.ndarray) -> Dict[int, float]:
 def build_extratrees(params: Dict[str, Any]) -> ExtraTreesClassifier:
     return ExtraTreesClassifier(**params)
 
+
 def build_xgboost(params: Dict[str, Any]) -> Any:
     if XGBClassifier is None:
         raise RuntimeError("xgboost not installed")
     return XGBClassifier(**params)
 
+
 def build_lightgbm(params: Dict[str, Any]) -> Any:
     if LGBMClassifier is None:
         raise RuntimeError("lightgbm not installed")
     return LGBMClassifier(**params)
+
 
 def build_catboost(params: Dict[str, Any]) -> Any:
     if CatBoostClassifier is None:
@@ -150,7 +159,7 @@ def build_catboost(params: Dict[str, Any]) -> Any:
 # ---------------------------
 # Model-name → suggest / build dispatch
 # ---------------------------
-_SUGGEST_FN = {}   # populated after function definitions below
+_SUGGEST_FN = {}  # populated after function definitions below
 _BUILD_FN = {
     "extratrees": build_extratrees,
     "xgboost": build_xgboost,
@@ -162,19 +171,27 @@ _BUILD_FN = {
 # ---------------------------
 # Optuna search spaces (crypto-noise tuned)
 # ---------------------------
-def suggest_extratrees(trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000) -> Dict[str, Any]:
+def suggest_extratrees(
+    trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000
+) -> Dict[str, Any]:
     """ExtraTrees — constrain hard to avoid overfitting noise."""
     n_estimators = trial.suggest_int("n_estimators", 300, 2000, step=200)
     max_depth = trial.suggest_int("max_depth", 3, 10)
-    
-    # Dynamic Regularization based on POSITIVE samples
-    n_pos = int(n_samples) # n_samples is passed as n_pos from make_objective
-    min_leaf_dyn = max(75, int(n_pos * 0.015)) # Increased to 1.5%
-    
-    min_samples_leaf = trial.suggest_int("min_samples_leaf", min_leaf_dyn, max(400, int(n_pos * 0.05)), log=True)
-    min_samples_split = trial.suggest_int("min_samples_split", min_leaf_dyn * 2, max(800, int(n_pos * 0.10)), log=True)
 
-    max_feat_mode = trial.suggest_categorical("max_features_mode", ["sqrt", "log2", "frac"])
+    # Dynamic Regularization based on POSITIVE samples
+    n_pos = int(n_samples)  # n_samples is passed as n_pos from make_objective
+    min_leaf_dyn = max(75, int(n_pos * 0.015))  # Increased to 1.5%
+
+    min_samples_leaf = trial.suggest_int(
+        "min_samples_leaf", min_leaf_dyn, max(400, int(n_pos * 0.05)), log=True
+    )
+    min_samples_split = trial.suggest_int(
+        "min_samples_split", min_leaf_dyn * 2, max(800, int(n_pos * 0.10)), log=True
+    )
+
+    max_feat_mode = trial.suggest_categorical(
+        "max_features_mode", ["sqrt", "log2", "frac"]
+    )
     if max_feat_mode == "frac":
         max_features = trial.suggest_float("max_features_frac", 0.2, 0.8)
     else:
@@ -184,14 +201,18 @@ def suggest_extratrees(trial: optuna.Trial, *, base_random_state: int = 42, n_sa
     use_oob = bootstrap and trial.suggest_categorical("use_oob", [False, False, True])
 
     criterion = trial.suggest_categorical("criterion", ["gini", "log_loss"])
-    class_weight_mode = trial.suggest_categorical("class_weight_mode", ["none", "balanced"])
+    class_weight_mode = trial.suggest_categorical(
+        "class_weight_mode", ["none", "balanced"]
+    )
     class_weight = None if class_weight_mode == "none" else "balanced"
 
     max_samples = None
     if bootstrap:
         max_samples = trial.suggest_float("max_samples", 0.5, 0.95)
 
-    min_impurity_decrease = trial.suggest_float("min_impurity_decrease", 1e-6, 1e-2, log=True)
+    min_impurity_decrease = trial.suggest_float(
+        "min_impurity_decrease", 1e-6, 1e-2, log=True
+    )
     ccp_alpha = trial.suggest_float("ccp_alpha", 0.0, 1e-2)
 
     return {
@@ -212,17 +233,24 @@ def suggest_extratrees(trial: optuna.Trial, *, base_random_state: int = 42, n_sa
     }
 
 
-def suggest_xgboost(trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000) -> Dict[str, Any]:
+def suggest_xgboost(
+    trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000
+) -> Dict[str, Any]:
     """XGBoost — conservative for noisy labels: high min_child_weight, gamma, reg_lambda."""
     n_estimators = trial.suggest_int("n_estimators", 600, 6000, step=200)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
     max_depth = trial.suggest_int("max_depth", 2, 5)
-    
+
     # Dynamic Regularization for XGBoost (hessian based) based on POSITIVE samples
-    n_pos = int(n_samples) # n_samples is passed as n_pos from make_objective
+    n_pos = int(n_samples)  # n_samples is passed as n_pos from make_objective
     min_cw_dyn = max(75, int(n_pos * 0.015 * 0.25))
-    
-    min_child_weight = trial.suggest_float("min_child_weight", float(min_cw_dyn), float(max(500, int(n_pos * 0.05 * 0.25))), log=True)
+
+    min_child_weight = trial.suggest_float(
+        "min_child_weight",
+        float(min_cw_dyn),
+        float(max(500, int(n_pos * 0.05 * 0.25))),
+        log=True,
+    )
     gamma = trial.suggest_float("gamma", 0.5, 20.0, log=True)
 
     subsample = trial.suggest_float("subsample", 0.6, 0.9)
@@ -269,7 +297,9 @@ def suggest_xgboost(trial: optuna.Trial, *, base_random_state: int = 42, n_sampl
     return params
 
 
-def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000) -> Dict[str, Any]:
+def suggest_lightgbm(
+    trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000
+) -> Dict[str, Any]:
     """LightGBM — cap leaves aggressively, raise min_child_samples, strong L1/L2."""
     n_estimators = trial.suggest_int("n_estimators", 800, 8000, step=200)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
@@ -277,16 +307,18 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42, n_samp
 
     num_leaves = trial.suggest_int("num_leaves", 8, 96, log=True)
     if max_depth > 0:
-        num_leaves = min(num_leaves, 2 ** max_depth)
+        num_leaves = min(num_leaves, 2**max_depth)
 
     subsample = trial.suggest_float("subsample", 0.6, 0.9)
     colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 0.9)
 
     # Dynamic Regularization based on POSITIVE samples
-    n_pos = int(n_samples) # n_samples is passed as n_pos from make_objective
+    n_pos = int(n_samples)  # n_samples is passed as n_pos from make_objective
     min_leaf_dyn = max(75, int(n_pos * 0.015))
 
-    min_child_samples = trial.suggest_int("min_child_samples", min_leaf_dyn, max(600, int(n_pos * 0.05)), log=True)
+    min_child_samples = trial.suggest_int(
+        "min_child_samples", min_leaf_dyn, max(600, int(n_pos * 0.05)), log=True
+    )
     min_child_weight = trial.suggest_float("min_child_weight", 1e-3, 10.0, log=True)
 
     lambda_l2 = trial.suggest_float("lambda_l2", 15.0, 500.0, log=True)
@@ -298,7 +330,9 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42, n_samp
     bagging_fraction = subsample
     bagging_freq = trial.suggest_int("bagging_freq", 0, 10)
 
-    imbalance_mode = trial.suggest_categorical("imbalance_mode", ["none", "scale_pos_weight"])
+    imbalance_mode = trial.suggest_categorical(
+        "imbalance_mode", ["none", "scale_pos_weight"]
+    )
     scale_pos_weight = trial.suggest_float("scale_pos_weight", 0.5, 20.0, log=True)
 
     params = {
@@ -327,7 +361,9 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42, n_samp
     return params
 
 
-def suggest_catboost(trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000) -> Dict[str, Any]:
+def suggest_catboost(
+    trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000
+) -> Dict[str, Any]:
     """CatBoost — keep depth small, strong regularisation."""
     iterations = trial.suggest_int("iterations", 800, 8000, step=200)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
@@ -388,15 +424,11 @@ def suggest_extratrees_base(
     """
     max_depth = trial.suggest_categorical("max_depth", [5, 6, 7, 8])
 
-    leaf_frac = trial.suggest_categorical(
-        "min_samples_leaf_frac", [0.005, 0.01, 0.02]
-    )
+    leaf_frac = trial.suggest_categorical("min_samples_leaf_frac", [0.005, 0.01, 0.02])
     min_samples_leaf = max(20, int(np.ceil(n_pos * leaf_frac)))
     min_samples_split = max(2, 2 * min_samples_leaf)
 
-    max_features = trial.suggest_categorical(
-        "max_features", ["sqrt", 0.25, 0.33, 0.5]
-    )
+    max_features = trial.suggest_categorical("max_features", ["sqrt", 0.25, 0.33, 0.5])
     ccp_alpha = trial.suggest_categorical("ccp_alpha", [1e-5, 1e-6])
     min_impurity_decrease = trial.suggest_categorical(
         "min_impurity_decrease", [1e-5, 1e-4]
@@ -501,7 +533,8 @@ def _fit_predict_fold(
 
         clf = build_xgboost(p)
         clf.fit(
-            X_tr, y_tr,
+            X_tr,
+            y_tr,
             sample_weight=sample_weight_tr,
             eval_set=[(X_va, y_va)],
             verbose=False,
@@ -515,7 +548,8 @@ def _fit_predict_fold(
         p = _prepare_lgbm_params(params)
         clf = build_lightgbm(p)
         clf.fit(
-            X_tr, y_tr,
+            X_tr,
+            y_tr,
             sample_weight=sample_weight_tr,
             eval_set=[(X_va, y_va)],
             eval_metric="auc",
@@ -534,7 +568,8 @@ def _fit_predict_fold(
 
         clf = build_catboost(p)
         clf.fit(
-            X_tr, y_tr,
+            X_tr,
+            y_tr,
             sample_weight=sample_weight_tr,
             eval_set=(X_va, y_va),
             use_best_model=True,
@@ -561,10 +596,14 @@ def make_objective(
     y = _as_1d(y).astype(np.int32)
     sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32)
 
-    cv = PurgedKFold(n_splits=config.n_splits, purge=config.purge, embargo=config.embargo)
+    cv = PurgedKFold(
+        n_splits=config.n_splits, purge=config.purge, embargo=config.embargo
+    )
     splits = cv.split(X)
     if len(splits) < 2:
-        raise ValueError("Not enough splits produced. Reduce purge/embargo or increase n_splits.")
+        raise ValueError(
+            "Not enough splits produced. Reduce purge/embargo or increase n_splits."
+        )
 
     suggest_fn = _SUGGEST_FN[config.model_name]
 
@@ -572,7 +611,9 @@ def make_objective(
         # Suggest params once (seed-independent hypers)
         # Use positive sample count for dynamic regularization bounds
         n_pos = int(np.sum(y > 0)) if len(y) > 0 else 0
-        params_base = suggest_fn(trial, base_random_state=config.random_state, n_samples=n_pos)
+        params_base = suggest_fn(
+            trial, base_random_state=config.random_state, n_samples=n_pos
+        )
 
         all_seed_ics: List[List[float]] = []  # [seed][fold]
 
@@ -598,11 +639,16 @@ def make_objective(
                 sw_tr = None if sw is None else sw[tr]
 
                 y_score = _fit_predict_fold(
-                    config.model_name, params,
-                    X_tr, y_tr, X_va, y_va,
-                    sample_weight_tr=sw_tr, config=config,
+                    config.model_name,
+                    params,
+                    X_tr,
+                    y_tr,
+                    X_va,
+                    y_va,
+                    sample_weight_tr=sw_tr,
+                    config=config,
                 )
-                
+
                 # Calculate Top-30% IC instead of Global AUC
                 if len(y_score) > 10:
                     ranks = rankdata(y_score) / len(y_score)
@@ -613,9 +659,10 @@ def make_objective(
                         ic_t30 = 0.0
                 else:
                     ic_t30 = 0.0
-                    
-                if not np.isfinite(ic_t30): ic_t30 = 0.0
-                
+
+                if not np.isfinite(ic_t30):
+                    ic_t30 = 0.0
+
                 fold_ics.append(ic_t30)
                 running_ics.append(ic_t30)
 
@@ -637,7 +684,9 @@ def make_objective(
 # ---------------------------
 # Reconstruct model params from Optuna best_params
 # ---------------------------
-def _reconstruct_params(model_name: str, raw_params: Dict[str, Any], random_state: int) -> Dict[str, Any]:
+def _reconstruct_params(
+    model_name: str, raw_params: Dict[str, Any], random_state: int
+) -> Dict[str, Any]:
     """Convert Optuna best_params (flat dict with helper keys) into constructor-ready params."""
     p = dict(raw_params)
 
@@ -663,36 +712,42 @@ def _reconstruct_params(model_name: str, raw_params: Dict[str, Any], random_stat
 
     elif model_name == "xgboost":
         p.pop("use_scale_pos_weight", None)  # handled at fit time
-        p.update({
-            "n_jobs": 2,
-            "random_state": random_state,
-            "enable_categorical": False,
-            "eval_metric": "auc",
-            "verbosity": 0,
-            "tree_method": "hist",
-        })
+        p.update(
+            {
+                "n_jobs": 2,
+                "random_state": random_state,
+                "enable_categorical": False,
+                "eval_metric": "auc",
+                "verbosity": 0,
+                "tree_method": "hist",
+            }
+        )
 
     elif model_name == "lightgbm":
         p.pop("imbalance_mode", None)
         p.pop("scale_pos_weight", None)
-        p.update({
-            "objective": "binary",
-            "metric": "auc",
-            "random_state": random_state,
-            "n_jobs": 2,
-            "verbose": -1,
-        })
+        p.update(
+            {
+                "objective": "binary",
+                "metric": "auc",
+                "random_state": random_state,
+                "n_jobs": 2,
+                "verbose": -1,
+            }
+        )
 
     elif model_name == "catboost":
         p.pop("use_class_weights", None)
-        p.update({
-            "random_seed": random_state,
-            "thread_count": -1,
-            "verbose": 0,
-            "allow_writing_files": False,
-            "loss_function": "Logloss",
-            "eval_metric": "AUC",
-        })
+        p.update(
+            {
+                "random_seed": random_state,
+                "thread_count": -1,
+                "verbose": 0,
+                "allow_writing_files": False,
+                "loss_function": "Logloss",
+                "eval_metric": "AUC",
+            }
+        )
 
     return p
 
@@ -709,7 +764,9 @@ def _generate_oof(
     config: HPOConfig,
 ) -> np.ndarray:
     """Generate out-of-fold predictions using best params (for metrics reporting + downstream)."""
-    cv = PurgedKFold(n_splits=config.n_splits, purge=config.purge, embargo=config.embargo)
+    cv = PurgedKFold(
+        n_splits=config.n_splits, purge=config.purge, embargo=config.embargo
+    )
     splits = cv.split(X)
     oof = np.full(len(y), np.nan, dtype=np.float64)
 
@@ -719,9 +776,14 @@ def _generate_oof(
         sw_tr = None if sw is None else sw[tr]
 
         proba = _fit_predict_fold(
-            model_name, params,
-            X_tr, y_tr, X_va, y_va,
-            sample_weight_tr=sw_tr, config=config,
+            model_name,
+            params,
+            X_tr,
+            y_tr,
+            X_va,
+            y_va,
+            sample_weight_tr=sw_tr,
+            config=config,
         )
         oof[va] = proba
 
@@ -761,7 +823,9 @@ def run_hpo(
     os.makedirs(out_dir, exist_ok=True)
 
     if model_name not in _SUGGEST_FN:
-        raise ValueError(f"Unknown model_name={model_name}. Choose from {list(_SUGGEST_FN)}")
+        raise ValueError(
+            f"Unknown model_name={model_name}. Choose from {list(_SUGGEST_FN)}"
+        )
 
     config = HPOConfig(
         model_name=model_name,
@@ -793,7 +857,13 @@ def run_hpo(
     )
 
     objective = make_objective(X, y, sample_weight, config)
-    study.optimize(objective, n_trials=n_trials, timeout=timeout_sec, gc_after_trial=True, show_progress_bar=True)
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        timeout=timeout_sec,
+        gc_after_trial=True,
+        show_progress_bar=True,
+    )
 
     # --- Results ---
     best_raw_params = dict(study.best_params)
@@ -858,7 +928,8 @@ def run_hpo(
         p["random_state"] = random_state
         model = build_xgboost(p)
         model.fit(
-            X_tr, y_tr,
+            X_tr,
+            y_tr,
             sample_weight=sw_tr,
             eval_set=[(X_va, y_va)],
             verbose=False,
@@ -873,7 +944,8 @@ def run_hpo(
         p["random_state"] = random_state
         model = build_lightgbm(p)
         model.fit(
-            X_tr, y_tr,
+            X_tr,
+            y_tr,
             sample_weight=sw_tr,
             eval_set=[(X_va, y_va)],
             eval_metric="auc",
@@ -889,7 +961,8 @@ def run_hpo(
         p["random_seed"] = random_state
         model = build_catboost(p)
         model.fit(
-            X_tr, y_tr,
+            X_tr,
+            y_tr,
             sample_weight=sw_tr,
             eval_set=(X_va, y_va),
             use_best_model=True,
@@ -904,7 +977,10 @@ def run_hpo(
     # Save fitted model
     try:
         import joblib
-        joblib.dump(model, os.path.join(out_dir, f"{study_name}_{model_name}_best_model.joblib"))
+
+        joblib.dump(
+            model, os.path.join(out_dir, f"{study_name}_{model_name}_best_model.joblib")
+        )
     except Exception:
         pass
 
@@ -936,7 +1012,9 @@ def _save_base_hpo_json(out_dir: str, payload: Dict[str, Any]) -> None:
         json.dump(payload, f, indent=2, default=str)
 
 
-def load_best_base_extratrees_params(out_dir: str = "./hpo_out") -> Optional[Dict[str, Any]]:
+def load_best_base_extratrees_params(
+    out_dir: str = "./hpo_out",
+) -> Optional[Dict[str, Any]]:
     """Public API for training.py to load best params."""
     data = _load_base_hpo_json(out_dir)
     if data is None:
@@ -1005,10 +1083,14 @@ def run_base_extratrees_hpo(
     y_hard = (y_raw >= 0.5).astype(np.int32)
     sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32)
 
-    X, y_hard = _subsample_diverse(X, y_hard, symbols, max_rows=max_rows, rng_seed=random_state)
+    X, y_hard = _subsample_diverse(
+        X, y_hard, symbols, max_rows=max_rows, rng_seed=random_state
+    )
     if sw is not None and sw.shape[0] != y_hard.shape[0]:
         sw = None
-    tprint(f"Base HPO: {X.shape[0]} rows, {X.shape[1]} features after diverse subsample")
+    tprint(
+        f"Base HPO: {X.shape[0]} rows, {X.shape[1]} features after diverse subsample"
+    )
 
     n_pos = int(np.sum(y_hard > 0))
     tprint(f"Base HPO: n_positive={n_pos}, n_negative={int(np.sum(y_hard == 0))}")
@@ -1016,7 +1098,9 @@ def run_base_extratrees_hpo(
     cv = PurgedKFold(n_splits=n_splits, purge=purge, embargo=embargo)
     splits = cv.split(X)
     if len(splits) < 2:
-        raise ValueError("Not enough CV splits — reduce purge/embargo or increase n_splits.")
+        raise ValueError(
+            "Not enough CV splits — reduce purge/embargo or increase n_splits."
+        )
 
     total_rounds = n_splits
     warmup_steps = max(1, int(np.ceil(0.30 * total_rounds)))
@@ -1076,7 +1160,9 @@ def run_base_extratrees_hpo(
         std_ic = float(np.std(fold_ics))
         return mean_ic - 1.0 * std_ic
 
-    study.optimize(objective, n_trials=n_trials, gc_after_trial=True, show_progress_bar=True)
+    study.optimize(
+        objective, n_trials=n_trials, gc_after_trial=True, show_progress_bar=True
+    )
 
     best_value = float(study.best_value)
     best_trial = study.best_trial
@@ -1119,7 +1205,8 @@ if __name__ == "__main__":
     winner = "lightgbm"
 
     result = run_hpo(
-        X, y,
+        X,
+        y,
         sample_weight=None,
         model_name=winner,
         n_trials=50,

@@ -54,6 +54,7 @@ from extreme_price_movements.optimise import (
 )
 from extreme_price_movements.pipeline_steps import (
     run_backtest_step,
+    run_base_hpo_step,
     run_feature_generation_step,
     run_label_generation_step_v2,
     run_policy_optimiser_step,
@@ -608,6 +609,7 @@ def run_features(
     if max_assets is not None:
         cfg["fetch_symbols_M"] = int(max_assets)
         cfg["skip_feature_snapshot_validation"] = True
+        cfg["skip_feature_postsave_checks"] = True
         tprint(f"Features mode: limiting universe to {int(max_assets)} assets")
 
     if store is None:
@@ -858,6 +860,13 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
     if state:
         tprint("TRAINING PIPELINE COMPLETE")
 
+        if base_only and not meta_only:
+            tprint("STEP: BASE HPO")
+            try:
+                run_base_hpo_step(ts_sig, cfg)
+            except Exception as e:
+                tprint(f"WARNING: Base HPO failed: {e}")
+
         # Run breakdown diagnostics after base training
         try:
             run_breakdown_diagnostics_integration(cfg, ts_sig)
@@ -1043,6 +1052,16 @@ def run_all(cfg, ts_override=None):
 
     run_train(cfg, ts_override=ts_override, store=store)
     _maintenance_checkpoint("run_all:after_train")
+
+    # Base HPO: optimise ExtraTrees hyper-parameters from pooled label data
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig:
+        tprint("STEP: BASE HPO")
+        try:
+            run_base_hpo_step(ts_sig, cfg)
+        except Exception as e:
+            tprint(f"WARNING: Base HPO failed: {e}")
+    _maintenance_checkpoint("run_all:after_base_hpo")
 
     # 1. Optimise: learn entry policy (fill model + delta) using default sizing/risk
     #    This ensures ridge_sizer sees the correct trade filter.
@@ -1425,8 +1444,11 @@ def main():
             "labels",
             "features",
             "train",
+            "base_training",
             "train_base",
+            "meta_training",
             "train_meta",
+            "base_hpo",
             "sizer",
             "policy_optimiser",
             "optimise",
@@ -1496,6 +1518,11 @@ def main():
         default=None,
         help="Limit features mode to the first N assets in the training universe",
     )
+    parser.add_argument(
+        "--skip-feature-postsave-checks",
+        action="store_true",
+        help="Skip post-save feature completeness and health checks",
+    )
     args = parser.parse_args()
 
     cfg = CFG.copy()
@@ -1524,6 +1551,7 @@ def main():
     cfg["optimise_use_ridge_oof"] = bool(args.optimise_use_ridge_oof)
     cfg["slice_planner_preset"] = "robust" if bool(args.robust_mode) else "fast"
     cfg["train_full_inference_models"] = bool(args.robust_mode)
+    cfg["skip_feature_postsave_checks"] = bool(args.skip_feature_postsave_checks)
 
     tprint(
         f"Planner preset: {cfg['slice_planner_preset']} (full_inference_retrain={cfg['train_full_inference_models']})"
@@ -1548,10 +1576,20 @@ def main():
             base_only=args.base_only,
             meta_only=args.meta_only,
         )
+    elif args.mode == "base_training":
+        run_train(cfg, ts_override=args.ts_override, base_only=True, meta_only=False)
     elif args.mode == "train_base":
         run_train(cfg, ts_override=args.ts_override, base_only=True, meta_only=False)
+    elif args.mode == "meta_training":
+        run_train_meta(cfg, ts_override=args.ts_override)
     elif args.mode == "train_meta":
         run_train_meta(cfg, ts_override=args.ts_override)
+    elif args.mode == "base_hpo":
+        ts_sig = _resolve_ts_sig(cfg, args.ts_override)
+        if ts_sig:
+            run_base_hpo_step(ts_sig, cfg)
+        else:
+            tprint("ERROR: No feature directories found.")
     elif args.mode == "sizer":
         run_sizer(cfg, ts_override=args.ts_override)
     elif args.mode == "policy_optimiser":

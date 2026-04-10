@@ -149,7 +149,7 @@ class CausalFeatureTransformer:
         processed_count = 0
         for family, keys_xform in family_groups.items():
             tprint(f"  CausalTransform processing family: {family} ({len(keys_xform)} features)")
-            for chunk_start in range(0, len(keys_xform), chunk_size):
+            for chunk_idx, chunk_start in enumerate(range(0, len(keys_xform), chunk_size)):
                 chunk_keys = keys_xform[chunk_start:chunk_start + chunk_size]
 
                 # Separate 1D (market-level) from 2D (per-symbol) features
@@ -198,6 +198,8 @@ class CausalFeatureTransformer:
                         end = int(split_offsets[ci + 1])
                         feats[k] = np.ascontiguousarray(stacked[:, start:end])
                     del stacked
+
+                if (chunk_idx + 1) % 4 == 0 or (chunk_start + chunk_size) >= len(keys_xform):
                     gc.collect()
 
                 t1 = time.time()

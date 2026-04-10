@@ -1,5 +1,5 @@
-import hashlib
 import gc
+import hashlib
 import json
 import os
 import pickle
@@ -20,6 +20,7 @@ from sklearn.mixture import GaussianMixture
 import extreme_price_movements.fast_funcs as ff
 
 from .barrier_geometry import make_effective_tp
+from .calibration import apply_logit_shift, compute_logit_shift, compute_prevalences
 from .candidates import (
     select_trade_candidates_hourly,
     select_trade_candidates_vectorized,
@@ -66,7 +67,6 @@ from .optimise_tpsl_ratio import (
     scaled_atr_pct,
 )
 from .path_utils import resolve_reports_dir
-from .strategy_registry import get_strategies, strategy_runtime_horizons
 from .policy_ml import (
     MetaClassifierSelectionConfig,
     build_base_tp_vs_sl,
@@ -74,7 +74,6 @@ from .policy_ml import (
     policy_rollout_ml,
 )
 from .production_admissibility import ProdGates, production_admissibility_report
-from .calibration import apply_logit_shift, compute_logit_shift, compute_prevalences
 from .sample_weight_optimization import (
     combine_weights_safely,
     compute_distance_to_barrier_weights,
@@ -95,6 +94,7 @@ from .sample_weights import (
     compute_sample_weights_with_uniqueness,
     drawdown_aware_weights,
 )
+from .strategy_registry import get_strategies, strategy_runtime_horizons
 from .trap_specialist import (
     build_trap_dataset,
     compute_trap_oof_predictions,
@@ -568,7 +568,10 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
     """Build candidate mask strictly from persisted offline-optimal threshold conditions."""
     cfg_resolved = _resolve_training_cfg_with_offline_optimisers(cfg)
 
-    from extreme_price_movements.strategy_registry import get_strategies
+    from extreme_price_movements.intraday_crypto_library import (
+        PERSISTED_INTRADAY_LIBRARY_COLUMNS,
+        build_intraday_crypto_library,
+    )
     from extreme_price_movements.lgbm_based_mask_generation import (
         CanonicalRuleMaskResolver,
         FeatureProcessor,
@@ -576,15 +579,14 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
         parse_slot_map,
         split_composite_key,
     )
-    from extreme_price_movements.intraday_crypto_library import (
-        PERSISTED_INTRADAY_LIBRARY_COLUMNS,
-        build_intraday_crypto_library,
-    )
+    from extreme_price_movements.strategy_registry import get_strategies
 
     # Import legacy mask builder for fallback on legacy mode keys
     try:
         from extreme_price_movements.inference.candidate_selector import (
             _build_mask_for_mode as _build_legacy_mode_mask,
+        )
+        from extreme_price_movements.inference.candidate_selector import (
             _up_down_zones as _legacy_up_down_zones,
         )
     except Exception:
@@ -890,12 +892,16 @@ def _fit_direct_extratrees_base_model(
     groups=None,
     symbols=None,
     n_splits: int = 2,
+    cfg=None,
 ):
     """Fit the base alpha model directly with ExtraTrees, bypassing ModelRace."""
+    import os as _os
+
     from scipy.stats import rankdata as _rankdata
-    from sklearn.linear_model import LogisticRegression
     from sklearn.base import clone
+    from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
+
     from .purged_cv import PurgedKFold as _PurgedKFold
 
     race = ModelRace(kind=kind_name, task="base", n_splits=n_splits)
@@ -922,9 +928,11 @@ def _fit_direct_extratrees_base_model(
 
     from .post_race_hpo import load_best_base_extratrees_params
 
-    _hpo_dir = os.path.join(
-        cfg.get("data_root", "data"), "hpo_out"
-    ) if cfg is not None else None
+    _hpo_dir = (
+        _os.path.join(cfg.get("data_root", "data"), "hpo_out")
+        if cfg is not None
+        else None
+    )
     if cfg is not None and "base_hpo_out_dir" in cfg:
         _hpo_dir = cfg["base_hpo_out_dir"]
 
@@ -940,10 +948,7 @@ def _fit_direct_extratrees_base_model(
         p.setdefault("bootstrap", False)
         p.setdefault("ccp_alpha", 1e-4)
         p.setdefault("max_leaf_nodes", 512)
-        inner.set_params(**{
-            k: v for k, v in p.items()
-            if k in inner.get_params()
-        })
+        inner.set_params(**{k: v for k, v in p.items() if k in inner.get_params()})
         tprint(
             f"Direct ExtraTrees: using HPO params: "
             f"max_depth={inner.max_depth}, min_samples_leaf={inner.min_samples_leaf}, "
@@ -6924,6 +6929,7 @@ def train_meta_models_from_artifacts(
         Missing labels are handled via placeholder target + zero sample_weight (no semantic fallback).
         """
         from sklearn.ensemble import ExtraTreesRegressor
+
         from extreme_price_movements.periods_symbols_management import (
             EventSchema,
             SlicePlanner,
@@ -10639,6 +10645,7 @@ def train_meta_models_from_artifacts(
         if "__early_inval__" in df.columns:
             try:
                 from sklearn.linear_model import LogisticRegression
+
                 from extreme_price_movements.periods_symbols_management import (
                     EventSchema,
                     SlicePlanner,
@@ -11817,11 +11824,13 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     if base in allowed_keys:
                         valid_cols.append(c)
                         break
-        
+
         # --- Pipeline Hardening: Ensure valid_cols strictly exist in X ---
         _missing_from_X = [c for c in valid_cols if c not in X.columns]
         if _missing_from_X:
-            tprint(f"  WARNING: Base Model Selector: Skipping {len(_missing_from_X)} allowed features missing from X: {_missing_from_X}")
+            tprint(
+                f"  WARNING: Base Model Selector: Skipping {len(_missing_from_X)} allowed features missing from X: {_missing_from_X}"
+            )
             valid_cols = [c for c in valid_cols if c in X.columns]
 
         if not valid_cols:
@@ -11943,6 +11952,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             groups=groups,
             symbols=symbols,
             n_splits=2,
+            cfg=cfg,
         )
         return {
             "model": race,
@@ -12337,6 +12347,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         groups=groups,
                         symbols=symbols,
                         n_splits=2,
+                        cfg=cfg,
                     )
                     score = race.metrics.get(race.best_model_name, -1.0)
                     dm = race.detailed_metrics.get(race.best_model_name, {})

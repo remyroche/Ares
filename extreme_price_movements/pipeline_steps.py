@@ -1,3 +1,4 @@
+import gc
 import glob
 import json
 import os
@@ -2506,6 +2507,104 @@ def run_policy_optimiser_step(ts_sig, cfg):
         tprint("POLICY OPTIMISER COMPLETE")
     else:
         tprint("POLICY OPTIMISER: no results produced")
+    return result
+
+
+def run_base_hpo_step(ts_sig, cfg):
+    """Run Optuna HPO for the base ExtraTrees classifier.
+
+    Pools label data across strategies and horizons, subsamples to 5 000 rows,
+    then runs 40 trials with a narrow search space.  Best params are saved to a
+    shared JSON consumed by ``_fit_direct_extratrees_base_model``.
+    """
+    from extreme_price_movements.post_race_hpo import run_base_extratrees_hpo
+
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    data_root = cfg.get("data_root", "data")
+
+    from extreme_price_movements.data_store import load_artifact_manifest
+
+    labels_manifest = load_artifact_manifest(data_root, run_id, "labels") or {}
+    available = set((labels_manifest.get("datasets") or {}).keys())
+    if not available:
+        tprint("BASE HPO: no label datasets found. Run labels first.")
+        return None
+
+    strategies = get_strategies(cfg)
+    strategy_horizons = {
+        s["strategy_id"]: strategy_runtime_horizons(s, cfg) for s in strategies
+    }
+
+    parts_y: list[np.ndarray] = []
+    parts_sym: list[np.ndarray] = []
+    X_blocks: list[np.ndarray] = []
+    drop_cols = {
+        "__y_bin__",
+        "__y_ret__",
+        "__w__",
+        "__ts__",
+        "__symbol__",
+        "__barrier_pct__",
+        "ts",
+        "symbol",
+    }
+
+    for strat in strategies:
+        s_id = strat["strategy_id"]
+        for H in strategy_horizons.get(s_id, []):
+            for suffix in ("", "_tight", "_wide"):
+                name = f"train_{s_id}_{H}{suffix}"
+                if name not in available:
+                    continue
+                df = load_artifact_df(data_root, run_id, "labels", name)
+                if df is None or df.empty:
+                    continue
+                if "__y_bin__" not in df.columns:
+                    continue
+                keep = [c for c in df.columns if c not in drop_cols]
+                X_parts = df[keep].select_dtypes(include=[np.number]).astype(np.float32)
+                X_blocks.append(X_parts.values)
+                parts_y.append(df["__y_bin__"].values.astype(np.float32))
+                sym_col = (
+                    df["__symbol__"].values
+                    if "__symbol__" in df.columns
+                    else np.full(len(df), "unknown", dtype=object)
+                )
+                parts_sym.append(sym_col)
+
+    if not X_blocks:
+        tprint("BASE HPO: no data rows loaded from label datasets.")
+        return None
+
+    X_all = np.vstack(X_blocks)
+    y_all = np.concatenate(parts_y)
+    sym_all = np.concatenate(parts_sym)
+    del X_blocks, parts_y, parts_sym
+    gc.collect()
+
+    finite_mask = np.isfinite(X_all).all(axis=1)
+    X_all = X_all[finite_mask]
+    y_all = y_all[finite_mask]
+    sym_all = sym_all[finite_mask]
+
+    tprint(
+        f"BASE HPO: pooled {X_all.shape[0]} rows, {X_all.shape[1]} features "
+        f"from {len(available)} datasets"
+    )
+
+    hpo_out_dir = os.path.join(data_root, "hpo_out")
+    cfg["base_hpo_out_dir"] = hpo_out_dir
+
+    result = run_base_extratrees_hpo(
+        X_all,
+        y_all,
+        symbols=sym_all,
+        n_trials=int(cfg.get("base_hpo_n_trials", 40)),
+        n_splits=int(cfg.get("base_hpo_n_splits", 3)),
+        max_rows=int(cfg.get("base_hpo_max_rows", 5000)),
+        out_dir=hpo_out_dir,
+    )
+    tprint(f"BASE HPO COMPLETE: best_value={result.get('best_value', 'n/a')}")
     return result
 
 
@@ -5079,16 +5178,19 @@ def run_feature_generation_step(
         if close_panel_light is not None and not close_panel_light.empty
         else panel_close_ref
     )
-    if bool(cfg.get("skip_feature_snapshot_validation", False)):
-        tprint(
-            "Feature snapshot completeness validation skipped for limited-universe run"
-        )
+    snapshot_expected_keys = {
+        k for k in expected_keys if not str(k).startswith("oof_")
+    }
+    skip_snapshot_validation = bool(cfg.get("skip_feature_snapshot_validation", False))
+    skip_postsave_checks = bool(cfg.get("skip_feature_postsave_checks", False))
+    if skip_snapshot_validation or skip_postsave_checks:
+        tprint("Feature snapshot post-save checks skipped")
     else:
         if not is_incremental_backfill:
             _enforce_feature_snapshot_completeness(
                 ts_sig=ts_sig,
                 data_root=cfg["data_root"],
-                expected_keys=expected_keys,
+                expected_keys=snapshot_expected_keys,
                 panel_close=completeness_panel,
             )
         else:
@@ -5099,31 +5201,31 @@ def run_feature_generation_step(
         _validate_feature_snapshot_completeness(
             ts_sig=ts_sig,
             data_root=cfg["data_root"],
-            expected_keys=expected_keys,
+            expected_keys=snapshot_expected_keys,
             panel_close=completeness_panel,
         )
-    _generate_feature_health_reports(
-        ts_sig, cfg["data_root"], allowed_symbols=train_syms
-    )
-    health_feats = load_features_selected(
-        ts_sig,
-        cfg["data_root"],
-        feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
-        symbols=train_syms,
-    )
-    if health_feats is None:
-        raise RuntimeError(
-            "Feature snapshot health validation failed: critical feature files "
-            "could not be loaded after generation."
+        _generate_feature_health_reports(
+            ts_sig, cfg["data_root"], allowed_symbols=train_syms
         )
-    health_issues = _feature_snapshot_health_issues(health_feats)
-    if health_issues:
-        raise RuntimeError(
-            "Feature snapshot health validation failed after generation: "
-            + ", ".join(health_issues)
-            + ". Re-run features mode with --force-feature-recompute after fixing "
-            "the underlying feature channel."
+        health_feats = load_features_selected(
+            ts_sig,
+            cfg["data_root"],
+            feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
+            symbols=train_syms,
         )
+        if health_feats is None:
+            raise RuntimeError(
+                "Feature snapshot health validation failed: critical feature files "
+                "could not be loaded after generation."
+            )
+        health_issues = _feature_snapshot_health_issues(health_feats)
+        if health_issues:
+            raise RuntimeError(
+                "Feature snapshot health validation failed after generation: "
+                + ", ".join(health_issues)
+                + ". Re-run features mode with --force-feature-recompute after fixing "
+                "the underlying feature channel."
+            )
     tprint("STEP: FEATURE GENERATION COMPLETE")
 
 

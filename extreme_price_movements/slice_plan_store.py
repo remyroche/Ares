@@ -283,7 +283,7 @@ def restrict_stage_symbols(stage_view: dict, max_assets: Optional[int]) -> dict:
 
     new_view = dict(stage_view)
     new_view["symbols"] = subset
-    tprint(f"Downscaled {stage_view['stage_name']} symbols from {len(symbols)} to {len(subset)} based on max_assets={max_assets}")
+    tprint(f"[{stage_view.get('stage_name', 'stage')}] Downscaled symbols from {len(symbols)} (planned) to {len(subset)} (effective) based on max_assets={max_assets}")
     return new_view
 
 
@@ -307,7 +307,7 @@ def restrict_stage_period(stage_view: dict, max_months: Optional[int]) -> dict:
 
     new_view = dict(stage_view)
     new_view["allowed_start_ts"] = new_start_ts.isoformat()
-    tprint(f"Downscaled {stage_view['stage_name']} period from {start_ts_str} to {new_start_ts.isoformat()} based on max_months={max_months}")
+    tprint(f"[{stage_view.get('stage_name', 'stage')}] Downscaled period from {start_ts_str} to {new_start_ts.isoformat()} (effective start), end {end_ts_str} based on max_months={max_months}")
     return new_view
 
 

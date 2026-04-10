@@ -35,7 +35,27 @@ from extreme_price_movements.ridge_position_sizer import (
     prepare_policy_params_from_tpsl_optimiser,
     prepare_trade_outcomes_from_labels,
 )
-from extreme_price_movements.utils import tprint, log_pipeline_warning
+from extreme_price_movements.utils import tprint
+
+def _filter_artifact_by_stage_view(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    view = cfg.get("_active_stage_view")
+    if not view or df is None or df.empty:
+        return df
+
+    if "symbols" in view and view["symbols"] is not None:
+        sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+        if sym_col:
+            df = df[df[sym_col].isin(view["symbols"])]
+
+    if view.get("allowed_start_ts") or view.get("allowed_end_ts"):
+        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
+        if ts_col:
+            if view.get("allowed_start_ts"):
+                df = df[pd.to_datetime(df[ts_col], utc=True) >= pd.to_datetime(view["allowed_start_ts"])]
+            if view.get("allowed_end_ts"):
+                df = df[pd.to_datetime(df[ts_col], utc=True) <= pd.to_datetime(view["allowed_end_ts"])]
+    return df
+, log_pipeline_warning
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 from extreme_price_movements.offline_optimisers.params_store import load_inference_candidate_mask_params_per_bucket
 
@@ -554,6 +574,10 @@ def load_meta_oof_predictions(
     # Inject required config-defined features into the inference data
     from extreme_price_movements.config import CFG
     from extreme_price_movements.data_store import load_features_selected
+from extreme_price_movements.slice_plan_store import load_features_for_stage_or_all
+
+
+
     from extreme_price_movements.training import _fast_lookup
 
     cfg = dict(CFG)
@@ -584,7 +608,7 @@ def load_meta_oof_predictions(
             if "symbol" in bdf.columns:
                 all_syms.update(bdf["symbol"].unique())
         
-        feats = load_features_selected(
+        feats = _smart_load_features_selected(cfg,
             ts=find_best_feature_snapshot_ts(data_root, run_id),
             root_dir=data_root,
             feature_keys=list(missing_feats),

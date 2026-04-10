@@ -72,6 +72,9 @@ from extreme_price_movements.universe import (
 )
 from extreme_price_movements.utils import tprint
 
+from extreme_price_movements.slice_plan_store import load_or_build_slice_plan, apply_stage_usage_limits
+
+
 # SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
 # Spot trading fees (default)
 BASE_ROUND_TRIP_FEE_PCT = 0.3  # 0.3% round-trip = 0.15% per side (15 bps)
@@ -158,7 +161,7 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
     if strategies:
         cfg["strategies"] = strategies
         from extreme_price_movements.utils import tprint
-
+        from extreme_price_movements.slice_plan_store import load_or_build_slice_plan, apply_stage_usage_limits
         tprint(f"Loaded {len(strategies)} strategies from final_rule_registry.csv")
 
     return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
@@ -633,6 +636,25 @@ def run_backtest(cfg, ts_override=None, store=None):
         tprint("ERROR: No feature directories found.")
         return
 
+    # Slice Plan Injection
+    try:
+        slice_plan = load_or_build_slice_plan(
+            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+        )
+        if "holdout_strategy_eval" in slice_plan.get("materialized_views", {}):
+            stage_view = slice_plan["materialized_views"]["holdout_strategy_eval"].get("sub_views", {}).get("backtest_eval")
+            if stage_view:
+                stage_view = apply_stage_usage_limits(
+                    stage_view,
+                    max_assets=cfg.get("planned_max_assets"),
+                    max_months=cfg.get("planned_max_months")
+                )
+                cfg["_active_stage_view"] = stage_view
+        else:
+            tprint(f"Warning: stage holdout_strategy_eval not found in materialized_views")
+    except Exception as e:
+        tprint(f"Slice plan loading failed: {e}")
+
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
 
@@ -662,6 +684,25 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")
         return
+
+    # Slice Plan Injection
+    try:
+        slice_plan = load_or_build_slice_plan(
+            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+        )
+        if "holdout_strategy_eval" in slice_plan.get("materialized_views", {}):
+            stage_view = slice_plan["materialized_views"]["holdout_strategy_eval"].get("sub_views", {}).get("backtest_eval")
+            if stage_view:
+                stage_view = apply_stage_usage_limits(
+                    stage_view,
+                    max_assets=cfg.get("planned_max_assets"),
+                    max_months=cfg.get("planned_max_months")
+                )
+                cfg["_active_stage_view"] = stage_view
+        else:
+            tprint(f"Warning: stage holdout_strategy_eval not found in materialized_views")
+    except Exception as e:
+        tprint(f"Slice plan loading failed: {e}")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -704,10 +745,12 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
     # Load features
     tprint("Loading features...")
     from extreme_price_movements.data_store import load_features_selected
+    from extreme_price_movements.slice_plan_store import load_features_for_stage_or_all
 
-    feats = load_features_selected(
+    feats = load_features_for_stage_or_all(
+        cfg,
+        ts_sig,
         root_dir=cfg["data_root"],
-        ts_sig=ts_sig,
         symbols=symbols,
     )
 
@@ -821,6 +864,24 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         tprint("ERROR: No feature directories found. Run feature_generation first.")
         return
 
+    # Slice Plan Injection
+    try:
+        slice_plan = load_or_build_slice_plan(
+            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+        )
+        if "train_base" in slice_plan.get("materialized_views", {}):
+            stage_view = slice_plan["materialized_views"]["train_base"]
+            stage_view = apply_stage_usage_limits(
+                stage_view,
+                max_assets=cfg.get("planned_max_assets"),
+                max_months=cfg.get("planned_max_months")
+            )
+            cfg["_active_stage_view"] = stage_view
+        else:
+            tprint(f"Warning: stage train_base not found in materialized_views")
+    except Exception as e:
+        tprint(f"Slice plan loading failed: {e}")
+
     tprint(f"Train mode. ts_sig={ts_sig} base_only={base_only} meta_only={meta_only}")
     _load_mask_params_by_mode(cfg)
 
@@ -927,6 +988,24 @@ def run_sizer(cfg, ts_override=None, store=None):
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")
         return
+
+    # Slice Plan Injection
+    try:
+        slice_plan = load_or_build_slice_plan(
+            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+        )
+        if "sizer_train" in slice_plan.get("materialized_views", {}):
+            stage_view = slice_plan["materialized_views"]["sizer_train"]
+            stage_view = apply_stage_usage_limits(
+                stage_view,
+                max_assets=cfg.get("planned_max_assets"),
+                max_months=cfg.get("planned_max_months")
+            )
+            cfg["_active_stage_view"] = stage_view
+        else:
+            tprint(f"Warning: stage sizer_train not found in materialized_views")
+    except Exception as e:
+        tprint(f"Slice plan loading failed: {e}")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -1165,6 +1244,24 @@ def run_train_meta(cfg, ts_override=None, store=None):
         tprint("ERROR: No feature directories found.")
         return
 
+    # Slice Plan Injection
+    try:
+        slice_plan = load_or_build_slice_plan(
+            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+        )
+        if "train_meta" in slice_plan.get("materialized_views", {}):
+            stage_view = slice_plan["materialized_views"]["train_meta"]
+            stage_view = apply_stage_usage_limits(
+                stage_view,
+                max_assets=cfg.get("planned_max_assets"),
+                max_months=cfg.get("planned_max_months")
+            )
+            cfg["_active_stage_view"] = stage_view
+        else:
+            tprint(f"Warning: stage train_meta not found in materialized_views")
+    except Exception as e:
+        tprint(f"Slice plan loading failed: {e}")
+
     _load_mask_params_by_mode(cfg)
     from extreme_price_movements.main import train_daily_meta
 
@@ -1218,6 +1315,24 @@ def run_optimise(cfg, ts_override=None, store=None):
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")
         return False
+
+    # Slice Plan Injection
+    try:
+        slice_plan = load_or_build_slice_plan(
+            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+        )
+        if "utility_policy_optimisation" in slice_plan.get("materialized_views", {}):
+            stage_view = slice_plan["materialized_views"]["utility_policy_optimisation"]
+            stage_view = apply_stage_usage_limits(
+                stage_view,
+                max_assets=cfg.get("planned_max_assets"),
+                max_months=cfg.get("planned_max_months")
+            )
+            cfg["_active_stage_view"] = stage_view
+        else:
+            tprint(f"Warning: stage utility_policy_optimisation not found in materialized_views")
+    except Exception as e:
+        tprint(f"Slice plan loading failed: {e}")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     if bool(cfg.get("optimise_use_ridge_oof", False)):
@@ -1523,6 +1638,24 @@ def main():
         action="store_true",
         help="Skip post-save feature completeness and health checks",
     )
+
+    parser.add_argument(
+        "--planned-max-assets",
+        type=int,
+        default=None,
+        help="Optional limit on number of symbols to run inside the plan stage"
+    )
+    parser.add_argument(
+        "--planned-max-months",
+        type=int,
+        default=None,
+        help="Optional limit on the number of months to run inside the plan stage"
+    )
+    parser.add_argument(
+        "--refresh-slice-plan",
+        action="store_true",
+        help="Force rebuild the slice plan"
+    )
     args = parser.parse_args()
 
     cfg = CFG.copy()
@@ -1557,6 +1690,11 @@ def main():
         f"Planner preset: {cfg['slice_planner_preset']} (full_inference_retrain={cfg['train_full_inference_models']})"
     )
     cfg["enable_trigger_discovery_stage"] = bool(args.enable_trigger_discovery_stage)
+
+    cfg["planned_max_assets"] = args.planned_max_assets
+    cfg["planned_max_months"] = args.planned_max_months
+    cfg["refresh_slice_plan"] = bool(args.refresh_slice_plan)
+
 
     if args.mode == "download":
         run_download(cfg)
@@ -1595,6 +1733,16 @@ def main():
     elif args.mode == "policy_optimiser":
         ts_sig = _resolve_ts_sig(cfg, args.ts_override)
         if ts_sig:
+            try:
+                slice_plan = load_or_build_slice_plan(cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False))
+                if "holdout_strategy_eval" in slice_plan.get("materialized_views", {}):
+                    stage_view = slice_plan["materialized_views"]["holdout_strategy_eval"].get("sub_views", {}).get("policy_optimiser")
+                    if stage_view:
+                        cfg["_active_stage_view"] = apply_stage_usage_limits(
+                            stage_view, max_assets=cfg.get("planned_max_assets"), max_months=cfg.get("planned_max_months")
+                        )
+            except Exception as e:
+                tprint(f"Slice plan loading failed: {e}")
             run_policy_optimiser_step(ts_sig, cfg)
         else:
             tprint("ERROR: No feature directories found.")
@@ -1608,7 +1756,18 @@ def main():
         run_breakdown_diagnostics_standalone(cfg, ts_override=args.ts_override)
     elif args.mode == "oos_eval":
         from extreme_price_movements.oos_pipeline import run_oos_eval_pipeline
-
+        ts_sig = _resolve_ts_sig(cfg, args.ts_override)
+        if ts_sig:
+            try:
+                slice_plan = load_or_build_slice_plan(cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False))
+                if "holdout_strategy_eval" in slice_plan.get("materialized_views", {}):
+                    stage_view = slice_plan["materialized_views"]["holdout_strategy_eval"].get("sub_views", {}).get("backtest_eval")
+                    if stage_view:
+                        cfg["_active_stage_view"] = apply_stage_usage_limits(
+                            stage_view, max_assets=cfg.get("planned_max_assets"), max_months=cfg.get("planned_max_months")
+                        )
+            except Exception as e:
+                tprint(f"Slice plan loading failed: {e}")
         run_oos_eval_pipeline(cfg, n_assets=args.n_assets, ts_override=args.ts_override)
     elif args.mode == "run":
         run_all(cfg, ts_override=args.ts_override)

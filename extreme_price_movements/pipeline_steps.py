@@ -17,6 +17,9 @@ from extreme_price_movements.config import (
     HELPER_BASE_FEATURES,
     POSITION_SIZER_V2_FEATURE_CONFIG,
 )
+
+
+
 from extreme_price_movements.data_store import (
     _atomic_write_parquet,
     _ensure_feature_frame_index,
@@ -1457,9 +1460,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
 
     # Keep feature-key selection consistent with the shared cache/feature generation logic.
     label_feature_keys = _labeling_feature_keys(cfg)
-    feats = load_features_selected(
-        ts_sig,
-        cfg["data_root"],
+    feats = load_features_for_stage_or_all(cfg, ts_sig, cfg["data_root"],
         feature_keys=sorted(label_feature_keys),
         symbols=train_syms,
     )
@@ -1509,6 +1510,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
 
     if all_events:
         all_events_df = pd.concat(all_events, ignore_index=True).drop_duplicates()
+
         events = pd.DataFrame(
             {
                 "event_id": np.arange(len(all_events_df), dtype=np.int64),
@@ -1521,6 +1523,13 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
                 ),
             }
         )
+
+        # SAVE EVENTS FOR DOWNSTREAM
+        _events_path = os.path.join(cfg["data_root"], "artifacts", run_id, "baseline_events.parquet")
+        os.makedirs(os.path.dirname(_events_path), exist_ok=True)
+        events.to_parquet(_events_path)
+        tprint(f"Saved baseline events for planning to {_events_path}")
+
 
         # Use SlicePlanner to get training vs test split
         planner_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
@@ -1768,6 +1777,7 @@ def run_training_step(
         if available_label_names and name not in available_label_names:
             return None
         df_local = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        df_local = _filter_artifact_by_stage_view(df_local, cfg)
         if df_local is not None:
             dataset_cache[name] = df_local
         return df_local
@@ -2557,6 +2567,7 @@ def run_base_hpo_step(ts_sig, cfg):
                 if name not in available:
                     continue
                 df = load_artifact_df(data_root, run_id, "labels", name)
+                df = _filter_artifact_by_stage_view(df, cfg)
                 if df is None or df.empty:
                     continue
                 if "__y_bin__" not in df.columns:
@@ -2826,7 +2837,7 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
 
     # Load only required features to prevent OOM
     req_feats = _extract_required_features(bundle, cfg)
-    feats = load_features_selected(run_ts, cfg["data_root"], feature_keys=req_feats)
+    feats = load_features_for_stage_or_all(cfg, run_ts, cfg["data_root"], feature_keys=req_feats)
     if feats is None:
         tprint("ERROR: Features not found for risk optimization.")
         return
@@ -3004,9 +3015,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             feat_start_ts = min(df.index.min() for df in dfs.values() if not df.empty)
         except ValueError:
             feat_start_ts = None
-    feats = load_features_selected(
-        ts_sig,
-        cfg["data_root"],
+    feats = load_features_for_stage_or_all(cfg, ts_sig, cfg["data_root"],
         feature_keys=req_feats,
         symbols=train_syms,
         start_ts=feat_start_ts,
@@ -5207,9 +5216,7 @@ def run_feature_generation_step(
         _generate_feature_health_reports(
             ts_sig, cfg["data_root"], allowed_symbols=train_syms
         )
-        health_feats = load_features_selected(
-            ts_sig,
-            cfg["data_root"],
+        health_feats = load_features_for_stage_or_all(cfg, ts_sig, cfg["data_root"],
             feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
             symbols=train_syms,
         )
@@ -5240,6 +5247,50 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     from extreme_price_movements.gamma_specialist import GAMMA_FEATURE_KEYS
     from extreme_price_movements.trap_specialist import TRAP_FEATURE_KEYS
     from extreme_price_movements.utils import tprint
+
+def _filter_artifact_by_stage_view(df, cfg):
+    view = cfg.get("_active_stage_view")
+    if not view or df is None or df.empty:
+        return df
+
+    orig_len = len(df)
+    stage_name = view.get("stage_name", "unknown_stage")
+
+    if "symbols" in view and view["symbols"] is not None:
+        sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+        if sym_col:
+            df = df[df[sym_col].isin(view["symbols"])]
+
+    if view.get("allowed_start_ts") or view.get("allowed_end_ts"):
+        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
+        if ts_col:
+            df_ts = pd.to_datetime(df[ts_col], utc=True)
+            if view.get("allowed_start_ts"):
+                df = df[df_ts >= pd.to_datetime(view["allowed_start_ts"])]
+                df_ts = pd.to_datetime(df[ts_col], utc=True)
+            if view.get("allowed_end_ts"):
+                df = df[df_ts <= pd.to_datetime(view["allowed_end_ts"])]
+
+    new_len = len(df)
+    if orig_len != new_len:
+        tprint(f"[{stage_name}] Filtered artifact: {orig_len} -> {new_len} rows (-{orig_len - new_len}) based on active stage limits.")
+
+    return df
+    if "symbols" in view and view["symbols"] is not None:
+        sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+        if sym_col:
+            df = df[df[sym_col].isin(view["symbols"])]
+    if view.get("allowed_start_ts") or view.get("allowed_end_ts"):
+        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
+        if ts_col:
+            df_ts = pd.to_datetime(df[ts_col], utc=True)
+            if view.get("allowed_start_ts"):
+                df = df[df_ts >= pd.to_datetime(view["allowed_start_ts"])]
+                df_ts = pd.to_datetime(df[ts_col], utc=True)
+            if view.get("allowed_end_ts"):
+                df = df[df_ts <= pd.to_datetime(view["allowed_end_ts"])]
+    return df
+
 
     tprint("Resolving unique symbols and timestamps for feature injection...")
     all_syms = set()

@@ -35,7 +35,27 @@ from extreme_price_movements.ridge_position_sizer import (
     prepare_policy_params_from_tpsl_optimiser,
     prepare_trade_outcomes_from_labels,
 )
-from extreme_price_movements.utils import tprint, log_pipeline_warning
+from extreme_price_movements.utils import tprint
+
+def _filter_artifact_by_stage_view(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    view = cfg.get("_active_stage_view")
+    if not view or df is None or df.empty:
+        return df
+
+    if "symbols" in view and view["symbols"] is not None:
+        sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+        if sym_col:
+            df = df[df[sym_col].isin(view["symbols"])]
+
+    if view.get("allowed_start_ts") or view.get("allowed_end_ts"):
+        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
+        if ts_col:
+            if view.get("allowed_start_ts"):
+                df = df[pd.to_datetime(df[ts_col], utc=True) >= pd.to_datetime(view["allowed_start_ts"])]
+            if view.get("allowed_end_ts"):
+                df = df[pd.to_datetime(df[ts_col], utc=True) <= pd.to_datetime(view["allowed_end_ts"])]
+    return df
+, log_pipeline_warning
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 from extreme_price_movements.offline_optimisers.params_store import load_inference_candidate_mask_params_per_bucket
 

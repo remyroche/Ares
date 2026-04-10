@@ -1777,6 +1777,7 @@ def run_training_step(
         if available_label_names and name not in available_label_names:
             return None
         df_local = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        df_local = _filter_artifact_by_stage_view(df_local, cfg)
         if df_local is not None:
             dataset_cache[name] = df_local
         return df_local
@@ -2566,6 +2567,7 @@ def run_base_hpo_step(ts_sig, cfg):
                 if name not in available:
                     continue
                 df = load_artifact_df(data_root, run_id, "labels", name)
+                df = _filter_artifact_by_stage_view(df, cfg)
                 if df is None or df.empty:
                     continue
                 if "__y_bin__" not in df.columns:
@@ -5245,6 +5247,26 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     from extreme_price_movements.gamma_specialist import GAMMA_FEATURE_KEYS
     from extreme_price_movements.trap_specialist import TRAP_FEATURE_KEYS
     from extreme_price_movements.utils import tprint
+
+def _filter_artifact_by_stage_view(df, cfg):
+    view = cfg.get("_active_stage_view")
+    if not view or df is None or df.empty:
+        return df
+    if "symbols" in view and view["symbols"] is not None:
+        sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+        if sym_col:
+            df = df[df[sym_col].isin(view["symbols"])]
+    if view.get("allowed_start_ts") or view.get("allowed_end_ts"):
+        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
+        if ts_col:
+            df_ts = pd.to_datetime(df[ts_col], utc=True)
+            if view.get("allowed_start_ts"):
+                df = df[df_ts >= pd.to_datetime(view["allowed_start_ts"])]
+                df_ts = pd.to_datetime(df[ts_col], utc=True)
+            if view.get("allowed_end_ts"):
+                df = df[df_ts <= pd.to_datetime(view["allowed_end_ts"])]
+    return df
+
 
     tprint("Resolving unique symbols and timestamps for feature injection...")
     all_syms = set()

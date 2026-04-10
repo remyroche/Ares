@@ -2499,7 +2499,7 @@ def run_sizer_step(ts_sig, cfg, state_file):
 
 
 def run_policy_optimiser_step(ts_sig, cfg):
-    """Run the 4-step policy optimiser (TP/SL, offset, MFE early exit, trailing)."""
+    """Run sequential policy optimisation using fixed TP/SL and pre-generated offsets."""
     from extreme_price_movements.policy_optimiser import run_policy_optimisation
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")

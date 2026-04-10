@@ -30,6 +30,10 @@ from extreme_price_movements.ridge_position_sizer import (
 from extreme_price_movements.simple_position_sizer import (
     evaluate_selection_profit_proxy,
 )
+from extreme_price_movements.policy_optimiser import (
+    build_replay_context,
+    replay_exit_policy,
+)
 from extreme_price_movements.universe import get_training_universe
 from extreme_price_movements.utils import tprint
 
@@ -405,14 +409,17 @@ def _load_best_policy_params(data_root: str, run_id: str) -> Optional[Dict[str, 
         / "best_policy_params.json",
         Path(data_root) / "artifacts" / run_id / "best_policy_params.json",
     ]:
-        if candidate.exists():
-            try:
-                payload = json.loads(candidate.read_text())
-                strategies = payload.get("strategies", [])
-                if strategies:
-                    return strategies[0]
-            except Exception:
-                pass
+        if not candidate.exists():
+            continue
+        try:
+            payload = json.loads(candidate.read_text())
+            strategies = (
+                payload.get("strategies", []) if isinstance(payload, dict) else []
+            )
+            if strategies:
+                return strategies[0]
+        except Exception:
+            continue
     return None
 
 
@@ -421,10 +428,9 @@ def _apply_policy_params_to_seed(
 ) -> Dict[str, Any]:
     tp_mult = float(policy.get("tp_mult", 2.0))
     sl_mult = float(policy.get("sl_mult", 1.6))
-    activation_frac = float(policy.get("activation_frac", 0.5))
-    giveback_frac = float(policy.get("giveback_frac", 0.3))
-
-    trailing_pct = max(0.01, activation_frac - giveback_frac)
+    trail_activation = float(policy.get("trail_activation_atr", 0.8))
+    trail_giveback = float(policy.get("trail_giveback_atr", 0.3))
+    trailing_pct = max(0.01, trail_activation - trail_giveback)
 
     result = {
         "tp_mult": tp_mult,
@@ -432,15 +438,35 @@ def _apply_policy_params_to_seed(
         "trailing_pct": trailing_pct,
         "atr": {symbol: atr_val},
         "source": "policy_optimiser",
-        "base_offset_atr_pct": float(policy.get("base_offset_atr_pct", 0.0)),
-        "max_offset_atr_pct": float(policy.get("max_offset_atr_pct", 0.0)),
-        "mfe_exit_frac": float(policy.get("mfe_exit_frac", 0.0)),
-        "min_hold_bars": int(policy.get("min_hold_bars", 0)),
-        "activation_frac": activation_frac,
-        "giveback_frac": giveback_frac,
-        "mae_gate_frac": policy.get("mae_gate_frac"),
-        "better_rule": policy.get("better_rule", "trailing"),
     }
+    passthrough = [
+        "strategy_id",
+        "k_recent",
+        "K_early",
+        "theta_fail",
+        "theta_path",
+        "d_path",
+        "progress_threshold",
+        "lambda_path",
+        "a1",
+        "a2",
+        "b1",
+        "b2",
+        "compression_start",
+        "compression_full",
+        "compression_max_fraction",
+        "trail_activation_atr",
+        "trail_giveback_atr",
+        "continuation_conf_threshold",
+        "multiplier_band_min",
+        "multiplier_band_max",
+        "score_weight_trend",
+        "score_weight_asym",
+        "score_weight_choppiness",
+    ]
+    for key in passthrough:
+        if key in policy:
+            result[key] = policy[key]
     return result
 
 
@@ -543,6 +569,31 @@ def evaluate_holdout_symbol(
         score_values = _fill_nonfinite(aligned_scores.to_numpy(dtype=np.float64))
         raw_returns = np.asarray(outcomes["label"].values, dtype=np.float64)
         ts_values = np.asarray(outcomes["timestamp"].values)
+
+        if best_policy is not None:
+            mfe = np.asarray(
+                outcomes.get("mfe_ret", np.abs(raw_returns)), dtype=np.float32
+            )
+            mae = np.asarray(
+                outcomes.get("mae_ret", np.abs(np.minimum(raw_returns, 0.0))),
+                dtype=np.float32,
+            )
+            bars = np.asarray(
+                outcomes.get("exit_bar", np.full(len(raw_returns), 4)),
+                dtype=np.int32,
+            )
+            barrier = np.maximum(mae * 2.5, 1e-4)
+            context = build_replay_context(
+                returns=raw_returns.astype(np.float32),
+                mfe_ret=mfe,
+                mae_ret=mae,
+                bars_since_entry=bars,
+                barrier_pct=barrier,
+                confidence=score_values.astype(np.float32),
+            )
+            raw_returns = replay_exit_policy(
+                raw_returns.astype(np.float32), context, best_policy
+            ).astype(np.float64)
 
         t_diff = pd.to_datetime(ts_values.max()) - pd.to_datetime(ts_values.min())
         n_days = float(t_diff / np.timedelta64(1, "D")) if len(ts_values) > 1 else 0.0

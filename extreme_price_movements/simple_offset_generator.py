@@ -50,24 +50,24 @@ def _compute_fill_probability(
     offset_ticks: np.ndarray,
     confidence_scores: np.ndarray,
     base_fill_prob: float = 0.9,
-    sensitivity: float = 0.2
+    sensitivity: float = 0.2,
 ) -> np.ndarray:
     """
     Compute fill probability as function of offset and confidence.
-    
+
     Higher confidence + larger offset = higher fill probability.
     Returns fill probability in [0, 1].
     """
     n = len(offset_ticks)
     fill_probs = np.zeros(n, dtype=np.float32)
-    
+
     for i in range(n):
         # Base fill probability decreases with larger offset (harder to fill)
         # But increases with confidence (we're more willing to wait)
         offset_penalty = 1.0 / (1.0 + sensitivity * offset_ticks[i])
         confidence_boost = 0.5 + 0.5 * confidence_scores[i]  # Map to [0.5, 1.0]
         fill_probs[i] = base_fill_prob * offset_penalty * confidence_boost
-    
+
     return np.clip(fill_probs, 0.1, 0.99)
 
 
@@ -84,10 +84,10 @@ def _simulate_offset_execution_atr(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Simulate limit order execution with offset expressed as ATR%.
-    
+
     Args:
         offset_atr_pct: Offset as fraction of ATR (e.g., 0.001 = 0.1% of ATR)
-    
+
     Returns:
         - executed: bool array indicating if order filled
         - fill_prices: price at which order filled (entry_price if not executed)
@@ -99,21 +99,21 @@ def _simulate_offset_execution_atr(
     fill_prices = entry_prices.copy()
     fill_bars = np.full(n, -1, dtype=np.int32)
     entry_improvements = np.zeros(n, dtype=np.float64)
-    
+
     for i in range(n):
         entry = entry_prices[i]
         is_long = is_longs[i]
         atr = atr_values[i] if i < len(atr_values) else entry * 0.001  # Fallback
-        
+
         # Compute offset in price terms from ATR%
         offset_price = atr * offset_atr_pct[i]
-        
+
         # Compute limit price based on direction and offset
         if is_long:
             limit_price = entry - offset_price
         else:
             limit_price = entry + offset_price
-        
+
         # Check for fill in next bars
         max_b = min(max_wait_bars, len(future_opens[i]))
         for b in range(max_b):
@@ -135,7 +135,7 @@ def _simulate_offset_execution_atr(
                     # Entry improvement: sold above market = positive
                     entry_improvements[i] = (limit_price - entry) / entry
                     break
-    
+
     return executed, fill_prices, fill_bars, entry_improvements
 
 
@@ -144,18 +144,18 @@ def compute_offset_atr_pct_from_confidence(
     base_offset_atr_pct: float = 0.001,  # 0.1% default
     max_offset_atr_pct: float = 0.003,  # 0.3% default
     confidence_threshold: float = 0.0,  # Use optimal from sizer, not hardcoded
-    scaling: str = "linear"
+    scaling: str = "linear",
 ) -> np.ndarray:
     """
     Compute ideal offset in ATR% based on Ridge confidence.
-    
+
     Args:
         confidence_scores: Normalized confidence scores [0, 1] from sizer
         base_offset_atr_pct: Minimum offset as ATR% (e.g., 0.001 = 0.1%)
         max_offset_atr_pct: Maximum offset as ATR% (e.g., 0.003 = 0.3%)
         confidence_threshold: Min confidence to apply offset (from sizer optimal threshold)
         scaling: "linear", "convex", or "concave"
-    
+
     Returns:
         Array of offset values as ATR% (e.g., 0.001 = 0.1%)
     """
@@ -166,34 +166,42 @@ def compute_offset_atr_pct_from_confidence(
         )
     else:
         conf_norm = confidence_scores.copy()
-    
+
     # Apply threshold mask
     above_threshold = conf_norm >= confidence_threshold
-    
+
     # Scale offset based on confidence level above threshold
     if confidence_threshold >= 1.0:
         offset_scale = np.zeros_like(conf_norm)
     else:
         if scaling == "linear":
-            offset_scale = (conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)
+            offset_scale = (conf_norm - confidence_threshold) / (
+                1.0 - confidence_threshold + 1e-9
+            )
         elif scaling == "convex":
             # Aggressive scaling: high confidence gets max offset quickly
-            offset_scale = ((conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)) ** 0.5
+            offset_scale = (
+                (conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)
+            ) ** 0.5
         elif scaling == "concave":
             # Conservative scaling: requires very high confidence for max offset
-            offset_scale = ((conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)) ** 2.0
+            offset_scale = (
+                (conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)
+            ) ** 2.0
         else:
             offset_scale = conf_norm - confidence_threshold
-    
+
     offset_scale = np.clip(offset_scale, 0.0, 1.0)
-    
+
     # Compute offset in ATR%
     offsets = np.where(
         above_threshold,
         base_offset_atr_pct + offset_scale * (max_offset_atr_pct - base_offset_atr_pct),
-        np.full_like(conf_norm, base_offset_atr_pct)  # Even low confidence gets base offset
+        np.full_like(
+            conf_norm, base_offset_atr_pct
+        ),  # Even low confidence gets base offset
     )
-    
+
     return offsets
 
 
@@ -208,7 +216,7 @@ def compute_offset_raw_return_from_confidence(
 ) -> np.ndarray:
     """
     Compute offset in raw return terms (price improvement as % of entry).
-    
+
     Args:
         confidence_scores: Normalized confidence scores [0, 1]
         expected_returns: Expected return per trade (for scaling context)
@@ -217,7 +225,7 @@ def compute_offset_raw_return_from_confidence(
         confidence_threshold: Min confidence to apply offset
         scaling: "linear", "convex", "concave"
         invert: If True, higher confidence gets LOWER offset (tighter to market)
-    
+
     Returns:
         Array of offset values as raw return (entry price improvement)
     """
@@ -228,22 +236,28 @@ def compute_offset_raw_return_from_confidence(
         )
     else:
         conf_norm = confidence_scores.copy()
-    
+
     # Scale offset based on confidence
     if confidence_threshold >= 1.0:
         offset_scale = np.zeros_like(conf_norm)
     else:
         if scaling == "linear":
-            offset_scale = (conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)
+            offset_scale = (conf_norm - confidence_threshold) / (
+                1.0 - confidence_threshold + 1e-9
+            )
         elif scaling == "convex":
-            offset_scale = ((conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)) ** 0.5
+            offset_scale = (
+                (conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)
+            ) ** 0.5
         elif scaling == "concave":
-            offset_scale = ((conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)) ** 2.0
+            offset_scale = (
+                (conf_norm - confidence_threshold) / (1.0 - confidence_threshold + 1e-9)
+            ) ** 2.0
         else:
             offset_scale = conf_norm - confidence_threshold
-    
+
     offset_scale = np.clip(offset_scale, 0.0, 1.0)
-    
+
     if invert:
         # Invert: higher confidence = lower offset (tighter to market)
         # Low confidence (scale=0) gets max_offset, high confidence (scale=1) gets base_offset
@@ -251,7 +265,7 @@ def compute_offset_raw_return_from_confidence(
     else:
         # Normal: higher confidence = higher offset (further from market)
         offsets = base_offset_ret + offset_scale * (max_offset_ret - base_offset_ret)
-    
+
     return offsets
 
 
@@ -262,16 +276,16 @@ def adjust_returns_for_offset(
 ) -> np.ndarray:
     """
     Adjust trade returns for better entry price from offset.
-    
+
     Key insight: If you enter at a better price:
     - For LONGS: limit price below market → entry is lower → gains are LARGER, losses are SMALLER
     - For SHORTS: limit price above market → entry is higher → gains are LARGER, losses are SMALLER
-    
+
     Args:
         original_returns: Raw returns from original entry price
         is_longs: Boolean array True=long, False=short
         entry_price_improvements: Price improvement as fraction (e.g., 0.001 = 0.1% better entry)
-    
+
     Returns:
         Adjusted returns accounting for better entry
     """
@@ -288,11 +302,11 @@ def apply_position_sizing_with_offset(
     executed: np.ndarray,
     wallet_range: Tuple[float, float] = (0.05, 0.15),
     sizing_mode: str = "linear",
-    cost_pct: float = 0.003
+    cost_pct: float = 0.003,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Apply position sizing to returns, accounting for execution.
-    
+
     Args:
         returns: Raw net returns per trade
         confidence_scores: Confidence scores for sizing
@@ -300,20 +314,20 @@ def apply_position_sizing_with_offset(
         wallet_range: (min_wallet%, max_wallet%) allocation
         sizing_mode: "linear", "convex", or "fixed"
         cost_pct: Transaction cost percentage
-    
+
     Returns:
         - sized_returns: Returns after position sizing and costs
         - sizes: Position sizes applied
     """
     n = len(returns)
-    
+
     # Only size executed trades
     executed_returns = returns.copy()
     executed_returns[~executed] = 0.0  # No return if not executed
-    
+
     # Apply transaction costs to executed trades
     executed_returns[executed] -= cost_pct
-    
+
     # Compute position sizes based on confidence
     if sizing_mode == "linear":
         # Linear interpolation from wallet_range[0] to wallet_range[1]
@@ -324,7 +338,7 @@ def apply_position_sizing_with_offset(
         # Convex: higher confidence gets disproportionately larger size
         sorted_idx = np.argsort(confidence_scores)
         linear = np.linspace(0, 1, n)
-        convex = linear ** 0.5  # Square root for convexity
+        convex = linear**0.5  # Square root for convexity
         sizes = wallet_range[0] + convex * (wallet_range[1] - wallet_range[0])
         sized_array = np.zeros(n)
         sized_array[sorted_idx] = sizes
@@ -333,7 +347,7 @@ def apply_position_sizing_with_offset(
         # Concave: size increases slowly at first then rapidly
         sorted_idx = np.argsort(confidence_scores)
         linear = np.linspace(0, 1, n)
-        concave = linear ** 2.0
+        concave = linear**2.0
         sizes = wallet_range[0] + concave * (wallet_range[1] - wallet_range[0])
         sized_array = np.zeros(n)
         sized_array[sorted_idx] = sizes
@@ -341,12 +355,12 @@ def apply_position_sizing_with_offset(
     else:
         # Fixed size at max
         sizes = np.full(n, wallet_range[1])
-    
+
     # Zero out sizes for non-executed trades
     sizes[~executed] = 0.0
-    
+
     sized_returns = executed_returns * sizes
-    
+
     return sized_returns, sizes
 
 
@@ -365,7 +379,7 @@ def evaluate_offset_strategy(
 ) -> Dict[str, Any]:
     """
     Evaluate strategy with offset applied.
-    
+
     Returns comprehensive metrics including fill rate delta vs baseline.
     """
     # Basic info
@@ -373,7 +387,7 @@ def evaluate_offset_strategy(
     executed_mask = executed
     n_executed = np.sum(executed_mask)
     fill_rate = n_executed / n_trades if n_trades > 0 else 0.0
-    
+
     if n_executed == 0:
         return {
             "n_trades": 0,
@@ -386,56 +400,66 @@ def evaluate_offset_strategy(
             "sortino": 0.0,
             "max_drawdown": 0.0,
         }
-    
+
     # KEY METRIC: Fill rate delta vs baseline (market orders = 100% fill)
     fill_rate_delta = fill_rate - baseline_fill_rate
     fill_rate_delta_pct = fill_rate_delta * 100  # Convert to percentage points
-    
+
     # Calculate hit_rate and profit_factor on RAW returns (before sizing)
     # This gives true trade performance, not distorted by position sizing
     raw_executed_rets = returns[executed_mask]
     hit_rate = np.mean(raw_executed_rets > 0) if len(raw_executed_rets) > 0 else 0.0
-    
+
     # Profit factor on raw returns
     gross_profit_raw = np.sum(raw_executed_rets[raw_executed_rets > 0])
     gross_loss_raw = np.abs(np.sum(raw_executed_rets[raw_executed_rets < 0]))
-    profit_factor = gross_profit_raw / gross_loss_raw if gross_loss_raw > 1e-9 else float(gross_profit_raw)
-    
+    profit_factor = (
+        gross_profit_raw / gross_loss_raw
+        if gross_loss_raw > 1e-9
+        else float(gross_profit_raw)
+    )
+
     # Apply position sizing for PnL-based metrics
     sized_returns, sizes = apply_position_sizing_with_offset(
         returns, confidence_scores, executed, wallet_range, sizing_mode, cost_pct
     )
-    
+
     # Filter to executed trades for metrics
     executed_mask_sized = executed & (sizes > 0)
     executed_rets = sized_returns[executed_mask_sized]
     executed_ts = timestamps[executed_mask_sized] if timestamps is not None else None
-    
+
     net_pnl = np.sum(executed_rets)
-    
+
     # Sortino
     downside_rets = executed_rets[executed_rets < 0]
     downside_std = np.std(downside_rets) if len(downside_rets) > 0 else 1e-6
     mean_ret = np.mean(executed_rets)
     sortino = mean_ret / downside_std
-    
+
     # Drawdown
     _, dd_series = _stable_equity_and_drawdown(executed_rets)
     max_drawdown = np.max(dd_series) if len(dd_series) > 0 else 0.0
-    
+
     # Execution quality
-    avg_fill_bars = np.mean(fill_bars[executed_mask]) if np.sum(executed_mask) > 0 else 0.0
-    avg_offset_atr_pct = np.mean(offset_atr_pct[executed_mask]) if np.sum(executed_mask) > 0 else 0.0
-    
+    avg_fill_bars = (
+        np.mean(fill_bars[executed_mask]) if np.sum(executed_mask) > 0 else 0.0
+    )
+    avg_offset_atr_pct = (
+        np.mean(offset_atr_pct[executed_mask]) if np.sum(executed_mask) > 0 else 0.0
+    )
+
     # Per-trade metrics
     pnl_per_trade_bps = (net_pnl / n_executed) * 10000 if n_executed > 0 else 0.0
     trades_per_day = n_executed / n_days if n_days > 0 else 0.0
-    
+
     # Cost of non-execution (opportunity cost)
     missed_trades = ~executed
     missed_returns = returns[missed_trades]
-    opportunity_cost = np.sum(missed_returns[missed_returns > 0]) if len(missed_returns) > 0 else 0.0
-    
+    opportunity_cost = (
+        np.sum(missed_returns[missed_returns > 0]) if len(missed_returns) > 0 else 0.0
+    )
+
     return {
         "n_trades": int(n_trades),
         "n_executed": int(n_executed),
@@ -460,62 +484,78 @@ def evaluate_offset_strategy(
 def generate_offset_comparison(
     baseline_metrics: Dict[str, Any],
     offset_metrics: Dict[str, Any],
-    strategy_name: str = "strategy"
+    strategy_name: str = "strategy",
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Generate comparison table between baseline and offset strategy.
-    
+
     Includes fill_rate_delta as primary execution quality metric.
     """
     metrics_to_compare = [
-        "net_pnl", "hit_rate", "profit_factor", "sortino", 
-        "max_drawdown", "n_executed", "fill_rate", "pnl_per_trade_bps",
-        "fill_rate_delta", "fill_rate_delta_pct", "opportunity_cost"
+        "net_pnl",
+        "hit_rate",
+        "profit_factor",
+        "sortino",
+        "max_drawdown",
+        "n_executed",
+        "fill_rate",
+        "pnl_per_trade_bps",
+        "fill_rate_delta",
+        "fill_rate_delta_pct",
+        "opportunity_cost",
     ]
-    
+
     rows = []
     for metric in metrics_to_compare:
         base_val = baseline_metrics.get(metric, 0.0)
         offset_val = offset_metrics.get(metric, 0.0)
-        
+
         # For fill_rate_delta, lower (less negative) is better
         if metric == "fill_rate_delta":
             is_better = offset_val > base_val  # Less negative = better
         elif metric == "opportunity_cost":
             is_better = offset_val < base_val  # Lower opportunity cost = better
         else:
-            is_better = offset_val > base_val if metric not in ["max_drawdown"] else offset_val < base_val
-        
+            is_better = (
+                offset_val > base_val
+                if metric not in ["max_drawdown"]
+                else offset_val < base_val
+            )
+
         if base_val != 0:
             improvement = (offset_val - base_val) / abs(base_val) * 100
         else:
-            improvement = 0.0 if offset_val == 0 else float('inf')
-        
-        rows.append({
-            "metric": metric,
-            "baseline": base_val,
-            "with_offset": offset_val,
-            "improvement_pct": improvement,
-            "better": "✓" if is_better else "✗" if not is_better else "=",
-        })
-    
+            improvement = 0.0 if offset_val == 0 else float("inf")
+
+        rows.append(
+            {
+                "metric": metric,
+                "baseline": base_val,
+                "with_offset": offset_val,
+                "improvement_pct": improvement,
+                "better": "✓" if is_better else "✗" if not is_better else "=",
+            }
+        )
+
     df = pd.DataFrame(rows)
-    
+
     # Summary with fill rate delta as key metric
     n_better = sum(1 for r in rows if r["better"] == "✓")
     n_worse = sum(1 for r in rows if r["better"] == "✗")
-    
+
     summary = {
         "strategy": strategy_name,
         "metrics_better": n_better,
         "metrics_worse": n_worse,
-        "net_pnl_delta": offset_metrics.get("net_pnl", 0) - baseline_metrics.get("net_pnl", 0),
-        "sortino_delta": offset_metrics.get("sortino", 0) - baseline_metrics.get("sortino", 0),
+        "net_pnl_delta": offset_metrics.get("net_pnl", 0)
+        - baseline_metrics.get("net_pnl", 0),
+        "sortino_delta": offset_metrics.get("sortino", 0)
+        - baseline_metrics.get("sortino", 0),
         "fill_rate_delta_pct": offset_metrics.get("fill_rate_delta_pct", 0),
         "opportunity_cost": offset_metrics.get("opportunity_cost", 0),
         "n_missed": offset_metrics.get("n_missed", 0),
     }
-    
+
     return df, summary
 
 
@@ -536,12 +576,12 @@ def run_simple_offset_generator_from_sizer(
 ) -> Dict[str, Any]:
     """
     Main orchestrator for offset generation - takes simple_position_sizer.py results directly.
-    
+
     Uses the optimal threshold and wallet settings from sizer_results['profit_proxy_table_']
-    
+
     Key insight: With offset entry, gains are LARGER and losses are SMALLER because you
     enter at a better price (lower for longs, higher for shorts).
-    
+
     Args:
         sizer_results: Output dict from run_simple_position_sizer() containing:
             - 'ridge_sizer_scores_': OOF Ridge predictions
@@ -560,16 +600,20 @@ def run_simple_offset_generator_from_sizer(
         cost_pct: Transaction cost %
         max_wait_bars: Max bars to wait for limit fill
         use_atr_values: Optional ATR values per trade (for offset computation)
-    
+
     Returns:
         Dictionary with baseline metrics, offset metrics, comparison table, and diagnostics.
     """
     # Determine mode: ATR% or raw return
-    if use_raw_return_offset or (base_offset_atr_pct is None and max_offset_atr_pct is None):
+    if use_raw_return_offset or (
+        base_offset_atr_pct is None and max_offset_atr_pct is None
+    ):
         use_raw_return_offset = True
         logger.info("Using RAW RETURN based offsets")
     else:
-        logger.info(f"Using ATR% offsets: base={base_offset_atr_pct}, max={max_offset_atr_pct}")
+        logger.info(
+            f"Using ATR% offsets: base={base_offset_atr_pct}, max={max_offset_atr_pct}"
+        )
     # 1. Extract from sizer results
 
     # We may be forcing a specific model's scores to be used.
@@ -598,13 +642,13 @@ def run_simple_offset_generator_from_sizer(
             profit_proxy_df = sizer_results.get("profit_proxy_table_")
     baseline_rets = sizer_results.get("opt_rets_")
     baseline_ts = sizer_results.get("opt_ts_")
-    
+
     if ridge_scores is None:
         logger.error("No best_simple_score_ found in sizer_results")
         return {"error": "No sizer scores available"}
-    
+
     n_samples = len(ridge_scores)
-    
+
     # 2. Get optimal threshold and wallet settings from profit_proxy_table_
     if profit_proxy_df is not None and not profit_proxy_df.empty:
         # Find optimal row (marked by is_optimal or highest wallet_pnl)
@@ -613,11 +657,11 @@ def run_simple_offset_generator_from_sizer(
         else:
             opt_idx = profit_proxy_df["wallet_pnl"].idxmax()
             opt_row = profit_proxy_df.loc[opt_idx]
-        
+
         opt_frac = opt_row["selection_frac"]
         wallet_range = (
             opt_row.get("wallet_min", 0.05),
-            opt_row.get("wallet_max", 0.15)
+            opt_row.get("wallet_max", 0.15),
         )
         sizing_mode = opt_row.get("sizing_mode", "linear")
     else:
@@ -625,25 +669,31 @@ def run_simple_offset_generator_from_sizer(
         opt_frac = 0.2
         wallet_range = (0.05, 0.15)
         sizing_mode = "linear"
-    
+
     # 3. Determine threshold and filter trades
     k_opt = max(1, int(n_samples * opt_frac))
     above_thresh_idx = np.argpartition(ridge_scores, -k_opt)[-k_opt:]
-    
+
     # Sort threshold idx by score for proper confidence ranking (low to high)
     above_thresh_idx = above_thresh_idx[np.argsort(ridge_scores[above_thresh_idx])]
-    
+
     # Normalize confidence scores to [0, 1] using sigmoid (for ALL samples first)
     confidence_scores = 1.0 / (1.0 + np.exp(-ridge_scores))
     # Then extract for thresholded trades
     thresh_confidence = confidence_scores[above_thresh_idx]
-    
+
     # Get returns for thresholded trades
     # Need to extract returns aligned with the sizer output
-    if baseline_rets is not None and len(baseline_rets) > 0 and len(baseline_rets) == k_opt:
+    if (
+        baseline_rets is not None
+        and len(baseline_rets) > 0
+        and len(baseline_rets) == k_opt
+    ):
         # Use the baseline returns directly - they're already filtered
         thresh_returns = baseline_rets
-        thresh_ts = baseline_ts if baseline_ts is not None else np.arange(len(baseline_rets))
+        thresh_ts = (
+            baseline_ts if baseline_ts is not None else np.arange(len(baseline_rets))
+        )
     else:
         # Extract from trade_outcomes using the above_thresh_idx
         if "net_return" in trade_outcomes.columns:
@@ -652,15 +702,15 @@ def run_simple_offset_generator_from_sizer(
             full_returns = trade_outcomes["return"].values
         else:
             full_returns = np.zeros(n_samples)
-        
+
         thresh_returns = full_returns[above_thresh_idx]
-        
+
         if "timestamp" in trade_outcomes.columns:
             full_ts = pd.to_datetime(trade_outcomes["timestamp"]).values
             thresh_ts = full_ts[above_thresh_idx]
         else:
             thresh_ts = np.arange(len(above_thresh_idx))
-    
+
     # 4. Baseline metrics (market orders - 100% fill rate)
     baseline_metrics = evaluate_offset_strategy(
         returns=thresh_returns,
@@ -674,7 +724,7 @@ def run_simple_offset_generator_from_sizer(
         cost_pct=cost_pct,
         baseline_fill_rate=1.0,
     )
-    
+
     # 5. Compute offset based on confidence (ATR% or raw return)
     if use_raw_return_offset:
         offset_raw = compute_offset_raw_return_from_confidence(
@@ -687,7 +737,11 @@ def run_simple_offset_generator_from_sizer(
             invert=invert_offset,
         )
         # Convert to ATR% for simulation (estimate ATR as 0.1% of entry)
-        entry_prices = trade_outcomes["entry_price"].values[above_thresh_idx] if "entry_price" in trade_outcomes.columns else np.ones(len(thresh_returns))
+        entry_prices = (
+            trade_outcomes["entry_price"].values[above_thresh_idx]
+            if "entry_price" in trade_outcomes.columns
+            else np.ones(len(thresh_returns))
+        )
         atr_estimate = entry_prices * 0.001  # 0.1% of price as ATR estimate
         offset_atr_pct = offset_raw / atr_estimate
     else:
@@ -702,25 +756,46 @@ def run_simple_offset_generator_from_sizer(
             scaling=offset_scaling,
         )
         offset_raw = None  # Will compute later from fill results
-    
+
     # 6. Simulate execution with offset
-    entry_improvements = np.zeros(len(thresh_returns))  # Price improvement from better entry
-    
+    entry_improvements = np.zeros(
+        len(thresh_returns)
+    )  # Price improvement from better entry
+
     if use_atr_values is None and future_prices is not None and "atr" in future_prices:
         use_atr_values = future_prices["atr"][above_thresh_idx]
-    
-    if future_prices is not None and all(k in future_prices for k in ["opens", "highs", "lows"]):
+
+    if future_prices is not None and all(
+        k in future_prices for k in ["opens", "highs", "lows"]
+    ):
         # Get entry prices and directions
-        entry_prices = trade_outcomes["entry_price"].values[above_thresh_idx] if "entry_price" in trade_outcomes.columns else np.ones(len(thresh_returns))
-        is_longs = trade_outcomes["is_long"].values[above_thresh_idx] if "is_long" in trade_outcomes.columns else np.ones(len(thresh_returns), dtype=bool)
-        
+        entry_prices = (
+            trade_outcomes["entry_price"].values[above_thresh_idx]
+            if "entry_price" in trade_outcomes.columns
+            else np.ones(len(thresh_returns))
+        )
+        is_longs = (
+            trade_outcomes["is_long"].values[above_thresh_idx]
+            if "is_long" in trade_outcomes.columns
+            else np.ones(len(thresh_returns), dtype=bool)
+        )
+
         # Use ATR values if provided, else estimate from entry price
         if use_atr_values is not None:
-            atr_vals = use_atr_values[above_thresh_idx] if len(use_atr_values) == n_samples else use_atr_values
+            atr_vals = (
+                use_atr_values[above_thresh_idx]
+                if len(use_atr_values) == n_samples
+                else use_atr_values
+            )
         else:
             atr_vals = entry_prices * 0.001  # Estimate 0.1% as default ATR
-        
-        executed, fill_prices, fill_bars, entry_improvements = _simulate_offset_execution_atr(
+
+        (
+            executed,
+            fill_prices,
+            fill_bars,
+            entry_improvements,
+        ) = _simulate_offset_execution_atr(
             entry_prices=entry_prices,
             is_longs=is_longs,
             atr_values=atr_vals,
@@ -730,12 +805,12 @@ def run_simple_offset_generator_from_sizer(
             offset_atr_pct=offset_atr_pct,
             max_wait_bars=max_wait_bars,
         )
-        
+
         # If using raw return offset, use actual improvements, otherwise compute from ATR%
         if use_raw_return_offset and offset_raw is not None:
             # Use the actual entry improvements from simulation
             pass  # entry_improvements already set
-        
+
         # Adjust returns for better entry price
         # Gains are LARGER, losses are SMALLER with offset
         adjusted_returns = adjust_returns_for_offset(
@@ -745,24 +820,32 @@ def run_simple_offset_generator_from_sizer(
         )
     else:
         # Probabilistic fill model based on offset size
-        is_longs = trade_outcomes["is_long"].values[above_thresh_idx] if "is_long" in trade_outcomes.columns else np.ones(len(thresh_returns), dtype=bool)
-        
+        is_longs = (
+            trade_outcomes["is_long"].values[above_thresh_idx]
+            if "is_long" in trade_outcomes.columns
+            else np.ones(len(thresh_returns), dtype=bool)
+        )
+
         if use_raw_return_offset and offset_raw is not None:
             fill_probs = np.exp(-offset_raw * 1000)  # Exponential decay with raw offset
         else:
             fill_probs = np.exp(-offset_atr_pct * 100)  # Exponential decay with ATR%
         fill_probs = np.clip(fill_probs, 0.3, 0.95)
         executed = np.random.random(len(thresh_returns)) < fill_probs
-        fill_bars = np.where(executed, np.random.randint(0, max_wait_bars, len(thresh_returns)), -1)
-        
+        fill_bars = np.where(
+            executed, np.random.randint(0, max_wait_bars, len(thresh_returns)), -1
+        )
+
         # Estimate entry improvements for non-simulation case
-        entry_improvements = np.where(executed, offset_atr_pct * 0.001, 0.0)  # Rough estimate
+        entry_improvements = np.where(
+            executed, offset_atr_pct * 0.001, 0.0
+        )  # Rough estimate
         adjusted_returns = adjust_returns_for_offset(
             original_returns=thresh_returns,
             is_longs=is_longs,
             entry_price_improvements=entry_improvements,
         )
-    
+
     # 7. Offset strategy metrics (using adjusted returns for better entry)
     offset_metrics = evaluate_offset_strategy(
         returns=adjusted_returns,  # Use adjusted returns!
@@ -776,12 +859,12 @@ def run_simple_offset_generator_from_sizer(
         cost_pct=cost_pct,
         baseline_fill_rate=1.0,
     )
-    
+
     # 8. Generate comparison
     comparison_df, summary = generate_offset_comparison(
         baseline_metrics, offset_metrics, strategy_name="ridge_atr_offset"
     )
-    
+
     # 9. Additional diagnostics
     diagnostics = {
         "n_total_trades": n_samples,
@@ -796,13 +879,22 @@ def run_simple_offset_generator_from_sizer(
         "total_entry_improvement": np.sum(entry_improvements),
         "adjusted_return_boost": np.sum(adjusted_returns) - np.sum(thresh_returns),
         "offset_distribution_atr_pct": pd.Series(offset_atr_pct).describe().to_dict(),
-        "entry_improvement_distribution": pd.Series(entry_improvements).describe().to_dict(),
-        "fill_rate_by_offset": pd.DataFrame({
-            "offset_atr_pct": offset_atr_pct,
-            "executed": executed,
-        }).groupby("offset_atr_pct")["executed"].mean().to_dict() if len(offset_atr_pct) > 0 else {},
+        "entry_improvement_distribution": pd.Series(entry_improvements)
+        .describe()
+        .to_dict(),
+        "fill_rate_by_offset": pd.DataFrame(
+            {
+                "offset_atr_pct": offset_atr_pct,
+                "executed": executed,
+            }
+        )
+        .groupby("offset_atr_pct")["executed"]
+        .mean()
+        .to_dict()
+        if len(offset_atr_pct) > 0
+        else {},
     }
-    
+
     return {
         "baseline_metrics": baseline_metrics,
         "offset_metrics": offset_metrics,
@@ -814,7 +906,66 @@ def run_simple_offset_generator_from_sizer(
         "offset_atr_pct": offset_atr_pct,
         "confidence_scores": thresh_confidence,
         "executed": executed,
-        "fill_bars": fill_bars if 'fill_bars' in locals() else None,
+        "fill_bars": fill_bars if "fill_bars" in locals() else None,
+    }
+
+
+def build_policy_path_state_bundle(
+    trade_outcomes: pd.DataFrame,
+    selected_idx: Optional[np.ndarray] = None,
+    k_recent: int = 3,
+) -> Dict[str, np.ndarray]:
+    """Materialize vectorized path-state arrays used by policy optimisation and OOS replay."""
+    n_total = len(trade_outcomes)
+    if selected_idx is None:
+        selected_idx = np.arange(n_total, dtype=np.int64)
+    idx = np.asarray(selected_idx, dtype=np.int64)
+
+    def _col(name: str, default: float = 0.0) -> np.ndarray:
+        if name in trade_outcomes.columns:
+            return np.asarray(trade_outcomes[name].values, dtype=np.float32)[idx]
+        return np.full(len(idx), default, dtype=np.float32)
+
+    returns = _col("return", 0.0)
+    mfe = np.maximum(_col("mfe_ret", np.abs(returns)), 0.0)
+    mae = np.maximum(_col("mae_ret", np.abs(np.minimum(returns, 0.0))), 0.0)
+    duration = np.maximum(_col("duration", 4.0), 1.0)
+    barrier_pct = np.clip(np.maximum(mae * 2.5, 1e-4), 0.005, 0.2).astype(np.float32)
+
+    k = max(1, int(k_recent))
+    ae_vel = mae / np.maximum(duration, float(k))
+    delta_mfe = mfe / np.maximum(duration, float(k))
+    delta_mae = mae / np.maximum(duration, float(k))
+    pressure = delta_mae / (delta_mfe + 1e-6)
+    path_quality = delta_mfe - delta_mae
+    progress_per_bar = np.maximum(returns, 0.0) / np.maximum(
+        duration * barrier_pct, 1e-6
+    )
+
+    asym_raw = np.log((mfe + 1e-6) / (mae + 1e-6)).astype(np.float32)
+    trend = _col("trend_strength_percentile", 0.0)
+    choppiness = _col("choppiness", 0.0)
+    confidence = _col("oof_u_hat", 0.0)
+
+    timestamps = np.asarray(
+        trade_outcomes.get("timestamp", pd.Series(np.arange(n_total))).values
+    )[idx]
+
+    return {
+        "returns": returns.astype(np.float32),
+        "mfe_ret": mfe.astype(np.float32),
+        "mae_ret": mae.astype(np.float32),
+        "bars_since_entry": duration.astype(np.int32),
+        "barrier_pct": barrier_pct,
+        "AE_vel": ae_vel.astype(np.float32),
+        "pressure": pressure.astype(np.float32),
+        "path_quality": path_quality.astype(np.float32),
+        "progress_per_bar": progress_per_bar.astype(np.float32),
+        "asym_raw": asym_raw,
+        "trend": trend.astype(np.float32),
+        "choppiness": choppiness.astype(np.float32),
+        "confidence": confidence.astype(np.float32),
+        "timestamps": timestamps,
     }
 
 
@@ -830,20 +981,20 @@ def run_offset_sweep_analysis_from_sizer(
     max_offset_atr_pcts: List[float] = [0.002, 0.003, 0.005],  # 0.2%, 0.3%, 0.5%
     offset_scalings: List[str] = ["linear", "convex", "concave"],
     use_atr_values: Optional[np.ndarray] = None,
-    **kwargs
+    **kwargs,
 ) -> pd.DataFrame:
     """
     Run comprehensive sweep over ATR% offset parameters.
-    
+
     Uses sizer_results directly (no recomputation). Sweeps:
     - Base offset ATR% (minimum offset)
     - Max offset ATR% (maximum offset at high confidence)
     - Offset scaling curve (linear/convex/concave)
-    
+
     Returns DataFrame with all combinations and their metrics.
     """
     results = []
-    
+
     for base_atr in base_offset_atr_pcts:
         for max_atr in max_offset_atr_pcts:
             if max_atr <= base_atr:
@@ -858,47 +1009,64 @@ def run_offset_sweep_analysis_from_sizer(
                         max_offset_atr_pct=max_atr,
                         offset_scaling=scaling,
                         use_atr_values=use_atr_values,
-                        **kwargs
+                        **kwargs,
                     )
-                    
+
                     row = {
                         "base_offset_atr_pct": base_atr,
                         "max_offset_atr_pct": max_atr,
                         "offset_scaling": scaling,
                         "baseline_pnl": result["baseline_metrics"]["net_pnl"],
                         "offset_pnl": result["offset_metrics"]["net_pnl"],
-                        "pnl_improvement": result["offset_metrics"]["net_pnl"] - result["baseline_metrics"]["net_pnl"],
-                        "pnl_improvement_pct": (result["offset_metrics"]["net_pnl"] - result["baseline_metrics"]["net_pnl"]) / (abs(result["baseline_metrics"]["net_pnl"]) + 1e-9) * 100,
+                        "pnl_improvement": result["offset_metrics"]["net_pnl"]
+                        - result["baseline_metrics"]["net_pnl"],
+                        "pnl_improvement_pct": (
+                            result["offset_metrics"]["net_pnl"]
+                            - result["baseline_metrics"]["net_pnl"]
+                        )
+                        / (abs(result["baseline_metrics"]["net_pnl"]) + 1e-9)
+                        * 100,
                         "baseline_sortino": result["baseline_metrics"]["sortino"],
                         "offset_sortino": result["offset_metrics"]["sortino"],
-                        "sortino_delta": result["offset_metrics"]["sortino"] - result["baseline_metrics"]["sortino"],
+                        "sortino_delta": result["offset_metrics"]["sortino"]
+                        - result["baseline_metrics"]["sortino"],
                         "fill_rate": result["offset_metrics"]["fill_rate"],
-                        "fill_rate_delta_pct": result["offset_metrics"]["fill_rate_delta_pct"],
+                        "fill_rate_delta_pct": result["offset_metrics"][
+                            "fill_rate_delta_pct"
+                        ],
                         "n_executed": result["offset_metrics"]["n_executed"],
                         "n_missed": result["offset_metrics"]["n_missed"],
-                        "opportunity_cost": result["offset_metrics"]["opportunity_cost"],
-                        "avg_offset_atr_pct": result["diagnostics"]["avg_offset_atr_pct"],
+                        "opportunity_cost": result["offset_metrics"][
+                            "opportunity_cost"
+                        ],
+                        "avg_offset_atr_pct": result["diagnostics"][
+                            "avg_offset_atr_pct"
+                        ],
                         "threshold_frac": result["diagnostics"]["threshold_frac"],
                     }
                     results.append(row)
-                    
+
                     logger.info(
                         f"Sweep: base={base_atr:.4f}, max={max_atr:.4f}, scale={scaling} | "
                         f"FillRate={row['fill_rate']:.2%}, FillDelta={row['fill_rate_delta_pct']:.1f}pp, "
                         f"PnLΔ={row['pnl_improvement']:.4f}"
                     )
-                    
+
                 except Exception as e:
-                    logger.warning(f"Failed for base={base_atr}, max={max_atr}, scale={scaling}: {e}")
-    
+                    logger.warning(
+                        f"Failed for base={base_atr}, max={max_atr}, scale={scaling}: {e}"
+                    )
+
     df = pd.DataFrame(results)
-    
+
     # Add ranking by PnL improvement adjusted for fill rate loss
     if not df.empty:
         # Score = PnL improvement - penalty for fill rate loss
-        df["adjusted_score"] = df["pnl_improvement"] - 0.01 * df["fill_rate_delta_pct"].abs()
+        df["adjusted_score"] = (
+            df["pnl_improvement"] - 0.01 * df["fill_rate_delta_pct"].abs()
+        )
         df = df.sort_values("adjusted_score", ascending=False).reset_index(drop=True)
-    
+
     return df
 
 
@@ -909,39 +1077,41 @@ run_offset_sweep_analysis = run_offset_sweep_analysis_from_sizer
 if __name__ == "__main__":
     # Example usage - generates mock data for demonstration
     logging.basicConfig(level=logging.INFO)
-    
+
     logger.info("Running simple_offset_generator.py with synthetic data...")
-    
+
     # Generate synthetic test data
     np.random.seed(42)
     n_samples = 1000
-    
+
     # Synthetic features (Ridge head predictions) - use prefixes that detect_meta_head_keys expects
     feature_dict = {
         "base_h_0": np.random.randn(n_samples) * 0.5 + 0.1,
         "base_h_1": np.random.randn(n_samples) * 0.5 + 0.05,
         "base_h_2": np.random.randn(n_samples) * 0.5,
     }
-    
+
     # Synthetic returns (some predictive signal)
     signal = 0.3 * feature_dict["base_h_0"] + 0.2 * feature_dict["base_h_1"]
     y_raw_net_return = signal + np.random.randn(n_samples) * 0.02
-    
+
     # Synthetic trade outcomes
-    trade_outcomes = pd.DataFrame({
-        "timestamp": pd.date_range("2024-01-01", periods=n_samples, freq="15min"),
-        "entry_price": np.ones(n_samples) * 100.0,
-        "is_long": np.random.choice([True, False], n_samples),
-        "net_return": y_raw_net_return,
-    })
-    
+    trade_outcomes = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2024-01-01", periods=n_samples, freq="15min"),
+            "entry_price": np.ones(n_samples) * 100.0,
+            "is_long": np.random.choice([True, False], n_samples),
+            "net_return": y_raw_net_return,
+        }
+    )
+
     timestamps = trade_outcomes["timestamp"].values
-    
+
     # Step 1: Run simple position sizer to get thresholds and wallet settings
     logger.info("Step 1: Running simple position sizer...")
-    
+
     from extreme_price_movements.simple_position_sizer import run_simple_position_sizer
-    
+
     sizer_results = run_simple_position_sizer(
         feature_dict=feature_dict,
         trade_outcomes=trade_outcomes,
@@ -949,16 +1119,18 @@ if __name__ == "__main__":
         y_downside=np.abs(np.minimum(y_raw_net_return, 0)),
         timestamps=timestamps,
     )
-    
+
     # Check sizer results
     if "error" in sizer_results:
         logger.error(f"Sizer failed: {sizer_results['error']}")
     else:
-        logger.info(f"Sizer completed. Found {len(sizer_results.get('ridge_profit_proxy_table_', []))} profit proxy configurations")
-    
+        logger.info(
+            f"Sizer completed. Found {len(sizer_results.get('ridge_profit_proxy_table_', []))} profit proxy configurations"
+        )
+
     # Step 2a: Test ATR% offset mode
     logger.info("\nStep 2a: Testing ATR% based offsets...")
-    
+
     offset_results_atr = run_simple_offset_generator_from_sizer(
         sizer_results=sizer_results,
         trade_outcomes=trade_outcomes,
@@ -966,18 +1138,22 @@ if __name__ == "__main__":
         max_offset_atr_pct=0.003,  # 0.3%
         offset_scaling="linear",
     )
-    
+
     print("\n=== ATR% Mode: Comparison Table (Baseline vs Offset) ===")
     print(offset_results_atr["comparison_table"].to_string())
-    
+
     print("\n=== ATR% Mode: Diagnostics ===")
     for k, v in offset_results_atr["diagnostics"].items():
-        if k not in ["offset_distribution_atr_pct", "fill_rate_by_offset", "entry_improvement_distribution"]:
+        if k not in [
+            "offset_distribution_atr_pct",
+            "fill_rate_by_offset",
+            "entry_improvement_distribution",
+        ]:
             print(f"  {k}: {v}")
-    
+
     # Step 2b: Test RAW RETURN offset mode
     logger.info("\nStep 2b: Testing RAW RETURN based offsets...")
-    
+
     offset_results_raw = run_simple_offset_generator_from_sizer(
         sizer_results=sizer_results,
         trade_outcomes=trade_outcomes,
@@ -986,25 +1162,29 @@ if __name__ == "__main__":
         max_offset_ret=0.0005,  # 5 bps max
         offset_scaling="linear",
     )
-    
+
     print("\n=== RAW RETURN Mode: Comparison Table (Baseline vs Offset) ===")
     print(offset_results_raw["comparison_table"].to_string())
-    
+
     print("\n=== RAW RETURN Mode: Key Metrics ===")
-    print(f"  Adjusted Return Boost: {offset_results_raw['diagnostics'].get('adjusted_return_boost', 0):.6f}")
-    print(f"  Avg Entry Improvement: {offset_results_raw['diagnostics'].get('avg_entry_improvement', 0):.6f}")
-    
+    print(
+        f"  Adjusted Return Boost: {offset_results_raw['diagnostics'].get('adjusted_return_boost', 0):.6f}"
+    )
+    print(
+        f"  Avg Entry Improvement: {offset_results_raw['diagnostics'].get('avg_entry_improvement', 0):.6f}"
+    )
+
     # Step 3: Run sweep analysis on ATR%
     logger.info("\nStep 3: Running ATR% sweep analysis...")
-    
+
     sweep_df = run_offset_sweep_analysis_from_sizer(
         sizer_results=sizer_results,
         trade_outcomes=trade_outcomes,
         base_offset_atr_pcts=[0.0005, 0.001, 0.0015],
         max_offset_atr_pcts=[0.002, 0.003],
     )
-    
+
     print("\n=== Top 5 ATR% Sweep Results (by adjusted score) ===")
     print(sweep_df.head().to_string())
-    
+
     logger.info("\n=== Done ===")

@@ -72,7 +72,10 @@ from extreme_price_movements.universe import (
 )
 from extreme_price_movements.utils import tprint
 
-from extreme_price_movements.slice_plan_store import load_or_build_slice_plan, apply_stage_usage_limits
+from extreme_price_movements.slice_plan_store import (
+    load_or_build_slice_plan,
+    apply_stage_usage_limits,
+)
 
 
 # SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
@@ -161,7 +164,11 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
     if strategies:
         cfg["strategies"] = strategies
         from extreme_price_movements.utils import tprint
-        from extreme_price_movements.slice_plan_store import load_or_build_slice_plan, apply_stage_usage_limits
+        from extreme_price_movements.slice_plan_store import (
+            load_or_build_slice_plan,
+            apply_stage_usage_limits,
+        )
+
         tprint(f"Loaded {len(strategies)} strategies from final_rule_registry.csv")
 
     return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
@@ -642,16 +649,22 @@ def run_backtest(cfg, ts_override=None, store=None):
             cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
         )
         if "holdout_strategy_eval" in slice_plan.get("materialized_views", {}):
-            stage_view = slice_plan["materialized_views"]["holdout_strategy_eval"].get("sub_views", {}).get("backtest_eval")
+            stage_view = (
+                slice_plan["materialized_views"]["holdout_strategy_eval"]
+                .get("sub_views", {})
+                .get("backtest_eval")
+            )
             if stage_view:
                 stage_view = apply_stage_usage_limits(
                     stage_view,
                     max_assets=cfg.get("planned_max_assets"),
-                    max_months=cfg.get("planned_max_months")
+                    max_months=cfg.get("planned_max_months"),
                 )
                 cfg["_active_stage_view"] = stage_view
         else:
-            tprint(f"Warning: stage holdout_strategy_eval not found in materialized_views")
+            tprint(
+                f"Warning: stage holdout_strategy_eval not found in materialized_views"
+            )
     except Exception as e:
         tprint(f"Slice plan loading failed: {e}")
 
@@ -691,16 +704,22 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
             cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
         )
         if "holdout_strategy_eval" in slice_plan.get("materialized_views", {}):
-            stage_view = slice_plan["materialized_views"]["holdout_strategy_eval"].get("sub_views", {}).get("backtest_eval")
+            stage_view = (
+                slice_plan["materialized_views"]["holdout_strategy_eval"]
+                .get("sub_views", {})
+                .get("backtest_eval")
+            )
             if stage_view:
                 stage_view = apply_stage_usage_limits(
                     stage_view,
                     max_assets=cfg.get("planned_max_assets"),
-                    max_months=cfg.get("planned_max_months")
+                    max_months=cfg.get("planned_max_months"),
                 )
                 cfg["_active_stage_view"] = stage_view
         else:
-            tprint(f"Warning: stage holdout_strategy_eval not found in materialized_views")
+            tprint(
+                f"Warning: stage holdout_strategy_eval not found in materialized_views"
+            )
     except Exception as e:
         tprint(f"Slice plan loading failed: {e}")
 
@@ -874,7 +893,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
             stage_view = apply_stage_usage_limits(
                 stage_view,
                 max_assets=cfg.get("planned_max_assets"),
-                max_months=cfg.get("planned_max_months")
+                max_months=cfg.get("planned_max_months"),
             )
             cfg["_active_stage_view"] = stage_view
         else:
@@ -999,7 +1018,7 @@ def run_sizer(cfg, ts_override=None, store=None):
             stage_view = apply_stage_usage_limits(
                 stage_view,
                 max_assets=cfg.get("planned_max_assets"),
-                max_months=cfg.get("planned_max_months")
+                max_months=cfg.get("planned_max_months"),
             )
             cfg["_active_stage_view"] = stage_view
         else:
@@ -1102,6 +1121,76 @@ def run_trigger_discovery(cfg, ts_override=None):
         _maintenance_checkpoint("trigger_discovery:end")
 
 
+def _run_offset_generation_stage(cfg, ts_sig):
+    """Run simple offset generation before policy optimisation."""
+    try:
+        from extreme_price_movements.policy_optimiser import (
+            _load_best_strategy,
+            resolve_optimised_selection_frac,
+        )
+        from extreme_price_movements.run_ridge_sizer import (
+            load_meta_oof_predictions,
+            load_trade_outcomes,
+        )
+        from extreme_price_movements.simple_offset_generator import (
+            run_simple_offset_generator_from_sizer,
+        )
+
+        run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+        selected = _load_best_strategy(cfg.get("data_root", "data"), run_id)
+        sid = selected.get("strategy_id", "")
+        if not sid:
+            tprint("OFFSET GENERATION: no selected strategy found; skipping")
+            return None
+        meta = load_meta_oof_predictions(cfg.get("data_root", "data"), run_id)
+        key = next((k for k in meta.keys() if sid in k), None)
+        if key is None:
+            tprint("OFFSET GENERATION: selected strategy missing in meta OOF; skipping")
+            return None
+        outcomes = load_trade_outcomes(cfg.get("data_root", "data"), run_id, meta[key])
+        conf = np.asarray(
+            outcomes.get("oof_u_hat", pd.Series(np.zeros(len(outcomes)))).values,
+            dtype=np.float32,
+        )
+        frac = resolve_optimised_selection_frac(
+            data_root=cfg.get("data_root", "data"),
+            run_id=run_id,
+            selected=selected,
+        )
+        k = max(1, int(len(conf) * frac))
+        idx = np.argpartition(conf, -k)[-k:]
+        sizer_stub = {
+            "best_simple_score_": conf,
+            "best_simple_score_name_": "Ridge_Head_Sizer",
+            "ridge_profit_proxy_table_": pd.DataFrame(
+                [
+                    {
+                        "selection_frac": frac,
+                        "wallet_min": 0.05,
+                        "wallet_max": 0.15,
+                        "sizing_mode": "linear",
+                        "is_optimal": True,
+                    }
+                ]
+            ),
+            "opt_rets_": np.asarray(
+                outcomes.get("return", pd.Series(np.zeros(len(outcomes)))).values,
+                dtype=np.float32,
+            )[idx],
+            "opt_ts_": np.asarray(
+                outcomes.get("timestamp", pd.Series(np.arange(len(outcomes)))).values
+            )[idx],
+        }
+        return run_simple_offset_generator_from_sizer(
+            sizer_results=sizer_stub,
+            trade_outcomes=outcomes,
+            cost_pct=float(cfg.get("ridge_cost_pct", 0.003)),
+        )
+    except Exception as exc:
+        tprint(f"WARNING: offset generation stage failed: {exc}")
+        return None
+
+
 def run_all(cfg, ts_override=None):
     """Run download -> features -> train (includes labels) -> optimise (learn entry) -> sizer -> optimise (sizing) in order.
 
@@ -1167,8 +1256,13 @@ def run_all(cfg, ts_override=None):
         return
     _maintenance_checkpoint("run_all:after_optimise_phase2")
 
-    # 4. Policy optimiser: 4-step exit-param optimisation on held-out 10%
+    # 4. Offset generation (must run after sizer selection and before policy optimiser)
     ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig:
+        tprint("STEP: OFFSET GENERATION")
+        _run_offset_generation_stage(cfg, ts_sig)
+
+    # 5. Policy optimiser
     if ts_sig:
         tprint("STEP: POLICY OPTIMISER")
         try:
@@ -1254,7 +1348,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
             stage_view = apply_stage_usage_limits(
                 stage_view,
                 max_assets=cfg.get("planned_max_assets"),
-                max_months=cfg.get("planned_max_months")
+                max_months=cfg.get("planned_max_months"),
             )
             cfg["_active_stage_view"] = stage_view
         else:
@@ -1326,11 +1420,13 @@ def run_optimise(cfg, ts_override=None, store=None):
             stage_view = apply_stage_usage_limits(
                 stage_view,
                 max_assets=cfg.get("planned_max_assets"),
-                max_months=cfg.get("planned_max_months")
+                max_months=cfg.get("planned_max_months"),
             )
             cfg["_active_stage_view"] = stage_view
         else:
-            tprint(f"Warning: stage utility_policy_optimisation not found in materialized_views")
+            tprint(
+                f"Warning: stage utility_policy_optimisation not found in materialized_views"
+            )
     except Exception as e:
         tprint(f"Slice plan loading failed: {e}")
 
@@ -1643,18 +1739,16 @@ def main():
         "--planned-max-assets",
         type=int,
         default=None,
-        help="Optional limit on number of symbols to run inside the plan stage"
+        help="Optional limit on number of symbols to run inside the plan stage",
     )
     parser.add_argument(
         "--planned-max-months",
         type=int,
         default=None,
-        help="Optional limit on the number of months to run inside the plan stage"
+        help="Optional limit on the number of months to run inside the plan stage",
     )
     parser.add_argument(
-        "--refresh-slice-plan",
-        action="store_true",
-        help="Force rebuild the slice plan"
+        "--refresh-slice-plan", action="store_true", help="Force rebuild the slice plan"
     )
     args = parser.parse_args()
 
@@ -1695,7 +1789,6 @@ def main():
     cfg["planned_max_months"] = args.planned_max_months
     cfg["refresh_slice_plan"] = bool(args.refresh_slice_plan)
 
-
     if args.mode == "download":
         run_download(cfg)
     elif args.mode == "labels":
@@ -1734,12 +1827,20 @@ def main():
         ts_sig = _resolve_ts_sig(cfg, args.ts_override)
         if ts_sig:
             try:
-                slice_plan = load_or_build_slice_plan(cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False))
+                slice_plan = load_or_build_slice_plan(
+                    cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+                )
                 if "holdout_strategy_eval" in slice_plan.get("materialized_views", {}):
-                    stage_view = slice_plan["materialized_views"]["holdout_strategy_eval"].get("sub_views", {}).get("policy_optimiser")
+                    stage_view = (
+                        slice_plan["materialized_views"]["holdout_strategy_eval"]
+                        .get("sub_views", {})
+                        .get("policy_optimiser")
+                    )
                     if stage_view:
                         cfg["_active_stage_view"] = apply_stage_usage_limits(
-                            stage_view, max_assets=cfg.get("planned_max_assets"), max_months=cfg.get("planned_max_months")
+                            stage_view,
+                            max_assets=cfg.get("planned_max_assets"),
+                            max_months=cfg.get("planned_max_months"),
                         )
             except Exception as e:
                 tprint(f"Slice plan loading failed: {e}")
@@ -1756,15 +1857,24 @@ def main():
         run_breakdown_diagnostics_standalone(cfg, ts_override=args.ts_override)
     elif args.mode == "oos_eval":
         from extreme_price_movements.oos_pipeline import run_oos_eval_pipeline
+
         ts_sig = _resolve_ts_sig(cfg, args.ts_override)
         if ts_sig:
             try:
-                slice_plan = load_or_build_slice_plan(cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False))
+                slice_plan = load_or_build_slice_plan(
+                    cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+                )
                 if "holdout_strategy_eval" in slice_plan.get("materialized_views", {}):
-                    stage_view = slice_plan["materialized_views"]["holdout_strategy_eval"].get("sub_views", {}).get("backtest_eval")
+                    stage_view = (
+                        slice_plan["materialized_views"]["holdout_strategy_eval"]
+                        .get("sub_views", {})
+                        .get("backtest_eval")
+                    )
                     if stage_view:
                         cfg["_active_stage_view"] = apply_stage_usage_limits(
-                            stage_view, max_assets=cfg.get("planned_max_assets"), max_months=cfg.get("planned_max_months")
+                            stage_view,
+                            max_assets=cfg.get("planned_max_assets"),
+                            max_months=cfg.get("planned_max_months"),
                         )
             except Exception as e:
                 tprint(f"Slice plan loading failed: {e}")

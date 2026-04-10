@@ -554,6 +554,10 @@ def load_meta_oof_predictions(
     # Inject required config-defined features into the inference data
     from extreme_price_movements.config import CFG
     from extreme_price_movements.data_store import load_features_selected
+from extreme_price_movements.slice_plan_store import load_features_for_stage_or_all
+
+
+
     from extreme_price_movements.training import _fast_lookup
 
     cfg = dict(CFG)
@@ -584,7 +588,7 @@ def load_meta_oof_predictions(
             if "symbol" in bdf.columns:
                 all_syms.update(bdf["symbol"].unique())
         
-        feats = load_features_selected(
+        feats = _smart_load_features_selected(cfg,
             ts=find_best_feature_snapshot_ts(data_root, run_id),
             root_dir=data_root,
             feature_keys=list(missing_feats),

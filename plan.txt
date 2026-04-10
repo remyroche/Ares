@@ -1,0 +1,4 @@
+1. Fix JSON serialization in `extreme_price_movements/slice_plan_store.py` by adding `OuterFold` and `InnerFold` support using `asdict` inside `_default`.
+2. Fix `_build_stage_view` to correctly combine `policy_optimiser` and `backtest_eval` for `holdout_strategy_eval`.
+3. Add hooks for `policy_optimiser` and `oos_eval` inside `run_pipeline.py`.
+4. Refactor `_smart_load_features_selected` out of local definitions into `extreme_price_movements/slice_plan_store.py` as a single exposed wrapper and update `pipeline_steps.py` and `run_ridge_sizer.py` to use it correctly.

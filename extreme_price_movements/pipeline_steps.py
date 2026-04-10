@@ -17,6 +17,9 @@ from extreme_price_movements.config import (
     HELPER_BASE_FEATURES,
     POSITION_SIZER_V2_FEATURE_CONFIG,
 )
+
+
+
 from extreme_price_movements.data_store import (
     _atomic_write_parquet,
     _ensure_feature_frame_index,
@@ -1457,9 +1460,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
 
     # Keep feature-key selection consistent with the shared cache/feature generation logic.
     label_feature_keys = _labeling_feature_keys(cfg)
-    feats = load_features_selected(
-        ts_sig,
-        cfg["data_root"],
+    feats = load_features_for_stage_or_all(cfg, ts_sig, cfg["data_root"],
         feature_keys=sorted(label_feature_keys),
         symbols=train_syms,
     )
@@ -1509,6 +1510,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
 
     if all_events:
         all_events_df = pd.concat(all_events, ignore_index=True).drop_duplicates()
+
         events = pd.DataFrame(
             {
                 "event_id": np.arange(len(all_events_df), dtype=np.int64),
@@ -1521,6 +1523,13 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
                 ),
             }
         )
+
+        # SAVE EVENTS FOR DOWNSTREAM
+        _events_path = os.path.join(cfg["data_root"], "artifacts", run_id, "baseline_events.parquet")
+        os.makedirs(os.path.dirname(_events_path), exist_ok=True)
+        events.to_parquet(_events_path)
+        tprint(f"Saved baseline events for planning to {_events_path}")
+
 
         # Use SlicePlanner to get training vs test split
         planner_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
@@ -2826,7 +2835,7 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
 
     # Load only required features to prevent OOM
     req_feats = _extract_required_features(bundle, cfg)
-    feats = load_features_selected(run_ts, cfg["data_root"], feature_keys=req_feats)
+    feats = load_features_for_stage_or_all(cfg, run_ts, cfg["data_root"], feature_keys=req_feats)
     if feats is None:
         tprint("ERROR: Features not found for risk optimization.")
         return
@@ -3004,9 +3013,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             feat_start_ts = min(df.index.min() for df in dfs.values() if not df.empty)
         except ValueError:
             feat_start_ts = None
-    feats = load_features_selected(
-        ts_sig,
-        cfg["data_root"],
+    feats = load_features_for_stage_or_all(cfg, ts_sig, cfg["data_root"],
         feature_keys=req_feats,
         symbols=train_syms,
         start_ts=feat_start_ts,
@@ -5207,9 +5214,7 @@ def run_feature_generation_step(
         _generate_feature_health_reports(
             ts_sig, cfg["data_root"], allowed_symbols=train_syms
         )
-        health_feats = load_features_selected(
-            ts_sig,
-            cfg["data_root"],
+        health_feats = load_features_for_stage_or_all(cfg, ts_sig, cfg["data_root"],
             feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
             symbols=train_syms,
         )

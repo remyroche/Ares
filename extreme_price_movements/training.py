@@ -6758,8 +6758,8 @@ def build_excursion_targets(
     mfe_norm = np.maximum(mfe / atr_safe, 0.0)
     mae_norm = np.maximum(mae / atr_safe, 0.0)
 
-    # Stage 1 + 2 logic for MFE and MAE is handled downstream. For now we output log1p for backwards compatibility.
-    y_mfe = np.log1p(mfe_norm)
+    mfe_cap = np.clip(mfe_norm, 0.0, 3.0)
+    y_mfe = np.log1p(np.maximum(mfe_cap - 0.1, 0.0))
     y_mae = np.log1p(mae_norm)
 
     # Use a bounded continuous ratio for asymmetry
@@ -7999,7 +7999,7 @@ def train_meta_models_from_artifacts(
 
         mae_target_variants = [
             str(v).lower()
-            for v in list(cfg.get("aux_mae_target_variants", ["rank_pct", "qbin_mid"]))
+            for v in list(cfg.get("aux_mae_target_variants", ["log_raw"]))
         ]
         mae_weight_variants = [
             str(v).lower()
@@ -8048,7 +8048,7 @@ def train_meta_models_from_artifacts(
 
         mfe_target_variants = [
             str(v).lower()
-            for v in list(cfg.get("aux_mfe_target_variants", ["rank_pct", "qbin_mid"]))
+            for v in list(cfg.get("aux_mfe_target_variants", ["log_raw"]))
         ]
         mfe_weight_variants = [
             str(v).lower()
@@ -8099,7 +8099,7 @@ def train_meta_models_from_artifacts(
         asym_target_variants = [
             str(v).lower()
             for v in list(
-                cfg.get("aux_asym_target_variants", ["log_raw", "rank_pct", "qbin_mid"])
+                cfg.get("aux_asym_target_variants", ["log_raw"])
             )
         ]
         asym_weight_variants = [
@@ -8521,18 +8521,6 @@ def train_meta_models_from_artifacts(
         )
 
         def _mae_train_target_full():
-            if mae_target_choice == "rank_pct":
-                return _rank_pct_target(y_mae_fit)
-            if mae_target_choice == "rank_tail_amp":
-                return _rank_tail_amp_target(
-                    y_mae_fit,
-                    top_start=float(cfg.get("aux_head_rank_tail_start", 0.70)),
-                    amp=float(cfg.get("aux_head_rank_tail_amp", 0.50)),
-                )
-            if mae_target_choice == "qbin_mid":
-                return _qbin_mid_target(
-                    y_mae_fit, n_bins=int(cfg.get("aux_mae_qbin_bins", 20))
-                )
             return y_mae_fit
 
         def _mae_train_weights_full():
@@ -8546,18 +8534,6 @@ def train_meta_models_from_artifacts(
             )
 
         def _mfe_train_target_full():
-            if mfe_target_choice == "rank_pct":
-                return _rank_pct_target(y_mfe_fit)
-            if mfe_target_choice == "rank_tail_amp":
-                return _rank_tail_amp_target(
-                    y_mfe_fit,
-                    top_start=float(cfg.get("aux_head_rank_tail_start", 0.70)),
-                    amp=float(cfg.get("aux_head_rank_tail_amp", 0.50)),
-                )
-            if mfe_target_choice == "qbin_mid":
-                return _qbin_mid_target(
-                    y_mfe_fit, n_bins=int(cfg.get("aux_mfe_qbin_bins", 20))
-                )
             return y_mfe_fit
 
         def _mfe_train_weights_full():
@@ -8571,18 +8547,6 @@ def train_meta_models_from_artifacts(
             )
 
         def _asym_train_target_full():
-            if asym_target_choice == "rank_pct":
-                return _rank_pct_target(y_asym_fit)
-            if asym_target_choice == "rank_tail_amp":
-                return _rank_tail_amp_target(
-                    y_asym_fit,
-                    top_start=float(cfg.get("aux_head_rank_tail_start", 0.70)),
-                    amp=float(cfg.get("aux_head_rank_tail_amp", 0.50)),
-                )
-            if asym_target_choice == "qbin_mid":
-                return _qbin_mid_target(
-                    y_asym_fit, n_bins=int(cfg.get("aux_asym_qbin_bins", 20))
-                )
             return y_asym_fit
 
         def _asym_train_weights_full():

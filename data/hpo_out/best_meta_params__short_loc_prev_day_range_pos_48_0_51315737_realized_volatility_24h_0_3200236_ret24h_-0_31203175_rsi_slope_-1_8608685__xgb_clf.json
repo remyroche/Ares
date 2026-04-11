@@ -3,7 +3,6 @@
   "kind": "xgb_clf",
   "best_params": {
     "n_estimators": 900,
-    "num_parallel_tree": 25,
     "max_depth": 7,
     "learning_rate": 0.1365056196354513,
     "subsample": 0.6661253173544918,

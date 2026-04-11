@@ -5836,6 +5836,8 @@ class RidgePositionSizer:
 
         self.feature_selection_diag_ = {"ridge": fs_diag_ridge}
         tprint(f"  Feature selection (sizer): kept {len(ridge_selected_features)} for Ridge, {len(tree_selected_features)} for Trees (out of {len(base_feature_names)})")
+        tprint(f"  Ridge kept features: {ridge_selected_features}")
+        tprint(f"  Trees kept features: {tree_selected_features}")
 
         from extreme_price_movements.purged_cv import PurgedKFold
 
@@ -6377,7 +6379,7 @@ class RidgePositionSizer:
         # --- ASSUMED CONTEXT END ---
 
         race_results = {}
-        for base_name in ["ridge", "et", "xgb"]:
+        for base_name in ["ridge", "et"]:
             for sm_name in smoother_kinds:
                 key = f"{base_name}+{sm_name}"
                 out = _run_policy_candidate(base_name, sm_name)
@@ -8174,6 +8176,44 @@ def run_ridge_position_sizer_step(
     tprint("=" * 80)
     tprint("RIDGE POSITION SIZER STEP")
     tprint("=" * 80)
+
+    def _select_numeric_oof_model_frame(df: pd.DataFrame) -> pd.DataFrame:
+        """Return only the numeric model-score columns used for ridge fitting."""
+        if not isinstance(df, pd.DataFrame):
+            return pd.DataFrame(df)
+        if "model_name" in df.columns and "pred" in df.columns:
+            wide = df.pivot(columns="model_name", values="pred")
+            return wide.sort_index(axis=1)
+
+        meta_cols = {
+            "timestamp",
+            "symbol",
+            "return",
+            "is_long",
+            "index",
+            "trade_side",
+            "bucket",
+            "ts",
+            "asset",
+            "side",
+            "close",
+            "entry_price",
+            "exit_price",
+        }
+        model_cols = [
+            c
+            for c in df.columns
+            if c not in meta_cols and pd.api.types.is_numeric_dtype(df[c])
+        ]
+        dropped_cols = [c for c in df.columns if c not in model_cols and c not in meta_cols]
+        if dropped_cols:
+            tprint(
+                "RidgePositionSizer: dropping non-numeric OOF columns before fit: "
+                f"{dropped_cols}"
+            )
+        if not model_cols:
+            raise ValueError("No numeric OOF model columns available for ridge fit")
+        return df[model_cols].copy()
     
     def _compute_oof_rank_metrics(
         scores: np.ndarray,
@@ -8311,6 +8351,12 @@ def run_ridge_position_sizer_step(
         except Exception as e:
             tprint(f"WARNING: label policy optimizer failed, continuing with existing labels: {e}")
 
+    fit_oof_preds = _select_numeric_oof_model_frame(oof_preds)
+    tprint(
+        f"RidgePositionSizer: using {len(fit_oof_preds.columns)} numeric OOF model columns "
+        f"for fit (from {len(oof_preds.columns)} total columns)"
+    )
+
     sizer = RidgePositionSizer(
         gamma_range=gamma_range,
         alpha_range=alpha_range,
@@ -8358,7 +8404,7 @@ def run_ridge_position_sizer_step(
     tprint(f"Sizer.fit: trade_outcomes has {len(trade_outcomes)} rows, "
            f"timestamps is {'None' if timestamps is None else f'len={len(timestamps)}'}")
     
-    sizer.fit(oof_preds, trade_outcomes, timestamps=timestamps, groups=groups, 
+    sizer.fit(fit_oof_preds, trade_outcomes, timestamps=timestamps, groups=groups, 
               labels=labels, symbols=symbols)
     
     # Compute metrics
@@ -8391,12 +8437,12 @@ def run_ridge_position_sizer_step(
         metrics['oos_protocol'] = dict(sizer.oos_protocol_)
     if getattr(sizer, 'target_family_ab_', None) is not None:
         metrics['target_family_ab'] = dict(sizer.target_family_ab_)
-    ridge_diag = _compute_ridge_weight_diagnostics(weights=weights, oof_preds=oof_preds, sizer=sizer)
+    ridge_diag = _compute_ridge_weight_diagnostics(weights=weights, oof_preds=fit_oof_preds, sizer=sizer)
     if ridge_diag:
         metrics["weight_diagnostics"] = ridge_diag
 
     try:
-        score_df = oof_preds[sizer.model_names_].copy()
+        score_df = fit_oof_preds[sizer.model_names_].copy()
         score = np.asarray(sizer.predict(score_df), dtype=np.float64)
         preds_for_offset = score_df.copy()
         preds_for_offset["sizer_score_oof"] = score
@@ -8773,7 +8819,7 @@ def run_ridge_position_sizer_step(
         diag_df = trade_outcomes.copy()
 
         # Predict scores using fitted sizer (aligned with trade_outcomes)
-        scores = sizer.predict(oof_preds)
+        scores = sizer.predict(fit_oof_preds)
         diag_df["score"] = scores
 
         # Determine output path

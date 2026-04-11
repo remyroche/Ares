@@ -68,9 +68,10 @@ from .optimise_tpsl_ratio import (
 )
 from .path_utils import resolve_reports_dir
 from .policy_ml import (
-    MetaClassifierSelectionConfig,
+    MetaMoveSelectionConfig,
     build_base_tp_vs_sl,
     load_best_policy_params_from_optimise,
+    pick_meta_move_by_topq,
     policy_rollout_ml,
 )
 from .production_admissibility import ProdGates, production_admissibility_report
@@ -1226,6 +1227,70 @@ def _fit_direct_extratrees_base_model(
     race.detailed_metrics = {"extratrees": dm}
     race.best_model = clone(candidate)
     race._fit_model(race.best_model, X_np, y_hard, sample_weight=sample_weight_arr)
+
+    try:
+        tprint("Post-refit recalibration: generating OOF from refit ExtraTrees...")
+        refit_oof = np.full(len(y_hard), np.nan, dtype=np.float64)
+        for train_idx, val_idx in cached_splits:
+            if train_idx.size == 0 or val_idx.size == 0:
+                continue
+            X_val_fold = X_np[val_idx] if isinstance(X_np, np.ndarray) else X.iloc[val_idx]
+            probs_raw = np.asarray(
+                race.best_model.predict_proba(X_val_fold)[:, 1], dtype=np.float64
+            )
+            y_tr_fold = y_hard[train_idx]
+            if sample_weight_arr is not None:
+                w_tr_fold = sample_weight_arr[train_idx]
+                den = float(np.sum(w_tr_fold))
+                p_weighted_fold = float(
+                    np.sum(w_tr_fold * y_tr_fold) / max(den, 1e-12)
+                )
+            else:
+                p_weighted_fold = float(np.mean(y_tr_fold))
+            p_unweighted_fold = float(np.mean(y_hard[val_idx]))
+            delta_logit_fold = compute_logit_shift(
+                p_unweighted_fold, p_weighted_fold, eps=1e-6
+            )
+            refit_oof[val_idx] = apply_logit_shift(
+                probs_raw, delta_logit_fold, eps=1e-6
+            )
+        refit_oof = np.nan_to_num(refit_oof, nan=0.5)
+
+        refit_calibrated, refit_calibrator, refit_cal_method = (
+            _safe_binary_calibrate(refit_oof, y_hard, min_unique=20, min_samples=100)
+        )
+        race.calibrator_ = refit_calibrator
+        if isinstance(race.calibration_state_, dict):
+            race.calibration_state_["calibration_method"] = refit_cal_method
+
+        cal_brier = float(
+            brier_score_loss(
+                y_hard, np.clip(refit_calibrated, 1e-7, 1 - 1e-7)
+            )
+        )
+        platt = LogisticRegression(random_state=42, max_iter=1000)
+        platt.fit(refit_calibrated.reshape(-1, 1), y_hard)
+        platt_pred = platt.predict_proba(refit_calibrated.reshape(-1, 1))[:, 1]
+        platt_brier = float(
+            brier_score_loss(y_hard, np.clip(platt_pred, 1e-7, 1 - 1e-7))
+        )
+        if platt_brier < cal_brier - 1e-4:
+            race.platt_calibrator_ = platt
+            tprint(
+                f"Post-refit recalibration: {refit_cal_method} + Platt "
+                f"(Brier {cal_brier:.4f} -> {platt_brier:.4f})"
+            )
+        else:
+            race.platt_calibrator_ = None
+            tprint(
+                f"Post-refit recalibration: {refit_cal_method} "
+                f"(Brier {cal_brier:.4f}, Platt skipped)"
+            )
+    except Exception as _e:
+        tprint(
+            f"WARNING: post-refit recalibration failed, keeping OOF calibration: {_e}"
+        )
+
     return race
 
 
@@ -2178,11 +2243,13 @@ def print_training_gate_report(report_payload):
 
     # ── Meta classifier table ─────────────────────────────────────────
     if clf_items:
-        tprint("\n--- META MODELS (Classifiers) ---")
+        tprint("\n--- META MODELS (Move Classifiers) ---")
         hdr = (
-            f"{'Model':<20} {'Winner':<16} {'Thr':>5} {'PR-AUC':>7} "
-            f"{'BalAcc':>7} {'TPvSLROC':>8} {'ECE':>7} {'EVCal':>12} "
-            f"{'Lift@26':>8} {'Sortino':>8} {'PnL_bps':>8} {'MaxDD':>8} {'WinRate':>8} {'Trd/Day':>8}"
+            f"{'Model':<20} {'Winner':<16} {'Thr':>5} {'MoveAUC':>8} "
+            f"{'PR':>7} {'PRΔ':>7} {'IC':>7} {'Bal0.5':>7} {'Bal*':>7} "
+            f"{'ECE10':>7} {'Brier':>7} {'BaseR':>7} {'Slope':>7} "
+            f"{'Int':>7} {'Top10L':>8} {'Top10P':>7} {'Top10R':>7} "
+            f"{'Top5L':>7} {'Top20L':>7}"
         )
         tprint(hdr)
         tprint("-" * len(hdr))
@@ -2191,23 +2258,30 @@ def print_training_gate_report(report_payload):
             name = it.get("model", "?")
             winner = m.get("clf_winner", "?")
             thr = m.get("clf_threshold_pct", 0)
-            prauc = m.get("clf_pr_auc", float("nan"))
-            balacc = m.get("balanced_accuracy", float("nan"))
-            tpvs = m.get("tp_vs_sl_roc_auc", float("nan"))
-            ece = m.get("ece_tp", float("nan"))
-            evcal = m.get("ev_calibration_profile", "n/a")
-            lift26 = m.get("clf_lift_26", float("nan"))
-            sortino = m.get("clf_sortino", float("nan"))
-            pnl = m.get("clf_pnl_total_bps", float("nan"))
-            maxdd = m.get("clf_max_dd_bps", float("nan"))
-            wr = m.get("clf_win_rate", float("nan"))
-            tpd = m.get("clf_avg_trades_day", float("nan"))
+            auc = m.get("move_roc_auc", m.get("roc_auc", float("nan")))
+            prauc = m.get("move_pr_auc", m.get("pr_auc", float("nan")))
+            base_rate = m.get("move_base_rate", m.get("base_rate", float("nan")))
+            pr_delta = m.get("pr_auc_vs_base_rate", float("nan"))
+            move_ic = m.get("move_ic", float("nan"))
+            bal05 = m.get("move_balanced_accuracy_0p5", m.get("balanced_accuracy_0p5", float("nan")))
+            balbest = m.get("move_balanced_accuracy_best", m.get("balanced_accuracy_best", float("nan")))
+            ece = m.get("ece_10", m.get("ece", float("nan")))
+            slope = m.get("calibration_slope", float("nan"))
+            inter = m.get("calibration_intercept", float("nan"))
+            top10l = m.get("top10_lift", float("nan"))
+            top10p = m.get("top_decile_precision", m.get("top10_hit_rate", float("nan")))
+            top10r = m.get("top_decile_recall", float("nan"))
+            brier = m.get("brier", float("nan"))
+            top5l = m.get("top05_lift", float("nan"))
+            top20l = m.get("top20_lift", float("nan"))
             tprint(
-                f"{name:<20} {winner:<16} {thr:>4d}% {prauc:>7.4f} {balacc:>7.3f} {tpvs:>8.3f} "
-                f"{ece:>7.3f} {str(evcal):>12} {lift26:>8.3f} {sortino:>8.3f} {pnl:>8.1f} {maxdd:>8.1f} {wr:>7.1%} {tpd:>8.1f}"
+                f"{name:<20} {winner:<16} {thr:>4d}% {auc:>8.4f} {prauc:>7.4f} {pr_delta:>7.4f} "
+                f"{move_ic:>7.4f} {bal05:>7.3f} {balbest:>7.3f} {ece:>7.3f} {brier:>7.4f} "
+                f"{base_rate:>7.3f} {slope:>7.3f} {inter:>7.3f} {top10l:>8.3f} "
+                f"{top10p:>7.1%} {top10r:>7.1%} {top5l:>7.3f} {top20l:>7.3f}"
             )
     else:
-        tprint("\n--- META MODELS (Classifiers): none ---")
+        tprint("\n--- META MODELS (Move Classifiers): none ---")
 
     tprint("=" * 100)
 
@@ -3193,6 +3267,42 @@ def _meta_feature_keys_for_kind(
     if kind not in {"reg", "clf", "mfe", "mae", "asym"}:
         kind = "clf"
     return dedupe_keep_order(get_meta_feature_keys(kind, cfg))
+
+
+def _build_meta_move_soft_target(
+    abs_ret: np.ndarray,
+    vol_proxy: np.ndarray,
+    thresholds: list[float] | tuple[float, ...],
+    weights: list[float] | tuple[float, ...],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    abs_ret_arr = np.asarray(abs_ret, dtype=np.float64).reshape(-1)
+    vol_arr = np.asarray(vol_proxy, dtype=np.float64).reshape(-1)
+    thresh = np.asarray(list(thresholds), dtype=np.float64).reshape(-1)
+    w = np.asarray(list(weights), dtype=np.float64).reshape(-1)
+    if thresh.size == 0:
+        thresh = np.asarray([1.0, 1.25, 1.5], dtype=np.float64)
+    if w.size == 0:
+        w = np.asarray([0.45, 0.35, 0.20], dtype=np.float64)
+    if thresh.size != w.size:
+        n = min(thresh.size, w.size)
+        thresh = thresh[:n]
+        w = w[:n]
+    if thresh.size == 0:
+        thresh = np.asarray([1.0, 1.25, 1.5], dtype=np.float64)
+        w = np.asarray([0.45, 0.35, 0.20], dtype=np.float64)
+    if not np.isfinite(np.sum(w)) or float(np.sum(w)) <= 0.0:
+        w = np.ones_like(thresh, dtype=np.float64)
+    w = w / max(float(np.sum(w)), 1e-12)
+    vp = np.clip(vol_arr, 1e-9, None)
+    ladder = []
+    for k in thresh:
+        ladder.append((abs_ret_arr > (float(k) * vp)).astype(np.float32))
+    stack = np.vstack(ladder).astype(np.float32)
+    soft = np.dot(w.astype(np.float32), stack).astype(np.float32)
+    hard = (soft >= 0.5).astype(np.int8)
+    middle_idx = 1 if len(thresh) > 1 else 0
+    move_thr = (float(thresh[middle_idx]) * vp).astype(np.float32)
+    return soft, hard, move_thr
 
 
 # Exhaustion model logic removed per user request.
@@ -6979,15 +7089,11 @@ def train_meta_models_from_artifacts(
     _bucket_metadata = {}
     _aux_head_oof = {}  # per-bucket shared-fold auxiliary head OOF outputs
     include_meta_reg = bool(cfg.get("meta_train_regression_bucket_model", False))
-    include_meta_clf = bool(cfg.get("meta_race_include_classifiers", False))
-    require_meta_barrier_probs = bool(
-        cfg.get("meta_require_classifier_barrier_probs", True)
-    )
-    if require_meta_barrier_probs and not include_meta_clf:
+    include_meta_clf = bool(cfg.get("meta_clf_enabled", cfg.get("meta_race_include_classifiers", True)))
+    require_meta_move_prob = bool(cfg.get("meta_require_classifier_barrier_probs", True))
+    if require_meta_move_prob and not include_meta_clf:
         raise RuntimeError(
-            "meta_race_include_classifiers=False, but policy-aligned meta/sizer runs "
-            "require classifier barrier probability export. Enable classifier heads "
-            "to produce oof_p_sl/oof_p_to/oof_p_tp in meta_oof."
+            "meta_clf_enabled=False, but policy-aligned meta/sizer runs require the binary move head export."
         )
     _ps_regime_cols = [
         str(c)
@@ -7317,7 +7423,7 @@ def train_meta_models_from_artifacts(
                     absolute_cap=int(
                         cfg.get(
                             "meta_aux_selector_max_samples",
-                            cfg.get("meta_selector_max_samples", 20000),
+                            cfg.get("meta_selector_max_samples", 30000),
                         )
                     ),
                     pct_cap=float(
@@ -9109,8 +9215,7 @@ def train_meta_models_from_artifacts(
             _m.hpo_out_dir = _meta_hpo_out_dir
             _mcw = float(cfg.get("meta_parallel_forest_min_child_weight", 40.0))
             _m.xgb_parallel_forest_params = {
-                "objective": "multi:softprob",
-                "num_class": 3,
+                "objective": "binary:logistic",
                 "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
                 "num_parallel_tree": int(
                     cfg.get("meta_parallel_forest_num_parallel_tree", 20)
@@ -9129,7 +9234,7 @@ def train_meta_models_from_artifacts(
                 "random_state": 42,
                 "n_jobs": 3,
                 "verbosity": 0,
-                "eval_metric": "mlogloss",
+                "eval_metric": "logloss",
                 "early_stopping_rounds": int(
                     cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
                 ),
@@ -9140,22 +9245,16 @@ def train_meta_models_from_artifacts(
             _m.selector_family_map = dict(
                 cfg.get("selector_feature_family_map", {}) or {}
             )
-            _sel_cfg = MetaClassifierSelectionConfig(
-                max_logloss=float(cfg.get("meta_clf_max_logloss", 1.10)),
-                dynamic_utility_from_realized=bool(
-                    cfg.get("meta_clf_dynamic_utility_from_realized", True)
-                ),
-                u_tp=float(cfg.get("meta_clf_u_tp", 1.0)),
-                u_to=float(cfg.get("meta_clf_u_to", 0.0)),
-                u_sl=float(cfg.get("meta_clf_u_sl", -3.0)),
-                top_frac=float(cfg.get("meta_clf_top_frac", 0.30)),
-                min_top_n=int(cfg.get("meta_clf_min_top_n", 50)),
-                min_lift_vs_baseline=float(
-                    cfg.get("meta_clf_min_lift_vs_baseline", 0.0)
-                ),
-                require_positive_oof_utility=bool(
-                    cfg.get("meta_clf_require_positive_oof_utility", True)
-                ),
+            _sel_cfg = MetaMoveSelectionConfig(
+                min_roc_auc=float(cfg.get("meta_move_min_roc_auc", 0.56)),
+                min_pr_auc=float(cfg.get("meta_move_min_pr_auc", 0.0)),
+                min_balanced_accuracy=float(cfg.get("meta_move_min_bal_acc", 0.0)),
+                min_ic=float(cfg.get("meta_move_min_ic", 0.0)),
+                top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
+                min_top_n=int(cfg.get("meta_move_min_top_n", 50)),
+                min_lift_vs_baseline=float(cfg.get("meta_move_min_lift_vs_baseline", 0.0)),
+                require_positive_top_lift=bool(cfg.get("meta_move_require_positive_top_lift", True)),
+                require_positive_base_rate=bool(cfg.get("meta_move_require_positive_base_rate", True)),
             )
             return _m, _sel_cfg
 
@@ -9211,98 +9310,9 @@ def train_meta_models_from_artifacts(
                 )
             return None
 
-        for _geom in cfg.get("meta_map_tbm_geometries", []):
-            _g_name = str(_geom.get("name", "")).strip()
-            _tp_pct = float(_geom.get("tp_pct", 0.005))
-            _sl_pct = float(_geom.get("sl_pct", 0.0025))
-            for _h in _bucket_horizons:
-                _ret_h = _align_bucket_vec(
-                    ret_for_h(int(_h)), fill_value=np.nan, dtype=np.float32
-                )
-                _exc = _native_excursion_cols(int(_h))
-                if _exc is None:
-                    continue
-                _mfe_vec, _mae_vec, _t_mfe_vec, _t_mae_vec = _exc
-
-                # Use classification target instead of regression
-                if _g_name in ("tbm_500_250", "tbm_250_125"):
-                    # Use consensus soft labels without leakage
-                    from extreme_price_movements.soft_labels import DynamicSoftLabels
-
-                    _atr_1h = (
-                        np.asarray(df["__meta_raw__atr_pct"].values, dtype=np.float32)
-                        if "__meta_raw__atr_pct" in df.columns
-                        else np.full(len(df), 0.005, dtype=np.float32)
-                    )
-                    _target_class = DynamicSoftLabels(
-                        _mfe_vec, _mae_vec, _t_mfe_vec, _t_mae_vec, float(_h), _atr_1h
-                    )
-                else:
-                    _target_class = _tbm_proxy_target_class(
-                        _mfe_vec,
-                        _mae_vec,
-                        _t_mfe_vec,
-                        _t_mae_vec,
-                        _tp_pct,
-                        _sl_pct,
-                        float(_h),
-                    )
-                _weights = _meta_map_weights(_ret_h, df, trade_mask)
-                if _target_class.ndim == 1:
-                    from sklearn.utils.class_weight import compute_class_weight
-
-                    _u_classes = np.unique(_target_class)
-                    if len(_u_classes) > 1:
-                        _cw = compute_class_weight(
-                            "balanced", classes=_u_classes, y=_target_class
-                        )
-                        _cw_map = {c: w for c, w in zip(_u_classes, _cw)}
-                        _class_w = np.array(
-                            [_cw_map[y] for y in _target_class], dtype=np.float32
-                        )
-                        _weights = _weights * _class_w
-                    _weights = _weights / max(float(np.mean(_weights)), 1e-12)
-
-                _head_name = f"{_bucket_key}_{_g_name}_h{int(_h)}"
-                _model, _sel_cfg = _configure_meta_clf(_head_name, "meta_selector_cfg")
-                # Get realized utility for classifier
-                _realized_u = (
-                    np.asarray(df["__u_policy_net__"].values, dtype=float)
-                    if "__u_policy_net__" in df.columns
-                    else np.log1p(np.clip(_ret_h, -0.999999, None))
-                )
-                _bp = (
-                    np.clip(
-                        np.asarray(df["__barrier_pct__"].values, dtype=np.float32),
-                        1e-6,
-                        None,
-                    )
-                    if "__barrier_pct__" in df.columns
-                    else np.full(len(df), 0.02, dtype=np.float32)
-                )
-                _model.fit(
-                    X_meta_base,
-                    _ret_h,  # Use returns for utility calculation
-                    sample_weight=_weights,
-                    groups=meta_groups,
-                    y_per_horizon={
-                        int(hh): _align_bucket_vec(
-                            ret_for_h(int(hh)),
-                            fill_value=np.nan,
-                            dtype=np.float64,
-                        )
-                        for hh in _bucket_horizons
-                    },
-                    vol_proxy=_bp,
-                    realized_u_policy=_realized_u,
-                    selection_cfg=_sel_cfg,
-                    y_class_override=_target_class,
-                    trade_mask=np.asarray(trade_mask, dtype=bool),
-                )
-                meta_models[_head_name] = _model
-                _bucket_y_ret[_head_name] = _ret_h.copy()
-                _bucket_metadata[_head_name] = _md
-                tprint(f"Meta {_head_name}: fitted aligned TBM classifier head")
+        # Geometry-specific multiclass classifiers are disabled.
+        # We now train a single binary move head below so downstream gating
+        # uses a stable p_move signal instead of TP/TIME/SL probabilities.
 
         _bp = (
             np.clip(
@@ -9422,17 +9432,31 @@ def train_meta_models_from_artifacts(
                 ret_for_h(int(_mid_h)), fill_value=np.nan, dtype=np.float64
             )
             _weights_clf = _meta_map_weights(_y_mid, df, trade_mask)
-            _realized_u = (
-                np.asarray(df["__u_policy_net__"].values, dtype=float)
-                if "__u_policy_net__" in df.columns
-                else np.log1p(np.clip(_y_mid, -0.999999, None))
+            _move_thresholds = tuple(
+                float(x) for x in cfg.get("meta_clf_move_thresholds", [1.0, 1.25, 1.5])
+            )
+            _move_weights = tuple(
+                float(x) for x in cfg.get("meta_clf_move_weights", [0.45, 0.35, 0.20])
+            )
+            _bp_move = _bp if "_bp" in locals() else np.asarray(
+                df["__barrier_pct__"].values, dtype=np.float64
+            ) if "__barrier_pct__" in df.columns else np.full(len(df), 0.02, dtype=np.float64)
+            _y_move_soft, _y_move, _move_thr = _build_meta_move_soft_target(
+                abs_ret=np.abs(_y_mid),
+                vol_proxy=_bp_move,
+                thresholds=_move_thresholds,
+                weights=_move_weights,
+            )
+            tprint(
+                f"  Meta move target (aligned map): H={_mid_h} "
+                f"thresholds={list(_move_thresholds)} weights={list(_move_weights)} "
+                f"base_rate={float(np.mean(_y_move)):.4f} soft_mean={float(np.mean(_y_move_soft)):.4f}"
             )
             _clf = MetaClassifierModel(reports_dir=reports_dir)
             _clf.strategy_name = _bucket_key
             _clf.candidate_mode = "xgb_parallel_forest"
             _clf.xgb_parallel_forest_params = {
-                "objective": "multi:softprob",
-                "num_class": 3,
+                "objective": "binary:logistic",
                 "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
                 "num_parallel_tree": int(
                     cfg.get("meta_parallel_forest_num_parallel_tree", 20)
@@ -9453,7 +9477,7 @@ def train_meta_models_from_artifacts(
                 "random_state": 42,
                 "n_jobs": 3,
                 "verbosity": 0,
-                "eval_metric": "mlogloss",
+                "eval_metric": "logloss",
                 "early_stopping_rounds": int(
                     cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
                 ),
@@ -9464,22 +9488,16 @@ def train_meta_models_from_artifacts(
             _clf.selector_family_map = dict(
                 cfg.get("selector_feature_family_map", {}) or {}
             )
-            _sel_cfg = MetaClassifierSelectionConfig(
-                max_logloss=float(cfg.get("meta_clf_max_logloss", 1.10)),
-                dynamic_utility_from_realized=bool(
-                    cfg.get("meta_clf_dynamic_utility_from_realized", True)
-                ),
-                u_tp=float(cfg.get("meta_clf_u_tp", 1.0)),
-                u_to=float(cfg.get("meta_clf_u_to", 0.0)),
-                u_sl=float(cfg.get("meta_clf_u_sl", -3.0)),
-                top_frac=float(cfg.get("meta_clf_top_frac", 0.30)),
-                min_top_n=int(cfg.get("meta_clf_min_top_n", 50)),
-                min_lift_vs_baseline=float(
-                    cfg.get("meta_clf_min_lift_vs_baseline", 0.0)
-                ),
-                require_positive_oof_utility=bool(
-                    cfg.get("meta_clf_require_positive_oof_utility", True)
-                ),
+            _sel_cfg = MetaMoveSelectionConfig(
+                min_roc_auc=float(cfg.get("meta_move_min_roc_auc", 0.56)),
+                min_pr_auc=float(cfg.get("meta_move_min_pr_auc", 0.0)),
+                min_balanced_accuracy=float(cfg.get("meta_move_min_bal_acc", 0.0)),
+                min_ic=float(cfg.get("meta_move_min_ic", 0.0)),
+                top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
+                min_top_n=int(cfg.get("meta_move_min_top_n", 50)),
+                min_lift_vs_baseline=float(cfg.get("meta_move_min_lift_vs_baseline", 0.0)),
+                require_positive_top_lift=bool(cfg.get("meta_move_require_positive_top_lift", True)),
+                require_positive_base_rate=bool(cfg.get("meta_move_require_positive_base_rate", True)),
             )
             _clf.fit(
                 X_meta_base,
@@ -9492,20 +9510,23 @@ def train_meta_models_from_artifacts(
                     )
                     for h in _bucket_horizons
                 },
-                vol_proxy=np.asarray(df["__barrier_pct__"].values, dtype=np.float64)
-                if "__barrier_pct__" in df.columns
-                else np.full(len(df), 0.02, dtype=np.float64),
-                realized_u_policy=_realized_u,
+                vol_proxy=_bp_move,
+                realized_u_policy=np.abs(_y_mid),
                 selection_cfg=_sel_cfg,
-                y_class_override=np.asarray(df["__y_outcome__"].values, dtype=np.int8)
-                if "__y_outcome__" in df.columns
-                else None,
                 trade_mask=np.asarray(trade_mask, dtype=bool),
+                move_thresholds=_move_thresholds,
+                move_weights=_move_weights,
+                use_class_weight_multiplier=bool(
+                    cfg.get("meta_clf_use_class_weight_multiplier", True)
+                ),
+                max_class_weight=float(cfg.get("meta_clf_max_class_weight", 10.0)),
+                use_calibration=bool(cfg.get("meta_clf_use_calibration", True)),
+                move_horizon=int(_mid_h),
             )
             meta_models[f"{_bucket_key}_clf"] = _clf
             _bucket_y_ret[f"{_bucket_key}_clf"] = _y_mid.copy()
             _bucket_metadata[f"{_bucket_key}_clf"] = _md
-            tprint(f"Meta {_bucket_key}_clf: fitted aligned classifier head")
+            tprint(f"Meta {_bucket_key}_clf: fitted aligned move head")
 
     strategies = get_strategies(cfg)
     for strat in strategies:
@@ -9951,7 +9972,9 @@ def train_meta_models_from_artifacts(
             X_meta_base["trend_regime_diff"] = (_t12 - _t48).astype(np.float32)
 
         meta_model_cols = []
-        meta_model_cols.extend([c for c in pred_h.columns if c in X_meta_base.columns])
+        meta_model_cols.extend(
+            [c for c in pred_h.columns if c in X_meta_base.columns and c.startswith(f"pred_{k}_H")]
+        )
         meta_model_cols.extend([c for c in feat_cols if c in X_meta_base.columns])
         meta_model_cols = list(dict.fromkeys(meta_model_cols))
         if not meta_model_cols:
@@ -10291,8 +10314,11 @@ def train_meta_models_from_artifacts(
                 f"Meta {_h_label}: skipped (meta_train_regression_bucket_model=False)"
             )
 
-        if _ran_aligned_map_v2:
-            continue
+        # Keep the shared-fold auxiliary heads running even in aligned_map_v2.
+        # Those heads feed _aux_head_oof and the downstream meta_oof parquet
+        # exports that the sizer expects. The classifier branch below is
+        # skipped separately to avoid retraining and overwriting the aligned
+        # classifier that was already fit above.
 
         # ══════════════════════════════════════════════════════════════
         # CLASSIFIER & AUXILIARY HEAD TRAINING (single per bucket, uses all horizons)
@@ -10395,8 +10421,8 @@ def train_meta_models_from_artifacts(
         except Exception as _e_aux:
             tprint(f"Warning: aux head training failed for {side}_{k}: {_e_aux}")
 
-        # --- 2. Optional Meta Classifier Training ---
-        if include_meta_clf:
+        # --- 2. Optional Meta Move-Classifier Training ---
+        if include_meta_clf and not _ran_aligned_map_v2:
             # Magnitude sigmoid: very slight top-40% upweight (same alpha as regressors)
             # Each source normalized to mean=1 before combining so neither dominates.
             _alpha_clf = float(cfg.get("meta_weight_sigmoid_alpha", 0.2))
@@ -10503,31 +10529,44 @@ def train_meta_models_from_artifacts(
                 )
             w_meta_clf = w_meta_clf.astype(np.float32)
 
-            # Use the middle horizon's target for the classifier's y_ret argument
-            _mid_h = (
-                4
-                if 4 in _y_per_h
-                else _available_horizons[len(_available_horizons) // 2]
+            _mid_h = 4 if 4 in _y_per_h else _available_horizons[len(_available_horizons) // 2]
+            _move_vol_proxy = _vol_proxy
+            if _move_vol_proxy is None:
+                for _cand_col in [
+                    "atr_24h",
+                    "realized_volatility_24h",
+                    "asset_vol_level",
+                    "__regime_vol_24h__",
+                    "__regime_vol_12h__",
+                    "__barrier_pct__",
+                ]:
+                    if _cand_col in df.columns:
+                        _move_vol_proxy = np.asarray(df[_cand_col].values, dtype=np.float64)
+                        tprint(f"  Meta classifier vol proxy fallback: {_cand_col}")
+                        break
+            if _move_vol_proxy is None:
+                raise RuntimeError("meta_clf_move requires a causal vol proxy column")
+
+            _move_thresholds = tuple(
+                float(x) for x in cfg.get("meta_clf_move_thresholds", [1.0, 1.25, 1.5])
+            )
+            _move_weights = tuple(
+                float(x) for x in cfg.get("meta_clf_move_weights", [0.45, 0.35, 0.20])
             )
             y_target_clf = _y_per_h[_mid_h].astype(np.float64)
-
-            _use_engine_meta_labels = bool(cfg.get("meta_clf_use_engine_labels", True))
-            _y_class_override = None
-            if _use_engine_meta_labels:
-                if "__y_outcome__" not in df.columns:
-                    raise RuntimeError(
-                        "meta_clf_use_engine_labels=True requires '__y_outcome__' in artifacts. "
-                        "Regenerate labels with policy_rollout_labeling enabled."
-                    )
-                _y_class_override = np.asarray(
-                    df["__y_outcome__"].values, dtype=np.int8
-                )
-                tprint(
-                    f"  Meta classifier labels source=engine counts="
-                    f"SL={int(np.sum(_y_class_override == 0))} "
-                    f"TO={int(np.sum(_y_class_override == 1))} "
-                    f"TP={int(np.sum(_y_class_override == 2))}"
-                )
+            _y_move_soft, _y_move, _move_thr = _build_meta_move_soft_target(
+                abs_ret=np.abs(y_target_clf),
+                vol_proxy=_move_vol_proxy,
+                thresholds=_move_thresholds,
+                weights=_move_weights,
+            )
+            _vol_valid = np.isfinite(_move_vol_proxy) & (_move_vol_proxy > 1e-9)
+            tprint(
+                f"  Meta move target: H={_mid_h} thresholds={list(_move_thresholds)} "
+                f"weights={list(_move_weights)} base_rate={float(np.mean(_y_move)):.4f} "
+                f"soft_mean={float(np.mean(_y_move_soft)):.4f} "
+                f"vol_valid={int(_vol_valid.sum())}/{len(_vol_valid)}"
+            )
 
             tprint(
                 f"  Fitting MetaClassifierModel {side}_{k} ({_time.monotonic()-_t0_meta:.1f}s)..."
@@ -10535,82 +10574,60 @@ def train_meta_models_from_artifacts(
             meta_clf = MetaClassifierModel(reports_dir=reports_dir)
             meta_clf.strategy_name = k
             meta_clf.candidate_mode = "xgb_parallel_forest"
-            meta_clf.disable_hpo = bool(
-                cfg.get("meta_parallel_forest_disable_hpo", False)
-            )
+            meta_clf.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", False))
             meta_clf.hpo_out_dir = _meta_hpo_out_dir
             meta_clf.xgb_parallel_forest_params = {
-                "objective": "multi:softprob",
-                "num_class": 3,
+                "objective": "binary:logistic",
                 "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
-                "num_parallel_tree": int(
-                    cfg.get("meta_parallel_forest_num_parallel_tree", 20)
-                ),
+                "num_parallel_tree": int(cfg.get("meta_parallel_forest_num_parallel_tree", 20)),
                 "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 5)),
-                "learning_rate": float(
-                    cfg.get("meta_parallel_forest_learning_rate", 0.05)
-                ),
+                "learning_rate": float(cfg.get("meta_parallel_forest_learning_rate", 0.05)),
                 "subsample": 0.75,
                 "colsample_bytree": 0.75,
                 "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
                 "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
-                "min_child_weight": float(
-                    cfg.get("meta_parallel_forest_min_child_weight", 40.0)
-                ),
+                "min_child_weight": float(cfg.get("meta_parallel_forest_min_child_weight", 40.0)),
                 "gamma": float(cfg.get("meta_parallel_forest_gamma", 1.5)),
                 "tree_method": "hist",
                 "random_state": 42,
                 "n_jobs": 3,
                 "verbosity": 0,
-                "eval_metric": "mlogloss",
-                "early_stopping_rounds": int(
-                    cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
-                ),
+                "eval_metric": "logloss",
+                "early_stopping_rounds": int(cfg.get("meta_parallel_forest_early_stopping_rounds", 20)),
             }
-            meta_clf.FEE_PER_ROUND_TRIP = (
-                float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
+            meta_clf.FEE_PER_ROUND_TRIP = float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
+            _sel_cfg = MetaMoveSelectionConfig(
+                min_roc_auc=float(cfg.get("meta_move_min_roc_auc", 0.56)),
+                min_pr_auc=float(cfg.get("meta_move_min_pr_auc", 0.0)),
+                min_balanced_accuracy=float(cfg.get("meta_move_min_bal_acc", 0.0)),
+                min_ic=float(cfg.get("meta_move_min_ic", 0.0)),
+                top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
+                min_top_n=int(cfg.get("meta_move_min_top_n", 50)),
+                min_lift_vs_baseline=float(cfg.get("meta_move_min_lift_vs_baseline", 0.0)),
+                require_positive_top_lift=bool(cfg.get("meta_move_require_positive_top_lift", True)),
+                require_positive_base_rate=bool(cfg.get("meta_move_require_positive_base_rate", True)),
             )
-            # Pass vol_proxy for risk-unit thresholding
-            _sel_cfg = MetaClassifierSelectionConfig(
-                max_logloss=float(cfg.get("meta_clf_max_logloss", 1.10)),
-                dynamic_utility_from_realized=bool(
-                    cfg.get("meta_clf_dynamic_utility_from_realized", True)
-                ),
-                u_tp=float(cfg.get("meta_clf_u_tp", 1.0)),
-                u_to=float(cfg.get("meta_clf_u_to", 0.0)),
-                u_sl=float(cfg.get("meta_clf_u_sl", -3.0)),
-                top_frac=float(cfg.get("meta_clf_top_frac", 0.30)),
-                min_top_n=int(cfg.get("meta_clf_min_top_n", 50)),
-                min_lift_vs_baseline=float(
-                    cfg.get("meta_clf_min_lift_vs_baseline", 0.0)
-                ),
-                require_positive_oof_utility=bool(
-                    cfg.get("meta_clf_require_positive_oof_utility", True)
-                ),
-            )
-            if "__u_policy_net__" in df.columns:
-                _realized_u = np.asarray(df["__u_policy_net__"].values, dtype=float)
-            else:
-                _realized_u = np.log1p(
-                    np.clip(np.asarray(y_target_clf, dtype=float), -0.999999, None)
-                )
 
             meta_clf.fit(
                 X_meta_models,
                 y_target_clf,
                 sample_weight=w_meta_clf,
                 groups=meta_groups,
-                y_per_horizon=None if _y_class_override is not None else _y_per_h,
-                vol_proxy=None if _y_class_override is not None else _vol_proxy,
-                realized_u_policy=_realized_u,
+                y_per_horizon=_y_per_h,
+                vol_proxy=_move_vol_proxy,
+                realized_u_policy=np.abs(y_target_clf),
                 selection_cfg=_sel_cfg,
-                y_class_override=_y_class_override,
                 trade_mask=_trade_mask,
+                move_thresholds=_move_thresholds,
+                move_weights=_move_weights,
+                use_class_weight_multiplier=bool(cfg.get("meta_clf_use_class_weight_multiplier", True)),
+                max_class_weight=float(cfg.get("meta_clf_max_class_weight", 10.0)),
+                use_calibration=bool(cfg.get("meta_clf_use_calibration", True)),
+                move_horizon=int(_mid_h),
             )
             meta_models[f"{k}_clf"] = meta_clf
             _bucket_y_ret[f"{k}_clf"] = y_target_clf.copy()
 
-            # Store metadata for classifier bucket
             _md = {}
             for _cn in [
                 "timestamp",
@@ -10622,7 +10639,6 @@ def train_meta_models_from_artifacts(
                 "__y_ret__",
                 "__u_policy_net__",
                 "__u_policy__",
-                "__y_outcome__",
                 "exit_code",
                 "__mae_ret__",
                 "__mfe_ret__",
@@ -10641,7 +10657,7 @@ def train_meta_models_from_artifacts(
 
             tprint(f"Meta {k}_clf: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
         else:
-            tprint(f"Meta {k}_clf: skipped (meta_race_include_classifiers=False)")
+            tprint(f"Meta {k}_clf: skipped (meta_clf_enabled=False)")
 
         # --- 3. ALWAYS Train Early Invalidation head for downstream consumers ---
         if "__early_inval__" in df.columns:
@@ -10866,6 +10882,18 @@ def train_meta_models_from_artifacts(
         cfg.get("data_root", "data"), "artifacts", _run_id, "meta_oof"
     )
     os.makedirs(meta_oof_dir, exist_ok=True)
+    # Make the artifact directory self-consistent for this run.
+    # Re-runs should not leave stale classifier/regression heads behind.
+    try:
+        import glob as _glob
+
+        for _p in _glob.glob(os.path.join(meta_oof_dir, "meta_oof_*.parquet")):
+            try:
+                os.remove(_p)
+            except Exception:
+                pass
+    except Exception:
+        pass
     # Remove stale legacy outputs for disabled heads.
     try:
         import glob as _glob
@@ -10891,7 +10919,7 @@ def train_meta_models_from_artifacts(
         _allowed_meta_suffixes.append("_clf")
     _allowed_meta_suffixes = tuple(_allowed_meta_suffixes)
     _aligned_map_pat = re.compile(
-        r".*_(tbm_500_250|tbm_250_125)_h\d+$|.*_(mae|mfe)_h\d+$"
+        r".*_(tbm_500_250|tbm_250_125|mae|mfe|asym)_h\d+$"
     )
 
     def _fill_nonfinite_oof_vector(
@@ -10932,8 +10960,8 @@ def train_meta_models_from_artifacts(
             required_cols.extend(["oof_log_mfe_hat", "oof_mfe_hat"])
         elif key.endswith("_asym"):
             required_cols.extend(["oof_asym_hat"])
-        elif key.endswith("_clf"):
-            required_cols.extend(["oof_p_tp", "oof_p_sl", "oof_p_to", "oof_ev"])
+        elif key.endswith("_clf") or key.endswith("_move"):
+            required_cols.extend(["oof_p_move"])
         elif key.endswith("_early_inval"):
             required_cols.extend(["oof_p_early_inval"])
 
@@ -10949,15 +10977,10 @@ def train_meta_models_from_artifacts(
                 ]:
                     tprint(f"    SCHEMA WARNING: {key} column {c} is not numeric")
 
-        if (
-            "oof_p_tp" in df.columns
-            and "oof_p_sl" in df.columns
-            and "oof_p_to" in df.columns
-        ):
-            simplex = df["oof_p_tp"] + df["oof_p_sl"] + df["oof_p_to"]
-            viol = np.sum(np.abs(simplex - 1.0) > 1e-5)
-            if viol > 0:
-                tprint(f"    SCHEMA WARNING: {key} has {viol} simplex violations")
+        if "oof_p_move" in df.columns:
+            p = np.asarray(df["oof_p_move"], dtype=float)
+            if np.any((p < -1e-6) | (p > 1 + 1e-6)):
+                tprint(f"    SCHEMA WARNING: {key} has out-of-range move probabilities")
 
     # Collect calibration metrics if configured
     _validate_calib = bool(cfg.get("META_VALIDATE_CALIBRATION", False))
@@ -11025,21 +11048,11 @@ def train_meta_models_from_artifacts(
             return
 
         calib_stats = {}
-        if "exit_code" in df.columns:
-            exit_code = df["exit_code"].values
-            valid_exit = np.isfinite(exit_code)
-            if "oof_p_tp" in df.columns:
-                calib_stats["tp_calibration"] = compute_prob_calibration(
-                    (exit_code == 2).astype(float), df["oof_p_tp"].values
-                )
-            if "oof_p_to" in df.columns:
-                calib_stats["to_calibration"] = compute_prob_calibration(
-                    (exit_code == 1).astype(float), df["oof_p_to"].values
-                )
-            if "oof_p_sl" in df.columns:
-                calib_stats["sl_calibration"] = compute_prob_calibration(
-                    (exit_code == 0).astype(float), df["oof_p_sl"].values
-                )
+        if "oof_p_move" in df.columns and "y_move" in df.columns:
+            calib_stats["move_calibration"] = compute_prob_calibration(
+                np.asarray(df["y_move"].values, dtype=float),
+                np.asarray(df["oof_p_move"].values, dtype=float),
+            )
 
         if "early_inval" in df.columns and "oof_p_early_inval" in df.columns:
             ei_true = df["early_inval"].values
@@ -11066,10 +11079,8 @@ def train_meta_models_from_artifacts(
             is_long = 1 if side_parsed == "long" else 0
 
             meta_oof_path = os.path.join(meta_oof_dir, f"meta_oof_{key}.parquet")
-            _is_clf_key = key.endswith("_clf")
-            _is_tbm_multiclass_key = bool(
-                re.match(r".*_(tbm_500_250|tbm_250_125)_h\d+$", key)
-            )
+            _is_clf_key = key.endswith("_clf") or key.endswith("_move")
+            _is_tbm_multiclass_key = False
             _is_ei_key = key.endswith("_early_inval")
             if _is_ei_key:
                 _oof_pred_1d = _fill_nonfinite_oof_vector(
@@ -11084,9 +11095,35 @@ def train_meta_models_from_artifacts(
                         "is_long": is_long,
                     }
                 )
-            elif (_is_clf_key or _is_tbm_multiclass_key) and np.ndim(
-                meta.oof_probs
-            ) == 2:
+            elif _is_clf_key and np.ndim(meta.oof_probs) == 1:
+                _p_move = _fill_nonfinite_oof_vector(
+                    meta.oof_probs, global_neutral=0.5, method="mean"
+                )
+                _n_meta = len(_p_move)
+                oof_df = pd.DataFrame(
+                    {
+                        "oof_pred": _trim_1d(_p_move, _n_meta),
+                        "oof_p_move": _trim_1d(_p_move, _n_meta),
+                        "index": range(_n_meta),
+                        "is_long": is_long,
+                    }
+                )
+                if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
+                    oof_df["y_move"] = _trim_1d(np.asarray(meta.y_move, dtype=float), _n_meta)
+                if hasattr(meta, "y_move_soft") and getattr(meta, "y_move_soft", None) is not None:
+                    oof_df["y_move_soft"] = _trim_1d(
+                        np.asarray(meta.y_move_soft, dtype=float), _n_meta
+                    )
+                if hasattr(meta, "move_threshold") and getattr(meta, "move_threshold", None) is not None:
+                    oof_df["move_threshold"] = _trim_1d(
+                        np.asarray(meta.move_threshold, dtype=float), _n_meta
+                    )
+                if hasattr(meta, "oof_probs_raw") and getattr(meta, "oof_probs_raw", None) is not None:
+                    _p_move_raw = _fill_nonfinite_oof_vector(
+                        meta.oof_probs_raw, global_neutral=0.5, method="mean"
+                    )
+                    oof_df["oof_p_move_raw"] = _trim_1d(_p_move_raw, _n_meta)
+            elif _is_clf_key and np.ndim(meta.oof_probs) == 2 and meta.oof_probs.shape[1] == 3:
                 p_sl = _fill_nonfinite_oof_vector(
                     meta.oof_probs[:, 0], global_neutral=1.0 / 3.0, method="mean"
                 )
@@ -11096,52 +11133,54 @@ def train_meta_models_from_artifacts(
                 p_tp = _fill_nonfinite_oof_vector(
                     meta.oof_probs[:, 2], global_neutral=1.0 / 3.0, method="mean"
                 )
-                _row_sum = np.clip(p_sl + p_to + p_tp, 1e-9, None)
-                p_sl = np.asarray(p_sl / _row_sum, dtype=np.float64).reshape(-1)
-                p_to = np.asarray(p_to / _row_sum, dtype=np.float64).reshape(-1)
-                p_tp = np.asarray(p_tp / _row_sum, dtype=np.float64).reshape(-1)
-
-                # Check simplex violations
-                _simplex_sum = p_sl + p_to + p_tp
-                _violations = np.abs(_simplex_sum - 1.0) > 1e-6
-                if np.any(_violations):
-                    _n_viol = int(np.sum(_violations))
-                    tprint(
-                        f"    WARNING: {_n_viol} probability simplex violations detected in {key} (renormalizing)."
-                    )
-                    p_sl[_violations] /= _simplex_sum[_violations]
-                    p_to[_violations] /= _simplex_sum[_violations]
-                    p_tp[_violations] /= _simplex_sum[_violations]
-
-                # Resolve EV ratio source
-                _ev_source = cfg.get("META_EV_TP_SL_RATIO_SOURCE", "fixed")
-                _tp_sl_ratio = float(cfg.get("DEFAULT_TP_SL_RATIO", 2.0))
-                if _ev_source == "policy":
-                    _tp_sl_ratio = float(
-                        cfg.get("policy_label_tp_sl_ratio", _tp_sl_ratio)
-                    )
-                # Future: fetch from per-horizon geometry metadata if _ev_source == "geometry"
-
-                tprint(
-                    f"    EV ratio resolution for {key}: source={_ev_source}, ratio={_tp_sl_ratio}"
-                )
-                oof_ev = np.asarray(
-                    compute_meta_expected_value(p_tp, p_sl, _tp_sl_ratio),
-                    dtype=np.float64,
-                ).reshape(-1)
-
-                _n_meta = min(len(p_sl), len(p_to), len(p_tp), len(oof_ev))
+                _n_meta = min(len(p_sl), len(p_to), len(p_tp))
                 oof_df = pd.DataFrame(
                     {
-                        "oof_pred": _trim_1d(oof_ev, _n_meta),
-                        "oof_ev": _trim_1d(oof_ev, _n_meta),
-                        "oof_p_sl": _trim_1d(p_sl, _n_meta),
-                        "oof_p_to": _trim_1d(p_to, _n_meta),
-                        "oof_p_tp": _trim_1d(p_tp, _n_meta),
+                        "oof_pred": _trim_1d(p_tp, _n_meta),
+                        "oof_p_move": _trim_1d(p_tp, _n_meta),
                         "index": range(_n_meta),
                         "is_long": is_long,
                     }
                 )
+                if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
+                    oof_df["y_move"] = _trim_1d(np.asarray(meta.y_move, dtype=float), _n_meta)
+                if hasattr(meta, "y_move_soft") and getattr(meta, "y_move_soft", None) is not None:
+                    oof_df["y_move_soft"] = _trim_1d(
+                        np.asarray(meta.y_move_soft, dtype=float), _n_meta
+                    )
+                if hasattr(meta, "move_threshold") and getattr(meta, "move_threshold", None) is not None:
+                    oof_df["move_threshold"] = _trim_1d(
+                        np.asarray(meta.move_threshold, dtype=float), _n_meta
+                    )
+            elif _is_tbm_multiclass_key and np.ndim(meta.oof_probs) == 2:
+                p_sl = _fill_nonfinite_oof_vector(
+                    meta.oof_probs[:, 0], global_neutral=1.0 / 3.0, method="mean"
+                )
+                p_to = _fill_nonfinite_oof_vector(
+                    meta.oof_probs[:, 1], global_neutral=1.0 / 3.0, method="mean"
+                )
+                p_tp = _fill_nonfinite_oof_vector(
+                    meta.oof_probs[:, 2], global_neutral=1.0 / 3.0, method="mean"
+                )
+                _n_meta = min(len(p_sl), len(p_to), len(p_tp))
+                oof_df = pd.DataFrame(
+                    {
+                        "oof_pred": _trim_1d(p_tp, _n_meta),
+                        "oof_p_move": _trim_1d(p_tp, _n_meta),
+                        "index": range(_n_meta),
+                        "is_long": is_long,
+                    }
+                )
+                if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
+                    oof_df["y_move"] = _trim_1d(np.asarray(meta.y_move, dtype=float), _n_meta)
+                if hasattr(meta, "y_move_soft") and getattr(meta, "y_move_soft", None) is not None:
+                    oof_df["y_move_soft"] = _trim_1d(
+                        np.asarray(meta.y_move_soft, dtype=float), _n_meta
+                    )
+                if hasattr(meta, "move_threshold") and getattr(meta, "move_threshold", None) is not None:
+                    oof_df["move_threshold"] = _trim_1d(
+                        np.asarray(meta.move_threshold, dtype=float), _n_meta
+                    )
             else:
                 _oof_pred_1d = _fill_nonfinite_oof_vector(
                     meta.oof_probs, global_neutral=0.0, method="median"
@@ -11172,6 +11211,12 @@ def train_meta_models_from_artifacts(
                     oof_df["oof_mfe_hat"] = np.expm1(_trim_1d(_oof_pred_1d, _n_meta))
                 elif key.endswith("_asym"):
                     oof_df["oof_asym_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
+                if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
+                    oof_df["y_move"] = _trim_1d(np.asarray(meta.y_move, dtype=float), _n_meta)
+                if hasattr(meta, "move_threshold") and getattr(meta, "move_threshold", None) is not None:
+                    oof_df["move_threshold"] = _trim_1d(
+                        np.asarray(meta.move_threshold, dtype=float), _n_meta
+                    )
 
             # Attach metadata from bucket-specific storage
             _md = _bucket_metadata.get(key, {})
@@ -11196,6 +11241,8 @@ def train_meta_models_from_artifacts(
                     oof_df["return"] = _md["__y_ret__"][:_n_meta]
                 elif "return" in _md:
                     oof_df["return"] = _md["return"][:_n_meta]
+                if "__barrier_pct__" in _md:
+                    oof_df["barrier_pct"] = np.asarray(_md["__barrier_pct__"], dtype=float)[:_n_meta]
                 if "__y_bin__" in _md:
                     oof_df["y_bin"] = np.asarray(_md["__y_bin__"], dtype=float)[
                         :_n_meta
@@ -11245,6 +11292,26 @@ def train_meta_models_from_artifacts(
                     if _cn in _md:
                         oof_df[_cn] = _md[_cn][:_n_meta]
 
+                if "oof_p_move" in oof_df.columns:
+                    if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
+                        y_move = np.asarray(meta.y_move, dtype=float)[:_n_meta]
+                        oof_df["y_move"] = y_move
+                    elif hasattr(meta, "y_move_soft") and getattr(meta, "y_move_soft", None) is not None:
+                        y_soft = np.asarray(meta.y_move_soft, dtype=float)[:_n_meta]
+                        y_move = (y_soft >= 0.5).astype(float)
+                        oof_df["y_move"] = y_move
+                    elif "return" in oof_df.columns:
+                        move_k = float(getattr(meta, "label_threshold", 1.25))
+                        if "barrier_pct" in oof_df.columns:
+                            move_thr = move_k * np.asarray(oof_df["barrier_pct"], dtype=float)
+                        else:
+                            move_thr = np.full(len(oof_df), float(move_k), dtype=float)
+                        y_move = (
+                            np.abs(np.asarray(oof_df["return"], dtype=float)) > move_thr
+                        ).astype(float)
+                        oof_df["y_move"] = y_move
+                        oof_df["move_threshold"] = np.asarray(move_thr, dtype=float)
+
             _bucket_base = "_".join(key.split("_")[:2])
             _aux = _aux_head_oof.get(_bucket_base)
             if isinstance(_aux, dict):
@@ -11266,53 +11333,6 @@ def train_meta_models_from_artifacts(
                     oof_df["oof_pred"], dtype=float
                 )
 
-            # Merge classifier probabilities from the classifier meta model (if exists)
-            _clf_key = f"{_bucket_base}_clf"
-            if _clf_key in meta_models and hasattr(meta_models[_clf_key], "oof_probs"):
-                _clf_meta = meta_models[_clf_key]
-                if (
-                    _clf_meta.oof_probs is not None
-                    and np.ndim(_clf_meta.oof_probs) == 2
-                    and _clf_meta.oof_probs.shape[1] == 3
-                ):
-                    _p_sl = _fill_nonfinite_oof_vector(
-                        _clf_meta.oof_probs[:, 0],
-                        global_neutral=1.0 / 3.0,
-                        method="mean",
-                    )
-                    _p_to = _fill_nonfinite_oof_vector(
-                        _clf_meta.oof_probs[:, 1],
-                        global_neutral=1.0 / 3.0,
-                        method="mean",
-                    )
-                    _p_tp = _fill_nonfinite_oof_vector(
-                        _clf_meta.oof_probs[:, 2],
-                        global_neutral=1.0 / 3.0,
-                        method="mean",
-                    )
-                    _row_sum = np.clip(_p_sl + _p_to + _p_tp, 1e-9, None)
-                    _p_sl = _p_sl / _row_sum
-                    _p_to = _p_to / _row_sum
-                    _p_tp = _p_tp / _row_sum
-
-                    _simplex_sum = _p_sl + _p_to + _p_tp
-                    _violations = np.abs(_simplex_sum - 1.0) > 1e-6
-                    if np.any(_violations):
-                        _p_sl[_violations] /= _simplex_sum[_violations]
-                        _p_to[_violations] /= _simplex_sum[_violations]
-                        _p_tp[_violations] /= _simplex_sum[_violations]
-
-                    _n_clf = min(_n_meta, len(_p_sl), len(_p_to), len(_p_tp))
-                    if _n_clf < len(oof_df):
-                        oof_df = oof_df.iloc[:_n_clf].copy()
-                        _n_meta = _n_clf
-                    oof_df["oof_p_sl"] = _trim_1d(_p_sl, _n_meta)
-                    oof_df["oof_p_to"] = _trim_1d(_p_to, _n_meta)
-                    oof_df["oof_p_tp"] = _trim_1d(_p_tp, _n_meta)
-                    tprint(
-                        f"  Merged classifier probabilities from {_clf_key} into {key}"
-                    )
-
             record_export_stats(oof_df, key)
             record_calibration(oof_df, key)
             validate_meta_oof_schema(oof_df, key)
@@ -11327,9 +11347,8 @@ def train_meta_models_from_artifacts(
         "oof_log_mfe_hat": "log1p(MFE / ATR)",
         "oof_mfe_hat": "MFE / ATR",
         "oof_asym_hat": "log(MFE / MAE)",
-        "oof_p_tp": "probability",
-        "oof_p_sl": "probability",
-        "oof_p_to": "probability",
+        "oof_p_move": "probability of a materially large move",
+        "oof_p_move_raw": "raw probability before calibration",
         "oof_p_early_inval": "probability",
         "oof_ev": "expected payoff multiple",
     }

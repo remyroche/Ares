@@ -57,11 +57,10 @@ from extreme_price_movements.pipeline_steps import (
     run_base_hpo_step,
     run_feature_generation_step,
     run_label_generation_step_v2,
-    run_policy_optimiser_step,
     run_risk_optimization_step,
-    run_sizer_step,
     run_training_step,
 )
+from extreme_price_movements.policy_optimiser import run_policy_optimisation
 from extreme_price_movements.strategy_registry import (
     get_strategies,
     strategy_runtime_horizons,
@@ -69,6 +68,10 @@ from extreme_price_movements.strategy_registry import (
 from extreme_price_movements.universe import (
     build_fetch_universe,
     refresh_margin_universe_daily,
+)
+from extreme_price_movements.simple_position_sizer import (
+    run_simple_position_sizer_from_artifacts,
+    write_holdout_multi_metrics,
 )
 from extreme_price_movements.utils import tprint
 
@@ -1001,7 +1004,7 @@ def run_risk_opt(
 
 
 def run_sizer(cfg, ts_override=None, store=None):
-    """Run configured sizer backend on meta model OOF predictions."""
+    """Run the simple artifact-backed sizer on meta model OOF predictions."""
     _maintenance_checkpoint("sizer:start")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
     if ts_sig is None:
@@ -1027,22 +1030,17 @@ def run_sizer(cfg, ts_override=None, store=None):
         tprint(f"Slice plan loading failed: {e}")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    import os
-
-    state_file = os.path.join(
-        cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl"
-    )
-    if not os.path.exists(state_file):
-        tprint(
-            f"ERROR: Trained state not found at {state_file}. Run 'train' mode first."
-        )
-        return
-
-    tprint(f"Sizer mode (ridge). ts_sig={ts_sig}")
+    tprint(f"Sizer mode (simple_position_sizer). ts_sig={ts_sig}")
     _load_mask_params_by_mode(cfg)
-    result = run_sizer_step(ts_sig, cfg, state_file)
+    result = run_simple_position_sizer_from_artifacts(
+        data_root=cfg["data_root"],
+        run_id=run_id,
+        top_n_strategies=int(cfg.get("simple_sizer_top_n_strategies", 4)),
+        use_ridge_head_sizer=True,
+        use_et_head_sizer=True,
+    )
     if result:
-        tprint("SIZER COMPLETE — ridge")
+        tprint("SIZER COMPLETE — simple_position_sizer")
 
         # Generate OOS backtest metrics immediately after sizer training.
         if bool(cfg.get("sizer_run_oos_backtest", True)):
@@ -1060,7 +1058,7 @@ def run_sizer(cfg, ts_override=None, store=None):
                 trades_path = os.path.join(
                     cfg["data_root"],
                     "artifacts",
-                    ts_sig.strftime("%Y%m%d_%H%M%S"),
+                    run_id,
                     "backtest_results.csv",
                 )
                 if os.path.exists(trades_path):
@@ -1068,6 +1066,9 @@ def run_sizer(cfg, ts_override=None, store=None):
                     trades = _downcast_numeric_frame(trades)
                     trades.to_csv(trades_path, index=False)
 
+                state_file = os.path.join(
+                    cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl"
+                )
                 run_backtest_step(ts_sig, None, bt_cfg, store, state_file)
                 tprint("SIZER: OOS backtest complete.")
             except Exception as e:
@@ -1145,8 +1146,29 @@ def _run_offset_generation_stage(cfg, ts_sig):
         meta = load_meta_oof_predictions(cfg.get("data_root", "data"), run_id)
         key = next((k for k in meta.keys() if sid in k), None)
         if key is None:
-            tprint("OFFSET GENERATION: selected strategy missing in meta OOF; skipping")
-            return None
+            scored_keys = []
+            for mk, mdf in meta.items():
+                if hasattr(mdf, "columns") and "oof_u_hat" in mdf.columns:
+                    scored_keys.append(
+                        (
+                            float(
+                                np.nanmean(np.asarray(mdf["oof_u_hat"], dtype=np.float32))
+                            ),
+                            mk,
+                        )
+                    )
+            if scored_keys:
+                scored_keys.sort(reverse=True)
+                key = scored_keys[0][1]
+                tprint(
+                    "OFFSET GENERATION: selected strategy missing in meta OOF; "
+                    f"falling back to best available meta bucket {key}"
+                )
+            else:
+                key = next(iter(meta.keys()), None)
+                if key is None:
+                    tprint("OFFSET GENERATION: no meta OOF buckets available; skipping")
+                    return None
         outcomes = load_trade_outcomes(cfg.get("data_root", "data"), run_id, meta[key])
         conf = np.asarray(
             outcomes.get("oof_u_hat", pd.Series(np.zeros(len(outcomes)))).values,
@@ -1246,20 +1268,41 @@ def run_all(cfg, ts_override=None):
         return
     _maintenance_checkpoint("run_all:after_optimise_phase2")
 
-    # 4. Offset generation (must run after sizer selection and before policy optimiser)
+    # 4. Offset generation is intentionally skipped by default.
+    # Enable it explicitly via cfg["run_limit_offset_optimiser"] when needed.
     ts_sig = _resolve_ts_sig(cfg, ts_override)
-    if ts_sig:
+    if ts_sig and bool(cfg.get("run_limit_offset_optimiser", False)):
         tprint("STEP: OFFSET GENERATION")
         _run_offset_generation_stage(cfg, ts_sig)
+    elif ts_sig:
+        tprint("STEP: OFFSET GENERATION (skipped by config)")
 
     # 5. Policy optimiser
     if ts_sig:
         tprint("STEP: POLICY OPTIMISER")
         try:
-            run_policy_optimiser_step(ts_sig, cfg)
+            run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+            run_policy_optimisation(
+                data_root=cfg["data_root"],
+                run_id=run_id,
+                holdout_frac=float(cfg.get("policy_optimiser_holdout_frac", 0.30)),
+                cost_pct=float(
+                    cfg.get("ridge_cost_pct", cfg.get("fee_bps", 50.0) / 10000.0)
+                ),
+                use_offset_optimiser=bool(cfg.get("run_limit_offset_optimiser", False)),
+            )
         except Exception as e:
             tprint(f"WARNING: Policy optimiser failed: {e}")
     _maintenance_checkpoint("run_all:after_policy_optimiser")
+
+    # Holdout multi-metrics: filter strategies by quality gates
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig:
+        run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+        try:
+            write_holdout_multi_metrics(cfg["data_root"], run_id)
+        except Exception as e:
+            tprint(f"WARNING: holdout_multi_metrics write failed: {e}")
 
     # Final Summary
     ts_sig = _resolve_ts_sig(cfg, ts_override)
@@ -1816,25 +1859,17 @@ def main():
     elif args.mode == "policy_optimiser":
         ts_sig = _resolve_ts_sig(cfg, args.ts_override)
         if ts_sig:
-            try:
-                slice_plan = load_or_build_slice_plan(
-                    cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
-                )
-                if "holdout_strategy_eval" in slice_plan.get("materialized_views", {}):
-                    stage_view = (
-                        slice_plan["materialized_views"]["holdout_strategy_eval"]
-                        .get("sub_views", {})
-                        .get("policy_optimiser")
-                    )
-                    if stage_view:
-                        cfg["_active_stage_view"] = apply_stage_usage_limits(
-                            stage_view,
-                            max_assets=cfg.get("planned_max_assets"),
-                            max_months=cfg.get("planned_max_months"),
-                        )
-            except Exception as e:
-                tprint(f"Slice plan loading failed: {e}")
-            run_policy_optimiser_step(ts_sig, cfg)
+            run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+            tprint("STEP: POLICY OPTIMISER START (policy_optimiser.py)")
+            run_policy_optimisation(
+                data_root=cfg["data_root"],
+                run_id=run_id,
+                holdout_frac=float(cfg.get("policy_optimiser_holdout_frac", 0.30)),
+                cost_pct=float(
+                    cfg.get("ridge_cost_pct", cfg.get("fee_bps", 50.0) / 10000.0)
+                ),
+                use_offset_optimiser=bool(cfg.get("run_limit_offset_optimiser", False)),
+            )
         else:
             tprint("ERROR: No feature directories found.")
     elif args.mode == "optimise":

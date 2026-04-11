@@ -1,0 +1,38 @@
+[
+  {
+    "strategy_id": "loc_prev_day_range_pos_48_0_51315737_realized_volatility_24h_0_3200236_ret24h_-0_31203175_rsi_slope_-1_8608685",
+    "ridge_utility": -0.7471714424469176,
+    "et_utility": -1.2919301557992446,
+    "ridge_best_wallet_pnl": -0.12040200488771581,
+    "et_best_wallet_pnl": -0.40719724477648295,
+    "winner": "ridge",
+    "wallet_winner": "ridge"
+  },
+  {
+    "strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
+    "ridge_utility": -0.5901905685981548,
+    "et_utility": -0.4410613089661809,
+    "ridge_best_wallet_pnl": 0.47622440906041097,
+    "et_best_wallet_pnl": 0.20114117725994368,
+    "winner": "et",
+    "wallet_winner": "ridge"
+  },
+  {
+    "strategy_id": "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
+    "ridge_utility": -0.16110366654319985,
+    "et_utility": -0.07430893898708069,
+    "ridge_best_wallet_pnl": 1.1043968398297572,
+    "et_best_wallet_pnl": 1.4366194467638695,
+    "winner": "et",
+    "wallet_winner": "et"
+  },
+  {
+    "strategy_id": "range_24h_pct_0_029937342_rolling_range_20_-1_0442592",
+    "ridge_utility": -0.7506715267933524,
+    "et_utility": -1.0914780113142601,
+    "ridge_best_wallet_pnl": -0.06631145316612855,
+    "et_best_wallet_pnl": -0.19011891112723953,
+    "winner": "ridge",
+    "wallet_winner": "ridge"
+  }
+]

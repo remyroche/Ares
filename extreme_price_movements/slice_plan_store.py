@@ -238,38 +238,56 @@ def _assign_interleaved_week_periods(
     if not week_windows:
         return
 
-    weights = [float(allocation_targets.get(stage_name, 0.0) or 0.0) for stage_name in stage_names]
-    counts = _largest_remainder_counts(weights, len(week_windows))
+    shared_groups = [
+        ("train_base", "train_meta"),
+    ]
+
+    pool_for_stage: dict[str, str] = {}
+    pool_weight: dict[str, float] = {}
+    for stage_name in stage_names:
+        pool_key = stage_name
+        for group in shared_groups:
+            if stage_name in group:
+                pool_key = group[0]
+                break
+        pool_for_stage[stage_name] = pool_key
+        if pool_key not in pool_weight:
+            pool_weight[pool_key] = float(allocation_targets.get(stage_name, 0.0) or 0.0)
+
+    unique_pools = list(dict.fromkeys(pool_for_stage[s] for s in stage_names))
+    pool_weights = [pool_weight[p] for p in unique_pools]
+    counts = _largest_remainder_counts(pool_weights, len(week_windows))
     if sum(counts) <= 0:
-        counts = _largest_remainder_counts([1.0 for _ in stage_names], len(week_windows))
+        counts = _largest_remainder_counts([1.0 for _ in unique_pools], len(week_windows))
 
     permuted_week_idxs = sorted(
         range(len(week_windows)),
         key=lambda i: _stable_hash_int(f"{run_id}:{i}"),
     )
-    remaining = {stage_name: counts[idx] for idx, stage_name in enumerate(stage_names)}
-    assigned_periods: dict[str, list[dict]] = {stage_name: [] for stage_name in stage_names}
+    remaining = {pool: counts[idx] for idx, pool in enumerate(unique_pools)}
+    assigned_periods_pool: dict[str, list[dict]] = {pool: [] for pool in unique_pools}
 
     for week_idx in permuted_week_idxs:
-        candidates = [s for s in stage_names if remaining.get(s, 0) > 0]
+        candidates = [p for p in unique_pools if remaining.get(p, 0) > 0]
         if not candidates:
             break
         chosen = max(
             candidates,
-            key=lambda s: (
-                remaining.get(s, 0),
-                float(allocation_targets.get(s, 0.0) or 0.0),
-                -stage_names.index(s),
+            key=lambda p: (
+                remaining.get(p, 0),
+                pool_weight.get(p, 0.0),
+                -unique_pools.index(p),
             ),
         )
-        assigned_periods[chosen].append(week_windows[week_idx])
+        assigned_periods_pool[chosen].append(week_windows[week_idx])
         remaining[chosen] -= 1
 
     for stage_name in stage_names:
-        materialized_views[stage_name]["allowed_periods"] = assigned_periods[stage_name]
+        pool_key = pool_for_stage[stage_name]
+        materialized_views[stage_name]["allowed_periods"] = list(assigned_periods_pool[pool_key])
         materialized_views[stage_name]["week_allocation"] = {
             "mode": "interleaved_weeks",
-            "allocated_weeks": len(assigned_periods[stage_name]),
+            "allocated_weeks": len(assigned_periods_pool[pool_key]),
             "total_weeks": len(week_windows),
         }
 
@@ -350,10 +368,10 @@ def load_or_build_slice_plan(
         planner_config = SlicePlannerConfig.fast_defaults(schema=EventSchema())
 
     allocation_targets = {
-        "train_base": 0.30,
-        "train_meta": 0.30,
+        "train_base": 0.55,
+        "train_meta": 0.55,
         "sizer_train": 0.20,
-        "utility_policy_optimisation": 0.10,
+        "utility_policy_optimisation": 0.15,
         "holdout_strategy_eval": 0.10
     }
 

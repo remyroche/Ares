@@ -436,8 +436,10 @@ def suggest_extratrees_base(
         "min_impurity_decrease", [1e-5, 1e-4]
     )
 
+    n_estimators = trial.suggest_categorical("n_estimators", [200, 300, 400])
+
     return {
-        "n_estimators": 400,
+        "n_estimators": n_estimators,
         "max_depth": max_depth,
         "min_samples_leaf": min_samples_leaf,
         "min_samples_split": min_samples_split,

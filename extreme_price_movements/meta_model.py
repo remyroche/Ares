@@ -29,7 +29,9 @@ from extreme_price_movements.utils import tprint
 from extreme_price_movements.path_utils import resolve_reports_dir
 from extreme_price_movements.policy_ml import (
     MetaClassifierSelectionConfig,
+    MetaMoveSelectionConfig,
     pick_meta_classifier_by_utility_top30,
+    pick_meta_move_by_topq,
 )
 
 META_CLASS_ORDER = np.array([0, 1, 2], dtype=np.int64)
@@ -341,8 +343,8 @@ class MetaModel:
             if not _params:
                 _params = {
                     "objective": "reg:squarederror",
-                    "n_estimators": 100,
-                    "num_parallel_tree": 20,
+                    "n_estimators": 400,
+                    "num_parallel_tree": 5,
                     "max_depth": 5,
                     "learning_rate": 0.05,
                     "subsample": 0.75,
@@ -778,19 +780,12 @@ class MetaModel:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Meta Classifier Model — binary classification race on top-K% labels
+# Meta Classifier Model — binary "magnitude move" head
 # ═══════════════════════════════════════════════════════════════════════
 
 class MetaClassifierModel:
-    """Classifier-based meta model that races Ridge/ET/XGB/CatBoost on
-    binary labels derived from top-K% of return magnitude.
+    """Binary meta model for p_move = E[y_move_soft | X_t]."""
 
-    Each label threshold (e.g. top39%, top26%, top13%) produces a separate
-    race. The best (model, threshold) pair is selected by a composite score
-    combining PR-AUC, Lift@K, and Sortino.
-    """
-
-    LABEL_THRESHOLDS = [0.39, 0.26, 0.13]  # top-K fractions
     FEE_PER_ROUND_TRIP = 0.005  # 0.5% total round-trip fee
 
     def __init__(self, strategy_name: Optional[str] = None, reports_dir: str | Path | None = None):
@@ -799,8 +794,9 @@ class MetaClassifierModel:
         self._model_type: Optional[str] = None
         self.selected_features: Optional[List[str]] = None
         self.oof_probs: Optional[np.ndarray] = None
+        self.oof_probs_raw: Optional[np.ndarray] = None
         self.report_rows: List[dict] = []
-        self.label_threshold: float = 0.26  # default
+        self.label_threshold: float = 1.25  # move threshold multiplier
         self.score_sign: int = 1
         self._reports_dir = resolve_reports_dir(reports_dir)
         self.candidate_mode: str = "race"
@@ -813,6 +809,18 @@ class MetaClassifierModel:
         self.xgb_parallel_forest_params: Optional[Dict[str, object]] = None
         self.disable_hpo: bool = False
         self.hpo_out_dir: Optional[str] = None
+        self.move_k: float = 1.25
+        self.move_k_by_h: Dict[int, float] = {}
+        self.move_thresholds: Tuple[float, ...] = (1.0, 1.25, 1.5)
+        self.move_weights: Tuple[float, ...] = (0.45, 0.35, 0.20)
+        self.use_class_weight_multiplier: bool = True
+        self.max_class_weight: float = 10.0
+        self.use_calibration: bool = True
+        self.move_horizon: Optional[int] = None
+        self._calibrator = None
+        self.y_move: Optional[np.ndarray] = None
+        self.y_move_soft: Optional[np.ndarray] = None
+        self.move_threshold: Optional[np.ndarray] = None
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -836,8 +844,7 @@ class MetaClassifierModel:
             _params = dict(self.xgb_parallel_forest_params or {})
             if not _params:
                 _params = {
-                    "objective": "multi:softprob",
-                    "num_class": 3,
+                    "objective": "binary:logistic",
                     "n_estimators": 100,
                     "num_parallel_tree": 20,
                     "max_depth": 5,
@@ -852,7 +859,7 @@ class MetaClassifierModel:
                     "random_state": 42,
                     "n_jobs": 3,
                     "verbosity": 0,
-                    "eval_metric": "mlogloss",
+                    "eval_metric": "logloss",
                     "early_stopping_rounds": 20,
                 }
             return {
@@ -890,7 +897,7 @@ class MetaClassifierModel:
                     "l2_leaf_reg": 10.0, "random_seed": 42,
                     "auto_class_weights": "Balanced",
                     "verbose": 0, "thread_count": 3,
-                    "loss_function": "MultiClass",
+                    "loss_function": "Logloss",
                 },
             }
         except ImportError:
@@ -902,6 +909,10 @@ class MetaClassifierModel:
     def _fit_one(self, kind, params, X_tr, y_tr, X_va, y_va, sw=None):
         from sklearn.linear_model import LogisticRegression
         from sklearn.ensemble import ExtraTreesClassifier
+        y_tr_arr = np.asarray(y_tr, dtype=float)
+        y_va_arr = np.asarray(y_va, dtype=float)
+        y_tr_bin = (y_tr_arr >= 0.5).astype(np.int8)
+        y_va_bin = (y_va_arr >= 0.5).astype(np.int8)
 
         if kind == "ridge_clf":
             if y_tr.ndim == 2:
@@ -911,14 +922,14 @@ class MetaClassifierModel:
                     ("scaler", RobustScaler()),
                     ("clf", LogisticRegression(**params)),
                 ])
-                model.fit(X_tr, y_tr, clf__sample_weight=sw)
+                model.fit(X_tr, y_tr_bin, clf__sample_weight=sw)
                 return model
         if kind == "et_clf":
             if y_tr.ndim == 2:
                 raise ValueError("et_clf does not support proper multiclass cross-entropy for soft labels. Use xgb_clf instead.")
             else:
                 model = ExtraTreesClassifier(**params)
-                model.fit(X_tr, y_tr, sample_weight=sw)
+                model.fit(X_tr, y_tr_bin, sample_weight=sw)
                 return model
         if kind == "catboost_clf":
             import catboost
@@ -927,8 +938,14 @@ class MetaClassifierModel:
                 raise ValueError("catboost_clf does not support proper multiclass cross-entropy for soft labels. Use xgb_clf instead.")
             else:
                 model = catboost.CatBoostClassifier(**p)
-                model.fit(X_tr, y_tr, sample_weight=sw,
-                          eval_set=(X_va, y_va), early_stopping_rounds=50, verbose=False)
+                model.fit(
+                    X_tr,
+                    y_tr_bin,
+                    sample_weight=sw,
+                    eval_set=(X_va, y_va_bin),
+                    early_stopping_rounds=50,
+                    verbose=False,
+                )
                 return model
         if kind == "xgb_clf":
             p = dict(params)
@@ -1006,58 +1023,72 @@ class MetaClassifierModel:
                 model.fit(X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False)
                 return model
             else:
-                model = xgb.XGBClassifier(**p)
-                model.fit(X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False)
+                model = xgb.XGBRegressor(**p)
+                model.fit(
+                    X_tr,
+                    y_tr_arr,
+                    sample_weight=sw,
+                    eval_set=[(X_va, y_va_arr)],
+                    verbose=False,
+                )
                 return model
         raise ValueError(f"Unknown classifier kind: {kind}")
 
     def _predict_proba(self, model, X):
-        """Get class probabilities aligned to class order [0,1,2]."""
-        pp_raw = np.asarray(model.predict_proba(X), dtype=np.float64)
-        if pp_raw.ndim != 2:
+        """Get positive-class probabilities for the binary move head."""
+        if hasattr(model, "predict_proba"):
+            pp_raw = np.asarray(model.predict_proba(X), dtype=np.float64)
+        else:
+            pp_raw = np.asarray(model.predict(X), dtype=np.float64)
+        if pp_raw.ndim == 1:
+            out = pp_raw
+        elif pp_raw.ndim == 2 and pp_raw.shape[1] == 2:
+            out = pp_raw[:, 1]
+        elif pp_raw.ndim == 2 and pp_raw.shape[1] == 1:
+            out = pp_raw[:, 0]
+        else:
             raise ValueError(f"predict_proba returned invalid shape: {pp_raw.shape}")
 
-        out = np.zeros((pp_raw.shape[0], 3), dtype=np.float64)
-        classes = getattr(model, "classes_", None)
-        if classes is None and hasattr(model, "named_steps"):
-            classes = getattr(model.named_steps.get("clf"), "classes_", None)
-        if classes is None and hasattr(model, "classes"):
-            classes = np.asarray(model.classes)
-        if classes is None:
-            if pp_raw.shape[1] == 3:
-                out = pp_raw
-            else:
-                raise ValueError("Unable to align class probabilities: missing class metadata")
-        else:
-            classes = np.asarray(classes).astype(np.int64)
-            for j, cls in enumerate(classes):
-                if cls in META_CLASS_ORDER and j < pp_raw.shape[1]:
-                    out[:, int(cls)] = pp_raw[:, j]
-
-        row_sum = out.sum(axis=1, keepdims=True)
-        row_sum = np.where(row_sum > 1e-12, row_sum, 1.0)
-        out = out / row_sum
-        assert out.shape[1] == 3, f"Expected 3 classes after alignment, got {out.shape}"
-
-        # Verify probability simplex invariant explicitly after any predict_proba
-        assert np.allclose(out.sum(axis=1), 1.0, atol=1e-6), "Predict_proba output must sum to 1.0 within tolerance"
+        out = np.asarray(out, dtype=np.float64).reshape(-1)
+        out = np.where(np.isfinite(out), out, 0.5)
+        out = np.clip(out, 0.0, 1.0)
         return out
 
     @staticmethod
-    def _sanitize_multiclass_proba(p: np.ndarray, n_classes: int = 3) -> np.ndarray:
-        """Clip/normalize per-row probabilities and guarantee finite simplex rows."""
-        pp = np.asarray(p, dtype=np.float64)
-        if pp.ndim != 2 or pp.shape[1] != int(n_classes):
-            raise ValueError(f"Expected shape (N,{n_classes}) probabilities, got {pp.shape}")
-        pp = np.where(np.isfinite(pp), pp, 0.0)
-        pp = np.clip(pp, 0.0, None)
-        row_sum = pp.sum(axis=1, keepdims=True)
-        safe = row_sum[:, 0] > 1e-12
-        if np.any(safe):
-            pp[safe] = pp[safe] / row_sum[safe]
-        if np.any(~safe):
-            pp[~safe] = np.full((int(np.sum(~safe)), n_classes), 1.0 / float(n_classes), dtype=np.float64)
-        return pp
+    def _build_soft_move_target(
+        abs_ret: np.ndarray,
+        vol_proxy: np.ndarray,
+        thresholds: Sequence[float],
+        weights: Sequence[float],
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        abs_ret = np.asarray(abs_ret, dtype=np.float64).reshape(-1)
+        vol_proxy = np.asarray(vol_proxy, dtype=np.float64).reshape(-1)
+        thresh = np.asarray(list(thresholds), dtype=np.float64).reshape(-1)
+        w = np.asarray(list(weights), dtype=np.float64).reshape(-1)
+        if thresh.size == 0:
+            thresh = np.asarray([1.0, 1.25, 1.5], dtype=np.float64)
+        if w.size == 0:
+            w = np.asarray([0.45, 0.35, 0.20], dtype=np.float64)
+        if thresh.size != w.size:
+            n = min(thresh.size, w.size)
+            thresh = thresh[:n]
+            w = w[:n]
+        if thresh.size == 0:
+            thresh = np.asarray([1.0, 1.25, 1.5], dtype=np.float64)
+            w = np.asarray([0.45, 0.35, 0.20], dtype=np.float64)
+        if not np.isfinite(np.sum(w)) or float(np.sum(w)) <= 0.0:
+            w = np.ones_like(thresh, dtype=np.float64)
+        w = w / max(float(np.sum(w)), 1e-12)
+        vp = np.clip(vol_proxy, 1e-9, None)
+        ladder = []
+        for k in thresh:
+            ladder.append((abs_ret > (float(k) * vp)).astype(np.float32))
+        stack = np.vstack(ladder).astype(np.float32)
+        soft = np.dot(w.astype(np.float32), stack).astype(np.float32)
+        hard = (soft >= 0.5).astype(np.int8)
+        middle_idx = 1 if len(thresh) > 1 else 0
+        move_thr = (float(thresh[middle_idx]) * vp).astype(np.float32)
+        return soft, hard, move_thr
 
     # ── CV evaluation ────────────────────────────────────────────────
     def _cv_evaluate(
@@ -1069,12 +1100,9 @@ class MetaClassifierModel:
         sw=None,
         feature_max_features: Optional[int] = None,
     ) -> Tuple[np.ndarray, float]:
-        """3-fold purged CV. Returns (oof_probs, brier_score).
-        oof_probs shape: (N, 3).
-        """
-        from sklearn.metrics import brier_score_loss
+        """3-fold purged CV for the binary move head."""
         pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
-        oof = np.full((len(y), 3), np.nan, dtype=float)
+        oof = np.full(len(y), np.nan, dtype=float)
 
         if isinstance(X, pd.DataFrame):
             X_frame = X.reset_index(drop=True)
@@ -1087,215 +1115,241 @@ class MetaClassifierModel:
             feature_max_features if feature_max_features is not None else max(30, min(60, X_frame.shape[1]))
         )
 
+        y_arr = np.asarray(y, dtype=float).reshape(-1)
+        y_hard = (y_arr >= 0.5).astype(np.int8)
+
         for tr, va in pkf.split(X_frame):
-            if getattr(self, "_dynamic_labels", None) is not None:
-                # Dynamic soft labels evaluated on train set to prevent leakage
-                dyn_tr = self._dynamic_labels[tr]
-                dyn_va = self._dynamic_labels[va]
-                retained = dyn_tr.get_retained_geometries()
-                y_tr = dyn_tr.build_soft_labels_with(retained).astype(np.float32)
-                y_va = dyn_va.build_soft_labels_with(retained).astype(np.float32)
+            y_tr_soft = np.asarray(y_arr[tr], dtype=float)
+            y_va_soft = np.asarray(y_arr[va], dtype=float)
+            y_tr = (y_tr_soft >= 0.5).astype(np.int8)
+            y_va = (y_va_soft >= 0.5).astype(np.int8)
+            sw_tr = None if sw is None else np.asarray(sw[tr], dtype=float)
+            if y_tr.size == 0 or y_va.size == 0:
+                continue
+            n_pos = int(np.sum(y_tr == 1))
+            n_neg = int(np.sum(y_tr == 0))
+            if n_pos < 1 or n_neg < 1:
+                continue
+            fold_sw = None
+            pos_weight = float(n_neg) / max(float(n_pos), 1.0)
+            pos_weight = float(np.clip(pos_weight, 1.0, max(float(self.max_class_weight), 1.0)))
+            if sw_tr is not None:
+                fold_sw = sw_tr.copy()
+                fold_sw[y_tr == 1] *= pos_weight
             else:
-                y_tr, y_va = y[tr], y[va]
-            sw_tr = None if sw is None else sw[tr]
+                fold_sw = np.ones(len(y_tr), dtype=float)
+                fold_sw[y_tr == 1] *= pos_weight
+            fold_sw = fold_sw / max(float(np.mean(fold_sw)), 1e-12)
             X_tr_df = X_frame.iloc[tr].reset_index(drop=True)
             X_va_df = X_frame.iloc[va].reset_index(drop=True)
             selected_cols = self._select_tail_features(
-                X_tr_df, np.asarray(y_tr, dtype=float), max_features=max_features
+                X_tr_df, np.asarray(y_tr_soft, dtype=float), max_features=max_features
             )
             X_tr = X_tr_df[selected_cols].to_numpy(dtype=np.float32)
             X_va = X_va_df[selected_cols].to_numpy(dtype=np.float32)
             try:
-                model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
+                model = self._fit_one(kind, params, X_tr, y_tr_soft, X_va, y_va_soft, sw=fold_sw)
                 pp = self._predict_proba(model, X_va)
-                if getattr(self, "_dynamic_labels", None) is not None:
-                    from extreme_price_movements.soft_labels import validate_probability_simplex
-                    pp = validate_probability_simplex(pp, "p_va")
                 oof[va] = pp
             except Exception as e:
                 tprint(f"Warning: Fold evaluation failed ({e}). Returning 1/3 prior.")
-                oof[va] = 1.0 / 3.0
+                oof[va] = 0.5
 
         # Purged/embargo CV may leave boundary rows without OOF predictions.
         # Fill with a safe prior so downstream selection metrics stay finite.
-        missing = ~np.isfinite(oof).all(axis=1)
+        missing = ~np.isfinite(oof)
         if np.any(missing):
-            fitted = np.isfinite(oof).all(axis=1)
+            fitted = np.isfinite(oof)
             if np.any(fitted):
-                prior = np.nanmean(oof[fitted], axis=0)
+                prior = float(np.nanmean(oof[fitted]))
             else:
-                prior = np.bincount(np.asarray(y, dtype=int), minlength=3).astype(float)
-                prior = prior / max(prior.sum(), 1.0)
-            prior = np.where(np.isfinite(prior), prior, 0.0)
-            prior = np.clip(prior, 0.0, None)
-            s = float(prior.sum())
-            prior = prior / s if s > 1e-12 else np.array([1 / 3, 1 / 3, 1 / 3], dtype=float)
+                prior = float(np.mean(np.asarray(y, dtype=float))) if len(y) else 0.5
+            if not np.isfinite(prior):
+                prior = 0.5
             oof[missing] = prior
 
-        mask = np.isfinite(oof).all(axis=1)
+        mask = np.isfinite(oof)
         if mask.sum() < 20:
             return oof, 999.0
-        row_sums = oof[mask].sum(axis=1)
-        assert np.all(np.isfinite(row_sums)), "OOF row sums contain non-finite values"
-        assert np.all(np.abs(row_sums - 1.0) < 1e-3), "OOF probabilities must sum to ~1"
-
-        # Metric: Brier score (multi-class: sum of squared differences)
-        # We can use EV as primary metric?
-        # But for CV selection, a proper scoring rule like Brier or LogLoss is better.
-        # Let's use LogLoss.
-        from sklearn.metrics import log_loss
         try:
-            oof_ll = self._sanitize_multiclass_proba(oof[mask], n_classes=3)
-            if getattr(self, "_dynamic_labels", None) is not None:
-                p_safe = np.clip(oof_ll, 1e-12, 1 - 1e-12)
-                score = float(-np.mean(np.sum(y[mask] * np.log(p_safe), axis=1)))
-            else:
-                score = log_loss(y[mask], oof_ll, labels=[0, 1, 2])
+            from sklearn.metrics import log_loss
+
+            score = float(
+                log_loss(
+                    y_hard[mask],
+                    np.clip(oof[mask], 1e-6, 1 - 1e-6),
+                    labels=[0, 1],
+                )
+            )
         except Exception:
             score = 999.0
         return oof, score
 
     # ── Comprehensive classifier metrics ─────────────────────────────
     @staticmethod
-    def _compute_clf_metrics(oof: np.ndarray, y_class: np.ndarray,
-                             y_ret: np.ndarray, groups=None,
-                             fee: float = 0.005) -> dict:
-        """Compute classifier metrics: EV, Brier, Accuracy, PnL, and soft-label diagnostics."""
+    def _compute_clf_metrics(
+        oof: np.ndarray,
+        y_move: np.ndarray,
+        realized_abs_return: np.ndarray,
+        groups=None,
+        fee: float = 0.005,
+    ) -> dict:
+        """Compute binary move-head metrics and calibration diagnostics."""
         from sklearn.metrics import (
-            accuracy_score,
+            average_precision_score,
             balanced_accuracy_score,
             brier_score_loss,
             log_loss,
             roc_auc_score,
+            roc_curve,
         )
-        mask = np.isfinite(oof).all(axis=1) & np.isfinite(y_ret)
-        pred, y_c, y_r = oof[mask], y_class[mask], y_ret[mask]
+        from sklearn.linear_model import LogisticRegression
+
+        mask = np.isfinite(oof) & np.isfinite(y_move) & np.isfinite(realized_abs_return)
+        pred = np.asarray(oof, dtype=float)[mask]
+        y = np.asarray(y_move, dtype=int)[mask]
+        r = np.asarray(realized_abs_return, dtype=float)[mask]
         n = len(pred)
         if n < 20:
             return {"n": n}
-        pred = MetaClassifierModel._sanitize_multiclass_proba(pred, n_classes=3)
 
-        # Handle soft true targets gracefully
-        # Both soft and hard labels use canonical ordering: [SL=0, TO=1, TP=2]
-        if y_c.ndim == 2:
-            y_c_hard = np.argmax(y_c, axis=1)
-
-            # EV calculation: P(TP)*2 - P(SL)*1
-            ev_vec = pred[:, 2] * 2.0 - pred[:, 0] * 1.0
-        else:
-            y_c_hard = y_c
-            # EV calculation: P(TP)*2 - P(SL)*1
-            ev_vec = pred[:, 2] * 2.0 - pred[:, 0] * 1.0
-
+        pred = np.clip(pred, 1e-6, 1 - 1e-6)
         try:
-            if y_c.ndim == 2:
-                p_safe = np.clip(pred, 1e-15, 1 - 1e-15)
-                ll = float(-np.mean(np.sum(y_c * np.log(p_safe), axis=1)))
-            else:
-                ll = float(log_loss(y_c, pred, labels=[0, 1, 2]))
+            ll = float(log_loss(y, pred, labels=[0, 1]))
         except Exception:
             ll = float("nan")
-
-        if y_c.ndim == 2:
-            pred_hard = np.argmax(pred, axis=1)
-        else:
-            pred_hard = np.argmax(pred, axis=1)
-        acc = float(accuracy_score(y_c_hard, pred_hard))
-        bal_acc = float(balanced_accuracy_score(y_c_hard, pred_hard))
-
-        # TP-vs-SL ROC on pure outcome rows only (exclude timeouts).
-        tp_sl_mask = (y_c_hard == 0) | (y_c_hard == 2)
-        tp_vs_sl_roc = float("nan")
-        if int(np.sum(tp_sl_mask)) >= 10 and len(np.unique(y_c_hard[tp_sl_mask])) > 1:
-            try:
-                tp_scores = pred[tp_sl_mask, 2]
-                sl_scores = pred[tp_sl_mask, 0]
-                denom = np.clip(tp_scores + sl_scores, 1e-12, None)
-                tp_vs_sl_score = tp_scores / denom
-                tp_vs_sl_roc = float(
-                    roc_auc_score((y_c_hard[tp_sl_mask] == 2).astype(int), tp_vs_sl_score)
-                )
-            except Exception:
-                tp_vs_sl_roc = float("nan")
-
-        metrics = {"n": n, "logloss": ll, "accuracy": acc, "balanced_accuracy": bal_acc}
-        metrics["tp_vs_sl_roc_auc"] = tp_vs_sl_roc
-
-        # Precision/PnL at top K EV
-        for frac_pct in [13, 26, 39]:
-            frac = frac_pct / 100.0
-            k = max(1, int(n * frac))
-            idx_top = np.argpartition(ev_vec, -k)[-k:]
-
-            # Realized PnL of selected trades
-            trade_rets = y_r[idx_top] - fee
-            mean_ret = float(np.mean(trade_rets))
-            win_rate = float(np.mean(trade_rets > 0))
-
-            metrics[f"ev_top{frac_pct}_ret"] = mean_ret
-            metrics[f"ev_top{frac_pct}_wr"] = win_rate
-
-        # Calibration (Brier for TP class)
-        y_tp = (y_c == 2).astype(int)
         try:
-            brier_tp = float(brier_score_loss(y_tp, pred[:, 2]))
-            metrics["brier_tp"] = brier_tp
+            roc = float(roc_auc_score(y, pred))
+        except Exception:
+            roc = float("nan")
+        try:
+            pr_auc = float(average_precision_score(y, pred))
+        except Exception:
+            pr_auc = float("nan")
+        try:
+            brier = float(brier_score_loss(y, pred))
+        except Exception:
+            brier = float("nan")
+
+        pred_05 = (pred >= 0.5).astype(int)
+        bal_05 = float(balanced_accuracy_score(y, pred_05))
+        try:
+            fpr, tpr, thr = roc_curve(y, pred)
+            youden = tpr - fpr
+            best_idx = int(np.argmax(youden))
+            best_thr = float(thr[best_idx])
+        except Exception:
+            best_thr = 0.5
+        pred_best = (pred >= best_thr).astype(int)
+        bal_best = float(balanced_accuracy_score(y, pred_best))
+
+        # Spearman IC between p_move and realized absolute return
+        try:
+            ic = float(spearmanr(pred, r).correlation)
+            if not np.isfinite(ic):
+                ic = 0.0
+        except Exception:
+            ic = 0.0
+
+        slope = float("nan")
+        intercept = float("nan")
+        try:
+            logits = np.log(
+                np.clip(pred, 1e-6, 1 - 1e-6) / np.clip(1.0 - pred, 1e-6, 1 - 1e-6)
+            )
+            _lr = LogisticRegression(solver="lbfgs", max_iter=1000)
+            _lr.fit(logits.reshape(-1, 1), y)
+            slope = float(_lr.coef_[0][0])
+            intercept = float(_lr.intercept_[0])
         except Exception:
             pass
 
-        # EV calibration curve: compare expected utility ranking to realized utility.
-        def _ev_calibration_curve(ev_pred: np.ndarray, realized_u: np.ndarray, n_bins: int = 10) -> list[dict]:
-            ev_pred = np.asarray(ev_pred, dtype=float)
-            realized_u = np.asarray(realized_u, dtype=float)
-            finite = np.isfinite(ev_pred) & np.isfinite(realized_u)
-            ev_pred = ev_pred[finite]
-            realized_u = realized_u[finite]
-            if ev_pred.size < 20:
-                return []
-            n_bins = max(2, min(int(n_bins), ev_pred.size))
-            edges = np.percentile(ev_pred, np.linspace(0, 100, n_bins + 1))
-            edges[0] -= 1e-9
-            edges[-1] += 1e-9
-            out: list[dict] = []
+        def _top_slice_metrics(frac: float) -> Tuple[float, float, float, float]:
+            k = max(1, int(np.ceil(float(frac) * n)))
+            idx = np.argsort(-pred)[:k]
+            absret_mean = float(np.mean(r[idx]))
+            lift = absret_mean - float(np.mean(r))
+            precision = float(np.mean(y[idx]))
+            recall = float(np.sum(y[idx]) / max(np.sum(y), 1))
+            return absret_mean, lift, precision, recall
+
+        top10_absret, top10_lift, top10_prec, top10_rec = _top_slice_metrics(0.10)
+        metrics = {
+            "n": n,
+            "logloss": ll,
+            "roc_auc": roc,
+            "pr_auc": pr_auc,
+            "pr_auc_base_rate": float(np.mean(y)),
+            "pr_auc_vs_base_rate": float(pr_auc - np.mean(y)) if np.isfinite(pr_auc) else float("nan"),
+            "pr_auc_lift_vs_base_rate": float(pr_auc / max(float(np.mean(y)), 1e-9))
+            if np.isfinite(pr_auc)
+            else float("nan"),
+            "brier": brier,
+            "brier_score": brier,
+            "balanced_accuracy_0p5": bal_05,
+            "balanced_accuracy_best": bal_best,
+            "best_threshold": best_thr,
+            "move_ic": ic,
+            "calibration_slope": slope,
+            "calibration_intercept": intercept,
+            "base_rate": float(np.mean(y)),
+            "move_base_rate": float(np.mean(y)),
+            "absret_mean": float(np.mean(r)),
+            "top10_absret_mean": top10_absret,
+            "top10_lift": top10_lift,
+            "top10_hit_rate": top10_prec,
+            "top_decile_precision": top10_prec,
+            "top_decile_recall": top10_rec,
+            "top_decile_absret_mean": top10_absret,
+            "top_decile_absret_lift": top10_lift,
+            "top_decile_absret_hit_rate": top10_prec,
+        }
+        for frac in (0.05, 0.10, 0.20):
+            absret_mean, lift, precision, recall = _top_slice_metrics(frac)
+            key = int(round(frac * 100))
+            metrics[f"top{key}_absret_mean"] = absret_mean
+            metrics[f"top{key}_lift"] = lift
+            metrics[f"top{key}_precision"] = precision
+            metrics[f"top{key}_recall"] = recall
+
+        # Optional calibration curve diagnostic.
+        edges = np.percentile(pred, np.linspace(0, 100, min(10, n) + 1))
+        def _fixed_bin_ece(n_bins: int) -> tuple[float, list[dict[str, float]]]:
+            edges = np.linspace(0.0, 1.0, n_bins + 1)
+            curve: list[dict[str, float]] = []
+            ece = 0.0
             for b in range(n_bins):
-                lo, hi = edges[b], edges[b + 1]
-                in_bin = (ev_pred >= lo) & (ev_pred < hi) if b < n_bins - 1 else (ev_pred >= lo) & (ev_pred <= hi)
+                lo, hi = float(edges[b]), float(edges[b + 1])
+                if b == n_bins - 1:
+                    in_bin = (pred >= lo) & (pred <= hi)
+                else:
+                    in_bin = (pred >= lo) & (pred < hi)
                 if not np.any(in_bin):
                     continue
-                out.append(
+                pred_mean = float(np.mean(pred[in_bin]))
+                true_mean = float(np.mean(y[in_bin]))
+                frac = float(np.mean(in_bin))
+                ece += abs(pred_mean - true_mean) * frac
+                curve.append(
                     {
                         "bin": int(b),
+                        "lo": lo,
+                        "hi": hi,
                         "n": int(np.sum(in_bin)),
-                        "pred_ev_mean": float(np.mean(ev_pred[in_bin])),
-                        "realized_u_mean": float(np.mean(realized_u[in_bin])),
-                        "gap": float(np.mean(ev_pred[in_bin]) - np.mean(realized_u[in_bin])),
+                        "pred_mean": pred_mean,
+                        "true_mean": true_mean,
+                        "gap": float(pred_mean - true_mean),
                     }
                 )
-            return out
+            return float(ece), curve
 
-        def _ev_calibration_profile(curve: list[dict]) -> str:
-            if len(curve) < 2:
-                return "flat"
-            pred_ev = np.array([c["pred_ev_mean"] for c in curve], dtype=float)
-            real_ev = np.array([c["realized_u_mean"] for c in curve], dtype=float)
-            diff = float(np.mean(real_ev - pred_ev))
-            if diff < -0.01:
-                return "overconfident"
-            if diff > 0.01:
-                return "underconfident/conservative"
-            return "well-calibrated"
-
-        ev_curve = _ev_calibration_curve(ev_vec, y_r)
-        metrics["ev_calibration_curve"] = ev_curve
-        metrics["ev_calibration_profile"] = _ev_calibration_profile(ev_curve)
-        if ev_curve:
-            metrics["ev_calibration_gap_mean"] = float(
-                np.mean([row["gap"] for row in ev_curve])
-            )
-
-        soft_diag = MetaClassifierModel._compute_soft_label_diagnostics(pred, y_c)
-        metrics.update(soft_diag)
-
+        ece_10, curve_10 = _fixed_bin_ece(10)
+        ece_15, curve_15 = _fixed_bin_ece(15)
+        metrics["calibration_curve_10"] = curve_10
+        metrics["calibration_curve_15"] = curve_15
+        metrics["ece_10"] = ece_10
+        metrics["ece_15"] = ece_15
+        metrics["ece"] = ece_10
         return metrics
 
     @staticmethod
@@ -1419,10 +1473,8 @@ class MetaClassifierModel:
                 )
                 p["rsm"] = trial.suggest_float("rsm", 0.5, 0.95)
             elif kind == "xgb_clf":
-                p["n_estimators"] = trial.suggest_int("n_estimators", 300, 1400, step=100)
-                p["num_parallel_tree"] = trial.suggest_int(
-                    "num_parallel_tree", 10, 40, step=5
-                )
+                p["num_parallel_tree"] = 5
+                p["n_estimators"] = trial.suggest_int("n_estimators", 200, 400, step=50)
                 p["max_depth"] = trial.suggest_int("max_depth", 3, 7)
                 p["learning_rate"] = trial.suggest_float(
                     "learning_rate", 0.01, 0.15, log=True
@@ -1535,89 +1587,126 @@ class MetaClassifierModel:
         return y_class, w_class
 
     # ── Main fit ─────────────────────────────────────────────────────
-    def fit(self, X_meta: pd.DataFrame, y_ret: np.ndarray,
-            sample_weight=None, groups=None,
-            y_per_horizon: Optional[Dict[int, np.ndarray]] = None,
-            vol_proxy: Optional[np.ndarray] = None,
-            realized_u_policy: Optional[np.ndarray] = None,
-            selection_cfg: Optional[MetaClassifierSelectionConfig] = None,
-            y_class_override: Optional[np.ndarray] = None,
-            trade_mask: Optional[np.ndarray] = None):
-        """Race classifiers using multi-barrier labels (multiclass if vol_proxy provided)."""
+    def fit(
+        self,
+        X_meta: pd.DataFrame,
+        y_ret: np.ndarray,
+        sample_weight=None,
+        groups=None,
+        y_per_horizon: Optional[Dict[int, np.ndarray]] = None,
+        vol_proxy: Optional[np.ndarray] = None,
+        realized_u_policy: Optional[np.ndarray] = None,
+        selection_cfg: Optional[MetaMoveSelectionConfig] = None,
+        y_move_override: Optional[np.ndarray] = None,
+        y_class_override: Optional[np.ndarray] = None,
+        trade_mask: Optional[np.ndarray] = None,
+        move_k: Optional[float] = None,
+        move_k_by_h: Optional[Dict[int, float]] = None,
+        move_thresholds: Optional[Sequence[float]] = None,
+        move_weights: Optional[Sequence[float]] = None,
+        use_class_weight_multiplier: Optional[bool] = None,
+        max_class_weight: Optional[float] = None,
+        use_calibration: Optional[bool] = None,
+        move_horizon: Optional[int] = None,
+    ):
+        """Fit a binary move classifier on a soft move ladder."""
         import time as _time
-        from sklearn.ensemble import ExtraTreesClassifier
+        from sklearn.isotonic import IsotonicRegression
+
         _t0 = _time.monotonic()
-        tprint(f"MetaClassifierModel.fit: {self.strategy_name} starting "
-               f"(n={len(y_ret)}, feats={X_meta.shape[1]})")
+        tprint(
+            f"MetaClassifierModel.fit: {self.strategy_name} starting "
+            f"(n={len(y_ret)}, feats={X_meta.shape[1]})"
+        )
+        self.move_horizon = move_horizon
+        self.move_k = float(move_k if move_k is not None else self.move_k)
+        self.move_k_by_h = dict(move_k_by_h or {})
+        self.move_thresholds = tuple(float(x) for x in (move_thresholds or self.move_thresholds))
+        self.move_weights = tuple(float(x) for x in (move_weights or self.move_weights))
+        self.use_class_weight_multiplier = bool(
+            self.use_class_weight_multiplier if use_class_weight_multiplier is None else use_class_weight_multiplier
+        )
+        self.max_class_weight = float(self.max_class_weight if max_class_weight is None else max_class_weight)
+        self.use_calibration = bool(self.use_calibration if use_calibration is None else use_calibration)
+
         y_ret_np = np.asarray(y_ret, dtype=float)
         sw = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
-        X_meta_work = X_meta
+        X_meta_work = X_meta.reset_index(drop=True) if isinstance(X_meta, pd.DataFrame) else pd.DataFrame(X_meta)
 
-        # Build labels
-        self._dynamic_labels = None
-        if y_class_override is not None:
-            if hasattr(y_class_override, "to_numpy") and hasattr(y_class_override, "get_retained_geometries"):
-                _soft = y_class_override.to_numpy()
-                if _soft is None:
-                    tprint(
-                        f"  WARNING: soft-label head unavailable for H={getattr(y_class_override, 'h', '?')}; "
-                        "falling back to standard multiclass labels."
-                    )
-                    y_class_override = None
-                else:
-                    self._dynamic_labels = y_class_override
-                    y_class = _soft.astype(np.float32)
-                    w_barrier = np.ones(len(y_class), dtype=np.float32)
-                    tprint(f"  Soft multiclass labels from engine shape: {y_class.shape}")
-            else:
-                y_class = np.asarray(y_class_override)
-                if y_class.ndim == 1:
-                    y_class = y_class.astype(np.int8)
-                    w_barrier = np.ones(len(y_class), dtype=np.float32)
-                    tprint(f"  Multiclass labels from engine (0=SL, 1=TO, 2=TP): {np.bincount(y_class, minlength=3)}")
-                else:
-                    y_class = y_class.astype(np.float32)
-                    w_barrier = np.ones(len(y_class), dtype=np.float32)
-                    tprint(f"  Soft multiclass labels from engine shape: {y_class.shape}")
-        elif vol_proxy is not None and y_per_horizon:
-            # Drop samples with undefined volatility (Task 5)
-            valid_vol = np.isfinite(vol_proxy) & (vol_proxy > 1e-9)
-            if not valid_vol.all():
-                n_drop = int((~valid_vol).sum())
-                tprint(f"  Dropping {n_drop} samples with invalid vol_proxy.")
-                valid_idx = np.where(valid_vol)[0]
-                X_meta_work = X_meta_work.iloc[valid_idx].reset_index(drop=True)
-                y_ret_np = y_ret_np[valid_idx]
-                if sw is not None:
-                    sw = sw[valid_idx]
-                if groups is not None:
-                    groups = np.asarray(groups)[valid_idx]
-                if realized_u_policy is not None:
-                    realized_u_policy = np.asarray(realized_u_policy, dtype=float)[valid_idx]
-                if trade_mask is not None:
-                    trade_mask = np.asarray(trade_mask, dtype=bool)[valid_idx]
-                y_per_horizon = {h: v[valid_idx] for h, v in y_per_horizon.items()}
-                vol_proxy = vol_proxy[valid_idx]
+        if vol_proxy is None:
+            raise ValueError("MetaClassifierModel requires a causal vol_proxy for binary move labeling.")
+        vol_proxy = np.asarray(vol_proxy, dtype=float)
+        valid_vol = np.isfinite(vol_proxy) & (vol_proxy > 1e-9)
+        if not valid_vol.all():
+            n_drop = int((~valid_vol).sum())
+            tprint(f"  Dropping {n_drop} samples with invalid vol_proxy.")
+            valid_idx = np.where(valid_vol)[0]
+            X_meta_work = X_meta_work.iloc[valid_idx].reset_index(drop=True)
+            y_ret_np = y_ret_np[valid_idx]
+            vol_proxy = vol_proxy[valid_idx]
+            if sw is not None:
+                sw = sw[valid_idx]
+            if groups is not None:
+                groups = np.asarray(groups)[valid_idx]
+            if trade_mask is not None:
+                trade_mask = np.asarray(trade_mask, dtype=bool)[valid_idx]
+            if y_per_horizon is not None:
+                y_per_horizon = {h: np.asarray(v)[valid_idx] for h, v in y_per_horizon.items()}
 
-            # New multiclass path (Task 6, 7)
-            y_class, w_barrier = self._build_multiclass_labels(y_per_horizon, vol_proxy)
-            tprint(f"  Multiclass labels (0=SL, 1=TO, 2=TP): {np.bincount(y_class)}")
+        move_threshold_arr = None
+        if y_move_override is not None or y_class_override is not None:
+            raw_override = y_move_override if y_move_override is not None else y_class_override
+            y_soft = np.asarray(raw_override, dtype=float).reshape(-1)
+            y_soft = y_soft[: len(X_meta_work)]
+            y_soft = np.clip(np.where(np.isfinite(y_soft), y_soft, 0.0), 0.0, 1.0).astype(np.float32)
+            y_hard = (y_soft >= 0.5).astype(np.int8)
+            tprint(
+                f"  META MOVE target: using override labels; base_rate={float(np.mean(y_hard)):.4f} "
+                f"soft_mean={float(np.mean(y_soft)):.4f}"
+            )
         else:
-            raise ValueError("MetaClassifierModel requires vol_proxy (ATR) and y_per_horizon for risk-based labeling.")
+            y_soft, y_hard, move_threshold_arr = self._build_soft_move_target(
+                abs_ret=np.abs(y_ret_np),
+                vol_proxy=vol_proxy,
+                thresholds=self.move_thresholds,
+                weights=self.move_weights,
+            )
+            y_soft = y_soft[: len(X_meta_work)]
+            y_hard = y_hard[: len(X_meta_work)]
+            move_threshold_arr = move_threshold_arr[: len(X_meta_work)]
+            tprint(
+                f"  META MOVE target: horizon={move_horizon if move_horizon is not None else 'n/a'} "
+                f"thresholds={list(self.move_thresholds)} weights={list(self.move_weights)} "
+                f"base_rate={float(np.mean(y_hard)):.4f} soft_mean={float(np.mean(y_soft)):.4f} "
+                f"threshold_mean={float(np.mean(move_threshold_arr)):.6f}"
+            )
 
-        # Combine barrier weights with sample weights
-        if sw is not None:
-            sw_combined = sw * w_barrier
-            sw_combined = sw_combined / max(float(np.mean(sw_combined)), 1e-12)
+        if trade_mask is None:
+            trade_mask = np.ones(len(y_soft), dtype=bool)
         else:
-            sw_combined = w_barrier
+            trade_mask = np.asarray(trade_mask, dtype=bool)[: len(y_soft)]
 
-        # Fold-local feature selection is applied inside CV.
-        # Keep the raw feature frame intact here so fold training never
-        # sees features selected on the full sample.
-        self._feature_selection_max_features = max(
-            30, min(60, X_meta_work.shape[1])
-        )
+        if sw is None:
+            sw = np.ones(len(y_soft), dtype=float)
+        sw = np.asarray(sw, dtype=float)
+        sw = np.where(np.isfinite(sw), sw, 1.0)
+        sw = sw / max(float(np.mean(sw)), 1e-12)
+
+        if self.use_class_weight_multiplier:
+            n_pos = int(np.sum(y_hard == 1))
+            n_neg = int(np.sum(y_hard == 0))
+            pos_weight = float(n_neg) / max(float(n_pos), 1.0)
+            pos_weight = float(np.clip(pos_weight, 1.0, max(float(self.max_class_weight), 1.0)))
+            class_mult = np.ones(len(y_hard), dtype=float)
+            class_mult[y_hard == 1] *= pos_weight
+            sw = sw * class_mult
+            sw = sw / max(float(np.mean(sw)), 1e-12)
+            tprint(
+                f"  Class weights: n_pos={n_pos} n_neg={n_neg} pos_weight={pos_weight:.3f} "
+                f"effective_mean={float(np.mean(sw)):.3f}"
+            )
+
+        self._feature_selection_max_features = max(30, min(60, X_meta_work.shape[1]))
         self.selected_features = list(X_meta_work.columns)
         tprint(
             f"  Features: {X_meta.shape[1]} -> {len(self.selected_features)} "
@@ -1629,24 +1718,20 @@ class MetaClassifierModel:
         scored = []
         best_rec = None
         if selection_cfg is None:
-            selection_cfg = MetaClassifierSelectionConfig()
+            selection_cfg = MetaMoveSelectionConfig()
 
-        if realized_u_policy is None:
-            realized_u_policy = np.log1p(np.clip(y_ret_np, -0.999999, None))
-        else:
-            realized_u_policy = np.asarray(realized_u_policy, dtype=float)
+        realized_abs_return = np.abs(y_ret_np)
 
         for name, cand in candidates.items():
             kind = cand["kind"]
             params = dict(cand["params"])
-
             try:
-                oof, logloss = self._cv_evaluate(
+                oof_raw, logloss = self._cv_evaluate(
                     kind,
                     params,
                     X_meta_work,
-                    y_class,
-                    sw_combined,
+                    y_soft,
+                    sw,
                     feature_max_features=self._feature_selection_max_features,
                 )
             except Exception as exc:
@@ -1654,104 +1739,143 @@ class MetaClassifierModel:
                 continue
 
             metrics = self._compute_clf_metrics(
-                oof, y_class, y_ret_np, groups=groups, fee=self.FEE_PER_ROUND_TRIP)
-            sel = pick_meta_classifier_by_utility_top30(
-                y_true=y_class,
-                p_pred=oof,
-                realized_u_policy=realized_u_policy,
+                oof_raw, y_hard, realized_abs_return, groups=groups, fee=self.FEE_PER_ROUND_TRIP
+            )
+            sel = pick_meta_move_by_topq(
+                y_true=y_hard,
+                p_pred=oof_raw,
+                realized_abs_return=realized_abs_return,
                 cfg=selection_cfg,
                 trade_mask=trade_mask,
             )
             metrics["model"] = name
             metrics["logloss_cv"] = logloss
             metrics["selection_score"] = float(sel.get("selection_score", float("nan")))
-            metrics["top_realized_u_mean"] = float(sel.get("top_realized_u_mean", float("nan")))
+            metrics["top_decile_absret_mean"] = float(sel.get("top_decile_absret_mean", float("nan")))
+            metrics["top_decile_lift"] = float(sel.get("top_decile_lift", float("nan")))
+            metrics["top_decile_hit_rate"] = float(sel.get("top_decile_hit_rate", float("nan")))
             metrics["passed_gate"] = float(sel.get("passed_gate", 0.0))
             metrics["passed_econ"] = float(sel.get("passed_econ", 0.0))
 
             records.append(metrics)
-            scored.append((name, kind, params, oof, y_class, metrics, sel))
+            scored.append((name, kind, params, oof_raw, y_soft, y_hard, metrics, sel))
             tprint(
-                f"    {name}: LogLoss={logloss:.4f}, Acc={metrics.get('accuracy',0):.3f}, "
-                f"BalAcc={metrics.get('balanced_accuracy',0):.3f}, ECE={metrics.get('ece_tp',0):.3f}, "
-                f"TPvsSLROC={metrics.get('tp_vs_sl_roc_auc', float('nan')):.3f}, "
-                f"EVCal={metrics.get('ev_calibration_profile', 'n/a')}, "
-                f"TopU={sel.get('selection_score', float('nan')):.5f}, "
-                f"TopRealU={sel.get('top_realized_u_mean', float('nan')):.5f}, "
+                f"    {name}: LogLoss={logloss:.4f}, AUC={metrics.get('roc_auc',0):.3f}, "
+                f"PR={metrics.get('pr_auc',0):.3f}, Brier={metrics.get('brier',0):.4f}, "
+                f"BalAcc@0.5={metrics.get('balanced_accuracy_0p5',0):.3f}, "
+                f"BalAcc*={metrics.get('balanced_accuracy_best',0):.3f}, "
+                f"ECE10={metrics.get('ece_10', metrics.get('ece',0)):.3f}, "
+                f"Slope={metrics.get('calibration_slope', float('nan')):.3f}, "
+                f"Int={metrics.get('calibration_intercept', float('nan')):.3f}, "
+                f"BaseR={metrics.get('base_rate',0):.3f}, "
+                f"IC={metrics.get('move_ic',0):.3f}, "
+                f"Top10Lift={sel.get('top_decile_lift', float('nan')):.5f}, "
+                f"Top10P={metrics.get('top_decile_precision', sel.get('top_decile_hit_rate', float('nan'))):.3f}, "
+                f"Top10R={metrics.get('top_decile_recall', float('nan')):.3f}, "
                 f"gate={bool(sel.get('passed_gate',0))}, econ={bool(sel.get('passed_econ',0))}"
             )
 
-        gated = [r for r in scored if bool(r[6].get("passed_gate", 0.0) > 0.5 and r[6].get("passed_econ", 0.0) > 0.5)]
+        gated = [
+            r for r in scored if bool(r[6].get("passed_gate", 0.0) > 0.5 and r[6].get("passed_econ", 0.0) > 0.5)
+        ]
         pool = gated if gated else scored
         if pool:
-            # Primary objective: utility-top30 selection score.
-            # Tie-breakers: lower logloss, then higher accuracy.
-            def _clf_rank_key(r):
-                sel_score = float(r[6].get("selection_score", -1e18))
-                logloss = float(r[5].get("logloss", r[5].get("logloss_cv", 1e18)))
-                acc = float(r[5].get("accuracy", -1e18))
-                return (sel_score, -logloss, acc)
+            def _rank_key(r):
+                sel_score = float(r[7].get("selection_score", -1e18))
+                auc = float(r[6].get("roc_auc", -1e18))
+                pr = float(r[6].get("pr_auc", -1e18))
+                return (sel_score, auc, pr)
 
-            _best = max(pool, key=_clf_rank_key)
+            _best = max(pool, key=_rank_key)
             best_rec = {
-                "name": _best[0], "kind": _best[1], "params": _best[2],
-                "oof": _best[3], "y_class": _best[4],
-                "metrics": _best[5],
-                "selection": _best[6],
+                "name": _best[0],
+                "kind": _best[1],
+                "params": _best[2],
+                "oof": _best[3],
+                "y_move_soft": _best[4],
+                "y_move": _best[5],
+                "metrics": _best[6],
+                "selection": _best[7],
             }
 
         if best_rec is None:
             raise RuntimeError("No classifier candidates completed")
 
-        self.label_threshold = 0.0 # Not used in multiclass
-        self.oof_probs = best_rec["oof"] # (N, 3)
+        self.label_threshold = float(self.move_thresholds[1] if len(self.move_thresholds) > 1 else self.move_thresholds[0])
+        self.y_move = np.asarray(best_rec["y_move"], dtype=np.int8).reshape(-1).copy()
+        self.y_move_soft = np.asarray(best_rec["y_move_soft"], dtype=np.float32).reshape(-1).copy()
+        self.move_threshold = None
+        if move_threshold_arr is not None:
+            self.move_threshold = np.asarray(move_threshold_arr, dtype=np.float32).reshape(-1).copy()
+        self.oof_probs_raw = np.asarray(best_rec["oof"], dtype=float).reshape(-1)
         self._model_type = best_rec["name"]
         self.report_rows = records
 
-        # Final fit on all data with best config
         kind = best_rec["kind"]
         params = best_rec["params"]
-        y_final = best_rec["y_class"]
-        
-        # Safety: ensure at least 2 classes for Classifier (especially LogisticRegression)
+        y_final_soft = np.asarray(best_rec["y_move_soft"], dtype=np.float32).reshape(-1)
+        y_final = np.asarray(best_rec["y_move"], dtype=np.int8)
+
         unique_classes = np.unique(y_final)
         if len(unique_classes) < 2:
-            tprint(f"  WARNING: Meta labels for {self.strategy_name} have only one class: {unique_classes}. Skipping final fit.")
-            self.model = {"kind": "trivial", "class": unique_classes[0], "multiclass": True}
+            tprint(
+                f"  WARNING: Meta move labels for {self.strategy_name} have only one class: {unique_classes}. Skipping final fit."
+            )
+            self.model = {"kind": "trivial", "class": int(unique_classes[0]), "binary": True}
+            self.oof_probs = np.full(len(y_final), float(unique_classes[0]), dtype=float)
             return self
 
         _sel_best = best_rec.get("selection", {}) if isinstance(best_rec, dict) else {}
         tprint(
             f"  Winner: {best_rec['name']} "
-            f"(SelScore={float(_sel_best.get('selection_score', float('nan'))):.5f}, "
-            f"LogLoss={float(_sel_best.get('logloss', float('nan'))):.4f}, "
-            f"TopRealU={float(_sel_best.get('top_realized_u_mean', float('nan'))):.5f}). "
+            f"(Score={float(_sel_best.get('selection_score', float('nan'))):.5f}, "
+            f"AUC={float(best_rec['metrics'].get('roc_auc', float('nan'))):.4f}, "
+            f"PR={float(best_rec['metrics'].get('pr_auc', float('nan'))):.4f}, "
+            f"Top10Lift={float(_sel_best.get('top_decile_lift', float('nan'))):.5f}). "
             f"Fitting final model..."
         )
 
         tuned_params = (
             dict(params)
             if self.disable_hpo
-            else self._optuna_hpo(best_rec["name"], kind, params, X_meta_work, y_final, sw=sw_combined)
+            else self._optuna_hpo(best_rec["name"], kind, params, X_meta_work, y_final_soft, sw=sw)
         )
 
         self.selected_features = self._select_tail_features(
-            X_meta_work, y_final, max_features=self._feature_selection_max_features
+            X_meta_work, y_final_soft, max_features=self._feature_selection_max_features
         )
         Xv = X_meta_work[self.selected_features].to_numpy(dtype=np.float32)
-
         final_model = self._fit_one(
             kind,
             tuned_params,
             Xv,
-            y_final,
+            y_final_soft,
             Xv,
-            y_final,
-            sw=sw_combined,
+            y_final_soft,
+            sw=sw,
         )
-        self.model = {"kind": kind, "models": [final_model], "multiclass": True}
+        self.model = {"kind": kind, "models": [final_model], "binary": True}
 
-        # Save race report
+        if self.use_calibration:
+            try:
+                calib_mask = np.isfinite(self.oof_probs_raw) & np.isfinite(y_final)
+                if int(np.sum(calib_mask)) >= 50 and len(np.unique(y_final[calib_mask])) > 1:
+                    self._calibrator = IsotonicRegression(out_of_bounds="clip")
+                    self._calibrator.fit(self.oof_probs_raw[calib_mask], y_final[calib_mask])
+                    self.oof_probs = np.asarray(
+                        self._calibrator.transform(self.oof_probs_raw),
+                        dtype=float,
+                    ).reshape(-1)
+                else:
+                    self._calibrator = None
+                    self.oof_probs = self.oof_probs_raw.copy()
+            except Exception as exc:
+                tprint(f"  Calibration skipped for {self.strategy_name}: {exc}")
+                self._calibrator = None
+                self.oof_probs = self.oof_probs_raw.copy()
+        else:
+            self.oof_probs = self.oof_probs_raw.copy()
+
         report_dir = self._reports_dir
         report_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(records).to_csv(
@@ -1759,8 +1883,10 @@ class MetaClassifierModel:
             index=False,
         )
 
-        tprint(f"MetaClassifierModel.fit: {self.strategy_name} done ({_time.monotonic()-_t0:.1f}s). "
-               f"Winner={best_rec['name']}")
+        tprint(
+            f"MetaClassifierModel.fit: {self.strategy_name} done ({_time.monotonic()-_t0:.1f}s). "
+            f"Winner={best_rec['name']}"
+        )
         return self
 
     def predict_proba(self, X_meta):
@@ -1770,9 +1896,7 @@ class MetaClassifierModel:
         if self.model.get("kind") == "trivial":
             n = len(X_meta)
             cls = self.model["class"]
-            out = np.zeros((n, 3), dtype=np.float64)
-            out[:, int(cls)] = 1.0
-            return out
+            return np.full(n, float(cls), dtype=np.float64)
 
         X = X_meta[self.selected_features].to_numpy(dtype=float)
         probs_list = []
@@ -1780,10 +1904,10 @@ class MetaClassifierModel:
             pp = self._predict_proba(m, X)
             probs_list.append(pp)
         out = np.mean(probs_list, axis=0)
-        row_sums = out.sum(axis=1)
-        assert out.shape[1] == 3, f"Expected multiclass probabilities of shape (N,3), got {out.shape}"
-        assert np.all(np.abs(row_sums - 1.0) < 1e-3), "Predicted probabilities must sum to ~1"
-
-        # Runtime prediction assertion
-        assert np.allclose(out.sum(axis=1), 1.0, atol=1e-6), "predict_proba output must strictly sum to 1.0"
-        return out
+        out = np.asarray(out, dtype=np.float64).reshape(-1)
+        if self._calibrator is not None:
+            try:
+                out = np.asarray(self._calibrator.transform(out), dtype=np.float64).reshape(-1)
+            except Exception:
+                pass
+        return np.clip(out, 0.0, 1.0)

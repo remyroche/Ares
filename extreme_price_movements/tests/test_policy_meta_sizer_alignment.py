@@ -12,31 +12,39 @@ def test_meta_classifier_uses_engine_label_override():
     n = 120
     X = pd.DataFrame({"f1": np.linspace(-1, 1, n), "f2": np.random.randn(n)})
     y_ret = np.random.randn(n) * 0.01
-    y_class = np.random.choice([0, 1, 2], size=n, p=[0.3, 0.4, 0.3]).astype(np.int8)
-    realized_u = np.where(y_class == 2, 0.01, np.where(y_class == 0, -0.01, 0.0))
+    vol_proxy = np.full(n, 0.01, dtype=float)
 
     m = MetaClassifierModel(strategy_name="t")
-    m._build_candidates = lambda: {
-        "ridge_clf": {
-            "kind": "ridge_clf",
-            "params": {"C": 0.1, "penalty": "l2", "solver": "lbfgs", "max_iter": 300, "class_weight": "balanced", "multi_class": "multinomial"},
-        }
+    m.candidate_mode = "xgb_parallel_forest"
+    m.xgb_parallel_forest_params = {
+        "objective": "binary:logistic",
+        "n_estimators": 20,
+        "num_parallel_tree": 5,
+        "max_depth": 3,
+        "learning_rate": 0.1,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_alpha": 0.0,
+        "reg_lambda": 1.0,
+        "min_child_weight": 1.0,
+        "gamma": 0.0,
+        "tree_method": "hist",
+        "random_state": 42,
+        "n_jobs": 1,
+        "verbosity": 0,
+        "eval_metric": "logloss",
+        "early_stopping_rounds": 5,
     }
-    def _fake_cv(kind, params, Xv, yv, sw=None):
-        oof = np.full((len(yv), 3), 1.0 / 3.0, dtype=float)
-        oof[np.arange(len(yv)), yv] = 0.6
-        oof = oof / oof.sum(axis=1, keepdims=True)
-        return oof, 0.9
-    m._cv_evaluate = _fake_cv
     m.fit(
         X,
         y_ret,
-        y_class_override=y_class,
-        realized_u_policy=realized_u,
+        vol_proxy=vol_proxy,
         selection_cfg=MetaClassifierSelectionConfig(min_top_n=5),
+        use_calibration=False,
     )
     assert m.oof_probs is not None
-    assert m.oof_probs.shape[1] == 3
+    assert m.oof_probs.ndim == 1
+    assert len(m.oof_probs) == n
 
 
 def test_ridge_target_race_selects_by_topq_u_policy_not_ic():

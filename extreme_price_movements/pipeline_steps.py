@@ -2548,13 +2548,18 @@ def run_policy_optimiser_step(ts_sig, cfg):
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     data_root = cfg.get("data_root", "data")
     cost_pct = float(cfg.get("ridge_cost_pct", cfg.get("fee_bps", 50.0) / 10000.0))
-    holdout_frac = float(cfg.get("policy_optimiser_holdout_frac", 0.10))
-    tprint(f"STEP: POLICY OPTIMISER START (holdout_frac={holdout_frac})")
+    holdout_frac = float(cfg.get("policy_optimiser_holdout_frac", 0.30))
+    use_offset_optimiser = bool(cfg.get("run_limit_offset_optimiser", False))
+    tprint(
+        f"STEP: POLICY OPTIMISER START (holdout_frac={holdout_frac}, "
+        f"use_offset_optimiser={use_offset_optimiser})"
+    )
     result = run_policy_optimisation(
         data_root=data_root,
         run_id=run_id,
         holdout_frac=holdout_frac,
         cost_pct=cost_pct,
+        use_offset_optimiser=use_offset_optimiser,
     )
     if result:
         tprint("POLICY OPTIMISER COMPLETE")

@@ -353,6 +353,22 @@ class MetaClassifierSelectionConfig:
     require_positive_oof_utility: bool = True
 
 
+@dataclass
+class MetaMoveSelectionConfig:
+    """Selection config for the binary move classifier."""
+
+    min_roc_auc: float = 0.56
+    min_pr_auc: float = 0.0
+    min_balanced_accuracy: float = 0.0
+    min_ic: float = 0.0
+    top_frac: float = 0.10
+    top_fracs: Tuple[float, ...] = (0.05, 0.10, 0.20)
+    min_top_n: int = 50
+    min_lift_vs_baseline: float = 0.0
+    require_positive_top_lift: bool = True
+    require_positive_base_rate: bool = True
+
+
 def expected_utility(p_pred: np.ndarray, u_tp: float, u_to: float, u_sl: float) -> np.ndarray:
     """Expected utility from multiclass [SL, TO, TP] probabilities."""
     return p_pred[:, 2] * u_tp + p_pred[:, 1] * u_to + p_pred[:, 0] * u_sl
@@ -463,4 +479,144 @@ def pick_meta_classifier_by_utility_top30(
         "u_sl": float(u_sl),
         "passed_econ": float(passed_econ),
         "selection_score": topU_mean,
+    }
+
+
+def pick_meta_move_by_topq(
+    y_true: np.ndarray,
+    p_pred: np.ndarray,
+    realized_abs_return: np.ndarray,
+    cfg: MetaMoveSelectionConfig,
+    trade_mask: np.ndarray | None = None,
+) -> Dict[str, float]:
+    """Binary move-head selection metrics and economic gate.
+
+    The target is p_move = Pr(|net return| > k * vol_scale).
+    Selection is based on ranking rows by p_move and checking whether the
+    top slice shows higher realized absolute return and positive lift.
+    """
+    from sklearn.metrics import (
+        average_precision_score,
+        balanced_accuracy_score,
+        brier_score_loss,
+        log_loss,
+        roc_auc_score,
+        roc_curve,
+    )
+    from scipy.stats import spearmanr
+
+    y_true = np.asarray(y_true).reshape(-1)
+    p_pred = np.asarray(p_pred, dtype=float).reshape(-1)
+    realized_abs_return = np.asarray(realized_abs_return, dtype=float).reshape(-1)
+    tm = np.ones(len(y_true), dtype=bool) if trade_mask is None else np.asarray(trade_mask, dtype=bool)
+    tm = tm[: len(y_true)]
+    valid = tm & np.isfinite(y_true) & np.isfinite(p_pred) & np.isfinite(realized_abs_return)
+
+    if valid.sum() == 0:
+        return {
+            "n": 0.0,
+            "logloss": float("nan"),
+            "roc_auc": float("nan"),
+            "pr_auc": float("nan"),
+            "balanced_accuracy_0p5": float("nan"),
+            "balanced_accuracy_best": float("nan"),
+            "best_threshold": float("nan"),
+            "brier": float("nan"),
+            "move_ic": float("nan"),
+            "top_decile_absret_mean": float("nan"),
+            "top_decile_lift": float("nan"),
+            "top_decile_hit_rate": float("nan"),
+            "base_rate": float("nan"),
+            "passed_gate": 0.0,
+            "passed_econ": 0.0,
+            "selection_score": float("-inf"),
+        }
+
+    y = y_true[valid].astype(int)
+    p = np.clip(p_pred[valid].astype(float), 1e-6, 1 - 1e-6)
+    r = realized_abs_return[valid].astype(float)
+    base_rate = float(np.mean(y))
+    try:
+        ll = float(log_loss(y, p, labels=[0, 1]))
+    except Exception:
+        ll = float("nan")
+    try:
+        roc = float(roc_auc_score(y, p))
+    except Exception:
+        roc = float("nan")
+    try:
+        pr = float(average_precision_score(y, p))
+    except Exception:
+        pr = float("nan")
+    try:
+        brier = float(brier_score_loss(y, p))
+    except Exception:
+        brier = float("nan")
+
+    pred_05 = (p >= 0.5).astype(int)
+    bal_05 = float(balanced_accuracy_score(y, pred_05))
+    try:
+        fpr, tpr, thr = roc_curve(y, p)
+        youden = tpr - fpr
+        best_idx = int(np.argmax(youden))
+        best_thr = float(thr[best_idx])
+    except Exception:
+        best_thr = 0.5
+    pred_best = (p >= best_thr).astype(int)
+    bal_best = float(balanced_accuracy_score(y, pred_best))
+
+    rho = 0.0
+    if np.std(p) > 1e-12 and np.std(r) > 1e-12:
+        rho_val, _ = spearmanr(p, r)
+        if np.isfinite(rho_val):
+            rho = float(rho_val)
+
+    k = max(1, int(np.ceil(float(cfg.top_frac) * len(p))))
+    top_idx = np.argsort(-p)[:k]
+    top_mean = float(np.mean(r[top_idx]))
+    top_hit = float(np.mean(y[top_idx]))
+    baseline_mean = float(np.mean(r))
+    lift = top_mean - baseline_mean
+
+    topq_metrics = {}
+    for frac in cfg.top_fracs:
+        kk = max(1, int(np.ceil(float(frac) * len(p))))
+        idx = np.argsort(-p)[:kk]
+        topq_metrics[f"top{int(round(frac*100)):02d}_absret_mean"] = float(np.mean(r[idx]))
+        topq_metrics[f"top{int(round(frac*100)):02d}_lift"] = float(np.mean(r[idx]) - baseline_mean)
+        topq_metrics[f"top{int(round(frac*100)):02d}_hit_rate"] = float(np.mean(y[idx]))
+
+    passed_gate = (
+        np.isfinite(roc)
+        and np.isfinite(pr)
+        and np.isfinite(bal_best)
+        and roc >= float(cfg.min_roc_auc)
+        and pr >= float(cfg.min_pr_auc)
+        and bal_best >= float(cfg.min_balanced_accuracy)
+        and rho >= float(cfg.min_ic)
+    )
+    passed_econ = bool(k >= int(cfg.min_top_n) and lift >= float(cfg.min_lift_vs_baseline))
+    if bool(cfg.require_positive_top_lift):
+        passed_econ = bool(passed_econ and top_mean > baseline_mean)
+    if bool(cfg.require_positive_base_rate):
+        passed_gate = bool(passed_gate and base_rate > 0.0)
+
+    return {
+        "n": float(len(p)),
+        "logloss": ll,
+        "roc_auc": roc,
+        "pr_auc": pr,
+        "balanced_accuracy_0p5": bal_05,
+        "balanced_accuracy_best": bal_best,
+        "best_threshold": best_thr,
+        "brier": brier,
+        "move_ic": rho,
+        "top_decile_absret_mean": top_mean,
+        "top_decile_lift": lift,
+        "top_decile_hit_rate": top_hit,
+        "base_rate": base_rate,
+        "passed_gate": float(passed_gate),
+        "passed_econ": float(passed_econ),
+        "selection_score": float(lift),
+        **topq_metrics,
     }

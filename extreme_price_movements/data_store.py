@@ -146,6 +146,10 @@ def _build_parquet_ts_filters(
     periods = _normalize_allowed_periods(allowed_periods)
     start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
     end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
+    if start_ts is not None and start_ts.tzinfo is not None:
+        start_ts = start_ts.tz_localize(None)
+    if end_ts is not None and end_ts.tzinfo is not None:
+        end_ts = end_ts.tz_localize(None)
 
     if start_ts is not None or end_ts is not None:
         if not periods:
@@ -1462,6 +1466,10 @@ def load_features_selected(
     symbol_set = {_normalize_spot_symbol(str(sym)) for sym in symbols} if symbols else None
     start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
     end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
+    if start_ts is not None and start_ts.tzinfo is not None:
+        start_ts = start_ts.tz_localize(None)
+    if end_ts is not None and end_ts.tzinfo is not None:
+        end_ts = end_ts.tz_localize(None)
     normalized_periods = _normalize_allowed_periods(allowed_periods)
     parquet_filters = _build_parquet_ts_filters(
         start_ts=start_ts,

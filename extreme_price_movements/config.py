@@ -803,11 +803,11 @@ CFG = {
     "val_lookback_hours": 24 * 7,  # 7d validation (time-split, no leakage)
     "min_train_samples": 200,
     # Sample caps (symbol-balanced subsampling when exceeded)
-    "base_fit_max_samples": 150000,
+    "base_fit_max_samples": 0,
     "base_selector_max_samples": 30000,
-    "base_variant_fit_max_samples": 100000,
-    "base_variant_selector_max_samples": 25000,
-    "meta_fit_max_samples": 50000,
+    "base_variant_fit_max_samples": 0,
+    "base_variant_selector_max_samples": 30000,
+    "meta_fit_max_samples": 0,
     # MFE/MAE-based sample weighting (Report 2026-02-12)
     # Weight samples by how "decisive" the price movement was relative to barriers
     # w = w_min + (1-w_min) * clip(max(MFE/TP, MAE/SL) / tau, 0, 1)
@@ -833,9 +833,18 @@ CFG = {
     "sample_weight_opt_trials": 16,
     "meta_sample_weight_opt_trials": 12,
     "meta_use_policy_value_target": True,
-    "meta_clf_use_engine_labels": True,
-    # Policy-aligned downstream sizing requires classifier barrier probabilities
-    # (oof_p_sl/oof_p_to/oof_p_tp) in meta_oof exports.
+    "meta_clf_enabled": True,
+    "meta_clf_type": "binary_move_softladder",
+    "meta_clf_move_thresholds": [1.00, 1.25, 1.50],
+    "meta_clf_move_weights": [0.45, 0.35, 0.20],
+    "meta_clf_use_calibration": True,
+    "meta_clf_use_class_weight_multiplier": True,
+    "meta_clf_max_class_weight": 10.0,
+    # Legacy compatibility knobs; the binary move head no longer consumes
+    # engine-derived TP/TIME/SL multiclass labels by default.
+    "meta_clf_use_engine_labels": False,
+    # Policy-aligned downstream sizing requires the binary move probability
+    # (oof_p_move) in meta_oof exports.
     "meta_race_include_classifiers": True,
     "meta_require_classifier_barrier_probs": True,
     "meta_train_regression_bucket_model": True,
@@ -973,7 +982,6 @@ CFG = {
         "oof_log_mae_q70_hat",
         "oof_log_mfe_hat",
         "oof_asym_hat",
-        "mfe_mae_ratio_hat",
         "oof_p_tp",
         "oof_p_sl",
         "oof_p_time",
@@ -1942,15 +1950,6 @@ CFG = {
         "up_down_semivol_ratio_tanh",
         "up_down_return_mass_ratio_tanh",
         "tail_asymmetry_q90_q10_atr_norm",
-        # Time features (circular seasonal)
-        "sin_hod",
-        "cos_hod",
-        "sin_dow",
-        "cos_dow",
-        "hour_sin",
-        "hour_cos",
-        "dow_sin",
-        "dow_cos",
         # Regime / state features
         "regime_trend_score",
         "regime_vol_score",

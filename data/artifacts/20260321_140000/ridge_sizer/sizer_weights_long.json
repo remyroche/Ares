@@ -1,0 +1,52 @@
+{
+  "direction": "long",
+  "weights": {
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_oof_p_move": 0.0760244821464679,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_range_norm_24": 0.06049353787093806,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_ll_count_12": 0.0,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_climax_range_12": 0.07758928292656002,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_range_norm_12": 0.06114842529603304,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_climax_vol_24": 0.06005185999105461,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_climax_range_24": 0.08125311348121607,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_ll_count_24": 0.0,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_rng_z": 0.07329534930381093,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_body_ratio_15m": 0.06109269867700522,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_press_12": 0.08612167314748688,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_hh_count_24": 0.0,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_climax_vol_12": 0.04557922601343076,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_dv_z": 0.062812307624777,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_vol_concentration_12": 0.07490360187107736,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_prog_eff_12": 0.07373325718981404,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_impact_12": 0.04082410889028685,
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021_impact_24": 0.0650770755690413
+  },
+  "params_per_strategy": {
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021": {
+      "alpha": 0.04900515974431273,
+      "delta": 0.8103370570150479,
+      "gamma": 0.3235241944603261,
+      "ranking_top_k_pct": 0.1,
+      "top_k_pct": 0.05,
+      "cooldown_hours": 2.0,
+      "base_size": 0.1,
+      "rank_multiplier": 0.16,
+      "sizing_formula": "linear",
+      "squash_fn": "tanh",
+      "squash_k": 1.0,
+      "ObjectiveScore": -0.003573179883915748,
+      "IntradayRisk": 6.2766253979560025,
+      "threshold_low": 0.07006189151743233,
+      "threshold_high": 0.1751103988599541,
+      "nested_cv_used": true,
+      "race_winner": "xgb+ridge",
+      "tree_hpo_min_child_weight": 381,
+      "tree_hpo_reg_alpha": 0.13898846301229653,
+      "tree_hpo_reg_lambda": 19.94060852725334
+    }
+  },
+  "buckets": [
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021"
+  ],
+  "run_id": "20260321_140000",
+  "timestamp": "2026-04-11T21:44:53.268912+00:00"
+}

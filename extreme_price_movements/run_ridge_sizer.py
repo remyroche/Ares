@@ -403,7 +403,7 @@ def load_meta_oof_predictions(
     #           long_mr_utility -> (long_mr, utility), etc.
     _h_pat = re.compile(r"^(.+)_H(\d+)$")
     _tbm_pat = re.compile(r"^(.+)_(tbm_\d+_\d+)_h(\d+)$")
-    _risk_pat = re.compile(r"^(.+)_(mae|mfe)_h(\d+)$")
+    _risk_pat = re.compile(r"^(.+)_(mae|mfe|asym)_h(\d+)$")
     _aux_heads = {"utility", "mae_q70", "mfe", "early_inval"}
     buckets = {}
     for name, df in raw_dfs.items():
@@ -523,6 +523,11 @@ def load_meta_oof_predictions(
             mfe_vals = combined[mfe_cols].values
             combined["mfe_mean"] = np.nanmean(mfe_vals, axis=1)
             combined["mfe_std"] = np.nanstd(mfe_vals, axis=1)
+        asym_cols = [c for c in combined.columns if c.startswith("asym_h")]
+        if asym_cols:
+            asym_vals = combined[asym_cols].values
+            combined["asym_mean"] = np.nanmean(asym_vals, axis=1)
+            combined["asym_std"] = np.nanstd(asym_vals, axis=1)
 
         # -------------------------------------------------------------
         # Synthesize interaction features from auxiliary heads
@@ -550,7 +555,6 @@ def load_meta_oof_predictions(
         inferred_side = next(iter(source_sides), "")
         if inferred_side:
             combined.attrs["trade_side"] = inferred_side
-            combined["trade_side"] = inferred_side
 
         # Attach metadata and realized outcomes for diagnostics
         aux_cols = [
@@ -565,6 +569,8 @@ def load_meta_oof_predictions(
             "oof_u_hat",
             "oof_log_mae_q70_hat",
             "oof_log_mfe_hat",
+            "oof_asym_hat",
+            "oof_p_move",
             "mae_ret",
             "mfe_ret",
             "u_policy_net",
@@ -683,6 +689,22 @@ def load_meta_oof_predictions(
                         for col in base_cols:
                             if col in base_by_idx.columns:
                                 combined[col] = combined["index"].map(base_by_idx[col])
+                        # Preserve base OOF prediction heads used downstream by the
+                        # policy optimiser and diagnostics. These are bucket-aligned
+                        # with the base OOF rows and must survive the meta merge.
+                        for col in [
+                            "oof_u_hat",
+                            "oof_log_mae_q70_hat",
+                            "oof_log_mfe_hat",
+                            "oof_log_dur_hat",
+                            "oof_p_move",
+                            "oof_p_sl",
+                            "oof_p_to",
+                            "oof_p_tp",
+                            "oof_asym_hat",
+                        ]:
+                            if col in base_by_idx.columns and col not in combined.columns:
+                                combined[col] = combined["index"].map(base_by_idx[col])
 
                     # Merge essential metadata if still missing
                     for meta_col in ["timestamp", "symbol"]:
@@ -713,7 +735,10 @@ def load_meta_oof_predictions(
     # Inject required config-defined features into the inference data
     from extreme_price_movements.config import CFG
     from extreme_price_movements.data_store import load_features_selected
-    from extreme_price_movements.slice_plan_store import load_features_for_stage_or_all
+    try:
+        from extreme_price_movements.pipeline_steps import load_features_for_stage_or_all
+    except Exception:
+        from extreme_price_movements.slice_plan_store import load_features_for_stage_or_all
     from extreme_price_movements.training import _fast_lookup
 
     cfg = dict(CFG)
@@ -740,10 +765,10 @@ def load_meta_oof_predictions(
         "oof_log_mae_q70_hat",
         "oof_log_mfe_hat",
         "oof_asym_hat",
+        "oof_p_move",
         "oof_p_sl",
         "oof_p_tp",
         "oof_p_time",
-        "mfe_mae_ratio_hat",
         "Upside",
         "Downside",
         "EdgeSharpe",
@@ -767,7 +792,7 @@ def load_meta_oof_predictions(
 
         feats = load_features_for_stage_or_all(
             cfg,
-            ts=find_best_feature_snapshot_ts(data_root, run_id),
+            ts_sig=find_best_feature_snapshot_ts(data_root, run_id),
             root_dir=data_root,
             feature_keys=list(missing_feats),
             symbols=list(all_syms),
@@ -972,6 +997,25 @@ def load_trade_outcomes(
     ]
     for c in aux_cols:
         if c in oof_df.columns:
+            outcomes[c] = oof_df[c].values
+
+    # Preserve additional prediction columns that downstream policy code can use
+    # as a fallback when the dedicated utility head is absent in older artifacts.
+    prediction_cols = [
+        "utility",
+        "oof_pred",
+        "oof_pred_oriented",
+        "reg",
+        "reg_mean",
+        "reg_std",
+        "clf",
+        "oof_p_move",
+        "oof_log_mae_q70_hat",
+        "oof_log_mfe_hat",
+        "oof_asym_hat",
+    ]
+    for c in prediction_cols:
+        if c in oof_df.columns and c not in outcomes.columns:
             outcomes[c] = oof_df[c].values
 
     if "return" not in outcomes.columns:

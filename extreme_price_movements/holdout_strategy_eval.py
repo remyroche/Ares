@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.config import CFG as DEFAULT_CFG
-from extreme_price_movements.data_store import load_features_selected
+from extreme_price_movements.data_store import PartitionedOHLCVStore, load_features_selected
 from extreme_price_movements.features import (
     add_regime_gates,
     compute_features_hourly,
@@ -751,6 +751,89 @@ def _sample_random_symbols(n: int = 5, seed: int = 42) -> List[str]:
     return list(rng.choice(symbols, size=n, replace=False))
 
 
+def _alpha_required_feature_keys(bundle: Dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for side_models in bundle.get("alpha_models", {}).values():
+        if not isinstance(side_models, dict):
+            continue
+        for model_info in side_models.values():
+            if not isinstance(model_info, dict):
+                continue
+            keys.update(model_info.get("feat_cols", []) or [])
+    return keys
+
+
+def _sample_compatible_symbols(
+    data_root: str,
+    run_id: str,
+    n: int = 5,
+    seed: int = 42,
+) -> List[str]:
+    """Sample symbols that satisfy the alpha feature contract."""
+    rng = np.random.RandomState(seed)
+    try:
+        cfg = dict(DEFAULT_CFG)
+        cfg["data_root"] = data_root
+        store = PartitionedOHLCVStore(
+            root_dir=data_root, timeframe=str(cfg.get("timeframe", "1h"))
+        )
+        universe = get_training_universe(None, cfg, store, ts_sig=None)
+        symbols = list(universe.keys()) if isinstance(universe, dict) else list(universe)
+    except Exception:
+        symbols = ["AIXBT_USDT"]
+
+    if len(symbols) == 0:
+        raise RuntimeError("No symbols available for holdout evaluation")
+
+    rng.shuffle(symbols)
+    bundle = load_model_bundle(run_id, data_root)
+    required_feature_keys = get_inference_required_feature_keys(bundle)
+    alpha_required_keys = _alpha_required_feature_keys(bundle)
+
+    compatible: List[str] = []
+    rejected: List[str] = []
+
+    for symbol in symbols:
+        try:
+            panel, panel_symbol = _load_price_panel(symbol)
+            feature_df = _load_symbol_features(
+                data_root,
+                run_id,
+                symbol=panel_symbol,
+                panel=panel,
+                required_feature_keys=required_feature_keys,
+            )
+            missing_alpha_keys = {
+                k for k in alpha_required_keys if k not in feature_df.columns
+            }
+            if missing_alpha_keys:
+                rejected.append(symbol)
+                continue
+            compatible.append(symbol)
+            if len(compatible) >= n:
+                break
+        except Exception as exc:
+            rejected.append(symbol)
+            tprint(f"Holdout sampler skipped {symbol}: {exc}")
+            continue
+
+    if not compatible:
+        raise RuntimeError(
+            "No holdout symbols satisfied the alpha feature contract. "
+            f"Checked {len(symbols)} symbols, rejected {len(rejected)}."
+        )
+    if len(compatible) < n:
+        tprint(
+            f"Holdout sampler found only {len(compatible)} compatible symbols "
+            f"out of requested {n}; proceeding with the available set."
+        )
+    tprint(
+        f"Holdout sampler selected {len(compatible)} compatible symbols "
+        f"(rejected={len(rejected)})"
+    )
+    return compatible[:n]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Evaluate frozen strategy thresholds on holdout symbols."
@@ -792,8 +875,10 @@ def main() -> None:
     if args.symbol:
         symbols = [args.symbol]
     else:
-        symbols = _sample_random_symbols(n=args.n_symbols, seed=args.seed)
-        tprint(f"Sampled {len(symbols)} holdout symbols: {symbols}")
+        symbols = _sample_compatible_symbols(
+            args.data_root, args.run_id, n=args.n_symbols, seed=args.seed
+        )
+        tprint(f"Sampled {len(symbols)} compatible holdout symbols: {symbols}")
 
     all_results: List[Dict[str, Any]] = []
     portfolio_parts: Dict[str, List] = {"scores": [], "returns": [], "ts": []}

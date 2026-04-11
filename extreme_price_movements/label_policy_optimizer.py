@@ -581,11 +581,35 @@ def optimize_label_policy(
     # Keep feature extraction aligned with RidgePositionSizer.fit semantics.
     if 'model_name' in search_oof_preds.columns and 'pred' in search_oof_preds.columns:
         pred_wide = search_oof_preds.pivot(columns='model_name', values='pred')
-        X_cols = list(pred_wide.columns)
-        X = np.nan_to_num(pred_wide.to_numpy(dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        X_cols = [c for c in pred_wide.columns if pd.api.types.is_numeric_dtype(pred_wide[c])]
+        dropped_cols = [c for c in pred_wide.columns if c not in X_cols]
+        if dropped_cols:
+            tprint(
+                f"Policy optimizer dropping non-numeric OOF columns: {dropped_cols}"
+            )
+        X = np.nan_to_num(
+            pred_wide[X_cols].to_numpy(dtype=np.float32),
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
     else:
-        X_cols = list(search_oof_preds.columns)
-        X = np.nan_to_num(search_oof_preds[X_cols].to_numpy(dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        X_cols = [
+            c
+            for c in search_oof_preds.columns
+            if pd.api.types.is_numeric_dtype(search_oof_preds[c])
+        ]
+        dropped_cols = [c for c in search_oof_preds.columns if c not in X_cols]
+        if dropped_cols:
+            tprint(
+                f"Policy optimizer dropping non-numeric OOF columns: {dropped_cols}"
+            )
+        X = np.nan_to_num(
+            search_oof_preds[X_cols].to_numpy(dtype=np.float32),
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
 
     grid = list(itertools.product(
         [0.8, 1.2, 1.6, 2.0],

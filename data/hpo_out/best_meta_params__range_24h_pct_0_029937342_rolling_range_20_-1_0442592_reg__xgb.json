@@ -1,0 +1,14 @@
+{
+  "scope_key": "range_24h_pct_0_029937342_rolling_range_20_-1_0442592_reg",
+  "kind": "xgb",
+  "best_params": {
+    "max_depth": 6,
+    "learning_rate": 0.0797780974002297,
+    "n_estimators": 991,
+    "subsample": 0.7862013821645912,
+    "colsample_bytree": 0.5128902363330657,
+    "reg_alpha": 0.17192794665884042,
+    "reg_lambda": 4.238407142628107
+  },
+  "n_trials_completed": 6
+}

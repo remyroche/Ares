@@ -8,6 +8,7 @@ exit-policy parameters. The resulting params are persisted for holdout OOS repla
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,10 +27,14 @@ from extreme_price_movements.simple_offset_generator import (
 from extreme_price_movements.utils import tprint
 
 EPS = 1e-9
+logger = logging.getLogger(__name__)
 
 
 def _metric_score(
-    rets: np.ndarray, cost_pct: float = 0.003, already_net: bool = False
+    rets: np.ndarray,
+    cost_pct: float = 0.003,
+    already_net: bool = False,
+    executed_mask: Optional[np.ndarray] = None,
 ) -> Dict[str, float]:
     if len(rets) == 0:
         return {
@@ -40,6 +45,10 @@ def _metric_score(
             "max_drawdown": 0.0,
             "n_trades": 0,
         }
+    if executed_mask is not None:
+        executed_mask = np.asarray(executed_mask, dtype=bool)
+        if executed_mask.shape[0] == len(rets):
+            rets = rets[executed_mask]
     # Avoid double-counting costs if returns already include them
     if already_net:
         net_rets = rets.astype(np.float64)
@@ -60,6 +69,18 @@ def _metric_score(
         "max_drawdown": float(np.max(dd)) if len(dd) else 0.0,
         "n_trades": int(len(rets)),
     }
+
+
+def _resolve_selection_score(outcomes: pd.DataFrame) -> Tuple[np.ndarray, str]:
+    """Return the sizer ranking score for trade selection."""
+    candidate_cols = ["sizer_score"]
+    for col in candidate_cols:
+        if col not in outcomes.columns:
+            continue
+        arr = np.asarray(outcomes[col].values, dtype=np.float32)
+        if np.any(np.isfinite(arr)) and float(np.nanstd(arr)) > 1e-12:
+            return arr, col
+    return np.zeros(len(outcomes), dtype=np.float32), "flat_zero"
 
 
 def _robust_fit(arr: np.ndarray, mask: np.ndarray) -> Tuple[float, float, float, float]:
@@ -154,6 +175,99 @@ def _load_best_strategy(data_root: str, run_id: str) -> Dict[str, Any]:
                 "sl_mult": float(row.get("sl_mult", 1.0)),
             }
     return best
+
+
+def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any]]:
+    """Load all strategy rows from ridge/et sizer artifacts.
+
+    When the same strategy_id appears in both artifacts, keep the row with the
+    higher baseline net_pnl so policy optimisation starts from the stronger
+    source model.
+    """
+    candidates: List[Dict[str, Any]] = []
+    for model_source, rel_path in [
+        ("ridge", "ridge_sizer/strategy_params.json"),
+        ("et", "et_sizer/strategy_params.json"),
+    ]:
+        path = Path(data_root) / "artifacts" / run_id / rel_path
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text())
+        except Exception:
+            continue
+        rows = payload.get("strategies", []) if isinstance(payload, dict) else []
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            sid = str(row.get("strategy_id", "") or "")
+            if not sid:
+                continue
+            cand = dict(row)
+            cand["strategy_id"] = sid
+            cand["model"] = model_source
+            cand["source_artifact"] = "et_sizer" if model_source == "et" else "ridge_sizer"
+            candidates.append(cand)
+
+    merged: Dict[str, Dict[str, Any]] = {}
+    for cand in candidates:
+        sid = str(cand.get("strategy_id", ""))
+        if not sid:
+            continue
+        prev = merged.get(sid)
+        if prev is None:
+            merged[sid] = cand
+            continue
+        prev_pnl = float(prev.get("net_pnl", float("-inf")))
+        cand_pnl = float(cand.get("net_pnl", float("-inf")))
+        if cand_pnl > prev_pnl:
+            merged[sid] = cand
+    out = list(merged.values())
+    out.sort(
+        key=lambda r: (
+            float(r.get("net_pnl", float("-inf"))),
+            float(r.get("profit_factor", float("-inf"))),
+            float(r.get("hit_rate", float("-inf"))),
+        ),
+        reverse=True,
+    )
+    return out
+
+
+def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
+    """Load the simple_position_sizer OOF score matrix."""
+    path = Path(data_root) / "artifacts" / run_id / "oof" / "sizer_oof_all.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"No sizer OOF score matrix found at {path}")
+    df = pd.read_parquet(path)
+    if "timestamp" not in df.columns or "symbol" not in df.columns:
+        raise ValueError(f"sizer OOF score matrix {path} is missing timestamp/symbol")
+    out = df.copy()
+    out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce").dt.tz_convert(
+        None
+    )
+    out["symbol"] = out["symbol"].astype(str)
+    return out
+
+
+def _attach_sizer_score(
+    outcomes: pd.DataFrame, sizer_scores: pd.DataFrame, strategy_id: str
+) -> pd.DataFrame:
+    """Attach a strategy-specific score column from the sizer OOF matrix."""
+    if strategy_id not in sizer_scores.columns:
+        return outcomes
+    score_df = sizer_scores[["timestamp", "symbol", strategy_id]].rename(
+        columns={strategy_id: "sizer_score"}
+    )
+    out = outcomes.copy()
+    out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce").dt.tz_convert(
+        None
+    )
+    out["symbol"] = out["symbol"].astype(str)
+    merged = out.merge(score_df, on=["timestamp", "symbol"], how="left", validate="one_to_one")
+    return merged
 
 
 def resolve_optimised_selection_frac(
@@ -390,11 +504,13 @@ def _sequential_optimise(
     val_mask: np.ndarray,
     fixed: Dict[str, Any],
     cost_pct: float,
+    executed_mask: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     params = dict(fixed)
     search_plan: List[Tuple[str, List[Any]]] = [
         ("theta_fail", np.linspace(-1.0, 1.5, 11).tolist()),
         ("theta_path", np.linspace(-1.5, 1.0, 11).tolist()),
+        ("K_early", [2, 3, 4, 5]),
         ("d_path", [1, 2, 3]),
         ("progress_threshold", [0.00, 0.05, 0.10, 0.15, 0.20, 0.25]),
         ("tp_conf_threshold", [0.3, 0.4, 0.5, 0.6, 0.7]),
@@ -427,7 +543,10 @@ def _sequential_optimise(
                 trial[name] = cand
             rets = replay_exit_policy(base_returns, context, trial)
             score = _metric_score(
-                rets[train_mask], cost_pct=cost_pct, already_net=True
+                rets[train_mask],
+                cost_pct=cost_pct,
+                already_net=False,
+                executed_mask=(executed_mask[train_mask] if executed_mask is not None else None),
             )["net_pnl"]
             if score > best_metric:
                 best_metric = score
@@ -443,12 +562,33 @@ def _sequential_optimise(
         else:
             params[name] = best_val
     params["metrics_baseline"] = _metric_score(
-        base_returns[val_mask], cost_pct=cost_pct, already_net=True
+        base_returns[val_mask],
+        cost_pct=cost_pct,
+        already_net=False,
+        executed_mask=(
+            executed_mask[val_mask] if executed_mask is not None else None
+        ),
     )
     final_rets = replay_exit_policy(base_returns, context, params)
     params["metrics_final"] = _metric_score(
-        final_rets[val_mask], cost_pct=cost_pct, already_net=True
+        final_rets[val_mask],
+        cost_pct=cost_pct,
+        already_net=False,
+        executed_mask=(
+            executed_mask[val_mask] if executed_mask is not None else None
+        ),
     )
+    baseline_net = float(params["metrics_baseline"].get("net_pnl", 0.0))
+    final_net = float(params["metrics_final"].get("net_pnl", 0.0))
+    if final_net < baseline_net:
+        logger.warning(
+            "Policy optimisation degraded validation net_pnl "
+            f"({final_net:.6f} < {baseline_net:.6f}); reverting to baseline params."
+        )
+        baseline_params = dict(fixed)
+        baseline_params["metrics_baseline"] = dict(params["metrics_baseline"])
+        baseline_params["metrics_final"] = dict(params["metrics_baseline"])
+        return baseline_params
     return params
 
 
@@ -456,144 +596,209 @@ def run_policy_optimisation(
     data_root: str,
     run_id: str,
     sizer_results: Optional[Dict[str, Any]] = None,
-    holdout_frac: float = 0.10,
+    holdout_frac: float = 0.30,
     cost_pct: float = 0.003,
+    use_offset_optimiser: bool = False,
 ) -> Dict[str, Any]:
     tprint("POLICY OPTIMISER START")
-    selected = _load_best_strategy(data_root, run_id)
-    if not selected.get("strategy_id"):
+    selected_candidates = _load_strategy_candidates(data_root, run_id)
+    if not selected_candidates:
+        selected = _load_best_strategy(data_root, run_id)
+        if selected.get("strategy_id"):
+            selected_candidates = [selected]
+    if not selected_candidates:
         tprint("No selected strategy found; skipping policy optimisation.")
         return {}
 
     meta_oofs = load_meta_oof_predictions(data_root, run_id)
-    key = next((k for k in meta_oofs.keys() if selected["strategy_id"] in k), None)
-    if key is None:
-        tprint(f"Strategy {selected['strategy_id']} not found in meta OOF.")
-        return {}
+    sizer_scores = _load_sizer_oof_scores(data_root, run_id)
+    strategy_rows: List[Dict[str, Any]] = []
+    for selected in selected_candidates:
+        key = next((k for k in meta_oofs.keys() if selected["strategy_id"] in k), None)
+        if key is None:
+            scored_keys = []
+            for mk, mdf in meta_oofs.items():
+                if hasattr(mdf, "columns") and "oof_u_hat" in mdf.columns:
+                    scored_keys.append(
+                        (
+                            float(
+                                np.nanmean(np.asarray(mdf["oof_u_hat"], dtype=np.float32))
+                            ),
+                            mk,
+                        )
+                    )
+            if scored_keys:
+                scored_keys.sort(reverse=True)
+                key = scored_keys[0][1]
+                tprint(
+                    f"Strategy {selected['strategy_id']} not found in meta OOF; "
+                    f"falling back to best available bucket {key}."
+                )
+            else:
+                key = next(iter(meta_oofs.keys()), None)
+                if key is None:
+                    tprint("No meta OOF buckets available; skipping policy optimisation.")
+                    return {}
 
-    outcomes = load_trade_outcomes(data_root, run_id, meta_oofs[key])
-    if outcomes.empty:
-        return {}
+        outcomes = load_trade_outcomes(data_root, run_id, meta_oofs[key])
+        if outcomes.empty:
+            continue
+        outcomes = _attach_sizer_score(outcomes, sizer_scores, selected["strategy_id"])
+        if "sizer_score" not in outcomes.columns:
+            raise RuntimeError(
+                f"Could not attach simple_position_sizer scores for {selected['strategy_id']}"
+            )
 
-    conf = np.asarray(
-        outcomes.get("oof_u_hat", pd.Series(np.zeros(len(outcomes)))).values,
-        dtype=np.float32,
-    )
-    frac = resolve_optimised_selection_frac(
-        data_root=data_root,
-        run_id=run_id,
-        selected=selected,
-    )
-    k = max(1, int(len(conf) * frac))
-    # Use stable sort to ensure deterministic selection
-    selected_idx = np.argsort(conf, kind="stable")[-k:]
+        conf, conf_name = _resolve_selection_score(outcomes)
+        frac = resolve_optimised_selection_frac(
+            data_root=data_root,
+            run_id=run_id,
+            selected=selected,
+        )
+        k = max(1, int(len(conf) * frac))
+        selected_idx = np.argsort(conf, kind="stable")[-k:]
 
-    sizer_stub = {
-        "best_simple_score_": conf,
-        "best_simple_score_name_": "Ridge_Head_Sizer",
-        "ridge_profit_proxy_table_": pd.DataFrame(
-            [
-                {
-                    "selection_frac": frac,
-                    "wallet_min": 0.05,
-                    "wallet_max": 0.15,
-                    "sizing_mode": "linear",
-                    "is_optimal": True,
-                }
-            ]
-        ),
-        "opt_rets_": np.asarray(
+        sizer_stub = {
+            "best_simple_score_": conf,
+            "best_simple_score_name_": "Ridge_Head_Sizer",
+            "ridge_profit_proxy_table_": pd.DataFrame(
+                [
+                    {
+                        "selection_frac": frac,
+                        "wallet_min": 0.05,
+                        "wallet_max": 0.15,
+                        "sizing_mode": "linear",
+                        "is_optimal": True,
+                    }
+                ]
+            ),
+            "opt_rets_": np.asarray(
+                outcomes.get("return", pd.Series(np.zeros(len(outcomes)))).values,
+                dtype=np.float32,
+            )[selected_idx],
+            "opt_ts_": np.asarray(
+                outcomes.get("timestamp", pd.Series(np.arange(len(outcomes)))).values
+            )[selected_idx],
+        }
+
+        path_bundle = build_policy_path_state_bundle(outcomes, selected_idx=selected_idx)
+
+        base_rets = np.asarray(
             outcomes.get("return", pd.Series(np.zeros(len(outcomes)))).values,
             dtype=np.float32,
-        )[selected_idx],
-        "opt_ts_": np.asarray(
-            outcomes.get("timestamp", pd.Series(np.arange(len(outcomes)))).values
-        )[selected_idx],
-    }
+        )[selected_idx]
+        executed_mask = np.ones(len(base_rets), dtype=bool)
 
-    offset_result = run_simple_offset_generator_from_sizer(
-        sizer_results=sizer_stub, trade_outcomes=outcomes, cost_pct=cost_pct
+        if use_offset_optimiser:
+            offset_result = run_simple_offset_generator_from_sizer(
+                sizer_results=sizer_stub, trade_outcomes=outcomes, cost_pct=cost_pct
+            )
+            base_rets = np.asarray(
+                outcomes.get("return", pd.Series(np.zeros(len(outcomes)))).values,
+                dtype=np.float32,
+            )[offset_result.get("above_threshold_idx")]
+            executed_mask = np.asarray(
+                offset_result.get("executed", np.ones(len(base_rets), dtype=bool)),
+                dtype=bool,
+            )
+
+        ts = pd.to_datetime(
+            np.asarray(path_bundle.get("timestamps", np.arange(len(base_rets)))),
+            utc=True,
+            errors="coerce",
+        )
+        order = np.argsort(ts.view("int64"))
+        n = len(base_rets)
+        n_val = max(1, int(n * holdout_frac))
+        val_mask = np.zeros(n, dtype=bool)
+        val_mask[order[-n_val:]] = True
+        train_mask = ~val_mask
+
+        ae_fit = _robust_fit(path_bundle["AE_vel"], train_mask)
+        pr_fit = _robust_fit(path_bundle["pressure"], train_mask)
+        pq_fit = _robust_fit(path_bundle["path_quality"], train_mask)
+        pg_fit = _robust_fit(path_bundle["progress_per_bar"], train_mask)
+        tr_fit = _robust_fit(path_bundle["trend"], train_mask)
+        as_fit = _robust_fit(path_bundle["asym_raw"], train_mask)
+        ch_fit = _robust_fit(path_bundle["choppiness"], train_mask)
+
+        asym_z = _robust_apply(path_bundle["asym_raw"], as_fit)
+        asym_01 = (asym_z - float(np.nanmin(asym_z[train_mask]))) / (
+            float(np.nanmax(asym_z[train_mask]) - np.nanmin(asym_z[train_mask])) + EPS
+        )
+        context = build_replay_context(
+            returns=base_rets,
+            mfe_ret=path_bundle["mfe_ret"],
+            mae_ret=path_bundle["mae_ret"],
+            bars_since_entry=path_bundle["bars_since_entry"],
+            barrier_pct=path_bundle["barrier_pct"],
+            confidence=path_bundle["confidence"],
+            trend=_robust_apply(path_bundle["trend"], tr_fit),
+            choppiness=_robust_apply(path_bundle["choppiness"], ch_fit),
+            asym=np.clip(asym_01, 0.0, 1.0).astype(np.float32),
+        )
+        context["AE_vel"] = _robust_apply(path_bundle["AE_vel"], ae_fit)
+        context["pressure"] = _robust_apply(path_bundle["pressure"], pr_fit)
+        context["path_quality"] = _robust_apply(path_bundle["path_quality"], pq_fit)
+        context["progress_per_bar"] = _robust_apply(path_bundle["progress_per_bar"], pg_fit)
+        context["p_tp"] = path_bundle.get("p_tp", np.full(len(base_rets), np.nan))
+        context["p_sl"] = path_bundle.get("p_sl", np.full(len(base_rets), np.nan))
+
+        fixed = {
+            "strategy_id": selected["strategy_id"],
+            "tp_mult": float(selected.get("tp_mult", 1.0)),
+            "sl_mult": float(selected.get("sl_mult", 1.0)),
+            "k_recent": 3,
+            "K_early": 3,
+            "lambda_path": 1.0,
+            "a1": 0.5,
+            "a2": 0.5,
+            "b1": 0.5,
+            "b2": 0.5,
+            "score_weight_trend": 1.0,
+            "score_weight_asym": 0.6,
+            "score_weight_choppiness": 0.9,
+        }
+
+        best = _sequential_optimise(
+            base_rets,
+            context,
+            train_mask,
+            val_mask,
+            fixed=fixed,
+            cost_pct=cost_pct,
+            executed_mask=executed_mask,
+        )
+        best["source_model"] = selected.get("model", "")
+        best["source_artifact"] = selected.get("source_artifact", "")
+        best["selected_key"] = key
+        best["selection_score"] = conf_name
+        best["baseline_net_pnl"] = float(best.get("metrics_baseline", {}).get("net_pnl", 0.0))
+        best["final_net_pnl"] = float(best.get("metrics_final", {}).get("net_pnl", 0.0))
+        best["net_pnl_delta"] = float(best["final_net_pnl"] - best["baseline_net_pnl"])
+        strategy_rows.append(best)
+
+    if not strategy_rows:
+        tprint("No strategy candidates produced valid policy optimisation results.")
+        return {}
+
+    strategy_rows.sort(
+        key=lambda row: (
+            float(row.get("final_net_pnl", float("-inf"))),
+            float(row.get("net_pnl_delta", float("-inf"))),
+            float(row.get("metrics_final", {}).get("profit_factor", float("-inf"))),
+        ),
+        reverse=True,
     )
-    # CRITICAL: Use the same indices as the sizer stub to ensure alignment
-    path_bundle = build_policy_path_state_bundle(outcomes, selected_idx=selected_idx)
-
-    base_rets = np.asarray(
-        outcomes.get("return", pd.Series(np.zeros(len(outcomes)))).values,
-        dtype=np.float32,
-    )[offset_result.get("above_threshold_idx")]
-    base_rets = np.where(
-        offset_result.get("executed", np.ones(len(base_rets), dtype=bool)),
-        base_rets,
-        0.0,
-    )
-
-    ts = pd.to_datetime(
-        np.asarray(path_bundle.get("timestamps", np.arange(len(base_rets)))),
-        utc=True,
-        errors="coerce",
-    )
-    order = np.argsort(ts.view("int64"))
-    n = len(base_rets)
-    n_val = max(1, int(n * holdout_frac))
-    val_mask = np.zeros(n, dtype=bool)
-    val_mask[order[-n_val:]] = True
-    train_mask = ~val_mask
-
-    ae_fit = _robust_fit(path_bundle["AE_vel"], train_mask)
-    pr_fit = _robust_fit(path_bundle["pressure"], train_mask)
-    pq_fit = _robust_fit(path_bundle["path_quality"], train_mask)
-    pg_fit = _robust_fit(path_bundle["progress_per_bar"], train_mask)
-    tr_fit = _robust_fit(path_bundle["trend"], train_mask)
-    as_fit = _robust_fit(path_bundle["asym_raw"], train_mask)
-    ch_fit = _robust_fit(path_bundle["choppiness"], train_mask)
-
-    asym_z = _robust_apply(path_bundle["asym_raw"], as_fit)
-    asym_01 = (asym_z - float(np.nanmin(asym_z[train_mask]))) / (
-        float(np.nanmax(asym_z[train_mask]) - np.nanmin(asym_z[train_mask])) + EPS
-    )
-    context = build_replay_context(
-        returns=base_rets,
-        mfe_ret=path_bundle["mfe_ret"],
-        mae_ret=path_bundle["mae_ret"],
-        bars_since_entry=path_bundle["bars_since_entry"],
-        barrier_pct=path_bundle["barrier_pct"],
-        confidence=path_bundle["confidence"],
-        trend=_robust_apply(path_bundle["trend"], tr_fit),
-        choppiness=_robust_apply(path_bundle["choppiness"], ch_fit),
-        asym=np.clip(asym_01, 0.0, 1.0).astype(np.float32),
-    )
-    context["AE_vel"] = _robust_apply(path_bundle["AE_vel"], ae_fit)
-    context["pressure"] = _robust_apply(path_bundle["pressure"], pr_fit)
-    context["path_quality"] = _robust_apply(path_bundle["path_quality"], pq_fit)
-    context["progress_per_bar"] = _robust_apply(path_bundle["progress_per_bar"], pg_fit)
-    context["p_tp"] = path_bundle.get("p_tp", np.full(len(base_rets), np.nan))
-    context["p_sl"] = path_bundle.get("p_sl", np.full(len(base_rets), np.nan))
-
-    fixed = {
-        "strategy_id": selected["strategy_id"],
-        "tp_mult": float(selected.get("tp_mult", 1.0)),
-        "sl_mult": float(selected.get("sl_mult", 1.0)),
-        "k_recent": 3,
-        "K_early": 3,
-        "lambda_path": 1.0,
-        "a1": 0.5,
-        "a2": 0.5,
-        "b1": 0.5,
-        "b2": 0.5,
-        "score_weight_trend": 1.0,
-        "score_weight_asym": 0.6,
-        "score_weight_choppiness": 0.9,
-    }
-
-    best = _sequential_optimise(
-        base_rets, context, train_mask, val_mask, fixed=fixed, cost_pct=cost_pct
-    )
+    best = strategy_rows[0]
     payload = {
         "schema_version": "v4",
         "generated_by": "policy_optimiser",
         "run_id": run_id,
         "cost_pct": float(cost_pct),
-        "strategies": [best],
+        "strategies": strategy_rows,
+        "best_strategy_id": strategy_rows[0].get("strategy_id", ""),
+        "best_source_model": strategy_rows[0].get("source_model", ""),
     }
     out_dir = Path(data_root) / "artifacts" / run_id / "policy_params"
     out_dir.mkdir(parents=True, exist_ok=True)

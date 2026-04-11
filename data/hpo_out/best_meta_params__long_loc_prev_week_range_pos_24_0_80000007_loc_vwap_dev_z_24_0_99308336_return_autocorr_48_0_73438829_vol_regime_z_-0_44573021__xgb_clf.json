@@ -1,0 +1,16 @@
+{
+  "scope_key": "long_loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
+  "kind": "xgb_clf",
+  "best_params": {
+    "n_estimators": 900,
+    "max_depth": 4,
+    "learning_rate": 0.04458773178576963,
+    "subsample": 0.6243847688253853,
+    "colsample_bytree": 0.8473169114426216,
+    "reg_alpha": 0.00349399137656865,
+    "reg_lambda": 18.339273068266678,
+    "min_child_weight": 22.304587182376473,
+    "gamma": 0.8519342584617806
+  },
+  "n_trials_completed": 2
+}

@@ -1,0 +1,16 @@
+{
+  "scope_key": "short_range_24h_pct_0_029937342_rolling_range_20_-1_0442592",
+  "kind": "xgb_clf",
+  "best_params": {
+    "n_estimators": 700,
+    "max_depth": 7,
+    "learning_rate": 0.038367962468999144,
+    "subsample": 0.7445805397841211,
+    "colsample_bytree": 0.5754638705720176,
+    "reg_alpha": 0.0002526938981065197,
+    "reg_lambda": 1.3385518993270014,
+    "min_child_weight": 19.340393221155022,
+    "gamma": 0.20534897582819234
+  },
+  "n_trials_completed": 2
+}

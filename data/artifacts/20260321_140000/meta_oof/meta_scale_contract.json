@@ -5,9 +5,8 @@
   "oof_log_mfe_hat": "log1p(MFE / ATR)",
   "oof_mfe_hat": "MFE / ATR",
   "oof_asym_hat": "log(MFE / MAE)",
-  "oof_p_tp": "probability",
-  "oof_p_sl": "probability",
-  "oof_p_to": "probability",
+  "oof_p_move": "probability of a materially large move",
+  "oof_p_move_raw": "raw probability before calibration",
   "oof_p_early_inval": "probability",
   "oof_ev": "expected payoff multiple"
 }

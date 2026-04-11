@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import uuid
+import re
 
 import numpy as np
 import pandas as pd
@@ -255,10 +256,48 @@ def _load_label_datasets(cfg, run_id):
         s.strip() for s in _train_symbols_env.split(",") if s.strip()
     )
 
+    def _normalize_label_like_df(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or not isinstance(df, pd.DataFrame):
+            return df
+        out = df.copy()
+        if "timestamp" in out.columns and "__ts__" not in out.columns:
+            out["__ts__"] = out["timestamp"]
+        if "symbol" in out.columns and "__symbol__" not in out.columns:
+            out["__symbol__"] = out["symbol"]
+        if "y_bin" in out.columns and "__y_bin__" not in out.columns:
+            out["__y_bin__"] = out["y_bin"]
+        if "y_ret" in out.columns and "__y_ret__" not in out.columns:
+            out["__y_ret__"] = out["y_ret"]
+        if "oof_prob" in out.columns and "oof_pred" not in out.columns:
+            out["oof_pred"] = out["oof_prob"]
+        return out
+
+    def _load_label_or_oof_artifact(name: str) -> pd.DataFrame | None:
+        df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        if df is not None:
+            return df
+        oof_candidates = []
+        base_name = name.removeprefix("train_")
+        oof_candidates.append(f"oof_{base_name}")
+        m = re.match(r"^(.*)_(\d+)(?:_(tight|wide|balanced))?$", base_name)
+        if m:
+            stem, horizon, variant = m.groups()
+            suffix = f"_{variant}" if variant else ""
+            oof_candidates.insert(0, f"oof_{stem}_H{int(horizon)}{suffix}")
+        for oof_name in oof_candidates:
+            df = load_artifact_df(cfg["data_root"], run_id, "oof", oof_name)
+            if df is None:
+                continue
+            tprint(
+                f"Label fallback: using OOF artifact for {name} from {oof_name}.parquet"
+            )
+            return _normalize_label_like_df(df)
+        return None
+
     # Spike
     for mode in ["best", "worst"]:
         name = f"spike_anatomy_{mode}"
-        df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        df_spike = _load_label_or_oof_artifact(name)
         if df_spike is not None:
             datasets[name] = df_spike
 
@@ -274,7 +313,7 @@ def _load_label_datasets(cfg, run_id):
         for H in strategy_runtime_horizons(strat, cfg):
             H_int = int(H)
             name = f"train_{strategy_id}_{H_int}"
-            df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+            df = _load_label_or_oof_artifact(name)
             if df is not None:
                 if _train_symbols_filter and "__symbol__" in df.columns:
                     df = df[df["__symbol__"].isin(_train_symbols_filter)].reset_index(
@@ -287,7 +326,7 @@ def _load_label_datasets(cfg, run_id):
                 if variant == "balanced":
                     continue
                 vname = f"train_{strategy_id}_{H_int}_{variant}"
-                df_v = load_artifact_df(cfg["data_root"], run_id, "labels", vname)
+                df_v = _load_label_or_oof_artifact(vname)
                 if df_v is not None:
                     if _train_symbols_filter and "__symbol__" in df_v.columns:
                         df_v = df_v[
@@ -304,14 +343,14 @@ def _load_label_datasets(cfg, run_id):
             "train_long_tf_1",
             "train_short_tf_1",
         ]:
-            df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+            df = _load_label_or_oof_artifact(name)
             if df is not None:
                 datasets[name] = df
                 found_count += 1
 
     # Specialist models
     for name in ["trap_model", "gamma_model"]:
-        df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        df = _load_label_or_oof_artifact(name)
         if df is not None:
             datasets[name] = df
 

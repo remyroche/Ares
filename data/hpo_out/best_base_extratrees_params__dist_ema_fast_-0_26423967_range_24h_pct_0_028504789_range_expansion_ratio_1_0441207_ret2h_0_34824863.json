@@ -10,7 +10,7 @@
     "max_samples": null,
     "criterion": "gini",
     "class_weight": null,
-    "min_impurity_decrease": 0.0001,
+    "min_impurity_decrease": 1e-05,
     "ccp_alpha": 1e-05,
     "max_leaf_nodes": 512
   },

@@ -1,0 +1,14 @@
+{
+  "scope_key": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805_reg",
+  "kind": "xgb",
+  "best_params": {
+    "max_depth": 6,
+    "learning_rate": 0.017845824234793622,
+    "n_estimators": 771,
+    "subsample": 0.7270798178418348,
+    "colsample_bytree": 0.5096881020077663,
+    "reg_alpha": 4.25571888255009,
+    "reg_lambda": 9.291114334174459
+  },
+  "n_trials_completed": 6
+}

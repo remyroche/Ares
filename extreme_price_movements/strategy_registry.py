@@ -76,23 +76,16 @@ def get_strategies(cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
                 "short" if trade_side == "short" else "long", cfg_dict
             )
 
-        meta_keys = s.get("meta_feature_keys")
-        if not meta_keys:
-            meta_keys = dedupe_keep_order(
-                get_meta_feature_keys("reg", cfg_dict)
-                + get_meta_feature_keys("clf", cfg_dict)
-                + get_meta_feature_keys("mfe", cfg_dict)
-                + get_meta_feature_keys("mae", cfg_dict)
-                + get_meta_feature_keys("asym", cfg_dict)
-            )
-
-        return {
+        out = {
             **s,
             "is_mr": is_mr,
             "is_tf": is_tf,
             "feature_keys": feat_keys,
-            "meta_feature_keys": meta_keys,
         }
+        meta_keys = s.get("meta_feature_keys")
+        if meta_keys:
+            out["meta_feature_keys"] = meta_keys
+        return out
 
     if not isinstance(raw, list) or not raw:
         return [_enrich_legacy(dict(s)) for s in _LEGACY_STRATEGIES]

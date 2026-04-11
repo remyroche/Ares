@@ -59,6 +59,50 @@ _BASE_LOCATION_PREFIXES = (
     "distance_to_",
 )
 
+_META_SHARED_BASELIKE_EXACT = {
+    # 15m/24h bar-structure features that should stay out of the shared meta basket.
+    "clv_t",
+    "body_ratio_15m",
+    "rejection_proxy",
+    "range_norm_12",
+    "sv_imb_12",
+    "press_12",
+    "impact_12",
+    "hh_count_12",
+    "ll_count_12",
+    "skew_12",
+    "climax_range_12",
+    "climax_vol_12",
+    "z_vwap_12",
+    "z_r_12",
+    "bb_pos_12",
+    "range_norm_24",
+    "sv_imb_24",
+    "press_24",
+    "impact_24",
+    "hh_count_24",
+    "ll_count_24",
+    "skew_24",
+    "climax_range_24",
+    "climax_vol_24",
+    "z_vwap_24",
+    "z_r_24",
+    "bb_pos_24",
+    # Structural-Z normalization features should remain on the base side.
+    "z_hl_range",
+    "z_intrabar_range_atr",
+    "z_compression_expansion",
+    "z_volume",
+    "z_breakout_up_24",
+    "z_breakout_dn_24",
+    "z_dist_ema_24",
+    "z_dist_vwap_24",
+    "z_atr_norm_ret_24",
+    "z_sm_momentum_24",
+    "z_slope_change_24",
+    "z_path_efficiency_24",
+}
+
 def dedupe_keep_order(xs: List[str]) -> List[str]:
     seen = set()
     out = []
@@ -89,6 +133,17 @@ def _filter_base_feature_keys(keys: List[str]) -> List[str]:
         if key in _BASE_META_ONLY_EXACT:
             continue
         if key in _BASE_NON_LOCATION_48H_PLUS_EXACT and not _is_location_feature(key):
+            continue
+        filtered.append(key)
+    return filtered
+
+
+def _filter_meta_shared_feature_keys(keys: List[str]) -> List[str]:
+    filtered: List[str] = []
+    for key in keys:
+        if key.startswith(("loc_", "dist_", "pullback_", "donch_dist_")):
+            continue
+        if key in _META_SHARED_BASELIKE_EXACT:
             continue
         filtered.append(key)
     return filtered
@@ -135,7 +190,9 @@ def get_meta_feature_keys(head: str, cfg: Dict[str, Any]) -> List[str]:
     if head not in {"reg", "clf", "mfe", "mae", "asym"}:
         raise ValueError(f"Invalid head {head}")
 
-    shared = expand_feature_group_refs(cfg.get("meta_shared_feature_keys", []), cfg)
+    shared = _filter_meta_shared_feature_keys(
+        expand_feature_group_refs(cfg.get("meta_shared_feature_keys", []), cfg)
+    )
 
     if head == "reg":
         specific = expand_feature_group_refs(cfg.get("meta_reg_feature_keys", []), cfg)

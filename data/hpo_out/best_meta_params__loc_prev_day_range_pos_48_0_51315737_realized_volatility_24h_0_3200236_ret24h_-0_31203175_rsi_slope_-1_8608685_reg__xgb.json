@@ -1,0 +1,14 @@
+{
+  "scope_key": "loc_prev_day_range_pos_48_0_51315737_realized_volatility_24h_0_3200236_ret24h_-0_31203175_rsi_slope_-1_8608685_reg",
+  "kind": "xgb",
+  "best_params": {
+    "max_depth": 7,
+    "learning_rate": 0.04580750606021107,
+    "n_estimators": 924,
+    "subsample": 0.7726766346327568,
+    "colsample_bytree": 0.5232020040473975,
+    "reg_alpha": 0.018040417337673947,
+    "reg_lambda": 18.302998589377605
+  },
+  "n_trials_completed": 14
+}

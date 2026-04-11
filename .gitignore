@@ -278,3 +278,4 @@ cache/
 # =============================================================================
 production_lgbm_outputs/
 tmp/
+data/artifacts/*/slices/slice_plan.json

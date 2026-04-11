@@ -41,11 +41,12 @@ warnings.filterwarnings("ignore", message=".*Mean of empty slice.*")
 # Suppress divide warnings from correlation calculations when stddev is 0
 warnings.filterwarnings("ignore", message=".*invalid value encountered.*")
 
-# Initialize joblib cache
-_cache = Memory("./cache/features", verbose=0)
+# Initialize joblib cache (use /tmp for writability)
+_CACHE_DIR = os.environ.get("EPM_CACHE_DIR", "/tmp/epm_cache")
+_cache = Memory(os.path.join(_CACHE_DIR, "features"), verbose=0)
 
 # --- Per-column FFD incremental cache ---
-_FFD_COL_CACHE_DIR = "./cache/ffd_columns"
+_FFD_COL_CACHE_DIR = os.path.join(_CACHE_DIR, "ffd_columns")
 EPS = 1e-12
 _PERP_FEATURE_COLLISION_RENAMES = {
     "ret1h": "ret1h_perp",
@@ -1345,14 +1346,52 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     c_raw.index = new_idx
 
     # Compute Proxy Target for gate-feature selection:
-    # use average of 2h and 8h forward returns to reduce horizon mismatch.
-    fwd_ret_2h = (c_raw.shift(-2) / c_raw - 1.0).fillna(0.0).astype(np.float32)
-    fwd_ret_4h = (c_raw.shift(-4) / c_raw - 1.0).fillna(0.0).astype(np.float32)
-    fwd_ret_8h = (c_raw.shift(-8) / c_raw - 1.0).fillna(0.0).astype(np.float32)
-    target_proxy = (0.3 * fwd_ret_2h + 0.4 * fwd_ret_4h + 0.3 * fwd_ret_8h).astype(
+    # strictly past-only to avoid any lookahead leakage.
+    # Emphasize:
+    #   - trailing realized volatility
+    #   - entropy regime change
+    #   - regime transition frequency
+    #   - directional persistence
+    ret_1 = c_raw.pct_change().fillna(0.0).astype(np.float32)
+    ret_sign = np.sign(ret_1).astype(np.float32)
+
+    past_rv_2h = ret_1.rolling(2, min_periods=1).std().shift(1).fillna(0.0).astype(
         np.float32
     )
-    del fwd_ret_2h, fwd_ret_4h, fwd_ret_8h
+    past_rv_4h = ret_1.rolling(4, min_periods=1).std().shift(1).fillna(0.0).astype(
+        np.float32
+    )
+    past_rv_8h = ret_1.rolling(8, min_periods=1).std().shift(1).fillna(0.0).astype(
+        np.float32
+    )
+    past_entropy_4h = ff.apply_to_frame(ret_sign, ff.binary_entropy_nb, 4).shift(1)
+    past_entropy_8h = ff.apply_to_frame(ret_sign, ff.binary_entropy_nb, 8).shift(1)
+    past_entropy_4h = past_entropy_4h.fillna(0.5).astype(np.float32)
+    past_entropy_8h = past_entropy_8h.fillna(0.5).astype(np.float32)
+    entropy_change = (past_entropy_4h - past_entropy_8h).astype(np.float32)
+
+    regime_transitions_8h = ff.apply_to_frame(ret_sign, ff.binary_entropy_nb, 8)
+    regime_transitions_8h = regime_transitions_8h.shift(1).fillna(0.5).astype(
+        np.float32
+    )
+    directional_persistence_8h = _rolling_autocorr_df(ret_sign, 8).shift(1).fillna(0.0).astype(
+        np.float32
+    )
+    directional_persistence_8h = ((directional_persistence_8h + 1.0) * 0.5).astype(
+        np.float32
+    )
+    rv_proxy = np.log1p(past_rv_2h + 0.5 * past_rv_4h + 0.25 * past_rv_8h).astype(
+        np.float32
+    )
+    target_proxy = (
+        0.40 * rv_proxy
+        + 0.20 * entropy_change
+        + 0.20 * regime_transitions_8h
+        + 0.20 * directional_persistence_8h
+    ).astype(np.float32)
+    del ret_1, ret_sign, past_rv_2h, past_rv_4h, past_rv_8h
+    del past_entropy_4h, past_entropy_8h, entropy_change
+    del regime_transitions_8h, directional_persistence_8h, rv_proxy
     gc.collect()
 
     # --- Raw-scale asset identity features (computed before FFD transform deletes raw data) ---

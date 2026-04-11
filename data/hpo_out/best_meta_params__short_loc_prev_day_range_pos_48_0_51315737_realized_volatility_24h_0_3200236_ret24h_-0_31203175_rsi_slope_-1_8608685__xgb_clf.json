@@ -1,0 +1,17 @@
+{
+  "scope_key": "short_loc_prev_day_range_pos_48_0_51315737_realized_volatility_24h_0_3200236_ret24h_-0_31203175_rsi_slope_-1_8608685",
+  "kind": "xgb_clf",
+  "best_params": {
+    "n_estimators": 900,
+    "num_parallel_tree": 25,
+    "max_depth": 7,
+    "learning_rate": 0.1365056196354513,
+    "subsample": 0.6661253173544918,
+    "colsample_bytree": 0.5624546750764808,
+    "reg_alpha": 0.13367544881992735,
+    "reg_lambda": 48.352189189556796,
+    "min_child_weight": 26.65936515457117,
+    "gamma": 0.5798705062750259
+  },
+  "n_trials_completed": 2
+}

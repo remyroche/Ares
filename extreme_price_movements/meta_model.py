@@ -5,7 +5,9 @@ Optional Optuna HPO on the winner.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+import json
+import os
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from pathlib import Path
 
 import importlib.util
@@ -49,6 +51,71 @@ def _safe_spearman(a, b):
     return float(rho) if np.isfinite(rho) else 0.0
 
 
+_META_HPO_JSON = "best_meta_params.json"
+
+
+def _meta_hpo_scope_suffix(scope_key: Optional[str]) -> str:
+    if not scope_key:
+        return ""
+    safe = str(scope_key).strip().replace(os.sep, "_").replace(" ", "_")
+    safe = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in safe)
+    return f"__{safe}" if safe else ""
+
+
+def _meta_hpo_json_path(
+    out_dir: str,
+    scope_key: Optional[str] = None,
+    kind: Optional[str] = None,
+) -> str:
+    suffix = _meta_hpo_scope_suffix(scope_key)
+    if kind:
+        kind_safe = "".join(
+            ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in str(kind)
+        )
+        suffix = f"{suffix}__{kind_safe}" if suffix else f"__{kind_safe}"
+    stem, ext = os.path.splitext(_META_HPO_JSON)
+    return os.path.join(out_dir, f"{stem}{suffix}{ext}")
+
+
+def _load_meta_hpo_json(
+    out_dir: str,
+    scope_key: Optional[str] = None,
+    kind: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    path = _meta_hpo_json_path(out_dir, scope_key=scope_key, kind=kind)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _save_meta_hpo_json(
+    out_dir: str,
+    payload: Dict[str, Any],
+    scope_key: Optional[str] = None,
+    kind: Optional[str] = None,
+) -> None:
+    os.makedirs(out_dir, exist_ok=True)
+    path = _meta_hpo_json_path(out_dir, scope_key=scope_key, kind=kind)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, default=str)
+
+
+def load_best_meta_params(
+    out_dir: str = "./hpo_out",
+    scope_key: Optional[str] = None,
+    kind: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Load previously saved best meta params for warm-start reuse."""
+    data = _load_meta_hpo_json(out_dir, scope_key=scope_key, kind=kind)
+    if data is None:
+        return None
+    return data.get("best_params")
+
+
 class MetaModel:
     def __init__(self, strategy_name: Optional[str] = None, reports_dir: str | Path | None = None):
         self.strategy_name = strategy_name
@@ -67,6 +134,7 @@ class MetaModel:
         self.selector_target_override: Optional[str] = None
         self.selector_loss_override: Optional[str] = None
         self.disable_hpo: bool = False
+        self.hpo_out_dir: Optional[str] = None
         self.xgb_parallel_forest_params: Optional[Dict[str, object]] = None
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
@@ -337,13 +405,31 @@ class MetaModel:
         raise ValueError(f"Unknown kind: {kind}")
 
     # ── CV evaluation ────────────────────────────────────────────────────
-    def _cv_evaluate(self, kind, params, X, y, sw=None) -> Tuple[np.ndarray, float]:
+    def _cv_evaluate(
+        self,
+        kind,
+        params,
+        X,
+        y,
+        sw=None,
+        feature_max_features: Optional[int] = None,
+    ) -> Tuple[np.ndarray, float]:
         """3-fold purged CV. Returns (oof_predictions, spearman_ic)."""
         pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
         oof = np.full(len(y), np.nan, dtype=float)
 
-        for tr, va in pkf.split(X):
-            X_tr, X_va = X[tr], X[va]
+        if isinstance(X, pd.DataFrame):
+            X_frame = X.reset_index(drop=True)
+        else:
+            X_frame = pd.DataFrame(
+                np.asarray(X, dtype=np.float32),
+                columns=[f"f_{i}" for i in range(np.asarray(X).shape[1])],
+            )
+        max_features = int(
+            feature_max_features if feature_max_features is not None else max(30, min(50, X_frame.shape[1]))
+        )
+
+        for tr, va in pkf.split(X_frame):
             if getattr(self, "_dynamic_labels", None) is not None:
                 # Dynamic soft labels evaluated on train set to prevent leakage
                 dyn_tr = self._dynamic_labels[tr]
@@ -354,6 +440,13 @@ class MetaModel:
             else:
                 y_tr, y_va = y[tr], y[va]
             sw_tr = None if sw is None else sw[tr]
+            X_tr_df = X_frame.iloc[tr].reset_index(drop=True)
+            X_va_df = X_frame.iloc[va].reset_index(drop=True)
+            selected_cols = self._select_tail_features(
+                X_tr_df, np.asarray(y_tr, dtype=float), max_features=max_features
+            )
+            X_tr = X_tr_df[selected_cols].to_numpy(dtype=np.float32)
+            X_va = X_va_df[selected_cols].to_numpy(dtype=np.float32)
             model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
             oof[va] = model.predict(X_va)
 
@@ -457,6 +550,14 @@ class MetaModel:
             return params
         import optuna
         optuna.logging.set_verbosity(optuna.logging.WARNING)
+        out_dir = str(self.hpo_out_dir or os.path.join("data", "hpo_out"))
+        scope_key = str(self.strategy_name or "default")
+        prev_blob = _load_meta_hpo_json(out_dir, scope_key=scope_key, kind=kind)
+        prev_params = (
+            dict(prev_blob.get("best_params", {}))
+            if isinstance(prev_blob, dict) and prev_blob.get("best_params")
+            else None
+        )
 
         def objective(trial):
             p = dict(params)
@@ -483,15 +584,42 @@ class MetaModel:
                 p["colsample_bytree"] = trial.suggest_float("colsample_bytree", 0.5, 0.9)
                 p["reg_alpha"] = trial.suggest_float("reg_alpha", 0.01, 20.0, log=True)
                 p["reg_lambda"] = trial.suggest_float("reg_lambda", 1.0, 100.0, log=True)
-            _, ic = self._cv_evaluate(kind, p, X, y, sw)
+            try:
+                _, ic = self._cv_evaluate(kind, p, X, y, sw)
+            except Exception as exc:
+                tprint(f"  Meta HPO trial failed[{scope_key}/{kind}]: {exc}")
+                return -1e9
             return -ic  # minimize negative IC
 
         study = optuna.create_study(study_name=f"meta_hpo_{name}")
+        if prev_params:
+            try:
+                study.enqueue_trial(prev_params)
+                tprint(
+                    f"  Meta HPO warm-start[{scope_key}/{kind}]: loaded previous params from "
+                    f"{_meta_hpo_json_path(out_dir, scope_key=scope_key, kind=kind)}"
+                )
+            except Exception as exc:
+                tprint(f"  Meta HPO warm-start[{scope_key}/{kind}] failed: {exc}")
         study.optimize(objective, n_trials=n_trials, timeout=180, gc_after_trial=True)
         if study.best_trial is None:
             return params
         best = dict(params)
         best.update(study.best_params)
+        payload = {
+            "scope_key": scope_key,
+            "kind": kind,
+            "best_params": dict(study.best_params),
+            "n_trials_completed": len(study.trials),
+        }
+        try:
+            _save_meta_hpo_json(out_dir, payload, scope_key=scope_key, kind=kind)
+            tprint(
+                f"  Meta HPO saved params[{scope_key}/{kind}] to "
+                f"{_meta_hpo_json_path(out_dir, scope_key=scope_key, kind=kind)}"
+            )
+        except Exception as exc:
+            tprint(f"  Meta HPO save[{scope_key}/{kind}] failed: {exc}")
         return best
 
     # ── Main fit ─────────────────────────────────────────────────────────
@@ -502,18 +630,12 @@ class MetaModel:
         tprint(f"MetaModel.fit: {self.strategy_name} starting (n={len(y)}, feats={X_meta.shape[1]})")
         y_np = np.asarray(y, dtype=float)
         sw = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
-
-        # Light feature selection: meta features are already curated (~100),
-        # so keep most of them. Only prune clearly irrelevant ones.
         n_target = max(30, min(50, X_meta.shape[1]))
-        selected_cols = self._select_tail_features(X_meta, y_np, max_features=n_target)
-        X_sel = X_meta[selected_cols]
-        self.selected_features = selected_cols
+        self._feature_selection_max_features = n_target
 
         candidates = self._build_candidates()
         tprint(f"  Racing {len(candidates)} candidates ({_time.monotonic()-_t0:.1f}s)...")
 
-        Xv = X_sel.to_numpy(dtype=np.float32)
         records = []
         best_name = None
         best_ic = -1e18
@@ -527,6 +649,8 @@ class MetaModel:
         if y_per_horizon:
             gate_horizons = {h: np.asarray(v, dtype=float)[best_gate_mask] for h, v in y_per_horizon.items()}
 
+        X_gate_df = X_meta.iloc[np.flatnonzero(best_gate_mask)].reset_index(drop=True)
+
         for name, cand in candidates.items():
             kind = cand["kind"]
             params = cand["params"]
@@ -537,7 +661,14 @@ class MetaModel:
             sw_fit = None if sw_fit_all is None else sw_fit_all[best_gate_mask]
 
             try:
-                oof_gate, _ = self._cv_evaluate(kind, params, Xv[best_gate_mask], y_fit, sw_fit)
+                oof_gate, _ = self._cv_evaluate(
+                    kind,
+                    params,
+                    X_gate_df,
+                    y_fit,
+                    sw_fit,
+                    feature_max_features=n_target,
+                )
                 oof_orig_gate = self._inverse_signed_log(oof_gate) if tail_lambda > 0 else oof_gate
             except Exception as exc:
                 tprint(f"  Candidate {name} failed: {exc}")
@@ -594,9 +725,10 @@ class MetaModel:
         y_fit = y_fit_all[best_gate_mask]
         sw_fit = None if sw_fit_all is None else sw_fit_all[best_gate_mask]
 
-        # Re-derive Xv from selected features (in case it was narrowed)
-        Xv = X_meta[self.selected_features].to_numpy(dtype=np.float32)
-        Xv_gate = Xv[best_gate_mask]
+        self.selected_features = self._select_tail_features(
+            X_gate_df, y_fit, max_features=n_target
+        )
+        Xv_gate = X_gate_df[self.selected_features].to_numpy(dtype=np.float32)
         tuned_params = (
             dict(params)
             if self.disable_hpo
@@ -676,13 +808,22 @@ class MetaClassifierModel:
         self.selector_report_dir: Optional[str] = None
         self.selector_prev_selected: Optional[Sequence[str]] = None
         self.selector_family_map: Dict[str, str] = {}
+        self.selector_target_override: Optional[str] = None
+        self.selector_loss_override: Optional[str] = None
         self.xgb_parallel_forest_params: Optional[Dict[str, object]] = None
+        self.disable_hpo: bool = False
+        self.hpo_out_dir: Optional[str] = None
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
         meta_data = pd.DataFrame(index=feats_df.index)
         meta_data[pred_col_name] = np.clip(logit(p), -4.0, 4.0)
         return pd.concat([meta_data, feats_df], axis=1).fillna(0.0)
+
+    def _select_tail_features(
+        self, X: pd.DataFrame, y: np.ndarray, max_features: int = 80
+    ) -> List[str]:
+        return MetaModel._select_tail_features(self, X, y, max_features=max_features)
 
     # ── Candidate definitions ────────────────────────────────────────
     def _build_candidates(self) -> Dict[str, dict]:
@@ -865,7 +1006,7 @@ class MetaClassifierModel:
                 model.fit(X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False)
                 return model
             else:
-                model = xgb.XGBClassifier(**p, early_stopping_rounds=50)
+                model = xgb.XGBClassifier(**p)
                 model.fit(X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False)
                 return model
         raise ValueError(f"Unknown classifier kind: {kind}")
@@ -919,7 +1060,15 @@ class MetaClassifierModel:
         return pp
 
     # ── CV evaluation ────────────────────────────────────────────────
-    def _cv_evaluate(self, kind, params, X, y, sw=None) -> Tuple[np.ndarray, float]:
+    def _cv_evaluate(
+        self,
+        kind,
+        params,
+        X,
+        y,
+        sw=None,
+        feature_max_features: Optional[int] = None,
+    ) -> Tuple[np.ndarray, float]:
         """3-fold purged CV. Returns (oof_probs, brier_score).
         oof_probs shape: (N, 3).
         """
@@ -927,8 +1076,18 @@ class MetaClassifierModel:
         pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
         oof = np.full((len(y), 3), np.nan, dtype=float)
 
-        for tr, va in pkf.split(X):
-            X_tr, X_va = X[tr], X[va]
+        if isinstance(X, pd.DataFrame):
+            X_frame = X.reset_index(drop=True)
+        else:
+            X_frame = pd.DataFrame(
+                np.asarray(X, dtype=np.float32),
+                columns=[f"f_{i}" for i in range(np.asarray(X).shape[1])],
+            )
+        max_features = int(
+            feature_max_features if feature_max_features is not None else max(30, min(60, X_frame.shape[1]))
+        )
+
+        for tr, va in pkf.split(X_frame):
             if getattr(self, "_dynamic_labels", None) is not None:
                 # Dynamic soft labels evaluated on train set to prevent leakage
                 dyn_tr = self._dynamic_labels[tr]
@@ -939,6 +1098,13 @@ class MetaClassifierModel:
             else:
                 y_tr, y_va = y[tr], y[va]
             sw_tr = None if sw is None else sw[tr]
+            X_tr_df = X_frame.iloc[tr].reset_index(drop=True)
+            X_va_df = X_frame.iloc[va].reset_index(drop=True)
+            selected_cols = self._select_tail_features(
+                X_tr_df, np.asarray(y_tr, dtype=float), max_features=max_features
+            )
+            X_tr = X_tr_df[selected_cols].to_numpy(dtype=np.float32)
+            X_va = X_va_df[selected_cols].to_numpy(dtype=np.float32)
             try:
                 model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
                 pp = self._predict_proba(model, X_va)
@@ -995,7 +1161,13 @@ class MetaClassifierModel:
                              y_ret: np.ndarray, groups=None,
                              fee: float = 0.005) -> dict:
         """Compute classifier metrics: EV, Brier, Accuracy, PnL, and soft-label diagnostics."""
-        from sklearn.metrics import log_loss, brier_score_loss, accuracy_score
+        from sklearn.metrics import (
+            accuracy_score,
+            balanced_accuracy_score,
+            brier_score_loss,
+            log_loss,
+            roc_auc_score,
+        )
         mask = np.isfinite(oof).all(axis=1) & np.isfinite(y_ret)
         pred, y_c, y_r = oof[mask], y_class[mask], y_ret[mask]
         n = len(pred)
@@ -1029,8 +1201,25 @@ class MetaClassifierModel:
         else:
             pred_hard = np.argmax(pred, axis=1)
         acc = float(accuracy_score(y_c_hard, pred_hard))
+        bal_acc = float(balanced_accuracy_score(y_c_hard, pred_hard))
 
-        metrics = {"n": n, "logloss": ll, "accuracy": acc}
+        # TP-vs-SL ROC on pure outcome rows only (exclude timeouts).
+        tp_sl_mask = (y_c_hard == 0) | (y_c_hard == 2)
+        tp_vs_sl_roc = float("nan")
+        if int(np.sum(tp_sl_mask)) >= 10 and len(np.unique(y_c_hard[tp_sl_mask])) > 1:
+            try:
+                tp_scores = pred[tp_sl_mask, 2]
+                sl_scores = pred[tp_sl_mask, 0]
+                denom = np.clip(tp_scores + sl_scores, 1e-12, None)
+                tp_vs_sl_score = tp_scores / denom
+                tp_vs_sl_roc = float(
+                    roc_auc_score((y_c_hard[tp_sl_mask] == 2).astype(int), tp_vs_sl_score)
+                )
+            except Exception:
+                tp_vs_sl_roc = float("nan")
+
+        metrics = {"n": n, "logloss": ll, "accuracy": acc, "balanced_accuracy": bal_acc}
+        metrics["tp_vs_sl_roc_auc"] = tp_vs_sl_roc
 
         # Precision/PnL at top K EV
         for frac_pct in [13, 26, 39]:
@@ -1053,6 +1242,56 @@ class MetaClassifierModel:
             metrics["brier_tp"] = brier_tp
         except Exception:
             pass
+
+        # EV calibration curve: compare expected utility ranking to realized utility.
+        def _ev_calibration_curve(ev_pred: np.ndarray, realized_u: np.ndarray, n_bins: int = 10) -> list[dict]:
+            ev_pred = np.asarray(ev_pred, dtype=float)
+            realized_u = np.asarray(realized_u, dtype=float)
+            finite = np.isfinite(ev_pred) & np.isfinite(realized_u)
+            ev_pred = ev_pred[finite]
+            realized_u = realized_u[finite]
+            if ev_pred.size < 20:
+                return []
+            n_bins = max(2, min(int(n_bins), ev_pred.size))
+            edges = np.percentile(ev_pred, np.linspace(0, 100, n_bins + 1))
+            edges[0] -= 1e-9
+            edges[-1] += 1e-9
+            out: list[dict] = []
+            for b in range(n_bins):
+                lo, hi = edges[b], edges[b + 1]
+                in_bin = (ev_pred >= lo) & (ev_pred < hi) if b < n_bins - 1 else (ev_pred >= lo) & (ev_pred <= hi)
+                if not np.any(in_bin):
+                    continue
+                out.append(
+                    {
+                        "bin": int(b),
+                        "n": int(np.sum(in_bin)),
+                        "pred_ev_mean": float(np.mean(ev_pred[in_bin])),
+                        "realized_u_mean": float(np.mean(realized_u[in_bin])),
+                        "gap": float(np.mean(ev_pred[in_bin]) - np.mean(realized_u[in_bin])),
+                    }
+                )
+            return out
+
+        def _ev_calibration_profile(curve: list[dict]) -> str:
+            if len(curve) < 2:
+                return "flat"
+            pred_ev = np.array([c["pred_ev_mean"] for c in curve], dtype=float)
+            real_ev = np.array([c["realized_u_mean"] for c in curve], dtype=float)
+            diff = float(np.mean(real_ev - pred_ev))
+            if diff < -0.01:
+                return "overconfident"
+            if diff > 0.01:
+                return "underconfident/conservative"
+            return "well-calibrated"
+
+        ev_curve = _ev_calibration_curve(ev_vec, y_r)
+        metrics["ev_calibration_curve"] = ev_curve
+        metrics["ev_calibration_profile"] = _ev_calibration_profile(ev_curve)
+        if ev_curve:
+            metrics["ev_calibration_gap_mean"] = float(
+                np.mean([row["gap"] for row in ev_curve])
+            )
 
         soft_diag = MetaClassifierModel._compute_soft_label_diagnostics(pred, y_c)
         metrics.update(soft_diag)
@@ -1128,6 +1367,121 @@ class MetaClassifierModel:
             "hard_agreement_rate": hard_agreement_rate,
             "ece_tp": float(ece_tp),
         }
+
+    def _optuna_hpo(
+        self,
+        name: str,
+        kind: str,
+        params: Dict[str, Any],
+        X: np.ndarray,
+        y: np.ndarray,
+        sw: Optional[np.ndarray] = None,
+        n_trials: int = 12,
+    ) -> Dict[str, Any]:
+        if importlib.util.find_spec("optuna") is None:
+            return params
+        import optuna
+
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        out_dir = str(self.hpo_out_dir or os.path.join("data", "hpo_out"))
+        scope_key = str(self.strategy_name or "default")
+        prev_blob = _load_meta_hpo_json(out_dir, scope_key=scope_key, kind=kind)
+        prev_params = (
+            dict(prev_blob.get("best_params", {}))
+            if isinstance(prev_blob, dict) and prev_blob.get("best_params")
+            else None
+        )
+
+        def objective(trial: optuna.Trial) -> float:
+            p = dict(params)
+            if kind == "ridge_clf":
+                p["C"] = trial.suggest_float("C", 0.01, 25.0, log=True)
+            elif kind == "et_clf":
+                p["n_estimators"] = trial.suggest_int("n_estimators", 200, 900, step=100)
+                p["max_depth"] = trial.suggest_int("max_depth", 4, 12)
+                p["min_samples_leaf"] = trial.suggest_int("min_samples_leaf", 10, 120)
+                p["min_samples_split"] = trial.suggest_int("min_samples_split", 20, 240)
+                p["max_features"] = trial.suggest_categorical(
+                    "max_features", ["sqrt", "log2", 0.25, 0.33, 0.5]
+                )
+                p["ccp_alpha"] = trial.suggest_float("ccp_alpha", 1e-6, 1e-3, log=True)
+            elif kind == "catboost_clf":
+                p["iterations"] = trial.suggest_int("iterations", 300, 1200, step=100)
+                p["depth"] = trial.suggest_int("depth", 3, 7)
+                p["learning_rate"] = trial.suggest_float(
+                    "learning_rate", 0.01, 0.15, log=True
+                )
+                p["l2_leaf_reg"] = trial.suggest_float(
+                    "l2_leaf_reg", 1.0, 50.0, log=True
+                )
+                p["bagging_temperature"] = trial.suggest_float(
+                    "bagging_temperature", 0.0, 2.0
+                )
+                p["rsm"] = trial.suggest_float("rsm", 0.5, 0.95)
+            elif kind == "xgb_clf":
+                p["n_estimators"] = trial.suggest_int("n_estimators", 300, 1400, step=100)
+                p["num_parallel_tree"] = trial.suggest_int(
+                    "num_parallel_tree", 10, 40, step=5
+                )
+                p["max_depth"] = trial.suggest_int("max_depth", 3, 7)
+                p["learning_rate"] = trial.suggest_float(
+                    "learning_rate", 0.01, 0.15, log=True
+                )
+                p["subsample"] = trial.suggest_float("subsample", 0.5, 0.9)
+                p["colsample_bytree"] = trial.suggest_float(
+                    "colsample_bytree", 0.5, 0.9
+                )
+                p["reg_alpha"] = trial.suggest_float("reg_alpha", 1e-6, 15.0, log=True)
+                p["reg_lambda"] = trial.suggest_float("reg_lambda", 1.0, 60.0, log=True)
+                p["min_child_weight"] = trial.suggest_float(
+                    "min_child_weight", 10.0, 120.0, log=True
+                )
+                p["gamma"] = trial.suggest_float("gamma", 0.0, 5.0)
+            else:
+                raise ValueError(f"Unsupported classifier kind for HPO: {kind}")
+
+            try:
+                _, score = self._cv_evaluate(kind, p, X, y, sw)
+            except Exception as exc:
+                tprint(f"  Meta clf HPO trial failed[{scope_key}/{kind}]: {exc}")
+                return -1e9
+            return -float(score)
+
+        study = optuna.create_study(
+            direction="maximize",
+            study_name=f"meta_clf_hpo_{name}",
+        )
+        if prev_params:
+            try:
+                study.enqueue_trial(prev_params)
+                tprint(
+                    f"  Meta clf HPO warm-start[{scope_key}/{kind}]: loaded previous params from "
+                    f"{_meta_hpo_json_path(out_dir, scope_key=scope_key, kind=kind)}"
+                )
+            except Exception as exc:
+                tprint(f"  Meta clf HPO warm-start[{scope_key}/{kind}] failed: {exc}")
+
+        study.optimize(objective, n_trials=n_trials, timeout=240, gc_after_trial=True)
+        if study.best_trial is None:
+            return params
+
+        tuned = dict(params)
+        tuned.update(study.best_params)
+        payload = {
+            "scope_key": scope_key,
+            "kind": kind,
+            "best_params": dict(study.best_params),
+            "n_trials_completed": len(study.trials),
+        }
+        try:
+            _save_meta_hpo_json(out_dir, payload, scope_key=scope_key, kind=kind)
+            tprint(
+                f"  Meta clf HPO saved params[{scope_key}/{kind}] to "
+                f"{_meta_hpo_json_path(out_dir, scope_key=scope_key, kind=kind)}"
+            )
+        except Exception as exc:
+            tprint(f"  Meta clf HPO save[{scope_key}/{kind}] failed: {exc}")
+        return tuned
 
     # ── Multi-barrier label construction ────────────────────────────
     @staticmethod
@@ -1258,75 +1612,17 @@ class MetaClassifierModel:
         else:
             sw_combined = w_barrier
 
-        # Target-aware classifier feature selection.
-        Xv_raw = X_meta_work.to_numpy(dtype=np.float32)
-        col_std = np.nanstd(Xv_raw, axis=0)
-        keep_cols = col_std > 1e-9
-        if np.sum(keep_cols) == 0:
-            keep_cols = np.ones(Xv_raw.shape[1], dtype=bool)
-        selected_cols = list(X_meta_work.columns[keep_cols])
-        X_sel = X_meta_work[selected_cols]
-        try:
-            _sel_cfg = dict(self.selector_cfg or {})
-            _fs = mdi_feature_selection_v3(
-                X_sel,
-                y_class,
-                base_model=ExtraTreesClassifier(
-                    n_estimators=int(_sel_cfg.get("analysis_n_estimators", 192)),
-                    max_depth=6,
-                    min_samples_leaf=40,
-                    max_features="sqrt",
-                    n_jobs=2,
-                    random_state=42,
-                    class_weight="balanced",
-                ),
-                sample_weight=sw_combined,
-                selector_y=y_class,
-                selector_target="classification",
-                selector_loss="multiclass_logloss",
-                selector_head_name=f"meta_clf_{self.strategy_name or 'default'}",
-                selector_report_dir=self.selector_report_dir,
-                selector_prev_selected=list(self.selector_prev_selected) if self.selector_prev_selected is not None else None,
-                selector_family_map=dict(self.selector_family_map or {}),
-                selector_focus_top_frac=float(_sel_cfg.get("selector_focus_top_frac", 1.0)),
-                selector_top_metric=_sel_cfg.get("selector_top_metric", "ic"),
-                selector_frequency_hit_mode=str(_sel_cfg.get("selector_frequency_hit_mode", "relative")),
-                selector_frequency_hit_quantile=float(_sel_cfg.get("selector_frequency_hit_quantile", 0.80)),
-                selector_frequency_hit_abs=float(_sel_cfg.get("selector_frequency_hit_abs", 1e-6)),
-                selector_interaction_mode=str(_sel_cfg.get("selector_interaction_mode", "tree_path_lift")),
-                selector_interaction_topk_pairs=int(_sel_cfg.get("selector_interaction_topk_pairs", 100)),
-                selector_interaction_max_pairs_per_feature=int(_sel_cfg.get("selector_interaction_max_pairs_per_feature", 8)),
-                selector_interaction_corr_penalty=bool(_sel_cfg.get("selector_interaction_corr_penalty", True)),
-                selector_family_penalty=bool(_sel_cfg.get("selector_family_penalty", True)),
-                selector_emit_report=bool(_sel_cfg.get("selector_emit_report", True)),
-                analysis_n_estimators=int(_sel_cfg.get("analysis_n_estimators", 192)),
-                analysis_max_samples=int(_sel_cfg.get("analysis_max_samples", 3000)),
-                min_samples_leaf_pct=float(_sel_cfg.get("min_samples_leaf_pct", 0.015)),
-                selector_max_missing_frac=float(_sel_cfg.get("selector_max_missing_frac", 0.15)),
-                selector_near_constant_dominance=float(
-                    _sel_cfg.get("selector_near_constant_dominance", 0.999)
-                ),
-                selector_hysteresis_margin=float(_sel_cfg.get("selector_hysteresis_margin", 0.05)),
-                selector_min_overlap=float(_sel_cfg.get("selector_min_overlap", 0.70)),
-                composite_weights={
-                    "top30": float(_sel_cfg.get("top30", 0.20)),
-                    "global": float(_sel_cfg.get("global", 0.35)),
-                    "stability": float(_sel_cfg.get("stability", 0.25)),
-                    "frequency": float(_sel_cfg.get("frequency", 0.10)),
-                    "interaction": float(_sel_cfg.get("interaction", 0.10)),
-                },
-                end_features=min(60, X_sel.shape[1]),
-                cumulative_cap=0.99,
-                min_share=0.0005,
-                min_features=min(30, max(8, X_sel.shape[1])),
-                max_features_pct=0.8,
-            )
-            selected_cols = list(_fs.selected_features)
-        except Exception as exc:
-            tprint(f"  Meta classifier feature selection failed ({exc}), using variance filter only")
-        self.selected_features = selected_cols
-        Xv = X_meta[self.selected_features].to_numpy(dtype=np.float32)
-        tprint(f"  Features: {X_meta.shape[1]} -> {len(self.selected_features)}")
+        # Fold-local feature selection is applied inside CV.
+        # Keep the raw feature frame intact here so fold training never
+        # sees features selected on the full sample.
+        self._feature_selection_max_features = max(
+            30, min(60, X_meta_work.shape[1])
+        )
+        self.selected_features = list(X_meta_work.columns)
+        tprint(
+            f"  Features: {X_meta.shape[1]} -> {len(self.selected_features)} "
+            "(fold-local selection handled inside CV)"
+        )
 
         candidates = self._build_candidates()
         records = []
@@ -1345,7 +1641,14 @@ class MetaClassifierModel:
             params = dict(cand["params"])
 
             try:
-                oof, logloss = self._cv_evaluate(kind, params, Xv, y_class, sw_combined)
+                oof, logloss = self._cv_evaluate(
+                    kind,
+                    params,
+                    X_meta_work,
+                    y_class,
+                    sw_combined,
+                    feature_max_features=self._feature_selection_max_features,
+                )
             except Exception as exc:
                 tprint(f"    {name} failed: {exc}")
                 continue
@@ -1370,6 +1673,9 @@ class MetaClassifierModel:
             scored.append((name, kind, params, oof, y_class, metrics, sel))
             tprint(
                 f"    {name}: LogLoss={logloss:.4f}, Acc={metrics.get('accuracy',0):.3f}, "
+                f"BalAcc={metrics.get('balanced_accuracy',0):.3f}, ECE={metrics.get('ece_tp',0):.3f}, "
+                f"TPvsSLROC={metrics.get('tp_vs_sl_roc_auc', float('nan')):.3f}, "
+                f"EVCal={metrics.get('ev_calibration_profile', 'n/a')}, "
                 f"TopU={sel.get('selection_score', float('nan')):.5f}, "
                 f"TopRealU={sel.get('top_realized_u_mean', float('nan')):.5f}, "
                 f"gate={bool(sel.get('passed_gate',0))}, econ={bool(sel.get('passed_econ',0))}"
@@ -1423,8 +1729,26 @@ class MetaClassifierModel:
             f"Fitting final model..."
         )
 
-        final_model = self._fit_one(kind, params, Xv, y_final, Xv, y_final,
-                                    sw=sw_combined)
+        tuned_params = (
+            dict(params)
+            if self.disable_hpo
+            else self._optuna_hpo(best_rec["name"], kind, params, X_meta_work, y_final, sw=sw_combined)
+        )
+
+        self.selected_features = self._select_tail_features(
+            X_meta_work, y_final, max_features=self._feature_selection_max_features
+        )
+        Xv = X_meta_work[self.selected_features].to_numpy(dtype=np.float32)
+
+        final_model = self._fit_one(
+            kind,
+            tuned_params,
+            Xv,
+            y_final,
+            Xv,
+            y_final,
+            sw=sw_combined,
+        )
         self.model = {"kind": kind, "models": [final_model], "multiclass": True}
 
         # Save race report

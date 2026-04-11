@@ -227,7 +227,11 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
     alpha_models = bundle.get("alpha_models", {}) if bundle else {}
     base_variant_models = bundle.get("base_variant_models", {}) if bundle else {}
     quality_gate = bundle.get("quality_gate_report", {}) if bundle else {}
-    base_rows = list(quality_gate.get("base_models", []) or [])
+    base_rows = [
+        r
+        for r in list(quality_gate.get("base_models", []) or [])
+        if str(r.get("variant", "primary")) != "primary"
+    ]
 
     rows_data = []
     table_rows = []
@@ -251,7 +255,7 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
         ]
 
         def _feature_count(side: str, strategy_id: str, horizon: int, variant: str) -> int | str:
-            if variant and variant != "primary":
+            if variant:
                 v_conf = base_variant_models.get((side, strategy_id, int(horizon), variant), {})
                 feats = v_conf.get("selected_features") or v_conf.get("feat_cols") or []
                 return len(feats) if feats else "—"

@@ -1170,7 +1170,7 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         f"labeling: triple-barrier parallel dispatch assets={len(assets)} "
         f"workers={n_jobs} horizon={horizon} side={side}"
     )
-    results = Parallel(n_jobs=n_jobs, prefer="threads", return_as="generator_unordered")(
+    results = Parallel(n_jobs=n_jobs, prefer="threads", return_as="generator")(
         delayed(_process_asset)(asset, idx)
         for idx, asset in enumerate(assets, start=1)
     )

@@ -1,0 +1,20 @@
+{
+  "selector_head_name": "meta_clf_short_bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
+  "selector_target": "classification",
+  "selector_top_metric": "ic",
+  "selector_focus_top_frac": 0.8,
+  "weights": {
+    "top30": 0.0,
+    "global": 0.55,
+    "stability": 0.25,
+    "frequency": 0.15,
+    "interaction": 0.05
+  },
+  "n_train_features": 60,
+  "n_selected": 48,
+  "anchor_count": 0,
+  "selected_anchor_count": 0,
+  "overlap_before": 1.0,
+  "overlap_after": 1.0,
+  "hysteresis_swaps": 0.0
+}

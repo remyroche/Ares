@@ -1,0 +1,17 @@
+{
+  "scope_key": "short_bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
+  "kind": "xgb_clf",
+  "best_params": {
+    "n_estimators": 1300,
+    "num_parallel_tree": 35,
+    "max_depth": 5,
+    "learning_rate": 0.012256374324394671,
+    "subsample": 0.7784552260483459,
+    "colsample_bytree": 0.786370265503542,
+    "reg_alpha": 0.0022367047910158326,
+    "reg_lambda": 3.1510048081480893,
+    "min_child_weight": 24.259428063389258,
+    "gamma": 1.1224667105713904
+  },
+  "n_trials_completed": 2
+}

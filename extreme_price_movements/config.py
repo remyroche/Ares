@@ -841,7 +841,7 @@ CFG = {
     "meta_train_regression_bucket_model": True,
     "meta_training_pipeline_version": "aligned_map_v2",
     "meta_train_save_legacy_setup": True,
-    "meta_parallel_forest_disable_hpo": True,
+    "meta_parallel_forest_disable_hpo": False,
     "meta_parallel_forest_num_parallel_tree": 20,
     "meta_parallel_forest_rounds": 100,
     "meta_parallel_forest_max_depth": 5,

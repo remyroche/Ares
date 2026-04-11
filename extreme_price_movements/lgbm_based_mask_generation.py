@@ -5390,8 +5390,8 @@ class RuleScorer:
         else:
             s_support_use = float(np.clip(support_objective_score, 0.0, 1.0))
             # Final quality score with requested weights:
-            # edge 10%, path quality 35%, learnability 45%, support fit 10%.
-            w_a, w_b, w_c, w_s = 0.10, 0.35, 0.45, 0.10
+            # edge 20%, path quality 35%, learnability 35%, support fit 10%.
+            w_a, w_b, w_c, w_s = 0.20, 0.35, 0.35, 0.10
             full_quality_score = float(
                 (s_edge_use + eps_score) ** w_a
                 * (s_path + eps_score) ** w_b
@@ -10491,17 +10491,25 @@ class MaskAssessor:
         ret_per_risk = pd.to_numeric(result.get("weekly_sortino", pd.Series(np.nan, index=result.index)), errors="coerce")
         result["_s9_ret_per_risk"] = _winsorize_minmax(ret_per_risk)
         
-        # Compute base score with weights
+        # 10. Post-fee PnL (weight: 0.20)
+        ridge_pnl = pd.to_numeric(
+            result.get("ridge_pnl_raw", pd.Series(np.nan, index=result.index)),
+            errors="coerce",
+        )
+        result["_s10_ridge_pnl"] = _winsorize_minmax(ridge_pnl)
+
+        # Compute base score with weights (sum = 1.0)
         base_score = (
-            0.3 * result["_s1_overall_mask_uplift"]
-            + 0.075 * result["_s2_dir_acc_atr_half"]
-            + 0.075 * result["_s3_dir_acc_atr_full"]
-            + 0.1 * result["_s4_dir_acc_sign"]
-            + 0.1 * result["_s5_ic_stability"]
-            + 0.1 * result["_s6_rank_ic"]
-            + 0.1 * result["_s7_ic_top10"]
-            + 0.1 * result["_s8_conditional_mean"]
-            + 0.1 * result["_s9_ret_per_risk"]
+            0.25 * result["_s1_overall_mask_uplift"]
+            + 0.06 * result["_s2_dir_acc_atr_half"]
+            + 0.06 * result["_s3_dir_acc_atr_full"]
+            + 0.08 * result["_s4_dir_acc_sign"]
+            + 0.08 * result["_s5_ic_stability"]
+            + 0.08 * result["_s6_rank_ic"]
+            + 0.08 * result["_s7_ic_top10"]
+            + 0.06 * result["_s8_conditional_mean"]
+            + 0.05 * result["_s9_ret_per_risk"]
+            + 0.20 * result["_s10_ridge_pnl"]
         )
         
         # Apply linear support scaling: 5% → 1.0, 20% → 1.2 (reward higher support)
@@ -10625,7 +10633,7 @@ class MaskAssessor:
 
         eligible["fold_stability"] = fold_stability.astype(np.float32)
         
-        overlap_penalty = float(self.cfg.get("final_selection_overlap_penalty", 0.35))
+        overlap_penalty = float(self.cfg.get("final_selection_overlap_penalty", 0.25))
         support_overlap_weight = float(self.cfg.get("final_selection_support_overlap_weight", 0.5))
         ic_overlap_weight = float(self.cfg.get("final_selection_ic_overlap_weight", 0.5))
         top_k = int(self.cfg.get("final_selected_rule_cap", 20))
@@ -10695,9 +10703,9 @@ class MaskAssessor:
 
             reduction_factor = 1.0
             if side_a != side_b:
-                reduction_factor *= 0.7  # 30% less penalty
+                reduction_factor *= 0.0
             if abs(horizon_a - horizon_b) > 1e-6:
-                reduction_factor *= 0.8  # 20% less penalty
+                reduction_factor *= 0.5
 
             return raw_overlap * reduction_factor
 
@@ -10751,7 +10759,8 @@ class MaskAssessor:
                 horizon_val = float(eligible.loc[idx, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
                 same_group_selected = selected_by_group.get((side_val, horizon_val), [])
                 max_overlap = max((_pair_overlap(idx, s) for s in same_group_selected), default=0.0)
-                score = base_score - overlap_penalty * max_overlap
+                penalised_overlap = max(max_overlap - 0.30, 0.0)
+                score = base_score - overlap_penalty * penalised_overlap
                 if score > best_score:
                     best_score = score
                     best_idx = idx

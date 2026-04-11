@@ -1,10 +1,32 @@
 {
   "selected_features": [
-    "feat_1",
-    "feat_2",
-    "feat_3",
-    "feat_0",
-    "feat_20"
+    "t_be_proxy",
+    "range_24h_pct",
+    "ffd_rv_12_05",
+    "ffd_rv_24h_04",
+    "range_12h_pct",
+    "prior_range",
+    "downside_semivariance_24",
+    "compression_ratio",
+    "range_16h_pct",
+    "ffd_rv_6h_06",
+    "volume_trend_48",
+    "upside_semivariance_24",
+    "prior_volatility",
+    "rolling_range_20",
+    "cvar_5pct",
+    "volatility_of_volatility_48",
+    "prog_eff_24",
+    "dir_path_risk_skew_2h",
+    "body_ratio",
+    "trapped_longs_24",
+    "bars_in_high_vol_state_log_norm",
+    "ffd_range_24_05",
+    "realized_volatility_24h",
+    "t_pl_proxy",
+    "vov_iqr_20",
+    "sin_dow",
+    "rvol_hod_base"
   ],
   "anchors": []
 }

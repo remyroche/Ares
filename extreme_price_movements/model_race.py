@@ -490,32 +490,48 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     self._fit_model(model_clone, X_tr, y_tr_fit, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr_fit)
                     
                     # --- Calibration Wrapper ---
-                    # Instead of saving raw probabilities, we use CalibratedClassifierCV 
-                    # on the fitted model to ensure probability outputs are strictly calibrated.
-                    # We use 'prefit' because we already fitted model_clone with early stopping above.
-                    # But wait: 'prefit' means it calibrates on the training data! That leaks.
-                    # Instead, we should wrap the unfitted model in CalibratedClassifierCV(cv=5)
-                    # before fitting, but CalibratedClassifierCV doesn't pass fit_params (like eval_set) smoothly.
-                    # So we use an internal split on the training data to fit Isotonic.
-                    
-                    from sklearn.calibration import CalibratedClassifierCV
-                    # 1. Fit raw model on 80% of X_tr, calibrate on 20% of X_tr
-                    n_tr = len(X_tr)
-                    cal_split = int(n_tr * 0.8)
-                    X_tr_cal_train, X_tr_cal_val = X_tr[:cal_split], X_tr[cal_split:]
-                    y_tr_cal_train, y_tr_cal_val = y_tr_fit[:cal_split], y_tr_fit[cal_split:]
-                    w_tr_cal_train = w_tr_fit[:cal_split] if w_tr_fit is not None else None
-                    
-                    # Fit a sub-clone for calibration
-                    cal_clone = clone(model)
-                    self._fit_model(cal_clone, X_tr_cal_train, y_tr_cal_train, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr_cal_train)
-                    
-                    # Fit the calibrator on the validation split
-                    calibrator = CalibratedClassifierCV(cal_clone, cv="prefit", method="isotonic")
-                    calibrator.fit(X_tr_cal_val, y_tr_cal_val)
-                    
-                    # Predict calibrated (but biased) probabilities on the actual OOF validation set
-                    probs_raw = calibrator.predict_proba(X_val)[:, 1]
+                    # Build a time-aware isotonic calibrator using inner PurgedKFold OOF
+                    # predictions on the training fold. This avoids the prefit leakage path.
+                    from sklearn.isotonic import IsotonicRegression
+
+                    inner_times = None
+                    if times_for_cv is not None:
+                        inner_times = np.asarray(times_for_cv)[train_idx]
+                    inner_cv = PurgedKFold(
+                        n_splits=3,
+                        purge=max(2, purge_samples // 2),
+                        embargo=max(1, embargo_samples // 2),
+                        times=inner_times,
+                    )
+                    inner_oof = np.full(len(X_tr), np.nan, dtype=float)
+                    for inner_tr, inner_va in inner_cv.split(X_tr):
+                        if len(inner_tr) < 20 or len(inner_va) < 5:
+                            continue
+                        if len(np.unique(y_tr_fit[inner_tr])) < 2:
+                            continue
+                        cal_fold = clone(model)
+                        w_inner_tr = (
+                            w_tr_fit[inner_tr] if w_tr_fit is not None else None
+                        )
+                        self._fit_model(
+                            cal_fold,
+                            X_tr[inner_tr],
+                            y_tr_fit[inner_tr],
+                            X_val=X_tr[inner_va],
+                            y_val=y_tr_fit[inner_va],
+                            sample_weight=w_inner_tr,
+                        )
+                        inner_oof[inner_va] = cal_fold.predict_proba(X_tr[inner_va])[:, 1]
+
+                    cal_mask = np.isfinite(inner_oof)
+                    if np.sum(cal_mask) >= 20 and len(np.unique(y_tr_fit[cal_mask])) > 1:
+                        calibrator = IsotonicRegression(out_of_bounds="clip")
+                        calibrator.fit(inner_oof[cal_mask], y_tr_fit[cal_mask])
+                        probs_raw = calibrator.transform(
+                            model_clone.predict_proba(X_val)[:, 1]
+                        )
+                    else:
+                        probs_raw = model_clone.predict_proba(X_val)[:, 1]
                     
                     # --- Prior Correction (replaces in-fold Platt scaling) ---
                     # Tree models with scale_pos_weight / class_weight shift raw

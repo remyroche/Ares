@@ -41,8 +41,8 @@ def _numba_triple_barrier_outcomes_fast(
     outcomes = np.zeros(n, dtype=np.int8)
     quality = np.zeros(n, dtype=np.float32)
     returns = np.zeros(n, dtype=np.float32)
-    exit_idxs = np.zeros(n, dtype=np.int64)
-    conflict_j = np.full(n, -1, dtype=np.int64)
+    exit_idxs = np.zeros(n, dtype=np.int32)
+    conflict_j = np.full(n, -1, dtype=np.int32)
     mfe_arr = np.zeros(n, dtype=np.float32)
     mae_arr = np.zeros(n, dtype=np.float32)
     time_to_mfe = np.zeros(n, dtype=np.float32)
@@ -192,8 +192,8 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
     outcomes = np.zeros(n, dtype=np.int8)
     quality = np.zeros(n, dtype=np.float32)
     returns = np.zeros(n, dtype=np.float32)
-    exit_idxs = np.zeros(n, dtype=np.int64)
-    conflict_j = np.full(n, -1, dtype=np.int64)
+    exit_idxs = np.zeros(n, dtype=np.int32)
+    conflict_j = np.full(n, -1, dtype=np.int32)
     mfe_arr = np.zeros(n, dtype=np.float32)
     mae_arr = np.zeros(n, dtype=np.float32)
     time_to_mfe = np.zeros(n, dtype=np.float32)
@@ -709,8 +709,8 @@ def _numba_triple_barrier_fast(
     n = len(closes)
     labels = np.zeros(n, dtype=np.int8)
     returns = np.zeros(n, dtype=np.float32)
-    exit_idxs = np.zeros(n, dtype=np.int64)
-    conflict_j = np.full(n, -1, dtype=np.int64)
+    exit_idxs = np.zeros(n, dtype=np.int32)
+    conflict_j = np.full(n, -1, dtype=np.int32)
     mfe_arr = np.zeros(n, dtype=np.float32)
     mae_arr = np.zeros(n, dtype=np.float32)
     time_to_mfe = np.zeros(n, dtype=np.float32)
@@ -888,8 +888,8 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
     n = len(closes)
     labels = np.zeros(n, dtype=np.int8)
     returns = np.zeros(n, dtype=np.float32)
-    exit_idxs = np.zeros(n, dtype=np.int64)
-    conflict_j = np.full(n, -1, dtype=np.int64)
+    exit_idxs = np.zeros(n, dtype=np.int32)
+    conflict_j = np.full(n, -1, dtype=np.int32)
     mfe_arr = np.zeros(n, dtype=np.float32)
     mae_arr = np.zeros(n, dtype=np.float32)
     time_to_mfe = np.zeros(n, dtype=np.float32)
@@ -1060,7 +1060,17 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
 
     return labels, returns, exit_idxs, conflict_j
 
-def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_outcomes=False, horizons_frame=None, resolve_conflicts=True):
+def compute_triple_barrier_labels(
+    panel,
+    tp,
+    sl,
+    horizon,
+    side="long",
+    return_outcomes=False,
+    horizons_frame=None,
+    resolve_conflicts=True,
+    return_path_stats=True,
+):
     """
     Computes triple barrier labels for a panel.
     tp: Scalar float OR DataFrame/Series matching panel dimensions.
@@ -1101,10 +1111,11 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
 
     out_labels = pd.DataFrame(0, index=c.index, columns=assets, dtype=np.int8)
     out_returns = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
-    out_quality = None
-
-    if return_outcomes:
-        out_quality = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+    out_quality = (
+        pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+        if return_outcomes
+        else None
+    )
 
     side_int = 1 if side == "long" else -1
 
@@ -1199,10 +1210,12 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
                 _hf_cache[asset] = pd.DataFrame()
         return _hf_cache[asset]
 
-    out_mfe = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
-    out_mae = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
-    out_t_mfe = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
-    out_t_mae = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+    out_mfe = out_mae = out_t_mfe = out_t_mae = None
+    if return_path_stats:
+        out_mfe = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+        out_mae = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+        out_t_mfe = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+        out_t_mae = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
 
     for result_idx, (asset, lbs_or_out, rets, qual, conflict_j, tp_arr, sl_arr, mfe_arr, mae_arr, t_mfe, t_mae) in enumerate(
         results, start=1
@@ -1269,10 +1282,11 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
 
         out_labels[asset] = lbs_or_out
         out_returns[asset] = rets
-        out_mfe[asset] = mfe_arr
-        out_mae[asset] = mae_arr
-        out_t_mfe[asset] = t_mfe
-        out_t_mae[asset] = t_mae
+        if return_path_stats:
+            out_mfe[asset] = mfe_arr
+            out_mae[asset] = mae_arr
+            out_t_mfe[asset] = t_mfe
+            out_t_mae[asset] = t_mae
         if return_outcomes and qual is not None:
             out_quality[asset] = qual
 
@@ -1282,5 +1296,17 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
     )
 
     if return_outcomes:
-        return out_labels, out_returns, out_quality, out_mfe, out_mae, out_t_mfe, out_t_mae
-    return out_labels, out_returns, out_mfe, out_mae, out_t_mfe, out_t_mae
+        if return_path_stats:
+            return (
+                out_labels,
+                out_returns,
+                out_quality,
+                out_mfe,
+                out_mae,
+                out_t_mfe,
+                out_t_mae,
+            )
+        return out_labels, out_returns, out_quality
+    if return_path_stats:
+        return out_labels, out_returns, out_mfe, out_mae, out_t_mfe, out_t_mae
+    return out_labels, out_returns

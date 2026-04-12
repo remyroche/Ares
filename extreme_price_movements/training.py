@@ -3751,6 +3751,7 @@ def build_hourly_training_set_and_weights(
                     side=side,
                     return_outcomes=True,
                     horizons_frame=dyn_horizon,
+                    return_path_stats=False,
                 )
                 tb_labels, tb_returns, tb_quality = _tb_out[:3]
                 if _tb_cache is not None:
@@ -5318,7 +5319,13 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
             _base=_audit_base,
         )
         _tb_out = compute_triple_barrier_labels(
-            panel, _tp_df_a, _sl_df_a, _H, side=_side, return_outcomes=True
+            panel,
+            _tp_df_a,
+            _sl_df_a,
+            _H,
+            side=_side,
+            return_outcomes=True,
+            return_path_stats=False,
         )
         _lbl_mat, _ret_mat, _qual_mat = _tb_out[:3]
         return {
@@ -5740,7 +5747,13 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                                 f"computing raw triple-barrier labels..."
                             )
                         _tb_out = compute_triple_barrier_labels(
-                            panel, tp_df, sl_df, H, side=side, return_outcomes=True
+                            panel,
+                            tp_df,
+                            sl_df,
+                            H,
+                            side=side,
+                            return_outcomes=True,
+                            return_path_stats=False,
                         )
                         lbl, ret, qual = _tb_out[:3]
                         n_events_raw = int(lbl.size)
@@ -6026,7 +6039,13 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         _base=_barrier_base,
                     )
                     _tb_out = compute_triple_barrier_labels(
-                        panel, tp_df, sl_df, H, side=side, return_outcomes=True
+                        panel,
+                        tp_df,
+                        sl_df,
+                        H,
+                        side=side,
+                        return_outcomes=True,
+                        return_path_stats=False,
                     )
                     lbl, ret, qual = _tb_out[:3]
                     _tp_vals_fb = tp_df.values
@@ -6488,6 +6507,7 @@ def generate_label_datasets(
     missing_cells: list[tuple[int, str]] = []
 
     strategies = get_strategies(cfg)
+    strategies_by_id = {s["strategy_id"]: s for s in strategies}
     strategy_horizons = {
         s["strategy_id"]: strategy_runtime_horizons(
             s, cfg, requested_horizons=requested_horizons
@@ -6522,65 +6542,51 @@ def generate_label_datasets(
                     )
             missing_cells.append((int(H), s_id))
 
-    def _parallel_tb_build_for_strategies(_strategy_ids: set[str]):
-        _selected = [s for s in strategies if s["strategy_id"] in _strategy_ids]
-        if not _selected:
-            return {}, {}
-        _jobs = [
-            (
-                _s,
-                sorted({int(h) for h in strategy_horizons.get(_s["strategy_id"], [])}),
-            )
-            for _s in _selected
-        ]
-        _jobs = [j for j in _jobs if j[1]]
-        if not _jobs:
-            return {}, {}
-        _workers = min(
-            len(_jobs),
-            max(
-                1,
-                int(
-                    cfg.get(
-                        "label_tb_cache_workers",
-                        _choose_parallel_cells(len(_jobs), cfg),
-                    )
-                ),
-            ),
+    def _build_and_persist_tb_cell(H: int, s_id: str) -> bool:
+        _strat = strategies_by_id.get(s_id)
+        if _strat is None:
+            return False
+        tprint(f"TB cache build: strategy_id={s_id} H={H} starting...")
+        _tb_i, _geom_i = build_grid_aggregated_tb_cache(
+            panel=panel,
+            feats=feats,
+            cfg=cfg,
+            horizons=[int(H)],
+            strategies=[_strat],
         )
-        if _workers <= 1 or not bool(cfg.get("label_tb_cache_parallel", True)):
-            _tb_all, _geom_all = {}, {}
-            for _strat, _hs in _jobs:
-                _tb_i, _geom_i = build_grid_aggregated_tb_cache(
-                    panel=panel,
-                    feats=feats,
-                    cfg=cfg,
-                    horizons=_hs,
-                    strategies=[_strat],
-                )
-                _tb_all.update(_tb_i)
-                _geom_all.update(_geom_i)
-            return _tb_all, _geom_all
-
-        tprint(f"Parallel TB cache build: strategies={len(_jobs)} workers={_workers}")
-        _tb_all, _geom_all = {}, {}
-        with ThreadPoolExecutor(max_workers=_workers) as _ex:
-            _futs = [
-                _ex.submit(
-                    build_grid_aggregated_tb_cache,
-                    panel,
-                    feats,
-                    cfg,
-                    _hs,
-                    [_strat],
-                )
-                for _strat, _hs in _jobs
-            ]
-            for _fut in as_completed(_futs):
-                _tb_i, _geom_i = _fut.result()
-                _tb_all.update(_tb_i)
-                _geom_all.update(_geom_i)
-        return _tb_all, _geom_all
+        key = (int(H), s_id)
+        persisted_base = False
+        for _k, _v in list(_tb_i.items()):
+            if not isinstance(_k, tuple) or len(_k) < 2:
+                continue
+            if int(_k[0]) != int(H) or str(_k[1]) != str(s_id):
+                continue
+            tb_cache[_k] = _downcast_tb_triplet(_v)
+            if len(_k) == 2 and _k == key:
+                persisted_base = True
+                p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, s_id, cfg_hash)
+                os.makedirs(os.path.dirname(p_tb), exist_ok=True)
+                with open(p_tb, "wb") as fh:
+                    pickle.dump(tb_cache[_k], fh, protocol=pickle.HIGHEST_PROTOCOL)
+        for _k, _v in list(_geom_i.items()):
+            if not isinstance(_k, tuple) or len(_k) < 2:
+                continue
+            if int(_k[0]) != int(H) or str(_k[1]) != str(s_id):
+                continue
+            geom_cache[_k] = _downcast_geom_payload(_v)
+            if len(_k) == 2 and _k == key:
+                p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, s_id, cfg_hash)
+                os.makedirs(os.path.dirname(p_geom), exist_ok=True)
+                with open(p_geom, "wb") as fh:
+                    pickle.dump(geom_cache[_k], fh, protocol=pickle.HIGHEST_PROTOCOL)
+        if not persisted_base:
+            tprint(f"TB cache build: strategy_id={s_id} H={H} produced no base cell payload.")
+            return False
+        tprint(f"TB cache build: strategy_id={s_id} H={H} persisted.")
+        del _tb_i, _geom_i
+        if bool(cfg.get("label_gc_after_each_dataset", True)):
+            gc.collect()
+        return True
 
     if missing_cells:
         miss_h = sorted({c[0] for c in missing_cells})
@@ -6588,21 +6594,10 @@ def generate_label_datasets(
         tprint(
             f"TB cache miss: {len(missing_cells)} cells; recomputing horizons={miss_h} strategy_ids={miss_s_ids}"
         )
-        _tb_new, _geom_new = _parallel_tb_build_for_strategies(set(miss_s_ids))
-        for H, s_id in missing_cells:
-            key = (int(H), s_id)
-            if key not in _tb_new or key not in _geom_new:
-                continue
-            tb_cache[key] = _downcast_tb_triplet(_tb_new[key])
-            geom_cache[key] = _downcast_geom_payload(_geom_new[key])
-            p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, s_id, cfg_hash)
-            os.makedirs(os.path.dirname(p_tb), exist_ok=True)
-            with open(p_tb, "wb") as fh:
-                pickle.dump(tb_cache[key], fh, protocol=pickle.HIGHEST_PROTOCOL)
-            with open(p_geom, "wb") as fh:
-                pickle.dump(geom_cache[key], fh, protocol=pickle.HIGHEST_PROTOCOL)
+        for H, s_id in sorted(set((int(h), sid) for h, sid in missing_cells)):
+            _build_and_persist_tb_cell(int(H), s_id)
         tprint(
-            f"TB cache refresh complete: hits={len(tb_cache) - len(missing_cells)} misses={len(missing_cells)}"
+            f"TB cache refresh complete: cells={len(missing_cells)} now_cached={len(tb_cache)}"
         )
     else:
         tprint(f"TB cache fully satisfied from disk: cells={len(tb_cache)}")
@@ -6620,15 +6615,8 @@ def generate_label_datasets(
             tprint(
                 f"Materializing grouped base-geometry variants in-memory for {len(_missing_variant_keys)} cells..."
             )
-            _tb_all, _geom_all = _parallel_tb_build_for_strategies(
-                {c[1] for c in _missing_variant_keys}
-            )
-            for _key, _val in _tb_all.items():
-                if isinstance(_key, tuple) and len(_key) == 3:  # (H, s_id, variant)
-                    tb_cache[_key] = _downcast_tb_triplet(_val)
-            for _key, _val in _geom_all.items():
-                if isinstance(_key, tuple) and len(_key) == 3:  # (H, s_id, variant)
-                    geom_cache[_key] = _downcast_geom_payload(_val)
+            for _H, _s_id, _variant in sorted(set(_missing_variant_keys)):
+                _build_and_persist_tb_cell(int(_H), _s_id)
         else:
             tprint("Base-geometry variant cache already satisfied for all requested cells.")
 

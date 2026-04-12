@@ -161,6 +161,8 @@ def _extract_strategy_params_payload(
             ),
             "stability": _to_float_or_nan(opt_row.get("stability", np.nan)),
             "max_drawdown": _to_float_or_nan(opt_row.get("max_drawdown", np.nan)),
+            "calmar_ratio": _to_float_or_nan(opt_row.get("calmar_ratio", np.nan)),
+            "expectancy_tstat": _to_float_or_nan(opt_row.get("expectancy_tstat", np.nan)),
             "source_target": source_target,
             "source_horizon": _to_float_or_nan(source_horizon),
         }
@@ -214,28 +216,298 @@ def _save_strategy_params_payload(
     return _strategy_params_path(data_root, run_id)
 
 
+# =============================================================================
+# Confidence Calibration (Full Curve)
+# =============================================================================
+
+def compute_full_calibration_curves(
+    oof_predictions: pd.DataFrame,
+    realized_returns: pd.DataFrame,
+    strategy_col: str = "strategy",
+    score_col: str = "sizer_score",
+    return_col: str = "realized_return",
+    n_bins: int = 10,
+) -> Dict[str, Dict[str, Any]]:
+    """Compute full calibration curves for each strategy using isotonic regression.
+    
+    This computes well-calibrated probability estimates from raw scores by
+    learning a monotonic mapping from scores to observed win frequencies.
+    
+    Args:
+        oof_predictions: DataFrame with OOF predictions per strategy
+        realized_returns: DataFrame with realized returns aligned to predictions
+        strategy_col: Column name for strategy identifier
+        score_col: Column name for the raw score/prediction
+        return_col: Column name for realized returns
+        n_bins: Number of bins for empirical calibration curve
+        
+    Returns:
+        Dict mapping strategy_id -> calibration data:
+        {
+            "strategy_id": str,
+            "raw_scores": List[float],  # All historical scores
+            "isotonic_scores": List[float],  # Calibrated scores
+            "score_range": (min, max),
+            "bin_edges": List[float],  # For discretized calibration
+            "bin_centers": List[float],
+            "bin_frequencies": List[float],  # Observed win rates per bin
+            "bin_counts": List[int],  # Sample count per bin
+            "p75_threshold": float,  # 75th percentile of isotonic scores
+            "p90_threshold": float,  # 90th percentile for reference
+            "calibration_curve": List[Tuple[float, float]],  # (raw, calibrated) pairs
+        }
+    """
+    from sklearn.isotonic import IsotonicRegression
+    
+    calibration_data: Dict[str, Dict[str, Any]] = {}
+    
+    # Ensure aligned data
+    if strategy_col not in oof_predictions.columns:
+        logger.warning(f"[Calibration] {strategy_col} not in OOF predictions")
+        return calibration_data
+    
+    # Merge predictions with realized returns
+    merged = oof_predictions.merge(
+        realized_returns[["symbol", "timestamp", return_col]],
+        on=["symbol", "timestamp"],
+        how="inner"
+    )
+    
+    if merged.empty:
+        logger.warning("[Calibration] No aligned data after merge")
+        return calibration_data
+    
+    # Group by strategy
+    for strategy_id, group in merged.groupby(strategy_col):
+        if len(group) < n_bins * 5:  # Need enough samples
+            logger.warning(f"[Calibration] Insufficient samples for {strategy_id}: {len(group)}")
+            continue
+        
+        raw_scores = group[score_col].values
+        returns = group[return_col].values
+        
+        # Binary outcomes (win/loss)
+        was_win = (returns > 0).astype(float)
+        
+        # Fit isotonic regression
+        iso_reg = IsotonicRegression(out_of_bounds="clip")
+        calibrated_scores = iso_reg.fit_transform(raw_scores, was_win)
+        
+        # Compute empirical calibration curve (binned)
+        sorted_indices = np.argsort(raw_scores)
+        sorted_scores = raw_scores[sorted_indices]
+        sorted_calibrated = calibrated_scores[sorted_indices]
+        
+        # Create bins
+        bin_edges = np.linspace(sorted_scores.min(), sorted_scores.max(), n_bins + 1)
+        bin_centers = []
+        bin_frequencies = []
+        bin_counts = []
+        
+        for i in range(n_bins):
+            mask = (sorted_scores >= bin_edges[i]) & (sorted_scores < bin_edges[i + 1])
+            if i == n_bins - 1:  # Include right edge for last bin
+                mask = (sorted_scores >= bin_edges[i]) & (sorted_scores <= bin_edges[i + 1])
+            
+            bin_scores = sorted_scores[mask]
+            bin_calibrated = sorted_calibrated[mask]
+            
+            if len(bin_scores) > 0:
+                bin_centers.append(float(np.mean(bin_scores)))
+                bin_frequencies.append(float(np.mean(bin_calibrated)))
+                bin_counts.append(int(len(bin_scores)))
+        
+        # Compute percentiles on calibrated scores
+        p75 = float(np.percentile(calibrated_scores, 75))
+        p90 = float(np.percentile(calibrated_scores, 90))
+        
+        # Store calibration data
+        calibration_data[str(strategy_id)] = {
+            "strategy_id": str(strategy_id),
+            "n_samples": int(len(group)),
+            "raw_score_range": (float(raw_scores.min()), float(raw_scores.max())),
+            "calibrated_score_range": (float(calibrated_scores.min()), float(calibrated_scores.max())),
+            "bin_edges": [float(x) for x in bin_edges],
+            "bin_centers": bin_centers,
+            "bin_frequencies": bin_frequencies,
+            "bin_counts": bin_counts,
+            "p75_threshold": p75,
+            "p90_threshold": p90,
+            "isotonic_regression": {
+                "X_min": float(iso_reg.X_min_),
+                "X_max": float(iso_reg.X_max_),
+                "increasing": bool(iso_reg.increasing),
+            },
+            # Store full calibration curve (subsampled for efficiency)
+            "calibration_curve": [
+                (float(raw_scores[i]), float(calibrated_scores[i]))
+                for i in range(0, len(raw_scores), max(1, len(raw_scores) // 1000))
+            ],
+        }
+    
+    return calibration_data
+
+
+def save_calibration_curves(
+    calibration_data: Dict[str, Dict[str, Any]],
+    data_root: str,
+    run_id: str,
+) -> Path:
+    """Save calibration curves as JSON artifact."""
+    path = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "confidence_calibration.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Convert to serializable format
+    payload = {
+        "schema_version": "v1",
+        "generated_by": "simple_position_sizer",
+        "run_id": run_id,
+        "n_strategies": len(calibration_data),
+        "strategies": calibration_data,
+    }
+    
+    path.write_text(json.dumps(payload, indent=2))
+    tprint(f"[Calibration] Saved calibration curves for {len(calibration_data)} strategies to {path}")
+    return path
+
+
+def load_calibration_curves(
+    data_root: str,
+    run_id: str,
+) -> Dict[str, Dict[str, Any]]:
+    """Load calibration curves from JSON artifact."""
+    path = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "confidence_calibration.json"
+    if not path.exists():
+        return {}
+    
+    payload = json.loads(path.read_text())
+    return payload.get("strategies", {})
+
+
+def calibrate_score(
+    raw_score: float,
+    strategy_id: str,
+    calibration_data: Dict[str, Dict[str, Any]],
+) -> float:
+    """Calibrate a single raw score using pre-computed calibration curve.
+    
+    Uses linear interpolation between calibration curve points.
+    
+    Args:
+        raw_score: Raw confidence score
+        strategy_id: Strategy identifier
+        calibration_data: Calibration data from compute_full_calibration_curves()
+        
+    Returns:
+        Calibrated score (well-calibrated probability estimate)
+    """
+    if strategy_id not in calibration_data:
+        return raw_score  # No calibration available
+    
+    strat_calib = calibration_data[strategy_id]
+    curve = strat_calib.get("calibration_curve", [])
+    
+    if not curve:
+        return raw_score
+    
+    # Sort by raw score
+    sorted_curve = sorted(curve, key=lambda x: x[0])
+    raw_points = [x[0] for x in sorted_curve]
+    calib_points = [x[1] for x in sorted_curve]
+    
+    # Find interpolation position
+    if raw_score <= raw_points[0]:
+        return calib_points[0]
+    if raw_score >= raw_points[-1]:
+        return calib_points[-1]
+    
+    # Linear interpolation
+    for i in range(len(raw_points) - 1):
+        if raw_points[i] <= raw_score <= raw_points[i + 1]:
+            # Linear interpolation
+            t = (raw_score - raw_points[i]) / (raw_points[i + 1] - raw_points[i])
+            return calib_points[i] + t * (calib_points[i + 1] - calib_points[i])
+    
+    return calib_points[-1]
+
+
+def filter_by_calibrated_confidence(
+    df: pd.DataFrame,
+    calibration_data: Dict[str, Dict[str, Any]],
+    percentile_threshold: float = 75.0,
+    strategy_col: str = "strategy",
+    score_col: str = "sizer_score",
+    calibrated_col: str = "calibrated_score",
+) -> pd.DataFrame:
+    """Filter trades where calibrated confidence ranks below threshold percentile.
+    
+    Args:
+        df: DataFrame with trades/scores
+        calibration_data: Strategy calibration data
+        percentile_threshold: Percentile cutoff (default: 75.0 for top 25%)
+        strategy_col: Strategy identifier column
+        score_col: Raw score column
+        calibrated_col: Column name to store calibrated scores
+        
+    Returns:
+        Filtered DataFrame with only passing trades
+    """
+    if not calibration_data or df.empty:
+        return df
+    
+    # Add calibrated scores
+    def get_threshold(row):
+        sid = row[strategy_col]
+        calib = calibration_data.get(sid, {})
+        # Get threshold for specified percentile
+        pct_key = f"p{int(percentile_threshold)}_threshold"
+        return calib.get(pct_key, calib.get("p75_threshold", 0.5))
+    
+    df["_threshold"] = df.apply(get_threshold, axis=1)
+    df[calibrated_col] = df.apply(
+        lambda row: calibrate_score(row[score_col], row[strategy_col], calibration_data),
+        axis=1
+    )
+    
+    # Filter: keep only if calibrated score >= threshold
+    mask = df[calibrated_col] >= df["_threshold"]
+    filtered = df[mask].copy()
+    
+    n_before = len(df)
+    n_after = len(filtered)
+    tprint(f"[Calibration] Filtered {n_before} -> {n_after} trades ({n_after/n_before*100:.1f}% kept)")
+    
+    # Clean up temp column
+    filtered = filtered.drop(columns=["_threshold"])
+    
+    return filtered
+
+
 def filter_qualified_strategies(
     strategies: List[Dict[str, Any]],
     *,
     min_profit_factor: float = 1.3,
     min_stability: float = 0.7,
     min_monthly_sortino: float = 1.0,
-    max_drawdown_vs_wallet: bool = True,
+    min_calmar_ratio: float = 1.0,
+    min_expectancy_tstat: float = 2.0,
 ) -> List[Dict[str, Any]]:
     qualified: List[Dict[str, Any]] = []
     for s in strategies:
         pf = float(s.get("profit_factor", 0.0) or 0.0)
         stab = float(s.get("stability", 0.0) or 0.0)
         ms = float(s.get("monthly_sortino", 0.0) or 0.0)
-        dd = float(s.get("max_drawdown", float("inf")) or float("inf"))
-        wpnl = float(s.get("wallet_pnl", 0.0) or 0.0)
+        calmar = float(s.get("calmar_ratio", 0.0) or 0.0)
+        etstat = float(s.get("expectancy_tstat", 0.0) or 0.0)
         if pf < min_profit_factor:
             continue
         if stab < min_stability:
             continue
         if ms < min_monthly_sortino:
             continue
-        if max_drawdown_vs_wallet and dd >= wpnl:
+        if calmar < min_calmar_ratio:
+            continue
+        if etstat < min_expectancy_tstat:
             continue
         qualified.append(s)
     return qualified
@@ -1417,6 +1689,8 @@ def evaluate_selection_profit_proxy(
                 "asset_group_pf_std": asset_stability["group_pf_std"],
                 "stability": stability,
                 "max_drawdown": mdd_pct,
+                "calmar_ratio": net_pnl / mdd_pct if mdd_pct > 1e-9 else float("inf"),
+                "expectancy_tstat": mean_ret / float(np.std(sized_rets)) if len(sized_rets) > 1 and float(np.std(sized_rets)) > 1e-9 else 0.0,
                 "trades_selected": len(sized_rets),
                 **wallet_sensitivity,
             }
@@ -3030,6 +3304,53 @@ def run_simple_position_sizer_from_artifacts(
 
             print(leaderboard_df.to_string(index=False))
             print("=" * 110 + "\n")
+
+    # =============================================================================
+    # Compute and Save Full Calibration Curves
+    # =============================================================================
+    try:
+        # Collect all OOF predictions for calibration
+        all_oof_preds = []
+        for strategy_id, res in strategy_results.items():
+            if "profit_proxy_table_" in res:
+                table = res["profit_proxy_table_"]
+                if isinstance(table, pd.DataFrame) and not table.empty:
+                    # Extract scored rows with predictions
+                    table["strategy"] = strategy_id
+                    all_oof_preds.append(table)
+        
+        if all_oof_preds:
+            oof_df = pd.concat(all_oof_preds, ignore_index=True)
+            
+            # Build realized returns DataFrame from trade_outcomes
+            realized_returns_df = pd.DataFrame()
+            if trade_outcomes is not None and not trade_outcomes.empty:
+                realized_returns_df = trade_outcomes[["symbol", "timestamp", "return"]].copy()
+                realized_returns_df = realized_returns_df.rename(columns={"return": "realized_return"})
+            
+            if not oof_df.empty and not realized_returns_df.empty:
+                tprint(f"[Calibration] Computing full calibration curves for {len(strategy_results)} strategies...")
+                
+                calibration_data = compute_full_calibration_curves(
+                    oof_predictions=oof_df,
+                    realized_returns=realized_returns_df,
+                    strategy_col="strategy",
+                    score_col="sizer_score" if "sizer_score" in oof_df.columns else "trading_score",
+                    return_col="realized_return",
+                    n_bins=10,
+                )
+                
+                if calibration_data:
+                    save_calibration_curves(calibration_data, data_root, run_id)
+                    tprint(f"[Calibration] Saved calibration curves for {len(calibration_data)} strategies")
+                else:
+                    tprint("[Calibration] No calibration data computed (insufficient samples)")
+            else:
+                tprint("[Calibration] Skipping calibration: missing OOF or realized returns data")
+        else:
+            tprint("[Calibration] No OOF predictions available for calibration")
+    except Exception as e:
+        logger.warning(f"[Calibration] Failed to compute calibration curves: {e}")
 
     return strategy_results
 

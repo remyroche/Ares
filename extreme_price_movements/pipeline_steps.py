@@ -1475,6 +1475,11 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         return
 
     panel = to_panel(dfs)
+    tprint(
+        f"Label data load complete: symbols={len(dfs)} "
+        f"horizons={horizons if horizons is not None else list(CANON_HORIZONS)} "
+        f"label_persist_incremental={bool(cfg.get('label_persist_incremental', False))}"
+    )
     # Removed random panel capping to preserve temporal integrity
     # SlicePlanner will be used later to determine walk-forward test set
 
@@ -1510,6 +1515,10 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     if feats is None or len(feats) == 0:
         tprint("ERROR: Features not found. Run feature_generation first.")
         return
+    tprint(
+        f"Label feature load complete: feature_families={len(feats)} "
+        f"symbols={len(train_syms)}"
+    )
     feats = _ensure_atr_pct_feature(feats, panel, cfg, symbols=train_syms)
 
     # Restrict to symbols present in both panel and features
@@ -1534,72 +1543,94 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     feats = _align_features_to_panel(feats, panel, valid_syms)
 
     # 1. Label Datasets
+    tprint(
+        f"Generating label datasets for {len(train_syms)} symbols "
+        f"across horizons={horizons if horizons is not None else list(CANON_HORIZONS)}"
+    )
     datasets = generate_label_datasets(
         panel, feats, mkt_gates, cfg, train_syms, ts_sig, None, horizons=horizons
     )
 
     # Use SlicePlanner to determine walk-forward test set and exclude it from training data
-    from extreme_price_movements.periods_symbols_management import (
-        EventSchema,
-        SlicePlanner,
-        SlicePlannerConfig,
-    )
-
-    # Build events from all labeled data
-    all_events = []
-    for name, df in datasets.items():
-        if "__ts__" in df.columns and "__symbol__" in df.columns:
-            all_events.append(df[["__ts__", "__symbol__"]].copy())
-
-    if all_events:
-        all_events_df = pd.concat(all_events, ignore_index=True).drop_duplicates()
-
-        events = pd.DataFrame(
-            {
-                "event_id": np.arange(len(all_events_df), dtype=np.int64),
-                "symbol": all_events_df["__symbol__"].values,
-                "t0": pd.to_datetime(
-                    all_events_df["__ts__"], utc=True, errors="coerce"
-                ),
-                "t1": pd.to_datetime(
-                    all_events_df["__ts__"], utc=True, errors="coerce"
-                ),
-            }
+    if bool(cfg.get("label_skip_slice_planner", False)):
+        tprint(
+            "Label slice-planner filtering disabled for label step; saving generated datasets directly."
+        )
+    else:
+        from extreme_price_movements.periods_symbols_management import (
+            EventSchema,
+            SlicePlanner,
+            SlicePlannerConfig,
         )
 
-        # SAVE EVENTS FOR DOWNSTREAM
-        _events_path = os.path.join(cfg["data_root"], "artifacts", run_id, "baseline_events.parquet")
-        os.makedirs(os.path.dirname(_events_path), exist_ok=True)
-        events.to_parquet(_events_path)
-        tprint(f"Saved baseline events for planning to {_events_path}")
+        # Build events from all labeled data
+        all_events = []
+        for name, df in datasets.items():
+            if "__ts__" in df.columns and "__symbol__" in df.columns:
+                all_events.append(df[["__ts__", "__symbol__"]].copy())
 
+        if all_events:
+            all_events_df = pd.concat(all_events, ignore_index=True).drop_duplicates()
 
-        # Use SlicePlanner to get training vs test split
-        planner_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
-        bundle = SlicePlanner(planner_cfg).build(events)
-
-        # Get all training indices (not test/walk-forward)
-        train_indices = set()
-        for plan in bundle["consumer_plans"].get("regime_search", []):
-            if plan.tag in ["fit_inner", "fit_outer", "predict_inner"]:
-                train_indices.update(plan.fit_idx)
-
-        # Filter datasets to only include training rows
-        if train_indices:
-            for name in datasets:
-                if len(datasets[name]) == len(all_events_df):
-                    original_len = len(datasets[name])
-                    datasets[name] = datasets[name].iloc[list(train_indices)].copy()
-                    tprint(
-                        f"Filtered {name} to {len(datasets[name])} training rows (excluded {original_len - len(datasets[name])} test rows)"
-                    )
-        else:
-            tprint(
-                "WARNING: No training indices found from SlicePlanner, using all data"
+            events = pd.DataFrame(
+                {
+                    "event_id": np.arange(len(all_events_df), dtype=np.int64),
+                    "symbol": all_events_df["__symbol__"].values,
+                    "t0": pd.to_datetime(
+                        all_events_df["__ts__"], utc=True, errors="coerce"
+                    ),
+                    "t1": pd.to_datetime(
+                        all_events_df["__ts__"], utc=True, errors="coerce"
+                    ),
+                }
             )
 
-    for name, df in datasets.items():
+            # SAVE EVENTS FOR DOWNSTREAM
+            _events_path = os.path.join(
+                cfg["data_root"], "artifacts", run_id, "baseline_events.parquet"
+            )
+            os.makedirs(os.path.dirname(_events_path), exist_ok=True)
+            events.to_parquet(_events_path)
+            tprint(f"Saved baseline events for planning to {_events_path}")
+
+            # Use SlicePlanner to get training vs test split
+            planner_cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+            bundle = SlicePlanner(planner_cfg).build(events)
+
+            # Get all training indices (not test/walk-forward)
+            train_indices = set()
+            for plan in bundle["consumer_plans"].get("regime_search", []):
+                if plan.tag in ["fit_inner", "fit_outer", "predict_inner"]:
+                    train_indices.update(plan.fit_idx)
+
+            # Filter datasets to only include training rows
+            if train_indices:
+                for name in datasets:
+                    if len(datasets[name]) == len(all_events_df):
+                        original_len = len(datasets[name])
+                        datasets[name] = datasets[name].iloc[list(train_indices)].copy()
+                        tprint(
+                            f"Filtered {name} to {len(datasets[name])} training rows (excluded {original_len - len(datasets[name])} test rows)"
+                        )
+            else:
+                tprint(
+                    "WARNING: No training indices found from SlicePlanner, using all data"
+                )
+
+    dataset_manifest: dict[str, dict[str, object]] = {}
+    for name in list(datasets.keys()):
+        df = datasets[name]
+        tprint(f"Saving label dataset {name}: rows={len(df)} cols={len(df.columns)}")
         save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
+        dataset_manifest[name] = {
+            "file": f"{name}.parquet",
+            "rows": int(len(df)),
+            "columns": list(df.columns),
+        }
+        del datasets[name]
+        if bool(cfg.get("label_gc_after_each_dataset", True)):
+            gc.collect()
+        tprint(f"Saved label dataset {name} and released in-memory frame")
 
     try:
         _manifest_path = os.path.join(
@@ -1607,19 +1638,12 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         )
         _manifest = {
             "run_id": run_id,
-            "datasets": {
-                name: {
-                    "file": f"{name}.parquet",
-                    "rows": int(len(df)),
-                    "columns": list(df.columns),
-                }
-                for name, df in datasets.items()
-            },
+            "datasets": dataset_manifest,
         }
         with open(_manifest_path, "w") as _mf:
             json.dump(_manifest, _mf, indent=2, sort_keys=True)
         tprint(
-            f"Wrote labels manifest with {len(datasets)} entries to {_manifest_path}"
+            f"Wrote labels manifest with {len(dataset_manifest)} entries to {_manifest_path}"
         )
     except Exception as _me:
         tprint(f"WARNING: labels_manifest write failed: {_me}")

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ from extreme_price_movements.offline_optimisers.params_store import (
     TBM_BEST_PARAMS_PER_CELL_CSV,
     TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV,
     TBM_GEOMETRY_GRID_CSV,
+    load_inference_candidate_mask_params_per_bucket,
 )
 from extreme_price_movements.strategy_registry import normalize_strategy_horizon
 
@@ -133,6 +135,34 @@ def _build_side_horizon_best_params(cell_df: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
+def _write_inference_candidate_bucket_params() -> Path:
+    strategies = load_inference_candidate_mask_params_per_bucket(top_n=2)
+    out_path = REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv"
+    if not strategies:
+        pd.DataFrame().to_csv(out_path, index=False)
+        return out_path
+
+    df = pd.DataFrame(strategies).copy()
+    if "mask_params" in df.columns:
+        df["mask_params_json"] = df["mask_params"].apply(
+            lambda v: json.dumps(v, sort_keys=True) if isinstance(v, dict) else str(v)
+        )
+        df = df.drop(columns=["mask_params"])
+
+    if {"trade_side", "source_horizon"}.issubset(df.columns):
+        counts = df.groupby(["trade_side", "source_horizon"]).size()
+        expected = {("long", 5), ("long", 10), ("short", 5), ("short", 10)}
+        missing = expected.difference(set(counts.index.tolist()))
+        if missing:
+            raise ValueError(f"Missing top-2 bucket coverage for: {sorted(missing)}")
+        if any(int(v) != 2 for v in counts.to_numpy()):
+            raise ValueError(f"Expected exactly 2 strategies per bucket, got counts={counts.to_dict()}")
+
+    df = df.sort_values(["trade_side", "source_horizon", "adjusted_ranking_score"], ascending=[True, True, False]).reset_index(drop=True)
+    df.to_csv(out_path, index=False)
+    return out_path
+
+
 def regenerate_simple_tbm_reports() -> tuple[Path, Path, Path]:
     if not TBM_GEOMETRY_GRID_CSV.exists():
         raise FileNotFoundError(TBM_GEOMETRY_GRID_CSV)
@@ -151,6 +181,7 @@ def regenerate_simple_tbm_reports() -> tuple[Path, Path, Path]:
     grid_df.to_csv(TBM_GEOMETRY_GRID_CSV, index=False)
     cell_df.to_csv(TBM_BEST_PARAMS_PER_CELL_CSV, index=False)
     side_df.to_csv(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV, index=False)
+    _write_inference_candidate_bucket_params()
     return TBM_GEOMETRY_GRID_CSV, TBM_BEST_PARAMS_PER_CELL_CSV, TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV
 
 

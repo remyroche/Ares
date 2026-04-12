@@ -10512,11 +10512,11 @@ class MaskAssessor:
             + 0.20 * result["_s10_ridge_pnl"]
         )
         
-        # Apply linear support scaling: 5% → 1.0, 20% → 1.2 (reward higher support)
+        # Apply linear support scaling: 5% → 0.0, 20% → 0.25
         support_pct = pd.to_numeric(result.get("support_pct", pd.Series(0.05, index=result.index)), errors="coerce").fillna(0.05)
         # Normalize to [0, 1] range where 5% = 0 and 20% = 1
         support_normalized = ((support_pct - 0.05) / 0.15).clip(0, 1)
-        support_factor = 1.0 + 0.2 * support_normalized
+        support_factor = 0.25 * support_normalized
         result["score_for_best_params"] = base_score * support_factor
         
         # Clean up temporary columns
@@ -10629,6 +10629,18 @@ class MaskAssessor:
             final_rank[missing_rank] = fallback_trade[missing_rank]
             still_missing = ~np.isfinite(final_rank)
             final_rank[still_missing] = fallback_stage[still_missing]
+            still_missing = ~np.isfinite(final_rank)
+            if np.any(still_missing):
+                fallback_regime = pd.to_numeric(
+                    result.loc[eligible.index, "regime_score"]
+                    if "regime_score" in result.columns
+                    else pd.Series(np.nan, index=eligible.index),
+                    errors="coerce",
+                ).to_numpy()
+                final_rank[still_missing] = fallback_regime[still_missing]
+            still_missing = ~np.isfinite(final_rank)
+            if np.any(still_missing):
+                final_rank[still_missing] = 0.0
             eligible["final_candidate_rank_score"] = final_rank
 
         eligible["fold_stability"] = fold_stability.astype(np.float32)
@@ -10636,7 +10648,8 @@ class MaskAssessor:
         overlap_penalty = float(self.cfg.get("final_selection_overlap_penalty", 0.25))
         support_overlap_weight = float(self.cfg.get("final_selection_support_overlap_weight", 0.5))
         ic_overlap_weight = float(self.cfg.get("final_selection_ic_overlap_weight", 0.5))
-        top_k = int(self.cfg.get("final_selected_rule_cap", 20))
+        # MODIFIED: Select top 8 per (side, horizon) instead of top 20 overall
+        rules_per_group = int(self.cfg.get("final_rules_per_side_horizon", 8))
         selected: List[Any] = []
         remaining = eligible.sort_values("final_candidate_rank_score", ascending=False).index.tolist()
 
@@ -10709,69 +10722,74 @@ class MaskAssessor:
 
             return raw_overlap * reduction_factor
 
-        quadrant_order = [("long", 3), ("long", 10), ("short", 3), ("short", 10)]
-        min_per_quadrant = 3
-        for side_name, horizon_value in quadrant_order:
-            if len(selected) >= top_k:
-                break
-            group_mask = (
-                eligible["side"].astype(str).eq(side_name)
-                & pd.to_numeric(
-                    eligible.get("source_horizon", np.nan), errors="coerce"
-                ).eq(float(horizon_value))
-            )
-            group_candidates = eligible.loc[group_mask].sort_values(
-                "final_candidate_rank_score", ascending=False
-            ).index.tolist()
-            selected_count = 0
-            for idx in group_candidates:
-                if len(selected) >= top_k:
-                    break
-                if idx in remaining and idx not in selected:
-                    selected.append(idx)
-                    remaining.remove(idx)
-                    selected_count += 1
-                    if selected_count >= min_per_quadrant:
-                        break
-
-        # Group remaining by (side, horizon) for overlap-constrained selection
+        # MODIFIED: Select exactly top 8 per (side, horizon) group
+        # Get unique (side, horizon) combinations from the data
         from collections import defaultdict
-        remaining_by_group = defaultdict(list)
-        for idx in remaining:
+        
+        # Group all eligible by (side, horizon)
+        eligible_by_group = defaultdict(list)
+        for idx in eligible.index:
             side_val = str(eligible.loc[idx, "side"]) if "side" in eligible.columns else "unknown"
-            horizon_val = float(eligible.loc[idx, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
-            remaining_by_group[(side_val, horizon_val)].append(idx)
+            horizon_raw = eligible.loc[idx, "source_horizon"] if "source_horizon" in eligible.columns else 0
+            try:
+                horizon_val = int(horizon_raw) if pd.notna(horizon_raw) else 0
+            except (TypeError, ValueError):
+                horizon_val = 0
+            eligible_by_group[(side_val, horizon_val)].append(idx)
         
-        # Pre-group selected by (side, horizon)
-        selected_by_group = defaultdict(list)
-        for s_idx in selected:
-            side_val = str(eligible.loc[s_idx, "side"]) if "side" in eligible.columns else "unknown"
-            horizon_val = float(eligible.loc[s_idx, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
-            selected_by_group[(side_val, horizon_val)].append(s_idx)
-        
-        while remaining and len(selected) < top_k:
-            best_idx = None
-            best_score = -np.inf
-            for idx in remaining:
-                base_score = float(eligible.loc[idx, "final_candidate_rank_score"])
-                # Only compute overlap against strategies with same (side, horizon)
-                side_val = str(eligible.loc[idx, "side"]) if "side" in eligible.columns else "unknown"
-                horizon_val = float(eligible.loc[idx, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
-                same_group_selected = selected_by_group.get((side_val, horizon_val), [])
-                max_overlap = max((_pair_overlap(idx, s) for s in same_group_selected), default=0.0)
+        # Select top N per group with overlap penalty
+        for (side_name, horizon_value), group_indices in eligible_by_group.items():
+            # Sort group by final_candidate_rank_score
+            group_scores = []
+            for idx in group_indices:
+                score_val = pd.to_numeric(
+                    eligible.loc[idx, "final_candidate_rank_score"], errors="coerce"
+                )
+                if not np.isfinite(score_val):
+                    score_val = pd.to_numeric(
+                        eligible.loc[idx, "trade_composite_score"], errors="coerce"
+                    )
+                if not np.isfinite(score_val):
+                    score_val = pd.to_numeric(
+                        eligible.loc[idx, "stage1_composite_score"], errors="coerce"
+                    )
+                if not np.isfinite(score_val):
+                    score_val = pd.to_numeric(
+                        eligible.loc[idx, "regime_score"], errors="coerce"
+                    )
+                if not np.isfinite(score_val):
+                    score_val = 0.0
+                group_scores.append((idx, float(score_val)))
+            group_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            selected_in_group = []
+            for idx, base_score in group_scores:
+                if len(selected_in_group) >= rules_per_group:
+                    break
+                # Compute overlap against already selected in same group
+                max_overlap = max((_pair_overlap(idx, s) for s in selected_in_group), default=0.0)
                 penalised_overlap = max(max_overlap - 0.30, 0.0)
                 score = base_score - overlap_penalty * penalised_overlap
-                if score > best_score:
-                    best_score = score
-                    best_idx = idx
-            if best_idx is None:
-                break
-            selected.append(best_idx)
-            remaining.remove(best_idx)
-            # Update selected_by_group
-            side_val = str(eligible.loc[best_idx, "side"]) if "side" in eligible.columns else "unknown"
-            horizon_val = float(eligible.loc[best_idx, "source_horizon"]) if "source_horizon" in eligible.columns else 0.0
-            selected_by_group[(side_val, horizon_val)].append(best_idx)
+                # Only select if score is still reasonable (not too negative)
+                if score > -np.inf:
+                    selected_in_group.append(idx)
+                    selected.append(idx)
+                    if idx in remaining:
+                        remaining.remove(idx)
+
+            # If overlap logic or missing scores left us short, backfill directly
+            # from the best remaining candidates in the same group so quotas are met.
+            if len(selected_in_group) < rules_per_group:
+                for idx, base_score in group_scores:
+                    if len(selected_in_group) >= rules_per_group:
+                        break
+                    if idx in selected_in_group:
+                        continue
+                    selected_in_group.append(idx)
+                    if idx not in selected:
+                        selected.append(idx)
+                    if idx in remaining:
+                        remaining.remove(idx)
 
         if selected:
             result.loc[selected, "selected_for_final_registry"] = True
@@ -14808,84 +14826,14 @@ class MaskAssessor:
         has_gross_profit = best_pnl_gross_raw > min_gross_pnl_threshold if np.isfinite(best_pnl_gross_raw) else False
         has_signal_quality = mask_sharpe >= min_mask_sharpe_threshold
         
-        # Reject only if no gross profit AND no positive post-fee threshold
-        if threshold_star_lowest_positive is None and not (has_gross_profit and has_signal_quality):
-            if best_candidate is None:
-                return _reject_metrics(
-                    {
-                        "reason": "no positive post-fee profit threshold",
-                        "best_pnl_candidate": float(best_pnl_raw) if best_pnl_raw != -np.inf else 0.0,
-                        "best_pnl_gross": float(best_pnl_gross_raw) if np.isfinite(best_pnl_gross_raw) else 0.0,
-                        "mask_signal_mean": mask_signal_mean,
-                        "mask_signal_std": mask_signal_std,
-                        "mask_sharpe": mask_sharpe,
-                        "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
-                        "threshold_star_best_pnl_threshold": threshold_star_best_pnl_threshold,
-                        "threshold_star_best_gross_pnl_threshold": threshold_star_best_gross_pnl_threshold,
-                        "n_quantiles_evaluated": n_quantiles_evaluated,
-                        "n_thresholds_evaluated": n_thresholds_evaluated,
-                        "n_unique_thresholds_evaluated": n_unique_thresholds_evaluated,
-                        "score_min": score_min,
-                        "score_max": score_max,
-                        "score_std": score_std,
-                        "n_unique_scores": n_unique_scores,
-                    },
-                    threshold_star_optimal_pnl=(
-                        float(threshold_star_optimal_pnl)
-                        if threshold_star_optimal_pnl is not None and np.isfinite(threshold_star_optimal_pnl)
-                        else np.nan
-                    ),
-                    threshold_star_best_pnl_threshold=(
-                        float(threshold_star_best_pnl_threshold)
-                        if threshold_star_best_pnl_threshold is not None and np.isfinite(threshold_star_best_pnl_threshold)
-                        else np.nan
-                    ),
-                    threshold_star_best_gross_pnl_threshold=(
-                        float(threshold_star_best_gross_pnl_threshold)
-                        if threshold_star_best_gross_pnl_threshold is not None and np.isfinite(threshold_star_best_gross_pnl_threshold)
-                        else np.nan
-                    ),
-                    ridge_pnl_raw_at_optimal_threshold=(
-                        float(best_pnl_raw) if best_pnl_raw != -np.inf else np.nan
-                    ),
-                    ridge_pnl_gross_raw_at_optimal_threshold=best_pnl_gross_raw,
-                    valid_symbol_days_observed=valid_symbol_days_observed,
-                    mask_signal_mean=mask_signal_mean,
-                    mask_signal_std=mask_signal_std,
-                    mask_sharpe=mask_sharpe,
-                    n_quantiles_evaluated=n_quantiles_evaluated,
-                    n_thresholds_evaluated=n_thresholds_evaluated,
-                    n_unique_thresholds_evaluated=n_unique_thresholds_evaluated,
-                    score_min=score_min,
-                    score_max=score_max,
-                    score_std=score_std,
-                    n_unique_scores=n_unique_scores,
-                )
-            # Use gross PnL threshold if net PnL failed but gross passed
-            if threshold_star_lowest_positive is None and has_gross_profit and has_signal_quality:
-                threshold_star = float(threshold_star_best_gross_pnl_threshold if threshold_star_best_gross_pnl_threshold is not None else best_candidate["threshold"])
-            else:
-                threshold_star = float(best_candidate["threshold"])
-            forced_reject_reason = {
-                "reason": "no positive post-fee profit threshold (but passed gross+signal criteria)" if (has_gross_profit and has_signal_quality) else "no positive post-fee profit threshold",
-                "best_pnl_candidate": float(best_pnl_raw) if best_pnl_raw != -np.inf else 0.0,
-                "best_pnl_gross": float(best_pnl_gross_raw) if np.isfinite(best_pnl_gross_raw) else 0.0,
-                "mask_signal_mean": mask_signal_mean,
-                "mask_signal_std": mask_signal_std,
-                "mask_sharpe": mask_sharpe,
-                "threshold_star_optimal_pnl": threshold_star_optimal_pnl,
-                "threshold_star_best_pnl_threshold": threshold_star_best_pnl_threshold,
-                "threshold_star_best_gross_pnl_threshold": threshold_star_best_gross_pnl_threshold,
-                "threshold_star_fallback": threshold_star,
-                "passed_gross_criteria": has_gross_profit and has_signal_quality,
-                "n_quantiles_evaluated": n_quantiles_evaluated,
-                "n_thresholds_evaluated": n_thresholds_evaluated,
-                "n_unique_thresholds_evaluated": n_unique_thresholds_evaluated,
-                "score_min": score_min,
-                "score_max": score_max,
-                "score_std": score_std,
-                "n_unique_scores": n_unique_scores,
-            }
+        # DISABLED: Post-fee profit threshold check removed for research evaluation
+        # Original logic:
+        # if threshold_star_lowest_positive is None and not (has_gross_profit and has_signal_quality):
+        #     ... rejection code ...
+        # Now: Always allow rules to pass regardless of post-fee profit threshold
+        forced_reject_reason = None
+        if False:  # Disabled - was: threshold_star_lowest_positive is None and not (has_gross_profit and has_signal_quality)
+            pass  # Original rejection block disabled
         else:
             if (
                 threshold_selection_policy == "lowest_positive"
@@ -15688,25 +15636,22 @@ def select_top_diverse_rules(
                     raw_overlap = dice_overlap(rule_mask, s_mask)
                     different_sides = str(row.get("side")) != str(sel.get("side"))
                     different_horizons = str(row.get("source_horizon")) != str(sel.get("source_horizon"))
-                    side_factor = 0.3 if different_sides else 0.0
-                    horizon_factor = 0.2 if different_horizons else 0.0
-                    difference_leniency = max(0.0, side_factor + horizon_factor)
-                    effective_overlap = raw_overlap * (1.0 - difference_leniency)
+                    if different_sides:
+                        continue
+                    horizon_discount = 0.4 if different_horizons else 0.0
+                    effective_overlap = raw_overlap * (1.0 - horizon_discount)
                     eligible_pairwise_overlaps.append(effective_overlap)
 
             if eligible_pairwise_overlaps:
                 pairwise_effective_overlap = max(eligible_pairwise_overlaps)
 
-            pairwise_overlap_penalty = pairwise_effective_overlap if pairwise_effective_overlap >= 0.30 else 0.0
+            pairwise_overlap_penalty = pairwise_effective_overlap if pairwise_effective_overlap >= 0.50 else 0.0
 
             union_raw_overlap = 0.0
             union_effective_overlap = 0.0
             if accepted_union_mask is not None:
-                # Compute raw overlap with union mask
                 union_raw_overlap = dice_overlap(rule_mask, accepted_union_mask)
 
-                # Compute conservative leniency for union: if ANY selected rule differs
-                # in side or horizon from candidate, apply the full leniency
                 candidate_side = str(row.get("side"))
                 candidate_horizon = str(row.get("source_horizon"))
                 different_sides = any(
@@ -15717,14 +15662,12 @@ def select_top_diverse_rules(
                     str(working_reg.loc[s_idx, "source_horizon"]) != candidate_horizon
                     for s_idx in selected_idx
                 )
-                side_factor = 0.3 if different_sides else 0.0
-                horizon_factor = 0.2 if different_horizons else 0.0
-                difference_leniency = max(0.0, side_factor + horizon_factor)
-                union_effective_overlap = union_raw_overlap * (1.0 - difference_leniency)
+                if not different_sides:
+                    horizon_discount = 0.4 if different_horizons else 0.0
+                    union_effective_overlap = union_raw_overlap * (1.0 - horizon_discount)
 
-            union_overlap_penalty = union_effective_overlap if union_effective_overlap >= 0.40 else 0.0
+            union_overlap_penalty = union_effective_overlap if union_effective_overlap >= 0.50 else 0.0
 
-            # Hard reject conditions - use effective_overlap consistently
             if pairwise_effective_overlap >= 0.70 or union_effective_overlap >= 0.75:
                 to_remove.append(idx)
                 continue

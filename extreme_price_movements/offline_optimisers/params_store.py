@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import ast
 import json
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
+
+import numpy as np
 
 # Import canonical constants from central config
 from extreme_price_movements.config import (
@@ -88,6 +91,37 @@ def _coerce_numeric_if_possible(v: Any) -> Any:
     return v
 
 
+def _parse_numeric_series(v: Any) -> np.ndarray:
+    if v is None:
+        return np.array([], dtype=np.float32)
+    if isinstance(v, np.ndarray):
+        return v.astype(np.float32, copy=False)
+    if isinstance(v, (list, tuple)):
+        try:
+            return np.asarray(v, dtype=np.float32)
+        except Exception:
+            return np.array([], dtype=np.float32)
+    if not isinstance(v, str):
+        return np.array([], dtype=np.float32)
+
+    s = v.strip()
+    if not s:
+        return np.array([], dtype=np.float32)
+
+    try:
+        parsed = ast.literal_eval(s)
+        if isinstance(parsed, (list, tuple)):
+            return np.asarray(parsed, dtype=np.float32)
+    except Exception:
+        pass
+
+    cleaned = s.strip("[]()")
+    arr = np.fromstring(cleaned, sep=" ", dtype=np.float32)
+    if arr.size == 0 and "," in cleaned:
+        arr = np.fromstring(cleaned.replace(",", " "), sep=" ", dtype=np.float32)
+    return arr
+
+
 def _read_best_params_csv(path: Path) -> Dict[str, Any]:
     import pandas as pd
 
@@ -133,6 +167,7 @@ def load_inference_candidate_mask_params_by_mode() -> Dict[str, Dict[str, Any]]:
 def load_inference_candidate_mask_params_per_bucket(
     top_n: int = 2,
     ranking_metric: str = "score_for_best_params",
+    classification_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """Load top-N dynamically generated strategy parameters from the mask-optimiser.
 
@@ -144,6 +179,8 @@ def load_inference_candidate_mask_params_per_bucket(
         ranking_metric: Metric to rank rules by (default: "score_for_best_params")
                       Options: "score_for_best_params", "composite_score", 
                             "learnability_step_c_score", "stage2_score", "mask_oof_corr"
+        classification_filter: Filter by production_classification (e.g., "production", 
+                            "research", or None for all). Default None allows all.
     
     Returns:
         List of strategy dicts, each with keys:
@@ -196,6 +233,15 @@ def load_inference_candidate_mask_params_per_bucket(
     if "source_horizon" not in df.columns:
         df["source_horizon"] = 100
     
+    # Apply classification filter if specified
+    if classification_filter is not None and "production_classification" in df.columns:
+        df = df[df["production_classification"].astype(str).str.lower() == classification_filter.lower()]
+        _log.info(f"[params_store] Filtered to {len(df)} rules with classification='{classification_filter}'")
+    
+    if df.empty:
+        _log.warning(f"[params_store] No rules match classification filter '{classification_filter}'")
+        return []
+    
     strategies = []
     
     if ranking_metric not in df.columns:
@@ -207,23 +253,100 @@ def load_inference_candidate_mask_params_per_bucket(
     else:
         df_sorted = df.sort_values(by=ranking_metric, ascending=False)
     
-    # Group by (side, source_horizon) and take top_n from each group
+    # Group by (side, source_horizon) and take top_n from each group.
+    # Within a group, apply a weak diversity penalty using IC-series overlap.
     grouped = df_sorted.groupby(["side", "source_horizon"], sort=False)
-    
+
+    overlap_weight = 0.15
+    if "ic_series" in df_sorted.columns:
+        ic_series_by_idx = {
+            idx: _parse_numeric_series(val)
+            for idx, val in df_sorted["ic_series"].items()
+        }
+    else:
+        ic_series_by_idx = {}
+
+    def _ic_overlap(idx_a: int, idx_b: int) -> float:
+        ic_a = ic_series_by_idx.get(idx_a, np.array([], dtype=np.float32))
+        ic_b = ic_series_by_idx.get(idx_b, np.array([], dtype=np.float32))
+        if ic_a.size < 2 or ic_b.size < 2:
+            return 0.0
+        min_len = min(ic_a.size, ic_b.size)
+        if min_len < 2:
+            return 0.0
+        a = ic_a[:min_len]
+        b = ic_b[:min_len]
+        valid = np.isfinite(a) & np.isfinite(b)
+        if int(valid.sum()) < 2:
+            return 0.0
+        a = a[valid]
+        b = b[valid]
+        if np.std(a) <= 1e-12 or np.std(b) <= 1e-12:
+            return 0.0
+        corr = float(np.corrcoef(a, b)[0, 1])
+        if not np.isfinite(corr):
+            return 0.0
+        return max(corr, 0.0)
+
     for (side, horizon), group in grouped:
-        top_rules = group.head(top_n)
-        for _, row in top_rules.iterrows():
+        raw_series = pd.to_numeric(group.get(ranking_metric, np.nan), errors="coerce")
+        finite_raw = raw_series[np.isfinite(raw_series.to_numpy())]
+        if finite_raw.empty:
+            raw_min = 0.0
+            raw_max = 0.0
+        else:
+            raw_min = float(finite_raw.min())
+            raw_max = float(finite_raw.max())
+        raw_span = max(raw_max - raw_min, 1e-12)
+
+        remaining = group.copy()
+        selected_indices: list[int] = []
+
+        while len(selected_indices) < top_n and not remaining.empty:
+            best_idx = None
+            best_adjusted_score = -np.inf
+            best_base_score = -np.inf
+
+            for idx, row in remaining.iterrows():
+                base_score = pd.to_numeric(row.get(ranking_metric, np.nan), errors="coerce")
+                if not np.isfinite(base_score):
+                    continue
+                normalized_base = float((float(base_score) - raw_min) / raw_span)
+                normalized_base = float(np.clip(normalized_base, 0.0, 1.0))
+                overlap = 0.0
+                for selected_idx in selected_indices:
+                    overlap = max(overlap, _ic_overlap(idx, selected_idx))
+                weak_factor = max(0.0, 1.0 - overlap_weight * overlap)
+                adjusted_score = normalized_base * weak_factor
+                if (
+                    adjusted_score > best_adjusted_score
+                    or (
+                        np.isclose(adjusted_score, best_adjusted_score)
+                        and float(base_score) > best_base_score
+                    )
+                ):
+                    best_idx = idx
+                    best_adjusted_score = adjusted_score
+                    best_base_score = float(base_score)
+
+            if best_idx is None:
+                break
+
+            selected_indices.append(best_idx)
+            row = remaining.loc[best_idx]
             key = str(row.get("canonical_key", ""))
-            side = str(row.get("side", "long")).lower()
-            if side == "mixed":
-                side = "long"
+            side_val = str(row.get("side", "long")).lower()
+            if side_val == "mixed":
+                side_val = "long"
             if not key:
+                remaining = remaining.drop(index=best_idx)
                 continue
-            
+
             import re
-            safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '_', key)
-            safe_id = re.sub(r'_+', '_', safe_id)
-            safe_id = safe_id.strip('_')
+
+            safe_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", key)
+            safe_id = re.sub(r"_+", "_", safe_id)
+            safe_id = safe_id.strip("_")
 
             move_bucket = ""
             explicit_move_bucket = str(row.get("move_bucket", "")).strip().lower()
@@ -238,13 +361,19 @@ def load_inference_candidate_mask_params_per_bucket(
 
             strategy = {
                 "strategy_id": safe_id,
-                "trade_side": side,
+                "trade_side": side_val,
                 "base_event_trigger": key,
                 "mask_params": {"canonical_key": key},
                 "source_target": str(row.get("source_target", "")).strip(),
                 "source_horizon": normalize_strategy_horizon(
                     row.get("source_horizon", horizon)
                 ),
+                "ranking_metric": ranking_metric,
+                "ranking_score": best_base_score,
+                "ranking_score_norm": float(
+                    np.clip((best_base_score - raw_min) / raw_span, 0.0, 1.0)
+                ),
+                "adjusted_ranking_score": best_adjusted_score,
             }
             if move_bucket:
                 strategy["move_bucket"] = move_bucket
@@ -253,6 +382,7 @@ def load_inference_candidate_mask_params_per_bucket(
                 )
 
             strategies.append(strategy)
+            remaining = remaining.drop(index=best_idx)
 
     _log.info(
         f"[params_store] Loaded {len(strategies)} strategies from {path} "

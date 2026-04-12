@@ -5,44 +5,6 @@
   "cost_pct": 0.003,
   "strategies": [
     {
-      "strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
-      "tp_mult": 1.0,
-      "sl_mult": 1.0,
-      "k_recent": 3,
-      "K_early": 3,
-      "lambda_path": 1.0,
-      "a1": 0.5,
-      "a2": 0.5,
-      "b1": 0.5,
-      "b2": 0.5,
-      "score_weight_trend": 1.0,
-      "score_weight_asym": 0.6,
-      "score_weight_choppiness": 0.9,
-      "metrics_baseline": {
-        "net_pnl": 7.043532372766787,
-        "sortino": 0.872782798077958,
-        "hit_rate": 0.4747225647348952,
-        "profit_factor": 1.5865214689458227,
-        "max_drawdown": 0.5847797788538237,
-        "n_trades": 811
-      },
-      "metrics_final": {
-        "net_pnl": 7.043532372766787,
-        "sortino": 0.872782798077958,
-        "hit_rate": 0.4747225647348952,
-        "profit_factor": 1.5865214689458227,
-        "max_drawdown": 0.5847797788538237,
-        "n_trades": 811
-      },
-      "source_model": "ridge",
-      "source_artifact": "ridge_sizer",
-      "selected_key": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
-      "selection_score": "sizer_score",
-      "baseline_net_pnl": 7.043532372766787,
-      "final_net_pnl": 7.043532372766787,
-      "net_pnl_delta": 0.0
-    },
-    {
       "strategy_id": "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
       "tp_mult": 1.0,
       "sl_mult": 1.0,
@@ -57,27 +19,23 @@
       "score_weight_asym": 0.6,
       "score_weight_choppiness": 0.9,
       "metrics_baseline": {
-        "net_pnl": 3.972574138539504,
-        "sortino": 0.2645317684345086,
-        "hit_rate": 0.4363490792634107,
-        "profit_factor": 1.189707688634799,
-        "max_drawdown": 0.9391830972696057,
-        "n_trades": 1249
+        "net_pnl": 20.08574845515936,
+        "sortino": 0.4833559315880645,
+        "hit_rate": 0.585213634181469,
+        "profit_factor": 2.0629983050319898,
+        "max_drawdown": 0.47379490802161606,
+        "n_trades": 4166
       },
       "metrics_final": {
-        "net_pnl": 3.972574138539504,
-        "sortino": 0.2645317684345086,
-        "hit_rate": 0.4363490792634107,
-        "profit_factor": 1.189707688634799,
-        "max_drawdown": 0.9391830972696057,
-        "n_trades": 1249
+        "net_pnl": 20.08574845515936,
+        "sortino": 0.4833559315880645,
+        "hit_rate": 0.585213634181469,
+        "profit_factor": 2.0629983050319898,
+        "max_drawdown": 0.47379490802161606,
+        "n_trades": 4166
       },
-      "source_model": "ridge",
-      "source_artifact": "ridge_sizer",
-      "selected_key": "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
-      "selection_score": "sizer_score",
-      "baseline_net_pnl": 3.972574138539504,
-      "final_net_pnl": 3.972574138539504,
+      "baseline_net_pnl": 20.08574845515936,
+      "final_net_pnl": 20.08574845515936,
       "net_pnl_delta": 0.0
     },
     {
@@ -85,7 +43,7 @@
       "tp_mult": 1.0,
       "sl_mult": 1.0,
       "k_recent": 3,
-      "K_early": 3,
+      "K_early": 5,
       "lambda_path": 1.0,
       "a1": 0.5,
       "a2": 0.5,
@@ -94,36 +52,298 @@
       "score_weight_trend": 1.0,
       "score_weight_asym": 0.6,
       "score_weight_choppiness": 0.9,
-      "metrics_baseline": {
-        "net_pnl": -1.8645601907888778,
-        "sortino": -0.7474889277096914,
-        "hit_rate": 0.27979274611398963,
-        "profit_factor": 0.5798986524736556,
-        "max_drawdown": 0.8699312518451234,
-        "n_trades": 386
-      },
+      "theta_fail": 1.5,
+      "theta_path": 1.0,
+      "d_path": 3,
+      "progress_threshold": 0.0,
+      "tp_conf_threshold": 0.7,
+      "sl_early_exit_threshold": 0.3,
+      "compression_start": 0.7,
+      "compression_full": 1.2,
+      "compression_max_fraction": 0.6,
+      "trail_activation_atr": 0.5,
+      "trail_giveback_atr": 0.2,
       "metrics_final": {
-        "net_pnl": -1.8645601907888778,
-        "sortino": -0.7474889277096914,
-        "hit_rate": 0.27979274611398963,
-        "profit_factor": 0.5798986524736556,
-        "max_drawdown": 0.8699312518451234,
-        "n_trades": 386
+        "net_pnl": -5.477249426099472,
+        "sortino": -0.7389003004352668,
+        "hit_rate": 0.3157486423584174,
+        "profit_factor": 0.2982066104096311,
+        "max_drawdown": 0.9961030410740802,
+        "n_trades": 1289
       },
+      "_param_history_": [
+        [
+          "theta_fail",
+          1.5,
+          -9.36253661531117,
+          -3.7392824345193802
+        ],
+        [
+          "theta_path",
+          1.0,
+          -3.940270301621408,
+          -1.5820396982058884
+        ],
+        [
+          "K_early",
+          5,
+          -3.940270301621408,
+          -1.5820396982058884
+        ],
+        [
+          "d_path",
+          3,
+          -3.940270301621408,
+          -1.5820396982058884
+        ],
+        [
+          "progress_threshold",
+          0.0,
+          -3.940270301621408,
+          -1.5820396982058884
+        ],
+        [
+          "tp_conf_threshold",
+          0.7,
+          -3.940270301621408,
+          -1.5820396982058884
+        ],
+        [
+          "sl_early_exit_threshold",
+          0.3,
+          -4.3505023677982395,
+          -1.561339966433123
+        ],
+        [
+          "compression_start",
+          0.7,
+          -4.3505023677982395,
+          -1.561339966433123
+        ],
+        [
+          "compression_full",
+          1.2,
+          -4.3505023677982395,
+          -1.561339966433123
+        ],
+        [
+          "compression_max_fraction",
+          0.6,
+          -4.3505023677982395,
+          -1.561339966433123
+        ],
+        [
+          "trail_activation_atr",
+          0.5,
+          -4.511265952108428,
+          -1.5011909598875792
+        ],
+        [
+          "trail_giveback_atr",
+          0.2,
+          -4.149160226193257,
+          -1.3280891999062152
+        ],
+        [
+          "continuation_conf_threshold",
+          0.7,
+          -4.149160226193257,
+          -1.3280891999062152
+        ],
+        [
+          "multiplier_band",
+          [
+            0.85,
+            1.15
+          ],
+          -4.149160226193257,
+          -1.3280891999062152
+        ],
+        [
+          "a1",
+          1.0,
+          -4.149160226193257,
+          -1.3280891999062152
+        ],
+        [
+          "b1",
+          1.0,
+          -4.149160226193257,
+          -1.3280891999062152
+        ]
+      ],
       "source_model": "ridge",
       "source_artifact": "ridge_sizer",
       "selected_key": "range_24h_pct_0_029937342_rolling_range_20_-1_0442592",
       "selection_score": "sizer_score",
-      "baseline_net_pnl": -1.8645601907888778,
-      "final_net_pnl": -1.8645601907888778,
-      "net_pnl_delta": 0.0
+      "metrics_baseline": {
+        "net_pnl": -11.945162875492127,
+        "sortino": -0.682553310612449,
+        "hit_rate": 0.31419705197827774,
+        "profit_factor": 0.1786129780947287,
+        "max_drawdown": 0.9999948497518273,
+        "n_trades": 1289
+      },
+      "baseline_net_pnl": -11.945162875492127,
+      "final_net_pnl": -5.477249426099472,
+      "net_pnl_delta": 6.467913449392655
+    },
+    {
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
+      "tp_mult": 1.0,
+      "sl_mult": 1.0,
+      "k_recent": 3,
+      "K_early": 5,
+      "lambda_path": 1.0,
+      "a1": 0.5,
+      "a2": 0.5,
+      "b1": 0.5,
+      "b2": 0.5,
+      "score_weight_trend": 1.0,
+      "score_weight_asym": 0.6,
+      "score_weight_choppiness": 0.9,
+      "theta_fail": 1.5,
+      "theta_path": 1.0,
+      "d_path": 3,
+      "progress_threshold": 0.0,
+      "tp_conf_threshold": 0.7,
+      "sl_early_exit_threshold": 0.5,
+      "compression_start": 0.7,
+      "compression_full": 1.2,
+      "compression_max_fraction": 0.6,
+      "trail_activation_atr": 0.5,
+      "trail_giveback_atr": 0.2,
+      "metrics_final": {
+        "net_pnl": -7.200321979597211,
+        "sortino": -0.3041116905572298,
+        "hit_rate": 0.48946395563770795,
+        "profit_factor": 0.5536298550771311,
+        "max_drawdown": 0.9994304467956365,
+        "n_trades": 2705
+      },
+      "_param_history_": [
+        [
+          "theta_fail",
+          1.5,
+          -23.576960840931164,
+          -8.981098177183421
+        ],
+        [
+          "theta_path",
+          1.0,
+          -5.817833415202797,
+          -2.777311883673072
+        ],
+        [
+          "K_early",
+          5,
+          -5.817833415202797,
+          -2.777311883673072
+        ],
+        [
+          "d_path",
+          3,
+          -5.817833415202797,
+          -2.777311883673072
+        ],
+        [
+          "progress_threshold",
+          0.0,
+          -5.817833415202797,
+          -2.777311883673072
+        ],
+        [
+          "tp_conf_threshold",
+          0.7,
+          -5.817833415202797,
+          -2.777311883673072
+        ],
+        [
+          "sl_early_exit_threshold",
+          0.5,
+          -5.817833415202797,
+          -2.777311883673072
+        ],
+        [
+          "compression_start",
+          0.7,
+          -5.817833415202797,
+          -2.777311883673072
+        ],
+        [
+          "compression_full",
+          1.2,
+          -5.817833415202797,
+          -2.777311883673072
+        ],
+        [
+          "compression_max_fraction",
+          0.6,
+          -5.817833415202797,
+          -2.777311883673072
+        ],
+        [
+          "trail_activation_atr",
+          0.5,
+          -6.087606284970418,
+          -2.654605500439182
+        ],
+        [
+          "trail_giveback_atr",
+          0.2,
+          -5.063631672964432,
+          -2.1366903066327794
+        ],
+        [
+          "continuation_conf_threshold",
+          0.7,
+          -5.063631672964432,
+          -2.1366903066327794
+        ],
+        [
+          "multiplier_band",
+          [
+            0.85,
+            1.15
+          ],
+          -5.063631672964432,
+          -2.1366903066327794
+        ],
+        [
+          "a1",
+          1.0,
+          -5.063631672964432,
+          -2.1366903066327794
+        ],
+        [
+          "b1",
+          1.0,
+          -5.063631672964432,
+          -2.1366903066327794
+        ]
+      ],
+      "source_model": "ridge",
+      "source_artifact": "ridge_sizer",
+      "selected_key": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
+      "selection_score": "sizer_score",
+      "metrics_baseline": {
+        "net_pnl": -21.918078164812187,
+        "sortino": -0.41210942988576427,
+        "hit_rate": 0.422550831792976,
+        "profit_factor": 0.27043631016538244,
+        "max_drawdown": 0.999999999865858,
+        "n_trades": 2705
+      },
+      "baseline_net_pnl": -21.918078164812187,
+      "final_net_pnl": -7.200321979597211,
+      "net_pnl_delta": 14.717756185214975
     },
     {
       "strategy_id": "loc_prev_day_range_pos_48_0_51315737_realized_volatility_24h_0_3200236_ret24h_-0_31203175_rsi_slope_-1_8608685",
       "tp_mult": 1.0,
       "sl_mult": 1.0,
       "k_recent": 3,
-      "K_early": 3,
+      "K_early": 5,
       "lambda_path": 1.0,
       "a1": 0.5,
       "a2": 0.5,
@@ -132,31 +352,143 @@
       "score_weight_trend": 1.0,
       "score_weight_asym": 0.6,
       "score_weight_choppiness": 0.9,
-      "metrics_baseline": {
-        "net_pnl": -3.3964071363150437,
-        "sortino": -0.3299392868549473,
-        "hit_rate": 0.3362521891418564,
-        "profit_factor": 0.7875140922423215,
-        "max_drawdown": 0.9960309109190746,
-        "n_trades": 1142
-      },
+      "theta_fail": 1.5,
+      "theta_path": 1.0,
+      "d_path": 3,
+      "progress_threshold": 0.0,
+      "tp_conf_threshold": 0.7,
+      "sl_early_exit_threshold": 0.5,
+      "compression_start": 0.7,
+      "compression_full": 1.2,
+      "compression_max_fraction": 0.6,
+      "trail_activation_atr": 1.2,
+      "trail_giveback_atr": 0.2,
       "metrics_final": {
-        "net_pnl": -3.3964071363150437,
-        "sortino": -0.3299392868549473,
-        "hit_rate": 0.3362521891418564,
-        "profit_factor": 0.7875140922423215,
-        "max_drawdown": 0.9960309109190746,
-        "n_trades": 1142
+        "net_pnl": -9.718616613563151,
+        "sortino": -0.36311240893628155,
+        "hit_rate": 0.46335697399527187,
+        "profit_factor": 0.5698682422456108,
+        "max_drawdown": 0.9999555837241774,
+        "n_trades": 3807
       },
+      "_param_history_": [
+        [
+          "theta_fail",
+          1.5,
+          -31.20052800619044,
+          -11.569529723165557
+        ],
+        [
+          "theta_path",
+          1.0,
+          -7.921928255939856,
+          -2.9409787138216195
+        ],
+        [
+          "K_early",
+          5,
+          -7.921928255939856,
+          -2.9409787138216195
+        ],
+        [
+          "d_path",
+          3,
+          -7.921928255939856,
+          -2.9409787138216195
+        ],
+        [
+          "progress_threshold",
+          0.0,
+          -7.921928255939856,
+          -2.9409787138216195
+        ],
+        [
+          "tp_conf_threshold",
+          0.7,
+          -7.921928255939856,
+          -2.9409787138216195
+        ],
+        [
+          "sl_early_exit_threshold",
+          0.5,
+          -7.921928255939856,
+          -2.9409787138216195
+        ],
+        [
+          "compression_start",
+          0.7,
+          -7.921928255939856,
+          -2.9409787138216195
+        ],
+        [
+          "compression_full",
+          1.2,
+          -7.921928255939856,
+          -2.9409787138216195
+        ],
+        [
+          "compression_max_fraction",
+          0.6,
+          -7.921928255939856,
+          -2.9409787138216195
+        ],
+        [
+          "trail_activation_atr",
+          1.2,
+          -7.7550543934386225,
+          -2.8929452959205952
+        ],
+        [
+          "trail_giveback_atr",
+          0.2,
+          -7.111169787710533,
+          -2.6074468258526173
+        ],
+        [
+          "continuation_conf_threshold",
+          0.7,
+          -7.111169787710533,
+          -2.6074468258526173
+        ],
+        [
+          "multiplier_band",
+          [
+            0.85,
+            1.15
+          ],
+          -7.111169787710533,
+          -2.6074468258526173
+        ],
+        [
+          "a1",
+          1.0,
+          -7.111169787710533,
+          -2.6074468258526173
+        ],
+        [
+          "b1",
+          1.0,
+          -7.111169787710533,
+          -2.6074468258526173
+        ]
+      ],
       "source_model": "ridge",
       "source_artifact": "ridge_sizer",
       "selected_key": "loc_prev_day_range_pos_48_0_51315737_realized_volatility_24h_0_3200236_ret24h_-0_31203175_rsi_slope_-1_8608685",
       "selection_score": "sizer_score",
-      "baseline_net_pnl": -3.3964071363150437,
-      "final_net_pnl": -3.3964071363150437,
-      "net_pnl_delta": 0.0
+      "metrics_baseline": {
+        "net_pnl": -23.952211580149832,
+        "sortino": -0.351322031712892,
+        "hit_rate": 0.4171263462043604,
+        "profit_factor": 0.36066511986897865,
+        "max_drawdown": 0.9999999999834017,
+        "n_trades": 3807
+      },
+      "baseline_net_pnl": -23.952211580149832,
+      "final_net_pnl": -9.718616613563151,
+      "net_pnl_delta": 14.233594966586681
     }
   ],
-  "best_strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
-  "best_source_model": "ridge"
+  "best_strategy_id": "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
+  "best_source_model": ""
 }

@@ -161,7 +161,7 @@ def _build_parquet_ts_filters(
                     period_start = max(period_start, start_ts)
                 if end_ts is not None:
                     period_end = min(period_end, end_ts)
-                if period_end > period_start:
+                if period_end is not None and period_start is not None and period_end > period_start:
                     clipped.append((period_start, period_end))
             periods = clipped
 
@@ -170,13 +170,15 @@ def _build_parquet_ts_filters(
 
     filters = []
     for period_start, period_end in periods:
+        if period_start is None or period_end is None:
+            continue
         filters.append(
             [
                 ("ts", ">=", period_start.to_pydatetime()),
                 ("ts", "<", period_end.to_pydatetime()),
             ]
         )
-    return filters
+    return filters if filters else None
 
 
 def _ensure_feature_frame_index(
@@ -1570,10 +1572,17 @@ def load_features_selected(
             if index_reason == "invalid_ts_column":
                 tprint(f"Skipping feature file {fpath}: invalid ts column")
                 continue
-            if start_ts is not None and parquet_filters is None:
-                df = df[df.index >= start_ts]
-            if end_ts is not None and parquet_filters is None:
-                df = df[df.index <= end_ts]
+            _idx = df.index
+            if isinstance(_idx, pd.DatetimeIndex) and _idx.tz is not None:
+                _s = start_ts.tz_localize(_idx.tz) if start_ts is not None and start_ts.tzinfo is None else start_ts
+                _e = end_ts.tz_localize(_idx.tz) if end_ts is not None and end_ts.tzinfo is None else end_ts
+            else:
+                _s = start_ts
+                _e = end_ts
+            if _s is not None and parquet_filters is None:
+                df = df[df.index >= _s]
+            if _e is not None and parquet_filters is None:
+                df = df[df.index <= _e]
             if normalized_periods and parquet_filters is None:
                 df = _apply_allowed_periods_mask(df, normalized_periods)
             if df.empty:

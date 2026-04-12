@@ -591,6 +591,8 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         return
 
     tprint(f"Labels mode. ts_sig={ts_sig} horizons={horizons}")
+    cfg["label_skip_slice_planner"] = True
+    cfg["label_persist_incremental"] = True
     _load_mask_params_by_mode(cfg)
 
     if store is None:

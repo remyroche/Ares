@@ -6287,7 +6287,43 @@ def generate_label_datasets(
     panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, horizons=None
 ):
     tprint(f"Entering function: generate_label_datasets in training.py")
+    run_id = pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S")
     datasets = {}
+    incremental_persist = bool(cfg.get("label_persist_incremental", False))
+    persisted_manifest: dict[str, dict[str, object]] = {}
+    base_variant_buffer: dict[tuple[str, int], dict[str, pd.DataFrame]] = {}
+    requested_horizons = list(horizons) if horizons else list(CANON_HORIZONS)
+    tprint(
+        f"Label dataset builder: symbols={len(syms)} horizons={requested_horizons} "
+        f"incremental_persist={incremental_persist}"
+    )
+
+    def _persist_label_artifact(name: str, df: pd.DataFrame) -> None:
+        save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
+        persisted_manifest[name] = {
+            "file": f"{name}.parquet",
+            "rows": int(len(df)),
+            "columns": list(df.columns),
+        }
+
+    def _maybe_flush_base_variant(strategy_id: str, horizon: int) -> None:
+        if not incremental_persist:
+            return
+        key = (strategy_id, int(horizon))
+        buf = base_variant_buffer.get(key)
+        if not buf:
+            return
+        tight_df = buf.get("tight")
+        wide_df = buf.get("wide")
+        if tight_df is None or wide_df is None:
+            return
+        base_key = f"train_{strategy_id}_{int(horizon)}"
+        base_df = pd.concat([tight_df, wide_df], axis=0, ignore_index=True)
+        _persist_label_artifact(base_key, base_df)
+        del base_df
+        del base_variant_buffer[key]
+        if bool(cfg.get("label_gc_after_each_dataset", True)):
+            gc.collect()
 
     # Always resolve + enforce persisted offline-optimal candidate ranges before any event generation.
     cfg = _resolve_training_cfg_with_offline_optimisers(cfg)
@@ -6366,8 +6402,6 @@ def generate_label_datasets(
     missing_cells: list[tuple[int, str]] = []
 
     strategies = get_strategies(cfg)
-    requested_horizons = list(horizons) if horizons else None
-    run_id = pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S")
     strategy_horizons = {
         s["strategy_id"]: strategy_runtime_horizons(
             s, cfg, requested_horizons=requested_horizons
@@ -6375,6 +6409,9 @@ def generate_label_datasets(
         for s in strategies
     }
     active_horizons = sorted({int(h) for hs in strategy_horizons.values() for h in hs})
+    tprint(
+        f"Label dataset builder: strategies={len(strategies)} active_horizons={active_horizons}"
+    )
     # Hash based on horizons + strategy_ids
     cfg_hash = _stable_cfg_subset_hash(
         cfg, active_horizons, [s["strategy_id"] for s in strategies]
@@ -6478,6 +6515,11 @@ def generate_label_datasets(
                 pickle.dump(tb_cache[key], fh, protocol=pickle.HIGHEST_PROTOCOL)
             with open(p_geom, "wb") as fh:
                 pickle.dump(geom_cache[key], fh, protocol=pickle.HIGHEST_PROTOCOL)
+        tprint(
+            f"TB cache refresh complete: hits={len(tb_cache) - len(missing_cells)} misses={len(missing_cells)}"
+        )
+    else:
+        tprint(f"TB cache fully satisfied from disk: cells={len(tb_cache)}")
 
     if bool(cfg.get("base_geometry_train_variants", True)):
         _missing_variant_keys = []
@@ -6501,6 +6543,8 @@ def generate_label_datasets(
             for _key, _val in _geom_all.items():
                 if isinstance(_key, tuple) and len(_key) == 3:  # (H, s_id, variant)
                     geom_cache[_key] = _downcast_geom_payload(_val)
+        else:
+            tprint("Base-geometry variant cache already satisfied for all requested cells.")
 
     def _prepare_events_once_for_strategy(_strategy: dict):
         _prep_lookup_cache: dict = {}
@@ -6736,8 +6780,19 @@ def generate_label_datasets(
                         if variant is None
                         else f"train_{k}_{H}_{variant}"
                     )
-                    datasets[_ds_key] = _downcast_label_dataset_df(df_out, copy=False)
-                    del df_out, X, y, y_ret, w, meta_idx, lbl_vals
+                    df_out = _downcast_label_dataset_df(df_out, copy=False)
+                    if incremental_persist:
+                        _persist_label_artifact(_ds_key, df_out)
+                        if variant in {"tight", "wide"}:
+                            base_key = (str(k), int(H))
+                            base_variant_buffer.setdefault(base_key, {})[
+                                variant
+                            ] = df_out
+                            _maybe_flush_base_variant(str(k), int(H))
+                        del df_out
+                    else:
+                        datasets[_ds_key] = df_out
+                    del X, y, y_ret, w, meta_idx, lbl_vals
                     if bool(cfg.get("label_gc_after_each_dataset", True)):
                         gc.collect()
     else:
@@ -6755,29 +6810,39 @@ def generate_label_datasets(
                 _ds_key = (
                     f"train_{k}_{H}" if variant is None else f"train_{k}_{H}_{variant}"
                 )
-                datasets[_ds_key] = _downcast_label_dataset_df(df_out, copy=False)
-                del df_out, X, y, y_ret, w, meta_idx, lbl_vals
+                df_out = _downcast_label_dataset_df(df_out, copy=False)
+                if incremental_persist:
+                    _persist_label_artifact(_ds_key, df_out)
+                    if variant in {"tight", "wide"}:
+                        base_key = (str(k), int(H))
+                        base_variant_buffer.setdefault(base_key, {})[variant] = df_out
+                        _maybe_flush_base_variant(str(k), int(H))
+                    del df_out
+                else:
+                    datasets[_ds_key] = df_out
+                del X, y, y_ret, w, meta_idx, lbl_vals
                 if bool(cfg.get("label_gc_after_each_dataset", True)):
                     gc.collect()
 
     # Synthesize the canonical base training dataset by concatenating required
     # tight/wide variants. We retain the canonical key name for downstream
     # compatibility.
-    strategies = get_strategies(cfg)
-    for strat in strategies:
-        k = strat["strategy_id"]
-        for H in strategy_horizons.get(k, []):
-            H_int = int(H)
-            _tight_key = f"train_{k}_{H_int}_tight"
-            _wide_key = f"train_{k}_{H_int}_wide"
-            _base_key = f"train_{k}_{H_int}"
-            if _tight_key not in datasets or _wide_key not in datasets:
-                continue
-            _parts = [datasets[_tight_key], datasets[_wide_key]]
-            _parts = [p for p in _parts if p is not None and not p.empty]
-            if not _parts:
-                continue
-            datasets[_base_key] = pd.concat(_parts, axis=0, ignore_index=True)
+    if not incremental_persist:
+        strategies = get_strategies(cfg)
+        for strat in strategies:
+            k = strat["strategy_id"]
+            for H in strategy_horizons.get(k, []):
+                H_int = int(H)
+                _tight_key = f"train_{k}_{H_int}_tight"
+                _wide_key = f"train_{k}_{H_int}_wide"
+                _base_key = f"train_{k}_{H_int}"
+                if _tight_key not in datasets or _wide_key not in datasets:
+                    continue
+                _parts = [datasets[_tight_key], datasets[_wide_key]]
+                _parts = [p for p in _parts if p is not None and not p.empty]
+                if not _parts:
+                    continue
+                datasets[_base_key] = pd.concat(_parts, axis=0, ignore_index=True)
 
     tprint("Spike anatomy and specialist model datasets are disabled.")
 
@@ -6819,6 +6884,21 @@ def generate_label_datasets(
                 "Duplicate label datasets detected across distinct strategies: "
                 + "; ".join(",".join(v) for v in _dupes)
             )
+
+    if incremental_persist:
+        _manifest_path = os.path.join(
+            cfg["data_root"], "artifacts", run_id, "labels", "labels_manifest.json"
+        )
+        _manifest = {
+            "run_id": run_id,
+            "datasets": persisted_manifest,
+        }
+        with open(_manifest_path, "w") as _mf:
+            json.dump(_manifest, _mf, indent=2, sort_keys=True)
+        tprint(
+            f"Wrote labels manifest with {len(persisted_manifest)} entries to {_manifest_path}"
+        )
+        return {}
 
     return datasets
 

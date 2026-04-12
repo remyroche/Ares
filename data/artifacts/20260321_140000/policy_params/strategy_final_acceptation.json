@@ -1,0 +1,69 @@
+{
+  "schema_version": "v1",
+  "generated_by": "policy_optimiser",
+  "run_id": "20260321_140000",
+  "hard_gates": {
+    "profit_factor_min": 1.3,
+    "stability_min": 0.7,
+    "monthly_sortino_min": 1.0,
+    "max_drawdown_lt_wallet_pnl": true
+  },
+  "strategies": [
+    {
+      "strategy_id": "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
+      "strategy_description": "thr=70.0% | sel=0.300",
+      "metrics": {
+        "asset_group_cv_pnl": 1.5716870151883113,
+        "asset_group_positive_share": 0.6744186046511628,
+        "hit_rate": 0.5103216514642342,
+        "max_drawdown": 0.9279698084618444,
+        "monthly_group_cv_pnl": 1.7788152314265044,
+        "monthly_pnl_std": 2.0428103698817712,
+        "monthly_sortino": 1.6045848011357893,
+        "net_pnl": 20.671390533447266,
+        "pnl_per_trade": 0.4961927636449176,
+        "profit_factor": 1.4291817300669298,
+        "selection_frac": 0.3,
+        "side": "",
+        "source_horizon": NaN,
+        "source_target": "",
+        "stability": 0.9665124769206118,
+        "strategy_id": "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
+        "threshold_pct": 70.0,
+        "trades_per_day": 11.413698630136986,
+        "wallet_pnl": 2.5072765256178378,
+        "strategy_description": "thr=70.0% | sel=0.300",
+        "D": 0.9248770945782859
+      },
+      "n_trades": 0
+    },
+    {
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
+      "strategy_description": "short | returns_target | h10 | thr=90.0% | sel=0.100",
+      "metrics": {
+        "asset_group_cv_pnl": 2.1829725532338733,
+        "asset_group_positive_share": 0.6458333333333334,
+        "hit_rate": 0.4920517560073937,
+        "max_drawdown": 0.7049919017130297,
+        "monthly_group_cv_pnl": 2.837074147873454,
+        "monthly_pnl_std": 2.078041062131434,
+        "monthly_sortino": 1.5286321308219328,
+        "net_pnl": 13.184266090393066,
+        "pnl_per_trade": 0.48740355232506716,
+        "profit_factor": 1.469500597033984,
+        "selection_frac": 0.1,
+        "side": "short",
+        "source_horizon": 10.0,
+        "source_target": "returns_target",
+        "stability": 0.9018941716082666,
+        "strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
+        "threshold_pct": 90.0,
+        "trades_per_day": 7.410958904109589,
+        "wallet_pnl": 1.6113592978976405,
+        "strategy_description": "short | returns_target | h10 | thr=90.0% | sel=0.100",
+        "D": 0.8628039145816737
+      },
+      "n_trades": 0
+    }
+  ]
+}

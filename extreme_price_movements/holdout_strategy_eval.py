@@ -10,7 +10,11 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.config import CFG as DEFAULT_CFG
-from extreme_price_movements.data_store import PartitionedOHLCVStore, load_features_selected
+from extreme_price_movements.data_store import (
+    PartitionedOHLCVStore,
+    append_symbol_features,
+    load_features_selected,
+)
 from extreme_price_movements.features import (
     add_regime_gates,
     compute_features_hourly,
@@ -48,6 +52,10 @@ def _fill_nonfinite(values: np.ndarray, neutral: float = 0.0) -> np.ndarray:
     fill = float(np.nanmedian(arr[finite])) if finite.any() else float(neutral)
     arr[~finite] = fill
     return arr
+
+
+_FEATURE_FRAME_CACHE: dict[tuple[str, str, tuple[str, ...]], pd.DataFrame] = {}
+_COMPATIBLE_SYMBOLS_CACHE: dict[tuple[str, str, tuple[str, ...]], List[str]] = {}
 
 
 def _freeze_path(data_root: str, run_id: str) -> Path:
@@ -92,14 +100,27 @@ def _load_symbol_features(
     symbol: str,
     panel: Dict[str, pd.DataFrame],
     required_feature_keys: set[str],
+    extra_required_keys: Optional[set[str]] = None,
 ) -> pd.DataFrame:
+    effective_required_keys = set(required_feature_keys)
+    if extra_required_keys:
+        effective_required_keys.update(extra_required_keys)
+
+    cache_key = (run_id, symbol, tuple(sorted(effective_required_keys)))
+    cached = _FEATURE_FRAME_CACHE.get(cache_key)
+    if cached is not None:
+        tprint(
+            f"Holdout feature cache hit: symbol={symbol} keys={len(effective_required_keys)} rows={len(cached)} cols={len(cached.columns)}"
+        )
+        return cached.copy()
+
     lookback_hours = max(24, int(np.ceil(len(panel["open"]) / 4.0)) + 24)
     feature_cfg = dict(DEFAULT_CFG)
     gated_required = any(
         isinstance(key, str)
         and key
         and (key in {"G_VOL", "G_TREND"} or "_G_VOL_" in key or "_G_TREND_" in key)
-        for key in required_feature_keys
+        for key in effective_required_keys
     )
     if gated_required:
         feature_cfg["enable_gated_features"] = True
@@ -110,10 +131,16 @@ def _load_symbol_features(
         data_root=data_root,
         cfg=feature_cfg,
         lookback_hours=lookback_hours,
-        required_feature_keys=required_feature_keys,
+        required_feature_keys=effective_required_keys,
+    )
+    cache_path = (
+        Path(data_root)
+        / "features"
+        / run_id
+        / f"symbol={symbol.replace('/', '_')}.parquet"
     )
     if feature_map:
-        feat_df = pd.DataFrame()
+        feat_series: Dict[str, pd.Series] = {}
         for feat_name, feat_series_df in feature_map.items():
             if not isinstance(feat_series_df, pd.DataFrame) or feat_series_df.empty:
                 continue
@@ -125,12 +152,34 @@ def _load_symbol_features(
                 continue
             if not isinstance(series, pd.Series) or series.empty:
                 continue
-            if feat_df.empty:
-                feat_df = pd.DataFrame(index=series.index)
-            feat_df[feat_name] = series.astype(np.float32)
+            feat_series[feat_name] = series.astype(np.float32)
+        feat_df = pd.DataFrame(feat_series) if feat_series else pd.DataFrame()
         missing_required = {
-            k for k in required_feature_keys if k not in feat_df.columns
+            k for k in effective_required_keys if k not in feat_df.columns
         }
+        tprint(
+            f"Holdout feature load: symbol={symbol} loaded={len(feat_df.columns)} required={len(effective_required_keys)} missing={len(missing_required)}"
+        )
+        if missing_required and not feat_df.empty:
+            tprint(
+                f"Holdout feature backfill: symbol={symbol} missing_keys={len(missing_required)}"
+            )
+            feat_df = _backfill_missing_feature_columns(
+                feat_df=feat_df,
+                data_root=data_root,
+                run_id=run_id,
+                symbol=symbol,
+                missing_keys=missing_required,
+            )
+            feat_df = _backfill_gated_interaction_columns(
+                feature_df=feat_df,
+                panel=panel,
+                panel_symbol=symbol,
+                missing_keys=missing_required,
+            )
+            missing_required = {
+                k for k in effective_required_keys if k not in feat_df.columns
+            }
         if len(feat_df.columns) >= 20 and not missing_required:
             feat_df = feat_df.sort_index()
             if not isinstance(feat_df.index, pd.DatetimeIndex):
@@ -139,6 +188,16 @@ def _load_symbol_features(
                 feat_df.index = feat_df.index.tz_localize("UTC")
             else:
                 feat_df.index = feat_df.index.tz_convert("UTC")
+            try:
+                append_symbol_features(cache_path.as_posix(), symbol, feat_df)
+            except Exception as exc:
+                tprint(
+                    f"Warning: failed to persist completed holdout features for {symbol}: {exc}"
+                )
+            tprint(
+                f"Holdout feature persist complete: symbol={symbol} rows={len(feat_df)} cols={len(feat_df.columns)}"
+            )
+            _FEATURE_FRAME_CACHE[cache_key] = feat_df.copy()
             return feat_df
         if missing_required:
             tprint(
@@ -151,6 +210,9 @@ def _load_symbol_features(
     compute_panel = {
         key: df.copy() for key, df in panel.items() if isinstance(df, pd.DataFrame)
     }
+    tprint(
+        f"Holdout feature full recompute start: symbol={symbol} required={len(effective_required_keys)}"
+    )
     mkt_df = compute_market_features(compute_panel, [symbol.replace("_", "/")])
     mkt_gates = add_regime_gates(
         mkt_df,
@@ -161,11 +223,11 @@ def _load_symbol_features(
         compute_panel,
         mkt_gates,
         feature_cfg,
-        requested_feature_keys=sorted(required_feature_keys)
-        if required_feature_keys
+        requested_feature_keys=sorted(effective_required_keys)
+        if effective_required_keys
         else None,
     )
-    feat_df = pd.DataFrame()
+    feat_series = {}
     for feat_name, feat_value in full_feats.items():
         if isinstance(feat_value, pd.DataFrame):
             feat_series_df = feat_value
@@ -181,9 +243,8 @@ def _load_symbol_features(
         series = feat_series_df[symbol]
         if not isinstance(series, pd.Series) or series.empty:
             continue
-        if feat_df.empty:
-            feat_df = pd.DataFrame(index=series.index)
-        feat_df[feat_name] = series.astype(np.float32)
+        feat_series[feat_name] = series.astype(np.float32)
+    feat_df = pd.DataFrame(feat_series) if feat_series else pd.DataFrame()
     if not feat_df.empty:
         feat_df = feat_df.sort_index()
         if not isinstance(feat_df.index, pd.DatetimeIndex):
@@ -192,6 +253,16 @@ def _load_symbol_features(
             feat_df.index = feat_df.index.tz_localize("UTC")
         else:
             feat_df.index = feat_df.index.tz_convert("UTC")
+        try:
+            append_symbol_features(cache_path.as_posix(), symbol, feat_df)
+        except Exception as exc:
+            tprint(
+                f"Warning: failed to persist recomputed holdout features for {symbol}: {exc}"
+            )
+        tprint(
+            f"Holdout feature recompute complete: symbol={symbol} rows={len(feat_df)} cols={len(feat_df.columns)}"
+        )
+        _FEATURE_FRAME_CACHE[cache_key] = feat_df.copy()
         return feat_df
 
     raise FileNotFoundError(f"No usable features found for {symbol}")
@@ -423,6 +494,52 @@ def _load_best_policy_params(data_root: str, run_id: str) -> Optional[Dict[str, 
     return None
 
 
+def _load_strategy_acceptation(data_root: str, run_id: str) -> Dict[str, Any]:
+    for candidate in [
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "policy_params"
+        / "strategy_final_acceptation.json",
+        Path(data_root) / "artifacts" / run_id / "strategy_final_acceptation.json",
+    ]:
+        if not candidate.exists():
+            continue
+        try:
+            payload = json.loads(candidate.read_text())
+            strategies = payload.get("strategies", []) if isinstance(payload, dict) else []
+            accepted_ids = {
+                str(row.get("strategy_id", ""))
+                for row in strategies
+                if isinstance(row, dict) and row.get("strategy_id", "")
+            }
+            return {
+                "payload": payload,
+                "accepted_ids": accepted_ids,
+                "found": True,
+            }
+        except Exception:
+            continue
+    return {"payload": None, "accepted_ids": set(), "found": False}
+
+
+def _accepted_strategy_feature_keys(
+    bundle: Dict[str, Any], accepted_ids: set[str]
+) -> set[str]:
+    keys: set[str] = set()
+    if not accepted_ids:
+        return keys
+    alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
+    for side_models in alpha_models.values():
+        if not isinstance(side_models, dict):
+            continue
+        for sid, model_info in side_models.items():
+            if sid not in accepted_ids or not isinstance(model_info, dict):
+                continue
+            keys.update(model_info.get("feat_cols", []) or [])
+    return keys
+
+
 def _apply_policy_params_to_seed(
     policy: Dict[str, Any], symbol: str, atr_val: float
 ) -> Dict[str, Any]:
@@ -475,9 +592,14 @@ def evaluate_holdout_symbol(
     run_id: str,
     symbol: str,
     freeze: Dict[str, Any],
+    *,
+    extra_required_keys: Optional[set[str]] = None,
+    bundle: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    bundle = load_model_bundle(run_id, data_root)
+    if bundle is None:
+        bundle = load_model_bundle(run_id, data_root)
     orchestrator = ModelOrchestrator(bundle, {"disable_spike_filter": True})
+    tprint(f"Holdout eval: symbol={symbol} run_id={run_id} strategies={len(freeze.get('strategies', []))}")
 
     panel, panel_symbol = _load_price_panel(symbol)
     required_feature_keys = get_inference_required_feature_keys(bundle)
@@ -487,6 +609,7 @@ def evaluate_holdout_symbol(
         symbol=panel_symbol,
         panel=panel,
         required_feature_keys=required_feature_keys,
+        extra_required_keys=extra_required_keys,
     )
     alpha_required_keys = set()
     for side_models in bundle.get("alpha_models", {}).values():
@@ -502,6 +625,9 @@ def evaluate_holdout_symbol(
             f"missing for {panel_symbol}. Missing: {sorted(missing_alpha_keys)[:10]}. "
             f"Available: {len(feature_df.columns)}. Re-run feature generation."
         )
+    tprint(
+        f"Holdout eval feature contract satisfied: symbol={symbol} features={len(feature_df.columns)} alpha_keys={len(alpha_required_keys)}"
+    )
     frozen_rows: List[Dict[str, Any]] = []
     portfolio_score_parts: List[np.ndarray] = []
     portfolio_return_parts: List[np.ndarray] = []
@@ -540,6 +666,9 @@ def evaluate_holdout_symbol(
                 f"Skipping strategy {strategy_id[:60]}: could not infer side from freeze file or alpha bundle"
             )
             continue
+        tprint(
+            f"Holdout eval strategy start: symbol={symbol} strategy_id={strategy_id} side={side} threshold_pct={strat.get('threshold_pct')}"
+        )
         threshold_pct = float(strat["threshold_pct"])
         frac = max(1e-6, 1.0 - threshold_pct / 100.0)
 
@@ -618,6 +747,10 @@ def evaluate_holdout_symbol(
             }
         )
         frozen_rows.append(row)
+        tprint(
+            f"Holdout eval strategy done: symbol={symbol} strategy_id={strategy_id} "
+            f"selected={int(len(opt_rets))}/{int(len(raw_returns))} net_pnl={float(row.get('net_pnl', 0.0)):.4f}"
+        )
 
         if float(row.get("net_pnl", 0.0)) > 0:
             k = max(1, int(len(score_values) * frac))
@@ -768,8 +901,46 @@ def _sample_compatible_symbols(
     run_id: str,
     n: int = 5,
     seed: int = 42,
+    extra_required_keys: Optional[set[str]] = None,
+    cache_key: Optional[tuple[str, str, tuple[str, ...]]] = None,
+    bundle: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """Sample symbols that satisfy the alpha feature contract."""
+    tprint(
+        f"Holdout sampler: requesting up to {n} compatible symbols for run_id={run_id}"
+    )
+    if cache_key is not None:
+        cached = _COMPATIBLE_SYMBOLS_CACHE.get(cache_key)
+        if cached is not None:
+            tprint(
+                f"Holdout sampler cache hit: {len(cached)} compatible symbols already cached"
+            )
+            return cached[:n]
+        cache_path = (
+            Path(data_root)
+            / "artifacts"
+            / run_id
+            / "policy_params"
+            / "holdout_compatible_symbols.json"
+        )
+        if cache_path.exists():
+            try:
+                payload = json.loads(cache_path.read_text())
+                if (
+                    payload.get("run_id") == run_id
+                    and tuple(payload.get("feature_keys", []))
+                    == cache_key[2]
+                ):
+                    symbols = [str(s) for s in payload.get("symbols", []) if str(s)]
+                    if symbols:
+                        _COMPATIBLE_SYMBOLS_CACHE[cache_key] = symbols
+                        tprint(
+                            f"Holdout sampler disk cache hit: {len(symbols)} compatible symbols"
+                        )
+                        return symbols[:n]
+            except Exception:
+                pass
+
     rng = np.random.RandomState(seed)
     try:
         cfg = dict(DEFAULT_CFG)
@@ -786,7 +957,8 @@ def _sample_compatible_symbols(
         raise RuntimeError("No symbols available for holdout evaluation")
 
     rng.shuffle(symbols)
-    bundle = load_model_bundle(run_id, data_root)
+    if bundle is None:
+        bundle = load_model_bundle(run_id, data_root)
     required_feature_keys = get_inference_required_feature_keys(bundle)
     alpha_required_keys = _alpha_required_feature_keys(bundle)
 
@@ -802,6 +974,7 @@ def _sample_compatible_symbols(
                 symbol=panel_symbol,
                 panel=panel,
                 required_feature_keys=required_feature_keys,
+                extra_required_keys=extra_required_keys,
             )
             missing_alpha_keys = {
                 k for k in alpha_required_keys if k not in feature_df.columns
@@ -831,6 +1004,29 @@ def _sample_compatible_symbols(
         f"Holdout sampler selected {len(compatible)} compatible symbols "
         f"(rejected={len(rejected)})"
     )
+    if cache_key is not None:
+        _COMPATIBLE_SYMBOLS_CACHE[cache_key] = compatible[:]
+        cache_path = (
+            Path(data_root)
+            / "artifacts"
+            / run_id
+            / "policy_params"
+            / "holdout_compatible_symbols.json"
+        )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "feature_keys": list(cache_key[2]),
+                    "symbols": compatible[:],
+                },
+                indent=2,
+            )
+        )
+        tprint(
+            f"Holdout sampler cache saved: {len(compatible)} symbols to {cache_path}"
+        )
     return compatible[:n]
 
 
@@ -871,12 +1067,45 @@ def main() -> None:
 
     force_model = "ridge" if args.ridge else ("et" if args.et else "")
     freeze = _pick_best_model_per_strategy(freeze, force_model=force_model)
+    acceptance = _load_strategy_acceptation(args.data_root, args.run_id)
+    bundle = load_model_bundle(args.run_id, args.data_root)
+    accepted_feature_keys: set[str] = set()
+    if acceptance.get("found", False):
+        accepted_ids = acceptance.get("accepted_ids", set())
+        accepted_feature_keys = _accepted_strategy_feature_keys(bundle, accepted_ids)
+        freeze_strats = freeze.get("strategies", [])
+        if isinstance(freeze_strats, list):
+            filtered = [
+                strat
+                for strat in freeze_strats
+                if str(strat.get("strategy_id", "")) in accepted_ids
+            ]
+            skipped = len(freeze_strats) - len(filtered)
+            freeze["strategies"] = filtered
+            tprint(
+                f"Acceptance filter kept {len(filtered)} strategies and skipped {skipped}"
+            )
+            if not filtered:
+                tprint("No strategies passed the final acceptance gates; holdout evaluation will skip all strategies.")
+    else:
+        tprint("No strategy acceptance file found; holdout evaluator will use all frozen strategies.")
 
+    cache_key = (
+        args.run_id,
+        force_model or "mixed",
+        tuple(sorted(accepted_feature_keys)),
+    )
     if args.symbol:
         symbols = [args.symbol]
     else:
         symbols = _sample_compatible_symbols(
-            args.data_root, args.run_id, n=args.n_symbols, seed=args.seed
+            args.data_root,
+            args.run_id,
+            n=args.n_symbols,
+            seed=args.seed,
+            extra_required_keys=accepted_feature_keys,
+            cache_key=cache_key,
+            bundle=bundle,
         )
         tprint(f"Sampled {len(symbols)} compatible holdout symbols: {symbols}")
 
@@ -886,7 +1115,12 @@ def main() -> None:
     for symbol in symbols:
         try:
             result = evaluate_holdout_symbol(
-                args.data_root, args.run_id, symbol, freeze
+                args.data_root,
+                args.run_id,
+                symbol,
+                freeze,
+                extra_required_keys=accepted_feature_keys,
+                bundle=bundle,
             )
             all_results.append(result)
             if result.get("portfolio"):

@@ -59,6 +59,45 @@ from extreme_price_movements.utils import tprint
 logger = logging.getLogger(__name__)
 
 
+def _apply_sizing_mode(
+    scores: np.ndarray,
+    base_position_size: float,
+    sizing_mode: str = "linear",
+) -> np.ndarray:
+    """Apply position sizing mode to scores.
+    
+    Args:
+        scores: Raw ranking scores (higher = better)
+        base_position_size: Base position size multiplier
+        sizing_mode: "linear", "concave", or "convex"
+        
+    Returns:
+        Position sizes as array
+    """
+    scores = np.asarray(scores, dtype=float)
+    
+    if sizing_mode == "linear":
+        # Linear scaling based on rank percentile
+        ranks = np.argsort(np.argsort(-scores))  # Rank descending
+        pctiles = ranks / max(1, len(scores) - 1)
+        sizes = base_position_size * (0.5 + 0.5 * pctiles)
+    elif sizing_mode == "concave":
+        # Concave (diminishing returns) - conservative sizing
+        ranks = np.argsort(np.argsort(-scores))
+        pctiles = ranks / max(1, len(scores) - 1)
+        sizes = base_position_size * np.sqrt(pctiles)
+    elif sizing_mode == "convex":
+        # Convex (accelerating) - aggressive sizing for top ranks
+        ranks = np.argsort(np.argsort(-scores))
+        pctiles = ranks / max(1, len(scores) - 1)
+        sizes = base_position_size * (pctiles ** 2)
+    else:
+        # Default to uniform sizing
+        sizes = np.full_like(scores, base_position_size)
+    
+    return np.clip(sizes, 0.0, base_position_size * 2.0)
+
+
 class PredictionScaler:
     """Scales predictions handling NaNs explicitly with train-fold medians."""
 

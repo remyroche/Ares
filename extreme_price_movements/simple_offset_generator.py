@@ -950,7 +950,14 @@ def build_policy_path_state_bundle(
     mfe = np.maximum(_col("mfe_ret", np.abs(returns)), 0.0)
     mae = np.maximum(_col("mae_ret", np.abs(np.minimum(returns, 0.0))), 0.0)
     duration = np.maximum(_col("duration", 4.0), 1.0)
-    barrier_pct = np.clip(np.maximum(mae * 2.5, 1e-4), 0.005, 0.2).astype(np.float32)
+
+    atr_raw = _col("atr_12_15m", 0.0)
+    sl_atr_mult = _col("label_policy_sl_atr_mult", 0.0)
+    has_label_policy = np.any(atr_raw > 1e-6) and np.any(sl_atr_mult > 1e-6)
+    if has_label_policy:
+        barrier_pct = np.clip(atr_raw * sl_atr_mult, 0.005, 0.2).astype(np.float32)
+    else:
+        barrier_pct = np.clip(np.maximum(mae * 2.5, 1e-4), 0.005, 0.2).astype(np.float32)
 
     k = max(1, int(k_recent))
     ae_vel = mae / np.maximum(duration, float(k))
@@ -974,12 +981,18 @@ def build_policy_path_state_bundle(
         trade_outcomes.get("timestamp", pd.Series(np.arange(n_total))).values
     )[idx]
 
+    tp_sl_ratio = _col("label_policy_tp_sl_ratio", 3.0)
+
     return {
         "returns": returns.astype(np.float32),
         "mfe_ret": mfe.astype(np.float32),
         "mae_ret": mae.astype(np.float32),
+        "delta_mfe": delta_mfe.astype(np.float32),
+        "delta_mae": delta_mae.astype(np.float32),
         "bars_since_entry": duration.astype(np.int32),
         "barrier_pct": barrier_pct,
+        "label_tp_sl_ratio": tp_sl_ratio,
+        "has_label_policy": np.float32(1.0 if has_label_policy else 0.0),
         "AE_vel": ae_vel.astype(np.float32),
         "pressure": pressure.astype(np.float32),
         "path_quality": path_quality.astype(np.float32),

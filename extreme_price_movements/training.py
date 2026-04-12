@@ -5229,6 +5229,107 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
             tp_over_sl = 0.0
         return float(auc_bound), float(tp_sep_top10), float(tp_over_sl)
 
+    def _summarize_geom_triplet(
+        *,
+        k_tp: float,
+        sl_base_mult: float,
+        atr_window: int,
+        rr_weight: float,
+        tp_hit_raw: float,
+        sl_hit_raw: float,
+        timeout_raw: float,
+        n_events_raw: int,
+        n_candidates: int,
+        n_rr_kept: int,
+        auc_bound: float,
+        tp_sep_top10: float,
+        bind_raw: float,
+        tp_over_sl: float,
+        tp_guard_target: float,
+        tp_emp_base: float,
+        tp_floor_share: float,
+        tp_ceil_share: float,
+        raw_key: tuple,
+    ) -> dict:
+        return {
+            "k_tp": float(k_tp),
+            "sl_base_mult": float(sl_base_mult),
+            "atr_window": int(atr_window),
+            "rr_weight": float(max(rr_weight, 1e-6)),
+            "tp_hit": float(tp_hit_raw),
+            "sl_hit": float(sl_hit_raw),
+            "to_rate": float(timeout_raw),
+            "n_events": int(n_events_raw),
+            "tp_hit_raw": float(tp_hit_raw),
+            "sl_hit_raw": float(sl_hit_raw),
+            "timeout_raw": float(timeout_raw),
+            "n_raw": int(n_events_raw),
+            "tp_hit_kept": float("nan"),
+            "sl_hit_kept": float("nan"),
+            "timeout_kept": float("nan"),
+            "n_candidates": int(n_candidates),
+            "n_rr_kept": int(n_rr_kept),
+            "auc_bound": float(auc_bound),
+            "tp_sep_top10": float(tp_sep_top10),
+            "bind": float(bind_raw),
+            "bind_raw": float(bind_raw),
+            "tp_over_sl": float(tp_over_sl),
+            "tp_guard_target": float(tp_guard_target),
+            "tp_emp_base": float(tp_emp_base),
+            "tp_floor_share": float(tp_floor_share),
+            "tp_ceil_share": float(tp_ceil_share),
+            "raw_key": raw_key,
+        }
+
+    def _materialize_geom_triplet(_g: dict, _side: str, _H: int) -> dict:
+        _sl_base = float(_g["sl_base_mult"])
+        _tp_lo_eval = _co_calibrate_tp_floor(tp_lo_eff_search, _sl_base, tp_hi)
+        _tp_lo_prod_eval = _co_calibrate_tp_floor(tp_lo_eff_prod, _sl_base, tp_hi)
+        _tp_lo_final_prod = (
+            _tp_lo_prod_eval
+            if bool(cfg.get("label_use_production_tp_floor", True))
+            else _tp_lo_eval
+        )
+        _audit_win = int(_g.get("atr_window", _atr_window))
+        _audit_base = _barrier_base_cache.get(_audit_win)
+        if _audit_base is None:
+            _audit_base = _barrier_base_cache.get(
+                int(cfg.get("barrier_atr_window", 24 * 30))
+            )
+        _tp_df_a, _sl_df_a = compute_barrier_factory(
+            atr_pct=atr_pct_local,
+            window_size=_audit_win,
+            k_tp=float(_g["k_tp"]),
+            sl_base_mult=_sl_base,
+            horizon=_H,
+            H_base=H_base,
+            disp_floor=disp_floor,
+            z_max=z_max,
+            k_reg=k_reg,
+            m_lo=m_lo,
+            m_hi=m_hi,
+            sl_mult_lo=sl_mult_lo,
+            sl_mult_hi=sl_mult_hi,
+            sl_lo=sl_lo,
+            sl_hi=sl_hi,
+            z_gate=z_gate,
+            tp_lo=_tp_lo_eval,
+            tp_hi=tp_hi,
+            _base=_audit_base,
+        )
+        _tb_out = compute_triple_barrier_labels(
+            panel, _tp_df_a, _sl_df_a, _H, side=_side, return_outcomes=True
+        )
+        _lbl_mat, _ret_mat, _qual_mat = _tb_out[:3]
+        return {
+            **_g,
+            "tp_floor_search": float(_tp_lo_eval),
+            "tp_floor_prod": float(_tp_lo_final_prod),
+            "lbl": _lbl_mat,
+            "ret": _ret_mat,
+            "qual": _qual_mat,
+        }
+
     def _materialize_geom_aggregate(_runs, _cache_key):
         if not _runs:
             return
@@ -5625,7 +5726,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         round(float(tp_hi), 6),
                     )
 
-                    if raw_key not in _raw_tb_cache:
+                    _tb_summary = _raw_tb_cache.get(raw_key)
+                    if _tb_summary is None:
                         if (
                             _triplet_idx == 1
                             or _triplet_idx == len(_validated_triplets)
@@ -5641,7 +5743,39 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                             panel, tp_df, sl_df, H, side=side, return_outcomes=True
                         )
                         lbl, ret, qual = _tb_out[:3]
-                        _raw_tb_cache[raw_key] = (lbl, ret, qual)
+                        n_events_raw = int(lbl.size)
+                        tp_hit_raw = float((lbl.values == 2).sum()) / max(1, n_events_raw)
+                        sl_hit_raw = float((lbl.values == 0).sum()) / max(1, n_events_raw)
+                        timeout_raw = float((lbl.values == 1).sum()) / max(1, n_events_raw)
+                        auc_bound, tp_sep_top10, tp_over_sl = _quality_metrics_from_proxy(
+                            lbl, ret, qual
+                        )
+                        bind_raw = tp_hit_raw + sl_hit_raw
+                        _tp_ts = (lbl.values == OUT_TP).mean(axis=1).astype(np.float64)
+                        _tp_roll_win = int(
+                            cfg.get("label_tp_hit_guardrail_roll_hours", 24 * 14)
+                        )
+                        _tp_roll = (
+                            pd.Series(_tp_ts)
+                            .rolling(
+                                _tp_roll_win,
+                                min_periods=max(24, _tp_roll_win // 8),
+                            )
+                            .mean()
+                        )
+                        _tp_emp_base = (
+                            float(
+                                _tp_roll.quantile(
+                                    float(
+                                        cfg.get(
+                                            "label_tp_hit_guardrail_quantile", 0.50
+                                        )
+                                    )
+                                )
+                            )
+                            if _tp_roll.notna().any()
+                            else float(tp_hit_raw)
+                        )
                         if (
                             _triplet_idx == 1
                             or _triplet_idx == len(_validated_triplets)
@@ -5653,13 +5787,23 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                                 f"triplet={_triplet_idx}/{len(_validated_triplets)} "
                                 f"raw labels ready ({lbl.size} events)"
                             )
-
-                    lbl, ret, qual = _raw_tb_cache[raw_key]
-
-                    n_events_raw = lbl.size
-                    tp_hit_raw = float((lbl.values == 2).sum()) / max(1, n_events_raw)
-                    sl_hit_raw = float((lbl.values == 0).sum()) / max(1, n_events_raw)
-                    timeout_raw = float((lbl.values == 1).sum()) / max(1, n_events_raw)
+                        _tb_summary = {
+                            "n_events_raw": int(n_events_raw),
+                            "tp_hit_raw": float(tp_hit_raw),
+                            "sl_hit_raw": float(sl_hit_raw),
+                            "timeout_raw": float(timeout_raw),
+                            "auc_bound": float(auc_bound),
+                            "tp_sep_top10": float(tp_sep_top10),
+                            "tp_over_sl": float(tp_over_sl),
+                            "bind_raw": float(bind_raw),
+                            "tp_emp_base": float(_tp_emp_base),
+                        }
+                        _raw_tb_cache[raw_key] = _tb_summary
+                        del lbl, ret, qual
+                    n_events_raw = int(_tb_summary["n_events_raw"])
+                    tp_hit_raw = float(_tb_summary["tp_hit_raw"])
+                    sl_hit_raw = float(_tb_summary["sl_hit_raw"])
+                    timeout_raw = float(_tb_summary["timeout_raw"])
 
                     # Kept-universe counters are unavailable at this stage (pre candidate/rr filters).
                     n_candidates = -1
@@ -5694,82 +5838,51 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                             except Exception:
                                 continue
                         relaxed_pool.append(
-                            {
-                                "lbl": lbl,
-                                "ret": ret,
-                                "qual": qual,
-                                "k_tp": float(k_tp),
-                                "sl_base_mult": float(sl_base_mult),
-                                "atr_window": int(_atr_window),
-                                "rr_weight": 1.0,
-                                "tp_hit": float(tp_hit_raw),
-                                "sl_hit": float(sl_hit_raw),
-                                "to_rate": float(timeout_raw),
-                                "n_events": int(n_events_raw),
-                                "tp_hit_raw": float(tp_hit_raw),
-                                "sl_hit_raw": float(sl_hit_raw),
-                                "timeout_raw": float(timeout_raw),
-                                "n_raw": int(n_events_raw),
-                                "tp_hit_kept": float("nan"),
-                                "sl_hit_kept": float("nan"),
-                                "timeout_kept": float("nan"),
-                                "n_candidates": int(n_candidates),
-                                "n_rr_kept": int(n_rr_kept),
-                                "auc_bound": float(
+                            _summarize_geom_triplet(
+                                k_tp=float(k_tp),
+                                sl_base_mult=float(sl_base_mult),
+                                atr_window=int(_atr_window),
+                                rr_weight=1.0,
+                                tp_hit_raw=float(tp_hit_raw),
+                                sl_hit_raw=float(sl_hit_raw),
+                                timeout_raw=float(timeout_raw),
+                                n_events_raw=int(n_events_raw),
+                                n_candidates=int(n_candidates),
+                                n_rr_kept=int(n_rr_kept),
+                                auc_bound=float(
                                     (_persisted_match or {}).get(
                                         "cell_auc_bound", float("nan")
                                     )
                                 ),
-                                "tp_sep_top10": float(
+                                tp_sep_top10=float(
                                     (_persisted_match or {}).get(
                                         "cell_tp_sep", float("nan")
                                     )
                                 ),
-                                "bind": float(tp_hit_raw + sl_hit_raw),
-                                "bind_raw": float(tp_hit_raw + sl_hit_raw),
-                                "tp_over_sl": float(
+                                bind_raw=float(tp_hit_raw + sl_hit_raw),
+                                tp_over_sl=float(
                                     (_persisted_match or {}).get(
                                         "cell_tp_over_sl",
                                         float(k_tp) / max(float(sl_base_mult), 1e-9),
                                     )
                                 ),
-                                "ap_lift": float(
-                                    (_persisted_match or {}).get(
-                                        "cell_ap_lift", float("nan")
-                                    )
-                                ),
-                                "tp_guard_target": float("nan"),
-                                "tp_emp_base": float("nan"),
-                                "tp_floor_share": float(_tp_floor_share),
-                                "tp_ceil_share": float(_tp_ceil_share),
-                            }
+                                tp_guard_target=float("nan"),
+                                tp_emp_base=float("nan"),
+                                tp_floor_share=float(_tp_floor_share),
+                                tp_ceil_share=float(_tp_ceil_share),
+                                raw_key=raw_key,
+                            )
                         )
                         continue
 
                     # Composite geometry score (quality-first, TP-hit as guardrail).
-                    auc_bound, tp_sep_top10, tp_over_sl = _quality_metrics_from_proxy(
-                        lbl, ret, qual
+                    auc_bound = float(_tb_summary.get("auc_bound", 0.5))
+                    tp_sep_top10 = float(_tb_summary.get("tp_sep_top10", 0.0))
+                    tp_over_sl = float(_tb_summary.get("tp_over_sl", 0.0))
+                    bind_raw = float(
+                        _tb_summary.get("bind_raw", tp_hit_raw + sl_hit_raw)
                     )
-                    bind_raw = tp_hit_raw + sl_hit_raw
-                    # Empirical TP-hit guardrail baseline from rolling per-timestamp TP share.
-                    _tp_ts = (lbl.values == OUT_TP).mean(axis=1).astype(np.float64)
-                    _tp_roll_win = int(
-                        cfg.get("label_tp_hit_guardrail_roll_hours", 24 * 14)
-                    )
-                    _tp_roll = (
-                        pd.Series(_tp_ts)
-                        .rolling(_tp_roll_win, min_periods=max(24, _tp_roll_win // 8))
-                        .mean()
-                    )
-                    _tp_emp_base = (
-                        float(
-                            _tp_roll.quantile(
-                                float(cfg.get("label_tp_hit_guardrail_quantile", 0.50))
-                            )
-                        )
-                        if _tp_roll.notna().any()
-                        else float(tp_hit_raw)
-                    )
+                    _tp_emp_base = float(_tb_summary.get("tp_emp_base", tp_hit_raw))
 
                     # Normalize components to stable [0, 1]-ish ranges.
                     auc_term = float(np.clip((auc_bound - 0.5) / 0.2, 0.0, 1.0))
@@ -5807,38 +5920,29 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         * (0.80 + 0.20 * min(rr_guard, 1.0))
                     )
                     relaxed_pool.append(
-                        {
-                            "lbl": lbl,
-                            "ret": ret,
-                            "qual": qual,
-                            "k_tp": float(k_tp),
-                            "sl_base_mult": float(sl_base_mult),
-                            "atr_window": int(_atr_window),
-                            "rr_weight": float(max(geom_weight, 1e-6)),
-                            "tp_hit": float(tp_hit_raw),
-                            "sl_hit": float(sl_hit_raw),
-                            "to_rate": float(timeout_raw),
-                            "n_events": int(n_events_raw),
-                            "tp_hit_raw": float(tp_hit_raw),
-                            "sl_hit_raw": float(sl_hit_raw),
-                            "timeout_raw": float(timeout_raw),
-                            "n_raw": int(n_events_raw),
-                            "tp_hit_kept": float("nan"),
-                            "sl_hit_kept": float("nan"),
-                            "timeout_kept": float("nan"),
-                            "n_candidates": int(n_candidates),
-                            "n_rr_kept": int(n_rr_kept),
-                            "auc_bound": float(auc_bound),
-                            "tp_sep_top10": float(tp_sep_top10),
-                            "bind": float(bind_raw),
-                            "bind_raw": float(bind_raw),
-                            "tp_over_sl": float(tp_over_sl),
-                            "tp_guard_target": float(tp_guard_target),
-                            "tp_emp_base": float(_tp_emp_base),
-                            "tp_floor_share": float(_tp_floor_share),
-                            "tp_ceil_share": float(_tp_ceil_share),
-                        }
+                        _summarize_geom_triplet(
+                            k_tp=float(k_tp),
+                            sl_base_mult=float(sl_base_mult),
+                            atr_window=int(_atr_window),
+                            rr_weight=float(max(geom_weight, 1e-6)),
+                            tp_hit_raw=float(tp_hit_raw),
+                            sl_hit_raw=float(sl_hit_raw),
+                            timeout_raw=float(timeout_raw),
+                            n_events_raw=int(n_events_raw),
+                            n_candidates=int(n_candidates),
+                            n_rr_kept=int(n_rr_kept),
+                            auc_bound=float(auc_bound),
+                            tp_sep_top10=float(tp_sep_top10),
+                            bind_raw=float(bind_raw),
+                            tp_over_sl=float(tp_over_sl),
+                            tp_guard_target=float(tp_guard_target),
+                            tp_emp_base=float(_tp_emp_base),
+                            tp_floor_share=float(_tp_floor_share),
+                            tp_ceil_share=float(_tp_ceil_share),
+                            raw_key=raw_key,
+                        )
                     )
+                    del lbl, ret, qual
 
                 # Keep top-N geometries per (bucket, horizon) by composite score.
                 if relaxed_pool:
@@ -5859,30 +5963,12 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         keep_top_n = max(1, keep_top_n)
                         geom_runs_proxy = relaxed_pool[:keep_top_n]
 
-                    # The first-pass triplet loop already used the exact production
-                    # barrier factory + triple-barrier labels, so re-running the top-N
-                    # winners is redundant. Reuse the exact outputs directly.
-                    geom_runs = []
-                    for _g in geom_runs_proxy:
-                        _sl_base = float(_g["sl_base_mult"])
-                        _tp_lo_eval = _co_calibrate_tp_floor(
-                            tp_lo_eff_search, _sl_base, tp_hi
-                        )
-                        _tp_lo_prod_eval = _co_calibrate_tp_floor(
-                            tp_lo_eff_prod, _sl_base, tp_hi
-                        )
-                        _tp_lo_final_prod = (
-                            _tp_lo_prod_eval
-                            if bool(cfg.get("label_use_production_tp_floor", True))
-                            else _tp_lo_eval
-                        )
-                        geom_runs.append(
-                            {
-                                **_g,
-                                "tp_floor_search": float(_tp_lo_eval),
-                                "tp_floor_prod": float(_tp_lo_final_prod),
-                            }
-                        )
+                    # Recompute only the winners so the full label payload exists
+                    # without retaining every candidate's large triple-barrier arrays.
+                    geom_runs = [
+                        _materialize_geom_triplet(_g, side, int(H))
+                        for _g in geom_runs_proxy
+                    ]
 
                 if not geom_runs:
                     # Rescue path mirrored for H2/H4 with stricter fallbacks on longer horizons.

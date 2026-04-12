@@ -455,7 +455,13 @@ def _labeling_feature_keys(cfg) -> set[str]:
         )
         from extreme_price_movements.strategy_registry import get_strategies
 
-        for strat in get_strategies(cfg):
+        selected_strategies = cfg.get("strategies", [])
+        if not isinstance(selected_strategies, (list, tuple)) or not selected_strategies:
+            selected_strategies = get_strategies(cfg)
+        tprint(
+            f"Label feature key scope: using {len(selected_strategies)} selected strategies"
+        )
+        for strat in selected_strategies:
             rule_key = str(strat.get("base_event_trigger", "")).strip()
             if (
                 not rule_key

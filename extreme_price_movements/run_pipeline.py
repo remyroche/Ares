@@ -593,6 +593,10 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
     tprint(f"Labels mode. ts_sig={ts_sig} horizons={horizons}")
     cfg["label_skip_slice_planner"] = True
     cfg["label_persist_incremental"] = True
+    cfg["label_parallel_enable"] = False
+    cfg["label_tb_cache_parallel"] = False
+    cfg["label_tb_cache_workers"] = 1
+    os.environ["EPM_LABEL_TB_WORKERS"] = "1"
     _load_mask_params_by_mode(cfg)
 
     if store is None:

@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 import platform
@@ -1165,7 +1166,11 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
     if platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}:
         # Keep memory pressure bounded on Apple Silicon unified memory.
         n_jobs_cap = 2
-    n_jobs = min(cpu_count(), len(assets), n_jobs_cap)
+    n_jobs_override = str(os.environ.get("EPM_LABEL_TB_WORKERS", "")).strip()
+    if n_jobs_override.isdigit() and int(n_jobs_override) > 0:
+        n_jobs = min(cpu_count(), len(assets), n_jobs_cap, int(n_jobs_override))
+    else:
+        n_jobs = min(cpu_count(), len(assets), n_jobs_cap)
     tprint(
         f"labeling: triple-barrier parallel dispatch assets={len(assets)} "
         f"workers={n_jobs} horizon={horizon} side={side}"

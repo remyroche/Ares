@@ -5475,11 +5475,8 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                 if raw_col not in df.columns:
                     add_cols[raw_col] = np.full(len(df), np.nan, dtype=np.float32)
         if add_cols:
-            df = pd.concat(
-                [df, pd.DataFrame(add_cols, index=df.index, copy=False)],
-                axis=1,
-                copy=False,
-            )
+            for k, v in add_cols.items():
+                df[k] = v
             datasets[name] = df
             meta["df"] = df
 
@@ -5966,8 +5963,8 @@ def _filter_artifact_by_stage_view(df, cfg):
                 if not cols_dict:
                     continue
                 df = datasets[name]
-                batch_df = pd.DataFrame(cols_dict, index=df.index, copy=False)
-                df = pd.concat([df, batch_df], axis=1, copy=False)
+                for k, v in cols_dict.items():
+                    df[k] = v
                 datasets[name] = df
                 if name in dataset_meta:
                     dataset_meta[name]["df"] = df

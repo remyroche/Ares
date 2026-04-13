@@ -773,13 +773,18 @@ def _simulate_barwise_path_policy(
     )
     np.asarray(context.get("confidence", np.zeros(n_trades)), dtype=np.float32)
     p_tp = np.asarray(context.get("p_tp", np.full(n_trades, np.nan)), dtype=np.float32)
+    conf = np.asarray(context.get("confidence", np.zeros(n_trades)), dtype=np.float32)
+    p_tp = np.asarray(context.get("p_tp", np.full(n_trades, np.nan)), dtype=np.float32)
     p_sl = np.asarray(context.get("p_sl", np.full(n_trades, np.nan)), dtype=np.float32)
     has_barrier_proba = np.any(np.isfinite(p_tp)) and np.any(p_tp > 0.0)
 
     trend = np.asarray(context.get("trend", np.zeros(n_trades)), dtype=np.float32)
     asym = np.asarray(context.get("asym", np.full(n_trades, 0.5)), dtype=np.float32)
     choppy = np.asarray(context.get("choppiness", np.zeros(n_trades)), dtype=np.float32)
-    s = 1.0 * trend + 0.6 * asym - 0.9 * choppy
+    score_weight_trend = float(params.get("score_weight_trend", 1.0))
+    score_weight_asym = float(params.get("score_weight_asym", 0.6))
+    score_weight_choppiness = float(params.get("score_weight_choppiness", 0.9))
+    s = score_weight_trend * trend + score_weight_asym * asym - score_weight_choppiness * choppy
     m_raw = 0.7 + 0.6 * _sigmoid(s)
     m = np.clip(
         m_raw,
@@ -799,11 +804,17 @@ def _simulate_barwise_path_policy(
     theta_path = float(params.get("theta_path", 0.0))
     d_path = int(params.get("d_path", 1))
     k_early = int(params.get("K_early", 3))
+    tp_gate = float(params.get("tp_conf_threshold", 0.5))
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
     progress_threshold = float(params.get("progress_threshold", 0.0))
     mfe_progress_threshold = float(params.get("mfe_progress_threshold", 0.25))
     x_base = float(params.get("x_base", 0.4))
     gamma = float(params.get("gamma", 0.0))
+
+    enable_early_exit = bool(params.get("enable_early_exit", True))
+    enable_trailing = bool(params.get("enable_trailing", True))
+    enable_barrier_conf = bool(params.get("enable_barrier_conf", True))
+    enable_compression = bool(params.get("enable_compression", True))
 
     rets = np.asarray(returns, dtype=np.float32).copy()
     exited = np.zeros(n_trades, dtype=bool)
@@ -900,14 +911,24 @@ def _simulate_barwise_path_policy(
         trail_floor = tp_dist_a + (1.0 - x_dynamic) * highest_ext_idx
         trail_active = tp_hit_ever[idx]
 
-        open_sl = open_ret <= -sl_dist_a
-        open_trail = trail_active & (open_ret <= trail_floor)
+        sl_eff = sl_dist_a.copy()
+        if enable_compression:
+            mfe_norm = mfe[idx] / np.maximum(tp_dist_a, 1e-4)
+            c_start = float(params.get("compression_start", 0.5))
+            c_full_raw = float(params.get("compression_full", 1.0))
+            c_full = max(c_start + 1e-6, c_full_raw)
+            c_max = float(params.get("compression_max_fraction", 0.5))
+            c_alpha = np.clip((mfe_norm - c_start) / (c_full - c_start), 0.0, 1.0) * c_max
+            sl_eff = sl_dist_a * (1.0 - c_alpha)
 
-        sl_hit = worst_ret <= -sl_dist_a
-        trail_hit = trail_active & (worst_ret <= trail_floor)
+        open_sl = open_ret <= -sl_eff
+        open_trail = trail_active & (open_ret <= trail_floor) & enable_trailing
+
+        sl_hit = worst_ret <= -sl_eff
+        trail_hit = trail_active & (worst_ret <= trail_floor) & enable_trailing
 
         bar_exit = np.full(len(idx), np.nan, dtype=np.float32)
-        bar_exit = np.where(open_sl, -sl_dist_a, bar_exit)
+        bar_exit = np.where(open_sl, -sl_eff, bar_exit)
         bar_exit = np.where(open_trail & np.isnan(bar_exit), trail_floor, bar_exit)
 
         hard_hit = sl_hit | trail_hit | open_sl | open_trail
@@ -915,7 +936,7 @@ def _simulate_barwise_path_policy(
             np.isnan(bar_exit),
             np.where(
                 sl_hit,
-                -sl_dist_a,
+                -sl_eff,
                 np.where(trail_hit, trail_floor, np.nan),
             ),
             bar_exit,
@@ -927,32 +948,46 @@ def _simulate_barwise_path_policy(
         has_made_progress = mfe_progress >= mfe_progress_threshold
 
         fail_exit = np.zeros(len(idx), dtype=bool)
-        # Never trigger fail_exit at bar 0 (first bar) - give trade time to develop
-        if bar >= 1:
-            if has_barrier_proba:
-                p_sl_safe = np.where(np.isfinite(p_sl[idx]), p_sl[idx], 0.5)
-                # Allow fail_exit only if trade hasn't made significant progress
-                fail_exit = (
-                    (bar + 1 <= k_early) & (p_sl_safe >= sl_gate) & (~has_made_progress)
-                )
-            else:
-                # Scale theta_fail threshold by progress - harder to trigger as MFE increases
-                progress_factor = np.where(
-                    has_made_progress, 2.0, 1.0
-                )  # 2x harder to trigger if progressed
-                fail_exit = (bar + 1 <= k_early) & (
-                    s_fail > theta_fail * progress_factor
-                )
+        path_exit = np.zeros(len(idx), dtype=bool)
 
-        path_exit = (
-            (bar + 1 >= max(3, d_path))
-            & (progress >= progress_threshold)
-            & (s_path < theta_path)
-        )
+        if enable_early_exit:
+            # Determine if we have high continuation confidence to gate early exits
+            high_cont = np.zeros(len(idx), dtype=bool)
+            if enable_barrier_conf:
+                if has_barrier_proba:
+                    p_tp_safe = np.where(np.isfinite(p_tp[idx]), p_tp[idx], 0.5)
+                    high_cont = p_tp_safe >= tp_gate
+                else:
+                    cont_thr = float(params.get("continuation_conf_threshold", 0.5))
+                    high_cont = conf[idx] >= cont_thr
+
+            # Never trigger fail_exit at bar 0 (first bar) - give trade time to develop
+            if bar >= 1:
+                if has_barrier_proba and enable_barrier_conf:
+                    p_sl_safe = np.where(np.isfinite(p_sl[idx]), p_sl[idx], 0.5)
+                    # Allow fail_exit only if trade hasn't made significant progress
+                    fail_exit = (
+                        (bar + 1 <= k_early) & (p_sl_safe >= sl_gate) & (~has_made_progress) & (~high_cont)
+                    )
+                else:
+                    # Scale theta_fail threshold by progress - harder to trigger as MFE increases
+                    progress_factor = np.where(
+                        has_made_progress, 2.0, 1.0
+                    )  # 2x harder to trigger if progressed
+                    fail_exit = (bar + 1 <= k_early) & (
+                        s_fail > theta_fail * progress_factor
+                    ) & (~high_cont)
+
+            path_exit = (
+                (bar + 1 >= max(3, d_path))
+                & (progress >= progress_threshold)
+                & (s_path < theta_path)
+                & (~high_cont)
+            )
 
         discretionary_exit = ~(hard_hit) & (fail_exit | path_exit)
         if np.any(discretionary_exit):
-            floor_ret = -0.25 * sl_dist_a
+            floor_ret = -0.25 * sl_eff
             discretionary_ret = np.where(
                 close_ret > 0.0, close_ret, np.minimum(close_ret, floor_ret)
             )
@@ -1026,6 +1061,7 @@ def replay_exit_policy(
     d_path = int(params.get("d_path", 1))
     k_early = int(params.get("K_early", 3))
 
+    conf = np.asarray(context.get("confidence", np.zeros(len(rets))), dtype=np.float32)
     p_tp = np.asarray(context.get("p_tp", np.full(len(rets), np.nan)), dtype=np.float32)
     p_sl = np.asarray(context.get("p_sl", np.full(len(rets), np.nan)), dtype=np.float32)
     has_barrier_proba = np.any(np.isfinite(p_tp)) and np.any(p_tp > 0)
@@ -1035,7 +1071,10 @@ def replay_exit_policy(
     choppy = np.asarray(
         context.get("choppiness", np.zeros(len(rets))), dtype=np.float32
     )
-    s = 1.0 * trend + 0.6 * asym - 0.9 * choppy
+    score_weight_trend = float(params.get("score_weight_trend", 1.0))
+    score_weight_asym = float(params.get("score_weight_asym", 0.6))
+    score_weight_choppiness = float(params.get("score_weight_choppiness", 0.9))
+    s = score_weight_trend * trend + score_weight_asym * asym - score_weight_choppiness * choppy
     m_raw = 0.7 + 0.6 * _sigmoid(s)
     m = np.clip(
         m_raw,
@@ -1047,7 +1086,7 @@ def replay_exit_policy(
     s_fail = (a1 * ae_vel + a2 * pressure) * fail_scale
     s_path = b1 * path_quality + b2 * progress
 
-    float(params.get("tp_conf_threshold", 0.5))
+    tp_gate = float(params.get("tp_conf_threshold", 0.5))
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
 
     mfe_progress_threshold = float(params.get("mfe_progress_threshold", 0.25))
@@ -1056,44 +1095,62 @@ def replay_exit_policy(
     mfe_progress = mfe / np.maximum(tp_dist, 1e-6)
     has_made_progress = mfe_progress >= mfe_progress_threshold
 
-    if has_barrier_proba:
-        p_sl_safe = np.where(np.isfinite(p_sl), p_sl, 0.5)
-        fail_exit = (bars <= k_early) & (p_sl_safe >= sl_gate) & (~has_made_progress)
-    else:
-        # Scale theta_fail threshold by progress - harder to trigger as MFE increases
-        progress_factor = np.where(has_made_progress, 2.0, 1.0)
-        fail_exit = (bars <= k_early) & (s_fail > theta_fail * progress_factor)
+    enable_early_exit = bool(params.get("enable_early_exit", True))
+    enable_trailing = bool(params.get("enable_trailing", True))
+    enable_barrier_conf = bool(params.get("enable_barrier_conf", True))
+    enable_compression = bool(params.get("enable_compression", True))
 
-    path_exit = (
-        (bars >= max(3, d_path))
-        & (progress >= float(params.get("progress_threshold", 0.0)))
-        & (s_path < theta_path)
-    )
-    floor_ret = -0.25 * sl_dist
-    disc_ret = np.where(rets > 0.0, rets, np.minimum(rets, floor_ret))
-    rets = np.where(fail_exit | path_exit, disc_ret, rets)
+    if enable_early_exit:
+        # Determine if we have high continuation confidence to gate early exits
+        high_cont = np.zeros(len(rets), dtype=bool)
+        if enable_barrier_conf:
+            if has_barrier_proba:
+                p_tp_safe = np.where(np.isfinite(p_tp), p_tp, 0.5)
+                high_cont = p_tp_safe >= tp_gate
+            else:
+                cont_thr = float(params.get("continuation_conf_threshold", 0.5))
+                high_cont = conf >= cont_thr
 
-    mfe_norm = mfe / np.maximum(tp_dist, 1e-4)
-    c_start = float(params.get("compression_start", 0.5))
-    c_full_raw = float(params.get("compression_full", 1.0))
-    if c_full_raw <= c_start:
-        import warnings
+        if has_barrier_proba and enable_barrier_conf:
+            p_sl_safe = np.where(np.isfinite(p_sl), p_sl, 0.5)
+            fail_exit = (bars <= k_early) & (p_sl_safe >= sl_gate) & (~has_made_progress) & (~high_cont)
+        else:
+            # Scale theta_fail threshold by progress - harder to trigger as MFE increases
+            progress_factor = np.where(has_made_progress, 2.0, 1.0)
+            fail_exit = (bars <= k_early) & (s_fail > theta_fail * progress_factor) & (~high_cont)
 
-        warnings.warn(
-            f"compression_full ({c_full_raw}) <= compression_start ({c_start}). "
-            f"Adjusting to compression_start + 1e-6. Review your parameter grid.",
-            UserWarning,
+        path_exit = (
+            (bars >= max(3, d_path))
+            & (progress >= float(params.get("progress_threshold", 0.0)))
+            & (s_path < theta_path)
+            & (~high_cont)
         )
-    c_full = max(c_start + 1e-6, c_full_raw)
-    c_max = float(params.get("compression_max_fraction", 0.5))
-    c_alpha = np.clip((mfe_norm - c_start) / (c_full - c_start), 0.0, 1.0) * c_max
-    sl_eff = sl_dist * (1.0 - c_alpha)
-    rets = np.maximum(rets, -sl_eff)
+        floor_ret = -0.25 * sl_dist
+        disc_ret = np.where(rets > 0.0, rets, np.minimum(rets, floor_ret))
+        rets = np.where(fail_exit | path_exit, disc_ret, rets)
+
+    if enable_compression:
+        mfe_norm = mfe / np.maximum(tp_dist, 1e-4)
+        c_start = float(params.get("compression_start", 0.5))
+        c_full_raw = float(params.get("compression_full", 1.0))
+        if c_full_raw <= c_start:
+            import warnings
+
+            warnings.warn(
+                f"compression_full ({c_full_raw}) <= compression_start ({c_start}). "
+                f"Adjusting to compression_start + 1e-6. Review your parameter grid.",
+                UserWarning,
+            )
+        c_full = max(c_start + 1e-6, c_full_raw)
+        c_max = float(params.get("compression_max_fraction", 0.5))
+        c_alpha = np.clip((mfe_norm - c_start) / (c_full - c_start), 0.0, 1.0) * c_max
+        sl_eff = sl_dist * (1.0 - c_alpha)
+        rets = np.maximum(rets, -sl_eff)
 
     x_base = float(params.get("x_base", 0.4))
     gamma = float(params.get("gamma", 0.0))
 
-    trail_on = mfe >= tp_dist
+    trail_on = (mfe >= tp_dist) & enable_trailing
 
     # In vectorized replay, we don't have full path history, so we approximate
     # hysteresis by quantizing the extension by 0.05 ATR.
@@ -1126,6 +1183,10 @@ def _sequential_optimise(
     executed_mask: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     params = dict(fixed)
+    params["enable_early_exit"] = False
+    params["enable_compression"] = False
+    params["enable_trailing"] = False
+    params["enable_barrier_conf"] = False
 
     # Group parameters into families for incremental testing
     # Each family is tested separately - if it degrades performance, it's disabled
@@ -1232,6 +1293,14 @@ def _sequential_optimise(
             continue
 
         family_best_params = dict(best_overall_params)  # Start from best known
+        if family_name == "tp_anchored_giveback_combo":
+            family_best_params["enable_trailing"] = True
+        elif family_name == "early_exit":
+            family_best_params["enable_early_exit"] = True
+        elif family_name == "barrier_conf":
+            family_best_params["enable_barrier_conf"] = True
+        elif family_name == "compression":
+            family_best_params["enable_compression"] = True
 
         tprint(
             f"  Testing family: {family_name} (best_val_pnl={best_overall_val_metric:.4f})"
@@ -1241,28 +1310,27 @@ def _sequential_optimise(
         is_combo_family = "combo" in family_name
 
         if is_combo_family:
-            # Establish baseline score for the family before testing combos
+            # Establish baseline score for the family before testing combos (ON TRAIN MASK)
             current_rets = _simulate_policy(family_best_params)
             if current_rets is not None:
-                current_val_score = _metric_score(
-                    current_rets[val_mask],
+                current_train_score = _metric_score(
+                    current_rets[train_mask],
                     cost_pct=cost_pct,
                     already_net=False,
                     executed_mask=(
-                        executed_mask[val_mask] if executed_mask is not None else None
+                        executed_mask[train_mask] if executed_mask is not None else None
                     ),
                 )["net_pnl"]
             else:
-                current_val_score = -1e18
+                current_train_score = -1e18
 
             # Generate all combinations for co-optimization
-            [p[0] for p in family_params]
             param_grids = [p[1] for p in family_params]
             all_combos = list(itertools.product(*param_grids))
 
             tprint(f"  Testing {len(all_combos)} combinations for {family_name}...")
 
-            best_combo_score = current_val_score
+            best_combo_score = current_train_score
             best_combo = None
 
             for combo in all_combos:
@@ -1285,27 +1353,28 @@ def _sequential_optimise(
                 rets = _simulate_policy(trial)
                 if rets is None:
                     continue
-                val_score = _metric_score(
-                    rets[val_mask],
+                train_score = _metric_score(
+                    rets[train_mask],
                     cost_pct=cost_pct,
                     already_net=False,
                     executed_mask=(
-                        executed_mask[val_mask] if executed_mask is not None else None
+                        executed_mask[train_mask] if executed_mask is not None else None
                     ),
                 )["net_pnl"]
 
-                if val_score > best_combo_score:
-                    best_combo_score = val_score
+                if train_score > best_combo_score:
+                    best_combo_score = train_score
                     best_combo = combo
 
             # Apply best combo
             if best_combo is not None:
-                delta_pnl = best_combo_score - current_val_score
+                delta_pnl = best_combo_score - current_train_score
                 tprint(
                     f"    Combo {family_name}: best_combo={best_combo}, delta PnL={delta_pnl:+.4f}"
                 )
                 for i, (name, _) in enumerate(family_params):
                     cand = best_combo[i]
+                    param_history.append((name, cand, float(best_combo_score), float('nan'))) # val appended later
                     if name == "multiplier_band":
                         (
                             family_best_params["multiplier_band_min"],
@@ -1327,18 +1396,18 @@ def _sequential_optimise(
                 # Establish baseline score for this parameter
                 current_rets = _simulate_policy(family_best_params)
                 if current_rets is not None:
-                    current_val_score = _metric_score(
-                        current_rets[val_mask],
+                    current_train_score = _metric_score(
+                        current_rets[train_mask],
                         cost_pct=cost_pct,
                         already_net=False,
                         executed_mask=(
-                            executed_mask[val_mask]
+                            executed_mask[train_mask]
                             if executed_mask is not None
                             else None
                         ),
                     )["net_pnl"]
                 else:
-                    current_val_score = -1e18
+                    current_train_score = -1e18
 
                 # Get the current value of the parameter
                 if name == "multiplier_band":
@@ -1346,6 +1415,9 @@ def _sequential_optimise(
                         family_best_params.get("multiplier_band_min"),
                         family_best_params.get("multiplier_band_max"),
                     )
+                    # If we don't have existing multiplier_band_min/max, fall back to grid
+                    if current_val[0] is None or current_val[1] is None:
+                        current_val = None
                 else:
                     current_val = family_best_params.get(name)
 
@@ -1354,7 +1426,7 @@ def _sequential_optimise(
                 if current_val is not None and current_val not in test_grid:
                     test_grid.append(current_val)
 
-                val_scores: List[Tuple[float, Any]] = []
+                train_scores: List[Tuple[float, Any]] = []
 
                 for cand in test_grid:
                     trial = dict(family_best_params)
@@ -1373,19 +1445,19 @@ def _sequential_optimise(
                     rets = _simulate_policy(trial)
                     if rets is None:
                         continue
-                    val_score = _metric_score(
-                        rets[val_mask],
+                    train_score = _metric_score(
+                        rets[train_mask],
                         cost_pct=cost_pct,
                         already_net=False,
                         executed_mask=(
-                            executed_mask[val_mask]
+                            executed_mask[train_mask]
                             if executed_mask is not None
                             else None
                         ),
                     )["net_pnl"]
-                    val_scores.append((val_score, cand))
+                    train_scores.append((train_score, cand))
 
-                if not val_scores:
+                if not train_scores:
                     continue
 
                 # Pick value that maximizes validation score. To ensure we keep the baseline
@@ -1394,24 +1466,31 @@ def _sequential_optimise(
 
                 # First, ensure we don't pick a slightly worse score due to floating point.
                 # Find the maximum score.
-                best_val_score = max(score for score, _ in val_scores)
+                best_train_score = max(score for score, _ in train_scores)
 
-                # Default to current_val if it tied the best score
-                best_val_for_param = current_val
+                # Default to current_val if it tied the best score, otherwise use the grid search winner
+                # If current_val was None (missing key from baseline), we just use the grid winner.
+                if current_val is not None:
+                    best_val_for_param = current_val
+                else:
+                    train_scores.sort(reverse=True)
+                    best_val_for_param = train_scores[0][1]
 
-                if best_val_score > current_val_score + 1e-6:
+                if best_train_score > current_train_score + 1e-6:
                     # Strict improvement found, use it. Sort ensures stability.
-                    val_scores.sort(reverse=True)
-                    best_val_score, best_val_for_param = val_scores[0]
+                    train_scores.sort(reverse=True)
+                    best_train_score, best_val_for_param = train_scores[0]
                 else:
                     # No strict improvement, keep baseline (or whatever we had)
-                    best_val_score = current_val_score
-                    best_val_for_param = current_val
+                    best_train_score = current_train_score
+                    # If current_val is None, best_val_for_param already correctly defaults to grid winner above
 
-                delta_pnl = best_val_score - current_val_score
+                delta_pnl = best_train_score - current_train_score
                 tprint(
                     f"    Sub-step {name}: best_param={best_val_for_param}, delta PnL={delta_pnl:+.4f}"
                 )
+
+                param_history.append((name, best_val_for_param, float(best_train_score), float('nan')))
 
                 # Update family params
                 if name == "multiplier_band":
@@ -1448,41 +1527,48 @@ def _sequential_optimise(
                 )
                 best_overall_params = dict(family_best_params)
                 best_overall_val_metric = family_val_metric
+
+                # Update param_history val scores
+                for i in range(len(param_history) - 1, -1, -1):
+                    if np.isnan(param_history[i][3]):
+                        param_history[i] = (param_history[i][0], param_history[i][1], param_history[i][2], float(family_val_metric))
+                    else:
+                        break # Stop at previous family
             else:
                 tprint(
                     f"  ✗ Family '{family_name}' did not improve (or degraded): {best_overall_val_metric:.4f} -> {family_val_metric:.4f}"
                 )
                 disabled_families.append(family_name)
 
+                # Remove rejected family params from param_history
+                for i in range(len(param_history) - 1, -1, -1):
+                    if np.isnan(param_history[i][3]):
+                        param_history.pop()
+                    else:
+                        break
+
     # Return the best params found across all families
     best_val_params = dict(best_overall_params)
     tprint(f"Optimization complete: best_val_pnl={best_overall_val_metric:.4f}")
 
     # Compute fair baseline from paths when available
+    baseline_rets_raw = None
     if has_future_paths_ctx:
         baseline_rets_raw = _simulate_baseline_tpsl_from_paths(
             context,
             tp_mult=fixed_tp_mult,
             sl_mult=fixed_sl_mult,
         )
-        if baseline_rets_raw is not None:
-            params["metrics_baseline"] = _metric_score(
-                baseline_rets_raw[val_mask],
-                cost_pct=cost_pct,
-                already_net=False,
-                executed_mask=(
-                    executed_mask[val_mask] if executed_mask is not None else None
-                ),
-            )
-        else:
-            params["metrics_baseline"] = _metric_score(
-                base_returns[val_mask],
-                cost_pct=cost_pct,
-                already_net=False,
-                executed_mask=(
-                    executed_mask[val_mask] if executed_mask is not None else None
-                ),
-            )
+
+    if baseline_rets_raw is not None:
+        params["metrics_baseline"] = _metric_score(
+            baseline_rets_raw[val_mask],
+            cost_pct=cost_pct,
+            already_net=False,
+            executed_mask=(
+                executed_mask[val_mask] if executed_mask is not None else None
+            ),
+        )
     else:
         params["metrics_baseline"] = _metric_score(
             base_returns[val_mask],

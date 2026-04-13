@@ -78,17 +78,17 @@ def _apply_sizing_mode(
     
     if sizing_mode == "linear":
         # Linear scaling based on rank percentile
-        ranks = np.argsort(np.argsort(-scores))  # Rank descending
+        ranks = np.argsort(np.argsort(scores))  # Rank ascending so highest score gets highest size
         pctiles = ranks / max(1, len(scores) - 1)
         sizes = base_position_size * (0.5 + 0.5 * pctiles)
     elif sizing_mode == "concave":
         # Concave (diminishing returns) - conservative sizing
-        ranks = np.argsort(np.argsort(-scores))
+        ranks = np.argsort(np.argsort(scores))
         pctiles = ranks / max(1, len(scores) - 1)
         sizes = base_position_size * np.sqrt(pctiles)
     elif sizing_mode == "convex":
         # Convex (accelerating) - aggressive sizing for top ranks
-        ranks = np.argsort(np.argsort(-scores))
+        ranks = np.argsort(np.argsort(scores))
         pctiles = ranks / max(1, len(scores) - 1)
         sizes = base_position_size * (pctiles ** 2)
     else:

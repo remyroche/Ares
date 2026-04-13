@@ -1306,11 +1306,12 @@ def _sequential_optimise(
             f"  Testing family: {family_name} (best_val_pnl={best_overall_val_metric:.4f})"
         )
 
-        # For "combo" families, test full Cartesian product
-        is_combo_family = "combo" in family_name
+        import optuna
 
-        if is_combo_family:
-            # Establish baseline score for the family before testing combos (ON TRAIN MASK)
+        is_large_family = family_name in ("early_exit", "tp_anchored_giveback_combo")
+
+        if is_large_family:
+            # Use Optuna for large families
             current_rets = _simulate_policy(family_best_params)
             if current_rets is not None:
                 current_train_score = _metric_score(
@@ -1324,10 +1325,114 @@ def _sequential_optimise(
             else:
                 current_train_score = -1e18
 
-            # Generate all combinations for co-optimization
-            param_grids = [p[1] for p in family_params]
-            all_combos = list(itertools.product(*param_grids))
+            tprint(f"  Using Optuna to optimize {family_name}...")
 
+            def objective(trial: optuna.Trial) -> float:
+                trial_params = dict(family_best_params)
+                for name, grid in family_params:
+                    # Convert to tuple for mutability safety, optuna handles numerical lists nicely
+                    cand = trial.suggest_categorical(name, grid)
+                    if name == "multiplier_band":
+                        trial_params["multiplier_band_min"], trial_params["multiplier_band_max"] = cand
+                    elif name == "a1":
+                        trial_params["a1"] = float(cand)
+                        trial_params["a2"] = 1.0 - float(cand)
+                    elif name == "b1":
+                        trial_params["b1"] = float(cand)
+                        trial_params["b2"] = 1.0 - float(cand)
+                    else:
+                        trial_params[name] = cand
+
+                rets = _simulate_policy(trial_params)
+                if rets is None:
+                    return -1e18
+
+                train_score = _metric_score(
+                    rets[train_mask],
+                    cost_pct=cost_pct,
+                    already_net=False,
+                    executed_mask=(
+                        executed_mask[train_mask] if executed_mask is not None else None
+                    ),
+                )["net_pnl"]
+                return float(train_score)
+
+            study = optuna.create_study(direction="maximize")
+            # Enqueue the current baseline to ensure we don't regress
+            baseline_trial = {}
+            for name, grid in family_params:
+                if name == "multiplier_band":
+                    baseline_trial[name] = (family_best_params.get("multiplier_band_min"), family_best_params.get("multiplier_band_max"))
+                else:
+                    baseline_trial[name] = family_best_params.get(name, grid[0]) # fallback to first grid val if missing
+                # if baseline val not in grid, append it to the grid so optuna doesn't crash on categorical
+                if baseline_trial[name] not in grid:
+                    grid.append(baseline_trial[name])
+
+            study.enqueue_trial(baseline_trial)
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+            study.optimize(objective, n_trials=50) # Use 50 trials for large families
+
+            best_combo_score = study.best_value
+            best_combo = study.best_params
+
+            if best_combo_score > current_train_score + 1e-6:
+                delta_pnl = best_combo_score - current_train_score
+                tprint(
+                    f"    Optuna {family_name}: best_params={best_combo}, delta PnL={delta_pnl:+.4f}"
+                )
+                for name, _ in family_params:
+                    cand = best_combo[name]
+                    param_history.append((name, cand, float(best_combo_score), float('nan'))) # val appended later
+                    if name == "multiplier_band":
+                        (
+                            family_best_params["multiplier_band_min"],
+                            family_best_params["multiplier_band_max"],
+                        ) = cand
+                    elif name == "a1":
+                        family_best_params["a1"] = float(cand)
+                        family_best_params["a2"] = 1.0 - float(cand)
+                    elif name == "b1":
+                        family_best_params["b1"] = float(cand)
+                        family_best_params["b2"] = 1.0 - float(cand)
+                    else:
+                        family_best_params[name] = cand
+            else:
+                tprint(f"    Optuna {family_name}: no improvement over baseline")
+        else:
+            # Grid Search (Cartesian product) for small families
+            current_rets = _simulate_policy(family_best_params)
+            if current_rets is not None:
+                current_train_score = _metric_score(
+                    current_rets[train_mask],
+                    cost_pct=cost_pct,
+                    already_net=False,
+                    executed_mask=(
+                        executed_mask[train_mask] if executed_mask is not None else None
+                    ),
+                )["net_pnl"]
+            else:
+                current_train_score = -1e18
+
+            # Build grids and ensure baseline is included
+            safe_grids = []
+            for name, grid in family_params:
+                if name == "multiplier_band":
+                    current_val = (
+                        family_best_params.get("multiplier_band_min"),
+                        family_best_params.get("multiplier_band_max"),
+                    )
+                    if current_val[0] is None or current_val[1] is None:
+                        current_val = None
+                else:
+                    current_val = family_best_params.get(name)
+
+                test_grid = list(grid)
+                if current_val is not None and current_val not in test_grid:
+                    test_grid.append(current_val)
+                safe_grids.append(test_grid)
+
+            all_combos = list(itertools.product(*safe_grids))
             tprint(f"  Testing {len(all_combos)} combinations for {family_name}...")
 
             best_combo_score = current_train_score
@@ -1338,9 +1443,7 @@ def _sequential_optimise(
                 for i, (name, _) in enumerate(family_params):
                     cand = combo[i]
                     if name == "multiplier_band":
-                        trial["multiplier_band_min"], trial["multiplier_band_max"] = (
-                            cand
-                        )
+                        trial["multiplier_band_min"], trial["multiplier_band_max"] = cand
                     elif name == "a1":
                         trial["a1"] = float(cand)
                         trial["a2"] = 1.0 - float(cand)
@@ -1362,19 +1465,16 @@ def _sequential_optimise(
                     ),
                 )["net_pnl"]
 
-                if train_score > best_combo_score:
+                if train_score > best_combo_score + 1e-6:
                     best_combo_score = train_score
                     best_combo = combo
 
-            # Apply best combo
             if best_combo is not None:
                 delta_pnl = best_combo_score - current_train_score
-                tprint(
-                    f"    Combo {family_name}: best_combo={best_combo}, delta PnL={delta_pnl:+.4f}"
-                )
+                tprint(f"    Grid {family_name}: best_combo={best_combo}, delta PnL={delta_pnl:+.4f}")
                 for i, (name, _) in enumerate(family_params):
                     cand = best_combo[i]
-                    param_history.append((name, cand, float(best_combo_score), float('nan'))) # val appended later
+                    param_history.append((name, cand, float(best_combo_score), float('nan')))
                     if name == "multiplier_band":
                         (
                             family_best_params["multiplier_band_min"],
@@ -1389,123 +1489,7 @@ def _sequential_optimise(
                     else:
                         family_best_params[name] = cand
             else:
-                tprint(f"    Combo {family_name}: no improvement over baseline")
-        else:
-            # Sequential parameter optimization (original approach)
-            for name, grid in family_params:
-                # Establish baseline score for this parameter
-                current_rets = _simulate_policy(family_best_params)
-                if current_rets is not None:
-                    current_train_score = _metric_score(
-                        current_rets[train_mask],
-                        cost_pct=cost_pct,
-                        already_net=False,
-                        executed_mask=(
-                            executed_mask[train_mask]
-                            if executed_mask is not None
-                            else None
-                        ),
-                    )["net_pnl"]
-                else:
-                    current_train_score = -1e18
-
-                # Get the current value of the parameter
-                if name == "multiplier_band":
-                    current_val = (
-                        family_best_params.get("multiplier_band_min"),
-                        family_best_params.get("multiplier_band_max"),
-                    )
-                    # If we don't have existing multiplier_band_min/max, fall back to grid
-                    if current_val[0] is None or current_val[1] is None:
-                        current_val = None
-                else:
-                    current_val = family_best_params.get(name)
-
-                # Include the current value in the grid if not already present
-                test_grid = list(grid)
-                if current_val is not None and current_val not in test_grid:
-                    test_grid.append(current_val)
-
-                train_scores: List[Tuple[float, Any]] = []
-
-                for cand in test_grid:
-                    trial = dict(family_best_params)
-                    if name == "multiplier_band":
-                        trial["multiplier_band_min"], trial["multiplier_band_max"] = (
-                            cand
-                        )
-                    elif name == "a1":
-                        trial["a1"] = float(cand)
-                        trial["a2"] = 1.0 - float(cand)
-                    elif name == "b1":
-                        trial["b1"] = float(cand)
-                        trial["b2"] = 1.0 - float(cand)
-                    else:
-                        trial[name] = cand
-                    rets = _simulate_policy(trial)
-                    if rets is None:
-                        continue
-                    train_score = _metric_score(
-                        rets[train_mask],
-                        cost_pct=cost_pct,
-                        already_net=False,
-                        executed_mask=(
-                            executed_mask[train_mask]
-                            if executed_mask is not None
-                            else None
-                        ),
-                    )["net_pnl"]
-                    train_scores.append((train_score, cand))
-
-                if not train_scores:
-                    continue
-
-                # Pick value that maximizes validation score. To ensure we keep the baseline
-                # if there's no actual improvement, we can find the candidate that corresponds
-                # to the current value, and only pick a new one if it strictly improves the score.
-
-                # First, ensure we don't pick a slightly worse score due to floating point.
-                # Find the maximum score.
-                best_train_score = max(score for score, _ in train_scores)
-
-                # Default to current_val if it tied the best score, otherwise use the grid search winner
-                # If current_val was None (missing key from baseline), we just use the grid winner.
-                if current_val is not None:
-                    best_val_for_param = current_val
-                else:
-                    train_scores.sort(reverse=True)
-                    best_val_for_param = train_scores[0][1]
-
-                if best_train_score > current_train_score + 1e-6:
-                    # Strict improvement found, use it. Sort ensures stability.
-                    train_scores.sort(reverse=True)
-                    best_train_score, best_val_for_param = train_scores[0]
-                else:
-                    # No strict improvement, keep baseline (or whatever we had)
-                    best_train_score = current_train_score
-                    # If current_val is None, best_val_for_param already correctly defaults to grid winner above
-
-                delta_pnl = best_train_score - current_train_score
-                tprint(
-                    f"    Sub-step {name}: best_param={best_val_for_param}, delta PnL={delta_pnl:+.4f}"
-                )
-
-                param_history.append((name, best_val_for_param, float(best_train_score), float('nan')))
-
-                # Update family params
-                if name == "multiplier_band":
-                    (
-                        family_best_params["multiplier_band_min"],
-                        family_best_params["multiplier_band_max"],
-                    ) = best_val_for_param
-                elif name == "a1":
-                    family_best_params["a1"] = float(best_val_for_param)
-                    family_best_params["a2"] = 1.0 - float(best_val_for_param)
-                elif name == "b1":
-                    family_best_params["b1"] = float(best_val_for_param)
-                    family_best_params["b2"] = 1.0 - float(best_val_for_param)
-                else:
-                    family_best_params[name] = best_val_for_param
+                tprint(f"    Grid {family_name}: no improvement over baseline")
 
         # Test if this family improved over baseline
         family_rets = _simulate_policy(family_best_params)

@@ -799,11 +799,10 @@ def _simulate_barwise_path_policy(
     theta_path = float(params.get("theta_path", 0.0))
     d_path = int(params.get("d_path", 1))
     k_early = int(params.get("K_early", 3))
-    float(params.get("tp_conf_threshold", 0.5))
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
     progress_threshold = float(params.get("progress_threshold", 0.0))
-    trail_activation_atr = float(params.get("trail_activation_atr", 1.0))
-    trail_giveback_atr = float(params.get("trail_giveback_atr", 0.5))
+    x_base = float(params.get("x_base", 0.4))
+    gamma = float(params.get("gamma", 0.0))
 
     rets = np.asarray(returns, dtype=np.float32).copy()
     exited = np.zeros(n_trades, dtype=bool)
@@ -812,6 +811,9 @@ def _simulate_barwise_path_policy(
     mae = np.zeros(n_trades, dtype=np.float32)
     prev_mfe = np.zeros(n_trades, dtype=np.float32)
     prev_mae = np.zeros(n_trades, dtype=np.float32)
+
+    tp_hit_ever = np.zeros(n_trades, dtype=bool)
+    highest_ext = np.zeros(n_trades, dtype=np.float32)
 
     for bar in range(max_bars):
         active = (~exited) & (bar < future_lengths)
@@ -873,29 +875,47 @@ def _simulate_barwise_path_policy(
         s_fail = (a1 * ae_vel + a2 * pressure) * fail_scale
         s_path = b1 * path_quality + b2 * progress
 
-        # Diagnostics: track trailing stop stats
-        trail_active = mfe[idx] >= trail_activation_atr * barrier_a
-        trail_floor = mfe[idx] - trail_giveback_atr * barrier_a
+        # TP hit logic
+        tp_hit = best_ret >= tp_dist_a
+        tp_hit_ever[idx] = tp_hit_ever[idx] | tp_hit
 
-        open_tp = open_ret >= tp_dist_a
+        # Fractional giveback trail logic
+        # 1. Compute current extension beyond TP
+        current_ext = np.maximum(0.0, mfe[idx] - tp_dist_a)
+
+        # 2. Update highest_ext with 0.05 ATR hysteresis
+        hysteresis = 0.05 * barrier_a
+        highest_ext_idx = highest_ext[idx]
+        increased = current_ext >= highest_ext_idx + hysteresis
+        highest_ext_idx = np.where(increased, current_ext, highest_ext_idx)
+        highest_ext[idx] = highest_ext_idx
+
+        # 3. Compute dynamic x
+        # extension in ATR units = highest_ext_idx / barrier_a
+        ext_atr = highest_ext_idx / np.maximum(barrier_a, 1e-6)
+        x_dynamic = x_base * np.exp(-gamma * ext_atr)
+
+        # 4. Compute trail floor
+        trail_floor = tp_dist_a + (1.0 - x_dynamic) * highest_ext_idx
+        trail_active = tp_hit_ever[idx]
+
         open_sl = open_ret <= -sl_dist_a
         open_trail = trail_active & (open_ret <= trail_floor)
 
-        tp_hit = best_ret >= tp_dist_a
         sl_hit = worst_ret <= -sl_dist_a
         trail_hit = trail_active & (worst_ret <= trail_floor)
 
         bar_exit = np.full(len(idx), np.nan, dtype=np.float32)
         bar_exit = np.where(open_sl, -sl_dist_a, bar_exit)
         bar_exit = np.where(open_trail & np.isnan(bar_exit), trail_floor, bar_exit)
-        bar_exit = np.where(open_tp & np.isnan(bar_exit), tp_dist_a, bar_exit)
-        hard_hit = sl_hit | trail_hit | tp_hit | open_sl | open_trail | open_tp
+
+        hard_hit = sl_hit | trail_hit | open_sl | open_trail
         bar_exit = np.where(
             np.isnan(bar_exit),
             np.where(
                 sl_hit,
                 -sl_dist_a,
-                np.where(trail_hit, trail_floor, np.where(tp_hit, tp_dist_a, np.nan)),
+                np.where(trail_hit, trail_floor, np.nan),
             ),
             bar_exit,
         )
@@ -1104,6 +1124,17 @@ def _sequential_optimise(
     # Each family is tested separately - if it degrades performance, it's disabled
     param_families: List[Tuple[str, List[Tuple[str, List[Any]]]]] = [
         (
+            "tp_anchored_giveback_combo",
+            [
+                # Co-optimize TP distance with trailing stop
+                # By pushing TP farther, trailing stop can activate and capture overshoots
+                ("tp_mult", [1.0, 1.2, 1.5, 1.8, 2.0, 2.5]),
+                ("sl_mult", [0.8, 1.0, 1.2]),  # Looser SL to give more room
+                ("x_base", [0.2, 0.4, 0.6]),
+                ("gamma", [0.2, 0.5, 1.0, 1.5]),
+            ],
+        ),
+        (
             "early_exit",
             [
                 ("theta_fail", np.linspace(-1.0, 1.5, 11).tolist()),
@@ -1127,24 +1158,6 @@ def _sequential_optimise(
                 ("compression_start", [0.30, 0.50, 0.70]),
                 ("compression_full", [0.80, 1.00, 1.20]),
                 ("compression_max_fraction", [0.20, 0.40, 0.60]),
-            ],
-        ),
-        (
-            "trailing_profit",
-            [
-                ("trail_activation_atr", [0.5, 0.8, 1.0, 1.2]),
-                ("trail_giveback_atr", [0.2, 0.3, 0.4, 0.5]),
-            ],
-        ),
-        (
-            "tp_trailing_combo",
-            [
-                # Co-optimize TP distance with trailing stop
-                # By pushing TP farther, trailing stop can activate and capture overshoots
-                ("tp_mult", [1.0, 1.2, 1.5, 1.8, 2.0, 2.5]),
-                ("sl_mult", [0.8, 1.0, 1.2]),  # Looser SL to give more room
-                ("trail_activation_atr", [0.3, 0.5, 0.7, 1.0]),  # Earlier activation
-                ("trail_giveback_atr", [0.1, 0.2, 0.3, 0.4]),  # Tighter giveback
             ],
         ),
         (

@@ -47,8 +47,9 @@ def main():
     report_lines.append("FILES BY SIZE")
     report_lines.append("=" * 80)
     for path, size in files:
-        rel_path = path.relative_to(root)
-        report_lines.append(f"{format_size(size):>10}  {rel_path}")
+        if size >= 1024 * 1024:
+            rel_path = path.relative_to(root)
+            report_lines.append(f"{format_size(size):>10}  {rel_path}")
 
     report_lines.append("")
     report_lines.append("=" * 80)

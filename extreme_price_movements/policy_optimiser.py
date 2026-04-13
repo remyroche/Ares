@@ -66,7 +66,15 @@ def _compute_strategy_D(row: Dict[str, Any]) -> float:
     wallet_pnl = float(row.get("wallet_pnl", float("nan")))
     if not all(
         np.isfinite(v)
-        for v in (pf, stability, monthly_sortino, hit_rate, trades_per_day, max_drawdown, wallet_pnl)
+        for v in (
+            pf,
+            stability,
+            monthly_sortino,
+            hit_rate,
+            trades_per_day,
+            max_drawdown,
+            wallet_pnl,
+        )
     ):
         return float("nan")
     if wallet_pnl <= 0.0:
@@ -82,7 +90,9 @@ def _compute_strategy_D(row: Dict[str, Any]) -> float:
 
 
 def _load_ridge_strategy_rows(data_root: str, run_id: str) -> Dict[str, Dict[str, Any]]:
-    path = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+    path = (
+        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+    )
     if not path.exists():
         return {}
     try:
@@ -365,7 +375,9 @@ def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any
             cand = dict(row)
             cand["strategy_id"] = sid
             cand["model"] = model_source
-            cand["source_artifact"] = "et_sizer" if model_source == "et" else "ridge_sizer"
+            cand["source_artifact"] = (
+                "et_sizer" if model_source == "et" else "ridge_sizer"
+            )
             candidates.append(cand)
 
     merged: Dict[str, Dict[str, Any]] = {}
@@ -402,9 +414,9 @@ def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
     if "timestamp" not in df.columns or "symbol" not in df.columns:
         raise ValueError(f"sizer OOF score matrix {path} is missing timestamp/symbol")
     out = df.copy()
-    out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce").dt.tz_convert(
-        None
-    )
+    out["timestamp"] = pd.to_datetime(
+        out["timestamp"], utc=True, errors="coerce"
+    ).dt.tz_convert(None)
     out["symbol"] = out["symbol"].astype(str)
     return out
 
@@ -419,11 +431,13 @@ def _attach_sizer_score(
         columns={strategy_id: "sizer_score"}
     )
     out = outcomes.copy()
-    out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce").dt.tz_convert(
-        None
-    )
+    out["timestamp"] = pd.to_datetime(
+        out["timestamp"], utc=True, errors="coerce"
+    ).dt.tz_convert(None)
     out["symbol"] = out["symbol"].astype(str)
-    merged = out.merge(score_df, on=["timestamp", "symbol"], how="left", validate="one_to_one")
+    merged = out.merge(
+        score_df, on=["timestamp", "symbol"], how="left", validate="one_to_one"
+    )
     return merged
 
 
@@ -452,17 +466,57 @@ def resolve_optimised_selection_frac(
             buckets = payload.get("buckets", {}) or {}
             sid = str(selected.get("strategy_id", ""))
             row = buckets.get(sid, {}) if isinstance(buckets, dict) else {}
-            row_pnl = float(row.get("net_pnl", 0.0))
-            threshold_pct = float(row.get("threshold_pct", threshold_pct))
-            if row_pnl <= 0.0 and isinstance(buckets, dict):
-                positive_rows = [
-                    r for r in buckets.values() if float(r.get("net_pnl", -1e18)) > 0.0
-                ]
-                if positive_rows:
-                    best_pos = max(
-                        positive_rows, key=lambda r: float(r.get("net_pnl", -1e18))
+
+            # Find the threshold just above the one that allows a positive PnL for this specific strategy
+            strategy_buckets = payload.get("strategy_buckets", {}).get(sid, [])
+            if not strategy_buckets:
+                # Fallback to the old logic if strategy_buckets detailed list is missing
+                row_pnl = float(row.get("net_pnl", 0.0))
+                threshold_pct = float(row.get("threshold_pct", threshold_pct))
+                if row_pnl <= 0.0 and isinstance(buckets, dict):
+                    positive_rows = [
+                        r
+                        for r in buckets.values()
+                        if float(r.get("net_pnl", -1e18)) > 0.0
+                    ]
+                    if positive_rows:
+                        best_pos = max(
+                            positive_rows, key=lambda r: float(r.get("net_pnl", -1e18))
+                        )
+                        threshold_pct = float(
+                            best_pos.get("threshold_pct", threshold_pct)
+                        )
+            else:
+                # We have detailed bucket evaluation.
+                # Sort by threshold ascending (wider selection to tighter selection)
+                sorted_buckets = sorted(
+                    strategy_buckets, key=lambda r: float(r.get("threshold_pct", 100.0))
+                )
+                positive_threshold = None
+
+                # Find the first (widest) threshold that produces positive net PnL
+                for b in sorted_buckets:
+                    if float(b.get("net_pnl", -1e18)) > 0.0:
+                        positive_threshold = float(b.get("threshold_pct", 100.0))
+                        break
+
+                if positive_threshold is not None:
+                    # We want the threshold "just above" the one that allows a positive PnL.
+                    # This gives us a wider base of trades for optimization.
+                    # Find the first bucket with threshold slightly higher (more selective) than positive_threshold.
+                    just_above = None
+                    for b in sorted_buckets:
+                        cand_thr = float(b.get("threshold_pct", 100.0))
+                        if cand_thr > positive_threshold + 1e-6:
+                            just_above = cand_thr
+                            break
+
+                    threshold_pct = (
+                        just_above if just_above is not None else positive_threshold
                     )
-                    threshold_pct = float(best_pos.get("threshold_pct", threshold_pct))
+                else:
+                    threshold_pct = float(row.get("threshold_pct", threshold_pct))
+
         except Exception:
             pass
 
@@ -511,7 +565,10 @@ def build_replay_context(
     path_quality = delta_mfe_arr - delta_mae_arr
     progress_per_bar = np.maximum(rets, 0.0) / np.maximum(barr * bars, 1e-4)
 
-    asym_raw = np.log((np.maximum(delta_mfe_arr, 0.0) + 1e-6) / (np.maximum(delta_mae_arr, 0.0) + 1e-6))
+    asym_raw = np.log(
+        (np.maximum(delta_mfe_arr, 0.0) + 1e-6)
+        / (np.maximum(delta_mae_arr, 0.0) + 1e-6)
+    )
     if asym is None:
         asym_vals = asym_raw
     else:
@@ -614,7 +671,9 @@ def _simulate_baseline_tpsl_from_paths(
     future_lows = np.asarray(context["future_lows"], dtype=np.float32)
     future_closes = np.asarray(context["future_closes"], dtype=np.float32)
     future_lengths = np.asarray(
-        context.get("future_lengths", np.full(len(future_opens), future_opens.shape[1])),
+        context.get(
+            "future_lengths", np.full(len(future_opens), future_opens.shape[1])
+        ),
         dtype=np.int32,
     )
 
@@ -622,14 +681,16 @@ def _simulate_baseline_tpsl_from_paths(
         return None
 
     n_trades, max_bars = future_opens.shape
-    entry = np.asarray(
-        context.get("entry_price", future_opens[:, 0]), dtype=np.float32
+    entry = np.asarray(context.get("entry_price", future_opens[:, 0]), dtype=np.float32)
+    is_long = np.asarray(
+        context.get("is_long", np.ones(n_trades, dtype=bool)), dtype=bool
     )
-    is_long = np.asarray(context.get("is_long", np.ones(n_trades, dtype=bool)), dtype=bool)
     side = np.where(is_long, 1.0, -1.0).astype(np.float32)
 
     barrier = np.maximum(
-        np.asarray(context.get("barrier_pct", np.full(n_trades, 0.02)), dtype=np.float32),
+        np.asarray(
+            context.get("barrier_pct", np.full(n_trades, 0.02)), dtype=np.float32
+        ),
         1e-4,
     )
 
@@ -728,23 +789,30 @@ def _simulate_barwise_path_policy(
     )
     if future_opens.ndim != 2 or future_highs.shape != future_opens.shape:
         return None
-    if future_lows.shape != future_opens.shape or future_closes.shape != future_opens.shape:
+    if (
+        future_lows.shape != future_opens.shape
+        or future_closes.shape != future_opens.shape
+    ):
         return None
 
     n_trades, max_bars = future_opens.shape
     if n_trades != len(returns):
         return None
 
-    entry = np.asarray(
-        context.get("entry_price", future_opens[:, 0]), dtype=np.float32
+    entry = np.asarray(context.get("entry_price", future_opens[:, 0]), dtype=np.float32)
+    is_long = np.asarray(
+        context.get("is_long", np.ones(n_trades, dtype=bool)), dtype=bool
     )
-    is_long = np.asarray(context.get("is_long", np.ones(n_trades, dtype=bool)), dtype=bool)
     side = np.where(is_long, 1.0, -1.0).astype(np.float32)
 
     barrier = np.maximum(
-        np.asarray(context.get("barrier_pct", np.full(n_trades, 0.02)), dtype=np.float32),
+        np.asarray(
+            context.get("barrier_pct", np.full(n_trades, 0.02)), dtype=np.float32
+        ),
         1e-4,
     )
+    np.asarray(context.get("confidence", np.zeros(n_trades)), dtype=np.float32)
+    p_tp = np.asarray(context.get("p_tp", np.full(n_trades, np.nan)), dtype=np.float32)
     conf = np.asarray(context.get("confidence", np.zeros(n_trades)), dtype=np.float32)
     p_tp = np.asarray(context.get("p_tp", np.full(n_trades, np.nan)), dtype=np.float32)
     p_sl = np.asarray(context.get("p_sl", np.full(n_trades, np.nan)), dtype=np.float32)
@@ -753,7 +821,14 @@ def _simulate_barwise_path_policy(
     trend = np.asarray(context.get("trend", np.zeros(n_trades)), dtype=np.float32)
     asym = np.asarray(context.get("asym", np.full(n_trades, 0.5)), dtype=np.float32)
     choppy = np.asarray(context.get("choppiness", np.zeros(n_trades)), dtype=np.float32)
-    s = 1.0 * trend + 0.6 * asym - 0.9 * choppy
+    score_weight_trend = float(params.get("score_weight_trend", 1.0))
+    score_weight_asym = float(params.get("score_weight_asym", 0.6))
+    score_weight_choppiness = float(params.get("score_weight_choppiness", 0.9))
+    s = (
+        score_weight_trend * trend
+        + score_weight_asym * asym
+        - score_weight_choppiness * choppy
+    )
     m_raw = 0.7 + 0.6 * _sigmoid(s)
     m = np.clip(
         m_raw,
@@ -776,8 +851,14 @@ def _simulate_barwise_path_policy(
     tp_gate = float(params.get("tp_conf_threshold", 0.5))
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
     progress_threshold = float(params.get("progress_threshold", 0.0))
-    trail_activation_atr = float(params.get("trail_activation_atr", 1.0))
-    trail_giveback_atr = float(params.get("trail_giveback_atr", 0.5))
+    mfe_progress_threshold = float(params.get("mfe_progress_threshold", 0.25))
+    x_base = float(params.get("x_base", 0.4))
+    gamma = float(params.get("gamma", 0.0))
+
+    enable_early_exit = bool(params.get("enable_early_exit", True))
+    enable_trailing = bool(params.get("enable_trailing", True))
+    enable_barrier_conf = bool(params.get("enable_barrier_conf", True))
+    enable_compression = bool(params.get("enable_compression", True))
 
     rets = np.asarray(returns, dtype=np.float32).copy()
     exited = np.zeros(n_trades, dtype=bool)
@@ -786,6 +867,9 @@ def _simulate_barwise_path_policy(
     mae = np.zeros(n_trades, dtype=np.float32)
     prev_mfe = np.zeros(n_trades, dtype=np.float32)
     prev_mae = np.zeros(n_trades, dtype=np.float32)
+
+    tp_hit_ever = np.zeros(n_trades, dtype=bool)
+    highest_ext = np.zeros(n_trades, dtype=np.float32)
 
     for bar in range(max_bars):
         active = (~exited) & (bar < future_lengths)
@@ -847,60 +931,114 @@ def _simulate_barwise_path_policy(
         s_fail = (a1 * ae_vel + a2 * pressure) * fail_scale
         s_path = b1 * path_quality + b2 * progress
 
-        tp_price = ent * (1.0 + side_a * tp_dist_a)
-        sl_price = ent * (1.0 - side_a * sl_dist_a)
-
-        # Diagnostics: track trailing stop stats
-        trail_active = mfe[idx] >= trail_activation_atr * barrier_a
-        trail_floor = mfe[idx] - trail_giveback_atr * barrier_a
-        trail_price = ent * (1.0 + side_a * trail_floor)
-
-        open_tp = open_ret >= tp_dist_a
-        open_sl = open_ret <= -sl_dist_a
-        open_trail = trail_active & (open_ret <= trail_floor)
-
+        # TP hit logic
         tp_hit = best_ret >= tp_dist_a
-        sl_hit = worst_ret <= -sl_dist_a
-        trail_hit = trail_active & (worst_ret <= trail_floor)
+        tp_hit_ever[idx] = tp_hit_ever[idx] | tp_hit
+
+        # Fractional giveback trail logic
+        # 1. Compute current extension beyond TP
+        current_ext = np.maximum(0.0, mfe[idx] - tp_dist_a)
+
+        # 2. Update highest_ext with 0.05 ATR hysteresis
+        hysteresis = 0.05 * barrier_a
+        highest_ext_idx = highest_ext[idx]
+        increased = current_ext >= highest_ext_idx + hysteresis
+        highest_ext_idx = np.where(increased, current_ext, highest_ext_idx)
+        highest_ext[idx] = highest_ext_idx
+
+        # 3. Compute dynamic x
+        # extension in ATR units = highest_ext_idx / barrier_a
+        ext_atr = highest_ext_idx / np.maximum(barrier_a, 1e-6)
+        x_dynamic = x_base * np.exp(-gamma * ext_atr)
+
+        # 4. Compute trail floor
+        trail_floor = tp_dist_a + (1.0 - x_dynamic) * highest_ext_idx
+        trail_active = tp_hit_ever[idx]
+
+        sl_eff = sl_dist_a.copy()
+        if enable_compression:
+            mfe_norm = mfe[idx] / np.maximum(tp_dist_a, 1e-4)
+            c_start = float(params.get("compression_start", 0.5))
+            c_full_raw = float(params.get("compression_full", 1.0))
+            c_full = max(c_start + 1e-6, c_full_raw)
+            c_max = float(params.get("compression_max_fraction", 0.5))
+            c_alpha = (
+                np.clip((mfe_norm - c_start) / (c_full - c_start), 0.0, 1.0) * c_max
+            )
+            sl_eff = sl_dist_a * (1.0 - c_alpha)
+
+        open_sl = open_ret <= -sl_eff
+        open_trail = trail_active & (open_ret <= trail_floor) & enable_trailing
+
+        sl_hit = worst_ret <= -sl_eff
+        trail_hit = trail_active & (worst_ret <= trail_floor) & enable_trailing
 
         bar_exit = np.full(len(idx), np.nan, dtype=np.float32)
-        bar_exit = np.where(open_sl, -sl_dist_a, bar_exit)
+        bar_exit = np.where(open_sl, -sl_eff, bar_exit)
         bar_exit = np.where(open_trail & np.isnan(bar_exit), trail_floor, bar_exit)
-        bar_exit = np.where(open_tp & np.isnan(bar_exit), tp_dist_a, bar_exit)
-        hard_hit = sl_hit | trail_hit | tp_hit | open_sl | open_trail | open_tp
+
+        hard_hit = sl_hit | trail_hit | open_sl | open_trail
         bar_exit = np.where(
             np.isnan(bar_exit),
-            np.where(sl_hit, -sl_dist_a, np.where(trail_hit, trail_floor, np.where(tp_hit, tp_dist_a, np.nan))),
+            np.where(
+                sl_hit,
+                -sl_eff,
+                np.where(trail_hit, trail_floor, np.nan),
+            ),
             bar_exit,
         )
 
         # MFE protection: don't trigger fail_exit if trade has made significant progress toward TP
         # This prevents cutting winning trades during temporary pullbacks
         mfe_progress = mfe[idx] / np.maximum(tp_dist_a, 1e-6)
-        has_made_progress = mfe_progress >= 0.25  # Has made 25% of TP distance
+        has_made_progress = mfe_progress >= mfe_progress_threshold
 
         fail_exit = np.zeros(len(idx), dtype=bool)
-        # Never trigger fail_exit at bar 0 (first bar) - give trade time to develop
-        if bar >= 1:
-            if has_barrier_proba:
-                p_sl_safe = np.where(np.isfinite(p_sl[idx]), p_sl[idx], 0.5)
-                # Allow fail_exit only if trade hasn't made significant progress
-                fail_exit = (bar + 1 <= k_early) & (p_sl_safe >= sl_gate) & (~has_made_progress)
-            else:
-                # Scale theta_fail threshold by progress - harder to trigger as MFE increases
-                progress_factor = np.where(has_made_progress, 2.0, 1.0)  # 2x harder to trigger if progressed
-                fail_exit = (bar + 1 <= k_early) & (s_fail > theta_fail * progress_factor)
+        path_exit = np.zeros(len(idx), dtype=bool)
 
+        if enable_early_exit:
+            # Determine if we have high continuation confidence to gate early exits
+            high_cont = np.zeros(len(idx), dtype=bool)
+            if enable_barrier_conf:
+                if has_barrier_proba:
+                    p_tp_safe = np.where(np.isfinite(p_tp[idx]), p_tp[idx], 0.5)
+                    high_cont = p_tp_safe >= tp_gate
+                else:
+                    cont_thr = float(params.get("continuation_conf_threshold", 0.5))
+                    high_cont = conf[idx] >= cont_thr
 
-        path_exit = (
-            (bar + 1 >= max(3, d_path))
-            & (progress >= progress_threshold)
-            & (s_path < theta_path)
-        )
+            # Never trigger fail_exit at bar 0 (first bar) - give trade time to develop
+            if bar >= 1:
+                if has_barrier_proba and enable_barrier_conf:
+                    p_sl_safe = np.where(np.isfinite(p_sl[idx]), p_sl[idx], 0.5)
+                    # Allow fail_exit only if trade hasn't made significant progress
+                    fail_exit = (
+                        (bar + 1 <= k_early)
+                        & (p_sl_safe >= sl_gate)
+                        & (~has_made_progress)
+                        & (~high_cont)
+                    )
+                else:
+                    # Scale theta_fail threshold by progress - harder to trigger as MFE increases
+                    progress_factor = np.where(
+                        has_made_progress, 2.0, 1.0
+                    )  # 2x harder to trigger if progressed
+                    fail_exit = (
+                        (bar + 1 <= k_early)
+                        & (s_fail > theta_fail * progress_factor)
+                        & (~high_cont)
+                    )
+
+            path_exit = (
+                (bar + 1 >= max(3, d_path))
+                & (progress >= progress_threshold)
+                & (s_path < theta_path)
+                & (~high_cont)
+            )
 
         discretionary_exit = ~(hard_hit) & (fail_exit | path_exit)
         if np.any(discretionary_exit):
-            floor_ret = -0.25 * sl_dist_a
+            floor_ret = -0.25 * sl_eff
             discretionary_ret = np.where(
                 close_ret > 0.0, close_ret, np.minimum(close_ret, floor_ret)
             )
@@ -937,7 +1075,7 @@ def replay_exit_policy(
             context.get("bars_since_entry", np.full(len(rets), 4)), dtype=np.int32
         ),
     )
-    conf = np.asarray(context.get("confidence", np.zeros(len(rets))), dtype=np.float32)
+    np.asarray(context.get("confidence", np.zeros(len(rets))), dtype=np.float32)
     barrier = np.maximum(
         np.asarray(
             context.get("barrier_pct", np.full(len(rets), 0.02)), dtype=np.float32
@@ -974,6 +1112,7 @@ def replay_exit_policy(
     d_path = int(params.get("d_path", 1))
     k_early = int(params.get("K_early", 3))
 
+    conf = np.asarray(context.get("confidence", np.zeros(len(rets))), dtype=np.float32)
     p_tp = np.asarray(context.get("p_tp", np.full(len(rets), np.nan)), dtype=np.float32)
     p_sl = np.asarray(context.get("p_sl", np.full(len(rets), np.nan)), dtype=np.float32)
     has_barrier_proba = np.any(np.isfinite(p_tp)) and np.any(p_tp > 0)
@@ -983,7 +1122,14 @@ def replay_exit_policy(
     choppy = np.asarray(
         context.get("choppiness", np.zeros(len(rets))), dtype=np.float32
     )
-    s = 1.0 * trend + 0.6 * asym - 0.9 * choppy
+    score_weight_trend = float(params.get("score_weight_trend", 1.0))
+    score_weight_asym = float(params.get("score_weight_asym", 0.6))
+    score_weight_choppiness = float(params.get("score_weight_choppiness", 0.9))
+    s = (
+        score_weight_trend * trend
+        + score_weight_asym * asym
+        - score_weight_choppiness * choppy
+    )
     m_raw = 0.7 + 0.6 * _sigmoid(s)
     m = np.clip(
         m_raw,
@@ -998,63 +1144,96 @@ def replay_exit_policy(
     tp_gate = float(params.get("tp_conf_threshold", 0.5))
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
 
+    mfe_progress_threshold = float(params.get("mfe_progress_threshold", 0.25))
+
     # MFE protection: don't trigger fail_exit if trade has made significant progress toward TP
     mfe_progress = mfe / np.maximum(tp_dist, 1e-6)
-    has_made_progress = mfe_progress >= 0.25  # Has made 25% of TP distance
+    has_made_progress = mfe_progress >= mfe_progress_threshold
 
-    if has_barrier_proba:
-        p_sl_safe = np.where(np.isfinite(p_sl), p_sl, 0.5)
-        fail_exit = (bars <= k_early) & (p_sl_safe >= sl_gate) & (~has_made_progress)
-    else:
-        # Scale theta_fail threshold by progress - harder to trigger as MFE increases
-        progress_factor = np.where(has_made_progress, 2.0, 1.0)
-        fail_exit = (bars <= k_early) & (s_fail > theta_fail * progress_factor)
+    enable_early_exit = bool(params.get("enable_early_exit", True))
+    enable_trailing = bool(params.get("enable_trailing", True))
+    enable_barrier_conf = bool(params.get("enable_barrier_conf", True))
+    enable_compression = bool(params.get("enable_compression", True))
 
-    path_exit = (
-        (bars >= max(3, d_path))
-        & (progress >= float(params.get("progress_threshold", 0.0)))
-        & (s_path < theta_path)
-    )
-    floor_ret = -0.25 * sl_dist
-    disc_ret = np.where(rets > 0.0, rets, np.minimum(rets, floor_ret))
-    rets = np.where(fail_exit | path_exit, disc_ret, rets)
+    if enable_early_exit:
+        # Determine if we have high continuation confidence to gate early exits
+        high_cont = np.zeros(len(rets), dtype=bool)
+        if enable_barrier_conf:
+            if has_barrier_proba:
+                p_tp_safe = np.where(np.isfinite(p_tp), p_tp, 0.5)
+                high_cont = p_tp_safe >= tp_gate
+            else:
+                cont_thr = float(params.get("continuation_conf_threshold", 0.5))
+                high_cont = conf >= cont_thr
 
-    mfe_norm = mfe / np.maximum(tp_dist, 1e-4)
-    c_start = float(params.get("compression_start", 0.5))
-    c_full_raw = float(params.get("compression_full", 1.0))
-    if c_full_raw <= c_start:
-        import warnings
+        if has_barrier_proba and enable_barrier_conf:
+            p_sl_safe = np.where(np.isfinite(p_sl), p_sl, 0.5)
+            fail_exit = (
+                (bars <= k_early)
+                & (p_sl_safe >= sl_gate)
+                & (~has_made_progress)
+                & (~high_cont)
+            )
+        else:
+            # Scale theta_fail threshold by progress - harder to trigger as MFE increases
+            progress_factor = np.where(has_made_progress, 2.0, 1.0)
+            fail_exit = (
+                (bars <= k_early)
+                & (s_fail > theta_fail * progress_factor)
+                & (~high_cont)
+            )
 
-        warnings.warn(
-            f"compression_full ({c_full_raw}) <= compression_start ({c_start}). "
-            f"Adjusting to compression_start + 1e-6. Review your parameter grid.",
-            UserWarning,
+        path_exit = (
+            (bars >= max(3, d_path))
+            & (progress >= float(params.get("progress_threshold", 0.0)))
+            & (s_path < theta_path)
+            & (~high_cont)
         )
-    c_full = max(c_start + 1e-6, c_full_raw)
-    c_max = float(params.get("compression_max_fraction", 0.5))
-    c_alpha = np.clip((mfe_norm - c_start) / (c_full - c_start), 0.0, 1.0) * c_max
-    sl_eff = sl_dist * (1.0 - c_alpha)
-    rets = np.maximum(rets, -sl_eff)
+        floor_ret = -0.25 * sl_dist
+        disc_ret = np.where(rets > 0.0, rets, np.minimum(rets, floor_ret))
+        rets = np.where(fail_exit | path_exit, disc_ret, rets)
 
-    trail_act = float(params.get("trail_activation_atr", 1.0)) * (1.0 + 0.8 * (m - 1.0))
-    trail_gb = float(params.get("trail_giveback_atr", 0.5)) * (1.0 + 0.8 * (m - 1.0))
-    trail_on = mfe >= trail_act * barrier
-    trail_floor = mfe - trail_gb * barrier
+    if enable_compression:
+        mfe_norm = mfe / np.maximum(tp_dist, 1e-4)
+        c_start = float(params.get("compression_start", 0.5))
+        c_full_raw = float(params.get("compression_full", 1.0))
+        if c_full_raw <= c_start:
+            import warnings
 
-    if has_barrier_proba:
-        p_tp_safe = np.where(np.isfinite(p_tp), p_tp, 0.5)
-        high_cont = p_tp_safe >= tp_gate
-    else:
-        cont_thr = float(params.get("continuation_conf_threshold", 0.5))
-        high_cont = conf >= cont_thr
+            warnings.warn(
+                f"compression_full ({c_full_raw}) <= compression_start ({c_start}). "
+                f"Adjusting to compression_start + 1e-6. Review your parameter grid.",
+                UserWarning,
+            )
+        c_full = max(c_start + 1e-6, c_full_raw)
+        c_max = float(params.get("compression_max_fraction", 0.5))
+        c_alpha = np.clip((mfe_norm - c_start) / (c_full - c_start), 0.0, 1.0) * c_max
+        sl_eff = sl_dist * (1.0 - c_alpha)
+        rets = np.maximum(rets, -sl_eff)
 
-    with_tp = np.minimum(np.maximum(rets, trail_floor), tp_dist)
-    no_tp = np.maximum(rets, trail_floor)
-    rets = np.where(trail_on & high_cont, no_tp, np.where(trail_on, with_tp, rets))
+    x_base = float(params.get("x_base", 0.4))
+    gamma = float(params.get("gamma", 0.0))
+
+    trail_on = (mfe >= tp_dist) & enable_trailing
+
+    # In vectorized replay, we don't have full path history, so we approximate
+    # hysteresis by quantizing the extension by 0.05 ATR.
+    hysteresis = 0.05 * barrier
+    current_ext = np.maximum(0.0, mfe - tp_dist)
+    # Floor division quantizes the extension
+    highest_ext_idx = np.floor(current_ext / np.maximum(hysteresis, 1e-6)) * hysteresis
+
+    ext_atr = highest_ext_idx / np.maximum(barrier, 1e-6)
+    x_dynamic = x_base * np.exp(-gamma * ext_atr)
+
+    trail_floor = tp_dist + (1.0 - x_dynamic) * highest_ext_idx
+
+    # Apply trail floor if trailing is active
+    rets = np.where(trail_on, np.maximum(rets, trail_floor), rets)
 
     sl_scale = 1.0 + 0.4 * (m - 1.0)
-    tp_scale = 1.0 + 1.0 * (m - 1.0)
-    rets = np.clip(rets, -sl_dist * sl_scale, tp_dist * tp_scale)
+    # We no longer hard-clip at TP. It's just an activation threshold.
+    rets = np.maximum(rets, -sl_dist * sl_scale)
     return rets.astype(np.float32)
 
 
@@ -1068,59 +1247,80 @@ def _sequential_optimise(
     executed_mask: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     params = dict(fixed)
-    
+    params["enable_early_exit"] = False
+    params["enable_compression"] = False
+    params["enable_trailing"] = False
+    params["enable_barrier_conf"] = False
+
     # Group parameters into families for incremental testing
     # Each family is tested separately - if it degrades performance, it's disabled
     param_families: List[Tuple[str, List[Tuple[str, List[Any]]]]] = [
-        ("early_exit", [
-            ("theta_fail", np.linspace(-1.0, 1.5, 11).tolist()),
-            ("theta_path", np.linspace(-1.5, 1.0, 11).tolist()),
-            ("K_early", [2, 3, 4, 5]),
-            ("d_path", [1, 2, 3]),
-            ("progress_threshold", [0.00, 0.05, 0.10, 0.15, 0.20, 0.25]),
-        ]),
-        ("barrier_conf", [
-            ("tp_conf_threshold", [0.3, 0.4, 0.5, 0.6, 0.7]),
-            ("sl_early_exit_threshold", [0.2, 0.3, 0.4, 0.5]),
-            ("continuation_conf_threshold", [0.4, 0.5, 0.6, 0.7]),
-        ]),
-        ("compression", [
-            ("compression_start", [0.30, 0.50, 0.70]),
-            ("compression_full", [0.80, 1.00, 1.20]),
-            ("compression_max_fraction", [0.20, 0.40, 0.60]),
-        ]),
-        ("trailing_profit", [
-            ("trail_activation_atr", [0.5, 0.8, 1.0, 1.2]),
-            ("trail_giveback_atr", [0.2, 0.3, 0.4, 0.5]),
-        ]),
-        ("tp_trailing_combo", [
-            # Co-optimize TP distance with trailing stop
-            # By pushing TP farther, trailing stop can activate and capture overshoots
-            ("tp_mult", [1.0, 1.2, 1.5, 1.8, 2.0, 2.5]),
-            ("sl_mult", [0.8, 1.0, 1.2]),  # Looser SL to give more room
-            ("trail_activation_atr", [0.3, 0.5, 0.7, 1.0]),  # Earlier activation
-            ("trail_giveback_atr", [0.1, 0.2, 0.3, 0.4]),  # Tighter giveback
-        ]),
-        ("multiplier_band", [
-            ("multiplier_band", [(0.70, 1.30), (0.80, 1.20), (0.85, 1.15)]),
-        ]),
-        ("scoring_weights", [
-            ("a1", np.linspace(0.0, 1.0, 11).tolist()),
-            ("b1", np.linspace(0.0, 1.0, 11).tolist()),
-        ]),
+        (
+            "tp_anchored_giveback_combo",
+            [
+                # Co-optimize TP distance with trailing stop
+                # By pushing TP farther, trailing stop can activate and capture overshoots
+                ("tp_mult", [1.0, 1.2, 1.5, 1.8, 2.0, 2.5]),
+                ("sl_mult", [0.8, 1.0, 1.2]),  # Looser SL to give more room
+                ("x_base", [0.2, 0.4, 0.6]),
+                ("gamma", [0.2, 0.5, 1.0, 1.5]),
+            ],
+        ),
+        (
+            "early_exit",
+            [
+                ("theta_fail", np.linspace(-1.0, 1.5, 11).tolist()),
+                ("theta_path", np.linspace(-1.5, 1.0, 11).tolist()),
+                ("K_early", [2, 3, 4, 5]),
+                ("d_path", [1, 2, 3]),
+                ("progress_threshold", [0.00, 0.05, 0.10, 0.15, 0.20, 0.25]),
+                ("mfe_progress_threshold", [0.1, 0.15, 0.25, 0.4]),
+            ],
+        ),
+        (
+            "barrier_conf",
+            [
+                ("tp_conf_threshold", [0.3, 0.4, 0.5, 0.6, 0.7]),
+                ("sl_early_exit_threshold", [0.2, 0.3, 0.4, 0.5]),
+                ("continuation_conf_threshold", [0.4, 0.5, 0.6, 0.7]),
+            ],
+        ),
+        (
+            "compression",
+            [
+                ("compression_start", [0.30, 0.50, 0.70]),
+                ("compression_full", [0.80, 1.00, 1.20]),
+                ("compression_max_fraction", [0.20, 0.40, 0.60]),
+            ],
+        ),
+        (
+            "multiplier_band",
+            [
+                ("multiplier_band", [(0.70, 1.30), (0.80, 1.20), (0.85, 1.15)]),
+            ],
+        ),
+        (
+            "scoring_weights",
+            [
+                ("a1", np.linspace(0.0, 1.0, 11).tolist()),
+                ("b1", np.linspace(0.0, 1.0, 11).tolist()),
+            ],
+        ),
     ]
 
     # Check if future paths are available for fair baseline computation
     has_future_paths_ctx = all(
-        col in context for col in ("future_opens", "future_highs", "future_lows", "future_closes")
+        col in context
+        for col in ("future_opens", "future_highs", "future_lows", "future_closes")
     )
     fixed_tp_mult = float(fixed.get("tp_mult", 1.0))
     fixed_sl_mult = float(fixed.get("sl_mult", 1.0))
 
     # Track best validation performance and corresponding params
-    best_val_metric = -1e18
     best_val_params = dict(params)
-    param_history: List[Tuple[str, Any, float, float]] = []  # (param_name, value, train_pnl, val_pnl)
+    param_history: List[
+        Tuple[str, Any, float, float]
+    ] = []  # (param_name, value, train_pnl, val_pnl)
 
     # Use path-based simulation when future paths available - this is the FAIR comparison
     # Both baseline and policy should be evaluated on raw price paths
@@ -1137,77 +1337,132 @@ def _sequential_optimise(
             baseline_rets[val_mask],
             cost_pct=cost_pct,
             already_net=False,
-            executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+            executed_mask=(
+                executed_mask[val_mask] if executed_mask is not None else None
+            ),
         )["net_pnl"]
     else:
         baseline_val_metric = -1e18
-    
+
     # Track best validation score and corresponding params across families
     best_overall_val_metric = baseline_val_metric
     best_overall_params = dict(params)
-    
+
     disabled_families: List[str] = []
-    
+
     for family_name, family_params in param_families:
         # Skip families that were previously disabled
         if family_name in disabled_families:
             tprint(f"  Skipping disabled family: {family_name}")
             continue
-            
+
         family_best_params = dict(best_overall_params)  # Start from best known
-        family_improved = False
-        
-        tprint(f"  Testing family: {family_name} (best_val_pnl={best_overall_val_metric:.4f})")
-        
-        # For "combo" families, test full Cartesian product
-        is_combo_family = "combo" in family_name
-        
-        if is_combo_family:
-            # Generate all combinations for co-optimization
-            param_names = [p[0] for p in family_params]
-            param_grids = [p[1] for p in family_params]
-            all_combos = list(itertools.product(*param_grids))
-            
-            tprint(f"  Testing {len(all_combos)} combinations for {family_name}...")
-            
-            best_combo_score = -1e18
-            best_combo = None
-            
-            for combo in all_combos:
-                trial = dict(family_best_params)
-                for i, (name, _) in enumerate(family_params):
-                    cand = combo[i]
-                    if name == "multiplier_band":
-                        trial["multiplier_band_min"], trial["multiplier_band_max"] = cand
-                    elif name == "a1":
-                        trial["a1"] = float(cand)
-                        trial["a2"] = 1.0 - float(cand)
-                    elif name == "b1":
-                        trial["b1"] = float(cand)
-                        trial["b2"] = 1.0 - float(cand)
-                    else:
-                        trial[name] = cand
-                
-                rets = _simulate_policy(trial)
-                if rets is None:
-                    continue
-                val_score = _metric_score(
-                    rets[val_mask],
+        if family_name == "tp_anchored_giveback_combo":
+            family_best_params["enable_trailing"] = True
+        elif family_name == "early_exit":
+            family_best_params["enable_early_exit"] = True
+        elif family_name == "barrier_conf":
+            family_best_params["enable_barrier_conf"] = True
+        elif family_name == "compression":
+            family_best_params["enable_compression"] = True
+
+        tprint(
+            f"  Testing family: {family_name} (best_val_pnl={best_overall_val_metric:.4f})"
+        )
+
+        import optuna
+
+        is_large_family = family_name in ("early_exit", "tp_anchored_giveback_combo")
+
+        if is_large_family:
+            # Use Optuna for large families
+            current_rets = _simulate_policy(family_best_params)
+            if current_rets is not None:
+                current_train_score = _metric_score(
+                    current_rets[train_mask],
                     cost_pct=cost_pct,
                     already_net=False,
-                    executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+                    executed_mask=(
+                        executed_mask[train_mask] if executed_mask is not None else None
+                    ),
                 )["net_pnl"]
-                
-                if val_score > best_combo_score:
-                    best_combo_score = val_score
-                    best_combo = combo
-            
-            # Apply best combo
-            if best_combo is not None:
-                for i, (name, _) in enumerate(family_params):
-                    cand = best_combo[i]
+            else:
+                current_train_score = -1e18
+
+            tprint(f"  Using Optuna to optimize {family_name}...")
+
+            def objective(trial: optuna.Trial) -> float:
+                trial_params = dict(family_best_params)
+                for name, grid in family_params:
+                    # Convert to tuple for mutability safety, optuna handles numerical lists nicely
+                    cand = trial.suggest_categorical(name, grid)
                     if name == "multiplier_band":
-                        family_best_params["multiplier_band_min"], family_best_params["multiplier_band_max"] = cand
+                        (
+                            trial_params["multiplier_band_min"],
+                            trial_params["multiplier_band_max"],
+                        ) = cand
+                    elif name == "a1":
+                        trial_params["a1"] = float(cand)
+                        trial_params["a2"] = 1.0 - float(cand)
+                    elif name == "b1":
+                        trial_params["b1"] = float(cand)
+                        trial_params["b2"] = 1.0 - float(cand)
+                    else:
+                        trial_params[name] = cand
+
+                rets = _simulate_policy(trial_params)
+                if rets is None:
+                    return -1e18
+
+                train_score = _metric_score(
+                    rets[train_mask],
+                    cost_pct=cost_pct,
+                    already_net=False,
+                    executed_mask=(
+                        executed_mask[train_mask] if executed_mask is not None else None
+                    ),
+                )["net_pnl"]
+                return float(train_score)
+
+            study = optuna.create_study(direction="maximize")
+            # Enqueue the current baseline to ensure we don't regress
+            baseline_trial = {}
+            for name, grid in family_params:
+                if name == "multiplier_band":
+                    baseline_trial[name] = (
+                        family_best_params.get("multiplier_band_min"),
+                        family_best_params.get("multiplier_band_max"),
+                    )
+                else:
+                    baseline_trial[name] = family_best_params.get(
+                        name, grid[0]
+                    )  # fallback to first grid val if missing
+                # if baseline val not in grid, append it to the grid so optuna doesn't crash on categorical
+                if baseline_trial[name] not in grid:
+                    grid.append(baseline_trial[name])
+
+            study.enqueue_trial(baseline_trial)
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+            study.optimize(objective, n_trials=50)  # Use 50 trials for large families
+
+            best_combo_score = study.best_value
+            best_combo = study.best_params
+
+            if best_combo_score > current_train_score + 1e-6:
+                delta_pnl = best_combo_score - current_train_score
+                tprint(
+                    f"    Optuna {family_name}: best_params={best_combo}, delta PnL={delta_pnl:+.4f}"
+                )
+                for name, _ in family_params:
+                    cand = best_combo[name]
+                    param_history.append(
+                        (name, cand, float(best_combo_score), float("nan"))
+                    )  # val appended later
+                    if name == "multiplier_band":
+                        (
+                            family_best_params["multiplier_band_min"],
+                            family_best_params["multiplier_band_max"],
+                        ) = cand
                     elif name == "a1":
                         family_best_params["a1"] = float(cand)
                         family_best_params["a2"] = 1.0 - float(cand)
@@ -1216,15 +1471,55 @@ def _sequential_optimise(
                         family_best_params["b2"] = 1.0 - float(cand)
                     else:
                         family_best_params[name] = cand
+            else:
+                tprint(f"    Optuna {family_name}: no improvement over baseline")
         else:
-            # Sequential parameter optimization (original approach)
+            # Grid Search (Cartesian product) for small families
+            current_rets = _simulate_policy(family_best_params)
+            if current_rets is not None:
+                current_train_score = _metric_score(
+                    current_rets[train_mask],
+                    cost_pct=cost_pct,
+                    already_net=False,
+                    executed_mask=(
+                        executed_mask[train_mask] if executed_mask is not None else None
+                    ),
+                )["net_pnl"]
+            else:
+                current_train_score = -1e18
+
+            # Build grids and ensure baseline is included
+            safe_grids = []
             for name, grid in family_params:
-                val_scores: List[Tuple[float, Any]] = []
-                
-                for cand in grid:
-                    trial = dict(family_best_params)
+                if name == "multiplier_band":
+                    current_val = (
+                        family_best_params.get("multiplier_band_min"),
+                        family_best_params.get("multiplier_band_max"),
+                    )
+                    if current_val[0] is None or current_val[1] is None:
+                        current_val = None
+                else:
+                    current_val = family_best_params.get(name)
+
+                test_grid = list(grid)
+                if current_val is not None and current_val not in test_grid:
+                    test_grid.append(current_val)
+                safe_grids.append(test_grid)
+
+            all_combos = list(itertools.product(*safe_grids))
+            tprint(f"  Testing {len(all_combos)} combinations for {family_name}...")
+
+            best_combo_score = current_train_score
+            best_combo = None
+
+            for combo in all_combos:
+                trial = dict(family_best_params)
+                for i, (name, _) in enumerate(family_params):
+                    cand = combo[i]
                     if name == "multiplier_band":
-                        trial["multiplier_band_min"], trial["multiplier_band_max"] = cand
+                        trial["multiplier_band_min"], trial["multiplier_band_max"] = (
+                            cand
+                        )
                     elif name == "a1":
                         trial["a1"] = float(cand)
                         trial["a2"] = 1.0 - float(cand)
@@ -1233,36 +1528,49 @@ def _sequential_optimise(
                         trial["b2"] = 1.0 - float(cand)
                     else:
                         trial[name] = cand
-                    rets = _simulate_policy(trial)
-                    if rets is None:
-                        continue
-                    val_score = _metric_score(
-                        rets[val_mask],
-                        cost_pct=cost_pct,
-                        already_net=False,
-                        executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
-                    )["net_pnl"]
-                    val_scores.append((val_score, cand))
-                
-                if not val_scores:
+
+                rets = _simulate_policy(trial)
+                if rets is None:
                     continue
-                    
-                # Pick value that maximizes validation score
-                val_scores.sort(reverse=True)
-                best_val_score, best_val_for_param = val_scores[0]
-                
-                # Update family params
-                if name == "multiplier_band":
-                    family_best_params["multiplier_band_min"], family_best_params["multiplier_band_max"] = best_val_for_param
-                elif name == "a1":
-                    family_best_params["a1"] = float(best_val_for_param)
-                    family_best_params["a2"] = 1.0 - float(best_val_for_param)
-                elif name == "b1":
-                    family_best_params["b1"] = float(best_val_for_param)
-                    family_best_params["b2"] = 1.0 - float(best_val_for_param)
-                else:
-                    family_best_params[name] = best_val_for_param
-        
+                train_score = _metric_score(
+                    rets[train_mask],
+                    cost_pct=cost_pct,
+                    already_net=False,
+                    executed_mask=(
+                        executed_mask[train_mask] if executed_mask is not None else None
+                    ),
+                )["net_pnl"]
+
+                if train_score > best_combo_score + 1e-6:
+                    best_combo_score = train_score
+                    best_combo = combo
+
+            if best_combo is not None:
+                delta_pnl = best_combo_score - current_train_score
+                tprint(
+                    f"    Grid {family_name}: best_combo={best_combo}, delta PnL={delta_pnl:+.4f}"
+                )
+                for i, (name, _) in enumerate(family_params):
+                    cand = best_combo[i]
+                    param_history.append(
+                        (name, cand, float(best_combo_score), float("nan"))
+                    )
+                    if name == "multiplier_band":
+                        (
+                            family_best_params["multiplier_band_min"],
+                            family_best_params["multiplier_band_max"],
+                        ) = cand
+                    elif name == "a1":
+                        family_best_params["a1"] = float(cand)
+                        family_best_params["a2"] = 1.0 - float(cand)
+                    elif name == "b1":
+                        family_best_params["b1"] = float(cand)
+                        family_best_params["b2"] = 1.0 - float(cand)
+                    else:
+                        family_best_params[name] = cand
+            else:
+                tprint(f"    Grid {family_name}: no improvement over baseline")
+
         # Test if this family improved over baseline
         family_rets = _simulate_policy(family_best_params)
         if family_rets is not None:
@@ -1270,47 +1578,66 @@ def _sequential_optimise(
                 family_rets[val_mask],
                 cost_pct=cost_pct,
                 already_net=False,
-                executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+                executed_mask=(
+                    executed_mask[val_mask] if executed_mask is not None else None
+                ),
             )["net_pnl"]
-            
-            if family_val_metric > best_overall_val_metric + 0.001:  # Significant improvement threshold
-                tprint(f"  ✓ Family '{family_name}' improved validation PnL: {best_overall_val_metric:.4f} -> {family_val_metric:.4f}")
+
+            if (
+                family_val_metric > best_overall_val_metric + 0.001
+            ):  # Significant improvement threshold
+                tprint(
+                    f"  ✓ Family '{family_name}' improved validation PnL: {best_overall_val_metric:.4f} -> {family_val_metric:.4f}"
+                )
                 best_overall_params = dict(family_best_params)
                 best_overall_val_metric = family_val_metric
-                family_improved = True
+
+                # Update param_history val scores
+                for i in range(len(param_history) - 1, -1, -1):
+                    if np.isnan(param_history[i][3]):
+                        param_history[i] = (
+                            param_history[i][0],
+                            param_history[i][1],
+                            param_history[i][2],
+                            float(family_val_metric),
+                        )
+                    else:
+                        break  # Stop at previous family
             else:
-                tprint(f"  ✗ Family '{family_name}' did not improve (or degraded): {best_overall_val_metric:.4f} -> {family_val_metric:.4f}")
+                tprint(
+                    f"  ✗ Family '{family_name}' did not improve (or degraded): {best_overall_val_metric:.4f} -> {family_val_metric:.4f}"
+                )
                 disabled_families.append(family_name)
-        
+
+                # Remove rejected family params from param_history
+                for i in range(len(param_history) - 1, -1, -1):
+                    if np.isnan(param_history[i][3]):
+                        param_history.pop()
+                    else:
+                        break
+
     # Return the best params found across all families
     best_val_params = dict(best_overall_params)
     tprint(f"Optimization complete: best_val_pnl={best_overall_val_metric:.4f}")
 
     # Compute fair baseline from paths when available
+    baseline_rets_raw = None
     if has_future_paths_ctx:
         baseline_rets_raw = _simulate_baseline_tpsl_from_paths(
             context,
             tp_mult=fixed_tp_mult,
             sl_mult=fixed_sl_mult,
         )
-        if baseline_rets_raw is not None:
-            params["metrics_baseline"] = _metric_score(
-                baseline_rets_raw[val_mask],
-                cost_pct=cost_pct,
-                already_net=False,
-                executed_mask=(
-                    executed_mask[val_mask] if executed_mask is not None else None
-                ),
-            )
-        else:
-            params["metrics_baseline"] = _metric_score(
-                base_returns[val_mask],
-                cost_pct=cost_pct,
-                already_net=False,
-                executed_mask=(
-                    executed_mask[val_mask] if executed_mask is not None else None
-                ),
-            )
+
+    if baseline_rets_raw is not None:
+        params["metrics_baseline"] = _metric_score(
+            baseline_rets_raw[val_mask],
+            cost_pct=cost_pct,
+            already_net=False,
+            executed_mask=(
+                executed_mask[val_mask] if executed_mask is not None else None
+            ),
+        )
     else:
         params["metrics_baseline"] = _metric_score(
             base_returns[val_mask],
@@ -1327,9 +1654,7 @@ def _sequential_optimise(
         final_rets[val_mask],
         cost_pct=cost_pct,
         already_net=False,
-        executed_mask=(
-            executed_mask[val_mask] if executed_mask is not None else None
-        ),
+        executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
     )
     best_val_params["_param_history_"] = param_history  # For diagnostics
     return best_val_params
@@ -1365,7 +1690,9 @@ def run_policy_optimisation(
                     scored_keys.append(
                         (
                             float(
-                                np.nanmean(np.asarray(mdf["oof_u_hat"], dtype=np.float32))
+                                np.nanmean(
+                                    np.asarray(mdf["oof_u_hat"], dtype=np.float32)
+                                )
                             ),
                             mk,
                         )
@@ -1380,7 +1707,9 @@ def run_policy_optimisation(
             else:
                 key = next(iter(meta_oofs.keys()), None)
                 if key is None:
-                    tprint("No meta OOF buckets available; skipping policy optimisation.")
+                    tprint(
+                        "No meta OOF buckets available; skipping policy optimisation."
+                    )
                     return {}
 
         outcomes = load_trade_outcomes(data_root, run_id, meta_oofs[key])
@@ -1424,10 +1753,14 @@ def run_policy_optimisation(
             )[selected_idx],
         }
 
-        path_bundle = build_policy_path_state_bundle(outcomes, selected_idx=selected_idx)
+        path_bundle = build_policy_path_state_bundle(
+            outcomes, selected_idx=selected_idx
+        )
         path_matrices = _pack_future_path_matrices(outcomes, selected_idx=selected_idx)
 
-        _label_tp_sl = float(np.nanmedian(path_bundle.get("label_tp_sl_ratio", np.array([3.0]))))
+        _label_tp_sl = float(
+            np.nanmedian(path_bundle.get("label_tp_sl_ratio", np.array([3.0])))
+        )
         _has_label_policy = bool(path_bundle.get("has_label_policy", 0.0) > 0.5)
 
         base_rets = np.asarray(
@@ -1456,10 +1789,26 @@ def run_policy_optimisation(
         )
         order = np.argsort(ts.view("int64"))
         n = len(base_rets)
-        n_val = max(1, int(n * holdout_frac))
+
+        # The user wants 60% of data (base/meta OOF training portion) for fitting/parameter search (`train_mask`),
+        # and 30% (position sizer portion) for validation/family acceptance (`val_mask`).
+        # Assuming the remaining 10% is either skipped or part of the first chunk if data was 60/30/10.
+        # Since this data represents the OOFs and sizer data combined, we can infer the temporal splits.
+        # If n is the total number of trades across the entire period (train+val+test):
+        # Train (60%), Val (30%), Test/Holdout (10%).
+        # Therefore, we want the first 60% as train, the next 30% as val.
+
+        n_train = max(1, int(n * 0.60))
+        n_val = max(1, int(n * 0.30))
+
+        train_mask = np.zeros(n, dtype=bool)
+        train_mask[order[:n_train]] = True
+
         val_mask = np.zeros(n, dtype=bool)
-        val_mask[order[-n_val:]] = True
-        train_mask = ~val_mask
+        val_mask[order[n_train : n_train + n_val]] = True
+
+        # If n_train + n_val < n, the rest is the holdout, which we ignore here during parameter search
+        # If we need to ensure all data is used up to the split, we could adjust.
 
         ae_fit = _robust_fit(path_bundle["AE_vel"], train_mask)
         pr_fit = _robust_fit(path_bundle["pressure"], train_mask)
@@ -1489,7 +1838,9 @@ def run_policy_optimisation(
         context["AE_vel"] = _robust_apply(path_bundle["AE_vel"], ae_fit)
         context["pressure"] = _robust_apply(path_bundle["pressure"], pr_fit)
         context["path_quality"] = _robust_apply(path_bundle["path_quality"], pq_fit)
-        context["progress_per_bar"] = _robust_apply(path_bundle["progress_per_bar"], pg_fit)
+        context["progress_per_bar"] = _robust_apply(
+            path_bundle["progress_per_bar"], pg_fit
+        )
         context["p_tp"] = path_bundle.get("p_tp", np.full(len(base_rets), np.nan))
         context["p_sl"] = path_bundle.get("p_sl", np.full(len(base_rets), np.nan))
         context.update(path_matrices)
@@ -1500,12 +1851,12 @@ def run_policy_optimisation(
         sizer_sl_mult = float(selected.get("sl_mult", 1.0))
         label_tp_mult = float(_label_tp_sl) if _has_label_policy else sizer_tp_mult
         label_sl_mult = 1.0  # Label policy typically uses SL=1.0
-        
+
         # Use sizer values as primary, label only as fallback or for ratio guidance
         # If label and sizer differ significantly, trust the sizer (it was profitable)
         tp_mult_to_use = sizer_tp_mult if sizer_tp_mult > 0 else label_tp_mult
         sl_mult_to_use = sizer_sl_mult if sizer_sl_mult > 0 else label_sl_mult
-        
+
         fixed = {
             "strategy_id": selected["strategy_id"],
             "tp_mult": tp_mult_to_use,
@@ -1539,8 +1890,10 @@ def run_policy_optimisation(
         # Compute fair baseline from raw paths when available, instead of using
         # pre-capped returns that already have TP/SL applied.
         has_future_paths = all(
-            col in context for col in ("future_opens", "future_highs", "future_lows", "future_closes")
+            col in context
+            for col in ("future_opens", "future_highs", "future_lows", "future_closes")
         )
+        baseline_rets_raw = None
         if has_future_paths:
             # Compute baseline using simple TP/SL from raw paths for fair comparison
             # Use the SAME sizer-derived TP/SL that the optimization uses
@@ -1584,7 +1937,9 @@ def run_policy_optimisation(
         # Only optimize strategies with positive baseline PnL
         baseline_pnl = float(baseline_assess.get("net_pnl", 0.0))
         if baseline_pnl <= 0:
-            tprint(f"Strategy {selected['strategy_id'][:40]}... has non-positive baseline PnL ({baseline_pnl:.4f}); skipping optimization.")
+            tprint(
+                f"Strategy {selected['strategy_id'][:40]}... has non-positive baseline PnL ({baseline_pnl:.4f}); skipping optimization."
+            )
             continue
 
         # FAIR COMPARISON: Compare baseline vs policy on VALIDATION SET ONLY
@@ -1595,30 +1950,36 @@ def run_policy_optimisation(
                 final_rets_assess = replay_exit_policy(base_rets, context, best)
         else:
             final_rets_assess = replay_exit_policy(base_rets, context, best)
-        
+
         # Compute metrics on validation set for fair comparison
         if baseline_rets_raw is not None:
             baseline_val_assess = _metric_score(
                 baseline_rets_raw[val_mask],
                 cost_pct=cost_pct,
                 already_net=False,
-                executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+                executed_mask=(
+                    executed_mask[val_mask] if executed_mask is not None else None
+                ),
             )
         else:
             baseline_val_assess = _metric_score(
                 base_rets[val_mask],
                 cost_pct=cost_pct,
                 already_net=False,
-                executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+                executed_mask=(
+                    executed_mask[val_mask] if executed_mask is not None else None
+                ),
             )
-        
+
         final_val_assess = _metric_score(
             final_rets_assess[val_mask],
             cost_pct=cost_pct,
             already_net=False,
-            executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+            executed_mask=(
+                executed_mask[val_mask] if executed_mask is not None else None
+            ),
         )
-        
+
         # Also compute full-set metrics for reporting
         final_assess = _metric_score(
             final_rets_assess,
@@ -1630,7 +1991,7 @@ def run_policy_optimisation(
         # Compare on VALIDATION SET (fair - same period used for optimization)
         baseline_val_pnl = float(baseline_val_assess.get("net_pnl", 0.0))
         final_val_pnl = float(final_val_assess.get("net_pnl", 0.0))
-        
+
         tprint(
             f"Fair comparison (validation set): baseline={baseline_val_pnl:.4f}, policy={final_val_pnl:.4f}, "
             f"delta={final_val_pnl - baseline_val_pnl:+.4f}"
@@ -1671,7 +2032,9 @@ def run_policy_optimisation(
         # Also store full-set metrics for reference
         best["baseline_net_pnl_full"] = float(baseline_assess.get("net_pnl", 0.0))
         best["final_net_pnl_full"] = float(final_assess.get("net_pnl", 0.0))
-        best["net_pnl_delta_full"] = float(best["final_net_pnl_full"] - best["baseline_net_pnl_full"])
+        best["net_pnl_delta_full"] = float(
+            best["final_net_pnl_full"] - best["baseline_net_pnl_full"]
+        )
         strategy_rows.append(best)
 
     if not strategy_rows:

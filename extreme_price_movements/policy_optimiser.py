@@ -801,6 +801,7 @@ def _simulate_barwise_path_policy(
     k_early = int(params.get("K_early", 3))
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
     progress_threshold = float(params.get("progress_threshold", 0.0))
+    mfe_progress_threshold = float(params.get("mfe_progress_threshold", 0.25))
     x_base = float(params.get("x_base", 0.4))
     gamma = float(params.get("gamma", 0.0))
 
@@ -923,7 +924,7 @@ def _simulate_barwise_path_policy(
         # MFE protection: don't trigger fail_exit if trade has made significant progress toward TP
         # This prevents cutting winning trades during temporary pullbacks
         mfe_progress = mfe[idx] / np.maximum(tp_dist_a, 1e-6)
-        has_made_progress = mfe_progress >= 0.25  # Has made 25% of TP distance
+        has_made_progress = mfe_progress >= mfe_progress_threshold
 
         fail_exit = np.zeros(len(idx), dtype=bool)
         # Never trigger fail_exit at bar 0 (first bar) - give trade time to develop
@@ -988,7 +989,7 @@ def replay_exit_policy(
             context.get("bars_since_entry", np.full(len(rets), 4)), dtype=np.int32
         ),
     )
-    conf = np.asarray(context.get("confidence", np.zeros(len(rets))), dtype=np.float32)
+    np.asarray(context.get("confidence", np.zeros(len(rets))), dtype=np.float32)
     barrier = np.maximum(
         np.asarray(
             context.get("barrier_pct", np.full(len(rets), 0.02)), dtype=np.float32
@@ -1046,12 +1047,14 @@ def replay_exit_policy(
     s_fail = (a1 * ae_vel + a2 * pressure) * fail_scale
     s_path = b1 * path_quality + b2 * progress
 
-    tp_gate = float(params.get("tp_conf_threshold", 0.5))
+    float(params.get("tp_conf_threshold", 0.5))
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
+
+    mfe_progress_threshold = float(params.get("mfe_progress_threshold", 0.25))
 
     # MFE protection: don't trigger fail_exit if trade has made significant progress toward TP
     mfe_progress = mfe / np.maximum(tp_dist, 1e-6)
-    has_made_progress = mfe_progress >= 0.25  # Has made 25% of TP distance
+    has_made_progress = mfe_progress >= mfe_progress_threshold
 
     if has_barrier_proba:
         p_sl_safe = np.where(np.isfinite(p_sl), p_sl, 0.5)
@@ -1087,25 +1090,29 @@ def replay_exit_policy(
     sl_eff = sl_dist * (1.0 - c_alpha)
     rets = np.maximum(rets, -sl_eff)
 
-    trail_act = float(params.get("trail_activation_atr", 1.0)) * (1.0 + 0.8 * (m - 1.0))
-    trail_gb = float(params.get("trail_giveback_atr", 0.5)) * (1.0 + 0.8 * (m - 1.0))
-    trail_on = mfe >= trail_act * barrier
-    trail_floor = mfe - trail_gb * barrier
+    x_base = float(params.get("x_base", 0.4))
+    gamma = float(params.get("gamma", 0.0))
 
-    if has_barrier_proba:
-        p_tp_safe = np.where(np.isfinite(p_tp), p_tp, 0.5)
-        high_cont = p_tp_safe >= tp_gate
-    else:
-        cont_thr = float(params.get("continuation_conf_threshold", 0.5))
-        high_cont = conf >= cont_thr
+    trail_on = mfe >= tp_dist
 
-    with_tp = np.minimum(np.maximum(rets, trail_floor), tp_dist)
-    no_tp = np.maximum(rets, trail_floor)
-    rets = np.where(trail_on & high_cont, no_tp, np.where(trail_on, with_tp, rets))
+    # In vectorized replay, we don't have full path history, so we approximate
+    # hysteresis by quantizing the extension by 0.05 ATR.
+    hysteresis = 0.05 * barrier
+    current_ext = np.maximum(0.0, mfe - tp_dist)
+    # Floor division quantizes the extension
+    highest_ext_idx = np.floor(current_ext / np.maximum(hysteresis, 1e-6)) * hysteresis
+
+    ext_atr = highest_ext_idx / np.maximum(barrier, 1e-6)
+    x_dynamic = x_base * np.exp(-gamma * ext_atr)
+
+    trail_floor = tp_dist + (1.0 - x_dynamic) * highest_ext_idx
+
+    # Apply trail floor if trailing is active
+    rets = np.where(trail_on, np.maximum(rets, trail_floor), rets)
 
     sl_scale = 1.0 + 0.4 * (m - 1.0)
-    tp_scale = 1.0 + 1.0 * (m - 1.0)
-    rets = np.clip(rets, -sl_dist * sl_scale, tp_dist * tp_scale)
+    # We no longer hard-clip at TP. It's just an activation threshold.
+    rets = np.maximum(rets, -sl_dist * sl_scale)
     return rets.astype(np.float32)
 
 
@@ -1142,6 +1149,7 @@ def _sequential_optimise(
                 ("K_early", [2, 3, 4, 5]),
                 ("d_path", [1, 2, 3]),
                 ("progress_threshold", [0.00, 0.05, 0.10, 0.15, 0.20, 0.25]),
+                ("mfe_progress_threshold", [0.1, 0.15, 0.25, 0.4]),
             ],
         ),
         (

@@ -1,11 +1,17 @@
 with open("extreme_price_movements/training.py", "r") as f:
     code = f.read()
 
-old_executor = """    n_workers = _choose_parallel_cells(len(tasks), cfg)
+old_executor = """    import concurrent.futures
+    import multiprocessing
+    n_workers = int(cfg.get("label_tb_cache_workers", max(1, multiprocessing.cpu_count() - 1)))
+    n_workers = min(n_workers, len(tasks))
+
     if bool(cfg.get("label_parallel_enable", True)) and n_workers > 1:"""
 
-new_executor = """    # Enforce maximum of 2 workers as requested for speed/memory tradeoff
-    n_workers = min(2, _choose_parallel_cells(len(tasks), cfg))
+new_executor = """    import concurrent.futures
+    import multiprocessing
+    # Enforce maximum of 2 workers as requested for speed/memory tradeoff
+    n_workers = min(2, len(tasks), int(cfg.get("label_tb_cache_workers", max(1, multiprocessing.cpu_count() - 1))))
 
     # We want to enable parallel execution if n_workers > 1,
     # regardless of legacy label_parallel_enable setting, as long as the user hasn't explicitly disabled it

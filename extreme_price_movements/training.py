@@ -6831,8 +6831,14 @@ def generate_label_datasets(
 
         return (H, side, k, variant, X, y, y_ret, w, meta_idx, lbl_vals)
 
-    n_workers = _choose_parallel_cells(len(tasks), cfg)
-    if bool(cfg.get("label_parallel_enable", True)) and n_workers > 1:
+    # Enforce maximum of 2 workers as requested for speed/memory tradeoff
+    n_workers = min(2, _choose_parallel_cells(len(tasks), cfg))
+
+    # We want to enable parallel execution if n_workers > 1,
+    # regardless of legacy label_parallel_enable setting, as long as the user hasn't explicitly disabled it
+    parallel_enabled = bool(cfg.get("label_parallel_enable", True)) or n_workers > 1
+
+    if parallel_enabled and n_workers > 1:
         tprint(
             f"Parallel label cell execution enabled: workers={n_workers}, cells={len(tasks)}"
         )

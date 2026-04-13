@@ -596,7 +596,39 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
     cfg["label_parallel_enable"] = False
     cfg["label_tb_cache_parallel"] = False
     cfg["label_tb_cache_workers"] = 1
-    os.environ["EPM_LABEL_TB_WORKERS"] = "1"
+    cfg["label_geom_keep_all_if_lte_per_cell"] = 6
+    cfg.setdefault("label_geom_keep_topn_per_cell", 6)
+    cfg.setdefault("label_geom_heartbeat_every", 4)
+    cfg.setdefault("label_geom_heartbeat_secs", 60.0)
+    cfg.setdefault("label_raw_tb_payload_cache_mb", 2048.0)
+    _tb_worker_target = 2
+    _tb_worker_mode = "auto"
+    _tb_worker_fallback_avail_mb = 6144.0
+    try:
+        import psutil
+
+        _vmem = psutil.virtual_memory()
+        if float(_vmem.available / (1024 ** 2)) < _tb_worker_fallback_avail_mb:
+            _tb_worker_target = 1
+            _tb_worker_mode = "fixed"
+    except Exception:
+        pass
+    os.environ["EPM_LABEL_TB_WORKERS"] = str(_tb_worker_target)
+    os.environ["EPM_LABEL_TB_WORKER_MODE"] = _tb_worker_mode
+    os.environ["EPM_LABEL_TB_WORKER_FALLBACK_AVAIL_MB"] = str(
+        int(_tb_worker_fallback_avail_mb)
+    )
+    tprint(
+        "Labels optimization mode: "
+        f"incremental_persist={bool(cfg['label_persist_incremental'])} "
+        f"keep_all_if_lte={int(cfg['label_geom_keep_all_if_lte_per_cell'])} "
+        f"keep_top_n={int(cfg['label_geom_keep_topn_per_cell'])} "
+        f"geom_hb_every={int(cfg['label_geom_heartbeat_every'])} "
+        f"geom_hb_secs={float(cfg['label_geom_heartbeat_secs']):.0f} "
+        f"raw_tb_payload_cache_mb={float(cfg['label_raw_tb_payload_cache_mb']):.0f} "
+        f"tb_workers={_tb_worker_target} worker_mode={_tb_worker_mode} "
+        "geom_payload=compact(tp_vals/sl_vals)"
+    )
     _load_mask_params_by_mode(cfg)
 
     if store is None:

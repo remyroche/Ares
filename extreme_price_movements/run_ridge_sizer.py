@@ -28,6 +28,7 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.training_utils import build_wide_tight_pair_features
 from extreme_price_movements.ridge_position_sizer import (
     RidgePositionSizer,
     prepare_policy_params_from_tpsl_optimiser,
@@ -297,6 +298,58 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
                     combined[col_name] = mdf["oof_prob"].values
                 elif "oof_pred" in mdf.columns:
                     combined[col_name] = mdf["oof_pred"].values
+                if "oof_sigma_trees" in mdf.columns:
+                    if col_name.endswith("_wide"):
+                        sigma_name = col_name.replace("_wide", "_sigma_wide")
+                    elif col_name.endswith("_tight"):
+                        sigma_name = col_name.replace("_tight", "_sigma_tight")
+                    else:
+                        sigma_name = f"{col_name}_sigma"
+                    combined[sigma_name] = mdf["oof_sigma_trees"].values
+                if "oof_sigma_robust" in mdf.columns:
+                    if col_name.endswith("_wide"):
+                        sigma_name = col_name.replace("_wide", "_robust_sigma_wide")
+                    elif col_name.endswith("_tight"):
+                        sigma_name = col_name.replace("_tight", "_robust_sigma_tight")
+                    else:
+                        sigma_name = f"{col_name}_robust_sigma"
+                    combined[sigma_name] = mdf["oof_sigma_robust"].values
+
+        pair_roots = sorted(
+            {
+                c[:-5]
+                for c in combined.columns
+                if c.endswith("_wide")
+                and not c.endswith(("_sigma_wide", "_robust_sigma_wide"))
+                and f"{c[:-5]}_tight" in combined.columns
+            }
+        )
+        for root in pair_roots:
+            wide_col = f"{root}_wide"
+            tight_col = f"{root}_tight"
+            sigma_wide_col = f"{root}_sigma_wide"
+            sigma_tight_col = f"{root}_sigma_tight"
+            robust_sigma_wide_col = f"{root}_robust_sigma_wide"
+            robust_sigma_tight_col = f"{root}_robust_sigma_tight"
+            pair_features = build_wide_tight_pair_features(
+                combined[wide_col].values,
+                combined[tight_col].values,
+                base_name=root,
+                sigma_wide=combined[sigma_wide_col].values
+                if sigma_wide_col in combined.columns
+                else None,
+                sigma_tight=combined[sigma_tight_col].values
+                if sigma_tight_col in combined.columns
+                else None,
+                robust_sigma_wide=combined[robust_sigma_wide_col].values
+                if robust_sigma_wide_col in combined.columns
+                else None,
+                robust_sigma_tight=combined[robust_sigma_tight_col].values
+                if robust_sigma_tight_col in combined.columns
+                else None,
+            )
+            for col_name, values in pair_features.items():
+                combined[col_name] = values
 
         # Add metadata and outcomes for joining and diagnostics
         meta_cols_to_pull = [
@@ -480,6 +533,17 @@ def load_meta_oof_predictions(
                 if col_name.startswith("reg"):
                     reg_cols.append(col_name)
 
+                # Preserve any extra numeric columns exported by the meta
+                # OOF files so downstream sizers can use uncertainty heads
+                # and auxiliary classifier outputs.
+                for extra_col in mdf.columns:
+                    if extra_col == "oof_pred" or extra_col in combined.columns:
+                        continue
+                    if pd.api.types.is_numeric_dtype(mdf[extra_col]):
+                        combined[extra_col] = _fill_nonfinite_oof_vector(
+                            mdf[extra_col].values, neutral=np.nan
+                        )
+
         # Agreement/disagreement features across horizon regressors
         if len(reg_cols) >= 2:
             reg_vals = combined[reg_cols].values
@@ -551,6 +615,33 @@ def load_meta_oof_predictions(
             combined["utility_disagreement"] = np.abs(
                 combined["reg_mean"].values - _u_hat
             )
+
+        # Pairwise agreement features for the main classifier/regressor.
+        if "oof_u_hat" in combined.columns and "oof_p_move" in combined.columns:
+            _u_hat = np.asarray(combined["oof_u_hat"].values, dtype=float)
+            _p_move = np.asarray(combined["oof_p_move"].values, dtype=float)
+            _eps = 1e-9
+            combined["meta_avg"] = 0.5 * (_u_hat + _p_move)
+            combined["meta_diff"] = _u_hat - _p_move
+            combined["meta_abs_diff"] = np.abs(combined["meta_diff"].values)
+            combined["meta_rel_diff"] = combined["meta_abs_diff"].values / (
+                np.abs(_u_hat) + np.abs(_p_move) + _eps
+            )
+            combined["meta_agreement_strength"] = np.clip(
+                1.0 - combined["meta_rel_diff"].values, 0.0, 1.0
+            )
+            if "robust_sigma_meta_reg" in combined.columns and "robust_sigma_meta_clf" in combined.columns:
+                combined["avg_robust_sigma_meta"] = 0.5 * (
+                    np.asarray(combined["robust_sigma_meta_reg"].values, dtype=float)
+                    + np.asarray(combined["robust_sigma_meta_clf"].values, dtype=float)
+                )
+            if "cv_meta_reg" in combined.columns and "cv_meta_clf" in combined.columns:
+                combined["avg_cv_meta"] = 0.5 * (
+                    np.asarray(combined["cv_meta_reg"].values, dtype=float)
+                    + np.asarray(combined["cv_meta_clf"].values, dtype=float)
+                )
+            if "avg_cv_meta" in combined.columns:
+                combined["meta_reliability"] = 1.0 / (1.0 + combined["avg_cv_meta"].values)
 
         inferred_side = next(iter(source_sides), "")
         if inferred_side:

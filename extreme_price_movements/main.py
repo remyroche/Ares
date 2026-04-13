@@ -418,6 +418,7 @@ def _load_base_oof_symbols(data_root: str, run_id: str) -> list[str]:
 def _filter_meta_training_to_base_oof_symbols(
     datasets: dict[str, pd.DataFrame],
     alpha_models: dict,
+    base_variant_models: dict,
     symbols: list[str],
 ) -> dict[str, pd.DataFrame]:
     """Filter datasets and cached base OOF vectors to the supplied symbol universe."""
@@ -477,6 +478,36 @@ def _filter_meta_training_to_base_oof_symbols(
                     )
                     continue
                 model.oof_probs = oof_probs[mask]
+
+    for variant_key, variant_info in (base_variant_models or {}).items():
+        if not isinstance(variant_info, dict):
+            continue
+        model = variant_info.get("model")
+        if model is None or getattr(model, "oof_probs", None) is None:
+            continue
+        if not isinstance(variant_key, tuple) or len(variant_key) != 4:
+            continue
+        _side, strategy_id, horizon, variant = variant_key
+        ds_key = f"train_{strategy_id}_{int(horizon)}_{variant}"
+        mask = row_masks.get(ds_key)
+        if mask is None:
+            continue
+        oof_probs = np.asarray(model.oof_probs, dtype=np.float32)
+        if len(oof_probs) != len(mask):
+            tprint(
+                f"WARNING: {ds_key} variant OOF length {len(oof_probs)} != mask length {len(mask)}; "
+                "skipping variant OOF symbol filter for this model"
+            )
+            continue
+        model.oof_probs = oof_probs[mask]
+        best_name = getattr(model, "best_model_name", None)
+        if hasattr(model, "detailed_metrics") and best_name in model.detailed_metrics:
+            dm = model.detailed_metrics[best_name]
+            for sigma_key in ("oof_sigma_trees", "oof_sigma_robust"):
+                if sigma_key in dm:
+                    sigma_vals = np.asarray(dm[sigma_key], dtype=np.float32)
+                    if len(sigma_vals) == len(mask):
+                        dm[sigma_key] = sigma_vals[mask]
 
     return filtered
 
@@ -620,7 +651,10 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
             f"Filtering meta training to {len(base_oof_symbols)} symbols with base-model OOF predictions"
         )
         datasets = _filter_meta_training_to_base_oof_symbols(
-            datasets, alpha_models, base_oof_symbols
+            datasets,
+            alpha_models,
+            base_bundle.get("base_variant_models", {}),
+            base_oof_symbols,
         )
     else:
         tprint(
@@ -643,7 +677,10 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
         from extreme_price_movements.training import train_meta_models_from_artifacts
 
         meta_models, meta_gate_results = train_meta_models_from_artifacts(
-            datasets, cfg, alpha_models, base_variant_models={}
+            datasets,
+            cfg,
+            alpha_models,
+            base_variant_models=base_bundle.get("base_variant_models", {}),
         )
         tprint(f"Meta models trained: {len(meta_models)}")
 

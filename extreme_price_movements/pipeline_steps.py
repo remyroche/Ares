@@ -66,11 +66,27 @@ from extreme_price_movements.reports.bucket_report import (
     report_optimise,
     report_ridge_sizer,
 )
-from extreme_price_movements.reports.report_generator import (
-    generate_backtest_report,
-    generate_risk_report,
-    generate_training_report,
-)
+try:
+    from extreme_price_movements.reports.report_generator import (
+        generate_backtest_report,
+        generate_risk_report,
+        generate_training_report,
+    )
+except ModuleNotFoundError:
+    def generate_backtest_report(*args, **kwargs):
+        raise ModuleNotFoundError(
+            "extreme_price_movements.reports.report_generator is not available"
+        )
+
+    def generate_risk_report(*args, **kwargs):
+        raise ModuleNotFoundError(
+            "extreme_price_movements.reports.report_generator is not available"
+        )
+
+    def generate_training_report(*args, **kwargs):
+        raise ModuleNotFoundError(
+            "extreme_price_movements.reports.report_generator is not available"
+        )
 from extreme_price_movements.ridge_position_sizer import (
     RidgePositionSizer,
     run_ridge_position_sizer_step,
@@ -92,6 +108,7 @@ from extreme_price_movements.training import (  # generate_spike_anatomy_history
 from extreme_price_movements.training_utils import (
     get_base_feature_keys,
     get_meta_feature_keys,
+    build_wide_tight_pair_features,
 )
 from extreme_price_movements.universe import (
     apply_hardcoded_universe_exclusions,
@@ -1794,6 +1811,14 @@ def _consolidate_layer_oof_from_disk(
         if not universe.empty
         else pd.DataFrame(columns=["timestamp", "symbol"])
     )
+
+    def _sigma_column_name(model_key: str, suffix: str) -> str:
+        if model_key.endswith("_wide"):
+            return model_key.replace("_wide", f"_{suffix}_wide")
+        if model_key.endswith("_tight"):
+            return model_key.replace("_tight", f"_{suffix}_tight")
+        return f"{model_key}_{suffix}"
+
     for fp in files:
         try:
             df = pd.read_parquet(fp)
@@ -1830,6 +1855,14 @@ def _consolidate_layer_oof_from_disk(
                 .dropna(subset=["timestamp", "symbol"])
                 .drop_duplicates(["timestamp", "symbol"])
             )
+            for sigma_col, suffix in (
+                ("oof_sigma_trees", "sigma"),
+                ("oof_sigma_robust", "robust_sigma"),
+            ):
+                if sigma_col in df.columns:
+                    mini[_sigma_column_name(model_key, suffix)] = pd.to_numeric(
+                        df[sigma_col], errors="coerce"
+                    ).astype(np.float32).values[: len(mini)]
             merged = (
                 mini
                 if merged.empty
@@ -1840,6 +1873,34 @@ def _consolidate_layer_oof_from_disk(
 
     if merged.empty:
         return 0
+
+    pair_roots = sorted(
+        {
+            c[:-5]
+            for c in merged.columns
+            if c.endswith("_wide")
+            and not c.endswith(("_sigma_wide", "_robust_sigma_wide"))
+            and f"{c[:-5]}_tight" in merged.columns
+        }
+    )
+    for root in pair_roots:
+        wide_col = f"{root}_wide"
+        tight_col = f"{root}_tight"
+        sigma_wide_col = f"{root}_sigma_wide"
+        sigma_tight_col = f"{root}_sigma_tight"
+        robust_sigma_wide_col = f"{root}_robust_sigma_wide"
+        robust_sigma_tight_col = f"{root}_robust_sigma_tight"
+        pair_features = build_wide_tight_pair_features(
+            merged[wide_col].values,
+            merged[tight_col].values,
+            base_name=root,
+            sigma_wide=merged[sigma_wide_col].values if sigma_wide_col in merged.columns else None,
+            sigma_tight=merged[sigma_tight_col].values if sigma_tight_col in merged.columns else None,
+            robust_sigma_wide=merged[robust_sigma_wide_col].values if robust_sigma_wide_col in merged.columns else None,
+            robust_sigma_tight=merged[robust_sigma_tight_col].values if robust_sigma_tight_col in merged.columns else None,
+        )
+        for col_name, values in pair_features.items():
+            merged[col_name] = values
 
     for col in merged.columns:
         if col in {"symbol"}:

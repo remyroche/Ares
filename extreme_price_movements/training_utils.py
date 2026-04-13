@@ -1,5 +1,7 @@
 from typing import List, Dict, Any
 
+import numpy as np
+
 
 _BASE_NON_LOCATION_48H_PLUS_EXACT = {
     "ret48h",
@@ -111,6 +113,81 @@ def dedupe_keep_order(xs: List[str]) -> List[str]:
             seen.add(x)
             out.append(x)
     return out
+
+
+def robust_sigma(arr: np.ndarray) -> np.ndarray:
+    arr = np.asarray(arr, dtype=np.float64)
+    med = np.median(arr, axis=1, keepdims=True)
+    mad = np.median(np.abs(arr - med), axis=1)
+    return 1.4826 * mad
+
+
+def build_wide_tight_pair_features(
+    wide: np.ndarray,
+    tight: np.ndarray,
+    *,
+    base_name: str,
+    sigma_wide: np.ndarray | None = None,
+    sigma_tight: np.ndarray | None = None,
+    robust_sigma_wide: np.ndarray | None = None,
+    robust_sigma_tight: np.ndarray | None = None,
+    eps: float = 1e-9,
+) -> dict[str, np.ndarray]:
+    wide = np.asarray(wide, dtype=np.float32).reshape(-1)
+    tight = np.asarray(tight, dtype=np.float32).reshape(-1)
+    if wide.shape != tight.shape:
+        raise ValueError("wide and tight must have the same shape")
+
+    def _coerce(arr, fallback):
+        if arr is None:
+            return np.asarray(fallback, dtype=np.float32).reshape(-1)
+        out = np.asarray(arr, dtype=np.float32).reshape(-1)
+        if len(out) != len(wide):
+            fill = np.full(len(wide), np.nan, dtype=np.float32)
+            m = min(len(out), len(wide))
+            if m > 0:
+                fill[:m] = out[:m]
+            return fill
+        return out
+
+    sigma_wide = _coerce(sigma_wide, np.zeros(len(wide), dtype=np.float32))
+    sigma_tight = _coerce(sigma_tight, np.zeros(len(wide), dtype=np.float32))
+    robust_sigma_wide = _coerce(
+        robust_sigma_wide, sigma_wide if sigma_wide is not None else np.zeros(len(wide))
+    )
+    robust_sigma_tight = _coerce(
+        robust_sigma_tight,
+        sigma_tight if sigma_tight is not None else np.zeros(len(wide)),
+    )
+
+    avg = 0.5 * (wide + tight)
+    diff = wide - tight
+    abs_diff = np.abs(diff)
+    rel_diff = abs_diff / (np.abs(wide) + np.abs(tight) + float(eps))
+
+    sigma_avg = 0.5 * (sigma_wide + sigma_tight)
+    robust_sigma_avg = 0.5 * (robust_sigma_wide + robust_sigma_tight)
+    cv_wide = robust_sigma_wide / (np.abs(wide) + float(eps))
+    cv_tight = robust_sigma_tight / (np.abs(tight) + float(eps))
+    cv_avg = robust_sigma_avg / (np.abs(avg) + float(eps))
+    agreement_strength = np.clip(1.0 - rel_diff, 0.0, 1.0)
+    reliability = 1.0 / (1.0 + cv_avg)
+
+    prefix = f"{base_name}_"
+    return {
+        f"{prefix}avg": avg.astype(np.float32),
+        f"{prefix}diff": diff.astype(np.float32),
+        f"{prefix}abs_diff": abs_diff.astype(np.float32),
+        f"{prefix}rel_diff": rel_diff.astype(np.float32),
+        f"{prefix}sigma_wide": sigma_wide.astype(np.float32),
+        f"{prefix}sigma_tight": sigma_tight.astype(np.float32),
+        f"{prefix}sigma_avg": sigma_avg.astype(np.float32),
+        f"{prefix}cv_wide": cv_wide.astype(np.float32),
+        f"{prefix}cv_tight": cv_tight.astype(np.float32),
+        f"{prefix}cv_avg": cv_avg.astype(np.float32),
+        f"{prefix}agreement_strength": agreement_strength.astype(np.float32),
+        f"{prefix}reliability": reliability.astype(np.float32),
+    }
 
 
 def _is_location_feature(name: str) -> bool:

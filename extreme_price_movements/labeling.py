@@ -4,6 +4,10 @@ import pandas as pd
 import platform
 from numba import jit, prange
 from joblib import Parallel, delayed, cpu_count
+try:
+    import psutil
+except Exception:
+    psutil = None
 from .fast_funcs import simulate_trade_numba
 from .utils import tprint
 
@@ -1133,6 +1137,43 @@ def compute_triple_barrier_labels(
     else:
         sl_df = sl
 
+    c_by_asset = {
+        asset: c[asset].to_numpy(dtype=np.float32, copy=False) for asset in assets
+    }
+    o_by_asset = {
+        asset: o[asset].to_numpy(dtype=np.float32, copy=False) for asset in assets
+    }
+    h_by_asset = {
+        asset: h[asset].to_numpy(dtype=np.float32, copy=False) for asset in assets
+    }
+    l_by_asset = {
+        asset: l[asset].to_numpy(dtype=np.float32, copy=False) for asset in assets
+    }
+    if horizons_frame is not None:
+        horizons_by_asset = {
+            asset: horizons_frame[asset].to_numpy(dtype=np.float32, copy=False)
+            for asset in assets
+            if asset in horizons_frame.columns
+        }
+    else:
+        horizons_by_asset = {}
+    if not tp_is_scalar:
+        tp_by_asset = {
+            asset: tp_df[asset].to_numpy(dtype=np.float32, copy=False)
+            for asset in assets
+            if asset in tp_df.columns
+        }
+    else:
+        tp_by_asset = {}
+    if not sl_is_scalar:
+        sl_by_asset = {
+            asset: sl_df[asset].to_numpy(dtype=np.float32, copy=False)
+            for asset in assets
+            if asset in sl_df.columns
+        }
+    else:
+        sl_by_asset = {}
+
     asset_progress_every = max(1, len(assets) // 4)
 
     def _process_asset(asset, asset_idx: int | None = None):
@@ -1145,23 +1186,27 @@ def compute_triple_barrier_labels(
                 f"labeling: triple-barrier asset {asset_idx}/{len(assets)} "
                 f"({asset}) horizon={horizon} side={side}"
             )
-        c_arr = c[asset].to_numpy(dtype=np.float32)
-        o_arr = o[asset].to_numpy(dtype=np.float32)
-        h_arr = h[asset].to_numpy(dtype=np.float32)
-        l_arr = l[asset].to_numpy(dtype=np.float32)
+        c_arr = c_by_asset[asset]
+        o_arr = o_by_asset[asset]
+        h_arr = h_by_asset[asset]
+        l_arr = l_by_asset[asset]
         
         # OPTIMIZATION: Use scalar directly when TP/SL are uniform
         if tp_is_scalar:
             tp_arr = np.full(len(c_arr), tp_scalar_val, dtype=np.float32)
         else:
-            tp_arr = tp_df[asset].to_numpy(dtype=np.float32) if asset in tp_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
+            tp_arr = tp_by_asset.get(asset)
+            if tp_arr is None:
+                tp_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
         
         if sl_is_scalar:
             sl_arr = np.full(len(c_arr), sl_scalar_val, dtype=np.float32)
         else:
-            sl_arr = sl_df[asset].to_numpy(dtype=np.float32) if asset in sl_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
+            sl_arr = sl_by_asset.get(asset)
+            if sl_arr is None:
+                sl_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
         
-        h_arr_custom = horizons_frame[asset].to_numpy(dtype=np.float32) if (horizons_frame is not None and asset in horizons_frame.columns) else None
+        h_arr_custom = horizons_by_asset.get(asset)
 
         if return_outcomes:
             out, rets, qual, _, conflict_j, mfe_arr, mae_arr, t_mfe, t_mae = _numba_triple_barrier_outcomes_fast(
@@ -1178,8 +1223,25 @@ def compute_triple_barrier_labels(
         # Keep memory pressure bounded on Apple Silicon unified memory.
         n_jobs_cap = 2
     n_jobs_override = str(os.environ.get("EPM_LABEL_TB_WORKERS", "")).strip()
+    _tb_worker_mode = str(os.environ.get("EPM_LABEL_TB_WORKER_MODE", "fixed")).strip().lower()
+    _fallback_mb = float(os.environ.get("EPM_LABEL_TB_WORKER_FALLBACK_AVAIL_MB", "6144") or 6144.0)
+    _selected_workers = None
     if n_jobs_override.isdigit() and int(n_jobs_override) > 0:
-        n_jobs = min(cpu_count(), len(assets), n_jobs_cap, int(n_jobs_override))
+        _selected_workers = int(n_jobs_override)
+        if _tb_worker_mode == "auto" and _selected_workers > 1 and psutil is not None:
+            try:
+                _vmem = psutil.virtual_memory()
+                _avail_mb = float(_vmem.available / (1024 ** 2))
+                if _avail_mb < _fallback_mb:
+                    tprint(
+                        f"labeling: memory-aware worker fallback active "
+                        f"(avail_mb={_avail_mb:.0f} < {_fallback_mb:.0f}); using workers=1"
+                    )
+                    _selected_workers = 1
+            except Exception:
+                pass
+    if _selected_workers is not None:
+        n_jobs = min(cpu_count(), len(assets), n_jobs_cap, _selected_workers)
     else:
         n_jobs = min(cpu_count(), len(assets), n_jobs_cap)
     tprint(
@@ -1240,7 +1302,7 @@ def compute_triple_barrier_labels(
                 hf_h = df_15m["high"].to_numpy(dtype=np.float32, copy=False)
                 hf_l = df_15m["low"].to_numpy(dtype=np.float32, copy=False)
                 hf_c = df_15m["close"].to_numpy(dtype=np.float32, copy=False)
-                c_arr = c[asset].to_numpy(dtype=np.float32, copy=False)
+                c_arr = c_by_asset[asset]
 
                 resolved_codes = _resolve_conflicts_with_15m_numba(
                     ambiguous_indices.astype(np.int64, copy=False),

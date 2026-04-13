@@ -56,6 +56,7 @@ from extreme_price_movements.calibration import (
     compute_logit_shift,
     apply_logit_shift,
 )
+from extreme_price_movements.training_utils import robust_sigma
 
 
 def _safe_binary_calibrate(preds, y_true, min_unique=20, min_samples=100):
@@ -334,6 +335,29 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         model.fit(X_tr, y_tr, **fit_kwargs)
 
+    def _tree_sigma_features(self, model, X):
+        """Return tree-ensemble dispersion features for a fitted model.
+
+        The base race only uses ExtraTrees, so we can compute the per-tree vote
+        spread directly from the fitted estimators. Fallbacks are NaN when the
+        model does not expose tree estimators.
+        """
+        inner = model.estimator if isinstance(model, Float64Wrapper) else model
+        estimators = getattr(inner, "estimators_", None)
+        if not estimators:
+            n = len(X)
+            nan_vec = np.full(n, np.nan, dtype=np.float32)
+            return nan_vec, nan_vec
+        try:
+            tree_preds = np.stack([tree.predict(X) for tree in estimators], axis=1)
+            sigma = np.asarray(tree_preds.std(axis=1), dtype=np.float32)
+            sigma_robust = np.asarray(robust_sigma(tree_preds), dtype=np.float32)
+            return sigma, sigma_robust
+        except Exception:
+            n = len(X)
+            nan_vec = np.full(n, np.nan, dtype=np.float32)
+            return nan_vec, nan_vec
+
     def fit(self, X, y, sample_weight=None, returns=None, groups=None, symbols=None):
         """
         X: features
@@ -461,6 +485,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             fold_base_logloss = []
             fold_logloss_imp = []
             oof_model = np.full(len(y), np.nan, dtype=np.float64)
+            oof_sigma_trees = np.full(len(y), np.nan, dtype=np.float32)
+            oof_sigma_robust = np.full(len(y), np.nan, dtype=np.float32)
 
             try:
                 for fold_i, (train_idx, val_idx) in enumerate(cached_splits):
@@ -548,6 +574,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                         probs = probs_raw
 
                     oof_model[val_idx] = probs
+                    sigma_fold, sigma_robust_fold = self._tree_sigma_features(
+                        model_clone, X_val
+                    )
+                    oof_sigma_trees[val_idx] = sigma_fold
+                    oof_sigma_robust[val_idx] = sigma_robust_fold
                     
                     # w_bss=0.20: Enabled BSS in selection score
                     # We now compute weighted BSS for diagnostics
@@ -650,6 +681,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "fold_brier": [float(x) for x in fold_brier],
                     "fold_base_logloss": [float(x) for x in fold_base_logloss],
                     "fold_logloss_imp": [float(x) for x in fold_logloss_imp],
+                    "oof_sigma_trees": oof_sigma_trees.copy().astype(np.float32),
+                    "oof_sigma_robust": oof_sigma_robust.copy().astype(np.float32),
                     # Store Calibrated OOF for gate checks
                     "oof_probs": np.nan_to_num(oof_cal.copy(), nan=0.5).astype(np.float32),
                     # Store raw OOF for reference

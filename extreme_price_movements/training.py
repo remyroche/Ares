@@ -102,6 +102,7 @@ from .trap_specialist import (
     train_trap_from_dataset,
 )
 from .tree_leaf_policy import tree_regularization_params
+from .training_utils import build_wide_tight_pair_features
 from .utils import tprint
 
 _EXP_INPUT_CLIP = 60.0
@@ -2495,7 +2496,7 @@ def _downcast_geom_payload(geom_payload: dict):
     if not isinstance(geom_payload, dict):
         return geom_payload
     out = dict(geom_payload)
-    for k in ("n_tp", "n_sl", "n_to"):
+    for k in ("tp_vals", "sl_vals"):
         df = out.get(k)
         if isinstance(df, pd.DataFrame):
             out[k] = df.astype(np.float32, copy=False)
@@ -4960,7 +4961,7 @@ def _get_bucket_label_config(cfg, side, kind):
 def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None):
     """Build grid-aggregated triple-barrier labels shared across MR/TF for each (H, strategy)."""
     tb_cache = {}  # (H, side) -> (tb_labels, tb_returns)
-    geom_cache = {}  # (H, side) -> {"n_tp", "n_sl", "n_to", "n_geom"}
+    geom_cache = {}  # (H, side) -> {"tp_vals", "sl_vals", "n_geom"}
 
     if "atr_pct" in feats:
         atr_pct_df = _coerce_feature_to_panel_df(
@@ -5064,10 +5065,75 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
 
     # Cache raw triple barrier results per (H, side, k_tp, sl_base_mult) to avoid recomputation.
     _raw_tb_cache = {}
+    _raw_tb_payload_cache = {}
+    _raw_tb_payload_cache_max_bytes = max(
+        0,
+        int(float(cfg.get("label_raw_tb_payload_cache_mb", 2048.0)) * 1024 * 1024),
+    )
     _kinds = ["mr", "tf"]
     _prod_events_rows = []
     _prod_cell_metrics = {}
     _diag_labels = bool(cfg.get("label_diagnostics_mode", False))
+
+    def _matrix_to_array(_obj, dtype=None):
+        if _obj is None:
+            return None
+        if isinstance(_obj, pd.DataFrame):
+            return _obj.to_numpy(dtype=dtype, copy=False)
+        _arr = np.asarray(_obj)
+        if dtype is not None and _arr.dtype != np.dtype(dtype):
+            _arr = _arr.astype(dtype, copy=False)
+        return _arr
+
+    def _raw_tb_payload_nbytes(payload: dict) -> int:
+        _total = 0
+        for _k in ("lbl", "ret", "qual", "tp_vals", "sl_vals"):
+            _v = payload.get(_k)
+            if _v is None:
+                continue
+            try:
+                _total += int(np.asarray(_v).nbytes)
+            except Exception:
+                pass
+        return int(_total)
+
+    def _trim_raw_tb_payload_cache() -> None:
+        if _raw_tb_payload_cache_max_bytes <= 0:
+            _raw_tb_payload_cache.clear()
+            return
+        _total = sum(
+            int(_payload.get("nbytes", 0))
+            for _payload in _raw_tb_payload_cache.values()
+        )
+        if _total <= _raw_tb_payload_cache_max_bytes:
+            return
+        for _key, _payload in sorted(
+            _raw_tb_payload_cache.items(),
+            key=lambda _item: (
+                float(_item[1].get("score", 0.0)),
+                float(_item[1].get("ts", 0.0)),
+            ),
+        ):
+            _total -= int(_payload.get("nbytes", 0))
+            _raw_tb_payload_cache.pop(_key, None)
+            if _total <= _raw_tb_payload_cache_max_bytes:
+                break
+
+    def _cache_raw_tb_payload(raw_key: tuple, lbl, ret, qual, tp_vals, sl_vals, score: float) -> None:
+        if raw_key is None or _raw_tb_payload_cache_max_bytes <= 0:
+            return
+        _payload = {
+            "lbl": np.ascontiguousarray(_matrix_to_array(lbl, np.int8)),
+            "ret": np.ascontiguousarray(_matrix_to_array(ret, np.float32)),
+            "qual": np.ascontiguousarray(_matrix_to_array(qual, np.float32)),
+            "tp_vals": np.ascontiguousarray(_matrix_to_array(tp_vals, np.float32)),
+            "sl_vals": np.ascontiguousarray(_matrix_to_array(sl_vals, np.float32)),
+            "score": float(score),
+            "ts": time.perf_counter(),
+        }
+        _payload["nbytes"] = _raw_tb_payload_nbytes(_payload)
+        _raw_tb_payload_cache[raw_key] = _payload
+        _trim_raw_tb_payload_cache()
 
     # -------------------------------------------------------------------------------------
     # OPTIMIZATION: Hoist ATR and Barrier Base Calculations (15x Speedup)
@@ -5283,6 +5349,19 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
         }
 
     def _materialize_geom_triplet(_g: dict, _side: str, _H: int) -> dict:
+        _raw_key = _g.get("raw_key")
+        _cached_payload = _raw_tb_payload_cache.get(_raw_key)
+        if _cached_payload is not None:
+            return {
+                **_g,
+                "tp_floor_search": float(_g.get("tp_floor_search", np.nan)),
+                "tp_floor_prod": float(_g.get("tp_floor_prod", np.nan)),
+                "lbl": _cached_payload["lbl"],
+                "ret": _cached_payload["ret"],
+                "qual": _cached_payload["qual"],
+                "tp_vals": _cached_payload["tp_vals"],
+                "sl_vals": _cached_payload["sl_vals"],
+            }
         _sl_base = float(_g["sl_base_mult"])
         _tp_lo_eval = _co_calibrate_tp_floor(tp_lo_eff_search, _sl_base, tp_hi)
         _tp_lo_prod_eval = _co_calibrate_tp_floor(tp_lo_eff_prod, _sl_base, tp_hi)
@@ -5332,19 +5411,19 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
             **_g,
             "tp_floor_search": float(_tp_lo_eval),
             "tp_floor_prod": float(_tp_lo_final_prod),
-            "lbl": _lbl_mat,
-            "ret": _ret_mat,
-            "qual": _qual_mat,
+            "lbl": np.ascontiguousarray(_matrix_to_array(_lbl_mat, np.int8)),
+            "ret": np.ascontiguousarray(_matrix_to_array(_ret_mat, np.float32)),
+            "qual": np.ascontiguousarray(_matrix_to_array(_qual_mat, np.float32)),
+            "tp_vals": np.ascontiguousarray(_matrix_to_array(_tp_df_a, np.float32)),
+            "sl_vals": np.ascontiguousarray(_matrix_to_array(_sl_df_a, np.float32)),
         }
 
-    def _materialize_geom_aggregate(_runs, _cache_key):
+    def _aggregate_geom_runs(_runs):
         if not _runs:
-            return
+            return None
         rr_weights_raw = np.array([g["rr_weight"] for g in _runs], dtype=np.float32)
         rr_weights = np.sqrt(rr_weights_raw).astype(np.float32)
         rr_weights = rr_weights / (rr_weights.mean() + 1e-12)
-
-        first_shape = _runs[0]["lbl"].values.shape
         _atr_med = _barrier_base["atr_median"].values
         _atr_pct = atr_pct_local.values
         atr_ratio = np.divide(
@@ -5361,12 +5440,12 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
         else:
             k_tps_norm = np.zeros_like(k_tps_raw)
 
-        lbl_stack = np.stack([g["lbl"].values for g in _runs], axis=0)
+        lbl_stack = np.stack([_matrix_to_array(g["lbl"], np.int8) for g in _runs], axis=0)
         ret_stack = np.stack(
-            [g["ret"].values.astype(np.float32) for g in _runs], axis=0
+            [_matrix_to_array(g["ret"], np.float32) for g in _runs], axis=0
         )
         qual_stack = np.stack(
-            [g["qual"].values.astype(np.float32) for g in _runs], axis=0
+            [_matrix_to_array(g["qual"], np.float32) for g in _runs], axis=0
         )
         mask_tp = (lbl_stack == OUT_TP).astype(np.float32)
         mask_sl = (lbl_stack == OUT_SL).astype(np.float32)
@@ -5385,34 +5464,24 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
         w_to = np.sum(w_3d * mask_to, axis=0)
         agg_ret_num = np.sum(w_3d * ret_stack, axis=0)
         agg_qual_num = np.sum(w_3d * qual_stack, axis=0)
-        tp_dist_num = np.sum(w_3d * np.where(mask_tp, ret_stack, 0.0), axis=0)
-        sl_dist_num = np.sum(w_3d * np.where(mask_sl, -ret_stack, 0.0), axis=0)
         w_sum = w_tp + w_sl + w_to
 
-        n_tp_df = pd.DataFrame(
-            w_tp.astype(np.float32, copy=False),
-            index=panel["close"].index,
-            columns=panel["close"].columns,
+        tp_vals_stack = np.stack(
+            [_matrix_to_array(g["tp_vals"], np.float32) for g in _runs], axis=0
         )
-        n_sl_df = pd.DataFrame(
-            w_sl.astype(np.float32, copy=False),
-            index=panel["close"].index,
-            columns=panel["close"].columns,
+        sl_vals_stack = np.stack(
+            [_matrix_to_array(g["sl_vals"], np.float32) for g in _runs], axis=0
         )
-        n_to_df = pd.DataFrame(
-            w_to.astype(np.float32, copy=False),
-            index=panel["close"].index,
-            columns=panel["close"].columns,
-        )
-        tp_dist_df = pd.DataFrame(
-            (tp_dist_num / np.where(w_tp > 0, w_tp, 1.0)).astype(
-                np.float32, copy=False
+        tp_vals_df = pd.DataFrame(
+            (np.sum(w_3d * tp_vals_stack, axis=0) / np.where(w_sum > 0, w_sum, 1.0)).astype(
+                np.float32,
+                copy=False,
             ),
             index=panel["close"].index,
             columns=panel["close"].columns,
         )
-        sl_dist_df = pd.DataFrame(
-            (sl_dist_num / np.where(w_sl > 0, w_sl, 1.0)).astype(
+        sl_vals_df = pd.DataFrame(
+            (np.sum(w_3d * sl_vals_stack, axis=0) / np.where(w_sum > 0, w_sum, 1.0)).astype(
                 np.float32, copy=False
             ),
             index=panel["close"].index,
@@ -5422,34 +5491,44 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
         agg_ret = (agg_ret_num / denom).astype(np.float32)
         agg_qual = (agg_qual_num / denom).astype(np.float32)
         agg_lbl = np.where(
-            n_tp_df.values > n_sl_df.values,
+            w_tp > w_sl,
             OUT_TP,
-            np.where(n_sl_df.values > n_tp_df.values, OUT_SL, OUT_TO),
+            np.where(w_sl > w_tp, OUT_SL, OUT_TO),
         ).astype(np.int8)
+
+        return {
+            "agg_lbl": agg_lbl,
+            "agg_ret": agg_ret,
+            "agg_qual": agg_qual,
+            "tp_vals_df": tp_vals_df,
+            "sl_vals_df": sl_vals_df,
+        }
+
+    def _materialize_geom_aggregate(_runs, _cache_key):
+        _agg = _aggregate_geom_runs(_runs)
+        if _agg is None:
+            return
 
         tb_cache[_cache_key] = (
             pd.DataFrame(
-                agg_lbl.astype(np.int8, copy=False),
+                _agg["agg_lbl"].astype(np.int8, copy=False),
                 index=panel["close"].index,
                 columns=panel["close"].columns,
             ),
             pd.DataFrame(
-                agg_ret.astype(np.float32, copy=False),
+                _agg["agg_ret"].astype(np.float32, copy=False),
                 index=panel["close"].index,
                 columns=panel["close"].columns,
             ),
             pd.DataFrame(
-                agg_qual.astype(np.float32, copy=False),
+                _agg["agg_qual"].astype(np.float32, copy=False),
                 index=panel["close"].index,
                 columns=panel["close"].columns,
             ),
         )
         geom_cache[_cache_key] = {
-            "n_tp": n_tp_df,
-            "n_sl": n_sl_df,
-            "n_to": n_to_df,
-            "tp_dist": tp_dist_df,
-            "sl_dist": sl_dist_df,
+            "tp_vals": _agg["tp_vals_df"],
+            "sl_vals": _agg["sl_vals_df"],
             "n_geom": len(_runs),
         }
 
@@ -5626,10 +5705,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         ]
 
                 _cell_windows = sorted(set(t[2] for t in _validated_triplets))
-                _keep_all_lte = int(cfg.get("label_geom_keep_all_if_lte_per_cell", 12))
+                _keep_all_lte = int(cfg.get("label_geom_keep_all_if_lte_per_cell", 6))
+                _keep_top_n = max(1, int(cfg.get("label_geom_keep_topn_per_cell", 6)))
                 _skip_geom_eval = len(_validated_triplets) > 0 and len(
                     _validated_triplets
-                ) <= max(0, _keep_all_lte)
+                ) <= max(0, min(_keep_all_lte, _keep_top_n))
                 tprint(
                     f"Pre-computing geometry labels H={H} strat={s_id} kind={kind} side={side} "
                     f"(triplets={len(_validated_triplets)}, atr_windows={_cell_windows})..."
@@ -5638,15 +5718,15 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                     tprint(
                         f"Geometry selection bypass: H={H} strat={s_id} side={side} "
                         f"keeping all {len(_validated_triplets)} validated triplets "
-                        f"(threshold={_keep_all_lte})"
+                        f"(threshold={min(_keep_all_lte, _keep_top_n)})"
                     )
 
                 geom_runs = []
                 relaxed_pool = []
                 _cell_start_ts = time.perf_counter()
                 _hb_last_ts = _cell_start_ts
-                _hb_every = max(1, int(cfg.get("label_geom_heartbeat_every", 2)))
-                _hb_secs = max(5.0, float(cfg.get("label_geom_heartbeat_secs", 30.0)))
+                _hb_every = max(1, int(cfg.get("label_geom_heartbeat_every", 4)))
+                _hb_secs = max(5.0, float(cfg.get("label_geom_heartbeat_secs", 60.0)))
 
                 # OPTIMIZATION: Cache barrier factory outputs by (atr_window, k_tp, sl_base_mult, H, tp_lo, tp_hi)
                 # This avoids redundant computation when same geometry is used across different (side, kind) combinations
@@ -5812,6 +5892,15 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                             "tp_emp_base": float(_tp_emp_base),
                         }
                         _raw_tb_cache[raw_key] = _tb_summary
+                        _cache_raw_tb_payload(
+                            raw_key,
+                            lbl,
+                            ret,
+                            qual,
+                            tp_df,
+                            sl_df,
+                            score=float(_tb_summary.get("auc_bound", 0.5)),
+                        )
                         del lbl, ret, qual
                     n_events_raw = int(_tb_summary["n_events_raw"])
                     tp_hit_raw = float(_tb_summary["tp_hit_raw"])
@@ -5972,16 +6061,14 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                             ),
                             reverse=True,
                         )
-                        keep_top_n = int(cfg.get("label_geom_keep_topn_per_cell", 6))
-                        keep_top_n = max(1, keep_top_n)
-                        geom_runs_proxy = relaxed_pool[:keep_top_n]
+                        geom_runs_proxy = relaxed_pool[:_keep_top_n]
 
-                    # Recompute only the winners so the full label payload exists
-                    # without retaining every candidate's large triple-barrier arrays.
+                    # Materialize only the winners, preferably from the bounded raw payload cache.
                     geom_runs = [
                         _materialize_geom_triplet(_g, side, int(H))
                         for _g in geom_runs_proxy
                     ]
+                    _raw_tb_payload_cache.clear()
 
                 if not geom_runs:
                     # Rescue path mirrored for H2/H4 with stricter fallbacks on longer horizons.
@@ -6134,41 +6221,13 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                             f"Consider raising production TP floor or widening geometry."
                         )
 
-                    # Build production-admissibility inputs for label-step diagnostics (best geometry per cell).
+                    # Build production-admissibility inputs from the kept top-K geometries for this cell.
+                    _prod_geom = _aggregate_geom_runs(geom_runs)
                     _best_g = geom_runs[0]
-                    _tp_lo_audit = float(
-                        _best_g.get(
-                            "tp_floor_prod",
-                            _best_g.get("tp_floor_search", tp_lo_eff_search),
-                        )
-                    )
-                    # Use the atr_window that produced _best_g, not the leaked loop variable.
-                    _audit_win = int(_best_g.get("atr_window", _atr_window))
-                    _audit_base = _barrier_base_cache.get(_audit_win, _barrier_base)
-                    _tp_df_a, _sl_df_a = compute_barrier_factory(
-                        atr_pct=atr_pct_local,
-                        window_size=_audit_win,
-                        k_tp=float(_best_g["k_tp"]),
-                        sl_base_mult=float(_best_g["sl_base_mult"]),
-                        horizon=H,
-                        H_base=H_base,
-                        disp_floor=disp_floor,
-                        z_max=z_max,
-                        k_reg=k_reg,
-                        m_lo=m_lo,
-                        sl_mult_lo=sl_mult_lo,
-                        sl_mult_hi=sl_mult_hi,
-                        sl_lo=sl_lo,
-                        sl_hi=sl_hi,
-                        z_gate=z_gate,
-                        tp_lo=_tp_lo_audit,
-                        tp_hi=tp_hi,
-                        _base=_audit_base,
-                    )
-                    _lbl_mat = _best_g["lbl"].to_numpy(dtype=np.int8, copy=False)
-                    _ret_mat = _best_g["ret"].to_numpy(dtype=np.float32, copy=False)
-                    _tp_mat = _tp_df_a.to_numpy(dtype=np.float32, copy=False)
-                    _sl_mat = _sl_df_a.to_numpy(dtype=np.float32, copy=False)
+                    _lbl_mat = _prod_geom["agg_lbl"]
+                    _ret_mat = _prod_geom["agg_ret"]
+                    _tp_mat = _prod_geom["tp_vals_df"].to_numpy(dtype=np.float32, copy=False)
+                    _sl_mat = _prod_geom["sl_vals_df"].to_numpy(dtype=np.float32, copy=False)
                     _valid_prod = (
                         np.isfinite(_ret_mat)
                         & np.isfinite(_tp_mat)
@@ -6203,27 +6262,54 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         _sl_mat,
                         _valid_prod,
                         _y_prod,
-                        _tp_df_a,
-                        _sl_df_a,
                     )
                     _prod_cell_metrics[f"{side}_H{int(H)}"] = {
                         "timeout": float(
-                            _best_g.get(
-                                "timeout_raw", _best_g.get("to_rate", float("nan"))
+                            np.mean(
+                                [
+                                    float(
+                                        g.get(
+                                            "timeout_raw",
+                                            g.get("to_rate", float("nan")),
+                                        )
+                                    )
+                                    for g in geom_runs
+                                ]
                             )
                         ),
                         "auc_label": float(
-                            _best_g.get(
-                                "auc_label",
-                                _best_g.get("auc_bound", float("nan")),
+                            np.mean(
+                                [
+                                    float(
+                                        g.get(
+                                            "auc_label",
+                                            g.get("auc_bound", float("nan")),
+                                        )
+                                    )
+                                    for g in geom_runs
+                                ]
                             )
                         ),
-                        "auc_bound": float(_best_g.get("auc_bound", float("nan"))),
-                        "tp_sep_top10": float(
-                            _best_g.get("tp_sep_top10", float("nan"))
+                        "auc_bound": float(
+                            np.mean(
+                                [float(g.get("auc_bound", float("nan"))) for g in geom_runs]
+                            )
                         ),
-                        "ap_lift": float(_best_g.get("ap_lift", float("nan"))),
-                        "tp_over_sl": float(_best_g.get("tp_over_sl", float("nan"))),
+                        "tp_sep_top10": float(
+                            np.mean(
+                                [float(g.get("tp_sep_top10", float("nan"))) for g in geom_runs]
+                            )
+                        ),
+                        "ap_lift": float(
+                            np.mean(
+                                [float(g.get("ap_lift", float("nan"))) for g in geom_runs]
+                            )
+                        ),
+                        "tp_over_sl": float(
+                            np.mean(
+                                [float(g.get("tp_over_sl", float("nan"))) for g in geom_runs]
+                            )
+                        ),
                     }
 
                 if _diag_labels:
@@ -7383,6 +7469,143 @@ def train_meta_models_from_artifacts(
         aligned = np.full(len(df_union), 0.5, dtype=np.float32)
         aligned[:n_use] = source_oof[:n_use].astype(np.float32)
         return aligned
+
+    def _race_sigma_vector(race, key: str, fallback_len: int) -> np.ndarray:
+        if race is None:
+            return np.full(fallback_len, np.nan, dtype=np.float32)
+        detailed = getattr(race, "detailed_metrics", {}) or {}
+        best_name = getattr(race, "best_model_name", None)
+        if best_name in detailed and key in detailed[best_name]:
+            vals = np.asarray(detailed[best_name][key], dtype=np.float32)
+            if len(vals) >= fallback_len:
+                return vals[:fallback_len]
+            out = np.full(fallback_len, np.nan, dtype=np.float32)
+            out[: len(vals)] = vals
+            return out
+        for dm in detailed.values():
+            if key in dm:
+                vals = np.asarray(dm[key], dtype=np.float32)
+                if len(vals) >= fallback_len:
+                    return vals[:fallback_len]
+                out = np.full(fallback_len, np.nan, dtype=np.float32)
+                out[: len(vals)] = vals
+                return out
+        return np.full(fallback_len, np.nan, dtype=np.float32)
+
+    def _collect_wide_tight_variant_features(
+        side: str,
+        kind: str,
+        df_union: pd.DataFrame,
+        horizon_dfs_local: dict,
+    ) -> tuple[pd.DataFrame, list[str]]:
+        feature_dict: dict[str, np.ndarray] = {}
+        feature_cols: list[str] = []
+        for h in sorted(horizon_dfs_local.keys()):
+            wide_key = (side, kind, int(h), "wide")
+            tight_key = (side, kind, int(h), "tight")
+            wide_info = base_variant_models.get(wide_key)
+            tight_info = base_variant_models.get(tight_key)
+            if not wide_info or not tight_info:
+                continue
+            wide_race = wide_info.get("model")
+            tight_race = tight_info.get("model")
+            if wide_race is None or tight_race is None:
+                continue
+            wide_ds = datasets.get(f"train_{kind}_{int(h)}_wide")
+            tight_ds = datasets.get(f"train_{kind}_{int(h)}_tight")
+            if wide_ds is None or tight_ds is None:
+                continue
+            wide_oof = getattr(wide_race, "oof_probs", None)
+            tight_oof = getattr(tight_race, "oof_probs", None)
+            if wide_oof is None or tight_oof is None:
+                continue
+            wide_pred = _align_oof_to_union(df_union, wide_ds, wide_oof)
+            tight_pred = _align_oof_to_union(df_union, tight_ds, tight_oof)
+            wide_sigma = _align_values_by_ts_symbol_keys(
+                df_union["__ts__"].values,
+                df_union["__symbol__"].values,
+                wide_ds["__ts__"].values,
+                wide_ds["__symbol__"].values,
+                _race_sigma_vector(wide_race, "oof_sigma_trees", len(wide_ds)),
+                fill_value=np.nan,
+                dtype=np.float32,
+            )
+            tight_sigma = _align_values_by_ts_symbol_keys(
+                df_union["__ts__"].values,
+                df_union["__symbol__"].values,
+                tight_ds["__ts__"].values,
+                tight_ds["__symbol__"].values,
+                _race_sigma_vector(tight_race, "oof_sigma_trees", len(tight_ds)),
+                fill_value=np.nan,
+                dtype=np.float32,
+            )
+            wide_robust_sigma = _align_values_by_ts_symbol_keys(
+                df_union["__ts__"].values,
+                df_union["__symbol__"].values,
+                wide_ds["__ts__"].values,
+                wide_ds["__symbol__"].values,
+                _race_sigma_vector(wide_race, "oof_sigma_robust", len(wide_ds)),
+                fill_value=np.nan,
+                dtype=np.float32,
+            )
+            tight_robust_sigma = _align_values_by_ts_symbol_keys(
+                df_union["__ts__"].values,
+                df_union["__symbol__"].values,
+                tight_ds["__ts__"].values,
+                tight_ds["__symbol__"].values,
+                _race_sigma_vector(tight_race, "oof_sigma_robust", len(tight_ds)),
+                fill_value=np.nan,
+                dtype=np.float32,
+            )
+            base_name = f"base_H{int(h)}"
+            feature_dict[f"{base_name}_wide"] = wide_pred.astype(np.float32)
+            feature_dict[f"{base_name}_tight"] = tight_pred.astype(np.float32)
+            feature_dict[f"{base_name}_sigma_wide"] = wide_sigma.astype(np.float32)
+            feature_dict[f"{base_name}_sigma_tight"] = tight_sigma.astype(np.float32)
+            feature_dict[f"{base_name}_robust_sigma_wide"] = wide_robust_sigma.astype(
+                np.float32
+            )
+            feature_dict[f"{base_name}_robust_sigma_tight"] = tight_robust_sigma.astype(
+                np.float32
+            )
+            feature_dict.update(
+                build_wide_tight_pair_features(
+                    wide_pred,
+                    tight_pred,
+                    base_name=base_name,
+                    sigma_wide=wide_sigma,
+                    sigma_tight=tight_sigma,
+                    robust_sigma_wide=wide_robust_sigma,
+                    robust_sigma_tight=tight_robust_sigma,
+                )
+            )
+            feature_cols.extend(
+                [
+                    f"{base_name}_wide",
+                    f"{base_name}_tight",
+                    f"{base_name}_sigma_wide",
+                    f"{base_name}_sigma_tight",
+                    f"{base_name}_robust_sigma_wide",
+                    f"{base_name}_robust_sigma_tight",
+                ]
+            )
+            feature_cols.extend(
+                [
+                    f"{base_name}_avg",
+                    f"{base_name}_diff",
+                    f"{base_name}_abs_diff",
+                    f"{base_name}_rel_diff",
+                    f"{base_name}_sigma_avg",
+                    f"{base_name}_cv_wide",
+                    f"{base_name}_cv_tight",
+                    f"{base_name}_cv_avg",
+                    f"{base_name}_agreement_strength",
+                    f"{base_name}_reliability",
+                ]
+            )
+        if feature_dict:
+            return pd.DataFrame(feature_dict, index=df_union.index), feature_cols
+        return pd.DataFrame(index=df_union.index), []
 
     def _train_aux_heads_shared_folds(
         X_num,
@@ -10053,6 +10276,12 @@ def train_meta_models_from_artifacts(
             axis=1,
         )
 
+        variant_feat_df, variant_feat_cols = _collect_wide_tight_variant_features(
+            side, k, df, horizon_dfs
+        )
+        if not variant_feat_df.empty:
+            X_feats = pd.concat([X_feats, variant_feat_df], axis=1)
+
         # Disagreement features over this strategy's own horizon OOFs only.
         _diag_feats = {}
         horizon_preds = []
@@ -10141,6 +10370,7 @@ def train_meta_models_from_artifacts(
         meta_model_cols.extend(
             [c for c in pred_h.columns if c in X_meta_base.columns and c.startswith(f"pred_{k}_H")]
         )
+        meta_model_cols.extend([c for c in variant_feat_cols if c in X_meta_base.columns])
         meta_model_cols.extend([c for c in feat_cols if c in X_meta_base.columns])
         meta_model_cols = list(dict.fromkeys(meta_model_cols))
         if not meta_model_cols:
@@ -11289,6 +11519,17 @@ def train_meta_models_from_artifacts(
                         meta.oof_probs_raw, global_neutral=0.5, method="mean"
                     )
                     oof_df["oof_p_move_raw"] = _trim_1d(_p_move_raw, _n_meta)
+                _robust_sigma = getattr(meta, "oof_robust_sigma", None)
+                if _robust_sigma is not None:
+                    _robust_sigma = _fill_nonfinite_oof_vector(
+                        _robust_sigma, global_neutral=np.nan, method="mean"
+                    )
+                    oof_df["robust_sigma_meta_clf"] = _trim_1d(
+                        _robust_sigma, _n_meta
+                    )
+                    oof_df["cv_meta_clf"] = _trim_1d(
+                        _robust_sigma / (np.abs(_p_move) + 1e-9), _n_meta
+                    )
             elif _is_clf_key and np.ndim(meta.oof_probs) == 2 and meta.oof_probs.shape[1] == 3:
                 p_sl = _fill_nonfinite_oof_vector(
                     meta.oof_probs[:, 0], global_neutral=1.0 / 3.0, method="mean"
@@ -11317,6 +11558,17 @@ def train_meta_models_from_artifacts(
                 if hasattr(meta, "move_threshold") and getattr(meta, "move_threshold", None) is not None:
                     oof_df["move_threshold"] = _trim_1d(
                         np.asarray(meta.move_threshold, dtype=float), _n_meta
+                    )
+                _robust_sigma = getattr(meta, "oof_robust_sigma", None)
+                if _robust_sigma is not None:
+                    _robust_sigma = _fill_nonfinite_oof_vector(
+                        _robust_sigma, global_neutral=np.nan, method="mean"
+                    )
+                    oof_df["robust_sigma_meta_clf"] = _trim_1d(
+                        _robust_sigma, _n_meta
+                    )
+                    oof_df["cv_meta_clf"] = _trim_1d(
+                        _robust_sigma / (np.abs(p_tp) + 1e-9), _n_meta
                     )
             elif _is_tbm_multiclass_key and np.ndim(meta.oof_probs) == 2:
                 p_sl = _fill_nonfinite_oof_vector(
@@ -11367,6 +11619,17 @@ def train_meta_models_from_artifacts(
                     )
                 if key.endswith("_utility"):
                     oof_df["oof_u_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
+                    _robust_sigma = getattr(meta, "oof_robust_sigma", None)
+                    if _robust_sigma is not None:
+                        _robust_sigma = _fill_nonfinite_oof_vector(
+                            _robust_sigma, global_neutral=np.nan, method="mean"
+                        )
+                        oof_df["robust_sigma_meta_reg"] = _trim_1d(
+                            _robust_sigma, _n_meta
+                        )
+                        oof_df["cv_meta_reg"] = _trim_1d(
+                            _robust_sigma / (np.abs(_oof_pred_1d) + 1e-9), _n_meta
+                        )
                 elif key.endswith("_mae_q70"):
                     oof_df["oof_log_mae_q70_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
                     oof_df["oof_mae_q70_hat"] = np.expm1(
@@ -12875,6 +13138,17 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     "oof_prob": np.asarray(_race.oof_probs, dtype=np.float32)[:_n],
                     "index": np.arange(_n, dtype=np.int32),
                 }
+                _dm_best = (
+                    _race.detailed_metrics.get(_race.best_model_name, {})
+                    if hasattr(_race, "detailed_metrics")
+                    else {}
+                )
+                for _sigma_key in ("oof_sigma_trees", "oof_sigma_robust"):
+                    _sigma_vals = _dm_best.get(_sigma_key)
+                    if _sigma_vals is not None and len(_sigma_vals) >= _n:
+                        _payload[_sigma_key] = np.asarray(
+                            _sigma_vals, dtype=np.float32
+                        )[:_n]
 
                 if _df_oof is not None:
                     if "__ts__" in _df_oof.columns:
@@ -13020,6 +13294,17 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             ],
                             "index": np.arange(_n, dtype=np.int32),
                         }
+                        _dm_best = (
+                            _race.detailed_metrics.get(_race.best_model_name, {})
+                            if hasattr(_race, "detailed_metrics")
+                            else {}
+                        )
+                        for _sigma_key in ("oof_sigma_trees", "oof_sigma_robust"):
+                            _sigma_vals = _dm_best.get(_sigma_key)
+                            if _sigma_vals is not None and len(_sigma_vals) >= _n:
+                                _payload[_sigma_key] = np.asarray(
+                                    _sigma_vals, dtype=np.float32
+                                )[:_n]
                         if "__ts__" in _df_oof.columns:
                             _payload["timestamp"] = _normalize_oof_timestamps_to_numpy(
                                 _df_oof["__ts__"]

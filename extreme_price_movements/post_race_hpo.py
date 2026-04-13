@@ -2,9 +2,17 @@
 Optuna HPO for model-race winners (ExtraTrees, XGBoost, LightGBM, CatBoost).
 
 Crypto-noise-tuned search spaces: conservative depth/leaves, strong regularisation,
-high min-child constraints.  Objective = mean_auc - 0.5 * std_auc across folds
-(stability penalty).  Multi-seed evaluation (2 seeds averaged) to reduce noise
-sensitivity.  Early stopping for boosters, Optuna MedianPruner with warm-up.
+high min-child constraints.
+
+Objective (composite z-score):
+    score = 0.5 * Zscore_PR_AUC_Lift
+          + 0.3 * Zscore_Top30_Abs_Ret_Lift
+          + 0.2 * Zscore_Median_IC_T30
+          - 0.2 * Zscore_Std_IC_T30
+          - 0.1 * Zscore_Brier
+
+Multi-seed evaluation (2 seeds averaged) to reduce noise sensitivity.
+Early stopping for boosters, Optuna MedianPruner with warm-up.
 
 Designed to be called *after* ModelRace picks a winner:
     winner_name = race.best_model_name   # e.g. "lightgbm"
@@ -24,9 +32,52 @@ from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from scipy.stats import rankdata, spearmanr
 from sklearn.ensemble import ExtraTreesClassifier
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, brier_score_loss, average_precision_score
 
 from extreme_price_movements.utils import tprint
+
+
+# ---------------------------
+# Running statistics for z-score normalization across trials
+# ---------------------------
+class _RunningStats:
+    """Online mean and variance tracking for z-score computation."""
+
+    def __init__(self):
+        self.n = 0
+        self.mean = 0.0
+        self.m2 = 0.0
+
+    def update(self, x: float):
+        """Update with new value using Welford's algorithm."""
+        self.n += 1
+        delta = x - self.mean
+        self.mean += delta / self.n
+        delta2 = x - self.mean
+        self.m2 += delta * delta2
+
+    def get_mean(self) -> float:
+        return self.mean if self.n > 0 else 0.0
+
+    def get_std(self) -> float:
+        return (self.m2 / self.n) ** 0.5 if self.n > 0 else 1.0
+
+    def zscore(self, x: float) -> float:
+        """Compute z-score for a value."""
+        std = self.get_std()
+        if std < 1e-9:
+            return 0.0
+        return (x - self.get_mean()) / std
+
+
+# Global running stats for base HPO metrics (populated across trials)
+_running_stats_base = {
+    "pr_auc_lift": _RunningStats(),
+    "top30_abs_ret_lift": _RunningStats(),
+    "median_ic_t30": _RunningStats(),
+    "std_ic_t30": _RunningStats(),
+    "brier": _RunningStats(),
+}
 
 try:
     from xgboost import XGBClassifier
@@ -585,6 +636,48 @@ def _fit_predict_fold(
     raise ValueError(f"Unknown model_name={model_name}")
 
 
+def _compute_pr_auc_lift(y_true: np.ndarray, y_score: np.ndarray) -> float:
+    """Compute PR AUC lift over baseline (random) PR AUC."""
+    from sklearn.metrics import precision_recall_curve, auc
+
+    y_true = np.asarray(y_true, dtype=np.int32)
+    y_score = np.asarray(y_score, dtype=np.float64)
+
+    # Baseline: PR AUC of a random classifier = positive rate
+    baseline = float(np.mean(y_true > 0)) if len(y_true) > 0 else 0.5
+
+    precision, recall, _ = precision_recall_curve(y_true, y_score)
+    pr_auc = float(auc(recall, precision)) if len(recall) > 1 else baseline
+
+    # Lift: how much better than baseline
+    if baseline < 1e-9:
+        return 0.0
+    return (pr_auc - baseline) / max(baseline, 1e-9)
+
+
+def _compute_top30_abs_ret_lift(y_score: np.ndarray, y_ret: np.ndarray) -> float:
+    """Compute lift in absolute returns for top 30% predictions vs baseline."""
+    y_score = np.asarray(y_score, dtype=np.float64)
+    y_ret = np.asarray(y_ret, dtype=np.float64)
+
+    if len(y_score) < 10 or len(y_ret) < 10:
+        return 0.0
+
+    ranks = rankdata(y_score) / len(y_score)
+    t30_mask = ranks >= 0.70
+
+    if t30_mask.sum() < 2:
+        return 0.0
+
+    abs_ret_t30 = float(np.mean(np.abs(y_ret[t30_mask])))
+    abs_ret_all = float(np.mean(np.abs(y_ret)))
+
+    if abs_ret_all < 1e-9:
+        return 0.0
+
+    return (abs_ret_t30 - abs_ret_all) / abs_ret_all
+
+
 def make_objective(
     X: np.ndarray,
     y: np.ndarray,
@@ -593,8 +686,13 @@ def make_objective(
 ):
     """
     Build Optuna objective.
-    Objective = mean_auc - 0.5 * std_auc  (stability penalty).
-    Multi-seed: each trial is evaluated with `config.n_seeds` seeds and averaged.
+
+    New composite objective with z-scored metrics:
+    score = 0.5 * Zscore_PR_AUC_Lift
+          + 0.3 * Zscore_Top30_Abs_Ret_Lift
+          + 0.2 * Zscore_Median_IC_T30
+          - 0.2 * Zscore_Std_IC_T30
+          - 0.1 * Zscore_Brier
     """
     X = _as_2d(X)
     y = _as_1d(y).astype(np.int32)
@@ -613,19 +711,16 @@ def make_objective(
 
     def objective(trial: optuna.Trial) -> float:
         # Suggest params once (seed-independent hypers)
-        # Use positive sample count for dynamic regularization bounds
         n_pos = int(np.sum(y > 0)) if len(y) > 0 else 0
         params_base = suggest_fn(
             trial, base_random_state=config.random_state, n_samples=n_pos
         )
 
-        all_seed_ics: List[List[float]] = []  # [seed][fold]
-
-        running_ics = []  # For pruning reports
+        # Metrics per fold: [pr_auc_lift, top30_abs_ret_lift, ic_t30, brier]
+        fold_metrics: List[Dict[str, float]] = []
 
         for seed_offset in range(config.n_seeds):
             seed = config.random_state + seed_offset
-            # Clone params and override seed
             params = dict(params_base)
             if config.model_name == "extratrees":
                 params["random_state"] = seed
@@ -636,10 +731,10 @@ def make_objective(
             elif config.model_name == "catboost":
                 params["random_seed"] = seed
 
-            fold_ics: List[float] = []
             for fold_i, (tr, va) in enumerate(splits):
                 X_tr, y_tr = X[tr], y[tr]
                 X_va, y_va = X[va], y[va]
+                y_va_ret = y_va.astype(np.float64)  # Use raw returns for ret metrics
                 sw_tr = None if sw is None else sw[tr]
 
                 y_score = _fit_predict_fold(
@@ -653,34 +748,100 @@ def make_objective(
                     config=config,
                 )
 
-                # Calculate Top-30% IC instead of Global AUC
+                # Compute metrics for this fold
+                # 1. PR AUC Lift
+                pr_auc_lift = _compute_pr_auc_lift(y_va, y_score)
+
+                # 2. Top-30% Absolute Returns Lift
+                top30_abs_ret_lift = _compute_top30_abs_ret_lift(y_score, y_va_ret)
+
+                # 3. IC T30 (Spearman in top 30% of predictions)
+                ic_t30 = 0.0
                 if len(y_score) > 10:
                     ranks = rankdata(y_score) / len(y_score)
                     t30 = ranks >= 0.70
                     if t30.sum() > 2:
-                        ic_t30 = float(spearmanr(y_score[t30], y_va[t30]).statistic)
-                    else:
-                        ic_t30 = 0.0
-                else:
-                    ic_t30 = 0.0
+                        ic_val = float(spearmanr(y_score[t30], y_va_ret[t30]).statistic)
+                        ic_t30 = ic_val if np.isfinite(ic_val) else 0.0
 
-                if not np.isfinite(ic_t30):
-                    ic_t30 = 0.0
+                # 4. Brier Score (for binary calibration)
+                brier = 0.0
+                try:
+                    y_binary = (y_va > 0).astype(np.int32)
+                    brier = float(brier_score_loss(y_binary, y_score))
+                except Exception:
+                    brier = 1.0  # Worst case
 
-                fold_ics.append(ic_t30)
-                running_ics.append(ic_t30)
+                fold_metrics.append({
+                    "pr_auc_lift": pr_auc_lift,
+                    "top30_abs_ret_lift": top30_abs_ret_lift,
+                    "ic_t30": ic_t30,
+                    "brier": brier,
+                })
 
-                step = len(running_ics) - 1
-                trial.report(float(np.mean(running_ics)), step=step)
+        # Aggregate metrics across all folds/seeds
+        if not fold_metrics:
+            return -1e9
 
-            all_seed_ics.append(fold_ics)
+        # Compute summary statistics
+        pr_auc_lifts = [m["pr_auc_lift"] for m in fold_metrics]
+        top30_abs_ret_lifts = [m["top30_abs_ret_lift"] for m in fold_metrics]
+        ic_t30s = [m["ic_t30"] for m in fold_metrics]
+        briers = [m["brier"] for m in fold_metrics]
 
-        # Flatten all fold ICs across seeds
-        flat = [a for sa in all_seed_ics for a in sa]
-        mean_ic = float(np.mean(flat))
-        std_ic = float(np.std(flat))
-        # Stability-penalised objective for Top-30% IC
-        return mean_ic - 1.0 * std_ic
+        # Trial-level aggregates
+        trial_pr_auc_lift = float(np.median(pr_auc_lifts))
+        trial_top30_abs_ret_lift = float(np.median(top30_abs_ret_lifts))
+        trial_median_ic_t30 = float(np.median(ic_t30s))
+        trial_std_ic_t30 = float(np.std(ic_t30s))
+        trial_brier = float(np.mean(briers))
+
+        # Update running stats for z-score computation
+        stats_pr = _running_stats_base["pr_auc_lift"]
+        stats_top30 = _running_stats_base["top30_abs_ret_lift"]
+        stats_median_ic = _running_stats_base["median_ic_t30"]
+        stats_std_ic = _running_stats_base["std_ic_t30"]
+        stats_brier = _running_stats_base["brier"]
+
+        # Compute z-scores (using population stats if available, else use trial as reference)
+        z_pr = stats_pr.zscore(trial_pr_auc_lift) if stats_pr.n >= 10 else trial_pr_auc_lift * 5.0
+        z_top30 = stats_top30.zscore(trial_top30_abs_ret_lift) if stats_top30.n >= 10 else trial_top30_abs_ret_lift * 5.0
+        z_median_ic = stats_median_ic.zscore(trial_median_ic_t30) if stats_median_ic.n >= 10 else trial_median_ic_t30 * 5.0
+        z_std_ic = stats_std_ic.zscore(trial_std_ic_t30) if stats_std_ic.n >= 10 else trial_std_ic_t30 * 5.0
+        z_brier = stats_brier.zscore(trial_brier) if stats_brier.n >= 10 else (trial_brier - 0.25) * 5.0
+
+        # Update running stats with this trial's values for future trials
+        stats_pr.update(trial_pr_auc_lift)
+        stats_top30.update(trial_top30_abs_ret_lift)
+        stats_median_ic.update(trial_median_ic_t30)
+        stats_std_ic.update(trial_std_ic_t30)
+        stats_brier.update(trial_brier)
+
+        # Composite score: 0.5*Z_PR + 0.3*Z_Top30 + 0.2*Z_IC - 0.2*Z_Std_IC - 0.1*Z_Brier
+        composite_score = (
+            0.5 * z_pr
+            + 0.3 * z_top30
+            + 0.2 * z_median_ic
+            - 0.2 * z_std_ic  # Penalize high std
+            - 0.1 * z_brier   # Penalize high Brier
+        )
+
+        # Report intermediate value for pruning
+        trial.report(composite_score, step=len(fold_metrics))
+
+        # Store raw metrics for analysis
+        trial.set_user_attr("pr_auc_lift", trial_pr_auc_lift)
+        trial.set_user_attr("top30_abs_ret_lift", trial_top30_abs_ret_lift)
+        trial.set_user_attr("median_ic_t30", trial_median_ic_t30)
+        trial.set_user_attr("std_ic_t30", trial_std_ic_t30)
+        trial.set_user_attr("brier", trial_brier)
+        trial.set_user_attr("z_pr", z_pr)
+        trial.set_user_attr("z_top30", z_top30)
+        trial.set_user_attr("z_median_ic", z_median_ic)
+        trial.set_user_attr("z_std_ic", z_std_ic)
+        trial.set_user_attr("z_brier", z_brier)
+
+        return float(composite_score)
 
     return objective
 

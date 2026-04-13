@@ -661,6 +661,18 @@ _RIDGE_HEAD_EXACT = {
     "risk_adjusted_pred",
     "high_utility_pred",
     "utility_disagreement",
+    "robust_sigma_meta_reg",
+    "robust_sigma_meta_clf",
+    "cv_meta_reg",
+    "cv_meta_clf",
+    "avg_robust_sigma_meta",
+    "avg_cv_meta",
+    "meta_avg",
+    "meta_diff",
+    "meta_abs_diff",
+    "meta_rel_diff",
+    "meta_agreement_strength",
+    "meta_reliability",
     "Upside",
     "Downside",
     "EdgeSharpe",
@@ -728,10 +740,22 @@ def detect_meta_head_keys(
             "oof_log_mae_q70_hat",
             "oof_log_mfe_hat",
             "oof_asym_hat",
+            "meta_avg",
+            "meta_diff",
+            "meta_abs_diff",
+            "meta_rel_diff",
         } or kl.startswith("base_h"):
             heads[k] = "return-like"
         elif kl in {"clf", "oof_p_tp", "oof_p_to", "oof_p_sl"}:
             heads[k] = "classification-like"
+        elif (
+            kl.startswith("robust_sigma_meta")
+            or kl.startswith("cv_meta")
+            or kl in {"avg_robust_sigma_meta", "avg_cv_meta", "meta_agreement_strength", "meta_reliability"}
+        ):
+            heads[k] = "uncertainty-like"
+        elif kl in {"meta_avg", "meta_diff", "meta_abs_diff", "meta_rel_diff"}:
+            heads[k] = "return-like"
         if (
             "edge" in kl
             or "expected_return" in kl
@@ -1868,8 +1892,29 @@ def run_simple_position_sizer(
             alpha = float(trial.suggest_categorical("alpha", ridge_alpha_choices))
             l1_ratio = float(trial.suggest_categorical("l1_ratio", ridge_l1_choices))
 
-            def _make_model() -> ElasticNet:
-                return ElasticNet(
+            # Per-fold metrics storage
+            fold_pnl_10: List[float] = []
+            fold_pnl_20: List[float] = []
+            fold_turnover_10: List[float] = []
+            fold_sortino_10: List[float] = []
+
+            for fold_idx, (tr_idx, te_idx) in enumerate(splits):
+                if len(tr_idx) == 0 or len(te_idx) == 0:
+                    continue
+
+                X_tr, y_tr = X_heads[tr_idx], y_raw_net_return[tr_idx]
+                X_te = X_heads[te_idx]
+                y_te = y_raw_net_return[te_idx]
+                ts_te = timestamps[te_idx] if timestamps is not None else None
+
+                # Standardize
+                X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(X_tr)
+                X_te_clean, _, _, _, _ = clean_and_standardize(
+                    X_te, fit_medians=medians, scaler=scaler, center_1d=center_1d, scale_1d=scale_1d
+                )
+
+                # Fit and predict
+                model = ElasticNet(
                     alpha=alpha,
                     l1_ratio=l1_ratio,
                     fit_intercept=True,
@@ -1878,46 +1923,85 @@ def run_simple_position_sizer(
                     random_state=42,
                     selection="cyclic",
                 )
+                model.fit(X_tr_clean, y_tr)
+                fold_preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
 
-            preds, importance_df = _fit_predict_oof_regressor_with_pruning(
-                X=X_heads,
-                y=y_raw_net_return,
-                y_downside=y_downside,
-                splits=splits,
-                model_factory=_make_model,
-                feature_names=used_keys,
-                trial=trial,
-                trial_name=f"ElasticNet(a={alpha},l1={l1_ratio})",
-                calibration_method=None,
+                # Compute fold-wise profit metrics
+                fold_profit_df, _, _ = evaluate_selection_profit_proxy(
+                    fold_preds,
+                    y_te,
+                    timestamps=ts_te,
+                    symbols=_sym_vals[te_idx] if _sym_vals is not None else None,
+                    top_fracs=[0.10, 0.20],
+                    cost_pct=cost_pct,
+                    n_days=max(1.0, len(te_idx) / 96.0),  # Approx days in fold
+                )
+
+                if not fold_profit_df.empty:
+                    # Extract metrics for this fold
+                    pnl_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["wallet_pnl"].values
+                    pnl_20 = fold_profit_df[fold_profit_df["selection_frac"] == 0.20]["wallet_pnl"].values
+                    to_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["trades_per_day"].values
+                    sort_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["sortino"].values
+
+                    if len(pnl_10) > 0:
+                        fold_pnl_10.append(float(pnl_10[0]))
+                    if len(pnl_20) > 0:
+                        fold_pnl_20.append(float(pnl_20[0]))
+                    if len(to_10) > 0:
+                        fold_turnover_10.append(float(to_10[0]))
+                    if len(sort_10) > 0:
+                        fold_sortino_10.append(float(sort_10[0]))
+
+                # Pruning check
+                if trial is not None:
+                    seen_so_far = sum(len(s[1]) for s in splits[:fold_idx+1])
+                    min_seen = max(20, int(0.2 * len(y_raw_net_return)))
+                    if seen_so_far >= min_seen:
+                        interim_oof = np.full(len(y_raw_net_return), np.nan, dtype=np.float32)
+                        interim_oof[te_idx] = fold_preds
+                        interim_metrics = evaluate_signal(
+                            f"Ridge_fold{fold_idx}",
+                            interim_oof,
+                            y_raw_net_return,
+                            y_downside,
+                            directionality="return-like",
+                        )
+                        trial.report(float(interim_metrics.get("utility_score", -np.inf)), step=fold_idx)
+                        if trial.should_prune():
+                            raise optuna.TrialPruned()
+
+            # Aggregate fold metrics
+            if not fold_pnl_10:
+                return -1e9
+
+            mean_pnl_10 = float(np.mean(fold_pnl_10))
+            std_pnl_10 = float(np.std(fold_pnl_10))
+            mean_pnl_20 = float(np.mean(fold_pnl_20)) if fold_pnl_20 else 0.0
+            std_pnl_20 = float(np.std(fold_pnl_20)) if len(fold_pnl_20) > 1 else 0.0
+            turnover_10 = float(np.mean(fold_turnover_10)) if fold_turnover_10 else 0.0
+            sortino_10 = float(np.mean(fold_sortino_10)) if fold_sortino_10 else 0.0
+
+            # Composite objective
+            composite = (
+                0.70 * mean_pnl_10
+                + 0.30 * mean_pnl_20
+                - 0.50 * std_pnl_10
+                - 0.20 * std_pnl_20
+                - 0.10 * turnover_10
+                + 0.15 * sortino_10
             )
-            metrics = evaluate_signal(
-                f"ElasticNet_Head_Sizer(a={alpha},l1={l1_ratio})",
-                preds,
-                y_raw_net_return,
-                y_downside,
-                directionality="return-like",
-            )
-            profit_proxy_df, _, _ = evaluate_selection_profit_proxy(
-                preds,
-                y_raw_net_return,
-                timestamps=timestamps,
-                symbols=_sym_vals,
-                top_fracs=list(top_fracs),
-                cost_pct=cost_pct,
-                n_days=n_days,
-            )
-            objective_pnl = (
-                float(profit_proxy_df["wallet_pnl"].max())
-                if not profit_proxy_df.empty
-                else float("-inf")
-            )
+
             trial.set_user_attr("feature_count", int(X_heads.shape[1]))
-            trial.set_user_attr("utility_score", float(metrics.get("utility_score", -np.inf)))
-            trial.set_user_attr("objective_pnl", float(objective_pnl))
-            trial.set_user_attr("top_10_mean_net", float(metrics.get("top_10_mean_net", 0.0)))
-            trial.set_user_attr("monotonicity", float(metrics.get("monotonicity", 0.0)))
-            trial.set_user_attr("false_safe_rate", float(metrics.get("false_safe_rate", 0.0)))
-            return float(objective_pnl)
+            trial.set_user_attr("mean_pnl_10", mean_pnl_10)
+            trial.set_user_attr("std_pnl_10", std_pnl_10)
+            trial.set_user_attr("mean_pnl_20", mean_pnl_20)
+            trial.set_user_attr("std_pnl_20", std_pnl_20)
+            trial.set_user_attr("turnover_10", turnover_10)
+            trial.set_user_attr("sortino_10", sortino_10)
+            trial.set_user_attr("composite_score", composite)
+
+            return float(composite)
 
         ridge_study.optimize(
             _ridge_objective,
@@ -2111,7 +2195,7 @@ def run_simple_position_sizer(
             direction="maximize", sampler=et_sampler, pruner=et_pruner
         )
 
-        et_n_estimators_choices = [200, 250, 300, 350, 400, 450, 500, 550, 600]
+        et_n_estimators_choices = [200, 300, 400, 500, 600, 700]
         et_max_depth_choices = [4, 5, 6, 7]
         et_max_features_choices = ["sqrt", 0.5, "log2"]
         et_ccp_alpha_choices = [1e-5, 1e-4, 1e-3]
@@ -2139,8 +2223,29 @@ def run_simple_position_sizer(
                 int(np.ceil(min_samples_split_frac * X_heads.shape[0])),
             )
 
-            def _make_model() -> ExtraTreesRegressor:
-                return ExtraTreesRegressor(
+            # Per-fold metrics storage
+            fold_pnl_10: List[float] = []
+            fold_pnl_20: List[float] = []
+            fold_turnover_10: List[float] = []
+            fold_sortino_10: List[float] = []
+
+            for fold_idx, (tr_idx, te_idx) in enumerate(splits):
+                if len(tr_idx) == 0 or len(te_idx) == 0:
+                    continue
+
+                X_tr, y_tr = X_heads[tr_idx], y_raw_net_return[tr_idx]
+                X_te = X_heads[te_idx]
+                y_te = y_raw_net_return[te_idx]
+                ts_te = timestamps[te_idx] if timestamps is not None else None
+
+                # Standardize
+                X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(X_tr)
+                X_te_clean, _, _, _, _ = clean_and_standardize(
+                    X_te, fit_medians=medians, scaler=scaler, center_1d=center_1d, scale_1d=scale_1d
+                )
+
+                # Fit and predict
+                model = ExtraTreesRegressor(
                     n_estimators=n_estimators,
                     max_depth=max_depth,
                     min_samples_leaf=min_samples_leaf,
@@ -2155,49 +2260,95 @@ def run_simple_position_sizer(
                     n_jobs=2,
                     verbose=0,
                 )
+                model.fit(X_tr_clean, y_tr)
+                fold_preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
 
-            preds, importance_df = _fit_predict_oof_regressor_with_pruning(
-                X=X_heads,
-                y=y_raw_net_return,
-                y_downside=y_downside,
-                splits=splits,
-                model_factory=_make_model,
-                feature_names=used_keys,
-                trial=trial,
-                trial_name=(
-                    f"ET(n={n_estimators},d={max_depth},leaf={min_samples_leaf},"
-                    f"split={min_samples_split},mf={max_features},crit={criterion})"
-                ),
-                calibration_method="isotonic",
+                # Isotonic calibration per fold
+                try:
+                    from sklearn.isotonic import IsotonicRegression
+                    valid = np.isfinite(fold_preds) & np.isfinite(y_te)
+                    if valid.sum() >= 20:
+                        calibrator = IsotonicRegression(out_of_bounds="clip")
+                        calibrator.fit(fold_preds[valid], y_te[valid])
+                        fold_preds[valid] = calibrator.transform(fold_preds[valid])
+                except Exception:
+                    pass
+
+                # Compute fold-wise profit metrics
+                fold_profit_df, _, _ = evaluate_selection_profit_proxy(
+                    fold_preds,
+                    y_te,
+                    timestamps=ts_te,
+                    symbols=_sym_vals[te_idx] if _sym_vals is not None else None,
+                    top_fracs=[0.10, 0.20],
+                    cost_pct=cost_pct,
+                    n_days=max(1.0, len(te_idx) / 96.0),
+                )
+
+                if not fold_profit_df.empty:
+                    pnl_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["wallet_pnl"].values
+                    pnl_20 = fold_profit_df[fold_profit_df["selection_frac"] == 0.20]["wallet_pnl"].values
+                    to_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["trades_per_day"].values
+                    sort_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["sortino"].values
+
+                    if len(pnl_10) > 0:
+                        fold_pnl_10.append(float(pnl_10[0]))
+                    if len(pnl_20) > 0:
+                        fold_pnl_20.append(float(pnl_20[0]))
+                    if len(to_10) > 0:
+                        fold_turnover_10.append(float(to_10[0]))
+                    if len(sort_10) > 0:
+                        fold_sortino_10.append(float(sort_10[0]))
+
+                # Pruning check
+                if trial is not None:
+                    seen_so_far = sum(len(s[1]) for s in splits[:fold_idx+1])
+                    min_seen = max(20, int(0.2 * len(y_raw_net_return)))
+                    if seen_so_far >= min_seen:
+                        interim_oof = np.full(len(y_raw_net_return), np.nan, dtype=np.float32)
+                        interim_oof[te_idx] = fold_preds
+                        interim_metrics = evaluate_signal(
+                            f"ET_fold{fold_idx}",
+                            interim_oof,
+                            y_raw_net_return,
+                            y_downside,
+                            directionality="return-like",
+                        )
+                        trial.report(float(interim_metrics.get("utility_score", -np.inf)), step=fold_idx)
+                        if trial.should_prune():
+                            raise optuna.TrialPruned()
+
+            # Aggregate fold metrics
+            if not fold_pnl_10:
+                return -1e9
+
+            mean_pnl_10 = float(np.mean(fold_pnl_10))
+            std_pnl_10 = float(np.std(fold_pnl_10))
+            mean_pnl_20 = float(np.mean(fold_pnl_20)) if fold_pnl_20 else 0.0
+            std_pnl_20 = float(np.std(fold_pnl_20)) if len(fold_pnl_20) > 1 else 0.0
+            turnover_10 = float(np.mean(fold_turnover_10)) if fold_turnover_10 else 0.0
+            sortino_10 = float(np.mean(fold_sortino_10)) if fold_sortino_10 else 0.0
+
+            # Composite objective
+            composite = (
+                0.70 * mean_pnl_10
+                + 0.30 * mean_pnl_20
+                - 0.50 * std_pnl_10
+                - 0.20 * std_pnl_20
+                - 0.10 * turnover_10
+                + 0.15 * sortino_10
             )
-            metrics = evaluate_signal(
-                "ET_HPO",
-                preds,
-                y_raw_net_return,
-                y_downside,
-                directionality="return-like",
-            )
-            profit_proxy_df, _, _ = evaluate_selection_profit_proxy(
-                preds,
-                y_raw_net_return,
-                timestamps=timestamps,
-                symbols=_sym_vals,
-                top_fracs=list(top_fracs),
-                cost_pct=cost_pct,
-                n_days=n_days,
-            )
-            objective_pnl = (
-                float(profit_proxy_df["wallet_pnl"].max())
-                if not profit_proxy_df.empty
-                else float("-inf")
-            )
+
             trial.set_user_attr("feature_count", int(X_heads.shape[1]))
-            trial.set_user_attr("utility_score", float(metrics.get("utility_score", -np.inf)))
-            trial.set_user_attr("objective_pnl", float(objective_pnl))
-            trial.set_user_attr("top_10_mean_net", float(metrics.get("top_10_mean_net", 0.0)))
-            trial.set_user_attr("monotonicity", float(metrics.get("monotonicity", 0.0)))
-            trial.set_user_attr("false_safe_rate", float(metrics.get("false_safe_rate", 0.0)))
-            return float(objective_pnl)
+            trial.set_user_attr("mean_pnl_10", mean_pnl_10)
+            trial.set_user_attr("std_pnl_10", std_pnl_10)
+            trial.set_user_attr("mean_pnl_20", mean_pnl_20)
+            trial.set_user_attr("std_pnl_20", std_pnl_20)
+            trial.set_user_attr("turnover_10", turnover_10)
+            trial.set_user_attr("sortino_10", sortino_10)
+            trial.set_user_attr("composite_score", composite)
+
+            return float(composite)
 
         et_study.optimize(
             _et_objective,

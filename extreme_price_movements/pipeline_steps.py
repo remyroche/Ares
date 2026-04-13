@@ -1543,6 +1543,15 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     if feats is None or len(feats) == 0:
         tprint("ERROR: Features not found. Run feature_generation first.")
         return
+
+    # Optimization: Downcast feature panels to float32 aggressively.
+    # Impact: Halves the memory footprint of loaded features before generation starts.
+    for k, v in feats.items():
+        if isinstance(v, pd.DataFrame):
+            for col in v.columns:
+                if pd.api.types.is_float_dtype(v[col]) and v[col].dtype != np.float32:
+                    v[col] = v[col].astype(np.float32)
+
     tprint(
         f"Label feature load complete: feature_families={len(feats)} "
         f"symbols={len(train_syms)}"

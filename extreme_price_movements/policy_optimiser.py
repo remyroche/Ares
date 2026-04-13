@@ -873,13 +873,9 @@ def _simulate_barwise_path_policy(
         s_fail = (a1 * ae_vel + a2 * pressure) * fail_scale
         s_path = b1 * path_quality + b2 * progress
 
-        ent * (1.0 + side_a * tp_dist_a)
-        ent * (1.0 - side_a * sl_dist_a)
-
         # Diagnostics: track trailing stop stats
         trail_active = mfe[idx] >= trail_activation_atr * barrier_a
         trail_floor = mfe[idx] - trail_giveback_atr * barrier_a
-        ent * (1.0 + side_a * trail_floor)
 
         open_tp = open_ret >= tp_dist_a
         open_sl = open_ret <= -sl_dist_a
@@ -1378,7 +1374,7 @@ def _sequential_optimise(
                 # First, ensure we don't pick a slightly worse score due to floating point.
                 # Find the maximum score.
                 best_val_score = max(score for score, _ in val_scores)
-                
+
                 # Default to current_val if it tied the best score
                 best_val_for_param = current_val
 

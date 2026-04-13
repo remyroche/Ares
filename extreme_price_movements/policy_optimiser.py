@@ -1893,6 +1893,7 @@ def run_policy_optimisation(
             col in context
             for col in ("future_opens", "future_highs", "future_lows", "future_closes")
         )
+        baseline_rets_raw = None
         if has_future_paths:
             # Compute baseline using simple TP/SL from raw paths for fair comparison
             # Use the SAME sizer-derived TP/SL that the optimization uses

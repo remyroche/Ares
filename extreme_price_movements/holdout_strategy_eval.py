@@ -658,7 +658,14 @@ def evaluate_holdout_symbol(
             f"rule={policy_params.get('better_rule', 'N/A')}"
         )
 
-    for strat in freeze.get("strategies", []):
+    strategies_list = freeze.get("strategies", [])
+    total_strategies = len(strategies_list)
+    tprint_interval = max(1, total_strategies // 10)
+
+    for i, strat in enumerate(strategies_list):
+        if i % tprint_interval == 0:
+            tprint(f"Holdout eval progress: {i}/{total_strategies} strategies ({i/total_strategies*100:.1f}%) for symbol {symbol}")
+
         strategy_id = str(strat["strategy_id"])
         side = _infer_strategy_side(bundle, strategy_id, str(strat.get("side", "")))
         if not side:
@@ -965,7 +972,10 @@ def _sample_compatible_symbols(
     compatible: List[str] = []
     rejected: List[str] = []
 
-    for symbol in symbols:
+    for i, symbol in enumerate(symbols):
+        if i > 0 and i % 10 == 0:
+            tprint(f"Holdout sampler progress: checked {i}/{len(symbols)} symbols, found {len(compatible)} compatible")
+
         try:
             panel, panel_symbol = _load_price_panel(symbol)
             feature_df = _load_symbol_features(
@@ -1112,7 +1122,8 @@ def main() -> None:
     all_results: List[Dict[str, Any]] = []
     portfolio_parts: Dict[str, List] = {"scores": [], "returns": [], "ts": []}
 
-    for symbol in symbols:
+    for i, symbol in enumerate(symbols):
+        tprint(f"Starting evaluation for symbol {i+1}/{len(symbols)}: {symbol}")
         try:
             result = evaluate_holdout_symbol(
                 args.data_root,

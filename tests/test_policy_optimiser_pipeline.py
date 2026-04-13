@@ -61,7 +61,7 @@ def test_holdout_policy_json_missing_fallback(tmp_path):
 
 
 def test_sign_direction_for_fail_and_path_scores():
-    base = np.array([0.01, 0.01], dtype=np.float32)
+    base = np.array([-0.001, 0.01], dtype=np.float32)
     context = {
         "mfe_ret": np.array([0.01, 0.02], dtype=np.float32),
         "mae_ret": np.array([0.03, 0.005], dtype=np.float32),
@@ -80,7 +80,7 @@ def test_sign_direction_for_fail_and_path_scores():
         "a2": 0.0,
         "b1": 1.0,
         "b2": 0.0,
-        "theta_fail": 0.0,
+        "theta_fail": -1.0,
         "theta_path": 0.0,
         "d_path": 1,
         "K_early": 3,
@@ -102,7 +102,7 @@ def test_run_all_wires_offset_before_policy(monkeypatch):
     )
     monkeypatch.setattr(rp, "run_sizer", lambda *a, **k: events.append("sizer") or True)
     monkeypatch.setattr(
-        rp, "run_policy_optimiser_step", lambda *a, **k: events.append("policy")
+        rp, "run_policy_optimisation", lambda *a, **k: events.append("policy") or True
     )
     monkeypatch.setattr(rp, "run_base_hpo_step", lambda *a, **k: None)
     monkeypatch.setattr(rp, "_maintenance_checkpoint", lambda *a, **k: None)
@@ -119,6 +119,7 @@ def test_run_all_wires_offset_before_policy(monkeypatch):
         "timeframe": "15m",
         "enable_trigger_discovery_stage": False,
         "reports_root": "reports",
+        "run_limit_offset_optimiser": True,
     }
     rp.run_all(cfg)
 

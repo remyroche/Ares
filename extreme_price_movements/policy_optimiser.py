@@ -66,7 +66,15 @@ def _compute_strategy_D(row: Dict[str, Any]) -> float:
     wallet_pnl = float(row.get("wallet_pnl", float("nan")))
     if not all(
         np.isfinite(v)
-        for v in (pf, stability, monthly_sortino, hit_rate, trades_per_day, max_drawdown, wallet_pnl)
+        for v in (
+            pf,
+            stability,
+            monthly_sortino,
+            hit_rate,
+            trades_per_day,
+            max_drawdown,
+            wallet_pnl,
+        )
     ):
         return float("nan")
     if wallet_pnl <= 0.0:
@@ -82,7 +90,9 @@ def _compute_strategy_D(row: Dict[str, Any]) -> float:
 
 
 def _load_ridge_strategy_rows(data_root: str, run_id: str) -> Dict[str, Dict[str, Any]]:
-    path = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+    path = (
+        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+    )
     if not path.exists():
         return {}
     try:
@@ -365,7 +375,9 @@ def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any
             cand = dict(row)
             cand["strategy_id"] = sid
             cand["model"] = model_source
-            cand["source_artifact"] = "et_sizer" if model_source == "et" else "ridge_sizer"
+            cand["source_artifact"] = (
+                "et_sizer" if model_source == "et" else "ridge_sizer"
+            )
             candidates.append(cand)
 
     merged: Dict[str, Dict[str, Any]] = {}
@@ -402,9 +414,9 @@ def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
     if "timestamp" not in df.columns or "symbol" not in df.columns:
         raise ValueError(f"sizer OOF score matrix {path} is missing timestamp/symbol")
     out = df.copy()
-    out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce").dt.tz_convert(
-        None
-    )
+    out["timestamp"] = pd.to_datetime(
+        out["timestamp"], utc=True, errors="coerce"
+    ).dt.tz_convert(None)
     out["symbol"] = out["symbol"].astype(str)
     return out
 
@@ -419,11 +431,13 @@ def _attach_sizer_score(
         columns={strategy_id: "sizer_score"}
     )
     out = outcomes.copy()
-    out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce").dt.tz_convert(
-        None
-    )
+    out["timestamp"] = pd.to_datetime(
+        out["timestamp"], utc=True, errors="coerce"
+    ).dt.tz_convert(None)
     out["symbol"] = out["symbol"].astype(str)
-    merged = out.merge(score_df, on=["timestamp", "symbol"], how="left", validate="one_to_one")
+    merged = out.merge(
+        score_df, on=["timestamp", "symbol"], how="left", validate="one_to_one"
+    )
     return merged
 
 
@@ -511,7 +525,10 @@ def build_replay_context(
     path_quality = delta_mfe_arr - delta_mae_arr
     progress_per_bar = np.maximum(rets, 0.0) / np.maximum(barr * bars, 1e-4)
 
-    asym_raw = np.log((np.maximum(delta_mfe_arr, 0.0) + 1e-6) / (np.maximum(delta_mae_arr, 0.0) + 1e-6))
+    asym_raw = np.log(
+        (np.maximum(delta_mfe_arr, 0.0) + 1e-6)
+        / (np.maximum(delta_mae_arr, 0.0) + 1e-6)
+    )
     if asym is None:
         asym_vals = asym_raw
     else:
@@ -614,7 +631,9 @@ def _simulate_baseline_tpsl_from_paths(
     future_lows = np.asarray(context["future_lows"], dtype=np.float32)
     future_closes = np.asarray(context["future_closes"], dtype=np.float32)
     future_lengths = np.asarray(
-        context.get("future_lengths", np.full(len(future_opens), future_opens.shape[1])),
+        context.get(
+            "future_lengths", np.full(len(future_opens), future_opens.shape[1])
+        ),
         dtype=np.int32,
     )
 
@@ -622,14 +641,16 @@ def _simulate_baseline_tpsl_from_paths(
         return None
 
     n_trades, max_bars = future_opens.shape
-    entry = np.asarray(
-        context.get("entry_price", future_opens[:, 0]), dtype=np.float32
+    entry = np.asarray(context.get("entry_price", future_opens[:, 0]), dtype=np.float32)
+    is_long = np.asarray(
+        context.get("is_long", np.ones(n_trades, dtype=bool)), dtype=bool
     )
-    is_long = np.asarray(context.get("is_long", np.ones(n_trades, dtype=bool)), dtype=bool)
     side = np.where(is_long, 1.0, -1.0).astype(np.float32)
 
     barrier = np.maximum(
-        np.asarray(context.get("barrier_pct", np.full(n_trades, 0.02)), dtype=np.float32),
+        np.asarray(
+            context.get("barrier_pct", np.full(n_trades, 0.02)), dtype=np.float32
+        ),
         1e-4,
     )
 
@@ -728,24 +749,29 @@ def _simulate_barwise_path_policy(
     )
     if future_opens.ndim != 2 or future_highs.shape != future_opens.shape:
         return None
-    if future_lows.shape != future_opens.shape or future_closes.shape != future_opens.shape:
+    if (
+        future_lows.shape != future_opens.shape
+        or future_closes.shape != future_opens.shape
+    ):
         return None
 
     n_trades, max_bars = future_opens.shape
     if n_trades != len(returns):
         return None
 
-    entry = np.asarray(
-        context.get("entry_price", future_opens[:, 0]), dtype=np.float32
+    entry = np.asarray(context.get("entry_price", future_opens[:, 0]), dtype=np.float32)
+    is_long = np.asarray(
+        context.get("is_long", np.ones(n_trades, dtype=bool)), dtype=bool
     )
-    is_long = np.asarray(context.get("is_long", np.ones(n_trades, dtype=bool)), dtype=bool)
     side = np.where(is_long, 1.0, -1.0).astype(np.float32)
 
     barrier = np.maximum(
-        np.asarray(context.get("barrier_pct", np.full(n_trades, 0.02)), dtype=np.float32),
+        np.asarray(
+            context.get("barrier_pct", np.full(n_trades, 0.02)), dtype=np.float32
+        ),
         1e-4,
     )
-    conf = np.asarray(context.get("confidence", np.zeros(n_trades)), dtype=np.float32)
+    np.asarray(context.get("confidence", np.zeros(n_trades)), dtype=np.float32)
     p_tp = np.asarray(context.get("p_tp", np.full(n_trades, np.nan)), dtype=np.float32)
     p_sl = np.asarray(context.get("p_sl", np.full(n_trades, np.nan)), dtype=np.float32)
     has_barrier_proba = np.any(np.isfinite(p_tp)) and np.any(p_tp > 0.0)
@@ -773,7 +799,7 @@ def _simulate_barwise_path_policy(
     theta_path = float(params.get("theta_path", 0.0))
     d_path = int(params.get("d_path", 1))
     k_early = int(params.get("K_early", 3))
-    tp_gate = float(params.get("tp_conf_threshold", 0.5))
+    float(params.get("tp_conf_threshold", 0.5))
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
     progress_threshold = float(params.get("progress_threshold", 0.0))
     trail_activation_atr = float(params.get("trail_activation_atr", 1.0))
@@ -847,13 +873,13 @@ def _simulate_barwise_path_policy(
         s_fail = (a1 * ae_vel + a2 * pressure) * fail_scale
         s_path = b1 * path_quality + b2 * progress
 
-        tp_price = ent * (1.0 + side_a * tp_dist_a)
-        sl_price = ent * (1.0 - side_a * sl_dist_a)
+        ent * (1.0 + side_a * tp_dist_a)
+        ent * (1.0 - side_a * sl_dist_a)
 
         # Diagnostics: track trailing stop stats
         trail_active = mfe[idx] >= trail_activation_atr * barrier_a
         trail_floor = mfe[idx] - trail_giveback_atr * barrier_a
-        trail_price = ent * (1.0 + side_a * trail_floor)
+        ent * (1.0 + side_a * trail_floor)
 
         open_tp = open_ret >= tp_dist_a
         open_sl = open_ret <= -sl_dist_a
@@ -870,7 +896,11 @@ def _simulate_barwise_path_policy(
         hard_hit = sl_hit | trail_hit | tp_hit | open_sl | open_trail | open_tp
         bar_exit = np.where(
             np.isnan(bar_exit),
-            np.where(sl_hit, -sl_dist_a, np.where(trail_hit, trail_floor, np.where(tp_hit, tp_dist_a, np.nan))),
+            np.where(
+                sl_hit,
+                -sl_dist_a,
+                np.where(trail_hit, trail_floor, np.where(tp_hit, tp_dist_a, np.nan)),
+            ),
             bar_exit,
         )
 
@@ -885,12 +915,17 @@ def _simulate_barwise_path_policy(
             if has_barrier_proba:
                 p_sl_safe = np.where(np.isfinite(p_sl[idx]), p_sl[idx], 0.5)
                 # Allow fail_exit only if trade hasn't made significant progress
-                fail_exit = (bar + 1 <= k_early) & (p_sl_safe >= sl_gate) & (~has_made_progress)
+                fail_exit = (
+                    (bar + 1 <= k_early) & (p_sl_safe >= sl_gate) & (~has_made_progress)
+                )
             else:
                 # Scale theta_fail threshold by progress - harder to trigger as MFE increases
-                progress_factor = np.where(has_made_progress, 2.0, 1.0)  # 2x harder to trigger if progressed
-                fail_exit = (bar + 1 <= k_early) & (s_fail > theta_fail * progress_factor)
-
+                progress_factor = np.where(
+                    has_made_progress, 2.0, 1.0
+                )  # 2x harder to trigger if progressed
+                fail_exit = (bar + 1 <= k_early) & (
+                    s_fail > theta_fail * progress_factor
+                )
 
         path_exit = (
             (bar + 1 >= max(3, d_path))
@@ -1068,59 +1103,82 @@ def _sequential_optimise(
     executed_mask: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     params = dict(fixed)
-    
+
     # Group parameters into families for incremental testing
     # Each family is tested separately - if it degrades performance, it's disabled
     param_families: List[Tuple[str, List[Tuple[str, List[Any]]]]] = [
-        ("early_exit", [
-            ("theta_fail", np.linspace(-1.0, 1.5, 11).tolist()),
-            ("theta_path", np.linspace(-1.5, 1.0, 11).tolist()),
-            ("K_early", [2, 3, 4, 5]),
-            ("d_path", [1, 2, 3]),
-            ("progress_threshold", [0.00, 0.05, 0.10, 0.15, 0.20, 0.25]),
-        ]),
-        ("barrier_conf", [
-            ("tp_conf_threshold", [0.3, 0.4, 0.5, 0.6, 0.7]),
-            ("sl_early_exit_threshold", [0.2, 0.3, 0.4, 0.5]),
-            ("continuation_conf_threshold", [0.4, 0.5, 0.6, 0.7]),
-        ]),
-        ("compression", [
-            ("compression_start", [0.30, 0.50, 0.70]),
-            ("compression_full", [0.80, 1.00, 1.20]),
-            ("compression_max_fraction", [0.20, 0.40, 0.60]),
-        ]),
-        ("trailing_profit", [
-            ("trail_activation_atr", [0.5, 0.8, 1.0, 1.2]),
-            ("trail_giveback_atr", [0.2, 0.3, 0.4, 0.5]),
-        ]),
-        ("tp_trailing_combo", [
-            # Co-optimize TP distance with trailing stop
-            # By pushing TP farther, trailing stop can activate and capture overshoots
-            ("tp_mult", [1.0, 1.2, 1.5, 1.8, 2.0, 2.5]),
-            ("sl_mult", [0.8, 1.0, 1.2]),  # Looser SL to give more room
-            ("trail_activation_atr", [0.3, 0.5, 0.7, 1.0]),  # Earlier activation
-            ("trail_giveback_atr", [0.1, 0.2, 0.3, 0.4]),  # Tighter giveback
-        ]),
-        ("multiplier_band", [
-            ("multiplier_band", [(0.70, 1.30), (0.80, 1.20), (0.85, 1.15)]),
-        ]),
-        ("scoring_weights", [
-            ("a1", np.linspace(0.0, 1.0, 11).tolist()),
-            ("b1", np.linspace(0.0, 1.0, 11).tolist()),
-        ]),
+        (
+            "early_exit",
+            [
+                ("theta_fail", np.linspace(-1.0, 1.5, 11).tolist()),
+                ("theta_path", np.linspace(-1.5, 1.0, 11).tolist()),
+                ("K_early", [2, 3, 4, 5]),
+                ("d_path", [1, 2, 3]),
+                ("progress_threshold", [0.00, 0.05, 0.10, 0.15, 0.20, 0.25]),
+            ],
+        ),
+        (
+            "barrier_conf",
+            [
+                ("tp_conf_threshold", [0.3, 0.4, 0.5, 0.6, 0.7]),
+                ("sl_early_exit_threshold", [0.2, 0.3, 0.4, 0.5]),
+                ("continuation_conf_threshold", [0.4, 0.5, 0.6, 0.7]),
+            ],
+        ),
+        (
+            "compression",
+            [
+                ("compression_start", [0.30, 0.50, 0.70]),
+                ("compression_full", [0.80, 1.00, 1.20]),
+                ("compression_max_fraction", [0.20, 0.40, 0.60]),
+            ],
+        ),
+        (
+            "trailing_profit",
+            [
+                ("trail_activation_atr", [0.5, 0.8, 1.0, 1.2]),
+                ("trail_giveback_atr", [0.2, 0.3, 0.4, 0.5]),
+            ],
+        ),
+        (
+            "tp_trailing_combo",
+            [
+                # Co-optimize TP distance with trailing stop
+                # By pushing TP farther, trailing stop can activate and capture overshoots
+                ("tp_mult", [1.0, 1.2, 1.5, 1.8, 2.0, 2.5]),
+                ("sl_mult", [0.8, 1.0, 1.2]),  # Looser SL to give more room
+                ("trail_activation_atr", [0.3, 0.5, 0.7, 1.0]),  # Earlier activation
+                ("trail_giveback_atr", [0.1, 0.2, 0.3, 0.4]),  # Tighter giveback
+            ],
+        ),
+        (
+            "multiplier_band",
+            [
+                ("multiplier_band", [(0.70, 1.30), (0.80, 1.20), (0.85, 1.15)]),
+            ],
+        ),
+        (
+            "scoring_weights",
+            [
+                ("a1", np.linspace(0.0, 1.0, 11).tolist()),
+                ("b1", np.linspace(0.0, 1.0, 11).tolist()),
+            ],
+        ),
     ]
 
     # Check if future paths are available for fair baseline computation
     has_future_paths_ctx = all(
-        col in context for col in ("future_opens", "future_highs", "future_lows", "future_closes")
+        col in context
+        for col in ("future_opens", "future_highs", "future_lows", "future_closes")
     )
     fixed_tp_mult = float(fixed.get("tp_mult", 1.0))
     fixed_sl_mult = float(fixed.get("sl_mult", 1.0))
 
     # Track best validation performance and corresponding params
-    best_val_metric = -1e18
     best_val_params = dict(params)
-    param_history: List[Tuple[str, Any, float, float]] = []  # (param_name, value, train_pnl, val_pnl)
+    param_history: List[
+        Tuple[str, Any, float, float]
+    ] = []  # (param_name, value, train_pnl, val_pnl)
 
     # Use path-based simulation when future paths available - this is the FAIR comparison
     # Both baseline and policy should be evaluated on raw price paths
@@ -1137,48 +1195,67 @@ def _sequential_optimise(
             baseline_rets[val_mask],
             cost_pct=cost_pct,
             already_net=False,
-            executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+            executed_mask=(
+                executed_mask[val_mask] if executed_mask is not None else None
+            ),
         )["net_pnl"]
     else:
         baseline_val_metric = -1e18
-    
+
     # Track best validation score and corresponding params across families
     best_overall_val_metric = baseline_val_metric
     best_overall_params = dict(params)
-    
+
     disabled_families: List[str] = []
-    
+
     for family_name, family_params in param_families:
         # Skip families that were previously disabled
         if family_name in disabled_families:
             tprint(f"  Skipping disabled family: {family_name}")
             continue
-            
+
         family_best_params = dict(best_overall_params)  # Start from best known
-        family_improved = False
-        
-        tprint(f"  Testing family: {family_name} (best_val_pnl={best_overall_val_metric:.4f})")
-        
+
+        tprint(
+            f"  Testing family: {family_name} (best_val_pnl={best_overall_val_metric:.4f})"
+        )
+
         # For "combo" families, test full Cartesian product
         is_combo_family = "combo" in family_name
-        
+
         if is_combo_family:
+            # Establish baseline score for the family before testing combos
+            current_rets = _simulate_policy(family_best_params)
+            if current_rets is not None:
+                current_val_score = _metric_score(
+                    current_rets[val_mask],
+                    cost_pct=cost_pct,
+                    already_net=False,
+                    executed_mask=(
+                        executed_mask[val_mask] if executed_mask is not None else None
+                    ),
+                )["net_pnl"]
+            else:
+                current_val_score = -1e18
+
             # Generate all combinations for co-optimization
-            param_names = [p[0] for p in family_params]
+            [p[0] for p in family_params]
             param_grids = [p[1] for p in family_params]
             all_combos = list(itertools.product(*param_grids))
-            
+
             tprint(f"  Testing {len(all_combos)} combinations for {family_name}...")
-            
-            best_combo_score = -1e18
+
+            best_combo_score = current_val_score
             best_combo = None
-            
+
             for combo in all_combos:
                 trial = dict(family_best_params)
                 for i, (name, _) in enumerate(family_params):
                     cand = combo[i]
                     if name == "multiplier_band":
-                        trial["multiplier_band_min"], trial["multiplier_band_max"] = cand
+                        trial["multiplier_band_min"], trial["multiplier_band_max"] = (
+                            cand
+                        )
                     elif name == "a1":
                         trial["a1"] = float(cand)
                         trial["a2"] = 1.0 - float(cand)
@@ -1187,7 +1264,7 @@ def _sequential_optimise(
                         trial["b2"] = 1.0 - float(cand)
                     else:
                         trial[name] = cand
-                
+
                 rets = _simulate_policy(trial)
                 if rets is None:
                     continue
@@ -1195,19 +1272,28 @@ def _sequential_optimise(
                     rets[val_mask],
                     cost_pct=cost_pct,
                     already_net=False,
-                    executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+                    executed_mask=(
+                        executed_mask[val_mask] if executed_mask is not None else None
+                    ),
                 )["net_pnl"]
-                
+
                 if val_score > best_combo_score:
                     best_combo_score = val_score
                     best_combo = combo
-            
+
             # Apply best combo
             if best_combo is not None:
+                delta_pnl = best_combo_score - current_val_score
+                tprint(
+                    f"    Combo {family_name}: best_combo={best_combo}, delta PnL={delta_pnl:+.4f}"
+                )
                 for i, (name, _) in enumerate(family_params):
                     cand = best_combo[i]
                     if name == "multiplier_band":
-                        family_best_params["multiplier_band_min"], family_best_params["multiplier_band_max"] = cand
+                        (
+                            family_best_params["multiplier_band_min"],
+                            family_best_params["multiplier_band_max"],
+                        ) = cand
                     elif name == "a1":
                         family_best_params["a1"] = float(cand)
                         family_best_params["a2"] = 1.0 - float(cand)
@@ -1216,15 +1302,49 @@ def _sequential_optimise(
                         family_best_params["b2"] = 1.0 - float(cand)
                     else:
                         family_best_params[name] = cand
+            else:
+                tprint(f"    Combo {family_name}: no improvement over baseline")
         else:
             # Sequential parameter optimization (original approach)
             for name, grid in family_params:
+                # Establish baseline score for this parameter
+                current_rets = _simulate_policy(family_best_params)
+                if current_rets is not None:
+                    current_val_score = _metric_score(
+                        current_rets[val_mask],
+                        cost_pct=cost_pct,
+                        already_net=False,
+                        executed_mask=(
+                            executed_mask[val_mask]
+                            if executed_mask is not None
+                            else None
+                        ),
+                    )["net_pnl"]
+                else:
+                    current_val_score = -1e18
+
+                # Get the current value of the parameter
+                if name == "multiplier_band":
+                    current_val = (
+                        family_best_params.get("multiplier_band_min"),
+                        family_best_params.get("multiplier_band_max"),
+                    )
+                else:
+                    current_val = family_best_params.get(name)
+
+                # Include the current value in the grid if not already present
+                test_grid = list(grid)
+                if current_val is not None and current_val not in test_grid:
+                    test_grid.append(current_val)
+
                 val_scores: List[Tuple[float, Any]] = []
-                
-                for cand in grid:
+
+                for cand in test_grid:
                     trial = dict(family_best_params)
                     if name == "multiplier_band":
-                        trial["multiplier_band_min"], trial["multiplier_band_max"] = cand
+                        trial["multiplier_band_min"], trial["multiplier_band_max"] = (
+                            cand
+                        )
                     elif name == "a1":
                         trial["a1"] = float(cand)
                         trial["a2"] = 1.0 - float(cand)
@@ -1240,20 +1360,48 @@ def _sequential_optimise(
                         rets[val_mask],
                         cost_pct=cost_pct,
                         already_net=False,
-                        executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+                        executed_mask=(
+                            executed_mask[val_mask]
+                            if executed_mask is not None
+                            else None
+                        ),
                     )["net_pnl"]
                     val_scores.append((val_score, cand))
-                
+
                 if not val_scores:
                     continue
-                    
-                # Pick value that maximizes validation score
-                val_scores.sort(reverse=True)
-                best_val_score, best_val_for_param = val_scores[0]
+
+                # Pick value that maximizes validation score. To ensure we keep the baseline
+                # if there's no actual improvement, we can find the candidate that corresponds
+                # to the current value, and only pick a new one if it strictly improves the score.
+
+                # First, ensure we don't pick a slightly worse score due to floating point.
+                # Find the maximum score.
+                best_val_score = max(score for score, _ in val_scores)
                 
+                # Default to current_val if it tied the best score
+                best_val_for_param = current_val
+
+                if best_val_score > current_val_score + 1e-6:
+                    # Strict improvement found, use it. Sort ensures stability.
+                    val_scores.sort(reverse=True)
+                    best_val_score, best_val_for_param = val_scores[0]
+                else:
+                    # No strict improvement, keep baseline (or whatever we had)
+                    best_val_score = current_val_score
+                    best_val_for_param = current_val
+
+                delta_pnl = best_val_score - current_val_score
+                tprint(
+                    f"    Sub-step {name}: best_param={best_val_for_param}, delta PnL={delta_pnl:+.4f}"
+                )
+
                 # Update family params
                 if name == "multiplier_band":
-                    family_best_params["multiplier_band_min"], family_best_params["multiplier_band_max"] = best_val_for_param
+                    (
+                        family_best_params["multiplier_band_min"],
+                        family_best_params["multiplier_band_max"],
+                    ) = best_val_for_param
                 elif name == "a1":
                     family_best_params["a1"] = float(best_val_for_param)
                     family_best_params["a2"] = 1.0 - float(best_val_for_param)
@@ -1262,7 +1410,7 @@ def _sequential_optimise(
                     family_best_params["b2"] = 1.0 - float(best_val_for_param)
                 else:
                     family_best_params[name] = best_val_for_param
-        
+
         # Test if this family improved over baseline
         family_rets = _simulate_policy(family_best_params)
         if family_rets is not None:
@@ -1270,18 +1418,25 @@ def _sequential_optimise(
                 family_rets[val_mask],
                 cost_pct=cost_pct,
                 already_net=False,
-                executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+                executed_mask=(
+                    executed_mask[val_mask] if executed_mask is not None else None
+                ),
             )["net_pnl"]
-            
-            if family_val_metric > best_overall_val_metric + 0.001:  # Significant improvement threshold
-                tprint(f"  ✓ Family '{family_name}' improved validation PnL: {best_overall_val_metric:.4f} -> {family_val_metric:.4f}")
+
+            if (
+                family_val_metric > best_overall_val_metric + 0.001
+            ):  # Significant improvement threshold
+                tprint(
+                    f"  ✓ Family '{family_name}' improved validation PnL: {best_overall_val_metric:.4f} -> {family_val_metric:.4f}"
+                )
                 best_overall_params = dict(family_best_params)
                 best_overall_val_metric = family_val_metric
-                family_improved = True
             else:
-                tprint(f"  ✗ Family '{family_name}' did not improve (or degraded): {best_overall_val_metric:.4f} -> {family_val_metric:.4f}")
+                tprint(
+                    f"  ✗ Family '{family_name}' did not improve (or degraded): {best_overall_val_metric:.4f} -> {family_val_metric:.4f}"
+                )
                 disabled_families.append(family_name)
-        
+
     # Return the best params found across all families
     best_val_params = dict(best_overall_params)
     tprint(f"Optimization complete: best_val_pnl={best_overall_val_metric:.4f}")
@@ -1327,9 +1482,7 @@ def _sequential_optimise(
         final_rets[val_mask],
         cost_pct=cost_pct,
         already_net=False,
-        executed_mask=(
-            executed_mask[val_mask] if executed_mask is not None else None
-        ),
+        executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
     )
     best_val_params["_param_history_"] = param_history  # For diagnostics
     return best_val_params
@@ -1365,7 +1518,9 @@ def run_policy_optimisation(
                     scored_keys.append(
                         (
                             float(
-                                np.nanmean(np.asarray(mdf["oof_u_hat"], dtype=np.float32))
+                                np.nanmean(
+                                    np.asarray(mdf["oof_u_hat"], dtype=np.float32)
+                                )
                             ),
                             mk,
                         )
@@ -1380,7 +1535,9 @@ def run_policy_optimisation(
             else:
                 key = next(iter(meta_oofs.keys()), None)
                 if key is None:
-                    tprint("No meta OOF buckets available; skipping policy optimisation.")
+                    tprint(
+                        "No meta OOF buckets available; skipping policy optimisation."
+                    )
                     return {}
 
         outcomes = load_trade_outcomes(data_root, run_id, meta_oofs[key])
@@ -1424,10 +1581,14 @@ def run_policy_optimisation(
             )[selected_idx],
         }
 
-        path_bundle = build_policy_path_state_bundle(outcomes, selected_idx=selected_idx)
+        path_bundle = build_policy_path_state_bundle(
+            outcomes, selected_idx=selected_idx
+        )
         path_matrices = _pack_future_path_matrices(outcomes, selected_idx=selected_idx)
 
-        _label_tp_sl = float(np.nanmedian(path_bundle.get("label_tp_sl_ratio", np.array([3.0]))))
+        _label_tp_sl = float(
+            np.nanmedian(path_bundle.get("label_tp_sl_ratio", np.array([3.0])))
+        )
         _has_label_policy = bool(path_bundle.get("has_label_policy", 0.0) > 0.5)
 
         base_rets = np.asarray(
@@ -1489,7 +1650,9 @@ def run_policy_optimisation(
         context["AE_vel"] = _robust_apply(path_bundle["AE_vel"], ae_fit)
         context["pressure"] = _robust_apply(path_bundle["pressure"], pr_fit)
         context["path_quality"] = _robust_apply(path_bundle["path_quality"], pq_fit)
-        context["progress_per_bar"] = _robust_apply(path_bundle["progress_per_bar"], pg_fit)
+        context["progress_per_bar"] = _robust_apply(
+            path_bundle["progress_per_bar"], pg_fit
+        )
         context["p_tp"] = path_bundle.get("p_tp", np.full(len(base_rets), np.nan))
         context["p_sl"] = path_bundle.get("p_sl", np.full(len(base_rets), np.nan))
         context.update(path_matrices)
@@ -1500,12 +1663,12 @@ def run_policy_optimisation(
         sizer_sl_mult = float(selected.get("sl_mult", 1.0))
         label_tp_mult = float(_label_tp_sl) if _has_label_policy else sizer_tp_mult
         label_sl_mult = 1.0  # Label policy typically uses SL=1.0
-        
+
         # Use sizer values as primary, label only as fallback or for ratio guidance
         # If label and sizer differ significantly, trust the sizer (it was profitable)
         tp_mult_to_use = sizer_tp_mult if sizer_tp_mult > 0 else label_tp_mult
         sl_mult_to_use = sizer_sl_mult if sizer_sl_mult > 0 else label_sl_mult
-        
+
         fixed = {
             "strategy_id": selected["strategy_id"],
             "tp_mult": tp_mult_to_use,
@@ -1539,7 +1702,8 @@ def run_policy_optimisation(
         # Compute fair baseline from raw paths when available, instead of using
         # pre-capped returns that already have TP/SL applied.
         has_future_paths = all(
-            col in context for col in ("future_opens", "future_highs", "future_lows", "future_closes")
+            col in context
+            for col in ("future_opens", "future_highs", "future_lows", "future_closes")
         )
         if has_future_paths:
             # Compute baseline using simple TP/SL from raw paths for fair comparison
@@ -1584,7 +1748,9 @@ def run_policy_optimisation(
         # Only optimize strategies with positive baseline PnL
         baseline_pnl = float(baseline_assess.get("net_pnl", 0.0))
         if baseline_pnl <= 0:
-            tprint(f"Strategy {selected['strategy_id'][:40]}... has non-positive baseline PnL ({baseline_pnl:.4f}); skipping optimization.")
+            tprint(
+                f"Strategy {selected['strategy_id'][:40]}... has non-positive baseline PnL ({baseline_pnl:.4f}); skipping optimization."
+            )
             continue
 
         # FAIR COMPARISON: Compare baseline vs policy on VALIDATION SET ONLY
@@ -1595,30 +1761,36 @@ def run_policy_optimisation(
                 final_rets_assess = replay_exit_policy(base_rets, context, best)
         else:
             final_rets_assess = replay_exit_policy(base_rets, context, best)
-        
+
         # Compute metrics on validation set for fair comparison
         if baseline_rets_raw is not None:
             baseline_val_assess = _metric_score(
                 baseline_rets_raw[val_mask],
                 cost_pct=cost_pct,
                 already_net=False,
-                executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+                executed_mask=(
+                    executed_mask[val_mask] if executed_mask is not None else None
+                ),
             )
         else:
             baseline_val_assess = _metric_score(
                 base_rets[val_mask],
                 cost_pct=cost_pct,
                 already_net=False,
-                executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+                executed_mask=(
+                    executed_mask[val_mask] if executed_mask is not None else None
+                ),
             )
-        
+
         final_val_assess = _metric_score(
             final_rets_assess[val_mask],
             cost_pct=cost_pct,
             already_net=False,
-            executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+            executed_mask=(
+                executed_mask[val_mask] if executed_mask is not None else None
+            ),
         )
-        
+
         # Also compute full-set metrics for reporting
         final_assess = _metric_score(
             final_rets_assess,
@@ -1630,7 +1802,7 @@ def run_policy_optimisation(
         # Compare on VALIDATION SET (fair - same period used for optimization)
         baseline_val_pnl = float(baseline_val_assess.get("net_pnl", 0.0))
         final_val_pnl = float(final_val_assess.get("net_pnl", 0.0))
-        
+
         tprint(
             f"Fair comparison (validation set): baseline={baseline_val_pnl:.4f}, policy={final_val_pnl:.4f}, "
             f"delta={final_val_pnl - baseline_val_pnl:+.4f}"
@@ -1671,7 +1843,9 @@ def run_policy_optimisation(
         # Also store full-set metrics for reference
         best["baseline_net_pnl_full"] = float(baseline_assess.get("net_pnl", 0.0))
         best["final_net_pnl_full"] = float(final_assess.get("net_pnl", 0.0))
-        best["net_pnl_delta_full"] = float(best["final_net_pnl_full"] - best["baseline_net_pnl_full"])
+        best["net_pnl_delta_full"] = float(
+            best["final_net_pnl_full"] - best["baseline_net_pnl_full"]
+        )
         strategy_rows.append(best)
 
     if not strategy_rows:

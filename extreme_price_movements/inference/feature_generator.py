@@ -18,7 +18,7 @@ from extreme_price_movements.features import (
     compute_features_hourly,
 )
 from extreme_price_movements.data_store import load_features_selected
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, log_error
 
 
 def get_market_data(
@@ -426,7 +426,7 @@ def _compute_per_symbol_features(
     try:
         is_empty = close is None or not isinstance(close, (pd.DataFrame, pd.Series)) or (hasattr(close, 'empty') and close.empty)
     except Exception as e:
-        print(f"Error checking close.empty: {e}, type: {type(close)}")
+        log_error(f"Error checking close.empty: {e}, type: {type(close)}", exc=e)
         is_empty = True
     
     if is_empty:

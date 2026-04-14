@@ -73,7 +73,7 @@ from extreme_price_movements.simple_position_sizer import (
     run_simple_position_sizer_from_artifacts,
     write_holdout_multi_metrics,
 )
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, log_error
 
 from extreme_price_movements.slice_plan_store import (
     load_or_build_slice_plan,
@@ -166,7 +166,7 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
     )
     if strategies:
         cfg["strategies"] = strategies
-        from extreme_price_movements.utils import tprint
+        from extreme_price_movements.utils import tprint, log_error
         from extreme_price_movements.slice_plan_store import (
             load_or_build_slice_plan,
             apply_stage_usage_limits,
@@ -574,7 +574,7 @@ def _cache_checkpoint(tag: str) -> None:
                 shutil.rmtree(cdir)
                 tprint(f"CACHE[{tag}]: cleared {cdir}")
             except Exception as e:
-                tprint(f"CACHE[{tag}]: failed {cdir}: {e}")
+                log_error(f"CACHE[{tag}]: failed {cdir}: {e}", exc=e)
 
 
 def _maintenance_checkpoint(tag: str) -> None:
@@ -707,7 +707,7 @@ def run_backtest(cfg, ts_override=None, store=None):
                 f"Warning: stage holdout_strategy_eval not found in materialized_views"
             )
     except Exception as e:
-        tprint(f"Slice plan loading failed: {e}")
+        log_error(f"Slice plan loading failed: {e}", exc=e)
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -762,7 +762,7 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
                 f"Warning: stage holdout_strategy_eval not found in materialized_views"
             )
     except Exception as e:
-        tprint(f"Slice plan loading failed: {e}")
+        log_error(f"Slice plan loading failed: {e}", exc=e)
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -940,7 +940,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         else:
             tprint(f"Warning: stage train_base not found in materialized_views")
     except Exception as e:
-        tprint(f"Slice plan loading failed: {e}")
+        log_error(f"Slice plan loading failed: {e}", exc=e)
 
     tprint(f"Train mode. ts_sig={ts_sig} base_only={base_only} meta_only={meta_only}")
     _load_mask_params_by_mode(cfg)
@@ -975,7 +975,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         try:
             run_base_hpo_step(ts_sig, cfg)
         except Exception as e:
-            tprint(f"WARNING: Base HPO failed: {e}")
+            log_error(f"WARNING: Base HPO failed: {e}", exc=e)
 
     state = run_training_step(
         ts_sig,
@@ -992,7 +992,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         try:
             run_breakdown_diagnostics_integration(cfg, ts_sig)
         except Exception as e:
-            tprint(f"WARNING: breakdown diagnostics failed: {e}")
+            log_error(f"WARNING: breakdown diagnostics failed: {e}", exc=e)
     else:
         tprint("TRAINING PIPELINE FAILED")
     _maintenance_checkpoint("train:end")
@@ -1065,7 +1065,7 @@ def run_sizer(cfg, ts_override=None, store=None):
         else:
             tprint(f"Warning: stage sizer_train not found in materialized_views")
     except Exception as e:
-        tprint(f"Slice plan loading failed: {e}")
+        log_error(f"Slice plan loading failed: {e}", exc=e)
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     tprint(f"Sizer mode (simple_position_sizer). ts_sig={ts_sig}")
@@ -1110,13 +1110,13 @@ def run_sizer(cfg, ts_override=None, store=None):
                 run_backtest_step(ts_sig, None, bt_cfg, store, state_file)
                 tprint("SIZER: OOS backtest complete.")
             except Exception as e:
-                tprint(f"WARNING: sizer OOS backtest failed: {e}")
+                log_error(f"WARNING: sizer OOS backtest failed: {e}", exc=e)
 
         # Run breakdown diagnostics after ridge sizer
         try:
             run_breakdown_diagnostics_integration(cfg, ts_sig)
         except Exception as e:
-            tprint(f"WARNING: breakdown diagnostics failed: {e}")
+            log_error(f"WARNING: breakdown diagnostics failed: {e}", exc=e)
 
         _maintenance_checkpoint("sizer:end")
         return True
@@ -1154,7 +1154,7 @@ def run_trigger_discovery(cfg, ts_override=None):
         tprint("TRIGGER DISCOVERY COMPLETE")
         return True
     except Exception as e:
-        tprint(f"ERROR: Trigger Discovery failed: {e}")
+        log_error(f"ERROR: Trigger Discovery failed: {e}", exc=e)
         return False
     finally:
         _maintenance_checkpoint("trigger_discovery:end")
@@ -1330,7 +1330,7 @@ def run_all(cfg, ts_override=None):
                 use_offset_optimiser=bool(cfg.get("run_limit_offset_optimiser", False)),
             )
         except Exception as e:
-            tprint(f"WARNING: Policy optimiser failed: {e}")
+            log_error(f"WARNING: Policy optimiser failed: {e}", exc=e)
     _maintenance_checkpoint("run_all:after_policy_optimiser")
 
     # Holdout multi-metrics: filter strategies by quality gates
@@ -1340,7 +1340,7 @@ def run_all(cfg, ts_override=None):
         try:
             write_holdout_multi_metrics(cfg["data_root"], run_id)
         except Exception as e:
-            tprint(f"WARNING: holdout_multi_metrics write failed: {e}")
+            log_error(f"WARNING: holdout_multi_metrics write failed: {e}", exc=e)
 
     # Final Summary
     ts_sig = _resolve_ts_sig(cfg, ts_override)
@@ -1397,7 +1397,7 @@ def run_all(cfg, ts_override=None):
                     tprint(f"Avg Net Return per Trade: {avg_net_per_trade:.4f}")
                 tprint("==============================\n")
             except Exception as e:
-                tprint(f"Could not read results for summary: {e}")
+                log_error(f"Could not read results for summary: {e}", exc=e)
     _maintenance_checkpoint("run_all:end")
 
 
@@ -1425,7 +1425,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
         else:
             tprint(f"Warning: stage train_meta not found in materialized_views")
     except Exception as e:
-        tprint(f"Slice plan loading failed: {e}")
+        log_error(f"Slice plan loading failed: {e}", exc=e)
 
     _load_mask_params_by_mode(cfg)
     from extreme_price_movements.main import train_daily_meta
@@ -1499,7 +1499,7 @@ def run_optimise(cfg, ts_override=None, store=None):
                 f"Warning: stage utility_policy_optimisation not found in materialized_views"
             )
     except Exception as e:
-        tprint(f"Slice plan loading failed: {e}")
+        log_error(f"Slice plan loading failed: {e}", exc=e)
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     if bool(cfg.get("optimise_use_ridge_oof", False)):
@@ -1571,7 +1571,7 @@ def run_optimise(cfg, ts_override=None, store=None):
     try:
         run_breakdown_diagnostics_integration(cfg, ts_sig)
     except Exception as e:
-        tprint(f"WARNING: breakdown diagnostics failed: {e}")
+        log_error(f"WARNING: breakdown diagnostics failed: {e}", exc=e)
 
     try:
         from extreme_price_movements.reports.bucket_report import report_optimise
@@ -1608,7 +1608,7 @@ def clear_caches():
                 shutil.rmtree(cdir)
                 tprint(f"CACHE: Cleared directory {cdir}")
             except Exception as e:
-                tprint(f"CACHE: Failed to clear {cdir}: {e}")
+                log_error(f"CACHE: Failed to clear {cdir}: {e}", exc=e)
 
 
 def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> None:
@@ -1653,7 +1653,7 @@ def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> No
                 tprint("WARNING: No symbols found in store for breakdown diagnostics")
                 return
         except Exception as e:
-            tprint(f"WARNING: Could not create OHLC data for diagnostics: {e}")
+            log_error(f"WARNING: Could not create OHLC data for diagnostics: {e}", exc=e)
             return
 
     # Configure breakdown diagnostics
@@ -1700,7 +1700,7 @@ def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> No
         tprint(f"Breakdown diagnostics saved to: {run_dir}/breakdown_diagnostics/")
 
     except Exception as e:
-        tprint(f"ERROR: breakdown diagnostics failed: {e}")
+        log_error(f"ERROR: breakdown diagnostics failed: {e}", exc=e)
         raise
 
 
@@ -1940,7 +1940,7 @@ def main():
                             max_months=cfg.get("planned_max_months"),
                         )
             except Exception as e:
-                tprint(f"Slice plan loading failed: {e}")
+                log_error(f"Slice plan loading failed: {e}", exc=e)
         run_oos_eval_pipeline(cfg, n_assets=args.n_assets, ts_override=args.ts_override)
     elif args.mode == "run":
         run_all(cfg, ts_override=args.ts_override)

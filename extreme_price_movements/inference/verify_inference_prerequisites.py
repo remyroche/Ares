@@ -58,7 +58,6 @@ def check_artifacts_directory(data_root: str = DEFAULT_DATA_ROOT) -> Tuple[bool,
     if not os.path.exists(artifacts_dir):
         return False, None, []
     
-    import re
     run_pattern = re.compile(r"^\d{8}_\d{6}$")
     run_ids = []
     

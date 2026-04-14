@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -39,7 +39,7 @@ from extreme_price_movements.simple_position_sizer import (
     load_calibration_curves,
     calibrate_score,
 )
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, log_error
 
 
 @dataclass(frozen=True)
@@ -375,7 +375,13 @@ def run_inference_backtest(
     current_time: Optional[pd.Timestamp] = None
     position_size_cap: float = 0.0
 
-    for row in df.itertuples(index=False):
+    total_rows = len(df)
+    log_interval = max(1, total_rows // 10)
+
+    for idx, row in enumerate(df.itertuples(index=False)):
+        if idx > 0 and idx % log_interval == 0:
+            tprint(f"[InferenceBacktest] Processed {idx}/{total_rows} trades ({(idx/total_rows)*100:.1f}%)")
+
         symbol = str(getattr(row, "symbol"))
         side = str(getattr(row, cfg.side_col)).lower()
         is_long = side in {"long", "buy", "1", "up"}
@@ -585,7 +591,7 @@ def _load_strategy_acceptance_filter(
                 tprint(f"[StrategyFilter] Loaded {len(accepted)} accepted strategies from {path}")
                 return accepted
             except Exception as e:
-                tprint(f"[StrategyFilter] Error loading {path}: {e}")
+                log_error(f"[StrategyFilter] Error loading {path}: {e}", exc=e)
                 continue
     
     return None

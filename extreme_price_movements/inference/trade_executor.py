@@ -1,3 +1,4 @@
+import numpy as np
 """
 Trade Executor for Inference.
 
@@ -15,15 +16,14 @@ Includes OCO (One Cancel the Other) order handling with dynamic updates:
 - Use bucket_params from Ridge position sizer for SL/TP parameters
 """
 
-import os
 import threading
 import time
-from typing import Dict, List, Any, Optional, Optional
+from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 import pandas as pd
 
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, log_error
 from extreme_price_movements import hf_data_loader
 
 # Try to import OrderManager from live_trading
@@ -165,7 +165,7 @@ class OCOExecutor:
                 current_price = closes[-1]
                 return atr / current_price  # Return as fraction
         except Exception as e:
-            tprint(f"Could not fetch ATR for {symbol}: {e}")
+            log_error(f"Could not fetch ATR for {symbol}: {e}", exc=e)
         
         return 0.01  # Default 1% ATR
     
@@ -193,7 +193,7 @@ class OCOExecutor:
                 tprint(f"Exchange does not support fetching trades for {symbol}")
                 return []
         except Exception as e:
-            tprint(f"Error fetching aggtrades for {symbol}: {e}")
+            log_error(f"Error fetching aggtrades for {symbol}: {e}", exc=e)
             return []
     
     def _get_aggtrades_at_entry(self, symbol: str, entry_time: pd.Timestamp) -> List[Dict[str, Any]]:
@@ -311,7 +311,7 @@ class OCOExecutor:
                 position_state["take_profit_order_id"] = tp_order.get("id")
                 
         except Exception as e:
-            tprint(f"Error placing OCO orders for {symbol}: {e}")
+            log_error(f"Error placing OCO orders for {symbol}: {e}", exc=e)
             # Continue with tracking even if order placement fails
             # This allows for manual intervention or retry
         
@@ -341,10 +341,10 @@ class OCOExecutor:
                     )
                     position_state["ohlcv_5m"] = ohlcv_5m_data
                 except Exception as e:
-                    tprint(f"Error fetching 5m OHLCV for {symbol}: {e}")
+                    log_error(f"Error fetching 5m OHLCV for {symbol}: {e}", exc=e)
                     
             except Exception as e:
-                tprint(f"Error fetching aggtrades for {symbol}: {e}")
+                log_error(f"Error fetching aggtrades for {symbol}: {e}", exc=e)
         
         tprint(f"Placed OCO for {symbol}: SL={stop_price:.4f}, TP={limit_price:.4f}")
         
@@ -384,7 +384,7 @@ class OCOExecutor:
             try:
                 self.monitor_positions()
             except Exception as e:
-                tprint(f"Error in OCO monitoring loop: {e}")
+                log_error(f"Error in OCO monitoring loop: {e}", exc=e)
             
             # Sleep in small increments to allow quick shutdown
             for _ in range(int(self._monitor_interval)):
@@ -419,7 +419,7 @@ class OCOExecutor:
                 self._update_oco(symbol, state, current_price)
                 
             except Exception as e:
-                tprint(f"Error monitoring {symbol}: {e}")
+                log_error(f"Error monitoring {symbol}: {e}", exc=e)
                 continue
     
     def _update_oco(
@@ -538,7 +538,7 @@ class OCOExecutor:
             tprint(f"Updated SL for {symbol} to {new_stop_price:.4f}")
             
         except Exception as e:
-            tprint(f"Error updating SL for {symbol}: {e}")
+            log_error(f"Error updating SL for {symbol}: {e}", exc=e)
     
     def _close_position(
         self,
@@ -589,7 +589,7 @@ class OCOExecutor:
             tprint(f"  PnL: {pnl:.2f}, MFE: {state['mfe']*100:.2f}%")
             
         except Exception as e:
-            tprint(f"Error closing {symbol}: {e}")
+            log_error(f"Error closing {symbol}: {e}", exc=e)
         finally:
             # Remove from active positions
             with self._positions_lock:
@@ -641,7 +641,7 @@ class OCOExecutor:
                     tprint(f"Warning: No 5m OHLCV data fetched for {symbol}")
                     
             except Exception as e:
-                tprint(f"Error fetching 5m OHLCV for {symbol}: {e}")
+                log_error(f"Error fetching 5m OHLCV for {symbol}: {e}", exc=e)
         
         return results
     
@@ -658,7 +658,7 @@ class OCOExecutor:
                 if state is not None:
                     self._close_position(symbol, state, current_price, "emergency_close")
             except Exception as e:
-                tprint(f"Error emergency closing {symbol}: {e}")
+                log_error(f"Error emergency closing {symbol}: {e}", exc=e)
 
 
 class TradeExecutor:
@@ -878,7 +878,7 @@ class TradeExecutor:
             }
             
         except Exception as e:
-            tprint(f"Error executing live trade: {e}")
+            log_error(f"Error executing live trade: {e}", exc=e)
             return {"success": False, "error": str(e)}
     
     def _record_shadow_trade(
@@ -988,7 +988,7 @@ class TradeExecutor:
                 state = self.oco_executor.active_positions[symbol]
                 self.oco_executor._close_position(symbol, state, current_price, reason)
             except Exception as e:
-                tprint(f"Error canceling OCO for {symbol}: {e}")
+                log_error(f"Error canceling OCO for {symbol}: {e}", exc=e)
         
         try:
             order_side = "sell" if side == "long" else "buy"

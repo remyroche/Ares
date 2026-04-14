@@ -15,9 +15,7 @@ The evaluator reports metrics for top-k rank buckets (10/20/30/40%).
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Set, Tuple
 
 import numpy as np
@@ -38,6 +36,12 @@ from extreme_price_movements.position_sizer_v2 import _apply_sizing_mode
 from extreme_price_movements.simple_position_sizer import (
     load_calibration_curves,
     calibrate_score,
+)
+from extreme_price_movements.inference.parity import (
+    apply_strategy_acceptance_filter,
+    calibration_size_multiplier,
+    load_strategy_acceptance_filter,
+    validate_calibration_artifacts,
 )
 from extreme_price_movements.utils import tprint
 
@@ -266,13 +270,15 @@ def run_inference_backtest(
     """
     cfg = config or InferenceBacktestConfig()
     df = trades.copy()
-    
+
     # Load strategy acceptance filter (upstream filtering)
     accepted_strategies: Optional[Set[str]] = None
     if use_strategy_acceptance and data_root and run_id:
-        accepted_strategies = _load_strategy_acceptance_filter(data_root, run_id)
+        accepted_strategies = load_strategy_acceptance_filter(data_root, run_id)
         if accepted_strategies:
-            df = _apply_strategy_acceptance_filter(df, accepted_strategies, cfg.strategy_col)
+            df = apply_strategy_acceptance_filter(
+                df, accepted_strategies, cfg.strategy_col
+            )
 
     required = {"event_id", "symbol", "t0", "t1", "entry_price", cfg.rank_col}
     missing = sorted(required.difference(df.columns))
@@ -296,16 +302,21 @@ def run_inference_backtest(
     df = df.loc[unseen_mask].copy()
     if df.empty:
         return {"n_unseen": 0, "metrics": {}, "reason": "no_unseen_trades"}
-    
+
     # Load calibration data for confidence filtering
     calibration_data: Dict[str, Dict[str, Any]] = {}
     if use_calibration_filter and data_root and run_id:
         calibration_data = load_calibration_curves(data_root, run_id)
+        validate_calibration_artifacts(
+            data_root, run_id, calibration_data, strict=False
+        )
         if calibration_data:
-            tprint(f"[InferenceBacktest] Loaded calibration for {len(calibration_data)} strategies")
+            tprint(
+                f"[InferenceBacktest] Loaded calibration for {len(calibration_data)} strategies"
+            )
 
     mode_masks = _build_mask_lookup(panel, feats, mask_params_by_mode)
-    
+
     # Initialize Portfolio Manager
     portfolio_mgr = None
     if use_portfolio_manager:
@@ -331,11 +342,17 @@ def run_inference_backtest(
             valid_period_mask[i] = bool(mask_df.loc[ts, sym])
     df = df.loc[valid_period_mask].copy()
     if df.empty:
-        return {"n_unseen": int(unseen_mask.sum()), "n_masked": int(valid_period_mask.sum()), "metrics": {}, "reason": "all_masked"}
-    
+        return {
+            "n_unseen": int(unseen_mask.sum()),
+            "n_masked": int(valid_period_mask.sum()),
+            "metrics": {},
+            "reason": "all_masked",
+        }
+
     # Apply calibration-based confidence filtering
     if calibration_data:
         n_before = len(df)
+
         # Filter trades below p75 calibrated threshold
         def passes_calibration(row):
             sid = row[cfg.strategy_col]
@@ -346,31 +363,47 @@ def run_inference_backtest(
                 calibrated = calibrate_score(raw_score, sid, calibration_data)
                 return calibrated >= p75
             return raw_score >= 0.5
-        
+
         mask = df.apply(passes_calibration, axis=1)
         df = df[mask].copy()
-        tprint(f"[InferenceBacktest] Calibration filter: {n_before} -> {len(df)} trades")
+        tprint(
+            f"[InferenceBacktest] Calibration filter: {n_before} -> {len(df)} trades"
+        )
 
     raw_rank = df[cfg.rank_col].to_numpy(dtype=float)
-    
+
     # Resolve trade conflicts using calibrated confidence
     df = _resolve_trade_conflicts(df, calibration_data, cfg.rank_col, cfg.strategy_col)
-    
+
     # Apply position sizing mode
+    if calibration_data:
+        df["_sizing_score"] = df.apply(
+            lambda row: float(
+                row[cfg.rank_col]
+                * calibration_size_multiplier(
+                    raw_score=float(row[cfg.rank_col]),
+                    strategy_id=str(row[cfg.strategy_col]),
+                    calibration_data=calibration_data,
+                    default_threshold=initial_threshold,
+                )
+            ),
+            axis=1,
+        )
+        sizing_values = df["_sizing_score"].to_numpy(dtype=float)
+    else:
+        sizing_values = df[cfg.rank_col].to_numpy(dtype=float)
     pos_sizes = _apply_sizing_mode(
-        df[cfg.rank_col].to_numpy(dtype=float), 
-        cfg.base_position_size, 
-        cfg.sizing_mode
+        sizing_values, cfg.base_position_size, cfg.sizing_mode
     )
     df["position_size"] = pos_sizes
-    
+
     fee_rt = cfg.fee_round_trip_pct / 100.0
     processed_row_positions: list[int] = []
     net_returns: list[float] = []
     holding_hours: list[float] = []
     win_flags: list[bool] = []
     portfolio_states: list[Dict[str, Any]] = []
-    
+
     # Track PortfolioManager state for each timestamp
     current_time: Optional[pd.Timestamp] = None
     position_size_cap: float = 0.0
@@ -381,14 +414,14 @@ def run_inference_backtest(
         is_long = side in {"long", "buy", "1", "up"}
         entry_px = float(getattr(row, "entry_price"))
         offset_bps = float(getattr(row, cfg.limit_offset_col))
-        
+
         # Portfolio Manager check
         if portfolio_mgr is not None:
             t0 = pd.Timestamp(getattr(row, "t0"))
             t1 = pd.Timestamp(getattr(row, "t1"))
             confidence_score = float(getattr(row, cfg.rank_col))
             strategy_id = str(getattr(row, cfg.strategy_col))
-            
+
             can_enter, info = portfolio_mgr.can_enter_position(
                 symbol=symbol,
                 side=side,
@@ -397,18 +430,18 @@ def run_inference_backtest(
                 initial_threshold=initial_threshold,
                 current_time=t0,
             )
-            
+
             if not can_enter:
                 # Skip this trade due to portfolio constraints
                 continue
-            
+
             # Use position size from portfolio manager's cap
             position_size_cap = info.get("position_size_cap", 0.0)
         else:
             t0 = pd.Timestamp(getattr(row, "t0"))
             t1 = pd.Timestamp(getattr(row, "t1"))
             strategy_id = str(getattr(row, cfg.strategy_col))
-        
+
         if is_long:
             entry_exec = entry_px * (1.0 - offset_bps / 10_000.0)
         else:
@@ -472,7 +505,10 @@ def run_inference_backtest(
         # Apply position sizing (portfolio manager cap or default)
         if portfolio_mgr is not None and position_size_cap > 0:
             # Use portfolio manager calculated size
-            size = min(float(getattr(row, "position_size", 1.0)), position_size_cap / entry_exec)
+            size = min(
+                float(getattr(row, "position_size", 1.0)),
+                position_size_cap / entry_exec,
+            )
             portfolio_mgr.record_position_open(
                 symbol=symbol,
                 side=side,
@@ -483,9 +519,9 @@ def run_inference_backtest(
             )
         else:
             size = float(getattr(row, "position_size", 1.0))
-        
+
         net_ret = (gross_ret - fee_rt) * size
-        
+
         # Record position close for portfolio manager
         if portfolio_mgr is not None:
             was_win = net_ret > 0.0
@@ -497,11 +533,11 @@ def run_inference_backtest(
             )
         hold_h = max((bars.index[-1] - bars.index[0]).total_seconds() / 3600.0, 0.0)
 
-        processed_row_positions.append(getattr(row, 'Index', 0))
+        processed_row_positions.append(getattr(row, "Index", 0))
         net_returns.append(float(net_ret))
         holding_hours.append(float(hold_h))
         win_flags.append(bool(net_ret > 0.0))
-        
+
         # Record portfolio state for this trade
         if portfolio_mgr is not None:
             portfolio_states.append(portfolio_mgr.get_portfolio_state())
@@ -545,67 +581,18 @@ def run_inference_backtest(
         "metrics": metrics,
         "trades": df,
     }
-    
+
     if portfolio_mgr is not None:
         result["portfolio_final_state"] = portfolio_mgr.get_portfolio_state()
         result["portfolio_history"] = portfolio_states
-    
+
     if accepted_strategies:
         result["accepted_strategies_used"] = len(accepted_strategies)
-    
+
     if calibration_data:
         result["calibration_strategies"] = len(calibration_data)
-    
+
     return result
-
-
-# =============================================================================
-# Strategy Acceptance & Calibration Helpers
-# =============================================================================
-
-def _load_strategy_acceptance_filter(
-    data_root: str,
-    run_id: str,
-) -> Optional[Set[str]]:
-    """Load accepted strategies from policy_optimiser output.
-    
-    Returns set of accepted strategy_ids, or None if no acceptance file exists.
-    """
-    paths = [
-        Path(data_root) / "artifacts" / run_id / "strategy_final_acceptation.json",
-        Path(data_root) / "artifacts" / run_id / "policy_params" / "strategy_final_acceptation.json",
-    ]
-    
-    for path in paths:
-        if path.exists():
-            try:
-                payload = json.loads(path.read_text())
-                strategies = payload.get("strategies", [])
-                accepted = {s["strategy_id"] for s in strategies if "strategy_id" in s}
-                tprint(f"[StrategyFilter] Loaded {len(accepted)} accepted strategies from {path}")
-                return accepted
-            except Exception as e:
-                tprint(f"[StrategyFilter] Error loading {path}: {e}")
-                continue
-    
-    return None
-
-
-def _apply_strategy_acceptance_filter(
-    df: pd.DataFrame,
-    accepted_strategies: Optional[Set[str]],
-    strategy_col: str = "strategy",
-) -> pd.DataFrame:
-    """Filter trades to only accepted strategies."""
-    if accepted_strategies is None:
-        return df
-    
-    n_before = len(df)
-    df = df[df[strategy_col].isin(accepted_strategies)].copy()
-    n_after = len(df)
-    
-    tprint(f"[StrategyFilter] {n_before} -> {n_after} trades after acceptance filtering")
-    return df
 
 
 def _resolve_trade_conflicts(
@@ -615,17 +602,17 @@ def _resolve_trade_conflicts(
     strategy_col: str = "strategy",
 ) -> pd.DataFrame:
     """Resolve conflicts by keeping highest calibrated confidence.
-    
+
     When multiple trades compete for same timestamp, select based on
     calibrated confidence score = raw_score / p75_threshold.
     """
     if candidates.empty:
         return candidates
-    
+
     if not calibration_data:
         # No calibration - use raw scores directly
         return candidates.loc[candidates.groupby(["symbol", "t0"])[rank_col].idxmax()]
-    
+
     # Compute calibrated scores
     def compute_calibrated_score(row):
         raw_score = row[rank_col]
@@ -635,13 +622,15 @@ def _resolve_trade_conflicts(
         if p75 > 0:
             return raw_score / p75
         return raw_score
-    
+
     candidates["_calibrated_score"] = candidates.apply(compute_calibrated_score, axis=1)
-    
+
     # Group by symbol and time, keep highest calibrated
-    result = candidates.loc[candidates.groupby(["symbol", "t0"])["_calibrated_score"].idxmax()]
+    result = candidates.loc[
+        candidates.groupby(["symbol", "t0"])["_calibrated_score"].idxmax()
+    ]
     result = result.drop(columns=["_calibrated_score"])
-    
+
     return result
 
 

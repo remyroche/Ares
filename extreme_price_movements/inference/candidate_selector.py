@@ -13,7 +13,7 @@ import pandas as pd
 import numpy as np
 
 from extreme_price_movements.inference.config import _resolve_runtime_cfg
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, log_error
 
 
 def _build_mask_for_mode(
@@ -367,7 +367,7 @@ def filter_candidates_by_direction(
     try:
         is_empty = close is None or not isinstance(close, (pd.DataFrame, pd.Series)) or (hasattr(close, 'empty') and close.empty)
     except Exception as e:
-        tprint(f"Error checking close.empty: {e}, type: {type(close)}")
+        log_error(f"Error checking close.empty: {e}, type: {type(close)}", exc=e)
         is_empty = True
     
     if is_empty:

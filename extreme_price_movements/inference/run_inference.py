@@ -31,7 +31,7 @@ def _configure_numba_threading_layer() -> None:
             print(f"Using Numba threading layer: {_layer}")
             return
         except Exception as e:
-            print(f"Threading layer {_layer} failed: {e}")
+            log_error(f"Threading layer {_layer} failed: {e}", exc=e)
             os.environ.pop("NUMBA_THREADING_LAYER", None)
     os.environ["NUMBA_THREADING_LAYER"] = "workqueue"
     try:
@@ -43,7 +43,6 @@ def _configure_numba_threading_layer() -> None:
     print("Falling back to Numba threading layer: workqueue")
 
 import argparse
-import sys
 import threading
 import time
 from typing import Dict, List, Any, Optional
@@ -63,7 +62,6 @@ from extreme_price_movements.inference.config import (
 from extreme_price_movements.inference.data_fetcher import (
     make_exchange,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     DataFetcher,
 )
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
@@ -75,7 +73,6 @@ from extreme_price_movements.inference.feature_generator import (
     load_or_compute_features,
     get_inference_required_feature_keys,
     get_features_for_candidates,
-    get_market_data,
     compute_selector_features,
 )
 from extreme_price_movements.inference.model_orchestrator import (
@@ -86,10 +83,9 @@ from extreme_price_movements.inference.trade_executor import (
 )
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements import hf_data_loader
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, log_error
 
 
 # Default symbols to trade
@@ -292,7 +288,7 @@ def run_inference_step(
         try:
             is_empty = candidate_features is None or not isinstance(candidate_features, (pd.DataFrame, pd.Series)) or (hasattr(candidate_features, 'empty') and candidate_features.empty)
         except Exception as e:
-            tprint(f"Error checking candidate_features.empty: {e}, type: {type(candidate_features)}")
+            log_error(f"Error checking candidate_features.empty: {e}, type: {type(candidate_features)}", exc=e)
             continue
         
         if is_empty:
@@ -367,7 +363,7 @@ def run_inference_step(
                     "result": trade_result,
                 })
         except Exception as e:
-            tprint(f"Error running inference chain for {side}: {e}")
+            log_error(f"Error running inference chain for {side}: {e}", exc=e)
             continue
     
     return results
@@ -444,7 +440,7 @@ def run_inference_loop(
             try:
                 has_close = panel_close is not None and isinstance(panel_close, (pd.DataFrame, pd.Series)) and not (hasattr(panel_close, 'empty') and panel_close.empty)
             except Exception as e:
-                tprint(f"Error checking panel_close.empty: {e}, type: {type(panel_close)}")
+                log_error(f"Error checking panel_close.empty: {e}, type: {type(panel_close)}", exc=e)
                 has_close = False
             
             if not has_close:
@@ -583,7 +579,7 @@ def run_inference_loop(
                     try:
                         feats[k] = pd.DataFrame(arr, index=panel_close.index[-arr.shape[0]:], columns=panel_close.columns)
                     except Exception as e:
-                        tprint(f"Warning: could not cast {k} back to DataFrame: {e}")
+                        log_error(f"Warning: could not cast {k} back to DataFrame: {e}", exc=e)
                         feats[k] = arr
                 else:
                     feats[k] = arr
@@ -605,7 +601,7 @@ def run_inference_loop(
             tprint("\nInterrupted by user")
             break
         except Exception as e:
-            tprint(f"Error in inference loop: {e}")
+            log_error(f"Error in inference loop: {e}", exc=e)
             import traceback
             traceback.print_exc()
         
@@ -616,7 +612,6 @@ def run_inference_loop(
 
 
 def main():
-    import argparse
     _configure_numba_threading_layer()
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true", help="Run live trading mode")
@@ -734,7 +729,7 @@ def main():
             executor.shutdown()
             break
         except Exception as e:
-            print(f"Error in inference loop: {e}")
+            log_error(f"Error in inference loop: {e}", exc=e)
             import traceback
             traceback.print_exc()
             time.sleep(60)  # Wait 1 minute on error
@@ -825,13 +820,13 @@ def run_challenger_monitor(symbols, data_fetcher, orchestrator, executor, logger
                             position_state["ohlcv_5m_latest"] = ohlcv_5m
                             _evaluate_oco_policy(symbol, position_state, ohlcv_5m, executor)
                     except Exception as e:
-                        print(f"  Error fetching 5m data for {symbol}: {e}")
+                        log_error(f"  Error fetching 5m data for {symbol}: {e}", exc=e)
                         continue
             
             time.sleep(interval)
             
         except Exception as e:
-            print(f"Error in challenger monitor: {e}")
+            log_error(f"Error in challenger monitor: {e}", exc=e)
             import traceback
             traceback.print_exc()
             time.sleep(interval)
@@ -939,7 +934,7 @@ def _evaluate_oco_policy(symbol: str, position_state: Dict[str, Any], ohlcv_5m: 
             last_5m_eval_ts=last_bar_ts,
         )
     except Exception as e:
-        print(f"  [OCO] Error evaluating OCO policy for {symbol}: {e}")
+        log_error(f"  [OCO] Error evaluating OCO policy for {symbol}: {e}", exc=e)
 
 
 if __name__ == "__main__":

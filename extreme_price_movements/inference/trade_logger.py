@@ -239,7 +239,7 @@ class TradeLogger:
         lines.append(f"   Mode: {record['mode']}")
         
         # Market context
-        lines.append(f"\n📈 Market Context:")
+        lines.append("\n📈 Market Context:")
         lines.append(f"   24h Return: {record.get('ret24h', 'N/A'):.2%}" if record.get('ret24h') else "   24h Return: N/A")
         lines.append(f"   12h Range: {record.get('range_12h_pct', 'N/A'):.2%}" if record.get('range_12h_pct') else "   12h Range: N/A")
         lines.append(f"   Volatility Z-Score: {record.get('volatility_zscore', 'N/A'):.2f}" if record.get('volatility_zscore') else "   Volatility Z-Score: N/A")
@@ -247,7 +247,7 @@ class TradeLogger:
         lines.append(f"   ATR: {record.get('atr', 'N/A'):.4f}" if record.get('atr') else "   ATR: N/A")
         
         # Model predictions
-        lines.append(f"\n🤖 Model Predictions:")
+        lines.append("\n🤖 Model Predictions:")
         
         if record['side'] == 'long':
             lines.append(f"   Alpha Long MR:  {record.get('alpha_long_mr_pred', 'N/A'):.4f}" if record.get('alpha_long_mr_pred') is not None else "   Alpha Long MR:  N/A")
@@ -260,12 +260,12 @@ class TradeLogger:
         lines.append(f"   Meta Confidence: {record.get('meta_confidence', 'N/A'):.2%}" if record.get('meta_confidence') else "   Meta Confidence: N/A")
         
         # Position sizing
-        lines.append(f"\n💰 Position Sizing:")
+        lines.append("\n💰 Position Sizing:")
         lines.append(f"   Ridge Position Size: {record.get('ridge_position_size', 'N/A'):.4f}" if record.get('ridge_position_size') else "   Ridge Position Size: N/A")
         lines.append(f"   Ridge Confidence: {record.get('ridge_confidence', 'N/A'):.2%}" if record.get('ridge_confidence') else "   Ridge Confidence: N/A")
         
         # Entry policy
-        lines.append(f"\n🎯 Entry Policy:")
+        lines.append("\n🎯 Entry Policy:")
         place_order = record.get('place_order', False)
         lines.append(f"   Place Order: {'✅ YES' if place_order else '❌ NO'}")
         if place_order:
@@ -278,7 +278,7 @@ class TradeLogger:
             lines.append(f"   TP Distance (ATR): {record.get('tp_distance_atr', 'N/A'):.2f}" if record.get('tp_distance_atr') else "   TP Distance: N/A")
         
         # Regime context
-        lines.append(f"\n🔄 Regime Features:")
+        lines.append("\n🔄 Regime Features:")
         g_vol = record.get('G_VOL', 'N/A')
         g_trend = record.get('G_TREND', 'N/A')
         g_volume = record.get('G_VOLUME', 'N/A')
@@ -289,13 +289,13 @@ class TradeLogger:
         lines.append(f"   Trend %: {record.get('trend_pct', 'N/A'):.2%}" if record.get('trend_pct') is not None else "   Trend %: N/A")
         
         # Disagreement features
-        lines.append(f"\n⚖️ Model Disagreement:")
+        lines.append("\n⚖️ Model Disagreement:")
         lines.append(f"   Disagree MR Std: {record.get('disagree_mr_std', 'N/A'):.4f}" if record.get('disagree_mr_std') is not None else "   Disagree MR Std: N/A")
         lines.append(f"   Disagree TF Std: {record.get('disagree_tf_std', 'N/A'):.4f}" if record.get('disagree_tf_std') is not None else "   Disagree TF Std: N/A")
         lines.append(f"   Agree TF - MR: {record.get('agree_tf_minus_mr', 'N/A'):.4f}" if record.get('agree_tf_minus_mr') is not None else "   Agree TF - MR: N/A")
         
         # Why trade was taken
-        lines.append(f"\n💡 WHY THIS TRADE:")
+        lines.append("\n💡 WHY THIS TRADE:")
         if place_order:
             reasons = []
             

@@ -4,9 +4,10 @@ import functools
 import random
 import pandas as pd
 import numpy as np
+import traceback
 
 def retry_with_backoff(retries=3, backoff_in_seconds=1):
-    tprint(f"Entering function: retry_with_backoff in utils.py")
+    tprint("Entering function: retry_with_backoff in utils.py")
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -31,6 +32,24 @@ def tprint(msg: str):
     sys.stdout.write(f"[{ts} UTC] {msg}\n")
     sys.stdout.flush()
 
+def log_error(msg: str, exc: Exception = None):
+    """
+    Log an error message. If an exception is provided, also logs the traceback details.
+    Logs are emitted to stdout with an [ERROR] prefix.
+    """
+    ts = pd.Timestamp.now('UTC').strftime("%Y-%m-%d %H:%M:%S")
+    sys.stdout.write(f"[{ts} UTC] [ERROR] {msg}\n")
+    if exc:
+        sys.stdout.write(f"[{ts} UTC] [ERROR] Exception details: {type(exc).__name__}: {str(exc)}\n")
+        try:
+            tb = traceback.format_exc()
+            if tb and tb.strip() != "NoneType: None":
+                sys.stdout.write(f"[{ts} UTC] [ERROR] Traceback:\n{tb}\n")
+        except Exception:
+            # Safe fallback if traceback extraction fails
+            pass
+    sys.stdout.flush()
+
 _PIPELINE_WARNINGS = []
 
 def log_pipeline_warning(msg: str):
@@ -52,21 +71,21 @@ def dump_pipeline_warnings(run_id: str):
                 f.write(f"[{ts} UTC] {w}\n")
         _PIPELINE_WARNINGS.clear()
     except Exception as e:
-        tprint(f"Failed to dump warnings: {e}")
+        log_error(f"Failed to dump warnings: {e}", e)
 
 
 class Timer:
     def __init__(self, label: str):
-        tprint(f"Entering function: __init__ in utils.py")
+        tprint("Entering function: __init__ in utils.py")
         self.label = label
         self.t0 = None
     def __enter__(self):
-        tprint(f"Entering function: __enter__ in utils.py")
+        tprint("Entering function: __enter__ in utils.py")
         self.t0 = time.time()
         tprint(f"START: {self.label}")
         return self
     def __exit__(self, exc_type, exc, tb):
-        tprint(f"Entering function: __exit__ in utils.py")
+        tprint("Entering function: __exit__ in utils.py")
         dt = time.time() - self.t0
         tprint(f"END: {self.label} ({dt:.2f}s)")
 
@@ -110,7 +129,7 @@ def check_inf_nan(df: pd.DataFrame, name: str):
             low_var_cols = num_df.columns[low_var_mask].tolist()
             tprint(f"Low variation detected in {name}: Cols {low_var_cols} (std < 1e-9)")
     except Exception as e:
-        tprint(f"Error checking variation in {name}: {e}")
+        log_error(f"Error checking variation in {name}: {e}", e)
 
 def clean_dataset(X: pd.DataFrame, y=None, sample_weight=None, name="X"):
     """

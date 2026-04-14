@@ -19,7 +19,7 @@ import numpy as np
 from extreme_price_movements.engine import _calculate_disagreement_features
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 from extreme_price_movements.inference.feature_generator import get_features_for_candidates
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, log_error
 
 
 class ModelOrchestrator:
@@ -223,7 +223,7 @@ class ModelOrchestrator:
             preds = model.predict(X)
             return pd.Series(preds, index=aligned_features.index)
         except Exception as e:
-            tprint(f"Error predicting alpha for {key}: {e}")
+            log_error(f"Error predicting alpha for {key}: {e}", exc=e)
             return pd.Series(dtype=float)
     
     def predict_alpha_all_horizons(
@@ -300,7 +300,7 @@ class ModelOrchestrator:
                 kind_name=kind_name,
             )
         except Exception as e:
-            tprint(f"Error computing disagreement features: {e}")
+            log_error(f"Error computing disagreement features: {e}", exc=e)
             return pd.Series(0.0, index=meta_data.index)
     
     # =========================================================================
@@ -351,7 +351,7 @@ class ModelOrchestrator:
             
             return pd.Series(preds, index=features.index)
         except Exception as e:
-            tprint(f"Error predicting meta for {key}: {e}")
+            log_error(f"Error predicting meta for {key}: {e}", exc=e)
             return pd.Series(dtype=float)
     
     # =========================================================================
@@ -413,7 +413,7 @@ class ModelOrchestrator:
                     conf = np.clip(np.abs(preds), 0.0, 1.0)
                     return pd.Series(preds, index=features.index), {"confidence": float(np.nanmean(conf)) if len(conf) else 0.0}
             except Exception as e:
-                tprint(f"Warning: ridge_sizer.predict failed for {bucket_key}: {e}")
+                log_error(f"Warning: ridge_sizer.predict failed for {bucket_key}: {e}", exc=e)
 
         if not isinstance(self.ridge_weight_map, dict) or not self.ridge_weight_map:
             tprint(f"Warning: Ridge weights not found for {bucket_key}")
@@ -504,7 +504,7 @@ class ModelOrchestrator:
             return decision
             
         except Exception as e:
-            tprint(f"Error computing entry policy for {symbol}: {e}")
+            log_error(f"Error computing entry policy for {symbol}: {e}", exc=e)
             return {
                 "place_order": True,  # Default to placing order on error
                 "entry_px_fill": entry_price,

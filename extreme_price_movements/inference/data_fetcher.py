@@ -10,13 +10,12 @@ This module handles fetching OHLCV data for inference with:
 
 import time
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone
 
 import pandas as pd
 import numpy as np
 
 from extreme_price_movements.data_store import PartitionedOHLCVStore, make_spot_exchange
-from extreme_price_movements.utils import tprint, retry_with_backoff
+from extreme_price_movements.utils import tprint, log_error, retry_with_backoff
 
 
 # Default configuration
@@ -201,7 +200,7 @@ class DataFetcher:
             )
             return ohlcv
         except Exception as e:
-            tprint(f"Error fetching OHLCV for {symbol} ({timeframe}): {e}")
+            log_error(f"Error fetching OHLCV for {symbol} ({timeframe}): {e}", exc=e)
             raise
     
     def _resample_to_hourly(self, df_15m: pd.DataFrame) -> pd.DataFrame:
@@ -364,7 +363,7 @@ class DataFetcher:
                 if data_not_empty:
                     ohlcv_data[symbol] = data
             except Exception as e:
-                tprint(f"Warning: Could not load data for {symbol}: {e}")
+                log_error(f"Warning: Could not load data for {symbol}: {e}", exc=e)
         
         # Convert to panel format
         return get_panel_from_dict(ohlcv_data)
@@ -412,7 +411,7 @@ def fetch_ohlcv(
         )
         return ohlcv
     except Exception as e:
-        tprint(f"Error fetching OHLCV for {symbol}: {e}")
+        log_error(f"Error fetching OHLCV for {symbol}: {e}", exc=e)
         raise
 
 
@@ -484,7 +483,7 @@ def fetch_ohlcv_for_symbols(
             else:
                 tprint(f"No data for {symbol}")
         except Exception as e:
-            tprint(f"Failed to fetch {symbol}: {e}")
+            log_error(f"Failed to fetch {symbol}: {e}", exc=e)
             continue
     
     return results
@@ -511,7 +510,7 @@ def fetch_latest_ohlcv(
             return convert_ohlcv_to_dataframe(ohlcv, symbol)
         return None
     except Exception as e:
-        tprint(f"Error fetching latest OHLCV for {symbol}: {e}")
+        log_error(f"Error fetching latest OHLCV for {symbol}: {e}", exc=e)
         return None
 
 

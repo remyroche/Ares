@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import optuna
 import numpy as np
@@ -25,10 +24,10 @@ import pandas as pd
 from scipy.stats import linregress, spearmanr
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.linear_model import ElasticNet, HuberRegressor, Ridge, RidgeClassifier
+from sklearn.linear_model import ElasticNet, Ridge, RidgeClassifier
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
-from sklearn.preprocessing import RobustScaler, StandardScaler
+from sklearn.preprocessing import RobustScaler
 
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.offline_optimisers.params_store import (
@@ -1167,10 +1166,10 @@ def compute_period_aggregated_stats(
     trade_rets: np.ndarray,
     trade_ts: Optional[np.ndarray],
     freq: str,
-) -> Tuple[float, float]:
-    """Return Sortino and standard deviation of period-aggregated PnL."""
+) -> Tuple[float, float, float, float, float, float]:
+    """Return Sortino, standard deviation, TUW, Ulcer, % negative, and worst PnL of period-aggregated PnL."""
     if trade_ts is None or len(trade_ts) == 0 or len(trade_rets) == 0:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     try:
         ts = pd.to_datetime(trade_ts, utc=True, errors="coerce")
         if isinstance(ts, pd.Series):
@@ -1180,18 +1179,26 @@ def compute_period_aggregated_stats(
             valid = pd.notna(ts)
             ts_idx = pd.DatetimeIndex(ts[valid])
         if np.sum(valid) == 0:
-            return 0.0, 0.0
+            return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         rets = np.asarray(trade_rets, dtype=float)[valid]
         period_vals = pd.Series(rets).groupby(ts_idx.to_period(freq)).sum().values
         if len(period_vals) == 0:
-            return 0.0, 0.0
+            return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         neg = period_vals[period_vals < 0]
         downside_std = float(np.std(neg)) if len(neg) > 0 else 1e-6
         mean_ret = float(np.mean(period_vals))
         sortino = mean_ret / downside_std if downside_std > 1e-12 else 0.0
-        return sortino, float(np.std(period_vals))
+        pnl_std = float(np.std(period_vals))
+
+        _, dd_series = _stable_equity_and_drawdown(period_vals)
+        tuw = float(np.mean(dd_series > 1e-12)) if dd_series.size else 1.0
+        ulcer = float(np.sqrt(np.mean(np.square(dd_series * 100.0)))) if dd_series.size else 100.0
+        pct_negative = float(np.mean(period_vals < 0)) if len(period_vals) > 0 else 0.0
+        worst_pnl = float(np.min(period_vals))
+
+        return sortino, pnl_std, tuw, ulcer, pct_negative, worst_pnl
     except Exception:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
 
 def compute_group_stability_stats(
@@ -1435,7 +1442,6 @@ class SimpleHeadRidgeSizer:
     """
 
     def __init__(self, model=None):
-        from sklearn.linear_model import Ridge
 
         self.model = model or Ridge(alpha=1.0)
         self.fold_coefs = []
@@ -1734,10 +1740,10 @@ def evaluate_selection_profit_proxy(
         mean_ret = np.mean(sized_rets)
         sortino = mean_ret / downside_std
 
-        weekly_sortino, weekly_pnl_std = compute_period_aggregated_stats(
+        weekly_sortino, weekly_pnl_std, weekly_tuw, weekly_ulcer, weekly_pct_negative, weekly_worst_pnl = compute_period_aggregated_stats(
             sized_rets, selected_ts, "W"
         )
-        monthly_sortino, monthly_pnl_std = compute_period_aggregated_stats(
+        monthly_sortino, monthly_pnl_std, monthly_tuw, monthly_ulcer, monthly_pct_negative, monthly_worst_pnl = compute_period_aggregated_stats(
             sized_rets, selected_ts, "M"
         )
         month_groups = None
@@ -1782,6 +1788,14 @@ def evaluate_selection_profit_proxy(
                 "monthly_sortino": monthly_sortino,
                 "weekly_pnl_std": weekly_pnl_std,
                 "monthly_pnl_std": monthly_pnl_std,
+                "weekly_tuw": weekly_tuw,
+                "weekly_ulcer": weekly_ulcer,
+                "weekly_pct_negative": weekly_pct_negative,
+                "weekly_worst_pnl": weekly_worst_pnl,
+                "monthly_tuw": monthly_tuw,
+                "monthly_ulcer": monthly_ulcer,
+                "monthly_pct_negative": monthly_pct_negative,
+                "monthly_worst_pnl": monthly_worst_pnl,
                 "monthly_group_std_pnl": month_stability["group_std_pnl"],
                 "monthly_group_cv_pnl": month_stability["group_cv_pnl"],
                 "monthly_group_pf_std": month_stability["group_pf_std"],
@@ -2280,9 +2294,6 @@ def run_simple_position_sizer(
     et_profit_proxy_df = pd.DataFrame()
 
     if use_et_head_sizer and used_keys:
-        from extreme_price_movements.extratrees_position_sizer import (
-            SimpleHeadExtraTreesSizer,
-        )
 
         X_heads = (
             X_heads
@@ -2791,10 +2802,6 @@ def run_simple_position_sizer_from_artifacts(
 
     Returns a dictionary mapping strategy_id to its respective position sizer results.
     """
-    from extreme_price_movements.run_ridge_sizer import (
-        load_meta_oof_predictions,
-        load_trade_outcomes,
-    )
 
     # Load dynamic strategies (which rules are active per bucket)
     # load_inference_candidate_mask_params_per_bucket returns top_n PER (side, horizon) group.
@@ -3020,9 +3027,9 @@ def run_simple_position_sizer_from_artifacts(
                 trade_side = inferred_side
 
         if not trade_side:
-            if "is_long" in trade_outcomes.columns:
+            if "is_long" in full_df.columns:
                 _is_long_vals = np.asarray(
-                    trade_outcomes["is_long"].values, dtype=float
+                    full_df["is_long"].values, dtype=float
                 )
                 _finite_long = np.isfinite(_is_long_vals)
                 if _finite_long.any():
@@ -3212,12 +3219,12 @@ def run_simple_position_sizer_from_artifacts(
             active_scored_df = active_joined_df.copy()
 
         # Diagnostic: Mask Pass Rate
-        print(f"\n" + "=" * 80)
+        print("\n" + "=" * 80)
         print(f" TARGETING STRATEGY: {strategy_id[:65]}...")
-        print(f" " + "-" * 78)
+        print(" " + "-" * 78)
         raw_to_matched = n_matched_labels / max(n_raw_labels, 1)
         matched_to_scorable = n_scorable / max(n_matched_labels, 1)
-        print(f" STRATEGY FUNNEL (Coverage Restoration):")
+        print(" STRATEGY FUNNEL (Coverage Restoration):")
         print(f"   [1] Raw label rows:    {n_raw_labels}")
         print(
             f"   [1b] Matched rows:     {n_matched_labels} "
@@ -3266,7 +3273,7 @@ def run_simple_position_sizer_from_artifacts(
                 f"{n_matched_labels} matched label rows. Meta model was likely trained on a heavily "
                 f"subsampled dataset — diagnostic results will have wide confidence intervals."
             )
-        print(f"=" * 80 + "\n")
+        print("=" * 80 + "\n")
 
         # Now pass the SCORED df to the sizer logic.
         # Keep trade outcomes aligned with the same scored rows so score/return
@@ -3529,7 +3536,6 @@ def run_simple_position_sizer_from_artifacts(
             portfolio_rets_list = []
             portfolio_ts_list = []
             portfolio_wallet_pnls = []
-            max_days = 0
             for sid, res in strategy_results.items():
                 pf = 0
                 opt_table = res.get("profit_proxy_table_", pd.DataFrame())
@@ -3575,10 +3581,10 @@ def run_simple_position_sizer_from_artifacts(
                 _, p_dd_series = _stable_equity_and_drawdown(all_portfolio_rets)
                 p_mdd = float(np.max(p_dd_series)) if len(p_dd_series) > 0 else 0.0
 
-                p_weekly_sortino, p_weekly_pnl_std = compute_period_aggregated_stats(
+                p_weekly_sortino, p_weekly_pnl_std, p_weekly_tuw, p_weekly_ulcer, p_weekly_pct_negative, p_weekly_worst_pnl = compute_period_aggregated_stats(
                     all_portfolio_rets, all_portfolio_ts, "W"
                 )
-                p_monthly_sortino, p_monthly_pnl_std = compute_period_aggregated_stats(
+                p_monthly_sortino, p_monthly_pnl_std, p_monthly_tuw, p_monthly_ulcer, p_monthly_pct_negative, p_monthly_worst_pnl = compute_period_aggregated_stats(
                     all_portfolio_rets, all_portfolio_ts, "M"
                 )
 
@@ -3592,8 +3598,18 @@ def run_simple_position_sizer_from_artifacts(
                         "trades/day": len(all_portfolio_rets) / 725.0,
                         "hit_rate": p_hit,
                         "pf": p_pf,
+                        "weekly_sortino": p_weekly_sortino,
                         "monthly_sortino": p_monthly_sortino,
+                        "weekly_pnl_std": p_weekly_pnl_std,
                         "monthly_pnl_std": p_monthly_pnl_std,
+                        "weekly_tuw": p_weekly_tuw,
+                        "weekly_ulcer": p_weekly_ulcer,
+                        "weekly_pct_negative": p_weekly_pct_negative,
+                        "weekly_worst_pnl": p_weekly_worst_pnl,
+                        "monthly_tuw": p_monthly_tuw,
+                        "monthly_ulcer": p_monthly_ulcer,
+                        "monthly_pct_negative": p_monthly_pct_negative,
+                        "monthly_worst_pnl": p_monthly_worst_pnl,
                         "monthly_group_cv_pnl": np.nan,
                         "asset_group_cv_pnl": np.nan,
                         "asset_group_positive_share": np.nan,
@@ -3682,7 +3698,6 @@ def run_simple_position_sizer_from_artifacts(
 
 if __name__ == "__main__":
     import argparse
-    import os
     import sys
 
     from extreme_price_movements.run_ridge_sizer import find_latest_run_id
@@ -3766,17 +3781,17 @@ if __name__ == "__main__":
 
         for strategy_id, res in results.items():
             print("-" * 60)
-            print(f"\n============================================================")
+            print("\n============================================================")
             print(f" STRATEGY: {strategy_id}")
-            print(f"============================================================\n")
+            print("============================================================\n")
 
             if "head_diagnostics_table_" in res:
-                print(f"\nTop 5 Meta-Heads by Utility:")
+                print("\nTop 5 Meta-Heads by Utility:")
                 print(res["head_diagnostics_table_"].head(5).to_string(index=False))
 
             if "ridge_importance_table_" in res:
                 print(
-                    f"\nMeta-Head Importance (Ridge Weights - Strictly Walk-Forward OOF):"
+                    "\nMeta-Head Importance (Ridge Weights - Strictly Walk-Forward OOF):"
                 )
                 print(res["ridge_importance_table_"].to_string(index=False))
 
@@ -3789,7 +3804,7 @@ if __name__ == "__main__":
             )
 
             cost_display = args.cost_pct if "args" in locals() else 0.003
-            print(f"\nConfidence Grid (Sizing: 5% to 15% Rank-Based):")
+            print("\nConfidence Grid (Sizing: 5% to 15% Rank-Based):")
             print(res.get("profit_proxy_table_", pd.DataFrame()).to_string(index=False))
             print("-" * 60)
 

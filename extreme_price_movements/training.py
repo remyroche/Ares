@@ -3414,25 +3414,6 @@ def _optimize_training_sample_weights(
                 tau=float(cfg.get("mfe_mae_tau", 1.0)),
                 cost_floor=float(cfg.get("mfe_mae_cost_floor", 0.001)),
             )
-            is_mr_strat = (
-                strategy.get("is_mr", False)
-                if strategy
-                else "_mr_" in str(stage).lower()
-            )
-            if is_mr_strat:
-                _tau_mfe = float(cfg.get("mr_weight_mfe_tau", 1.0))
-                _tau_mae = float(cfg.get("mr_weight_mae_tau", 1.0))
-                _mfe_rel = np.clip(np.maximum(mfe_v, 0.0) / (tp_v + 1e-9), 0.0, 3.0)
-                _mae_rel = np.clip(np.maximum(mae_v, 0.0) / (sl_v + 1e-9), 0.0, 3.0)
-                _mfe_score = np.clip(_mfe_rel / max(_tau_mfe, 1e-6), 0.0, 1.0)
-                _mae_score = 1.0 - np.clip(_mae_rel / max(_tau_mae, 1e-6), 0.0, 1.0)
-                _mr_path_w = np.clip(0.5 + 0.5 * (_mfe_score + _mae_score), 0.25, 1.50)
-                w_trade_quality = (
-                    np.asarray(w_trade_quality, dtype=np.float64) * _mr_path_w
-                )
-                w_trade_quality = w_trade_quality / max(
-                    float(np.mean(w_trade_quality)), 1e-12
-                )
             components["trade_quality"] = np.asarray(w_trade_quality, dtype=np.float64)
 
     # Magnitude/opportunity gates as additive components (not hard replacements).
@@ -4305,24 +4286,7 @@ def build_hourly_training_set_and_weights(
     w_mfe_mae = np.clip((2.0 * np.asarray(w_mfe_mae, dtype=np.float32)) - 0.5, 0.5, 1.5)
     w_mfe_mae = np.nan_to_num(w_mfe_mae, nan=1.0, posinf=1.5, neginf=0.5)
 
-    # MR-specific path-aware weighting: prioritize efficient reversals
-    # (high MFE relative to TP with controlled MAE relative to SL).
-    if str(model_kind).lower() == "mr":
-        _tau_mfe = float(cfg.get("mr_weight_mfe_tau", 1.0))
-        _tau_mae = float(cfg.get("mr_weight_mae_tau", 1.0))
-        _mfe_rel = np.clip(np.maximum(mfe_vals, 0.0) / (tp_vals + 1e-9), 0.0, 3.0)
-        _mae_rel = np.clip(np.maximum(mae_vals, 0.0) / (sl_vals + 1e-9), 0.0, 3.0)
-        _mfe_score = np.clip(_mfe_rel / max(_tau_mfe, 1e-6), 0.0, 1.0)
-        _mae_score = 1.0 - np.clip(_mae_rel / max(_tau_mae, 1e-6), 0.0, 1.0)
-        _mr_path_score = 0.5 * _mfe_score + 0.5 * _mae_score
-        _mr_path_w = np.clip(0.5 + _mr_path_score, 0.25, 1.50).astype(np.float32)
-        w_mfe_mae = w_mfe_mae * _mr_path_w
-        w_mfe_mae = w_mfe_mae / max(float(np.mean(w_mfe_mae)), 1e-12)
-
     # Multiply into base weight (before normalization)
-    if str(model_kind).lower() == "mr":
-        _mag_power = float(cfg.get("mr_weight_magnitude_power", 0.35))
-        w_base = np.power(np.clip(w_base, 1e-6, None), _mag_power)
     w_base = np.nan_to_num(w_base, nan=1.0, posinf=1.5, neginf=0.5).astype(
         np.float32, copy=False
     )

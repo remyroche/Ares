@@ -24,10 +24,8 @@ import pickle
 import re
 import joblib
 import glob
-from pathlib import Path
 from typing import Any, Optional
 
-import numpy as np
 
 from extreme_price_movements.entry_policy import flatten_bucket_policy
 from extreme_price_movements.utils import tprint
@@ -190,14 +188,11 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
     
     # Log summary
     alpha = bundle["alpha_models"]
-    tprint(f"Model bundle loaded:")
+    tprint("Model bundle loaded:")
     if isinstance(alpha, dict):
-        alpha_summary = {
-            side: sorted(list(models.keys())) if isinstance(models, dict) else []
-            for side, models in alpha.items()
-        }
+        alpha_summary = sorted(list(alpha.keys()))
     else:
-        alpha_summary = {}
+        alpha_summary = []
     tprint(f"  Alpha models: {alpha_summary}")
     tprint(f"  Meta models: {list(bundle['meta_models'].keys())}")
     tprint(f"  Spike models: {list(bundle['spike_models'].keys())}")
@@ -237,19 +232,19 @@ def load_alpha_models(native_dir: str) -> dict:
         tprint(f"WARNING: Native directory does not exist: {native_dir}")
         return alpha_models
     
-    # Pattern: {side}_{kind}_H{h}
-    # The strategy kind is now the full strategy id fragment, not just mr/tf.
-    pattern = re.compile(r"^(long|short)_(.+)_H(\d+)$")
+    # Pattern: {strategy_id}_H{h}
+    # We no longer use long/short or mr/tf, we strictly use strategy_id.
+    pattern = re.compile(r"^(.+)_H(\d+)$")
     
-    # Group models by (side, kind) to handle multi-horizon
-    models_by_side_kind = {}  # {(side, kind): {H: model_info}}
+    # Group models by (strategy_id) to handle multi-horizon
+    models_by_strategy = {}  # {strategy_id: {H: model_info}}
     
     for dirname in os.listdir(native_dir):
         match = pattern.match(dirname)
         if not match:
             continue
         
-        side, kind, H = match.groups()
+        strategy_id, H = match.groups()
         H = int(H)
         model_dir = os.path.join(native_dir, dirname)
         
@@ -296,19 +291,18 @@ def load_alpha_models(native_dir: str) -> dict:
                 "H": H,
             }
             
-            key = (side, kind)
-            if key not in models_by_side_kind:
-                models_by_side_kind[key] = {}
-            models_by_side_kind[key][H] = model_info
+            if strategy_id not in models_by_strategy:
+                models_by_strategy[strategy_id] = {}
+            models_by_strategy[strategy_id][H] = model_info
             
-            tprint(f"  Loaded alpha model: {side}_{kind}_H{H} ({len(feat_cols)} features)")
+            tprint(f"  Loaded alpha model: {strategy_id}_H{H} ({len(feat_cols)} features)")
             
         except Exception as e:
             tprint(f"  WARNING: Failed to load {dirname}: {e}")
             continue
     
     # Build final structure with best horizon and multi-horizon support
-    for (side, kind), h_models in models_by_side_kind.items():
+    for strategy_id, h_models in models_by_strategy.items():
         # Select best horizon (highest H for now, could use metrics)
         best_H = max(h_models.keys())
         best_info = h_models[best_H]
@@ -321,13 +315,12 @@ def load_alpha_models(native_dir: str) -> dict:
                 "feat_cols": info["feat_cols"],
             }
         
-        # Use flat dict structure: alpha_models[side][kind]
-        alpha_models.setdefault(side, {})[kind] = {
+        # Use flat dict structure: alpha_models[strategy_id]
+        alpha_models[strategy_id] = {
             "model": best_info["model"],
             "feat_cols": best_info["feat_cols"],
             "H": best_H,
             "models_by_h": models_by_h,
-            "trade_side": side,  # Keep for reference
         }
 
     return alpha_models
@@ -357,15 +350,25 @@ def load_meta_models_from_pickle(trained_state_path: str) -> dict:
         if not isinstance(meta_models, dict):
             return {}
         meta_models = dict(meta_models)
-        for side in ("long", "short"):
-            for kind in ("mr", "tf"):
-                base = f"{side}_{kind}"
-                reg = meta_models.get(f"{base}_reg")
-                clf = meta_models.get(f"{base}_clf") or meta_models.get(f"{base}_early_inval")
-                if base not in meta_models and reg is not None:
-                    meta_models[base] = reg
-                if f"{base}_clf" not in meta_models and clf is not None:
-                    meta_models[f"{base}_clf"] = clf
+        # Extract base names by removing suffixes like _reg, _clf, _early_inval
+        base_names = set()
+        for k in meta_models.keys():
+            if k.endswith("_reg"):
+                base_names.add(k[:-4])
+            elif k.endswith("_clf"):
+                base_names.add(k[:-4])
+            elif k.endswith("_early_inval"):
+                base_names.add(k[:-12])
+            else:
+                base_names.add(k)
+
+        for base in base_names:
+            reg = meta_models.get(f"{base}_reg")
+            clf = meta_models.get(f"{base}_clf") or meta_models.get(f"{base}_early_inval")
+            if base not in meta_models and reg is not None:
+                meta_models[base] = reg
+            if f"{base}_clf" not in meta_models and clf is not None:
+                meta_models[f"{base}_clf"] = clf
         return meta_models
 
     def _extract_meta_models(state_obj) -> dict:
@@ -602,7 +605,7 @@ def load_quality_gate_report(trained_state_path: str) -> dict:
             tprint("  No quality_gate_report found in trained state")
             return {}
         
-        tprint(f"  Loaded quality gate report")
+        tprint("  Loaded quality gate report")
         return quality_gate_report
         
     except Exception as e:
@@ -638,7 +641,7 @@ def load_ev_decomposition(trained_state_path: str) -> dict:
             tprint("  No ev_decomposition found in trained state")
             return {}
         
-        tprint(f"  Loaded EV decomposition")
+        tprint("  Loaded EV decomposition")
         return ev_decomposition
         
     except Exception as e:
@@ -669,7 +672,7 @@ def load_risk_params(trained_state_path: str) -> dict:
             tprint("  No risk_params found in trained state")
             return {}
         
-        tprint(f"  Loaded risk params")
+        tprint("  Loaded risk params")
         return risk_params
         
     except Exception as e:

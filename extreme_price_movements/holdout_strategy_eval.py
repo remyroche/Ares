@@ -26,7 +26,7 @@ from extreme_price_movements.inference.feature_generator import (
     load_or_compute_features,
 )
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
-from extreme_price_movements.model_loader import load_model_bundle
+from extreme_price_movements.model_loader import load_model_bundle, load_bucket_params
 from extreme_price_movements.ridge_position_sizer import (
     prepare_policy_params_from_tpsl_optimiser,
     run_policy_aware_labeling_step,
@@ -676,6 +676,10 @@ def evaluate_holdout_symbol(
             f"rule={policy_params.get('better_rule', 'N/A')}"
         )
 
+
+    # Load per-strategy bucket params
+    bucket_params = load_bucket_params(run_id, data_root)
+
     # 1. Load active strategy masks
     tprint("Loading inference candidate mask params...")
     dyn_strategies = load_inference_candidate_mask_params_per_bucket(top_n=99)
@@ -759,6 +763,13 @@ def evaluate_holdout_symbol(
                     else:
                         strat_mask = strat_mask & per_mode_series
 
+
+        strat_policy_params = policy_params.copy()
+        if strategy_id in bucket_params:
+            strat_policy_params.update(bucket_params[strategy_id])
+        elif best_policy is not None:
+            strat_policy_params.update(best_policy)
+
         candidates = _build_candidates(feature_df, panel, panel_symbol, side=side, mask=strat_mask)
         if candidates.empty:
             continue
@@ -766,7 +777,8 @@ def evaluate_holdout_symbol(
         outcomes = run_policy_aware_labeling_step(
             candidates,
             panel,
-            policy_params,
+            strat_policy_params,
+
             max_hold_hours=24,
             cost_pct=0.0,
             bars_per_hour=4,
@@ -808,7 +820,7 @@ def evaluate_holdout_symbol(
                 confidence=score_values.astype(np.float32),
             )
             raw_returns = replay_exit_policy(
-                raw_returns.astype(np.float32), context, best_policy
+                raw_returns.astype(np.float32), context, strat_policy_params
             ).astype(np.float64)
 
         t_diff = pd.to_datetime(ts_values.max()) - pd.to_datetime(ts_values.min())
@@ -1200,7 +1212,7 @@ def main() -> None:
         tprint(f"Sampled {len(symbols)} compatible holdout symbols: {symbols}")
 
     all_results: List[Dict[str, Any]] = []
-
+    pass
 
     for i, symbol in enumerate(symbols):
         tprint(f"Starting evaluation for symbol {i+1}/{len(symbols)}: {symbol}")

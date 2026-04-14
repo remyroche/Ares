@@ -920,7 +920,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             else:
                 oof_ic = 0.0
             # OOF selection score (same weights as race)
-            oof_sel = calculate_selection_score(y_hard, oof_probs, returns, sample_weight=sample_weight, symbols=symbols_arr, w_bss=0.20, w_realized=0.55, w_uic=0.25)
+            oof_sel = calculate_selection_score(y_hard, oof_probs, returns, sample_weight=sample_weight, symbols=symbols_arr, groups=groups_arr, w_bss=0.20, w_realized=0.55, w_uic=0.25)
             tprint(f"Winner OOF Metrics: AUC={oof_auc:.4f}  IC={oof_ic:.4f}  LogLoss={oof_logloss:.4f}  Acc={oof_accuracy:.4f}  SelScore={oof_sel['Selection_Score']:.4f}  Lift@30={oof_sel.get('Lift_Top30', 0.0):.4f}")
             
             # --- Post-hoc Isotonic Calibration ---

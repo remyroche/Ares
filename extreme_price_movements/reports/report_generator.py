@@ -130,15 +130,20 @@ def generate_training_report(
     base_rows = qgr.get("base_models", []) if isinstance(qgr, dict) else []
     if base_rows:
         lines.append("### Per-Horizon Alpha Performance (Quality Gate)")
-        lines.append("| Model | Winner | AUC | IC | LogLoss | PR-AUC | Lift@20 | BrierImp | Passed |")
-        lines.append("|-------|--------|-----|----|---------|--------|---------|----------|--------|")
+        lines.append("| Model | Winner | AUC | IC | LogLoss | PR-AUC | Lift@20 | BrierImp | PR-AUC/Rnd | ECE | Mean IC | IC_Stab | DecSpearman | med(ICm) | mos(ICm<-.01) | mos(Rho>0) | IR_wk | Passed |")
+        lines.append("|-------|--------|-----|----|---------|--------|---------|----------|------------|-----|---------|---------|-------------|----------|---------------|------------|-------|--------|")
         for r in base_rows:
             m = r.get("metrics", {}) if isinstance(r, dict) else {}
             lines.append(
                 f"| {r.get('model', '—')} | {r.get('winner', '—')} | {_fmt(m.get('auc', float('nan')))} | "
                 f"{_fmt(m.get('ic', float('nan')))} | {_fmt(m.get('logloss', float('nan')))} | "
-                f"{_fmt(m.get('pr_auc', float('nan')))} | {_fmt(m.get('lift20', float('nan')))} | "
-                f"{_fmt(m.get('brier_imp', float('nan')))} | {bool(r.get('passed', False))} |"
+                f"{_fmt(m.get('pr_auc', float('nan')))} | {_fmt(m.get('lift_at_20pct', m.get('lift20', float('nan'))))} | "
+                f"{_fmt(m.get('brier_improvement', m.get('brier_imp', float('nan'))))} | "
+                f"{_fmt(m.get('pr_auc_random', float('nan')))} | {_fmt(m.get('ece', float('nan')))} | "
+                f"{_fmt(m.get('mean_ic', float('nan')))} | {_fmt(m.get('ic_stability', float('nan')))} | "
+                f"{_fmt(m.get('decile_spearman', float('nan')))} | {_fmt(m.get('median_ic_m', float('nan')))} | "
+                f"{m.get('months_ic_m_lt_neg_01', 0)} | {m.get('months_rho_decile_gt_0', 0)} | "
+                f"{_fmt(m.get('ir_weekly', float('nan')))} | {bool(r.get('passed', False))} |"
             )
         lines.append("")
 

@@ -1790,16 +1790,21 @@ def run_policy_optimisation(
         order = np.argsort(ts.view("int64"))
         n = len(base_rets)
 
-        # The user wants 60% of data (base/meta OOF training portion) for fitting/parameter search (`train_mask`),
-        # and 30% (position sizer portion) for validation/family acceptance (`val_mask`).
-        # Assuming the remaining 10% is either skipped or part of the first chunk if data was 60/30/10.
-        # Since this data represents the OOFs and sizer data combined, we can infer the temporal splits.
+        # The user wants the splits to be fully applied dynamically based on the holdout_frac.
+        # Assuming a default base/meta OOF training portion, position sizer portion for validation, and a test/holdout tail.
         # If n is the total number of trades across the entire period (train+val+test):
-        # Train (60%), Val (30%), Test/Holdout (10%).
-        # Therefore, we want the first 60% as train, the next 30% as val.
+        # We calculate the splits such that:
+        # Holdout = holdout_frac
+        # Train = 2/3 of remaining data
+        # Val = 1/3 of remaining data
 
-        n_train = max(1, int(n * 0.60))
-        n_val = max(1, int(n * 0.30))
+        n_holdout = int(n * holdout_frac)
+        n_train = int(n * (1.0 - holdout_frac) * (2.0 / 3.0))
+        n_val = n - n_train - n_holdout
+
+        n_holdout = max(1, n_holdout)
+        n_train = max(1, n_train)
+        n_val = max(1, n_val)
 
         train_mask = np.zeros(n, dtype=bool)
         train_mask[order[:n_train]] = True

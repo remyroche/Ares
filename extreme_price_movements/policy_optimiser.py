@@ -210,6 +210,9 @@ def _metric_score(
             "hit_rate": 0.0,
             "profit_factor": 0.0,
             "max_drawdown": 0.0,
+            "ulcer": 0.0,
+            "tuw": 0.0,
+            "pct_negative_trades": 0.0,
             "n_trades": 0,
         }
     if executed_mask is not None:
@@ -226,6 +229,11 @@ def _metric_score(
     gross_win = float(np.sum(net_rets[net_rets > 0]))
     gross_loss = float(np.abs(np.sum(net_rets[net_rets < 0])))
     _, dd = _stable_equity_and_drawdown(net_rets)
+
+    ulcer = float(np.sqrt(np.mean(np.square(dd * 100.0)))) if dd.size else 100.0
+    tuw = float(np.mean(dd > 1e-12)) if dd.size else 1.0
+    pct_negative_trades = float(np.mean(net_rets < 0)) if len(net_rets) > 0 else 0.0
+
     return {
         "net_pnl": float(np.sum(net_rets)),
         "sortino": float(np.mean(net_rets)) / ds_std,
@@ -234,6 +242,9 @@ def _metric_score(
         if gross_loss > EPS
         else float(gross_win),
         "max_drawdown": float(np.max(dd)) if len(dd) else 0.0,
+        "ulcer": ulcer,
+        "tuw": tuw,
+        "pct_negative_trades": pct_negative_trades,
         "n_trades": int(len(rets)),
     }
 

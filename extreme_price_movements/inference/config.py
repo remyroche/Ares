@@ -23,6 +23,7 @@ from extreme_price_movements.model_loader import (
 )
 from extreme_price_movements.utils import tprint
 
+
 def _resolve_runtime_cfg() -> Dict[str, Any]:
     """Refresh runtime config from persisted offline optimiser outputs."""
     return apply_offline_optimizer_best_params(dict(CFG))
@@ -41,16 +42,17 @@ def _load_inference_candidate_mask_params() -> Dict[str, Any]:
     except Exception:
         return {}
 
+
 # Default paths
 DEFAULT_DATA_ROOT = "data"
 
 
 def get_candidate_thresholds(thresholds_csv: Optional[str] = None) -> Dict[str, float]:
     """Load candidate thresholds from runtime config (populated by offline optimizer).
-    
+
     Args:
         thresholds_csv: Deprecated parameter, kept for backward compatibility.
-        
+
     Returns:
         Dictionary with threshold parameters:
         - extreme_pct: Percentage of top/bottom performers to consider
@@ -83,11 +85,11 @@ def load_inference_config(
     run_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Load complete inference configuration.
-    
+
     Args:
         data_root: Root data directory. If None, uses "data"
         run_id: Specific run ID to load. If None, finds latest run
-        
+
     Returns:
         Dictionary with all config needed for inference:
         - run_id: The run ID used
@@ -99,30 +101,30 @@ def load_inference_config(
     """
     if data_root is None:
         data_root = DEFAULT_DATA_ROOT
-    
+
     # Find latest run ID if not provided
     if run_id is None:
         run_id = find_latest_run_id(data_root)
         if run_id is None:
             raise ValueError("No run ID found and none provided")
-    
+
     tprint(f"Loading inference config for run_id: {run_id}")
-    
+
     # Load thresholds from runtime_cfg (populated by offline optimizer)
     runtime_cfg = _resolve_runtime_cfg()
     thresholds = get_candidate_thresholds()
     tprint(f"Using thresholds: {thresholds}")
-    
+
     # Load TBM params from runtime_cfg
     tbm_params = get_tbm_params()
     tprint(f"Using TBM params: {tbm_params}")
-    
+
     # Load model bundle
     model_bundle = load_model_bundle(run_id, data_root)
-    
+
     # Load full state
     full_state = load_full_state(run_id, data_root)
-    
+
     config = {
         "run_id": run_id,
         "thresholds": thresholds,
@@ -131,17 +133,17 @@ def load_inference_config(
         "full_state": full_state,
         "data_root": data_root,
     }
-    
+
     tprint(f"Inference config loaded successfully for run {run_id}")
     return config
 
 
 def get_tbm_params() -> Dict[str, Any]:
     """Get TBM (Triple Barrier Model) parameters from runtime config.
-    
+
     These parameters are populated by apply_offline_optimizer_best_params()
     and are the same parameters that were optimized during training.
-    
+
     Returns:
         Dictionary with TBM barrier parameters:
         - barrier_k_tp: TP multiplier
@@ -175,22 +177,22 @@ def get_tbm_params() -> Dict[str, Any]:
         "label_horizon_scaling",
         "barrier_mode",
     ]
-    
+
     runtime_cfg = _resolve_runtime_cfg()
     params = {}
     for key in tbm_keys:
         if key in runtime_cfg and runtime_cfg[key] is not None:
             params[key] = runtime_cfg[key]
-    
+
     return params
 
 
 def get_sample_weight_params() -> Dict[str, Any]:
     """Get sample weight parameters from runtime config.
-    
+
     These parameters are populated by apply_offline_optimizer_best_params()
     and are the same parameters that were optimized during training.
-    
+
     Returns:
         Dictionary with sample weight parameters:
         - sample_weight_component_alphas: Component alphas for sample weighting
@@ -211,19 +213,19 @@ def get_sample_weight_params() -> Dict[str, Any]:
         "sample_weight_distance_min_dist",
         "sample_weight_recency_half_life_bars",
     ]
-    
+
     runtime_cfg = _resolve_runtime_cfg()
     params = {}
     for key in sample_weight_keys:
         if key in runtime_cfg and runtime_cfg[key] is not None:
             params[key] = runtime_cfg[key]
-    
+
     return params
 
 
 def get_runtime_cfg() -> Dict[str, Any]:
     """Get the full runtime config with all optimized parameters.
-    
+
     Returns:
         Dictionary with all runtime config parameters including:
         - Candidate thresholds (extreme_pct, min_range_pct, min_vol_zscore)
@@ -236,7 +238,7 @@ def get_runtime_cfg() -> Dict[str, Any]:
 
 def get_inference_defaults() -> Dict[str, Any]:
     """Get default inference parameters.
-    
+
     Returns:
         Dictionary with default parameters for inference
     """
@@ -244,15 +246,12 @@ def get_inference_defaults() -> Dict[str, Any]:
         # Data fetching
         "lookback_periods": 24 * 60,  # Number of 1h periods to look back (~2 months)
         "symbols_per_batch": 50,  # Symbols to fetch per batch
-        
         # Feature generation
         "trend_sma_hours": 24 * 14,  # 14 days
         "gate_vol_lookback_hours": 24 * 7,  # 7 days
         "gate_trend_thr": 0.0,
-        
         # Model inference
         "use_multi_horizon": True,
-        
         # Execution
         "max_position_size": 0.1,  # 10% of capital
         "default_stop_loss_pct": 0.05,  # 5%
@@ -264,51 +263,89 @@ def get_inference_defaults() -> Dict[str, Any]:
 _MARGIN_UNIVERSE_CACHE = None
 
 
+def _load_universe_from_exchange(exchange: Any) -> List[str]:
+    """Build inference universe from exchange.load_markets() metadata.
+
+    Filters to active USDT symbols and margin-capable markets when flags exist.
+    """
+    markets = exchange.load_markets()
+    selected: List[str] = []
+    for symbol, meta in (markets or {}).items():
+        if not isinstance(meta, dict):
+            continue
+        quote = str(meta.get("quote") or "").upper()
+        if quote != "USDT":
+            continue
+        if not bool(meta.get("active", True)):
+            continue
+        margin_ok = bool(
+            meta.get("margin", True)
+            or meta.get("spot", False)
+            and meta.get("info", {}).get("isMarginTradingAllowed", False)
+        )
+        if not margin_ok:
+            continue
+        selected.append(str(symbol))
+    return sorted(set(selected))
+
+
 def get_margin_universe(exchange=None) -> List[str]:
     """Get list of margin-enabled symbols from cache.
-    
+
     Args:
         exchange: Optional exchange instance (ignored, kept for API compatibility)
-        
+
     Returns:
         List of margin-enabled trading symbols
     """
     global _MARGIN_UNIVERSE_CACHE
-    
+
     if _MARGIN_UNIVERSE_CACHE is None:
+        if exchange is not None and hasattr(exchange, "load_markets"):
+            try:
+                _MARGIN_UNIVERSE_CACHE = _load_universe_from_exchange(exchange)
+                if _MARGIN_UNIVERSE_CACHE:
+                    tprint(
+                        f"Loaded {len(_MARGIN_UNIVERSE_CACHE)} margin-enabled symbols from exchange markets"
+                    )
+                    return _MARGIN_UNIVERSE_CACHE
+            except Exception as exc:
+                tprint(f"Exchange universe load failed, falling back to cache: {exc}")
         import json
         import os
-        
+
         cache_path = os.path.join(
-            os.path.dirname(__file__), 
-            "..", 
-            ".margin_universe_cache.json"
+            os.path.dirname(__file__), "..", ".margin_universe_cache.json"
         )
-        
+
         # Try multiple possible locations
         possible_paths = [
             cache_path,
             os.path.join(os.path.dirname(__file__), ".margin_universe_cache.json"),
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), ".margin_universe_cache.json"),
+            os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                ".margin_universe_cache.json",
+            ),
             "/Users/remyroche/Documents/Ares/extreme_price_movements/.margin_universe_cache.json",
         ]
-        
+
         for path in possible_paths:
             if os.path.exists(path):
                 cache_path = path
                 break
-        
+
         tprint(f"Loading margin universe from: {cache_path}")
-        
-        with open(cache_path, 'r') as f:
+
+        with open(cache_path, "r") as f:
             margin_data = json.load(f)
-        
+
         # Extract symbols that have margin trading enabled
         _MARGIN_UNIVERSE_CACHE = [
-            item["symbol"] for item in margin_data 
+            item["symbol"]
+            for item in margin_data
             if item.get("isMarginTradingAllowed", False)
         ]
-        
+
         tprint(f"Loaded {len(_MARGIN_UNIVERSE_CACHE)} margin-enabled symbols")
-    
+
     return _MARGIN_UNIVERSE_CACHE

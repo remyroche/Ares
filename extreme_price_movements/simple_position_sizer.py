@@ -162,7 +162,9 @@ def _extract_strategy_params_payload(
             "stability": _to_float_or_nan(opt_row.get("stability", np.nan)),
             "max_drawdown": _to_float_or_nan(opt_row.get("max_drawdown", np.nan)),
             "calmar_ratio": _to_float_or_nan(opt_row.get("calmar_ratio", np.nan)),
-            "expectancy_tstat": _to_float_or_nan(opt_row.get("expectancy_tstat", np.nan)),
+            "expectancy_tstat": _to_float_or_nan(
+                opt_row.get("expectancy_tstat", np.nan)
+            ),
             "source_target": source_target,
             "source_horizon": _to_float_or_nan(source_horizon),
         }
@@ -220,6 +222,7 @@ def _save_strategy_params_payload(
 # Confidence Calibration (Full Curve)
 # =============================================================================
 
+
 def compute_full_calibration_curves(
     oof_predictions: pd.DataFrame,
     realized_returns: pd.DataFrame,
@@ -229,10 +232,10 @@ def compute_full_calibration_curves(
     n_bins: int = 10,
 ) -> Dict[str, Dict[str, Any]]:
     """Compute full calibration curves for each strategy using isotonic regression.
-    
+
     This computes well-calibrated probability estimates from raw scores by
     learning a monotonic mapping from scores to observed win frequencies.
-    
+
     Args:
         oof_predictions: DataFrame with OOF predictions per strategy
         realized_returns: DataFrame with realized returns aligned to predictions
@@ -240,7 +243,7 @@ def compute_full_calibration_curves(
         score_col: Column name for the raw score/prediction
         return_col: Column name for realized returns
         n_bins: Number of bins for empirical calibration curve
-        
+
     Returns:
         Dict mapping strategy_id -> calibration data:
         {
@@ -258,75 +261,82 @@ def compute_full_calibration_curves(
         }
     """
     from sklearn.isotonic import IsotonicRegression
-    
+
     calibration_data: Dict[str, Dict[str, Any]] = {}
-    
+
     # Ensure aligned data
     if strategy_col not in oof_predictions.columns:
         logger.warning(f"[Calibration] {strategy_col} not in OOF predictions")
         return calibration_data
-    
+
     # Merge predictions with realized returns
     merged = oof_predictions.merge(
         realized_returns[["symbol", "timestamp", return_col]],
         on=["symbol", "timestamp"],
-        how="inner"
+        how="inner",
     )
-    
+
     if merged.empty:
         logger.warning("[Calibration] No aligned data after merge")
         return calibration_data
-    
+
     # Group by strategy
     for strategy_id, group in merged.groupby(strategy_col):
         if len(group) < n_bins * 5:  # Need enough samples
-            logger.warning(f"[Calibration] Insufficient samples for {strategy_id}: {len(group)}")
+            logger.warning(
+                f"[Calibration] Insufficient samples for {strategy_id}: {len(group)}"
+            )
             continue
-        
+
         raw_scores = group[score_col].values
         returns = group[return_col].values
-        
+
         # Binary outcomes (win/loss)
         was_win = (returns > 0).astype(float)
-        
+
         # Fit isotonic regression
         iso_reg = IsotonicRegression(out_of_bounds="clip")
         calibrated_scores = iso_reg.fit_transform(raw_scores, was_win)
-        
+
         # Compute empirical calibration curve (binned)
         sorted_indices = np.argsort(raw_scores)
         sorted_scores = raw_scores[sorted_indices]
         sorted_calibrated = calibrated_scores[sorted_indices]
-        
+
         # Create bins
         bin_edges = np.linspace(sorted_scores.min(), sorted_scores.max(), n_bins + 1)
         bin_centers = []
         bin_frequencies = []
         bin_counts = []
-        
+
         for i in range(n_bins):
             mask = (sorted_scores >= bin_edges[i]) & (sorted_scores < bin_edges[i + 1])
             if i == n_bins - 1:  # Include right edge for last bin
-                mask = (sorted_scores >= bin_edges[i]) & (sorted_scores <= bin_edges[i + 1])
-            
+                mask = (sorted_scores >= bin_edges[i]) & (
+                    sorted_scores <= bin_edges[i + 1]
+                )
+
             bin_scores = sorted_scores[mask]
             bin_calibrated = sorted_calibrated[mask]
-            
+
             if len(bin_scores) > 0:
                 bin_centers.append(float(np.mean(bin_scores)))
                 bin_frequencies.append(float(np.mean(bin_calibrated)))
                 bin_counts.append(int(len(bin_scores)))
-        
+
         # Compute percentiles on calibrated scores
         p75 = float(np.percentile(calibrated_scores, 75))
         p90 = float(np.percentile(calibrated_scores, 90))
-        
+
         # Store calibration data
         calibration_data[str(strategy_id)] = {
             "strategy_id": str(strategy_id),
             "n_samples": int(len(group)),
             "raw_score_range": (float(raw_scores.min()), float(raw_scores.max())),
-            "calibrated_score_range": (float(calibrated_scores.min()), float(calibrated_scores.max())),
+            "calibrated_score_range": (
+                float(calibrated_scores.min()),
+                float(calibrated_scores.max()),
+            ),
             "bin_edges": [float(x) for x in bin_edges],
             "bin_centers": bin_centers,
             "bin_frequencies": bin_frequencies,
@@ -344,7 +354,7 @@ def compute_full_calibration_curves(
                 for i in range(0, len(raw_scores), max(1, len(raw_scores) // 1000))
             ],
         }
-    
+
     return calibration_data
 
 
@@ -354,9 +364,15 @@ def save_calibration_curves(
     run_id: str,
 ) -> Path:
     """Save calibration curves as JSON artifact."""
-    path = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "confidence_calibration.json"
+    path = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "ridge_sizer"
+        / "confidence_calibration.json"
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Convert to serializable format
     payload = {
         "schema_version": "v1",
@@ -365,9 +381,27 @@ def save_calibration_curves(
         "n_strategies": len(calibration_data),
         "strategies": calibration_data,
     }
-    
+
     path.write_text(json.dumps(payload, indent=2))
-    tprint(f"[Calibration] Saved calibration curves for {len(calibration_data)} strategies to {path}")
+    contract_path = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "ridge_sizer"
+        / "confidence_calibration.contract.json"
+    )
+    contract_payload = {
+        "schema_version": "v1",
+        "generated_by": "simple_position_sizer",
+        "run_id": run_id,
+        "required_strategy_fields": ["p75_threshold", "calibration_curve"],
+        "rank_semantics": "calibrated_p75_threshold",
+        "disagreement_feature_contract": "engine._calculate_disagreement_features",
+    }
+    contract_path.write_text(json.dumps(contract_payload, indent=2))
+    tprint(
+        f"[Calibration] Saved calibration curves for {len(calibration_data)} strategies to {path}"
+    )
     return path
 
 
@@ -376,12 +410,38 @@ def load_calibration_curves(
     run_id: str,
 ) -> Dict[str, Dict[str, Any]]:
     """Load calibration curves from JSON artifact."""
-    path = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "confidence_calibration.json"
+    path = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "ridge_sizer"
+        / "confidence_calibration.json"
+    )
     if not path.exists():
         return {}
-    
+
     payload = json.loads(path.read_text())
     return payload.get("strategies", {})
+
+
+def load_calibration_contract(
+    data_root: str,
+    run_id: str,
+) -> Dict[str, Any]:
+    """Load calibration contract metadata used by inference parity checks."""
+    path = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "ridge_sizer"
+        / "confidence_calibration.contract.json"
+    )
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
 
 
 def calibrate_score(
@@ -390,44 +450,44 @@ def calibrate_score(
     calibration_data: Dict[str, Dict[str, Any]],
 ) -> float:
     """Calibrate a single raw score using pre-computed calibration curve.
-    
+
     Uses linear interpolation between calibration curve points.
-    
+
     Args:
         raw_score: Raw confidence score
         strategy_id: Strategy identifier
         calibration_data: Calibration data from compute_full_calibration_curves()
-        
+
     Returns:
         Calibrated score (well-calibrated probability estimate)
     """
     if strategy_id not in calibration_data:
         return raw_score  # No calibration available
-    
+
     strat_calib = calibration_data[strategy_id]
     curve = strat_calib.get("calibration_curve", [])
-    
+
     if not curve:
         return raw_score
-    
+
     # Sort by raw score
     sorted_curve = sorted(curve, key=lambda x: x[0])
     raw_points = [x[0] for x in sorted_curve]
     calib_points = [x[1] for x in sorted_curve]
-    
+
     # Find interpolation position
     if raw_score <= raw_points[0]:
         return calib_points[0]
     if raw_score >= raw_points[-1]:
         return calib_points[-1]
-    
+
     # Linear interpolation
     for i in range(len(raw_points) - 1):
         if raw_points[i] <= raw_score <= raw_points[i + 1]:
             # Linear interpolation
             t = (raw_score - raw_points[i]) / (raw_points[i + 1] - raw_points[i])
             return calib_points[i] + t * (calib_points[i + 1] - calib_points[i])
-    
+
     return calib_points[-1]
 
 
@@ -440,7 +500,7 @@ def filter_by_calibrated_confidence(
     calibrated_col: str = "calibrated_score",
 ) -> pd.DataFrame:
     """Filter trades where calibrated confidence ranks below threshold percentile.
-    
+
     Args:
         df: DataFrame with trades/scores
         calibration_data: Strategy calibration data
@@ -448,13 +508,13 @@ def filter_by_calibrated_confidence(
         strategy_col: Strategy identifier column
         score_col: Raw score column
         calibrated_col: Column name to store calibrated scores
-        
+
     Returns:
         Filtered DataFrame with only passing trades
     """
     if not calibration_data or df.empty:
         return df
-    
+
     # Add calibrated scores
     def get_threshold(row):
         sid = row[strategy_col]
@@ -462,24 +522,28 @@ def filter_by_calibrated_confidence(
         # Get threshold for specified percentile
         pct_key = f"p{int(percentile_threshold)}_threshold"
         return calib.get(pct_key, calib.get("p75_threshold", 0.5))
-    
+
     df["_threshold"] = df.apply(get_threshold, axis=1)
     df[calibrated_col] = df.apply(
-        lambda row: calibrate_score(row[score_col], row[strategy_col], calibration_data),
-        axis=1
+        lambda row: calibrate_score(
+            row[score_col], row[strategy_col], calibration_data
+        ),
+        axis=1,
     )
-    
+
     # Filter: keep only if calibrated score >= threshold
     mask = df[calibrated_col] >= df["_threshold"]
     filtered = df[mask].copy()
-    
+
     n_before = len(df)
     n_after = len(filtered)
-    tprint(f"[Calibration] Filtered {n_before} -> {n_after} trades ({n_after/n_before*100:.1f}% kept)")
-    
+    tprint(
+        f"[Calibration] Filtered {n_before} -> {n_after} trades ({n_after/n_before*100:.1f}% kept)"
+    )
+
     # Clean up temp column
     filtered = filtered.drop(columns=["_threshold"])
-    
+
     return filtered
 
 
@@ -523,7 +587,13 @@ def write_holdout_multi_metrics(
     payload = json.loads(params_path.read_text())
     all_strategies = payload.get("strategies", [])
     qualified = filter_qualified_strategies(all_strategies)
-    out_path = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "holdout_multi_metrics.json"
+    out_path = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "ridge_sizer"
+        / "holdout_multi_metrics.json"
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(qualified, indent=2, sort_keys=True, default=str))
     tprint(
@@ -751,7 +821,13 @@ def detect_meta_head_keys(
         elif (
             kl.startswith("robust_sigma_meta")
             or kl.startswith("cv_meta")
-            or kl in {"avg_robust_sigma_meta", "avg_cv_meta", "meta_agreement_strength", "meta_reliability"}
+            or kl
+            in {
+                "avg_robust_sigma_meta",
+                "avg_cv_meta",
+                "meta_agreement_strength",
+                "meta_reliability",
+            }
         ):
             heads[k] = "uncertainty-like"
         elif kl in {"meta_avg", "meta_diff", "meta_abs_diff", "meta_rel_diff"}:
@@ -1076,7 +1152,9 @@ def _fit_predict_oof_regressor_with_pruning(
                 "head_name": feature_names,
                 "mean_importance": mean_importance,
                 "std_importance": std_importance,
-                "importance_rank": pd.Series(mean_importance).rank(ascending=False).values,
+                "importance_rank": pd.Series(mean_importance)
+                .rank(ascending=False)
+                .values,
             }
         ).sort_values("mean_importance", ascending=False)
     else:
@@ -1714,7 +1792,9 @@ def evaluate_selection_profit_proxy(
                 "stability": stability,
                 "max_drawdown": mdd_pct,
                 "calmar_ratio": net_pnl / mdd_pct if mdd_pct > 1e-9 else float("inf"),
-                "expectancy_tstat": mean_ret / float(np.std(sized_rets)) if len(sized_rets) > 1 and float(np.std(sized_rets)) > 1e-9 else 0.0,
+                "expectancy_tstat": mean_ret / float(np.std(sized_rets))
+                if len(sized_rets) > 1 and float(np.std(sized_rets)) > 1e-9
+                else 0.0,
                 "trades_selected": len(sized_rets),
                 **wallet_sensitivity,
             }
@@ -1854,7 +1934,9 @@ def run_simple_position_sizer(
         ridge_trials = 40
         ridge_sampler = TPESampler(seed=42, multivariate=True, group=True)
         ridge_pruner = MedianPruner(
-            n_startup_trials=8, n_warmup_steps=max(1, len(splits) // 2), interval_steps=1
+            n_startup_trials=8,
+            n_warmup_steps=max(1, len(splits) // 2),
+            interval_steps=1,
         )
         ridge_study = optuna.create_study(
             direction="maximize", sampler=ridge_sampler, pruner=ridge_pruner
@@ -1876,7 +1958,10 @@ def run_simple_position_sizer(
                         best_value = current
                         best_trial_number = int(trial.number)
                         return
-                if best_trial_number >= 0 and (int(trial.number) - best_trial_number) >= patience:
+                if (
+                    best_trial_number >= 0
+                    and (int(trial.number) - best_trial_number) >= patience
+                ):
                     tprint(
                         f"{label}: early stopping after {patience} trials without improvement "
                         f"(best={best_value:.6f}, last_improved_trial={best_trial_number})"
@@ -1908,9 +1993,19 @@ def run_simple_position_sizer(
                 ts_te = timestamps[te_idx] if timestamps is not None else None
 
                 # Standardize
-                X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(X_tr)
+                (
+                    X_tr_clean,
+                    medians,
+                    scaler,
+                    center_1d,
+                    scale_1d,
+                ) = clean_and_standardize(X_tr)
                 X_te_clean, _, _, _, _ = clean_and_standardize(
-                    X_te, fit_medians=medians, scaler=scaler, center_1d=center_1d, scale_1d=scale_1d
+                    X_te,
+                    fit_medians=medians,
+                    scaler=scaler,
+                    center_1d=center_1d,
+                    scale_1d=scale_1d,
                 )
 
                 # Fit and predict
@@ -1939,10 +2034,18 @@ def run_simple_position_sizer(
 
                 if not fold_profit_df.empty:
                     # Extract metrics for this fold
-                    pnl_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["wallet_pnl"].values
-                    pnl_20 = fold_profit_df[fold_profit_df["selection_frac"] == 0.20]["wallet_pnl"].values
-                    to_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["trades_per_day"].values
-                    sort_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["sortino"].values
+                    pnl_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
+                        "wallet_pnl"
+                    ].values
+                    pnl_20 = fold_profit_df[fold_profit_df["selection_frac"] == 0.20][
+                        "wallet_pnl"
+                    ].values
+                    to_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
+                        "trades_per_day"
+                    ].values
+                    sort_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
+                        "sortino"
+                    ].values
 
                     if len(pnl_10) > 0:
                         fold_pnl_10.append(float(pnl_10[0]))
@@ -1955,10 +2058,12 @@ def run_simple_position_sizer(
 
                 # Pruning check
                 if trial is not None:
-                    seen_so_far = sum(len(s[1]) for s in splits[:fold_idx+1])
+                    seen_so_far = sum(len(s[1]) for s in splits[: fold_idx + 1])
                     min_seen = max(20, int(0.2 * len(y_raw_net_return)))
                     if seen_so_far >= min_seen:
-                        interim_oof = np.full(len(y_raw_net_return), np.nan, dtype=np.float32)
+                        interim_oof = np.full(
+                            len(y_raw_net_return), np.nan, dtype=np.float32
+                        )
                         interim_oof[te_idx] = fold_preds
                         interim_metrics = evaluate_signal(
                             f"Ridge_fold{fold_idx}",
@@ -1967,7 +2072,10 @@ def run_simple_position_sizer(
                             y_downside,
                             directionality="return-like",
                         )
-                        trial.report(float(interim_metrics.get("utility_score", -np.inf)), step=fold_idx)
+                        trial.report(
+                            float(interim_metrics.get("utility_score", -np.inf)),
+                            step=fold_idx,
+                        )
                         if trial.should_prune():
                             raise optuna.TrialPruned()
 
@@ -2015,7 +2123,9 @@ def run_simple_position_sizer(
         )
         if ridge_study.best_trial is not None:
             best_ridge_alpha = float(ridge_study.best_trial.params.get("alpha", 1.0))
-            best_ridge_l1_ratio = float(ridge_study.best_trial.params.get("l1_ratio", 0.0))
+            best_ridge_l1_ratio = float(
+                ridge_study.best_trial.params.get("l1_ratio", 0.0)
+            )
 
         def _best_ridge_model_factory() -> ElasticNet:
             return ElasticNet(
@@ -2028,7 +2138,10 @@ def run_simple_position_sizer(
                 selection="cyclic",
             )
 
-        best_ridge_preds, best_ridge_importance = _fit_predict_oof_regressor_with_pruning(
+        (
+            best_ridge_preds,
+            best_ridge_importance,
+        ) = _fit_predict_oof_regressor_with_pruning(
             X=X_heads,
             y=y_raw_net_return,
             y_downside=y_downside,
@@ -2189,7 +2302,9 @@ def run_simple_position_sizer(
         et_trials = 100
         et_sampler = TPESampler(seed=42, multivariate=True, group=True)
         et_pruner = MedianPruner(
-            n_startup_trials=15, n_warmup_steps=max(1, len(splits) // 2), interval_steps=1
+            n_startup_trials=15,
+            n_warmup_steps=max(1, len(splits) // 2),
+            interval_steps=1,
         )
         et_study = optuna.create_study(
             direction="maximize", sampler=et_sampler, pruner=et_pruner
@@ -2203,12 +2318,22 @@ def run_simple_position_sizer(
         et_criterion_choices = ["squared_error", "absolute_error"]
 
         def _et_objective(trial: optuna.trial.Trial) -> float:
-            n_estimators = int(trial.suggest_categorical("n_estimators", et_n_estimators_choices))
-            max_depth = int(trial.suggest_categorical("max_depth", et_max_depth_choices))
-            max_features = trial.suggest_categorical("max_features", et_max_features_choices)
-            ccp_alpha = float(trial.suggest_categorical("ccp_alpha", et_ccp_alpha_choices))
+            n_estimators = int(
+                trial.suggest_categorical("n_estimators", et_n_estimators_choices)
+            )
+            max_depth = int(
+                trial.suggest_categorical("max_depth", et_max_depth_choices)
+            )
+            max_features = trial.suggest_categorical(
+                "max_features", et_max_features_choices
+            )
+            ccp_alpha = float(
+                trial.suggest_categorical("ccp_alpha", et_ccp_alpha_choices)
+            )
             min_impurity_decrease = float(
-                trial.suggest_categorical("min_impurity_decrease", et_min_impurity_choices)
+                trial.suggest_categorical(
+                    "min_impurity_decrease", et_min_impurity_choices
+                )
             )
             criterion = trial.suggest_categorical("criterion", et_criterion_choices)
             min_samples_leaf_frac = float(
@@ -2217,7 +2342,9 @@ def run_simple_position_sizer(
             min_samples_split_frac = float(
                 trial.suggest_float("min_samples_split_frac", 0.005, 0.02, log=True)
             )
-            min_samples_leaf = max(1, int(np.ceil(min_samples_leaf_frac * X_heads.shape[0])))
+            min_samples_leaf = max(
+                1, int(np.ceil(min_samples_leaf_frac * X_heads.shape[0]))
+            )
             min_samples_split = max(
                 min_samples_leaf + 1,
                 int(np.ceil(min_samples_split_frac * X_heads.shape[0])),
@@ -2239,9 +2366,19 @@ def run_simple_position_sizer(
                 ts_te = timestamps[te_idx] if timestamps is not None else None
 
                 # Standardize
-                X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(X_tr)
+                (
+                    X_tr_clean,
+                    medians,
+                    scaler,
+                    center_1d,
+                    scale_1d,
+                ) = clean_and_standardize(X_tr)
                 X_te_clean, _, _, _, _ = clean_and_standardize(
-                    X_te, fit_medians=medians, scaler=scaler, center_1d=center_1d, scale_1d=scale_1d
+                    X_te,
+                    fit_medians=medians,
+                    scaler=scaler,
+                    center_1d=center_1d,
+                    scale_1d=scale_1d,
                 )
 
                 # Fit and predict
@@ -2266,6 +2403,7 @@ def run_simple_position_sizer(
                 # Isotonic calibration per fold
                 try:
                     from sklearn.isotonic import IsotonicRegression
+
                     valid = np.isfinite(fold_preds) & np.isfinite(y_te)
                     if valid.sum() >= 20:
                         calibrator = IsotonicRegression(out_of_bounds="clip")
@@ -2286,10 +2424,18 @@ def run_simple_position_sizer(
                 )
 
                 if not fold_profit_df.empty:
-                    pnl_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["wallet_pnl"].values
-                    pnl_20 = fold_profit_df[fold_profit_df["selection_frac"] == 0.20]["wallet_pnl"].values
-                    to_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["trades_per_day"].values
-                    sort_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10]["sortino"].values
+                    pnl_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
+                        "wallet_pnl"
+                    ].values
+                    pnl_20 = fold_profit_df[fold_profit_df["selection_frac"] == 0.20][
+                        "wallet_pnl"
+                    ].values
+                    to_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
+                        "trades_per_day"
+                    ].values
+                    sort_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
+                        "sortino"
+                    ].values
 
                     if len(pnl_10) > 0:
                         fold_pnl_10.append(float(pnl_10[0]))
@@ -2302,10 +2448,12 @@ def run_simple_position_sizer(
 
                 # Pruning check
                 if trial is not None:
-                    seen_so_far = sum(len(s[1]) for s in splits[:fold_idx+1])
+                    seen_so_far = sum(len(s[1]) for s in splits[: fold_idx + 1])
                     min_seen = max(20, int(0.2 * len(y_raw_net_return)))
                     if seen_so_far >= min_seen:
-                        interim_oof = np.full(len(y_raw_net_return), np.nan, dtype=np.float32)
+                        interim_oof = np.full(
+                            len(y_raw_net_return), np.nan, dtype=np.float32
+                        )
                         interim_oof[te_idx] = fold_preds
                         interim_metrics = evaluate_signal(
                             f"ET_fold{fold_idx}",
@@ -2314,7 +2462,10 @@ def run_simple_position_sizer(
                             y_downside,
                             directionality="return-like",
                         )
-                        trial.report(float(interim_metrics.get("utility_score", -np.inf)), step=fold_idx)
+                        trial.report(
+                            float(interim_metrics.get("utility_score", -np.inf)),
+                            step=fold_idx,
+                        )
                         if trial.should_prune():
                             raise optuna.TrialPruned()
 
@@ -2371,7 +2522,12 @@ def run_simple_position_sizer(
         best_et_criterion = str(best_et_params.get("criterion", "squared_error"))
         best_et_min_samples_leaf = max(
             1,
-            int(np.ceil(float(best_et_params.get("min_samples_leaf_frac", 0.01)) * X_heads.shape[0])),
+            int(
+                np.ceil(
+                    float(best_et_params.get("min_samples_leaf_frac", 0.01))
+                    * X_heads.shape[0]
+                )
+            ),
         )
         best_et_min_samples_split = max(
             best_et_min_samples_leaf + 1,
@@ -2466,9 +2622,7 @@ def run_simple_position_sizer(
         results["et_profit_proxy_table_"] = et_profit_proxy_df
         results["et_opt_rets_"] = best_et_opt_rets
         results["et_opt_ts_"] = best_et_opt_ts
-        if best_et_objective > (
-            best_ridge_objective if ridge_sizer_eval else -9999
-        ):
+        if best_et_objective > (best_ridge_objective if ridge_sizer_eval else -9999):
             if not best_combo or best_et_objective > best_combo_objective:
                 best_simple_score = et_oof_preds
                 best_simple_score_name = "ExtraTrees_Head_Sizer"
@@ -2867,7 +3021,9 @@ def run_simple_position_sizer_from_artifacts(
 
         if not trade_side:
             if "is_long" in trade_outcomes.columns:
-                _is_long_vals = np.asarray(trade_outcomes["is_long"].values, dtype=float)
+                _is_long_vals = np.asarray(
+                    trade_outcomes["is_long"].values, dtype=float
+                )
                 _finite_long = np.isfinite(_is_long_vals)
                 if _finite_long.any():
                     trade_side = (
@@ -3181,8 +3337,7 @@ def run_simple_position_sizer_from_artifacts(
                 for c in head_cols
             ),
             "asym": any(
-                c.lower().startswith("asym_h") or c == "oof_asym_hat"
-                for c in head_cols
+                c.lower().startswith("asym_h") or c == "oof_asym_hat" for c in head_cols
             ),
         }
 
@@ -3197,7 +3352,10 @@ def run_simple_position_sizer_from_artifacts(
                 )
             if family == "classifier":
                 return any(
-                    any(c == "clf" or c.lower().startswith("oof_p_") for c in src.columns)
+                    any(
+                        c == "clf" or c.lower().startswith("oof_p_")
+                        for c in src.columns
+                    )
                     for src in source_frames
                 )
             if family == "mae":
@@ -3252,7 +3410,9 @@ def run_simple_position_sizer_from_artifacts(
             continue
         missing_fams = [name for name, ok in expected_families.items() if not ok]
         if missing_fams:
-            join_gap = [fam for fam in missing_fams if _family_available_in_sources(fam)]
+            join_gap = [
+                fam for fam in missing_fams if _family_available_in_sources(fam)
+            ]
             export_gap = [fam for fam in missing_fams if fam not in join_gap]
             if join_gap:
                 logger.warning(
@@ -3469,35 +3629,49 @@ def run_simple_position_sizer_from_artifacts(
                     # Extract scored rows with predictions
                     table["strategy"] = strategy_id
                     all_oof_preds.append(table)
-        
+
         if all_oof_preds:
             oof_df = pd.concat(all_oof_preds, ignore_index=True)
-            
+
             # Build realized returns DataFrame from trade_outcomes
             realized_returns_df = pd.DataFrame()
             if trade_outcomes is not None and not trade_outcomes.empty:
-                realized_returns_df = trade_outcomes[["symbol", "timestamp", "return"]].copy()
-                realized_returns_df = realized_returns_df.rename(columns={"return": "realized_return"})
-            
+                realized_returns_df = trade_outcomes[
+                    ["symbol", "timestamp", "return"]
+                ].copy()
+                realized_returns_df = realized_returns_df.rename(
+                    columns={"return": "realized_return"}
+                )
+
             if not oof_df.empty and not realized_returns_df.empty:
-                tprint(f"[Calibration] Computing full calibration curves for {len(strategy_results)} strategies...")
-                
+                tprint(
+                    f"[Calibration] Computing full calibration curves for {len(strategy_results)} strategies..."
+                )
+
                 calibration_data = compute_full_calibration_curves(
                     oof_predictions=oof_df,
                     realized_returns=realized_returns_df,
                     strategy_col="strategy",
-                    score_col="sizer_score" if "sizer_score" in oof_df.columns else "trading_score",
+                    score_col="sizer_score"
+                    if "sizer_score" in oof_df.columns
+                    else "trading_score",
                     return_col="realized_return",
                     n_bins=10,
                 )
-                
+
                 if calibration_data:
                     save_calibration_curves(calibration_data, data_root, run_id)
-                    tprint(f"[Calibration] Saved calibration curves for {len(calibration_data)} strategies")
+                    tprint(
+                        f"[Calibration] Saved calibration curves for {len(calibration_data)} strategies"
+                    )
                 else:
-                    tprint("[Calibration] No calibration data computed (insufficient samples)")
+                    tprint(
+                        "[Calibration] No calibration data computed (insufficient samples)"
+                    )
             else:
-                tprint("[Calibration] Skipping calibration: missing OOF or realized returns data")
+                tprint(
+                    "[Calibration] Skipping calibration: missing OOF or realized returns data"
+                )
         else:
             tprint("[Calibration] No OOF predictions available for calibration")
     except Exception as e:

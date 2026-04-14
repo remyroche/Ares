@@ -5066,6 +5066,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
     # Cache raw triple barrier results per (H, side, k_tp, sl_base_mult) to avoid recomputation.
     _raw_tb_cache = {}
     _raw_tb_payload_cache = {}
+    _raw_tb_payload_pinned = {}
     _raw_tb_payload_cache_max_bytes = max(
         0,
         int(float(cfg.get("label_raw_tb_payload_cache_mb", 2048.0)) * 1024 * 1024),
@@ -5134,6 +5135,29 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
         _payload["nbytes"] = _raw_tb_payload_nbytes(_payload)
         _raw_tb_payload_cache[raw_key] = _payload
         _trim_raw_tb_payload_cache()
+
+    def _refresh_pinned_raw_payloads(_pool, _keep_top_n: int) -> None:
+        _raw_tb_payload_pinned.clear()
+        if not _pool or _keep_top_n <= 0:
+            return
+        _top = sorted(
+            _pool,
+            key=lambda g: (
+                float(g.get("rr_weight", 0.0)),
+                float(g.get("auc_bound", 0.0)),
+                float(g.get("tp_sep_top10", 0.0)),
+                float(g.get("bind", 0.0)),
+                float(g.get("tp_over_sl", 0.0)),
+            ),
+            reverse=True,
+        )[: max(1, int(_keep_top_n))]
+        for _g in _top:
+            _rk = _g.get("raw_key")
+            if _rk is None:
+                continue
+            _payload = _raw_tb_payload_cache.get(_rk)
+            if _payload is not None:
+                _raw_tb_payload_pinned[_rk] = _payload
 
     # -------------------------------------------------------------------------------------
     # OPTIMIZATION: Hoist ATR and Barrier Base Calculations (15x Speedup)
@@ -5350,7 +5374,9 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
 
     def _materialize_geom_triplet(_g: dict, _side: str, _H: int) -> dict:
         _raw_key = _g.get("raw_key")
-        _cached_payload = _raw_tb_payload_cache.get(_raw_key)
+        _cached_payload = _raw_tb_payload_pinned.get(_raw_key)
+        if _cached_payload is None:
+            _cached_payload = _raw_tb_payload_cache.get(_raw_key)
         if _cached_payload is not None:
             return {
                 **_g,
@@ -5440,50 +5466,45 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
         else:
             k_tps_norm = np.zeros_like(k_tps_raw)
 
-        lbl_stack = np.stack([_matrix_to_array(g["lbl"], np.int8) for g in _runs], axis=0)
-        ret_stack = np.stack(
-            [_matrix_to_array(g["ret"], np.float32) for g in _runs], axis=0
-        )
-        qual_stack = np.stack(
-            [_matrix_to_array(g["qual"], np.float32) for g in _runs], axis=0
-        )
-        mask_tp = (lbl_stack == OUT_TP).astype(np.float32)
-        mask_sl = (lbl_stack == OUT_SL).astype(np.float32)
-        mask_to = (lbl_stack == OUT_TO).astype(np.float32)
+        first_lbl = _matrix_to_array(_runs[0]["lbl"], np.int8)
+        _shape = first_lbl.shape
+        w_tp = np.zeros(_shape, dtype=np.float32)
+        w_sl = np.zeros(_shape, dtype=np.float32)
+        w_to = np.zeros(_shape, dtype=np.float32)
+        agg_ret_num = np.zeros(_shape, dtype=np.float32)
+        agg_qual_num = np.zeros(_shape, dtype=np.float32)
+        tp_vals_num = np.zeros(_shape, dtype=np.float32)
+        sl_vals_num = np.zeros(_shape, dtype=np.float32)
 
-        atr_ratio_3d = np.expand_dims(atr_ratio, axis=0)
-        k_tps_norm_3d = k_tps_norm.reshape(-1, 1, 1)
-        _dyn_exp = 0.5 * (atr_ratio_3d - 1.0) * k_tps_norm_3d
-        _dyn_exp = np.clip(_dyn_exp, -20.0, 20.0)
-        dynamic_modifier_3d = np.exp(_dyn_exp, dtype=np.float32)
-        rr_weights_3d = rr_weights.reshape(-1, 1, 1)
-        w_3d = rr_weights_3d * dynamic_modifier_3d
+        for _idx, _g in enumerate(_runs):
+            _lbl = _matrix_to_array(_g["lbl"], np.int8)
+            _ret = _matrix_to_array(_g["ret"], np.float32)
+            _qual = _matrix_to_array(_g["qual"], np.float32)
+            _tp_vals = _matrix_to_array(_g["tp_vals"], np.float32)
+            _sl_vals = _matrix_to_array(_g["sl_vals"], np.float32)
+            _dyn_exp = 0.5 * (atr_ratio - 1.0) * k_tps_norm[_idx]
+            _dyn_exp = np.clip(_dyn_exp, -20.0, 20.0)
+            _w = rr_weights[_idx] * np.exp(_dyn_exp).astype(np.float32, copy=False)
+            _mask_tp = (_lbl == OUT_TP).astype(np.float32, copy=False)
+            _mask_sl = (_lbl == OUT_SL).astype(np.float32, copy=False)
+            _mask_to = (_lbl == OUT_TO).astype(np.float32, copy=False)
+            w_tp += _w * _mask_tp
+            w_sl += _w * _mask_sl
+            w_to += _w * _mask_to
+            agg_ret_num += _w * _ret
+            agg_qual_num += _w * _qual
+            tp_vals_num += _w * _tp_vals
+            sl_vals_num += _w * _sl_vals
 
-        w_tp = np.sum(w_3d * mask_tp, axis=0)
-        w_sl = np.sum(w_3d * mask_sl, axis=0)
-        w_to = np.sum(w_3d * mask_to, axis=0)
-        agg_ret_num = np.sum(w_3d * ret_stack, axis=0)
-        agg_qual_num = np.sum(w_3d * qual_stack, axis=0)
         w_sum = w_tp + w_sl + w_to
-
-        tp_vals_stack = np.stack(
-            [_matrix_to_array(g["tp_vals"], np.float32) for g in _runs], axis=0
-        )
-        sl_vals_stack = np.stack(
-            [_matrix_to_array(g["sl_vals"], np.float32) for g in _runs], axis=0
-        )
+        _denom_safe = np.where(w_sum > 0, w_sum, 1.0)
         tp_vals_df = pd.DataFrame(
-            (np.sum(w_3d * tp_vals_stack, axis=0) / np.where(w_sum > 0, w_sum, 1.0)).astype(
-                np.float32,
-                copy=False,
-            ),
+            (tp_vals_num / _denom_safe).astype(np.float32, copy=False),
             index=panel["close"].index,
             columns=panel["close"].columns,
         )
         sl_vals_df = pd.DataFrame(
-            (np.sum(w_3d * sl_vals_stack, axis=0) / np.where(w_sum > 0, w_sum, 1.0)).astype(
-                np.float32, copy=False
-            ),
+            (sl_vals_num / _denom_safe).astype(np.float32, copy=False),
             index=panel["close"].index,
             columns=panel["close"].columns,
         )
@@ -5975,6 +5996,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                                 raw_key=raw_key,
                             )
                         )
+                        _refresh_pinned_raw_payloads(relaxed_pool, _keep_top_n)
                         continue
 
                     # Composite geometry score (quality-first, TP-hit as guardrail).
@@ -6044,7 +6066,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                             raw_key=raw_key,
                         )
                     )
-                    del lbl, ret, qual
+                    _refresh_pinned_raw_payloads(relaxed_pool, _keep_top_n)
 
                 # Keep top-N geometries per (bucket, horizon) by composite score.
                 if relaxed_pool:
@@ -6069,6 +6091,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         for _g in geom_runs_proxy
                     ]
                     _raw_tb_payload_cache.clear()
+                    _raw_tb_payload_pinned.clear()
 
                 if not geom_runs:
                     # Rescue path mirrored for H2/H4 with stricter fallbacks on longer horizons.

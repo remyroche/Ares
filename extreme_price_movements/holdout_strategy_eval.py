@@ -34,6 +34,18 @@ from extreme_price_movements.ridge_position_sizer import (
 from extreme_price_movements.simple_position_sizer import (
     evaluate_selection_profit_proxy,
 )
+
+from extreme_price_movements.offline_optimisers.params_store import (
+    load_inference_candidate_mask_params_per_bucket,
+)
+from extreme_price_movements.inference.candidate_selector import (
+    _build_mask_for_mode,
+    _up_down_zones,
+)
+from extreme_price_movements.periods_symbols_management import (
+    EventSchema,
+    SlicePlannerConfig,
+)
 from extreme_price_movements.policy_optimiser import (
     build_replay_context,
     replay_exit_policy,
@@ -421,6 +433,7 @@ def _build_candidates(
     panel: Dict[str, pd.DataFrame],
     panel_symbol: str,
     side: str,
+    mask: Optional[pd.Series] = None,
 ) -> pd.DataFrame:
     opens = panel["open"][panel_symbol]
     candidate_ts = pd.DatetimeIndex(feature_df.index)
@@ -431,6 +444,10 @@ def _build_candidates(
         lookup_ts = lookup_ts.tz_convert("UTC")
     entry_prices = opens.reindex(lookup_ts, method="bfill")
     valid = np.isfinite(entry_prices.to_numpy(dtype=float))
+
+    if mask is not None:
+        valid = valid & mask.to_numpy(dtype=bool)
+
     if not np.any(valid):
         return pd.DataFrame()
     lookup_ts = lookup_ts[valid]
@@ -635,6 +652,7 @@ def evaluate_holdout_symbol(
 
     policy_params = _compute_policy_params(feature_df, panel_symbol)
 
+
     best_policy = _load_best_policy_params(data_root, run_id)
     if best_policy is not None:
         if "atr_pct" in feature_df.columns:
@@ -658,6 +676,42 @@ def evaluate_holdout_symbol(
             f"rule={policy_params.get('better_rule', 'N/A')}"
         )
 
+    # 1. Load active strategy masks
+    tprint("Loading inference candidate mask params...")
+    dyn_strategies = load_inference_candidate_mask_params_per_bucket(top_n=99)
+    mask_params_by_mode = {}
+    for s in dyn_strategies:
+        sid = s.get("strategy_id")
+        m_params = s.get("mask_params", {})
+        if sid and m_params:
+            mask_params_by_mode[sid] = m_params
+
+    # 2. Precompute up/down zones
+      # Minimal feats needed for up_down_zones
+
+    # We need to construct a mini-feats dict with panel symbols
+    # Since up_down_zones expects full panel formatting, we simulate it
+    sim_feats = {}
+    for k in feature_df.columns:
+        sim_feats[k] = pd.DataFrame({panel_symbol: feature_df[k]})
+
+    up_zone, down_zone = _up_down_zones(sim_feats, panel, metric="ret12h")
+
+    # 3. Create walk-forward unseen mask
+    # We generate a dummy events df to use SlicePlanner
+    dummy_events = pd.DataFrame({
+        "event_id": range(len(feature_df)),
+        "symbol": panel_symbol,
+        "t0": feature_df.index,
+        "t1": feature_df.index + pd.Timedelta(hours=1)
+    })
+    planner_cfg = SlicePlannerConfig.robust_defaults(schema=EventSchema())
+    from extreme_price_movements.inference_backtest import _build_unseen_mask
+    unseen_mask_np = _build_unseen_mask(dummy_events, planner_cfg)
+    unseen_mask = pd.Series(unseen_mask_np, index=feature_df.index)
+
+
+
     strategies_list = freeze.get("strategies", [])
     total_strategies = len(strategies_list)
     tprint_interval = max(1, total_strategies // 10)
@@ -679,7 +733,33 @@ def evaluate_holdout_symbol(
         threshold_pct = float(strat["threshold_pct"])
         frac = max(1e-6, 1.0 - threshold_pct / 100.0)
 
-        candidates = _build_candidates(feature_df, panel, panel_symbol, side=side)
+        # Build specific mask for this strategy
+        strat_mask = unseen_mask.copy()
+        if strategy_id in mask_params_by_mode:
+            mask_cfg = mask_params_by_mode[strategy_id]
+            per_mode_df = _build_mask_for_mode(panel, sim_feats, mask_cfg)
+            if panel_symbol in per_mode_df.columns:
+                per_mode_series = per_mode_df[panel_symbol]
+
+                # Apply up/down zone logic based on side
+                if side == "long":
+                    # For long, we use up_zone (if TF) or down_zone (if MR)
+                    # We can infer TF/MR from strategy_id usually, but let's check
+                    if "tf" in strategy_id.lower() and panel_symbol in up_zone.columns:
+                        strat_mask = strat_mask & up_zone[panel_symbol] & per_mode_series
+                    elif "mr" in strategy_id.lower() and panel_symbol in down_zone.columns:
+                        strat_mask = strat_mask & down_zone[panel_symbol] & per_mode_series
+                    else:
+                        strat_mask = strat_mask & per_mode_series
+                else: # short
+                    if "tf" in strategy_id.lower() and panel_symbol in down_zone.columns:
+                        strat_mask = strat_mask & down_zone[panel_symbol] & per_mode_series
+                    elif "mr" in strategy_id.lower() and panel_symbol in up_zone.columns:
+                        strat_mask = strat_mask & up_zone[panel_symbol] & per_mode_series
+                    else:
+                        strat_mask = strat_mask & per_mode_series
+
+        candidates = _build_candidates(feature_df, panel, panel_symbol, side=side, mask=strat_mask)
         if candidates.empty:
             continue
 
@@ -1120,7 +1200,7 @@ def main() -> None:
         tprint(f"Sampled {len(symbols)} compatible holdout symbols: {symbols}")
 
     all_results: List[Dict[str, Any]] = []
-    portfolio_parts: Dict[str, List] = {"scores": [], "returns": [], "ts": []}
+
 
     for i, symbol in enumerate(symbols):
         tprint(f"Starting evaluation for symbol {i+1}/{len(symbols)}: {symbol}")

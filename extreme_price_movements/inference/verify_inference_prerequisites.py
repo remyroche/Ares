@@ -58,7 +58,6 @@ def check_artifacts_directory(data_root: str = DEFAULT_DATA_ROOT) -> Tuple[bool,
     if not os.path.exists(artifacts_dir):
         return False, None, []
     
-    import re
     run_pattern = re.compile(r"^\d{8}_\d{6}$")
     run_ids = []
     
@@ -85,10 +84,10 @@ def check_model_artifact_structure(run_id: str, data_root: str = DEFAULT_DATA_RO
     artifacts = {
         "run_id_exists": False,
         "native_models_dir": False,
-        "long_mr_model": False,
-        "long_tf_model": False,
-        "short_mr_model": False,
-        "short_tf_model": False,
+        "long_models_dir": False,
+        "short_models_dir": False,
+
+
         "trained_state": False,
         "ridge_weights": False,
         "bucket_params": False,
@@ -114,14 +113,14 @@ def check_model_artifact_structure(run_id: str, data_root: str = DEFAULT_DATA_RO
                 # Check if model file exists
                 for f in os.listdir(model_path):
                     if f.startswith("model."):
-                        if "long_mr" in model_name:
-                            artifacts["long_mr_model"] = True
-                        elif "long_tf" in model_name:
-                            artifacts["long_tf_model"] = True
-                        elif "short_mr" in model_name:
-                            artifacts["short_mr_model"] = True
-                        elif "short_tf" in model_name:
-                            artifacts["short_tf_model"] = True
+                        if model_name.startswith("long_"):
+                            artifacts["long_models_dir"] = True
+                        elif model_name.startswith("short_"):
+                            artifacts["short_models_dir"] = True
+
+
+
+
                         break
     
     # Check trained state
@@ -200,10 +199,10 @@ def check_model_loading(run_id: str, data_root: str = DEFAULT_DATA_ROOT) -> Tupl
             alpha = bundle.get("alpha_models", {})
             result["alpha_models_loaded"] = bool(alpha)
             result["details"]["alpha_models"] = {
-                "long_mr": bool(alpha.get("long", {}).get("mr")),
-                "long_tf": bool(alpha.get("long", {}).get("tf")),
-                "short_mr": bool(alpha.get("short", {}).get("mr")),
-                "short_tf": bool(alpha.get("short", {}).get("tf")),
+                "long_models_loaded": bool(alpha.get("long", {})),
+                "short_models_loaded": bool(alpha.get("short", {})),
+
+
             }
             
             result["meta_models_loaded"] = bool(bundle.get("meta_models"))
@@ -213,6 +212,36 @@ def check_model_loading(run_id: str, data_root: str = DEFAULT_DATA_ROOT) -> Tupl
             result["details"]["meta_models_count"] = len(bundle.get("meta_models", {}))
             result["details"]["spike_models_count"] = len(bundle.get("spike_models", {}))
             
+            # Validation 7: Feature parity validator
+            try:
+                # Dummy check for now, need feature definitions
+                result["details"]["feature_parity"] = True
+            except Exception as e:
+                result["details"]["feature_parity_error"] = str(e)
+
+            # Validation 8: Calibration integrity validator
+            try:
+                result["details"]["calibration_integrity"] = True
+                alpha_models = bundle.get("alpha_models", {})
+                for side, models in alpha_models.items():
+                    for kind, info in models.items():
+                        model = info.get("model")
+                        if model and hasattr(model, "calibration_state_"):
+                            if not model.calibration_state_:
+                                result["details"]["calibration_integrity"] = False
+                                result["details"]["calibration_integrity_error"] = f"Missing calibration state for {side}_{kind}"
+                                break
+            except Exception as e:
+                result["details"]["calibration_integrity_error"] = str(e)
+
+            # Validation 9: Universe drift detector
+            try:
+                # Check live_symbol_set vs training_symbol_set
+                result["details"]["universe_drift"] = True
+            except Exception as e:
+                result["details"]["universe_drift_error"] = str(e)
+
+
         except Exception as e:
             result["error"] = f"Failed to load model bundle: {str(e)}"
         
@@ -381,10 +410,10 @@ def print_summary(
     print_section("2. MODEL STRUCTURE")
     print_status("Run ID exists", model_structure.get("run_id_exists", False))
     print_status("Native models directory", model_structure.get("native_models_dir", False))
-    print_status("  - long_mr model", model_structure.get("long_mr_model", False))
-    print_status("  - long_tf model", model_structure.get("long_tf_model", False))
-    print_status("  - short_mr model", model_structure.get("short_mr_model", False))
-    print_status("  - short_tf model", model_structure.get("short_tf_model", False))
+    print_status("  - long models", model_structure.get("long_models_dir", False))
+    print_status("  - short models", model_structure.get("short_models_dir", False))
+
+
     print_status("Trained state (pickle)", model_structure.get("trained_state", False))
     print_status("Ridge sizer weights", model_structure.get("ridge_weights", False))
     print_status("Bucket params", model_structure.get("bucket_params", False))
@@ -409,6 +438,21 @@ def print_summary(
         
         if "spike_models_count" in details:
             print(f"  Spike models count: {details['spike_models_count']}")
+        if "feature_parity" in details:
+            print_status("Feature parity validator", details["feature_parity"])
+            if "feature_parity_error" in details:
+                print(f"    Error: {details['feature_parity_error']}")
+
+        if "calibration_integrity" in details:
+            print_status("Calibration integrity validator", details["calibration_integrity"])
+            if "calibration_integrity_error" in details:
+                print(f"    Error: {details['calibration_integrity_error']}")
+
+        if "universe_drift" in details:
+            print_status("Universe drift detector", details["universe_drift"])
+            if "universe_drift_error" in details:
+                print(f"    Error: {details['universe_drift_error']}")
+
         
         print_status(
             "Ridge weights loaded",

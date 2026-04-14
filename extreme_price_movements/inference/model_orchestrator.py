@@ -2,7 +2,6 @@
 Model Orchestrator for Inference.
 
 This module orchestrates the full inference chain:
-1. GMM Spike Quality Filter (best/worst spike models from bundle["spike_models"])
 2. Alpha model predictions (long_mr, long_tf, short_mr, short_tf)
 3. Compute disagreement features
 4. Meta model predictions
@@ -13,7 +12,6 @@ Returns full prediction chain results for each candidate.
 """
 
 from typing import Dict, List, Any, Optional, Tuple
-import json
 
 import pandas as pd
 import numpy as np
@@ -179,89 +177,6 @@ class ModelOrchestrator:
     
     # =========================================================================
     # STEP 1: GMM Spike Quality Filter
-    # =========================================================================
-    
-    def _apply_spike_filter(
-        self,
-        symbol: str,
-        features: pd.DataFrame,
-        side: str = "long",
-    ) -> Tuple[bool, Dict[str, Any]]:
-        """Step 1: GMM spike model quality filter.
-        
-        Uses best/worst spike models from bundle["spike_models"] to filter
-        candidates based on their quality score (log-likelihood).
-        
-        Args:
-            symbol: Trading symbol
-            features: Feature DataFrame for the candidate
-            side: "long" or "short" (determines which spike model to use)
-            
-        Returns:
-            Tuple of (pass_filter: bool, spike_info: dict with score details)
-        """
-        if bool(self.cfg.get("disable_spike_filter", False)):
-            return True, {"reason": "spike_filter_disabled"}
-
-        # Determine which spike model to use based on side
-        # For long: use "best" spike model (higher density = better)
-        # For short: use "worst" spike model (lower density = better for shorting worst spikes)
-        spike_key = "best" if side == "long" else "worst"
-        
-        spike_info = self.spike_models.get(spike_key)
-        
-        if spike_info is None:
-            # No spike filter available, pass through
-            return True, {"reason": "no_spike_model"}
-        
-        gmm = spike_info.get("gmm")
-        scaler = spike_info.get("scaler")
-        spike_columns = spike_info.get("columns", [])
-        
-        if gmm is None or scaler is None:
-            return True, {"reason": "spike_model_not_fitted"}
-        
-        # Get features for spike model
-        available_cols = [c for c in spike_columns if c in features.columns]
-        
-        if not available_cols:
-            return True, {"reason": "no_matching_features"}
-        
-        try:
-            X = features[available_cols].fillna(0)
-            
-            # Scale features
-            X_scaled = scaler.transform(X)
-            
-            # Get log-likelihood score
-            score = gmm.score_samples(X_scaled)[0]
-            
-            # Get threshold from spike info (stored during training)
-            # If not available, use a default threshold
-            threshold = spike_info.get("threshold", score)  # Use current score as threshold if not set
-            
-            # Determine pass/fail based on spike key
-            if spike_key == "best":
-                # For long: pass if score is high (high density = good quality)
-                pass_filter = score >= threshold
-            else:
-                # For short: pass if score is low (low density = good for shorting)
-                pass_filter = score <= threshold
-            
-            return pass_filter, {
-                "spike_key": spike_key,
-                "score": float(score),
-                "threshold": float(threshold),
-                "pass": pass_filter,
-            }
-            
-        except Exception as e:
-            tprint(f"Error applying spike filter for {symbol}: {e}")
-            # On error, pass through
-            return True, {"reason": f"error: {e}"}
-    
-    # =========================================================================
-    # STEP 2: Alpha (Base) Model Predictions
     # =========================================================================
     
     def predict_alpha(
@@ -463,12 +378,38 @@ class ModelOrchestrator:
 
         if self.ridge_sizer is not None:
             try:
-                model_names = list(getattr(self.ridge_sizer, "model_names_", []) or [])
+                from extreme_price_movements.simple_position_sizer import clean_and_standardize
+
+                # Fetch feature names configured in the artifact
+                model_names = getattr(self.ridge_sizer, "feature_names", None)
+                if model_names is None:
+                    model_names = getattr(self.ridge_sizer, "model_names_", [])
+                model_names = list(model_names)
+
                 if model_names:
                     for col in model_names:
                         if col not in features.columns:
                             features[col] = 0.0
-                    preds = np.asarray(self.ridge_sizer.predict(features[model_names]), dtype=float)
+
+                    X = features[model_names].to_numpy(dtype=float)
+
+                    # Robust standardizer parameters from train time
+                    fit_medians = getattr(self.ridge_sizer, "fit_medians_", None)
+                    scaler = getattr(self.ridge_sizer, "scaler_", None)
+                    center_1d = getattr(self.ridge_sizer, "center_1d_", None)
+                    scale_1d = getattr(self.ridge_sizer, "scale_1d_", None)
+
+                    X_clean, _, _, _, _ = clean_and_standardize(
+                        X,
+                        fit_medians=fit_medians,
+                        scaler=scaler,
+                        center_1d=center_1d,
+                        scale_1d=scale_1d
+                    )
+
+                    # Call predict on the underlying model (e.g. HuberRegressor or Ridge)
+                    model = getattr(self.ridge_sizer, "model", self.ridge_sizer)
+                    preds = np.asarray(model.predict(X_clean), dtype=float)
                     conf = np.clip(np.abs(preds), 0.0, 1.0)
                     return pd.Series(preds, index=features.index), {"confidence": float(np.nanmean(conf)) if len(conf) else 0.0}
             except Exception as e:
@@ -587,12 +528,11 @@ class ModelOrchestrator:
     ) -> Dict[str, Any]:
         """Run predictions in proper order:
         
-        1. GMM Spike Quality Filter
-        2. Alpha (Base) Model Predictions
-        3. Disagreement Features
-        4. Meta Model Prediction
-        5. Ridge Position Sizing
-        6. Entry Policy (Limit Offset Optimizer)
+        1. Alpha (Base) Model Predictions
+        2. Disagreement Features
+        3. Meta Model Prediction
+        4. Ridge Position Sizing
+        5. Entry Policy (Limit Offset Optimizer)
         
         Args:
             symbol: Trading symbol
@@ -611,18 +551,6 @@ class ModelOrchestrator:
             return results
         if symbol not in features.index:
             features.index = pd.Index([symbol] * len(features))
-        
-        # =====================================================================
-        # STEP 1: GMM Spike Quality Filter
-        # =====================================================================
-        gmm_pass, spike_info = self._apply_spike_filter(symbol, features, side)
-        results["gmm_pass"] = gmm_pass
-        results["spike_info"] = spike_info
-        
-        if not gmm_pass:
-            results["action"] = "rejected_gmm"
-            results["reason"] = f"spike_filter_failed_{spike_info.get('spike_key', 'unknown')}"
-            return results
         
         # =====================================================================
         # STEP 2: Alpha (Base) Model Predictions

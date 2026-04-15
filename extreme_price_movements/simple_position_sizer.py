@@ -1962,23 +1962,52 @@ def run_simple_position_sizer(
         ) -> Callable[[optuna.Study, optuna.trial.FrozenTrial], None]:
             best_value = float("-inf")
             best_trial_number = -1
+            # Track meaningful improvement (>0.5% threshold)
+            meaningful_improvement_threshold = 1.005  # 0.5% improvement required
+            last_meaningful_improvement_trial = -1
+            best_value_at_meaningful_check = float("-inf")
 
             def _callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
-                nonlocal best_value, best_trial_number
+                nonlocal best_value, best_trial_number, last_meaningful_improvement_trial, best_value_at_meaningful_check
                 values = trial.values or []
+                current_trial_number = int(trial.number)
+
                 if values:
                     current = float(values[0])
-                    if np.isfinite(current) and current > best_value:
-                        best_value = current
-                        best_trial_number = int(trial.number)
-                        return
+                    if np.isfinite(current):
+                        # Rule 1: Any improvement tracking
+                        if current > best_value:
+                            best_value = current
+                            best_trial_number = current_trial_number
+
+                        # Rule 2: Meaningful improvement (>0.5%) tracking
+                        if current > best_value_at_meaningful_check * meaningful_improvement_threshold:
+                            best_value_at_meaningful_check = current
+                            last_meaningful_improvement_trial = current_trial_number
+                    return
+
+                # Rule 1: Stop if no improvement for 'patience' trials
                 if (
                     best_trial_number >= 0
-                    and (int(trial.number) - best_trial_number) >= patience
+                    and (current_trial_number - best_trial_number) >= patience
                 ):
                     tprint(
                         f"{label}: early stopping after {patience} trials without improvement "
                         f"(best={best_value:.6f}, last_improved_trial={best_trial_number})"
+                    )
+                    study.stop()
+                    return
+
+                # Rule 2: Stop if no meaningful improvement (>0.5%) for 1.5*patience trials
+                extended_patience = int(patience * 1.5)
+                if (
+                    last_meaningful_improvement_trial >= 0
+                    and (current_trial_number - last_meaningful_improvement_trial) >= extended_patience
+                ):
+                    tprint(
+                        f"{label}: early stopping after {extended_patience} trials without meaningful "
+                        f"improvement (>0.5% gain) "
+                        f"(best={best_value:.6f}, last_meaningful_trial={last_meaningful_improvement_trial})"
                     )
                     study.stop()
 
@@ -2314,18 +2343,16 @@ def run_simple_position_sizer(
         et_sampler = TPESampler(seed=42, multivariate=True, group=True)
         et_pruner = MedianPruner(
             n_startup_trials=15,
-            n_warmup_steps=max(1, len(splits) // 2),
+            n_warmup_steps=max(1, len(splits) // 3),
             interval_steps=1,
         )
         et_study = optuna.create_study(
             direction="maximize", sampler=et_sampler, pruner=et_pruner
         )
 
-        et_n_estimators_choices = [200, 300, 400, 500, 600, 700]
-        et_max_depth_choices = [4, 5, 6, 7]
-        et_max_features_choices = ["sqrt", 0.5, "log2"]
-        et_ccp_alpha_choices = [1e-5, 1e-4, 1e-3]
-        et_min_impurity_choices = [1e-6, 1e-5, 1e-4]
+        et_n_estimators_choices = [300, 400, 500]
+        et_max_depth_choices = [6, 7, 8, 9, 10, 11, 12]
+        et_min_impurity_choices = [1e-6, 1e-5, 5e-5, 1e-4]
         et_criterion_choices = ["squared_error", "absolute_error"]
 
         def _et_objective(trial: optuna.trial.Trial) -> float:
@@ -2335,12 +2362,10 @@ def run_simple_position_sizer(
             max_depth = int(
                 trial.suggest_categorical("max_depth", et_max_depth_choices)
             )
-            max_features = trial.suggest_categorical(
-                "max_features", et_max_features_choices
+            max_features = float(
+                trial.suggest_float("max_features", 0.2, 0.7)
             )
-            ccp_alpha = float(
-                trial.suggest_categorical("ccp_alpha", et_ccp_alpha_choices)
-            )
+            ccp_alpha = 1e-6
             min_impurity_decrease = float(
                 trial.suggest_categorical(
                     "min_impurity_decrease", et_min_impurity_choices
@@ -3164,7 +3189,7 @@ def run_simple_position_sizer_from_artifacts(
 
         active_joined_df = active_df
 
-        _sizer_cap = 50000
+        _sizer_cap = 65000
         if _sizer_cap > 0 and len(active_joined_df) > _sizer_cap:
             from extreme_price_movements.training import subsample_symbol_balanced
 

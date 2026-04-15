@@ -776,6 +776,10 @@ def _simulate_tpsl_from_paths_unified(
         # --- STOP LOSS (hard capped) ---
         sl_hit = worst_ret <= -sl_dist_a
         
+        # --- TAKE PROFIT (simple hit detection) ---
+        best_ret = np.maximum(high_ret, low_ret)
+        tp_hit = best_ret >= tp_dist_a
+        
         # --- TRAILING PROFIT LOGIC ---
         # Update extreme price tracking
         for i_idx, trade_idx in enumerate(idx):
@@ -1771,12 +1775,16 @@ def _sequential_optimise(
     best_trail_mult = float(best_val_params.get("trail_mult", 0.5))
     baseline_rets_raw = None
     if has_future_paths_ctx:
-        baseline_rets_raw = _simulate_baseline_tpsl_from_paths(
+        # Use same scores as policy for fair comparison
+        baseline_rets_raw = _simulate_tpsl_from_paths_unified(
             context,
             tp_mult=fixed_tp_mult,
             sl_mult=fixed_sl_mult,
             trail_mult=best_trail_mult,
+            scores=context.get("confidence"),  # Match policy: use confidence for position sizing
+            wallet_range=(0.05, 0.15),
             enable_trailing=False,  # BASIC RUN: Simple TP/SL only, no trailing
+            is_baseline=True,
         )
 
     if baseline_rets_raw is not None:
@@ -2062,14 +2070,15 @@ def run_policy_optimisation(
             # Use the SAME sizer-derived TP/SL and optimized trail_mult
             # Also apply the SAME 5-15% confidence-weighted position sizing
             best_trail_mult = float(best.get("trail_mult", 0.5))
-            baseline_rets_raw = _simulate_baseline_tpsl_from_paths(
+            baseline_rets_raw = _simulate_tpsl_from_paths_unified(
                 context,
                 tp_mult=tp_mult_to_use,
                 sl_mult=sl_mult_to_use,
-                scores=conf,  # sizer confidence scores for position sizing
+                scores=context.get("confidence"),  # Match first baseline: use context confidence
                 wallet_range=(0.05, 0.15),
                 trail_mult=best_trail_mult,
                 enable_trailing=False,  # BASIC RUN: Simple TP/SL only, no trailing
+                is_baseline=True,
             )
             if baseline_rets_raw is not None:
                 baseline_assess = _metric_score(

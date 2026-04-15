@@ -36,6 +36,12 @@ from extreme_price_movements.policy_ml import (
 )
 from extreme_price_movements.training_utils import robust_sigma
 
+if importlib.util.find_spec("optuna") is not None:
+    import optuna
+    from optuna.pruners import SuccessiveHalvingPruner
+else:
+    optuna = None
+
 META_CLASS_ORDER = np.array([0, 1, 2], dtype=np.int64)
 
 
@@ -80,6 +86,74 @@ _running_stats_meta = {
     "rank_metric_std": _RunningStats(),
     "error_metric": _RunningStats(),
 }
+
+
+# ---------------------------
+# Custom Early Stopping Callback for Optuna HPO
+# ---------------------------
+def _make_early_stopping_callback(
+    min_trials_before_check: int = 50,
+    patience: int = 30,
+    magnitude_patience: int = 40,
+    improvement_threshold: float = 1.005
+):
+    """Create Optuna early stopping callback with dual rules.
+
+    Early stopping ONLY activates after min_trials_before_check trials.
+
+    Rule 1 (standard): Stop if no improvement for `patience` trials.
+    Rule 2 (magnitude): Stop if Score_new > Score_old * 1.005 for
+                       `magnitude_patience` consecutive trials.
+
+    The two rules are complementary - either can trigger early stopping.
+    """
+    def early_stopping_callback(study, trial):
+        # Early stopping ONLY after min_trials_before_check
+        if len(study.trials) < min_trials_before_check:
+            return
+
+        # Rule 1: Standard patience-based early stopping
+        # Check last `patience` trials for no improvement
+        recent_trials = study.trials[-patience:]
+        best_value = study.best_value
+        no_improvement = all(
+            t.value is None or t.value < best_value * 0.9999
+            for t in recent_trials
+        )
+        if no_improvement:
+            tprint(f"  Meta HPO early stop (patience={patience}): no improvement for {patience} trials")
+            study.stop()
+            return
+
+        # Rule 2: Magnitude-based improvement threshold
+        # Check if all recent trials exceed threshold over baseline
+        if len(study.trials) < magnitude_patience + 1:
+            return
+
+        # Get the best value from before the recent window
+        trials_before_window = study.trials[:-magnitude_patience]
+        if not trials_before_window:
+            return
+
+        best_before = max(
+            (t.value for t in trials_before_window if t.value is not None),
+            default=None
+        )
+        if best_before is None:
+            return
+
+        # Check if all recent trials exceed threshold
+        threshold = best_before * improvement_threshold
+        all_above_threshold = all(
+            t.value is not None and t.value > threshold
+            for t in study.trials[-magnitude_patience:]
+        )
+        if all_above_threshold:
+            tprint(f"  Meta HPO early stop (magnitude): {magnitude_patience} trials > {improvement_threshold:.4f}x baseline")
+            study.stop()
+
+    return early_stopping_callback
+
 
 if importlib.util.find_spec("xgboost") is not None:
     import xgboost as xgb
@@ -868,7 +942,7 @@ class MetaModel:
         }
 
     # ── Optuna HPO (optional, on winner) ─────────────────────────────────
-    def _optuna_hpo(self, name, kind, params, X, y, sw=None, n_trials=15) -> dict:
+    def _optuna_hpo(self, name, kind, params, X, y, sw=None, n_trials=150) -> dict:
         if importlib.util.find_spec("optuna") is None:
             return params
         import optuna
@@ -966,7 +1040,16 @@ class MetaModel:
 
             return float(composite)
 
-        study = optuna.create_study(study_name=f"meta_hpo_{name}")
+        study = optuna.create_study(
+            study_name=f"meta_hpo_{name}",
+            direction="maximize",
+            pruner=SuccessiveHalvingPruner(
+                min_resource=1,
+                reduction_factor=2,
+                min_early_stopping_rate=0,
+                bootstrap_count=5,
+            ),
+        )
         if prev_params:
             try:
                 study.enqueue_trial(prev_params)
@@ -976,7 +1059,7 @@ class MetaModel:
                 )
             except Exception as exc:
                 tprint(f"  Meta HPO warm-start[{scope_key}/{kind}] failed: {exc}")
-        study.optimize(objective, n_trials=n_trials, timeout=180, gc_after_trial=True)
+        study.optimize(objective, n_trials=n_trials, timeout=None, callbacks=[_make_early_stopping_callback()], gc_after_trial=True)
         if study.best_trial is None:
             return params
         best = dict(params)
@@ -1840,7 +1923,7 @@ class MetaClassifierModel:
         X: np.ndarray,
         y: np.ndarray,
         sw: Optional[np.ndarray] = None,
-        n_trials: int = 12,
+        n_trials: int = 150,
     ) -> Dict[str, Any]:
         if importlib.util.find_spec("optuna") is None:
             return params
@@ -1962,6 +2045,12 @@ class MetaClassifierModel:
         study = optuna.create_study(
             direction="maximize",
             study_name=f"meta_clf_hpo_{name}",
+            pruner=SuccessiveHalvingPruner(
+                min_resource=1,
+                reduction_factor=2,
+                min_early_stopping_rate=0,
+                bootstrap_count=5,
+            ),
         )
         if prev_params:
             try:
@@ -1973,7 +2062,7 @@ class MetaClassifierModel:
             except Exception as exc:
                 tprint(f"  Meta clf HPO warm-start[{scope_key}/{kind}] failed: {exc}")
 
-        study.optimize(objective, n_trials=n_trials, timeout=240, gc_after_trial=True)
+        study.optimize(objective, n_trials=n_trials, timeout=None, callbacks=[_make_early_stopping_callback()], gc_after_trial=True)
         if study.best_trial is None:
             return params
 

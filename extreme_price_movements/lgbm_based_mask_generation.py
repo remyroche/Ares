@@ -310,6 +310,23 @@ def atomic_to_csv(
     return prepared
 
 
+def _ensure_registry_support_columns(df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    if df is None:
+        return pd.DataFrame()
+    if df.empty:
+        return df
+    out = df.copy()
+    if "support_pct" not in out.columns and "mean_support_pct" in out.columns:
+        out["support_pct"] = pd.to_numeric(
+            out["mean_support_pct"], errors="coerce"
+        )
+    if "support_percent" not in out.columns and "support_pct" in out.columns:
+        out["support_percent"] = (
+            pd.to_numeric(out["support_pct"], errors="coerce") * 100.0
+        )
+    return out
+
+
 def _drop_duplicate_columns(df: Optional[pd.DataFrame]) -> pd.DataFrame:
     if df is None:
         return pd.DataFrame()
@@ -7523,6 +7540,7 @@ def run_mining_stage(
 
     # Ensure canonical schema by dropping duplicate columns before export
     accepted_registry = accepted_registry.loc[:, ~accepted_registry.columns.duplicated()]
+    accepted_registry = _ensure_registry_support_columns(accepted_registry)
 
     # Pre-export integrity pass
     _cols = accepted_registry.columns
@@ -8900,6 +8918,7 @@ def run_lgbm_mask_generation_triad(
                         "score_for_best_params", ascending=False
                     ).reset_index(drop=True)
                 final_rule_registry["preset"] = cfg.get("preset", "triad_exploration")
+                final_rule_registry = _ensure_registry_support_columns(final_rule_registry)
                 atomic_to_csv(
                     final_rule_registry,
                     root_output_dir / "final_rule_registry.csv",

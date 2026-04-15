@@ -888,6 +888,7 @@ def _avg_trades_per_day_global(scores, k_frac, timestamps):
 def _fit_direct_extratrees_base_model(
     *,
     kind_name,
+    hpo_scope_key=None,
     X,
     y,
     sample_weight=None,
@@ -945,7 +946,7 @@ def _fit_direct_extratrees_base_model(
     candidate = race._get_candidates(race_mode=True)["extratrees"]
     inner = candidate.estimator if hasattr(candidate, "estimator") else candidate
 
-    from .post_race_hpo import load_best_base_extratrees_params
+    from .post_race_hpo import load_best_base_extratrees_payload
 
     _hpo_dir = (
         _os.path.join(cfg.get("data_root", "data"), "hpo_out")
@@ -955,14 +956,17 @@ def _fit_direct_extratrees_base_model(
     if cfg is not None and "base_hpo_out_dir" in cfg:
         _hpo_dir = cfg["base_hpo_out_dir"]
 
-    hpo_params = None
+    hpo_payload = None
     if _hpo_dir is not None:
-        hpo_params = load_best_base_extratrees_params(_hpo_dir, scope_key=kind_name)
-        if hpo_params is None:
-            hpo_params = load_best_base_extratrees_params(_hpo_dir)
+        _scope = hpo_scope_key or kind_name
+        hpo_payload = load_best_base_extratrees_payload(_hpo_dir, scope_key=_scope)
+        if hpo_payload is None and _scope != kind_name:
+            hpo_payload = load_best_base_extratrees_payload(_hpo_dir, scope_key=kind_name)
+        if hpo_payload is None:
+            hpo_payload = load_best_base_extratrees_payload(_hpo_dir)
 
-    if hpo_params is not None:
-        p = dict(hpo_params)
+    if hpo_payload is not None and hpo_payload.get("best_params") is not None:
+        p = dict(hpo_payload.get("best_params") or {})
         tree_dyn = tree_regularization_params(y_hard, task_type="classification")
         p.setdefault("min_samples_leaf", int(tree_dyn["min_samples_leaf"]))
         p.setdefault("min_samples_split", int(tree_dyn["min_samples_split"]))
@@ -970,7 +974,7 @@ def _fit_direct_extratrees_base_model(
         p.setdefault("ccp_alpha", 1e-4)
         p.setdefault("max_leaf_nodes", 512)
         inner.set_params(**{k: v for k, v in p.items() if k in inner.get_params()})
-        hpo_scope = kind_name
+        hpo_scope = hpo_scope_key or kind_name
         tprint(
             f"Direct ExtraTrees[{hpo_scope}]: using HPO params: "
             f"max_depth={inner.max_depth}, min_samples_leaf={inner.min_samples_leaf}, "
@@ -1862,6 +1866,44 @@ def _base_model_report_entry(
         calibrated_auc = 0.5
     raw_ic_bin = _safe_spearman(oof_probs, y_bin)
     raw_ic_ret = _safe_spearman(oof_probs, y_ret)
+    s_valid = np.asarray(oof_probs, dtype=float)
+    y_bin_valid = np.asarray(y_bin, dtype=float)
+    y_ret_valid = np.asarray(y_ret, dtype=float)
+    valid_mask = np.isfinite(s_valid) & np.isfinite(y_bin_valid) & np.isfinite(y_ret_valid)
+    s_valid = s_valid[valid_mask]
+    y_bin_valid = y_bin_valid[valid_mask]
+    global_ic_chunks = []
+    t30_ic_chunks = []
+    if len(s_valid) >= 30:
+        chunk = max(len(s_valid) // 5, 30)
+        for i in range(0, len(s_valid) - chunk + 1, chunk):
+            s_chunk = s_valid[i : i + chunk]
+            y_bin_chunk = y_bin_valid[i : i + chunk]
+            if len(s_chunk) < 10:
+                continue
+            global_ic_chunks.append(float(_safe_spearman(s_chunk, y_bin_chunk)))
+            rk_chunk = pd.Series(s_chunk).rank(pct=True).values
+            t30_chunk = rk_chunk >= 0.70
+            if int(np.sum(t30_chunk)) > 2:
+                t30_ic_chunks.append(
+                    float(_safe_spearman(s_chunk[t30_chunk], y_bin_chunk[t30_chunk]))
+                )
+    if t30_ic_chunks:
+        median_ic_t30 = float(np.median(t30_ic_chunks))
+        std_ic_t30 = float(np.std(t30_ic_chunks))
+    else:
+        if len(s_valid) > 0:
+            rk_all = pd.Series(s_valid).rank(pct=True).values
+            t30_all = rk_all >= 0.70
+            median_ic_t30 = (
+                float(_safe_spearman(s_valid[t30_all], y_bin_valid[t30_all]))
+                if int(np.sum(t30_all)) > 2
+                else 0.0
+            )
+        else:
+            median_ic_t30 = 0.0
+        std_ic_t30 = 0.0
+    ic_std = float(np.std(global_ic_chunks)) if len(global_ic_chunks) >= 2 else 0.0
 
     metrics = {
         "auc": calibrated_auc,
@@ -1869,6 +1911,9 @@ def _base_model_report_entry(
         "calibrated_auc": calibrated_auc,
         "ic": raw_ic_bin,
         "ic_ret": raw_ic_ret,
+        "median_ic_t30": median_ic_t30,
+        "std_ic_t30": std_ic_t30,
+        "ic_std": ic_std,
         "brier": float(brier),
         "logloss": float(ll),
         "pr_auc": pr_auc,
@@ -2452,6 +2497,8 @@ def subsample_symbol_balanced(
 def _subsample_indices_time_balanced(
     n_rows: int, max_rows: int, y: Optional[np.ndarray] = None
 ) -> np.ndarray:
+    if max_rows is None or int(max_rows) <= 0:
+        return np.arange(n_rows, dtype=np.int32)
     if n_rows <= max_rows:
         return np.arange(n_rows, dtype=np.int32)
     base_idx = np.linspace(0, n_rows - 1, max_rows, dtype=np.int32)
@@ -12208,6 +12255,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     final_models = {}
     base_variant_models = {}
     min_base_fit_features = int(cfg.get("base_min_fit_features_guard", 8))
+    skip_primary_alpha = bool(cfg.get("base_skip_primary_variant", True))
 
     def _log_feature_matrix_state(label, X_df, selected=None):
         cols_now = list(X_df.columns) if hasattr(X_df, "columns") else []
@@ -12312,10 +12360,17 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         from sklearn.ensemble import ExtraTreesRegressor
 
         _base_sel_cfg = dict(cfg.get("base_selector_cfg", {}) or {})
+        _n_training_rows = int(len(X))
+        _strict_row_cap = max(1, int((_n_training_rows - 1) // 20))
+        _effective_target_cap = min(200, _strict_row_cap)
+        _effective_min_features = min(
+            int(cfg.get("base_variant_mdi_min_features", 30)),
+            _effective_target_cap,
+        )
         mdi_base = ExtraTreesRegressor(
-            n_estimators=int(_base_sel_cfg.get("analysis_n_estimators", 192)),
-            max_depth=5,
-            min_samples_leaf=64,
+            n_estimators=int(_base_sel_cfg.get("analysis_n_estimators", 120)),
+            max_depth=8,
+            min_samples_leaf=16,
             max_features="sqrt",
             n_jobs=2,
             random_state=42,
@@ -12327,83 +12382,103 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             str(cfg.get("run_id", "default")),
             "fs_reports",
         )
-        sel_res = mdi_feature_selection_v3(
-            X.iloc[_sel_idx],
-            y[_sel_idx],
-            candidate_cols=list(X.columns),
-            base_model=mdi_base,
-            sample_weight=w[_sel_idx],
-            selector_y=y[_sel_idx],
-            selector_target=str(cfg.get("base_mdi_selector_target", "classification")),
-            selector_loss=str(cfg.get("base_mdi_selector_loss", "binary_logloss")),
-            selector_head_name=_selector_head,
-            selector_report_dir=_selector_report_dir,
-            selector_prev_selected=None,
-            selector_family_map=dict(cfg.get("selector_feature_family_map", {}) or {}),
-            selector_focus_top_frac=float(
-                _base_sel_cfg.get("selector_focus_top_frac", 1.0)
-            ),
-            selector_top_metric=_base_sel_cfg.get("selector_top_metric", "ic"),
-            selector_frequency_hit_mode=str(
-                _base_sel_cfg.get("selector_frequency_hit_mode", "relative")
-            ),
-            selector_frequency_hit_quantile=float(
-                _base_sel_cfg.get("selector_frequency_hit_quantile", 0.80)
-            ),
-            selector_frequency_hit_abs=float(
-                _base_sel_cfg.get("selector_frequency_hit_abs", 1e-6)
-            ),
-            selector_interaction_mode=str(
-                _base_sel_cfg.get("selector_interaction_mode", "tree_path_lift")
-            ),
-            selector_interaction_topk_pairs=int(
-                _base_sel_cfg.get("selector_interaction_topk_pairs", 100)
-            ),
-            selector_interaction_max_pairs_per_feature=int(
-                _base_sel_cfg.get("selector_interaction_max_pairs_per_feature", 8)
-            ),
-            selector_interaction_corr_penalty=bool(
-                _base_sel_cfg.get("selector_interaction_corr_penalty", True)
-            ),
-            selector_family_penalty=bool(
-                _base_sel_cfg.get("selector_family_penalty", True)
-            ),
-            selector_emit_report=bool(_base_sel_cfg.get("selector_emit_report", True)),
-            analysis_n_estimators=int(_base_sel_cfg.get("analysis_n_estimators", 192)),
-            analysis_max_samples=int(_base_sel_cfg.get("analysis_max_samples", 3000)),
-            min_samples_leaf_pct=float(
-                _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
-            ),
-            selector_max_missing_frac=float(
-                _base_sel_cfg.get("selector_max_missing_frac", 0.15)
-            ),
-            selector_near_constant_dominance=float(
-                _base_sel_cfg.get("selector_near_constant_dominance", 0.999)
-            ),
-            selector_hysteresis_margin=float(
-                _base_sel_cfg.get("selector_hysteresis_margin", 0.05)
-            ),
-            selector_min_overlap=float(_base_sel_cfg.get("selector_min_overlap", 0.70)),
-            composite_weights={
-                "top30": float(_base_sel_cfg.get("top30", 0.0)),
-                "global": float(_base_sel_cfg.get("global", 0.55)),
-                "stability": float(_base_sel_cfg.get("stability", 0.25)),
-                "frequency": float(_base_sel_cfg.get("frequency", 0.15)),
-                "interaction": float(_base_sel_cfg.get("interaction", 0.05)),
-            },
-            end_features=60,
-            cumulative_cap=0.99,
-            min_share=0.0005,
-            min_features=30,
-            max_features_pct=0.8,
-        )
-        selected_feats = _cap_selected_features(
-            list(sel_res.selected_features),
-            list(X.columns),
-            target_cap=int(cfg.get("base_variant_mdi_target_features", 60)),
-            min_features=int(cfg.get("base_variant_mdi_min_features", 30)),
-        )
-        top5_feats, top10_feats = _mdi_top_feature_lists(sel_res, selected_feats)
+        from .post_race_hpo import load_best_base_extratrees_payload
+
+        _hpo_payload_variant = None
+        if cfg.get("base_hpo_out_dir"):
+            _hpo_payload_variant = load_best_base_extratrees_payload(
+                str(cfg.get("base_hpo_out_dir")), scope_key=dataset_key
+            )
+        _selected_from_hpo = list((_hpo_payload_variant or {}).get("selected_features", []) or [])
+        if _selected_from_hpo:
+            selected_feats = _cap_selected_features(
+                _selected_from_hpo,
+                list(X.columns),
+                target_cap=_effective_target_cap,
+                min_features=_effective_min_features,
+            )
+            top5_feats, top10_feats = selected_feats[:5], selected_feats[:10]
+            tprint(
+                f"Base variant HPO-selected features [{dataset_key}]: using {len(selected_feats)}/{X.shape[1]} features from persisted base HPO"
+            )
+        else:
+            sel_res = mdi_feature_selection_v3(
+                X.iloc[_sel_idx],
+                y[_sel_idx],
+                candidate_cols=list(X.columns),
+                base_model=mdi_base,
+                sample_weight=w[_sel_idx],
+                selector_y=y[_sel_idx],
+                selector_target=str(cfg.get("base_mdi_selector_target", "classification")),
+                selector_loss=str(cfg.get("base_mdi_selector_loss", "binary_logloss")),
+                selector_head_name=_selector_head,
+                selector_report_dir=_selector_report_dir,
+                selector_prev_selected=None,
+                selector_family_map=dict(cfg.get("selector_feature_family_map", {}) or {}),
+                selector_focus_top_frac=float(
+                    _base_sel_cfg.get("selector_focus_top_frac", 1.0)
+                ),
+                selector_top_metric=_base_sel_cfg.get("selector_top_metric", "ic"),
+                selector_frequency_hit_mode=str(
+                    _base_sel_cfg.get("selector_frequency_hit_mode", "relative")
+                ),
+                selector_frequency_hit_quantile=float(
+                    _base_sel_cfg.get("selector_frequency_hit_quantile", 0.80)
+                ),
+                selector_frequency_hit_abs=float(
+                    _base_sel_cfg.get("selector_frequency_hit_abs", 1e-6)
+                ),
+                selector_interaction_mode=str(
+                    _base_sel_cfg.get("selector_interaction_mode", "tree_path_lift")
+                ),
+                selector_interaction_topk_pairs=int(
+                    _base_sel_cfg.get("selector_interaction_topk_pairs", 100)
+                ),
+                selector_interaction_max_pairs_per_feature=int(
+                    _base_sel_cfg.get("selector_interaction_max_pairs_per_feature", 8)
+                ),
+                selector_interaction_corr_penalty=bool(
+                    _base_sel_cfg.get("selector_interaction_corr_penalty", True)
+                ),
+                selector_family_penalty=bool(
+                    _base_sel_cfg.get("selector_family_penalty", True)
+                ),
+                selector_emit_report=bool(_base_sel_cfg.get("selector_emit_report", True)),
+                analysis_n_estimators=int(_base_sel_cfg.get("analysis_n_estimators", 192)),
+                analysis_max_samples=int(_base_sel_cfg.get("analysis_max_samples", 3000)),
+                min_samples_leaf_pct=float(
+                    _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
+                ),
+                selector_max_missing_frac=float(
+                    _base_sel_cfg.get("selector_max_missing_frac", 0.15)
+                ),
+                selector_near_constant_dominance=float(
+                    _base_sel_cfg.get("selector_near_constant_dominance", 0.999)
+                ),
+                selector_hysteresis_margin=float(
+                    _base_sel_cfg.get("selector_hysteresis_margin", 0.05)
+                ),
+                selector_min_overlap=float(_base_sel_cfg.get("selector_min_overlap", 0.70)),
+                composite_weights={
+                    "top30": float(_base_sel_cfg.get("top30", 0.0)),
+                    "global": float(_base_sel_cfg.get("global", 0.55)),
+                    "stability": float(_base_sel_cfg.get("stability", 0.25)),
+                    "frequency": float(_base_sel_cfg.get("frequency", 0.15)),
+                    "interaction": float(_base_sel_cfg.get("interaction", 0.05)),
+                },
+                end_features=_effective_target_cap,
+                cumulative_cap=0.99,
+                min_share=0.0005,
+                min_features=_effective_min_features,
+                max_features_pct=0.8,
+            )
+            selected_feats = _cap_selected_features(
+                list(sel_res.selected_features),
+                list(X.columns),
+                target_cap=_effective_target_cap,
+                min_features=_effective_min_features,
+            )
+            top5_feats, top10_feats = _mdi_top_feature_lists(sel_res, selected_feats)
         _log_feature_matrix_state(
             f"Base variant post-MDI [{dataset_key}]",
             X.iloc[_fit_idx][selected_feats] if selected_feats else X.iloc[_fit_idx][[]],
@@ -12427,6 +12502,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         )
         race = _fit_direct_extratrees_base_model(
             kind_name=kind_name,
+            hpo_scope_key=dataset_key,
             X=X_sel,
             y=y[_fit_idx],
             sample_weight=w[_fit_idx],
@@ -12446,6 +12522,79 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             "dataset_key": dataset_key,
         }
 
+    def _build_variant_alpha_bundle(side_name, kind_name, horizon):
+        members = []
+        member_oofs = []
+        selected_union = []
+        top5_union = []
+        top10_union = []
+        for variant_name in cfg.get("base_geometry_archetypes", ["tight", "wide"]):
+            variant_name = str(variant_name)
+            variant_info = base_variant_models.get(
+                (side_name, kind_name, int(horizon), variant_name)
+            )
+            if not variant_info:
+                continue
+            race_variant = variant_info.get("model")
+            if race_variant is None or race_variant.oof_probs is None:
+                continue
+            ds_key_variant = f"train_{kind_name}_{int(horizon)}_{variant_name}"
+            df_variant = datasets.get(ds_key_variant)
+            if df_variant is None or df_variant.empty:
+                continue
+            members.append(
+                {
+                    "model": race_variant,
+                    "feat_cols": list(variant_info.get("feat_cols", [])),
+                    "H": int(horizon),
+                    "variant": variant_name,
+                    "oof_probs": np.asarray(race_variant.oof_probs, dtype=np.float32),
+                }
+            )
+            if "__ts__" in df_variant.columns and "__symbol__" in df_variant.columns:
+                aligned_oof = _align_values_by_ts_symbol_keys(
+                    datasets[f"train_{kind_name}_{int(horizon)}"]["__ts__"].values,
+                    datasets[f"train_{kind_name}_{int(horizon)}"]["__symbol__"].values,
+                    df_variant["__ts__"].values,
+                    df_variant["__symbol__"].values,
+                    np.asarray(race_variant.oof_probs, dtype=np.float32),
+                    fill_value=0.5,
+                    dtype=np.float32,
+                )
+            else:
+                n_union = len(datasets[f"train_{kind_name}_{int(horizon)}"])
+                aligned_oof = np.full(n_union, 0.5, dtype=np.float32)
+                n_use = min(n_union, len(race_variant.oof_probs))
+                aligned_oof[:n_use] = np.asarray(race_variant.oof_probs, dtype=np.float32)[
+                    :n_use
+                ]
+            member_oofs.append(aligned_oof)
+            selected_union.extend(list(variant_info.get("selected_features", [])))
+            top5_union.extend(list(variant_info.get("top5_features", [])))
+            top10_union.extend(list(variant_info.get("top10_features", [])))
+        if not members:
+            return None
+        ensemble_model = AlphaHorizonEnsemble(members)
+        if member_oofs:
+            ensemble_model.oof_probs = np.mean(np.vstack(member_oofs), axis=0).astype(
+                np.float32
+            )
+        feat_cols_union = list(dict.fromkeys(selected_union))
+        return {
+            "model": ensemble_model,
+            "H": int(horizon),
+            "feat_cols": feat_cols_union,
+            "selected_features": feat_cols_union,
+            "top5_features": list(dict.fromkeys(top5_union))[:5],
+            "top10_features": list(dict.fromkeys(top10_union))[:10],
+            "score": float(np.nan),
+            "econ_ok": True,
+            "degenerate": False,
+            "degeneracy": {},
+            "deployable": True,
+            "variant_members": [m.get("variant") for m in members],
+        }
+
     if train_base:
         from extreme_price_movements.strategy_registry import get_strategies
 
@@ -12460,6 +12609,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
         for strategy in strats:
             for side, k in [(strategy["trade_side"], strategy["strategy_id"])]:
+                if skip_primary_alpha:
+                    continue
                 best_ic = -1.0
                 best_m = None
                 per_h_models = {}
@@ -12627,12 +12778,19 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     from sklearn.ensemble import ExtraTreesRegressor
 
                     _base_sel_cfg = dict(cfg.get("base_selector_cfg", {}) or {})
+                    _n_training_rows = int(len(X))
+                    _strict_row_cap = max(1, int((_n_training_rows - 1) // 20))
+                    _effective_target_cap = min(200, _strict_row_cap)
+                    _effective_min_features = min(
+                        int(cfg.get("base_mdi_min_features", 30)),
+                        _effective_target_cap,
+                    )
                     mdi_base = ExtraTreesRegressor(
                         n_estimators=int(
-                            _base_sel_cfg.get("analysis_n_estimators", 192)
+                            _base_sel_cfg.get("analysis_n_estimators", 120)
                         ),
-                        max_depth=5,
-                        min_samples_leaf=64,
+                        max_depth=8,
+                        min_samples_leaf=16,
                         max_features="sqrt",
                         n_jobs=2,
                         random_state=42,
@@ -12670,108 +12828,128 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             except Exception:
                                 _prev_sel = None
 
-                    sel_res = mdi_feature_selection_v3(
-                        X.iloc[_sel_idx],
-                        y[_sel_idx],
-                        candidate_cols=list(X.columns),
-                        base_model=mdi_base,
-                        sample_weight=w[_sel_idx],
-                        selector_y=y[_sel_idx],
-                        selector_target=str(
-                            cfg.get("base_mdi_selector_target", "classification")
-                        ),
-                        selector_loss=str(
-                            cfg.get("base_mdi_selector_loss", "binary_logloss")
-                        ),
-                        selector_head_name=_selector_head,
-                        selector_report_dir=_selector_report_dir,
-                        selector_prev_selected=_prev_sel,
-                        selector_family_map=dict(
-                            cfg.get("selector_feature_family_map", {}) or {}
-                        ),
-                        selector_focus_top_frac=float(
-                            _base_sel_cfg.get("selector_focus_top_frac", 1.0)
-                        ),
-                        selector_top_metric=_base_sel_cfg.get(
-                            "selector_top_metric", "ic"
-                        ),
-                        selector_frequency_hit_mode=str(
-                            _base_sel_cfg.get("selector_frequency_hit_mode", "relative")
-                        ),
-                        selector_frequency_hit_quantile=float(
-                            _base_sel_cfg.get("selector_frequency_hit_quantile", 0.80)
-                        ),
-                        selector_frequency_hit_abs=float(
-                            _base_sel_cfg.get("selector_frequency_hit_abs", 1e-6)
-                        ),
-                        selector_interaction_mode=str(
-                            _base_sel_cfg.get(
-                                "selector_interaction_mode", "tree_path_lift"
-                            )
-                        ),
-                        selector_interaction_topk_pairs=int(
-                            _base_sel_cfg.get("selector_interaction_topk_pairs", 100)
-                        ),
-                        selector_interaction_max_pairs_per_feature=int(
-                            _base_sel_cfg.get(
-                                "selector_interaction_max_pairs_per_feature", 8
-                            )
-                        ),
-                        selector_interaction_corr_penalty=bool(
-                            _base_sel_cfg.get("selector_interaction_corr_penalty", True)
-                        ),
-                        selector_family_penalty=bool(
-                            _base_sel_cfg.get("selector_family_penalty", True)
-                        ),
-                        selector_emit_report=bool(
-                            _base_sel_cfg.get("selector_emit_report", True)
-                        ),
-                        analysis_n_estimators=int(
-                            _base_sel_cfg.get("analysis_n_estimators", 192)
-                        ),
-                        analysis_max_samples=int(
-                            _base_sel_cfg.get("analysis_max_samples", 3000)
-                        ),
-                        min_samples_leaf_pct=float(
-                            _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
-                        ),
-                        selector_max_missing_frac=float(
-                            _base_sel_cfg.get("selector_max_missing_frac", 0.15)
-                        ),
-                        selector_near_constant_dominance=float(
-                            _base_sel_cfg.get("selector_near_constant_dominance", 0.999)
-                        ),
-                        selector_hysteresis_margin=float(
-                            _base_sel_cfg.get("selector_hysteresis_margin", 0.05)
-                        ),
-                        selector_min_overlap=float(
-                            _base_sel_cfg.get("selector_min_overlap", 0.70)
-                        ),
-                        composite_weights={
-                            "top30": float(_base_sel_cfg.get("top30", 0.0)),
-                            "global": float(_base_sel_cfg.get("global", 0.55)),
-                            "stability": float(_base_sel_cfg.get("stability", 0.25)),
-                            "frequency": float(_base_sel_cfg.get("frequency", 0.15)),
-                            "interaction": float(
-                                _base_sel_cfg.get("interaction", 0.05)
-                            ),
-                        },
-                        end_features=60,
-                        cumulative_cap=0.99,
-                        min_share=0.0005,
-                        min_features=30,
-                        max_features_pct=0.8,
-                    )
+                    from .post_race_hpo import load_best_base_extratrees_payload
 
-                    selected_feats = _cap_selected_features(
-                        list(sel_res.selected_features),
-                        list(X.columns),
-                        target_cap=int(cfg.get("base_mdi_target_features", 60)),
-                        min_features=int(cfg.get("base_mdi_min_features", 30)),
-                    )
-                    top5_feats, top10_feats = _mdi_top_feature_lists(
-                        sel_res, selected_feats
-                    )
+                    _hpo_payload_base = None
+                    if cfg.get("base_hpo_out_dir"):
+                        _hpo_payload_base = load_best_base_extratrees_payload(
+                            str(cfg.get("base_hpo_out_dir")), scope_key=key
+                        )
+                    _selected_from_hpo = list((_hpo_payload_base or {}).get("selected_features", []) or [])
+                    if _selected_from_hpo:
+                        selected_feats = _cap_selected_features(
+                            _selected_from_hpo,
+                            list(X.columns),
+                            target_cap=_effective_target_cap,
+                            min_features=_effective_min_features,
+                        )
+                        top5_feats, top10_feats = selected_feats[:5], selected_feats[:10]
+                        tprint(
+                            f"Base HPO-selected features [{key}]: using {len(selected_feats)}/{X.shape[1]} features from persisted base HPO"
+                        )
+                    else:
+                        sel_res = mdi_feature_selection_v3(
+                            X.iloc[_sel_idx],
+                            y[_sel_idx],
+                            candidate_cols=list(X.columns),
+                            base_model=mdi_base,
+                            sample_weight=w[_sel_idx],
+                            selector_y=y[_sel_idx],
+                            selector_target=str(
+                                cfg.get("base_mdi_selector_target", "classification")
+                            ),
+                            selector_loss=str(
+                                cfg.get("base_mdi_selector_loss", "binary_logloss")
+                            ),
+                            selector_head_name=_selector_head,
+                            selector_report_dir=_selector_report_dir,
+                            selector_prev_selected=_prev_sel,
+                            selector_family_map=dict(
+                                cfg.get("selector_feature_family_map", {}) or {}
+                            ),
+                            selector_focus_top_frac=float(
+                                _base_sel_cfg.get("selector_focus_top_frac", 1.0)
+                            ),
+                            selector_top_metric=_base_sel_cfg.get(
+                                "selector_top_metric", "ic"
+                            ),
+                            selector_frequency_hit_mode=str(
+                                _base_sel_cfg.get("selector_frequency_hit_mode", "relative")
+                            ),
+                            selector_frequency_hit_quantile=float(
+                                _base_sel_cfg.get("selector_frequency_hit_quantile", 0.80)
+                            ),
+                            selector_frequency_hit_abs=float(
+                                _base_sel_cfg.get("selector_frequency_hit_abs", 1e-6)
+                            ),
+                            selector_interaction_mode=str(
+                                _base_sel_cfg.get(
+                                    "selector_interaction_mode", "tree_path_lift"
+                                )
+                            ),
+                            selector_interaction_topk_pairs=int(
+                                _base_sel_cfg.get("selector_interaction_topk_pairs", 100)
+                            ),
+                            selector_interaction_max_pairs_per_feature=int(
+                                _base_sel_cfg.get(
+                                    "selector_interaction_max_pairs_per_feature", 8
+                                )
+                            ),
+                            selector_interaction_corr_penalty=bool(
+                                _base_sel_cfg.get("selector_interaction_corr_penalty", True)
+                            ),
+                            selector_family_penalty=bool(
+                                _base_sel_cfg.get("selector_family_penalty", True)
+                            ),
+                            selector_emit_report=bool(
+                                _base_sel_cfg.get("selector_emit_report", True)
+                            ),
+                            analysis_n_estimators=int(
+                                _base_sel_cfg.get("analysis_n_estimators", 192)
+                            ),
+                            analysis_max_samples=int(
+                                _base_sel_cfg.get("analysis_max_samples", 3000)
+                            ),
+                            min_samples_leaf_pct=float(
+                                _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
+                            ),
+                            selector_max_missing_frac=float(
+                                _base_sel_cfg.get("selector_max_missing_frac", 0.15)
+                            ),
+                            selector_near_constant_dominance=float(
+                                _base_sel_cfg.get("selector_near_constant_dominance", 0.999)
+                            ),
+                            selector_hysteresis_margin=float(
+                                _base_sel_cfg.get("selector_hysteresis_margin", 0.05)
+                            ),
+                            selector_min_overlap=float(
+                                _base_sel_cfg.get("selector_min_overlap", 0.70)
+                            ),
+                            composite_weights={
+                                "top30": float(_base_sel_cfg.get("top30", 0.0)),
+                                "global": float(_base_sel_cfg.get("global", 0.55)),
+                                "stability": float(_base_sel_cfg.get("stability", 0.25)),
+                                "frequency": float(_base_sel_cfg.get("frequency", 0.15)),
+                                "interaction": float(
+                                    _base_sel_cfg.get("interaction", 0.05)
+                                ),
+                            },
+                            end_features=_effective_target_cap,
+                            cumulative_cap=0.99,
+                            min_share=0.0005,
+                            min_features=_effective_min_features,
+                            max_features_pct=0.8,
+                        )
+
+                        selected_feats = _cap_selected_features(
+                            list(sel_res.selected_features),
+                            list(X.columns),
+                            target_cap=_effective_target_cap,
+                            min_features=_effective_min_features,
+                        )
+                        top5_feats, top10_feats = _mdi_top_feature_lists(
+                            sel_res, selected_feats
+                        )
                     feature_selection_by_h[H] = list(selected_feats)
                     tprint(
                         f"MDI selected {len(selected_feats)} features (from {X.shape[1]}) for H={H}."
@@ -12808,6 +12986,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     )
                     race = _fit_direct_extratrees_base_model(
                         kind_name=k,
+                        hpo_scope_key=key,
                         X=X_sel,
                         y=y_fit,
                         sample_weight=w_fit,
@@ -13267,9 +13446,6 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 gate_res["Model"] = f"{side}_{k}_H{_gate_H}"
                 alpha_gate_results.append(gate_res)
 
-            if best_m is not None:
-                final_models[side][k] = best_m
-
         if bool(cfg.get("base_geometry_train_variants", True)):
             tprint("Training grouped base-geometry variant models (tight/wide)...")
             _run_id = cfg.get("run_id", "default")
@@ -13338,6 +13514,54 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             )
                             pd.DataFrame(_payload).to_parquet(_oof_path, index=False)
                             tprint(f"  Saved grouped base OOF to {_oof_path}")
+
+        if skip_primary_alpha:
+            tprint("Building final base alpha bundles from tight/wide variants only...")
+            for strategy in strats:
+                side = strategy["trade_side"]
+                k = strategy["strategy_id"]
+                variant_h_models = {}
+                for H in strategy_horizons.get(k, []):
+                    if f"train_{k}_{int(H)}" not in datasets:
+                        continue
+                    variant_bundle = _build_variant_alpha_bundle(side, k, int(H))
+                    if variant_bundle is None:
+                        continue
+                    variant_h_models[int(H)] = variant_bundle
+                if not variant_h_models:
+                    continue
+                primary_h = max(variant_h_models.keys())
+                best_m = dict(variant_h_models[primary_h])
+                best_m["models_by_h"] = {
+                    h: {
+                        "model": v["model"],
+                        "feat_cols": v["feat_cols"],
+                        "H": v["H"],
+                        "selected_features": v.get("selected_features", v["feat_cols"]),
+                        "top5_features": v.get("top5_features", [])[:5],
+                        "top10_features": v.get("top10_features", [])[:10],
+                    }
+                    for h, v in variant_h_models.items()
+                }
+                best_m["all_models_by_h"] = {
+                    h: {
+                        "model": v["model"],
+                        "feat_cols": v["feat_cols"],
+                        "H": v["H"],
+                        "selected_features": v.get("selected_features", v["feat_cols"]),
+                        "top5_features": v.get("top5_features", [])[:5],
+                        "top10_features": v.get("top10_features", [])[:10],
+                        "degenerate": False,
+                        "degeneracy": {},
+                        "deployable": True,
+                    }
+                    for h, v in variant_h_models.items()
+                }
+                best_m["downstream_blocked"] = False
+                best_m.setdefault("alpha_diag", {})
+                best_m["alpha_diag"]["primary_disabled"] = True
+                best_m["alpha_diag"]["base_source"] = "tight_wide_variants_only"
+                final_models.setdefault(side, {})[k] = best_m
 
     # Save base models intermediate for train_meta mode (only when we actually trained them)
     if train_base:

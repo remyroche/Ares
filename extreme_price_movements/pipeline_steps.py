@@ -100,7 +100,10 @@ from extreme_price_movements.telemetry.tprint_hooks import (
     emit_bucket_summary,
     emit_run_header,
 )
+from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 from extreme_price_movements.training import (  # generate_spike_anatomy_history,
+    _cap_selected_features,
+    _subsample_indices_time_balanced,
     generate_label_datasets,
     optimize_risk_params,
     train_models_from_artifacts,
@@ -2742,11 +2745,12 @@ def run_policy_optimiser_step(ts_sig, cfg):
 def run_base_hpo_step(ts_sig, cfg):
     """Run Optuna HPO for the base ExtraTrees classifier.
 
-    Runs one HPO job per strategy family, pooling that strategy's horizons and
-    geometry variants. Best params are saved to strategy-scoped JSON files
-    consumed by ``_fit_direct_extratrees_base_model``.
+    Runs one HPO job per concrete base training dataset scope (per strategy,
+    horizon, and geometry variant). Each scope now follows:
+    MDI feature selection -> HPO -> final training.
     """
     from extreme_price_movements.post_race_hpo import run_base_extratrees_hpo
+    from sklearn.ensemble import ExtraTreesRegressor
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     data_root = cfg.get("data_root", "data")
@@ -2811,9 +2815,6 @@ def run_base_hpo_step(ts_sig, cfg):
             sorted(base_req_keys),
         )
 
-        parts_y: list[np.ndarray] = []
-        parts_sym: list[np.ndarray] = []
-        X_blocks: list[np.ndarray] = []
         allowed_keys = set(strat.get("feature_keys") or [])
         std_inputs = {
             "p_exh_lag1",
@@ -2827,6 +2828,7 @@ def run_base_hpo_step(ts_sig, cfg):
             "gamma_score",
         }
 
+        strategy_scope_results: dict[str, dict] = {}
         for name, df in strategy_datasets.items():
             if df is None or df.empty or "__y_bin__" not in df.columns:
                 continue
@@ -2856,70 +2858,174 @@ def run_base_hpo_step(ts_sig, cfg):
             )
             if X_parts.empty:
                 continue
-            X_blocks.append(X_parts.values)
-            parts_y.append(df["__y_bin__"].values.astype(np.float32))
+            X_all = X_parts.values.astype(np.float32, copy=False)
+            y_all = df["__y_bin__"].values.astype(np.float32)
             sym_col = (
                 df["__symbol__"].values
                 if "__symbol__" in df.columns
                 else np.full(len(df), "unknown", dtype=object)
             )
-            parts_sym.append(sym_col)
+            valid_y_mask = np.isfinite(y_all)
+            if not valid_y_mask.all():
+                X_all = X_all[valid_y_mask]
+                y_all = y_all[valid_y_mask]
+                sym_col = sym_col[valid_y_mask]
 
-        if not X_blocks:
-            tprint(f"BASE HPO[{s_id}]: no usable feature matrix after injection/filtering.")
-            continue
+            if X_all.size == 0 or y_all.size == 0:
+                tprint(f"BASE HPO[{name}]: empty matrix after target filtering.")
+                continue
 
-        X_all = np.vstack(X_blocks)
-        y_all = np.concatenate(parts_y)
-        sym_all = np.concatenate(parts_sym)
-        del X_blocks, parts_y, parts_sym, strategy_datasets
-        gc.collect()
+            missing_frac = float(np.mean(~np.isfinite(X_all)))
+            if missing_frac > 0.0:
+                col_medians = np.nanmedian(X_all, axis=0)
+                col_medians = np.where(np.isfinite(col_medians), col_medians, 0.0).astype(
+                    np.float32,
+                    copy=False,
+                )
+                nan_rows, nan_cols = np.where(~np.isfinite(X_all))
+                X_all = X_all.astype(np.float32, copy=False)
+                X_all[nan_rows, nan_cols] = col_medians[nan_cols]
+                tprint(
+                    f"BASE HPO[{name}]: imputed non-finite feature values "
+                    f"(missing_frac={missing_frac:.2%})."
+                )
 
-        valid_y_mask = np.isfinite(y_all)
-        if not valid_y_mask.all():
-            X_all = X_all[valid_y_mask]
-            y_all = y_all[valid_y_mask]
-            sym_all = sym_all[valid_y_mask]
-
-        if X_all.size == 0 or y_all.size == 0:
-            tprint(f"BASE HPO[{s_id}]: empty pooled matrix after target filtering.")
-            continue
-
-        missing_frac = float(np.mean(~np.isfinite(X_all)))
-        if missing_frac > 0.0:
-            col_medians = np.nanmedian(X_all, axis=0)
-            col_medians = np.where(np.isfinite(col_medians), col_medians, 0.0).astype(
-                np.float32,
-                copy=False,
+            X_df = pd.DataFrame(X_all, columns=list(X_parts.columns))
+            is_variant_scope = name.endswith("_tight") or name.endswith("_wide")
+            _base_sel_cfg = dict(cfg.get("base_selector_cfg", {}) or {})
+            _selector_report_dir = os.path.join(
+                str(cfg.get("data_root", "data")),
+                "artifacts",
+                str(cfg.get("run_id", run_id)),
+                "fs_reports",
             )
-            nan_rows, nan_cols = np.where(~np.isfinite(X_all))
-            X_all = X_all.astype(np.float32, copy=False)
-            X_all[nan_rows, nan_cols] = col_medians[nan_cols]
+            _n_training_rows = int(len(X_df))
+            _strict_row_cap = max(1, int((_n_training_rows - 1) // 20))
+            _mdi_target = min(200, _strict_row_cap)
+            _mdi_min = min(
+                int(
+                    cfg.get(
+                        "base_variant_mdi_min_features" if is_variant_scope else "base_mdi_min_features",
+                        30,
+                    )
+                ),
+                _mdi_target,
+            )
+            _sel_idx = _subsample_indices_time_balanced(
+                len(X_df), int(cfg.get("base_selector_max_samples", 30000)), y_all
+            )
+            mdi_base = ExtraTreesRegressor(
+                n_estimators=int(_base_sel_cfg.get("analysis_n_estimators", 192)),
+                max_depth=8,
+                min_samples_leaf=64,
+                max_features="sqrt",
+                n_jobs=2,
+                random_state=42,
+            )
+            sel_res = mdi_feature_selection_v3(
+                X_df.iloc[_sel_idx],
+                y_all[_sel_idx],
+                candidate_cols=list(X_df.columns),
+                base_model=mdi_base,
+                sample_weight=None,
+                selector_y=y_all[_sel_idx],
+                selector_target=str(cfg.get("base_mdi_selector_target", "classification")),
+                selector_loss=str(cfg.get("base_mdi_selector_loss", "binary_logloss")),
+                selector_head_name=f"base_{name}",
+                selector_report_dir=_selector_report_dir,
+                selector_prev_selected=None,
+                selector_family_map=dict(cfg.get("selector_feature_family_map", {}) or {}),
+                selector_focus_top_frac=float(_base_sel_cfg.get("selector_focus_top_frac", 1.0)),
+                selector_top_metric=_base_sel_cfg.get("selector_top_metric", "ic"),
+                selector_frequency_hit_mode=str(
+                    _base_sel_cfg.get("selector_frequency_hit_mode", "relative")
+                ),
+                selector_frequency_hit_quantile=float(
+                    _base_sel_cfg.get("selector_frequency_hit_quantile", 0.80)
+                ),
+                selector_frequency_hit_abs=float(
+                    _base_sel_cfg.get("selector_frequency_hit_abs", 1e-6)
+                ),
+                selector_interaction_mode=str(
+                    _base_sel_cfg.get("selector_interaction_mode", "tree_path_lift")
+                ),
+                selector_interaction_topk_pairs=int(
+                    _base_sel_cfg.get("selector_interaction_topk_pairs", 100)
+                ),
+                selector_interaction_max_pairs_per_feature=int(
+                    _base_sel_cfg.get("selector_interaction_max_pairs_per_feature", 8)
+                ),
+                selector_interaction_corr_penalty=bool(
+                    _base_sel_cfg.get("selector_interaction_corr_penalty", True)
+                ),
+                selector_family_penalty=bool(
+                    _base_sel_cfg.get("selector_family_penalty", True)
+                ),
+                selector_emit_report=bool(_base_sel_cfg.get("selector_emit_report", True)),
+                analysis_n_estimators=int(_base_sel_cfg.get("analysis_n_estimators", 192)),
+                analysis_max_samples=int(_base_sel_cfg.get("analysis_max_samples", 3000)),
+                min_samples_leaf_pct=float(_base_sel_cfg.get("min_samples_leaf_pct", 0.015)),
+                selector_max_missing_frac=float(
+                    _base_sel_cfg.get("selector_max_missing_frac", 0.15)
+                ),
+                selector_near_constant_dominance=float(
+                    _base_sel_cfg.get("selector_near_constant_dominance", 0.999)
+                ),
+                selector_hysteresis_margin=float(
+                    _base_sel_cfg.get("selector_hysteresis_margin", 0.05)
+                ),
+                selector_min_overlap=float(_base_sel_cfg.get("selector_min_overlap", 0.70)),
+                composite_weights={
+                    "top30": float(_base_sel_cfg.get("top30", 0.0)),
+                    "global": float(_base_sel_cfg.get("global", 0.55)),
+                    "stability": float(_base_sel_cfg.get("stability", 0.25)),
+                    "frequency": float(_base_sel_cfg.get("frequency", 0.15)),
+                    "interaction": float(_base_sel_cfg.get("interaction", 0.05)),
+                },
+                end_features=_mdi_target,
+                cumulative_cap=0.99,
+                min_share=0.0005,
+                min_features=_mdi_min,
+                max_features_pct=0.8,
+            )
+            selected_feats = _cap_selected_features(
+                list(sel_res.selected_features),
+                list(X_df.columns),
+                target_cap=_mdi_target,
+                min_features=_mdi_min,
+            )
+            if not selected_feats:
+                tprint(f"BASE HPO[{name}]: MDI produced no usable selected features.")
+                continue
+            X_selected = X_df[selected_feats].to_numpy(dtype=np.float32, copy=False)
             tprint(
-                f"BASE HPO[{s_id}]: imputed non-finite feature values "
-                f"(missing_frac={missing_frac:.2%})."
+                f"BASE HPO[{name}]: MDI selected {len(selected_feats)}/{X_df.shape[1]} features before HPO"
             )
 
-        tprint(
-            f"BASE HPO[{s_id}]: pooled {X_all.shape[0]} rows, {X_all.shape[1]} features "
-            f"from {len(available)} datasets"
-        )
+            result = run_base_extratrees_hpo(
+                X_selected,
+                y_all,
+                selected_features=selected_feats,
+                symbols=sym_col,
+                n_trials=int(cfg.get("base_hpo_n_trials", 150)),
+                n_splits=int(cfg.get("base_hpo_n_splits", 3)),
+                max_rows=int(cfg.get("base_hpo_max_rows", 6500)),
+                optuna_patience_trials=int(cfg.get("base_hpo_patience_trials", 30)),
+                optuna_min_trials_before_stop=int(cfg.get("base_hpo_min_trials_before_stop", 50)),
+                optuna_meaningful_improvement_pct=float(cfg.get("base_hpo_meaningful_improvement_pct", 0.005)),
+                out_dir=hpo_out_dir,
+                study_name=f"base_extratrees_hpo_{name}",
+                scope_key=name,
+            )
+            strategy_scope_results[name] = result
+            results[name] = result
+            tprint(
+                f"BASE HPO[{name}] COMPLETE: best_value={result.get('best_value', 'n/a')}"
+            )
 
-        result = run_base_extratrees_hpo(
-            X_all,
-            y_all,
-            symbols=sym_all,
-            n_trials=int(cfg.get("base_hpo_n_trials", 40)),
-            n_splits=int(cfg.get("base_hpo_n_splits", 3)),
-            max_rows=int(cfg.get("base_hpo_max_rows", 5000)),
-            out_dir=hpo_out_dir,
-            study_name=f"base_extratrees_hpo_{s_id}",
-            scope_key=s_id,
-        )
-        results[s_id] = result
-        tprint(
-            f"BASE HPO[{s_id}] COMPLETE: best_value={result.get('best_value', 'n/a')}"
-        )
+        if not strategy_scope_results:
+            tprint(f"BASE HPO[{s_id}]: no dataset-level HPO results were produced.")
+            continue
 
     if not results:
         tprint("BASE HPO: no strategy-level results were produced.")
@@ -5548,6 +5654,7 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     import numpy as np
     import pandas as pd
     import pyarrow.parquet as pq
+    import time
 
     from extreme_price_movements.data_store import get_feature_path
     from extreme_price_movements.utils import tprint
@@ -5616,13 +5723,20 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                 if raw_col not in df.columns:
                     add_cols[raw_col] = np.full(len(df), np.nan, dtype=np.float32)
         if add_cols:
-            for k, v in add_cols.items():
-                df[k] = v
+            add_df = pd.DataFrame(add_cols, index=df.index)
+            df = pd.concat([df, add_df], axis=1)
             datasets[name] = df
             meta["df"] = df
 
     injected_keys = 0
     loaded_symbols = 0
+    total_symbols = int(len(all_syms))
+    progress_every = max(1, int(cfg.get("feature_injection_progress_every_symbols", 25)))
+    progress_interval_sec = float(
+        cfg.get("feature_injection_progress_interval_sec", 60.0)
+    )
+    start_time = time.time()
+    last_progress_time = start_time
     injection_stats: dict[str, dict[str, object]] = {
         name: {
             "requested_missing": list(requested_keys_per_dataset.get(name, [])),
@@ -5632,7 +5746,21 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         }
         for name, meta in dataset_meta.items()
     }
-    for sym in sorted(all_syms):
+    tprint(
+        f"Feature injection: starting symbol pass for {total_symbols} symbols across {len(missing_keys_per_dataset)} datasets; req_keys={len(req_keys)}"
+    )
+    for sym_i, sym in enumerate(sorted(all_syms), start=1):
+        now = time.time()
+        if (
+            sym_i == 1
+            or sym_i % progress_every == 0
+            or (now - last_progress_time) >= progress_interval_sec
+        ):
+            elapsed = now - start_time
+            tprint(
+                f"Feature injection progress: symbols={sym_i}/{total_symbols} loaded_symbol_files={loaded_symbols} injected_cells={injected_keys} elapsed_sec={elapsed:.1f} current_symbol={sym}"
+            )
+            last_progress_time = now
         target_datasets = [
             name
             for name in datasets_by_symbol.get(sym, [])
@@ -6104,8 +6232,12 @@ def _filter_artifact_by_stage_view(df, cfg):
                 if not cols_dict:
                     continue
                 df = datasets[name]
-                for k, v in cols_dict.items():
-                    df[k] = v
+                add_df = pd.DataFrame(cols_dict, index=df.index)
+                if len(add_df.columns) == len(set(add_df.columns)):
+                    overlap_cols = [c for c in add_df.columns if c in df.columns]
+                    if overlap_cols:
+                        df = df.drop(columns=overlap_cols, errors="ignore")
+                df = pd.concat([df, add_df], axis=1)
                 datasets[name] = df
                 if name in dataset_meta:
                     dataset_meta[name]["df"] = df

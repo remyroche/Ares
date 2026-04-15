@@ -203,6 +203,203 @@ def extract_extra_mdi_metrics_fast(
     return freq, mdi_depth, mdi_cov, median_gain
 
 
+def _is_xgb_model(model) -> bool:
+    """Check if model is XGBoost (XGBRegressor/XGBClassifier)."""
+    return xgb is not None and hasattr(model, "get_booster")
+
+
+def _is_lgb_model(model) -> bool:
+    """Check if model is LightGBM (LGBMRegressor/LGBMClassifier)."""
+    return lgb is not None and hasattr(model, "booster_")
+
+
+def extract_xgb_mdi_metrics(
+    model,
+    feature_names: List[str],
+    depth_discount: float = 0.85,
+    eps: float = 1e-12,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Extract rich MDI metrics from XGBoost model trees.
+
+    Returns (freq, mdi_depth, mdi_cov, gain) with same semantics as sklearn.
+    """
+    freq = np.zeros(len(feature_names), dtype=np.float32)
+    mdi_depth = np.zeros(len(feature_names), dtype=np.float32)
+    mdi_cov = np.zeros(len(feature_names), dtype=np.float32)
+    gain_sum = np.zeros(len(feature_names), dtype=np.float32)
+
+    booster = model.get_booster()
+    # Get feature name mapping
+    fmap = {f: i for i, f in enumerate(feature_names)}
+
+    # Dump trees as JSON and parse
+    try:
+        trees_json = booster.get_dump(dump_format="json")
+    except Exception:
+        # Fallback to text dump
+        trees_json = []
+
+    if not trees_json:
+        return freq, mdi_depth, mdi_cov, gain_sum
+
+    import json
+
+    for tree_str in trees_json:
+        try:
+            tree = json.loads(tree_str)
+        except json.JSONDecodeError:
+            continue
+
+        # DFS traverse tree with (node, depth) stack
+        stack = [(tree, 0)]
+        # Get root samples for coverage calculation
+        root_n = float(tree.get("cover", 1.0)) if "cover" in tree else 1.0
+
+        while stack:
+            node, depth = stack.pop()
+
+            # Check if split node
+            split_feat = node.get("split", None)
+            if split_feat is None:
+                continue  # Leaf
+
+            # Map feature name to index
+            feat_idx = fmap.get(split_feat, None)
+            if feat_idx is None:
+                # Try parsing as f{index} format
+                if isinstance(split_feat, str) and split_feat.startswith("f"):
+                    try:
+                        feat_idx = int(split_feat[1:])
+                        if feat_idx >= len(feature_names):
+                            continue
+                    except ValueError:
+                        continue
+                else:
+                    continue
+
+            # Get gain and cover
+            gain = float(node.get("gain", 0.0))
+            cover = float(node.get("cover", 1.0))
+
+            freq[feat_idx] += 1.0
+            mdi_depth[feat_idx] += np.float32((depth_discount ** depth) * gain)
+            cov_weight = cover / (root_n + eps)
+            mdi_cov[feat_idx] += np.float32(cov_weight * gain)
+            gain_sum[feat_idx] += np.float32(gain)
+
+            # Push children
+            left = node.get("yes", None)
+            right = node.get("no", None)
+            missing = node.get("missing", None)
+
+            if left is not None:
+                stack.append((left, depth + 1))
+            if right is not None and right != left:
+                stack.append((right, depth + 1))
+
+    return freq, mdi_depth, mdi_cov, gain_sum
+
+
+def extract_lgb_mdi_metrics(
+    model,
+    feature_names: List[str],
+    depth_discount: float = 0.85,
+    eps: float = 1e-12,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Extract rich MDI metrics from LightGBM model trees.
+
+    Returns (freq, mdi_depth, mdi_cov, gain) with same semantics as sklearn.
+    """
+    freq = np.zeros(len(feature_names), dtype=np.float32)
+    mdi_depth = np.zeros(len(feature_names), dtype=np.float32)
+    mdi_cov = np.zeros(len(feature_names), dtype=np.float32)
+    gain_sum = np.zeros(len(feature_names), dtype=np.float32)
+
+    booster = model.booster_
+    if booster is None:
+        return freq, mdi_depth, mdi_cov, gain_sum
+
+    # Get model dump
+    try:
+        tree_strs = booster.dump_model()["tree_info"]
+    except Exception:
+        return freq, mdi_depth, mdi_cov, gain_sum
+
+    # Map feature names to indices
+    fmap = {f: i for i, f in enumerate(feature_names)}
+
+    for tree_info in tree_strs:
+        tree = tree_info.get("tree_structure", {})
+        if not tree:
+            continue
+
+        # Get root samples
+        root_n = float(tree.get("internal_count", tree.get("leaf_count", 1.0)))
+
+        # DFS traverse with (node_dict, depth) stack
+        stack = [(tree, 0)]
+
+        while stack:
+            node, depth = stack.pop()
+
+            # Check if internal node
+            split_feat = node.get("split_feature", None)
+            if split_feat is None:
+                continue  # Leaf
+
+            # Map feature to index
+            if isinstance(split_feat, str):
+                feat_idx = fmap.get(split_feat, None)
+            else:
+                feat_idx = int(split_feat)
+
+            if feat_idx is None or feat_idx >= len(feature_names):
+                continue
+
+            # Get gain and count
+            gain = float(node.get("split_gain", 0.0))
+            count = float(node.get("internal_count", 1.0))
+
+            freq[feat_idx] += 1.0
+            mdi_depth[feat_idx] += np.float32((depth_discount ** depth) * gain)
+            cov_weight = count / (root_n + eps)
+            mdi_cov[feat_idx] += np.float32(cov_weight * gain)
+            gain_sum[feat_idx] += np.float32(gain)
+
+            # Push children
+            left = node.get("left_child", None)
+            right = node.get("right_child", None)
+
+            if left is not None:
+                stack.append((left, depth + 1))
+            if right is not None:
+                stack.append((right, depth + 1))
+
+    return freq, mdi_depth, mdi_cov, gain_sum
+
+
+def extract_gbdt_mdi_metrics(
+    model,
+    feature_names: List[str],
+    depth_discount: float = 0.85,
+    eps: float = 1e-12,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Unified interface to extract MDI metrics from any GBDT model.
+
+    Auto-detects XGB/LGB and delegates to appropriate extractor.
+    Returns (freq, mdi_depth, mdi_cov, gain_sum).
+    """
+    if _is_xgb_model(model):
+        return extract_xgb_mdi_metrics(model, feature_names, depth_discount, eps)
+    elif _is_lgb_model(model):
+        return extract_lgb_mdi_metrics(model, feature_names, depth_discount, eps)
+    else:
+        raise ValueError(f"Unknown GBDT model type: {type(model)}")
+
+
 # ======================================================================================
 # Main Production Pipeline
 # ======================================================================================
@@ -611,7 +808,7 @@ def mdi_feature_selection_v3(
     min_samples_leaf: int = 64,
     min_samples_leaf_pct: float = 0.015,
     min_impurity_decrease: float = 0.0,
-    analysis_n_estimators: int = 192,
+    analysis_n_estimators: int = 120,
     analysis_max_samples: int = 3000,
     selector_max_missing_frac: float = 0.15,
     selector_near_constant_dominance: float = 0.999,
@@ -1157,9 +1354,23 @@ def mdi_feature_selection_v3(
             # folds_data['share'].append(m.feature_importances_)
             share = m.feature_importances_.astype(np.float64)
 
-            # Fast extra metrics
+            # Fast extra metrics - support sklearn forests, XGB, and LGB
             if hasattr(m, "estimators_"):
+                # Sklearn RandomForest/ExtraTrees
                 freq, mdi_d, mdi_c, _ = extract_extra_mdi_metrics_fast(m, p)
+            elif _is_xgb_model(m) or _is_lgb_model(m):
+                # XGBoost or LightGBM - extract full tree structure metrics
+                try:
+                    freq, mdi_d, mdi_c, gain_sum = extract_gbdt_mdi_metrics(
+                        m, current_features, depth_discount=0.85, eps=1e-12
+                    )
+                    # Use gain_sum as share (more accurate than built-in for GBDT)
+                    share = gain_sum.astype(np.float64)
+                except Exception as _exc:
+                    # Fallback to built-in importances
+                    freq = np.zeros(p, dtype=np.float64)
+                    mdi_d = np.zeros(p, dtype=np.float64)
+                    mdi_c = np.zeros(p, dtype=np.float64)
             else:
                 freq = np.zeros(p, dtype=np.float64)
                 mdi_d = np.zeros(p, dtype=np.float64)

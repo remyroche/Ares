@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import optuna
-from optuna.pruners import MedianPruner
+from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
 from optuna.samplers import TPESampler
 from scipy.stats import rankdata, spearmanr
 from sklearn.ensemble import ExtraTreesClassifier
@@ -281,7 +281,7 @@ def suggest_extratrees(
         "class_weight": class_weight,
         "min_impurity_decrease": min_impurity_decrease,
         "ccp_alpha": ccp_alpha,
-        "n_jobs": 2,
+        "n_jobs": 3,
         "random_state": base_random_state,
     }
 
@@ -475,7 +475,7 @@ def suggest_extratrees_base(
         ccp_alpha          ∈ {1e-5, 1e-6}
         min_impurity_decrease ∈ {1e-5, 1e-4}
     """
-    max_depth = trial.suggest_categorical("max_depth", [5, 6, 7, 8])
+    max_depth = trial.suggest_categorical("max_depth", [6, 7, 8, 9, 10, 11, 12, 13])
 
     leaf_frac = trial.suggest_categorical("min_samples_leaf_frac", [0.005, 0.01, 0.02])
     min_samples_leaf = max(20, int(np.ceil(n_pos * leaf_frac)))
@@ -503,7 +503,7 @@ def suggest_extratrees_base(
         "min_impurity_decrease": min_impurity_decrease,
         "ccp_alpha": ccp_alpha,
         "max_leaf_nodes": 512,
-        "n_jobs": 2,
+        "n_jobs": 3,
         "random_state": base_random_state,
     }
 
@@ -526,6 +526,9 @@ class HPOConfig:
 
     # Pruning
     pruner_warmup_steps: int = 4  # default to n_splits, will be overridden
+    optuna_patience_trials: int = 30
+    optuna_min_trials_before_stop: int = 50
+    optuna_meaningful_improvement_pct: float = 0.005
 
     # Multi-seed: average over this many seeds per trial to reduce noise sensitivity
     n_seeds: int = 1
@@ -554,6 +557,60 @@ def _lgbm_callbacks(early_stopping_rounds: int) -> list:
         except Exception:
             pass
     return cbs
+
+
+def _make_optuna_patience_callback(
+    *,
+    patience: int,
+    label: str,
+    min_delta: float = 0.0,
+    min_trials_before_stop: int = 0,
+    meaningful_improvement_pct: float = 0.005,
+):
+    best_value = float("-inf")
+    best_trial_number = -1
+    last_meaningful_improvement_trial = -1
+
+    def _callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        nonlocal best_value, best_trial_number, last_meaningful_improvement_trial
+        if trial.value is None or not np.isfinite(trial.value):
+            return
+        current_value = float(trial.value)
+        if current_value > (best_value + float(min_delta)):
+            prev_best = best_value
+            best_value = current_value
+            best_trial_number = int(trial.number)
+            if prev_best == float("-inf"):
+                last_meaningful_improvement_trial = int(trial.number)
+            else:
+                denom = max(abs(prev_best), 1e-12)
+                rel_gain = (current_value - prev_best) / denom
+                if rel_gain > float(meaningful_improvement_pct):
+                    last_meaningful_improvement_trial = int(trial.number)
+            return
+        if int(trial.number) < int(min_trials_before_stop):
+            return
+        if best_trial_number >= 0 and (int(trial.number) - best_trial_number) >= int(patience):
+            tprint(
+                f"{label}: early stopping after {patience} trials without improvement "
+                f"(best={best_value:.6f}, last_improved_trial={best_trial_number})"
+            )
+            study.stop()
+            return
+        extended_patience = int(np.ceil(float(patience) * 1.5))
+        if (
+            last_meaningful_improvement_trial >= 0
+            and (int(trial.number) - last_meaningful_improvement_trial)
+            >= extended_patience
+        ):
+            tprint(
+                f"{label}: early stopping after {extended_patience} trials without meaningful improvement "
+                f"(>{100.0 * float(meaningful_improvement_pct):.2f}% gain, best={best_value:.6f}, "
+                f"last_meaningful_trial={last_meaningful_improvement_trial})"
+            )
+            study.stop()
+
+    return _callback
 
 
 def _fit_predict_fold(
@@ -873,7 +930,7 @@ def _reconstruct_params(
         if not p.get("bootstrap", False):
             p.pop("max_samples", None)
 
-        p.update({"n_jobs": 2, "random_state": random_state})
+        p.update({"n_jobs": 3, "random_state": random_state})
 
     elif model_name == "xgboost":
         p.pop("use_scale_pos_weight", None)  # handled at fit time
@@ -1206,6 +1263,14 @@ def load_best_base_extratrees_params(
     return data.get("best_params")
 
 
+def load_best_base_extratrees_payload(
+    out_dir: str = "./hpo_out",
+    scope_key: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Load the full saved base HPO payload for a given scope."""
+    return _load_base_hpo_json(out_dir, scope_key=scope_key)
+
+
 def _subsample_diverse(
     X: np.ndarray,
     y: np.ndarray,
@@ -1245,21 +1310,25 @@ def run_base_extratrees_hpo(
     X: np.ndarray,
     y: np.ndarray,
     *,
+    selected_features: Optional[List[str]] = None,
     symbols: Optional[np.ndarray] = None,
     sample_weight: Optional[np.ndarray] = None,
-    n_trials: int = 40,
+    n_trials: int = 150,
     n_splits: int = 3,
     purge: int = 12,
     embargo: int = 2,
-    max_rows: int = 5000,
+    max_rows: int = 6500,
     random_state: int = 42,
     out_dir: str = "./hpo_out",
     study_name: str = "base_extratrees_hpo",
     scope_key: Optional[str] = None,
+    optuna_patience_trials: int = 30,
+    optuna_min_trials_before_stop: int = 50,
+    optuna_meaningful_improvement_pct: float = 0.005,
 ) -> Dict[str, Any]:
     """Run HPO for the base ExtraTrees classifier with a narrow search space.
 
-    - 40 Optuna trials, MedianPruner (prune after 30 % of CV rounds)
+    - 150 Optuna trials, MedianPruner (prune after 30 % of CV rounds)
     - Max 5 000 samples, sourced from diverse periods / assets
     - Saves best params for later training reuse
     """
@@ -1290,13 +1359,14 @@ def run_base_extratrees_hpo(
         )
 
     total_rounds = n_splits
-    warmup_steps = max(1, int(np.ceil(0.30 * total_rounds)))
+    warmup_steps = max(1, int(np.ceil(0.20 * total_rounds)))
 
     sampler = TPESampler(seed=random_state, multivariate=True, group=True)
-    pruner = MedianPruner(
-        n_startup_trials=10,
-        n_warmup_steps=warmup_steps,
-        interval_steps=1,
+    pruner = SuccessiveHalvingPruner(
+        min_resource=1,
+        reduction_factor=2,
+        min_early_stopping_rate=0,
+        bootstrap_count=5,
     )
 
     study = optuna.create_study(
@@ -1304,6 +1374,33 @@ def run_base_extratrees_hpo(
         study_name=study_name,
         sampler=sampler,
         pruner=pruner,
+    )
+
+    def _log_best_trial(study_obj: optuna.Study, trial_obj: optuna.trial.FrozenTrial) -> None:
+        if study_obj.best_trial.number != trial_obj.number:
+            return
+        best_params_local = suggest_extratrees_base(
+            study_obj.best_trial, base_random_state=random_state, n_pos=n_pos
+        )
+        best_params_local.pop("n_jobs", None)
+        best_params_local.pop("random_state", None)
+        scope_name = scope_key or study_name
+        tprint(
+            "BASE HPO[{}] NEW BEST: trial={} value={:.6f} params={}".format(
+                scope_name,
+                trial_obj.number,
+                float(study_obj.best_value),
+                json.dumps(best_params_local, sort_keys=True),
+            )
+        )
+
+    scope_name = scope_key or study_name
+    patience_callback = _make_optuna_patience_callback(
+        patience=int(optuna_patience_trials),
+        label=f"BASE HPO[{scope_name}]",
+        min_delta=0.0,
+        min_trials_before_stop=int(optuna_min_trials_before_stop),
+        meaningful_improvement_pct=float(optuna_meaningful_improvement_pct),
     )
 
     def objective(trial: optuna.Trial) -> float:
@@ -1335,14 +1432,24 @@ def run_base_extratrees_hpo(
                 ic = 0.0
 
             fold_ics.append(ic)
-            trial.report(ic, step=fold_i)
+            interim_mean_ic = float(np.mean(fold_ics))
+            interim_std_ic = float(np.std(fold_ics))
+            interim_score = interim_mean_ic - 1.0 * interim_std_ic
+            trial.report(interim_score, step=fold_i)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
 
         mean_ic = float(np.mean(fold_ics))
         std_ic = float(np.std(fold_ics))
         return mean_ic - 1.0 * std_ic
 
     study.optimize(
-        objective, n_trials=n_trials, gc_after_trial=True, show_progress_bar=True
+        objective,
+        n_trials=n_trials,
+        timeout=None,
+        gc_after_trial=True,
+        show_progress_bar=True,
+        callbacks=[_log_best_trial, patience_callback],
     )
 
     best_value = float(study.best_value)
@@ -1354,17 +1461,32 @@ def run_base_extratrees_hpo(
     best_params.pop("random_state", None)
 
     payload = {
+        "best_value": best_value,
         "best_params": best_params,
+        "selected_features": [str(v) for v in (selected_features or []) if isinstance(v, str)],
         "n_trials_completed": len(study.trials),
         "n_pos_at_optimisation": n_pos,
         "search_space": "base_narrow",
+        "best_trial_metrics": {
+            "pr_auc_lift": float(best_trial.user_attrs.get("pr_auc_lift", 0.0)),
+            "top30_abs_ret_lift": float(
+                best_trial.user_attrs.get("top30_abs_ret_lift", 0.0)
+            ),
+            "median_ic_t30": float(best_trial.user_attrs.get("median_ic_t30", 0.0)),
+            "std_ic_t30": float(best_trial.user_attrs.get("std_ic_t30", 0.0)),
+            "brier": float(best_trial.user_attrs.get("brier", 1.0)),
+            "z_pr": float(best_trial.user_attrs.get("z_pr", 0.0)),
+            "z_top30": float(best_trial.user_attrs.get("z_top30", 0.0)),
+            "z_median_ic": float(best_trial.user_attrs.get("z_median_ic", 0.0)),
+            "z_std_ic": float(best_trial.user_attrs.get("z_std_ic", 0.0)),
+            "z_brier": float(best_trial.user_attrs.get("z_brier", 0.0)),
+        },
     }
 
     _save_base_hpo_json(out_dir, payload, scope_key=scope_key)
     save_name = os.path.basename(_base_hpo_json_path(out_dir, scope_key=scope_key))
     tprint(f"Base HPO: saved params from current run to {save_name}")
 
-    payload["best_value"] = best_value
     payload["out_dir"] = out_dir
     return payload
 

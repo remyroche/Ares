@@ -832,7 +832,7 @@ def _simulate_tpsl_from_paths_unified(
                 else:
                     # Simple TP exit (no trailing)
                     # Exit when we first hit the TP level
-                    if tp_hit[i_idx]:
+                    if high_ret[i_idx] >= tp_dist_a[i_idx]:
                         bar_exit[i_idx] = tp_dist_a[i_idx]
         
         # If no hit, use close for last bar

@@ -1880,6 +1880,15 @@ def _base_model_report_entry(
         "bootstrap_prec20_cv": bootstrap_prec20_cv,
         "fold_logloss_improvement_ratio": pos_fold_ratio,
         "worst_fold_logloss_improvement": worst_fold_imp,
+        "pr_auc_random": float(dm.get("rank_components", {}).get("PR-AUC/Random", np.nan)),
+        "ece": float(dm.get("rank_components", {}).get("ECE", np.nan)),
+        "ic_stability": float(dm.get("rank_components", {}).get("IC_Stability", np.nan)),
+        "mean_ic": float(dm.get("rank_components", {}).get("Mean_IC", np.nan)),
+        "decile_spearman": float(dm.get("rank_components", {}).get("Decile_Spearman", np.nan)),
+        "months_rho_decile_gt_0": int(dm.get("rank_components", {}).get("months_rho_decile_gt_0", 0)),
+        "median_ic_m": float(dm.get("rank_components", {}).get("median_IC_m", np.nan)),
+        "months_ic_m_lt_neg_01": int(dm.get("rank_components", {}).get("months_IC_m_lt_neg_01", 0)),
+        "ir_weekly": float(dm.get("rank_components", {}).get("IR_weekly", np.nan)),
         **info_metrics,
         **timeout_metrics,
     }
@@ -2188,7 +2197,7 @@ def print_training_gate_report(report_payload):
         winners = base_items  # fallback: show all if no winner flag
     if winners:
         tprint("\n--- BASE MODELS (Race Winners) ---")
-        hdr = f"{'Model':<32} {'RawAUC':>7} {'CalAUC':>7} {'IC_bin':>7} {'IC_ret':>7} {'LogLoss':>8} {'PR-AUC':>7} {'Lift@20':>8} {'BrierImp':>9} {'Deg':>4}"
+        hdr = f"{'Model':<32} {'RawAUC':>7} {'CalAUC':>7} {'IC_bin':>7} {'IC_ret':>7} {'LogLoss':>8} {'PR-AUC':>7} {'Lift@20':>8} {'BrierImp':>9} {'ECE':>7} {'IC_Stab':>8} {'Deg':>4}"
         tprint(hdr)
         tprint("-" * len(hdr))
         for it in winners:
@@ -2202,9 +2211,11 @@ def print_training_gate_report(report_payload):
             prauc = m.get("pr_auc", float("nan"))
             lift = m.get("lift_at_20pct", float("nan"))
             brimp = m.get("brier_improvement", float("nan"))
+            ece = m.get("ece", float("nan"))
+            ic_stab = m.get("ic_stability", float("nan"))
             deg = "Y" if it.get("degenerate", False) else "N"
             tprint(
-                f"{name:<32} {raw_auc:>7.4f} {cal_auc:>7.4f} {ic:>7.4f} {ic_ret:>7.4f} {ll:>8.4f} {prauc:>7.4f} {lift:>8.3f} {brimp:>8.1%} {deg:>4}"
+                f"{name:<32} {raw_auc:>7.4f} {cal_auc:>7.4f} {ic:>7.4f} {ic_ret:>7.4f} {ll:>8.4f} {prauc:>7.4f} {lift:>8.3f} {brimp:>8.1%} {ece:>7.4f} {ic_stab:>8.4f} {deg:>4}"
             )
     blocked = report_payload.get("blocked_strategy_ids", [])
     if blocked:
@@ -2652,8 +2663,9 @@ def _aggregate_alpha_oof_metrics(
     p_m = probs[mask]
     r_m = returns[mask]
     w_m = sw[mask] if sw is not None else None
+    grp_m = np.asarray(groups)[mask] if groups is not None else None
     # Selection score already returns composite metrics we need
-    sel_metrics = calculate_selection_score(y_m, p_m, r_m, sample_weight=w_m)
+    sel_metrics = calculate_selection_score(y_m, p_m, r_m, sample_weight=w_m, groups=grp_m)
     metrics.update(
         {
             "auc": float(sel_metrics.get("AUC", np.nan)),
@@ -2668,6 +2680,18 @@ def _aggregate_alpha_oof_metrics(
             "calmar": float(sel_metrics.get("Calmar", np.nan)),
             "prec30": float(sel_metrics.get("Prec_Top30", np.nan)),
             "lift30": float(sel_metrics.get("Lift_Top30", np.nan)),
+            "pr_auc": float(sel_metrics.get("PR-AUC", np.nan)),
+            "lift20": float(sel_metrics.get("Lift@20", np.nan)),
+            "brier_imp": float(sel_metrics.get("BrierImp", np.nan)),
+            "ece": float(sel_metrics.get("ECE", np.nan)),
+            "ic_stability": float(sel_metrics.get("IC_Stability", np.nan)),
+            "mean_ic": float(sel_metrics.get("Mean_IC", np.nan)),
+            "decile_spearman": float(sel_metrics.get("Decile_Spearman", np.nan)),
+            "months_rho_decile_gt_0": int(sel_metrics.get("months_rho_decile_gt_0", 0)),
+            "median_ic_m": float(sel_metrics.get("median_IC_m", np.nan)),
+            "months_ic_m_lt_neg_01": int(sel_metrics.get("months_IC_m_lt_neg_01", 0)),
+            "ir_weekly": float(sel_metrics.get("IR_weekly", np.nan)),
+            "pr_auc_random": float(sel_metrics.get("PR-AUC/Random", np.nan)),
         }
     )
 

@@ -162,6 +162,7 @@ def calculate_selection_score(
     *,
     sample_weight=None,
     symbols=None,
+    groups=None,  # typically timestamps
     # ---- Position sizing ----
     size_mode="rank",       # "linear"|"rank"|"sigmoid"|"centered"
     min_pos=0.0,              # long-only default. set -1..1 for long/short with centered mode
@@ -442,11 +443,11 @@ def calculate_selection_score(
         base_rate = np.average(y_true_m, weights=w_m if w_m is not None else np.ones_like(y_true_m))
         if base_rate > 1e-6:
             metrics["Lift_Top10"] = float(prec_10 / base_rate)
-            metrics["Lift_Top20"] = float(np.average(y_sorted[:max(1, int(len(y_sorted)*0.20))], weights=w_sorted[:max(1, int(len(y_sorted)*0.20))]) / base_rate)
+            metrics["Lift@20"] = float(np.average(y_sorted[:max(1, int(len(y_sorted)*0.20))], weights=w_sorted[:max(1, int(len(y_sorted)*0.20))]) / base_rate)
             metrics["Lift_Top30"] = float(prec_30 / base_rate)
         else:
             metrics["Lift_Top10"] = 0.0
-            metrics["Lift_Top20"] = 0.0
+            metrics["Lift@20"] = 0.0
             metrics["Lift_Top30"] = 0.0
     else:
         metrics["Prec_Top10"] = 0.0
@@ -454,7 +455,7 @@ def calculate_selection_score(
         metrics["Prec_Top30"] = 0.0
         metrics["Prec_Top40"] = 0.0
         metrics["Lift_Top10"] = 0.0
-        metrics["Lift_Top20"] = 0.0
+        metrics["Lift@20"] = 0.0
         metrics["Lift_Top30"] = 0.0
 
     # -------------------------
@@ -478,20 +479,133 @@ def calculate_selection_score(
                  metrics["AUC"] = 0.5
         except:
              metrics["AUC"] = 0.5
+
+        try:
+            from sklearn.metrics import average_precision_score
+            metrics["PR-AUC"] = float(average_precision_score(y_true_m, y_prob_m))
+            metrics["Random"] = float(np.mean(y_true_m))
+            metrics["PR-AUC/Random"] = metrics["PR-AUC"] / max(metrics["Random"], 1e-9)
+        except:
+            metrics["PR-AUC"] = 0.0
+            metrics["Random"] = 0.0
+            metrics["PR-AUC/Random"] = 0.0
+
+        try:
+            from extreme_price_movements.model_scoring import ece_at_mask
+            metrics["ECE"] = ece_at_mask(y_true_m, y_prob_m, np.ones(len(y_true_m), dtype=bool))
+        except:
+            metrics["ECE"] = 0.0
+
+        try:
+            # Brier Improvement = (Base_Brier - Brier) / Base_Brier
+            base_brier = metrics["Random"] * (1.0 - metrics["Random"])
+            brier_score = metrics.get("Brier_Score", 0.0)
+            metrics["BrierImp"] = (base_brier - brier_score) / max(base_brier, 1e-9)
+        except:
+            metrics["BrierImp"] = 0.0
     else:
         metrics["AUC"] = 0.5
+        metrics["PR-AUC"] = 0.0
+        metrics["Random"] = 0.0
+        metrics["PR-AUC/Random"] = 0.0
+        metrics["ECE"] = 0.0
+        metrics["BrierImp"] = 0.0
         
     metrics["IC"] = metrics["Utility_IC"]
     # Or keep original IC? The new logic uses Utility IC.
     # We can add standard IC too.
     try:
+        from extreme_price_movements.model_scoring import ic_cross_sectional, spearman_corr
         if symbols_m is not None:
-            from extreme_price_movements.model_scoring import ic_cross_sectional
             std_ic = ic_cross_sectional(y_prob_m, r_m, groups=symbols_m)
         else:
             std_ic = spearmanr(y_prob_m, r_m, nan_policy="omit").correlation
         metrics["Standard_IC"] = float(std_ic) if (std_ic is not None and np.isfinite(std_ic)) else 0.0
     except:
         metrics["Standard_IC"] = 0.0
+
+    try:
+        from extreme_price_movements.model_scoring import spearman_corr
+        # Mean decile Spearman
+        if len(y_prob_m) >= 10:
+            decile_ranks = pd.qcut(y_prob_m, 10, labels=False, duplicates='drop')
+            decile_means = []
+            for d in range(10):
+                if np.any(decile_ranks == d):
+                    decile_means.append(np.mean(r_m[decile_ranks == d]))
+                else:
+                    decile_means.append(0.0)
+            metrics["Decile_Spearman"] = spearman_corr(np.arange(10), np.array(decile_means))
+        else:
+            metrics["Decile_Spearman"] = 0.0
+    except:
+        metrics["Decile_Spearman"] = 0.0
+
+    # Time-grouped metrics using `groups` (which is typically timestamps per docstrings)
+    metrics["Mean_IC"] = metrics["Standard_IC"]  # Default fallback
+    metrics["IC_Stability"] = 0.0
+    metrics["months_rho_decile_gt_0"] = 0
+    metrics["median_IC_m"] = 0.0
+    metrics["months_IC_m_lt_neg_01"] = 0
+    metrics["IR_weekly"] = 0.0
+
+    if groups is not None and len(groups) == n:
+        try:
+            groups_m = np.asarray(groups)[m]
+            df_g = pd.DataFrame({'p': y_prob_m, 'r': r_m, 'ts': groups_m})
+            df_g['ts'] = pd.to_datetime(df_g['ts'], errors='coerce')
+            df_g = df_g.dropna(subset=['ts'])
+
+            if not df_g.empty:
+                # Monthly metrics
+                df_g['month'] = df_g['ts'].dt.to_period('M')
+                monthly_ic = []
+                monthly_decile_rho = []
+                for _, group in df_g.groupby('month'):
+                    if len(group) >= 3:
+                        monthly_ic.append(spearman_corr(group['p'].values, group['r'].values))
+                    if len(group) >= 10:
+                        try:
+                            d_ranks = pd.qcut(group['p'].values, 10, labels=False, duplicates='drop')
+                            d_means = []
+                            for d in range(10):
+                                if np.any(d_ranks == d):
+                                    d_means.append(np.mean(group['r'].values[d_ranks == d]))
+                                else:
+                                    d_means.append(0.0)
+                            monthly_decile_rho.append(spearman_corr(np.arange(10), np.array(d_means)))
+                        except:
+                            pass
+
+                monthly_ic = np.array(monthly_ic)
+                monthly_ic = monthly_ic[np.isfinite(monthly_ic)]
+                if len(monthly_ic) > 0:
+                    metrics["median_IC_m"] = float(np.median(monthly_ic))
+                    metrics["months_IC_m_lt_neg_01"] = int(np.sum(monthly_ic < -0.01))
+
+                monthly_decile_rho = np.array(monthly_decile_rho)
+                monthly_decile_rho = monthly_decile_rho[np.isfinite(monthly_decile_rho)]
+                if len(monthly_decile_rho) > 0:
+                    metrics["months_rho_decile_gt_0"] = int(np.sum(monthly_decile_rho > 0))
+
+                # Weekly metrics
+                df_g['week'] = df_g['ts'].dt.to_period('W')
+                weekly_ic = []
+                for _, group in df_g.groupby('week'):
+                    if len(group) >= 3:
+                        weekly_ic.append(spearman_corr(group['p'].values, group['r'].values))
+
+                weekly_ic = np.array(weekly_ic)
+                weekly_ic = weekly_ic[np.isfinite(weekly_ic)]
+                if len(weekly_ic) > 0:
+                    mean_ic_wk = float(np.mean(weekly_ic))
+                    std_ic_wk = float(np.std(weekly_ic))
+                    metrics["Mean_IC"] = mean_ic_wk
+                    if std_ic_wk > 1e-9:
+                        metrics["IR_weekly"] = mean_ic_wk / std_ic_wk
+                        metrics["IC_Stability"] = std_ic_wk / abs(mean_ic_wk) if abs(mean_ic_wk) > 1e-9 else 0.0
+        except Exception as e:
+            # Silently fallback to defaults if timestamp grouping fails
+            pass
     
     return metrics

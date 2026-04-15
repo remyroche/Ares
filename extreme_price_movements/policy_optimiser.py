@@ -667,8 +667,6 @@ def _simulate_tpsl_from_paths_unified(
     context: Dict[str, np.ndarray],
     tp_mult: float = 1.0,
     sl_mult: float = 1.0,
-    scores: Optional[np.ndarray] = None,
-    wallet_range: Tuple[float, float] = (0.05, 0.15),
     trail_mult: float = 0.5,
     enable_trailing: bool = True,
     is_baseline: bool = True,  # If True, this is baseline simulation
@@ -832,8 +830,7 @@ def _simulate_tpsl_from_paths_unified(
                 else:
                     # Simple TP exit (no trailing)
                     # Exit when we first hit the TP level
-                    if tp_hit[i_idx]:
-                        bar_exit[i_idx] = tp_dist_a[i_idx]
+                    bar_exit[i_idx] = tp_dist_a[i_idx]
         
         # If no hit, use close for last bar
         is_last = bar >= future_lengths[idx] - 1
@@ -854,17 +851,6 @@ def _simulate_tpsl_from_paths_unified(
             if last_bar >= 0 and np.isfinite(future_closes[i, last_bar]):
                 exit_rets[i] = side[i] * (future_closes[i, last_bar] / entry[i] - 1.0)
 
-    # Apply confidence-weighted position sizing (5-15% wallet allocation) if scores provided
-    if scores is not None and len(scores) == len(exit_rets):
-        n = len(exit_rets)
-        sorted_args = np.argsort(scores)  # ascending order by score
-        allocations = np.linspace(wallet_range[0], wallet_range[1], n)
-        # Sort returns by score and apply allocations
-        sorted_rets = exit_rets[sorted_args]
-        sized_rets = sorted_rets * allocations
-        # Return to original order
-        exit_rets = sized_rets[np.argsort(sorted_args)]
-
     return exit_rets.astype(np.float32)
 
 
@@ -882,14 +868,11 @@ def _simulate_barwise_path_policy(
     if not any([enable_trailing, enable_early_exit, enable_compression, enable_barrier_conf]):
         tp_mult = float(params.get("tp_mult", 1.0))
         sl_mult = float(params.get("sl_mult", 1.0))
-        # Get scores from context if available
-        scores = context.get("confidence")
         # Call the baseline simulation directly for identical results
         return _simulate_tpsl_from_paths_unified(
             context,
             tp_mult=tp_mult,
             sl_mult=sl_mult,
-            scores=scores,
             enable_trailing=False,
             is_baseline=True,
         )
@@ -971,8 +954,6 @@ def _simulate_barwise_path_policy(
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
     progress_threshold = float(params.get("progress_threshold", 0.0))
     mfe_progress_threshold = float(params.get("mfe_progress_threshold", 0.25))
-    x_base = float(params.get("x_base", 0.4))
-    gamma = float(params.get("gamma", 0.0))
     trail_mult = float(params.get("trail_mult", 0.5))  # Simple TP-anchored trailing
 
     enable_early_exit = bool(params.get("enable_early_exit", True))
@@ -989,7 +970,6 @@ def _simulate_barwise_path_policy(
     prev_mae = np.zeros(n_trades, dtype=np.float32)
 
     tp_hit_ever = np.zeros(n_trades, dtype=bool)
-    highest_ext = np.zeros(n_trades, dtype=np.float32)
     
     # TP-anchored trailing state (matching baseline)
     extreme_price = entry.copy()  # Track highest high / lowest low
@@ -1116,18 +1096,24 @@ def _simulate_barwise_path_policy(
 
         sl_hit = worst_ret <= -sl_eff
         trail_hit = trail_active & (worst_ret <= trail_floor_ret) & enable_trailing
+        simple_tp_hit = tp_hit & (~enable_trailing)
 
         bar_exit = np.full(len(idx), np.nan, dtype=np.float32)
-        bar_exit = np.where(open_sl, -sl_eff, bar_exit)
+        bar_exit = np.where(simple_tp_hit, tp_dist_a, bar_exit)
         bar_exit = np.where(open_trail & np.isnan(bar_exit), trail_floor_ret, bar_exit)
+        bar_exit = np.where(open_sl & np.isnan(bar_exit), -sl_eff, bar_exit)
 
-        hard_hit = sl_hit | trail_hit | open_sl | open_trail
+        hard_hit = sl_hit | trail_hit | open_sl | open_trail | simple_tp_hit
         bar_exit = np.where(
             np.isnan(bar_exit),
             np.where(
-                sl_hit,
-                -sl_eff,
-                np.where(trail_hit, trail_floor_ret, np.nan),
+                simple_tp_hit,
+                tp_dist_a,
+                np.where(
+                    trail_hit,
+                    trail_floor_ret,
+                    np.where(sl_hit, -sl_eff, np.nan),
+                )
             ),
             bar_exit,
         )
@@ -1182,13 +1168,9 @@ def _simulate_barwise_path_policy(
 
         discretionary_exit = ~(hard_hit) & (fail_exit | path_exit)
         if np.any(discretionary_exit):
-            floor_ret = -0.25 * sl_eff
-            discretionary_ret = np.where(
-                close_ret > 0.0, close_ret, np.minimum(close_ret, floor_ret)
-            )
             bar_exit = np.where(
                 discretionary_exit,
-                discretionary_ret,
+                close_ret,
                 bar_exit,
             )
 
@@ -1333,6 +1315,9 @@ def replay_exit_policy(
             & (s_path < theta_path)
             & (~high_cont)
         )
+        # Note: in vectorize replay we don't have close_ret easily accessible,
+        # but the fallback is just whatever return the trade had at that point
+        # For the fail_exit/path_exit we apply a floor ret previously calculated as -0.25 * sl_dist
         floor_ret = -0.25 * sl_dist
         disc_ret = np.where(rets > 0.0, rets, np.minimum(rets, floor_ret))
         rets = np.where(fail_exit | path_exit, disc_ret, rets)
@@ -1360,22 +1345,21 @@ def replay_exit_policy(
 
     trail_on = (mfe >= tp_dist) & enable_trailing
 
-    # In vectorized replay, we don't have full path history, so we approximate
-    # hysteresis by quantizing the extension by 0.05 ATR.
-    hysteresis = 0.05 * barrier
     current_ext = np.maximum(0.0, mfe - tp_dist)
-    # Floor division quantizes the extension
-    highest_ext_idx = np.floor(current_ext / np.maximum(hysteresis, 1e-6)) * hysteresis
 
-    ext_atr = highest_ext_idx / np.maximum(barrier, 1e-6)
+    ext_atr = current_ext / np.maximum(barrier, 1e-6)
     x_dynamic = x_base * np.exp(-gamma * ext_atr)
 
-    trail_floor = tp_dist + (1.0 - x_dynamic) * highest_ext_idx
+    trail_floor = tp_dist + (1.0 - x_dynamic) * current_ext
 
     # Apply trail floor if trailing is active
     rets = np.where(trail_on, np.maximum(rets, trail_floor), rets)
 
-    sl_scale = 1.0 + 0.4 * (m - 1.0)
+    if any([enable_trailing, enable_early_exit, enable_compression, enable_barrier_conf]):
+        sl_scale = 1.0 + 0.4 * (m - 1.0)
+    else:
+        sl_scale = 1.0
+
     # We no longer hard-clip at TP. It's just an activation threshold.
     rets = np.maximum(rets, -sl_dist * sl_scale)
     return rets.astype(np.float32)
@@ -1771,7 +1755,7 @@ def _sequential_optimise(
     best_trail_mult = float(best_val_params.get("trail_mult", 0.5))
     baseline_rets_raw = None
     if has_future_paths_ctx:
-        baseline_rets_raw = _simulate_baseline_tpsl_from_paths(
+        baseline_rets_raw = _simulate_tpsl_from_paths_unified(
             context,
             tp_mult=fixed_tp_mult,
             sl_mult=fixed_sl_mult,
@@ -2062,12 +2046,10 @@ def run_policy_optimisation(
             # Use the SAME sizer-derived TP/SL and optimized trail_mult
             # Also apply the SAME 5-15% confidence-weighted position sizing
             best_trail_mult = float(best.get("trail_mult", 0.5))
-            baseline_rets_raw = _simulate_baseline_tpsl_from_paths(
+            baseline_rets_raw = _simulate_tpsl_from_paths_unified(
                 context,
                 tp_mult=tp_mult_to_use,
                 sl_mult=sl_mult_to_use,
-                scores=conf,  # sizer confidence scores for position sizing
-                wallet_range=(0.05, 0.15),
                 trail_mult=best_trail_mult,
                 enable_trailing=False,  # BASIC RUN: Simple TP/SL only, no trailing
             )

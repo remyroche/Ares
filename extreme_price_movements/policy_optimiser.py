@@ -202,6 +202,7 @@ def _metric_score(
     cost_pct: float = 0.003,
     already_net: bool = False,
     executed_mask: Optional[np.ndarray] = None,
+    sizes: Optional[np.ndarray] = None,
 ) -> Dict[str, float]:
     if len(rets) == 0:
         return {
@@ -219,11 +220,19 @@ def _metric_score(
         executed_mask = np.asarray(executed_mask, dtype=bool)
         if executed_mask.shape[0] == len(rets):
             rets = rets[executed_mask]
-    # Avoid double-counting costs if returns already include them
+            if sizes is not None and sizes.shape[0] == executed_mask.shape[0]:
+                sizes = sizes[executed_mask]
+
+    if sizes is None:
+        sizes = np.ones_like(rets)
+
+    # Apply sizing and exact fee calculation. Fee is proportional to size * 0.003
+    # rets are raw returns here, we multiply by size then subtract fee * size
     if already_net:
-        net_rets = rets.astype(np.float64)
+        net_rets = rets.astype(np.float64) * sizes
     else:
-        net_rets = rets.astype(np.float64) - float(cost_pct)
+        net_rets = (rets.astype(np.float64) - float(cost_pct)) * sizes
+
     downside = net_rets[net_rets < 0]
     ds_std = float(np.std(downside)) if len(downside) > 1 else 1e-6
     gross_win = float(np.sum(net_rets[net_rets > 0]))
@@ -667,8 +676,7 @@ def _simulate_tpsl_from_paths_unified(
     context: Dict[str, np.ndarray],
     tp_mult: float = 1.0,
     sl_mult: float = 1.0,
-    trail_mult: float = 0.5,
-    enable_trailing: bool = True,
+    enable_trailing: bool = False,
     is_baseline: bool = True,  # If True, this is baseline simulation
 ) -> Optional[np.ndarray]:
     """UNIFIED simulation for both baseline and policy - ensures identical results.
@@ -734,8 +742,11 @@ def _simulate_tpsl_from_paths_unified(
     extreme_price = entry.copy()  # Highest high (long) or lowest low (short) seen
     trailing_thresh = np.zeros(n_trades, dtype=np.float32)  # Trailing stop threshold
 
+    # We will keep track of exactly what bar a trade exits to compute time-in-market
+
     for bar in range(max_bars):
         active = (~exited) & (bar < future_lengths)
+
         if not np.any(active):
             break
 
@@ -790,24 +801,9 @@ def _simulate_tpsl_from_paths_unified(
                 extreme_ret = side_a[i_idx] * (extreme_price[trade_idx] / ent[i_idx] - 1.0)
                 if extreme_ret >= tp_dist_a[i_idx]:
                     tp_activated[trade_idx] = True
-                    # Set initial trailing threshold
-                    # trail_mult * distance from extreme back to activation
-                    activation_price = ent[i_idx] * (1.0 + tp_dist_a[i_idx]) if side_a[i_idx] > 0 else ent[i_idx] * (1.0 - tp_dist_a[i_idx])
-                    trail_dist = trail_mult * abs(extreme_price[trade_idx] - activation_price)
-                    if side_a[i_idx] > 0:  # Long
-                        trailing_thresh[trade_idx] = extreme_price[trade_idx] - trail_dist
-                    else:  # Short
-                        trailing_thresh[trade_idx] = extreme_price[trade_idx] + trail_dist
-        
-        # Update trailing threshold if already activated and new extreme reached
-        for i_idx, trade_idx in enumerate(idx):
-            if tp_activated[trade_idx]:
-                activation_price = ent[i_idx] * (1.0 + tp_dist_a[i_idx]) if side_a[i_idx] > 0 else ent[i_idx] * (1.0 - tp_dist_a[i_idx])
-                trail_dist = trail_mult * abs(extreme_price[trade_idx] - activation_price)
-                if side_a[i_idx] > 0:  # Long
-                    trailing_thresh[trade_idx] = extreme_price[trade_idx] - trail_dist
-                else:  # Short
-                    trailing_thresh[trade_idx] = extreme_price[trade_idx] + trail_dist
+
+        # No trailing logic available here - this is the simple fallback / baseline simulator.
+        # Trailing should be off here anyway.
         
         # Check exit conditions
         bar_exit = np.full(len(idx), np.nan, dtype=np.float32)
@@ -954,7 +950,10 @@ def _simulate_barwise_path_policy(
     sl_gate = float(params.get("sl_early_exit_threshold", 0.4))
     progress_threshold = float(params.get("progress_threshold", 0.0))
     mfe_progress_threshold = float(params.get("mfe_progress_threshold", 0.25))
-    trail_mult = float(params.get("trail_mult", 0.5))  # Simple TP-anchored trailing
+
+    trailing_power = float(params.get("trailing_power", 1.0))
+    trailing_squash_divisor = float(params.get("trailing_squash_divisor", 1.0))
+    trailing_override_alpha = float(params.get("trailing_override_alpha", 0.0))
 
     enable_early_exit = bool(params.get("enable_early_exit", True))
     enable_trailing = bool(params.get("enable_trailing", True))
@@ -975,8 +974,20 @@ def _simulate_barwise_path_policy(
     extreme_price = entry.copy()  # Track highest high / lowest low
     trailing_thresh = np.zeros(n_trades, dtype=np.float32)
 
+    import pandas as pd
+    # Strict causal expanding median grouped by symbol to avoid cross-asset contamination
+    if "symbol" in context:
+        df_atr = pd.DataFrame({"barrier": barrier, "symbol": context["symbol"]})
+        full_median_atr = df_atr.groupby("symbol")["barrier"].expanding(min_periods=1).median().reset_index(level=0, drop=True).sort_index().values.astype(np.float32)
+    else:
+        full_median_atr = pd.Series(barrier).expanding(min_periods=1).median().values.astype(np.float32)
+
+    # We will keep track of exactly what bar a trade exits to compute time-in-market
+    exit_lengths = np.full(n_trades, max_bars, dtype=np.int32)
+
     for bar in range(max_bars):
         active = (~exited) & (bar < future_lengths)
+
         if not np.any(active):
             break
 
@@ -1039,7 +1050,7 @@ def _simulate_barwise_path_policy(
         tp_hit = best_ret >= tp_dist_a
         tp_hit_ever[idx] = tp_hit_ever[idx] | tp_hit
         
-        # --- SIMPLE TP-ANCHORED TRAILING (matching baseline) ---
+        # --- NEW TRAILING LOGIC ---
         # Update extreme price tracking
         for i_idx, trade_idx in enumerate(idx):
             if side_a[i_idx] > 0:  # Long
@@ -1049,30 +1060,42 @@ def _simulate_barwise_path_policy(
                 if bar_low[i_idx] < extreme_price[trade_idx]:
                     extreme_price[trade_idx] = bar_low[i_idx]
         
-        # Check TP activation and set trailing threshold
+        # Calculate ATR-based median
+        atr_ratio_a = barrier_a / np.maximum(full_median_atr[idx], 1e-6)
+        trailing_override_band_a = trailing_override_alpha * atr_ratio_a
+        giveback_beta_param = float(params.get("giveback_beta", 0.5))
+
+        # Check activation and set trailing threshold
         for i_idx, trade_idx in enumerate(idx):
             extreme_ret = side_a[i_idx] * (extreme_price[trade_idx] / ent[i_idx] - 1.0)
-            if not tp_hit_ever[trade_idx]:  # Not yet activated
-                if extreme_ret >= tp_dist_a[i_idx]:
-                    tp_hit_ever[trade_idx] = True
-                    # TP-anchored: threshold = TP + trail_mult * (extreme - TP)
-                    tp_price = ent[i_idx] * (1.0 + tp_dist_a[i_idx]) if side_a[i_idx] > 0 else ent[i_idx] * (1.0 - tp_dist_a[i_idx])
-                    profit_above_tp = abs(extreme_price[trade_idx] - tp_price)
-                    trail_dist = trail_mult * profit_above_tp
-                    if side_a[i_idx] > 0:
-                        trailing_thresh[trade_idx] = extreme_price[trade_idx] - trail_dist
-                    else:
-                        trailing_thresh[trade_idx] = extreme_price[trade_idx] + trail_dist
-            else:
-                # Already activated, update threshold
-                tp_price = ent[i_idx] * (1.0 + tp_dist_a[i_idx]) if side_a[i_idx] > 0 else ent[i_idx] * (1.0 - tp_dist_a[i_idx])
-                profit_above_tp = abs(extreme_price[trade_idx] - tp_price)
-                trail_dist = trail_mult * profit_above_tp
+
+            # Activation condition based on unrealized PnL (extreme_ret) exceeding the band
+            if extreme_ret > trailing_override_band_a[i_idx]:
+                tp_hit_ever[trade_idx] = True
+
+                activation_price = ent[i_idx] * (1.0 + trailing_override_band_a[i_idx]) if side_a[i_idx] > 0 else ent[i_idx] * (1.0 - trailing_override_band_a[i_idx])
+                profit_above_activation = abs(extreme_price[trade_idx] - activation_price)
+
+                # Apply power curve
+                profit_above_activation_ret = profit_above_activation / ent[i_idx]
+                trail_dist_ret = (profit_above_activation_ret ** trailing_power) / trailing_squash_divisor
+                trail_dist = trail_dist_ret * ent[i_idx]
+
+                # Giveback constraint
+                D = giveback_beta_param * atr_ratio_a[i_idx] / 100.0
+
                 if side_a[i_idx] > 0:
-                    trailing_thresh[trade_idx] = extreme_price[trade_idx] - trail_dist
+                    power_stop = extreme_price[trade_idx] - trail_dist
+                    giveback_stop = extreme_price[trade_idx] * (1.0 - D)
+                    trailing_thresh[trade_idx] = min(power_stop, giveback_stop)
                 else:
-                    trailing_thresh[trade_idx] = extreme_price[trade_idx] + trail_dist
-        
+                    power_stop = extreme_price[trade_idx] + trail_dist
+                    giveback_stop = extreme_price[trade_idx] * (1.0 + D)
+                    trailing_thresh[trade_idx] = max(power_stop, giveback_stop)
+            else:
+                # Keep active flag as false if not breached
+                pass
+
         trail_active = tp_hit_ever[idx]
         # Convert price threshold to return for exit logic
         # trail_floor_price = trailing_thresh[idx]
@@ -1092,16 +1115,23 @@ def _simulate_barwise_path_policy(
             sl_eff = sl_dist_a * (1.0 - c_alpha)
 
         open_sl = open_ret <= -sl_eff
-        open_trail = trail_active & (open_ret <= trail_floor_ret) & enable_trailing
 
         sl_hit = worst_ret <= -sl_eff
-        trail_hit = trail_active & (worst_ret <= trail_floor_ret) & enable_trailing
+        # Check trail breach symmetrically: Longs check Low, Shorts check High
+        trail_hit_long = (side_a > 0) & (bar_low <= trailing_thresh[idx])
+        trail_hit_short = (side_a < 0) & (bar_high >= trailing_thresh[idx])
+        trail_hit = trail_active & (trail_hit_long | trail_hit_short) & enable_trailing
+
+        # For simplicity, open_trail is checked on open_ret vs trail_floor_ret to be completely symmetric
+        # regardless of long/short since return handles side inversion
+        open_trail = trail_active & (open_ret <= trail_floor_ret) & enable_trailing
+
         simple_tp_hit = tp_hit & (~enable_trailing)
 
         bar_exit = np.full(len(idx), np.nan, dtype=np.float32)
-        bar_exit = np.where(simple_tp_hit, tp_dist_a, bar_exit)
+        bar_exit = np.where(open_sl, -sl_eff, bar_exit)
         bar_exit = np.where(open_trail & np.isnan(bar_exit), trail_floor_ret, bar_exit)
-        bar_exit = np.where(open_sl & np.isnan(bar_exit), -sl_eff, bar_exit)
+        bar_exit = np.where(simple_tp_hit & np.isnan(bar_exit), tp_dist_a, bar_exit)
 
         hard_hit = sl_hit | trail_hit | open_sl | open_trail | simple_tp_hit
         bar_exit = np.where(
@@ -1179,6 +1209,10 @@ def _simulate_barwise_path_policy(
             exit_idx = idx[exit_now]
             exit_rets[exit_idx] = bar_exit[exit_now]
             exited[exit_idx] = True
+            exit_lengths[exit_idx] = bar + 1
+
+    # Inject lengths into context so downstream components can use them
+    context["_cached_lengths_"] = exit_lengths
 
     return exit_rets.astype(np.float32)
 
@@ -1317,10 +1351,7 @@ def replay_exit_policy(
         )
         # Note: in vectorize replay we don't have close_ret easily accessible,
         # but the fallback is just whatever return the trade had at that point
-        # For the fail_exit/path_exit we apply a floor ret previously calculated as -0.25 * sl_dist
-        floor_ret = -0.25 * sl_dist
-        disc_ret = np.where(rets > 0.0, rets, np.minimum(rets, floor_ret))
-        rets = np.where(fail_exit | path_exit, disc_ret, rets)
+        rets = np.where(fail_exit | path_exit, rets, rets)
 
     if enable_compression:
         mfe_norm = mfe / np.maximum(tp_dist, 1e-4)
@@ -1340,17 +1371,39 @@ def replay_exit_policy(
         sl_eff = sl_dist * (1.0 - c_alpha)
         rets = np.maximum(rets, -sl_eff)
 
-    x_base = float(params.get("x_base", 0.4))
-    gamma = float(params.get("gamma", 0.0))
+    trailing_power = float(params.get("trailing_power", 1.0))
+    trailing_squash_divisor = float(params.get("trailing_squash_divisor", 1.0))
+    trailing_override_alpha = float(params.get("trailing_override_alpha", 0.0))
+    giveback_beta_param = float(params.get("giveback_beta", 0.5))
 
-    trail_on = (mfe >= tp_dist) & enable_trailing
+    # Compute expanding median ATR strictly causally across the mask to prevent future leakage
+    # Using a fast pandas rolling median grouped by symbol to prevent cross-asset leakage
+    import pandas as pd
+    if "symbol" in context:
+        df_atr = pd.DataFrame({"barrier": barrier, "symbol": context["symbol"]})
+        median_atr = df_atr.groupby("symbol")["barrier"].expanding(min_periods=1).median().reset_index(level=0, drop=True).sort_index().values.astype(np.float32)
+    else:
+        median_atr = pd.Series(barrier).expanding(min_periods=1).median().values.astype(np.float32)
 
-    current_ext = np.maximum(0.0, mfe - tp_dist)
+    atr_ratio = barrier / np.maximum(median_atr, 1e-6)
+    trailing_override_band = trailing_override_alpha * atr_ratio
 
-    ext_atr = current_ext / np.maximum(barrier, 1e-6)
-    x_dynamic = x_base * np.exp(-gamma * ext_atr)
+    trail_on = (mfe > trailing_override_band) & enable_trailing
 
-    trail_floor = tp_dist + (1.0 - x_dynamic) * current_ext
+    # Activation price return is exactly trailing_override_band
+    # Profit above activation (in return terms)
+    profit_above_activation_ret = np.maximum(0.0, mfe - trailing_override_band)
+
+    # Apply power curve
+    trail_dist_ret = (profit_above_activation_ret ** trailing_power) / trailing_squash_divisor
+
+    # Giveback constraint
+    D = giveback_beta_param * atr_ratio / 100.0
+
+    # Trail floor is the max profit minus the giveback distance
+    power_stop = mfe - trail_dist_ret
+    giveback_stop = mfe - D
+    trail_floor = np.minimum(power_stop, giveback_stop)
 
     # Apply trail floor if trailing is active
     rets = np.where(trail_on, np.maximum(rets, trail_floor), rets)
@@ -1382,60 +1435,28 @@ def _sequential_optimise(
 
     # Group parameters into families for incremental testing
     # Each family is tested separately - if it degrades performance, it's disabled
-    # BASIC RUN: All families disabled to verify foundation (baseline = policy with simple TP/SL)
     param_families: List[Tuple[str, List[Tuple[str, List[Any]]]]] = [
-        # DISABLED FOR BASIC RUN:
-        # (
-        #     "tp_anchored_giveback_combo",
-        #     [
-        #         ("tp_mult", [1.0, 1.2, 1.5, 1.8, 2.0, 2.5]),
-        #         ("sl_mult", [0.8, 1.0, 1.2]),
-        #         ("trail_mult", [0.1, 0.2, 0.3, 0.5, 0.7, 1.0]),
-        #         ("x_base", [0.2, 0.4, 0.6]),
-        #         ("gamma", [0.2, 0.5, 1.0, 1.5]),
-        #     ],
-        # ),
-        # DISABLED FOR TRAILING PROFIT DIAGNOSTIC:
-        # (
-        #     "early_exit",
-        #     [
-        #         ("theta_fail", np.linspace(-1.0, 1.5, 11).tolist()),
-        #         ("theta_path", np.linspace(-1.5, 1.0, 11).tolist()),
-        #         ("K_early", [2, 3, 4, 5]),
-        #         ("d_path", [1, 2, 3]),
-        #         ("progress_threshold", [0.00, 0.05, 0.10, 0.15, 0.20, 0.25]),
-        #         ("mfe_progress_threshold", [0.1, 0.15, 0.25, 0.4]),
-        #     ],
-        # ),
-        # (
-        #     "barrier_conf",
-        #     [
-        #         ("tp_conf_threshold", [0.3, 0.4, 0.5, 0.6, 0.7]),
-        #         ("sl_early_exit_threshold", [0.2, 0.3, 0.4, 0.5]),
-        #         ("continuation_conf_threshold", [0.4, 0.5, 0.6, 0.7]),
-        #     ],
-        # ),
-        # (
-        #     "compression",
-        #     [
-        #         ("compression_start", [0.30, 0.50, 0.70]),
-        #         ("compression_full", [0.80, 1.00, 1.20]),
-        #         ("compression_max_fraction", [0.20, 0.40, 0.60]),
-        #     ],
-        # ),
-        # (
-        #     "multiplier_band",
-        #     [
-        #         ("multiplier_band", [(0.70, 1.30), (0.80, 1.20), (0.85, 1.15)]),
-        #     ],
-        # ),
-        # (
-        #     "scoring_weights",
-        #     [
-        #         ("a1", np.linspace(0.0, 1.0, 11).tolist()),
-        #         ("b1", np.linspace(0.0, 1.0, 11).tolist()),
-        #     ],
-        # ),
+        (
+            "position_sizing",
+            [
+                ("size_power", [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]),
+            ],
+        ),
+        (
+            "trailing_stop",
+            [
+                ("trailing_power", [1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]),
+                ("trailing_squash_divisor", [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0]),
+                ("trailing_override_alpha", [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]),
+                ("giveback_beta", [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]),
+            ],
+        ),
+        (
+            "multiplier_band",
+            [
+                ("multiplier_band", [(0.70, 1.30), (0.80, 1.20), (0.85, 1.15)]),
+            ],
+        ),
     ]
 
     # Check if future paths are available for fair baseline computation
@@ -1453,29 +1474,92 @@ def _sequential_optimise(
     ] = []  # (param_name, value, train_pnl, val_pnl)
 
     # Use path-based simulation when future paths available - this is the FAIR comparison
+    def _get_position_sizes(rets: np.ndarray, params_to_use: Dict[str, Any], mask_idx: np.ndarray) -> np.ndarray:
+        sizes = np.ones_like(rets)
+        size_power = float(params_to_use.get("size_power", 1.0))
+        if size_power == 1.0 and "size_power" not in params_to_use:
+            return sizes
+        if len(rets) == 0:
+            return sizes
+
+        scores = context.get("confidence")
+        if scores is None or len(scores) != len(rets):
+            return sizes
+
+        subset_scores = scores[mask_idx]
+        if len(subset_scores) > 0:
+            # Rank percentile among approved trades
+            ranks = np.argsort(np.argsort(subset_scores))
+            approved_rank_pct = ranks / float(max(1, len(subset_scores) - 1))
+
+            size_min = 0.05
+            size_max = 0.15
+            position_sizes = size_min + (size_max - size_min) * (approved_rank_pct ** size_power)
+
+            sizes[mask_idx] = position_sizes
+
+        return sizes
+
     # Both baseline and policy should be evaluated on raw price paths
-    def _simulate_policy(params_to_use: Dict[str, Any]) -> Optional[np.ndarray]:
+    def _simulate_policy(params_to_use: Dict[str, Any], evaluate_mask: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """Returns raw returns and sizing array."""
         if has_future_paths_ctx:
-            return _simulate_barwise_path_policy(base_returns, context, params_to_use)
-        return replay_exit_policy(base_returns, context, params_to_use)
+            rets = _simulate_barwise_path_policy(base_returns, context, params_to_use)
+        else:
+            rets = replay_exit_policy(base_returns, context, params_to_use)
+
+        sizes = None
+        if rets is not None:
+            # Apply concurrency logic
+            if "timestamps_ms" in context and "symbol" in context:
+                # We need exit timestamps for concurrency. We can approximate them using lengths.
+                # If length is nan, trade wasn't taken or didn't finish.
+                lengths = context.get("_cached_lengths_")
+                if lengths is None:
+                    # Very rough fallback if length calculation is unavailable in simulation scope
+                    lengths = np.full(len(rets), 24, dtype=np.float32)
+
+                # Approximate exit ms
+                bar_ms = 3600000  # assuming 1h bars, rough heuristic
+                exit_ms = context["timestamps_ms"] + (np.nan_to_num(lengths, nan=0.0) * bar_ms).astype(np.int64)
+
+                conc_mask = _fast_concurrency_mask(
+                    context["timestamps_ms"],
+                    exit_ms,
+                    context["symbol"],
+                    context.get("confidence", np.zeros(len(rets))),
+                )
+
+                # Zero out returns for trades rejected by concurrency
+                rets = np.where(conc_mask, rets, np.nan)
+
+            sizes = _get_position_sizes(rets, params_to_use, evaluate_mask)
+        return rets, sizes
 
     # Test each parameter family incrementally
     # If a family degrades performance, disable it and move to next
-    baseline_rets = _simulate_policy(params)
+    baseline_rets, baseline_sizes = _simulate_policy(params, val_mask)
     if baseline_rets is not None:
-        baseline_val_metric = _metric_score(
+        baseline_val_metrics = _metric_score(
             baseline_rets[val_mask],
             cost_pct=cost_pct,
             already_net=False,
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
-        )["net_pnl"]
+            sizes=baseline_sizes[val_mask] if baseline_sizes is not None else None,
+            ts_vals=context.get("timestamps_ms", np.arange(len(baseline_rets)))[val_mask] if "timestamps_ms" in context else None,
+            scores=context.get("confidence")[val_mask] if context.get("confidence") is not None else None,
+        )
+        baseline_val_metrics["robust_downside_ratio"] = baseline_val_metrics["net_pnl"] / np.sqrt(baseline_val_metrics["robust_downside_semi_variance"])
+
+        baseline_val_metric = 0.0
     else:
         baseline_val_metric = -1e18
 
     # Track best validation score and corresponding params across families
     best_overall_val_metric = baseline_val_metric
+    best_overall_val_metrics = baseline_val_metrics if baseline_rets is not None else {}
     best_overall_params = dict(params)
 
     disabled_families: List[str] = []
@@ -1502,22 +1586,81 @@ def _sequential_optimise(
 
         import optuna
 
-        is_large_family = family_name in ("early_exit", "tp_anchored_giveback_combo")
+        # We evaluate scores on the current stage/family.
+        # This will be useful to perform Z-score normalisation over all trials.
+
+        family_train_scores_all_metrics = []
+        family_trial_configs = []
+
+        is_large_family = family_name in ("early_exit", "trailing_stop")
+
+        if "_progression_" not in best_overall_params:
+            best_overall_params["_progression_"] = []
+            # we record baseline
+            best_overall_params["_progression_"].append({
+                "step_name": "Baseline",
+                "params": dict(best_overall_params),
+                "metrics": dict(best_overall_val_metrics),
+                "score": float(best_overall_val_metric)
+            })
+
+        # Precompute baseline reference for static Z-score normalization
+        baseline_metrics = _metric_score(
+            baseline_rets[train_mask],
+            cost_pct=cost_pct,
+            already_net=False,
+            executed_mask=(executed_mask[train_mask] if executed_mask is not None else None),
+            sizes=baseline_sizes[train_mask] if baseline_sizes is not None else None,
+            ts_vals=context.get("timestamps_ms", np.arange(len(baseline_rets)))[train_mask] if "timestamps_ms" in context else None,
+            scores=context.get("confidence")[train_mask] if context.get("confidence") is not None else None,
+        )
+        baseline_metrics["robust_downside_ratio"] = baseline_metrics["net_pnl"] / np.sqrt(baseline_metrics["robust_downside_semi_variance"])
+
+        # We need a small delta to prevent division by zero in IQR
+        def _calculate_custom_score(metrics: Dict[str, float]) -> float:
+
+            def z(val: float, key: str) -> float:
+                # We use the baseline metric as the median, and a fixed percentage (e.g. 10% of abs baseline or a small epsilon) as IQR
+                # to keep normalization completely stable across Optuna trials.
+                med = float(baseline_metrics.get(key, 0.0))
+                iqr = max(abs(med) * 0.1, 1e-5)
+                return (val - med) / iqr
+
+            return (
+                0.15 * z(metrics.get("net_pnl", 0.0), "net_pnl") +
+                0.10 * z(metrics.get("net_pnl", 0.0) / np.sqrt(metrics.get("robust_downside_semi_variance", 1e-6)), "robust_downside_ratio") +
+                0.10 * z(metrics.get("pnl_top_25pct_taken_trades", 0.0), "pnl_top_25pct_taken_trades") +
+                0.14 * z(metrics.get("weekly_sortino", 0.0), "weekly_sortino") +
+                0.11 * z(metrics.get("monthly_sortino", 0.0), "monthly_sortino") +
+                0.06 * z(metrics.get("median_pnl_per_winning_trade", 0.0), "median_pnl_per_winning_trade") +
+                0.05 * z(metrics.get("weekly_gtp", 0.0), "weekly_gtp") +
+                0.05 * z(metrics.get("trade_return_skew", 0.0), "trade_return_skew") -
+                0.16 * z(metrics.get("ulcer", 0.0), "ulcer") -
+                0.08 * z(metrics.get("tuw", 0.0), "tuw") -
+                0.08 * z(metrics.get("neg_months_pct", 0.0), "neg_months_pct") -
+                0.06 * z(metrics.get("worst_week_dd_mag", 0.0), "worst_week_dd_mag")
+            )
 
         if is_large_family:
             # Use Optuna for large families
-            current_rets = _simulate_policy(family_best_params)
+            current_rets, current_sizes = _simulate_policy(family_best_params, train_mask)
             if current_rets is not None:
-                current_train_score = _metric_score(
+                current_metrics = _metric_score(
                     current_rets[train_mask],
                     cost_pct=cost_pct,
                     already_net=False,
                     executed_mask=(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
-                )["net_pnl"]
+                    sizes=current_sizes[train_mask] if current_sizes is not None else None,
+                    ts_vals=context.get("timestamps_ms", np.arange(len(current_rets)))[train_mask] if "timestamps_ms" in context else None,
+                    scores=context.get("confidence")[train_mask] if context.get("confidence") is not None else None,
+                )
+                # Compute robust downside ratio
+                current_metrics["robust_downside_ratio"] = current_metrics["net_pnl"] / np.sqrt(current_metrics["robust_downside_semi_variance"])
+                family_train_scores_all_metrics.append(current_metrics)
             else:
-                current_train_score = -1e18
+                current_metrics = {}
 
             tprint(f"  Using Optuna to optimize {family_name}...")
 
@@ -1540,21 +1683,73 @@ def _sequential_optimise(
                     else:
                         trial_params[name] = cand
 
-                rets = _simulate_policy(trial_params)
+                # Split train mask into 5 folds
+                valid_train_idx = np.where(train_mask)[0]
+                fold_size = len(valid_train_idx) // 5
+
+                fold_scores = []
+                for i in range(5):
+                    start = i * fold_size
+                    end = (i + 1) * fold_size if i < 4 else len(valid_train_idx)
+                    fold_mask = np.zeros(len(train_mask), dtype=bool)
+                    fold_mask[valid_train_idx[start:end]] = True
+
+                    f_rets, f_sizes = _simulate_policy(trial_params, fold_mask)
+                    if f_rets is None:
+                        trial.report(-1e18, i)
+                        if trial.should_prune():
+                            raise optuna.TrialPruned()
+                        fold_scores.append(-1e18)
+                        continue
+
+                    f_metrics = _metric_score(
+                        f_rets[fold_mask],
+                        cost_pct=cost_pct,
+                        already_net=False,
+                        executed_mask=(executed_mask[fold_mask] if executed_mask is not None else None),
+                        sizes=f_sizes[fold_mask] if f_sizes is not None else None,
+                        ts_vals=context.get("timestamps_ms", np.arange(len(f_rets)))[fold_mask] if "timestamps_ms" in context else None,
+                        scores=context.get("confidence")[fold_mask] if context.get("confidence") is not None else None,
+                    )
+                    f_metrics["robust_downside_ratio"] = f_metrics["net_pnl"] / np.sqrt(f_metrics["robust_downside_semi_variance"])
+
+                    # Store metrics for dynamic calculation
+                    family_train_scores_all_metrics.append(f_metrics)
+                    f_score = _calculate_custom_score(f_metrics, family_train_scores_all_metrics)
+
+                    trial.report(f_score, i)
+                    if trial.should_prune():
+                        raise optuna.TrialPruned()
+
+                    fold_scores.append(f_score)
+
+                # Full train evaluation
+                rets, sizes = _simulate_policy(trial_params, train_mask)
                 if rets is None:
                     return -1e18
 
-                train_score = _metric_score(
+                metrics = _metric_score(
                     rets[train_mask],
                     cost_pct=cost_pct,
                     already_net=False,
                     executed_mask=(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
-                )["net_pnl"]
-                return float(train_score)
+                    sizes=sizes[train_mask] if sizes is not None else None,
+                    ts_vals=context.get("timestamps_ms", np.arange(len(rets)))[train_mask] if "timestamps_ms" in context else None,
+                    scores=context.get("confidence")[train_mask] if context.get("confidence") is not None else None,
+                )
+                metrics["robust_downside_ratio"] = metrics["net_pnl"] / np.sqrt(metrics["robust_downside_semi_variance"])
 
-            study = optuna.create_study(direction="maximize")
+                family_train_scores_all_metrics.append(metrics)
+                family_trial_configs.append(trial_params)
+
+                return _calculate_custom_score(metrics, family_train_scores_all_metrics)
+
+            pruner = optuna.pruners.MedianPruner(n_startup_trials=20, n_warmup_steps=2, interval_steps=1)
+            sampler = optuna.samplers.TPESampler(seed=42)
+            study = optuna.create_study(direction="maximize", pruner=pruner, sampler=sampler)
+
             # Enqueue the current baseline to ensure we don't regress
             baseline_trial = {}
             for name, grid in family_params:
@@ -1573,20 +1768,123 @@ def _sequential_optimise(
 
             study.enqueue_trial(baseline_trial)
             optuna.logging.set_verbosity(optuna.logging.WARNING)
-            study.optimize(objective, n_trials=50)  # Use 50 trials for large families
 
-            best_combo_score = study.best_value
+            def early_stopping_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial):
+                if len(study.trials) > 100:
+                    best_value = study.best_value
+                    # check if no improvement in last 50 trials
+                    recent_trials = study.trials[-50:]
+                    improved_recently = any(t.value is not None and t.value > best_value - 1e-6 for t in recent_trials)
+                    if not improved_recently:
+                        study.stop()
+                        return
+
+                    if len(study.trials) > 75:
+                        older_best = max([t.value for t in study.trials[:-75] if t.value is not None] + [-1e18])
+                        if best_value > 0 and older_best > 0:
+                            if (best_value - older_best) / older_best < 0.005:
+                                study.stop()
+
+            study.optimize(objective, n_trials=400, callbacks=[early_stopping_callback])  # Use 400 trials for trailing stop family with TPE
+
+            # Re-evaluate best with final custom score
             best_combo = study.best_params
+            best_custom_score = -1e18
 
-            if best_combo_score > current_train_score + 1e-6:
-                delta_pnl = best_combo_score - current_train_score
+            # Select top 10 unique configs from trials
+            valid_trials = [t for t in study.trials if t.value is not None]
+            valid_trials.sort(key=lambda t: t.value, reverse=True)
+            top_10_configs = []
+            seen_configs = set()
+            for t in valid_trials:
+                config_str = str(sorted(t.params.items()))
+                if config_str not in seen_configs:
+                    seen_configs.add(config_str)
+                    top_10_configs.append(t.params)
+                if len(top_10_configs) == 10:
+                    break
+
+            # Re-evaluate top 10 across 5 folds (using chronologically partitioned train_mask blocks)
+            # This requires actual chronological splitting of the train_mask
+            valid_train_idx = np.where(train_mask)[0]
+            fold_size = len(valid_train_idx) // 5
+            folds = []
+            for i in range(5):
+                start = i * fold_size
+                end = (i + 1) * fold_size if i < 4 else len(valid_train_idx)
+                fold_mask = np.zeros(len(train_mask), dtype=bool)
+                fold_mask[valid_train_idx[start:end]] = True
+                folds.append(fold_mask)
+
+            top_10_scores = []
+            for config in top_10_configs:
+                fold_scores = []
+                for f_mask in folds:
+                    f_rets, f_sizes = _simulate_policy(config, f_mask)
+                    if f_rets is not None:
+                        f_metrics = _metric_score(
+                            f_rets[f_mask],
+                            cost_pct=cost_pct,
+                            already_net=False,
+                            executed_mask=(executed_mask[f_mask] if executed_mask is not None else None),
+                            sizes=f_sizes[f_mask] if f_sizes is not None else None,
+                            ts_vals=context.get("timestamps_ms", np.arange(len(f_rets)))[f_mask] if "timestamps_ms" in context else None,
+                            scores=context.get("confidence")[f_mask] if context.get("confidence") is not None else None,
+                        )
+                        f_metrics["robust_downside_ratio"] = f_metrics["net_pnl"] / np.sqrt(f_metrics["robust_downside_semi_variance"])
+                        f_score = _calculate_custom_score(f_metrics, family_train_scores_all_metrics)
+                        fold_scores.append(f_score)
+                    else:
+                        fold_scores.append(-1e18)
+
+                # selection_score = median_5fold(Score) - 0.4 * IQR_5fold(Score) + 0.1 * min_5fold(Score)
+                f_arr = np.array(fold_scores)
+                if len(f_arr) > 0 and np.all(f_arr > -1e17):
+                    f_med = np.median(f_arr)
+                    f_iqr = np.percentile(f_arr, 75) - np.percentile(f_arr, 25)
+                    f_min = np.min(f_arr)
+                    sel_score = f_med - 0.4 * f_iqr + 0.1 * f_min
+                else:
+                    sel_score = -1e18
+                top_10_scores.append((sel_score, config, f_arr))
+
+            top_10_scores.sort(key=lambda x: x[0], reverse=True)
+            if top_10_scores:
+                best_custom_score = top_10_scores[0][0]
+                best_combo = top_10_scores[0][1]
+
+                tprint("    Top 10 Finalist Selection:")
+                for rank, (s_score, cfg, f_arr) in enumerate(top_10_scores):
+                    tprint(f"      {rank+1}. Score: {s_score:.4f} | Folds: {[f'{x:.4f}' for x in f_arr]}")
+                    # Re-evaluate global metrics for this specific config to log them
+                    if rank < 10:
+                        g_rets, g_sizes = _simulate_policy(cfg, train_mask)
+                        if g_rets is not None:
+                            g_metrics = _metric_score(
+                                g_rets[train_mask],
+                                cost_pct=cost_pct,
+                                already_net=False,
+                                executed_mask=(executed_mask[train_mask] if executed_mask is not None else None),
+                                sizes=g_sizes[train_mask] if g_sizes is not None else None,
+                                ts_vals=context.get("timestamps_ms", np.arange(len(g_rets)))[train_mask] if "timestamps_ms" in context else None,
+                                scores=context.get("confidence")[train_mask] if context.get("confidence") is not None else None,
+                            )
+                            g_metrics["robust_downside_ratio"] = g_metrics["net_pnl"] / np.sqrt(g_metrics["robust_downside_semi_variance"])
+                            tprint(f"         -> Global PnL: {g_metrics['net_pnl']:.4f} | Global Sortino: {g_metrics['weekly_sortino']:.4f}")
+
+                    if rank == 0:
+                        tprint(f"         Winner Config: {cfg}")
+
+            baseline_custom_score = _calculate_custom_score(family_train_scores_all_metrics[0], family_train_scores_all_metrics)
+
+            if best_custom_score > baseline_custom_score + 1e-6:
                 tprint(
-                    f"    Optuna {family_name}: best_params={best_combo}, delta PnL={delta_pnl:+.4f}"
+                    f"    Optuna {family_name}: best_params={best_combo}, delta Score={best_custom_score - baseline_custom_score:+.4f}"
                 )
                 for name, _ in family_params:
                     cand = best_combo[name]
                     param_history.append(
-                        (name, cand, float(best_combo_score), float("nan"))
+                        (name, cand, float(best_custom_score), float("nan"))
                     )  # val appended later
                     if name == "multiplier_band":
                         (
@@ -1605,7 +1903,7 @@ def _sequential_optimise(
                 tprint(f"    Optuna {family_name}: no improvement over baseline")
         else:
             # Grid Search (Cartesian product) for small families
-            current_rets = _simulate_policy(family_best_params)
+            current_rets, current_sizes = _simulate_policy(family_best_params, train_mask)
             if current_rets is not None:
                 current_train_score = _metric_score(
                     current_rets[train_mask],
@@ -1614,6 +1912,7 @@ def _sequential_optimise(
                     executed_mask=(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
+                    sizes=current_sizes[train_mask] if current_sizes is not None else None,
                 )["net_pnl"]
             else:
                 current_train_score = -1e18
@@ -1659,7 +1958,7 @@ def _sequential_optimise(
                     else:
                         trial[name] = cand
 
-                rets = _simulate_policy(trial)
+                rets, sizes = _simulate_policy(trial, train_mask)
                 if rets is None:
                     continue
                 train_score = _metric_score(
@@ -1669,6 +1968,7 @@ def _sequential_optimise(
                     executed_mask=(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
+                    sizes=sizes[train_mask] if sizes is not None else None,
                 )["net_pnl"]
 
                 if train_score > best_combo_score + 1e-6:
@@ -1702,25 +2002,76 @@ def _sequential_optimise(
                 tprint(f"    Grid {family_name}: no improvement over baseline")
 
         # Test if this family improved over baseline
-        family_rets = _simulate_policy(family_best_params)
+        family_rets, family_sizes = _simulate_policy(family_best_params, val_mask)
         if family_rets is not None:
-            family_val_metric = _metric_score(
+            family_val_metrics = _metric_score(
                 family_rets[val_mask],
                 cost_pct=cost_pct,
                 already_net=False,
                 executed_mask=(
                     executed_mask[val_mask] if executed_mask is not None else None
                 ),
-            )["net_pnl"]
+                sizes=family_sizes[val_mask] if family_sizes is not None else None,
+                ts_vals=context.get("timestamps_ms", np.arange(len(family_rets)))[val_mask] if "timestamps_ms" in context else None,
+                scores=context.get("confidence")[val_mask] if context.get("confidence") is not None else None,
+            )
+            family_val_metrics["robust_downside_ratio"] = family_val_metrics["net_pnl"] / np.sqrt(family_val_metrics["robust_downside_semi_variance"])
+
+            # Recalculate baseline val metrics for comparison
+            baseline_val_rets, baseline_val_sizes = _simulate_policy(best_overall_params, val_mask)
+            baseline_val_metrics = _metric_score(
+                baseline_val_rets[val_mask],
+                cost_pct=cost_pct,
+                already_net=False,
+                executed_mask=(
+                    executed_mask[val_mask] if executed_mask is not None else None
+                ),
+                sizes=baseline_val_sizes[val_mask] if baseline_val_sizes is not None else None,
+                ts_vals=context.get("timestamps_ms", np.arange(len(baseline_val_rets)))[val_mask] if "timestamps_ms" in context else None,
+                scores=context.get("confidence")[val_mask] if context.get("confidence") is not None else None,
+            )
+            baseline_val_metrics["robust_downside_ratio"] = baseline_val_metrics["net_pnl"] / np.sqrt(baseline_val_metrics["robust_downside_semi_variance"])
+
+            # Since baseline_metrics is used as a static ref, we can just call it on the dict
+            validation_history = [baseline_val_metrics, family_val_metrics]
+            family_val_metric = _calculate_custom_score(family_val_metrics, validation_history)
+            best_overall_val_metric_current = _calculate_custom_score(baseline_val_metrics, validation_history)
 
             if (
-                family_val_metric > best_overall_val_metric + 0.001
+                family_val_metric > best_overall_val_metric_current + 0.001
             ):  # Significant improvement threshold
                 tprint(
-                    f"  ✓ Family '{family_name}' improved validation PnL: {best_overall_val_metric:.4f} -> {family_val_metric:.4f}"
+                    f"  ✓ Family '{family_name}' improved validation Score: {best_overall_val_metric_current:.4f} -> {family_val_metric:.4f}"
                 )
+
+                # End of family tprint
+                tprint(f"  [End of Family: {family_name} Metrics]")
+                tprint(f"    PnL: {family_val_metrics['net_pnl']:.4f}")
+                tprint(f"    Robust Downside Ratio: {family_val_metrics['robust_downside_ratio']:.4f}")
+                tprint(f"    PnL Top 25% Taken Trades: {family_val_metrics['pnl_top_25pct_taken_trades']:.4f}")
+                tprint(f"    Weekly Sortino: {family_val_metrics['weekly_sortino']:.4f}")
+                tprint(f"    Monthly Sortino: {family_val_metrics['monthly_sortino']:.4f}")
+                tprint(f"    Median PnL / Win: {family_val_metrics['median_pnl_per_winning_trade']:.4f}")
+                tprint(f"    Weekly GtP: {family_val_metrics['weekly_gtp']:.4f}")
+                tprint(f"    Trade Return Skew: {family_val_metrics['trade_return_skew']:.4f}")
+                tprint(f"    Ulcer: {family_val_metrics['ulcer']:.4f}")
+                tprint(f"    TUW: {family_val_metrics['tuw']:.4f}")
+                tprint(f"    Neg Months %: {family_val_metrics['neg_months_pct']:.4%}")
+                tprint(f"    Abs Worst Week DD: {family_val_metrics['worst_week_dd_mag']:.4f}")
+                tprint(f"    Trades/Day: {family_val_metrics['n_trades'] / 725.0:.2f}") # Approx
+                if family_val_metrics['n_trades'] > 0:
+                    tprint(f"    Avg PnL/Trade (net): {family_val_metrics['net_pnl']/family_val_metrics['n_trades']:.6f}")
+
                 best_overall_params = dict(family_best_params)
                 best_overall_val_metric = family_val_metric
+                best_overall_val_metrics = family_val_metrics
+
+                best_overall_params["_progression_"].append({
+                    "step_name": family_name,
+                    "params": dict(best_overall_params),
+                    "metrics": dict(best_overall_val_metrics),
+                    "score": float(best_overall_val_metric)
+                })
 
                 # Update param_history val scores
                 for i in range(len(param_history) - 1, -1, -1):
@@ -1748,18 +2099,16 @@ def _sequential_optimise(
 
     # Return the best params found across all families
     best_val_params = dict(best_overall_params)
-    tprint(f"Optimization complete: best_val_pnl={best_overall_val_metric:.4f}")
+
+    tprint(f"Optimization complete: best_overall_val_score={best_overall_val_metric:.4f}")
 
     # Compute fair baseline from paths when available
-    # Use optimized trail_mult if found, otherwise default
-    best_trail_mult = float(best_val_params.get("trail_mult", 0.5))
     baseline_rets_raw = None
     if has_future_paths_ctx:
         baseline_rets_raw = _simulate_tpsl_from_paths_unified(
             context,
             tp_mult=fixed_tp_mult,
             sl_mult=fixed_sl_mult,
-            trail_mult=best_trail_mult,
             enable_trailing=False,  # BASIC RUN: Simple TP/SL only, no trailing
         )
 
@@ -1771,6 +2120,8 @@ def _sequential_optimise(
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
+            ts_vals=context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))[val_mask] if "timestamps_ms" in context else None,
+            scores=context.get("confidence")[val_mask] if context.get("confidence") is not None else None,
         )
     else:
         params["metrics_baseline"] = _metric_score(
@@ -1780,19 +2131,71 @@ def _sequential_optimise(
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
+            ts_vals=context.get("timestamps_ms", np.arange(len(base_returns)))[val_mask] if "timestamps_ms" in context else None,
+            scores=context.get("confidence")[val_mask] if context.get("confidence") is not None else None,
         )
     # Use the params that achieved best validation performance, not just final accumulated
     # This prevents overfitting to training set during sequential optimization
-    final_rets = replay_exit_policy(base_returns, context, best_val_params)
+    final_rets, final_sizes = _simulate_policy(best_val_params, val_mask)
+
     best_val_params["metrics_final"] = _metric_score(
-        final_rets[val_mask],
+        final_rets[val_mask] if final_rets is not None else np.zeros(len(val_mask)),
         cost_pct=cost_pct,
         already_net=False,
         executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
+        sizes=final_sizes[val_mask] if final_sizes is not None else None,
+        ts_vals=context.get("timestamps_ms", np.arange(len(val_mask)))[val_mask] if "timestamps_ms" in context else None,
+        scores=context.get("confidence")[val_mask] if context.get("confidence") is not None else None,
     )
     best_val_params["_param_history_"] = param_history  # For diagnostics
     return best_val_params
 
+
+
+
+def _fast_concurrency_mask(
+    entry_timestamps: np.ndarray,
+    exit_timestamps: np.ndarray,
+    symbols: np.ndarray,
+    scores: np.ndarray,
+    max_global_concurrent: int = 3,
+) -> np.ndarray:
+    """
+    Generates a boolean mask indicating which trades should be executed,
+    enforcing that no two trades on the same symbol overlap, and that
+    a maximum of `max_global_concurrent` trades can be open globally at any time.
+    Trades are processed chronologically. In case of exact timestamp ties, higher confidence wins.
+    """
+    n_trades = len(entry_timestamps)
+    mask = np.zeros(n_trades, dtype=bool)
+
+    if n_trades == 0:
+        return mask
+
+    # Sort trades chronologically, then by score (descending)
+    sort_idx = np.lexsort((-scores, entry_timestamps))
+
+    active_trades = []  # List to store tuples of (exit_time, symbol)
+
+    for idx in sort_idx:
+        entry_t = entry_timestamps[idx]
+        exit_t = exit_timestamps[idx]
+        sym = symbols[idx]
+
+        # Remove trades that have already exited before or exactly at current entry time
+        active_trades = [t for t in active_trades if t[0] > entry_t]
+
+        # Check symbol constraint
+        symbol_already_active = any(t[1] == sym for t in active_trades)
+
+        # Check global constraint
+        global_cap_reached = len(active_trades) >= max_global_concurrent
+
+        if not symbol_already_active and not global_cap_reached:
+            mask[idx] = True
+            active_trades.append((exit_t, sym))
+
+    return mask
 
 def run_policy_optimisation(
     data_root: str,
@@ -2042,15 +2445,12 @@ def run_policy_optimisation(
         )
         baseline_rets_raw = None
         if has_future_paths:
-            # Compute baseline using trailing profit + hard SL from raw paths for fair comparison
-            # Use the SAME sizer-derived TP/SL and optimized trail_mult
-            # Also apply the SAME 5-15% confidence-weighted position sizing
-            best_trail_mult = float(best.get("trail_mult", 0.5))
+            # Compute baseline using simple TP + hard SL from raw paths for fair comparison
+            # Use the SAME sizer-derived TP/SL
             baseline_rets_raw = _simulate_tpsl_from_paths_unified(
                 context,
                 tp_mult=tp_mult_to_use,
                 sl_mult=sl_mult_to_use,
-                trail_mult=best_trail_mult,
                 enable_trailing=False,  # BASIC RUN: Simple TP/SL only, no trailing
             )
             if baseline_rets_raw is not None:
@@ -2059,6 +2459,8 @@ def run_policy_optimisation(
                     cost_pct=cost_pct,
                     already_net=False,
                     executed_mask=executed_mask,
+                    ts_vals=context.get("timestamps_ms", np.arange(len(baseline_rets_raw))) if "timestamps_ms" in context else None,
+                    scores=context.get("confidence") if context.get("confidence") is not None else None,
                 )
                 # Pre-capped returns = original returns from triple-barrier labeling during training
                 # Path-computed returns = re-simulated from raw OHLC using same TP/SL geometry
@@ -2075,6 +2477,8 @@ def run_policy_optimisation(
                     cost_pct=cost_pct,
                     already_net=False,
                     executed_mask=executed_mask,
+                    ts_vals=context.get("timestamps_ms", np.arange(len(base_rets))) if "timestamps_ms" in context else None,
+                    scores=context.get("confidence") if context.get("confidence") is not None else None,
                 )
         else:
             # No future paths available - use original training returns (pre-capped by triple-barrier)
@@ -2083,6 +2487,8 @@ def run_policy_optimisation(
                 cost_pct=cost_pct,
                 already_net=False,
                 executed_mask=executed_mask,
+                ts_vals=context.get("timestamps_ms", np.arange(len(base_rets))) if "timestamps_ms" in context else None,
+                scores=context.get("confidence") if context.get("confidence") is not None else None,
             )
             logger.warning(
                 "Future path data not available in context; using original training returns as baseline. "
@@ -2109,6 +2515,24 @@ def run_policy_optimisation(
         else:
             final_rets_assess = replay_exit_policy(base_rets, context, best)
 
+        def _apply_global_sizing(rets_arr: np.ndarray, strat_params: Dict[str, Any]) -> np.ndarray:
+            size_power = float(strat_params.get("size_power", 1.0))
+            if size_power == 1.0 and "size_power" not in strat_params:
+                return rets_arr
+            if len(rets_arr) == 0:
+                return rets_arr
+            scores_arr = context.get("confidence")
+            if scores_arr is None or len(scores_arr) != len(rets_arr):
+                return rets_arr
+            sized = rets_arr.copy()
+            ranks = np.argsort(np.argsort(scores_arr))
+            pcts = ranks / float(max(1, len(scores_arr) - 1))
+            sz = 0.05 + (0.15 - 0.05) * (pcts ** size_power)
+            return sized * sz
+
+        if final_rets_assess is not None:
+            final_rets_assess = _apply_global_sizing(final_rets_assess, best)
+
         # Compute metrics on validation set for fair comparison
         if baseline_rets_raw is not None:
             baseline_val_assess = _metric_score(
@@ -2118,6 +2542,8 @@ def run_policy_optimisation(
                 executed_mask=(
                     executed_mask[val_mask] if executed_mask is not None else None
                 ),
+                ts_vals=context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))[val_mask] if "timestamps_ms" in context else None,
+                scores=context.get("confidence")[val_mask] if context.get("confidence") is not None else None,
             )
         else:
             baseline_val_assess = _metric_score(
@@ -2127,6 +2553,8 @@ def run_policy_optimisation(
                 executed_mask=(
                     executed_mask[val_mask] if executed_mask is not None else None
                 ),
+                ts_vals=context.get("timestamps_ms", np.arange(len(base_rets)))[val_mask] if "timestamps_ms" in context else None,
+                scores=context.get("confidence")[val_mask] if context.get("confidence") is not None else None,
             )
 
         final_val_assess = _metric_score(
@@ -2136,6 +2564,8 @@ def run_policy_optimisation(
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
+            ts_vals=context.get("timestamps_ms", np.arange(len(final_rets_assess)))[val_mask] if "timestamps_ms" in context else None,
+            scores=context.get("confidence")[val_mask] if context.get("confidence") is not None else None,
         )
 
         # Also compute full-set metrics for reporting
@@ -2144,6 +2574,8 @@ def run_policy_optimisation(
             cost_pct=cost_pct,
             already_net=False,
             executed_mask=executed_mask,
+            ts_vals=context.get("timestamps_ms", np.arange(len(final_rets_assess))) if "timestamps_ms" in context else None,
+            scores=context.get("confidence") if context.get("confidence") is not None else None,
         )
 
         # Compare on VALIDATION SET (fair - same period used for optimization)
@@ -2200,6 +2632,100 @@ def run_policy_optimisation(
         best["wallet_range"] = [0.05, 0.15]
         best["sizer_wallet_pnl"] = sizer_wallet_pnl
         best["sizer_net_pnl"] = float(selected.get("net_pnl", 0.0))
+
+        # Build progression table for this strategy
+        if "_progression_" in best:
+            try:
+                import datetime
+                import os
+
+                dt_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                prog_filename = f"policy_progression_{dt_str}.md"
+                prog_path = Path(data_root) / "artifacts" / run_id / "policy_params" / prog_filename
+                os.makedirs(prog_path.parent, exist_ok=True)
+
+                md_content = [f"# Policy Progression for {selected['strategy_id']}", ""]
+                md_content.append(f"Run ID: {run_id}")
+                md_content.append("")
+
+                headers = ["Step", "Score", "PnL", "Rb_DownRatio", "PnL_25pct", "WkSortino", "MoSortino", "MedPnL/Win", "WkGtP", "Skew", "Ulcer", "TUW", "NegMo%", "DD_Mag", "Trades/Day", "AvgNetPnL", "Params"]
+
+                # We format a text table manually
+                row_fmt = "{:<15} | {:>8} | {:>8} | {:>12} | {:>9} | {:>9} | {:>9} | {:>10} | {:>8} | {:>6} | {:>6} | {:>5} | {:>6} | {:>8} | {:>10} | {:>9} | {}"
+
+                md_content.append(row_fmt.format(*headers))
+                md_content.append("-" * 180)
+
+                for step in best["_progression_"]:
+                    step_name = step.get("step_name", "")
+                    score = step.get("score", 0.0)
+                    m = step.get("metrics", {})
+                    p = step.get("params", {})
+
+                    # keep only active parameters from param_families + standard tp/sl
+                    active_params = {}
+                    if "size_power" in p:
+                        active_params["size_power"] = p["size_power"]
+                    if "trailing_power" in p:
+                        active_params["trailing_power"] = p["trailing_power"]
+                    if "trailing_squash_divisor" in p:
+                        active_params["trailing_squash_divisor"] = p["trailing_squash_divisor"]
+                    if "trailing_override_alpha" in p:
+                        active_params["trailing_override_alpha"] = p["trailing_override_alpha"]
+                    if "giveback_beta" in p:
+                        active_params["giveback_beta"] = p["giveback_beta"]
+                    if "multiplier_band_min" in p:
+                        active_params["mult_min"] = p["multiplier_band_min"]
+                    if "multiplier_band_max" in p:
+                        active_params["mult_max"] = p["multiplier_band_max"]
+                    if "tp_mult" in p:
+                        active_params["tp"] = p["tp_mult"]
+                    if "sl_mult" in p:
+                        active_params["sl"] = p["sl_mult"]
+
+                    def _f(val, fmt=":.4f"):
+                        try:
+                            return format(val, fmt)
+                        except Exception:
+                            return str(val)
+
+                    n_trades = m.get('n_trades', 0)
+                    trades_per_day = n_trades / 725.0
+                    avg_pnl = m.get('net_pnl', 0.0) / max(1, n_trades) if n_trades > 0 else 0.0
+
+                    row_str = row_fmt.format(
+                        step_name[:15],
+                        f"{score:.4f}",
+                        f"{m.get('net_pnl', 0.0):.4f}",
+                        f"{m.get('robust_downside_ratio', 0.0):.4f}",
+                        f"{m.get('pnl_top_25pct_taken_trades', 0.0):.4f}",
+                        f"{m.get('weekly_sortino', 0.0):.4f}",
+                        f"{m.get('monthly_sortino', 0.0):.4f}",
+                        f"{m.get('median_pnl_per_winning_trade', 0.0):.4f}",
+                        f"{m.get('weekly_gtp', 0.0):.4f}",
+                        f"{m.get('trade_return_skew', 0.0):.4f}",
+                        f"{m.get('ulcer', 0.0):.4f}",
+                        f"{m.get('tuw', 0.0):.4f}",
+                        f"{m.get('neg_months_pct', 0.0):.1%}",
+                        f"{m.get('worst_week_dd_mag', 0.0):.4f}",
+                        f"{trades_per_day:.2f}",
+                        f"{avg_pnl:.5f}",
+                        str(active_params)
+                    )
+                    md_content.append(row_str)
+
+                md_text = "\n".join(md_content)
+                tprint("\n" + "="*120)
+                tprint(md_text)
+                tprint("="*120 + "\n")
+
+                with open(prog_path, "a") as f:
+                    f.write(md_text + "\n\n")
+
+                tprint(f"Appended progression table to {prog_path}")
+            except Exception as e:
+                logger.warning(f"Failed to generate progression table: {e}")
+
         strategy_rows.append(best)
 
     if not strategy_rows:

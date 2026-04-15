@@ -21,6 +21,7 @@ import extreme_price_movements.fast_funcs as ff
 
 from .barrier_geometry import make_effective_tp
 from .calibration import apply_logit_shift, compute_logit_shift, compute_prevalences
+from .data_store import save_artifact_df
 from .candidates import (
     select_trade_candidates_hourly,
     select_trade_candidates_vectorized,

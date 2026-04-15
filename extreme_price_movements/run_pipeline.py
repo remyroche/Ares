@@ -517,13 +517,8 @@ def _label_artifacts_ready(cfg, ts_sig):
     import os
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    horizons = sorted(
-        {
-            int(h)
-            for strat in get_strategies(cfg)
-            for h in strategy_runtime_horizons(strat, cfg)
-        }
-    )
+    from extreme_price_movements.data_store import load_artifact_manifest
+
     required = []
     strategies = get_strategies(cfg)
     for strat in strategies:
@@ -531,11 +526,35 @@ def _label_artifacts_ready(cfg, ts_sig):
         for h in strategy_runtime_horizons(strat, cfg):
             required.append(f"train_{k}_{h}")
 
+    labels_manifest = load_artifact_manifest(cfg["data_root"], run_id, "labels") or {}
+    manifest_datasets = labels_manifest.get("datasets") or {}
+    available_manifest_names = set(manifest_datasets.keys())
+    missing_manifest = [name for name in required if name not in available_manifest_names]
+    if missing_manifest:
+        tprint(
+            f"Label artifacts incomplete for run_id={run_id}: manifest missing {len(missing_manifest)}/{len(required)} required datasets"
+        )
+        return False
+
     for name in required:
         fpath = os.path.join(
             cfg["data_root"], "artifacts", run_id, "labels", f"{name}.parquet"
         )
         if not os.path.exists(fpath):
+            tprint(
+                f"Label artifacts incomplete for run_id={run_id}: missing parquet {name}.parquet"
+            )
+            return False
+        try:
+            if os.path.getsize(fpath) <= 0:
+                tprint(
+                    f"Label artifacts incomplete for run_id={run_id}: empty parquet {name}.parquet"
+                )
+                return False
+        except OSError as exc:
+            tprint(
+                f"Label artifacts incomplete for run_id={run_id}: failed to stat {name}.parquet ({exc})"
+            )
             return False
     return True
 

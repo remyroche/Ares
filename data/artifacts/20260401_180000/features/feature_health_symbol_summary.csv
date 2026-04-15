@@ -1,6 +1,0 @@
-symbol,rows,n_features,nan_cells,nan_pct_overall,leading_nan_cells,interior_nan_cells,trailing_nan_cells,all_nan_features,constant_features,features_with_interior_nan
-AVAX/USDT,35040,625,0,0.0,0,0,0,0,27,0
-BTC/USDT,35040,625,0,0.0,0,0,0,0,34,0
-ETH/USDT,35040,625,0,0.0,0,0,0,0,33,0
-SOL/USDT,35040,625,0,0.0,0,0,0,0,24,0
-XRP/USDT,35040,625,0,0.0,0,0,0,0,23,0

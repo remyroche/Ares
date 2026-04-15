@@ -1392,7 +1392,6 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     tprint("STEP: LABEL GENERATION START")
     _labels_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "labels")
     os.makedirs(_labels_dir, exist_ok=True)
-    _stale_label_files = sorted(glob.glob(os.path.join(_labels_dir, "train_*.parquet")))
     _stale_aux = [
         os.path.join(_labels_dir, "label_verification.csv"),
         os.path.join(_labels_dir, "label_verification.md"),
@@ -1403,8 +1402,12 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         os.path.join(_report_dir, "label_verification.csv"),
         os.path.join(_report_dir, "label_verification.md"),
     ]
+    _existing_train_files = {
+        os.path.basename(_fp)
+        for _fp in glob.glob(os.path.join(_labels_dir, "train_*.parquet"))
+    }
     _removed = 0
-    for _fp in _stale_label_files + _stale_aux + _stale_reports:
+    for _fp in _stale_aux + _stale_reports:
         if not os.path.exists(_fp):
             continue
         try:
@@ -1703,21 +1706,50 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             gc.collect()
         tprint(f"Saved label dataset {name} and released in-memory frame")
 
+    _manifest_payload = {
+        "run_id": run_id,
+        "datasets": dataset_manifest,
+    }
     try:
         _manifest_path = os.path.join(
             cfg["data_root"], "artifacts", run_id, "labels", "labels_manifest.json"
         )
-        _manifest = {
-            "run_id": run_id,
-            "datasets": dataset_manifest,
-        }
-        with open(_manifest_path, "w") as _mf:
-            json.dump(_manifest, _mf, indent=2, sort_keys=True)
-        tprint(
-            f"Wrote labels manifest with {len(dataset_manifest)} entries to {_manifest_path}"
-        )
+        if (
+            bool(cfg.get("label_persist_incremental", False))
+            and not dataset_manifest
+            and os.path.exists(_manifest_path)
+        ):
+            with open(_manifest_path, "r", encoding="utf-8") as _mf:
+                _manifest_payload = json.load(_mf)
+            tprint(f"Preserving existing incremental labels manifest at {_manifest_path}")
+        else:
+            with open(_manifest_path, "w", encoding="utf-8") as _mf:
+                json.dump(_manifest_payload, _mf, indent=2, sort_keys=True)
+            tprint(
+                f"Wrote labels manifest with {len(_manifest_payload.get('datasets', {}))} entries to {_manifest_path}"
+            )
     except Exception as _me:
         tprint(f"WARNING: labels_manifest write failed: {_me}")
+
+    try:
+        _active_manifest_names = set((_manifest_payload.get("datasets") or {}).keys())
+        _obsolete_train_files = sorted(
+            _fname
+            for _fname in _existing_train_files
+            if _fname.endswith(".parquet")
+            and _fname[: -len(".parquet")] not in _active_manifest_names
+        )
+        for _fname in _obsolete_train_files:
+            _fp = os.path.join(_labels_dir, _fname)
+            if not os.path.exists(_fp):
+                continue
+            os.remove(_fp)
+        if _obsolete_train_files:
+            tprint(
+                f"Removed {len(_obsolete_train_files)} obsolete label parquet files after successful regeneration"
+            )
+    except Exception as _cleanup_exc:
+        tprint(f"WARNING: obsolete label artifact cleanup failed: {_cleanup_exc}")
 
     try:
         rp = report_labels(

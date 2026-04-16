@@ -21,12 +21,12 @@ import extreme_price_movements.fast_funcs as ff
 
 from .barrier_geometry import make_effective_tp
 from .calibration import apply_logit_shift, compute_logit_shift, compute_prevalences
-from .data_store import save_artifact_df
 from .candidates import (
     select_trade_candidates_hourly,
     select_trade_candidates_vectorized,
 )
 from .config import CANON_HORIZONS
+from .data_store import save_artifact_df
 
 # from .spike_anatomy import SpikeAnatomyModel
 from .feature_selection_extreme_events import mdi_feature_selection_v3
@@ -97,13 +97,13 @@ from .sample_weights import (
     drawdown_aware_weights,
 )
 from .strategy_registry import get_strategies, strategy_runtime_horizons
+from .training_utils import build_wide_tight_pair_features
 from .trap_specialist import (
     build_trap_dataset,
     compute_trap_oof_predictions,
     train_trap_from_dataset,
 )
 from .tree_leaf_policy import tree_regularization_params
-from .training_utils import build_wide_tight_pair_features
 from .utils import tprint
 
 _EXP_INPUT_CLIP = 60.0
@@ -898,7 +898,11 @@ def _fit_direct_extratrees_base_model(
     n_splits: int = 2,
     cfg=None,
 ):
-    """Fit the base alpha model directly with ExtraTrees, bypassing ModelRace."""
+    """Fit the base alpha model directly with ExtraTrees, bypassing ModelRace.
+
+    Returns None when the OOF vector is invalid or effectively degenerate, so
+    callers can skip this candidate and continue with the next model.
+    """
     import os as _os
 
     from scipy.stats import rankdata as _rankdata
@@ -961,7 +965,9 @@ def _fit_direct_extratrees_base_model(
         _scope = hpo_scope_key or kind_name
         hpo_payload = load_best_base_extratrees_payload(_hpo_dir, scope_key=_scope)
         if hpo_payload is None and _scope != kind_name:
-            hpo_payload = load_best_base_extratrees_payload(_hpo_dir, scope_key=kind_name)
+            hpo_payload = load_best_base_extratrees_payload(
+                _hpo_dir, scope_key=kind_name
+            )
         if hpo_payload is None:
             hpo_payload = load_best_base_extratrees_payload(_hpo_dir)
 
@@ -998,6 +1004,26 @@ def _fit_direct_extratrees_base_model(
 
     purge_samples = race.max_label_horizon_hours + 2
     embargo_samples = max(2, race.max_label_horizon_hours // 2)
+
+    def _save_cv_skip_diagnostics(payload: dict[str, Any]) -> None:
+        try:
+            diag_dir = _hpo_dir or _os.path.join(
+                cfg.get("data_root", "data"), "hpo_out"
+            )
+            _os.makedirs(diag_dir, exist_ok=True)
+            scope_name = str(hpo_scope_key or kind_name)
+            safe_scope = "".join(
+                ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in scope_name
+            )
+            diag_path = _os.path.join(
+                diag_dir, f"base_extratrees_cv_skip__{safe_scope}.json"
+            )
+            with open(diag_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, default=str)
+            tprint(f"Direct ExtraTrees[{scope_name}]: saved CV skip diagnostics to {diag_path}")
+        except Exception as exc:
+            tprint(f"Direct ExtraTrees[{kind_name}]: failed to save CV skip diagnostics: {exc}")
+
     tscv = _PurgedKFold(
         n_splits=n_splits,
         purge=purge_samples,
@@ -1007,19 +1033,130 @@ def _fit_direct_extratrees_base_model(
     cached_splits = list(tscv.split(X_np))
     if not cached_splits:
         n_total = len(y_hard)
-        split_at = max(1, int(np.floor(0.7 * n_total)))
-        if split_at < n_total:
-            cached_splits = [
-                (
-                    np.arange(0, split_at, dtype=np.int32),
-                    np.arange(split_at, n_total, dtype=np.int32),
+        valid_time_count = None
+        bad_time_count = None
+        unique_time_count = None
+        monotonic_non_decreasing = None
+        first_valid_time = None
+        last_valid_time = None
+        fold_diagnostics: list[dict[str, Any]] = []
+        tprint(
+            f"Direct ExtraTrees[{kind_name}]: PurgedKFold produced 0 valid folds. "
+            f"n_total={n_total} n_splits={n_splits} purge={purge_samples} "
+            f"embargo={embargo_samples} times_provided={groups_arr is not None}"
+        )
+        if groups_arr is not None and len(groups_arr) == n_total:
+            try:
+                times_series = pd.Series(
+                    pd.to_datetime(groups_arr, utc=True, errors="coerce")
                 )
-            ]
-            tprint(
-                "Direct ExtraTrees: fell back to single chronological holdout split."
-            )
+                valid_mask = times_series.notna().to_numpy()
+                times_ns = times_series.astype("int64", copy=False).to_numpy(
+                    dtype=np.int64, copy=False
+                )
+                valid_ns = times_ns[valid_mask]
+                valid_time_count = int(valid_mask.sum())
+                bad_time_count = int((~valid_mask).sum())
+                unique_time_count = int(pd.Index(times_series[valid_mask]).nunique())
+                monotonic_non_decreasing = bool(
+                    len(valid_ns) < 2 or np.all(np.diff(valid_ns) >= 0)
+                )
+                tprint(
+                    f"  CV time diagnostics: dtype={getattr(times_series, 'dtype', 'n/a')} "
+                    f"valid={valid_time_count}/{n_total} bad={bad_time_count} "
+                    f"unique={unique_time_count} monotonic_non_decreasing={monotonic_non_decreasing}"
+                )
+                if valid_mask.any():
+                    first_valid_time = str(times_series[valid_mask].iloc[0])
+                    last_valid_time = str(times_series[valid_mask].iloc[-1])
+                    tprint(f"  CV time span: first={first_valid_time} last={last_valid_time}")
+                else:
+                    tprint("  CV time span: no valid timestamps available")
+                fold_sizes = np.full(n_splits, n_total // n_splits, dtype=np.int32)
+                fold_sizes[: n_total % n_splits] += 1
+                bounds = np.r_[0, fold_sizes.cumsum()]
+                for fold_i in range(n_splits):
+                    val_start = int(bounds[fold_i])
+                    val_end = int(bounds[fold_i + 1])
+                    if val_start >= n_total or val_end <= val_start:
+                        continue
+                    fold_start_valid = bool(valid_mask[val_start])
+                    fold_end_idx = min(val_end - 1, n_total - 1)
+                    fold_end_valid = bool(valid_mask[fold_end_idx])
+                    val_size = int(val_end - val_start)
+                    if fold_start_valid:
+                        purge_time = int(times_ns[val_start]) - int(
+                            purge_samples * 1e9
+                        )
+                        train_mask = valid_mask[:val_start] & (
+                            times_ns[:val_start] < purge_time
+                        )
+                        train_size = int(np.sum(train_mask))
+                    else:
+                        purge_time = None
+                        train_size = 0
+                    excluded_by_purge = max(0, int(val_start - train_size))
+                    fold_diagnostics.append(
+                        {
+                            "fold": int(fold_i + 1),
+                            "val_start": int(val_start),
+                            "val_end": int(val_end),
+                            "val_size": val_size,
+                            "train_size_after_purge": train_size,
+                            "train_size_before_purge": int(val_start),
+                            "excluded_by_purge": excluded_by_purge,
+                            "fold_start_valid_time": fold_start_valid,
+                            "fold_end_valid_time": fold_end_valid,
+                            "purge_seconds": int(purge_samples),
+                            "embargo_seconds": int(embargo_samples),
+                            "purge_time_ns": int(purge_time)
+                            if purge_time is not None
+                            else None,
+                        }
+                    )
+                    val_size = int(val_end - val_start)
+                    tprint(
+                        f"  CV fold {fold_i + 1}/{n_splits}: "
+                        f"val=[{val_start},{val_end}) train_size={train_size} "
+                        f"val_size={val_size} excluded_by_purge={excluded_by_purge} "
+                        f"start_valid={fold_start_valid} end_valid={fold_end_valid}"
+                    )
+            except Exception as exc:
+                tprint(f"  CV time diagnostics failed: {exc}")
+        _save_cv_skip_diagnostics(
+            {
+                "scope_key": hpo_scope_key or kind_name,
+                "kind_name": kind_name,
+                "n_total": int(n_total),
+                "n_splits": int(n_splits),
+                "purge_samples": int(purge_samples),
+                "embargo_samples": int(embargo_samples),
+                "times_provided": bool(groups_arr is not None),
+                "valid_time_count": valid_time_count,
+                "bad_time_count": bad_time_count,
+                "unique_time_count": unique_time_count,
+                "monotonic_non_decreasing": monotonic_non_decreasing,
+                "first_valid_time": first_valid_time,
+                "last_valid_time": last_valid_time,
+                "fold_diagnostics": fold_diagnostics,
+                "reason": "purged_cv_produced_zero_valid_folds",
+            }
+        )
+        tprint(
+            f"Direct ExtraTrees[{kind_name}]: skipping fit because no valid purged CV "
+            "splits were available."
+        )
+        return None
 
     oof_probs = np.full(len(y_hard), np.nan, dtype=np.float64)
+    oof_tree_features = {
+        _tk: np.full(len(y_hard), np.nan, dtype=np.float32)
+        for _tk in ModelRace._TREE_UNCERTAINTY_KEYS
+    }
+    tprint(
+        f"Direct ExtraTrees: tree uncertainty families={len(ModelRace._TREE_UNCERTAINTY_KEYS)}; "
+        f"example keys={list(ModelRace._TREE_UNCERTAINTY_KEYS[:6])}"
+    )
     fold_class_diagnostics = []
     folds_with_insufficient_samples = 0
     folds_with_single_class_pred = 0
@@ -1067,11 +1204,34 @@ def _fit_direct_extratrees_base_model(
         p_unweighted = float(np.mean(y_val))
         delta_logit = compute_logit_shift(p_unweighted, p_weighted, eps=1e-6)
         oof_probs[val_idx] = apply_logit_shift(probs_raw, delta_logit, eps=1e-6)
+        try:
+            fold_tree_feats = race._tree_uncertainty_features(
+                est,
+                X_val,
+                X_train=X_tr,
+                y_train=y_tr,
+            )
+            for _tk, _tv in fold_tree_feats.items():
+                if _tk in oof_tree_features:
+                    oof_tree_features[_tk][val_idx] = np.asarray(_tv, dtype=np.float32)
+        except Exception as _e_tree_feats:
+            tprint(
+                f"  Tree uncertainty features failed for fold {fold_i}: {_e_tree_feats}"
+            )
         tprint(
             f"  Direct ExtraTrees fold {fold_i}/{len(cached_splits)} complete: n_train={train_idx.size}, n_val={val_idx.size}"
         )
 
     oof_probs_raw = np.asarray(oof_probs, dtype=np.float32).copy()
+    trainable_ok, trainable_reason = _base_oof_is_trainable(
+        oof_probs_raw, min_finite_fraction=1.0, min_unique=2, min_std=1e-12
+    )
+    if not trainable_ok:
+        tprint(
+            f"WARNING: Direct ExtraTrees[{kind_name}] invalid OOF predictions "
+            f"({trainable_reason}); skipping model and moving to the next candidate."
+        )
+        return None
     p_unweighted_all, p_weighted_all = compute_prevalences(y_hard, sample_weight_arr)
     race._used_sample_weight_ = sample_weight_arr is not None
     race.calibration_state_ = race._build_bias_state(
@@ -1211,10 +1371,10 @@ def _fit_direct_extratrees_base_model(
     curve = calibration_curve_bins(y_hard, oof_probs_eval, n_bins=10)
     class_pos = int(np.sum(y_hard))
     class_neg = int(len(y_hard) - class_pos)
-    class_imbalance_pct = (
-        float(min(class_pos, class_neg) / max(len(y_hard), 1)) * 100.0
+    class_imbalance_pct = float(min(class_pos, class_neg) / max(len(y_hard), 1)) * 100.0
+    oof_nan_count = int(
+        np.sum(~np.isfinite(np.asarray(race.oof_probs, dtype=np.float64)))
     )
-    oof_nan_count = int(np.sum(~np.isfinite(np.asarray(race.oof_probs, dtype=np.float64))))
     training_diagnostics = {
         "n_total": int(len(y_hard)),
         "class_counts": {"neg": class_neg, "pos": class_pos},
@@ -1274,6 +1434,14 @@ def _fit_direct_extratrees_base_model(
         "oof_probs": np.asarray(race.oof_probs, dtype=np.float32).copy(),
         "oof_raw": np.asarray(oof_probs_raw, dtype=np.float32).copy(),
         "training_diagnostics": training_diagnostics,
+        "oof_sigma_trees": oof_tree_features["pred_std"].copy().astype(np.float32),
+        "oof_sigma_robust": oof_tree_features["pred_std_robust"]
+        .copy()
+        .astype(np.float32),
+        **{
+            f"oof_tree_{_tk}": np.asarray(_tv, dtype=np.float32).copy()
+            for _tk, _tv in oof_tree_features.items()
+        },
     }
     degeneracy = _base_oof_degeneracy_summary(oof_probs_raw, race.oof_probs)
     dm["degeneracy"] = degeneracy
@@ -1300,7 +1468,9 @@ def _fit_direct_extratrees_base_model(
         for train_idx, val_idx in cached_splits:
             if train_idx.size == 0 or val_idx.size == 0:
                 continue
-            X_val_fold = X_np[val_idx] if isinstance(X_np, np.ndarray) else X.iloc[val_idx]
+            X_val_fold = (
+                X_np[val_idx] if isinstance(X_np, np.ndarray) else X.iloc[val_idx]
+            )
             probs_raw = np.asarray(
                 race.best_model.predict_proba(X_val_fold)[:, 1], dtype=np.float64
             )
@@ -1308,9 +1478,7 @@ def _fit_direct_extratrees_base_model(
             if sample_weight_arr is not None:
                 w_tr_fold = sample_weight_arr[train_idx]
                 den = float(np.sum(w_tr_fold))
-                p_weighted_fold = float(
-                    np.sum(w_tr_fold * y_tr_fold) / max(den, 1e-12)
-                )
+                p_weighted_fold = float(np.sum(w_tr_fold * y_tr_fold) / max(den, 1e-12))
             else:
                 p_weighted_fold = float(np.mean(y_tr_fold))
             p_unweighted_fold = float(np.mean(y_hard[val_idx]))
@@ -1320,17 +1488,15 @@ def _fit_direct_extratrees_base_model(
             refit_oof[val_idx] = apply_logit_shift(
                 probs_raw, delta_logit_fold, eps=1e-6
             )
-        refit_calibrated, refit_calibrator, refit_cal_method = (
-            _safe_binary_calibrate(refit_oof, y_hard, min_unique=20, min_samples=100)
+        refit_calibrated, refit_calibrator, refit_cal_method = _safe_binary_calibrate(
+            refit_oof, y_hard, min_unique=20, min_samples=100
         )
         race.calibrator_ = refit_calibrator
         if isinstance(race.calibration_state_, dict):
             race.calibration_state_["calibration_method"] = refit_cal_method
 
         cal_brier = float(
-            brier_score_loss(
-                y_hard, np.clip(refit_calibrated, 1e-7, 1 - 1e-7)
-            )
+            brier_score_loss(y_hard, np.clip(refit_calibrated, 1e-7, 1 - 1e-7))
         )
         platt = LogisticRegression(random_state=42, max_iter=1000)
         platt.fit(refit_calibrated.reshape(-1, 1), y_hard)
@@ -1766,6 +1932,37 @@ def _base_oof_degeneracy_summary(
     }
 
 
+def _base_oof_is_trainable(
+    probs,
+    *,
+    min_finite_fraction: float = 1.0,
+    min_unique: int = 2,
+    min_std: float = 1e-12,
+) -> tuple[bool, str]:
+    """Return whether an OOF vector is safe to calibrate/refit.
+
+    If a candidate produces non-finite or effectively flat OOF predictions, we
+    skip that model entirely and move to the next candidate instead of trying to
+    calibrate or refit it.
+    """
+    arr = np.asarray(probs, dtype=np.float64)
+    if arr.size == 0:
+        return False, "empty_oof"
+    finite = np.isfinite(arr)
+    finite_count = int(np.sum(finite))
+    if finite_count == 0:
+        return False, "all_oof_nan"
+    if finite_count / max(arr.size, 1) < float(min_finite_fraction):
+        return False, f"oof_nonfinite_fraction:{arr.size - finite_count}/{arr.size}"
+    finite_arr = arr[finite]
+    unique_count = int(len(np.unique(np.round(finite_arr, 8))))
+    if unique_count < int(min_unique):
+        return False, f"oof_unique_lt_{int(min_unique)}"
+    if float(np.std(finite_arr)) < float(min_std):
+        return False, f"oof_std_lt_{float(min_std):g}"
+    return True, "ok"
+
+
 def _base_model_report_entry(
     model_name,
     side,
@@ -1780,6 +1977,17 @@ def _base_model_report_entry(
     top10_features=None,
 ):
     training_diag = dict(dm.get("training_diagnostics", {}) or {})
+    support = {
+        "n_total": int(training_diag.get("n_total", len(y_bin))),
+        "n_positive": int(training_diag.get("class_counts", {}).get("pos", int(np.sum(y_bin)))),
+        "n_negative": int(training_diag.get("class_counts", {}).get("neg", int(len(y_bin) - np.sum(y_bin)))),
+        "minority_support_pct": float(
+            training_diag.get(
+                "class_imbalance_minority_pct",
+                (min(float(np.sum(y_bin)), float(len(y_bin) - np.sum(y_bin))) / max(len(y_bin), 1)) * 100.0,
+            )
+        ),
+    }
     prev = float(np.mean(y_bin))
     prev = float(np.clip(prev, 1e-7, 1 - 1e-7))
     base_brier = prev * (1.0 - prev)
@@ -1911,9 +2119,7 @@ def _base_model_report_entry(
 
     try:
         raw_auc = (
-            float(_roc_auc_score(y_bin, raw_clip))
-            if len(np.unique(y_bin)) > 1
-            else 0.5
+            float(_roc_auc_score(y_bin, raw_clip)) if len(np.unique(y_bin)) > 1 else 0.5
         )
     except Exception:
         raw_auc = 0.5
@@ -1928,7 +2134,9 @@ def _base_model_report_entry(
     s_valid = np.asarray(oof_probs, dtype=float)
     y_bin_valid = np.asarray(y_bin, dtype=float)
     y_ret_valid = np.asarray(y_ret, dtype=float)
-    valid_mask = np.isfinite(s_valid) & np.isfinite(y_bin_valid) & np.isfinite(y_ret_valid)
+    valid_mask = (
+        np.isfinite(s_valid) & np.isfinite(y_bin_valid) & np.isfinite(y_ret_valid)
+    )
     s_valid = s_valid[valid_mask]
     y_bin_valid = y_bin_valid[valid_mask]
     global_ic_chunks = []
@@ -1982,14 +2190,24 @@ def _base_model_report_entry(
         "bootstrap_prec20_cv": bootstrap_prec20_cv,
         "fold_logloss_improvement_ratio": pos_fold_ratio,
         "worst_fold_logloss_improvement": worst_fold_imp,
-        "pr_auc_random": float(dm.get("rank_components", {}).get("PR-AUC/Random", np.nan)),
+        "pr_auc_random": float(
+            dm.get("rank_components", {}).get("PR-AUC/Random", np.nan)
+        ),
         "ece": float(dm.get("rank_components", {}).get("ECE", np.nan)),
-        "ic_stability": float(dm.get("rank_components", {}).get("IC_Stability", np.nan)),
+        "ic_stability": float(
+            dm.get("rank_components", {}).get("IC_Stability", np.nan)
+        ),
         "mean_ic": float(dm.get("rank_components", {}).get("Mean_IC", np.nan)),
-        "decile_spearman": float(dm.get("rank_components", {}).get("Decile_Spearman", np.nan)),
-        "months_rho_decile_gt_0": int(dm.get("rank_components", {}).get("months_rho_decile_gt_0", 0)),
+        "decile_spearman": float(
+            dm.get("rank_components", {}).get("Decile_Spearman", np.nan)
+        ),
+        "months_rho_decile_gt_0": int(
+            dm.get("rank_components", {}).get("months_rho_decile_gt_0", 0)
+        ),
         "median_ic_m": float(dm.get("rank_components", {}).get("median_IC_m", np.nan)),
-        "months_ic_m_lt_neg_01": int(dm.get("rank_components", {}).get("months_IC_m_lt_neg_01", 0)),
+        "months_ic_m_lt_neg_01": int(
+            dm.get("rank_components", {}).get("months_IC_m_lt_neg_01", 0)
+        ),
         "ir_weekly": float(dm.get("rank_components", {}).get("IR_weekly", np.nan)),
         **info_metrics,
         **timeout_metrics,
@@ -2005,6 +2223,26 @@ def _base_model_report_entry(
             for r in (degeneracy.get("reasons", []) or [])
         )
     )
+    metrics_are_fallback = bool(
+        degeneracy.get("is_degenerate", False)
+        and (
+            constant_prediction_warning
+            or (
+                abs(float(metrics.get("auc", 0.5)) - 0.5) <= 1e-9
+                and abs(float(metrics.get("ic", 0.0))) <= 1e-9
+                and abs(float(metrics.get("ic_ret", 0.0))) <= 1e-9
+            )
+        )
+    )
+    if metrics_are_fallback:
+        fit_status = "fallback"
+        failure_reason = "degenerate_constant_or_near_constant_predictions"
+    elif bool(degeneracy.get("is_degenerate", False)):
+        fit_status = "trained"
+        failure_reason = "degenerate_but_nonfallback_metrics"
+    else:
+        fit_status = "trained"
+        failure_reason = None
     training_warnings = []
     if constant_prediction_warning:
         training_warnings.append("constant_or_near_constant_predictions")
@@ -2025,6 +2263,10 @@ def _base_model_report_entry(
         "degenerate": bool(degeneracy.get("is_degenerate", False)),
         "degeneracy": degeneracy,
         "training_diagnostics": training_diag,
+        "support": support,
+        "fit_status": fit_status,
+        "failure_reason": failure_reason,
+        "metrics_are_fallback": metrics_are_fallback,
         "constant_prediction_warning": constant_prediction_warning,
         "training_warnings": training_warnings,
         "passed": bool(all(checks.values())),
@@ -2144,9 +2386,9 @@ def _meta_report_entry(
             {
                 "coverage_tau": abs(cov - tau) <= 0.05,
                 "pinball_improve_ge_2pct": pb_imp >= 0.02,
-                "pinball_improve_ge_2of3_folds": (np.mean(fold_sign) >= (2 / 3))
-                if fold_sign
-                else False,
+                "pinball_improve_ge_2of3_folds": (
+                    (np.mean(fold_sign) >= (2 / 3)) if fold_sign else False
+                ),
             }
         )
     else:
@@ -2182,16 +2424,16 @@ def _meta_report_entry(
         checks.update(
             {
                 "robust_loss_ge_2pct": loss_imp >= 0.02,
-                "robust_loss_ge_2of3_folds": (np.mean(np.array(fold_loss) > 0) >= 2 / 3)
-                if fold_loss
-                else False,
-                "robust_loss_worst_fold_ge_1pct": (np.min(fold_loss) >= 0.01)
-                if fold_loss
-                else False,
+                "robust_loss_ge_2of3_folds": (
+                    (np.mean(np.array(fold_loss) > 0) >= 2 / 3) if fold_loss else False
+                ),
+                "robust_loss_worst_fold_ge_1pct": (
+                    (np.min(fold_loss) >= 0.01) if fold_loss else False
+                ),
                 "bias_overall": abs(mean_err) <= 0.05 * mad_t,
-                "bias_per_fold": (np.max(np.abs(bias_fold)) <= 0.07 * mad_t)
-                if bias_fold
-                else False,
+                "bias_per_fold": (
+                    (np.max(np.abs(bias_fold)) <= 0.07 * mad_t) if bias_fold else False
+                ),
             }
         )
 
@@ -2398,13 +2640,21 @@ def print_training_gate_report(report_payload):
             base_rate = m.get("move_base_rate", m.get("base_rate", float("nan")))
             pr_delta = m.get("pr_auc_vs_base_rate", float("nan"))
             move_ic = m.get("move_ic", float("nan"))
-            bal05 = m.get("move_balanced_accuracy_0p5", m.get("balanced_accuracy_0p5", float("nan")))
-            balbest = m.get("move_balanced_accuracy_best", m.get("balanced_accuracy_best", float("nan")))
+            bal05 = m.get(
+                "move_balanced_accuracy_0p5",
+                m.get("balanced_accuracy_0p5", float("nan")),
+            )
+            balbest = m.get(
+                "move_balanced_accuracy_best",
+                m.get("balanced_accuracy_best", float("nan")),
+            )
             ece = m.get("ece_10", m.get("ece", float("nan")))
             slope = m.get("calibration_slope", float("nan"))
             inter = m.get("calibration_intercept", float("nan"))
             top10l = m.get("top10_lift", float("nan"))
-            top10p = m.get("top_decile_precision", m.get("top10_hit_rate", float("nan")))
+            top10p = m.get(
+                "top_decile_precision", m.get("top10_hit_rate", float("nan"))
+            )
             top10r = m.get("top_decile_recall", float("nan"))
             brier = m.get("brier", float("nan"))
             top5l = m.get("top05_lift", float("nan"))
@@ -2789,7 +3039,9 @@ def _aggregate_alpha_oof_metrics(
     w_m = sw[mask] if sw is not None else None
     grp_m = np.asarray(groups)[mask] if groups is not None else None
     # Selection score already returns composite metrics we need
-    sel_metrics = calculate_selection_score(y_m, p_m, r_m, sample_weight=w_m, groups=grp_m)
+    sel_metrics = calculate_selection_score(
+        y_m, p_m, r_m, sample_weight=w_m, groups=grp_m
+    )
     metrics.update(
         {
             "auc": float(sel_metrics.get("AUC", np.nan)),
@@ -3172,7 +3424,9 @@ def _cap_selected_features(
     return (out + fallback)[: max(min_features, min(target_cap, len(available_cols)))]
 
 
-def _mdi_top_feature_lists(sel_res, selected_feats: list[str]) -> tuple[list[str], list[str]]:
+def _mdi_top_feature_lists(
+    sel_res, selected_feats: list[str]
+) -> tuple[list[str], list[str]]:
     """Return selector top-5 and top-10 lists, preferring the MDI ranking table."""
     # The selector already returns a ranked feature list in `selected_feats`.
     # Some selector artifacts also expose a `metrics_table`, but that table can
@@ -4588,15 +4842,19 @@ def build_hourly_training_set_and_weights(
         np.float32
     )
     _dur_vals = np.asarray(
-        _policy_bars_vals
-        if _policy_bars_vals is not None
-        else np.full(len(_r_gross), H, dtype=np.int16),
+        (
+            _policy_bars_vals
+            if _policy_bars_vals is not None
+            else np.full(len(_r_gross), H, dtype=np.int16)
+        ),
         dtype=np.int16,
     )
     _bars_to_mfe_vals = np.asarray(
-        _policy_bars_to_mfe_vals
-        if _policy_bars_to_mfe_vals is not None
-        else np.maximum(1, _dur_vals),
+        (
+            _policy_bars_to_mfe_vals
+            if _policy_bars_to_mfe_vals is not None
+            else np.maximum(1, _dur_vals)
+        ),
         dtype=np.int16,
     )
     _is_mr = str(model_kind).lower() == "mr"
@@ -4658,9 +4916,11 @@ def build_hourly_training_set_and_weights(
         (lbl_vals == OUT_SL)
         & (
             np.asarray(
-                _policy_bars_vals
-                if _policy_bars_vals is not None
-                else np.zeros(len(lbl_vals)),
+                (
+                    _policy_bars_vals
+                    if _policy_bars_vals is not None
+                    else np.zeros(len(lbl_vals))
+                ),
                 dtype=np.int16,
             )
             <= int(cfg.get("kill_min_bars", 2))
@@ -5233,7 +5493,9 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
             if _total <= _raw_tb_payload_cache_max_bytes:
                 break
 
-    def _cache_raw_tb_payload(raw_key: tuple, lbl, ret, qual, tp_vals, sl_vals, score: float) -> None:
+    def _cache_raw_tb_payload(
+        raw_key: tuple, lbl, ret, qual, tp_vals, sl_vals, score: float
+    ) -> None:
         if raw_key is None or _raw_tb_payload_cache_max_bytes <= 0:
             return
         _payload = {
@@ -5705,9 +5967,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
             )
             tp_lo_search_default = float(
                 cfg.get(
-                    "barrier_tp_lo_search_h2"
-                    if int(H) == 2
-                    else "barrier_tp_lo_search",
+                    (
+                        "barrier_tp_lo_search_h2"
+                        if int(H) == 2
+                        else "barrier_tp_lo_search"
+                    ),
                     _cell_tp_lo_base,
                 )
             )
@@ -5971,11 +6235,17 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         )
                         lbl, ret, qual = _tb_out[:3]
                         n_events_raw = int(lbl.size)
-                        tp_hit_raw = float((lbl.values == 2).sum()) / max(1, n_events_raw)
-                        sl_hit_raw = float((lbl.values == 0).sum()) / max(1, n_events_raw)
-                        timeout_raw = float((lbl.values == 1).sum()) / max(1, n_events_raw)
-                        auc_bound, tp_sep_top10, tp_over_sl = _quality_metrics_from_proxy(
-                            lbl, ret, qual
+                        tp_hit_raw = float((lbl.values == 2).sum()) / max(
+                            1, n_events_raw
+                        )
+                        sl_hit_raw = float((lbl.values == 0).sum()) / max(
+                            1, n_events_raw
+                        )
+                        timeout_raw = float((lbl.values == 1).sum()) / max(
+                            1, n_events_raw
+                        )
+                        auc_bound, tp_sep_top10, tp_over_sl = (
+                            _quality_metrics_from_proxy(lbl, ret, qual)
                         )
                         bind_raw = tp_hit_raw + sl_hit_raw
                         _tp_ts = (lbl.values == OUT_TP).mean(axis=1).astype(np.float64)
@@ -5994,9 +6264,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                             float(
                                 _tp_roll.quantile(
                                     float(
-                                        cfg.get(
-                                            "label_tp_hit_guardrail_quantile", 0.50
-                                        )
+                                        cfg.get("label_tp_hit_guardrail_quantile", 0.50)
                                     )
                                 )
                             )
@@ -6362,8 +6630,12 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                     _best_g = geom_runs[0]
                     _lbl_mat = _prod_geom["agg_lbl"]
                     _ret_mat = _prod_geom["agg_ret"]
-                    _tp_mat = _prod_geom["tp_vals_df"].to_numpy(dtype=np.float32, copy=False)
-                    _sl_mat = _prod_geom["sl_vals_df"].to_numpy(dtype=np.float32, copy=False)
+                    _tp_mat = _prod_geom["tp_vals_df"].to_numpy(
+                        dtype=np.float32, copy=False
+                    )
+                    _sl_mat = _prod_geom["sl_vals_df"].to_numpy(
+                        dtype=np.float32, copy=False
+                    )
                     _valid_prod = (
                         np.isfinite(_ret_mat)
                         & np.isfinite(_tp_mat)
@@ -6428,22 +6700,34 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         ),
                         "auc_bound": float(
                             np.mean(
-                                [float(g.get("auc_bound", float("nan"))) for g in geom_runs]
+                                [
+                                    float(g.get("auc_bound", float("nan")))
+                                    for g in geom_runs
+                                ]
                             )
                         ),
                         "tp_sep_top10": float(
                             np.mean(
-                                [float(g.get("tp_sep_top10", float("nan"))) for g in geom_runs]
+                                [
+                                    float(g.get("tp_sep_top10", float("nan")))
+                                    for g in geom_runs
+                                ]
                             )
                         ),
                         "ap_lift": float(
                             np.mean(
-                                [float(g.get("ap_lift", float("nan"))) for g in geom_runs]
+                                [
+                                    float(g.get("ap_lift", float("nan")))
+                                    for g in geom_runs
+                                ]
                             )
                         ),
                         "tp_over_sl": float(
                             np.mean(
-                                [float(g.get("tp_over_sl", float("nan"))) for g in geom_runs]
+                                [
+                                    float(g.get("tp_over_sl", float("nan")))
+                                    for g in geom_runs
+                                ]
                             )
                         ),
                     }
@@ -6665,6 +6949,7 @@ def generate_label_datasets(
     if bool(cfg.get("use_noise_filter", True)) and cached_cand_mask is not None:
         tprint("Pre-computing Microstructure Noise Filter...")
         from extreme_price_movements.fast_funcs import numba_rolling_mean_parallel
+
         vol = panel["volume"]
         # Optimization: Replaced slow pandas rolling with Numba parallel equivalent.
         # This solves massive memory spikes and slow dataframe allocations across large panels.
@@ -6808,7 +7093,9 @@ def generate_label_datasets(
                 with open(p_geom, "wb") as fh:
                     pickle.dump(geom_cache[_k], fh, protocol=pickle.HIGHEST_PROTOCOL)
         if not persisted_base:
-            tprint(f"TB cache build: strategy_id={s_id} H={H} produced no base cell payload.")
+            tprint(
+                f"TB cache build: strategy_id={s_id} H={H} produced no base cell payload."
+            )
             return False
         tprint(f"TB cache build: strategy_id={s_id} H={H} persisted.")
         del _tb_i, _geom_i
@@ -6830,7 +7117,7 @@ def generate_label_datasets(
     else:
         tprint(f"TB cache fully satisfied from disk: cells={len(tb_cache)}")
 
-    if bool(cfg.get("base_geometry_train_variants", True)):
+    if bool(cfg.get("base_geometry_train_variants", False)):
         _missing_variant_keys = []
         for strat in strategies:
             s_id = strat["strategy_id"]
@@ -6846,7 +7133,9 @@ def generate_label_datasets(
             for _H, _s_id, _variant in sorted(set(_missing_variant_keys)):
                 _build_and_persist_tb_cell(int(_H), _s_id)
         else:
-            tprint("Base-geometry variant cache already satisfied for all requested cells.")
+            tprint(
+                "Base-geometry variant cache already satisfied for all requested cells."
+            )
 
     def _prepare_events_once_for_strategy(_strategy: dict):
         _prep_lookup_cache: dict = {}
@@ -6950,7 +7239,7 @@ def generate_label_datasets(
         for H in strategy_horizons.get(strategy_id, []):
             H_int = int(H)
 
-            if bool(cfg.get("base_geometry_train_variants", True)):
+            if bool(cfg.get("base_geometry_train_variants", False)):
                 _missing_required = [
                     _v
                     for _v in _required_geometry_variants
@@ -7063,9 +7352,11 @@ def generate_label_datasets(
             fixed_sl=fixed_sl,
             side=side,
             _cached_cand_mask=mask_by_strategy.get(k, cached_cand_mask),
-            _cached_tb=tb_cache.get((H, strategy_id))
-            if variant is None
-            else tb_cache.get((H, strategy_id, variant)),
+            _cached_tb=(
+                tb_cache.get((H, strategy_id))
+                if variant is None
+                else tb_cache.get((H, strategy_id, variant))
+            ),
             _precomputed_events=_pre_h,
             _geom_frames=_geom,
         )
@@ -7494,8 +7785,12 @@ def train_meta_models_from_artifacts(
     _bucket_metadata = {}
     _aux_head_oof = {}  # per-bucket shared-fold auxiliary head OOF outputs
     include_meta_reg = bool(cfg.get("meta_train_regression_bucket_model", False))
-    include_meta_clf = bool(cfg.get("meta_clf_enabled", cfg.get("meta_race_include_classifiers", True)))
-    require_meta_move_prob = bool(cfg.get("meta_require_classifier_barrier_probs", True))
+    include_meta_clf = bool(
+        cfg.get("meta_clf_enabled", cfg.get("meta_race_include_classifiers", True))
+    )
+    require_meta_move_prob = bool(
+        cfg.get("meta_require_classifier_barrier_probs", True)
+    )
     if require_meta_move_prob and not include_meta_clf:
         raise RuntimeError(
             "meta_clf_enabled=False, but policy-aligned meta/sizer runs require the binary move head export."
@@ -7648,7 +7943,6 @@ def train_meta_models_from_artifacts(
     _TREE_UNCERTAINTY_KEYS = (
         "pred_mean",
         "pred_std",
-        "pred_iqr",
         "pred_cv",
         "pred_std_robust",
         "vote_entropy",
@@ -7657,12 +7951,14 @@ def train_meta_models_from_artifacts(
         "leaf_support_mean",
         "leaf_support_median",
         "leaf_support_std",
+        "leaf_support_q25",
         "leaf_target_std_mean",
         "leaf_target_iqr_mean",
-        "leaf_target_var_mean",
         "leaf_centroid_dist_mean",
         "leaf_centroid_dist_median",
         "leaf_centroid_dist_cv",
+        "leaf_centroid_dist_rel_mean",
+        "leaf_centroid_dist_rel_std",
     )
 
     def _collect_primary_tree_uncertainty_features(
@@ -7680,9 +7976,7 @@ def train_meta_models_from_artifacts(
                 continue
             ds_h = horizon_dfs_local[h][0]
             for feat_key in _TREE_UNCERTAINTY_KEYS:
-                vec_h = _race_sigma_vector(
-                    race, f"oof_tree_{feat_key}", len(ds_h)
-                )
+                vec_h = _race_sigma_vector(race, f"oof_tree_{feat_key}", len(ds_h))
                 aligned = _align_values_by_ts_symbol_keys(
                     df_union["__ts__"].values,
                     df_union["__symbol__"].values,
@@ -7695,7 +7989,11 @@ def train_meta_models_from_artifacts(
                 out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
                 out[f"pred_H{int(h)}_{feat_key}"] = aligned
                 out[f"base_H{int(h)}_{feat_key}"] = aligned
-        return pd.DataFrame(out, index=df_union.index) if out else pd.DataFrame(index=df_union.index)
+        return (
+            pd.DataFrame(out, index=df_union.index)
+            if out
+            else pd.DataFrame(index=df_union.index)
+        )
 
     def _collect_wide_tight_variant_features(
         side: str,
@@ -8998,9 +9296,7 @@ def train_meta_models_from_artifacts(
         # ASYM HEAD UPGRADE
         asym_target_variants = [
             str(v).lower()
-            for v in list(
-                cfg.get("aux_asym_target_variants", ["log_raw"])
-            )
+            for v in list(cfg.get("aux_asym_target_variants", ["log_raw"]))
         ]
         asym_weight_variants = [
             str(v).lower()
@@ -9505,18 +9801,26 @@ def train_meta_models_from_artifacts(
         if len(idx_q) > 0 and np.any(valid_mae & tm) and do_full_inference_retrain:
             y_mae_final_fit = _mae_train_target_full()
             w_mae_full = _mae_train_weights_full()
-            m_mae_final = _configure_meta_reg(f"mae_q70_final_{bucket_id}", "aux_mae_selector_cfg")
+            m_mae_final = _configure_meta_reg(
+                f"mae_q70_final_{bucket_id}", "aux_mae_selector_cfg"
+            )
             m_mae_final.fit(
-                pd.DataFrame(Xv[:, idx_q], columns=[f"f_{i}" for i in range(len(idx_q))]),
+                pd.DataFrame(
+                    Xv[:, idx_q], columns=[f"f_{i}" for i in range(len(idx_q))]
+                ),
                 y_mae_final_fit,
                 sample_weight=w_mae_full,
             )
         if len(idx_mfe) > 0 and np.any(valid_mfe & tm) and do_full_inference_retrain:
             y_mfe_final_fit = _mfe_train_target_full()
             w_mfe_full = _mfe_train_weights_full()
-            m_mfe_final = _configure_meta_reg(f"mfe_final_{bucket_id}", "aux_mfe_selector_cfg")
+            m_mfe_final = _configure_meta_reg(
+                f"mfe_final_{bucket_id}", "aux_mfe_selector_cfg"
+            )
             m_mfe_final.fit(
-                pd.DataFrame(Xv[:, idx_mfe], columns=[f"f_{i}" for i in range(len(idx_mfe))]),
+                pd.DataFrame(
+                    Xv[:, idx_mfe], columns=[f"f_{i}" for i in range(len(idx_mfe))]
+                ),
                 y_mfe_final_fit,
                 sample_weight=w_mfe_full,
             )
@@ -9557,9 +9861,13 @@ def train_meta_models_from_artifacts(
                 np.arange(len(y_asym_fit)),
                 weight_lambda=asym_weight_lambda,
             )
-            m_asym_final = _configure_meta_reg(f"asym_final_{bucket_id}", "aux_asym_selector_cfg")
+            m_asym_final = _configure_meta_reg(
+                f"asym_final_{bucket_id}", "aux_asym_selector_cfg"
+            )
             m_asym_final.fit(
-                pd.DataFrame(Xv[:, idx_asym], columns=[f"f_{i}" for i in range(len(idx_asym))]),
+                pd.DataFrame(
+                    Xv[:, idx_asym], columns=[f"f_{i}" for i in range(len(idx_asym))]
+                ),
                 _asym_train_target_full(),
                 sample_weight=_asym_full_w,
             )
@@ -9760,9 +10068,7 @@ def train_meta_models_from_artifacts(
             _m = MetaModel(reports_dir=reports_dir)
             _m.strategy_name = _head_name
             _m.candidate_mode = "xgb_parallel_forest"
-            _m.disable_hpo = bool(
-                cfg.get("meta_parallel_forest_disable_hpo", False)
-            )
+            _m.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", False))
             _m.hpo_out_dir = _meta_hpo_out_dir
             _mcw = float(cfg.get("meta_parallel_forest_min_child_weight", 40.0))
             _m.xgb_parallel_forest_params = {
@@ -9803,9 +10109,7 @@ def train_meta_models_from_artifacts(
             _m = MetaClassifierModel(reports_dir=reports_dir)
             _m.strategy_name = _head_name
             _m.candidate_mode = "xgb_parallel_forest"
-            _m.disable_hpo = bool(
-                cfg.get("meta_parallel_forest_disable_hpo", False)
-            )
+            _m.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", False))
             _m.hpo_out_dir = _meta_hpo_out_dir
             _mcw = float(cfg.get("meta_parallel_forest_min_child_weight", 40.0))
             _m.xgb_parallel_forest_params = {
@@ -9846,9 +10150,15 @@ def train_meta_models_from_artifacts(
                 min_ic=float(cfg.get("meta_move_min_ic", 0.0)),
                 top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
                 min_top_n=int(cfg.get("meta_move_min_top_n", 50)),
-                min_lift_vs_baseline=float(cfg.get("meta_move_min_lift_vs_baseline", 0.0)),
-                require_positive_top_lift=bool(cfg.get("meta_move_require_positive_top_lift", True)),
-                require_positive_base_rate=bool(cfg.get("meta_move_require_positive_base_rate", True)),
+                min_lift_vs_baseline=float(
+                    cfg.get("meta_move_min_lift_vs_baseline", 0.0)
+                ),
+                require_positive_top_lift=bool(
+                    cfg.get("meta_move_require_positive_top_lift", True)
+                ),
+                require_positive_base_rate=bool(
+                    cfg.get("meta_move_require_positive_base_rate", True)
+                ),
             )
             return _m, _sel_cfg
 
@@ -10032,9 +10342,15 @@ def train_meta_models_from_artifacts(
             _move_weights = tuple(
                 float(x) for x in cfg.get("meta_clf_move_weights", [0.45, 0.35, 0.20])
             )
-            _bp_move = _bp if "_bp" in locals() else np.asarray(
-                df["__barrier_pct__"].values, dtype=np.float64
-            ) if "__barrier_pct__" in df.columns else np.full(len(df), 0.02, dtype=np.float64)
+            _bp_move = (
+                _bp
+                if "_bp" in locals()
+                else (
+                    np.asarray(df["__barrier_pct__"].values, dtype=np.float64)
+                    if "__barrier_pct__" in df.columns
+                    else np.full(len(df), 0.02, dtype=np.float64)
+                )
+            )
             _y_move_soft, _y_move, _move_thr = _build_meta_move_soft_target(
                 abs_ret=np.abs(_y_mid),
                 vol_proxy=_bp_move,
@@ -10089,9 +10405,15 @@ def train_meta_models_from_artifacts(
                 min_ic=float(cfg.get("meta_move_min_ic", 0.0)),
                 top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
                 min_top_n=int(cfg.get("meta_move_min_top_n", 50)),
-                min_lift_vs_baseline=float(cfg.get("meta_move_min_lift_vs_baseline", 0.0)),
-                require_positive_top_lift=bool(cfg.get("meta_move_require_positive_top_lift", True)),
-                require_positive_base_rate=bool(cfg.get("meta_move_require_positive_base_rate", True)),
+                min_lift_vs_baseline=float(
+                    cfg.get("meta_move_min_lift_vs_baseline", 0.0)
+                ),
+                require_positive_top_lift=bool(
+                    cfg.get("meta_move_require_positive_top_lift", True)
+                ),
+                require_positive_base_rate=bool(
+                    cfg.get("meta_move_require_positive_base_rate", True)
+                ),
             )
             _clf.fit(
                 X_meta_base,
@@ -10481,19 +10803,29 @@ def train_meta_models_from_artifacts(
             axis=1,
         )
 
-        variant_feat_df, variant_feat_cols = _collect_wide_tight_variant_features(
-            side, k, df, horizon_dfs
+        tree_uncertainty_cols: list[str] = []
+        # Primary model uncertainty features come from the per-horizon base model
+        # ensembles. Keep these even when variant models are disabled.
+        primary_tree_feat_df = _collect_primary_tree_uncertainty_features(
+            k, conf, df, horizon_dfs
         )
-        if not variant_feat_df.empty:
-            X_feats = pd.concat([X_feats, variant_feat_df], axis=1)
-        else:
-            # Primary-only base training path: use within-ensemble uncertainty features
-            # from each horizon model so meta heads still receive dispersion signals.
-            primary_tree_feat_df = _collect_primary_tree_uncertainty_features(
-                k, conf, df, horizon_dfs
+        if not primary_tree_feat_df.empty:
+            X_feats = pd.concat([X_feats, primary_tree_feat_df], axis=1)
+            tree_uncertainty_cols = list(primary_tree_feat_df.columns)
+            tprint(
+                f"  Meta {k}: primary tree uncertainty features materialized="
+                f"{len(tree_uncertainty_cols)} columns from "
+                f"{len(_TREE_UNCERTAINTY_KEYS)} families; sample={tree_uncertainty_cols[:8]}"
             )
-            if not primary_tree_feat_df.empty:
-                X_feats = pd.concat([X_feats, primary_tree_feat_df], axis=1)
+
+        if bool(cfg.get("base_geometry_train_variants", False)):
+            variant_feat_df, variant_feat_cols = _collect_wide_tight_variant_features(
+                side, k, df, horizon_dfs
+            )
+            if not variant_feat_df.empty:
+                X_feats = pd.concat([X_feats, variant_feat_df], axis=1)
+        else:
+            variant_feat_cols = []
 
         # Disagreement features over this strategy's own horizon OOFs only.
         _diag_feats = {}
@@ -10581,10 +10913,19 @@ def train_meta_models_from_artifacts(
 
         meta_model_cols = []
         meta_model_cols.extend(
-            [c for c in pred_h.columns if c in X_meta_base.columns and c.startswith(f"pred_{k}_H")]
+            [
+                c
+                for c in pred_h.columns
+                if c in X_meta_base.columns and c.startswith(f"pred_{k}_H")
+            ]
         )
-        meta_model_cols.extend([c for c in variant_feat_cols if c in X_meta_base.columns])
+        meta_model_cols.extend(
+            [c for c in variant_feat_cols if c in X_meta_base.columns]
+        )
         meta_model_cols.extend([c for c in feat_cols if c in X_meta_base.columns])
+        meta_model_cols.extend(
+            [c for c in tree_uncertainty_cols if c in X_meta_base.columns]
+        )
         meta_model_cols = list(dict.fromkeys(meta_model_cols))
         if not meta_model_cols:
             raise RuntimeError(
@@ -10596,7 +10937,9 @@ def train_meta_models_from_artifacts(
             f"(dropped extras={len(meta_extras)})"
         )
         if meta_extras:
-            tprint(f"    Meta {k}: dropped non-meta extras (first 20): {meta_extras[:20]}")
+            tprint(
+                f"    Meta {k}: dropped non-meta extras (first 20): {meta_extras[:20]}"
+            )
         X_meta_models = X_meta_base.loc[:, meta_model_cols].copy()
 
         meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
@@ -11116,7 +11459,9 @@ def train_meta_models_from_artifacts(
                 )
                 w_meta_clf = _optimize_training_sample_weights(
                     df=pd.DataFrame({"ts": _meta_ts_c}),
-                    X_frame=X_meta_models.select_dtypes(include=[np.number]).fillna(0.0),
+                    X_frame=X_meta_models.select_dtypes(include=[np.number]).fillna(
+                        0.0
+                    ),
                     y_ret=_y_per_h[_mid_h_c].astype(np.float64),
                     label_times=_meta_label_times_c,
                     base_weights=w_meta_clf,
@@ -11138,7 +11483,11 @@ def train_meta_models_from_artifacts(
                 )
             w_meta_clf = w_meta_clf.astype(np.float32)
 
-            _mid_h = 4 if 4 in _y_per_h else _available_horizons[len(_available_horizons) // 2]
+            _mid_h = (
+                4
+                if 4 in _y_per_h
+                else _available_horizons[len(_available_horizons) // 2]
+            )
             _move_vol_proxy = _vol_proxy
             if _move_vol_proxy is None:
                 for _cand_col in [
@@ -11150,7 +11499,9 @@ def train_meta_models_from_artifacts(
                     "__barrier_pct__",
                 ]:
                     if _cand_col in df.columns:
-                        _move_vol_proxy = np.asarray(df[_cand_col].values, dtype=np.float64)
+                        _move_vol_proxy = np.asarray(
+                            df[_cand_col].values, dtype=np.float64
+                        )
                         tprint(f"  Meta classifier vol proxy fallback: {_cand_col}")
                         break
             if _move_vol_proxy is None:
@@ -11183,28 +11534,40 @@ def train_meta_models_from_artifacts(
             meta_clf = MetaClassifierModel(reports_dir=reports_dir)
             meta_clf.strategy_name = k
             meta_clf.candidate_mode = "xgb_parallel_forest"
-            meta_clf.disable_hpo = bool(cfg.get("meta_parallel_forest_disable_hpo", False))
+            meta_clf.disable_hpo = bool(
+                cfg.get("meta_parallel_forest_disable_hpo", False)
+            )
             meta_clf.hpo_out_dir = _meta_hpo_out_dir
             meta_clf.xgb_parallel_forest_params = {
                 "objective": "binary:logistic",
                 "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
-                "num_parallel_tree": int(cfg.get("meta_parallel_forest_num_parallel_tree", 20)),
+                "num_parallel_tree": int(
+                    cfg.get("meta_parallel_forest_num_parallel_tree", 20)
+                ),
                 "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 5)),
-                "learning_rate": float(cfg.get("meta_parallel_forest_learning_rate", 0.05)),
+                "learning_rate": float(
+                    cfg.get("meta_parallel_forest_learning_rate", 0.05)
+                ),
                 "subsample": 0.75,
                 "colsample_bytree": 0.75,
                 "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
                 "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
-                "min_child_weight": float(cfg.get("meta_parallel_forest_min_child_weight", 40.0)),
+                "min_child_weight": float(
+                    cfg.get("meta_parallel_forest_min_child_weight", 40.0)
+                ),
                 "gamma": float(cfg.get("meta_parallel_forest_gamma", 1.5)),
                 "tree_method": "hist",
                 "random_state": 42,
                 "n_jobs": 3,
                 "verbosity": 0,
                 "eval_metric": "logloss",
-                "early_stopping_rounds": int(cfg.get("meta_parallel_forest_early_stopping_rounds", 20)),
+                "early_stopping_rounds": int(
+                    cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
+                ),
             }
-            meta_clf.FEE_PER_ROUND_TRIP = float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
+            meta_clf.FEE_PER_ROUND_TRIP = (
+                float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
+            )
             _sel_cfg = MetaMoveSelectionConfig(
                 min_roc_auc=float(cfg.get("meta_move_min_roc_auc", 0.56)),
                 min_pr_auc=float(cfg.get("meta_move_min_pr_auc", 0.0)),
@@ -11212,9 +11575,15 @@ def train_meta_models_from_artifacts(
                 min_ic=float(cfg.get("meta_move_min_ic", 0.0)),
                 top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
                 min_top_n=int(cfg.get("meta_move_min_top_n", 50)),
-                min_lift_vs_baseline=float(cfg.get("meta_move_min_lift_vs_baseline", 0.0)),
-                require_positive_top_lift=bool(cfg.get("meta_move_require_positive_top_lift", True)),
-                require_positive_base_rate=bool(cfg.get("meta_move_require_positive_base_rate", True)),
+                min_lift_vs_baseline=float(
+                    cfg.get("meta_move_min_lift_vs_baseline", 0.0)
+                ),
+                require_positive_top_lift=bool(
+                    cfg.get("meta_move_require_positive_top_lift", True)
+                ),
+                require_positive_base_rate=bool(
+                    cfg.get("meta_move_require_positive_base_rate", True)
+                ),
             )
 
             meta_clf.fit(
@@ -11229,7 +11598,9 @@ def train_meta_models_from_artifacts(
                 trade_mask=_trade_mask,
                 move_thresholds=_move_thresholds,
                 move_weights=_move_weights,
-                use_class_weight_multiplier=bool(cfg.get("meta_clf_use_class_weight_multiplier", True)),
+                use_class_weight_multiplier=bool(
+                    cfg.get("meta_clf_use_class_weight_multiplier", True)
+                ),
                 max_class_weight=float(cfg.get("meta_clf_max_class_weight", 10.0)),
                 use_calibration=bool(cfg.get("meta_clf_use_calibration", True)),
                 move_horizon=int(_mid_h),
@@ -11527,9 +11898,7 @@ def train_meta_models_from_artifacts(
     if include_meta_clf:
         _allowed_meta_suffixes.append("_clf")
     _allowed_meta_suffixes = tuple(_allowed_meta_suffixes)
-    _aligned_map_pat = re.compile(
-        r".*_(tbm_500_250|tbm_250_125|mae|mfe|asym)_h\d+$"
-    )
+    _aligned_map_pat = re.compile(r".*_(tbm_500_250|tbm_250_125|mae|mfe|asym)_h\d+$")
 
     def _fill_nonfinite_oof_vector(
         values, global_neutral: float = 0.0, method: str = "median"
@@ -11717,17 +12086,31 @@ def train_meta_models_from_artifacts(
                         "is_long": is_long,
                     }
                 )
-                if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
-                    oof_df["y_move"] = _trim_1d(np.asarray(meta.y_move, dtype=float), _n_meta)
-                if hasattr(meta, "y_move_soft") and getattr(meta, "y_move_soft", None) is not None:
+                if (
+                    hasattr(meta, "y_move")
+                    and getattr(meta, "y_move", None) is not None
+                ):
+                    oof_df["y_move"] = _trim_1d(
+                        np.asarray(meta.y_move, dtype=float), _n_meta
+                    )
+                if (
+                    hasattr(meta, "y_move_soft")
+                    and getattr(meta, "y_move_soft", None) is not None
+                ):
                     oof_df["y_move_soft"] = _trim_1d(
                         np.asarray(meta.y_move_soft, dtype=float), _n_meta
                     )
-                if hasattr(meta, "move_threshold") and getattr(meta, "move_threshold", None) is not None:
+                if (
+                    hasattr(meta, "move_threshold")
+                    and getattr(meta, "move_threshold", None) is not None
+                ):
                     oof_df["move_threshold"] = _trim_1d(
                         np.asarray(meta.move_threshold, dtype=float), _n_meta
                     )
-                if hasattr(meta, "oof_probs_raw") and getattr(meta, "oof_probs_raw", None) is not None:
+                if (
+                    hasattr(meta, "oof_probs_raw")
+                    and getattr(meta, "oof_probs_raw", None) is not None
+                ):
                     _p_move_raw = _fill_nonfinite_oof_vector(
                         meta.oof_probs_raw, global_neutral=0.5, method="mean"
                     )
@@ -11737,13 +12120,50 @@ def train_meta_models_from_artifacts(
                     _robust_sigma = _fill_nonfinite_oof_vector(
                         _robust_sigma, global_neutral=np.nan, method="mean"
                     )
-                    oof_df["robust_sigma_meta_clf"] = _trim_1d(
-                        _robust_sigma, _n_meta
-                    )
+                    oof_df["robust_sigma_meta_clf"] = _trim_1d(_robust_sigma, _n_meta)
                     oof_df["cv_meta_clf"] = _trim_1d(
                         _robust_sigma / (np.abs(_p_move) + 1e-9), _n_meta
                     )
-            elif _is_clf_key and np.ndim(meta.oof_probs) == 2 and meta.oof_probs.shape[1] == 3:
+                _clf_center = _p_move - 0.5
+                oof_df["clf_center"] = _trim_1d(_clf_center, _n_meta)
+                _eps_entropy = 1e-12
+                oof_df["clf_entropy"] = _trim_1d(
+                    -(
+                        _p_move * np.log(np.clip(_p_move, _eps_entropy, 1.0))
+                        + (1.0 - _p_move)
+                        * np.log(np.clip(1.0 - _p_move, _eps_entropy, 1.0))
+                    ),
+                    _n_meta,
+                )
+                _prefix_std = getattr(meta, "oof_prefix_std", None)
+                if _prefix_std is not None:
+                    oof_df["clf_prefix_std"] = _trim_1d(
+                        _fill_nonfinite_oof_vector(
+                            _prefix_std, global_neutral=np.nan, method="mean"
+                        ),
+                        _n_meta,
+                    )
+                _leaf_sup = getattr(meta, "oof_leaf_support_q25", None)
+                if _leaf_sup is not None:
+                    oof_df["clf_leaf_support_q25"] = _trim_1d(
+                        _fill_nonfinite_oof_vector(
+                            _leaf_sup, global_neutral=np.nan, method="mean"
+                        ),
+                        _n_meta,
+                    )
+                _leaf_iqr = getattr(meta, "oof_leaf_target_iqr_mean", None)
+                if _leaf_iqr is not None:
+                    oof_df["clf_leaf_target_iqr_mean"] = _trim_1d(
+                        _fill_nonfinite_oof_vector(
+                            _leaf_iqr, global_neutral=np.nan, method="mean"
+                        ),
+                        _n_meta,
+                    )
+            elif (
+                _is_clf_key
+                and np.ndim(meta.oof_probs) == 2
+                and meta.oof_probs.shape[1] == 3
+            ):
                 p_sl = _fill_nonfinite_oof_vector(
                     meta.oof_probs[:, 0], global_neutral=1.0 / 3.0, method="mean"
                 )
@@ -11762,13 +12182,24 @@ def train_meta_models_from_artifacts(
                         "is_long": is_long,
                     }
                 )
-                if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
-                    oof_df["y_move"] = _trim_1d(np.asarray(meta.y_move, dtype=float), _n_meta)
-                if hasattr(meta, "y_move_soft") and getattr(meta, "y_move_soft", None) is not None:
+                if (
+                    hasattr(meta, "y_move")
+                    and getattr(meta, "y_move", None) is not None
+                ):
+                    oof_df["y_move"] = _trim_1d(
+                        np.asarray(meta.y_move, dtype=float), _n_meta
+                    )
+                if (
+                    hasattr(meta, "y_move_soft")
+                    and getattr(meta, "y_move_soft", None) is not None
+                ):
                     oof_df["y_move_soft"] = _trim_1d(
                         np.asarray(meta.y_move_soft, dtype=float), _n_meta
                     )
-                if hasattr(meta, "move_threshold") and getattr(meta, "move_threshold", None) is not None:
+                if (
+                    hasattr(meta, "move_threshold")
+                    and getattr(meta, "move_threshold", None) is not None
+                ):
                     oof_df["move_threshold"] = _trim_1d(
                         np.asarray(meta.move_threshold, dtype=float), _n_meta
                     )
@@ -11777,9 +12208,7 @@ def train_meta_models_from_artifacts(
                     _robust_sigma = _fill_nonfinite_oof_vector(
                         _robust_sigma, global_neutral=np.nan, method="mean"
                     )
-                    oof_df["robust_sigma_meta_clf"] = _trim_1d(
-                        _robust_sigma, _n_meta
-                    )
+                    oof_df["robust_sigma_meta_clf"] = _trim_1d(_robust_sigma, _n_meta)
                     oof_df["cv_meta_clf"] = _trim_1d(
                         _robust_sigma / (np.abs(p_tp) + 1e-9), _n_meta
                     )
@@ -11802,13 +12231,24 @@ def train_meta_models_from_artifacts(
                         "is_long": is_long,
                     }
                 )
-                if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
-                    oof_df["y_move"] = _trim_1d(np.asarray(meta.y_move, dtype=float), _n_meta)
-                if hasattr(meta, "y_move_soft") and getattr(meta, "y_move_soft", None) is not None:
+                if (
+                    hasattr(meta, "y_move")
+                    and getattr(meta, "y_move", None) is not None
+                ):
+                    oof_df["y_move"] = _trim_1d(
+                        np.asarray(meta.y_move, dtype=float), _n_meta
+                    )
+                if (
+                    hasattr(meta, "y_move_soft")
+                    and getattr(meta, "y_move_soft", None) is not None
+                ):
                     oof_df["y_move_soft"] = _trim_1d(
                         np.asarray(meta.y_move_soft, dtype=float), _n_meta
                     )
-                if hasattr(meta, "move_threshold") and getattr(meta, "move_threshold", None) is not None:
+                if (
+                    hasattr(meta, "move_threshold")
+                    and getattr(meta, "move_threshold", None) is not None
+                ):
                     oof_df["move_threshold"] = _trim_1d(
                         np.asarray(meta.move_threshold, dtype=float), _n_meta
                     )
@@ -11843,6 +12283,31 @@ def train_meta_models_from_artifacts(
                         oof_df["cv_meta_reg"] = _trim_1d(
                             _robust_sigma / (np.abs(_oof_pred_1d) + 1e-9), _n_meta
                         )
+                    oof_df["reg_pred"] = _trim_1d(_oof_pred_1d, _n_meta)
+                    _prefix_std_r = getattr(meta, "oof_prefix_std", None)
+                    if _prefix_std_r is not None:
+                        oof_df["reg_prefix_std"] = _trim_1d(
+                            _fill_nonfinite_oof_vector(
+                                _prefix_std_r, global_neutral=np.nan, method="mean"
+                            ),
+                            _n_meta,
+                        )
+                    _leaf_sup_r = getattr(meta, "oof_leaf_support_q25", None)
+                    if _leaf_sup_r is not None:
+                        oof_df["reg_leaf_support_q25"] = _trim_1d(
+                            _fill_nonfinite_oof_vector(
+                                _leaf_sup_r, global_neutral=np.nan, method="mean"
+                            ),
+                            _n_meta,
+                        )
+                    _leaf_iqr_r = getattr(meta, "oof_leaf_target_iqr_mean", None)
+                    if _leaf_iqr_r is not None:
+                        oof_df["reg_leaf_target_iqr_mean"] = _trim_1d(
+                            _fill_nonfinite_oof_vector(
+                                _leaf_iqr_r, global_neutral=np.nan, method="mean"
+                            ),
+                            _n_meta,
+                        )
                 elif key.endswith("_mae_q70"):
                     oof_df["oof_log_mae_q70_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
                     oof_df["oof_mae_q70_hat"] = np.expm1(
@@ -11853,9 +12318,17 @@ def train_meta_models_from_artifacts(
                     oof_df["oof_mfe_hat"] = np.expm1(_trim_1d(_oof_pred_1d, _n_meta))
                 elif key.endswith("_asym"):
                     oof_df["oof_asym_hat"] = _trim_1d(_oof_pred_1d, _n_meta)
-                if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
-                    oof_df["y_move"] = _trim_1d(np.asarray(meta.y_move, dtype=float), _n_meta)
-                if hasattr(meta, "move_threshold") and getattr(meta, "move_threshold", None) is not None:
+                if (
+                    hasattr(meta, "y_move")
+                    and getattr(meta, "y_move", None) is not None
+                ):
+                    oof_df["y_move"] = _trim_1d(
+                        np.asarray(meta.y_move, dtype=float), _n_meta
+                    )
+                if (
+                    hasattr(meta, "move_threshold")
+                    and getattr(meta, "move_threshold", None) is not None
+                ):
                     oof_df["move_threshold"] = _trim_1d(
                         np.asarray(meta.move_threshold, dtype=float), _n_meta
                     )
@@ -11884,7 +12357,9 @@ def train_meta_models_from_artifacts(
                 elif "return" in _md:
                     oof_df["return"] = _md["return"][:_n_meta]
                 if "__barrier_pct__" in _md:
-                    oof_df["barrier_pct"] = np.asarray(_md["__barrier_pct__"], dtype=float)[:_n_meta]
+                    oof_df["barrier_pct"] = np.asarray(
+                        _md["__barrier_pct__"], dtype=float
+                    )[:_n_meta]
                 if "__y_bin__" in _md:
                     oof_df["y_bin"] = np.asarray(_md["__y_bin__"], dtype=float)[
                         :_n_meta
@@ -11935,17 +12410,25 @@ def train_meta_models_from_artifacts(
                         oof_df[_cn] = _md[_cn][:_n_meta]
 
                 if "oof_p_move" in oof_df.columns:
-                    if hasattr(meta, "y_move") and getattr(meta, "y_move", None) is not None:
+                    if (
+                        hasattr(meta, "y_move")
+                        and getattr(meta, "y_move", None) is not None
+                    ):
                         y_move = np.asarray(meta.y_move, dtype=float)[:_n_meta]
                         oof_df["y_move"] = y_move
-                    elif hasattr(meta, "y_move_soft") and getattr(meta, "y_move_soft", None) is not None:
+                    elif (
+                        hasattr(meta, "y_move_soft")
+                        and getattr(meta, "y_move_soft", None) is not None
+                    ):
                         y_soft = np.asarray(meta.y_move_soft, dtype=float)[:_n_meta]
                         y_move = (y_soft >= 0.5).astype(float)
                         oof_df["y_move"] = y_move
                     elif "return" in oof_df.columns:
                         move_k = float(getattr(meta, "label_threshold", 1.25))
                         if "barrier_pct" in oof_df.columns:
-                            move_thr = move_k * np.asarray(oof_df["barrier_pct"], dtype=float)
+                            move_thr = move_k * np.asarray(
+                                oof_df["barrier_pct"], dtype=float
+                            )
                         else:
                             move_thr = np.full(len(oof_df), float(move_k), dtype=float)
                         y_move = (
@@ -12392,6 +12875,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     spike_models = {}
     exh_models = {}
     degenerate_strategy_ids = set()
+    alpha_fit_diagnostics = {}
 
     alpha_gate_results = []
     meta_gate_results = []
@@ -12409,16 +12893,14 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     final_models = {}
     base_variant_models = {}
     min_base_fit_features = int(cfg.get("base_min_fit_features_guard", 8))
-    skip_primary_alpha = bool(cfg.get("base_skip_primary_variant", True))
+    skip_primary_alpha = bool(cfg.get("base_skip_primary_variant", False))
     base_min_samples_hard_floor = int(cfg.get("base_min_samples_hard_floor", 3000))
 
     def _log_feature_matrix_state(label, X_df, selected=None):
         cols_now = list(X_df.columns) if hasattr(X_df, "columns") else []
         n_cols = len(cols_now)
         n_unique = len(set(cols_now))
-        tprint(
-            f"{label}: rows={len(X_df)} cols={n_cols} unique_cols={n_unique}"
-        )
+        tprint(f"{label}: rows={len(X_df)} cols={n_cols} unique_cols={n_unique}")
         if cols_now:
             tprint(f"  {label} columns sample: {cols_now[:12]}")
         if selected is not None:
@@ -12438,6 +12920,56 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             )
             return False
         return True
+
+    def _record_alpha_fit_diag(
+        side_name,
+        kind_name,
+        horizon,
+        *,
+        fit_status,
+        failure_reason=None,
+        metrics_are_fallback=False,
+        selected_features=None,
+        y_fit=None,
+        training_diag=None,
+        degeneracy=None,
+        extra=None,
+    ):
+        y_arr = None if y_fit is None else np.asarray(y_fit, dtype=np.float32)
+        n_total = int(len(y_arr)) if y_arr is not None else int(
+            (training_diag or {}).get("n_total", 0)
+        )
+        if y_arr is not None and len(y_arr) > 0:
+            y_hard = (y_arr >= 0.5).astype(np.int8)
+            n_pos = int(np.sum(y_hard))
+            n_neg = int(len(y_hard) - n_pos)
+        else:
+            class_counts = dict((training_diag or {}).get("class_counts", {}) or {})
+            n_pos = int(class_counts.get("pos", 0))
+            n_neg = int(class_counts.get("neg", 0))
+        minority_pct = float(
+            (min(n_pos, n_neg) / max(n_total, 1)) * 100.0 if n_total > 0 else 0.0
+        )
+        key = f"{side_name}_{kind_name}_H{int(horizon)}"
+        payload = {
+            "fit_status": str(fit_status),
+            "failure_reason": failure_reason,
+            "metrics_are_fallback": bool(metrics_are_fallback),
+            "selected_feature_count": int(len(selected_features or [])),
+            "selected_feature_sample": list(selected_features or [])[:12],
+            "support": {
+                "n_total": n_total,
+                "n_positive": n_pos,
+                "n_negative": n_neg,
+                "minority_support_pct": minority_pct,
+            },
+            "training_diagnostics": dict(training_diag or {}),
+            "degeneracy": dict(degeneracy or {}),
+        }
+        if extra:
+            payload.update(extra)
+        alpha_fit_diagnostics[key] = payload
+        return payload
 
     def _train_base_variant_dataset(
         side_name, kind_name, horizon, dataset_key, df_variant, strategy=None
@@ -12545,7 +13077,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             _hpo_payload_variant = load_best_base_extratrees_payload(
                 str(cfg.get("base_hpo_out_dir")), scope_key=dataset_key
             )
-        _selected_from_hpo = list((_hpo_payload_variant or {}).get("selected_features", []) or [])
+        _selected_from_hpo = list(
+            (_hpo_payload_variant or {}).get("selected_features", []) or []
+        )
         if _selected_from_hpo:
             selected_feats = _cap_selected_features(
                 _selected_from_hpo,
@@ -12565,12 +13099,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 base_model=mdi_base,
                 sample_weight=w[_sel_idx],
                 selector_y=y[_sel_idx],
-                selector_target=str(cfg.get("base_mdi_selector_target", "classification")),
+                selector_target=str(
+                    cfg.get("base_mdi_selector_target", "classification")
+                ),
                 selector_loss=str(cfg.get("base_mdi_selector_loss", "binary_logloss")),
                 selector_head_name=_selector_head,
                 selector_report_dir=_selector_report_dir,
                 selector_prev_selected=None,
-                selector_family_map=dict(cfg.get("selector_feature_family_map", {}) or {}),
+                selector_family_map=dict(
+                    cfg.get("selector_feature_family_map", {}) or {}
+                ),
                 selector_focus_top_frac=float(
                     _base_sel_cfg.get("selector_focus_top_frac", 1.0)
                 ),
@@ -12599,9 +13137,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 selector_family_penalty=bool(
                     _base_sel_cfg.get("selector_family_penalty", True)
                 ),
-                selector_emit_report=bool(_base_sel_cfg.get("selector_emit_report", True)),
-                analysis_n_estimators=int(_base_sel_cfg.get("analysis_n_estimators", 192)),
-                analysis_max_samples=int(_base_sel_cfg.get("analysis_max_samples", 3000)),
+                selector_emit_report=bool(
+                    _base_sel_cfg.get("selector_emit_report", True)
+                ),
+                analysis_n_estimators=int(
+                    _base_sel_cfg.get("analysis_n_estimators", 192)
+                ),
+                analysis_max_samples=int(
+                    _base_sel_cfg.get("analysis_max_samples", 3000)
+                ),
                 min_samples_leaf_pct=float(
                     _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
                 ),
@@ -12614,7 +13158,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 selector_hysteresis_margin=float(
                     _base_sel_cfg.get("selector_hysteresis_margin", 0.05)
                 ),
-                selector_min_overlap=float(_base_sel_cfg.get("selector_min_overlap", 0.70)),
+                selector_min_overlap=float(
+                    _base_sel_cfg.get("selector_min_overlap", 0.70)
+                ),
                 composite_weights={
                     "top30": float(_base_sel_cfg.get("top30", 0.0)),
                     "global": float(_base_sel_cfg.get("global", 0.55)),
@@ -12637,7 +13183,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             top5_feats, top10_feats = _mdi_top_feature_lists(sel_res, selected_feats)
         _log_feature_matrix_state(
             f"Base variant post-MDI [{dataset_key}]",
-            X.iloc[_fit_idx][selected_feats] if selected_feats else X.iloc[_fit_idx][[]],
+            (
+                X.iloc[_fit_idx][selected_feats]
+                if selected_feats
+                else X.iloc[_fit_idx][[]]
+            ),
             selected_feats,
         )
         if not _feature_guard_ok(
@@ -12668,6 +13218,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             n_splits=2,
             cfg=cfg,
         )
+        if race is None:
+            return None
         return {
             "model": race,
             "H": int(horizon),
@@ -12721,9 +13273,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 n_union = len(datasets[f"train_{kind_name}_{int(horizon)}"])
                 aligned_oof = np.full(n_union, 0.5, dtype=np.float32)
                 n_use = min(n_union, len(race_variant.oof_probs))
-                aligned_oof[:n_use] = np.asarray(race_variant.oof_probs, dtype=np.float32)[
-                    :n_use
-                ]
+                aligned_oof[:n_use] = np.asarray(
+                    race_variant.oof_probs, dtype=np.float32
+                )[:n_use]
             member_oofs.append(aligned_oof)
             selected_union.extend(list(variant_info.get("selected_features", [])))
             top5_union.extend(list(variant_info.get("top5_features", [])))
@@ -12765,22 +13317,39 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
         for strategy in strats:
             for side, k in [(strategy["trade_side"], strategy["strategy_id"])]:
-                if skip_primary_alpha:
-                    continue
                 best_ic = -1.0
                 best_m = None
                 per_h_models = {}
                 deployable_h_models = {}
                 feature_selection_by_h = {}
+                if skip_primary_alpha:
+                    continue
                 for H in strategy_horizons.get(k, []):
                     key = f"train_{k}_{H}"
                     if key not in datasets:
+                        _record_alpha_fit_diag(
+                            side,
+                            k,
+                            H,
+                            fit_status="skipped",
+                            failure_reason="missing_dataset",
+                            metrics_are_fallback=True,
+                        )
                         continue
 
                     df = datasets[key]
                     if df.empty or len(df) < max(
                         int(cfg["min_train_samples"] // 4), base_min_samples_hard_floor
                     ):
+                        _record_alpha_fit_diag(
+                            side,
+                            k,
+                            H,
+                            fit_status="skipped",
+                            failure_reason="insufficient_training_samples",
+                            metrics_are_fallback=True,
+                            y_fit=df["__y_bin__"].values if "__y_bin__" in df.columns else None,
+                        )
                         continue
 
                     _base_cap = int(cfg.get("base_fit_max_samples", 150000))
@@ -12821,6 +13390,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
                     y = df["__y_bin__"].values.astype(np.float32)
                     if len(np.unique((y >= 0.5).astype(int))) < 2:
+                        _record_alpha_fit_diag(
+                            side,
+                            k,
+                            H,
+                            fit_status="skipped",
+                            failure_reason="single_class_target",
+                            metrics_are_fallback=True,
+                            y_fit=y,
+                        )
                         tprint(
                             f"  Skipping {key}: single-class target (all {'positive' if np.mean(y)>=0.5 else 'negative'})"
                         )
@@ -12905,6 +13483,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     X = X[valid_cols]
                     _log_feature_matrix_state(f"Base pre-MDI [{key}]", X)
                     if not _feature_guard_ok(f"Base pre-MDI [{key}]", X.columns):
+                        _record_alpha_fit_diag(
+                            side,
+                            k,
+                            H,
+                            fit_status="skipped",
+                            failure_reason="insufficient_features_pre_mdi",
+                            metrics_are_fallback=True,
+                            y_fit=y,
+                        )
                         continue
                     base_sel_max = int(cfg.get("base_selector_max_samples", 30000))
                     base_fit_max = int(cfg.get("base_fit_max_samples", 150000))
@@ -12993,7 +13580,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         _hpo_payload_base = load_best_base_extratrees_payload(
                             str(cfg.get("base_hpo_out_dir")), scope_key=key
                         )
-                    _selected_from_hpo = list((_hpo_payload_base or {}).get("selected_features", []) or [])
+                    _selected_from_hpo = list(
+                        (_hpo_payload_base or {}).get("selected_features", []) or []
+                    )
                     if _selected_from_hpo:
                         selected_feats = _cap_selected_features(
                             _selected_from_hpo,
@@ -13001,7 +13590,10 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             target_cap=_effective_target_cap,
                             min_features=_effective_min_features,
                         )
-                        top5_feats, top10_feats = selected_feats[:5], selected_feats[:10]
+                        top5_feats, top10_feats = (
+                            selected_feats[:5],
+                            selected_feats[:10],
+                        )
                         tprint(
                             f"Base HPO-selected features [{key}]: using {len(selected_feats)}/{X.shape[1]} features from persisted base HPO"
                         )
@@ -13032,10 +13624,14 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                                 "selector_top_metric", "ic"
                             ),
                             selector_frequency_hit_mode=str(
-                                _base_sel_cfg.get("selector_frequency_hit_mode", "relative")
+                                _base_sel_cfg.get(
+                                    "selector_frequency_hit_mode", "relative"
+                                )
                             ),
                             selector_frequency_hit_quantile=float(
-                                _base_sel_cfg.get("selector_frequency_hit_quantile", 0.80)
+                                _base_sel_cfg.get(
+                                    "selector_frequency_hit_quantile", 0.80
+                                )
                             ),
                             selector_frequency_hit_abs=float(
                                 _base_sel_cfg.get("selector_frequency_hit_abs", 1e-6)
@@ -13046,7 +13642,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                                 )
                             ),
                             selector_interaction_topk_pairs=int(
-                                _base_sel_cfg.get("selector_interaction_topk_pairs", 100)
+                                _base_sel_cfg.get(
+                                    "selector_interaction_topk_pairs", 100
+                                )
                             ),
                             selector_interaction_max_pairs_per_feature=int(
                                 _base_sel_cfg.get(
@@ -13054,7 +13652,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                                 )
                             ),
                             selector_interaction_corr_penalty=bool(
-                                _base_sel_cfg.get("selector_interaction_corr_penalty", True)
+                                _base_sel_cfg.get(
+                                    "selector_interaction_corr_penalty", True
+                                )
                             ),
                             selector_family_penalty=bool(
                                 _base_sel_cfg.get("selector_family_penalty", True)
@@ -13075,7 +13675,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                                 _base_sel_cfg.get("selector_max_missing_frac", 0.15)
                             ),
                             selector_near_constant_dominance=float(
-                                _base_sel_cfg.get("selector_near_constant_dominance", 0.999)
+                                _base_sel_cfg.get(
+                                    "selector_near_constant_dominance", 0.999
+                                )
                             ),
                             selector_hysteresis_margin=float(
                                 _base_sel_cfg.get("selector_hysteresis_margin", 0.05)
@@ -13086,8 +13688,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             composite_weights={
                                 "top30": float(_base_sel_cfg.get("top30", 0.0)),
                                 "global": float(_base_sel_cfg.get("global", 0.55)),
-                                "stability": float(_base_sel_cfg.get("stability", 0.25)),
-                                "frequency": float(_base_sel_cfg.get("frequency", 0.15)),
+                                "stability": float(
+                                    _base_sel_cfg.get("stability", 0.25)
+                                ),
+                                "frequency": float(
+                                    _base_sel_cfg.get("frequency", 0.15)
+                                ),
                                 "interaction": float(
                                     _base_sel_cfg.get("interaction", 0.05)
                                 ),
@@ -13114,10 +13720,24 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     )
                     _log_feature_matrix_state(
                         f"Base post-MDI [{key}]",
-                        X.iloc[_fit_idx][selected_feats] if selected_feats else X.iloc[_fit_idx][[]],
+                        (
+                            X.iloc[_fit_idx][selected_feats]
+                            if selected_feats
+                            else X.iloc[_fit_idx][[]]
+                        ),
                         selected_feats,
                     )
                     if not _feature_guard_ok(f"Base post-MDI [{key}]", selected_feats):
+                        _record_alpha_fit_diag(
+                            side,
+                            k,
+                            H,
+                            fit_status="skipped",
+                            failure_reason="insufficient_features_post_mdi",
+                            metrics_are_fallback=True,
+                            y_fit=y_fit,
+                            selected_features=selected_feats,
+                        )
                         continue
 
                     X_sel = X.iloc[_fit_idx][selected_feats]
@@ -13154,6 +13774,21 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         n_splits=2,
                         cfg=cfg,
                     )
+                    if race is None:
+                        _record_alpha_fit_diag(
+                            side,
+                            k,
+                            H,
+                            fit_status="failed",
+                            failure_reason="invalid_or_degenerate_model_output",
+                            metrics_are_fallback=True,
+                            y_fit=y_fit,
+                            selected_features=selected_feats,
+                        )
+                        tprint(
+                            f"Skipping {side} {k} H={H}: invalid or degenerate model output."
+                        )
+                        continue
                     score = race.metrics.get(race.best_model_name, -1.0)
                     dm = race.detailed_metrics.get(race.best_model_name, {})
                     degeneracy_info = dm.get("degeneracy", {})
@@ -13166,9 +13801,19 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         if len(np.unique(y_bin_canon)) > 1:
                             from sklearn.metrics import roc_auc_score as _roc_auc
 
-                            oof_auc_canonical = float(
-                                _roc_auc(y_bin_canon, race.oof_probs)
-                            )
+                            oof_canon = np.asarray(race.oof_probs, dtype=np.float64)
+                            finite_canon = np.isfinite(oof_canon)
+                            if np.any(finite_canon):
+                                fill_canon = float(np.nanmean(oof_canon[finite_canon]))
+                                oof_canon = np.where(
+                                    finite_canon, oof_canon, fill_canon
+                                )
+                                try:
+                                    oof_auc_canonical = float(
+                                        _roc_auc(y_bin_canon, oof_canon)
+                                    )
+                                except Exception:
+                                    oof_auc_canonical = 0.5
                     # --- Alpha model OOF diagnostics (all metrics from same post-calibration oof) ---
                     per_regime = {}
                     oof_bss = dm.get("BSS", 0)  # fallback to race BSS
@@ -13296,6 +13941,21 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     alpha_diag = {}
                     if race.best_model_name in race.detailed_metrics:
                         dm_best = race.detailed_metrics[race.best_model_name]
+                        _training_diag = dict(dm_best.get("training_diagnostics", {}) or {})
+                        _degeneracy_info = dict(dm_best.get("degeneracy", {}) or {})
+                        _metrics_are_fallback = bool(
+                            _degeneracy_info.get("is_degenerate", False)
+                            and (
+                                bool(
+                                    _degeneracy_info.get("reasons", []) or []
+                                )
+                                or (
+                                    abs(float(dm_best.get("AUC", 0.5)) - 0.5) <= 1e-9
+                                    and abs(float(dm_best.get("IC", 0.0))) <= 1e-9
+                                    and abs(float(dm_best.get("IC_ret", 0.0))) <= 1e-9
+                                )
+                            )
+                        )
                         alpha_diag = {
                             "prec10": float(dm_best.get("Prec10", np.nan)),
                             "prec40": float(dm_best.get("Prec40", np.nan)),
@@ -13304,11 +13964,50 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                                 "calibration_profile", "n/a"
                             ),
                             "degenerate": bool(
-                                dm_best.get("degeneracy", {}).get("is_degenerate", False)
+                                _degeneracy_info.get("is_degenerate", False)
                             ),
                             "degeneracy_reasons": list(
-                                dm_best.get("degeneracy", {}).get("reasons", [])
+                                _degeneracy_info.get("reasons", [])
                             ),
+                            "fit_status": (
+                                "fallback" if _metrics_are_fallback else "trained"
+                            ),
+                            "failure_reason": (
+                                "degenerate_constant_or_near_constant_predictions"
+                                if _metrics_are_fallback
+                                else (
+                                    "degenerate_but_nonfallback_metrics"
+                                    if bool(_degeneracy_info.get("is_degenerate", False))
+                                    else None
+                                )
+                            ),
+                            "metrics_are_fallback": _metrics_are_fallback,
+                            "support": {
+                                "n_total": int(_training_diag.get("n_total", len(y_fit))),
+                                "n_positive": int(
+                                    _training_diag.get("class_counts", {}).get(
+                                        "pos", int(np.sum(y_fit >= 0.5))
+                                    )
+                                ),
+                                "n_negative": int(
+                                    _training_diag.get("class_counts", {}).get(
+                                        "neg", int(len(y_fit) - np.sum(y_fit >= 0.5))
+                                    )
+                                ),
+                                "minority_support_pct": float(
+                                    _training_diag.get(
+                                        "class_imbalance_minority_pct",
+                                        (min(
+                                            int(np.sum(y_fit >= 0.5)),
+                                            int(len(y_fit) - np.sum(y_fit >= 0.5)),
+                                        )
+                                        / max(len(y_fit), 1))
+                                        * 100.0,
+                                    )
+                                ),
+                            },
+                            "training_diagnostics": _training_diag,
+                            "degeneracy": _degeneracy_info,
                         }
                     if race.oof_probs is not None:
                         groups_v = (
@@ -13330,6 +14029,24 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             groups=groups_v,
                         )
                         alpha_diag.update(oof_metrics)
+                    _record_alpha_fit_diag(
+                        side,
+                        k,
+                        H,
+                        fit_status=alpha_diag.get("fit_status", "trained"),
+                        failure_reason=alpha_diag.get("failure_reason"),
+                        metrics_are_fallback=bool(
+                            alpha_diag.get("metrics_are_fallback", False)
+                        ),
+                        selected_features=selected_feats,
+                        y_fit=y_fit,
+                        training_diag=alpha_diag.get("training_diagnostics", {}),
+                        degeneracy=alpha_diag.get("degeneracy", {}),
+                        extra={
+                            "selected_feature_count": int(len(selected_feats)),
+                            "selected_feature_sample": list(selected_feats)[:12],
+                        },
+                    )
 
                     # Economic gate: positive realized expectancy on top-k OOF selection
                     _econ_ok = True
@@ -13377,9 +14094,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         "degenerate": is_degenerate,
                         "degeneracy": degeneracy_info,
                         "deployable": _deployable,
-                        "econ_top_mean_ret": float(_econ_mean)
-                        if np.isfinite(_econ_mean)
-                        else float("nan"),
+                        "econ_top_mean_ret": (
+                            float(_econ_mean)
+                            if np.isfinite(_econ_mean)
+                            else float("nan")
+                        ),
                     }
                     if _deployable:
                         deployable_h_models[H] = per_h_models[H]
@@ -13493,7 +14212,10 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     else {}
                 )
                 for _metric_key, _metric_vals in _dm_best.items():
-                    if _metric_key in ("oof_sigma_trees", "oof_sigma_robust") or _metric_key.startswith("oof_tree_"):
+                    if _metric_key in (
+                        "oof_sigma_trees",
+                        "oof_sigma_robust",
+                    ) or _metric_key.startswith("oof_tree_"):
                         if _metric_vals is not None and len(_metric_vals) >= _n:
                             _payload[_metric_key] = np.asarray(
                                 _metric_vals, dtype=np.float32
@@ -13604,7 +14326,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 gate_res["Model"] = f"{side}_{k}_H{_gate_H}"
                 alpha_gate_results.append(gate_res)
 
-        if bool(cfg.get("base_geometry_train_variants", True)):
+        if bool(cfg.get("base_geometry_train_variants", False)):
             tprint("Training grouped base-geometry variant models (tight/wide)...")
             _run_id = cfg.get("run_id", "default")
             oof_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "oof")
@@ -13646,7 +14368,10 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             else {}
                         )
                         for _metric_key, _metric_vals in _dm_best.items():
-                            if _metric_key in ("oof_sigma_trees", "oof_sigma_robust") or _metric_key.startswith("oof_tree_"):
+                            if _metric_key in (
+                                "oof_sigma_trees",
+                                "oof_sigma_robust",
+                            ) or _metric_key.startswith("oof_tree_"):
                                 if _metric_vals is not None and len(_metric_vals) >= _n:
                                     _payload[_metric_key] = np.asarray(
                                         _metric_vals, dtype=np.float32
@@ -13736,6 +14461,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             "spike_models": spike_models,
             "specialist_models": specialist_models,
             "blocked_strategy_ids": sorted(str(s) for s in degenerate_strategy_ids),
+            "alpha_fit_diagnostics": alpha_fit_diagnostics,
         }
         with open(_intermediate_path, "wb") as _f:
             _pkl_save.dump(_base_bundle, _f)
@@ -13886,14 +14612,18 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 )
                 entry["H"] = H_rep
                 entry["is_winner"] = cand_name == race.best_model_name
-                entry["downstream_blocked"] = bool(conf.get("downstream_blocked", False))
+                entry["downstream_blocked"] = bool(
+                    conf.get("downstream_blocked", False)
+                )
                 entry["variant"] = "primary"
                 # Canonical primary rows are kept internally but are not part of the
                 # reportable geometry-variant surface. The report should focus on
                 # the explicit _tight / _wide models only.
                 continue
 
-    for (side, kind, horizon, variant), variant_info in (base_variant_models or {}).items():
+    for (side, kind, horizon, variant), variant_info in (
+        base_variant_models or {}
+    ).items():
         race = variant_info.get("model")
         if race is None or race.oof_probs is None:
             continue
@@ -13904,9 +14634,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         y_bin = (dfm["__y_bin__"].values >= 0.5).astype(int)
         y_ret = dfm["__y_ret__"].values.astype(float)
         y_lbl = (
-            dfm["__y_lbl__"].values.astype(int)
-            if "__y_lbl__" in dfm.columns
-            else None
+            dfm["__y_lbl__"].values.astype(int) if "__y_lbl__" in dfm.columns else None
         )
         groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
         for cand_name, dm in race.detailed_metrics.items():
@@ -14134,6 +14862,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         "spike_models": spike_models,
         "specialist_models": specialist_models,
         "quality_gate_report": gate_report,
+        "alpha_fit_diagnostics": alpha_fit_diagnostics,
     }
 
 

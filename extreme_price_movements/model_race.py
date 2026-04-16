@@ -335,28 +335,203 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         model.fit(X_tr, y_tr, **fit_kwargs)
 
-    def _tree_sigma_features(self, model, X):
-        """Return tree-ensemble dispersion features for a fitted model.
+    _TREE_UNCERTAINTY_KEYS = (
+        "pred_mean",
+        "pred_std",
+        "pred_iqr",
+        "pred_cv",
+        "pred_std_robust",
+        "vote_entropy",
+        "vote_margin",
+        "vote_top_gap",
+        "leaf_support_mean",
+        "leaf_support_median",
+        "leaf_support_std",
+        "leaf_target_std_mean",
+        "leaf_target_iqr_mean",
+        "leaf_target_var_mean",
+        "leaf_centroid_dist_mean",
+        "leaf_centroid_dist_median",
+        "leaf_centroid_dist_cv",
+    )
 
-        The base race only uses ExtraTrees, so we can compute the per-tree vote
-        spread directly from the fitted estimators. Fallbacks are NaN when the
-        model does not expose tree estimators.
-        """
+    @staticmethod
+    def _nan_tree_feature_dict(n: int) -> dict[str, np.ndarray]:
+        return {
+            k: np.full(n, np.nan, dtype=np.float32)
+            for k in ModelRace._TREE_UNCERTAINTY_KEYS
+        }
+
+    def _build_leaf_context(
+        self, model, X_train: np.ndarray, y_train: np.ndarray
+    ) -> list[dict[str, np.ndarray]] | None:
         inner = model.estimator if isinstance(model, Float64Wrapper) else model
         estimators = getattr(inner, "estimators_", None)
         if not estimators:
-            n = len(X)
-            nan_vec = np.full(n, np.nan, dtype=np.float32)
-            return nan_vec, nan_vec
+            return None
+        if X_train is None or y_train is None or len(X_train) == 0:
+            return None
+
+        X_tr = np.asarray(X_train, dtype=np.float32)
+        y_tr = np.asarray(y_train, dtype=np.float32).reshape(-1)
+        context: list[dict[str, np.ndarray]] = []
+
+        for tree in estimators:
+            leaves = tree.apply(X_tr).astype(np.int32)
+            uniq, inv = np.unique(leaves, return_inverse=True)
+            n_leaf = len(uniq)
+            support = np.bincount(inv, minlength=n_leaf).astype(np.float32)
+            support_safe = np.maximum(support, 1.0)
+
+            y_sum = np.bincount(inv, weights=y_tr, minlength=n_leaf).astype(np.float32)
+            y_sq_sum = np.bincount(
+                inv, weights=np.square(y_tr), minlength=n_leaf
+            ).astype(np.float32)
+            y_mean = y_sum / support_safe
+            y_var = np.clip(y_sq_sum / support_safe - np.square(y_mean), 0.0, None)
+            y_std = np.sqrt(y_var, dtype=np.float32)
+            # Bernoulli-compatible IQR proxy from in-leaf positive rate.
+            y_iqr = np.where(
+                (y_mean > 0.25) & (y_mean < 0.75), 1.0, 0.0
+            ).astype(np.float32)
+
+            centroid = np.zeros((n_leaf, X_tr.shape[1]), dtype=np.float32)
+            for j in range(X_tr.shape[1]):
+                centroid[:, j] = (
+                    np.bincount(inv, weights=X_tr[:, j], minlength=n_leaf).astype(
+                        np.float32
+                    )
+                    / support_safe
+                )
+
+            context.append(
+                {
+                    "leaf_ids": uniq.astype(np.int32),
+                    "support": support.astype(np.float32),
+                    "target_std": y_std.astype(np.float32),
+                    "target_iqr": y_iqr.astype(np.float32),
+                    "target_var": y_var.astype(np.float32),
+                    "centroid": centroid.astype(np.float32),
+                }
+            )
+        return context
+
+    def _tree_uncertainty_features(
+        self,
+        model,
+        X,
+        *,
+        leaf_context: list[dict[str, np.ndarray]] | None = None,
+        X_train: np.ndarray | None = None,
+        y_train: np.ndarray | None = None,
+        eps: float = 1e-12,
+    ) -> dict[str, np.ndarray]:
+        inner = model.estimator if isinstance(model, Float64Wrapper) else model
+        estimators = getattr(inner, "estimators_", None)
+        n = len(X)
+        if not estimators:
+            return self._nan_tree_feature_dict(n)
+
+        X_np = np.asarray(X, dtype=np.float32)
         try:
-            tree_preds = np.stack([tree.predict(X) for tree in estimators], axis=1)
-            sigma = np.asarray(tree_preds.std(axis=1), dtype=np.float32)
-            sigma_robust = np.asarray(robust_sigma(tree_preds), dtype=np.float32)
-            return sigma, sigma_robust
+            tree_preds = np.column_stack([t.predict(X_np) for t in estimators]).astype(
+                np.float32
+            )
         except Exception:
-            n = len(X)
-            nan_vec = np.full(n, np.nan, dtype=np.float32)
-            return nan_vec, nan_vec
+            return self._nan_tree_feature_dict(n)
+
+        pred_mean = tree_preds.mean(axis=1).astype(np.float32)
+        pred_std = tree_preds.std(axis=1).astype(np.float32)
+        pred_iqr = np.subtract(
+            np.percentile(tree_preds, 75, axis=1),
+            np.percentile(tree_preds, 25, axis=1),
+            dtype=np.float32,
+        ).astype(np.float32)
+        pred_cv = (pred_std / (np.abs(pred_mean) + eps)).astype(np.float32)
+        pred_std_robust = np.asarray(robust_sigma(tree_preds), dtype=np.float32)
+
+        # Binary-vote uncertainty features.
+        votes = tree_preds
+        p_hat = votes.mean(axis=1).astype(np.float32)
+        p_hat = np.clip(p_hat, 0.0, 1.0)
+        vote_entropy = -(
+            p_hat * np.log(p_hat + eps) + (1.0 - p_hat) * np.log(1.0 - p_hat + eps)
+        ).astype(np.float32)
+        vote_margin = np.abs(p_hat - 0.5).astype(np.float32)
+        vote_top_gap = np.abs(2.0 * p_hat - 1.0).astype(np.float32)
+
+        if leaf_context is None and X_train is not None and y_train is not None:
+            try:
+                leaf_context = self._build_leaf_context(model, X_train, y_train)
+            except Exception:
+                leaf_context = None
+
+        n_trees = len(estimators)
+        leaf_support = np.full((n, n_trees), np.nan, dtype=np.float32)
+        leaf_target_std = np.full((n, n_trees), np.nan, dtype=np.float32)
+        leaf_target_iqr = np.full((n, n_trees), np.nan, dtype=np.float32)
+        leaf_target_var = np.full((n, n_trees), np.nan, dtype=np.float32)
+        leaf_centroid_dist = np.full((n, n_trees), np.nan, dtype=np.float32)
+
+        for i, tree in enumerate(estimators):
+            leaves = tree.apply(X_np).astype(np.int32)
+            leaf_support[:, i] = tree.tree_.n_node_samples[leaves].astype(np.float32)
+            if not leaf_context or i >= len(leaf_context):
+                continue
+            ctx = leaf_context[i]
+            leaf_ids = ctx["leaf_ids"]
+            pos = np.searchsorted(leaf_ids, leaves)
+            valid = (pos >= 0) & (pos < len(leaf_ids)) & (leaf_ids[pos] == leaves)
+            if not valid.any():
+                continue
+            vp = pos[valid]
+            leaf_target_std[valid, i] = ctx["target_std"][vp]
+            leaf_target_iqr[valid, i] = ctx["target_iqr"][vp]
+            leaf_target_var[valid, i] = ctx["target_var"][vp]
+            centroids = ctx["centroid"][vp]
+            diff = X_np[valid] - centroids
+            leaf_centroid_dist[valid, i] = np.sqrt(
+                np.sum(np.square(diff, dtype=np.float32), axis=1), dtype=np.float32
+            )
+
+        leaf_support_mean = np.nanmean(leaf_support, axis=1).astype(np.float32)
+        leaf_support_median = np.nanmedian(leaf_support, axis=1).astype(np.float32)
+        leaf_support_std = np.nanstd(leaf_support, axis=1).astype(np.float32)
+        leaf_target_std_mean = np.nanmean(leaf_target_std, axis=1).astype(np.float32)
+        leaf_target_iqr_mean = np.nanmean(leaf_target_iqr, axis=1).astype(np.float32)
+        leaf_target_var_mean = np.nanmean(leaf_target_var, axis=1).astype(np.float32)
+        leaf_centroid_dist_mean = np.nanmean(leaf_centroid_dist, axis=1).astype(
+            np.float32
+        )
+        leaf_centroid_dist_median = np.nanmedian(leaf_centroid_dist, axis=1).astype(
+            np.float32
+        )
+        leaf_centroid_dist_std = np.nanstd(leaf_centroid_dist, axis=1).astype(
+            np.float32
+        )
+        leaf_centroid_dist_cv = (
+            leaf_centroid_dist_std / (leaf_centroid_dist_mean + eps)
+        ).astype(np.float32)
+
+        return {
+            "pred_mean": pred_mean,
+            "pred_std": pred_std,
+            "pred_iqr": pred_iqr,
+            "pred_cv": pred_cv,
+            "pred_std_robust": pred_std_robust,
+            "vote_entropy": vote_entropy,
+            "vote_margin": vote_margin,
+            "vote_top_gap": vote_top_gap,
+            "leaf_support_mean": leaf_support_mean,
+            "leaf_support_median": leaf_support_median,
+            "leaf_support_std": leaf_support_std,
+            "leaf_target_std_mean": leaf_target_std_mean,
+            "leaf_target_iqr_mean": leaf_target_iqr_mean,
+            "leaf_target_var_mean": leaf_target_var_mean,
+            "leaf_centroid_dist_mean": leaf_centroid_dist_mean,
+            "leaf_centroid_dist_median": leaf_centroid_dist_median,
+            "leaf_centroid_dist_cv": leaf_centroid_dist_cv,
+        }
 
     def fit(self, X, y, sample_weight=None, returns=None, groups=None, symbols=None):
         """
@@ -485,8 +660,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             fold_base_logloss = []
             fold_logloss_imp = []
             oof_model = np.full(len(y), np.nan, dtype=np.float64)
-            oof_sigma_trees = np.full(len(y), np.nan, dtype=np.float32)
-            oof_sigma_robust = np.full(len(y), np.nan, dtype=np.float32)
+            oof_tree_features = {
+                k: np.full(len(y), np.nan, dtype=np.float32)
+                for k in self._TREE_UNCERTAINTY_KEYS
+            }
 
             try:
                 for fold_i, (train_idx, val_idx) in enumerate(cached_splits):
@@ -574,11 +751,16 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                         probs = probs_raw
 
                     oof_model[val_idx] = probs
-                    sigma_fold, sigma_robust_fold = self._tree_sigma_features(
-                        model_clone, X_val
+                    fold_tree_feats = self._tree_uncertainty_features(
+                        model_clone,
+                        X_val,
+                        X_train=X_tr,
+                        y_train=y_tr_fit,
                     )
-                    oof_sigma_trees[val_idx] = sigma_fold
-                    oof_sigma_robust[val_idx] = sigma_robust_fold
+                    for _k, _vals in fold_tree_feats.items():
+                        oof_tree_features[_k][val_idx] = np.asarray(
+                            _vals, dtype=np.float32
+                        )
                     
                     # w_bss=0.20: Enabled BSS in selection score
                     # We now compute weighted BSS for diagnostics
@@ -681,8 +863,12 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "fold_brier": [float(x) for x in fold_brier],
                     "fold_base_logloss": [float(x) for x in fold_base_logloss],
                     "fold_logloss_imp": [float(x) for x in fold_logloss_imp],
-                    "oof_sigma_trees": oof_sigma_trees.copy().astype(np.float32),
-                    "oof_sigma_robust": oof_sigma_robust.copy().astype(np.float32),
+                    "oof_sigma_trees": oof_tree_features["pred_std"].copy().astype(np.float32),
+                    "oof_sigma_robust": oof_tree_features["pred_std_robust"].copy().astype(np.float32),
+                    **{
+                        f"oof_tree_{_k}": np.asarray(_v, dtype=np.float32).copy()
+                        for _k, _v in oof_tree_features.items()
+                    },
                     # Store Calibrated OOF for gate checks
                     "oof_probs": np.nan_to_num(oof_cal.copy(), nan=0.5).astype(np.float32),
                     # Store raw OOF for reference
@@ -1040,6 +1226,19 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # Use _fit_model so that class weights and other dynamics are applied correctly,
         # even without early stopping (no eval_set passed).
         self._fit_model(self.best_model, X, y_hard, sample_weight=sample_weight)
+        try:
+            _x_fit = (
+                X_np
+                if use_numpy
+                else X.to_numpy(dtype=np.float32, copy=False)
+                if hasattr(X, "to_numpy")
+                else np.asarray(X, dtype=np.float32)
+            )
+            self.best_model_leaf_context_ = self._build_leaf_context(
+                self.best_model, _x_fit, y_hard
+            )
+        except Exception:
+            self.best_model_leaf_context_ = None
 
         # 4. Post-refit recalibration
         # The refit model has a different distribution than the fold-specific OOF models.
@@ -1165,6 +1364,16 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # Return probability class 1 (rank score, not calibrated probability)
         return self.predict_proba(X)[:, 1]
 
+    def predict_tree_uncertainty_features(self, X):
+        """Compute tree-dispersion and leaf-local uncertainty features."""
+        if self.best_model is None:
+            return self._nan_tree_feature_dict(len(X))
+        return self._tree_uncertainty_features(
+            self.best_model,
+            X,
+            leaf_context=getattr(self, "best_model_leaf_context_", None),
+        )
+
     def strip_for_serialization(self):
         """Drop heavy internals not needed for inference or meta training."""
         for attr in ["race_sample_frac", "race_early_stopping_rounds",
@@ -1206,6 +1415,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "calibrator_": getattr(self, "calibrator_", None),
             "platt_calibrator_": getattr(self, "platt_calibrator_", None),
             "classes_": getattr(self.best_model, "classes_", np.array([0, 1])),
+            "best_model_leaf_context_": getattr(self, "best_model_leaf_context_", None),
             "model_file": fmt,
         }
         with open(os.path.join(directory, "sidecar.pkl"), "wb") as f:
@@ -1245,4 +1455,5 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         obj._used_sample_weight_ = sc["_used_sample_weight_"]
         obj.calibrator_ = sc.get("calibrator_")
         obj.platt_calibrator_ = sc.get("platt_calibrator_")
+        obj.best_model_leaf_context_ = sc.get("best_model_leaf_context_")
         return obj

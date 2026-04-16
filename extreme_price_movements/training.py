@@ -7645,6 +7645,58 @@ def train_meta_models_from_artifacts(
                 return out
         return np.full(fallback_len, np.nan, dtype=np.float32)
 
+    _TREE_UNCERTAINTY_KEYS = (
+        "pred_mean",
+        "pred_std",
+        "pred_iqr",
+        "pred_cv",
+        "pred_std_robust",
+        "vote_entropy",
+        "vote_margin",
+        "vote_top_gap",
+        "leaf_support_mean",
+        "leaf_support_median",
+        "leaf_support_std",
+        "leaf_target_std_mean",
+        "leaf_target_iqr_mean",
+        "leaf_target_var_mean",
+        "leaf_centroid_dist_mean",
+        "leaf_centroid_dist_median",
+        "leaf_centroid_dist_cv",
+    )
+
+    def _collect_primary_tree_uncertainty_features(
+        strategy_id: str,
+        conf_local: dict[str, Any],
+        df_union: pd.DataFrame,
+        horizon_dfs_local: dict[int, tuple[pd.DataFrame, np.ndarray]],
+    ) -> pd.DataFrame:
+        out: dict[str, np.ndarray] = {}
+        models_by_h = (conf_local or {}).get("models_by_h", {}) if conf_local else {}
+        for h in sorted(horizon_dfs_local.keys()):
+            model_info = models_by_h.get(h) or {}
+            race = model_info.get("model")
+            if race is None:
+                continue
+            ds_h = horizon_dfs_local[h][0]
+            for feat_key in _TREE_UNCERTAINTY_KEYS:
+                vec_h = _race_sigma_vector(
+                    race, f"oof_tree_{feat_key}", len(ds_h)
+                )
+                aligned = _align_values_by_ts_symbol_keys(
+                    df_union["__ts__"].values,
+                    df_union["__symbol__"].values,
+                    ds_h["__ts__"].values,
+                    ds_h["__symbol__"].values,
+                    vec_h,
+                    fill_value=np.nan,
+                    dtype=np.float32,
+                )
+                out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
+                out[f"pred_H{int(h)}_{feat_key}"] = aligned
+                out[f"base_H{int(h)}_{feat_key}"] = aligned
+        return pd.DataFrame(out, index=df_union.index) if out else pd.DataFrame(index=df_union.index)
+
     def _collect_wide_tight_variant_features(
         side: str,
         kind: str,
@@ -10434,6 +10486,14 @@ def train_meta_models_from_artifacts(
         )
         if not variant_feat_df.empty:
             X_feats = pd.concat([X_feats, variant_feat_df], axis=1)
+        else:
+            # Primary-only base training path: use within-ensemble uncertainty features
+            # from each horizon model so meta heads still receive dispersion signals.
+            primary_tree_feat_df = _collect_primary_tree_uncertainty_features(
+                k, conf, df, horizon_dfs
+            )
+            if not primary_tree_feat_df.empty:
+                X_feats = pd.concat([X_feats, primary_tree_feat_df], axis=1)
 
         # Disagreement features over this strategy's own horizon OOFs only.
         _diag_feats = {}
@@ -13432,12 +13492,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     if hasattr(_race, "detailed_metrics")
                     else {}
                 )
-                for _sigma_key in ("oof_sigma_trees", "oof_sigma_robust"):
-                    _sigma_vals = _dm_best.get(_sigma_key)
-                    if _sigma_vals is not None and len(_sigma_vals) >= _n:
-                        _payload[_sigma_key] = np.asarray(
-                            _sigma_vals, dtype=np.float32
-                        )[:_n]
+                for _metric_key, _metric_vals in _dm_best.items():
+                    if _metric_key in ("oof_sigma_trees", "oof_sigma_robust") or _metric_key.startswith("oof_tree_"):
+                        if _metric_vals is not None and len(_metric_vals) >= _n:
+                            _payload[_metric_key] = np.asarray(
+                                _metric_vals, dtype=np.float32
+                            )[:_n]
 
                 if _df_oof is not None:
                     if "__ts__" in _df_oof.columns:
@@ -13585,12 +13645,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             if hasattr(_race, "detailed_metrics")
                             else {}
                         )
-                        for _sigma_key in ("oof_sigma_trees", "oof_sigma_robust"):
-                            _sigma_vals = _dm_best.get(_sigma_key)
-                            if _sigma_vals is not None and len(_sigma_vals) >= _n:
-                                _payload[_sigma_key] = np.asarray(
-                                    _sigma_vals, dtype=np.float32
-                                )[:_n]
+                        for _metric_key, _metric_vals in _dm_best.items():
+                            if _metric_key in ("oof_sigma_trees", "oof_sigma_robust") or _metric_key.startswith("oof_tree_"):
+                                if _metric_vals is not None and len(_metric_vals) >= _n:
+                                    _payload[_metric_key] = np.asarray(
+                                        _metric_vals, dtype=np.float32
+                                    )[:_n]
                         if "__ts__" in _df_oof.columns:
                             _payload["timestamp"] = _normalize_oof_timestamps_to_numpy(
                                 _df_oof["__ts__"]

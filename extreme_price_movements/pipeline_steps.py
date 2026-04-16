@@ -2734,6 +2734,7 @@ def run_policy_optimiser_step(ts_sig, cfg):
         holdout_frac=holdout_frac,
         cost_pct=cost_pct,
         use_offset_optimiser=use_offset_optimiser,
+        stage_view=cfg.get("_active_stage_view"),
     )
     if result:
         tprint("POLICY OPTIMISER COMPLETE")

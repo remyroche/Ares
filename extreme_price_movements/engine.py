@@ -1254,6 +1254,17 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                 mr_preds_list.append(_p)
                 mr_h_preds[f"pred_mr_H{_h}"] = _p
                 mr_h_preds[f"pred_H{_h}"] = _p # Also generic name for meta-compat
+                if hasattr(_m, "predict_tree_uncertainty_features"):
+                    try:
+                        _u = _m.predict_tree_uncertainty_features(_X)
+                        for _uk, _uv in _u.items():
+                            _vals = np.asarray(_uv, dtype=np.float32)
+                            mr_h_preds[f"pred_mr_H{_h}_{_uk}"] = _vals
+                            if f"pred_H{_h}_{_uk}" not in mr_h_preds:
+                                mr_h_preds[f"pred_H{_h}_{_uk}"] = _vals
+                            mr_h_preds[f"base_H{_h}_{_uk}"] = _vals
+                    except Exception:
+                        pass
             p_mr = np.mean(mr_preds_list, axis=0) if mr_preds_list else np.zeros(len(grp))
         else:
             X_mr_pred = grp_mr.reindex(columns=fcols_mr, fill_value=0.0).fillna(0.0).astype(np.float32)
@@ -1272,6 +1283,20 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                 tf_h_preds[f"pred_tf_H{_h}"] = _p
                 if f"pred_H{_h}" not in mr_h_preds: # avoid collision
                      tf_h_preds[f"pred_H{_h}"] = _p
+                if hasattr(_m, "predict_tree_uncertainty_features"):
+                    try:
+                        _u = _m.predict_tree_uncertainty_features(_X)
+                        for _uk, _uv in _u.items():
+                            _vals = np.asarray(_uv, dtype=np.float32)
+                            tf_h_preds[f"pred_tf_H{_h}_{_uk}"] = _vals
+                            if (
+                                f"pred_H{_h}_{_uk}" not in mr_h_preds
+                                and f"pred_H{_h}_{_uk}" not in tf_h_preds
+                            ):
+                                tf_h_preds[f"pred_H{_h}_{_uk}"] = _vals
+                            tf_h_preds[f"base_H{_h}_{_uk}"] = _vals
+                    except Exception:
+                        pass
             p_tf = np.mean(tf_preds_list, axis=0) if tf_preds_list else np.zeros(len(grp))
         else:
             X_tf_pred = grp_tf.reindex(columns=fcols_tf, fill_value=0.0).fillna(0.0).astype(np.float32)

@@ -1609,9 +1609,16 @@ def mdi_feature_selection_v3(
         if selector_interaction_topk_pairs > 0:
             pair_df = pair_df.head(int(selector_interaction_topk_pairs)).copy()
         feat_pair_scores: Dict[str, List[float]] = defaultdict(list)
-        for _, r in pair_df.iterrows():
-            feat_pair_scores[str(r["feature_a"])].append(float(r["final_pair_score"]))
-            feat_pair_scores[str(r["feature_b"])].append(float(r["final_pair_score"]))
+
+        # Replace O(N) Pandas iterrows with much faster direct array iteration
+        f_a_arr = pair_df["feature_a"].to_numpy()
+        f_b_arr = pair_df["feature_b"].to_numpy()
+        s_arr = pair_df["final_pair_score"].to_numpy(dtype=float)
+
+        for a, b, score in zip(f_a_arr, f_b_arr, s_arr):
+            feat_pair_scores[str(a)].append(float(score))
+            feat_pair_scores[str(b)].append(float(score))
+
         for f, vals in feat_pair_scores.items():
             vals_sorted = sorted(vals, reverse=True)[: max(1, int(selector_interaction_max_pairs_per_feature))]
             interaction_support_raw[idx_map[f]] = float(np.sum(vals_sorted))

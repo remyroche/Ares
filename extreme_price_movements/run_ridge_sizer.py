@@ -314,6 +314,10 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
                     else:
                         sigma_name = f"{col_name}_robust_sigma"
                     combined[sigma_name] = mdf["oof_sigma_robust"].values
+                tree_unc_cols = [c for c in mdf.columns if c.startswith("oof_tree_")]
+                for tc in tree_unc_cols:
+                    feat_name = tc.replace("oof_tree_", "")
+                    combined[f"{col_name}_{feat_name}"] = mdf[tc].values
 
         pair_roots = sorted(
             {

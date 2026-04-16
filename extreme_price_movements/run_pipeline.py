@@ -1338,6 +1338,23 @@ def run_all(cfg, ts_override=None):
     if ts_sig:
         tprint("STEP: POLICY OPTIMISER")
         try:
+            try:
+                slice_plan = load_or_build_slice_plan(
+                    cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+                )
+                if "utility_policy_optimisation" in slice_plan.get(
+                    "materialized_views", {}
+                ):
+                    stage_view = slice_plan["materialized_views"][
+                        "utility_policy_optimisation"
+                    ]
+                    cfg["_active_stage_view"] = apply_stage_usage_limits(
+                        stage_view,
+                        max_assets=cfg.get("planned_max_assets"),
+                        max_months=cfg.get("planned_max_months"),
+                    )
+            except Exception as _slice_exc:
+                tprint(f"Policy optimiser slice plan loading failed: {_slice_exc}")
             run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
             run_policy_optimisation(
                 data_root=cfg["data_root"],
@@ -1347,6 +1364,7 @@ def run_all(cfg, ts_override=None):
                     cfg.get("ridge_cost_pct", cfg.get("fee_bps", 50.0) / 10000.0)
                 ),
                 use_offset_optimiser=bool(cfg.get("run_limit_offset_optimiser", False)),
+                stage_view=cfg.get("_active_stage_view"),
             )
         except Exception as e:
             tprint(f"WARNING: Policy optimiser failed: {e}")
@@ -1917,6 +1935,23 @@ def main():
         ts_sig = _resolve_ts_sig(cfg, args.ts_override)
         if ts_sig:
             run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+            try:
+                slice_plan = load_or_build_slice_plan(
+                    cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+                )
+                if "utility_policy_optimisation" in slice_plan.get(
+                    "materialized_views", {}
+                ):
+                    stage_view = slice_plan["materialized_views"][
+                        "utility_policy_optimisation"
+                    ]
+                    cfg["_active_stage_view"] = apply_stage_usage_limits(
+                        stage_view,
+                        max_assets=cfg.get("planned_max_assets"),
+                        max_months=cfg.get("planned_max_months"),
+                    )
+            except Exception as _slice_exc:
+                tprint(f"Policy optimiser slice plan loading failed: {_slice_exc}")
             tprint("STEP: POLICY OPTIMISER START (policy_optimiser.py)")
             run_policy_optimisation(
                 data_root=cfg["data_root"],
@@ -1926,6 +1961,7 @@ def main():
                     cfg.get("ridge_cost_pct", cfg.get("fee_bps", 50.0) / 10000.0)
                 ),
                 use_offset_optimiser=bool(cfg.get("run_limit_offset_optimiser", False)),
+                stage_view=cfg.get("_active_stage_view"),
             )
         else:
             tprint("ERROR: No feature directories found.")

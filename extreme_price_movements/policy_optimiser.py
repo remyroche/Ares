@@ -452,6 +452,54 @@ def _attach_sizer_score(
     return merged
 
 
+def _filter_df_by_stage_view(
+    df: pd.DataFrame, stage_view: Optional[Dict[str, Any]]
+) -> pd.DataFrame:
+    """Apply symbol/time restrictions from a materialized stage view."""
+    if stage_view is None or df is None or df.empty:
+        return df
+
+    out = df.copy()
+    symbol_col = next((c for c in ("symbol", "__symbol__") if c in out.columns), None)
+    ts_col = next((c for c in ("timestamp", "__ts__", "t0") if c in out.columns), None)
+
+    allowed_symbols = stage_view.get("symbols")
+    if allowed_symbols is not None and symbol_col is not None:
+        out = out[out[symbol_col].astype(str).isin([str(s) for s in allowed_symbols])]
+
+    if ts_col is not None and not out.empty:
+        ts = pd.to_datetime(out[ts_col], utc=True, errors="coerce")
+
+        periods = stage_view.get("allowed_periods") or None
+        if periods:
+            mask = np.zeros(len(out), dtype=bool)
+            for period in periods:
+                if isinstance(period, dict):
+                    p_start = period.get("start_ts") or period.get("start")
+                    p_end = period.get("end_ts") or period.get("end")
+                elif isinstance(period, (list, tuple)) and len(period) >= 2:
+                    p_start, p_end = period[0], period[1]
+                else:
+                    continue
+                p_start = pd.to_datetime(p_start, utc=True, errors="coerce")
+                p_end = pd.to_datetime(p_end, utc=True, errors="coerce")
+                if pd.isna(p_start) or pd.isna(p_end) or p_end <= p_start:
+                    continue
+                mask |= (ts >= p_start) & (ts < p_end)
+            out = out.loc[mask]
+            ts = pd.to_datetime(out[ts_col], utc=True, errors="coerce")
+
+        start_ts = stage_view.get("allowed_start_ts")
+        end_ts = stage_view.get("allowed_end_ts")
+        if start_ts:
+            out = out[ts >= pd.to_datetime(start_ts, utc=True, errors="coerce")]
+            ts = pd.to_datetime(out[ts_col], utc=True, errors="coerce")
+        if end_ts:
+            out = out[ts <= pd.to_datetime(end_ts, utc=True, errors="coerce")]
+
+    return out
+
+
 def resolve_optimised_selection_frac(
     *, data_root: str, run_id: str, selected: Dict[str, Any]
 ) -> float:
@@ -1825,6 +1873,7 @@ def run_policy_optimisation(
     holdout_frac: float = 0.30,
     cost_pct: float = 0.003,
     use_offset_optimiser: bool = False,
+    stage_view: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     tprint("POLICY OPTIMISER START")
     selected_candidates = _load_strategy_candidates(data_root, run_id)
@@ -1837,7 +1886,22 @@ def run_policy_optimisation(
         return {}
 
     meta_oofs = load_meta_oof_predictions(data_root, run_id)
+    if stage_view:
+        filtered_meta: Dict[str, pd.DataFrame] = {}
+        for key, mdf in meta_oofs.items():
+            mdf_f = _filter_df_by_stage_view(mdf, stage_view)
+            if not mdf_f.empty:
+                filtered_meta[key] = mdf_f
+        meta_oofs = filtered_meta
+        if not meta_oofs:
+            tprint("Policy optimiser stage filtering removed all meta OOF rows.")
+            return {}
+
     sizer_scores = _load_sizer_oof_scores(data_root, run_id)
+    sizer_scores = _filter_df_by_stage_view(sizer_scores, stage_view)
+    if sizer_scores.empty:
+        tprint("Policy optimiser stage filtering removed all sizer OOF rows.")
+        return {}
     strategy_rows: List[Dict[str, Any]] = []
     for selected in selected_candidates:
         key = next((k for k in meta_oofs.keys() if selected["strategy_id"] in k), None)
@@ -1871,6 +1935,7 @@ def run_policy_optimisation(
                     return {}
 
         outcomes = load_trade_outcomes(data_root, run_id, meta_oofs[key])
+        outcomes = _filter_df_by_stage_view(outcomes, stage_view)
         if outcomes.empty:
             continue
         outcomes = _attach_sizer_score(outcomes, sizer_scores, selected["strategy_id"])

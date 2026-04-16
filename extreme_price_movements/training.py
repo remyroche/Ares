@@ -1020,6 +1020,9 @@ def _fit_direct_extratrees_base_model(
             )
 
     oof_probs = np.full(len(y_hard), np.nan, dtype=np.float64)
+    fold_class_diagnostics = []
+    folds_with_insufficient_samples = 0
+    folds_with_single_class_pred = 0
     for fold_i, (train_idx, val_idx) in enumerate(cached_splits, start=1):
         if train_idx.size == 0 or val_idx.size == 0:
             continue
@@ -1027,12 +1030,33 @@ def _fit_direct_extratrees_base_model(
         X_val = X_np[val_idx] if isinstance(X_np, np.ndarray) else X.iloc[val_idx]
         y_tr = y_hard[train_idx]
         y_val = y_hard[val_idx]
+        train_pos = int(np.sum(y_tr))
+        train_neg = int(len(y_tr) - train_pos)
+        val_pos = int(np.sum(y_val))
+        val_neg = int(len(y_val) - val_pos)
+        fold_has_insufficient = (
+            train_pos < 2 or train_neg < 2 or val_pos < 2 or val_neg < 2
+        )
+        if fold_has_insufficient:
+            folds_with_insufficient_samples += 1
+        fold_class_diagnostics.append(
+            {
+                "fold": int(fold_i),
+                "n_train": int(len(y_tr)),
+                "n_val": int(len(y_val)),
+                "train_pos": train_pos,
+                "train_neg": train_neg,
+                "val_pos": val_pos,
+                "val_neg": val_neg,
+                "insufficient_class_support": bool(fold_has_insufficient),
+            }
+        )
         w_tr = sample_weight_arr[train_idx] if sample_weight_arr is not None else None
         est = clone(candidate)
         race._fit_model(est, X_tr, y_tr, sample_weight=w_tr)
         _proba_out = est.predict_proba(X_val)
         if _proba_out.shape[1] < 2:
-            oof_probs[val_idx] = 0.5
+            folds_with_single_class_pred += 1
             continue
         probs_raw = np.asarray(_proba_out[:, 1], dtype=np.float64)
         if sample_weight_arr is not None:
@@ -1047,7 +1071,6 @@ def _fit_direct_extratrees_base_model(
             f"  Direct ExtraTrees fold {fold_i}/{len(cached_splits)} complete: n_train={train_idx.size}, n_val={val_idx.size}"
         )
 
-    oof_probs = np.nan_to_num(oof_probs, nan=0.5)
     oof_probs_raw = np.asarray(oof_probs, dtype=np.float32).copy()
     p_unweighted_all, p_weighted_all = compute_prevalences(y_hard, sample_weight_arr)
     race._used_sample_weight_ = sample_weight_arr is not None
@@ -1126,9 +1149,17 @@ def _fit_direct_extratrees_base_model(
         race.platt_calibrator_ = None
         tprint(f"Direct ExtraTrees calibration fallback to identity: {exc}")
 
+    oof_probs_eval = np.asarray(race.oof_probs, dtype=np.float64)
+    finite_eval = np.isfinite(oof_probs_eval)
+    if np.any(finite_eval):
+        eval_fill = float(np.nanmean(oof_probs_eval[finite_eval]))
+    else:
+        eval_fill = float(np.mean(y_hard)) if len(y_hard) else 0.5
+    oof_probs_eval = np.where(finite_eval, oof_probs_eval, eval_fill)
+
     sel = calculate_selection_score(
         y_hard,
-        race.oof_probs,
+        oof_probs_eval,
         returns_arr,
         sample_weight=sample_weight_arr,
         w_bss=0.20,
@@ -1137,18 +1168,18 @@ def _fit_direct_extratrees_base_model(
     )
     try:
         auc = (
-            float(roc_auc_score(y_hard, race.oof_probs))
+            float(roc_auc_score(y_hard, oof_probs_eval))
             if len(np.unique(y_hard)) > 1
             else 0.5
         )
     except Exception:
         auc = 0.5
     try:
-        ll = float(log_loss(y_hard, np.clip(race.oof_probs, 1e-7, 1 - 1e-7)))
+        ll = float(log_loss(y_hard, np.clip(oof_probs_eval, 1e-7, 1 - 1e-7)))
     except Exception:
         ll = float("nan")
     try:
-        acc = float(accuracy_score(y_hard, race.oof_probs >= 0.5))
+        acc = float(accuracy_score(y_hard, oof_probs_eval >= 0.5))
     except Exception:
         acc = float("nan")
     if (
@@ -1172,12 +1203,40 @@ def _fit_direct_extratrees_base_model(
     else:
         ic = 0.0
     top10_mask = topk_mask(
-        race.oof_probs, 0.10, groups=groups_arr if groups_arr is not None else None
+        oof_probs_eval, 0.10, groups=groups_arr if groups_arr is not None else None
     )
     top30_mask = topk_mask(
-        race.oof_probs, 0.30, groups=groups_arr if groups_arr is not None else None
+        oof_probs_eval, 0.30, groups=groups_arr if groups_arr is not None else None
     )
-    curve = calibration_curve_bins(y_hard, race.oof_probs, n_bins=10)
+    curve = calibration_curve_bins(y_hard, oof_probs_eval, n_bins=10)
+    class_pos = int(np.sum(y_hard))
+    class_neg = int(len(y_hard) - class_pos)
+    class_imbalance_pct = (
+        float(min(class_pos, class_neg) / max(len(y_hard), 1)) * 100.0
+    )
+    oof_nan_count = int(np.sum(~np.isfinite(np.asarray(race.oof_probs, dtype=np.float64))))
+    training_diagnostics = {
+        "n_total": int(len(y_hard)),
+        "class_counts": {"neg": class_neg, "pos": class_pos},
+        "class_imbalance_minority_pct": class_imbalance_pct,
+        "fold_count_requested": int(n_splits),
+        "fold_count_realized": int(len(cached_splits)),
+        "folds_with_insufficient_class_support": int(folds_with_insufficient_samples),
+        "folds_with_single_class_predictions": int(folds_with_single_class_pred),
+        "oof_nan_count": oof_nan_count,
+        "oof_nan_ratio": float(oof_nan_count / max(len(y_hard), 1)),
+        "fold_class_diagnostics": fold_class_diagnostics,
+    }
+    if folds_with_insufficient_samples > 0:
+        tprint(
+            f"WARNING: {kind_name} has {folds_with_insufficient_samples}/{len(cached_splits)} folds "
+            "with insufficient class support."
+        )
+    if folds_with_single_class_pred > 0:
+        tprint(
+            f"WARNING: {kind_name} has {folds_with_single_class_pred}/{len(cached_splits)} folds "
+            "with single-class probability output; OOF kept as NaN for those folds."
+        )
     dm = {
         "score": float(sel.get("Selection_Score", 0.0)),
         "rank_score": float(sel.get("Selection_Score", 0.0)),
@@ -1214,6 +1273,7 @@ def _fit_direct_extratrees_base_model(
         "calibration_profile": calibration_profile(curve),
         "oof_probs": np.asarray(race.oof_probs, dtype=np.float32).copy(),
         "oof_raw": np.asarray(oof_probs_raw, dtype=np.float32).copy(),
+        "training_diagnostics": training_diagnostics,
     }
     degeneracy = _base_oof_degeneracy_summary(oof_probs_raw, race.oof_probs)
     dm["degeneracy"] = degeneracy
@@ -1260,8 +1320,6 @@ def _fit_direct_extratrees_base_model(
             refit_oof[val_idx] = apply_logit_shift(
                 probs_raw, delta_logit_fold, eps=1e-6
             )
-        refit_oof = np.nan_to_num(refit_oof, nan=0.5)
-
         refit_calibrated, refit_calibrator, refit_cal_method = (
             _safe_binary_calibrate(refit_oof, y_hard, min_unique=20, min_samples=100)
         )
@@ -1721,6 +1779,7 @@ def _base_model_report_entry(
     top5_features=None,
     top10_features=None,
 ):
+    training_diag = dict(dm.get("training_diagnostics", {}) or {})
     prev = float(np.mean(y_bin))
     prev = float(np.clip(prev, 1e-7, 1 - 1e-7))
     base_brier = prev * (1.0 - prev)
@@ -1907,8 +1966,6 @@ def _base_model_report_entry(
 
     metrics = {
         "auc": calibrated_auc,
-        "raw_auc": raw_auc,
-        "calibrated_auc": calibrated_auc,
         "ic": raw_ic_bin,
         "ic_ret": raw_ic_ret,
         "median_ic_t30": median_ic_t30,
@@ -1938,6 +1995,25 @@ def _base_model_report_entry(
         **timeout_metrics,
     }
     degeneracy = dm.get("degeneracy", {})
+    constant_prediction_warning = bool(
+        degeneracy.get("is_degenerate", False)
+        and any(
+            str(r).startswith("cal_unique_lt_")
+            or str(r).startswith("raw_unique_lt_")
+            or str(r).startswith("cal_std_lt_")
+            or str(r).startswith("raw_std_lt_")
+            for r in (degeneracy.get("reasons", []) or [])
+        )
+    )
+    training_warnings = []
+    if constant_prediction_warning:
+        training_warnings.append("constant_or_near_constant_predictions")
+    if int(training_diag.get("folds_with_insufficient_class_support", 0)) > 0:
+        training_warnings.append("folds_with_insufficient_class_support")
+    if int(training_diag.get("folds_with_single_class_predictions", 0)) > 0:
+        training_warnings.append("single_class_fold_predictions")
+    if float(training_diag.get("class_imbalance_minority_pct", 100.0)) < 10.0:
+        training_warnings.append("severe_class_imbalance_lt_10pct_minority")
 
     return {
         "model": model_name,
@@ -1946,10 +2022,11 @@ def _base_model_report_entry(
         "score": float(dm.get("rank_score", dm.get("score", 0.0))),
         "checks": {k: {"pass": bool(v), "emoji": _emoji(v)} for k, v in checks.items()},
         "metrics": metrics,
-        "raw_auc": raw_auc,
-        "calibrated_auc": calibrated_auc,
         "degenerate": bool(degeneracy.get("is_degenerate", False)),
         "degeneracy": degeneracy,
+        "training_diagnostics": training_diag,
+        "constant_prediction_warning": constant_prediction_warning,
+        "training_warnings": training_warnings,
         "passed": bool(all(checks.values())),
         "top5_features": list(top5_features or []),
         "top10_features": list(top10_features or []),
@@ -6873,33 +6950,50 @@ def generate_label_datasets(
         for H in strategy_horizons.get(strategy_id, []):
             H_int = int(H)
 
-            if not bool(cfg.get("base_geometry_train_variants", True)):
-                tprint(
-                    f"Skipping classifier label cell {strategy_id}_H{H_int}: "
-                    "base_geometry_train_variants=False but tight/wide are mandatory."
-                )
-                continue
+            if bool(cfg.get("base_geometry_train_variants", True)):
+                _missing_required = [
+                    _v
+                    for _v in _required_geometry_variants
+                    if (H_int, strategy_id, _v) not in tb_cache
+                ]
+                if _missing_required:
+                    tprint(
+                        f"Skipping classifier label cell {strategy_id}_H{H_int}: "
+                        f"missing required geometry variants={_missing_required}."
+                    )
+                    continue
 
-            _missing_required = [
-                _v
-                for _v in _required_geometry_variants
-                if (H_int, strategy_id, _v) not in tb_cache
-            ]
-            if _missing_required:
-                tprint(
-                    f"Skipping classifier label cell {strategy_id}_H{H_int}: "
-                    f"missing required geometry variants={_missing_required}."
-                )
-                continue
-
-            for _variant in _required_geometry_variants:
+                for _variant in _required_geometry_variants:
+                    tasks.append(
+                        (
+                            H_int,
+                            side,
+                            k,
+                            strategy_id,
+                            _variant,
+                            move_bucket,
+                            strategy_label,
+                            cand_filter,
+                            feat_key,
+                            extra_feature_keys,
+                            fixed_tp,
+                            fixed_sl,
+                        )
+                    )
+            else:
+                if (H_int, strategy_id) not in tb_cache:
+                    tprint(
+                        f"Skipping classifier label cell {strategy_id}_H{H_int}: "
+                        "missing primary geometry payload."
+                    )
+                    continue
                 tasks.append(
                     (
                         H_int,
                         side,
                         k,
                         strategy_id,
-                        _variant,
+                        None,
                         move_bucket,
                         strategy_label,
                         cand_filter,
@@ -12256,6 +12350,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     base_variant_models = {}
     min_base_fit_features = int(cfg.get("base_min_fit_features_guard", 8))
     skip_primary_alpha = bool(cfg.get("base_skip_primary_variant", True))
+    base_min_samples_hard_floor = int(cfg.get("base_min_samples_hard_floor", 3000))
 
     def _log_feature_matrix_state(label, X_df, selected=None):
         cols_now = list(X_df.columns) if hasattr(X_df, "columns") else []
@@ -12290,7 +12385,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         if (
             df_variant is None
             or df_variant.empty
-            or len(df_variant) < cfg["min_train_samples"] // 4
+            or len(df_variant)
+            < max(int(cfg["min_train_samples"] // 4), base_min_samples_hard_floor)
         ):
             return None
         y = df_variant["__y_bin__"].values.astype(np.float32)
@@ -12622,7 +12718,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         continue
 
                     df = datasets[key]
-                    if df.empty or len(df) < cfg["min_train_samples"] // 4:
+                    if df.empty or len(df) < max(
+                        int(cfg["min_train_samples"] // 4), base_min_samples_hard_floor
+                    ):
                         continue
 
                     _base_cap = int(cfg.get("base_fit_max_samples", 150000))
@@ -13679,16 +13777,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             continue
         models_by_h = conf.get("models_by_h", {})
         if not models_by_h:
-            # Fallback: single-model legacy format
-            models_by_h = {
-                conf.get("H", 4): {
-                    "model": conf["model"],
-                    "feat_cols": conf["feat_cols"],
-                    "top5_features": conf.get("top5_features", []),
-                    "top10_features": conf.get("top10_features", []),
-                    "deployable": not bool(conf.get("downstream_blocked", False)),
-                }
-            }
+            continue
         for H_rep, h_info in models_by_h.items():
             ds_key = f"train_{kind}_{H_rep}"
             if ds_key not in datasets:
@@ -13709,10 +13798,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 # Use per-model OOF predictions from detailed_metrics, not the winner's OOF
                 oof_probs = dm.get("oof_probs")
                 if oof_probs is None:
-                    # Fallback to winner's OOF if per-model not available (legacy)
-                    oof_probs = np.asarray(race.oof_probs, dtype=float)
-                else:
-                    oof_probs = np.asarray(oof_probs, dtype=float)
+                    continue
+                oof_probs = np.asarray(oof_probs, dtype=float)
                 n = min(len(y_bin), len(oof_probs), len(y_ret))
                 y_bin_model, oof_probs_model, y_ret_model = (
                     y_bin[:n],

@@ -361,7 +361,7 @@ TIME_FEATURE_KEYS = [
     "cos_dow",
 ]
 
-RIDGE_FEATURE_META = {
+CONTINUOUS_REGIME_FEATURES = {
     # Trend features
     "ema20_gt_ema50": {"family": "trend", "type": "binary"},
     "ema50_gt_ema200": {"family": "trend", "type": "binary"},
@@ -419,9 +419,19 @@ RIDGE_FEATURE_META = {
         "family": "path_structure",
         "type": "continuous",
     },
+    # Additional 24h+ / structural regime features
+    "rv_24h": {"family": "volatility", "type": "continuous"},
+    "dist_ema_fast": {"family": "trend", "type": "continuous"},
+    "range_24h_pct": {"family": "compression", "type": "continuous"},
+    "spectral_entropy_ret_24": {"family": "path_structure", "type": "continuous"},
+    "volume_entropy_24": {"family": "liquidity", "type": "continuous"},
+    "path_efficiency_24": {"family": "path_structure", "type": "continuous"},
+    "amihud_illiq": {"family": "liquidity", "type": "continuous"},
+    "amihud_z": {"family": "liquidity", "type": "continuous"},
+    "coherence_24": {"family": "path_structure", "type": "continuous"},
 }
 
-RIDGE_FEATURE_COLS = list(RIDGE_FEATURE_META.keys())
+RIDGE_FEATURE_COLS = list(CONTINUOUS_REGIME_FEATURES.keys())
 
 CONTINUOUS_TRIGGER_COLS = [
     "range_atr",
@@ -774,7 +784,8 @@ CFG = {
     # Canonical set is [1, 2, 4] hours. H1 added for entry timing; H8 removed.
     "label_horizons_hours": CANON_HORIZONS,
     "base_geometry_archetypes": ["tight", "balanced", "wide"],
-    "base_geometry_train_variants": True,
+    "base_geometry_train_variants": False,
+    "base_skip_primary_variant": False,
     "base_geometry_grr_topk": 12,
     "base_geometry_learnability_weight": 0.75,
     "base_geometry_geometry_weight": 0.25,
@@ -802,6 +813,7 @@ CFG = {
     "train_lookback_hours": 24 * 365 * 4,  # 4 years
     "val_lookback_hours": 24 * 7,  # 7d validation (time-split, no leakage)
     "min_train_samples": 200,
+    "base_min_samples_hard_floor": 3000,
     # Sample caps (symbol-balanced subsampling when exceeded)
     "base_fit_max_samples": 0,
     "base_selector_max_samples": 30000,

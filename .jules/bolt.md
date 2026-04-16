@@ -44,3 +44,6 @@ Action: Rewrote bar construction logic (`_construct_volume_bars`, `_construct_do
 ## 2026-05-18 - DataFrame column addition memory spikes
 Learning: Using `pd.concat` to add many new columns to a large existing DataFrame is extremely memory intensive and causes massive memory spikes, as it creates a full copy of all data rather than just assigning the new arrays.
 Action: In feature injection (`pipeline_steps.py`), replace `pd.concat([df, pd.DataFrame(add_cols)], axis=1)` with direct in-place column assignments `for k, v in add_cols.items(): df[k] = v`. This avoids memory duplication and reduces CPU overhead.
+## 2025-04-16 - Replace pandas iterrows with numpy arrays
+Learning: `iterrows()` in pandas is extremely slow due to box/unbox overhead and index checking. Simple iteration is often better performed by converting dataframe columns to numpy arrays and using `zip()` to iterate, or vectorizing the operations entirely, especially inside inner loops for tasks like pruning dominance fronts or pairwise metrics processing.
+Action: Search for and replace `iterrows()` with vectorized alternatives or numpy iteration whenever optimizing loops in a DataFrame.

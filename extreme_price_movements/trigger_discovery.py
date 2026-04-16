@@ -1119,37 +1119,60 @@ def prune_non_dominated_triggers(
             df["non_dominated_flag"] = True
         return df
 
+    # Replace O(n^2) iterrows with vectorized Numpy operations
+    # Create copies of required columns into arrays to avoid mutating the original df
+    df_copy = df.copy()
+    cols_defaults = {
+        "total_events": 0.0,
+        "delta_r_shrunk": -1e9,
+        "S_r": -1e9,
+        "D_r": 1e9,
+        "timing_precision_score": -1e9,
+    }
+
+    for col, default in cols_defaults.items():
+        if col not in df_copy.columns:
+            df_copy[col] = default
+        else:
+            df_copy[col] = pd.to_numeric(df_copy[col], errors="coerce").fillna(default)
+
     kept_groups: List[pd.DataFrame] = []
-    for _, group in df.groupby("parent_regime_id", sort=False):
-        rows = []
-        for idx, row in group.iterrows():
-            dominated = False
-            for other_idx, other in group.iterrows():
-                if idx == other_idx:
-                    continue
-                same_or_simpler = (
-                    _safe_float(other.get("total_events"), 0.0) >= _safe_float(row.get("total_events"), 0.0)
-                )
-                dominates = (
-                    _safe_float(other.get("delta_r_shrunk"), -1e9) >= _safe_float(row.get("delta_r_shrunk"), -1e9)
-                    and _safe_float(other.get("S_r"), -1e9) >= _safe_float(row.get("S_r"), -1e9)
-                    and _safe_float(other.get("D_r"), 1e9) <= _safe_float(row.get("D_r"), 1e9)
-                    and _safe_float(other.get("timing_precision_score"), -1e9) >= _safe_float(row.get("timing_precision_score"), -1e9)
-                    and same_or_simpler
-                )
-                strict = (
-                    _safe_float(other.get("delta_r_shrunk"), -1e9) > _safe_float(row.get("delta_r_shrunk"), -1e9)
-                    or _safe_float(other.get("S_r"), -1e9) > _safe_float(row.get("S_r"), -1e9)
-                    or _safe_float(other.get("D_r"), 1e9) < _safe_float(row.get("D_r"), 1e9)
-                    or _safe_float(other.get("timing_precision_score"), -1e9) > _safe_float(row.get("timing_precision_score"), -1e9)
-                )
-                if dominates and strict:
-                    dominated = True
-                    break
-            new_row = row.copy()
-            new_row["non_dominated_flag"] = not dominated
-            rows.append(new_row)
-        kept_groups.append(pd.DataFrame(rows))
+    for _, group in df_copy.groupby("parent_regime_id", sort=False):
+        total_events = group["total_events"].to_numpy(dtype=float)
+        delta_r = group["delta_r_shrunk"].to_numpy(dtype=float)
+        s_r = group["S_r"].to_numpy(dtype=float)
+        d_r = group["D_r"].to_numpy(dtype=float)
+        timing = group["timing_precision_score"].to_numpy(dtype=float)
+
+        n = len(group)
+        non_dominated = np.ones(n, dtype=bool)
+
+        for i in range(n):
+            same_or_simpler = total_events >= total_events[i]
+            dominates = (
+                (delta_r >= delta_r[i]) &
+                (s_r >= s_r[i]) &
+                (d_r <= d_r[i]) &
+                (timing >= timing[i]) &
+                same_or_simpler
+            )
+            strict = (
+                (delta_r > delta_r[i]) |
+                (s_r > s_r[i]) |
+                (d_r < d_r[i]) |
+                (timing > timing[i])
+            )
+            is_dominated_by = dominates & strict
+            is_dominated_by[i] = False
+
+            if np.any(is_dominated_by):
+                non_dominated[i] = False
+
+        # Apply flag to the *original* dataframe group to avoid returning overwritten NaNs
+        orig_group = df.loc[group.index].copy()
+        orig_group["non_dominated_flag"] = non_dominated
+        kept_groups.append(orig_group)
+
     return pd.concat(kept_groups, ignore_index=True)
 
 

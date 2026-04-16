@@ -30,11 +30,10 @@ os.environ.setdefault("LOKY_MAX_CPU_COUNT", "3")
 from extreme_price_movements.config import (
     CFG,
     CONTINUOUS_LOCATION_COLS,
+    CONTINUOUS_REGIME_FEATURES,
     CONTINUOUS_TRIGGER_COLS,
     LOC_CONTINUOUS_FAMILY_MAP,
     RIDGE_FEATURE_COLS,
-    RIDGE_FEATURE_META,
-    TEST_FEATURE_KEYS,
     TIME_FEATURE_KEYS,
 )
 from extreme_price_movements.data_store import (
@@ -2069,11 +2068,15 @@ class FeatureProcessor:
 
     @staticmethod
     def _regime_source_type(source_name: str) -> str:
-        return str(RIDGE_FEATURE_META.get(source_name, {}).get("type", "continuous"))
+        return str(
+            CONTINUOUS_REGIME_FEATURES.get(source_name, {}).get("type", "continuous")
+        )
 
     @staticmethod
     def _regime_source_family(source_name: str) -> str:
-        return str(RIDGE_FEATURE_META.get(source_name, {}).get("family", "unknown"))
+        return str(
+            CONTINUOUS_REGIME_FEATURES.get(source_name, {}).get("family", "unknown")
+        )
 
     @staticmethod
     def _is_reserved_target_side_feature(source_name: str) -> bool:
@@ -2255,11 +2258,7 @@ class FeatureProcessor:
         # 3. Regime Features (continuous -> hybrid booleanize)
         if "regime" in active_groups:
             time_keys_set = set(TIME_FEATURE_KEYS)
-            regime_sources = sorted(
-                list(
-                    (set(RIDGE_FEATURE_COLS) | set(TEST_FEATURE_KEYS)) - time_keys_set
-                )
-            )
+            regime_sources = sorted(list(set(RIDGE_FEATURE_COLS) - time_keys_set))
             _add_continuous_features_as_booleans(regime_sources, "regime")
 
         # 4. Extra Binary Features (e.g. Stage A Contexts)
@@ -2536,8 +2535,8 @@ class FeatureProcessor:
         source_name = kwargs.get("source_name", name)
         regime_family = None
         if group == "regime":
-            if source_name in RIDGE_FEATURE_META:
-                regime_family = RIDGE_FEATURE_META[source_name].get("family")
+            if source_name in CONTINUOUS_REGIME_FEATURES:
+                regime_family = CONTINUOUS_REGIME_FEATURES[source_name].get("family")
             else:
                 regime_family = kwargs.get("source_family", "unknown")
 

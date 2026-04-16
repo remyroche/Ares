@@ -7,7 +7,10 @@ from sklearn.model_selection import TimeSeriesSplit
 from lightgbm import LGBMRegressor
 from scipy.stats import spearmanr
 
-from extreme_price_movements.config import RIDGE_FEATURE_META, RIDGE_FEATURE_COLS
+from extreme_price_movements.config import (
+    CONTINUOUS_REGIME_FEATURES,
+    RIDGE_FEATURE_COLS,
+)
 
 # =========================================================
 # DATACLASSES
@@ -310,7 +313,7 @@ def select_promising_regime_variables(
     Selects top features avoiding family concentration and high collinearity.
     """
     selected = []
-    family_counts = {f["family"]: 0 for f in RIDGE_FEATURE_META.values()}
+    family_counts = {f["family"]: 0 for f in CONTINUOUS_REGIME_FEATURES.values()}
 
     # We only check correlation against already selected continuous features
     selected_continuous_cols = []
@@ -325,7 +328,9 @@ def select_promising_regime_variables(
         if pd.isna(importance) or importance < min_importance:
             continue
 
-        meta = RIDGE_FEATURE_META.get(fname, {"family": "unknown", "type": "continuous"})
+        meta = CONTINUOUS_REGIME_FEATURES.get(
+            fname, {"family": "unknown", "type": "continuous"}
+        )
         family = meta["family"]
         ftype = meta["type"]
 
@@ -382,7 +387,9 @@ def build_phase3_conditioner_seeds(
         fname = row["feature"]
         coef = row["coef"]
 
-        meta = RIDGE_FEATURE_META.get(fname, {"family": "unknown", "type": "continuous"})
+        meta = CONTINUOUS_REGIME_FEATURES.get(
+            fname, {"family": "unknown", "type": "continuous"}
+        )
         direction = "positive" if coef > 0 else "negative"
 
         thresholds = None

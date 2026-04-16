@@ -239,7 +239,7 @@ def _assign_interleaved_week_periods(
         return
 
     shared_groups = [
-        ("train_base", "train_meta"),
+        ("train_base", "train_meta", "utility_policy_optimisation"),
     ]
 
     pool_for_stage: dict[str, str] = {}
@@ -368,11 +368,11 @@ def load_or_build_slice_plan(
         planner_config = SlicePlannerConfig.fast_defaults(schema=EventSchema())
 
     allocation_targets = {
-        "train_base": 0.55,
-        "train_meta": 0.55,
-        "sizer_train": 0.20,
-        "utility_policy_optimisation": 0.15,
-        "holdout_strategy_eval": 0.10
+        "train_base": 0.70,
+        "train_meta": 0.70,
+        "sizer_train": 0.25,
+        "utility_policy_optimisation": 0.70,
+        "holdout_strategy_eval": 0.05,
     }
 
     # Try to load existing

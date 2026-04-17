@@ -245,7 +245,19 @@ def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
     tprint("DAILY FEATURE GENERATION COMPLETE")
 
 
-def _load_label_datasets(cfg, run_id):
+def _sort_label_dataset_for_time_cv(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize label dataset ordering for time-based CV consumers."""
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+    sort_cols = [
+        c for c in ("__ts__", "timestamp", "__symbol__", "symbol") if c in df.columns
+    ]
+    if not sort_cols:
+        return df.reset_index(drop=True)
+    return df.sort_values(sort_cols, kind="mergesort").reset_index(drop=True)
+
+
+def _load_label_datasets(cfg, run_id, *, allow_oof_fallback: bool = True):
     """Load all label datasets from artifacts. Shared by train_daily / train_daily_base / train_daily_meta."""
     import os as _os
 
@@ -270,12 +282,14 @@ def _load_label_datasets(cfg, run_id):
             out["__y_ret__"] = out["y_ret"]
         if "oof_prob" in out.columns and "oof_pred" not in out.columns:
             out["oof_pred"] = out["oof_prob"]
-        return out
+        return _sort_label_dataset_for_time_cv(out)
 
     def _load_label_or_oof_artifact(name: str) -> pd.DataFrame | None:
         df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df is not None:
-            return df
+            return _sort_label_dataset_for_time_cv(df)
+        if not allow_oof_fallback:
+            return None
         oof_candidates = []
         base_name = name.removeprefix("train_")
         oof_candidates.append(f"oof_{base_name}")
@@ -303,9 +317,12 @@ def _load_label_datasets(cfg, run_id):
 
     found_count = 0
     strategies = get_strategies(cfg)
-    base_geometry_archetypes = [
-        str(v) for v in cfg.get("base_geometry_archetypes", ["tight", "wide"]) if str(v)
-    ]
+    include_variant_datasets = bool(cfg.get("base_geometry_train_variants", False))
+    base_geometry_archetypes = (
+        [str(v) for v in cfg.get("base_geometry_archetypes", ["tight", "wide"]) if str(v)]
+        if include_variant_datasets
+        else []
+    )
     for strat in strategies:
         strategy_id = str(strat.get("strategy_id", ""))
         if not strategy_id:
@@ -334,6 +351,9 @@ def _load_label_datasets(cfg, run_id):
                         ].reset_index(drop=True)
                     if len(df_v) > 0:
                         datasets[vname] = df_v
+
+    if not include_variant_datasets:
+        tprint("Label dataset loader: primary-only mode, variant label artifacts are excluded.")
 
     # Backward-compatible fallback for older artifact layouts.
     if not found_count:
@@ -526,7 +546,9 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
     tprint("DAILY TRAINING START")
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     cfg["run_id"] = run_id
-    datasets, found_count = _load_label_datasets(cfg, run_id)
+    datasets, found_count = _load_label_datasets(
+        cfg, run_id, allow_oof_fallback=False
+    )
 
     if not found_count:
         tprint("ERROR: No label datasets found. Run 'labels' mode first.")
@@ -564,7 +586,9 @@ def train_daily_base(ts_sig, margin_symbols, cfg, store, ex):
 
     cfg = ensure_training_residualization_feature_keys(cfg)
     cfg["run_id"] = run_id
-    datasets, found_count = _load_label_datasets(cfg, run_id)
+    datasets, found_count = _load_label_datasets(
+        cfg, run_id, allow_oof_fallback=False
+    )
 
     if not found_count:
         tprint("ERROR: No label datasets found. Run 'labels' mode first.")
@@ -618,7 +642,9 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
 
     cfg = ensure_training_residualization_feature_keys(cfg)
     cfg["run_id"] = run_id
-    datasets, found_count = _load_label_datasets(cfg, run_id)
+    datasets, found_count = _load_label_datasets(
+        cfg, run_id, allow_oof_fallback=True
+    )
 
     if not found_count:
         tprint("ERROR: No label datasets found. Run 'labels' mode first.")
@@ -644,6 +670,73 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
     if not alpha_models:
         tprint("ERROR: No alpha models found in intermediate state.")
         return None
+
+    current_strategy_ids = {
+        str(s["strategy_id"]) for s in get_strategies(cfg) if isinstance(s, dict)
+    }
+    intermediate_strategy_ids = {
+        str(strategy_id)
+        for side_models in alpha_models.values()
+        if isinstance(side_models, dict)
+        for strategy_id in side_models.keys()
+    }
+    variant_only_intermediate = all(
+        bool(((conf or {}).get("alpha_diag", {}) or {}).get("primary_disabled", False))
+        or str(((conf or {}).get("alpha_diag", {}) or {}).get("base_source", ""))
+        == "tight_wide_variants_only"
+        for side_models in alpha_models.values()
+        if isinstance(side_models, dict)
+        for conf in side_models.values()
+    )
+    if variant_only_intermediate:
+        tprint(
+            "ERROR: Base models intermediate contains only non-primary tight/wide variant bundles. "
+            "Meta training requires primary alpha models only."
+        )
+        tprint(
+            f"  Intermediate strategies: {sorted(intermediate_strategy_ids)}"
+        )
+        tprint(f"  Current strategies: {sorted(current_strategy_ids)}")
+        tprint(
+            "  Fix: rerun base training in primary-only mode so base_models_intermediate.pkl is rebuilt from primary alpha models."
+        )
+        return None
+
+    blocked_strategy_ids = set(
+        base_bundle.get("blocked_strategy_ids", [])
+        or (base_bundle.get("quality_gate_report", {}) or {}).get(
+            "blocked_strategy_ids", []
+        )
+    )
+    if blocked_strategy_ids:
+        eligible_alpha_models = {}
+        eligible_count = 0
+        for side, side_models in alpha_models.items():
+            if not isinstance(side_models, dict):
+                continue
+            kept = {}
+            for strategy_id, conf in side_models.items():
+                if strategy_id in blocked_strategy_ids:
+                    continue
+                if bool((conf or {}).get("downstream_blocked", False)):
+                    continue
+                kept[strategy_id] = conf
+            if kept:
+                eligible_alpha_models[side] = kept
+                eligible_count += len(kept)
+        if eligible_alpha_models:
+            tprint(
+                f"Meta training: restricted alpha model set to {eligible_count} non-degenerate strategies "
+                f"(blocked={len(blocked_strategy_ids)})"
+            )
+            alpha_models = eligible_alpha_models
+        base_variant_models = {
+            k: v
+            for k, v in base_bundle.get("base_variant_models", {}).items()
+            if k[1] not in blocked_strategy_ids
+        }
+    else:
+        base_variant_models = base_bundle.get("base_variant_models", {})
 
     base_oof_symbols = _load_base_oof_symbols(cfg["data_root"], run_id)
     if base_oof_symbols:
@@ -680,7 +773,7 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
             datasets,
             cfg,
             alpha_models,
-            base_variant_models=base_bundle.get("base_variant_models", {}),
+            base_variant_models=base_variant_models,
         )
         tprint(f"Meta models trained: {len(meta_models)}")
 

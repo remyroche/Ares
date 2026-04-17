@@ -81,28 +81,48 @@ class PurgedKFold(BaseCrossValidator):
         if times is not None and hasattr(times, '__len__') and len(times) == n_samples:
             # Convert to numeric (seconds since epoch) for comparison
             import pandas as pd
-            if hasattr(times, 'dtype') and np.issubdtype(times.dtype, np.datetime64):
-                times_numeric = pd.to_datetime(times).astype(np.int64) // 10**9
-            else:
-                times_numeric = np.asarray(times, dtype=np.float64)
+            times_dt = pd.to_datetime(times, utc=True, errors="coerce")
+            valid_mask = np.asarray(pd.notna(times_dt), dtype=bool)
+            times_numeric = (times_dt.astype(np.int64) // 10**9).to_numpy(
+                dtype=np.int64, copy=False
+            )
+            if not np.any(valid_mask):
+                return
+            valid_idx = np.flatnonzero(valid_mask).astype(np.int32, copy=False)
+            ordered_valid = valid_idx[
+                np.argsort(times_numeric[valid_idx], kind="mergesort")
+            ]
             
             purge_seconds = float(self.purge)
             embargo_seconds = float(self.embargo)
             
+            ordered_n = ordered_valid.size
+            fold_sizes = np.full(self.n_splits, ordered_n // self.n_splits, dtype=np.int32)
+            fold_sizes[: ordered_n % self.n_splits] += 1
+
             start = 0
             for i in range(self.n_splits):
                 val_start = start
                 val_end = start + fold_sizes[i]
                 start = val_end
 
-                val_idx = np.arange(val_start, val_end, dtype=np.int32)
+                if val_end <= val_start:
+                    continue
+                val_idx = ordered_valid[val_start:val_end].astype(np.int32, copy=False)
                 
                 # Time-based purge: find all indices whose time is before (test_start_time - purge)
-                test_start_time = times_numeric[val_start]
-                test_end_time = times_numeric[min(val_end - 1, n_samples - 1)]
+                test_start_time = float(times_numeric[val_idx[0]])
+                test_end_time = float(times_numeric[val_idx[-1]])
                 
                 purge_time = test_start_time - purge_seconds
-                train_mask = times_numeric[:val_start] < purge_time
+                embargo_time = test_end_time + embargo_seconds
+                train_mask = valid_mask & (times_numeric < purge_time)
+                train_mask &= ~(times_numeric >= test_start_time)
+                if embargo_seconds > 0:
+                    train_mask &= ~(
+                        (times_numeric > test_end_time)
+                        & (times_numeric <= embargo_time)
+                    )
                 
                 train_idx = np.where(train_mask)[0].astype(np.int32)
                 

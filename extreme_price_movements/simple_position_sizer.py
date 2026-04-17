@@ -18,15 +18,15 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import optuna
 import numpy as np
+import optuna
 import pandas as pd
+from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
+from optuna.samplers import TPESampler
 from scipy.stats import linregress, spearmanr
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import ElasticNet, Ridge, RidgeClassifier
-from optuna.pruners import MedianPruner
-from optuna.samplers import TPESampler
 from sklearn.preprocessing import RobustScaler
 
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
@@ -187,9 +187,9 @@ def _extract_strategy_params_payload(
         "strategies": strategies,
         "buckets": {str(row["strategy_id"]): dict(row) for row in strategies},
         "best_strategy_id": strategies[0]["strategy_id"] if strategies else None,
-        "best_threshold_pct": float(strategies[0]["threshold_pct"])
-        if strategies
-        else None,
+        "best_threshold_pct": (
+            float(strategies[0]["threshold_pct"]) if strategies else None
+        ),
     }
     return payload
 
@@ -602,6 +602,64 @@ def write_holdout_multi_metrics(
     return qualified
 
 
+def _persist_sizer_oof_predictions(
+    data_root: str,
+    run_id: str,
+    strategy_results: Dict[str, Any],
+) -> None:
+    """Save sizer OOF predictions to parquet for policy_optimiser consumption.
+
+    Saves predictions indexed by row position (assumes consistent ordering across strategies).
+    """
+    all_rows = []
+    row_idx = 0
+
+    for strategy_id, res in strategy_results.items():
+        ridge_preds = res.get("ridge_sizer_scores_")
+        et_preds = res.get("et_sizer_scores_")
+
+        # Get predictions - use whichever is available
+        preds = ridge_preds if ridge_preds is not None else et_preds
+        if preds is None:
+            continue
+
+        n_preds = len(preds)
+
+        # Find the winner model for this strategy
+        comp = res.get("comparison_", {})
+        if comp:
+            winner = comp.get("winner", "elasticnet")
+        else:
+            # Fallback: prefer et if available, else elasticnet
+            winner = "extratrees" if et_preds is not None else "elasticnet"
+
+        for idx in range(n_preds):
+            score = float(preds[idx]) if np.isfinite(preds[idx]) else np.nan
+            all_rows.append(
+                {
+                    "row_idx": row_idx + idx,
+                    "strategy_id": strategy_id,
+                    "sizer_score_oof": score,
+                    "model": winner,
+                }
+            )
+
+        row_idx += n_preds
+
+    if all_rows:
+        df = pd.DataFrame(all_rows)
+        out_path = (
+            Path(data_root)
+            / "artifacts"
+            / run_id
+            / "oof"
+            / "simple_sizer_oof_all.parquet"
+        )
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(out_path, index=False)
+        logger.info(f"Saved simple_position_sizer OOF predictions to {out_path}")
+
+
 def _persist_head_to_head_winner(
     data_root: str,
     run_id: str,
@@ -742,6 +800,22 @@ _RIDGE_HEAD_EXACT = {
     "meta_rel_diff",
     "meta_agreement_strength",
     "meta_reliability",
+    "clf_center",
+    "clf_entropy",
+    "clf_prefix_std",
+    "reg_pred",
+    "reg_prefix_std",
+    "clf_leaf_support_q25",
+    "reg_leaf_support_q25",
+    "clf_leaf_target_iqr_mean",
+    "reg_leaf_target_iqr_mean",
+    "sign_agree",
+    "joint_confidence",
+    "conflict_score",
+    "joint_instability",
+    "edge_unc_pen",
+    "edge_support_pen",
+    "edge_noise_pen",
     "Upside",
     "Downside",
     "EdgeSharpe",
@@ -804,6 +878,7 @@ def detect_meta_head_keys(
             "reg_range",
             "reg_sign_agree",
             "reg_clf_agree",
+            "reg_pred",
             "oof_ev",
             "oof_u_hat",
             "oof_log_mae_q70_hat",
@@ -813,9 +888,19 @@ def detect_meta_head_keys(
             "meta_diff",
             "meta_abs_diff",
             "meta_rel_diff",
+            "edge_unc_pen",
+            "edge_support_pen",
+            "edge_noise_pen",
         } or kl.startswith("base_h"):
             heads[k] = "return-like"
-        elif kl in {"clf", "oof_p_tp", "oof_p_to", "oof_p_sl"}:
+        elif kl in {
+            "clf",
+            "oof_p_tp",
+            "oof_p_to",
+            "oof_p_sl",
+            "clf_center",
+            "clf_entropy",
+        }:
             heads[k] = "classification-like"
         elif (
             kl.startswith("robust_sigma_meta")
@@ -826,6 +911,16 @@ def detect_meta_head_keys(
                 "avg_cv_meta",
                 "meta_agreement_strength",
                 "meta_reliability",
+                "clf_prefix_std",
+                "reg_prefix_std",
+                "clf_leaf_support_q25",
+                "reg_leaf_support_q25",
+                "clf_leaf_target_iqr_mean",
+                "reg_leaf_target_iqr_mean",
+                "sign_agree",
+                "joint_confidence",
+                "conflict_score",
+                "joint_instability",
             }
         ):
             heads[k] = "uncertainty-like"
@@ -907,6 +1002,24 @@ def clean_and_standardize(
             X_clean = scaler.transform(X_clean)
 
     return X_clean, fit_medians, scaler, center_1d, scale_1d
+
+
+def _precompute_fold_standardization(
+    X: np.ndarray, splits: List[Tuple[np.ndarray, np.ndarray]]
+) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    scaled_folds: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    for tr_idx, te_idx in splits:
+        X_tr = X[tr_idx]
+        X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(X_tr)
+        X_te_clean, _, _, _, _ = clean_and_standardize(
+            X[te_idx],
+            fit_medians=medians,
+            scaler=scaler,
+            center_1d=center_1d,
+            scale_1d=scale_1d,
+        )
+        scaled_folds.append((tr_idx, te_idx, X_tr_clean, X_te_clean))
+    return scaled_folds
 
 
 def walk_forward_temporal_splits(
@@ -1192,7 +1305,11 @@ def compute_period_aggregated_stats(
 
         _, dd_series = _stable_equity_and_drawdown(period_vals)
         tuw = float(np.mean(dd_series > 1e-12)) if dd_series.size else 1.0
-        ulcer = float(np.sqrt(np.mean(np.square(dd_series * 100.0)))) if dd_series.size else 100.0
+        ulcer = (
+            float(np.sqrt(np.mean(np.square(dd_series * 100.0))))
+            if dd_series.size
+            else 100.0
+        )
         pct_negative = float(np.mean(period_vals < 0)) if len(period_vals) > 0 else 0.0
         worst_pnl = float(np.min(period_vals))
 
@@ -1442,7 +1559,6 @@ class SimpleHeadRidgeSizer:
     """
 
     def __init__(self, model=None):
-
         self.model = model or Ridge(alpha=1.0)
         self.fold_coefs = []
         self.feature_names = []
@@ -1654,6 +1770,50 @@ def calibrate_barrier_probabilities(
     return calibrated.astype(np.float32)
 
 
+def _lightweight_hpo_pnl_eval(
+    scores: np.ndarray,
+    y_raw_net_return: np.ndarray,
+    top_fracs: List[float],
+    cost_pct: float = 0.003,
+    n_days: float = 365.0,
+) -> Dict[str, float]:
+    results: Dict[str, float] = {}
+    n = len(scores)
+    if n == 0:
+        return results
+
+    for frac in top_fracs:
+        k = max(1, int(n * frac))
+        idx = np.argpartition(scores, -k)[-k:]
+        rets = y_raw_net_return[idx]
+        net_rets = rets - cost_pct
+
+        sorted_args = np.argsort(scores[idx])
+        allocations = np.linspace(0.05, 0.15, len(idx))
+        wallet_rets = (rets[sorted_args] - cost_pct) * allocations
+        wallet_pnl = float(np.sum(wallet_rets))
+
+        gross_win = float(np.sum(net_rets[net_rets > 0]))
+        gross_loss = float(np.abs(np.sum(net_rets[net_rets < 0])))
+        pf = (
+            gross_win / gross_loss
+            if gross_loss > 1e-12
+            else (100.0 if gross_win > 0 else 0.0)
+        )
+
+        ds = net_rets[net_rets < 0]
+        ds_std = float(np.std(ds)) if len(ds) > 1 else 1e-4
+        sortino = float(np.mean(net_rets)) / ds_std if ds_std > 1e-12 else 0.0
+
+        label = f"{frac:.3f}"
+        results[f"wallet_pnl_{label}"] = wallet_pnl
+        results[f"pf_{label}"] = pf
+        results[f"sortino_{label}"] = sortino
+        results[f"tpd_{label}"] = float(len(rets)) / n_days if n_days > 0 else 0.0
+
+    return results
+
+
 def evaluate_selection_profit_proxy(
     scores: np.ndarray,
     y_raw_net_return: np.ndarray,
@@ -1740,12 +1900,22 @@ def evaluate_selection_profit_proxy(
         mean_ret = np.mean(sized_rets)
         sortino = mean_ret / downside_std
 
-        weekly_sortino, weekly_pnl_std, weekly_tuw, weekly_ulcer, weekly_pct_negative, weekly_worst_pnl = compute_period_aggregated_stats(
-            sized_rets, selected_ts, "W"
-        )
-        monthly_sortino, monthly_pnl_std, monthly_tuw, monthly_ulcer, monthly_pct_negative, monthly_worst_pnl = compute_period_aggregated_stats(
-            sized_rets, selected_ts, "M"
-        )
+        (
+            weekly_sortino,
+            weekly_pnl_std,
+            weekly_tuw,
+            weekly_ulcer,
+            weekly_pct_negative,
+            weekly_worst_pnl,
+        ) = compute_period_aggregated_stats(sized_rets, selected_ts, "W")
+        (
+            monthly_sortino,
+            monthly_pnl_std,
+            monthly_tuw,
+            monthly_ulcer,
+            monthly_pct_negative,
+            monthly_worst_pnl,
+        ) = compute_period_aggregated_stats(sized_rets, selected_ts, "M")
         month_groups = None
         if selected_ts is not None:
             ts_idx = pd.to_datetime(selected_ts, utc=True, errors="coerce")
@@ -1806,9 +1976,11 @@ def evaluate_selection_profit_proxy(
                 "stability": stability,
                 "max_drawdown": mdd_pct,
                 "calmar_ratio": net_pnl / mdd_pct if mdd_pct > 1e-9 else float("inf"),
-                "expectancy_tstat": mean_ret / float(np.std(sized_rets))
-                if len(sized_rets) > 1 and float(np.std(sized_rets)) > 1e-9
-                else 0.0,
+                "expectancy_tstat": (
+                    mean_ret / float(np.std(sized_rets))
+                    if len(sized_rets) > 1 and float(np.std(sized_rets)) > 1e-9
+                    else 0.0
+                ),
                 "trades_selected": len(sized_rets),
                 **wallet_sensitivity,
             }
@@ -1933,6 +2105,16 @@ def run_simple_position_sizer(
     ridge_importance_df = pd.DataFrame()
     ridge_profit_proxy_df = pd.DataFrame()
 
+    _hpo_subsample_rate = 0.5
+    _hpo_rng = np.random.RandomState(42)
+    _hpo_tr_idx_subs: List[np.ndarray] = []
+    for _tr_idx, _te_idx in splits:
+        if len(_tr_idx) > 200:
+            n_sub = max(200, int(len(_tr_idx) * _hpo_subsample_rate))
+            _hpo_tr_idx_subs.append(_hpo_rng.choice(_tr_idx, n_sub, replace=False))
+        else:
+            _hpo_tr_idx_subs.append(_tr_idx)
+
     if use_ridge_head_sizer and used_keys:
         X_heads = np.column_stack([feature_dict[k] for k in used_keys])
         best_ridge_utility = -np.inf
@@ -1945,17 +2127,28 @@ def run_simple_position_sizer(
         best_ridge_opt_rets = np.array([])
         best_ridge_opt_ts = np.array([])
 
+        ridge_scaled_folds = _precompute_fold_standardization(X_heads, splits)
+        ridge_sub_scaled_folds: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        for i, (tr_idx, te_idx) in enumerate(splits):
+            sub_tr = _hpo_tr_idx_subs[i]
+            X_sub = X_heads[sub_tr]
+            X_sub_clean, med, sc, c1d, s1d = clean_and_standardize(X_sub)
+            X_te_clean, _, _, _, _ = clean_and_standardize(
+                X_heads[te_idx], fit_medians=med, scaler=sc, center_1d=c1d, scale_1d=s1d
+            )
+            ridge_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
+
         ridge_trials = 40
         ridge_sampler = TPESampler(seed=42, multivariate=True, group=True)
-        ridge_pruner = MedianPruner(
-            n_startup_trials=8,
-            n_warmup_steps=max(1, len(splits) // 2),
-            interval_steps=1,
+        ridge_pruner = SuccessiveHalvingPruner(
+            min_resource=1,
+            max_resource=len(splits),
+            reduction_factor=3,
         )
         ridge_study = optuna.create_study(
             direction="maximize", sampler=ridge_sampler, pruner=ridge_pruner
         )
-        optuna_patience_trials = 30
+        optuna_patience_trials = 40
 
         def _make_patience_callback(
             *, patience: int, label: str
@@ -1975,18 +2168,17 @@ def run_simple_position_sizer(
                 if values:
                     current = float(values[0])
                     if np.isfinite(current):
-                        # Rule 1: Any improvement tracking
                         if current > best_value:
                             best_value = current
                             best_trial_number = current_trial_number
-
-                        # Rule 2: Meaningful improvement (>0.5%) tracking
-                        if current > best_value_at_meaningful_check * meaningful_improvement_threshold:
+                        if (
+                            current
+                            > best_value_at_meaningful_check
+                            * meaningful_improvement_threshold
+                        ):
                             best_value_at_meaningful_check = current
                             last_meaningful_improvement_trial = current_trial_number
-                    return
 
-                # Rule 1: Stop if no improvement for 'patience' trials
                 if (
                     best_trial_number >= 0
                     and (current_trial_number - best_trial_number) >= patience
@@ -1998,11 +2190,11 @@ def run_simple_position_sizer(
                     study.stop()
                     return
 
-                # Rule 2: Stop if no meaningful improvement (>0.5%) for 1.5*patience trials
                 extended_patience = int(patience * 1.5)
                 if (
                     last_meaningful_improvement_trial >= 0
-                    and (current_trial_number - last_meaningful_improvement_trial) >= extended_patience
+                    and (current_trial_number - last_meaningful_improvement_trial)
+                    >= extended_patience
                 ):
                     tprint(
                         f"{label}: early stopping after {extended_patience} trials without meaningful "
@@ -2023,35 +2215,18 @@ def run_simple_position_sizer(
             # Per-fold metrics storage
             fold_pnl_10: List[float] = []
             fold_pnl_20: List[float] = []
-            fold_turnover_10: List[float] = []
             fold_sortino_10: List[float] = []
+            oof_preds_buf = np.full(len(y_raw_net_return), np.nan, dtype=np.float32)
 
-            for fold_idx, (tr_idx, te_idx) in enumerate(splits):
-                if len(tr_idx) == 0 or len(te_idx) == 0:
+            for fold_idx in range(len(splits)):
+                sub_tr, te_idx, X_tr_clean, X_te_clean = ridge_sub_scaled_folds[
+                    fold_idx
+                ]
+                if len(sub_tr) == 0 or len(te_idx) == 0:
                     continue
-
-                X_tr, y_tr = X_heads[tr_idx], y_raw_net_return[tr_idx]
-                X_te = X_heads[te_idx]
+                y_tr = y_raw_net_return[sub_tr]
                 y_te = y_raw_net_return[te_idx]
-                ts_te = timestamps[te_idx] if timestamps is not None else None
 
-                # Standardize
-                (
-                    X_tr_clean,
-                    medians,
-                    scaler,
-                    center_1d,
-                    scale_1d,
-                ) = clean_and_standardize(X_tr)
-                X_te_clean, _, _, _, _ = clean_and_standardize(
-                    X_te,
-                    fit_medians=medians,
-                    scaler=scaler,
-                    center_1d=center_1d,
-                    scale_1d=scale_1d,
-                )
-
-                # Fit and predict
                 model = ElasticNet(
                     alpha=alpha,
                     l1_ratio=l1_ratio,
@@ -2063,66 +2238,31 @@ def run_simple_position_sizer(
                 )
                 model.fit(X_tr_clean, y_tr)
                 fold_preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
+                oof_preds_buf[te_idx] = fold_preds
 
-                # Compute fold-wise profit metrics
-                fold_profit_df, _, _ = evaluate_selection_profit_proxy(
+                n_days_fold = max(1.0, len(te_idx) / 96.0)
+                lw = _lightweight_hpo_pnl_eval(
                     fold_preds,
                     y_te,
-                    timestamps=ts_te,
-                    symbols=_sym_vals[te_idx] if _sym_vals is not None else None,
                     top_fracs=[0.10, 0.20],
                     cost_pct=cost_pct,
-                    n_days=max(1.0, len(te_idx) / 96.0),  # Approx days in fold
+                    n_days=n_days_fold,
                 )
+                if f"wallet_pnl_0.100" in lw:
+                    fold_pnl_10.append(lw["wallet_pnl_0.100"])
+                if f"wallet_pnl_0.200" in lw:
+                    fold_pnl_20.append(lw["wallet_pnl_0.200"])
+                if f"sortino_0.100" in lw:
+                    fold_sortino_10.append(lw["sortino_0.100"])
 
-                if not fold_profit_df.empty:
-                    # Extract metrics for this fold
-                    pnl_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
-                        "wallet_pnl"
-                    ].values
-                    pnl_20 = fold_profit_df[fold_profit_df["selection_frac"] == 0.20][
-                        "wallet_pnl"
-                    ].values
-                    to_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
-                        "trades_per_day"
-                    ].values
-                    sort_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
-                        "sortino"
-                    ].values
+                if trial is not None and fold_idx >= len(splits) // 2:
+                    trial.report(
+                        float(np.mean(fold_pnl_10)) if fold_pnl_10 else -1e9,
+                        step=fold_idx,
+                    )
+                    if trial.should_prune():
+                        raise optuna.TrialPruned()
 
-                    if len(pnl_10) > 0:
-                        fold_pnl_10.append(float(pnl_10[0]))
-                    if len(pnl_20) > 0:
-                        fold_pnl_20.append(float(pnl_20[0]))
-                    if len(to_10) > 0:
-                        fold_turnover_10.append(float(to_10[0]))
-                    if len(sort_10) > 0:
-                        fold_sortino_10.append(float(sort_10[0]))
-
-                # Pruning check
-                if trial is not None:
-                    seen_so_far = sum(len(s[1]) for s in splits[: fold_idx + 1])
-                    min_seen = max(20, int(0.2 * len(y_raw_net_return)))
-                    if seen_so_far >= min_seen:
-                        interim_oof = np.full(
-                            len(y_raw_net_return), np.nan, dtype=np.float32
-                        )
-                        interim_oof[te_idx] = fold_preds
-                        interim_metrics = evaluate_signal(
-                            f"Ridge_fold{fold_idx}",
-                            interim_oof,
-                            y_raw_net_return,
-                            y_downside,
-                            directionality="return-like",
-                        )
-                        trial.report(
-                            float(interim_metrics.get("utility_score", -np.inf)),
-                            step=fold_idx,
-                        )
-                        if trial.should_prune():
-                            raise optuna.TrialPruned()
-
-            # Aggregate fold metrics
             if not fold_pnl_10:
                 return -1e9
 
@@ -2130,16 +2270,13 @@ def run_simple_position_sizer(
             std_pnl_10 = float(np.std(fold_pnl_10))
             mean_pnl_20 = float(np.mean(fold_pnl_20)) if fold_pnl_20 else 0.0
             std_pnl_20 = float(np.std(fold_pnl_20)) if len(fold_pnl_20) > 1 else 0.0
-            turnover_10 = float(np.mean(fold_turnover_10)) if fold_turnover_10 else 0.0
             sortino_10 = float(np.mean(fold_sortino_10)) if fold_sortino_10 else 0.0
 
-            # Composite objective
             composite = (
                 0.70 * mean_pnl_10
                 + 0.30 * mean_pnl_20
                 - 0.50 * std_pnl_10
                 - 0.20 * std_pnl_20
-                - 0.10 * turnover_10
                 + 0.15 * sortino_10
             )
 
@@ -2148,7 +2285,6 @@ def run_simple_position_sizer(
             trial.set_user_attr("std_pnl_10", std_pnl_10)
             trial.set_user_attr("mean_pnl_20", mean_pnl_20)
             trial.set_user_attr("std_pnl_20", std_pnl_20)
-            trial.set_user_attr("turnover_10", turnover_10)
             trial.set_user_attr("sortino_10", sortino_10)
             trial.set_user_attr("composite_score", composite)
 
@@ -2238,9 +2374,11 @@ def run_simple_position_sizer(
             weight_col = (
                 "mean_weight"
                 if "mean_weight" in _imp.columns
-                else "mean_importance"
-                if "mean_importance" in _imp.columns
-                else "abs_weight"
+                else (
+                    "mean_importance"
+                    if "mean_importance" in _imp.columns
+                    else "abs_weight"
+                )
             )
             std_col = "std_weight" if "std_weight" in _imp.columns else None
             _imp = _imp.sort_values("abs_weight", ascending=False).head(20)
@@ -2323,7 +2461,6 @@ def run_simple_position_sizer(
     et_profit_proxy_df = pd.DataFrame()
 
     if use_et_head_sizer and used_keys:
-
         X_heads = (
             X_heads
             if use_ridge_head_sizer and used_keys
@@ -2339,18 +2476,28 @@ def run_simple_position_sizer(
         best_et_opt_ts = np.array([])
         best_et_params = {}
 
-        et_trials = 100
+        et_sub_scaled_folds: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        for i, (tr_idx, te_idx) in enumerate(splits):
+            sub_tr = _hpo_tr_idx_subs[i]
+            X_sub = X_heads[sub_tr]
+            X_sub_clean, med, sc, c1d, s1d = clean_and_standardize(X_sub)
+            X_te_clean, _, _, _, _ = clean_and_standardize(
+                X_heads[te_idx], fit_medians=med, scaler=sc, center_1d=c1d, scale_1d=s1d
+            )
+            et_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
+
+        et_trials = 150
         et_sampler = TPESampler(seed=42, multivariate=True, group=True)
-        et_pruner = MedianPruner(
-            n_startup_trials=15,
-            n_warmup_steps=max(1, len(splits) // 3),
-            interval_steps=1,
+        et_pruner = SuccessiveHalvingPruner(
+            min_resource=1,
+            max_resource=len(splits),
+            reduction_factor=3,
         )
         et_study = optuna.create_study(
             direction="maximize", sampler=et_sampler, pruner=et_pruner
         )
 
-        et_n_estimators_choices = [300, 400, 500]
+        et_n_estimators_choices = [200, 300, 400]
         et_max_depth_choices = [6, 7, 8, 9, 10, 11, 12]
         et_min_impurity_choices = [1e-6, 1e-5, 5e-5, 1e-4]
         et_criterion_choices = ["squared_error", "absolute_error"]
@@ -2362,9 +2509,7 @@ def run_simple_position_sizer(
             max_depth = int(
                 trial.suggest_categorical("max_depth", et_max_depth_choices)
             )
-            max_features = float(
-                trial.suggest_float("max_features", 0.2, 0.7)
-            )
+            max_features = float(trial.suggest_float("max_features", 0.2, 0.7))
             ccp_alpha = 1e-6
             min_impurity_decrease = float(
                 trial.suggest_categorical(
@@ -2386,38 +2531,17 @@ def run_simple_position_sizer(
                 int(np.ceil(min_samples_split_frac * X_heads.shape[0])),
             )
 
-            # Per-fold metrics storage
             fold_pnl_10: List[float] = []
             fold_pnl_20: List[float] = []
-            fold_turnover_10: List[float] = []
             fold_sortino_10: List[float] = []
 
-            for fold_idx, (tr_idx, te_idx) in enumerate(splits):
-                if len(tr_idx) == 0 or len(te_idx) == 0:
+            for fold_idx in range(len(splits)):
+                sub_tr, te_idx, X_tr_clean, X_te_clean = et_sub_scaled_folds[fold_idx]
+                if len(sub_tr) == 0 or len(te_idx) == 0:
                     continue
-
-                X_tr, y_tr = X_heads[tr_idx], y_raw_net_return[tr_idx]
-                X_te = X_heads[te_idx]
+                y_tr = y_raw_net_return[sub_tr]
                 y_te = y_raw_net_return[te_idx]
-                ts_te = timestamps[te_idx] if timestamps is not None else None
 
-                # Standardize
-                (
-                    X_tr_clean,
-                    medians,
-                    scaler,
-                    center_1d,
-                    scale_1d,
-                ) = clean_and_standardize(X_tr)
-                X_te_clean, _, _, _, _ = clean_and_standardize(
-                    X_te,
-                    fit_medians=medians,
-                    scaler=scaler,
-                    center_1d=center_1d,
-                    scale_1d=scale_1d,
-                )
-
-                # Fit and predict
                 model = ExtraTreesRegressor(
                     n_estimators=n_estimators,
                     max_depth=max_depth,
@@ -2436,76 +2560,29 @@ def run_simple_position_sizer(
                 model.fit(X_tr_clean, y_tr)
                 fold_preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
 
-                # Isotonic calibration per fold
-                try:
-                    from sklearn.isotonic import IsotonicRegression
-
-                    valid = np.isfinite(fold_preds) & np.isfinite(y_te)
-                    if valid.sum() >= 20:
-                        calibrator = IsotonicRegression(out_of_bounds="clip")
-                        calibrator.fit(fold_preds[valid], y_te[valid])
-                        fold_preds[valid] = calibrator.transform(fold_preds[valid])
-                except Exception:
-                    pass
-
-                # Compute fold-wise profit metrics
-                fold_profit_df, _, _ = evaluate_selection_profit_proxy(
+                n_days_fold = max(1.0, len(te_idx) / 96.0)
+                lw = _lightweight_hpo_pnl_eval(
                     fold_preds,
                     y_te,
-                    timestamps=ts_te,
-                    symbols=_sym_vals[te_idx] if _sym_vals is not None else None,
                     top_fracs=[0.10, 0.20],
                     cost_pct=cost_pct,
-                    n_days=max(1.0, len(te_idx) / 96.0),
+                    n_days=n_days_fold,
                 )
+                if "wallet_pnl_0.100" in lw:
+                    fold_pnl_10.append(lw["wallet_pnl_0.100"])
+                if "wallet_pnl_0.200" in lw:
+                    fold_pnl_20.append(lw["wallet_pnl_0.200"])
+                if "sortino_0.100" in lw:
+                    fold_sortino_10.append(lw["sortino_0.100"])
 
-                if not fold_profit_df.empty:
-                    pnl_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
-                        "wallet_pnl"
-                    ].values
-                    pnl_20 = fold_profit_df[fold_profit_df["selection_frac"] == 0.20][
-                        "wallet_pnl"
-                    ].values
-                    to_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
-                        "trades_per_day"
-                    ].values
-                    sort_10 = fold_profit_df[fold_profit_df["selection_frac"] == 0.10][
-                        "sortino"
-                    ].values
+                if trial is not None and fold_idx >= len(splits) // 2:
+                    trial.report(
+                        float(np.mean(fold_pnl_10)) if fold_pnl_10 else -1e9,
+                        step=fold_idx,
+                    )
+                    if trial.should_prune():
+                        raise optuna.TrialPruned()
 
-                    if len(pnl_10) > 0:
-                        fold_pnl_10.append(float(pnl_10[0]))
-                    if len(pnl_20) > 0:
-                        fold_pnl_20.append(float(pnl_20[0]))
-                    if len(to_10) > 0:
-                        fold_turnover_10.append(float(to_10[0]))
-                    if len(sort_10) > 0:
-                        fold_sortino_10.append(float(sort_10[0]))
-
-                # Pruning check
-                if trial is not None:
-                    seen_so_far = sum(len(s[1]) for s in splits[: fold_idx + 1])
-                    min_seen = max(20, int(0.2 * len(y_raw_net_return)))
-                    if seen_so_far >= min_seen:
-                        interim_oof = np.full(
-                            len(y_raw_net_return), np.nan, dtype=np.float32
-                        )
-                        interim_oof[te_idx] = fold_preds
-                        interim_metrics = evaluate_signal(
-                            f"ET_fold{fold_idx}",
-                            interim_oof,
-                            y_raw_net_return,
-                            y_downside,
-                            directionality="return-like",
-                        )
-                        trial.report(
-                            float(interim_metrics.get("utility_score", -np.inf)),
-                            step=fold_idx,
-                        )
-                        if trial.should_prune():
-                            raise optuna.TrialPruned()
-
-            # Aggregate fold metrics
             if not fold_pnl_10:
                 return -1e9
 
@@ -2513,16 +2590,13 @@ def run_simple_position_sizer(
             std_pnl_10 = float(np.std(fold_pnl_10))
             mean_pnl_20 = float(np.mean(fold_pnl_20)) if fold_pnl_20 else 0.0
             std_pnl_20 = float(np.std(fold_pnl_20)) if len(fold_pnl_20) > 1 else 0.0
-            turnover_10 = float(np.mean(fold_turnover_10)) if fold_turnover_10 else 0.0
             sortino_10 = float(np.mean(fold_sortino_10)) if fold_sortino_10 else 0.0
 
-            # Composite objective
             composite = (
                 0.70 * mean_pnl_10
                 + 0.30 * mean_pnl_20
                 - 0.50 * std_pnl_10
                 - 0.20 * std_pnl_20
-                - 0.10 * turnover_10
                 + 0.15 * sortino_10
             )
 
@@ -2531,7 +2605,6 @@ def run_simple_position_sizer(
             trial.set_user_attr("std_pnl_10", std_pnl_10)
             trial.set_user_attr("mean_pnl_20", mean_pnl_20)
             trial.set_user_attr("std_pnl_20", std_pnl_20)
-            trial.set_user_attr("turnover_10", turnover_10)
             trial.set_user_attr("sortino_10", sortino_10)
             trial.set_user_attr("composite_score", composite)
 
@@ -2721,9 +2794,9 @@ def run_simple_position_sizer(
         "best_simple_score_": best_simple_score,
         "best_simple_score_name_": best_simple_score_name,
         "best_combo_profit_proxy_table_": best_combo_profit_proxy_df,
-        "profit_proxy_table_": profit_proxy_df
-        if not profit_proxy_df.empty
-        else pd.DataFrame(),
+        "profit_proxy_table_": (
+            profit_proxy_df if not profit_proxy_df.empty else pd.DataFrame()
+        ),
         "opt_rets_": best_opt_rets,
         "opt_ts_": best_opt_ts,
         "barrier_clf_importance_": barrier_clf_importance_df,
@@ -2784,9 +2857,11 @@ def run_bucketed_simple_position_sizer(
             b_y_raw_net_return,
             b_y_downside,
             b_timestamps,
-            b_trade_outcomes["symbol"].values
-            if "symbol" in b_trade_outcomes.columns
-            else None,
+            (
+                b_trade_outcomes["symbol"].values
+                if "symbol" in b_trade_outcomes.columns
+                else None
+            ),
             bucket_labels=None,
             sample_weight=b_sample_weight,
             **kwargs,
@@ -2853,17 +2928,24 @@ def run_simple_position_sizer_from_artifacts(
         f"Loaded {len(strategies)} strategies (global top-{top_n_strategies}). IDs: {[s.get('strategy_id', '')[:40] for s in strategies]}"
     )
 
-    # Load base and meta OOFs
+    # Load base and meta OOFs — BOTH required
     base_oofs = load_base_oof_predictions(data_root, run_id)
     try:
         meta_oofs = load_meta_oof_predictions(data_root, run_id)
     except Exception as e:
-        logger.warning(f"Could not load meta OOFs: {e}. Falling back to base-only.")
-        meta_oofs = {}
+        logger.error(
+            f"Could not load meta OOFs: {e}. Aborting — both base and meta OOFs are required."
+        )
+        return {}
 
-    if not base_oofs and not meta_oofs:
-        logger.warning(
-            f"No OOFs found in {data_root}/artifacts/{run_id}. Checking both base/ and meta_oof/."
+    if not base_oofs:
+        logger.error(
+            f"No base OOFs found in {data_root}/artifacts/{run_id}/oof/. Aborting."
+        )
+        return {}
+    if not meta_oofs:
+        logger.error(
+            f"No meta OOFs found in {data_root}/artifacts/{run_id}/meta_oof/. Aborting."
         )
         return {}
 
@@ -3000,52 +3082,81 @@ def run_simple_position_sizer_from_artifacts(
 
         trade_side = str(strategy.get("trade_side", "") or "")
 
-        # 2. Resolve OOF bucket by matching strategy_id prefix against meta_oof keys
-        # meta_oofs keys look like: "short_compression_ratio_..." or "compression_ratio_..."
-        # strategy_id looks like: "compression_ratio_1_0376017_dist_ema_fast_..."
+        # 2. Resolve OOF bucket by matching strategy_id against meta_oof AND base_oof keys
         oof_df = pd.DataFrame()
         resolved_meta_key = None
+        resolved_base_key = None
 
-        # Priority 1: exact side-prefixed match (e.g. "short_<strategy_id>")
-        prefixed = f"{trade_side}_{strategy_id}" if trade_side else strategy_id
-        if prefixed in meta_oofs:
-            resolved_meta_key = prefixed
-        else:
-            # Priority 2: longest common prefix between strategy_id and each meta key (strip side prefix)
-            import re as _re
+        import re as _re_oof
 
-            def _strip_side(k):
-                return _re.sub(r"^(long|short)_", "", k)
+        def _strip_side(k):
+            return _re_oof.sub(r"^(long|short)_", "", k)
 
-            strat_norm = _re.sub(r"[^a-z0-9]", "", strategy_id.lower())
-            best_key, best_score = None, 0
-            for mk in meta_oofs.keys():
-                mk_norm = _re.sub(r"[^a-z0-9]", "", _strip_side(mk).lower())
-                # Score = length of matching prefix
+        def _best_prefix_match(strategy_id: str, keys) -> tuple:
+            strat_norm = _re_oof.sub(r"[^a-z0-9]", "", strategy_id.lower())
+            best_k, best_s = None, 0
+            for k in keys:
+                k_norm = _re_oof.sub(r"[^a-z0-9]", "", _strip_side(k).lower())
                 plen = 0
-                for a, b in zip(strat_norm, mk_norm):
+                for a, b in zip(strat_norm, k_norm):
                     if a == b:
                         plen += 1
                     else:
                         break
-                if plen > best_score:
-                    best_score = plen
-                    best_key = mk
-            if best_key and best_score >= 20:  # require substantial prefix overlap
-                resolved_meta_key = best_key
-                logger.info(
-                    f"Fuzzy matched strategy '{strategy_id[:40]}' to meta_oof key '{best_key[:40]}' (prefix_len={best_score})"
-                )
+                if plen > best_s:
+                    best_s = plen
+                    best_k = k
+            return (best_k, best_s) if best_s >= 20 else (None, 0)
+
+        prefixed = f"{trade_side}_{strategy_id}" if trade_side else strategy_id
+        if prefixed in meta_oofs:
+            resolved_meta_key = prefixed
+        elif strategy_id in meta_oofs:
+            resolved_meta_key = strategy_id
+        else:
+            resolved_meta_key, _ = _best_prefix_match(strategy_id, meta_oofs.keys())
+
+        if prefixed in base_oofs:
+            resolved_base_key = prefixed
+        elif strategy_id in base_oofs:
+            resolved_base_key = strategy_id
+        else:
+            resolved_base_key, _ = _best_prefix_match(strategy_id, base_oofs.keys())
 
         if resolved_meta_key:
             oof_df = meta_oofs[resolved_meta_key]
+            logger.info(
+                f"Resolved meta OOF: '{strategy_id[:40]}' -> '{resolved_meta_key[:40]}'"
+            )
+
+        if resolved_base_key and base_oofs[resolved_base_key] is not None:
+            base_part = base_oofs[resolved_base_key]
+            if not isinstance(base_part, pd.DataFrame):
+                base_part = pd.DataFrame(base_part)
+            if oof_df.empty:
+                oof_df = base_part
+                logger.info(
+                    f"Resolved base OOF (no meta): '{strategy_id[:40]}' -> '{resolved_base_key[:40]}'"
+                )
+            else:
+                base_cols = [c for c in base_part.columns if c not in oof_df.columns]
+                if base_cols:
+                    n = min(len(oof_df), len(base_part))
+                    for c in base_cols:
+                        oof_df[c] = base_part[c].values[:n]
+                    logger.info(
+                        f"Merged {len(base_cols)} base columns into OOF from '{resolved_base_key[:40]}'"
+                    )
+
+        if resolved_meta_key or resolved_base_key:
+            src_key = resolved_meta_key or resolved_base_key
             inferred_side = str(oof_df.attrs.get("trade_side", "") or "")
             if not inferred_side:
                 inferred_side = (
                     "long"
-                    if str(resolved_meta_key).startswith("long_")
+                    if str(src_key).startswith("long_")
                     else "short"
-                    if str(resolved_meta_key).startswith("short_")
+                    if str(src_key).startswith("short_")
                     else ""
                 )
             if inferred_side and not trade_side:
@@ -3053,9 +3164,7 @@ def run_simple_position_sizer_from_artifacts(
 
         if not trade_side:
             if "is_long" in full_df.columns:
-                _is_long_vals = np.asarray(
-                    full_df["is_long"].values, dtype=float
-                )
+                _is_long_vals = np.asarray(full_df["is_long"].values, dtype=float)
                 _finite_long = np.isfinite(_is_long_vals)
                 if _finite_long.any():
                     trade_side = (
@@ -3492,9 +3601,11 @@ def run_simple_position_sizer_from_artifacts(
             y_raw_net_return=y_raw_net_return,
             y_downside=y_downside,
             timestamps=timestamps,
-            symbols=trade_outcomes["symbol"].values
-            if "symbol" in trade_outcomes.columns
-            else None,
+            symbols=(
+                trade_outcomes["symbol"].values
+                if "symbol" in trade_outcomes.columns
+                else None
+            ),
             bucket_labels=None,  # Running independently, no bucketing needed
             top_fracs=top_fracs,
             use_ridge_head_sizer=use_ridge_head_sizer,
@@ -3518,6 +3629,13 @@ def run_simple_position_sizer_from_artifacts(
         logger.info(f"Saved strategy params to {strategy_params_path}")
 
     _persist_head_to_head_winner(data_root, run_id, strategy_results)
+
+    # Save OOF predictions to parquet for policy_optimiser
+    if strategy_results:
+        try:
+            _persist_sizer_oof_predictions(data_root, run_id, strategy_results)
+        except Exception as e:
+            logger.warning(f"Could not save OOF predictions: {e}")
 
     # Print Strategy Leaderboard after all strategies are processed
     if strategy_results:
@@ -3606,10 +3724,24 @@ def run_simple_position_sizer_from_artifacts(
                 _, p_dd_series = _stable_equity_and_drawdown(all_portfolio_rets)
                 p_mdd = float(np.max(p_dd_series)) if len(p_dd_series) > 0 else 0.0
 
-                p_weekly_sortino, p_weekly_pnl_std, p_weekly_tuw, p_weekly_ulcer, p_weekly_pct_negative, p_weekly_worst_pnl = compute_period_aggregated_stats(
+                (
+                    p_weekly_sortino,
+                    p_weekly_pnl_std,
+                    p_weekly_tuw,
+                    p_weekly_ulcer,
+                    p_weekly_pct_negative,
+                    p_weekly_worst_pnl,
+                ) = compute_period_aggregated_stats(
                     all_portfolio_rets, all_portfolio_ts, "W"
                 )
-                p_monthly_sortino, p_monthly_pnl_std, p_monthly_tuw, p_monthly_ulcer, p_monthly_pct_negative, p_monthly_worst_pnl = compute_period_aggregated_stats(
+                (
+                    p_monthly_sortino,
+                    p_monthly_pnl_std,
+                    p_monthly_tuw,
+                    p_monthly_ulcer,
+                    p_monthly_pct_negative,
+                    p_monthly_worst_pnl,
+                ) = compute_period_aggregated_stats(
                     all_portfolio_rets, all_portfolio_ts, "M"
                 )
 
@@ -3693,9 +3825,11 @@ def run_simple_position_sizer_from_artifacts(
                     oof_predictions=oof_df,
                     realized_returns=realized_returns_df,
                     strategy_col="strategy",
-                    score_col="sizer_score"
-                    if "sizer_score" in oof_df.columns
-                    else "trading_score",
+                    score_col=(
+                        "sizer_score"
+                        if "sizer_score" in oof_df.columns
+                        else "trading_score"
+                    ),
                     return_col="realized_return",
                     n_bins=10,
                 )

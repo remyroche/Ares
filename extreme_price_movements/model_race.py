@@ -1,15 +1,17 @@
 import os
 import pickle
+
 import numpy as np
 import pandas as pd
+from scipy.special import expit, logit
+from scipy.stats import rankdata, spearmanr
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import roc_auc_score, brier_score_loss, log_loss, accuracy_score
-from scipy.stats import rankdata, spearmanr
-from scipy.special import logit, expit
+from sklearn.preprocessing import StandardScaler
+
 try:
     from catboost import CatBoostClassifier
 except Exception:
@@ -23,40 +25,46 @@ try:
 except Exception:
     LGBMClassifier = None
 import joblib
+
 from extreme_price_movements.utils import tprint
 
 
 def _is_xgb(est):
     return type(est).__module__.startswith("xgboost")
 
+
 def _is_lgb(est):
     return type(est).__module__.startswith("lightgbm")
 
+
 def _is_cb(est):
     return type(est).__module__.startswith("catboost")
-from extreme_price_movements.purged_cv import PurgedKFold
+
+
+from scipy.optimize import brentq
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.isotonic import IsotonicRegression
+from sklearn.model_selection import TimeSeriesSplit
+
+from extreme_price_movements.calibration import (
+    apply_logit_shift,
+    compute_logit_shift,
+    compute_prevalences,
+    safe_clip_proba,
+)
 from extreme_price_movements.metrics import calculate_selection_score
 from extreme_price_movements.model_scoring import (
     AlphaRankConfig,
     alpha_objective_logloss,
     alpha_rank_components,
-    ece_at_mask,
-    topk_mask,
     calibration_curve_bins,
     calibration_profile,
+    ece_at_mask,
+    topk_mask,
 )
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.isotonic import IsotonicRegression
-from sklearn.model_selection import TimeSeriesSplit
-from scipy.optimize import brentq
-from extreme_price_movements.tree_leaf_policy import tree_regularization_params
-from extreme_price_movements.calibration import (
-    safe_clip_proba,
-    compute_prevalences,
-    compute_logit_shift,
-    apply_logit_shift,
-)
+from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.training_utils import robust_sigma
+from extreme_price_movements.tree_leaf_policy import tree_regularization_params
 
 
 def _safe_binary_calibrate(preds, y_true, min_unique=20, min_samples=100):
@@ -83,7 +91,7 @@ def _safe_binary_calibrate(preds, y_true, min_unique=20, min_samples=100):
             return preds, None, "identity"
 
     try:
-        iso = IsotonicRegression(out_of_bounds='clip', y_min=0.05, y_max=0.95)
+        iso = IsotonicRegression(out_of_bounds="clip", y_min=0.05, y_max=0.95)
         iso.fit(x, y)
         out = preds.copy()
         out[valid] = iso.predict(x)
@@ -99,16 +107,21 @@ def _safe_binary_calibrate(preds, y_true, min_unique=20, min_samples=100):
             return preds, None, "identity"
 
 
-def calculate_selection_score(y_true, y_prob, y_ret, sample_weight=None, symbols=None, **kwargs):
+def calculate_selection_score(
+    y_true, y_prob, y_ret, sample_weight=None, symbols=None, **kwargs
+):
     """Backward-compatible wrapper exposing legacy AUC/BSS/IC keys for tests/logs."""
     from extreme_price_movements.metrics import calculate_selection_score as _calc
     from extreme_price_movements.model_scoring import ic_cross_sectional
+
     out = _calc(y_true, y_prob, y_ret, sample_weight=sample_weight, **kwargs)
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
     y_ret = np.asarray(y_ret)
     try:
-        out["AUC"] = float(roc_auc_score(y_true, y_prob)) if len(np.unique(y_true)) > 1 else 0.5
+        out["AUC"] = (
+            float(roc_auc_score(y_true, y_prob)) if len(np.unique(y_true)) > 1 else 0.5
+        )
     except Exception:
         out["AUC"] = 0.5
     brier = float(np.mean((y_prob - y_true) ** 2))
@@ -130,6 +143,7 @@ def calculate_selection_score(y_true, y_prob, y_ret, sample_weight=None, symbols
 class Float64Wrapper(BaseEstimator, ClassifierMixin):
     """Wraps a classifier so predict_proba / decision_function always return float64.
     Some estimators (e.g. XGBoost) return float32 predictions by default."""
+
     def __init__(self, estimator=None):
         self.estimator = estimator
 
@@ -148,7 +162,7 @@ class Float64Wrapper(BaseEstimator, ClassifierMixin):
         return self.estimator.predict(X)
 
     def decision_function(self, X):
-        if hasattr(self.estimator, 'decision_function'):
+        if hasattr(self.estimator, "decision_function"):
             return np.asarray(self.estimator.decision_function(X), dtype=np.float64)
         return self.predict_proba(X)[:, 1]
 
@@ -183,9 +197,10 @@ class NativeLGBMBoosterClassifier(BaseEstimator, ClassifierMixin):
 
 class ScaledLogisticRegression(LogisticRegression):
     """
-    Wrapper to apply StandardScaler internally, ensuring sample_weight 
+    Wrapper to apply StandardScaler internally, ensuring sample_weight
     is correctly passed to fit (bypassing Pipeline limitations with CalibratedClassifierCV).
     """
+
     def __init__(self, class_weight=None, **kwargs):
         super().__init__(class_weight=class_weight, **kwargs)
         self.scaler = StandardScaler()
@@ -197,15 +212,22 @@ class ScaledLogisticRegression(LogisticRegression):
     def predict(self, X):
         X_scaled = self.scaler.transform(X)
         return super().predict(X_scaled)
-        
+
     def predict_proba(self, X):
         X_scaled = self.scaler.transform(X)
         return super().predict_proba(X_scaled)
 
 
-
 class ModelRace(BaseEstimator, ClassifierMixin):
-    def __init__(self, kind="long", task="base", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50, max_label_horizon_hours=8):
+    def __init__(
+        self,
+        kind="long",
+        task="base",
+        n_splits=5,
+        race_sample_frac=0.5,
+        race_early_stopping_rounds=50,
+        max_label_horizon_hours=8,
+    ):
         self.kind = kind
         self.task = task
         self.n_splits = n_splits
@@ -245,7 +267,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         }
 
     def _apply_bias_state(self, p_raw, state):
-        return apply_logit_shift(p_raw, state["delta_logit"], eps=state.get("eps", 1e-6))
+        return apply_logit_shift(
+            p_raw, state["delta_logit"], eps=state.get("eps", 1e-6)
+        )
 
     def _get_candidates(self, race_mode=True):
         candidates = {}
@@ -262,7 +286,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 "max_leaf_nodes": 512,
                 "max_features": "sqrt",
                 "n_jobs": 2,
-                "random_state": 42
+                "random_state": 42,
             }
             candidates["extratrees"] = Float64Wrapper(ExtraTreesClassifier(**et_params))
         elif self.task == "meta":
@@ -277,7 +301,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 "gamma": 0.5,
                 "tree_method": "hist",
                 "n_jobs": 2,
-                "random_state": 42
+                "random_state": 42,
             }
             candidates["xgboost"] = Float64Wrapper(XGBClassifier(**xgb_params))
         else:
@@ -305,31 +329,40 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             # CatBoost requires scale_pos_weight for custom class weighting
             inner.set_params(scale_pos_weight=pos_weight)
             if X_val is not None and y_val is not None:
-                fit_kwargs.update({
-                    "eval_set": (X_val, y_val),
-                    "early_stopping_rounds": self.race_early_stopping_rounds,
-                    "use_best_model": True,
-                })
+                fit_kwargs.update(
+                    {
+                        "eval_set": (X_val, y_val),
+                        "early_stopping_rounds": self.race_early_stopping_rounds,
+                        "use_best_model": True,
+                    }
+                )
         elif XGBClassifier is not None and isinstance(inner, XGBClassifier):
             inner.set_params(scale_pos_weight=pos_weight, eval_metric="auc")
             if X_val is not None and y_val is not None:
-                fit_kwargs.update({
-                    "eval_set": [(X_val, y_val)],
-                    "verbose": False,
-                    # early_stopping_rounds deprecated in fit, use constructor or callbacks if needed
-                    # For simple race, we can omit it or relying on constructor
-                })
+                fit_kwargs.update(
+                    {
+                        "eval_set": [(X_val, y_val)],
+                        "verbose": False,
+                        # early_stopping_rounds deprecated in fit, use constructor or callbacks if needed
+                        # For simple race, we can omit it or relying on constructor
+                    }
+                )
         elif LGBMClassifier is not None and isinstance(inner, LGBMClassifier):
             inner.set_params(scale_pos_weight=pos_weight)
             if X_val is not None and y_val is not None:
-                fit_kwargs.update({
-                    "eval_set": [(X_val, y_val)],
-                    "eval_metric": "auc",
-                    "callbacks": [],
-                })
+                fit_kwargs.update(
+                    {
+                        "eval_set": [(X_val, y_val)],
+                        "eval_metric": "auc",
+                        "callbacks": [],
+                    }
+                )
                 try:
                     from lightgbm import early_stopping
-                    fit_kwargs["callbacks"].append(early_stopping(self.race_early_stopping_rounds, verbose=False))
+
+                    fit_kwargs["callbacks"].append(
+                        early_stopping(self.race_early_stopping_rounds, verbose=False)
+                    )
                 except Exception:
                     pass
 
@@ -338,7 +371,6 @@ class ModelRace(BaseEstimator, ClassifierMixin):
     _TREE_UNCERTAINTY_KEYS = (
         "pred_mean",
         "pred_std",
-        "pred_iqr",
         "pred_cv",
         "pred_std_robust",
         "vote_entropy",
@@ -347,12 +379,14 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         "leaf_support_mean",
         "leaf_support_median",
         "leaf_support_std",
+        "leaf_support_q25",
         "leaf_target_std_mean",
         "leaf_target_iqr_mean",
-        "leaf_target_var_mean",
         "leaf_centroid_dist_mean",
         "leaf_centroid_dist_median",
         "leaf_centroid_dist_cv",
+        "leaf_centroid_dist_rel_mean",
+        "leaf_centroid_dist_rel_std",
     )
 
     @staticmethod
@@ -391,9 +425,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             y_var = np.clip(y_sq_sum / support_safe - np.square(y_mean), 0.0, None)
             y_std = np.sqrt(y_var, dtype=np.float32)
             # Bernoulli-compatible IQR proxy from in-leaf positive rate.
-            y_iqr = np.where(
-                (y_mean > 0.25) & (y_mean < 0.75), 1.0, 0.0
-            ).astype(np.float32)
+            y_iqr = np.where((y_mean > 0.25) & (y_mean < 0.75), 1.0, 0.0).astype(
+                np.float32
+            )
 
             centroid = np.zeros((n_leaf, X_tr.shape[1]), dtype=np.float32)
             for j in range(X_tr.shape[1]):
@@ -442,11 +476,6 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         pred_mean = tree_preds.mean(axis=1).astype(np.float32)
         pred_std = tree_preds.std(axis=1).astype(np.float32)
-        pred_iqr = np.subtract(
-            np.percentile(tree_preds, 75, axis=1),
-            np.percentile(tree_preds, 25, axis=1),
-            dtype=np.float32,
-        ).astype(np.float32)
         pred_cv = (pred_std / (np.abs(pred_mean) + eps)).astype(np.float32)
         pred_std_robust = np.asarray(robust_sigma(tree_preds), dtype=np.float32)
 
@@ -470,7 +499,6 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         leaf_support = np.full((n, n_trees), np.nan, dtype=np.float32)
         leaf_target_std = np.full((n, n_trees), np.nan, dtype=np.float32)
         leaf_target_iqr = np.full((n, n_trees), np.nan, dtype=np.float32)
-        leaf_target_var = np.full((n, n_trees), np.nan, dtype=np.float32)
         leaf_centroid_dist = np.full((n, n_trees), np.nan, dtype=np.float32)
 
         for i, tree in enumerate(estimators):
@@ -487,7 +515,6 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             vp = pos[valid]
             leaf_target_std[valid, i] = ctx["target_std"][vp]
             leaf_target_iqr[valid, i] = ctx["target_iqr"][vp]
-            leaf_target_var[valid, i] = ctx["target_var"][vp]
             centroids = ctx["centroid"][vp]
             diff = X_np[valid] - centroids
             leaf_centroid_dist[valid, i] = np.sqrt(
@@ -497,9 +524,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         leaf_support_mean = np.nanmean(leaf_support, axis=1).astype(np.float32)
         leaf_support_median = np.nanmedian(leaf_support, axis=1).astype(np.float32)
         leaf_support_std = np.nanstd(leaf_support, axis=1).astype(np.float32)
+        leaf_support_q25 = np.nanpercentile(leaf_support, 25, axis=1).astype(np.float32)
         leaf_target_std_mean = np.nanmean(leaf_target_std, axis=1).astype(np.float32)
         leaf_target_iqr_mean = np.nanmean(leaf_target_iqr, axis=1).astype(np.float32)
-        leaf_target_var_mean = np.nanmean(leaf_target_var, axis=1).astype(np.float32)
         leaf_centroid_dist_mean = np.nanmean(leaf_centroid_dist, axis=1).astype(
             np.float32
         )
@@ -512,11 +539,19 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         leaf_centroid_dist_cv = (
             leaf_centroid_dist_std / (leaf_centroid_dist_mean + eps)
         ).astype(np.float32)
+        leaf_centroid_dist_rel = leaf_centroid_dist / (
+            leaf_centroid_dist_mean[:, np.newaxis] + eps
+        )
+        leaf_centroid_dist_rel_mean = np.nanmean(leaf_centroid_dist_rel, axis=1).astype(
+            np.float32
+        )
+        leaf_centroid_dist_rel_std = np.nanstd(leaf_centroid_dist_rel, axis=1).astype(
+            np.float32
+        )
 
         return {
             "pred_mean": pred_mean,
             "pred_std": pred_std,
-            "pred_iqr": pred_iqr,
             "pred_cv": pred_cv,
             "pred_std_robust": pred_std_robust,
             "vote_entropy": vote_entropy,
@@ -525,12 +560,14 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "leaf_support_mean": leaf_support_mean,
             "leaf_support_median": leaf_support_median,
             "leaf_support_std": leaf_support_std,
+            "leaf_support_q25": leaf_support_q25,
             "leaf_target_std_mean": leaf_target_std_mean,
             "leaf_target_iqr_mean": leaf_target_iqr_mean,
-            "leaf_target_var_mean": leaf_target_var_mean,
             "leaf_centroid_dist_mean": leaf_centroid_dist_mean,
             "leaf_centroid_dist_median": leaf_centroid_dist_median,
             "leaf_centroid_dist_cv": leaf_centroid_dist_cv,
+            "leaf_centroid_dist_rel_mean": leaf_centroid_dist_rel_mean,
+            "leaf_centroid_dist_rel_std": leaf_centroid_dist_rel_std,
         }
 
     def fit(self, X, y, sample_weight=None, returns=None, groups=None, symbols=None):
@@ -590,7 +627,12 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # Note: training.py passes timestamps in 'groups'
         times_for_cv = groups_arr if groups_arr is not None else None
 
-        tscv = PurgedKFold(n_splits=self.n_splits, purge=purge_samples, embargo=embargo_samples, times=times_for_cv)
+        tscv = PurgedKFold(
+            n_splits=self.n_splits,
+            purge=purge_samples,
+            embargo=embargo_samples,
+            times=times_for_cv,
+        )
         cached_splits = list(tscv.split(X))
 
         # 1. The Race
@@ -602,14 +644,17 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         n_pos = int(np.sum(y > 0)) if len(y) > 0 else 0
         min_leaf_dyn = int(tree_dyn["min_samples_leaf"])
         min_split_dyn = int(tree_dyn["min_samples_split"])
-        min_cw_dyn = max(1, int(np.ceil(0.25 * min_leaf_dyn)))  # XGB hessian-scaled analogue
+        min_cw_dyn = max(
+            1, int(np.ceil(0.25 * min_leaf_dyn))
+        )  # XGB hessian-scaled analogue
         tprint(
             f"ModelRace: Dynamic min_samples_leaf={min_leaf_dyn}, min_samples_split={min_split_dyn}, "
             f"min_child_weight={min_cw_dyn} (pos={n_pos}, pos_frac=1%)"
         )
 
         def safe_slice(arr, idx):
-            if hasattr(arr, "iloc"): return arr.iloc[idx]
+            if hasattr(arr, "iloc"):
+                return arr.iloc[idx]
             return arr[idx]
 
         # Store per-model detailed metrics for reporting
@@ -618,8 +663,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         for name, model in candidates.items():
             # Apply dynamic regularization to inner estimator
-            if hasattr(model, "estimator"): inner = model.estimator
-            else: inner = model
+            if hasattr(model, "estimator"):
+                inner = model.estimator
+            else:
+                inner = model
 
             # ExtraTrees / RF
             if "min_samples_leaf" in inner.get_params():
@@ -640,21 +687,21 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 inner.set_params(min_child_samples=min_leaf_dyn)
             # XGBoost (hessian-based: use dedicated min_cw_dyn)
             if "min_child_weight" in inner.get_params():
-                 inner.set_params(min_child_weight=min_cw_dyn)
+                inner.set_params(min_child_weight=min_cw_dyn)
 
             tprint(f"Race: Training {name}...")
             fold_scores = []
             fold_aucs = []
             fold_ics = []
             fold_bss = []
-            fold_bs = [] # Brier Score
-            fold_ref = [] # Brier Ref
-            fold_brier = [] # Basic (unweighted) Brier
-            fold_p10 = [] # Prec Top 10%
-            fold_p20 = [] # Prec Top 20%
-            fold_p25 = [] # Prec Top 25%
-            fold_p30 = [] # Prec Top 30%
-            fold_p40 = [] # Prec Top 40%
+            fold_bs = []  # Brier Score
+            fold_ref = []  # Brier Ref
+            fold_brier = []  # Basic (unweighted) Brier
+            fold_p10 = []  # Prec Top 10%
+            fold_p20 = []  # Prec Top 20%
+            fold_p25 = []  # Prec Top 25%
+            fold_p30 = []  # Prec Top 30%
+            fold_p40 = []  # Prec Top 40%
             fold_logloss = []
             fold_accuracy = []
             fold_base_logloss = []
@@ -677,21 +724,33 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     y_val = safe_slice(y, val_idx)
                     y_tr_fit = (y_tr >= 0.5).astype(np.int8)
                     y_val_fit = (y_val >= 0.5).astype(np.int8)
-                    w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
+                    w_tr = (
+                        safe_slice(sample_weight, train_idx)
+                        if sample_weight is not None
+                        else None
+                    )
                     ret_val = safe_slice(returns, val_idx)
 
-
-                    
-                    
                     # Fit raw model (no CalibratedClassifierCV wrapper)
                     # We will apply bias correction manually on validation set
                     model_clone = clone(model)
-                    
+
                     # We use _fit_model to handle sample weights and early stopping
                     # passing X_val/y_val for early stopping if supported (XGB/LGBM/Cat)
-                    w_tr_fit = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
-                    self._fit_model(model_clone, X_tr, y_tr_fit, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr_fit)
-                    
+                    w_tr_fit = (
+                        safe_slice(sample_weight, train_idx)
+                        if sample_weight is not None
+                        else None
+                    )
+                    self._fit_model(
+                        model_clone,
+                        X_tr,
+                        y_tr_fit,
+                        X_val=X_val,
+                        y_val=y_val_fit,
+                        sample_weight=w_tr_fit,
+                    )
+
                     # --- Calibration Wrapper ---
                     # Build a time-aware isotonic calibrator using inner PurgedKFold OOF
                     # predictions on the training fold. This avoids the prefit leakage path.
@@ -724,10 +783,15 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                             y_val=y_tr_fit[inner_va],
                             sample_weight=w_inner_tr,
                         )
-                        inner_oof[inner_va] = cal_fold.predict_proba(X_tr[inner_va])[:, 1]
+                        inner_oof[inner_va] = cal_fold.predict_proba(X_tr[inner_va])[
+                            :, 1
+                        ]
 
                     cal_mask = np.isfinite(inner_oof)
-                    if np.sum(cal_mask) >= 20 and len(np.unique(y_tr_fit[cal_mask])) > 1:
+                    if (
+                        np.sum(cal_mask) >= 20
+                        and len(np.unique(y_tr_fit[cal_mask])) > 1
+                    ):
                         calibrator = IsotonicRegression(out_of_bounds="clip")
                         calibrator.fit(inner_oof[cal_mask], y_tr_fit[cal_mask])
                         probs_raw = calibrator.transform(
@@ -735,7 +799,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                         )
                     else:
                         probs_raw = model_clone.predict_proba(X_val)[:, 1]
-                    
+
                     # --- Prior Correction (replaces in-fold Platt scaling) ---
                     # Tree models with scale_pos_weight / class_weight shift raw
                     # probabilities away from the true prevalence.  We correct by
@@ -761,11 +825,23 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                         oof_tree_features[_k][val_idx] = np.asarray(
                             _vals, dtype=np.float32
                         )
-                    
+
                     # w_bss=0.20: Enabled BSS in selection score
                     # We now compute weighted BSS for diagnostics
-                    w_val = safe_slice(sample_weight, val_idx) if sample_weight is not None else None
-                    metrics = calculate_selection_score(y_val_fit, probs, ret_val, sample_weight=w_val, w_bss=0.20, w_realized=0.55, w_uic=0.25)
+                    w_val = (
+                        safe_slice(sample_weight, val_idx)
+                        if sample_weight is not None
+                        else None
+                    )
+                    metrics = calculate_selection_score(
+                        y_val_fit,
+                        probs,
+                        ret_val,
+                        sample_weight=w_val,
+                        w_bss=0.20,
+                        w_realized=0.55,
+                        w_uic=0.25,
+                    )
                     fold_scores.append(metrics["Selection_Score"])
                     fold_aucs.append(metrics["AUC"])
                     fold_ics.append(metrics["IC"])
@@ -779,15 +855,19 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     fold_p30.append(metrics.get("Prec_Top30", np.nan))
                     fold_p40.append(metrics.get("Prec_Top40", np.nan))
                     # fold_p40 handled below if needed, but metrics returns it
-                    
+
                     try:
-                        ll_fold = log_loss(y_val_fit, np.clip(probs, 1e-7, 1-1e-7))
+                        ll_fold = log_loss(y_val_fit, np.clip(probs, 1e-7, 1 - 1e-7))
                         fold_logloss.append(ll_fold)
                         p_fold = float(np.mean(y_val_fit))
                         p_fold = float(np.clip(p_fold, 1e-7, 1 - 1e-7))
-                        ll_base_fold = log_loss(y_val_fit, np.full_like(y_val_fit, p_fold, dtype=np.float64))
+                        ll_base_fold = log_loss(
+                            y_val_fit, np.full_like(y_val_fit, p_fold, dtype=np.float64)
+                        )
                         fold_base_logloss.append(ll_base_fold)
-                        fold_logloss_imp.append((ll_base_fold - ll_fold) / max(ll_base_fold, 1e-9))
+                        fold_logloss_imp.append(
+                            (ll_base_fold - ll_fold) / max(ll_base_fold, 1e-9)
+                        )
                     except:
                         fold_logloss.append(np.nan)
                         fold_base_logloss.append(np.nan)
@@ -803,9 +883,15 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
                 # Use Calibrated OOF for Selection Metrics
                 oof_metrics = calculate_selection_score(
-                    y_hard[valid], oof_cal[valid], returns[valid],
-                    sample_weight=sample_weight[valid] if sample_weight is not None else None,
-                    w_bss=0.20, w_realized=0.55, w_uic=0.25
+                    y_hard[valid],
+                    oof_cal[valid],
+                    returns[valid],
+                    sample_weight=(
+                        sample_weight[valid] if sample_weight is not None else None
+                    ),
+                    w_bss=0.20,
+                    w_realized=0.55,
+                    w_uic=0.25,
                 )
 
                 # Stability Diagnostics
@@ -814,21 +900,49 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 std_p10 = np.nanstd(fold_p10)
                 cv_p10 = std_p10 / avg_p10 if avg_p10 > 1e-9 else 1.0
 
-                train_loss = alpha_objective_logloss(y, np.clip(np.nan_to_num(oof_cal, nan=np.nanmean(oof_cal)), 1e-6, 1-1e-6), w=sample_weight)
-
-                comps = alpha_rank_components(
-                    y_hard[valid], oof_cal[valid], returns[valid],
-                    w=sample_weight[valid] if sample_weight is not None else None,
-                    groups=groups_arr[valid] if groups_arr is not None else None,
-                    cfg=rank_cfg
+                train_loss = alpha_objective_logloss(
+                    y,
+                    np.clip(
+                        np.nan_to_num(oof_cal, nan=np.nanmean(oof_cal)), 1e-6, 1 - 1e-6
+                    ),
+                    w=sample_weight,
                 )
 
-                results[name] = 0.0 # Placeholder, set by rank_score later
+                comps = alpha_rank_components(
+                    y_hard[valid],
+                    oof_cal[valid],
+                    returns[valid],
+                    w=sample_weight[valid] if sample_weight is not None else None,
+                    groups=groups_arr[valid] if groups_arr is not None else None,
+                    cfg=rank_cfg,
+                )
 
-                top10_mask = topk_mask(oof_cal[valid], 0.10, groups=groups_arr[valid] if groups_arr is not None else None)
-                ece10 = ece_at_mask(y_hard[valid], oof_cal[valid], top10_mask, n_bins=10, w=sample_weight[valid] if sample_weight is not None else None)
-                top30_mask = topk_mask(oof_cal[valid], 0.30, groups=groups_arr[valid] if groups_arr is not None else None)
-                ece30 = ece_at_mask(y_hard[valid], oof_cal[valid], top30_mask, n_bins=10, w=sample_weight[valid] if sample_weight is not None else None)
+                results[name] = 0.0  # Placeholder, set by rank_score later
+
+                top10_mask = topk_mask(
+                    oof_cal[valid],
+                    0.10,
+                    groups=groups_arr[valid] if groups_arr is not None else None,
+                )
+                ece10 = ece_at_mask(
+                    y_hard[valid],
+                    oof_cal[valid],
+                    top10_mask,
+                    n_bins=10,
+                    w=sample_weight[valid] if sample_weight is not None else None,
+                )
+                top30_mask = topk_mask(
+                    oof_cal[valid],
+                    0.30,
+                    groups=groups_arr[valid] if groups_arr is not None else None,
+                )
+                ece30 = ece_at_mask(
+                    y_hard[valid],
+                    oof_cal[valid],
+                    top30_mask,
+                    n_bins=10,
+                    w=sample_weight[valid] if sample_weight is not None else None,
+                )
                 curve = calibration_curve_bins(y_hard[valid], oof_cal[valid], n_bins=10)
                 profile = calibration_profile(curve)
 
@@ -848,14 +962,16 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "BS_Ref": oof_metrics.get("Brier_Ref", np.nan),
                     "Brier": oof_metrics.get("Brier", np.nan),
                     "Prec10": oof_metrics.get("Prec_Top10", np.nan),
-                    "CV_Prec10": cv_p10, # Keep fold-based CV stability measure
+                    "CV_Prec10": cv_p10,  # Keep fold-based CV stability measure
                     "Prec20": oof_metrics.get("Prec_Top20", np.nan),
                     "CV_Prec20": np.nanstd(fold_p20) / (np.nanmean(fold_p20) + 1e-9),
                     "Prec25": oof_metrics.get("Prec_Top25", np.nan),
                     "Prec30": oof_metrics.get("Prec_Top30", np.nan),
                     "Prec40": oof_metrics.get("Prec_Top40", np.nan),
                     "std_score": std_score,
-                    "LogLoss": log_loss(y_hard[valid], np.clip(oof_cal[valid], 1e-7, 1-1e-7)),
+                    "LogLoss": log_loss(
+                        y_hard[valid], np.clip(oof_cal[valid], 1e-7, 1 - 1e-7)
+                    ),
                     "Accuracy": accuracy_score(y_hard[valid], oof_cal[valid] > 0.5),
                     "fold_logloss": [float(x) for x in fold_logloss],
                     "fold_precision20": [float(x) for x in fold_p20],
@@ -863,38 +979,56 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "fold_brier": [float(x) for x in fold_brier],
                     "fold_base_logloss": [float(x) for x in fold_base_logloss],
                     "fold_logloss_imp": [float(x) for x in fold_logloss_imp],
-                    "oof_sigma_trees": oof_tree_features["pred_std"].copy().astype(np.float32),
-                    "oof_sigma_robust": oof_tree_features["pred_std_robust"].copy().astype(np.float32),
+                    "oof_sigma_trees": oof_tree_features["pred_std"]
+                    .copy()
+                    .astype(np.float32),
+                    "oof_sigma_robust": oof_tree_features["pred_std_robust"]
+                    .copy()
+                    .astype(np.float32),
                     **{
                         f"oof_tree_{_k}": np.asarray(_v, dtype=np.float32).copy()
                         for _k, _v in oof_tree_features.items()
                     },
                     # Store Calibrated OOF for gate checks
-                    "oof_probs": np.nan_to_num(oof_cal.copy(), nan=0.5).astype(np.float32),
+                    "oof_probs": np.nan_to_num(oof_cal.copy(), nan=0.5).astype(
+                        np.float32
+                    ),
                     # Store raw OOF for reference
-                    "oof_raw": np.nan_to_num(oof_model.copy(), nan=0.5).astype(np.float32),
+                    "oof_raw": np.nan_to_num(oof_model.copy(), nan=0.5).astype(
+                        np.float32
+                    ),
                     # Store calibrator for inference
                     "calibrator": calibrator,
                 }
-                
+
                 # --- Top-K Feature Importance Reporting ---
-                if hasattr(model_clone, "estimator"): inner_m = model_clone.estimator
-                else: inner_m = model_clone
-                
+                if hasattr(model_clone, "estimator"):
+                    inner_m = model_clone.estimator
+                else:
+                    inner_m = model_clone
+
                 if hasattr(inner_m, "feature_importances_"):
                     importances = inner_m.feature_importances_
-                    feat_names = X.columns if hasattr(X, "columns") else [f"f_{i}" for i in range(len(importances))]
-                    imp_df = pd.DataFrame({"feature": feat_names, "importance": importances}).sort_values("importance", ascending=False)
-                    
+                    feat_names = (
+                        X.columns
+                        if hasattr(X, "columns")
+                        else [f"f_{i}" for i in range(len(importances))]
+                    )
+                    imp_df = pd.DataFrame(
+                        {"feature": feat_names, "importance": importances}
+                    ).sort_values("importance", ascending=False)
+
                     top5 = imp_df.head(5)
                     top10_pct_n = max(1, int(len(imp_df) * 0.10))
                     top10_pct_sum = imp_df.head(top10_pct_n)["importance"].sum()
-                    
+
                     tprint(f"  {name} Importance: Top10% CumSum={top10_pct_sum:.4f}")
                     for _, row in top5.iterrows():
                         tprint(f"    - {row['feature']}: {row['importance']:.4f}")
 
-                tprint(f"  {name}: OOF_Cal_Score={detailed_metrics[name]['score']:.4f} AUC={detailed_metrics[name]['AUC']:.4f} IC={detailed_metrics[name]['IC']:.4f} BSS={detailed_metrics[name]['BSS']:.4f} Prec10={detailed_metrics[name]['Prec10']:.4f}")
+                tprint(
+                    f"  {name}: OOF_Cal_Score={detailed_metrics[name]['score']:.4f} AUC={detailed_metrics[name]['AUC']:.4f} IC={detailed_metrics[name]['IC']:.4f} BSS={detailed_metrics[name]['BSS']:.4f} Prec10={detailed_metrics[name]['Prec10']:.4f}"
+                )
 
             except Exception as e:
                 tprint(f"  {name} Failed: {e}")
@@ -909,18 +1043,30 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         comp_keys = ["IC", "Prec@K", "Cal@K", "StdIC"]
         zscores = {n: {} for n in detailed_metrics}
         for ck in comp_keys:
-            vals = np.array([detailed_metrics[n]["rank_components"].get(ck, np.nan) for n in detailed_metrics], dtype=float)
+            vals = np.array(
+                [
+                    detailed_metrics[n]["rank_components"].get(ck, np.nan)
+                    for n in detailed_metrics
+                ],
+                dtype=float,
+            )
             mu, sd = np.nanmean(vals), np.nanstd(vals)
             for n in detailed_metrics:
                 v = detailed_metrics[n]["rank_components"].get(ck, np.nan)
-                zscores[n][ck] = 0.0 if (not np.isfinite(sd) or sd < 1e-12 or not np.isfinite(v)) else float((v - mu) / sd)
+                zscores[n][ck] = (
+                    0.0
+                    if (not np.isfinite(sd) or sd < 1e-12 or not np.isfinite(v))
+                    else float((v - mu) / sd)
+                )
 
         for n in detailed_metrics:
             c = detailed_metrics[n]["rank_components"]
             z = zscores[n]
             rank_score = (
-                rank_cfg.w_ic * z["IC"] + rank_cfg.w_prec * z["Prec@K"]
-                - rank_cfg.w_cal * z["Cal@K"] - rank_cfg.w_std * z["StdIC"]
+                rank_cfg.w_ic * z["IC"]
+                + rank_cfg.w_prec * z["Prec@K"]
+                - rank_cfg.w_cal * z["Cal@K"]
+                - rank_cfg.w_std * z["StdIC"]
                 - rank_cfg.w_neff_pen * c.get("n_eff_pen", 0.0)
             )
             detailed_metrics[n]["rank_score"] = float(rank_score)
@@ -929,12 +1075,18 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # Compute quality gate checks for each model (same as _base_model_report_entry in training.py)
         def _compute_gate_checks(dm, y_hard, oof_probs, prev):
             """Compute quality gate checks for a model. Returns (n_passed, checks_dict)."""
-            from sklearn.metrics import average_precision_score, brier_score_loss, log_loss as _log_loss
-            
+            from sklearn.metrics import (
+                average_precision_score,
+                brier_score_loss,
+            )
+            from sklearn.metrics import log_loss as _log_loss
+
             # Brier and logloss improvement
             p_clip = np.clip(oof_probs, 1e-7, 1 - 1e-7)
             base_brier = prev * (1.0 - prev)
-            base_ll = -(prev * np.log(prev + 1e-12) + (1 - prev) * np.log(1 - prev + 1e-12))
+            base_ll = -(
+                prev * np.log(prev + 1e-12) + (1 - prev) * np.log(1 - prev + 1e-12)
+            )
             try:
                 brier = float(brier_score_loss(y_hard, p_clip))
                 ll = float(_log_loss(y_hard, p_clip))
@@ -942,13 +1094,17 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 ll_imp = (base_ll - ll) / max(base_ll, 1e-9)
             except Exception:
                 brier_imp, ll_imp = 0.0, 0.0
-            
+
             # PR-AUC
             try:
-                pr_auc = float(average_precision_score(y_hard, oof_probs)) if len(np.unique(y_hard)) > 1 else 0.0
+                pr_auc = (
+                    float(average_precision_score(y_hard, oof_probs))
+                    if len(np.unique(y_hard)) > 1
+                    else 0.0
+                )
             except Exception:
                 pr_auc = 0.0
-            
+
             # Lift@20%
             k_frac = 0.20
             k_n = max(1, int(len(y_hard) * k_frac))
@@ -956,12 +1112,14 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             prec_k = float(np.mean(y_hard[idx]))
             lift_k = prec_k / max(prev, 1e-9)
             prec_lift_abs = prec_k - prev
-            
+
             # Fold stability
             fold_imp = [x for x in dm.get("fold_logloss_imp", []) if np.isfinite(x)]
-            pos_fold_ratio = float(np.mean(np.array(fold_imp) > 0.0)) if fold_imp else 0.0
+            pos_fold_ratio = (
+                float(np.mean(np.array(fold_imp) > 0.0)) if fold_imp else 0.0
+            )
             worst_fold_imp = float(np.min(fold_imp)) if fold_imp else -1.0
-            
+
             # Bootstrap CV for precision@20%
             n_boot = 50
             rng_boot = np.random.RandomState(42)
@@ -975,16 +1133,21 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 prec_samples.append(p_k_b)
             prec_arr = np.array(prec_samples)
             bootstrap_prec20_cv = float(np.std(prec_arr) / (np.mean(prec_arr) + 1e-9))
-            
+
             # Prevalence-aware PR-AUC threshold
             pr_auc_threshold = max(1.25 * prev, prev + 0.05)
-            
+
             # Gate checks (same as training.py)
             checks = {
                 "pr_auc_ge_threshold": pr_auc >= pr_auc_threshold,
                 "pr_auc_ge_random": pr_auc >= prev,
-                "brier_and_logloss_improve_ge_2pct": bool((brier_imp >= 0.02) and (ll_imp >= 0.02)),
-                "liftk_and_preck_lift": bool((lift_k >= 1.2) and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))),
+                "brier_and_logloss_improve_ge_2pct": bool(
+                    (brier_imp >= 0.02) and (ll_imp >= 0.02)
+                ),
+                "liftk_and_preck_lift": bool(
+                    (lift_k >= 1.2)
+                    and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))
+                ),
                 "bootstrap_prec20_cv_le_0_30": bootstrap_prec20_cv <= 0.30,
                 "delta_logloss_le_minus_0_5pct": ll_imp >= 0.005,
                 "logloss_improves_in_ge_70pct_folds": pos_fold_ratio >= 0.70,
@@ -992,7 +1155,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             }
             n_passed = sum(checks.values())
             return n_passed, checks
-        
+
         # Compute gate checks for all models
         prev = float(np.mean(y_hard))
         gate_results = {}
@@ -1012,7 +1175,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             gate_results[n] = {"n_passed": n_passed, "checks": checks}
             detailed_metrics[n]["gate_checks"] = checks
             detailed_metrics[n]["gate_n_passed"] = n_passed
-        
+
         # Winner selection: prioritize models passing most gates, use rank_score as tie-breaker
         # Sort by (n_passed, rank_score) descending
         eligible_results = {
@@ -1029,19 +1192,25 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         best_name = sorted_candidates[0][0]
         best_n_passed = gate_results[best_name]["n_passed"]
         best_score = results[best_name]
-        
+
         tprint(f"Gate-aware winner selection:")
         for name, score in sorted_candidates[:4]:
-            tprint(f"  {name}: gates_passed={gate_results[name]['n_passed']}/7, rank_score={score:.4f}")
-        
+            tprint(
+                f"  {name}: gates_passed={gate_results[name]['n_passed']}/7, rank_score={score:.4f}"
+            )
+
         # Log if we're selecting a model with fewer gates passed due to tie-breaker
         if best_n_passed < 7:
-            tprint(f"WARNING: Best model '{best_name}' passes only {best_n_passed}/7 gates")
+            tprint(
+                f"WARNING: Best model '{best_name}' passes only {best_n_passed}/7 gates"
+            )
 
         self.best_model_name = best_name
         self.metrics = results
         dm = detailed_metrics.get(best_name, {})
-        tprint(f"Race Winner: {best_name} (RankScore={results[best_name]:.4f}, IC={dm.get('rank_components',{}).get('IC',0):.4f}, Prec@10={dm.get('rank_components',{}).get('Prec@K',0):.4f})")
+        tprint(
+            f"Race Winner: {best_name} (RankScore={results[best_name]:.4f}, IC={dm.get('rank_components',{}).get('IC',0):.4f}, Prec@10={dm.get('rank_components',{}).get('Prec@K',0):.4f})"
+        )
 
         # 2. Generate OOF predictions with best model (for meta model)
         tprint(f"Generating OOF predictions with {best_name}...")
@@ -1057,14 +1226,25 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             y_val = safe_slice(y, val_idx)
             y_tr_fit = (y_tr >= 0.5).astype(np.int8)
             y_val_fit = (y_val >= 0.5).astype(np.int8)
-            w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
-            
+            w_tr = (
+                safe_slice(sample_weight, train_idx)
+                if sample_weight is not None
+                else None
+            )
+
             # Raw model fit — using _fit_model for consistency with race (early stopping, weights)
             estimator = clone(oof_model)
-            self._fit_model(estimator, X_tr, y_tr_fit, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr)
-            
+            self._fit_model(
+                estimator,
+                X_tr,
+                y_tr_fit,
+                X_val=X_val,
+                y_val=y_val_fit,
+                sample_weight=w_tr,
+            )
+
             oof_probs[val_idx] = estimator.predict_proba(X_val)[:, 1]
-            
+
             # Predict raw then apply fold bias correction contract.
             probs_raw = estimator.predict_proba(X_val)[:, 1]
             if sample_weight is not None:
@@ -1074,30 +1254,45 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             else:
                 p_weighted_fold = float(np.mean(y_tr_fit))
             p_unweighted_fold = float(np.mean(y_val_fit))
-            delta_logit_fold = compute_logit_shift(p_unweighted_fold, p_weighted_fold, eps=1e-6)
-            oof_probs[val_idx] = apply_logit_shift(probs_raw, delta_logit_fold, eps=1e-6)
+            delta_logit_fold = compute_logit_shift(
+                p_unweighted_fold, p_weighted_fold, eps=1e-6
+            )
+            oof_probs[val_idx] = apply_logit_shift(
+                probs_raw, delta_logit_fold, eps=1e-6
+            )
         # Fill any remaining NaN with 0.5 (neutral)
         oof_probs = np.nan_to_num(oof_probs, nan=0.5)
         self.oof_probs = oof_probs
         self._used_sample_weight_ = sample_weight is not None
         p_unweighted_all, p_weighted_all = compute_prevalences(y_hard, sample_weight)
-        self.calibration_state_ = self._build_bias_state(p_unweighted_all, p_weighted_all, eps=1e-6)
-        tprint(f"OOF predictions: mean={np.mean(oof_probs):.4f}, std={np.std(oof_probs):.4f}")
+        self.calibration_state_ = self._build_bias_state(
+            p_unweighted_all, p_weighted_all, eps=1e-6
+        )
+        tprint(
+            f"OOF predictions: mean={np.mean(oof_probs):.4f}, std={np.std(oof_probs):.4f}"
+        )
 
         # Effective sample size diagnostic
         if sample_weight is not None:
             sw = np.asarray(sample_weight, dtype=np.float64)
-            n_eff = (np.sum(sw) ** 2) / np.sum(sw ** 2)
-            tprint(f"Weight diagnostics: n={len(sw)}, n_eff={n_eff:.0f} ({100*n_eff/len(sw):.0f}%), mean={np.mean(sw):.3f}, std={np.std(sw):.3f}, p95={np.percentile(sw,95):.3f}")
+            n_eff = (np.sum(sw) ** 2) / np.sum(sw**2)
+            tprint(
+                f"Weight diagnostics: n={len(sw)}, n_eff={n_eff:.0f} ({100*n_eff/len(sw):.0f}%), mean={np.mean(sw):.3f}, std={np.std(sw):.3f}, p95={np.percentile(sw,95):.3f}"
+            )
 
         # Calculate Winner OOF Metrics (rank-based, not calibration-dependent)
         try:
             oof_auc = roc_auc_score(y_hard, oof_probs)
-            oof_logloss = log_loss(y_hard, np.clip(oof_probs, 1e-7, 1-1e-7))
+            oof_logloss = log_loss(y_hard, np.clip(oof_probs, 1e-7, 1 - 1e-7))
             oof_accuracy = accuracy_score(y_hard, oof_probs > 0.5)
-            if returns is not None and np.std(oof_probs) > 1e-9 and np.std(returns) > 1e-9:
+            if (
+                returns is not None
+                and np.std(oof_probs) > 1e-9
+                and np.std(returns) > 1e-9
+            ):
                 if symbols_arr is not None:
                     from extreme_price_movements.model_scoring import ic_cross_sectional
+
                     oof_ic = ic_cross_sectional(oof_probs, returns, groups=symbols_arr)
                     if np.isnan(oof_ic):
                         oof_ic = 0.0
@@ -1106,15 +1301,29 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             else:
                 oof_ic = 0.0
             # OOF selection score (same weights as race)
-            oof_sel = calculate_selection_score(y_hard, oof_probs, returns, sample_weight=sample_weight, symbols=symbols_arr, groups=groups_arr, w_bss=0.20, w_realized=0.55, w_uic=0.25)
-            tprint(f"Winner OOF Metrics: AUC={oof_auc:.4f}  IC={oof_ic:.4f}  LogLoss={oof_logloss:.4f}  Acc={oof_accuracy:.4f}  SelScore={oof_sel['Selection_Score']:.4f}  Lift@30={oof_sel.get('Lift_Top30', 0.0):.4f}")
-            
+            oof_sel = calculate_selection_score(
+                y_hard,
+                oof_probs,
+                returns,
+                sample_weight=sample_weight,
+                symbols=symbols_arr,
+                groups=groups_arr,
+                w_bss=0.20,
+                w_realized=0.55,
+                w_uic=0.25,
+            )
+            tprint(
+                f"Winner OOF Metrics: AUC={oof_auc:.4f}  IC={oof_ic:.4f}  LogLoss={oof_logloss:.4f}  Acc={oof_accuracy:.4f}  SelScore={oof_sel['Selection_Score']:.4f}  Lift@30={oof_sel.get('Lift_Top30', 0.0):.4f}"
+            )
+
             # --- Post-hoc Isotonic Calibration ---
             # Fit calibrator on OOF predictions
             # Use relaxed constraints (y_min=0.05, y_max=0.95) to prevent degenerate
             # score distributions where all predictions cluster tightly around prevalence.
             # This was causing "degenerate IQR" warnings in backtest.
-            tprint("Running calibration router on OOF predictions (isotonic/platt/identity)...")
+            tprint(
+                "Running calibration router on OOF predictions (isotonic/platt/identity)..."
+            )
             calibrated_oof, self.calibrator_, cal_method = _safe_binary_calibrate(
                 oof_probs, y_hard, min_unique=20, min_samples=100
             )
@@ -1122,16 +1331,20 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 self.calibration_state_["calibration_input"] = "bias_corrected"
                 self.calibration_state_["calibration_method"] = cal_method
             tprint(f"Calibration router selected: {cal_method}")
-            
+
             # --- Minimum Variance Enforcement ---
             # Prevent degenerate score distributions (all predictions near prevalence)
             # This addresses the "degenerate IQR" warnings seen in backtest
             MIN_VARIANCE = 0.01  # Minimum std dev threshold
             cal_std = np.std(calibrated_oof)
             if cal_std < MIN_VARIANCE:
-                tprint(f"WARNING: Calibrated scores have low variance (std={cal_std:.6f}). Enforcing minimum spread.")
+                tprint(
+                    f"WARNING: Calibrated scores have low variance (std={cal_std:.6f}). Enforcing minimum spread."
+                )
                 # Blend with rank-based scores to restore variance while preserving rank order
-                rank_scores = (rankdata(oof_probs) - 1) / (len(oof_probs) - 1)  # Normalize to [0, 1]
+                rank_scores = (rankdata(oof_probs) - 1) / (
+                    len(oof_probs) - 1
+                )  # Normalize to [0, 1]
                 # Blend factor: how much to mix in rank scores (higher = more variance)
                 blend_factor = 0.3
                 # Center rank scores around prevalence for consistency
@@ -1139,33 +1352,54 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 rank_scores_centered = rank_scores - 0.5 + prevalence
                 rank_scores_centered = np.clip(rank_scores_centered, 0.05, 0.95)
                 # Blend calibrated with rank-based
-                calibrated_oof = (1 - blend_factor) * calibrated_oof + blend_factor * rank_scores_centered
-                tprint(f"  Blended with rank scores: new std={np.std(calibrated_oof):.6f}")
-            
+                calibrated_oof = (
+                    1 - blend_factor
+                ) * calibrated_oof + blend_factor * rank_scores_centered
+                tprint(
+                    f"  Blended with rank scores: new std={np.std(calibrated_oof):.6f}"
+                )
+
             # Preserve raw rank scores for downstream use (e.g., ridge sizer)
             self.raw_rank_scores_ = (rankdata(oof_probs) - 1) / (len(oof_probs) - 1)
-            
-            from sklearn.metrics import brier_score_loss
+
             from sklearn.linear_model import LogisticRegression
-            raw_brier = brier_score_loss(y_hard, np.clip(oof_probs, 1e-7, 1-1e-7))
-            cal_brier = brier_score_loss(y_hard, np.clip(calibrated_oof, 1e-7, 1-1e-7))
-            tprint(f"Calibration ({cal_method}): Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
-            
+            from sklearn.metrics import brier_score_loss
+
+            raw_brier = brier_score_loss(y_hard, np.clip(oof_probs, 1e-7, 1 - 1e-7))
+            cal_brier = brier_score_loss(
+                y_hard, np.clip(calibrated_oof, 1e-7, 1 - 1e-7)
+            )
+            tprint(
+                f"Calibration ({cal_method}): Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}"
+            )
+
             # Optional Platt scaling: only apply if it improves Brier score
             platt_calibrator = LogisticRegression(random_state=42, max_iter=1000)
             platt_calibrator.fit(calibrated_oof.reshape(-1, 1), y_hard)
-            platt_calibrated = platt_calibrator.predict_proba(calibrated_oof.reshape(-1, 1))[:, 1]
-            platt_brier = brier_score_loss(y_hard, np.clip(platt_calibrated, 1e-7, 1-1e-7))
-            
-            if platt_brier < cal_brier - 1e-4:  # Only keep Platt if it materially improves Brier
+            platt_calibrated = platt_calibrator.predict_proba(
+                calibrated_oof.reshape(-1, 1)
+            )[:, 1]
+            platt_brier = brier_score_loss(
+                y_hard, np.clip(platt_calibrated, 1e-7, 1 - 1e-7)
+            )
+
+            if (
+                platt_brier < cal_brier - 1e-4
+            ):  # Only keep Platt if it materially improves Brier
                 self.platt_calibrator_ = platt_calibrator
-                tprint(f"Platt scaling enabled: Brier improved {cal_brier:.4f} -> {platt_brier:.4f}")
+                tprint(
+                    f"Platt scaling enabled: Brier improved {cal_brier:.4f} -> {platt_brier:.4f}"
+                )
             else:
                 self.platt_calibrator_ = None
-                tprint(f"Platt scaling skipped: no improvement (isotonic={cal_brier:.4f}, platt={platt_brier:.4f})")
+                tprint(
+                    f"Platt scaling skipped: no improvement (isotonic={cal_brier:.4f}, platt={platt_brier:.4f})"
+                )
             win_dm = self.detailed_metrics.get(self.best_model_name, {})
-            tprint(f"Calibration profile ({self.best_model_name}): {win_dm.get('calibration_profile', 'n/a')}, ECE@10={win_dm.get('ece_top10', float('nan')):.4f}")
-            
+            tprint(
+                f"Calibration profile ({self.best_model_name}): {win_dm.get('calibration_profile', 'n/a')}, ECE@10={win_dm.get('ece_top10', float('nan')):.4f}"
+            )
+
             self.oof_probs = calibrated_oof
 
         except Exception as e:
@@ -1173,14 +1407,20 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # Recap
         tprint("\n=== Model Race Recap ===")
-        tprint(f"{'Model':<15} {'RankSc':>8} {'RcAUC':>8} {'RcIC':>8} {'RcBSS':>8} {'RcBrier':>8} {'RaceP10':>8} {'RaceP30':>8} {'RaceP40':>8} {'LL':>8} {'ECE10':>8} {'ECE30':>8}")
+        tprint(
+            f"{'Model':<15} {'RankSc':>8} {'RcAUC':>8} {'RcIC':>8} {'RcBSS':>8} {'RcBrier':>8} {'RaceP10':>8} {'RaceP30':>8} {'RaceP40':>8} {'LL':>8} {'ECE10':>8} {'ECE30':>8}"
+        )
         tprint("-" * 122)
 
-        sorted_models = sorted(detailed_metrics.items(), key=lambda x: x[1]['rank_score'], reverse=True)
+        sorted_models = sorted(
+            detailed_metrics.items(), key=lambda x: x[1]["rank_score"], reverse=True
+        )
         for name, m in sorted_models:
-            ece10 = m.get('ece_top10', np.nan)
-            ece30 = m.get('ece_top30', np.nan)
-            tprint(f"{name:<15} {m['rank_score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m.get('Brier',0):8.4f} {m['Prec10']:8.4f} {m.get('Prec30', np.nan):8.4f} {m['Prec40']:8.4f} {m['LogLoss']:8.4f} {ece10:8.4f} {ece30:8.4f}")
+            ece10 = m.get("ece_top10", np.nan)
+            ece30 = m.get("ece_top30", np.nan)
+            tprint(
+                f"{name:<15} {m['rank_score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m.get('Brier',0):8.4f} {m['Prec10']:8.4f} {m.get('Prec30', np.nan):8.4f} {m['Prec40']:8.4f} {m['LogLoss']:8.4f} {ece10:8.4f} {ece30:8.4f}"
+            )
         tprint("========================\n")
 
         # 3. Final Retraining (raw model, no calibration wrapper)
@@ -1191,13 +1431,17 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         #       - Tie-breaker: rank_score
         # Do NOT re-select here - use existing self.best_model_name
         if self.best_model_name and self.best_model_name in candidates:
-             self.best_model = candidates[self.best_model_name]
+            self.best_model = candidates[self.best_model_name]
         else:
-             # Fallback should never happen, but log if it does
-             tprint(f"WARNING: best_model_name '{self.best_model_name}' not in candidates, falling back to rank_score selection")
-             if detailed_metrics:
-                  self.best_model_name = max(detailed_metrics.items(), key=lambda x: x[1]['rank_score'])[0]
-                  self.best_model = candidates[self.best_model_name]
+            # Fallback should never happen, but log if it does
+            tprint(
+                f"WARNING: best_model_name '{self.best_model_name}' not in candidates, falling back to rank_score selection"
+            )
+            if detailed_metrics:
+                self.best_model_name = max(
+                    detailed_metrics.items(), key=lambda x: x[1]["rank_score"]
+                )[0]
+                self.best_model = candidates[self.best_model_name]
 
         tprint(f"Retraining {self.best_model_name} on full data (full config)...")
         final_candidates = self._get_candidates(race_mode=False)
@@ -1205,8 +1449,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # Use TimeSeriesSplit(5) for better usage of data in final model.
 
         final_base = clone(self.best_model)
-        if hasattr(final_base, "estimator"): # Unwrap wrapper if needed? No, Float64Wrapper is a classifier.
-             pass
+        if hasattr(
+            final_base, "estimator"
+        ):  # Unwrap wrapper if needed? No, Float64Wrapper is a classifier.
+            pass
 
         # We fit the raw model on full data.
         # Note: We need to store the bias correction factor for the FINAL model too?
@@ -1230,9 +1476,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             _x_fit = (
                 X_np
                 if use_numpy
-                else X.to_numpy(dtype=np.float32, copy=False)
-                if hasattr(X, "to_numpy")
-                else np.asarray(X, dtype=np.float32)
+                else (
+                    X.to_numpy(dtype=np.float32, copy=False)
+                    if hasattr(X, "to_numpy")
+                    else np.asarray(X, dtype=np.float32)
+                )
             )
             self.best_model_leaf_context_ = self._build_leaf_context(
                 self.best_model, _x_fit, y_hard
@@ -1253,7 +1501,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 if sample_weight is not None:
                     w_tr_fold = sample_weight[train_idx]
                     den = float(np.sum(w_tr_fold))
-                    p_weighted_fold = float(np.sum(w_tr_fold * y_tr_fold) / max(den, 1e-12))
+                    p_weighted_fold = float(
+                        np.sum(w_tr_fold * y_tr_fold) / max(den, 1e-12)
+                    )
                 else:
                     p_weighted_fold = float(np.mean(y_tr_fold))
                 p_unweighted_fold = float(np.mean(y_hard[val_idx]))
@@ -1266,14 +1516,16 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             refit_oof = np.nan_to_num(refit_oof, nan=0.5)
 
             refit_calibrated, refit_calibrator, refit_cal_method = (
-                _safe_binary_calibrate(refit_oof, y_hard, min_unique=20, min_samples=100)
+                _safe_binary_calibrate(
+                    refit_oof, y_hard, min_unique=20, min_samples=100
+                )
             )
             self.calibrator_ = refit_calibrator
             if isinstance(self.calibration_state_, dict):
                 self.calibration_state_["calibration_method"] = refit_cal_method
 
-            from sklearn.metrics import brier_score_loss
             from sklearn.linear_model import LogisticRegression
+            from sklearn.metrics import brier_score_loss
 
             cal_brier = brier_score_loss(
                 y_hard, np.clip(refit_calibrated, 1e-7, 1 - 1e-7)
@@ -1281,9 +1533,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             platt = LogisticRegression(random_state=42, max_iter=1000)
             platt.fit(refit_calibrated.reshape(-1, 1), y_hard)
             platt_pred = platt.predict_proba(refit_calibrated.reshape(-1, 1))[:, 1]
-            platt_brier = brier_score_loss(
-                y_hard, np.clip(platt_pred, 1e-7, 1 - 1e-7)
-            )
+            platt_brier = brier_score_loss(y_hard, np.clip(platt_pred, 1e-7, 1 - 1e-7))
             if platt_brier < cal_brier - 1e-4:
                 self.platt_calibrator_ = platt
                 tprint(
@@ -1297,7 +1547,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     f"(Brier {cal_brier:.4f}, Platt skipped)"
                 )
         except Exception as _e:
-            tprint(f"WARNING: post-refit recalibration failed, keeping OOF calibration: {_e}")
+            tprint(
+                f"WARNING: post-refit recalibration failed, keeping OOF calibration: {_e}"
+            )
 
         # Extract feature importances if possible
         try:
@@ -1312,16 +1564,20 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     cols = [f"f_{i}" for i in range(len(fi))]
                 # Print top 20 features sorted by importance
                 sorted_idx = np.argsort(fi)[::-1][:20]
-                tprint(f"\n=== BASE MODEL FEATURE IMPORTANCES ({self.best_model_name}) - Top 20 ===")
+                tprint(
+                    f"\n=== BASE MODEL FEATURE IMPORTANCES ({self.best_model_name}) - Top 20 ==="
+                )
                 for i, idx in enumerate(sorted_idx):
                     tprint(f"  {i+1:2d}. {cols[idx]}: {fi[idx]:.6f}")
                 tprint("=== END BASE MODEL FEATURES ===\n")
             else:
-                tprint(f"Feature Importances ({self.best_model_name}): None (no feature_importances_)")
+                tprint(
+                    f"Feature Importances ({self.best_model_name}): None (no feature_importances_)"
+                )
         except Exception as e:
             tprint(f"Failed to get feature importances: {e}")
 
-# No more manual bias correction factor needed (Isotonic handles it)
+        # No more manual bias correction factor needed (Isotonic handles it)
         return self
 
     def predict_proba_raw(self, X):
@@ -1333,19 +1589,28 @@ class ModelRace(BaseEstimator, ClassifierMixin):
     def predict_proba(self, X):
         if self.best_model is None:
             raise ValueError("ModelRace not fitted")
-        if self.calibration_state_ is None or "delta_logit" not in self.calibration_state_:
-            raise RuntimeError("Missing calibration_state_. Refit ModelRace with calibration enabled before inference.")
+        if (
+            self.calibration_state_ is None
+            or "delta_logit" not in self.calibration_state_
+        ):
+            raise RuntimeError(
+                "Missing calibration_state_. Refit ModelRace with calibration enabled before inference."
+            )
 
         if self._used_sample_weight_ and self.calibration_state_ is None:
-            raise RuntimeError("Sample-weighted training requires persisted calibration_state_.")
+            raise RuntimeError(
+                "Sample-weighted training requires persisted calibration_state_."
+            )
 
         p_raw = self.predict_proba_raw(X)
         p_corr = self._apply_bias_state(p_raw, self.calibration_state_)
 
-        if hasattr(self, 'calibrator_') and self.calibrator_ is not None:
+        if hasattr(self, "calibrator_") and self.calibrator_ is not None:
             if self.calibration_state_.get("calibration_input") != "bias_corrected":
-                raise RuntimeError("Calibrator expects bias-corrected inputs but calibration_state_ is inconsistent.")
-            if hasattr(self.calibrator_, 'predict_proba'):
+                raise RuntimeError(
+                    "Calibrator expects bias-corrected inputs but calibration_state_ is inconsistent."
+                )
+            if hasattr(self.calibrator_, "predict_proba"):
                 p_cal = self.calibrator_.predict_proba(p_corr.reshape(-1, 1))[:, 1]
             else:
                 p_cal = self.calibrator_.predict(p_corr)
@@ -1353,7 +1618,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             p_cal = p_corr
 
         # Apply Platt scaling if available
-        if hasattr(self, 'platt_calibrator_') and self.platt_calibrator_ is not None:
+        if hasattr(self, "platt_calibrator_") and self.platt_calibrator_ is not None:
             p_cal = self.platt_calibrator_.predict_proba(p_cal.reshape(-1, 1))[:, 1]
 
         p_cal = safe_clip_proba(p_cal, eps=1e-6)
@@ -1376,8 +1641,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
     def strip_for_serialization(self):
         """Drop heavy internals not needed for inference or meta training."""
-        for attr in ["race_sample_frac", "race_early_stopping_rounds",
-                      "n_splits"]:
+        for attr in ["race_sample_frac", "race_early_stopping_rounds", "n_splits"]:
             if hasattr(self, attr):
                 try:
                     delattr(self, attr)
@@ -1430,6 +1694,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         mp = os.path.join(directory, mf)
         if mf.endswith(".ubj"):
             from xgboost import XGBClassifier as _XGB
+
             inner = _XGB()
             inner.load_model(mp)
         elif mf.endswith(".lgb"):
@@ -1437,6 +1702,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             inner = NativeLGBMBoosterClassifier(booster=booster)
         elif mf.endswith(".cbm"):
             from catboost import CatBoostClassifier as _CB
+
             inner = _CB()
             inner.load_model(mp)
         else:

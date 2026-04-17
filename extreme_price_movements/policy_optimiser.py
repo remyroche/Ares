@@ -683,7 +683,26 @@ def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
             out["symbol"] = out["symbol"].astype(str)
             return out
 
-    # Check for simple_position_sizer output (ElasticNet/ExtraTrees winners)
+    # Check for simple_position_sizer OOF predictions (ElasticNet/ExtraTrees winners)
+    simple_sizer_oof_path = _art / "oof" / "simple_sizer_oof_all.parquet"
+    if simple_sizer_oof_path.exists():
+        df = pd.read_parquet(simple_sizer_oof_path)
+        if "timestamp" in df.columns and "symbol" in df.columns and "strategy_id" in df.columns:
+            tprint(f"Using simple_position_sizer OOF scores from {simple_sizer_oof_path}")
+            # Pivot to get scores per strategy
+            pivot = df.pivot_table(
+                index=["timestamp", "symbol"],
+                columns="strategy_id",
+                values="sizer_score_oof",
+            ).reset_index()
+            out = pivot.copy()
+            out["timestamp"] = pd.to_datetime(
+                out["timestamp"], utc=True, errors="coerce"
+            ).dt.tz_convert(None)
+            out["symbol"] = out["symbol"].astype(str)
+            return out
+
+    # Check for et_sizer params (fallback warning)
     et_sizer_path = _art / "et_sizer" / "strategy_params.json"
     simple_sizer_path = _art / "simple_sizer" / "strategy_params.json"
     for sp in (et_sizer_path, simple_sizer_path):

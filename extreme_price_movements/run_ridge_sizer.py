@@ -28,7 +28,6 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
-from extreme_price_movements.training_utils import build_wide_tight_pair_features
 from extreme_price_movements.ridge_position_sizer import (
     RidgePositionSizer,
     prepare_policy_params_from_tpsl_optimiser,
@@ -36,6 +35,7 @@ from extreme_price_movements.ridge_position_sizer import (
     run_policy_aware_labeling_step,
     run_ridge_position_sizer_step,
 )
+from extreme_price_movements.training_utils import build_wide_tight_pair_features
 
 
 def _filter_artifact_by_stage_view(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
@@ -58,11 +58,13 @@ def _filter_artifact_by_stage_view(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         ts_col = (
             "__ts__"
             if "__ts__" in df.columns
-            else "timestamp"
-            if "timestamp" in df.columns
-            else "t0"
-            if "t0" in df.columns
-            else None
+            else (
+                "timestamp"
+                if "timestamp" in df.columns
+                else "t0"
+                if "t0" in df.columns
+                else None
+            )
         )
         if ts_col:
             if view.get("allowed_start_ts"):
@@ -222,9 +224,13 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         )
         return {}
 
-    # Load all parquet files
+    # Load all parquet files (exclude _tight/_wide/_balanced variants)
     raw_dfs = {}
     for parquet_file in base_oof_dir.glob("oof_*.parquet"):
+        if any(
+            suffix in parquet_file.stem for suffix in ("_tight", "_wide", "_balanced")
+        ):
+            continue
         model_name = parquet_file.stem.replace("oof_", "")
         df = pd.read_parquet(parquet_file)
         raw_dfs[model_name] = df
@@ -339,18 +345,26 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
                 combined[wide_col].values,
                 combined[tight_col].values,
                 base_name=root,
-                sigma_wide=combined[sigma_wide_col].values
-                if sigma_wide_col in combined.columns
-                else None,
-                sigma_tight=combined[sigma_tight_col].values
-                if sigma_tight_col in combined.columns
-                else None,
-                robust_sigma_wide=combined[robust_sigma_wide_col].values
-                if robust_sigma_wide_col in combined.columns
-                else None,
-                robust_sigma_tight=combined[robust_sigma_tight_col].values
-                if robust_sigma_tight_col in combined.columns
-                else None,
+                sigma_wide=(
+                    combined[sigma_wide_col].values
+                    if sigma_wide_col in combined.columns
+                    else None
+                ),
+                sigma_tight=(
+                    combined[sigma_tight_col].values
+                    if sigma_tight_col in combined.columns
+                    else None
+                ),
+                robust_sigma_wide=(
+                    combined[robust_sigma_wide_col].values
+                    if robust_sigma_wide_col in combined.columns
+                    else None
+                ),
+                robust_sigma_tight=(
+                    combined[robust_sigma_tight_col].values
+                    if robust_sigma_tight_col in combined.columns
+                    else None
+                ),
             )
             for col_name, values in pair_features.items():
                 combined[col_name] = values
@@ -634,7 +648,10 @@ def load_meta_oof_predictions(
             combined["meta_agreement_strength"] = np.clip(
                 1.0 - combined["meta_rel_diff"].values, 0.0, 1.0
             )
-            if "robust_sigma_meta_reg" in combined.columns and "robust_sigma_meta_clf" in combined.columns:
+            if (
+                "robust_sigma_meta_reg" in combined.columns
+                and "robust_sigma_meta_clf" in combined.columns
+            ):
                 combined["avg_robust_sigma_meta"] = 0.5 * (
                     np.asarray(combined["robust_sigma_meta_reg"].values, dtype=float)
                     + np.asarray(combined["robust_sigma_meta_clf"].values, dtype=float)
@@ -645,7 +662,92 @@ def load_meta_oof_predictions(
                     + np.asarray(combined["cv_meta_clf"].values, dtype=float)
                 )
             if "avg_cv_meta" in combined.columns:
-                combined["meta_reliability"] = 1.0 / (1.0 + combined["avg_cv_meta"].values)
+                combined["meta_reliability"] = 1.0 / (
+                    1.0 + combined["avg_cv_meta"].values
+                )
+
+            # ── Cross-model uncertainty & composite edge features ──
+            _reg = np.asarray(
+                combined.get(
+                    "reg_pred", combined.get("oof_u_hat", np.zeros(len(combined)))
+                ).values,
+                dtype=float,
+            )
+            _clf_c = np.asarray(
+                combined.get("clf_center", np.zeros(len(combined))).values, dtype=float
+            )
+            _clf_pfx = np.asarray(
+                combined.get("clf_prefix_std", np.full(len(combined), np.nan)).values,
+                dtype=float,
+            )
+            _reg_pfx = np.asarray(
+                combined.get("reg_prefix_std", np.full(len(combined), np.nan)).values,
+                dtype=float,
+            )
+            _clf_sup = np.asarray(
+                combined.get(
+                    "clf_leaf_support_q25", np.full(len(combined), np.nan)
+                ).values,
+                dtype=float,
+            )
+            _reg_sup = np.asarray(
+                combined.get(
+                    "reg_leaf_support_q25", np.full(len(combined), np.nan)
+                ).values,
+                dtype=float,
+            )
+            _clf_iqr = np.asarray(
+                combined.get(
+                    "clf_leaf_target_iqr_mean", np.full(len(combined), np.nan)
+                ).values,
+                dtype=float,
+            )
+            _reg_iqr = np.asarray(
+                combined.get(
+                    "reg_leaf_target_iqr_mean", np.full(len(combined), np.nan)
+                ).values,
+                dtype=float,
+            )
+
+            combined["sign_agree"] = (np.sign(_reg) * np.sign(_clf_c)).astype(
+                np.float32
+            )
+            combined["joint_confidence"] = (np.abs(_reg) * np.abs(_clf_c)).astype(
+                np.float32
+            )
+            _reg_z = (_reg - np.nanmean(_reg)) / (np.nanstd(_reg) + 1e-9)
+            _clf_z = (_clf_c - np.nanmean(_clf_c)) / (np.nanstd(_clf_c) + 1e-9)
+            _min_z = np.minimum(np.abs(_reg_z), np.abs(_clf_z))
+            _sum_z = np.abs(_reg_z) + np.abs(_clf_z) + 1e-9
+            combined["conflict_score"] = (
+                1.0 - np.sign(_reg) * np.sign(_clf_c) * (2.0 * _min_z / _sum_z)
+            ).astype(np.float32)
+
+            _pfx_clf_f = np.where(np.isfinite(_clf_pfx), _clf_pfx, 0.0)
+            _pfx_reg_f = np.where(np.isfinite(_reg_pfx), _reg_pfx, 0.0)
+            combined["joint_instability"] = (
+                0.5 * _pfx_clf_f + 0.5 * _pfx_reg_f
+            ).astype(np.float32)
+
+            combined["edge_unc_pen"] = (
+                _reg / (1.0 + _pfx_reg_f + _pfx_clf_f + 1e-12)
+            ).astype(np.float32)
+
+            _min_sup = np.minimum(
+                np.where(np.isfinite(_clf_sup), _clf_sup, 0.0),
+                np.where(np.isfinite(_reg_sup), _reg_sup, 0.0),
+            )
+            _support_score = np.clip(np.log1p(_min_sup) / 5.0, 0.0, 1.0).astype(
+                np.float32
+            )
+            combined["edge_support_pen"] = (_reg * _support_score).astype(np.float32)
+
+            _joint_leaf_noise = 0.5 * np.where(
+                np.isfinite(_clf_iqr), _clf_iqr, 0.0
+            ) + 0.5 * np.where(np.isfinite(_reg_iqr), _reg_iqr, 0.0)
+            combined["edge_noise_pen"] = (
+                _reg / (1.0 + 10.0 * _joint_leaf_noise + 1e-12)
+            ).astype(np.float32)
 
         inferred_side = next(iter(source_sides), "")
         if inferred_side:
@@ -798,7 +900,10 @@ def load_meta_oof_predictions(
                             "oof_p_tp",
                             "oof_asym_hat",
                         ]:
-                            if col in base_by_idx.columns and col not in combined.columns:
+                            if (
+                                col in base_by_idx.columns
+                                and col not in combined.columns
+                            ):
                                 combined[col] = combined["index"].map(base_by_idx[col])
 
                     # Merge essential metadata if still missing
@@ -830,10 +935,15 @@ def load_meta_oof_predictions(
     # Inject required config-defined features into the inference data
     from extreme_price_movements.config import CFG
     from extreme_price_movements.data_store import load_features_selected
+
     try:
-        from extreme_price_movements.pipeline_steps import load_features_for_stage_or_all
+        from extreme_price_movements.pipeline_steps import (
+            load_features_for_stage_or_all,
+        )
     except Exception:
-        from extreme_price_movements.slice_plan_store import load_features_for_stage_or_all
+        from extreme_price_movements.slice_plan_store import (
+            load_features_for_stage_or_all,
+        )
     from extreme_price_movements.training import _fast_lookup
 
     cfg = dict(CFG)
@@ -1434,7 +1544,7 @@ def main():
         bucket_oofs = load_meta_oof_predictions(
             args.data_root,
             run_id,
-            require_meta_barrier_probs=True,
+            require_meta_barrier_probs=False,
         )
     except (FileNotFoundError, RuntimeError) as e:
         tprint(f"Error: {e}")

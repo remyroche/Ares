@@ -290,9 +290,9 @@ def suggest_xgboost(
     trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000
 ) -> Dict[str, Any]:
     """XGBoost — conservative for noisy labels: high min_child_weight, gamma, reg_lambda."""
-    n_estimators = trial.suggest_int("n_estimators", 600, 6000, step=200)
+    n_estimators = trial.suggest_int("n_estimators", 400, 1500, step=100)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
-    max_depth = trial.suggest_int("max_depth", 2, 5)
+    max_depth = trial.suggest_int("max_depth", 3, 6)
 
     # Dynamic Regularization for XGBoost (hessian based) based on POSITIVE samples
     n_pos = int(n_samples)  # n_samples is passed as n_pos from make_objective
@@ -304,14 +304,14 @@ def suggest_xgboost(
         float(max(500, int(n_pos * 0.05 * 0.25))),
         log=True,
     )
-    gamma = trial.suggest_float("gamma", 0.5, 20.0, log=True)
+    gamma = trial.suggest_float("gamma", 0.5, 5.0, log=True)
 
     subsample = trial.suggest_float("subsample", 0.6, 0.9)
-    colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 0.9)
-    colsample_bynode = trial.suggest_float("colsample_bynode", 0.5, 0.9)
+    colsample_bytree = trial.suggest_float("colsample_bytree", 0.6, 0.8)
+    colsample_bynode = trial.suggest_float("colsample_bynode", 0.6, 0.8)
 
-    reg_lambda = trial.suggest_float("reg_lambda", 15.0, 500.0, log=True)
-    reg_alpha = trial.suggest_float("reg_alpha", 0.0, 10.0)
+    reg_lambda = trial.suggest_float("reg_lambda", 1.0, 100.0, log=True)
+    reg_alpha = trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True)
 
     max_delta_step = trial.suggest_float("max_delta_step", 0.0, 5.0)
     tree_method = "hist"
@@ -346,6 +346,9 @@ def suggest_xgboost(
     if max_leaves is not None:
         params["max_leaves"] = max_leaves
 
+    params["objective"] = trial.suggest_categorical(
+        "objective", ["binary:logistic", "binary:logitraw"]
+    )
     params["_use_scale_pos_weight"] = bool(use_spw)
     return params
 
@@ -479,7 +482,8 @@ def suggest_extratrees_base(
 
     leaf_frac = trial.suggest_categorical("min_samples_leaf_frac", [0.005, 0.01, 0.02])
     min_samples_leaf = max(20, int(np.ceil(n_pos * leaf_frac)))
-    min_samples_split = max(2, 2 * min_samples_leaf)
+    split_mult = trial.suggest_categorical("min_samples_split_mult", [2, 3])
+    min_samples_split = max(2, split_mult * min_samples_leaf)
 
     max_features = trial.suggest_categorical("max_features", ["sqrt", 0.25, 0.33, 0.5])
     ccp_alpha = trial.suggest_categorical("ccp_alpha", [1e-5, 1e-6])
@@ -487,7 +491,9 @@ def suggest_extratrees_base(
         "min_impurity_decrease", [1e-5, 1e-4]
     )
 
-    n_estimators = trial.suggest_categorical("n_estimators", [200, 300, 400])
+    n_estimators = trial.suggest_categorical("n_estimators", [200, 300, 400, 500, 600])
+    criterion = trial.suggest_categorical("criterion", ["gini", "entropy", "log_loss"])
+    max_leaf_nodes = trial.suggest_categorical("max_leaf_nodes", [256, 512, 1024])
 
     return {
         "n_estimators": n_estimators,
@@ -498,10 +504,35 @@ def suggest_extratrees_base(
         "bootstrap": False,
         "oob_score": False,
         "max_samples": None,
-        "criterion": "gini",
+        "criterion": criterion,
         "class_weight": None,
         "min_impurity_decrease": min_impurity_decrease,
         "ccp_alpha": ccp_alpha,
+        "max_leaf_nodes": max_leaf_nodes,
+        "n_jobs": 3,
+        "random_state": base_random_state,
+    }
+
+
+def _fallback_extratrees_base_params(
+    *, base_random_state: int = 42, n_pos: int = 1000
+) -> Dict[str, Any]:
+    """Conservative fallback ExtraTrees params when Optuna yields no completed trial."""
+    min_samples_leaf = max(20, int(np.ceil(float(n_pos) * 0.01)))
+    min_samples_split = max(2, 2 * min_samples_leaf)
+    return {
+        "n_estimators": 300,
+        "max_depth": 8,
+        "min_samples_leaf": min_samples_leaf,
+        "min_samples_split": min_samples_split,
+        "max_features": "sqrt",
+        "bootstrap": False,
+        "oob_score": False,
+        "max_samples": None,
+        "criterion": "gini",
+        "class_weight": None,
+        "min_impurity_decrease": 1e-4,
+        "ccp_alpha": 1e-5,
         "max_leaf_nodes": 512,
         "n_jobs": 3,
         "random_state": base_random_state,
@@ -1377,10 +1408,20 @@ def run_base_extratrees_hpo(
     )
 
     def _log_best_trial(study_obj: optuna.Study, trial_obj: optuna.trial.FrozenTrial) -> None:
-        if study_obj.best_trial.number != trial_obj.number:
+        completed = [
+            t
+            for t in study_obj.trials
+            if t.state == optuna.trial.TrialState.COMPLETE
+            and t.value is not None
+            and np.isfinite(float(t.value))
+        ]
+        if not completed:
+            return
+        best_trial_local = max(completed, key=lambda t: float(t.value))
+        if best_trial_local.number != trial_obj.number:
             return
         best_params_local = suggest_extratrees_base(
-            study_obj.best_trial, base_random_state=random_state, n_pos=n_pos
+            best_trial_local, base_random_state=random_state, n_pos=n_pos
         )
         best_params_local.pop("n_jobs", None)
         best_params_local.pop("random_state", None)
@@ -1389,7 +1430,7 @@ def run_base_extratrees_hpo(
             "BASE HPO[{}] NEW BEST: trial={} value={:.6f} params={}".format(
                 scope_name,
                 trial_obj.number,
-                float(study_obj.best_value),
+                float(best_trial_local.value),
                 json.dumps(best_params_local, sort_keys=True),
             )
         )
@@ -1441,7 +1482,12 @@ def run_base_extratrees_hpo(
 
         mean_ic = float(np.mean(fold_ics))
         std_ic = float(np.std(fold_ics))
-        return mean_ic - 1.0 * std_ic
+        trial_score = mean_ic - 1.0 * std_ic
+        trial.set_user_attr("mean_ic", mean_ic)
+        trial.set_user_attr("std_ic", std_ic)
+        trial.set_user_attr("fold_ics", [float(v) for v in fold_ics])
+        trial.set_user_attr("objective", trial_score)
+        return trial_score
 
     study.optimize(
         objective,
@@ -1452,11 +1498,30 @@ def run_base_extratrees_hpo(
         callbacks=[_log_best_trial, patience_callback],
     )
 
-    best_value = float(study.best_value)
-    best_trial = study.best_trial
-    best_params = suggest_extratrees_base(
-        best_trial, base_random_state=random_state, n_pos=n_pos
-    )
+    completed_trials = [
+        t
+        for t in study.trials
+        if t.state == optuna.trial.TrialState.COMPLETE
+        and t.value is not None
+        and np.isfinite(float(t.value))
+    ]
+    if completed_trials:
+        best_trial = max(completed_trials, key=lambda t: float(t.value))
+        best_value = float(best_trial.value)
+        best_params = suggest_extratrees_base(
+            best_trial, base_random_state=random_state, n_pos=n_pos
+        )
+        fallback_used = False
+    else:
+        tprint(
+            "WARNING: Base HPO completed with zero finished trials; using conservative fallback params."
+        )
+        best_trial = None
+        best_value = float("nan")
+        best_params = _fallback_extratrees_base_params(
+            base_random_state=random_state, n_pos=n_pos
+        )
+        fallback_used = True
     best_params.pop("n_jobs", None)
     best_params.pop("random_state", None)
 
@@ -1465,21 +1530,23 @@ def run_base_extratrees_hpo(
         "best_params": best_params,
         "selected_features": [str(v) for v in (selected_features or []) if isinstance(v, str)],
         "n_trials_completed": len(study.trials),
+        "n_trials_finished": int(len(completed_trials)),
         "n_pos_at_optimisation": n_pos,
         "search_space": "base_narrow",
+        "fallback_used": bool(fallback_used),
         "best_trial_metrics": {
-            "pr_auc_lift": float(best_trial.user_attrs.get("pr_auc_lift", 0.0)),
-            "top30_abs_ret_lift": float(
-                best_trial.user_attrs.get("top30_abs_ret_lift", 0.0)
-            ),
-            "median_ic_t30": float(best_trial.user_attrs.get("median_ic_t30", 0.0)),
-            "std_ic_t30": float(best_trial.user_attrs.get("std_ic_t30", 0.0)),
-            "brier": float(best_trial.user_attrs.get("brier", 1.0)),
-            "z_pr": float(best_trial.user_attrs.get("z_pr", 0.0)),
-            "z_top30": float(best_trial.user_attrs.get("z_top30", 0.0)),
-            "z_median_ic": float(best_trial.user_attrs.get("z_median_ic", 0.0)),
-            "z_std_ic": float(best_trial.user_attrs.get("z_std_ic", 0.0)),
-            "z_brier": float(best_trial.user_attrs.get("z_brier", 0.0)),
+            "mean_ic": float(best_trial.user_attrs.get("mean_ic", best_value))
+            if best_trial is not None
+            else float("nan"),
+            "std_ic": float(best_trial.user_attrs.get("std_ic", 0.0))
+            if best_trial is not None
+            else float("nan"),
+            "fold_ics": [
+                float(v) for v in (best_trial.user_attrs.get("fold_ics", []) if best_trial is not None else [])
+            ],
+            "objective": float(best_trial.user_attrs.get("objective", best_value))
+            if best_trial is not None
+            else float("nan"),
         },
     }
 

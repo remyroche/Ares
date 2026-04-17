@@ -165,14 +165,35 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
         top_n=2, ranking_metric="score_for_best_params"
     )
     if strategies:
-        cfg["strategies"] = strategies
+        valid_strategies = [
+            s for s in strategies if s.get("source_horizon") is not None
+        ]
+        dropped = len(strategies) - len(valid_strategies)
+        if dropped:
+            from extreme_price_movements.utils import tprint
+
+            tprint(
+                f"Dropping {dropped} mask strategies without source_horizon; "
+                "primary training requires one horizon per strategy."
+            )
+        cfg["strategies"] = valid_strategies
         from extreme_price_movements.utils import tprint
         from extreme_price_movements.slice_plan_store import (
             load_or_build_slice_plan,
             apply_stage_usage_limits,
         )
 
-        tprint(f"Loaded {len(strategies)} strategies from final_rule_registry.csv")
+        horizons = sorted(
+            {
+                int(s["source_horizon"])
+                for s in valid_strategies
+                if s.get("source_horizon") is not None
+            }
+        )
+        tprint(
+            f"Loaded {len(valid_strategies)} strategies from final_rule_registry.csv "
+            f"with source_horizons={horizons}"
+        )
 
     return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
 
@@ -1896,7 +1917,6 @@ def main():
     cfg["planned_max_assets"] = args.planned_max_assets
     cfg["planned_max_months"] = args.planned_max_months
     cfg["refresh_slice_plan"] = bool(args.refresh_slice_plan)
-
     if args.mode == "download":
         run_download(cfg)
     elif args.mode == "labels":

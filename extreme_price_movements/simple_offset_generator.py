@@ -954,8 +954,11 @@ def build_policy_path_state_bundle(
     atr_raw = _col("atr_12_15m", 0.0)
     sl_atr_mult = _col("label_policy_sl_atr_mult", 0.0)
     has_label_policy = np.any(atr_raw > 1e-6) and np.any(sl_atr_mult > 1e-6)
+    has_atr = np.any(atr_raw > 1e-6)
     if has_label_policy:
-        barrier_pct = np.clip(atr_raw * sl_atr_mult, 0.005, 0.2).astype(np.float32)
+        barrier_pct = np.clip(atr_raw * sl_atr_mult, 0.001, 0.2).astype(np.float32)
+    elif has_atr:
+        barrier_pct = np.clip(atr_raw * 2.0, 0.001, 0.2).astype(np.float32)
     else:
         barrier_pct = np.clip(np.maximum(mae * 2.5, 1e-4), 0.005, 0.2).astype(np.float32)
 
@@ -981,7 +984,7 @@ def build_policy_path_state_bundle(
         trade_outcomes.get("timestamp", pd.Series(np.arange(n_total))).values
     )[idx]
 
-    tp_sl_ratio = _col("label_policy_tp_sl_ratio", 3.0)
+    tp_sl_ratio = _col("label_policy_tp_sl_ratio", 2.5)
 
     return {
         "returns": returns.astype(np.float32),

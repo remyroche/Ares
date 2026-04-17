@@ -1,37 +1,48 @@
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
-from typing import Tuple, List, Dict, Optional
 
-from extreme_price_movements.pnl import CostModel
-from extreme_price_movements.pnl_asserts import assert_units
-from extreme_price_movements.telemetry.tprint_hooks import emit_bucket_summary
-from extreme_price_movements.utils import tprint
-
-from extreme_price_movements.risk import TrailingStop
-from extreme_price_movements.training import (
-    select_best_horizon,
-    apply_interaction_toggles,
-    scaled_atr_pct
+from extreme_price_movements.candidates import (
+    entry_price_next_hour_open,
+    select_trade_candidates_hourly,
 )
 from extreme_price_movements.config import CANON_HORIZONS
-from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
+from extreme_price_movements.execution_semantics import ExitReason, resolve_stop_fill
 from extreme_price_movements.limit_order_pricer import (
+    check_limit_order_fill,
+    create_limit_order_config,
     estimate_entry_limit_offset,
     estimate_exit_limit_offset,
     estimate_fill_probability,
-    check_limit_order_fill,
-    get_limit_price_for_order,
     get_fee_for_order_type,
-    create_limit_order_config,
+    get_limit_price_for_order,
 )
-from extreme_price_movements.execution_semantics import resolve_stop_fill, ExitReason
+from extreme_price_movements.pnl import CostModel
+from extreme_price_movements.pnl_asserts import assert_units
+from extreme_price_movements.risk import TrailingStop
+from extreme_price_movements.telemetry.tprint_hooks import emit_bucket_summary
+from extreme_price_movements.training import (
+    apply_interaction_toggles,
+    scaled_atr_pct,
+    select_best_horizon,
+)
+from extreme_price_movements.utils import tprint
+
 # Import optimized prediction utilities
 try:
-    from extreme_price_movements.optimized_predictions import OptimizedMetaCombiner, BatchPredictor
+    from extreme_price_movements.optimized_predictions import (
+        BatchPredictor,
+        OptimizedMetaCombiner,
+    )
+
     _USE_OPTIMIZED_PREDICTIONS = True
 except ImportError:
     _USE_OPTIMIZED_PREDICTIONS = False
-    tprint("WARNING: optimized_predictions module not found, using legacy implementation")
+    tprint(
+        "WARNING: optimized_predictions module not found, using legacy implementation"
+    )
+
 
 def _meta_feature_keys_union(cfg) -> set[str]:
     keys = set(cfg.get("meta_feature_keys", []) or [])
@@ -44,12 +55,20 @@ def _normalize_ridge_bucket_params(params_per_bucket: dict, bucket_key: str) -> 
     if not isinstance(params_per_bucket, dict):
         return {}
     direct = params_per_bucket.get(bucket_key)
-    if isinstance(direct, dict) and bucket_key in direct and isinstance(direct[bucket_key], dict):
+    if (
+        isinstance(direct, dict)
+        and bucket_key in direct
+        and isinstance(direct[bucket_key], dict)
+    ):
         return direct[bucket_key]
     if isinstance(direct, dict):
         return direct
     for value in params_per_bucket.values():
-        if isinstance(value, dict) and bucket_key in value and isinstance(value[bucket_key], dict):
+        if (
+            isinstance(value, dict)
+            and bucket_key in value
+            and isinstance(value[bucket_key], dict)
+        ):
             return value[bucket_key]
     return {}
 
@@ -63,10 +82,10 @@ def _apply_exit_limit_order(
     trigger_price: float,
 ) -> Tuple[float, bool]:
     """Apply exit limit order with proper high/low validation.
-    
+
     For exit limits, we check if price moved in our favor enough to hit
     the limit price. If the limit order fills, we get better execution.
-    
+
     Args:
         current_price: The current close price
         is_long: True for long position
@@ -74,7 +93,7 @@ def _apply_exit_limit_order(
         high_price: Bar high price
         low_price: Bar low price
         trigger_price: The price that triggered the exit (SL/TP/close)
-    
+
     Returns:
         Tuple of (exit_price, did_fill)
             - exit_price: The actual exit price (better if limit filled)
@@ -82,17 +101,17 @@ def _apply_exit_limit_order(
     """
     if limit_offset_pct <= 0:
         return current_price, False
-    
+
     # Calculate target limit price
     if is_long:
         # For long: exit at higher price = sell at limit (better than close)
         # Target: we want to sell, so limit price is above current
         limit_price = trigger_price * (1.0 + limit_offset_pct)
-        
+
         # Check if price moved up to hit our limit
         # For long exit: we want high to reach or exceed limit_price
         did_fill = high_price >= limit_price
-        
+
         if did_fill:
             # Fill at limit price (better than trigger)
             exit_price = limit_price
@@ -103,19 +122,20 @@ def _apply_exit_limit_order(
         # For short: exit at lower price = buy back at limit (better than close)
         # Target: we want to buy, so limit price is below current
         limit_price = trigger_price * (1.0 - limit_offset_pct)
-        
+
         # Check if price moved down to hit our limit
         # For short exit: we want low to reach or go below limit_price
         did_fill = low_price <= limit_price
-        
+
         if did_fill:
             # Fill at limit price (better than trigger)
             exit_price = limit_price
         else:
             # No fill - exit at current (worse than limit)
             exit_price = current_price
-    
+
     return float(exit_price), bool(did_fill)
+
 
 def _estimate_global_percentile(score, q50, q90, q95=None, q98=None):
     """Linearly interpolate global percentile for a score magnitude."""
@@ -123,11 +143,15 @@ def _estimate_global_percentile(score, q50, q90, q95=None, q98=None):
     # Fallbacks for missing/None quantiles
     if q50 is None or q90 is None:
         return 0.5  # No calibration data yet — neutral rank
-    if q50 <= 0: return 0.5 # protection
-    if q90 <= q50: q90 = q50 * 1.5
-    if q95 is None: q95 = q90 + 0.5 * (q90 - q50)
-    if q98 is None: q98 = q95 + 0.5 * (q95 - q90)
-    
+    if q50 <= 0:
+        return 0.5  # protection
+    if q90 <= q50:
+        q90 = q50 * 1.5
+    if q95 is None:
+        q95 = q90 + 0.5 * (q90 - q50)
+    if q98 is None:
+        q98 = q95 + 0.5 * (q95 - q90)
+
     if z <= q50:
         return 0.5 * (z / q50)
     if z <= q90:
@@ -136,7 +160,7 @@ def _estimate_global_percentile(score, q50, q90, q95=None, q98=None):
         return 0.9 + 0.05 * (z - q90) / (q95 - q90 + 1e-12)
     if z <= q98:
         return 0.95 + 0.03 * (z - q95) / (q98 - q95 + 1e-12)
-    
+
     # Beyond P98, we linear extrapolate slightly but cap at 0.999
     extrap = 0.98 + 0.01 * (z - q98) / (q98 - q95 + 1e-12)
     return min(extrap, 0.999)
@@ -144,7 +168,7 @@ def _estimate_global_percentile(score, q50, q90, q95=None, q98=None):
 
 def _compute_barrier_pct(feats_s, ts_sig, atr, cfg):
     """Compute vol-scaled barrier percentage from ATR history.
-    
+
     IMPORTANT: feats_s contains raw price-space ATR (not a fraction).
     scaled_atr_pct clips to [vol_lo, vol_hi] which are fractions (0.03-0.06).
     Fallback must also return a fraction, never raw price-space ATR.
@@ -175,7 +199,21 @@ def _compute_barrier_pct(feats_s, ts_sig, atr, cfg):
     return default_barrier
 
 
-def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side, cfg, max_hold_hours, exchange=None, symbol=None, cost: CostModel | None = None):
+def simulate_trade_hourly(
+    o_s,
+    h_s,
+    l_s,
+    c_s,
+    feats_s,
+    ts_entry,
+    entry_px,
+    side,
+    cfg,
+    max_hold_hours,
+    exchange=None,
+    symbol=None,
+    cost: CostModel | None = None,
+):
     """Simulate a trade using trailing-profit policy.
 
     Exit logic (all distances are vol-scaled via barrier_pct):
@@ -185,7 +223,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         running extreme. The trailing stop only ratchets in the profitable
         direction.
       - Time exit: close at last bar if neither SL nor trailing stop triggered.
-    
+
     If exchange (CCXT) and symbol are provided and use_15m_precision is enabled,
     downloads 15m data for more accurate trailing stop simulation.
 
@@ -197,7 +235,13 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
           sl_pct: stop-loss distance as % of entry price
           tp_pct: activation distance as % of entry price
     """
-    _empty_extras = {"mae_pct": 0.0, "mfe_pct": 0.0, "bars_to_mfe": 0, "sl_pct": 0.0, "tp_pct": 0.0}
+    _empty_extras = {
+        "mae_pct": 0.0,
+        "mfe_pct": 0.0,
+        "bars_to_mfe": 0,
+        "sl_pct": 0.0,
+        "tp_pct": 0.0,
+    }
     if cost is not None:
         assert_units(cost)
     if np.isnan(entry_px) or entry_px <= 0:
@@ -209,29 +253,45 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
 
     # Risk parameters (vol-scaled) — per-bucket TP/SL comes via cfg overrides
     sl_mult = float(cfg.get("sl_mult", 0.5))
-    activation_mult = float(cfg.get("tp_mult", 1.0))      # full trail activation
-    trail_mult = float(cfg.get("trail_mult", 0.25))        # trail = 25% of barrier — wide enough to survive bar noise
+    activation_mult = float(cfg.get("tp_mult", 1.0))  # full trail activation
+    trail_mult = float(
+        cfg.get("trail_mult", 0.25)
+    )  # trail = 25% of barrier — wide enough to survive bar noise
 
     # Early invalidation parameters (kill_score = mae_frac + a*bars - b*mfe_frac - c)
-    kill_a = float(cfg.get("kill_a", 0.002))    # time penalty per bar
-    kill_b = float(cfg.get("kill_b", 1.5))       # MFE credit multiplier
-    kill_c = float(cfg.get("kill_c", 0.005))     # baseline tolerance
+    kill_a = float(cfg.get("kill_a", 0.002))  # time penalty per bar
+    kill_b = float(cfg.get("kill_b", 1.5))  # MFE credit multiplier
+    kill_c = float(cfg.get("kill_c", 0.005))  # baseline tolerance
     kill_min_bars = int(cfg.get("kill_min_bars", 2))  # minimum bars before kill check
 
     # Profit-protection parameters (absolute % of price, NOT barrier-proportional)
     fee_rate = float(cfg.get("fee_bps", 25.0)) / 10000.0
-    be_threshold_pct = float(cfg.get("be_threshold_pct", 0.005))    # Stage 1: BE after MFE >= 0.5%
-    be_buffer_pct = float(cfg.get("be_buffer_pct", 2.0 * fee_rate)) # buffer above entry for BE stop
-    profit_lock_pct = float(cfg.get("profit_lock_pct", 0.015))      # Stage 2: lock profit after MFE >= 1.5%
-    profit_lock_amount = float(cfg.get("profit_lock_amount", 0.003)) # lock 0.3% real profit at stage 2
-    giveback_pct = float(cfg.get("giveback_pct", 0.005))            # Max giveback: exit if ret drops this much from peak MFE
-    max_loss_pct = float(cfg.get("max_loss_pct", 0.03))             # hard cap: max 3% loss in ret space
+    be_threshold_pct = float(
+        cfg.get("be_threshold_pct", 0.005)
+    )  # Stage 1: BE after MFE >= 0.5%
+    be_buffer_pct = float(
+        cfg.get("be_buffer_pct", 2.0 * fee_rate)
+    )  # buffer above entry for BE stop
+    profit_lock_pct = float(
+        cfg.get("profit_lock_pct", 0.015)
+    )  # Stage 2: lock profit after MFE >= 1.5%
+    profit_lock_amount = float(
+        cfg.get("profit_lock_amount", 0.003)
+    )  # lock 0.3% real profit at stage 2
+    giveback_pct = float(
+        cfg.get("giveback_pct", 0.005)
+    )  # Max giveback: exit if ret drops this much from peak MFE
+    max_loss_pct = float(
+        cfg.get("max_loss_pct", 0.03)
+    )  # hard cap: max 3% loss in ret space
 
     # Sanity: barrier_pct must be a fraction (0.01–0.30), not price-space ATR
     if barrier_pct > 0.30:
-        tprint(f"  WARNING: barrier_pct={barrier_pct:.4f} > 30% — likely price-space ATR, clamping to 6%")
+        tprint(
+            f"  WARNING: barrier_pct={barrier_pct:.4f} > 30% — likely price-space ATR, clamping to 6%"
+        )
         barrier_pct = 0.06
-    
+
     sl_dist = sl_mult * barrier_pct * entry_px
     activation_dist = activation_mult * barrier_pct * entry_px
     trail_dist = trail_mult * barrier_pct * entry_px
@@ -245,14 +305,16 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     # Clamp SL to max_loss_pct (hard ceiling)
     if sl_dist > max_loss_dist:
         sl_dist = max_loss_dist
-    
+
     # Post-computation sanity: actual distances as fraction of entry must be sane
     sl_frac = sl_dist / entry_px
     tp_frac = activation_dist / entry_px
     if sl_frac > 0.15 or tp_frac > 0.30:
-        tprint(f"  WARNING: Insane distances SL={sl_frac:.2%} TP={tp_frac:.2%} "
-               f"(barrier={barrier_pct:.4f}, sl_mult={sl_mult}, tp_mult={activation_mult}). "
-               f"Clamping barrier to 6%.")
+        tprint(
+            f"  WARNING: Insane distances SL={sl_frac:.2%} TP={tp_frac:.2%} "
+            f"(barrier={barrier_pct:.4f}, sl_mult={sl_mult}, tp_mult={activation_mult}). "
+            f"Clamping barrier to 6%."
+        )
         barrier_pct = 0.06
         sl_dist = sl_mult * barrier_pct * entry_px
         activation_dist = activation_mult * barrier_pct * entry_px
@@ -265,27 +327,34 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         sl_pct_log = (sl_dist / entry_px) * 100
         tp_pct_log = (activation_dist / entry_px) * 100
         trail_pct_log = (trail_dist / entry_px) * 100
-        tprint(f"  Risk params: SL={sl_pct_log:.2f}%, TP={tp_pct_log:.2f}%, Trail={trail_pct_log:.2f}% | "
-               f"Entry=${entry_px:.2f}, Barrier={barrier_pct*100:.2f}% | "
-               f"BE@{be_threshold_pct*100:.1f}%, Lock@{profit_lock_pct*100:.1f}%, MaxLoss={max_loss_pct*100:.1f}%")
+        tprint(
+            f"  Risk params: SL={sl_pct_log:.2f}%, TP={tp_pct_log:.2f}%, Trail={trail_pct_log:.2f}% | "
+            f"Entry=${entry_px:.2f}, Barrier={barrier_pct*100:.2f}% | "
+            f"BE@{be_threshold_pct*100:.1f}%, Lock@{profit_lock_pct*100:.1f}%, MaxLoss={max_loss_pct*100:.1f}%"
+        )
 
     end_ts = ts_entry + pd.Timedelta(hours=max_hold_hours)
-    
+
     # Check if 15m precision is enabled
-    use_15m = cfg.get("use_15m_precision", False) and exchange is not None and symbol is not None
-    
+    use_15m = (
+        cfg.get("use_15m_precision", False)
+        and exchange is not None
+        and symbol is not None
+    )
+
     if use_15m:
         # Download 15m data for precise simulation
         try:
             from extreme_price_movements.hf_data_loader import get_15m_ohlcv
+
             df_15m = get_15m_ohlcv(exchange, symbol, ts_entry, max_hold_hours)
-            
+
             if not df_15m.empty:
                 # Use 15m bars
                 path = df_15m.index
-                h_data = df_15m['high']
-                l_data = df_15m['low']
-                c_data = df_15m['close']
+                h_data = df_15m["high"]
+                l_data = df_15m["low"]
+                c_data = df_15m["close"]
             else:
                 # Fallback to 1h if download failed
                 path = o_s.loc[ts_entry:end_ts].index
@@ -314,12 +383,12 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     # Limit Order Fill Logic (Post-prediction offset)
     use_limit = cfg.get("use_limit_orders", False)
     use_mae_mfe_offset = cfg.get("use_mae_mfe_limit_offset", False)
-    
+
     # Check if we have MAE/MFE predictions available in extras
     mae_hat = float(extras.get("mae_hat", 0.0))
     mfe_hat = float(extras.get("mfe_hat", 0.0))
     u_hat = float(extras.get("u_hat", 0.0))
-    
+
     # Determine limit offset: use MAE/MFE-based estimation if available
     if use_limit and use_mae_mfe_offset and (mae_hat > 0 or mfe_hat > 0):
         # Use MAE/MFE-based dynamic offset
@@ -335,12 +404,12 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     else:
         # Use static offset from config
         limit_offset_bps = float(cfg.get("limit_offset_bps", 0.0))
-    
+
     limit_offset_pct = limit_offset_bps / 10000.0
-    
+
     # Use the new pricer function for proper long/short handling with high/low
-    is_long_side = (side == "long")
-    
+    is_long_side = side == "long"
+
     if use_limit and limit_offset_pct > 0:
         # Calculate limit price using proper logic for long/short
         limit_px = get_limit_price_for_order(
@@ -350,20 +419,20 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
             high_price=None,  # Will check per-bar
             low_price=None,
         )
-        
+
         # Check first 4 bars for fill using proper high/low prices
         fill_window = path[:4]
         filled = False
         fill_ts = ts_entry
         actual_fill_price = entry_px  # Default to signal price if no limit
-        
+
         for ts in fill_window:
             if ts not in h_data.index or ts not in l_data.index:
                 continue
-            
+
             bar_l = l_data.loc[ts]
             bar_h = h_data.loc[ts]
-            
+
             # Use proper fill check with high/low
             did_fill, fill_price = check_limit_order_fill(
                 limit_price=limit_px,
@@ -372,35 +441,35 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                 low_price=bar_l,
                 open_price=c_data.loc[ts] if ts in c_data.index else entry_px,
             )
-            
+
             if did_fill:
                 filled = True
                 fill_ts = ts
                 actual_fill_price = fill_price
                 break
-        
+
         if not filled:
             return 0.0, ts_entry, ExitReason.LIMIT_NOT_FILLED.value, _empty_extras
-        
+
         # Update entry price and start time to fill event
         entry_px = actual_fill_price
         ts_entry = fill_ts
         # Resume simulation from fill_ts
-        path = path[path.get_loc(fill_ts):]
-        
+        path = path[path.get_loc(fill_ts) :]
+
         # Use limit order fee
         cfg["fee_bps"] = cfg.get("fee_bps_limit_entry", 10.0)
         filled_via_limit = True
     else:
         filled_via_limit = False
-    
+
     if len(path) == 0:
         return 0.0, ts_entry, ExitReason.NO_PATH.value, _empty_extras
 
     # Exit limit offset logic
     use_exit_limit = cfg.get("use_exit_limit_orders", False)
     exit_limit_offset_bps = float(cfg.get("exit_limit_offset_bps", 0.0))
-    
+
     # Use MAE/MFE-based exit offset if enabled
     if use_exit_limit and use_mae_mfe_offset and (mae_hat > 0 or mfe_hat > 0):
         # Calculate profit locked for adaptive exit offset
@@ -412,12 +481,14 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
             mae_hat=mae_hat,
             cfg=cfg,
         )
-    
+
     exit_limit_offset_pct = exit_limit_offset_bps / 10000.0
 
     # MAE/MFE tracking
-    mae_px = 0.0   # max adverse excursion (worst unrealised loss, as positive distance)
-    mfe_px = 0.0   # max favorable excursion (best unrealised profit, as positive distance)
+    mae_px = 0.0  # max adverse excursion (worst unrealised loss, as positive distance)
+    mfe_px = (
+        0.0  # max favorable excursion (best unrealised profit, as positive distance)
+    )
     mae_px_4bar = 0.0  # max adverse excursion in first 4 bars
     mfe_px_4bar = 0.0  # max favorable excursion in first 4 bars
     bars_to_mfe = 0
@@ -440,11 +511,11 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     for ts in path:
         if ts not in h_data.index or ts not in l_data.index or ts not in c_data.index:
             continue
-        
+
         hh = h_data.loc[ts]
         ll = l_data.loc[ts]
         cc = c_data.loc[ts]
-        
+
         if np.isnan(hh) or np.isnan(ll) or np.isnan(cc):
             continue
 
@@ -463,7 +534,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         if favorable > mfe_px:
             mfe_px = favorable
             bars_to_mfe = bar_count
-            
+
         if bar_count <= 4:
             if adverse > mae_px_4bar:
                 mae_px_4bar = adverse
@@ -551,15 +622,23 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                 exit_filled_via_limit = False
                 if exit_limit_offset_pct > 0:
                     # Use proper high/low validation
-                    is_long_side = (side == "long")
-                    limit_px = get_limit_price_for_order(cc, exit_limit_offset_bps, is_long_side, hh, ll)
+                    is_long_side = side == "long"
+                    limit_px = get_limit_price_for_order(
+                        cc, exit_limit_offset_bps, is_long_side, hh, ll
+                    )
                     # Note: cc is used as open_price here since this is triggered mid/end bar without gap semantics for limit
-                    did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, cc)
+                    did_fill, actual_exit_px = check_limit_order_fill(
+                        limit_px, is_long_side, hh, ll, cc
+                    )
                     if did_fill:
                         exit_price = actual_exit_px
                         exit_filled_via_limit = True
 
-                ret = (exit_price / entry_px) - 1.0 if side == "long" else (entry_px / exit_price) - 1.0
+                ret = (
+                    (exit_price / entry_px) - 1.0
+                    if side == "long"
+                    else (entry_px / exit_price) - 1.0
+                )
                 extras = {
                     "mae_pct": mae_frac,
                     "mfe_pct": mfe_frac,
@@ -575,18 +654,18 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
 
         # Check stop-loss / trailing-stop hit
         # Use proper gap execution semantics
-        is_long_side = (side == "long")
+        is_long_side = side == "long"
         # open_price for gap check is current bar open (o_data isn't passed for some reason, we assume o_s exists)
         # Wait, o_data is o_s but we need to index it
         # The loop has o_s but we didn't index it. Let's fix that.
-        oo = o_s.loc[ts] if ts in o_s.index else cc # fallback
+        oo = o_s.loc[ts] if ts in o_s.index else cc  # fallback
 
         hit_sl, stop_fill_price = resolve_stop_fill(
             open_price=oo,
             high_price=hh,
             low_price=ll,
             stop_price=sl_price,
-            is_long=is_long_side
+            is_long=is_long_side,
         )
 
         if hit_sl:
@@ -596,13 +675,21 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
             exit_filled_via_limit = False
             if exit_limit_offset_pct > 0:
                 # Use proper high/low validation
-                limit_px = get_limit_price_for_order(stop_fill_price, exit_limit_offset_bps, is_long_side, hh, ll)
-                did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, stop_fill_price)
+                limit_px = get_limit_price_for_order(
+                    stop_fill_price, exit_limit_offset_bps, is_long_side, hh, ll
+                )
+                did_fill, actual_exit_px = check_limit_order_fill(
+                    limit_px, is_long_side, hh, ll, stop_fill_price
+                )
                 if did_fill:
                     exit_price = actual_exit_px
                     exit_filled_via_limit = True
-            
-            ret = (exit_price / entry_px) - 1.0 if side == "long" else (entry_px / exit_price) - 1.0
+
+            ret = (
+                (exit_price / entry_px) - 1.0
+                if side == "long"
+                else (entry_px / exit_price) - 1.0
+            )
             if exit_stage >= 1:
                 reason = ExitReason.TRAILING_STOP.value
             else:
@@ -625,19 +712,23 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     # Time exit
     last_ts = path[-1]
     last_close = c_data.loc[last_ts]
-    
+
     # Apply exit limit padding
     exit_price = last_close
     exit_filled_via_limit = False
     if exit_limit_offset_pct > 0:
         # Use proper high/low validation
-        is_long_side = (side == "long")
-        limit_px = get_limit_price_for_order(last_close, exit_limit_offset_bps, is_long_side, hh, ll)
-        did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, last_close)
+        is_long_side = side == "long"
+        limit_px = get_limit_price_for_order(
+            last_close, exit_limit_offset_bps, is_long_side, hh, ll
+        )
+        did_fill, actual_exit_px = check_limit_order_fill(
+            limit_px, is_long_side, hh, ll, last_close
+        )
         if did_fill:
             exit_price = actual_exit_px
             exit_filled_via_limit = True
-            
+
     extras = {
         "mae_pct": mae_px / entry_px,
         "mfe_pct": mfe_px / entry_px,
@@ -652,10 +743,19 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         "exit_limit_bonus": abs(exit_price - last_close) / entry_px,
     }
     if side == "long":
-        return (exit_price / entry_px) - 1.0, last_ts, ExitReason.TIME_EXIT.value, extras
+        return (
+            (exit_price / entry_px) - 1.0,
+            last_ts,
+            ExitReason.TIME_EXIT.value,
+            extras,
+        )
     else:
-        return (entry_px / exit_price) - 1.0, last_ts, ExitReason.TIME_EXIT.value, extras
-
+        return (
+            (entry_px / exit_price) - 1.0,
+            last_ts,
+            ExitReason.TIME_EXIT.value,
+            extras,
+        )
 
 
 def _robust_norm(val, center, scale, eps=1e-12):
@@ -678,28 +778,46 @@ def _calculate_disagreement_features(meta_data, h_preds, kind_name):
         for i in range(len(preds)):
             for j in range(i + 1, len(preds)):
                 pair_terms.append(np.abs(preds[i] - preds[j]))
-        pair_abs = np.mean(np.vstack(pair_terms), axis=0) if pair_terms else np.zeros(len(stack), dtype=np.float32)
+        pair_abs = (
+            np.mean(np.vstack(pair_terms), axis=0)
+            if pair_terms
+            else np.zeros(len(stack), dtype=np.float32)
+        )
         vote_p = (stack > 0.5).mean(axis=1).astype(np.float32)
         meta_data[f"disagree_{kind_name}_std"] = np.std(stack, axis=1, dtype=np.float32)
-        meta_data[f"disagree_{kind_name}_range"] = np.max(stack, axis=1) - np.min(stack, axis=1)
+        meta_data[f"disagree_{kind_name}_range"] = np.max(stack, axis=1) - np.min(
+            stack, axis=1
+        )
         meta_data[f"disagree_{kind_name}_pair_abs"] = pair_abs
         meta_data[f"disagree_{kind_name}_vote_mix"] = 4.0 * vote_p * (1.0 - vote_p)
         return pair_abs
     return None
 
-def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h_preds, tf_h_preds, cfg=None):
+
+def _meta_predict_or_fallback(
+    meta_model, p_alpha, grp_df, label, side_key, mr_h_preds, tf_h_preds, cfg=None
+):
     """Predict with meta model; disable signals entirely if meta output is unavailable.
 
     Uses optimized prediction pipeline when available.
+
+    Returns (s, fallback_mask, X_all) where X_all is the pre-reindex feature
+    DataFrame (or None on error).  X_all can be reused to compute uncertainty
+    features from secondary meta model variants without re-preparing features.
     """
     if meta_model is None:
         tprint(f"  Meta {side_key}_{label}: DISABLED — no meta model available")
-        return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
+        return (
+            np.full(len(p_alpha), np.nan, dtype=np.float64),
+            np.ones(len(p_alpha), dtype=bool),
+            None,
+        )
 
     # Use optimized meta prediction if available
     if _USE_OPTIMIZED_PREDICTIONS:
         try:
             import traceback
+
             meta_combiner = OptimizedMetaCombiner(use_numba=True)
             # Use adaptive batching for optimal performance
             batch_predictor = BatchPredictor(batch_size=None, adaptive_batching=True)
@@ -710,23 +828,36 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
             )
 
             # Check feature coverage
+            X_all = X_meta
             if meta_model.selected_features:
                 available = set(X_meta.columns)
                 # Convert selected_features to list if it's not already
-                selected_features_list = list(meta_model.selected_features) if not isinstance(meta_model.selected_features, list) else meta_model.selected_features
+                selected_features_list = (
+                    list(meta_model.selected_features)
+                    if not isinstance(meta_model.selected_features, list)
+                    else meta_model.selected_features
+                )
                 selected = set(selected_features_list)
                 coverage = len(selected & available) / len(selected)
 
                 if coverage < 0.8:  # Require 80% coverage
-                    tprint(f"  Meta {side_key}_{label}: DISABLED — feature coverage {coverage:.0%} "
-                           f"({len(selected - available)} missing of {len(selected)})")
-                    return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
+                    tprint(
+                        f"  Meta {side_key}_{label}: DISABLED — feature coverage {coverage:.0%} "
+                        f"({len(selected - available)} missing of {len(selected)})"
+                    )
+                    return (
+                        np.full(len(p_alpha), np.nan, dtype=np.float64),
+                        np.ones(len(p_alpha), dtype=bool),
+                        None,
+                    )
 
                 # Fill missing features with 0
                 missing = selected - available
                 if missing:
-                    tprint(f"  Meta {side_key}_{label}: {len(missing)} features missing "
-                           f"(coverage {coverage:.0%}), filling with 0")
+                    tprint(
+                        f"  Meta {side_key}_{label}: {len(missing)} features missing "
+                        f"(coverage {coverage:.0%}), filling with 0"
+                    )
                 X_meta = X_meta.reindex(columns=selected_features_list, fill_value=0.0)
 
             # Get features for prediction
@@ -741,24 +872,36 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
             # Batch prediction
             if hasattr(meta_model, "predict_proba"):
                 # For probabilistic models, use batch prediction
-                probs = batch_predictor.predict_batched(meta_model, X_pred, predict_proba=True, keep_dataframe=True)
+                probs = batch_predictor.predict_batched(
+                    meta_model, X_pred, predict_proba=True, keep_dataframe=True
+                )
                 # Class 2 is TP, Class 0 is SL. Score by EV proxy.
                 if probs.ndim == 2 and probs.shape[1] >= 3:
                     s = probs[:, 2] * 2.0 - probs[:, 0] * 1.0
                 else:
                     s = probs[:, 1] if probs.ndim == 2 else probs
             else:
-                s = batch_predictor.predict_batched(meta_model, X_pred, keep_dataframe=True)
+                s = batch_predictor.predict_batched(
+                    meta_model, X_pred, keep_dataframe=True
+                )
 
             # Variance gate: only check on large batches (>=10 symbols)
             if len(s) >= 10 and np.std(s) < 1e-6:
-                tprint(f"  Meta {side_key}_{label}: DISABLED — prediction std={np.std(s):.2e} (degenerate, n={len(s)})")
-                return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
+                tprint(
+                    f"  Meta {side_key}_{label}: DISABLED — prediction std={np.std(s):.2e} (degenerate, n={len(s)})"
+                )
+                return (
+                    np.full(len(p_alpha), np.nan, dtype=np.float64),
+                    np.ones(len(p_alpha), dtype=bool),
+                    None,
+                )
 
-            return s, np.zeros(len(p_alpha), dtype=bool)
+            return s, np.zeros(len(p_alpha), dtype=bool), X_all
 
         except Exception as e:
-            tprint(f"WARNING: Optimized meta prediction failed, falling back to legacy: {e}")
+            tprint(
+                f"WARNING: Optimized meta prediction failed, falling back to legacy: {e}"
+            )
             tprint(f"Traceback: {traceback.format_exc()}")
             # Fall through to legacy implementation
 
@@ -772,6 +915,7 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
     # REPLICATE training.py derived feature logic
     # 1. Per-horizon logit features
     from scipy.special import logit as _logit_fn
+
     _logit_parts = []
     for h in CANON_HORIZONS:
         # Collect from both h_preds sets
@@ -812,8 +956,18 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
     # 5. Core Interaction features (must match training.py:4246)
     if "pred_logit" in X_meta.columns:
         pl = X_meta["pred_logit"].values
-        for interact_feat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct",
-                              "trend_t", "trend_z_t", "spike_score", "grind_score", "chop_score"]:
+        for interact_feat in [
+            "vol_z",
+            "mkt_rv_ratio",
+            "ambig",
+            "exh_qual",
+            "trend_pct",
+            "trend_t",
+            "trend_z_t",
+            "spike_score",
+            "grind_score",
+            "chop_score",
+        ]:
             if interact_feat in X_meta.columns:
                 X_meta[f"pred_x_{interact_feat}"] = pl * X_meta[interact_feat].values
 
@@ -853,15 +1007,17 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
                 # If no stable boundaries, fallback to dynamic cross-sectional terciles
                 if terciles is None and valid_mask.sum() > 5:
                     try:
-                        terciles = np.nanpercentile(vals[valid_mask], [33.3, 66.7]).tolist()
+                        terciles = np.nanpercentile(
+                            vals[valid_mask], [33.3, 66.7]
+                        ).tolist()
                     except Exception:
                         terciles = None
 
                 if terciles:
                     # Apply thresholds
-                    mask0 = (vals <= terciles[0])
+                    mask0 = vals <= terciles[0]
                     mask1 = (vals > terciles[0]) & (vals < terciles[1])
-                    mask2 = (vals >= terciles[1])
+                    mask2 = vals >= terciles[1]
 
                     X_meta[f"pred_x_{rname}_0"] = pl * mask0.astype(float)
                     X_meta[f"pred_x_{rname}_1"] = pl * mask1.astype(float)
@@ -869,7 +1025,9 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
 
                     # Also store raw regime buckets (0, 1, 2) for agreement features
                     # mapping: Low=0, Mid=1, High=2
-                    grp_df[f"__regime_{rname}__"] = (mask1.astype(int) + 2 * mask2.astype(int)).astype(float)
+                    grp_df[f"__regime_{rname}__"] = (
+                        mask1.astype(int) + 2 * mask2.astype(int)
+                    ).astype(float)
                 elif valid_mask.sum() > 0:
                     # Sparse data and no boundaries: fallback to mid-bucket (1)
                     X_meta[f"pred_x_{rname}_1"] = pl * valid_mask.astype(float)
@@ -880,20 +1038,28 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
             ts48 = grp_df["trend_slope_48h"].values
             ts120 = grp_df["trend_slope_120h"].values
             X_meta["trend_slope_ratio_48_120"] = np.where(
-                np.abs(ts120) > 1e-9, ts48 / np.clip(np.abs(ts120), 1e-9, None), 0.0).astype(np.float32)
+                np.abs(ts120) > 1e-9, ts48 / np.clip(np.abs(ts120), 1e-9, None), 0.0
+            ).astype(np.float32)
 
-        if "__regime_vol_12h__" in grp_df.columns and "__regime_vol_48h__" in grp_df.columns:
+        if (
+            "__regime_vol_12h__" in grp_df.columns
+            and "__regime_vol_48h__" in grp_df.columns
+        ):
             v12 = grp_df["__regime_vol_12h__"].values
             v48 = grp_df["__regime_vol_48h__"].values
             X_meta["vol_regime_agree"] = (v12 == v48).astype(np.float32)
             X_meta["vol_regime_diff"] = (v12 - v48).astype(np.float32)
 
-        if "__regime_trend_12h__" in grp_df.columns and "__regime_trend_48h__" in grp_df.columns:
+        if (
+            "__regime_trend_12h__" in grp_df.columns
+            and "__regime_trend_48h__" in grp_df.columns
+        ):
             t12 = grp_df["__regime_trend_12h__"].values
             t48 = grp_df["__regime_trend_48h__"].values
             X_meta["trend_regime_agree"] = (t12 == t48).astype(np.float32)
             X_meta["trend_regime_diff"] = (t12 - t48).astype(np.float32)
 
+    X_all_legacy = X_meta
     if meta_model.selected_features:
         available = set(X_meta.columns)
         selected = set(meta_model.selected_features)
@@ -901,15 +1067,25 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
         missing = selected - available
         coverage = len(present) / max(len(selected), 1)
         if coverage < 1.0:
-            tprint(f"  Meta {side_key}_{label}: DISABLED — feature coverage {coverage:.0%} "
-                   f"({len(missing)} missing of {len(selected)})")
+            tprint(
+                f"  Meta {side_key}_{label}: DISABLED — feature coverage {coverage:.0%} "
+                f"({len(missing)} missing of {len(selected)})"
+            )
             if missing:
                 missing_list = sorted(list(missing))
-                tprint(f"    Missing keys: {missing_list[:10]} {'...' if len(missing_list) > 10 else ''}")
-            return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
+                tprint(
+                    f"    Missing keys: {missing_list[:10]} {'...' if len(missing_list) > 10 else ''}"
+                )
+            return (
+                np.full(len(p_alpha), np.nan, dtype=np.float64),
+                np.ones(len(p_alpha), dtype=bool),
+                None,
+            )
         if missing:
-            tprint(f"  Meta {side_key}_{label}: {len(missing)} features missing "
-                   f"(coverage {coverage:.0%}), filling with 0")
+            tprint(
+                f"  Meta {side_key}_{label}: {len(missing)} features missing "
+                f"(coverage {coverage:.0%}), filling with 0"
+            )
         X_meta = X_meta.reindex(columns=meta_model.selected_features, fill_value=0.0)
 
     if hasattr(meta_model, "predict_proba"):
@@ -924,12 +1100,26 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
     # The _center_scale degenerate guard in pipeline_steps.py
     # already protects against systematic degeneracy.
     if len(s) >= 10 and np.std(s) < 1e-6:
-        tprint(f"  Meta {side_key}_{label}: DISABLED — prediction std={np.std(s):.2e} (degenerate, n={len(s)})")
-        return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
-    return s, np.zeros(len(p_alpha), dtype=bool)
+        tprint(
+            f"  Meta {side_key}_{label}: DISABLED — prediction std={np.std(s):.2e} (degenerate, n={len(s)})"
+        )
+        return (
+            np.full(len(p_alpha), np.nan, dtype=np.float64),
+            np.ones(len(p_alpha), dtype=bool),
+            None,
+        )
+    return s, np.zeros(len(p_alpha), dtype=bool), X_all_legacy
 
 
-def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_positions_syms, tradeable_candidates=None):
+def _build_side_score_df(
+    ts_sig,
+    feats,
+    mkt_gates,
+    model_bundle,
+    cfg,
+    current_positions_syms,
+    tradeable_candidates=None,
+):
     _dbg = bool(cfg.get("debug_signal_generation", False))
     if ts_sig not in mkt_gates.index:
         if _dbg:
@@ -1019,7 +1209,11 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                         ts_alt = pd.Timestamp(ts_sig, tz=idx_tz)
                         if ts_alt in idx:
                             resolved = ts_alt
-                    elif idx_tz is not None and ts_tz is not None and str(idx_tz) != str(ts_sig.tz):
+                    elif (
+                        idx_tz is not None
+                        and ts_tz is not None
+                        and str(idx_tz) != str(ts_sig.tz)
+                    ):
                         ts_alt = ts_sig.tz_convert(idx_tz)
                         if ts_alt in idx:
                             resolved = ts_alt
@@ -1027,6 +1221,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                     resolved = None
         _feat_ts_cache[key] = resolved
         return resolved
+
     valid_symbols = []
     for sym in candidates:
         if trend_map.get(sym, 0) == 0:
@@ -1049,12 +1244,26 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
     bundle_feature_keys |= set(cfg.get("mr_meta_feature_keys", []))
     bundle_feature_keys |= set(cfg.get("tf_meta_feature_keys", []))
     bundle_feature_keys |= {
-        "rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base",
-        "vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct", "trend_t",
-        "trend_z_t", "spike_score", "grind_score", "chop_score",
+        "rv_12h",
+        "rv_24h",
+        "vol_z_base",
+        "vol_z24_base",
+        "ret6h",
+        "trend_pct_base",
+        "vol_z",
+        "mkt_rv_ratio",
+        "ambig",
+        "exh_qual",
+        "trend_pct",
+        "trend_t",
+        "trend_z_t",
+        "spike_score",
+        "grind_score",
+        "chop_score",
     }
     bundle_feature_keys |= {
-        str(c) for c in cfg.get("position_sizer_regime_feature_keys", [])
+        str(c)
+        for c in cfg.get("position_sizer_regime_feature_keys", [])
         if isinstance(c, str) and c
     }
     for side_key in ["long", "short"]:
@@ -1079,7 +1288,9 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
     base_df["mkt_rv"] = float(mrk["mkt_rv"])
     base_df["G_VOL"] = int(mrk["G_VOL"])
     base_df["G_TREND"] = int(mrk["G_TREND"])
-    base_df["trend_dir"] = pd.Series({sym: int(trend_map[sym]) for sym in valid_symbols}, dtype=np.int8)
+    base_df["trend_dir"] = pd.Series(
+        {sym: int(trend_map[sym]) for sym in valid_symbols}, dtype=np.int8
+    )
 
     base_df["p_exh_lag1"] = 0.5
 
@@ -1112,7 +1323,15 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
     )
     if df_all.empty:
         if _dbg:
-            _ex_summary = ",".join(f"{k}:{v}" for k, v in sorted(row_exceptions.items(), key=lambda kv: kv[1], reverse=True)[:3]) or "none"
+            _ex_summary = (
+                ",".join(
+                    f"{k}:{v}"
+                    for k, v in sorted(
+                        row_exceptions.items(), key=lambda kv: kv[1], reverse=True
+                    )[:3]
+                )
+                or "none"
+            )
             tprint(
                 f"    SideScoreDiag ts={ts_sig} drop=no_rows "
                 f"cand_post_pos={cand_post_pos} trend_cov={trend_cov} "
@@ -1122,7 +1341,15 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
         return pd.DataFrame()
 
     if _dbg:
-        _ex_summary = ",".join(f"{k}:{v}" for k, v in sorted(row_exceptions.items(), key=lambda kv: kv[1], reverse=True)[:2]) or "none"
+        _ex_summary = (
+            ",".join(
+                f"{k}:{v}"
+                for k, v in sorted(
+                    row_exceptions.items(), key=lambda kv: kv[1], reverse=True
+                )[:2]
+            )
+            or "none"
+        )
         tprint(
             f"    SideScoreDiag ts={ts_sig} ok "
             f"seed={cand_seed} from_extremes={cand_from_extremes} "
@@ -1151,10 +1378,10 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
     else:
         for i in range(4):
             df_all[f"spike_prob_{i}"] = 0.0
-    
+
     # Specialist Models: Trap (quality filter) and Gamma (volatility prediction)
     specialist_models = model_bundle.get("specialist_models", {})
-    
+
     # Trap Specialist: Quality Score
     trap_model = specialist_models.get("trap_model") if specialist_models else None
     if trap_model:
@@ -1165,7 +1392,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
             X_trap_scaled = trap_model["scaler"].transform(X_trap)
             trap_probs = trap_model["gmm"].predict_proba(X_trap_scaled)
             cluster_order = trap_model["cluster_order"]
-            
+
             # Quality Score = Weighted sum (0=Trap, 3=Premium)
             quality_weights = np.array([0.0, 0.33, 0.67, 1.0])
             quality_score = trap_probs @ quality_weights[cluster_order]
@@ -1174,14 +1401,15 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
             df_all["trap_quality"] = 1.0  # Default to accepting all signals
     else:
         df_all["trap_quality"] = 1.0
-    
+
     # Gamma Specialist: Volatility Regime (GMM-based)
     gamma_model = specialist_models.get("gamma_model") if specialist_models else None
     if gamma_model is not None:
         # Check if it's the new GMM model or old regression model
-        if hasattr(gamma_model, 'score_samples'):
+        if hasattr(gamma_model, "score_samples"):
             # New GMM-based gamma model
             from extreme_price_movements.gamma_specialist import GAMMA_FEATURE_KEYS
+
             gamma_cols = GAMMA_FEATURE_KEYS
             available_gamma_cols = [c for c in gamma_cols if c in df_all.columns]
             if available_gamma_cols:
@@ -1191,14 +1419,19 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                     gamma_scores = gamma_model.score_samples(X_gamma)
                     df_all["gamma_vol_regime_score"] = gamma_scores
                     # Keep backward compatibility
-                    df_all["predicted_vol_6h"] = 1.0 + gamma_scores  # Higher = more volatile
+                    df_all["predicted_vol_6h"] = (
+                        1.0 + gamma_scores
+                    )  # Higher = more volatile
                 except Exception:
                     df_all["predicted_vol_6h"] = 1.0
                     df_all["gamma_vol_regime_score"] = 0.5
             else:
                 df_all["predicted_vol_6h"] = 1.0
                 df_all["gamma_vol_regime_score"] = 0.5
-        elif hasattr(gamma_model, 'selected_features_') and gamma_model.selected_features_:
+        elif (
+            hasattr(gamma_model, "selected_features_")
+            and gamma_model.selected_features_
+        ):
             # Old ExtraTrees-based gamma model (backward compatibility)
             gamma_cols = gamma_model.selected_features_
             available_gamma_cols = [c for c in gamma_cols if c in df_all.columns]
@@ -1206,7 +1439,9 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                 X_gamma = df_all[gamma_cols].fillna(0.0)
                 predicted_vol = gamma_model.predict(X_gamma)
                 df_all["predicted_vol_6h"] = predicted_vol
-                df_all["gamma_vol_regime_score"] = np.clip(predicted_vol / 0.05, 0, 1)  # Approximate
+                df_all["gamma_vol_regime_score"] = np.clip(
+                    predicted_vol / 0.05, 0, 1
+                )  # Approximate
             else:
                 df_all["predicted_vol_6h"] = 1.0
                 df_all["gamma_vol_regime_score"] = 0.5
@@ -1218,7 +1453,11 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
         df_all["gamma_vol_regime_score"] = 0.5
 
     score_rows = []
-    _ps_runtime_cols = [str(c) for c in cfg.get("position_sizer_regime_feature_keys", []) if isinstance(c, str) and c]
+    _ps_runtime_cols = [
+        str(c)
+        for c in cfg.get("position_sizer_regime_feature_keys", [])
+        if isinstance(c, str) and c
+    ]
     for side_key, grp in df_all.groupby("side_key"):
         m_bundle = alpha_models.get(side_key)
         if not m_bundle or not m_bundle.get("mr") or not m_bundle.get("tf"):
@@ -1249,11 +1488,15 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
             for _h, _hi in mr_by_h.items():
                 _m = _hi["model"]
                 _fc = _hi.get("feat_cols", fcols_mr)
-                _X = grp_mr.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
+                _X = (
+                    grp_mr.reindex(columns=_fc, fill_value=0.0)
+                    .fillna(0.0)
+                    .astype(np.float32)
+                )
                 _p = _m.predict(_X)
                 mr_preds_list.append(_p)
                 mr_h_preds[f"pred_mr_H{_h}"] = _p
-                mr_h_preds[f"pred_H{_h}"] = _p # Also generic name for meta-compat
+                mr_h_preds[f"pred_H{_h}"] = _p  # Also generic name for meta-compat
                 if hasattr(_m, "predict_tree_uncertainty_features"):
                     try:
                         _u = _m.predict_tree_uncertainty_features(_X)
@@ -1265,11 +1508,17 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                             mr_h_preds[f"base_H{_h}_{_uk}"] = _vals
                     except Exception:
                         pass
-            p_mr = np.mean(mr_preds_list, axis=0) if mr_preds_list else np.zeros(len(grp))
+            p_mr = (
+                np.mean(mr_preds_list, axis=0) if mr_preds_list else np.zeros(len(grp))
+            )
         else:
-            X_mr_pred = grp_mr.reindex(columns=fcols_mr, fill_value=0.0).fillna(0.0).astype(np.float32)
+            X_mr_pred = (
+                grp_mr.reindex(columns=fcols_mr, fill_value=0.0)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
             p_mr = model_mr.predict(X_mr_pred)
-            mr_h_preds["pred_mr_H2"] = p_mr # Minimal fallback
+            mr_h_preds["pred_mr_H2"] = p_mr  # Minimal fallback
 
         # Multi-horizon TF prediction
         if tf_by_h:
@@ -1277,12 +1526,16 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
             for _h, _hi in tf_by_h.items():
                 _m = _hi["model"]
                 _fc = _hi.get("feat_cols", fcols_tf)
-                _X = grp_tf.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
+                _X = (
+                    grp_tf.reindex(columns=_fc, fill_value=0.0)
+                    .fillna(0.0)
+                    .astype(np.float32)
+                )
                 _p = _m.predict(_X)
                 tf_preds_list.append(_p)
                 tf_h_preds[f"pred_tf_H{_h}"] = _p
-                if f"pred_H{_h}" not in mr_h_preds: # avoid collision
-                     tf_h_preds[f"pred_H{_h}"] = _p
+                if f"pred_H{_h}" not in mr_h_preds:  # avoid collision
+                    tf_h_preds[f"pred_H{_h}"] = _p
                 if hasattr(_m, "predict_tree_uncertainty_features"):
                     try:
                         _u = _m.predict_tree_uncertainty_features(_X)
@@ -1297,11 +1550,17 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                             tf_h_preds[f"base_H{_h}_{_uk}"] = _vals
                     except Exception:
                         pass
-            p_tf = np.mean(tf_preds_list, axis=0) if tf_preds_list else np.zeros(len(grp))
+            p_tf = (
+                np.mean(tf_preds_list, axis=0) if tf_preds_list else np.zeros(len(grp))
+            )
         else:
-            X_tf_pred = grp_tf.reindex(columns=fcols_tf, fill_value=0.0).fillna(0.0).astype(np.float32)
+            X_tf_pred = (
+                grp_tf.reindex(columns=fcols_tf, fill_value=0.0)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
             p_tf = model_tf.predict(X_tf_pred)
-            tf_h_preds["pred_tf_H2"] = p_tf # Minimal fallback
+            tf_h_preds["pred_tf_H2"] = p_tf  # Minimal fallback
 
         # Accept legacy and current meta head key naming.
         _mr_meta_keys = [
@@ -1320,12 +1579,149 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
             f"{side_key}_tf_mae_q70",
             f"{side_key}_tf_mfe",
         ]
-        meta_mr = next((meta_models.get(_k) for _k in _mr_meta_keys if meta_models.get(_k) is not None), None)
-        meta_tf = next((meta_models.get(_k) for _k in _tf_meta_keys if meta_models.get(_k) is not None), None)
+        meta_mr = next(
+            (
+                meta_models.get(_k)
+                for _k in _mr_meta_keys
+                if meta_models.get(_k) is not None
+            ),
+            None,
+        )
+        meta_tf = next(
+            (
+                meta_models.get(_k)
+                for _k in _tf_meta_keys
+                if meta_models.get(_k) is not None
+            ),
+            None,
+        )
 
+        s_mr, fb_mr, X_all_mr = _meta_predict_or_fallback(
+            meta_mr, p_mr, grp, "mr", side_key, mr_h_preds, tf_h_preds, cfg=cfg
+        )
+        s_tf, fb_tf, X_all_tf = _meta_predict_or_fallback(
+            meta_tf, p_tf, grp, "tf", side_key, mr_h_preds, tf_h_preds, cfg=cfg
+        )
 
-        s_mr, fb_mr = _meta_predict_or_fallback(meta_mr, p_mr, grp, "mr", side_key, mr_h_preds, tf_h_preds, cfg=cfg)
-        s_tf, fb_tf = _meta_predict_or_fallback(meta_tf, p_tf, grp, "tf", side_key, mr_h_preds, tf_h_preds, cfg=cfg)
+        # ── Meta-model uncertainty features for position sizer ──────────
+        _n_grp = len(grp)
+
+        def _safe_unc(mm, X):
+            if mm is None or X is None:
+                return {}
+            try:
+                return mm.predict_uncertainty_features(X)
+            except Exception:
+                return {}
+
+        def _safe_pred(mm, X):
+            if mm is None or X is None or not getattr(mm, "selected_features", None):
+                return None
+            try:
+                Xs = X[mm.selected_features].fillna(0.0).replace([np.inf, -np.inf], 0.0)
+                if hasattr(mm, "predict_proba"):
+                    return np.asarray(mm.predict_proba(Xs), dtype=np.float64).reshape(
+                        -1
+                    )
+                else:
+                    return np.asarray(mm.predict(Xs), dtype=np.float64).reshape(-1)
+            except Exception:
+                return None
+
+        _mr_clf = meta_models.get(f"{side_key}_mr_clf")
+        _mr_reg = meta_models.get(f"{side_key}_mr_reg")
+        _tf_clf = meta_models.get(f"{side_key}_tf_clf")
+        _tf_reg = meta_models.get(f"{side_key}_tf_reg")
+
+        _unc_mr_clf = _safe_unc(_mr_clf, X_all_mr)
+        _unc_mr_reg = _safe_unc(_mr_reg, X_all_mr)
+        _unc_tf_clf = _safe_unc(_tf_clf, X_all_tf)
+        _unc_tf_reg = _safe_unc(_tf_reg, X_all_tf)
+
+        _mr_is_clf = hasattr(meta_mr, "predict_proba") if meta_mr is not None else False
+        _tf_is_clf = hasattr(meta_tf, "predict_proba") if meta_tf is not None else False
+        _pred_mr_clf = s_mr if _mr_is_clf else _safe_pred(_mr_clf, X_all_mr)
+        _pred_mr_reg = s_mr if not _mr_is_clf else _safe_pred(_mr_reg, X_all_mr)
+        _pred_tf_clf = s_tf if _tf_is_clf else _safe_pred(_tf_clf, X_all_tf)
+        _pred_tf_reg = s_tf if not _tf_is_clf else _safe_pred(_tf_reg, X_all_tf)
+
+        def _ext(unc, key):
+            v = unc.get(key)
+            if v is not None and len(v) == _n_grp:
+                return v
+            return np.full(_n_grp, np.nan, dtype=np.float32)
+
+        def _aor(a):
+            if a is not None and len(a) == _n_grp:
+                return np.asarray(a, dtype=np.float64)
+            return np.full(_n_grp, np.nan, dtype=np.float64)
+
+        _meta_unc_arrays = {}
+        for _pfx, _pclf, _preg, _uclf, _ureg in [
+            ("mr", _pred_mr_clf, _pred_mr_reg, _unc_mr_clf, _unc_mr_reg),
+            ("tf", _pred_tf_clf, _pred_tf_reg, _unc_tf_clf, _unc_tf_reg),
+        ]:
+            _reg = _aor(_preg)
+            _clf_prob = _aor(_pclf)
+            _clf_c = _clf_prob - 0.5
+            _clf_pfx = _ext(_uclf, "prefix_std")
+            _reg_pfx = _ext(_ureg, "prefix_std")
+            _clf_sup = _ext(_uclf, "leaf_support_q25")
+            _reg_sup = _ext(_ureg, "leaf_support_q25")
+            _clf_iqr = _ext(_uclf, "leaf_target_iqr_mean")
+            _reg_iqr = _ext(_ureg, "leaf_target_iqr_mean")
+
+            _p = np.clip(_clf_prob, 1e-7, 1 - 1e-7)
+            _meta_unc_arrays[f"{_pfx}_clf_center"] = _clf_c.astype(np.float32)
+            _meta_unc_arrays[f"{_pfx}_clf_entropy"] = (
+                -(_p * np.log(_p) + (1 - _p) * np.log(1 - _p))
+            ).astype(np.float32)
+            _meta_unc_arrays[f"{_pfx}_reg_pred"] = _reg.astype(np.float32)
+            _meta_unc_arrays[f"{_pfx}_clf_prefix_std"] = _clf_pfx
+            _meta_unc_arrays[f"{_pfx}_reg_prefix_std"] = _reg_pfx
+            _meta_unc_arrays[f"{_pfx}_clf_leaf_support_q25"] = _clf_sup
+            _meta_unc_arrays[f"{_pfx}_reg_leaf_support_q25"] = _reg_sup
+            _meta_unc_arrays[f"{_pfx}_clf_leaf_target_iqr_mean"] = _clf_iqr
+            _meta_unc_arrays[f"{_pfx}_reg_leaf_target_iqr_mean"] = _reg_iqr
+
+            _meta_unc_arrays[f"{_pfx}_sign_agree"] = (
+                np.sign(_reg) * np.sign(_clf_c)
+            ).astype(np.float32)
+            _meta_unc_arrays[f"{_pfx}_joint_confidence"] = (
+                np.abs(_reg) * np.abs(_clf_c)
+            ).astype(np.float32)
+            _reg_z = (_reg - np.nanmean(_reg)) / (np.nanstd(_reg) + 1e-9)
+            _clf_z = (_clf_c - np.nanmean(_clf_c)) / (np.nanstd(_clf_c) + 1e-9)
+            _min_z = np.minimum(np.abs(_reg_z), np.abs(_clf_z))
+            _sum_z = np.abs(_reg_z) + np.abs(_clf_z) + 1e-9
+            _meta_unc_arrays[f"{_pfx}_conflict_score"] = (
+                1.0 - np.sign(_reg) * np.sign(_clf_c) * (2.0 * _min_z / _sum_z)
+            ).astype(np.float32)
+
+            _pfx_clf_f = np.where(np.isfinite(_clf_pfx), _clf_pfx, 0.0)
+            _pfx_reg_f = np.where(np.isfinite(_reg_pfx), _reg_pfx, 0.0)
+            _meta_unc_arrays[f"{_pfx}_joint_instability"] = (
+                0.5 * _pfx_clf_f + 0.5 * _pfx_reg_f
+            ).astype(np.float32)
+            _meta_unc_arrays[f"{_pfx}_edge_unc_pen"] = (
+                _reg / (1.0 + _pfx_reg_f + _pfx_clf_f + 1e-12)
+            ).astype(np.float32)
+
+            _min_sup = np.minimum(
+                np.where(np.isfinite(_clf_sup), _clf_sup, 0.0),
+                np.where(np.isfinite(_reg_sup), _reg_sup, 0.0),
+            )
+            _sup_sc = np.clip(np.log1p(_min_sup) / 5.0, 0.0, 1.0).astype(np.float32)
+            _meta_unc_arrays[f"{_pfx}_edge_support_pen"] = (_reg * _sup_sc).astype(
+                np.float32
+            )
+
+            _jn = 0.5 * np.where(np.isfinite(_clf_iqr), _clf_iqr, 0.0) + 0.5 * np.where(
+                np.isfinite(_reg_iqr), _reg_iqr, 0.0
+            )
+            _meta_unc_arrays[f"{_pfx}_edge_noise_pen"] = (
+                _reg / (1.0 + 10.0 * _jn + 1e-12)
+            ).astype(np.float32)
 
         meta_disabled_rows = 0
         for i, idx in enumerate(grp.index):
@@ -1351,8 +1747,19 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
             for _name, _vals in tf_h_preds.items():
                 if i < len(_vals):
                     _row[_name] = float(_vals[i])
-            _mr_h_vals = [float(v[i]) for _, v in sorted(mr_h_preds.items()) if _.startswith("pred_mr_H") and i < len(v)]
-            _tf_h_vals = [float(v[i]) for _, v in sorted(tf_h_preds.items()) if _.startswith("pred_tf_H") and i < len(v)]
+            for _uk, _uv in _meta_unc_arrays.items():
+                if i < len(_uv):
+                    _row[_uk] = float(_uv[i])
+            _mr_h_vals = [
+                float(v[i])
+                for _, v in sorted(mr_h_preds.items())
+                if _.startswith("pred_mr_H") and i < len(v)
+            ]
+            _tf_h_vals = [
+                float(v[i])
+                for _, v in sorted(tf_h_preds.items())
+                if _.startswith("pred_tf_H") and i < len(v)
+            ]
             if _mr_h_vals:
                 _row["reg_mr_mean"] = float(np.mean(_mr_h_vals))
                 _row["reg_mr_std"] = float(np.std(_mr_h_vals))
@@ -1370,12 +1777,18 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                     continue
                 try:
                     _val = grp.loc[idx, _cn]
-                    if isinstance(_val, (bool, int, float, np.integer, np.floating)) and np.isfinite(float(_val)):
+                    if isinstance(
+                        _val, (bool, int, float, np.integer, np.floating)
+                    ) and np.isfinite(float(_val)):
                         _row[_cn] = float(_val)
                 except Exception:
                     continue
             # Also include meta features that might be needed downstream
-            meta_cols = set(cfg.get("meta_feature_keys", [])) | set(cfg.get("mr_meta_feature_keys", [])) | set(cfg.get("tf_meta_feature_keys", []))
+            meta_cols = (
+                set(cfg.get("meta_feature_keys", []))
+                | set(cfg.get("mr_meta_feature_keys", []))
+                | set(cfg.get("tf_meta_feature_keys", []))
+            )
             for _cn in meta_cols:
                 if _cn in grp.columns and _cn not in _row:
                     try:
@@ -1384,7 +1797,26 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
                         _row[_cn] = 0.0
 
             # Ensure basic interaction columns and raw values are passed
-            _extra_cols = ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct", "trend_t", "trend_z_t", "spike_score", "grind_score", "chop_score", "rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base", "G_VOL", "G_TREND"]
+            _extra_cols = [
+                "vol_z",
+                "mkt_rv_ratio",
+                "ambig",
+                "exh_qual",
+                "trend_pct",
+                "trend_t",
+                "trend_z_t",
+                "spike_score",
+                "grind_score",
+                "chop_score",
+                "rv_12h",
+                "rv_24h",
+                "vol_z_base",
+                "vol_z24_base",
+                "ret6h",
+                "trend_pct_base",
+                "G_VOL",
+                "G_TREND",
+            ]
             for _cn in _extra_cols:
                 if _cn in grp.columns and _cn not in _row:
                     try:
@@ -1399,13 +1831,27 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_po
 
     return pd.DataFrame(score_rows)
 
-def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, current_positions_syms, tradeable_candidates=None):
+
+def generate_hourly_signals(
+    ts_sig,
+    feats,
+    mkt_gates,
+    model_bundle,
+    risk_config,
+    cfg,
+    current_positions_syms,
+    tradeable_candidates=None,
+):
     if ts_sig not in mkt_gates.index:
         if bool(cfg.get("debug_signal_generation", False)):
             tprint(f"    SignalGenDiag ts={ts_sig} dropped: ts not in mkt_gates.index")
         return []
 
-    signal_params = (risk_config or {}).get("signal_params", {}) if isinstance(risk_config, dict) else {}
+    signal_params = (
+        (risk_config or {}).get("signal_params", {})
+        if isinstance(risk_config, dict)
+        else {}
+    )
     thr_long = float(signal_params.get("thr_long", cfg.get("thr_long", 0.01)))
     # Unified score convention: higher score is always better (long and short).
     # For short buckets we keep side information separate from score orientation.
@@ -1432,19 +1878,43 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
         "after_symbol_dedup": 0,
         "after_new_sizer": 0,
     }
-    sc_df = _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, current_positions_syms, tradeable_candidates=tradeable_candidates)
+    sc_df = _build_side_score_df(
+        ts_sig,
+        feats,
+        mkt_gates,
+        model_bundle,
+        cfg,
+        current_positions_syms,
+        tradeable_candidates=tradeable_candidates,
+    )
     if sc_df.empty:
         if _dbg:
-            tprint(f"    SignalGenDiag ts={ts_sig} sc_rows=0 (no candidates from side-score stage)")
+            tprint(
+                f"    SignalGenDiag ts={ts_sig} sc_rows=0 (no candidates from side-score stage)"
+            )
         return []
     _diag["sc_rows"] = int(len(sc_df))
 
-    score_scale = signal_params.get("score_scale_params", {}) if isinstance(signal_params, dict) else {}
+    score_scale = (
+        signal_params.get("score_scale_params", {})
+        if isinstance(signal_params, dict)
+        else {}
+    )
 
     final_orders = []
-    _ps_runtime_cols = [str(c) for c in cfg.get("position_sizer_regime_feature_keys", []) if isinstance(c, str) and c]
-    _ps_runtime_cols += ["reg_mr_live", "reg_tf_live", "trap_quality", "predicted_vol_6h", "trend_dir"]
-    for row in sc_df.to_dict('records'):
+    _ps_runtime_cols = [
+        str(c)
+        for c in cfg.get("position_sizer_regime_feature_keys", [])
+        if isinstance(c, str) and c
+    ]
+    _ps_runtime_cols += [
+        "reg_mr_live",
+        "reg_tf_live",
+        "trap_quality",
+        "predicted_vol_6h",
+        "trend_dir",
+    ]
+    for row in sc_df.to_dict("records"):
         sym = row["symbol"]
         side_key = row["side_key"]
         t_dir = int(row["trend_dir"])
@@ -1453,11 +1923,27 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
 
         if score_scale:
             if side_key == "long":
-                s_mr = _robust_norm(s_mr, score_scale.get("long_mr_center", 0.0), score_scale.get("long_mr_scale", 1.0))
-                s_tf = _robust_norm(s_tf, score_scale.get("long_tf_center", 0.0), score_scale.get("long_tf_scale", 1.0))
+                s_mr = _robust_norm(
+                    s_mr,
+                    score_scale.get("long_mr_center", 0.0),
+                    score_scale.get("long_mr_scale", 1.0),
+                )
+                s_tf = _robust_norm(
+                    s_tf,
+                    score_scale.get("long_tf_center", 0.0),
+                    score_scale.get("long_tf_scale", 1.0),
+                )
             else:
-                s_mr = _robust_norm(s_mr, score_scale.get("short_mr_center", 0.0), score_scale.get("short_mr_scale", 1.0))
-                s_tf = _robust_norm(s_tf, score_scale.get("short_tf_center", 0.0), score_scale.get("short_tf_scale", 1.0))
+                s_mr = _robust_norm(
+                    s_mr,
+                    score_scale.get("short_mr_center", 0.0),
+                    score_scale.get("short_mr_scale", 1.0),
+                )
+                s_tf = _robust_norm(
+                    s_tf,
+                    score_scale.get("short_tf_center", 0.0),
+                    score_scale.get("short_tf_scale", 1.0),
+                )
 
         # Decoupled Logic (Report 2026-02-10)
         # Long candidates (from 'top'): check TF for momentum (Up Trend) or MR for recovery (Down Trend)
@@ -1468,25 +1954,49 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                 mode = "best"
                 thr = float(signal_params.get(f"thr_tf_{mode}", thr_long))
                 if s_tf >= thr:
-                    potential_signal = {"symbol": sym, "side": "long", "score": s_tf, "dom": "tf", "mode": mode}
+                    potential_signal = {
+                        "symbol": sym,
+                        "side": "long",
+                        "score": s_tf,
+                        "dom": "tf",
+                        "mode": mode,
+                    }
             else:
                 mode = "worst"
                 thr = float(signal_params.get(f"thr_mr_{mode}", thr_long))
                 if s_mr >= thr:
-                    potential_signal = {"symbol": sym, "side": "long", "score": s_mr, "dom": "mr", "mode": mode}
-        else: # side_key == "short"
+                    potential_signal = {
+                        "symbol": sym,
+                        "side": "long",
+                        "score": s_mr,
+                        "dom": "mr",
+                        "mode": mode,
+                    }
+        else:  # side_key == "short"
             s_mr_cmp = abs(s_mr)
             s_tf_cmp = abs(s_tf)
             if t_dir > 0:
                 mode = "best"
                 thr = float(signal_params.get(f"thr_mr_{mode}", thr_short))
                 if s_mr_cmp >= thr:
-                    potential_signal = {"symbol": sym, "side": "short", "score": s_mr_cmp, "dom": "mr", "mode": mode}
+                    potential_signal = {
+                        "symbol": sym,
+                        "side": "short",
+                        "score": s_mr_cmp,
+                        "dom": "mr",
+                        "mode": mode,
+                    }
             else:
                 mode = "worst"
                 thr = float(signal_params.get(f"thr_tf_{mode}", thr_short))
                 if s_tf_cmp >= thr:
-                    potential_signal = {"symbol": sym, "side": "short", "score": s_tf_cmp, "dom": "tf", "mode": mode}
+                    potential_signal = {
+                        "symbol": sym,
+                        "side": "short",
+                        "score": s_tf_cmp,
+                        "dom": "tf",
+                        "mode": mode,
+                    }
 
         if potential_signal:
             # Keep EV-decomposition runtime features on each order.
@@ -1518,6 +2028,28 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             potential_signal["high_utility_pred"] = float(potential_signal["reg_mean"])
             potential_signal["risk_adjusted_pred"] = float(potential_signal["reg_mean"])
             potential_signal["bucket_key"] = _bucket_key
+            # Map kind-prefixed meta uncertainty features to non-prefixed names for sizer
+            for _mf in [
+                "clf_center",
+                "clf_entropy",
+                "reg_pred",
+                "clf_prefix_std",
+                "reg_prefix_std",
+                "clf_leaf_support_q25",
+                "reg_leaf_support_q25",
+                "clf_leaf_target_iqr_mean",
+                "reg_leaf_target_iqr_mean",
+                "sign_agree",
+                "joint_confidence",
+                "conflict_score",
+                "joint_instability",
+                "edge_unc_pen",
+                "edge_support_pen",
+                "edge_noise_pen",
+            ]:
+                _mk = f"{_prefix}_{_mf}"
+                if _mk in row:
+                    potential_signal[_mf] = float(row[_mk])
             final_orders.append(potential_signal)
     _diag["potential"] = int(len(final_orders))
 
@@ -1544,17 +2076,19 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                 k_short = max(1, int(np.ceil(len(shorts) * _kfs))) if shorts else 0
     except Exception:
         pass
-    final_orders = longs[:max(0, k_long)] + shorts[:max(0, k_short)]
+    final_orders = longs[: max(0, k_long)] + shorts[: max(0, k_short)]
     _diag["after_k"] = int(len(final_orders))
-    
+
     # --- Global Percentile Gating ---
     # Gating based on global distribution of scores (across all assets and time)
     # This addresses the user query: "if it's in the top x%, then act on it"
     q95 = signal_params.get("size_q95")
     q98 = signal_params.get("size_q98")
     for o in final_orders:
-        o["global_rank"] = _estimate_global_percentile(o["score"], size_q50, size_q90, q95, q98)
-    
+        o["global_rank"] = _estimate_global_percentile(
+            o["score"], size_q50, size_q90, q95, q98
+        )
+
     score_gate_q = float(signal_params.get("score_gate_q", 0.0))
     if score_gate_q > 0:
         filtered = [o for o in final_orders if o["global_rank"] >= score_gate_q]
@@ -1575,31 +2109,55 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
 
     # Runtime integration with Ridge position sizer stack backend.
     _ps_backend = str(cfg.get("position_sizer_backend", "ridge")).lower()
-    _ridge_manifest = (risk_config or {}).get("ridge_weights_manifest") if isinstance(risk_config, dict) else None
-    _ridge_sizer = (risk_config or {}).get("ridge_sizer") if isinstance(risk_config, dict) else None
+    _ridge_manifest = (
+        (risk_config or {}).get("ridge_weights_manifest")
+        if isinstance(risk_config, dict)
+        else None
+    )
+    _ridge_sizer = (
+        (risk_config or {}).get("ridge_sizer")
+        if isinstance(risk_config, dict)
+        else None
+    )
     if _ps_backend == "ridge" and isinstance(_ridge_manifest, dict):
         try:
             _weights = _ridge_manifest.get("weights", {}) or {}
             _params_manifest = _ridge_manifest.get("params_per_bucket", {}) or {}
             _new_orders = []
-            for _bucket_key in sorted({o.get("bucket_key") for o in final_orders if o.get("bucket_key")}):
-                _bucket_orders = [o for o in final_orders if o.get("bucket_key") == _bucket_key]
+            for _bucket_key in sorted(
+                {o.get("bucket_key") for o in final_orders if o.get("bucket_key")}
+            ):
+                _bucket_orders = [
+                    o for o in final_orders if o.get("bucket_key") == _bucket_key
+                ]
                 if not _bucket_orders:
                     continue
-                _bucket_params = _normalize_ridge_bucket_params(_params_manifest, _bucket_key)
+                _bucket_params = _normalize_ridge_bucket_params(
+                    _params_manifest, _bucket_key
+                )
                 _feature_names = [
-                    k[len(_bucket_key) + 1:]
+                    k[len(_bucket_key) + 1 :]
                     for k in _weights.keys()
                     if isinstance(k, str) and k.startswith(f"{_bucket_key}_")
                 ]
                 if not _feature_names:
                     continue
                 _X = pd.DataFrame(
-                    [{c: float(o.get(c, 0.0)) if np.isfinite(float(o.get(c, 0.0))) else 0.0 for c in _feature_names}
-                     for o in _bucket_orders],
+                    [
+                        {
+                            c: float(o.get(c, 0.0))
+                            if np.isfinite(float(o.get(c, 0.0)))
+                            else 0.0
+                            for c in _feature_names
+                        }
+                        for o in _bucket_orders
+                    ],
                     columns=_feature_names,
                 ).fillna(0.0)
-                _coef = np.asarray([float(_weights[f"{_bucket_key}_{c}"]) for c in _feature_names], dtype=float)
+                _coef = np.asarray(
+                    [float(_weights[f"{_bucket_key}_{c}"]) for c in _feature_names],
+                    dtype=float,
+                )
                 _raw = np.asarray(_X.values, dtype=float) @ _coef
                 _top_frac = float(_bucket_params.get("top_k_pct", 0.30) or 0.30)
                 _top_frac = min(1.0, max(0.05, _top_frac))
@@ -1608,15 +2166,21 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                 _allow_mask = np.zeros(len(_bucket_orders), dtype=bool)
                 _allow_mask[_order[:_k_keep]] = True
                 _base_size = float(_bucket_params.get("base_size", 0.05) or 0.05)
-                _rank_multiplier = float(_bucket_params.get("rank_multiplier", 0.10) or 0.10)
+                _rank_multiplier = float(
+                    _bucket_params.get("rank_multiplier", 0.10) or 0.10
+                )
                 _squash_k = float(_bucket_params.get("squash_k", 1.0) or 1.0)
-                _sizing_formula = str(_bucket_params.get("sizing_formula", "linear") or "linear").lower()
+                _sizing_formula = str(
+                    _bucket_params.get("sizing_formula", "linear") or "linear"
+                ).lower()
                 if _sizing_formula == "sigmoid":
                     _z = 1.0 / (1.0 + np.exp(-_squash_k * _raw))
                 elif _sizing_formula == "concave":
                     _pos = np.clip(_raw, 0.0, None)
                     _mx = np.max(_pos)
-                    _z = (_pos / _mx) ** _squash_k if _mx > 1e-9 else np.zeros_like(_pos)
+                    _z = (
+                        (_pos / _mx) ** _squash_k if _mx > 1e-9 else np.zeros_like(_pos)
+                    )
                 else:
                     _z = 0.5 * (1.0 + np.tanh(_squash_k * _raw))
                 _size = np.clip(_base_size + _rank_multiplier * _z, 0.0, 1.0)
@@ -1630,7 +2194,11 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                     except Exception:
                         _offset_ticks = np.zeros(len(_bucket_orders), dtype=float)
                 for _ix, _o in enumerate(_bucket_orders):
-                    if not _allow_mask[_ix] or not np.isfinite(_size[_ix]) or _size[_ix] <= 0:
+                    if (
+                        not _allow_mask[_ix]
+                        or not np.isfinite(_size[_ix])
+                        or _size[_ix] <= 0
+                    ):
                         continue
                     _o["weight"] = float(abs(_size[_ix]))
                     _o["ps_ev"] = float(_raw[_ix])
@@ -1669,11 +2237,13 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     raw_w = []
     # Mode "rank" now uses GLOBAL rank (percentile) rather than hourly local rank
     # mapping is: global_rank (interpolated) -> sigmoid weight
-    
+
     for i, o in enumerate(final_orders):
         if sizing_mode == "score":
             z = abs(float(o["score"]))
-            z_tilde = np.clip((z - size_q50) / (size_q90 - size_q50 + 1e-12), 0.0, size_zcap)
+            z_tilde = np.clip(
+                (z - size_q50) / (size_q90 - size_q50 + 1e-12), 0.0, size_zcap
+            )
             fz = 1.0 / (1.0 + np.exp(-size_k * (z_tilde - size_x0)))
             w_alloc = size_min + (size_max - size_min) * fz
         elif sizing_mode == "rank":
@@ -1691,7 +2261,9 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
 
     for ord, w_alloc in zip(final_orders, raw_w):
         ord["weight"] = float(w_alloc * scale)
-        mode = ord.get("mode") or _bucket_mode_from_side_dom(ord.get("side"), ord.get("dom"))
+        mode = ord.get("mode") or _bucket_mode_from_side_dom(
+            ord.get("side"), ord.get("dom")
+        )
         r_keys = [
             f"risk_{ord['dom']}_{mode}",
             f"risk_{ord['side']}_{ord['dom']}",

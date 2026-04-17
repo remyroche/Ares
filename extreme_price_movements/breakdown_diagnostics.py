@@ -244,10 +244,14 @@ def policy_profitability_sweep(
     trade_rows: List[Dict[str, Any]] = []
 
     # Replace O(N) Pandas iterrows with much faster direct array iteration
+    event_id_arr = events["event_id"].to_numpy(dtype=int)
     start_ts_arr = events["start_ts"].to_numpy()
     shock_sign_arr = events["shock_sign"].to_numpy(dtype=int)
 
-    for start_ts_np, shock_sign_np in zip(start_ts_arr, shock_sign_arr):
+    for event_id_np, start_ts_np, shock_sign_np in zip(
+        event_id_arr, start_ts_arr, shock_sign_arr
+    ):
+        event_id = int(event_id_np)
         start_ts = pd.Timestamp(start_ts_np)
         shock_sign = int(shock_sign_np)
         for off in entry_offsets:
@@ -276,7 +280,7 @@ def policy_profitability_sweep(
                     )
                     trade_rows.append(
                         {
-                            "event_id": int(ev["event_id"]),
+                            "event_id": event_id,
                             "shock_sign": shock_sign,
                             "offset_h": int(off),
                             "direction": str(dname),

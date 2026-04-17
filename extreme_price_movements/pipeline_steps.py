@@ -1822,22 +1822,59 @@ def _consolidate_layer_oof_from_disk(
     if not os.path.isdir(oof_dir):
         return 0
     if layer == "base":
-        pats = [
-            "oof_long_*.parquet",
-            "oof_short_*.parquet",
-            "oof_spike_*.parquet",
-            "oof_exh_*.parquet",
-            "oof_*_tight.parquet",
-            "oof_*_wide.parquet",
-        ]
+        contract_primary_only = False
+        contract_path = os.path.join(
+            data_root, "artifacts", run_id, "base_meta_contract.json"
+        )
+        files = []
+        if os.path.exists(contract_path):
+            try:
+                with open(contract_path, "r", encoding="utf-8") as f:
+                    contract = json.load(f)
+                contract_primary_only = bool(contract.get("primary_only", False))
+                if contract_primary_only:
+                    files = sorted(
+                        {
+                            str(path)
+                            for strat in contract.get("strategies", [])
+                            for path in strat.get("oof_files", [])
+                            if isinstance(path, str) and path.endswith(".parquet")
+                        }
+                    )
+            except Exception as exc:
+                tprint(
+                    f"WARNING: failed to read base_meta_contract.json for OOF consolidation: {exc}"
+                )
+        if contract_primary_only and not files:
+            return 0
+        if not files:
+            pats = [
+                "oof_*.parquet",
+            ]
+            files = []
+            for pat in pats:
+                files.extend(glob.glob(os.path.join(oof_dir, pat)))
+            files = sorted(
+                {
+                    fp
+                    for fp in files
+                    if os.path.basename(fp) != "base_oof_all.parquet"
+                    and not fp.endswith("_tight.parquet")
+                    and not fp.endswith("_wide.parquet")
+                }
+            )
     elif layer == "meta":
         pats = ["meta_oof_*.parquet", "oof_meta_*.parquet"]
+        files = []
+        for pat in pats:
+            files.extend(glob.glob(os.path.join(oof_dir, pat)))
+        files = sorted(set(files))
     else:
         pats = ["*.parquet"]
-    files = []
-    for pat in pats:
-        files.extend(glob.glob(os.path.join(oof_dir, pat)))
-    files = sorted(set(files))
+        files = []
+        for pat in pats:
+            files.extend(glob.glob(os.path.join(oof_dir, pat)))
+        files = sorted(set(files))
     if not files:
         return 0
 
@@ -1909,33 +1946,34 @@ def _consolidate_layer_oof_from_disk(
     if merged.empty:
         return 0
 
-    pair_roots = sorted(
-        {
-            c[:-5]
-            for c in merged.columns
-            if c.endswith("_wide")
-            and not c.endswith(("_sigma_wide", "_robust_sigma_wide"))
-            and f"{c[:-5]}_tight" in merged.columns
-        }
-    )
-    for root in pair_roots:
-        wide_col = f"{root}_wide"
-        tight_col = f"{root}_tight"
-        sigma_wide_col = f"{root}_sigma_wide"
-        sigma_tight_col = f"{root}_sigma_tight"
-        robust_sigma_wide_col = f"{root}_robust_sigma_wide"
-        robust_sigma_tight_col = f"{root}_robust_sigma_tight"
-        pair_features = build_wide_tight_pair_features(
-            merged[wide_col].values,
-            merged[tight_col].values,
-            base_name=root,
-            sigma_wide=merged[sigma_wide_col].values if sigma_wide_col in merged.columns else None,
-            sigma_tight=merged[sigma_tight_col].values if sigma_tight_col in merged.columns else None,
-            robust_sigma_wide=merged[robust_sigma_wide_col].values if robust_sigma_wide_col in merged.columns else None,
-            robust_sigma_tight=merged[robust_sigma_tight_col].values if robust_sigma_tight_col in merged.columns else None,
+    if layer != "base":
+        pair_roots = sorted(
+            {
+                c[:-5]
+                for c in merged.columns
+                if c.endswith("_wide")
+                and not c.endswith(("_sigma_wide", "_robust_sigma_wide"))
+                and f"{c[:-5]}_tight" in merged.columns
+            }
         )
-        for col_name, values in pair_features.items():
-            merged[col_name] = values
+        for root in pair_roots:
+            wide_col = f"{root}_wide"
+            tight_col = f"{root}_tight"
+            sigma_wide_col = f"{root}_sigma_wide"
+            sigma_tight_col = f"{root}_sigma_tight"
+            robust_sigma_wide_col = f"{root}_robust_sigma_wide"
+            robust_sigma_tight_col = f"{root}_robust_sigma_tight"
+            pair_features = build_wide_tight_pair_features(
+                merged[wide_col].values,
+                merged[tight_col].values,
+                base_name=root,
+                sigma_wide=merged[sigma_wide_col].values if sigma_wide_col in merged.columns else None,
+                sigma_tight=merged[sigma_tight_col].values if sigma_tight_col in merged.columns else None,
+                robust_sigma_wide=merged[robust_sigma_wide_col].values if robust_sigma_wide_col in merged.columns else None,
+                robust_sigma_tight=merged[robust_sigma_tight_col].values if robust_sigma_tight_col in merged.columns else None,
+            )
+            pair_block = pd.DataFrame(pair_features, index=merged.index)
+            merged = pd.concat([merged, pair_block], axis=1, copy=False)
 
     for col in merged.columns:
         if col in {"symbol"}:
@@ -1995,14 +2033,31 @@ def run_training_step(
             return None
         df_local = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         df_local = _filter_artifact_by_stage_view(df_local, cfg)
+        if isinstance(df_local, pd.DataFrame) and not df_local.empty:
+            sort_cols = [
+                c
+                for c in ("__ts__", "timestamp", "__symbol__", "symbol")
+                if c in df_local.columns
+            ]
+            if sort_cols:
+                df_local = df_local.sort_values(
+                    sort_cols, kind="mergesort"
+                ).reset_index(drop=True)
+            else:
+                df_local = df_local.reset_index(drop=True)
         if df_local is not None:
             dataset_cache[name] = df_local
         return df_local
 
-    base_geometry_archetypes = [
-        str(v)
-        for v in cfg.get("base_geometry_archetypes", ["tight", "balanced", "wide"])
-    ]
+    include_variant_datasets = bool(cfg.get("base_geometry_train_variants", False))
+    base_geometry_archetypes = (
+        [
+            str(v)
+            for v in cfg.get("base_geometry_archetypes", ["tight", "balanced", "wide"])
+        ]
+        if include_variant_datasets
+        else []
+    )
     for strat in strategies:
         side = strat["trade_side"]
         s_id = strat["strategy_id"]
@@ -2024,6 +2079,9 @@ def run_training_step(
                 if df_v is not None:
                     datasets[vname] = df_v
                     tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
+
+    if not include_variant_datasets:
+        tprint("Model-training dataset loader: primary-only mode, variant label artifacts are excluded.")
 
     tprint("Spike anatomy and specialist label datasets are disabled.")
 
@@ -2681,6 +2739,53 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     except Exception as _e_s_oof:
         tprint(f"WARNING: failed to save consolidated sizer OOF: {_e_s_oof}")
 
+    try:
+        _ridge_score_frames = []
+        for _rs_dir_key, _rs_params in all_params.items():
+            _rs_metrics = all_metrics.get(_rs_dir_key, {})
+            _rs_oof_path = (
+                Path(data_root)
+                / "artifacts"
+                / run_id
+                / "ridge_sizer"
+                / f"ridge_sizer_oof_{_rs_dir_key.lower()}.parquet"
+            )
+            if not _rs_oof_path.exists():
+                continue
+            _rs_df = pd.read_parquet(_rs_oof_path)
+            if (
+                "sizer_score_oof" not in _rs_df.columns
+                or "timestamp" not in _rs_df.columns
+                or "symbol" not in _rs_df.columns
+            ):
+                continue
+            _rs_sub = _rs_df[["timestamp", "symbol", "sizer_score_oof"]].copy()
+            _rs_sub = _rs_sub.rename(columns={"sizer_score_oof": _rs_dir_key})
+            _rs_sub["timestamp"] = pd.to_datetime(
+                _rs_sub["timestamp"], utc=True, errors="coerce"
+            )
+            _rs_sub["symbol"] = _rs_sub["symbol"].astype(str)
+            _ridge_score_frames.append(_rs_sub)
+        if _ridge_score_frames:
+            _rs_merged = _ridge_score_frames[0]
+            for _rsf in _ridge_score_frames[1:]:
+                _rs_merged = _rs_merged.merge(
+                    _rsf, on=["timestamp", "symbol"], how="outer"
+                )
+            _rs_out_path = (
+                Path(data_root)
+                / "artifacts"
+                / run_id
+                / "oof"
+                / "ridge_sizer_scores_all.parquet"
+            )
+            _rs_merged.to_parquet(_rs_out_path, index=False, compression="zstd")
+            tprint(
+                f"Saved ridge sizer OOF scores: {_rs_out_path} rows={len(_rs_merged)}"
+            )
+    except Exception as _e_rs_scores:
+        tprint(f"WARNING: failed to save ridge sizer OOF scores: {_e_rs_scores}")
+
     _ridge_result = {
         "weights": all_weights,
         "params_per_strategy": all_params,
@@ -2746,8 +2851,8 @@ def run_policy_optimiser_step(ts_sig, cfg):
 def run_base_hpo_step(ts_sig, cfg):
     """Run Optuna HPO for the base ExtraTrees classifier.
 
-    Runs one HPO job per concrete base training dataset scope (per strategy,
-    horizon, and geometry variant). Each scope now follows:
+    Runs one HPO job per primary base training dataset scope (per strategy
+    and horizon). Each scope now follows:
     MDI feature selection -> HPO -> final training.
     """
     from extreme_price_movements.post_race_hpo import run_base_extratrees_hpo
@@ -2779,17 +2884,16 @@ def run_base_hpo_step(ts_sig, cfg):
         strategy_datasets: dict[str, pd.DataFrame] = {}
 
         for H in strategy_horizons.get(s_id, []):
-            for suffix in ("", "_tight", "_wide"):
-                name = f"train_{s_id}_{H}{suffix}"
-                if name not in available:
-                    continue
-                df = load_artifact_df(data_root, run_id, "labels", name)
-                df = _filter_artifact_by_stage_view(df, cfg)
-                if df is None or df.empty:
-                    continue
-                if "__y_bin__" not in df.columns:
-                    continue
-                strategy_datasets[name] = df
+            name = f"train_{s_id}_{H}"
+            if name not in available:
+                continue
+            df = load_artifact_df(data_root, run_id, "labels", name)
+            df = _filter_artifact_by_stage_view(df, cfg)
+            if df is None or df.empty:
+                continue
+            if "__y_bin__" not in df.columns:
+                continue
+            strategy_datasets[name] = df
 
         if not strategy_datasets:
             tprint(f"BASE HPO: no data rows loaded for strategy {s_id}.")
@@ -5690,7 +5794,9 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             else ("symbol" if "symbol" in df.columns else None)
         )
         t_col = (
-            "__ts__" if "__ts__" in df.columns else ("ts" if "ts" in df.columns else None)
+            "__ts__"
+            if "__ts__" in df.columns
+            else ("ts" if "ts" in df.columns else None)
         )
         if not s_col or not t_col:
             continue
@@ -5699,57 +5805,70 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         requested_keys_per_dataset[name] = list(missing)
         if not missing:
             continue
-        missing_keys_per_dataset[name] = missing
-        syms = pd.Series(df[s_col]).dropna().astype(str).unique().tolist()
+        missing_keys_per_dataset[name] = list(missing)
+        syms = pd.Index(df[s_col].dropna().astype(str).unique())
         for sym in syms:
-            all_syms.add(sym)
-            datasets_by_symbol.setdefault(sym, []).append(name)
+            all_syms.add(str(sym))
+            datasets_by_symbol.setdefault(str(sym), []).append(name)
 
     if not missing_keys_per_dataset:
         tprint("Feature injection: all requested features already present in datasets.")
         return datasets
 
     meta_keys_all = set(_meta_feature_keys_union(cfg))
-    for name, missing in missing_keys_per_dataset.items():
-        meta = dataset_meta.get(name)
-        if not meta:
-            continue
-        df = meta["df"]
-        add_cols: dict[str, np.ndarray] = {}
-        for col in missing:
-            if col not in df.columns:
-                add_cols[col] = np.full(len(df), np.nan, dtype=np.float32)
-            if col in meta_keys_all:
-                raw_col = f"__meta_raw__{col}"
-                if raw_col not in df.columns:
-                    add_cols[raw_col] = np.full(len(df), np.nan, dtype=np.float32)
-        if add_cols:
-            add_df = pd.DataFrame(add_cols, index=df.index)
-            df = pd.concat([df, add_df], axis=1)
-            datasets[name] = df
-            meta["df"] = df
-
-    injected_keys = 0
-    loaded_symbols = 0
-    total_symbols = int(len(all_syms))
-    progress_every = max(1, int(cfg.get("feature_injection_progress_every_symbols", 25)))
+    progress_every = max(
+        1, int(cfg.get("feature_injection_progress_every_symbols", 25))
+    )
     progress_interval_sec = float(
         cfg.get("feature_injection_progress_interval_sec", 60.0)
     )
     start_time = time.time()
     last_progress_time = start_time
-    injection_stats: dict[str, dict[str, object]] = {
-        name: {
+
+    dataset_ts_index: dict[str, pd.DatetimeIndex] = {}
+    dataset_symbol_positions: dict[str, dict[str, np.ndarray]] = {}
+    target_buffers: dict[str, dict[str, np.ndarray]] = {}
+    injection_stats: dict[str, dict[str, object]] = {}
+
+    for name, meta in dataset_meta.items():
+        df = meta["df"]
+        s_col = meta["s_col"]
+        t_col = meta["t_col"]
+        missing = list(missing_keys_per_dataset.get(name, []))
+        injection_stats[name] = {
             "requested_missing": list(requested_keys_per_dataset.get(name, [])),
             "loaded_keys": set(),
             "missing_after": set(),
-            "n_rows": int(len(meta["df"])) if meta and meta.get("df") is not None else 0,
+            "n_rows": int(len(df)),
         }
-        for name, meta in dataset_meta.items()
-    }
+        if not missing:
+            continue
+        ts_index = pd.DatetimeIndex(pd.to_datetime(df[t_col], utc=True, errors="coerce"))
+        dataset_ts_index[name] = ts_index
+        symbol_positions = (
+            pd.Series(np.arange(len(df), dtype=np.int32))
+            .groupby(df[s_col].astype(str).to_numpy(copy=False), sort=False)
+            .indices
+        )
+        dataset_symbol_positions[name] = {
+            str(sym): np.asarray(pos, dtype=np.int32)
+            for sym, pos in symbol_positions.items()
+        }
+        buf: dict[str, np.ndarray] = {}
+        for key in missing:
+            buf[key] = np.full(len(df), np.nan, dtype=np.float32)
+            if key in meta_keys_all:
+                buf[f"__meta_raw__{key}"] = np.full(len(df), np.nan, dtype=np.float32)
+        target_buffers[name] = buf
+
+    loaded_symbols = 0
+    injected_cells = 0
+    total_symbols = int(len(all_syms))
     tprint(
-        f"Feature injection: starting symbol pass for {total_symbols} symbols across {len(missing_keys_per_dataset)} datasets; req_keys={len(req_keys)}"
+        f"Feature injection: starting symbol pass for {total_symbols} symbols across "
+        f"{len(missing_keys_per_dataset)} datasets; req_keys={len(req_keys)}"
     )
+
     for sym_i, sym in enumerate(sorted(all_syms), start=1):
         now = time.time()
         if (
@@ -5759,9 +5878,12 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         ):
             elapsed = now - start_time
             tprint(
-                f"Feature injection progress: symbols={sym_i}/{total_symbols} loaded_symbol_files={loaded_symbols} injected_cells={injected_keys} elapsed_sec={elapsed:.1f} current_symbol={sym}"
+                f"Feature injection progress: symbols={sym_i}/{total_symbols} "
+                f"loaded_symbol_files={loaded_symbols} injected_cells={injected_cells} "
+                f"elapsed_sec={elapsed:.1f} current_symbol={sym}"
             )
             last_progress_time = now
+
         target_datasets = [
             name
             for name in datasets_by_symbol.get(sym, [])
@@ -5785,18 +5907,23 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             continue
 
         try:
-            pf = pq.ParquetFile(fpath)
-            available_cols = set(pf.schema.names)
+            schema_cols = set(pq.ParquetFile(fpath).schema.names)
         except Exception as exc:
             tprint(f"Feature injection: failed to inspect {fpath}: {exc}")
             continue
 
-        load_cols = [k for k in keys_for_symbol if k in available_cols]
-        if not load_cols or "ts" not in available_cols:
+        load_cols = [k for k in keys_for_symbol if k in schema_cols]
+        ts_in_schema = "ts" in schema_cols or "timestamp" in schema_cols
+        if not load_cols:
             continue
 
         try:
-            feat_df = pd.read_parquet(fpath, columns=["ts", *load_cols])
+            read_cols = list(load_cols)
+            if "ts" in schema_cols:
+                read_cols = ["ts", *read_cols]
+            elif "timestamp" in schema_cols:
+                read_cols = ["timestamp", *read_cols]
+            feat_df = pd.read_parquet(fpath, columns=read_cols)
         except Exception as exc:
             tprint(f"Feature injection: failed to load {fpath}: {exc}")
             continue
@@ -5804,50 +5931,76 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         if feat_df.empty:
             continue
 
+        ts_series = None
         if "ts" in feat_df.columns:
-            feat_df["ts"] = pd.to_datetime(feat_df["ts"], utc=True, errors="coerce")
-            feat_df = feat_df.dropna(subset=["ts"]).drop_duplicates(
-                subset=["ts"], keep="last"
+            ts_series = pd.to_datetime(feat_df["ts"], utc=True, errors="coerce")
+            feat_df = feat_df.drop(columns=["ts"], errors="ignore")
+        elif "timestamp" in feat_df.columns:
+            ts_series = pd.to_datetime(feat_df["timestamp"], utc=True, errors="coerce")
+            feat_df = feat_df.drop(columns=["timestamp"], errors="ignore")
+        elif isinstance(feat_df.index, pd.DatetimeIndex):
+            ts_series = pd.to_datetime(feat_df.index, utc=True, errors="coerce")
+        elif ts_in_schema:
+            tprint(
+                f"Feature injection: timestamp column was not materialized from {fpath}; "
+                "falling back to parquet index."
             )
-            feat_df = feat_df.set_index("ts")
+            ts_series = pd.to_datetime(feat_df.index, utc=True, errors="coerce")
         else:
-            feat_df.index = pd.to_datetime(feat_df.index, utc=True, errors="coerce")
-            feat_df = feat_df[~feat_df.index.isna()]
-            feat_df = feat_df[~feat_df.index.duplicated(keep="last")]
+            ts_series = pd.to_datetime(feat_df.index, utc=True, errors="coerce")
+
+        feat_df = feat_df.assign(__ts__=ts_series)
+        feat_df = feat_df.dropna(subset=["__ts__"]).drop_duplicates(
+            subset=["__ts__"], keep="last"
+        )
         if feat_df.empty:
             continue
+        feat_df = feat_df.set_index("__ts__").sort_index(kind="mergesort")
 
+        feature_arrays = {
+            col: pd.to_numeric(feat_df[col], errors="coerce")
+            .astype(np.float32, copy=False)
+            .to_numpy(copy=False)
+            for col in load_cols
+        }
+        feat_index = feat_df.index
         loaded_symbols += 1
+
         for name in target_datasets:
-            meta = dataset_meta.get(name)
-            if not meta:
-                continue
-            df = meta["df"]
-            s_col = meta["s_col"]
-            t_col = meta["t_col"]
-            mask = pd.Series(df[s_col]).astype(str).eq(sym).to_numpy()
-            if not mask.any():
+            row_pos = dataset_symbol_positions.get(name, {}).get(sym)
+            if row_pos is None or row_pos.size == 0:
                 continue
             needed = [
-                k
-                for k in missing_keys_per_dataset.get(name, [])
-                if k in feat_df.columns
+                k for k in missing_keys_per_dataset.get(name, []) if k in feature_arrays
             ]
             if not needed:
                 continue
+            ts_vals = dataset_ts_index[name].take(row_pos)
+            feat_row_pos = feat_index.get_indexer(ts_vals)
+            valid = feat_row_pos >= 0
+            if not np.any(valid):
+                continue
+            buffer_pos = row_pos[valid]
+            feat_row_pos = feat_row_pos[valid]
+            name_buffers = target_buffers[name]
+            loaded_keys = injection_stats[name]["loaded_keys"]
+            for key in needed:
+                vals = feature_arrays[key][feat_row_pos]
+                name_buffers[key][buffer_pos] = vals
+                loaded_keys.add(key)
+                if key in meta_keys_all:
+                    raw_key = f"__meta_raw__{key}"
+                    if raw_key in name_buffers:
+                        name_buffers[raw_key][buffer_pos] = vals
+                injected_cells += int(len(buffer_pos))
 
-            row_idx = np.flatnonzero(mask)
-            ts_vals = pd.to_datetime(df.iloc[row_idx][t_col], utc=True, errors="coerce")
-            aligned = feat_df.reindex(ts_vals)[needed]
-            block = aligned.to_numpy(dtype=np.float32, copy=False)
-            for j, col in enumerate(needed):
-                df.iloc[row_idx, df.columns.get_loc(col)] = block[:, j]
-                injection_stats.setdefault(name, {}).setdefault("loaded_keys", set()).add(col)
-                if col in meta_keys_all:
-                    raw_col = f"__meta_raw__{col}"
-                    if raw_col in df.columns:
-                        df.iloc[row_idx, df.columns.get_loc(raw_col)] = block[:, j]
-                injected_keys += 1
+    for name, cols_dict in target_buffers.items():
+        if not cols_dict:
+            continue
+        df = datasets[name]
+        add_df = pd.DataFrame(cols_dict, index=df.index)
+        datasets[name] = pd.concat([df, add_df], axis=1, copy=False)
+        dataset_meta[name]["df"] = datasets[name]
 
     variant_base_groups: dict[str, dict[str, set[str]]] = {}
     for name, stat in injection_stats.items():
@@ -5857,14 +6010,14 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         stat["missing_after"] = missing_after
         tprint(
             f"Feature injection [{name}]: rows={stat.get('n_rows', 0)} "
-            f"requested_missing={len(req_missing)} loaded={len(loaded)} missing_after={len(missing_after)}"
+            f"requested_missing={len(req_missing)} loaded={len(loaded)} "
+            f"missing_after={len(missing_after)}"
         )
         if missing_after:
             tprint(
                 f"  Feature injection [{name}] missing_after sample: "
                 f"{sorted(list(missing_after))[:12]}"
             )
-
         base_name = name
         variant_tag = "primary"
         if name.endswith("_tight"):
@@ -5897,8 +6050,10 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                     f"{missing_vs_primary[:12]}"
                 )
 
+    elapsed_total = time.time() - start_time
     tprint(
-        f"Feature injection: loaded {loaded_symbols} symbol files and injected requested features into {len(missing_keys_per_dataset)} datasets."
+        f"Feature injection: loaded {loaded_symbols} symbol files and injected requested "
+        f"features into {len(missing_keys_per_dataset)} datasets in {elapsed_total:.1f}s."
     )
     return datasets
 

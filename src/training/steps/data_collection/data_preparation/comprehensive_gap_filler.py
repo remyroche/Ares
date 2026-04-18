@@ -1,5 +1,5 @@
 
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.comprehensive_function_logger import log_important_calls, log_all_calls
 
 import pandas as pd
 
@@ -25,9 +25,6 @@ from typing import Any
 import aiohttp
 import certifi
 
-import logging
-import numpy as np
-import time
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -94,22 +91,24 @@ class ComprehensiveGapFiller:
 
             # Find gaps larger than threshold
             gaps: list[dict[str, Any]] = []
-            gap_rows = df[df["time_diff"] > min_gap_seconds]
+            mask = df["time_diff"] > min_gap_seconds
 
-            for idx, row in gap_rows.iterrows():
-                if idx > 0:
-                    gap_start = pd.to_datetime(
-                        df.loc[idx - 1, "timestamp"]
-                    ).to_pydatetime()
-                    gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
-                    gap_duration = (gap_end - gap_start).total_seconds()
+            if mask.any():
+                gap_ends = pd.to_datetime(df.loc[mask, "timestamp"])
+                gap_starts = pd.to_datetime(df["timestamp"].shift(1).loc[mask])
+                durations = df.loc[mask, "time_diff"]
+
+                for start, end, duration in zip(gap_starts, gap_ends, durations):
+                    # In pandas, if the first row matches the mask, its shifted value is NaT
+                    if pd.isna(start):
+                        continue
 
                     gaps.append(
                         {
                             "file": file_path.name,
-                            "gap_start": gap_start,
-                            "gap_end": gap_end,
-                            "gap_duration_seconds": gap_duration,
+                            "gap_start": start.to_pydatetime(),
+                            "gap_end": end.to_pydatetime(),
+                            "gap_duration_seconds": duration,
                             "data_type": "aggtrades",
                         },
                     )
@@ -152,24 +151,23 @@ class ComprehensiveGapFiller:
             # Find gaps larger than threshold
             # (futures typically have 8-hour funding intervals)
             gaps: list[dict[str, Any]] = []
-            gap_rows = df[df["time_diff_hours"] > min_gap_hours]
+            mask = df["time_diff_hours"] > min_gap_hours
 
-            for idx, row in gap_rows.iterrows():
-                if idx > 0:
-                    gap_start = pd.to_datetime(
-                        df.loc[idx - 1, "timestamp"]
-                    ).to_pydatetime()
-                    gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
-                    gap_duration_hours = (
-                        (gap_end - gap_start).total_seconds() / 3600
-                    )
+            if mask.any():
+                gap_ends = pd.to_datetime(df.loc[mask, "timestamp"])
+                gap_starts = pd.to_datetime(df["timestamp"].shift(1).loc[mask])
+                durations = df.loc[mask, "time_diff_hours"]
+
+                for start, end, duration in zip(gap_starts, gap_ends, durations):
+                    if pd.isna(start):
+                        continue
 
                     gaps.append(
                         {
                             "file": file_path.name,
-                            "gap_start": gap_start,
-                            "gap_end": gap_end,
-                            "gap_duration_hours": gap_duration_hours,
+                            "gap_start": start.to_pydatetime(),
+                            "gap_end": end.to_pydatetime(),
+                            "gap_duration_hours": duration,
                             "data_type": "futures",
                         },
                     )
@@ -211,24 +209,23 @@ class ComprehensiveGapFiller:
 
             # Find gaps larger than threshold
             gaps: list[dict[str, Any]] = []
-            gap_rows = df[df["time_diff_minutes"] > min_gap_minutes]
+            mask = df["time_diff_minutes"] > min_gap_minutes
 
-            for idx, row in gap_rows.iterrows():
-                if idx > 0:
-                    gap_start = pd.to_datetime(
-                        df.loc[idx - 1, "timestamp"]
-                    ).to_pydatetime()
-                    gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
-                    gap_duration_minutes = (
-                        (gap_end - gap_start).total_seconds() / 60
-                    )
+            if mask.any():
+                gap_ends = pd.to_datetime(df.loc[mask, "timestamp"])
+                gap_starts = pd.to_datetime(df["timestamp"].shift(1).loc[mask])
+                durations = df.loc[mask, "time_diff_minutes"]
+
+                for start, end, duration in zip(gap_starts, gap_ends, durations):
+                    if pd.isna(start):
+                        continue
 
                     gaps.append(
                         {
                             "file": file_path.name,
-                            "gap_start": gap_start,
-                            "gap_end": gap_end,
-                            "gap_duration_minutes": gap_duration_minutes,
+                            "gap_start": start.to_pydatetime(),
+                            "gap_end": end.to_pydatetime(),
+                            "gap_duration_minutes": duration,
                             "data_type": "klines",
                         },
                     )

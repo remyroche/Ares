@@ -2,7 +2,7 @@
 from typing import Any
 import pandas as pd
 from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.comprehensive_function_logger import log_important_calls, log_all_calls
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
 'Gap Filler Pipeline for Step1.\n\nHandles gap detection and filling for aggtrades data.\n'
@@ -15,9 +15,6 @@ from datetime import datetime
 from pathlib import Path
 import aiohttp
 import certifi
-import logging
-import numpy as np
-import time
 
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -66,13 +63,17 @@ class GapFillerPipeline:
             df = df.sort_values('timestamp').reset_index(drop = True)
             df['time_diff'] = df['timestamp'].diff().dt.total_seconds()
             gaps = []
-            gap_rows = df[df['time_diff'] > min_gap_seconds]
-            for idx, row in gap_rows.iterrows():
-                if idx > 0:
-                    gap_start = df.loc[idx - 1, 'timestamp']
-                    gap_end = row['timestamp']
-                    gap_duration = (gap_end - gap_start).total_seconds()
-                    gaps.append({'file': file_path.name, 'gap_start': gap_start, 'gap_end': gap_end, 'gap_duration_seconds': gap_duration})
+            mask = df['time_diff'] > min_gap_seconds
+
+            if mask.any():
+                gap_ends = pd.to_datetime(df.loc[mask, 'timestamp'])
+                gap_starts = pd.to_datetime(df['timestamp'].shift(1).loc[mask])
+                durations = df.loc[mask, 'time_diff']
+
+                for start, end, duration in zip(gap_starts, gap_ends, durations):
+                    if pd.isna(start):
+                        continue
+                    gaps.append({'file': file_path.name, 'gap_start': start.to_pydatetime(), 'gap_end': end.to_pydatetime(), 'gap_duration_seconds': duration})
             return gaps
         except Exception:
             return []

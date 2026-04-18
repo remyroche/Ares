@@ -336,19 +336,21 @@ class DataGapDetector:
                 df["time_diff"] = df["timestamp"].diff().dt.total_seconds()
 
                 # Find gaps larger than threshold
-                gap_rows = df[df["time_diff"] > min_gap_seconds]
+                mask = df["time_diff"] > min_gap_seconds
 
-                for idx, row in gap_rows.iterrows():
-                    if idx > 0:
-                        gap_start = df.loc[idx - 1, "timestamp"]
-                        gap_end = row["timestamp"]
-                        gap_duration = (gap_end - gap_start).total_seconds()
+                if mask.any():
+                    gap_ends = pd.to_datetime(df.loc[mask, "timestamp"])
+                    gap_starts = pd.to_datetime(df["timestamp"].shift(1).loc[mask])
+                    durations = df.loc[mask, "time_diff"]
 
+                    for start, end, duration in zip(gap_starts, gap_ends, durations):
+                        if pd.isna(start):
+                            continue
                         gaps.append({
                             "file": file_path.name,
-                            "gap_start": gap_start,
-                            "gap_end": gap_end,
-                            "gap_duration_seconds": gap_duration,
+                            "gap_start": start,
+                            "gap_end": end,
+                            "gap_duration_seconds": duration,
                             "data_type": "aggtrades",
                         })
 
@@ -403,7 +405,7 @@ class DataGapDetector:
         if len(missing_data["missing_aggtrades_days"]) > 20:
             report += f"... and {len(missing_data['missing_aggtrades_days']) - 20} more days\n"
 
-        report += f"""
+        report += """
 📋 MISSING KLINES MONTHS (first 10):
 """
 
@@ -413,7 +415,7 @@ class DataGapDetector:
         if len(missing_data["missing_klines_months"]) > 10:
             report += f"... and {len(missing_data['missing_klines_months']) - 10} more months\n"
 
-        report += f"""
+        report += """
 📋 MISSING FUTURES MONTHS (first 10):
 """
 

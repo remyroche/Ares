@@ -1,0 +1,46 @@
+{
+  "scope_key": "train_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_5",
+  "kind_name": "dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898",
+  "n_total": 384438,
+  "n_splits": 2,
+  "purge_samples": 10,
+  "embargo_samples": 4,
+  "times_provided": true,
+  "valid_time_count": 384438,
+  "bad_time_count": 0,
+  "unique_time_count": 9852,
+  "monotonic_non_decreasing": false,
+  "first_valid_time": "2022-07-04 05:00:00+00:00",
+  "last_valid_time": "2024-02-24 12:00:00+00:00",
+  "fold_diagnostics": [
+    {
+      "fold": 1,
+      "val_start": 0,
+      "val_end": 192219,
+      "val_size": 192219,
+      "train_size_after_purge": 0,
+      "train_size_before_purge": 0,
+      "excluded_by_purge": 0,
+      "fold_start_valid_time": true,
+      "fold_end_valid_time": true,
+      "purge_seconds": 10,
+      "embargo_seconds": 4,
+      "purge_time_ns": 1656910790000000000
+    },
+    {
+      "fold": 2,
+      "val_start": 192219,
+      "val_end": 384438,
+      "val_size": 192219,
+      "train_size_after_purge": 0,
+      "train_size_before_purge": 192219,
+      "excluded_by_purge": 192219,
+      "fold_start_valid_time": true,
+      "fold_end_valid_time": true,
+      "purge_seconds": 10,
+      "embargo_seconds": 4,
+      "purge_time_ns": 1656910790000000000
+    }
+  ],
+  "reason": "purged_cv_produced_zero_valid_folds"
+}

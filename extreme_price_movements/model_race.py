@@ -1488,68 +1488,15 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         except Exception:
             self.best_model_leaf_context_ = None
 
-        # 4. Post-refit recalibration
-        # The refit model has a different distribution than the fold-specific OOF models.
-        # Re-generate OOF predictions via CV on the refit model, then re-fit calibration.
-        try:
-            tprint("Post-refit recalibration: generating OOF from refit model...")
-            refit_oof = np.full(len(y_hard), np.nan, dtype=np.float64)
-            for train_idx, val_idx in cached_splits:
-                X_val_fold = X_np[val_idx] if use_numpy else X.iloc[val_idx]
-                probs_raw = self.best_model.predict_proba(X_val_fold)[:, 1]
-                y_tr_fold = y_hard[train_idx]
-                if sample_weight is not None:
-                    w_tr_fold = sample_weight[train_idx]
-                    den = float(np.sum(w_tr_fold))
-                    p_weighted_fold = float(
-                        np.sum(w_tr_fold * y_tr_fold) / max(den, 1e-12)
-                    )
-                else:
-                    p_weighted_fold = float(np.mean(y_tr_fold))
-                p_unweighted_fold = float(np.mean(y_hard[val_idx]))
-                delta_logit_fold = compute_logit_shift(
-                    p_unweighted_fold, p_weighted_fold, eps=1e-6
-                )
-                refit_oof[val_idx] = apply_logit_shift(
-                    probs_raw, delta_logit_fold, eps=1e-6
-                )
-            refit_oof = np.nan_to_num(refit_oof, nan=0.5)
-
-            refit_calibrated, refit_calibrator, refit_cal_method = (
-                _safe_binary_calibrate(
-                    refit_oof, y_hard, min_unique=20, min_samples=100
-                )
+        if isinstance(self.calibration_state_, dict):
+            self.calibration_state_["train_inference_parity_mode"] = (
+                "oof_calibrator"
             )
-            self.calibrator_ = refit_calibrator
-            if isinstance(self.calibration_state_, dict):
-                self.calibration_state_["calibration_method"] = refit_cal_method
-
-            from sklearn.linear_model import LogisticRegression
-            from sklearn.metrics import brier_score_loss
-
-            cal_brier = brier_score_loss(
-                y_hard, np.clip(refit_calibrated, 1e-7, 1 - 1e-7)
-            )
-            platt = LogisticRegression(random_state=42, max_iter=1000)
-            platt.fit(refit_calibrated.reshape(-1, 1), y_hard)
-            platt_pred = platt.predict_proba(refit_calibrated.reshape(-1, 1))[:, 1]
-            platt_brier = brier_score_loss(y_hard, np.clip(platt_pred, 1e-7, 1 - 1e-7))
-            if platt_brier < cal_brier - 1e-4:
-                self.platt_calibrator_ = platt
-                tprint(
-                    f"Post-refit recalibration: {refit_cal_method} + Platt "
-                    f"(Brier {cal_brier:.4f} -> {platt_brier:.4f})"
-                )
-            else:
-                self.platt_calibrator_ = None
-                tprint(
-                    f"Post-refit recalibration: {refit_cal_method} "
-                    f"(Brier {cal_brier:.4f}, Platt skipped)"
-                )
-        except Exception as _e:
-            tprint(
-                f"WARNING: post-refit recalibration failed, keeping OOF calibration: {_e}"
-            )
+            self.calibration_state_["post_refit_recalibration_skipped"] = True
+            self.calibration_state_["calibration_source"] = "oof"
+        tprint(
+            "Post-refit recalibration skipped to preserve OOF/inference calibration parity."
+        )
 
         # Extract feature importances if possible
         try:

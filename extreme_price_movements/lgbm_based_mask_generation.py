@@ -4371,6 +4371,8 @@ class CanonicalRuleMaskResolver:
         metadata: List[FeatureMetadata],
         context_lookup: Optional[Dict[str, np.ndarray]] = None,
         context_key_map: Optional[Dict[str, str]] = None,
+        raw_feature_lookup: Optional[Dict[str, np.ndarray]] = None,
+        feature_aliases: Optional[Dict[str, str]] = None,
         slot_order: Sequence[str] = ("trigger", "location", "regime"),
     ):
         self.X = X
@@ -4382,8 +4384,20 @@ class CanonicalRuleMaskResolver:
         }
         self.context_key_map = context_key_map or {}
         self.slot_order = tuple(slot_order)
+        self.feature_aliases = {
+            str(k): str(v) for k, v in (feature_aliases or {}).items()
+        }
         tprint("CanonicalRuleMaskResolver: processing name_to_idx...")
         self.name_to_idx = {m.feature_name: m.feature_index for m in metadata}
+        self.source_name_to_idx = {
+            m.source_name: m.feature_index
+            for m in metadata
+            if m.source_type == "continuous" and m.source_name not in self.name_to_idx
+        }
+        self.raw_feature_lookup = {
+            str(key): np.asarray(val, dtype=np.float32).reshape(-1)
+            for key, val in (raw_feature_lookup or {}).items()
+        }
         tprint("CanonicalRuleMaskResolver: processing context_name_to_idx...")
         self.context_name_to_idx = {
             key: idx for idx, key in enumerate(self.context_lookup.keys())
@@ -4398,6 +4412,9 @@ class CanonicalRuleMaskResolver:
         self.unresolved_feature_count = 0
         self.unresolved_feature_names: Set[str] = set()
         tprint("CanonicalRuleMaskResolver: init complete.")
+
+    def _resolve_rule_feature_name(self, feature_name: str) -> str:
+        return self.feature_aliases.get(feature_name, feature_name)
 
     def _slice_mask(
         self, mask: np.ndarray, indices: Optional[np.ndarray]
@@ -4467,6 +4484,9 @@ class CanonicalRuleMaskResolver:
         feature_indices: List[int] = []
         feature_operator_codes: List[int] = []
         feature_threshold_values: List[float] = []
+        raw_feature_names: List[str] = []
+        raw_feature_operator_codes: List[int] = []
+        raw_feature_threshold_values: List[float] = []
         context_feature_names: List[str] = []
         context_target_values: List[int] = []
         unresolved: List[Tuple[str, str]] = []
@@ -4480,18 +4500,28 @@ class CanonicalRuleMaskResolver:
                     self.malformed_key_count += 1
                     raise ValueError(f"Malformed slot {cond_str} in {canonical_key}")
                 feature_name, operator, raw_value = parsed
-                if feature_name in self.name_to_idx:
-                    feature_idx = self.name_to_idx[feature_name]
+                resolved_feature_name = self._resolve_rule_feature_name(feature_name)
+                if resolved_feature_name in self.name_to_idx:
+                    feature_idx = self.name_to_idx[resolved_feature_name]
                     feature_indices.append(feature_idx)
                     feature_operator_codes.append(condition_operator_code(operator))
                     feature_threshold_values.append(float(raw_value))
-                elif feature_name in self.context_lookup:
+                elif resolved_feature_name in self.source_name_to_idx:
+                    feature_idx = self.source_name_to_idx[resolved_feature_name]
+                    feature_indices.append(feature_idx)
+                    feature_operator_codes.append(condition_operator_code(operator))
+                    feature_threshold_values.append(float(raw_value))
+                elif resolved_feature_name in self.context_lookup:
                     if operator != "==":
                         raise ValueError(
-                            f"Context feature {feature_name} only supports == predicates"
+                            f"Context feature {resolved_feature_name} only supports == predicates"
                         )
-                    context_feature_names.append(feature_name)
+                    context_feature_names.append(resolved_feature_name)
                     context_target_values.append(int(float(raw_value)))
+                elif resolved_feature_name in self.raw_feature_lookup:
+                    raw_feature_names.append(resolved_feature_name)
+                    raw_feature_operator_codes.append(condition_operator_code(operator))
+                    raw_feature_threshold_values.append(float(raw_value))
                 else:
                     unresolved.append((group, feature_name))
                     self.unresolved_feature_count += 1
@@ -4523,6 +4553,13 @@ class CanonicalRuleMaskResolver:
             "feature_operator_codes": np.asarray(feature_operator_codes, dtype=np.int8),
             "feature_threshold_values": np.asarray(
                 feature_threshold_values, dtype=np.float32
+            ),
+            "raw_feature_names": tuple(raw_feature_names),
+            "raw_feature_operator_codes": np.asarray(
+                raw_feature_operator_codes, dtype=np.int8
+            ),
+            "raw_feature_threshold_values": np.asarray(
+                raw_feature_threshold_values, dtype=np.float32
             ),
             "context_feature_names": tuple(context_feature_names),
             "context_target_values": np.asarray(context_target_values, dtype=np.int8),
@@ -4593,6 +4630,27 @@ class CanonicalRuleMaskResolver:
             else:
                 mask &= values >= threshold_value
 
+        for raw_name, operator_code, threshold_value in zip(
+            spec.get("raw_feature_names", ()),
+            spec.get("raw_feature_operator_codes", np.empty(0, dtype=np.int8)),
+            spec.get("raw_feature_threshold_values", np.empty(0, dtype=np.float32)),
+        ):
+            raw_values = self.raw_feature_lookup.get(str(raw_name))
+            if raw_values is None:
+                mask[:] = False
+                break
+            values = raw_values if indices is None else raw_values[indices]
+            if int(operator_code) == 0:
+                mask &= values == threshold_value
+            elif int(operator_code) == 1:
+                mask &= values <= threshold_value
+            elif int(operator_code) == 2:
+                mask &= values > threshold_value
+            elif int(operator_code) == 3:
+                mask &= values < threshold_value
+            else:
+                mask &= values >= threshold_value
+
         for feature_name, target_val in zip(
             spec["context_feature_names"], spec["context_target_values"]
         ):
@@ -4646,7 +4704,9 @@ class CanonicalRuleMaskResolver:
         offset = 0
 
         for pos, spec in enumerate(parsed_specs):
-            if spec.get("is_composite", False):
+            if spec.get("is_composite", False) or len(
+                spec.get("raw_feature_names", ())
+            ) > 0:
                 composite_positions.append(pos)
                 continue
             non_composite_positions.append(pos)

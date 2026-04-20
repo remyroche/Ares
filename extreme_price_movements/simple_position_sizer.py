@@ -29,6 +29,11 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import ElasticNet, Ridge, RidgeClassifier
 from sklearn.preprocessing import RobustScaler
 
+try:
+    from lightgbm import LGBMRegressor
+except ImportError:
+    LGBMRegressor = None  # type: ignore[assignment, misc]
+
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.offline_optimisers.params_store import (
     load_inference_candidate_mask_params_per_bucket,
@@ -167,6 +172,7 @@ def _extract_strategy_params_payload(
             "source_target": source_target,
             "source_horizon": _to_float_or_nan(source_horizon),
         }
+        row["feature_importance"] = _summarize_strategy_feature_importance(res)
         strategies.append(row)
 
     strategies = sorted(
@@ -192,6 +198,164 @@ def _extract_strategy_params_payload(
         ),
     }
     return payload
+
+
+def _normalize_importance_table(
+    df: pd.DataFrame | None,
+    *,
+    default_metric: str,
+) -> pd.DataFrame:
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame()
+
+    out = df.copy()
+    if "feature" not in out.columns:
+        if "head_name" in out.columns:
+            out["feature"] = out["head_name"].astype(str)
+        else:
+            out["feature"] = [f"feature_{i}" for i in range(len(out))]
+
+    metric_col = None
+    for cand in (
+        "mean_importance",
+        "importance",
+        "mean_abs_weight",
+        "abs_weight",
+        "mean_weight",
+    ):
+        if cand in out.columns:
+            metric_col = cand
+            break
+    if metric_col is None:
+        return pd.DataFrame()
+
+    out["importance_value"] = pd.to_numeric(out[metric_col], errors="coerce").astype(
+        float
+    )
+    if metric_col in {"mean_weight"} and "abs_weight" in out.columns:
+        out["importance_value"] = pd.to_numeric(
+            out["abs_weight"], errors="coerce"
+        ).astype(float)
+    out["importance_metric"] = str(default_metric)
+
+    std_col = None
+    for cand in ("std_importance", "std_weight"):
+        if cand in out.columns:
+            std_col = cand
+            break
+    out["importance_std"] = (
+        pd.to_numeric(out[std_col], errors="coerce").astype(float)
+        if std_col is not None
+        else np.nan
+    )
+    out = out[np.isfinite(out["importance_value"])].copy()
+    if out.empty:
+        return pd.DataFrame()
+    return out.sort_values("importance_value", ascending=False).reset_index(drop=True)
+
+
+def _summarize_strategy_feature_importance(res: Dict[str, Any]) -> Dict[str, Any]:
+    ridge_df = _normalize_importance_table(
+        res.get("ridge_importance_table_"), default_metric="abs_weight"
+    )
+    et_df = _normalize_importance_table(
+        res.get("et_importance_table_"), default_metric="gain"
+    )
+    barrier_df = _normalize_importance_table(
+        res.get("barrier_clf_importance_"), default_metric="abs_weight"
+    )
+
+    comparison = dict(res.get("comparison_", {}) or {})
+    winner = str(
+        comparison.get(
+            "wallet_winner",
+            comparison.get("winner", "ridge" if not ridge_df.empty else "et"),
+        )
+    )
+    winner_key = "ridge" if winner.startswith("ridge") else "et"
+    winner_df = ridge_df if winner_key == "ridge" else et_df
+
+    def _topn(df: pd.DataFrame, n: int = 10) -> list[dict[str, Any]]:
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return []
+        rows = []
+        for _, row in df.head(n).iterrows():
+            rows.append(
+                {
+                    "feature": str(row.get("feature", "")),
+                    "importance": float(row.get("importance_value", np.nan)),
+                    "std": float(row.get("importance_std", np.nan))
+                    if np.isfinite(row.get("importance_std", np.nan))
+                    else None,
+                    "metric": str(row.get("importance_metric", "")),
+                }
+            )
+        return rows
+
+    def _pred_prefix_share(df: pd.DataFrame) -> float | None:
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return None
+        vals = np.asarray(df["importance_value"], dtype=float)
+        total = float(np.nansum(np.abs(vals)))
+        if total <= 0.0:
+            return None
+        mask = df["feature"].astype(str).str.startswith("oof_")
+        share = float(np.nansum(np.abs(vals[mask.to_numpy()])) / total)
+        return share
+
+    return {
+        "winner_model": winner_key,
+        "winner_top10": _topn(winner_df, 10),
+        "winner_pred_prefix_share": _pred_prefix_share(winner_df),
+        "elasticnet_top10": _topn(ridge_df, 10),
+        "extratrees_top10": _topn(et_df, 10),
+        "barrier_clf_top10": _topn(barrier_df, 10),
+    }
+
+
+def _persist_feature_importance_summary(
+    data_root: str,
+    run_id: str,
+    strategy_results: Dict[str, Any],
+) -> Path | None:
+    rows: list[dict[str, Any]] = []
+    payload: dict[str, Any] = {
+        "schema_version": "v1",
+        "generated_by": "simple_position_sizer",
+        "run_id": str(run_id),
+        "strategies": {},
+    }
+    for strategy_id, res in strategy_results.items():
+        summary = _summarize_strategy_feature_importance(res)
+        payload["strategies"][str(strategy_id)] = summary
+        for model_name, top_key in (
+            ("elasticnet", "elasticnet_top10"),
+            ("extratrees", "extratrees_top10"),
+            ("barrier_clf", "barrier_clf_top10"),
+        ):
+            for rank, item in enumerate(summary.get(top_key, []), start=1):
+                rows.append(
+                    {
+                        "strategy_id": str(strategy_id),
+                        "model": model_name,
+                        "rank": int(rank),
+                        "feature": str(item.get("feature", "")),
+                        "importance": float(item.get("importance", np.nan)),
+                        "importance_std": item.get("std"),
+                        "importance_metric": str(item.get("metric", "")),
+                        "winner_model": str(summary.get("winner_model", "")),
+                    }
+                )
+
+    out_dir = Path(data_root) / "artifacts" / run_id / "ridge_sizer"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    json_path = out_dir / "feature_importance_summary.json"
+    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    if rows:
+        pd.DataFrame(rows).to_csv(
+            out_dir / "feature_importance_summary.csv", index=False
+        )
+    return json_path
 
 
 def _save_strategy_params_payload(
@@ -610,6 +774,7 @@ def _persist_sizer_oof_predictions(
     """Save sizer OOF predictions to parquet for policy_optimiser consumption.
 
     Saves predictions indexed by row position (assumes consistent ordering across strategies).
+    Also persists Total_Confidence and inference metadata for live residualization.
     """
     all_rows = []
     row_idx = 0
@@ -617,32 +782,40 @@ def _persist_sizer_oof_predictions(
     for strategy_id, res in strategy_results.items():
         ridge_preds = res.get("ridge_sizer_scores_")
         et_preds = res.get("et_sizer_scores_")
+        total_conf = res.get("total_confidence_")
 
-        # Get predictions - use whichever is available
-        preds = ridge_preds if ridge_preds is not None else et_preds
+        preds = total_conf
+        if preds is None:
+            preds = ridge_preds if ridge_preds is not None else et_preds
         if preds is None:
             continue
 
         n_preds = len(preds)
 
-        # Find the winner model for this strategy
         comp = res.get("comparison_", {})
         if comp:
             winner = comp.get("winner", "elasticnet")
         else:
-            # Fallback: prefer et if available, else elasticnet
             winner = "extratrees" if et_preds is not None else "elasticnet"
 
         for idx in range(n_preds):
             score = float(preds[idx]) if np.isfinite(preds[idx]) else np.nan
-            all_rows.append(
-                {
-                    "row_idx": row_idx + idx,
-                    "strategy_id": strategy_id,
-                    "sizer_score_oof": score,
-                    "model": winner,
-                }
-            )
+            row_data = {
+                "row_idx": row_idx + idx,
+                "strategy_id": strategy_id,
+                "sizer_score_oof": score,
+                "total_confidence": score,
+                "model": winner,
+            }
+            if ridge_preds is not None and idx < len(ridge_preds):
+                row_data["ridge_score"] = (
+                    float(ridge_preds[idx]) if np.isfinite(ridge_preds[idx]) else np.nan
+                )
+            if et_preds is not None and idx < len(et_preds):
+                row_data["et_score"] = (
+                    float(et_preds[idx]) if np.isfinite(et_preds[idx]) else np.nan
+                )
+            all_rows.append(row_data)
 
         row_idx += n_preds
 
@@ -659,6 +832,67 @@ def _persist_sizer_oof_predictions(
         df.to_parquet(out_path, index=False)
         logger.info(f"Saved simple_position_sizer OOF predictions to {out_path}")
 
+    for strategy_id, res in strategy_results.items():
+        calibration_isotonic = res.get("calibration_isotonic_")
+        ridge_resid_mean = res.get("ridge_resid_mean_")
+        ridge_resid_std = res.get("ridge_resid_std_")
+        et_best_params = res.get("et_best_params_")
+        lgbm_best_params = res.get("lgbm_best_params_")
+        cal_iso_et = res.get("calibration_isotonic_")
+        cal_iso_lgbm = res.get("calibration_isotonic_lgbm_")
+
+        if cal_iso_et is not None or et_best_params is not None:
+            meta_path = (
+                Path(data_root)
+                / "artifacts"
+                / run_id
+                / "et_sizer"
+                / "inference_metadata.json"
+            )
+            meta_path.parent.mkdir(parents=True, exist_ok=True)
+            import pickle
+
+            if cal_iso_et is not None:
+                with open(meta_path.parent / "calibration_isotonic.pkl", "wb") as f:
+                    pickle.dump(cal_iso_et, f)
+            meta_payload = {
+                "ridge_resid_mean": ridge_resid_mean,
+                "ridge_resid_std": ridge_resid_std,
+                "et_best_params": et_best_params,
+                "has_calibration": cal_iso_et is not None,
+                "atr_column": res.get("_strategy_meta_", {}).get("atr_column"),
+            }
+            with open(meta_path, "w") as f:
+                json.dump(meta_payload, f, indent=2)
+
+        if cal_iso_lgbm is not None or lgbm_best_params is not None:
+            meta_path_lgbm = (
+                Path(data_root)
+                / "artifacts"
+                / run_id
+                / "lgbm_sizer"
+                / "inference_metadata.json"
+            )
+            meta_path_lgbm.parent.mkdir(parents=True, exist_ok=True)
+            import pickle
+
+            if cal_iso_lgbm is not None:
+                with open(
+                    meta_path_lgbm.parent / "calibration_isotonic.pkl", "wb"
+                ) as f:
+                    pickle.dump(cal_iso_lgbm, f)
+            meta_payload_lgbm = {
+                "ridge_resid_mean": ridge_resid_mean,
+                "ridge_resid_std": ridge_resid_std,
+                "lgbm_best_params": lgbm_best_params,
+                "has_calibration": cal_iso_lgbm is not None,
+                "atr_column": res.get("_strategy_meta_", {}).get("atr_column"),
+            }
+            with open(meta_path_lgbm, "w") as f:
+                json.dump(meta_payload_lgbm, f, indent=2)
+
+        break
+
 
 def _persist_head_to_head_winner(
     data_root: str,
@@ -667,19 +901,22 @@ def _persist_head_to_head_winner(
 ) -> None:
     comparison_rows: List[Dict[str, Any]] = []
     et_winner_rows: List[Dict[str, Any]] = []
+    lgbm_winner_rows: List[Dict[str, Any]] = []
     for strategy_id, res in strategy_results.items():
         comp = res.get("comparison_", {})
         if not comp:
             continue
         comparison_rows.append({"strategy_id": strategy_id, **comp})
-        if comp.get("winner") == "et":
-            et_profit = res.get("et_profit_proxy_table_", pd.DataFrame())
-            if et_profit.empty:
+        winner = comp.get("winner", "")
+        if winner == "ridge_plus_et":
+            profit_df = res.get("et_profit_proxy_table_", pd.DataFrame())
+            if profit_df.empty:
                 continue
-            if "is_optimal" in et_profit.columns:
-                opt = et_profit[et_profit["is_optimal"]].iloc[0]
-            else:
-                opt = et_profit.sort_values("wallet_pnl", ascending=False).iloc[0]
+            opt = (
+                profit_df[profit_df["is_optimal"]].iloc[0]
+                if "is_optimal" in profit_df.columns
+                else profit_df.sort_values("wallet_pnl", ascending=False).iloc[0]
+            )
             meta = res.get("_strategy_meta_", {})
             et_winner_rows.append(
                 {
@@ -695,7 +932,34 @@ def _persist_head_to_head_winner(
                     "net_pnl": _to_float_or_nan(opt.get("net_pnl", np.nan)),
                     "profit_factor": _to_float_or_nan(opt.get("profit_factor", np.nan)),
                     "hit_rate": _to_float_or_nan(opt.get("hit_rate", np.nan)),
-                    "model_source": "et",
+                    "model_source": "ridge_plus_et",
+                }
+            )
+        elif winner == "ridge_plus_lgbm":
+            profit_df = res.get("lgbm_profit_proxy_table_", pd.DataFrame())
+            if profit_df.empty:
+                continue
+            opt = (
+                profit_df[profit_df["is_optimal"]].iloc[0]
+                if "is_optimal" in profit_df.columns
+                else profit_df.sort_values("wallet_pnl", ascending=False).iloc[0]
+            )
+            meta = res.get("_strategy_meta_", {})
+            lgbm_winner_rows.append(
+                {
+                    "strategy_id": str(strategy_id),
+                    "side": _infer_side_label(
+                        strategy_id=str(strategy_id), strategy_meta=meta
+                    ),
+                    "threshold_pct": _to_float_or_nan(opt.get("threshold_pct", np.nan)),
+                    "selection_frac": _to_float_or_nan(
+                        opt.get("selection_frac", np.nan)
+                    ),
+                    "wallet_pnl": _to_float_or_nan(opt.get("wallet_pnl", np.nan)),
+                    "net_pnl": _to_float_or_nan(opt.get("net_pnl", np.nan)),
+                    "profit_factor": _to_float_or_nan(opt.get("profit_factor", np.nan)),
+                    "hit_rate": _to_float_or_nan(opt.get("hit_rate", np.nan)),
+                    "model_source": "ridge_plus_lgbm",
                 }
             )
 
@@ -710,33 +974,57 @@ def _persist_head_to_head_winner(
         comp_path.parent.mkdir(parents=True, exist_ok=True)
         comp_path.write_text(json.dumps(comparison_rows, indent=2, default=str))
 
-    if et_winner_rows:
-        best_et_row = max(
-            et_winner_rows,
+    for model_name, winner_rows in [
+        ("et_sizer", et_winner_rows),
+        ("lgbm_sizer", lgbm_winner_rows),
+    ]:
+        if not winner_rows:
+            continue
+        best_row = max(
+            winner_rows,
             key=lambda r: (
                 float(r.get("net_pnl", float("-inf"))),
                 float(r.get("profit_factor", float("-inf"))),
                 float(r.get("hit_rate", float("-inf"))),
             ),
         )
-        et_params_path = (
-            Path(data_root) / "artifacts" / run_id / "et_sizer" / "strategy_params.json"
+        params_path = (
+            Path(data_root) / "artifacts" / run_id / model_name / "strategy_params.json"
         )
-        et_params_path.parent.mkdir(parents=True, exist_ok=True)
-        et_payload = {
+        params_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
             "schema_version": "v1",
             "generated_by": "simple_position_sizer",
             "run_id": run_id,
             "fee_pct": 0.003,
-            "strategies": et_winner_rows,
-            "buckets": {row["strategy_id"]: dict(row) for row in et_winner_rows},
-            "best_strategy_id": best_et_row["strategy_id"],
-            "best_threshold_pct": best_et_row["threshold_pct"],
+            "strategies": winner_rows,
+            "buckets": {row["strategy_id"]: dict(row) for row in winner_rows},
+            "best_strategy_id": best_row["strategy_id"],
+            "best_threshold_pct": best_row["threshold_pct"],
         }
-        et_params_path.write_text(json.dumps(et_payload, indent=2))
+        params_path.write_text(json.dumps(payload, indent=2))
         logger.info(
-            f"Persisted ET winner params ({len(et_winner_rows)} strategies) to {et_params_path}"
+            f"Persisted {model_name} winner params ({len(winner_rows)} strategies) to {params_path}"
         )
+
+    comp_table = pd.DataFrame()
+    for strategy_id, res in strategy_results.items():
+        ct = res.get("comparison_table_", pd.DataFrame())
+        if not ct.empty:
+            comp_table = pd.concat(
+                [comp_table, ct.assign(strategy_id=strategy_id)], ignore_index=True
+            )
+    if not comp_table.empty:
+        table_path = (
+            Path(data_root)
+            / "artifacts"
+            / run_id
+            / "ridge_sizer"
+            / "pipeline_comparison_table.csv"
+        )
+        table_path.parent.mkdir(parents=True, exist_ok=True)
+        comp_table.to_csv(table_path, index=False)
+        logger.info(f"Persisted pipeline comparison table to {table_path}")
 
 
 def _to_float_or_nan(value: Any) -> float:
@@ -2007,6 +2295,34 @@ def evaluate_selection_profit_proxy(
     return df, opt_rets, opt_ts
 
 
+def _mdi_select_features(
+    X: np.ndarray,
+    y: np.ndarray,
+    feature_names: List[str],
+    model_factory: Callable[[], Any],
+    n_max: int = 60,
+    n_min: int = 20,
+    cumulative_threshold: float = 0.99,
+) -> List[str]:
+    preliminary = model_factory()
+    preliminary.fit(X, y)
+    if not hasattr(preliminary, "feature_importances_"):
+        return list(feature_names)
+    importances = np.asarray(preliminary.feature_importances_, dtype=np.float64)
+    n_max = min(n_max, len(feature_names))
+    n_min = min(n_min, n_max)
+    order = np.argsort(importances)[::-1]
+    sorted_imp = importances[order]
+    total = sorted_imp.sum()
+    if total < 1e-12:
+        return list(feature_names[:n_min])
+    cumsum = np.cumsum(sorted_imp) / total
+    elbow_idx = int(np.searchsorted(cumsum, cumulative_threshold)) + 1
+    n_select = max(n_min, min(elbow_idx, n_max))
+    top_idx = order[:n_select]
+    return [feature_names[i] for i in sorted(top_idx)]
+
+
 def run_simple_position_sizer(
     feature_dict: Dict[str, np.ndarray],
     trade_outcomes: pd.DataFrame,
@@ -2022,8 +2338,11 @@ def run_simple_position_sizer(
     top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
     use_ridge_head_sizer: bool = True,
     use_et_head_sizer: bool = True,
+    use_lgbm_head_sizer: bool = True,
     use_barrier_classifier: bool = True,
     config_feature_keys: Optional[List[str]] = None,
+    y_atr_target: Optional[np.ndarray] = None,
+    atr_vals: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """
     Main orchestrator for the simple position sizer diagnostic framework.
@@ -2031,6 +2350,24 @@ def run_simple_position_sizer(
     """
     if lambda_grid is None:
         lambda_grid = [0.25, 0.5, 1.0, 2.0]
+
+    y_model_target = y_atr_target if y_atr_target is not None else y_raw_net_return
+    _atr_safe: np.ndarray = (
+        np.where(
+            np.isfinite(atr_vals) & (np.abs(atr_vals) > 1e-8), atr_vals, 1.0
+        ).astype(np.float32)
+        if atr_vals is not None
+        else np.ones(len(y_raw_net_return), dtype=np.float32)
+    )
+    _use_atr = atr_vals is not None and y_atr_target is not None
+    if y_atr_target is not None:
+        tprint(
+            f"  ATR-normalized target: "
+            f"mean={float(np.nanmean(y_model_target)):.6f}, "
+            f"std={float(np.nanstd(y_model_target)):.6f}, "
+            f"raw mean={float(np.nanmean(y_raw_net_return)):.6f}, "
+            f"ATR mean={float(np.mean(_atr_safe)):.6f}"
+        )
 
     detected_heads = detect_meta_head_keys(
         feature_dict, config_overrides=config_feature_keys
@@ -2142,7 +2479,6 @@ def run_simple_position_sizer(
         ridge_sampler = TPESampler(seed=42, multivariate=True, group=True)
         ridge_pruner = SuccessiveHalvingPruner(
             min_resource=1,
-            max_resource=len(splits),
             reduction_factor=3,
         )
         ridge_study = optuna.create_study(
@@ -2151,12 +2487,11 @@ def run_simple_position_sizer(
         optuna_patience_trials = 40
 
         def _make_patience_callback(
-            *, patience: int, label: str
+            *, patience: int, label: str, min_trials: int = 0
         ) -> Callable[[optuna.Study, optuna.trial.FrozenTrial], None]:
             best_value = float("-inf")
             best_trial_number = -1
-            # Track meaningful improvement (>0.5% threshold)
-            meaningful_improvement_threshold = 1.005  # 0.5% improvement required
+            meaningful_improvement_threshold = 1.005
             last_meaningful_improvement_trial = -1
             best_value_at_meaningful_check = float("-inf")
 
@@ -2164,6 +2499,9 @@ def run_simple_position_sizer(
                 nonlocal best_value, best_trial_number, last_meaningful_improvement_trial, best_value_at_meaningful_check
                 values = trial.values or []
                 current_trial_number = int(trial.number)
+
+                if current_trial_number < min_trials:
+                    return
 
                 if values:
                     current = float(values[0])
@@ -2224,8 +2562,8 @@ def run_simple_position_sizer(
                 ]
                 if len(sub_tr) == 0 or len(te_idx) == 0:
                     continue
-                y_tr = y_raw_net_return[sub_tr]
-                y_te = y_raw_net_return[te_idx]
+                y_tr = y_model_target[sub_tr]
+                y_te = y_model_target[te_idx]
 
                 model = ElasticNet(
                     alpha=alpha,
@@ -2243,7 +2581,7 @@ def run_simple_position_sizer(
                 n_days_fold = max(1.0, len(te_idx) / 96.0)
                 lw = _lightweight_hpo_pnl_eval(
                     fold_preds,
-                    y_te,
+                    y_raw_net_return[te_idx],
                     top_fracs=[0.10, 0.20],
                     cost_pct=cost_pct,
                     n_days=n_days_fold,
@@ -2322,7 +2660,7 @@ def run_simple_position_sizer(
             best_ridge_importance,
         ) = _fit_predict_oof_regressor_with_pruning(
             X=X_heads,
-            y=y_raw_net_return,
+            y=y_model_target,
             y_downside=y_downside,
             splits=splits,
             model_factory=_best_ridge_model_factory,
@@ -2459,14 +2797,46 @@ def run_simple_position_sizer(
     et_sizer_eval: Dict[str, Any] = {}
     et_importance_df = pd.DataFrame()
     et_profit_proxy_df = pd.DataFrame()
+    lgbm_sizer_eval: Dict[str, Any] = {}
+    lgbm_importance_df = pd.DataFrame()
+    lgbm_profit_proxy_df = pd.DataFrame()
 
-    if use_et_head_sizer and used_keys:
+    _use_any_booster = (use_et_head_sizer or use_lgbm_head_sizer) and used_keys
+
+    if _use_any_booster:
         X_heads = (
             X_heads
             if use_ridge_head_sizer and used_keys
             else np.column_stack([feature_dict[k] for k in used_keys])
         )
 
+        ridge_oof_available = (
+            use_ridge_head_sizer
+            and ridge_oof_preds is not None
+            and len(ridge_oof_preds) == len(y_raw_net_return)
+        )
+
+        if ridge_oof_available:
+            ridge_resid = y_model_target - ridge_oof_preds
+            ridge_resid_mean = float(np.mean(ridge_resid))
+            ridge_resid_std = float(np.std(ridge_resid)) + 1e-6
+            y_resid_target = (ridge_resid - ridge_resid_mean) / ridge_resid_std
+            tprint(
+                f"  Residual target: resid_mean={ridge_resid_mean:.6f}, "
+                f"resid_std={ridge_resid_std:.6f}, "
+                f"target_mean={float(np.mean(y_resid_target)):.6f}"
+            )
+        else:
+            y_resid_target = y_model_target
+            ridge_resid_mean = 0.0
+            ridge_resid_std = 1.0
+            tprint("  No Ridge OOF available — training boosters on raw target")
+
+        X_heads_clean_m, medians_m, scaler_m, c1d_m, s1d_m = clean_and_standardize(
+            X_heads
+        )
+
+    if use_et_head_sizer and used_keys:
         best_et_utility = -np.inf
         best_et_preds = None
         best_et_importance = pd.DataFrame()
@@ -2476,13 +2846,29 @@ def run_simple_position_sizer(
         best_et_opt_ts = np.array([])
         best_et_params = {}
 
+        et_selected_keys = _mdi_select_features(
+            X_heads_clean_m,
+            y_resid_target,
+            used_keys,
+            model_factory=lambda: ExtraTreesRegressor(
+                n_estimators=200, max_depth=7, random_state=42, n_jobs=2
+            ),
+        )
+        et_selected_idx = [
+            used_keys.index(k) for k in et_selected_keys if k in used_keys
+        ]
+        X_et = X_heads[:, et_selected_idx]
+        tprint(
+            f"  ET MDI feature selection: {len(et_selected_keys)}/{len(used_keys)} features retained"
+        )
+
         et_sub_scaled_folds: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
         for i, (tr_idx, te_idx) in enumerate(splits):
             sub_tr = _hpo_tr_idx_subs[i]
-            X_sub = X_heads[sub_tr]
+            X_sub = X_et[sub_tr]
             X_sub_clean, med, sc, c1d, s1d = clean_and_standardize(X_sub)
             X_te_clean, _, _, _, _ = clean_and_standardize(
-                X_heads[te_idx], fit_medians=med, scaler=sc, center_1d=c1d, scale_1d=s1d
+                X_et[te_idx], fit_medians=med, scaler=sc, center_1d=c1d, scale_1d=s1d
             )
             et_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
 
@@ -2490,17 +2876,86 @@ def run_simple_position_sizer(
         et_sampler = TPESampler(seed=42, multivariate=True, group=True)
         et_pruner = SuccessiveHalvingPruner(
             min_resource=1,
-            max_resource=len(splits),
             reduction_factor=3,
         )
         et_study = optuna.create_study(
             direction="maximize", sampler=et_sampler, pruner=et_pruner
         )
 
-        et_n_estimators_choices = [200, 300, 400]
-        et_max_depth_choices = [6, 7, 8, 9, 10, 11, 12]
-        et_min_impurity_choices = [1e-6, 1e-5, 5e-5, 1e-4]
-        et_criterion_choices = ["squared_error", "absolute_error"]
+        et_n_estimators_choices = [200, 300, 400, 500, 600, 800, 1000]
+        et_max_depth_choices = [3, 4, 5, 6, 7]
+        et_criterion_choices = ["absolute_error"]
+
+        def _quantile_scale_to_band(
+            arr: np.ndarray, low: float = 0.7, high: float = 1.3
+        ) -> np.ndarray:
+            n = len(arr)
+            if n == 0:
+                return np.array([], dtype=np.float32)
+            ranks = np.argsort(np.argsort(arr)).astype(np.float64) / max(n - 1, 1)
+            delta_r = ranks - 0.5
+            mapped = 1.0 + np.sign(delta_r) * 1.2 * (delta_r**2)
+            mapped = np.clip(mapped, low, high)
+            median_val = float(np.median(mapped))
+            if abs(median_val) > 1e-12:
+                mapped = mapped * (1.0 / median_val)
+            mapped = np.clip(mapped, low, high)
+            return mapped.astype(np.float32)
+
+        def _compute_et_confidence(
+            model: ExtraTreesRegressor,
+            X: np.ndarray,
+        ) -> np.ndarray:
+            n_trees = len(model.estimators_)
+            n_samples = X.shape[0]
+            leaf_ids = np.empty((n_samples, n_trees), dtype=np.int32)
+            tree_preds = np.empty((n_samples, n_trees), dtype=np.float32)
+            for t_idx, tree in enumerate(model.estimators_):
+                leaf_ids[:, t_idx] = tree.apply(X)
+                tree_preds[:, t_idx] = tree.predict(X).astype(np.float32)
+
+            tree_mean = np.mean(tree_preds, axis=1)
+            tree_std = np.std(tree_preds, axis=1).astype(np.float32)
+            tree_disagreement = tree_std / (np.abs(tree_mean) + 1e-6)
+
+            leaf_support = np.zeros(n_samples, dtype=np.float32)
+            centroid_dist = np.zeros(n_samples, dtype=np.float32)
+            for t_idx, tree in enumerate(model.estimators_):
+                leaves = leaf_ids[:, t_idx]
+                unique_leaves = np.unique(leaves)
+                leaf_counts = np.zeros(n_samples, dtype=np.float32)
+                leaf_means = np.zeros(n_samples, dtype=np.float32)
+                for lf in unique_leaves:
+                    mask = leaves == lf
+                    count = np.sum(mask)
+                    mean_val = np.mean(tree_preds[mask, t_idx]) if count > 0 else 0.0
+                    leaf_counts[mask] = float(count)
+                    leaf_means[mask] = float(mean_val)
+                leaf_support += leaf_counts
+                centroid_dist += np.abs(tree_preds[:, t_idx] - leaf_means)
+            leaf_support /= n_trees
+            centroid_dist /= n_trees
+
+            td_inv = 1.0 / (tree_disagreement + 1e-12)
+            cd_inv = 1.0 / (centroid_dist + 1e-12)
+            td_scaled = _quantile_scale_to_band(td_inv)
+            ls_scaled = _quantile_scale_to_band(leaf_support)
+            cd_scaled = _quantile_scale_to_band(cd_inv)
+
+            log_conf = (
+                3.0 * np.log(td_scaled + 1e-12)
+                + 2.0 * np.log(ls_scaled + 1e-12)
+                + 1.0 * np.log(cd_scaled + 1e-12)
+            ) / 6.0
+            raw_wgm = np.exp(log_conf).astype(np.float32)
+            median_wgm = float(np.median(raw_wgm))
+            if abs(median_wgm) > 1e-12:
+                et_confidence = np.clip(raw_wgm / median_wgm, 0.7, 1.3).astype(
+                    np.float32
+                )
+            else:
+                et_confidence = np.ones_like(raw_wgm)
+            return et_confidence
 
         def _et_objective(trial: optuna.trial.Trial) -> float:
             n_estimators = int(
@@ -2511,24 +2966,20 @@ def run_simple_position_sizer(
             )
             max_features = float(trial.suggest_float("max_features", 0.2, 0.7))
             ccp_alpha = 1e-6
-            min_impurity_decrease = float(
-                trial.suggest_categorical(
-                    "min_impurity_decrease", et_min_impurity_choices
-                )
-            )
+            min_impurity_decrease = 1e-6
             criterion = trial.suggest_categorical("criterion", et_criterion_choices)
             min_samples_leaf_frac = float(
-                trial.suggest_float("min_samples_leaf_frac", 0.001, 0.1, log=True)
+                trial.suggest_float("min_samples_leaf_frac", 0.01, 0.05)
             )
             min_samples_split_frac = float(
-                trial.suggest_float("min_samples_split_frac", 0.005, 0.02, log=True)
+                trial.suggest_float("min_samples_split_frac", 0.01, 0.05)
             )
             min_samples_leaf = max(
-                1, int(np.ceil(min_samples_leaf_frac * X_heads.shape[0]))
+                1, int(np.ceil(min_samples_leaf_frac * X_et.shape[0]))
             )
             min_samples_split = max(
                 min_samples_leaf + 1,
-                int(np.ceil(min_samples_split_frac * X_heads.shape[0])),
+                int(np.ceil(min_samples_split_frac * X_et.shape[0])),
             )
 
             fold_pnl_10: List[float] = []
@@ -2539,7 +2990,7 @@ def run_simple_position_sizer(
                 sub_tr, te_idx, X_tr_clean, X_te_clean = et_sub_scaled_folds[fold_idx]
                 if len(sub_tr) == 0 or len(te_idx) == 0:
                     continue
-                y_tr = y_raw_net_return[sub_tr]
+                y_tr = y_resid_target[sub_tr]
                 y_te = y_raw_net_return[te_idx]
 
                 model = ExtraTreesRegressor(
@@ -2558,12 +3009,34 @@ def run_simple_position_sizer(
                     verbose=0,
                 )
                 model.fit(X_tr_clean, y_tr)
-                fold_preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
+                et_fold_preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
+                et_conf_fold = _compute_et_confidence(model, X_te_clean)
+
+                if ridge_oof_available:
+                    ridge_fold_preds = ridge_oof_preds[te_idx]
+                    _combined_hpo = (
+                        ridge_fold_preds + 0.5 * et_fold_preds * et_conf_fold
+                    )
+                    if _use_atr:
+                        raw_conf = np.clip(
+                            _combined_hpo * _atr_safe[te_idx],
+                            0.0,
+                            3.0 * _atr_safe[te_idx],
+                        ).astype(np.float32)
+                    else:
+                        raw_conf = np.maximum(
+                            0.0,
+                            _combined_hpo * ridge_resid_std,
+                        ).astype(np.float32)
+                else:
+                    raw_conf = (
+                        et_fold_preds * _atr_safe[te_idx] if _use_atr else et_fold_preds
+                    )
 
                 n_days_fold = max(1.0, len(te_idx) / 96.0)
                 lw = _lightweight_hpo_pnl_eval(
-                    fold_preds,
-                    y_te,
+                    raw_conf,
+                    y_raw_net_return[te_idx],
                     top_fracs=[0.10, 0.20],
                     cost_pct=cost_pct,
                     n_days=n_days_fold,
@@ -2616,7 +3089,7 @@ def run_simple_position_sizer(
             gc_after_trial=True,
             callbacks=[
                 _make_patience_callback(
-                    patience=optuna_patience_trials, label="ExtraTrees HPO"
+                    patience=optuna_patience_trials, label="ExtraTrees Residual HPO"
                 )
             ],
         )
@@ -2628,13 +3101,13 @@ def run_simple_position_sizer(
         best_et_max_features = best_et_params.get("max_features", "sqrt")
         best_et_ccp_alpha = float(best_et_params.get("ccp_alpha", 1e-5))
         best_et_min_impurity = float(best_et_params.get("min_impurity_decrease", 1e-6))
-        best_et_criterion = str(best_et_params.get("criterion", "squared_error"))
+        best_et_criterion = str(best_et_params.get("criterion", "absolute_error"))
         best_et_min_samples_leaf = max(
             1,
             int(
                 np.ceil(
-                    float(best_et_params.get("min_samples_leaf_frac", 0.01))
-                    * X_heads.shape[0]
+                    float(best_et_params.get("min_samples_leaf_frac", 0.02))
+                    * X_et.shape[0]
                 )
             ),
         )
@@ -2642,8 +3115,8 @@ def run_simple_position_sizer(
             best_et_min_samples_leaf + 1,
             int(
                 np.ceil(
-                    float(best_et_params.get("min_samples_split_frac", 0.01))
-                    * X_heads.shape[0]
+                    float(best_et_params.get("min_samples_split_frac", 0.02))
+                    * X_et.shape[0]
                 )
             ),
         )
@@ -2665,17 +3138,120 @@ def run_simple_position_sizer(
                 verbose=0,
             )
 
-        best_et_preds, best_et_importance = _fit_predict_oof_regressor_with_pruning(
-            X=X_heads,
-            y=y_raw_net_return,
-            y_downside=y_downside,
-            splits=splits,
-            model_factory=_best_et_model_factory,
-            feature_names=used_keys,
-            calibration_method="isotonic",
+        et_oof_preds_raw = np.zeros(len(y_raw_net_return), dtype=np.float32)
+        et_confidence_all = np.ones(len(y_raw_net_return), dtype=np.float32)
+        et_fold_importances: List[np.ndarray] = []
+        observed_mask = np.zeros(len(y_raw_net_return), dtype=bool)
+        fold_et_models = []
+
+        for fold_idx, (tr_idx, te_idx) in enumerate(splits):
+            if len(tr_idx) == 0 or len(te_idx) == 0:
+                continue
+            X_tr, y_tr = X_et[tr_idx], y_resid_target[tr_idx]
+            X_te = X_et[te_idx]
+            if X_tr.shape[0] == 0 or X_te.shape[0] == 0:
+                continue
+
+            X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(
+                X_tr
+            )
+            X_te_clean, _, _, _, _ = clean_and_standardize(
+                X_te,
+                fit_medians=medians,
+                scaler=scaler,
+                center_1d=center_1d,
+                scale_1d=scale_1d,
+            )
+
+            model = _best_et_model_factory()
+            model.fit(X_tr_clean, y_tr)
+            preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
+            et_oof_preds_raw[te_idx] = preds
+            observed_mask[te_idx] = True
+
+            conf = _compute_et_confidence(model, X_te_clean)
+            et_confidence_all[te_idx] = conf
+
+            if hasattr(model, "feature_importances_"):
+                et_fold_importances.append(
+                    np.asarray(model.feature_importances_, dtype=np.float32)
+                )
+
+            fold_et_models.append(
+                {
+                    "fold_idx": fold_idx,
+                    "model": model,
+                    "medians": medians,
+                    "scaler": scaler,
+                    "center_1d": center_1d,
+                    "scale_1d": scale_1d,
+                    "tr_idx": tr_idx,
+                    "te_idx": te_idx,
+                }
+            )
+
+        if ridge_oof_available:
+            _combined_atr = ridge_oof_preds + 0.5 * et_oof_preds_raw * et_confidence_all
+            if _use_atr:
+                raw_conf_all = np.clip(
+                    _combined_atr * _atr_safe, 0.0, 3.0 * _atr_safe
+                ).astype(np.float32)
+            else:
+                raw_conf_all = np.maximum(
+                    0.0,
+                    _combined_atr * ridge_resid_std,
+                ).astype(np.float32)
+        else:
+            raw_conf_all = (
+                et_oof_preds_raw * _atr_safe if _use_atr else et_oof_preds_raw
+            )
+
+        total_confidence = raw_conf_all.copy()
+        calibration_isotonic = None
+        valid = (
+            observed_mask
+            & np.isfinite(total_confidence)
+            & np.isfinite(y_raw_net_return)
         )
+        if valid.sum() >= 30:
+            from sklearn.isotonic import IsotonicRegression as IsoReg
+
+            calibration_isotonic = IsoReg(out_of_bounds="clip")
+            calibration_isotonic.fit(total_confidence[valid], y_raw_net_return[valid])
+            total_confidence_calibrated = calibration_isotonic.transform(
+                total_confidence.astype(np.float64)
+            ).astype(np.float32)
+            tprint(
+                f"  Isotonic calibration fitted on {valid.sum()} samples: "
+                f"raw_conf range=[{float(np.min(raw_conf_all[valid])):.4f}, "
+                f"{float(np.max(raw_conf_all[valid])):.4f}] -> "
+                f"calibrated range=[{float(np.min(total_confidence_calibrated)):.4f}, "
+                f"{float(np.max(total_confidence_calibrated)):.4f}]"
+            )
+        else:
+            total_confidence_calibrated = total_confidence
+
+        best_et_preds = total_confidence_calibrated
+
+        if et_fold_importances:
+            importance_matrix = np.asarray(et_fold_importances, dtype=np.float32)
+            mean_importance = np.mean(importance_matrix, axis=0)
+            std_importance = np.std(importance_matrix, axis=0)
+            best_et_importance = pd.DataFrame(
+                {
+                    "head_name": et_selected_keys,
+                    "mean_importance": mean_importance,
+                    "std_importance": std_importance,
+                    "importance_rank": pd.Series(mean_importance)
+                    .rank(ascending=False)
+                    .values,
+                }
+            ).sort_values("mean_importance", ascending=False)
+        else:
+            best_et_importance = pd.DataFrame()
+
         best_et_metrics = evaluate_signal(
-            "ET_HPO",
+            "ET_Residual_HPO",
             best_et_preds,
             y_raw_net_return,
             y_downside,
@@ -2702,10 +3278,11 @@ def run_simple_position_sizer(
         )
 
         tprint(
-            "ET HPO winner: "
+            "ET Residual HPO winner: "
             f"{best_et_params} (utility={best_et_utility:.4f}, "
             f"wallet_pnl={best_et_objective:.4f}, "
-            f"n_estimators={best_et_n_estimators}, n_jobs=2)"
+            f"n_estimators={best_et_n_estimators}, n_jobs=2, "
+            f"ridge_resid_std={ridge_resid_std:.6f})"
         )
         if not best_et_importance.empty:
             tprint("=== ExtraTrees Feature Importance (top 20) ===")
@@ -2731,38 +3308,569 @@ def run_simple_position_sizer(
         results["et_profit_proxy_table_"] = et_profit_proxy_df
         results["et_opt_rets_"] = best_et_opt_rets
         results["et_opt_ts_"] = best_et_opt_ts
-        if best_et_objective > (best_ridge_objective if ridge_sizer_eval else -9999):
-            if not best_combo or best_et_objective > best_combo_objective:
-                best_simple_score = et_oof_preds
-                best_simple_score_name = "ExtraTrees_Head_Sizer"
+        results["et_raw_residual_preds_"] = et_oof_preds_raw
+        results["et_confidence_"] = et_confidence_all
+        results["raw_confidence_"] = raw_conf_all
+        results["total_confidence_"] = best_et_preds
+        results["calibration_isotonic_"] = calibration_isotonic
+        results["ridge_resid_mean_"] = ridge_resid_mean
+        results["ridge_resid_std_"] = ridge_resid_std
+        results["fold_et_models_"] = fold_et_models
+        results["et_best_params_"] = best_et_params
+        combined_et_objective = best_et_objective
+        if not best_combo or combined_et_objective > best_combo_objective:
+            best_simple_score = best_et_preds
+            best_simple_score_name = "RidgePlusET_TotalConfidence"
 
-    # --- Head-to-Head Comparison ---
-    comparison: Dict[str, Any] = {}
-    if ridge_sizer_eval and et_sizer_eval:
-        ridge_util = ridge_sizer_eval.get("utility_score", 0.0)
-        et_util = et_sizer_eval.get("utility_score", 0.0)
-        ridge_wallet = (
-            float(ridge_profit_proxy_df["wallet_pnl"].max())
-            if not ridge_profit_proxy_df.empty
-            else 0.0
+    # --- LGBM Residual Sizer ---
+    if (
+        use_lgbm_head_sizer
+        and used_keys
+        and _use_any_booster
+        and LGBMRegressor is not None
+    ):
+        best_lgbm_utility = -np.inf
+        best_lgbm_preds = None
+        best_lgbm_importance = pd.DataFrame()
+        best_lgbm_metrics = {}
+        best_lgbm_profit_proxy = pd.DataFrame()
+        best_lgbm_opt_rets = np.array([])
+        best_lgbm_opt_ts = np.array([])
+        best_lgbm_params = {}
+
+        lgbm_selected_keys = _mdi_select_features(
+            X_heads_clean_m,
+            y_resid_target,
+            used_keys,
+            model_factory=lambda: LGBMRegressor(
+                n_estimators=200,
+                max_depth=5,
+                num_leaves=31,
+                objective="mae",
+                random_state=42,
+                n_jobs=2,
+                verbose=-1,
+            ),
         )
+        lgbm_selected_idx = [
+            used_keys.index(k) for k in lgbm_selected_keys if k in used_keys
+        ]
+        X_lgbm = X_heads[:, lgbm_selected_idx]
+        tprint(
+            f"  LGBM MDI feature selection: {len(lgbm_selected_keys)}/{len(used_keys)} features retained"
+        )
+
+        lgbm_sub_scaled_folds: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        for i, (tr_idx, te_idx) in enumerate(splits):
+            sub_tr = _hpo_tr_idx_subs[i]
+            X_sub = X_lgbm[sub_tr]
+            X_sub_clean, med, sc, c1d, s1d = clean_and_standardize(X_sub)
+            X_te_clean, _, _, _, _ = clean_and_standardize(
+                X_lgbm[te_idx],
+                fit_medians=med,
+                scaler=sc,
+                center_1d=c1d,
+                scale_1d=s1d,
+            )
+            lgbm_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
+
+        lgbm_trials = 150
+        lgbm_sampler = TPESampler(seed=42, multivariate=True, group=True)
+        lgbm_pruner = SuccessiveHalvingPruner(
+            min_resource=1,
+            reduction_factor=3,
+        )
+        lgbm_study = optuna.create_study(
+            direction="maximize", sampler=lgbm_sampler, pruner=lgbm_pruner
+        )
+
+        def _compute_lgbm_confidence(
+            model: LGBMRegressor,
+            X: np.ndarray,
+            X_raw: np.ndarray,
+            y_train_raw: np.ndarray,
+        ) -> np.ndarray:
+            n_samples = X.shape[0]
+            leaf_preds = model.predict(X_raw, pred_leaf=True)
+            n_trees = leaf_preds.shape[1]
+            booster = model.booster_
+
+            leaf_counts_arr = np.zeros((n_samples, n_trees), dtype=np.float32)
+            leaf_var_arr = np.zeros((n_samples, n_trees), dtype=np.float32)
+            tree_preds_arr = np.zeros((n_samples, n_trees), dtype=np.float32)
+            for t_idx in range(n_trees):
+                leaf_ids = leaf_preds[:, t_idx]
+                unique_leaves = np.unique(leaf_ids)
+                for lf in unique_leaves:
+                    mask = leaf_ids == lf
+                    count = float(np.sum(mask))
+                    train_leaf_mask = leaf_preds_train_cache[:, t_idx] == lf
+                    if np.sum(train_leaf_mask) > 1:
+                        lv = float(np.var(y_train_raw[train_leaf_mask]))
+                    else:
+                        lv = 0.0
+                    leaf_counts_arr[mask, t_idx] = count
+                    leaf_var_arr[mask, t_idx] = lv
+                    tree_preds_arr[mask, t_idx] = float(
+                        np.mean(tree_preds_train_cache[train_leaf_mask, t_idx])
+                        if np.sum(train_leaf_mask) > 0
+                        else 0.0
+                    )
+
+            n_leaf_avg = np.mean(leaf_counts_arr, axis=1)
+            centroid_dist = np.mean(
+                np.abs(
+                    model.predict(X_raw).astype(np.float32)[:, None] - tree_preds_arr
+                ),
+                axis=1,
+            )
+            local_variance = centroid_dist / (np.sqrt(np.log(1.0 + n_leaf_avg) + 1e-12))
+            leaf_variance = np.mean(leaf_var_arr, axis=1)
+
+            lv_scaled = _quantile_scale_to_band(local_variance)
+            lfv_scaled = _quantile_scale_to_band(leaf_variance)
+
+            log_conf = (
+                1.0 * np.log(lv_scaled + 1e-12) + 2.0 * np.log(lfv_scaled + 1e-12)
+            ) / 3.0
+            raw_wgm = np.exp(log_conf).astype(np.float32)
+            median_wgm = float(np.median(raw_wgm))
+            if abs(median_wgm) > 1e-12:
+                lgbm_confidence = np.clip(raw_wgm / median_wgm, 0.7, 1.3).astype(
+                    np.float32
+                )
+            else:
+                lgbm_confidence = np.ones_like(raw_wgm)
+            return lgbm_confidence
+
+        def _lgbm_objective(trial: optuna.trial.Trial) -> float:
+            n_estimators = 3000
+            num_leaves = int(trial.suggest_int("num_leaves", 8, 128))
+            max_depth = int(trial.suggest_categorical("max_depth", [4, 5, 6]))
+            min_data_frac = float(trial.suggest_float("min_data_frac", 0.01, 0.05))
+            min_data_in_leaf = max(1, int(np.ceil(min_data_frac * X_lgbm.shape[0])))
+            min_sum_hessian = float(
+                trial.suggest_float("min_sum_hessian", 1e-3, 10.0, log=True)
+            )
+            feature_fraction = float(trial.suggest_float("feature_fraction", 0.8, 1.0))
+            bagging_fraction = float(trial.suggest_float("bagging_fraction", 0.7, 1.0))
+            bagging_freq = int(trial.suggest_int("bagging_freq", 0, 10))
+            lambda_l1 = float(trial.suggest_float("lambda_l1", 1.0, 10.0, log=True))
+            lambda_l2 = float(trial.suggest_float("lambda_l2", 1.0, 20.0, log=True))
+            min_gain_to_split = float(
+                trial.suggest_float("min_gain_to_split", 1e-4, 1e-1, log=True)
+            )
+
+            fold_pnl_10: List[float] = []
+            fold_pnl_20: List[float] = []
+            fold_sortino_10: List[float] = []
+
+            for fold_idx in range(len(splits)):
+                (
+                    sub_tr,
+                    te_idx,
+                    X_tr_clean,
+                    X_te_clean,
+                ) = lgbm_sub_scaled_folds[fold_idx]
+                if len(sub_tr) == 0 or len(te_idx) == 0:
+                    continue
+                y_tr = y_resid_target[sub_tr]
+                y_te = y_raw_net_return[te_idx]
+
+                model = LGBMRegressor(
+                    n_estimators=n_estimators,
+                    num_leaves=num_leaves,
+                    max_depth=max_depth,
+                    min_child_samples=min_data_in_leaf,
+                    min_sum_hessian_in_leaf=min_sum_hessian,
+                    colsample_bytree=feature_fraction,
+                    subsample=bagging_fraction,
+                    subsample_freq=bagging_freq,
+                    reg_alpha=lambda_l1,
+                    reg_lambda=lambda_l2,
+                    min_gain_to_split=min_gain_to_split,
+                    objective="mae",
+                    random_state=42,
+                    n_jobs=2,
+                    verbose=-1,
+                )
+                model.fit(
+                    X_tr_clean,
+                    y_tr,
+                )
+                lgbm_fold_preds = np.asarray(
+                    model.predict(X_te_clean), dtype=np.float32
+                )
+
+                if ridge_oof_available:
+                    ridge_fold_preds = ridge_oof_preds[te_idx]
+                    _combined_hpo_l = ridge_fold_preds + 0.5 * lgbm_fold_preds
+                    if _use_atr:
+                        raw_conf = np.clip(
+                            _combined_hpo_l * _atr_safe[te_idx],
+                            0.0,
+                            3.0 * _atr_safe[te_idx],
+                        ).astype(np.float32)
+                    else:
+                        raw_conf = np.maximum(
+                            0.0,
+                            _combined_hpo_l * ridge_resid_std,
+                        ).astype(np.float32)
+                else:
+                    raw_conf = (
+                        lgbm_fold_preds * _atr_safe[te_idx]
+                        if _use_atr
+                        else lgbm_fold_preds
+                    )
+
+                n_days_fold = max(1.0, len(te_idx) / 96.0)
+                lw = _lightweight_hpo_pnl_eval(
+                    raw_conf,
+                    y_te,
+                    top_fracs=[0.10, 0.20],
+                    cost_pct=cost_pct,
+                    n_days=n_days_fold,
+                )
+                if "wallet_pnl_0.100" in lw:
+                    fold_pnl_10.append(lw["wallet_pnl_0.100"])
+                if "wallet_pnl_0.200" in lw:
+                    fold_pnl_20.append(lw["wallet_pnl_0.200"])
+                if "sortino_0.100" in lw:
+                    fold_sortino_10.append(lw["sortino_0.100"])
+
+                if trial is not None and fold_idx >= len(splits) // 2:
+                    trial.report(
+                        float(np.mean(fold_pnl_10)) if fold_pnl_10 else -1e9,
+                        step=fold_idx,
+                    )
+                    if trial.should_prune():
+                        raise optuna.TrialPruned()
+
+            if not fold_pnl_10:
+                return -1e9
+
+            mean_pnl_10 = float(np.mean(fold_pnl_10))
+            std_pnl_10 = float(np.std(fold_pnl_10))
+            mean_pnl_20 = float(np.mean(fold_pnl_20)) if fold_pnl_20 else 0.0
+            std_pnl_20 = float(np.std(fold_pnl_20)) if len(fold_pnl_20) > 1 else 0.0
+            sortino_10 = float(np.mean(fold_sortino_10)) if fold_sortino_10 else 0.0
+
+            composite = (
+                0.70 * mean_pnl_10
+                + 0.30 * mean_pnl_20
+                - 0.50 * std_pnl_10
+                - 0.20 * std_pnl_20
+                + 0.15 * sortino_10
+            )
+
+            trial.set_user_attr("feature_count", int(X_lgbm.shape[1]))
+            trial.set_user_attr("mean_pnl_10", mean_pnl_10)
+            trial.set_user_attr("std_pnl_10", std_pnl_10)
+            trial.set_user_attr("mean_pnl_20", mean_pnl_20)
+            trial.set_user_attr("std_pnl_20", std_pnl_20)
+            trial.set_user_attr("sortino_10", sortino_10)
+            trial.set_user_attr("composite_score", composite)
+
+            return float(composite)
+
+        lgbm_study.optimize(
+            _lgbm_objective,
+            n_trials=lgbm_trials,
+            gc_after_trial=True,
+            callbacks=[
+                _make_patience_callback(
+                    patience=30, label="LGBM Residual HPO", min_trials=50
+                )
+            ],
+        )
+        if lgbm_study.best_trial is not None:
+            best_lgbm_params = dict(lgbm_study.best_trial.params)
+
+        def _best_lgbm_model_factory() -> LGBMRegressor:
+            _n_est = 3000
+            _nl = int(best_lgbm_params.get("num_leaves", 31))
+            _md = int(best_lgbm_params.get("max_depth", 5))
+            _mdf = float(best_lgbm_params.get("min_data_frac", 0.02))
+            _mdil = max(1, int(np.ceil(_mdf * X_lgbm.shape[0])))
+            return LGBMRegressor(
+                n_estimators=_n_est,
+                num_leaves=_nl,
+                max_depth=_md,
+                min_child_samples=_mdil,
+                min_sum_hessian_in_leaf=float(
+                    best_lgbm_params.get("min_sum_hessian", 1e-3)
+                ),
+                colsample_bytree=float(best_lgbm_params.get("feature_fraction", 0.9)),
+                subsample=float(best_lgbm_params.get("bagging_fraction", 0.8)),
+                subsample_freq=int(best_lgbm_params.get("bagging_freq", 1)),
+                reg_alpha=float(best_lgbm_params.get("lambda_l1", 1.0)),
+                reg_lambda=float(best_lgbm_params.get("lambda_l2", 1.0)),
+                min_gain_to_split=float(
+                    best_lgbm_params.get("min_gain_to_split", 1e-4)
+                ),
+                objective="mae",
+                random_state=42,
+                n_jobs=2,
+                verbose=-1,
+            )
+
+        lgbm_oof_preds_raw = np.zeros(len(y_raw_net_return), dtype=np.float32)
+        lgbm_confidence_all = np.ones(len(y_raw_net_return), dtype=np.float32)
+        lgbm_fold_importances: List[np.ndarray] = []
+        observed_mask_lgbm = np.zeros(len(y_raw_net_return), dtype=bool)
+        fold_lgbm_models = []
+
+        for fold_idx, (tr_idx, te_idx) in enumerate(splits):
+            if len(tr_idx) == 0 or len(te_idx) == 0:
+                continue
+            X_tr, y_tr = X_lgbm[tr_idx], y_resid_target[tr_idx]
+            X_te = X_lgbm[te_idx]
+            if X_tr.shape[0] == 0 or X_te.shape[0] == 0:
+                continue
+
+            X_tr_clean, medians, scaler, center_1d, scale_1d = clean_and_standardize(
+                X_tr
+            )
+            X_te_clean, _, _, _, _ = clean_and_standardize(
+                X_te,
+                fit_medians=medians,
+                scaler=scaler,
+                center_1d=center_1d,
+                scale_1d=scale_1d,
+            )
+
+            model = _best_lgbm_model_factory()
+            model.fit(X_tr_clean, y_tr)
+            preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
+            lgbm_oof_preds_raw[te_idx] = preds
+            observed_mask_lgbm[te_idx] = True
+
+            leaf_preds_train_cache = model.predict(X_tr_clean, pred_leaf=True)
+            tree_preds_train_cache = np.zeros(
+                (X_tr_clean.shape[0], leaf_preds_train_cache.shape[1]),
+                dtype=np.float32,
+            )
+            booster = model.booster_
+            for t_idx in range(leaf_preds_train_cache.shape[1]):
+                tree_preds_train_cache[:, t_idx] = model.predict(X_tr_clean).astype(
+                    np.float32
+                )
+
+            conf = _compute_lgbm_confidence(model, X_te_clean, X_te, y_tr)
+            lgbm_confidence_all[te_idx] = conf
+
+            if hasattr(model, "feature_importances_"):
+                lgbm_fold_importances.append(
+                    np.asarray(model.feature_importances_, dtype=np.float32)
+                )
+
+            fold_lgbm_models.append(
+                {
+                    "fold_idx": fold_idx,
+                    "model": model,
+                    "medians": medians,
+                    "scaler": scaler,
+                    "center_1d": center_1d,
+                    "scale_1d": scale_1d,
+                    "tr_idx": tr_idx,
+                    "te_idx": te_idx,
+                }
+            )
+
+        if ridge_oof_available:
+            _combined_lgbm_atr = (
+                ridge_oof_preds + 0.5 * lgbm_oof_preds_raw * lgbm_confidence_all
+            )
+            if _use_atr:
+                raw_conf_lgbm_all = np.clip(
+                    _combined_lgbm_atr * _atr_safe, 0.0, 3.0 * _atr_safe
+                ).astype(np.float32)
+            else:
+                raw_conf_lgbm_all = np.maximum(
+                    0.0,
+                    _combined_lgbm_atr * ridge_resid_std,
+                ).astype(np.float32)
+        else:
+            raw_conf_lgbm_all = (
+                lgbm_oof_preds_raw * _atr_safe if _use_atr else lgbm_oof_preds_raw
+            )
+
+        total_confidence_lgbm = raw_conf_lgbm_all.copy()
+        calibration_isotonic_lgbm = None
+        valid_lgbm = (
+            observed_mask_lgbm
+            & np.isfinite(total_confidence_lgbm)
+            & np.isfinite(y_raw_net_return)
+        )
+        if valid_lgbm.sum() >= 30:
+            from sklearn.isotonic import IsotonicRegression as IsoReg
+
+            calibration_isotonic_lgbm = IsoReg(out_of_bounds="clip")
+            calibration_isotonic_lgbm.fit(
+                total_confidence_lgbm[valid_lgbm],
+                y_raw_net_return[valid_lgbm],
+            )
+            total_confidence_lgbm_cal = calibration_isotonic_lgbm.transform(
+                total_confidence_lgbm.astype(np.float64)
+            ).astype(np.float32)
+            tprint(f"  LGBM isotonic calibration fitted on {valid_lgbm.sum()} samples")
+        else:
+            total_confidence_lgbm_cal = total_confidence_lgbm
+
+        best_lgbm_preds = total_confidence_lgbm_cal
+
+        if lgbm_fold_importances:
+            importance_matrix_l = np.asarray(lgbm_fold_importances, dtype=np.float32)
+            mean_importance_l = np.mean(importance_matrix_l, axis=0)
+            std_importance_l = np.std(importance_matrix_l, axis=0)
+            best_lgbm_importance = pd.DataFrame(
+                {
+                    "head_name": lgbm_selected_keys,
+                    "mean_importance": mean_importance_l,
+                    "std_importance": std_importance_l,
+                    "importance_rank": pd.Series(mean_importance_l)
+                    .rank(ascending=False)
+                    .values,
+                }
+            ).sort_values("mean_importance", ascending=False)
+        else:
+            best_lgbm_importance = pd.DataFrame()
+
+        best_lgbm_metrics = evaluate_signal(
+            "LGBM_Residual_HPO",
+            best_lgbm_preds,
+            y_raw_net_return,
+            y_downside,
+            directionality="return-like",
+        )
+        best_lgbm_utility = best_lgbm_metrics.get("utility_score", -np.inf)
+        (
+            best_lgbm_profit_proxy,
+            best_lgbm_opt_rets,
+            best_lgbm_opt_ts,
+        ) = evaluate_selection_profit_proxy(
+            best_lgbm_preds,
+            y_raw_net_return,
+            timestamps=timestamps,
+            symbols=_sym_vals,
+            top_fracs=list(top_fracs),
+            cost_pct=cost_pct,
+            n_days=n_days,
+        )
+        best_lgbm_objective = (
+            float(best_lgbm_profit_proxy["wallet_pnl"].max())
+            if not best_lgbm_profit_proxy.empty
+            else float("-inf")
+        )
+
+        tprint(
+            f"LGBM Residual HPO winner: "
+            f"{best_lgbm_params} (utility={best_lgbm_utility:.4f}, "
+            f"wallet_pnl={best_lgbm_objective:.4f}, "
+            f"ridge_resid_std={ridge_resid_std:.6f})"
+        )
+        if not best_lgbm_importance.empty:
+            tprint("=== LGBM Feature Importance (top 20) ===")
+            _imp_l = best_lgbm_importance.copy()
+            if "importance" not in _imp_l.columns:
+                _imp_l["importance"] = _imp_l.get("mean_importance", 0.0)
+            feature_col = "feature" if "feature" in _imp_l.columns else "head_name"
+            _imp_l = _imp_l.sort_values("importance", ascending=False).head(20)
+            for _i, _row in _imp_l.iterrows():
+                tprint(
+                    f"  {_i+1:>3}. {_row[feature_col]:<40} importance={float(_row['importance']):.6f}"
+                )
+            tprint("=== End LGBM Importance ===")
+        lgbm_oof_preds = best_lgbm_preds
+        lgbm_sizer_eval = best_lgbm_metrics
+        lgbm_importance_df = best_lgbm_importance
+        lgbm_profit_proxy_df = best_lgbm_profit_proxy
+        results["lgbm_sizer_scores_"] = lgbm_oof_preds
+        results["lgbm_importance_table_"] = lgbm_importance_df
+        results["lgbm_profit_proxy_table_"] = lgbm_profit_proxy_df
+        results["lgbm_opt_rets_"] = best_lgbm_opt_rets
+        results["lgbm_opt_ts_"] = best_lgbm_opt_ts
+        results["lgbm_raw_residual_preds_"] = lgbm_oof_preds_raw
+        results["lgbm_confidence_"] = lgbm_confidence_all
+        results["raw_confidence_lgbm_"] = raw_conf_lgbm_all
+        results["total_confidence_lgbm_"] = best_lgbm_preds
+        results["calibration_isotonic_lgbm_"] = calibration_isotonic_lgbm
+        results["fold_lgbm_models_"] = fold_lgbm_models
+        results["lgbm_best_params_"] = best_lgbm_params
+        combined_lgbm_objective = best_lgbm_objective
+        if not best_combo or combined_lgbm_objective > best_combo_objective:
+            if (
+                best_simple_score is None
+                or combined_lgbm_objective > combined_et_objective
+            ):
+                best_simple_score = best_lgbm_preds
+                best_simple_score_name = "RidgePlusLGBM_TotalConfidence"
+    elif use_lgbm_head_sizer and LGBMRegressor is None:
+        tprint("  LGBM skipped: lightgbm not installed")
+
+    # --- 3-Way Pipeline Comparison ---
+    comparison: Dict[str, Any] = {}
+    comparison_rows = []
+    ridge_util = ridge_sizer_eval.get("utility_score", 0.0) if ridge_sizer_eval else 0.0
+    ridge_wallet = (
+        float(ridge_profit_proxy_df["wallet_pnl"].max())
+        if not ridge_profit_proxy_df.empty
+        else 0.0
+    )
+    comparison_rows.append(
+        {
+            "pipeline": "ridge_only",
+            "utility": ridge_util,
+            "wallet_pnl": ridge_wallet,
+        }
+    )
+    if et_sizer_eval:
+        et_util = et_sizer_eval.get("utility_score", 0.0)
         et_wallet = (
             float(et_profit_proxy_df["wallet_pnl"].max())
             if not et_profit_proxy_df.empty
             else 0.0
         )
+        comparison_rows.append(
+            {
+                "pipeline": "ridge_plus_et",
+                "utility": et_util,
+                "wallet_pnl": et_wallet,
+            }
+        )
+    if lgbm_sizer_eval:
+        lgbm_util = lgbm_sizer_eval.get("utility_score", 0.0)
+        lgbm_wallet = (
+            float(lgbm_profit_proxy_df["wallet_pnl"].max())
+            if not lgbm_profit_proxy_df.empty
+            else 0.0
+        )
+        comparison_rows.append(
+            {
+                "pipeline": "ridge_plus_lgbm",
+                "utility": lgbm_util,
+                "wallet_pnl": lgbm_wallet,
+            }
+        )
+    if comparison_rows:
+        best_row = max(comparison_rows, key=lambda r: r["wallet_pnl"])
         comparison = {
-            "ridge_utility": ridge_util,
-            "et_utility": et_util,
-            "ridge_best_wallet_pnl": ridge_wallet,
-            "et_best_wallet_pnl": et_wallet,
-            "winner": "ridge" if ridge_util >= et_util else "et",
-            "wallet_winner": "ridge" if ridge_wallet >= et_wallet else "et",
+            "rows": comparison_rows,
+            "winner": best_row["pipeline"],
+            "winner_wallet_pnl": best_row["wallet_pnl"],
+            "winner_utility": best_row["utility"],
         }
         tprint(
-            f"Head-to-Head: Ridge util={ridge_util:.4f} wallet={ridge_wallet:.4f} | ET util={et_util:.4f} wallet={et_wallet:.4f} | Winner={comparison['winner']}"
+            f"3-Way Pipeline Comparison: "
+            + " | ".join(
+                f"{r['pipeline']}={r['wallet_pnl']:.4f}" for r in comparison_rows
+            )
+            + f" | winner={comparison['winner']}"
         )
     results["comparison_"] = comparison
+    results["comparison_table_"] = (
+        pd.DataFrame(comparison_rows) if comparison_rows else pd.DataFrame()
+    )
 
     # --- Profit Proxy on Best Score ---
     profit_proxy_df = pd.DataFrame()
@@ -2790,7 +3898,11 @@ def run_simple_position_sizer(
         "et_sizer_eval_": et_sizer_eval,
         "et_importance_table_": et_importance_df,
         "et_profit_proxy_table_": et_profit_proxy_df,
+        "lgbm_sizer_eval_": lgbm_sizer_eval,
+        "lgbm_importance_table_": lgbm_importance_df,
+        "lgbm_profit_proxy_table_": lgbm_profit_proxy_df,
         "comparison_": comparison,
+        "comparison_table_": results.get("comparison_table_", pd.DataFrame()),
         "best_simple_score_": best_simple_score,
         "best_simple_score_name_": best_simple_score_name,
         "best_combo_profit_proxy_table_": best_combo_profit_proxy_df,
@@ -2804,6 +3916,22 @@ def run_simple_position_sizer(
         "oof_p_tp_": results.get("oof_p_tp_"),
         "oof_p_sl_": results.get("oof_p_sl_"),
         "oof_p_time_": results.get("oof_p_time_"),
+        "et_raw_residual_preds_": results.get("et_raw_residual_preds_"),
+        "et_confidence_": results.get("et_confidence_"),
+        "raw_confidence_": results.get("raw_confidence_"),
+        "total_confidence_": results.get("total_confidence_"),
+        "calibration_isotonic_": results.get("calibration_isotonic_"),
+        "ridge_resid_mean_": results.get("ridge_resid_mean_"),
+        "ridge_resid_std_": results.get("ridge_resid_std_"),
+        "fold_et_models_": results.get("fold_et_models_"),
+        "et_best_params_": results.get("et_best_params_"),
+        "lgbm_raw_residual_preds_": results.get("lgbm_raw_residual_preds_"),
+        "lgbm_confidence_": results.get("lgbm_confidence_"),
+        "raw_confidence_lgbm_": results.get("raw_confidence_lgbm_"),
+        "total_confidence_lgbm_": results.get("total_confidence_lgbm_"),
+        "calibration_isotonic_lgbm_": results.get("calibration_isotonic_lgbm_"),
+        "fold_lgbm_models_": results.get("fold_lgbm_models_"),
+        "lgbm_best_params_": results.get("lgbm_best_params_"),
     }
 
 
@@ -2850,6 +3978,11 @@ def run_bucketed_simple_position_sizer(
         b_y_downside = y_downside[mask]
         b_timestamps = timestamps[mask]
         b_sample_weight = sample_weight[mask] if sample_weight is not None else None
+        b_kwargs = dict(kwargs)
+        if "y_atr_target" in b_kwargs and b_kwargs["y_atr_target"] is not None:
+            b_kwargs["y_atr_target"] = b_kwargs["y_atr_target"][mask]
+        if "atr_vals" in b_kwargs and b_kwargs["atr_vals"] is not None:
+            b_kwargs["atr_vals"] = b_kwargs["atr_vals"][mask]
 
         b_res = run_simple_position_sizer(
             b_feature_dict,
@@ -2864,7 +3997,7 @@ def run_bucketed_simple_position_sizer(
             ),
             bucket_labels=None,
             sample_weight=b_sample_weight,
-            **kwargs,
+            **b_kwargs,
         )
         bucket_results[b] = b_res
 
@@ -2890,6 +4023,7 @@ def run_simple_position_sizer_from_artifacts(
     top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
     use_ridge_head_sizer: bool = True,
     use_et_head_sizer: bool = True,
+    use_lgbm_head_sizer: bool = True,
     top_n_strategies: int = 4,
     time_filter: Optional[Tuple[Any, Any]] = None,
 ) -> Dict[str, Any]:
@@ -2909,6 +4043,24 @@ def run_simple_position_sizer_from_artifacts(
     _pool = load_inference_candidate_mask_params_per_bucket(
         top_n=99, ranking_metric="score_for_best_params"
     )
+
+    if not _pool:
+        fallback_path = (
+            Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+        )
+        if fallback_path.exists():
+            try:
+                payload = json.loads(fallback_path.read_text())
+                buckets = payload.get("buckets", {})
+                for sid, row in buckets.items():
+                    _pool.append(
+                        {"strategy_id": sid, **row}
+                    )
+                logger.info(
+                    f"Fallback: loaded {len(_pool)} strategies from {fallback_path}"
+                )
+            except Exception as e:
+                logger.warning(f"Fallback strategy load failed: {e}")
 
     if not _pool:
         logger.warning("No strategies loaded from params_store.")
@@ -3592,9 +4744,41 @@ def run_simple_position_sizer_from_artifacts(
             else np.zeros(len(y_raw_net_return))
         )
 
+        y_atr_target = None
+        atr_vals = None
+        atr_col = None
+        for _atr_c in ("atr_12_15m", "atr_pct"):
+            if _atr_c in trade_outcomes.columns:
+                atr_col = _atr_c
+                break
+            if _atr_c in active_df.columns:
+                atr_col = _atr_c
+                break
+        if atr_col is not None:
+            _atr_raw = (
+                trade_outcomes[atr_col].values
+                if atr_col in trade_outcomes.columns
+                else active_df[atr_col].values
+            )
+            atr_safe = np.where(np.abs(_atr_raw) > 1e-8, _atr_raw, np.nan)
+            y_atr_target = np.asarray(y_raw_net_return / atr_safe, dtype=np.float32)
+            valid_atr = np.isfinite(y_atr_target)
+            if valid_atr.mean() < 0.5:
+                logger.warning(
+                    f"ATR normalization: only {valid_atr.mean():.1%} valid values "
+                    f"from '{atr_col}' — falling back to raw returns"
+                )
+                y_atr_target = None
+            else:
+                atr_vals = _atr_raw.astype(np.float32)
+                logger.info(
+                    f"ATR normalization via '{atr_col}': "
+                    f"{valid_atr.mean():.1%} valid, "
+                    f"target std={float(np.nanstd(y_atr_target)):.6f}"
+                )
+
         feature_dict = {col: active_df[col].values for col in head_cols}
 
-        # Run the pipeline for this specific strategy
         res = run_simple_position_sizer(
             feature_dict=feature_dict,
             trade_outcomes=trade_outcomes,
@@ -3606,16 +4790,20 @@ def run_simple_position_sizer_from_artifacts(
                 if "symbol" in trade_outcomes.columns
                 else None
             ),
-            bucket_labels=None,  # Running independently, no bucketing needed
+            bucket_labels=None,
             top_fracs=top_fracs,
             use_ridge_head_sizer=use_ridge_head_sizer,
             use_et_head_sizer=use_et_head_sizer,
+            use_lgbm_head_sizer=use_lgbm_head_sizer,
+            y_atr_target=y_atr_target,
+            atr_vals=atr_vals,
         )
 
         res["_strategy_meta_"] = {
             "trade_side": trade_side,
             "source_target": strategy.get("source_target", ""),
             "source_horizon": strategy.get("source_horizon", np.nan),
+            "atr_column": atr_col,
         }
         strategy_results[strategy_id] = res
 
@@ -3629,6 +4817,14 @@ def run_simple_position_sizer_from_artifacts(
         logger.info(f"Saved strategy params to {strategy_params_path}")
 
     _persist_head_to_head_winner(data_root, run_id, strategy_results)
+    try:
+        _fi_path = _persist_feature_importance_summary(
+            data_root, run_id, strategy_results
+        )
+        if _fi_path is not None:
+            logger.info(f"Saved sizer feature importance summary to {_fi_path}")
+    except Exception as e:
+        logger.warning(f"Could not save feature importance summary: {e}")
 
     # Save OOF predictions to parquet for policy_optimiser
     if strategy_results:

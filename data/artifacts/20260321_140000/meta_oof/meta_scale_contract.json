@@ -1,10 +1,4 @@
 {
-  "oof_u_hat": "arcsinh(log-return normalized by ATR)",
-  "oof_log_mae_q70_hat": "log1p(MAE / ATR)",
-  "oof_mae_q70_hat": "MAE / ATR",
-  "oof_log_mfe_hat": "log1p(MFE / ATR)",
-  "oof_mfe_hat": "MFE / ATR",
-  "oof_asym_hat": "log(MFE / MAE)",
   "oof_p_move": "probability of a materially large move",
   "oof_p_move_raw": "raw probability before calibration",
   "oof_p_early_inval": "probability",

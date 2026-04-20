@@ -1,0 +1,20 @@
+{
+  "selector_head_name": "meta_short_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_v4",
+  "selector_target": "regression",
+  "selector_top_metric": "ic_top",
+  "selector_focus_top_frac": 0.3,
+  "weights": {
+    "top30": 0.35,
+    "global": 0.2,
+    "stability": 0.25,
+    "frequency": 0.15,
+    "interaction": 0.05
+  },
+  "n_train_features": 44,
+  "n_selected": 41,
+  "anchor_count": 0,
+  "selected_anchor_count": 0,
+  "overlap_before": 1.0,
+  "overlap_after": 1.0,
+  "hysteresis_swaps": 0.0
+}

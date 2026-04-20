@@ -143,13 +143,21 @@ def _build_parquet_ts_filters(
     allowed_periods=None,
 ):
     """Build pyarrow parquet filters for timestamp pushdown when possible."""
+    def _to_utc_filter_ts(ts: pd.Timestamp | None) -> pd.Timestamp | None:
+        if ts is None:
+            return None
+        out = pd.Timestamp(ts)
+        if out.tzinfo is None:
+            out = out.tz_localize("UTC")
+        else:
+            out = out.tz_convert("UTC")
+        return out
+
     periods = _normalize_allowed_periods(allowed_periods)
     start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
     end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
-    if start_ts is not None and start_ts.tzinfo is not None:
-        start_ts = start_ts.tz_localize(None)
-    if end_ts is not None and end_ts.tzinfo is not None:
-        end_ts = end_ts.tz_localize(None)
+    start_ts = _to_utc_filter_ts(start_ts)
+    end_ts = _to_utc_filter_ts(end_ts)
 
     if start_ts is not None or end_ts is not None:
         if not periods:
@@ -157,6 +165,8 @@ def _build_parquet_ts_filters(
         else:
             clipped: list[tuple[pd.Timestamp, pd.Timestamp]] = []
             for period_start, period_end in periods:
+                period_start = _to_utc_filter_ts(period_start)
+                period_end = _to_utc_filter_ts(period_end)
                 if start_ts is not None:
                     period_start = max(period_start, start_ts)
                 if end_ts is not None:
@@ -1350,7 +1360,11 @@ class LazyFeatureDict:
                     continue
                 if reason is not None:
                     normalized_symbols.append(f"{sym}:{reason}")
-                series = pd.Series(normalized_vals, index=normalized_idx, copy=False)
+                series_idx = pd.DatetimeIndex(
+                    pd.to_datetime(normalized_idx, utc=True, errors="coerce"),
+                    tz="UTC",
+                )
+                series = pd.Series(normalized_vals, index=series_idx, copy=False)
                 if not series.index.is_unique:
                     series = series[~series.index.duplicated(keep="last")]
                 clean_data[sym] = series
@@ -1368,6 +1382,85 @@ class LazyFeatureDict:
             self._assembled[k] = df
             return df
         raise KeyError(k)
+
+    def _assemble_many_keys(self, keys, progress_every=25):
+        from extreme_price_movements.utils import tprint
+
+        target_keys = [k for k in keys if k in self._raw and k not in self._assembled]
+        total = len(target_keys)
+        if total == 0:
+            return
+
+        tprint(
+            f"Pre-materializing {total} feature matrices in grouped mode..."
+        )
+        clean_data_by_key: dict[str, dict[str, pd.Series]] = {
+            k: {} for k in target_keys
+        }
+        skipped_by_key: dict[str, list[str]] = {k: [] for k in target_keys}
+        normalized_by_key: dict[str, list[str]] = {k: [] for k in target_keys}
+
+        symbols: set[str] = set()
+        for k in target_keys:
+            raw_payload = self._raw.get(k)
+            if isinstance(raw_payload, dict):
+                symbols.update(str(sym) for sym in raw_payload.keys())
+
+        for sym in sorted(symbols):
+            idx_vals = self._symbol_indices.get(sym)
+            for k in target_keys:
+                data = self._raw.get(k)
+                if not isinstance(data, dict) or sym not in data:
+                    continue
+                payload = data[sym]
+                if isinstance(payload, tuple) and len(payload) == 2:
+                    idx_vals_local, val_array = payload
+                else:
+                    idx_vals_local, val_array = idx_vals, payload
+                if idx_vals_local is None:
+                    skipped_by_key[k].append(f"{sym}:missing_index")
+                    continue
+                normalized_idx, normalized_vals, reason = _normalize_feature_index(
+                    idx_vals_local,
+                    val_array,
+                )
+                if normalized_idx is None or normalized_vals is None:
+                    skipped_by_key[k].append(f"{sym}:{reason}")
+                    continue
+                if reason is not None:
+                    normalized_by_key[k].append(f"{sym}:{reason}")
+                series_idx = pd.DatetimeIndex(
+                    pd.to_datetime(normalized_idx, utc=True, errors="coerce"),
+                    tz="UTC",
+                )
+                series = pd.Series(normalized_vals, index=series_idx, copy=False)
+                if not series.index.is_unique:
+                    series = series[~series.index.duplicated(keep="last")]
+                clean_data_by_key[k][sym] = series
+
+        for i, k in enumerate(target_keys, start=1):
+            df = (
+                pd.DataFrame(clean_data_by_key[k]).sort_index()
+                if clean_data_by_key[k]
+                else pd.DataFrame()
+            )
+            self._assembled[k] = df
+            self._raw.pop(k, None)
+            if skipped_by_key[k]:
+                tprint(
+                    f"Lazy feature assembly skipped {len(skipped_by_key[k])} symbols for '{k}' "
+                    f"due to invalid indices. Sample: {skipped_by_key[k][:5]}"
+                )
+            if normalized_by_key[k]:
+                tprint(
+                    f"Lazy feature assembly normalized {len(normalized_by_key[k])} symbols for '{k}'. "
+                    f"Sample: {normalized_by_key[k][:5]}"
+                )
+            if i % progress_every == 0 or i == total:
+                tprint(
+                    f"  Grouped feature materialization progress: {i}/{total} "
+                    f"({(100.0 * i / max(1, total)):.1f}%)"
+                )
 
     def __getitem__(self, k):
         return self._assemble_key(k, log=True)
@@ -1425,20 +1518,11 @@ class LazyFeatureDict:
         return cloned
 
     def materialize(self, keys=None, progress_every=25):
-        from extreme_price_movements.utils import tprint
-
         target_keys = list(self.keys()) if keys is None else [k for k in keys if k in self]
         total = len(target_keys)
         if total == 0:
             return
-        tprint(f"Pre-materializing {total} feature matrices for backtest runtime...")
-        for i, k in enumerate(target_keys, start=1):
-            self._assemble_key(k, log=False)
-            if i % progress_every == 0 or i == total:
-                tprint(
-                    f"  Feature materialization progress: {i}/{total} "
-                    f"({(100.0 * i / max(1, total)):.1f}%)"
-                )
+        self._assemble_many_keys(target_keys, progress_every=progress_every)
 
 def load_features_selected(
     ts: pd.Timestamp,

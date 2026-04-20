@@ -511,6 +511,9 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
         rows_data.append(row)
 
     detail_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
+    if detail_df.empty or "head_type" not in detail_df.columns:
+        lines.append("No meta-model OOF artifacts available.")
+        return _save(run_id, "meta_training", lines, base_dir=base_dir)
 
     requested_order = ["tbm_500_250", "tbm_250_125", "mae", "mfe", "asym", "clf", "reg"]
     detail_df = detail_df[
@@ -799,6 +802,52 @@ def report_ridge_sizer(run_id: str, result: Dict[str, Any], base_dir: str | Path
             if bkt_weights:
                 lines.append(f"**{bkt}**: " + ", ".join(f"`{k}`={v:.4f}" for k, v in sorted(bkt_weights.items())))
         lines.append("")
+
+    _data_root = result.get("data_root")
+    if _data_root:
+        _fi_path = (
+            Path(_data_root)
+            / "artifacts"
+            / run_id
+            / "ridge_sizer"
+            / "feature_importance_summary.json"
+        )
+        if _fi_path.exists():
+            try:
+                _payload = json.loads(_fi_path.read_text())
+                _strategies = dict(_payload.get("strategies", {}) or {})
+                if _strategies:
+                    lines.append("## Feature Importance")
+                    for _sid, _info in sorted(_strategies.items()):
+                        lines.append(
+                            f"### {_sid} — winner={_info.get('winner_model', 'n/a')}"
+                        )
+                        _winner_top10 = list(_info.get("winner_top10", []) or [])
+                        if not _winner_top10:
+                            lines.append("No feature-importance data available.")
+                            lines.append("")
+                            continue
+                        _headers = ["Rank", "Feature", "Importance", "Std", "Metric"]
+                        _rows = []
+                        for _rank, _item in enumerate(_winner_top10, start=1):
+                            _rows.append(
+                                [
+                                    str(_rank),
+                                    str(_item.get("feature", "")),
+                                    _fmt(_item.get("importance", float("nan"))),
+                                    _fmt(_item.get("std", float("nan"))),
+                                    str(_item.get("metric", "")),
+                                ]
+                            )
+                        lines.extend(_md_table(_headers, _rows))
+                        _share = _info.get("winner_pred_prefix_share")
+                        if _share is not None:
+                            lines.append(
+                                f"`oof_*` importance share: {_fmt(float(_share) * 100.0)}%"
+                            )
+                        lines.append("")
+            except Exception:
+                pass
 
     out_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
     return _save(run_id, "ridge_sizer", lines, out_df, base_dir=base_dir)

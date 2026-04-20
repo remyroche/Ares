@@ -44,7 +44,17 @@ def _build_mask_for_mode(
     resolver = CanonicalRuleMaskResolver(X, metadata)
     tprint(f"candidate_selector: CanonicalRuleMaskResolver initialized for mask_cfg name {mask_cfg.get('name')}")
 
-    base = str(mask_cfg.get("base_event_trigger", "")).strip()
+    def _normalize_legacy_base_event(base_event: str) -> str:
+        base_event = str(base_event or "").strip()
+        if (
+            base_event
+            and "|" not in base_event
+            and base_event.startswith("price_")
+        ):
+            return f"({base_event}==1)|(*)|(*)"
+        return base_event
+
+    base = _normalize_legacy_base_event(mask_cfg.get("base_event_trigger", ""))
     if base:
         try:
             mask_1d = resolver.get_mask(base)
@@ -78,7 +88,9 @@ def _build_mask_for_mode(
     else:
         ret_1 = close_df.pct_change().fillna(0.0).to_numpy(dtype=np.float32, copy=False).ravel()
 
-    vol_df = feats.get("atr_pct_base") or feats.get("atr_pct")
+    vol_df = feats.get("atr_pct_base")
+    if not isinstance(vol_df, pd.DataFrame):
+        vol_df = feats.get("atr_pct")
     if isinstance(vol_df, pd.DataFrame):
         vol_g = vol_df.reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
     else:

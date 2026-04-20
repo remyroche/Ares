@@ -1,0 +1,46 @@
+{
+  "scope_key": "train_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_10",
+  "kind_name": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+  "n_total": 390936,
+  "n_splits": 2,
+  "purge_samples": 10,
+  "embargo_samples": 4,
+  "times_provided": true,
+  "valid_time_count": 390936,
+  "bad_time_count": 0,
+  "unique_time_count": 7777,
+  "monotonic_non_decreasing": false,
+  "first_valid_time": "2022-07-04 07:00:00+00:00",
+  "last_valid_time": "2024-02-24 07:00:00+00:00",
+  "fold_diagnostics": [
+    {
+      "fold": 1,
+      "val_start": 0,
+      "val_end": 195468,
+      "val_size": 195468,
+      "train_size_after_purge": 0,
+      "train_size_before_purge": 0,
+      "excluded_by_purge": 0,
+      "fold_start_valid_time": true,
+      "fold_end_valid_time": true,
+      "purge_seconds": 10,
+      "embargo_seconds": 4,
+      "purge_time_ns": 1656917990000000000
+    },
+    {
+      "fold": 2,
+      "val_start": 195468,
+      "val_end": 390936,
+      "val_size": 195468,
+      "train_size_after_purge": 0,
+      "train_size_before_purge": 195468,
+      "excluded_by_purge": 195468,
+      "fold_start_valid_time": true,
+      "fold_end_valid_time": true,
+      "purge_seconds": 10,
+      "embargo_seconds": 4,
+      "purge_time_ns": 1656917990000000000
+    }
+  ],
+  "reason": "purged_cv_produced_zero_valid_folds"
+}

@@ -9,6 +9,7 @@ from collections import defaultdict
 import importlib.util
 import json
 import os
+import sys
 
 from numba import jit, prange
 import numpy as np
@@ -19,7 +20,6 @@ from scipy.stats import rankdata
 from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import SGDRegressor
-from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import QuantileTransformer, RobustScaler, StandardScaler
 from sklearn.utils import check_random_state
 from .utils import tprint, check_inf_nan, clean_dataset
@@ -420,6 +420,7 @@ def linear_prescreen_enet(
     random_state: int = 42,
     loss: str = "huber",
     huber_epsilon: float = 1.35,
+    max_rows: int = 12000,
 ) -> list[str]:
     """
     Drop-in ElasticNet-penalized linear pre-screen targeting keep-count ~= multiplier * n_select.
@@ -440,88 +441,75 @@ def linear_prescreen_enet(
     min_keep_from_cap = int(np.ceil((1.0 - float(np.clip(max_drop_frac, 0.0, 0.95))) * p))
     target_keep = int(np.clip(max(target_keep_raw, min_keep_from_cap), 1, p))
 
-    y = np.asarray(y, dtype=float)
+    y = np.asarray(y, dtype=np.float32).reshape(-1)
+    X_np = np.asarray(X.values, dtype=np.float32)
+    if X_np.ndim != 2 or X_np.shape[0] != len(y):
+        return list(X.columns[:target_keep])
+
+    valid_rows = np.isfinite(y) & np.isfinite(X_np).all(axis=1)
+    if not np.any(valid_rows):
+        return list(X.columns[:target_keep])
+    if not np.all(valid_rows):
+        X_np = X_np[valid_rows]
+        y = y[valid_rows]
+
+    if max_rows > 0 and len(y) > int(max_rows):
+        row_idx = np.linspace(0, len(y) - 1, int(max_rows), dtype=np.int32)
+        row_idx = np.unique(row_idx)
+        X_np = X_np[row_idx]
+        y = y[row_idx]
+
+    scaler = RobustScaler(copy=False)
+    X_scaled = scaler.fit_transform(X_np).astype(np.float32, copy=False)
+
     # Scale target to unit variance for stable ElasticNet convergence
     y_std = float(np.nanstd(y))
-    y_t = y / max(y_std, 1e-9)
+    y_t = (y / max(y_std, 1e-9)).astype(np.float32, copy=False)
+
+    _t0_prescreen = pd.Timestamp.utcnow()
+    tprint(
+        f"MDI prescreen: start rows={len(y)} cols={p} target_keep={target_keep} "
+        f"loss={loss} max_rows={int(max_rows)}"
+    )
 
     def fit_abscoef(alpha: float) -> np.ndarray:
-        pipe = Pipeline([
-            ("scaler", RobustScaler()),
-            ("enet", SGDRegressor(
-                loss=loss,
-                alpha=alpha,
-                penalty="elasticnet",
-                l1_ratio=l1_ratio,
-                max_iter=max_iter,
-                tol=tol,
-                random_state=random_state,
-                epsilon=huber_epsilon,
-            ))
-        ])
-        pipe.fit(X, y_t)
-        return np.abs(pipe.named_steps["enet"].coef_)
+        model = SGDRegressor(
+            loss=loss,
+            alpha=float(alpha),
+            penalty="elasticnet",
+            l1_ratio=l1_ratio,
+            max_iter=min(int(max_iter), 1500),
+            tol=max(float(tol), 5e-3),
+            random_state=random_state,
+            epsilon=huber_epsilon,
+            early_stopping=True,
+            validation_fraction=0.10,
+            n_iter_no_change=5,
+            average=True,
+            shuffle=True,
+        )
+        model.fit(X_scaled, y_t)
+        return np.abs(np.asarray(model.coef_, dtype=np.float32))
 
-    # Count "selected" coefficients; pre-screen is ranking-based, so threshold is just for guidance.
     def nnz(abscoef: np.ndarray) -> int:
         return int(np.sum(abscoef > 1e-12))
 
-    # Bracket alphas so that:
-    # - alpha_lo keeps >= target_keep
-    # - alpha_hi keeps <= target_keep (if possible)
-    abs_lo = fit_abscoef(alpha_lo)
-    n_lo = nnz(abs_lo)
+    alpha_mid = float(np.sqrt(max(float(alpha_lo), 1e-8) * max(float(alpha_hi), 1e-8)))
+    best_abs = fit_abscoef(alpha_mid)
+    best_n = nnz(best_abs)
+    if best_n < max(1, int(0.5 * target_keep)):
+        best_abs = fit_abscoef(max(float(alpha_lo), 1e-8))
+        best_n = nnz(best_abs)
+    elif best_n > int(1.8 * target_keep):
+        best_abs = fit_abscoef(max(float(alpha_hi), alpha_mid))
+        best_n = nnz(best_abs)
 
-    # If even very small alpha yields too few selected, fall back to top-|coef|
-    if n_lo <= target_keep:
-        idx = np.argsort(abs_lo)[::-1][:target_keep]
-        return X.columns[idx].tolist()
-
-    abs_hi = fit_abscoef(alpha_hi)
-    n_hi = nnz(abs_hi)
-
-    # Increase alpha_hi until we get <= target_keep (or give up)
-    grow = 0
-    while n_hi > target_keep and alpha_hi < 1e6 and grow < 20:
-        alpha_hi *= 10.0
-        abs_hi = fit_abscoef(alpha_hi)
-        n_hi = nnz(abs_hi)
-        grow += 1
-
-    # If we can't sparsify enough, just take top-|coef| from the strongest-regularized fit we have
-    if n_hi > target_keep:
-        idx = np.argsort(abs_hi)[::-1][:target_keep]
-        return X.columns[idx].tolist()
-
-    # Binary search on log10(alpha)
-    lo, hi = np.log10(alpha_lo), np.log10(alpha_hi)
-    best_abs = abs_hi
-    best_n = n_hi
-    best_gap = abs(best_n - target_keep)
-
-    for _ in range(max_steps):
-        mid = (lo + hi) / 2.0
-        alpha_mid = 10 ** mid
-        abs_mid = fit_abscoef(alpha_mid)
-        n_mid = nnz(abs_mid)
-
-        gap = abs(n_mid - target_keep)
-        if gap < best_gap:
-            best_gap, best_abs, best_n = gap, abs_mid, n_mid
-
-        # Close enough
-        if gap <= max(1, int(target_keep * tol_frac)):
-            best_abs, best_n = abs_mid, n_mid
-            break
-
-        # Too many kept => alpha too small => increase alpha
-        if n_mid > target_keep:
-            lo = mid
-        else:
-            hi = mid
-
-    # Enforce exact keep-count by coefficient magnitude
     idx = np.argsort(best_abs)[::-1][:target_keep]
+    _elapsed = (pd.Timestamp.utcnow() - _t0_prescreen).total_seconds()
+    tprint(
+        f"MDI prescreen: done kept={len(idx)} nnz={best_n} alpha_mid={alpha_mid:.3e} "
+        f"elapsed={_elapsed:.1f}s"
+    )
     return X.columns[idx].tolist()
 
 def suggest_depth(p: int, n_samples: int) -> int:
@@ -620,6 +608,56 @@ def _safe_spearman_np(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sum(aa0 * bb0) / den)
 
 
+def _safe_top_indices(values: np.ndarray, k: int) -> np.ndarray:
+    vals = np.asarray(values, dtype=float).reshape(-1)
+    if vals.size == 0:
+        return np.empty(0, dtype=np.int32)
+    k_eff = int(max(1, min(int(k), vals.size)))
+    order = np.argsort(vals, kind="mergesort")
+    return order[-k_eff:].astype(np.int32, copy=False)
+
+
+def _safe_quantile_sorted(values: np.ndarray, q: float) -> float:
+    arr = np.asarray(values, dtype=np.float64).reshape(-1)
+    if arr.size == 0:
+        return float("nan")
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return float("nan")
+    arr_sorted = np.sort(arr, kind="mergesort")
+    q_clipped = float(np.clip(q, 0.0, 1.0))
+    if arr_sorted.size == 1:
+        return float(arr_sorted[0])
+    pos = q_clipped * float(arr_sorted.size - 1)
+    lo = int(np.floor(pos))
+    hi = int(np.ceil(pos))
+    if lo == hi:
+        return float(arr_sorted[lo])
+    frac = pos - float(lo)
+    return float((1.0 - frac) * arr_sorted[lo] + frac * arr_sorted[hi])
+
+
+def _safe_percentiles_sorted(values: np.ndarray, percentiles: np.ndarray) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64).reshape(-1)
+    pct = np.asarray(percentiles, dtype=np.float64).reshape(-1)
+    if arr.size == 0 or pct.size == 0:
+        return np.empty(0, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return np.full(pct.shape, np.nan, dtype=np.float64)
+    arr_sorted = np.sort(arr, kind="mergesort")
+    n = arr_sorted.size
+    if n == 1:
+        return np.full(pct.shape, float(arr_sorted[0]), dtype=np.float64)
+    q = np.clip(pct / 100.0, 0.0, 1.0)
+    pos = q * float(n - 1)
+    lo = np.floor(pos).astype(np.int32)
+    hi = np.ceil(pos).astype(np.int32)
+    frac = pos - lo.astype(np.float64)
+    out = (1.0 - frac) * arr_sorted[lo] + frac * arr_sorted[hi]
+    return out.astype(np.float64, copy=False)
+
+
 def _subset_top_metric(
     y_true: np.ndarray,
     y_pred: np.ndarray,
@@ -637,7 +675,7 @@ def _subset_top_metric(
     yp = y_pred[m]
     n = len(yt)
     k = max(1, int(np.ceil(float(top_frac) * n)))
-    idx_top = np.argpartition(yp, -k)[-k:]
+    idx_top = _safe_top_indices(yp, k)
 
     if top_metric == "top30_mean_utility":
         return float(np.mean(yt[idx_top])) if len(idx_top) else 0.0
@@ -645,7 +683,7 @@ def _subset_top_metric(
         y_bin = (yt >= 0.5).astype(float)
         return float(np.mean(y_bin[idx_top])) if len(idx_top) else 0.0
     if top_metric == "weighted_tail":
-        q = float(np.nanquantile(yt, tail_q))
+        q = _safe_quantile_sorted(yt, tail_q)
         w = np.clip(yt - q, 0.0, None)
         if np.sum(w) < 1e-12:
             return _safe_spearman_np(yp[idx_top], yt[idx_top])
@@ -847,6 +885,7 @@ def mdi_feature_selection_v3(
     selector_hysteresis_margin: float = 0.05,
     selector_min_overlap: float = 0.70,
     selector_family_map: Optional[Dict[str, str]] = None,
+    coarse_keep_frac: Optional[float] = None,
 ) -> MDISelectionResult:
     """
     Robust MDI Feature Selection with Quantile-Transformed Correlations v3.
@@ -879,8 +918,14 @@ def mdi_feature_selection_v3(
         3.  Accumulate features (sorted by rank) until the cumulative sum reaches `cumulative_cap` (default 0.98 or 98%).
         4.  This count is then clamped by `min_features` (floor) and `max_features_pct` (ceiling).
     """
+    _t0_mdi = pd.Timestamp.utcnow()
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame.")
+    tprint(
+        f"MDI v3: start rows={len(X)} cols={X.shape[1]} "
+        f"target={selector_target} end_features={end_features} "
+        f"head={selector_head_name or 'default'}"
+    )
 
     if candidate_cols is not None:
         candidate_cols = [c for c in candidate_cols if c in X.columns]
@@ -941,6 +986,10 @@ def mdi_feature_selection_v3(
     # defaulting to `y` when not provided.
     y_for_selector = selector_y if selector_y is not None else y
     X, y_for_selector, sample_weight = clean_dataset(X, y_for_selector, sample_weight, name="X_mdi")
+    tprint(
+        f"MDI v3: after clean rows={len(X)} cols={X.shape[1]} "
+        f"elapsed={(pd.Timestamp.utcnow() - _t0_mdi).total_seconds():.1f}s"
+    )
 
     if X.empty:
         tprint("MDI: X became empty after cleaning. Returning empty result.")
@@ -1104,7 +1153,10 @@ def mdi_feature_selection_v3(
     kept_features = [feature_names_full[i] for i in range(len(keep_mask)) if keep_mask[i]]
     kept_features_indices = [i for i, kept in enumerate(keep_mask) if kept]
 
-    tprint(f"MDI: Starting with {len(kept_features)} features after dedupe (target: {end_features}).")
+    tprint(
+        f"MDI: Starting with {len(kept_features)} features after dedupe "
+        f"(target: {end_features}, elapsed={(pd.Timestamp.utcnow() - _t0_mdi).total_seconds():.1f}s)."
+    )
 
     current_features = kept_features
 
@@ -1177,36 +1229,11 @@ def mdi_feature_selection_v3(
 
     if len(current_features) > 4 * end_features:
         # SGDRegressor only accepts regression losses ('huber', 'squared_error', etc.)
-        # If the outer selector target is classification, we use huber as a robust linear proxy.
-        _prescreen_loss = str(_sel_loss).lower()
-        if _prescreen_loss in {"binary_logloss", "log_loss", "cross_entropy", "binary"}:
-            _prescreen_loss = "huber"
-        if _sel_target in {"classification", "binary", "clf"}:
-            _prescreen_l1_ratio = 0.65
-            _prescreen_alpha_lo = 1e-4
-            _prescreen_alpha_hi = 5.0
-        elif _sel_target == "quantile" or "quantile" in str(_sel_loss).lower():
-            _prescreen_l1_ratio = 0.45
-            _prescreen_alpha_lo = 5e-4
-            _prescreen_alpha_hi = 10.0
-        else:
-            _prescreen_l1_ratio = 0.35
-            _prescreen_alpha_lo = 1e-4
-            _prescreen_alpha_hi = 10.0
-            
-        prescreened_features = linear_prescreen_enet(
-            X[current_features],
-            y_np,
-            n_select=end_features,
-            multiplier=5,
-            max_drop_frac=0.15,
-            l1_ratio=_prescreen_l1_ratio,
-            alpha_lo=_prescreen_alpha_lo,
-            alpha_hi=_prescreen_alpha_hi,
-            loss=_prescreen_loss,
+        tprint(
+            f"MDI: ElasticNet prescreen disabled; starting tree-based ranking with "
+            f"{len(current_features)} cleaned/deduped features "
+            f"(elapsed={(pd.Timestamp.utcnow() - _t0_mdi).total_seconds():.1f}s)"
         )
-        tprint(f"MDI: ElasticNet prescreen reduced features from {len(current_features)} to {len(prescreened_features)}")
-        current_features = prescreened_features
 
     metrics_df_sorted = pd.DataFrame()
     mean_model_fit_score = float("nan")
@@ -1223,6 +1250,7 @@ def mdi_feature_selection_v3(
     supported_params = set(base_params.keys())
 
     while True:
+        _iter_t0 = pd.Timestamp.utcnow()
         p = len(current_features)
 
         # Subsampling Logic - Limit to 5K events max for MDI
@@ -1396,7 +1424,7 @@ def mdi_feature_selection_v3(
                 y_val = y_curr_np[val_idx]
                 y_pred_val = m.predict(X_val)
                 n_top = max(3, int(np.ceil(_top_frac * len(val_idx))))
-                idx_top = np.argpartition(y_pred_val, -n_top)[-n_top:]
+                idx_top = _safe_top_indices(y_pred_val, n_top)
                 idx_rest = np.setdiff1d(np.arange(len(val_idx)), idx_top, assume_unique=False)
                 _metric_fn = lambda yy, pp: _subset_top_metric(
                     yy, pp, _target_name, _top_metric, _top_frac, _tail_q
@@ -1471,6 +1499,32 @@ def mdi_feature_selection_v3(
         last_features = list(current_features)
         last_metrics_df = metrics_df.copy()
 
+        if coarse_keep_frac is not None:
+            _keep_frac = float(np.clip(coarse_keep_frac, 0.05, 1.0))
+            coarse_keep_n = min(
+                p,
+                max(int(end_features), int(np.ceil(float(p) * _keep_frac))),
+            )
+            if coarse_keep_n < p:
+                coarse_features = metrics_df_sorted.index[:coarse_keep_n].tolist()
+                coarse_idx = [metrics_df.index.get_loc(f) for f in coarse_features]
+                last_fold_share = [arr[coarse_idx] for arr in fold_share_curr]
+                last_fold_top_imp = [arr[coarse_idx] for arr in fold_top_imp_curr]
+                last_fold_rest_imp = [arr[coarse_idx] for arr in fold_rest_imp_curr]
+                last_features = list(coarse_features)
+                last_metrics_df = metrics_df.loc[coarse_features].copy()
+                tprint(
+                    f"MDI coarse pass: keeping top {coarse_keep_n}/{p} features "
+                    f"(keep_frac={_keep_frac:.2f}) and skipping recursive RFE "
+                    f"[iter_elapsed={(pd.Timestamp.utcnow() - _iter_t0).total_seconds():.1f}s, "
+                    f"total_elapsed={(pd.Timestamp.utcnow() - _t0_mdi).total_seconds():.1f}s]"
+                )
+            else:
+                tprint(
+                    f"MDI coarse pass: no-op (keep {coarse_keep_n}/{p}) and skipping recursive RFE"
+                )
+            break
+
         # If we reached the target, we are done
         # RFE: Adaptive prune rate with target-aware linear decay + fixed bonus drop.
         if p <= end_features:
@@ -1495,7 +1549,9 @@ def mdi_feature_selection_v3(
             
         tprint(
             f"MDI: Dropping {n_to_drop} features (remaining: {p - n_to_drop}) "
-            f"[adaptive rate={_drop_rate:.3f}, p/target={_ratio:.2f}, bonus=+{_bonus_drop}]"
+            f"[adaptive rate={_drop_rate:.3f}, p/target={_ratio:.2f}, bonus=+{_bonus_drop}, "
+            f"iter_elapsed={(pd.Timestamp.utcnow() - _iter_t0).total_seconds():.1f}s, "
+            f"total_elapsed={(pd.Timestamp.utcnow() - _t0_mdi).total_seconds():.1f}s]"
         )
         current_features = metrics_df_sorted.index[:-n_to_drop].tolist()
         
@@ -1541,7 +1597,7 @@ def mdi_feature_selection_v3(
         for row in fs:
             row = np.asarray(row, dtype=float)
             nz = row[row > 0]
-            thr_rel = float(np.quantile(nz, selector_frequency_hit_quantile)) if nz.size > 0 else np.inf
+            thr_rel = _safe_quantile_sorted(nz, selector_frequency_hit_quantile) if nz.size > 0 else np.inf
             thr_abs = float(selector_frequency_hit_abs) * max(float(np.sum(np.abs(row))), 1e-12)
             thr = max(thr_rel, thr_abs) if str(selector_frequency_hit_mode).lower() == "relative" else thr_abs
             if not np.isfinite(thr):
@@ -1723,6 +1779,10 @@ def mdi_feature_selection_v3(
 
     import gc
     gc.collect()
+    tprint(
+        f"MDI v3: done selected={len(selected)} kept_after_dedupe={len(kept_features)} "
+        f"elapsed={(pd.Timestamp.utcnow() - _t0_mdi).total_seconds():.1f}s"
+    )
     return MDISelectionResult(
         metrics_table=metrics_df_sorted,
         selected_features=selected,
@@ -1843,7 +1903,8 @@ def compute_decile_ranking_importance(
     n_bootstrap: int = 20,
     sample_weight: Optional[np.ndarray] = None,
     random_state: int = 42,
-    n_jobs: int = 2
+    n_jobs: int = 2,
+    max_rows: int = 50000,
 ) -> pd.Series:
     """
     Compute feature importance based on quintile-based monotonic ranking strength.
@@ -1896,11 +1957,28 @@ def compute_decile_ranking_importance(
     Returns:
         pd.Series: Feature importance (Spearman correlation), sorted descending
     """
+    _t0_rank = pd.Timestamp.utcnow()
+    tprint(
+        f"MDI decile-importance: start rows={len(X)} cols={X.shape[1]} "
+        f"bins={int(n_bins)} boot={int(n_bootstrap)} n_jobs={int(n_jobs)} "
+        f"max_rows={int(max_rows)}"
+    )
     # Cap n_bins at 5 (20% each max) to align with lift@20% metric
     n_bins = min(n_bins, 5)
     
     y = np.asarray(y, dtype=np.float64)
     y_binary = (y >= 0.5).astype(np.float64)
+
+    if max_rows > 0 and len(y_binary) > int(max_rows):
+        row_idx = np.linspace(0, len(y_binary) - 1, int(max_rows), dtype=np.int32)
+        row_idx = np.unique(row_idx)
+        X = X.iloc[row_idx].reset_index(drop=True)
+        y_binary = y_binary[row_idx]
+        if sample_weight is not None:
+            sample_weight = np.asarray(sample_weight, dtype=np.float64)[row_idx]
+        tprint(
+            f"MDI decile-importance: row cap applied {len(y)} -> {len(y_binary)}"
+        )
     
     n_samples = len(y)
     min_samples_per_bin = max(5, n_bins)
@@ -1956,7 +2034,10 @@ def compute_decile_ranking_importance(
             
             # Compute percentiles for binning
             try:
-                percentiles = np.percentile(feat_valid, np.linspace(0, 100, n_bins + 1)[1:-1])
+                percentiles = _safe_percentiles_sorted(
+                    feat_valid,
+                    np.linspace(0, 100, n_bins + 1, dtype=np.float64)[1:-1],
+                )
                 
                 # Bin and compute positive rates
                 bin_labels, pos_rates, has_weight = _bin_and_compute_pos_rates_numba(
@@ -1989,11 +2070,21 @@ def compute_decile_ranking_importance(
         else:
             return 0.0
     
-    # Use joblib for parallel processing if n_jobs != 1
-    if n_jobs != 1 and n_cols > 10:
+    # Threaded joblib + Numba is fragile on macOS/Apple Silicon. Keep the
+    # refinement sequential there for stability, and only parallelize elsewhere
+    # when the feature block is large enough to justify it.
+    effective_n_jobs = int(max(1, n_jobs))
+    if sys.platform == "darwin":
+        effective_n_jobs = 1
+
+    if effective_n_jobs != 1 and n_cols > 10:
         try:
             from joblib import Parallel, delayed
-            results = Parallel(n_jobs=n_jobs, backend='loky')(
+            results = Parallel(
+                n_jobs=effective_n_jobs,
+                backend="threading",
+                prefer="threads",
+            )(
                 delayed(_process_column)(col_idx) for col_idx in range(n_cols)
             )
             importance_values = np.array(results)
@@ -2007,6 +2098,10 @@ def compute_decile_ranking_importance(
             importance_values[col_idx] = _process_column(col_idx)
     
     importance = dict(zip(col_names, importance_values))
+    _elapsed = (pd.Timestamp.utcnow() - _t0_rank).total_seconds()
+    tprint(
+        f"MDI decile-importance: done cols={n_cols} elapsed={_elapsed:.1f}s"
+    )
     return pd.Series(importance).sort_values(ascending=False)
 
 
@@ -2039,6 +2134,10 @@ def mdi_feature_selection_v4_topk(
     sample_weight: Optional[np.ndarray] = None,
     k_frac: float = 0.20,
     topk_weight: float = 0.2,
+    n_bins: int = 5,
+    n_bootstrap: int = 8,
+    n_jobs: int = 2,
+    max_rank_rows: int = 50000,
     **kwargs
 ) -> MDISelectionResult:
     """
@@ -2078,14 +2177,25 @@ def mdi_feature_selection_v4_topk(
     Returns:
         MDISelectionResult with combined importance ranking
     """
-    tprint(f"MDI v4 TopK: Running combined MDI + decile-ranking selection (weight={topk_weight})")
+    _t0_v4 = pd.Timestamp.utcnow()
+    tprint(
+        f"MDI v4 TopK: start rows={len(X)} cols={X.shape[1]} "
+        f"weight={topk_weight} bins={int(n_bins)} boot={int(n_bootstrap)} "
+        f"rank_rows={int(max_rank_rows)}"
+    )
     
     # 1. Get standard MDI result
     mdi_result = mdi_feature_selection_v3(X, y, base_model, sample_weight=sample_weight, **kwargs)
     
     # 2. Get decile-based ranking importance
     decile_imp = compute_decile_ranking_importance(
-        X, y, n_bins=10, sample_weight=sample_weight
+        X,
+        y,
+        n_bins=n_bins,
+        n_bootstrap=n_bootstrap,
+        sample_weight=sample_weight,
+        n_jobs=n_jobs,
+        max_rows=max_rank_rows,
     )
     
     # 3. Normalize both importance scores
@@ -2113,6 +2223,13 @@ def mdi_feature_selection_v4_topk(
     new_metrics['combined_score'] = combined
     new_metrics = new_metrics.loc[combined_sorted.index]
     
-    tprint(f"MDI v4 TopK: Selected {len(selected)} features with combined importance")
-    
+    _elapsed = (pd.Timestamp.utcnow() - _t0_v4).total_seconds()
+    tprint(
+        f"MDI v4 TopK: selected {len(selected)} features elapsed={_elapsed:.1f}s"
+    )
+
     return MDISelectionResult(new_metrics, selected, mdi_result.kept_after_dedupe)
+    tprint(
+        f"MDI decile-importance: start rows={len(X)} cols={X.shape[1]} "
+        f"bins={int(n_bins)} boot={int(n_bootstrap)} n_jobs={int(n_jobs)}"
+    )

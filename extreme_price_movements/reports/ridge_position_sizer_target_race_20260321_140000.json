@@ -1,0 +1,94 @@
+{
+  "select_metric": "topq_u_policy",
+  "candidate_metrics": [
+    {
+      "target_name": "winsorized",
+      "ridge_ic": 0.7348656657290242,
+      "ridge_topq_u": -0.0004535507008525504,
+      "ridge_topq_u_std": 0.00015101149935010957,
+      "ridge_composite_score": -1000000000000.0,
+      "precision_at_30": 0.9758333333333333,
+      "lift_at_30": 2.607437096415052,
+      "ridge_topq_n": 1200,
+      "ridge_pass_gate": false
+    },
+    {
+      "target_name": "winsorized_voladj",
+      "ridge_ic": 0.3932531097657099,
+      "ridge_topq_u": -0.001484907180541389,
+      "ridge_topq_u_std": 0.00013059877598304117,
+      "ridge_composite_score": -1000000000000.0,
+      "precision_at_30": 0.6008333333333333,
+      "lift_at_30": 1.6054330883990202,
+      "ridge_topq_n": 1200,
+      "ridge_pass_gate": false
+    },
+    {
+      "target_name": "huber_adv",
+      "ridge_ic": 0.6662059291858815,
+      "ridge_topq_u": -0.0003903589206432419,
+      "ridge_topq_u_std": 0.00026535808346125125,
+      "ridge_composite_score": -1000000000000.0,
+      "precision_at_30": 0.9791666666666666,
+      "lift_at_30": 2.616343798708528,
+      "ridge_topq_n": 1200,
+      "ridge_pass_gate": false
+    },
+    {
+      "target_name": "huber_adv_voladj",
+      "ridge_ic": 0.6746323013661089,
+      "ridge_topq_u": -0.0003865929668609169,
+      "ridge_topq_u_std": 0.00026647851210327646,
+      "ridge_composite_score": -1000000000000.0,
+      "precision_at_30": 0.9783333333333334,
+      "lift_at_30": 2.614117123135159,
+      "ridge_topq_n": 1200,
+      "ridge_pass_gate": false
+    },
+    {
+      "target_name": "rolling_rank",
+      "ridge_ic": 0.7250103214999819,
+      "ridge_topq_u": -0.00038577875851236363,
+      "ridge_topq_u_std": 0.00025469430869937544,
+      "ridge_composite_score": -1000000000000.0,
+      "precision_at_30": 0.955,
+      "lift_at_30": 2.551770207080828,
+      "ridge_topq_n": 1200,
+      "ridge_pass_gate": false
+    },
+    {
+      "target_name": "rolling_rank_voladj",
+      "ridge_ic": 0.7123398804363323,
+      "ridge_topq_u": -0.00043560947212730144,
+      "ridge_topq_u_std": 0.00032821628313286057,
+      "ridge_composite_score": -1000000000000.0,
+      "precision_at_30": 0.96,
+      "lift_at_30": 2.565130260521042,
+      "ridge_topq_n": 1200,
+      "ridge_pass_gate": false
+    },
+    {
+      "target_name": "rank_residual",
+      "ridge_ic": 0.6943540784660567,
+      "ridge_topq_u": -0.0004764615640488046,
+      "ridge_topq_u_std": 0.00036339053476998134,
+      "ridge_composite_score": -1000000000000.0,
+      "precision_at_30": 0.9433333333333334,
+      "lift_at_30": 2.520596749053663,
+      "ridge_topq_n": 1200,
+      "ridge_pass_gate": false
+    },
+    {
+      "target_name": "rank_residual_voladj",
+      "ridge_ic": 0.6927674043024172,
+      "ridge_topq_u": -0.0005142103022020213,
+      "ridge_topq_u_std": 0.00037499481191540933,
+      "ridge_composite_score": -1000000000000.0,
+      "precision_at_30": 0.9408333333333333,
+      "lift_at_30": 2.5139167223335557,
+      "ridge_topq_n": 1200,
+      "ridge_pass_gate": false
+    }
+  ],
+  "winner_model_metrics": {}
+}

@@ -1,0 +1,14 @@
+{
+  "weight_l1": 0.0,
+  "weight_l2": 0.0,
+  "weight_max_abs": 0.0,
+  "weight_top1_share": 0.0,
+  "weight_top2_share": 0.0,
+  "weight_top3_share": 0.0,
+  "weight_effective_n_models": 0.0,
+  "weight_entropy": 0.0,
+  "weight_share_by_horizon": {
+    "H5": 0.0,
+    "H10": 0.0
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "scope_key": "dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834_reg",
+  "kind": "xgb",
+  "best_params": {
+    "objective": "reg:pseudohubererror",
+    "n_estimators": 1400,
+    "max_depth": 4,
+    "learning_rate": 0.05924903655558719,
+    "subsample": 0.7437223049640911,
+    "colsample_bytree": 0.6615872143466236,
+    "colsample_bynode": 0.6149341746239103,
+    "gamma": 2.672731987790186,
+    "reg_alpha": 2.214583202167759,
+    "reg_lambda": 79.15176034011749,
+    "min_child_weight": 15
+  },
+  "n_trials_completed": 112,
+  "best_trial_number": 51
+}

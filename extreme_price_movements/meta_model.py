@@ -80,18 +80,18 @@ class _RunningStats:
         return (x - self.get_mean()) / std
 
 
-# Global running stats for meta HPO metrics (populated across trials)
-_running_stats_meta = {
-    "rank_metric": _RunningStats(),
-    "top_bucket_lift": _RunningStats(),
-    "top_bucket_mean": _RunningStats(),
-    "top_bucket_precision": _RunningStats(),
-    "top_bucket_recall": _RunningStats(),
-    "reg_top20_ic": _RunningStats(),
-    "reg_overall_ic": _RunningStats(),
-    "rank_metric_std": _RunningStats(),
-    "error_metric": _RunningStats(),
-}
+def _make_meta_hpo_running_stats() -> dict[str, _RunningStats]:
+    return {
+        "rank_metric": _RunningStats(),
+        "top_bucket_lift": _RunningStats(),
+        "top_bucket_mean": _RunningStats(),
+        "top_bucket_precision": _RunningStats(),
+        "top_bucket_recall": _RunningStats(),
+        "reg_top20_ic": _RunningStats(),
+        "reg_overall_ic": _RunningStats(),
+        "rank_metric_std": _RunningStats(),
+        "error_metric": _RunningStats(),
+    }
 
 
 def _topk_spearman(pred: np.ndarray, target: np.ndarray, frac: float) -> float:
@@ -251,74 +251,203 @@ def _extract_top_feature_importance(
     }
 
 
+def _cap_hpo_rows(
+    X: np.ndarray,
+    y: np.ndarray,
+    sw: Optional[np.ndarray],
+    max_rows: Optional[int],
+) -> tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
+    """Cap HPO rows with a time-preserving subsample and mild class balancing."""
+    Xv = np.asarray(X)
+    yv = np.asarray(y)
+    swv = None if sw is None else np.asarray(sw)
+    if max_rows is None or int(max_rows) <= 0 or len(yv) <= int(max_rows):
+        return Xv, yv, swv
+
+    max_rows = int(max_rows)
+    base_idx = np.linspace(0, len(yv) - 1, max_rows, dtype=np.int32)
+
+    # If the target is binary-like, preserve some minority support while
+    # keeping chronological coverage via the baseline linspace sample.
+    finite = np.isfinite(yv)
+    uniq = np.unique(yv[finite]) if finite.any() else np.asarray([], dtype=float)
+    if len(uniq) <= 2 and np.all(np.isin(uniq, [0.0, 1.0])):
+        pos_idx = np.flatnonzero((yv > 0.5) & finite)
+        neg_idx = np.flatnonzero((yv <= 0.5) & finite)
+        keep_pos = min(len(pos_idx), max_rows // 2)
+        keep_neg = min(len(neg_idx), max_rows - keep_pos)
+        bal_idx = np.concatenate(
+            [
+                pos_idx[np.linspace(0, len(pos_idx) - 1, keep_pos, dtype=np.int32)]
+                if keep_pos > 0
+                else np.empty(0, dtype=np.int32),
+                neg_idx[np.linspace(0, len(neg_idx) - 1, keep_neg, dtype=np.int32)]
+                if keep_neg > 0
+                else np.empty(0, dtype=np.int32),
+            ]
+        )
+        idx = np.unique(np.concatenate([base_idx, bal_idx]))
+        if len(idx) > max_rows:
+            idx = idx[
+                np.linspace(0, len(idx) - 1, max_rows, dtype=np.int32)
+            ]
+    else:
+        idx = base_idx
+
+    return (
+        Xv[idx],
+        yv[idx],
+        None if swv is None else swv[idx],
+    )
+
+
+def _feature_importance_pred_prefix_summary(
+    fi_summary: dict[str, Any],
+) -> dict[str, float]:
+    rows = list(fi_summary.get("feature_importance_top10", []) or [])
+    pred_sum = 0.0
+    top10_sum = 0.0
+    for row in rows:
+        try:
+            val = float(row.get("importance", 0.0))
+        except Exception:
+            val = 0.0
+        top10_sum += val
+        feat = str(row.get("feature", ""))
+        if feat.startswith("pred_"):
+            pred_sum += val
+    return {
+        "feature_importance_pred_prefix_sum_top10": float(pred_sum),
+        "feature_importance_top10_sum": float(top10_sum),
+        "feature_importance_pred_prefix_share_top10": float(
+            pred_sum / max(top10_sum, 1e-12)
+        ),
+    }
+
+
 # ---------------------------
 # Custom Early Stopping Callback for Optuna HPO
 # ---------------------------
 def _make_early_stopping_callback(
     min_trials_before_check: int = 60,
     patience: int = 60,
-    magnitude_patience: int = 60,
     improvement_threshold: float = 1.005,
 ):
-    """Create Optuna early stopping callback with dual rules.
+    """Create Optuna early stopping callback for maximizing studies.
 
-    Early stopping ONLY activates after min_trials_before_check trials.
-
-    Rule 1 (standard): Stop if no improvement for `patience` trials.
-    Rule 2 (magnitude): Stop if Score_new > Score_old * 1.005 for
-                       `magnitude_patience` consecutive trials.
-
-    The two rules are complementary - either can trigger early stopping.
+    Stops after `patience` completed/pruned trials without a meaningful best-value
+    improvement. Improvement is measured relative to the incumbent best when the
+    current stagnation window started.
     """
 
+    best_trial_number = None
+    best_value_at_anchor = None
+
+    def _safe_best(study):
+        try:
+            _best_trial = study.best_trial
+            _best_value = study.best_value
+        except ValueError:
+            return None, None
+        if _best_trial is None or _best_value is None:
+            return None, None
+        return _best_trial, _best_value
+
     def early_stopping_callback(study, trial):
-        # Early stopping ONLY after min_trials_before_check
-        if len(study.trials) < min_trials_before_check:
+        nonlocal best_trial_number, best_value_at_anchor
+        completed_like = [
+            t
+            for t in study.trials
+            if getattr(t.state, "name", str(t.state)) in {"COMPLETE", "PRUNED"}
+        ]
+        if len(completed_like) < min_trials_before_check:
+            return
+        _best_trial, _best_value = _safe_best(study)
+        if _best_trial is None or _best_value is None:
             return
 
-        # Rule 1: Standard patience-based early stopping
-        # Check last `patience` trials for no improvement
-        recent_trials = study.trials[-patience:]
-        best_value = study.best_value
-        no_improvement = all(
-            t.value is None or t.value < best_value * 0.9999 for t in recent_trials
+        curr_best_no = int(_best_trial.number)
+        curr_best_val = float(_best_value)
+        if best_trial_number != curr_best_no:
+            best_trial_number = curr_best_no
+            best_value_at_anchor = curr_best_val
+            return
+
+        trials_since_best = int(trial.number) - curr_best_no
+        if trials_since_best < int(max(1, patience)):
+            return
+
+        anchor = (
+            float(best_value_at_anchor)
+            if best_value_at_anchor is not None and np.isfinite(best_value_at_anchor)
+            else curr_best_val
         )
-        if no_improvement:
+        min_improvement = max(1e-9, abs(anchor) * (float(improvement_threshold) - 1.0))
+        if curr_best_val <= anchor + min_improvement:
             tprint(
-                f"  Meta HPO early stop (patience={patience}): no improvement for {patience} trials"
-            )
-            study.stop()
-            return
-
-        # Rule 2: Magnitude-based improvement threshold
-        # Check if all recent trials exceed threshold over baseline
-        if len(study.trials) < magnitude_patience + 1:
-            return
-
-        # Get the best value from before the recent window
-        trials_before_window = study.trials[:-magnitude_patience]
-        if not trials_before_window:
-            return
-
-        best_before = max(
-            (t.value for t in trials_before_window if t.value is not None), default=None
-        )
-        if best_before is None:
-            return
-
-        # Check if all recent trials exceed threshold
-        threshold = best_before * improvement_threshold
-        all_above_threshold = all(
-            t.value is not None and t.value > threshold
-            for t in study.trials[-magnitude_patience:]
-        )
-        if all_above_threshold:
-            tprint(
-                f"  Meta HPO early stop (magnitude): {magnitude_patience} trials > {improvement_threshold:.4f}x baseline"
+                f"  Meta HPO early stop (patience={patience}): "
+                f"no meaningful improvement for {trials_since_best} trials "
+                f"(best_trial={curr_best_no}, best={curr_best_val:.6f})"
             )
             study.stop()
 
     return early_stopping_callback
+
+
+def _make_hpo_heartbeat_callback(
+    *,
+    label: str,
+    every_trials: int = 10,
+    every_seconds: float = 120.0,
+):
+    """Emit periodic Optuna progress heartbeats during long HPO runs."""
+    import time as _time
+
+    t0 = _time.monotonic()
+    last_emit_t = t0
+    last_emit_n = 0
+
+    def heartbeat_callback(study, trial):
+        nonlocal last_emit_t, last_emit_n
+        n_done = len(study.trials)
+        now = _time.monotonic()
+        emit_by_trials = (n_done - last_emit_n) >= int(max(1, every_trials))
+        emit_by_time = (now - last_emit_t) >= float(max(1.0, every_seconds))
+        if not (emit_by_trials or emit_by_time):
+            return
+
+        state_counts = {}
+        for _t in study.trials:
+            _state = getattr(_t.state, "name", str(_t.state))
+            state_counts[_state] = state_counts.get(_state, 0) + 1
+        n_complete = int(state_counts.get("COMPLETE", 0))
+        n_pruned = int(state_counts.get("PRUNED", 0))
+        n_failed = int(state_counts.get("FAIL", 0))
+        try:
+            _best_trial = study.best_trial
+            best_val = study.best_value
+            best_trial_no = int(_best_trial.number) if _best_trial is not None else "n/a"
+        except ValueError:
+            best_val = None
+            best_trial_no = "n/a"
+        best_val_str = (
+            f"{float(best_val):.6f}" if best_val is not None and np.isfinite(best_val) else "n/a"
+        )
+        curr_val = getattr(trial, "value", None)
+        curr_val_str = (
+            f"{float(curr_val):.6f}" if curr_val is not None and np.isfinite(curr_val) else "n/a"
+        )
+        elapsed = now - t0
+        tprint(
+            f"  Meta HPO heartbeat[{label}]: trials={n_done} complete={n_complete} "
+            f"pruned={n_pruned} failed={n_failed} "
+            f"best={best_val_str} best_trial={best_trial_no} "
+            f"current={curr_val_str} elapsed={elapsed:.1f}s"
+        )
+        last_emit_t = now
+        last_emit_n = n_done
+
+    return heartbeat_callback
 
 
 if importlib.util.find_spec("xgboost") is not None:
@@ -779,6 +908,18 @@ def _save_meta_hpo_json(
         json.dump(payload, f, indent=2, default=str)
 
 
+def _hpo_probe_subset(
+    X,
+    y,
+    sw=None,
+    *,
+    probe_rows: int = 3000,
+):
+    y_arr = np.asarray(y)
+    n_probe = min(int(max(256, probe_rows)), len(y_arr))
+    return _cap_hpo_rows(X, y_arr, sw, n_probe)
+
+
 def load_best_meta_params(
     out_dir: str = "./hpo_out",
     scope_key: Optional[str] = None,
@@ -823,6 +964,9 @@ class MetaModel:
         self.xgb_parallel_forest_params: Optional[Dict[str, object]] = None
         self.monotone_constraints: Optional[Dict[str, int]] = None
         self.collect_uncertainty_metrics: bool = False
+        self.hpo_n_trials: Optional[int] = None
+        self.hpo_max_rows: Optional[int] = None
+        self.hpo_max_rows: Optional[int] = None
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -929,12 +1073,12 @@ class MetaModel:
         y: np.ndarray,
         max_features: int = 80,
     ) -> List[str]:
-        """Light feature selection for meta models via MDI v3 only.
+        """Light feature selection for meta models via bounded MDI v3 + v4 refinement.
 
         Meta features are already curated (~100 features: pred_logit,
         per-horizon OOFs, handpicked market features). Aggressive pruning
-        removes signal — only do a broad v3 pass with a high floor.
-        No v4_topk refinement (that's for base models with 600+ raw features).
+        removes signal — do a broad v3 pass with a high floor, then a small
+        v4_topk refinement on the stage-1 shortlist only.
 
         Target is scaled to unit variance before MDI (meta targets have
         std ~0.01 which causes near-zero tree importances otherwise).
@@ -950,6 +1094,118 @@ class MetaModel:
         if y_std > 1e-9:
             y_scaled = y_scaled / y_std
 
+        def _cheap_corr_cluster_prune(
+            X_frame: pd.DataFrame,
+            ordered_cols: Sequence[str],
+            *,
+            target_count: int,
+            corr_threshold: float,
+            row_cap: int,
+        ) -> list[str]:
+            ordered = [str(c) for c in ordered_cols if c in X_frame.columns]
+            if len(ordered) <= int(target_count):
+                return ordered
+            row_cap = max(256, int(row_cap))
+            corr_threshold = float(np.clip(corr_threshold, 0.50, 0.999))
+            X_sub = X_frame[ordered]
+            if len(X_sub) > row_cap:
+                ridx = np.linspace(0, len(X_sub) - 1, num=row_cap, dtype=np.int32)
+                X_sub = X_sub.iloc[ridx]
+            X_np = np.nan_to_num(
+                X_sub.to_numpy(dtype=np.float32, copy=False),
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            )
+            if X_np.shape[1] <= 1:
+                return ordered[:target_count]
+            corr = np.corrcoef(X_np, rowvar=False)
+            corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+            keep_idx: list[int] = []
+            for i in range(len(ordered)):
+                if not keep_idx:
+                    keep_idx.append(i)
+                else:
+                    max_abs_corr = float(np.max(np.abs(corr[i, keep_idx])))
+                    if max_abs_corr < corr_threshold:
+                        keep_idx.append(i)
+                if len(keep_idx) >= int(target_count):
+                    break
+            if len(keep_idx) < int(target_count):
+                seen = set(keep_idx)
+                for i in range(len(ordered)):
+                    if i in seen:
+                        continue
+                    keep_idx.append(i)
+                    if len(keep_idx) >= int(target_count):
+                        break
+            return [ordered[i] for i in keep_idx[: int(target_count)]]
+
+        def _preferred_feature_names(columns: Sequence[str]) -> list[str]:
+            _core_tokens = (
+                "pred_std",
+                "pred_cv",
+                "pred_std_robust",
+                "vote_entropy",
+                "vote_margin",
+                "vote_top_gap",
+                "leaf_support_",
+                "leaf_target_",
+                "leaf_centroid_dist_",
+                "reg_pred_",
+                "reg_sign_",
+                "reg_pos_vote_frac",
+                "reg_leaf_",
+                "clf_reg_",
+                "clf_prob_x_reg_",
+                "reg_snr_x_clf_",
+                "clf_entropy_x_reg_",
+                "clf_std_x_reg_",
+            )
+            return [
+                c
+                for c in columns
+                if c.startswith(("pred_", "base_")) or any(tok in c for tok in _core_tokens)
+            ]
+
+        def _apply_preferred_bias(
+            candidate_order: Sequence[str],
+            chosen: Sequence[str],
+            *,
+            width: int,
+            boost: float = 1.5,
+        ) -> list[str]:
+            preferred = set(_preferred_feature_names(candidate_order))
+            chosen_set = set(str(c) for c in chosen)
+            scored: list[tuple[float, str]] = []
+            for rank, col in enumerate(candidate_order):
+                if col not in chosen_set:
+                    continue
+                base_score = 1.0 / float(rank + 1)
+                if col in preferred:
+                    base_score *= float(boost)
+                scored.append((base_score, str(col)))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            out: list[str] = []
+            seen: set[str] = set()
+            for _, col in scored:
+                if col in seen:
+                    continue
+                seen.add(col)
+                out.append(col)
+                if len(out) >= int(width):
+                    break
+            if len(out) < int(width):
+                for col in candidate_order:
+                    col = str(col)
+                    if col in seen or col not in chosen_set:
+                        continue
+                    seen.add(col)
+                    out.append(col)
+                    if len(out) >= int(width):
+                        break
+            return out
+
         try:
             _sel_cfg = dict(self.selector_cfg or {})
             # Single broad MDI v3 pass — high floor, no aggressive refinement
@@ -958,6 +1214,9 @@ class MetaModel:
                 y_scaled,
                 min_features=30,
                 end_features=max_features,
+                coarse_keep_frac=float(
+                    _sel_cfg.get("stage1_coarse_keep_frac", 0.70)
+                ),
                 selector_y=y,
                 selector_target=str(self.selector_target_override or "regression"),
                 selector_loss=str(self.selector_loss_override or "huber"),
@@ -1021,40 +1280,92 @@ class MetaModel:
                 max_features_pct=0.90,
             )
             selected_stage1 = list(fs1.selected_features)
+            _cluster_target = min(
+                len(selected_stage1),
+                max(int(max_features) * 3, 90),
+            )
+            if len(selected_stage1) > _cluster_target:
+                _pre_prune_n = len(selected_stage1)
+                selected_stage1 = _cheap_corr_cluster_prune(
+                    X,
+                    selected_stage1,
+                    target_count=_cluster_target,
+                    corr_threshold=float(
+                        _sel_cfg.get("cluster_prune_corr_threshold", 0.92)
+                    ),
+                    row_cap=int(_sel_cfg.get("cluster_prune_row_cap", 3000)),
+                )
+                tprint(
+                    f"  Meta cluster prune: {_pre_prune_n} -> {len(selected_stage1)} "
+                    f"features before v4_topk"
+                )
             if len(selected_stage1) < 30:
                 selected = list(X.columns[:max_features])
             else:
-                # Stage 2: v4_topk refinement for redundancy removal
-                n_stage2_target = max(30, min(max_features, len(selected_stage1) - 10))
+                n_stage2_target = max(
+                    60,
+                    min(max_features, len(selected_stage1) - 10),
+                )
                 if len(selected_stage1) > n_stage2_target:
                     try:
-                        X_stage1 = X[selected_stage1]
                         fs2 = mdi_feature_selection_v4_topk(
-                            X_stage1,
+                            X[selected_stage1],
                             y_scaled,
-                            topk_weight=0.3,
-                            base_model=None,
+                            topk_weight=float(_sel_cfg.get("v4_topk_weight", 0.20)),
+                            n_bins=int(_sel_cfg.get("v4_topk_n_bins", 5)),
+                            n_bootstrap=int(_sel_cfg.get("v4_topk_n_bootstrap", 8)),
+                            n_jobs=int(_sel_cfg.get("v4_topk_n_jobs", 1)),
+                            max_rank_rows=int(
+                                _sel_cfg.get("v4_topk_max_rank_rows", 50000)
+                            ),
+                            selector_y=y,
+                            min_features=30,
+                            end_features=n_stage2_target,
+                            selector_target=str(
+                                self.selector_target_override or "regression"
+                            ),
+                            selector_loss=str(self.selector_loss_override or "huber"),
+                            selector_head_name=f"meta_{self.strategy_name or 'default'}_v4",
+                            selector_report_dir=self.selector_report_dir,
+                            analysis_n_estimators=int(
+                                _sel_cfg.get("analysis_n_estimators", 192)
+                            ),
+                            analysis_max_samples=int(
+                                _sel_cfg.get("analysis_max_samples", 3000)
+                            ),
+                            max_features_pct=0.95,
                         )
                         selected = list(fs2.selected_features)[:n_stage2_target]
+                        selected = _apply_preferred_bias(
+                            selected_stage1,
+                            selected,
+                            width=n_stage2_target,
+                            boost=1.5,
+                        )
                         tprint(
-                            f"  Meta v4_topk refinement: {len(selected_stage1)} -> {len(selected)} features"
+                            f"  Meta v4_topk refinement: {len(selected_stage1)} -> "
+                            f"{len(selected)} features"
                         )
                     except Exception as exc2:
                         tprint(
                             f"  v4_topk refinement failed ({exc2}), using stage1 selection"
                         )
-                        selected = selected_stage1[:max_features]
+                        selected = _apply_preferred_bias(
+                            selected_stage1,
+                            selected_stage1[:max_features],
+                            width=max_features,
+                            boost=1.5,
+                        )
                 else:
-                    selected = selected_stage1[:max_features]
+                    selected = _apply_preferred_bias(
+                        selected_stage1,
+                        selected_stage1[:max_features],
+                        width=max_features,
+                        boost=1.5,
+                    )
         except Exception as exc:
             tprint(f"  MDI feature selection failed ({exc}), using all columns")
             selected = list(X.columns[:max_features])
-
-        # Always keep pred_logit and pred_H* (core alpha signals)
-        must_keep = [c for c in X.columns if c.startswith("pred_")]
-        for c in must_keep:
-            if c not in selected:
-                selected.append(c)
 
         tprint(
             f"  Meta feature selection: {len(X.columns)} -> {len(selected)} features"
@@ -1085,7 +1396,7 @@ class MetaModel:
                     "gamma": 1.5,
                     "tree_method": "hist",
                     "random_state": 42,
-                    "n_jobs": 3,
+                    "n_jobs": 2,
                     "verbosity": 0,
                     "early_stopping_rounds": 20,
                 }
@@ -1109,7 +1420,17 @@ class MetaModel:
         return candidates
 
     # ── Model fitting ────────────────────────────────────────────────────
-    def _fit_one(self, kind, params, X_tr, y_tr, X_va, y_va, sw=None):
+    def _fit_one(
+        self,
+        kind,
+        params,
+        X_tr,
+        y_tr,
+        X_va,
+        y_va,
+        sw=None,
+        feature_names: Optional[Sequence[str]] = None,
+    ):
         if kind == "ridge":
             model = Pipeline(
                 [
@@ -1135,10 +1456,12 @@ class MetaModel:
             p = dict(params)
             es_rounds = p.pop("early_stopping_rounds", 50)
             mc = getattr(self, "monotone_constraints", None)
-            if mc and isinstance(mc, dict) and self.selected_features:
-                p["monotone_constraints"] = tuple(
-                    mc.get(f, 0) for f in self.selected_features
-                )
+            if mc and isinstance(mc, dict):
+                ordered_feats = list(feature_names or self.selected_features or [])
+                if ordered_feats:
+                    p["monotone_constraints"] = tuple(
+                        mc.get(f, 0) for f in ordered_feats
+                    )
             model = xgb.XGBRegressor(**p, early_stopping_rounds=es_rounds)
             model.fit(
                 X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False
@@ -1155,6 +1478,7 @@ class MetaModel:
         y,
         sw=None,
         feature_max_features: Optional[int] = None,
+        selector_cache: Optional[Dict[Tuple[int, int, int], List[str]]] = None,
     ) -> Tuple[np.ndarray, float, Dict[str, Any], Dict[str, np.ndarray]]:
         """3-fold purged CV. Returns OOF predictions plus uncertainty proxies."""
         pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
@@ -1164,15 +1488,6 @@ class MetaModel:
         oof_prefix_std = np.full(len(y), np.nan, dtype=np.float32)
         oof_leaf_support_q25 = np.full(len(y), np.nan, dtype=np.float32)
         oof_leaf_target_iqr_mean = np.full(len(y), np.nan, dtype=np.float32)
-        fold_spearmans: List[float] = []
-        fold_briers: List[float] = []
-        fold_bss: List[float] = []
-        fold_top_decile_precisions: List[float] = []
-        fold_top_decile_recalls: List[float] = []
-        fold_ic_top10: List[float] = []
-        fold_ic_top20: List[float] = []
-        fold_ic_top30: List[float] = []
-
         if isinstance(X, pd.DataFrame):
             X_frame = X.reset_index(drop=True)
         else:
@@ -1183,7 +1498,7 @@ class MetaModel:
         max_features = int(
             feature_max_features
             if feature_max_features is not None
-            else max(30, min(50, X_frame.shape[1]))
+            else max(30, min(60, X_frame.shape[1]))
         )
 
         # Per-fold metrics for composite scoring
@@ -1194,7 +1509,7 @@ class MetaModel:
         fold_top_decile_means: List[float] = []
         fold_rmses: List[float] = []
 
-        for tr, va in pkf.split(X_frame):
+        for fold_idx, (tr, va) in enumerate(pkf.split(X_frame), start=1):
             if getattr(self, "_dynamic_labels", None) is not None:
                 # Dynamic soft labels evaluated on train set to prevent leakage
                 dyn_tr = self._dynamic_labels[tr]
@@ -1207,12 +1522,19 @@ class MetaModel:
             sw_tr = None if sw is None else sw[tr]
             X_tr_df = X_frame.iloc[tr].reset_index(drop=True)
             X_va_df = X_frame.iloc[va].reset_index(drop=True)
-            selected_cols = self._select_tail_features(
-                X_tr_df, np.asarray(y_tr, dtype=float), max_features=max_features
-            )
+            selected_cols = list(X_tr_df.columns)
             X_tr = X_tr_df[selected_cols].to_numpy(dtype=np.float32)
             X_va = X_va_df[selected_cols].to_numpy(dtype=np.float32)
-            model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
+            model = self._fit_one(
+                kind,
+                params,
+                X_tr,
+                y_tr,
+                X_va,
+                y_va,
+                sw=sw_tr,
+                feature_names=selected_cols,
+            )
             pred_va = model.predict(X_va)
             oof[va] = pred_va
             if kind == "xgb" and self.collect_uncertainty_metrics:
@@ -1442,6 +1764,79 @@ class MetaModel:
             if isinstance(prev_blob, dict) and prev_blob.get("best_params")
             else None
         )
+        X_hpo, y_hpo, sw_hpo = _cap_hpo_rows(X, y, sw, self.hpo_max_rows)
+        if len(y_hpo) != len(y):
+            tprint(
+                f"  Meta HPO cap[{scope_key}/{kind}]: {len(y)} -> {len(y_hpo)} rows "
+                f"(cap={int(self.hpo_max_rows or 0)})"
+            )
+        _stats = _make_meta_hpo_running_stats()
+
+        def _score_params(_p, _X, _y, _sw):
+            _, ic, metrics, _ = self._cv_evaluate(
+                kind,
+                _p,
+                _X,
+                _y,
+                _sw,
+            )
+
+            rank_metric = metrics.get("mean_fold_ic_top10", 0.0)
+            top_bucket_lift = metrics.get("mean_top_decile_lift", 0.0)
+            top_bucket_mean = metrics.get("mean_top_decile_mean", 0.0)
+            top_bucket_ic20 = metrics.get("mean_fold_ic_top20", 0.0)
+            ic_overall = metrics.get("median_fold_spearman", 0.0)
+            rank_metric_std = metrics.get("std_fold_spearman", 0.0)
+            error_metric = metrics.get("mean_rmse", 1.0)
+
+            stats_rank = _stats["rank_metric"]
+            stats_lift = _stats["top_bucket_lift"]
+            stats_mean = _stats["top_bucket_mean"]
+            stats_ic20 = _stats["reg_top20_ic"]
+            stats_ic_overall = _stats["reg_overall_ic"]
+            stats_std = _stats["rank_metric_std"]
+            stats_err = _stats["error_metric"]
+
+            z_rank = stats_rank.zscore(rank_metric) if stats_rank.n >= 10 else rank_metric * 5.0
+            z_lift = stats_lift.zscore(top_bucket_lift) if stats_lift.n >= 10 else top_bucket_lift * 5.0
+            z_mean = stats_mean.zscore(top_bucket_mean) if stats_mean.n >= 10 else top_bucket_mean * 5.0
+            z_ic20 = stats_ic20.zscore(top_bucket_ic20) if stats_ic20.n >= 10 else top_bucket_ic20 * 5.0
+            z_ic_overall = stats_ic_overall.zscore(ic_overall) if stats_ic_overall.n >= 10 else ic_overall * 5.0
+            z_std = stats_std.zscore(rank_metric_std) if stats_std.n >= 10 else rank_metric_std * 5.0
+            z_err = stats_err.zscore(error_metric) if stats_err.n >= 10 else error_metric * 5.0
+
+            stats_rank.update(rank_metric)
+            stats_lift.update(top_bucket_lift)
+            stats_mean.update(top_bucket_mean)
+            stats_ic20.update(top_bucket_ic20)
+            stats_ic_overall.update(ic_overall)
+            stats_std.update(rank_metric_std)
+            stats_err.update(error_metric)
+
+            composite = (
+                0.30 * z_rank
+                + 0.26 * z_ic20
+                + 0.18 * z_ic_overall
+                + 0.14 * z_lift
+                + 0.08 * z_mean
+                - 0.03 * z_std
+                - 0.01 * z_err
+            )
+            metric_payload = {
+                "rank_metric": rank_metric,
+                "top_bucket_lift": top_bucket_lift,
+                "top_bucket_mean": top_bucket_mean,
+                "top_bucket_ic20": top_bucket_ic20,
+                "ic_overall": ic_overall,
+                "rank_metric_std": rank_metric_std,
+                "error_metric": error_metric,
+                "z_rank": z_rank,
+                "z_lift": z_lift,
+                "z_mean": z_mean,
+                "z_std": z_std,
+                "z_err": z_err,
+            }
+            return float(composite), metric_payload
 
         def objective(trial):
             p = dict(params)
@@ -1489,105 +1884,30 @@ class MetaModel:
                 p["reg_lambda"] = trial.suggest_float(
                     "reg_lambda", 1.0, 100.0, log=True
                 )
-                p["min_child_weight"] = trial.suggest_float(
-                    "min_child_weight", 10.0, 120.0, log=True
+                p["min_child_weight"] = float(
+                    trial.suggest_int("min_child_weight", 1, 40)
                 )
             try:
-                _, ic, metrics, _ = self._cv_evaluate(kind, p, X, y, sw)
+                if len(y_hpo) > 4000:
+                    X_probe, y_probe, sw_probe = _hpo_probe_subset(
+                        X_hpo, y_hpo, sw_hpo, probe_rows=3000
+                    )
+                    probe_score, _ = _score_params(p, X_probe, y_probe, sw_probe)
+                    trial.report(float(probe_score), step=0)
+                    if trial.should_prune():
+                        raise optuna.TrialPruned()
+                composite, metric_payload = _score_params(p, X_hpo, y_hpo, sw_hpo)
+                trial.report(float(composite), step=1)
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
+            except optuna.TrialPruned:
+                raise
             except Exception as exc:
                 tprint(f"  Meta HPO trial failed[{scope_key}/{kind}]: {exc}")
                 return -1e9
 
-            # Bias the search toward top-slice economics first, with full-distribution
-            # IC and error terms acting as stabilizers.
-            rank_metric = metrics.get("mean_fold_ic_top10", 0.0)
-            top_bucket_lift = metrics.get("mean_top_decile_lift", 0.0)
-            top_bucket_mean = metrics.get("mean_top_decile_mean", 0.0)
-            top_bucket_ic20 = metrics.get("mean_fold_ic_top20", 0.0)
-            ic_overall = metrics.get("median_fold_spearman", 0.0)
-            rank_metric_std = metrics.get("std_fold_spearman", 0.0)
-            error_metric = metrics.get("mean_rmse", 1.0)
-
-            # Get running stats
-            stats_rank = _running_stats_meta["rank_metric"]
-            stats_lift = _running_stats_meta["top_bucket_lift"]
-            stats_mean = _running_stats_meta["top_bucket_mean"]
-            stats_ic20 = _running_stats_meta["reg_top20_ic"]
-            stats_ic_overall = _running_stats_meta["reg_overall_ic"]
-            stats_std = _running_stats_meta["rank_metric_std"]
-            stats_err = _running_stats_meta["error_metric"]
-
-            # Compute z-scores (use scaled values if not enough samples yet)
-            z_rank = (
-                stats_rank.zscore(rank_metric)
-                if stats_rank.n >= 10
-                else rank_metric * 5.0
-            )
-            z_lift = (
-                stats_lift.zscore(top_bucket_lift)
-                if stats_lift.n >= 10
-                else top_bucket_lift * 5.0
-            )
-            z_mean = (
-                stats_mean.zscore(top_bucket_mean)
-                if stats_mean.n >= 10
-                else top_bucket_mean * 5.0
-            )
-            z_ic20 = (
-                stats_ic20.zscore(top_bucket_ic20)
-                if stats_ic20.n >= 10
-                else top_bucket_ic20 * 5.0
-            )
-            z_ic_overall = (
-                stats_ic_overall.zscore(ic_overall)
-                if stats_ic_overall.n >= 10
-                else ic_overall * 5.0
-            )
-            z_std = (
-                stats_std.zscore(rank_metric_std)
-                if stats_std.n >= 10
-                else rank_metric_std * 5.0
-            )
-            z_err = (
-                stats_err.zscore(error_metric)
-                if stats_err.n >= 10
-                else error_metric * 5.0
-            )
-
-            # Update running stats
-            stats_rank.update(rank_metric)
-            stats_lift.update(top_bucket_lift)
-            stats_mean.update(top_bucket_mean)
-            stats_ic20.update(top_bucket_ic20)
-            stats_ic_overall.update(ic_overall)
-            stats_std.update(rank_metric_std)
-            stats_err.update(error_metric)
-
-            # Composite score: prioritize top-decile ranking/lift, then broader IC
-            # and calibration stability as regularizers.
-            composite = (
-                0.30 * z_rank
-                + 0.26 * z_ic20
-                + 0.18 * z_ic_overall
-                + 0.14 * z_lift
-                + 0.08 * z_mean
-                - 0.03 * z_std
-                - 0.01 * z_err
-            )
-
-            # Store metrics for analysis
-            trial.set_user_attr("rank_metric", rank_metric)
-            trial.set_user_attr("top_bucket_lift", top_bucket_lift)
-            trial.set_user_attr("top_bucket_mean", top_bucket_mean)
-            trial.set_user_attr("top_bucket_ic20", top_bucket_ic20)
-            trial.set_user_attr("ic_overall", ic_overall)
-            trial.set_user_attr("rank_metric_std", rank_metric_std)
-            trial.set_user_attr("error_metric", error_metric)
-            trial.set_user_attr("z_rank", z_rank)
-            trial.set_user_attr("z_lift", z_lift)
-            trial.set_user_attr("z_mean", z_mean)
-            trial.set_user_attr("z_std", z_std)
-            trial.set_user_attr("z_err", z_err)
+            for _k, _v in metric_payload.items():
+                trial.set_user_attr(_k, _v)
 
             return float(composite)
 
@@ -1610,14 +1930,26 @@ class MetaModel:
                 )
             except Exception as exc:
                 tprint(f"  Meta HPO warm-start[{scope_key}/{kind}] failed: {exc}")
+        n_trials = int(self.hpo_n_trials or n_trials)
         study.optimize(
             objective,
             n_trials=n_trials,
             timeout=None,
-            callbacks=[_make_early_stopping_callback()],
+            callbacks=[
+                _make_early_stopping_callback(),
+                _make_hpo_heartbeat_callback(
+                    label=f"{scope_key}/{kind}",
+                    every_trials=10,
+                    every_seconds=120.0,
+                ),
+            ],
             gc_after_trial=True,
         )
-        if study.best_trial is None:
+        try:
+            _best_trial = study.best_trial
+        except ValueError:
+            _best_trial = None
+        if _best_trial is None:
             return params
         best = dict(params)
         best.update(study.best_params)
@@ -1626,6 +1958,7 @@ class MetaModel:
             "kind": kind,
             "best_params": dict(study.best_params),
             "n_trials_completed": len(study.trials),
+            "best_trial_number": int(_best_trial.number),
         }
         try:
             _save_meta_hpo_json(out_dir, payload, scope_key=scope_key, kind=kind)
@@ -1680,6 +2013,19 @@ class MetaModel:
             }
 
         X_gate_df = X_meta.iloc[np.flatnonzero(best_gate_mask)].reset_index(drop=True)
+        y_gate = np.asarray(y_np[best_gate_mask], dtype=float)
+        tprint("  Meta feature selection: running once for this reg head...")
+        self.selected_features = self._select_tail_features(
+            X_gate_df, y_gate, max_features=n_target
+        )
+        self.monotone_constraints = discover_monotone_constraints(
+            X_gate_df, y_gate, self.selected_features
+        )
+        X_gate_df = X_gate_df[self.selected_features].reset_index(drop=True)
+        tprint(
+            f"  Features: {X_meta.shape[1]} -> {len(self.selected_features)} "
+            "(single selector run reused for CV/HPO/final fit)"
+        )
 
         for name, cand in candidates.items():
             kind = cand["kind"]
@@ -1768,13 +2114,6 @@ class MetaModel:
         y_fit_all, sw_fit_all = self._prepare_fit_arrays(y_np, sw, tail_lambda)
         y_fit = y_fit_all[best_gate_mask]
         sw_fit = None if sw_fit_all is None else sw_fit_all[best_gate_mask]
-
-        self.selected_features = self._select_tail_features(
-            X_gate_df, y_fit, max_features=n_target
-        )
-        self.monotone_constraints = discover_monotone_constraints(
-            X_gate_df, y_fit, self.selected_features
-        )
         Xv_gate = X_gate_df[self.selected_features].to_numpy(dtype=np.float32)
         tuned_params = (
             dict(params)
@@ -1793,7 +2132,14 @@ class MetaModel:
             pass
 
         final_model = self._fit_one(
-            kind, tuned_params, Xv_gate, y_fit, Xv_gate, y_fit, sw=sw_fit
+            kind,
+            tuned_params,
+            Xv_gate,
+            y_fit,
+            Xv_gate,
+            y_fit,
+            sw=sw_fit,
+            feature_names=self.selected_features,
         )
 
         self.model = {
@@ -1886,10 +2232,28 @@ class MetaModel:
                     row.update(rec_cal)
 
         fi_summary = _extract_top_feature_importance(final_model, self.selected_features)
+        fi_pred_summary = _feature_importance_pred_prefix_summary(fi_summary)
         for row in records:
             row.update(fi_summary)
+            row.update(fi_pred_summary)
 
         self.report_rows = records
+
+        _fi_rows = list(fi_summary.get("feature_importance_top10", []) or [])
+        if _fi_rows:
+            _top10_txt = ", ".join(
+                f"{str(r.get('feature'))}={float(r.get('importance', 0.0)):.4f}"
+                for r in _fi_rows
+            )
+            tprint(
+                f"  Top10 feature importance[{self.strategy_name}][{fi_summary.get('feature_importance_metric','none')}]: "
+                f"{_top10_txt}"
+            )
+            tprint(
+                f"  feature_importance(pred_*)[{self.strategy_name}]: "
+                f"sum_top10={fi_pred_summary['feature_importance_pred_prefix_sum_top10']:.4f} "
+                f"share_top10={fi_pred_summary['feature_importance_pred_prefix_share_top10']:.3f}"
+            )
 
         # Save race report
         report_dir = self._reports_dir
@@ -2017,6 +2381,7 @@ class MetaClassifierModel:
         self.move_threshold: Optional[np.ndarray] = None
         self.monotone_constraints: Optional[Dict[str, int]] = None
         self.collect_uncertainty_metrics: bool = False
+        self.hpo_n_trials: Optional[int] = None
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -2055,7 +2420,7 @@ class MetaClassifierModel:
                     "gamma": 1.5,
                     "tree_method": "hist",
                     "random_state": 42,
-                    "n_jobs": 3,
+                    "n_jobs": 2,
                     "verbosity": 0,
                     "eval_metric": "logloss",
                     "early_stopping_rounds": 20,
@@ -2089,7 +2454,7 @@ class MetaClassifierModel:
                 "max_depth": 8,
                 "min_samples_leaf": 40,
                 "max_features": "sqrt",
-                "n_jobs": 3,
+                "n_jobs": 2,
                 "random_state": 42,
                 "class_weight": "balanced",
             },
@@ -2119,7 +2484,17 @@ class MetaClassifierModel:
         return candidates
 
     # ── Model fitting ────────────────────────────────────────────────
-    def _fit_one(self, kind, params, X_tr, y_tr, X_va, y_va, sw=None):
+    def _fit_one(
+        self,
+        kind,
+        params,
+        X_tr,
+        y_tr,
+        X_va,
+        y_va,
+        sw=None,
+        feature_names: Optional[Sequence[str]] = None,
+    ):
         from sklearn.ensemble import ExtraTreesClassifier
         from sklearn.linear_model import LogisticRegression
 
@@ -2182,10 +2557,12 @@ class MetaClassifierModel:
                 p["disable_default_eval_metric"] = 1
 
                 mc = getattr(self, "monotone_constraints", None)
-                if mc and isinstance(mc, dict) and self.selected_features:
-                    p["monotone_constraints"] = tuple(
-                        mc.get(f, 0) for f in self.selected_features
-                    )
+                if mc and isinstance(mc, dict):
+                    ordered_feats = list(feature_names or self.selected_features or [])
+                    if ordered_feats:
+                        p["monotone_constraints"] = tuple(
+                            mc.get(f, 0) for f in ordered_feats
+                        )
 
                 # Number of classes is assumed to be y_tr.shape[1] (which is 3)
                 n_classes = y_tr.shape[1]
@@ -2258,12 +2635,38 @@ class MetaClassifierModel:
                 model._codex_objective = None
                 return model
             else:
-                model = xgb.XGBRegressor(**p)
+                mc = getattr(self, "monotone_constraints", None)
+                if mc and isinstance(mc, dict):
+                    ordered_feats = list(feature_names or self.selected_features or [])
+                    if ordered_feats:
+                        p["monotone_constraints"] = tuple(
+                            mc.get(f, 0) for f in ordered_feats
+                        )
+                y_fit = np.asarray(y_tr_bin, dtype=np.float32).reshape(-1)
+                sw_fit = None if sw is None else np.asarray(sw, dtype=np.float32).reshape(-1)
+                valid_fit = np.isfinite(y_fit)
+                if sw_fit is not None:
+                    valid_fit &= np.isfinite(sw_fit) & (sw_fit > 0.0)
+                if not np.all(valid_fit):
+                    X_tr = np.asarray(X_tr)[valid_fit]
+                    y_fit = y_fit[valid_fit]
+                    if sw_fit is not None:
+                        sw_fit = sw_fit[valid_fit]
+                if y_fit.size == 0:
+                    raise ValueError("xgb_clf received no valid weighted training rows")
+                if sw_fit is not None and float(np.sum(sw_fit)) > 0.0:
+                    base_score = float(np.average(y_fit, weights=sw_fit))
+                else:
+                    base_score = float(np.mean(y_fit))
+                if not np.isfinite(base_score):
+                    base_score = 0.5
+                p["base_score"] = float(np.clip(base_score, 1e-4, 1.0 - 1e-4))
+                model = xgb.XGBClassifier(**p)
                 model.fit(
                     X_tr,
-                    y_tr_arr,
-                    sample_weight=sw,
-                    eval_set=[(X_va, y_va_arr)],
+                    y_fit,
+                    sample_weight=sw_fit,
+                    eval_set=[(X_va, y_va_bin)],
                     verbose=False,
                 )
                 model._codex_objective = p.get("objective")
@@ -2338,6 +2741,7 @@ class MetaClassifierModel:
         y,
         sw=None,
         feature_max_features: Optional[int] = None,
+        selector_cache: Optional[Dict[Tuple[int, int, int], List[str]]] = None,
     ) -> Tuple[np.ndarray, float, Dict[str, Any], Dict[str, np.ndarray]]:
         """3-fold purged CV for the binary move head."""
         pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
@@ -2363,19 +2767,65 @@ class MetaClassifierModel:
 
         y_arr = np.asarray(y, dtype=float).reshape(-1)
         y_hard = (y_arr >= 0.5).astype(np.int8)
+        fold_spearmans: List[float] = []
+        fold_briers: List[float] = []
+        fold_bss: List[float] = []
+        fold_top_decile_precisions: List[float] = []
+        fold_top_decile_recalls: List[float] = []
+        fold_ic_top10: List[float] = []
+        fold_ic_top20: List[float] = []
+        fold_ic_top30: List[float] = []
 
-        for tr, va in pkf.split(X_frame):
+        for fold_idx, (tr, va) in enumerate(pkf.split(X_frame), start=1):
             y_tr_soft = np.asarray(y_arr[tr], dtype=float)
             y_va_soft = np.asarray(y_arr[va], dtype=float)
+            sw_tr_raw = None if sw is None else np.asarray(sw[tr], dtype=float)
+            tr_keep = np.isfinite(y_tr_soft)
+            _used_unweighted_fallback = False
+            if sw_tr_raw is not None:
+                _finite_sw = np.isfinite(sw_tr_raw)
+                _weighted_keep = tr_keep & _finite_sw & (sw_tr_raw > 0.0)
+                if int(np.sum(_weighted_keep)) >= 20:
+                    tr_keep = _weighted_keep
+                else:
+                    tr_keep &= _finite_sw
+                    sw_tr_raw = None
+                    _used_unweighted_fallback = True
+            if int(np.sum(tr_keep)) < 20:
+                tprint(
+                    f"Warning: Fold evaluation skipped "
+                    f"[strategy={self.strategy_name} kind={kind} fold={fold_idx}] "
+                    "insufficient valid training rows after fallback."
+                )
+                oof[va] = 0.5
+                continue
+            y_tr_soft = y_tr_soft[tr_keep]
             y_tr = (y_tr_soft >= 0.5).astype(np.int8)
             y_va = (y_va_soft >= 0.5).astype(np.int8)
-            sw_tr = None if sw is None else np.asarray(sw[tr], dtype=float)
+            sw_tr = None if sw_tr_raw is None else sw_tr_raw[tr_keep]
             if y_tr.size == 0 or y_va.size == 0:
                 continue
             n_pos = int(np.sum(y_tr == 1))
             n_neg = int(np.sum(y_tr == 0))
             if n_pos < 1 or n_neg < 1:
-                continue
+                if sw is None or _used_unweighted_fallback:
+                    continue
+                _fallback_keep = np.isfinite(np.asarray(y_arr[tr], dtype=float))
+                y_tr_soft = np.asarray(y_arr[tr], dtype=float)[_fallback_keep]
+                y_tr = (y_tr_soft >= 0.5).astype(np.int8)
+                n_pos = int(np.sum(y_tr == 1))
+                n_neg = int(np.sum(y_tr == 0))
+                if y_tr.size == 0 or n_pos < 1 or n_neg < 1:
+                    continue
+                tr_keep = _fallback_keep
+                sw_tr = None
+                _used_unweighted_fallback = True
+            if _used_unweighted_fallback:
+                tprint(
+                    f"Warning: Fold evaluation fallback "
+                    f"[strategy={self.strategy_name} kind={kind} fold={fold_idx}] "
+                    "using unweighted valid rows."
+                )
             fold_sw = None
             pos_weight = float(n_neg) / max(float(n_pos), 1.0)
             pos_weight = float(
@@ -2388,16 +2838,29 @@ class MetaClassifierModel:
                 fold_sw = np.ones(len(y_tr), dtype=float)
                 fold_sw[y_tr == 1] *= pos_weight
             fold_sw = fold_sw / max(float(np.mean(fold_sw)), 1e-12)
-            X_tr_df = X_frame.iloc[tr].reset_index(drop=True)
-            X_va_df = X_frame.iloc[va].reset_index(drop=True)
-            selected_cols = self._select_tail_features(
-                X_tr_df, np.asarray(y_tr_soft, dtype=float), max_features=max_features
-            )
-            X_tr = X_tr_df[selected_cols].to_numpy(dtype=np.float32)
-            X_va = X_va_df[selected_cols].to_numpy(dtype=np.float32)
             try:
+                X_tr_df = X_frame.iloc[tr].reset_index(drop=True)
+                X_va_df = X_frame.iloc[va].reset_index(drop=True)
+                X_tr_df = X_tr_df.iloc[np.where(tr_keep)[0]].reset_index(drop=True)
+                selected_cols = list(X_tr_df.columns)
+                if not selected_cols:
+                    selected_cols = list(X_tr_df.columns[:max_features])
+                    tprint(
+                        f"Warning: classifier selector returned no columns "
+                        f"[strategy={self.strategy_name} kind={kind} fold={fold_idx}]; "
+                        f"falling back to first {len(selected_cols)} columns."
+                    )
+                X_tr = X_tr_df[selected_cols].to_numpy(dtype=np.float32)
+                X_va = X_va_df[selected_cols].to_numpy(dtype=np.float32)
                 model = self._fit_one(
-                    kind, params, X_tr, y_tr_soft, X_va, y_va_soft, sw=fold_sw
+                    kind,
+                    params,
+                    X_tr,
+                    y_tr_soft,
+                    X_va,
+                    y_va_soft,
+                    sw=fold_sw,
+                    feature_names=selected_cols,
                 )
                 pp = self._predict_proba(model, X_va)
                 oof[va] = pp
@@ -2430,9 +2893,9 @@ class MetaClassifierModel:
                     fold_ic_top30.append(_topk_spearman(pp[_mask], y_va_soft[_mask], 0.30))
                 try:
                     pp_clip = np.clip(pp, 1e-6, 1 - 1e-6)
-                    fold_brier = float(brier_score_loss(y_va_bin, pp_clip))
+                    fold_brier = float(brier_score_loss(y_va, pp_clip))
                     fold_briers.append(fold_brier)
-                    base_brier = float(np.mean((np.mean(y_va_bin) - y_va_bin) ** 2))
+                    base_brier = float(np.mean((np.mean(y_va) - y_va) ** 2))
                     fold_bss.append(1.0 - fold_brier / max(base_brier, 1e-12))
                 except Exception:
                     pass
@@ -2440,15 +2903,19 @@ class MetaClassifierModel:
                     n10 = max(1, int(np.ceil(0.10 * len(pp))))
                     idx_top10 = np.argsort(pp)[-n10:]
                     fold_top_decile_precisions.append(
-                        float(np.mean(y_va_bin[idx_top10]))
+                        float(np.mean(y_va[idx_top10]))
                     )
                     fold_top_decile_recalls.append(
-                        float(np.sum(y_va_bin[idx_top10]) / max(np.sum(y_va_bin), 1))
+                        float(np.sum(y_va[idx_top10]) / max(np.sum(y_va), 1))
                     )
                 except Exception:
                     pass
             except Exception as e:
-                tprint(f"Warning: Fold evaluation failed ({e}). Returning 1/3 prior.")
+                tprint(
+                    f"Warning: Fold evaluation failed "
+                    f"[strategy={self.strategy_name} kind={kind} fold={fold_idx}] "
+                    f"({type(e).__name__}: {e}). Returning prior."
+                )
                 oof[va] = 0.5
 
         # Purged/embargo CV may leave boundary rows without OOF predictions.
@@ -2591,6 +3058,9 @@ class MetaClassifierModel:
             roc = float(roc_auc_score(y, pred))
         except Exception:
             roc = float("nan")
+        roc_inverted = (
+            float(1.0 - roc) if np.isfinite(roc) else float("nan")
+        )
         try:
             pr_auc = float(average_precision_score(y, pred))
         except Exception:
@@ -2634,7 +3104,9 @@ class MetaClassifierModel:
         except Exception:
             pass
 
-        def _top_slice_metrics(frac: float) -> Tuple[float, float, float, float]:
+        def _top_slice_metrics(
+            frac: float,
+        ) -> Tuple[float, float, float, float, float]:
             k = max(1, int(np.ceil(float(frac) * n)))
             idx = np.argsort(-pred)[:k]
             idx_bot = np.argsort(pred)[:k]
@@ -2653,6 +3125,15 @@ class MetaClassifierModel:
             "n": n,
             "logloss": ll,
             "roc_auc": roc,
+            "roc_auc_inverted": roc_inverted,
+            "auc_gap_to_inversion": (
+                float(roc_inverted - roc)
+                if np.isfinite(roc) and np.isfinite(roc_inverted)
+                else float("nan")
+            ),
+            "is_score_inverted_suspect": bool(
+                np.isfinite(roc) and roc < 0.45 and roc_inverted > 0.55
+            ),
             "pr_auc": pr_auc,
             "pr_auc_base_rate": float(np.mean(y)),
             "pr_auc_vs_base_rate": (
@@ -2690,12 +3171,13 @@ class MetaClassifierModel:
             "top_decile_absret_hit_rate": top10_prec,
         }
         for frac in (0.05, 0.10, 0.20):
-            absret_mean, lift, precision, recall = _top_slice_metrics(frac)
+            absret_mean, lift, precision, recall, spread = _top_slice_metrics(frac)
             key = int(round(frac * 100))
             metrics[f"top{key}_absret_mean"] = absret_mean
             metrics[f"top{key}_lift"] = lift
             metrics[f"top{key}_precision"] = precision
             metrics[f"top{key}_recall"] = recall
+            metrics[f"spread{key}"] = spread
 
         # Optional calibration curve diagnostic.
         edges = np.percentile(pred, np.linspace(0, 100, min(10, n) + 1))
@@ -2838,6 +3320,81 @@ class MetaClassifierModel:
             if isinstance(prev_blob, dict) and prev_blob.get("best_params")
             else None
         )
+        X_hpo, y_hpo, sw_hpo = _cap_hpo_rows(X, y, sw, self.hpo_max_rows)
+        if len(y_hpo) != len(y):
+            tprint(
+                f"  Meta clf HPO cap[{scope_key}/{kind}]: {len(y)} -> {len(y_hpo)} rows "
+                f"(cap={int(self.hpo_max_rows or 0)})"
+            )
+        _stats = _make_meta_hpo_running_stats()
+
+        def _score_params(_p, _X, _y, _sw):
+            _, _, metrics, _ = self._cv_evaluate(
+                kind,
+                _p,
+                _X,
+                _y,
+                _sw,
+            )
+
+            rank_metric = metrics.get("median_fold_spearman", 0.0)
+            top_bucket_lift = metrics.get("mean_top_decile_lift", 0.0)
+            top_bucket_mean = metrics.get("mean_top_decile_mean", 0.0)
+            top_bucket_precision = metrics.get("mean_top_decile_precision", 0.0)
+            top_bucket_recall = metrics.get("mean_top_decile_recall", 0.0)
+            rank_metric_std = metrics.get("std_fold_spearman", 0.0)
+            error_metric = metrics.get("mean_brier", 0.5)
+
+            stats_rank = _stats["rank_metric"]
+            stats_lift = _stats["top_bucket_lift"]
+            stats_mean = _stats["top_bucket_mean"]
+            stats_prec = _stats["top_bucket_precision"]
+            stats_rec = _stats["top_bucket_recall"]
+            stats_std = _stats["rank_metric_std"]
+            stats_err = _stats["error_metric"]
+
+            z_rank = stats_rank.zscore(rank_metric) if stats_rank.n >= 10 else rank_metric * 5.0
+            z_lift = stats_lift.zscore(top_bucket_lift) if stats_lift.n >= 10 else top_bucket_lift * 5.0
+            z_mean = stats_mean.zscore(top_bucket_mean) if stats_mean.n >= 10 else top_bucket_mean * 5.0
+            z_prec = stats_prec.zscore(top_bucket_precision) if stats_prec.n >= 10 else top_bucket_precision * 5.0
+            z_rec = stats_rec.zscore(top_bucket_recall) if stats_rec.n >= 10 else top_bucket_recall * 5.0
+            z_std = stats_std.zscore(rank_metric_std) if stats_std.n >= 10 else rank_metric_std * 5.0
+            z_err = stats_err.zscore(error_metric) if stats_err.n >= 10 else (error_metric - 0.25) * 5.0
+
+            stats_rank.update(rank_metric)
+            stats_lift.update(top_bucket_lift)
+            stats_mean.update(top_bucket_mean)
+            stats_prec.update(top_bucket_precision)
+            stats_rec.update(top_bucket_recall)
+            stats_std.update(rank_metric_std)
+            stats_err.update(error_metric)
+
+            composite = (
+                0.14 * z_rank
+                + 0.24 * z_lift
+                + 0.16 * z_prec
+                + 0.12 * z_rec
+                + 0.10 * z_mean
+                - 0.07 * z_std
+                - 0.03 * z_err
+            )
+            metric_payload = {
+                "rank_metric": rank_metric,
+                "top_bucket_lift": top_bucket_lift,
+                "top_bucket_mean": top_bucket_mean,
+                "top_bucket_precision": top_bucket_precision,
+                "top_bucket_recall": top_bucket_recall,
+                "rank_metric_std": rank_metric_std,
+                "error_metric": error_metric,
+                "z_rank": z_rank,
+                "z_lift": z_lift,
+                "z_mean": z_mean,
+                "z_prec": z_prec,
+                "z_rec": z_rec,
+                "z_std": z_std,
+                "z_err": z_err,
+            }
+            return float(composite), metric_payload
 
         def objective(trial: optuna.Trial) -> float:
             p = dict(params)
@@ -2889,102 +3446,33 @@ class MetaClassifierModel:
                 p["gamma"] = trial.suggest_float("gamma", 0.5, 5.0, log=True)
                 p["reg_alpha"] = trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True)
                 p["reg_lambda"] = trial.suggest_float("reg_lambda", 1.0, 100.0, log=True)
-                p["min_child_weight"] = trial.suggest_float(
-                    "min_child_weight", 10.0, 120.0, log=True
+                p["min_child_weight"] = float(
+                    trial.suggest_int("min_child_weight", 1, 40)
                 )
             else:
                 raise ValueError(f"Unsupported classifier kind for HPO: {kind}")
 
             try:
-                _, score, metrics, _ = self._cv_evaluate(kind, p, X, y, sw)
+                if len(y_hpo) > 4000:
+                    X_probe, y_probe, sw_probe = _hpo_probe_subset(
+                        X_hpo, y_hpo, sw_hpo, probe_rows=3000
+                    )
+                    probe_score, _ = _score_params(p, X_probe, y_probe, sw_probe)
+                    trial.report(float(probe_score), step=0)
+                    if trial.should_prune():
+                        raise optuna.TrialPruned()
+                composite, metric_payload = _score_params(p, X_hpo, y_hpo, sw_hpo)
+                trial.report(float(composite), step=1)
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
+            except optuna.TrialPruned:
+                raise
             except Exception as exc:
                 tprint(f"  Meta clf HPO trial failed[{scope_key}/{kind}]: {exc}")
                 return -1e9
 
-            # For classifiers, bias the objective toward top-decile lift/precision/recall,
-            # with broader ranking and calibration as stabilizers.
-            rank_metric = metrics.get("median_fold_spearman", 0.0)
-            top_bucket_lift = metrics.get("mean_top_decile_lift", 0.0)
-            top_bucket_mean = metrics.get("mean_top_decile_mean", 0.0)
-            top_bucket_precision = metrics.get("mean_top_decile_precision", 0.0)
-            top_bucket_recall = metrics.get("mean_top_decile_recall", 0.0)
-            rank_metric_std = metrics.get("std_fold_spearman", 0.0)
-            error_metric = metrics.get("mean_brier", 0.5)  # Brier score
-
-            # Get running stats
-            stats_rank = _running_stats_meta["rank_metric"]
-            stats_lift = _running_stats_meta["top_bucket_lift"]
-            stats_mean = _running_stats_meta["top_bucket_mean"]
-            stats_prec = _running_stats_meta["top_bucket_precision"]
-            stats_rec = _running_stats_meta["top_bucket_recall"]
-            stats_std = _running_stats_meta["rank_metric_std"]
-            stats_err = _running_stats_meta["error_metric"]
-
-            # Compute z-scores
-            z_rank = (
-                stats_rank.zscore(rank_metric)
-                if stats_rank.n >= 10
-                else rank_metric * 5.0
-            )
-            z_lift = (
-                stats_lift.zscore(top_bucket_lift)
-                if stats_lift.n >= 10
-                else top_bucket_lift * 5.0
-            )
-            z_mean = (
-                stats_mean.zscore(top_bucket_mean)
-                if stats_mean.n >= 10
-                else top_bucket_mean * 5.0
-            )
-            z_prec = (
-                stats_prec.zscore(top_bucket_precision)
-                if stats_prec.n >= 10
-                else top_bucket_precision * 5.0
-            )
-            z_rec = (
-                stats_rec.zscore(top_bucket_recall)
-                if stats_rec.n >= 10
-                else top_bucket_recall * 5.0
-            )
-            z_std = (
-                stats_std.zscore(rank_metric_std)
-                if stats_std.n >= 10
-                else rank_metric_std * 5.0
-            )
-            z_err = (
-                stats_err.zscore(error_metric)
-                if stats_err.n >= 10
-                else (error_metric - 0.25) * 5.0
-            )
-
-            # Update running stats
-            stats_rank.update(rank_metric)
-            stats_lift.update(top_bucket_lift)
-            stats_mean.update(top_bucket_mean)
-            stats_prec.update(top_bucket_precision)
-            stats_rec.update(top_bucket_recall)
-            stats_std.update(rank_metric_std)
-            stats_err.update(error_metric)
-
-            # Composite score: top-slice metrics dominate, broader metrics stabilize.
-            composite = (
-                0.14 * z_rank
-                + 0.24 * z_lift
-                + 0.16 * z_prec
-                + 0.12 * z_rec
-                + 0.10 * z_mean
-                - 0.07 * z_std
-                - 0.03 * z_err
-            )
-
-            # Store metrics
-            trial.set_user_attr("rank_metric", rank_metric)
-            trial.set_user_attr("top_bucket_lift", top_bucket_lift)
-            trial.set_user_attr("top_bucket_mean", top_bucket_mean)
-            trial.set_user_attr("top_bucket_precision", top_bucket_precision)
-            trial.set_user_attr("top_bucket_recall", top_bucket_recall)
-            trial.set_user_attr("rank_metric_std", rank_metric_std)
-            trial.set_user_attr("error_metric", error_metric)
+            for _k, _v in metric_payload.items():
+                trial.set_user_attr(_k, _v)
 
             return float(composite)
 
@@ -3008,14 +3496,26 @@ class MetaClassifierModel:
             except Exception as exc:
                 tprint(f"  Meta clf HPO warm-start[{scope_key}/{kind}] failed: {exc}")
 
+        n_trials = int(self.hpo_n_trials or n_trials)
         study.optimize(
             objective,
             n_trials=n_trials,
             timeout=None,
-            callbacks=[_make_early_stopping_callback()],
+            callbacks=[
+                _make_early_stopping_callback(),
+                _make_hpo_heartbeat_callback(
+                    label=f"{scope_key}/{kind}",
+                    every_trials=10,
+                    every_seconds=120.0,
+                ),
+            ],
             gc_after_trial=True,
         )
-        if study.best_trial is None:
+        try:
+            _best_trial = study.best_trial
+        except ValueError:
+            _best_trial = None
+        if _best_trial is None:
             return params
 
         tuned = dict(params)
@@ -3025,6 +3525,7 @@ class MetaClassifierModel:
             "kind": kind,
             "best_params": dict(study.best_params),
             "n_trials_completed": len(study.trials),
+            "best_trial_number": int(_best_trial.number),
         }
         try:
             _save_meta_hpo_json(out_dir, payload, scope_key=scope_key, kind=kind)
@@ -3211,7 +3712,36 @@ class MetaClassifierModel:
         if sw is None:
             sw = np.ones(len(y_soft), dtype=float)
         sw = np.asarray(sw, dtype=float)
-        sw = np.where(np.isfinite(sw), sw, 1.0)
+        sw = np.where(np.isfinite(sw), sw, 0.0)
+        valid_sw_mask = np.isfinite(sw) & (sw > 0.0)
+        if not np.all(valid_sw_mask):
+            kept = int(np.sum(valid_sw_mask))
+            if kept < 20:
+                raise RuntimeError(
+                    f"MetaClassifierModel: insufficient valid rows after dropping zero-weight targets "
+                    f"(kept={kept}/{len(valid_sw_mask)})"
+                )
+            X_meta_work = X_meta_work.iloc[valid_sw_mask].reset_index(drop=True)
+            y_ret_np = y_ret_np[valid_sw_mask]
+            y_soft = y_soft[valid_sw_mask]
+            y_hard = y_hard[valid_sw_mask]
+            sw = sw[valid_sw_mask]
+            if groups is not None:
+                groups = np.asarray(groups)[valid_sw_mask]
+            if trade_mask is not None:
+                trade_mask = np.asarray(trade_mask, dtype=bool)[valid_sw_mask]
+            if vol_proxy is not None:
+                vol_proxy = np.asarray(vol_proxy)[valid_sw_mask]
+            if move_threshold_arr is not None:
+                move_threshold_arr = move_threshold_arr[valid_sw_mask]
+            if y_per_horizon is not None:
+                y_per_horizon = {
+                    h: np.asarray(v)[valid_sw_mask] for h, v in y_per_horizon.items()
+                }
+            tprint(
+                f"  Meta clf: dropped zero-weight/invalid rows before selection/HPO/final fit "
+                f"(kept={kept}/{len(valid_sw_mask)})"
+            )
         sw = sw / max(float(np.mean(sw)), 1e-12)
 
         if self.use_class_weight_multiplier:
@@ -3231,10 +3761,19 @@ class MetaClassifierModel:
             )
 
         self._feature_selection_max_features = max(30, min(60, X_meta_work.shape[1]))
-        self.selected_features = list(X_meta_work.columns)
+        tprint("  Meta feature selection: running once for this clf head...")
+        self.selected_features = self._select_tail_features(
+            X_meta_work,
+            y_soft,
+            max_features=self._feature_selection_max_features,
+        )
+        self.monotone_constraints = discover_monotone_constraints(
+            X_meta_work, y_soft, self.selected_features
+        )
+        X_meta_work = X_meta_work[self.selected_features].reset_index(drop=True)
         tprint(
             f"  Features: {X_meta.shape[1]} -> {len(self.selected_features)} "
-            "(fold-local selection handled inside CV)"
+            "(single selector run reused for CV/HPO/final fit)"
         )
 
         candidates = self._build_candidates()
@@ -3242,6 +3781,7 @@ class MetaClassifierModel:
         scored = []
         best_rec = None
         best_aux = None
+        candidate_failures: dict[str, str] = {}
         if selection_cfg is None:
             selection_cfg = MetaMoveSelectionConfig()
 
@@ -3261,6 +3801,7 @@ class MetaClassifierModel:
                 )
             except Exception as exc:
                 tprint(f"    {name} failed: {exc}")
+                candidate_failures[name] = f"{type(exc).__name__}: {exc}"
                 continue
 
             metrics = self._compute_clf_metrics(
@@ -3333,6 +3874,14 @@ class MetaClassifierModel:
                 f"Top10R={metrics.get('top_decile_recall', float('nan')):.3f}, "
                 f"gate={bool(sel.get('passed_gate',0))}, econ={bool(sel.get('passed_econ',0))}"
             )
+            if bool(metrics.get("is_score_inverted_suspect", False)):
+                tprint(
+                    f"      WARNING: {name} appears inverted for {self.strategy_name}: "
+                    f"AUC={float(metrics.get('roc_auc', float('nan'))):.4f}, "
+                    f"inverted_AUC={float(metrics.get('roc_auc_inverted', float('nan'))):.4f}, "
+                    f"IC={float(metrics.get('move_ic', float('nan'))):.4f}, "
+                    f"Top10Lift={float(sel.get('top_decile_lift', float('nan'))):.5f}"
+                )
 
         gated = [
             r
@@ -3365,7 +3914,12 @@ class MetaClassifierModel:
             best_aux = _best[8]
 
         if best_rec is None:
-            raise RuntimeError("No classifier candidates completed")
+            _detail = "; ".join(
+                f"{_k}={_v}" for _k, _v in sorted(candidate_failures.items())
+            )
+            if not _detail:
+                _detail = "no candidate exceptions captured"
+            raise RuntimeError(f"No classifier candidates completed ({_detail})")
 
         self.label_threshold = float(
             self.move_thresholds[1]
@@ -3445,14 +3999,7 @@ class MetaClassifierModel:
                 best_rec["name"], kind, params, X_meta_work, y_final_soft, sw=sw
             )
         )
-
-        self.selected_features = self._select_tail_features(
-            X_meta_work, y_final_soft, max_features=self._feature_selection_max_features
-        )
-        self.monotone_constraints = discover_monotone_constraints(
-            X_meta_work, y_final_soft, self.selected_features
-        )
-        Xv = X_meta_work[self.selected_features].to_numpy(dtype=np.float32)
+        Xv = X_meta_work.to_numpy(dtype=np.float32)
         final_model = self._fit_one(
             kind,
             tuned_params,
@@ -3461,6 +4008,7 @@ class MetaClassifierModel:
             Xv,
             y_final_soft,
             sw=sw,
+            feature_names=self.selected_features,
         )
         self.model = {"kind": kind, "models": [final_model], "binary": True}
         self._leaf_stats_ = None
@@ -3536,8 +4084,26 @@ class MetaClassifierModel:
                     row.update(rec_cal)
 
         fi_summary = _extract_top_feature_importance(final_model, self.selected_features)
+        fi_pred_summary = _feature_importance_pred_prefix_summary(fi_summary)
         for row in records:
             row.update(fi_summary)
+            row.update(fi_pred_summary)
+
+        _fi_rows = list(fi_summary.get("feature_importance_top10", []) or [])
+        if _fi_rows:
+            _top10_txt = ", ".join(
+                f"{str(r.get('feature'))}={float(r.get('importance', 0.0)):.4f}"
+                for r in _fi_rows
+            )
+            tprint(
+                f"  Top10 feature importance[{self.strategy_name}][{fi_summary.get('feature_importance_metric','none')}]: "
+                f"{_top10_txt}"
+            )
+            tprint(
+                f"  feature_importance(pred_*)[{self.strategy_name}]: "
+                f"sum_top10={fi_pred_summary['feature_importance_pred_prefix_sum_top10']:.4f} "
+                f"share_top10={fi_pred_summary['feature_importance_pred_prefix_share_top10']:.3f}"
+            )
 
         report_dir = self._reports_dir
         report_dir.mkdir(parents=True, exist_ok=True)

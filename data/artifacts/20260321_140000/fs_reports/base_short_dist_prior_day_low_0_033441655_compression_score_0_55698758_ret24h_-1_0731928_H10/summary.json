@@ -10,8 +10,8 @@
     "frequency": 0.15,
     "interaction": 0.05
   },
-  "n_train_features": 60,
-  "n_selected": 48,
+  "n_train_features": 200,
+  "n_selected": 160,
   "anchor_count": 0,
   "selected_anchor_count": 0,
   "overlap_before": 1.0,

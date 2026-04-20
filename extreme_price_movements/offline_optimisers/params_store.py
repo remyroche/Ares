@@ -211,7 +211,13 @@ def load_inference_candidate_mask_params_per_bucket(
     path = None
     if candidate_paths:
         candidate_paths.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        path = candidate_paths[0]
+        for _cp in candidate_paths:
+            try:
+                if _cp.stat().st_size > 100:
+                    path = _cp
+                    break
+            except OSError:
+                continue
     else:
         path = Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
         if not path.exists():
@@ -244,13 +250,21 @@ def load_inference_candidate_mask_params_per_bucket(
     
     strategies = []
     
+    df_sorted = df
     if ranking_metric not in df.columns:
-        _log.warning(
-            f"[params_store] ranking_metric '{ranking_metric}' not found in {path}, "
-            f"using default ranking"
-        )
-        df_sorted = df
-    else:
+        for _fallback in ("directional_mean_ret", "mean_net_ret", "mean_uplift"):
+            if _fallback in df.columns:
+                ranking_metric = _fallback
+                _log.info(
+                    f"[params_store] ranking_metric fallback to '{ranking_metric}'"
+                )
+                break
+        else:
+            _log.warning(
+                f"[params_store] ranking_metric '{ranking_metric}' not found in {path}, "
+                f"using default ranking"
+            )
+    if ranking_metric in df.columns:
         df_sorted = df.sort_values(by=ranking_metric, ascending=False)
     
     # Group by (side, source_horizon) and take top_n from each group.
@@ -289,7 +303,10 @@ def load_inference_candidate_mask_params_per_bucket(
         return max(corr, 0.0)
 
     for (side, horizon), group in grouped:
-        raw_series = pd.to_numeric(group.get(ranking_metric, np.nan), errors="coerce")
+        if ranking_metric in group.columns:
+            raw_series = pd.to_numeric(group[ranking_metric], errors="coerce")
+        else:
+            raw_series = pd.Series(np.nan, index=group.index, dtype="float64")
         finite_raw = raw_series[np.isfinite(raw_series.to_numpy())]
         if finite_raw.empty:
             raw_min = 0.0

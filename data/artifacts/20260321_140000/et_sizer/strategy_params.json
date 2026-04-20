@@ -5,26 +5,74 @@
   "fee_pct": 0.003,
   "strategies": [
     {
-      "strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
-      "side": "short",
-      "threshold_pct": 92.5,
-      "selection_frac": 0.075,
-      "wallet_pnl": 0.20114117725994368,
-      "net_pnl": 3.41644287109375,
-      "profit_factor": 1.1996234436738025,
-      "hit_rate": 0.42998027613412226,
+      "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+      "side": "",
+      "threshold_pct": 80.0,
+      "selection_frac": 0.2,
+      "wallet_pnl": 0.01420185434240425,
+      "net_pnl": 0.15394282341003418,
+      "profit_factor": 1.372970507867274,
+      "hit_rate": 0.5777777777777777,
+      "model_source": "et"
+    },
+    {
+      "strategy_id": "loc_prev_day_range_pos_48_0_51315737_realized_volatility_24h_0_3200236_ret24h_-0_31203175_rsi_slope_-1_8608685",
+      "side": "",
+      "threshold_pct": 95.0,
+      "selection_frac": 0.05,
+      "wallet_pnl": -0.6712016155035817,
+      "net_pnl": -7.50866174697876,
+      "profit_factor": 0.6303866052556863,
+      "hit_rate": 0.27905449770190416,
       "model_source": "et"
     },
     {
       "strategy_id": "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
       "side": "",
-      "threshold_pct": 80.0,
-      "selection_frac": 0.2,
-      "wallet_pnl": 1.4366194467638695,
-      "net_pnl": 14.617423057556152,
-      "profit_factor": 1.504177565994964,
-      "hit_rate": 0.5117032769175369,
+      "threshold_pct": 82.5,
+      "selection_frac": 0.175,
+      "wallet_pnl": 1.0995777636917379,
+      "net_pnl": 9.838191986083984,
+      "profit_factor": 1.374881932821847,
+      "hit_rate": 0.4831275720164609,
       "model_source": "et"
     }
-  ]
+  ],
+  "buckets": {
+    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701": {
+      "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+      "side": "",
+      "threshold_pct": 80.0,
+      "selection_frac": 0.2,
+      "wallet_pnl": 0.01420185434240425,
+      "net_pnl": 0.15394282341003418,
+      "profit_factor": 1.372970507867274,
+      "hit_rate": 0.5777777777777777,
+      "model_source": "et"
+    },
+    "loc_prev_day_range_pos_48_0_51315737_realized_volatility_24h_0_3200236_ret24h_-0_31203175_rsi_slope_-1_8608685": {
+      "strategy_id": "loc_prev_day_range_pos_48_0_51315737_realized_volatility_24h_0_3200236_ret24h_-0_31203175_rsi_slope_-1_8608685",
+      "side": "",
+      "threshold_pct": 95.0,
+      "selection_frac": 0.05,
+      "wallet_pnl": -0.6712016155035817,
+      "net_pnl": -7.50866174697876,
+      "profit_factor": 0.6303866052556863,
+      "hit_rate": 0.27905449770190416,
+      "model_source": "et"
+    },
+    "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021": {
+      "strategy_id": "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
+      "side": "",
+      "threshold_pct": 82.5,
+      "selection_frac": 0.175,
+      "wallet_pnl": 1.0995777636917379,
+      "net_pnl": 9.838191986083984,
+      "profit_factor": 1.374881932821847,
+      "hit_rate": 0.4831275720164609,
+      "model_source": "et"
+    }
+  },
+  "best_strategy_id": "loc_prev_week_range_pos_24_0_80000007_loc_vwap_dev_z_24_0_99308336_return_autocorr_48_0_73438829_vol_regime_z_-0_44573021",
+  "best_threshold_pct": 82.5
 }

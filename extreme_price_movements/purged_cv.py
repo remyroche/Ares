@@ -73,9 +73,24 @@ class PurgedKFold(BaseCrossValidator):
         else:
             n_samples = len(X)
         
-        fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype=np.int32)
-        fold_sizes[: n_samples % self.n_splits] += 1
-        
+        def _walk_forward_layout(total_count: int) -> tuple[int, np.ndarray] | None:
+            """Reserve an initial train window, then emit n_splits forward validation folds."""
+            if total_count <= self.n_splits:
+                return None
+            base_train = max(1, total_count // (self.n_splits + 1))
+            if self.min_train_size is not None:
+                base_train = max(int(self.min_train_size), base_train)
+            if base_train >= total_count:
+                return None
+            remaining = total_count - base_train
+            if remaining < self.n_splits:
+                return None
+            val_fold_sizes = np.full(
+                self.n_splits, remaining // self.n_splits, dtype=np.int32
+            )
+            val_fold_sizes[: remaining % self.n_splits] += 1
+            return int(base_train), val_fold_sizes
+
         # Time-based purging if times are available
         times = self.times
         if times is not None and hasattr(times, '__len__') and len(times) == n_samples:
@@ -97,10 +112,12 @@ class PurgedKFold(BaseCrossValidator):
             embargo_seconds = float(self.embargo)
             
             ordered_n = ordered_valid.size
-            fold_sizes = np.full(self.n_splits, ordered_n // self.n_splits, dtype=np.int32)
-            fold_sizes[: ordered_n % self.n_splits] += 1
+            layout = _walk_forward_layout(ordered_n)
+            if layout is None:
+                return
+            initial_train_size, fold_sizes = layout
 
-            start = 0
+            start = initial_train_size
             for i in range(self.n_splits):
                 val_start = start
                 val_end = start + fold_sizes[i]
@@ -110,21 +127,23 @@ class PurgedKFold(BaseCrossValidator):
                     continue
                 val_idx = ordered_valid[val_start:val_end].astype(np.int32, copy=False)
                 
-                # Time-based purge: find all indices whose time is before (test_start_time - purge)
+                # Walk-forward purging: training uses only samples strictly before the validation block.
                 test_start_time = float(times_numeric[val_idx[0]])
                 test_end_time = float(times_numeric[val_idx[-1]])
                 
                 purge_time = test_start_time - purge_seconds
                 embargo_time = test_end_time + embargo_seconds
-                train_mask = valid_mask & (times_numeric < purge_time)
-                train_mask &= ~(times_numeric >= test_start_time)
+                train_candidates = ordered_valid[:val_start]
+                if train_candidates.size == 0:
+                    continue
+                train_candidate_times = times_numeric[train_candidates]
+                train_mask = train_candidate_times < purge_time
                 if embargo_seconds > 0:
                     train_mask &= ~(
-                        (times_numeric > test_end_time)
-                        & (times_numeric <= embargo_time)
+                        (train_candidate_times > test_end_time)
+                        & (train_candidate_times <= embargo_time)
                     )
-                
-                train_idx = np.where(train_mask)[0].astype(np.int32)
+                train_idx = train_candidates[train_mask].astype(np.int32, copy=False)
                 
                 if train_idx.size == 0:
                     continue
@@ -134,7 +153,11 @@ class PurgedKFold(BaseCrossValidator):
                 yield train_idx, val_idx
         else:
             # Index-based purging (original behavior)
-            start = 0
+            layout = _walk_forward_layout(n_samples)
+            if layout is None:
+                return
+            initial_train_size, fold_sizes = layout
+            start = initial_train_size
             for i in range(self.n_splits):
                 val_start = start
                 val_end = start + fold_sizes[i]

@@ -3989,6 +3989,62 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["vol_z_x_low_vol"] = (feats["vol_z"] * feats["is_low_vol_regime"]).astype(
         np.float32
     )
+
+    # -----------------------------------------------------------------
+    # Position-sizer interaction features
+    # Normalisation: _signed_log1p then robust z-score (30-day window)
+    # to tame heavy right-skew inherent to product terms.
+    # -----------------------------------------------------------------
+    _ps_interact_items: list[tuple[str, pd.DataFrame]] = []
+
+    if _needs_feature(
+        "atr_pct_x_amihud_z",
+        "rvol_z_x_range_expansion",
+        "close_loc_x_hurst",
+        "dist_vwap_x_vov",
+        "abs_ret6h_sigma_x_vov",
+        "amihud_z_x_close_loc",
+    ):
+        _clb = feats.get("close_location_in_bar", feats.get("close_position_in_range", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32)))
+        _vov48 = feats.get("volatility_of_volatility_48", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
+        _az = feats.get("amihud_z", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
+        _ap = feats.get("atr_pct", pd.DataFrame(1, index=c.index, columns=c.columns, dtype=np.float32))
+        _dvn = feats.get("dist_vwap_norm", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
+        _rz = feats.get("rvol_z", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
+        _rer = feats.get("range_expansion_ratio", pd.DataFrame(1, index=c.index, columns=c.columns, dtype=np.float32))
+        _hp = feats.get("hurst_proxy_24", pd.DataFrame(0.5, index=c.index, columns=c.columns, dtype=np.float32))
+        _r6 = feats.get("ret6h", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
+        _rv6 = feats.get("rv_6h", pd.DataFrame(1, index=c.index, columns=c.columns, dtype=np.float32))
+
+        if _needs_feature("atr_pct_x_amihud_z"):
+            _raw = (_ap * _az).astype(np.float32)
+            _ps_interact_items.append(("atr_pct_x_amihud_z", _signed_log1p(_raw)))
+
+        if _needs_feature("rvol_z_x_range_expansion"):
+            _raw = (_rz * _rer).astype(np.float32)
+            _ps_interact_items.append(("rvol_z_x_range_expansion", _signed_log1p(_raw)))
+
+        if _needs_feature("close_loc_x_hurst"):
+            _raw = (_clb * _hp).astype(np.float32)
+            _ps_interact_items.append(("close_loc_x_hurst", _signed_log1p(_raw)))
+
+        if _needs_feature("dist_vwap_x_vov"):
+            _raw = (_dvn * _vov48).astype(np.float32)
+            _ps_interact_items.append(("dist_vwap_x_vov", _signed_log1p(_raw)))
+
+        if _needs_feature("abs_ret6h_sigma_x_vov"):
+            _raw = ((np.abs(_r6) / (_rv6 + np.float32(1e-12))) * _vov48).astype(np.float32)
+            _ps_interact_items.append(("abs_ret6h_sigma_x_vov", _signed_log1p(_raw)))
+
+        if _needs_feature("amihud_z_x_close_loc"):
+            _raw = (_az * _clb).astype(np.float32)
+            _ps_interact_items.append(("amihud_z_x_close_loc", _signed_log1p(_raw)))
+
+        if _ps_interact_items:
+            _ps_interact_rz = _batch_roll_robust_zscore(_ps_interact_items, 24 * 30)
+            for _name, _rz_df in _ps_interact_rz.items():
+                feats[_name] = _rz_df.astype(np.float32)
+
     mkt_ret24h = mkt_gates["mkt_ret24h"].reindex(c.index).astype(np.float32)
     mkt_ret6h = mkt_gates["mkt_ret6h"].reindex(c.index).astype(np.float32)
     ret24h = feats["ret24h"].astype(np.float32)

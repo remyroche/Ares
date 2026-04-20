@@ -1,0 +1,46 @@
+{
+  "scope_key": "train_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_10",
+  "kind_name": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+  "n_total": 453960,
+  "n_splits": 2,
+  "purge_samples": 10,
+  "embargo_samples": 4,
+  "times_provided": true,
+  "valid_time_count": 453960,
+  "bad_time_count": 0,
+  "unique_time_count": 9939,
+  "monotonic_non_decreasing": false,
+  "first_valid_time": "2022-07-04 05:00:00+00:00",
+  "last_valid_time": "2024-02-24 12:00:00+00:00",
+  "fold_diagnostics": [
+    {
+      "fold": 1,
+      "val_start": 0,
+      "val_end": 226980,
+      "val_size": 226980,
+      "train_size_after_purge": 0,
+      "train_size_before_purge": 0,
+      "excluded_by_purge": 0,
+      "fold_start_valid_time": true,
+      "fold_end_valid_time": true,
+      "purge_seconds": 10,
+      "embargo_seconds": 4,
+      "purge_time_ns": 1656910790000000000
+    },
+    {
+      "fold": 2,
+      "val_start": 226980,
+      "val_end": 453960,
+      "val_size": 226980,
+      "train_size_after_purge": 0,
+      "train_size_before_purge": 226980,
+      "excluded_by_purge": 226980,
+      "fold_start_valid_time": true,
+      "fold_end_valid_time": true,
+      "purge_seconds": 10,
+      "embargo_seconds": 4,
+      "purge_time_ns": 1656910790000000000
+    }
+  ],
+  "reason": "purged_cv_produced_zero_valid_folds"
+}

@@ -12,9 +12,26 @@ import warnings
 # Avoid expensive/warning-prone Matplotlib cache initialization under read-only HOME.
 _mpl_cfg = os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig_epm")
 os.environ.setdefault("MPLBACKEND", "Agg")
+#
+# Keep native thread pools conservative on Apple Silicon. The meta-training stack
+# mixes Arrow, OpenBLAS, OpenMP/joblib and Python worker pools; unrestricted
+# defaults have repeatedly produced EXC_BAD_ACCESS / SIGSEGV crashes under load.
+# Users can still override any of these via the environment.
+for _thread_env, _default in (
+    ("OMP_NUM_THREADS", "1"),
+    ("OMP_THREAD_LIMIT", "1"),
+    ("OPENBLAS_NUM_THREADS", "1"),
+    ("MKL_NUM_THREADS", "1"),
+    ("NUMEXPR_NUM_THREADS", "1"),
+    ("VECLIB_MAXIMUM_THREADS", "1"),
+    ("BLIS_NUM_THREADS", "1"),
+    ("ARROW_NUM_THREADS", "1"),
+    ("POLARS_MAX_THREADS", "1"),
+):
+    os.environ.setdefault(_thread_env, _default)
 _loky_cpu = str(os.environ.get("LOKY_MAX_CPU_COUNT", "")).strip()
 if not _loky_cpu.isdigit():
-    os.environ["LOKY_MAX_CPU_COUNT"] = str(os.cpu_count() or 1)
+    os.environ["LOKY_MAX_CPU_COUNT"] = str(min(os.cpu_count() or 1, 2))
 warnings.filterwarnings(
     "ignore",
     message="Could not find the number of physical cores for the following reason:",
@@ -959,6 +976,15 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
 
 def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=None):
     _maintenance_checkpoint("train:start")
+    _base_hpo_trials_env = os.getenv("EPM_BASE_HPO_TRIALS")
+    if _base_hpo_trials_env:
+        try:
+            cfg["base_hpo_n_trials"] = int(_base_hpo_trials_env)
+            tprint(f"Base override: base_hpo_n_trials={cfg['base_hpo_n_trials']}")
+        except Exception as e:
+            tprint(
+                f"WARNING: invalid EPM_BASE_HPO_TRIALS={_base_hpo_trials_env!r}: {e}"
+            )
     ts_sig = _resolve_ts_sig(cfg, ts_override)
     if ts_sig is None:
         tprint("ERROR: No feature directories found. Run feature_generation first.")
@@ -1462,6 +1488,56 @@ def run_all(cfg, ts_override=None):
 def run_train_meta(cfg, ts_override=None, store=None):
     """Re-run only meta model training, reusing existing base models."""
     _maintenance_checkpoint("train_meta:start")
+    cfg.setdefault("meta_train_q20_regression", False)
+    _meta_hpo_trials_env = os.getenv("EPM_META_HPO_TRIALS")
+    if _meta_hpo_trials_env:
+        try:
+            cfg["meta_hpo_trials"] = int(_meta_hpo_trials_env)
+            tprint(f"Meta override: meta_hpo_trials={cfg['meta_hpo_trials']}")
+        except Exception as e:
+            tprint(
+                f"WARNING: invalid EPM_META_HPO_TRIALS={_meta_hpo_trials_env!r}: {e}"
+            )
+    _meta_max_strats_env = os.getenv("EPM_META_MAX_STRATEGY_IDS")
+    if _meta_max_strats_env:
+        try:
+            cfg["meta_max_strategy_ids"] = int(_meta_max_strats_env)
+            tprint(
+                f"Meta override: meta_max_strategy_ids={cfg['meta_max_strategy_ids']}"
+            )
+        except Exception as e:
+            tprint(
+                f"WARNING: invalid EPM_META_MAX_STRATEGY_IDS={_meta_max_strats_env!r}: {e}"
+            )
+    _meta_clf_enabled_env = os.getenv("EPM_META_CLF_ENABLED")
+    if _meta_clf_enabled_env is not None:
+        _v = str(_meta_clf_enabled_env).strip().lower()
+        if _v in {"1", "true", "yes", "on"}:
+            cfg["meta_clf_enabled"] = True
+        elif _v in {"0", "false", "no", "off"}:
+            cfg["meta_clf_enabled"] = False
+        else:
+            tprint(
+                f"WARNING: invalid EPM_META_CLF_ENABLED={_meta_clf_enabled_env!r}; "
+                "expected one of 1/0/true/false/yes/no/on/off"
+            )
+        tprint(f"Meta override: meta_clf_enabled={bool(cfg.get('meta_clf_enabled'))}")
+    _meta_q20_reg_env = os.getenv("EPM_META_TRAIN_Q20_REGRESSION")
+    if _meta_q20_reg_env is not None:
+        _v = str(_meta_q20_reg_env).strip().lower()
+        if _v in {"1", "true", "yes", "on"}:
+            cfg["meta_train_q20_regression"] = True
+        elif _v in {"0", "false", "no", "off"}:
+            cfg["meta_train_q20_regression"] = False
+        else:
+            tprint(
+                f"WARNING: invalid EPM_META_TRAIN_Q20_REGRESSION={_meta_q20_reg_env!r}; "
+                "expected one of 1/0/true/false/yes/no/on/off"
+            )
+        tprint(
+            "Meta override: "
+            f"meta_train_q20_regression={bool(cfg.get('meta_train_q20_regression'))}"
+        )
     ts_sig = _resolve_ts_sig(cfg, ts_override)
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")

@@ -1,0 +1,20 @@
+{
+  "selector_head_name": "meta_dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_q20_reg",
+  "selector_target": "regression",
+  "selector_top_metric": "ic",
+  "selector_focus_top_frac": 0.8,
+  "weights": {
+    "top30": 0.2,
+    "global": 0.35,
+    "stability": 0.25,
+    "frequency": 0.1,
+    "interaction": 0.1
+  },
+  "n_train_features": 45,
+  "n_selected": 40,
+  "anchor_count": 0,
+  "selected_anchor_count": 0,
+  "overlap_before": 1.0,
+  "overlap_after": 1.0,
+  "hysteresis_swaps": 0.0
+}

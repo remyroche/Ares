@@ -3,6 +3,7 @@ import sys
 import time
 import uuid
 import re
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -642,13 +643,6 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
 
     cfg = ensure_training_residualization_feature_keys(cfg)
     cfg["run_id"] = run_id
-    datasets, found_count = _load_label_datasets(
-        cfg, run_id, allow_oof_fallback=True
-    )
-
-    if not found_count:
-        tprint("ERROR: No label datasets found. Run 'labels' mode first.")
-        return None
 
     # Load intermediate alpha models
     import pickle as _pkl
@@ -669,6 +663,59 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
     alpha_models = base_bundle.get("alpha_models", {})
     if not alpha_models:
         tprint("ERROR: No alpha models found in intermediate state.")
+        return None
+
+    def _strategies_from_alpha_models() -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for side, side_models in alpha_models.items():
+            if not isinstance(side_models, dict):
+                continue
+            trade_side = "short" if str(side).lower() == "short" else "long"
+            for strategy_id, conf in side_models.items():
+                if not isinstance(conf, dict):
+                    continue
+                h_val = conf.get("H")
+                try:
+                    source_horizon = int(h_val) if h_val is not None else None
+                except Exception:
+                    source_horizon = None
+                row = {
+                    "strategy_id": str(strategy_id),
+                    "trade_side": trade_side,
+                    # Only needed so get_strategies() keeps dynamic rows instead of
+                    # falling back to legacy masks; meta label loading keys off strategy_id/H.
+                    "base_event_trigger": str(strategy_id),
+                }
+                if source_horizon is not None:
+                    row["source_horizon"] = int(source_horizon)
+                out.append(row)
+        return out
+
+    _cfg_strategies = cfg.get("strategies")
+    _cfg_strategy_ids = {
+        str(s.get("strategy_id"))
+        for s in (_cfg_strategies or [])
+        if isinstance(s, dict) and s.get("strategy_id")
+    }
+    _alpha_strategy_ids = {
+        str(strategy_id)
+        for side_models in alpha_models.values()
+        if isinstance(side_models, dict)
+        for strategy_id in side_models.keys()
+    }
+    if not _cfg_strategy_ids or not (_cfg_strategy_ids & _alpha_strategy_ids):
+        cfg["strategies"] = _strategies_from_alpha_models()
+        tprint(
+            "Meta training: strategy list overridden from primary base-model intermediate "
+            f"({len(cfg['strategies'])} strategies)"
+        )
+
+    datasets, found_count = _load_label_datasets(
+        cfg, run_id, allow_oof_fallback=True
+    )
+
+    if not found_count:
+        tprint("ERROR: No label datasets found. Run 'labels' mode first.")
         return None
 
     current_strategy_ids = {
@@ -739,6 +786,18 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
         base_variant_models = base_bundle.get("base_variant_models", {})
 
     base_oof_symbols = _load_base_oof_symbols(cfg["data_root"], run_id)
+    _stage_view = cfg.get("_active_stage_view") or {}
+    _stage_symbols = _stage_view.get("symbols") or None
+    if base_oof_symbols and _stage_symbols:
+        _stage_symbol_set = {str(sym) for sym in _stage_symbols if str(sym)}
+        _before = len(base_oof_symbols)
+        base_oof_symbols = [
+            str(sym) for sym in base_oof_symbols if str(sym) in _stage_symbol_set
+        ]
+        tprint(
+            f"Meta training: intersected base OOF symbol universe with active stage view "
+            f"({_before} -> {len(base_oof_symbols)} symbols)"
+        )
     if base_oof_symbols:
         tprint(
             f"Filtering meta training to {len(base_oof_symbols)} symbols with base-model OOF predictions"
@@ -754,17 +813,11 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
             "WARNING: No base-model OOF symbol universe found; proceeding without symbol filtering"
         )
 
-    from extreme_price_movements.pipeline_steps import (
-        _expected_feature_keys_from_cfg,
-        _meta_feature_keys_union,
-        inject_features_into_datasets,
-    )
-
-    meta_req_keys = _meta_feature_keys_union(cfg)
+    cfg["_feature_snapshot_ts"] = ts_sig
     tprint(
-        f"Injecting {len(meta_req_keys)} meta features into datasets for meta training..."
+        "Meta training: deferring raw meta feature loading to per-bucket two-stage loading "
+        "(MDI/HPO subset first, selected-feature full rows second)."
     )
-    datasets = inject_features_into_datasets(datasets, ts_sig, cfg, meta_req_keys)
 
     with Timer("Meta Model Training"):
         from extreme_price_movements.training import train_meta_models_from_artifacts
@@ -776,6 +829,26 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
             base_variant_models=base_variant_models,
         )
         tprint(f"Meta models trained: {len(meta_models)}")
+
+    meta_blocked_strategy_ids = sorted(
+        str(s) for s in (cfg.get("_meta_blocked_strategy_ids") or [])
+    )
+    if meta_blocked_strategy_ids:
+        base_bundle["meta_blocked_strategy_ids"] = meta_blocked_strategy_ids
+        base_bundle["blocked_strategy_ids"] = sorted(
+            {
+                *(base_bundle.get("blocked_strategy_ids", []) or []),
+                *meta_blocked_strategy_ids,
+            }
+        )
+        tprint(
+            "Meta training: marked strategies as downstream-blocked after meta-quality gate: "
+            f"{meta_blocked_strategy_ids}"
+        )
+    if cfg.get("_meta_strategy_gate_results") is not None:
+        base_bundle["meta_strategy_gate_results"] = list(
+            cfg.get("_meta_strategy_gate_results") or []
+        )
 
     # Merge meta into base bundle
     base_bundle["meta_models"] = meta_models

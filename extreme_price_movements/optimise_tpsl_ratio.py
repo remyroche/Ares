@@ -1158,8 +1158,9 @@ def run_tp_sl_selection_fast(
 
     n_events = e.size
     # Outer CV: walk-forward expanding window (train always > test)
-    # Split by time_idx (true temporal coordinate), not by e (flat_idx)
-    outer_cv = WalkForwardCV(n_splits=3, purge=safe_purge, test_fraction=0.15,
+    # Split by time_idx (true temporal coordinate), not by e (flat_idx).
+    # Fixed at 2 folds to keep the pre-meta policy optimizer bounded.
+    outer_cv = WalkForwardCV(n_splits=2, purge=safe_purge, test_fraction=0.15,
                              min_train_size=max(50, n_events // 5))
     # Inner CV: PurgedKFold on the outer-train subset (sorted by time)
     inner_n_splits = 2 if n_events < 400 else 3
@@ -1187,6 +1188,40 @@ def run_tp_sl_selection_fast(
     if np.isnan(mean_atr) or mean_atr <= 0:
         mean_atr = 0.03
 
+    # Precompute reference labels/weights used by fold-level feature selection.
+    _ref_barrier_sel = scaled_atr_pct_dynamic_a(
+        atr_pct=atr_pct[e], z=z[e], atr_base_pct=atr_base_pct[e],
+        z_max=z_max, lo=lo, hi=hi
+    )
+    _feature_ref_cache: Dict[Tuple[float, float], Tuple[np.ndarray, np.ndarray]] = {}
+    for (tp_r, sl_r) in [(1.0, 1.0), (0.8, 1.5)]:
+        _lab_ref = label_from_cache(
+            cache, _ref_barrier_sel, tp_mult=float(tp_r), sl_mult=float(sl_r)
+        )
+        _ae_ref = compute_ae_until_exit_pct(cache, _lab_ref.pt_t, _lab_ref.sl_t)
+        _feature_ref_cache[(float(tp_r), float(sl_r))] = (_lab_ref.y_bin, _ae_ref)
+
+    # Cache vol-scaled barriers and per-grid labels/AE across outer folds.
+    _barrier_cache: Dict[Tuple[float, float, float], np.ndarray] = {}
+    for _z_val in z_max_grid:
+        for _lo_val in lo_grid:
+            for _hi_val in hi_grid:
+                _barrier_cache[(float(_z_val), float(_lo_val), float(_hi_val))] = (
+                    scaled_atr_pct_dynamic_a(
+                        atr_pct=atr_pct[e],
+                        z=z[e],
+                        atr_base_pct=atr_base_pct[e],
+                        z_max=float(_z_val),
+                        lo=float(_lo_val),
+                        hi=float(_hi_val),
+                    )
+                )
+
+    _label_cache: Dict[
+        Tuple[float, float, float, float, float, float],
+        Tuple[GridLabels, np.ndarray],
+    ] = {}
+
     for ofold, (tr, te) in enumerate(outer_splits):
         X_tr_full = X_e_full[tr]
         X_te_full = X_e_full[te]
@@ -1195,17 +1230,19 @@ def run_tp_sl_selection_fast(
         # Using a union of (1.0, 1.0) and (0.8, 1.5) to pick features robust to different TP/SL
         feat_indices = []
         for (tp_r, sl_r) in [(1.0, 1.0), (0.8, 1.5)]:
-            barrier_ref = scaled_atr_pct_dynamic_a(
-                atr_pct=atr_pct[e], z=z[e], atr_base_pct=atr_base_pct[e],
-                z_max=z_max, lo=lo, hi=hi
-            )
-            lab_ref = label_from_cache(cache, barrier_ref, tp_mult=tp_r, sl_mult=sl_r)
-            ae_ref = compute_ae_until_exit_pct(cache, lab_ref.pt_t, lab_ref.sl_t)
-            sw_ref = (ae_weight_multiplier(ae_ref, (sl_r * barrier_ref), w_min=w_min, w_max=w_max)[tr] * 
-                      class_weight_balanced(lab_ref.y_bin[tr])).astype(np.float32, copy=False)
+            lab_ref_y, ae_ref = _feature_ref_cache[(float(tp_r), float(sl_r))]
+            sw_ref = (
+                ae_weight_multiplier(
+                    ae_ref,
+                    (float(sl_r) * _ref_barrier_sel),
+                    w_min=w_min,
+                    w_max=w_max,
+                )[tr]
+                * class_weight_balanced(lab_ref_y[tr])
+            ).astype(np.float32, copy=False)
 
             feat_indices.append(select_top_features_fast_ridge(
-                X=X_tr_full, y_bin=lab_ref.y_bin[tr], sw=sw_ref,
+                X=X_tr_full, y_bin=lab_ref_y[tr], sw=sw_ref,
                 alpha=ridge_alpha, top_k=top_k_features
             ))
         
@@ -1217,7 +1254,7 @@ def run_tp_sl_selection_fast(
             # For simplicity, we'll just take the top_k by sorting the union or re-scoring.
             # Re-scoring is safer.
             feat_idx = select_top_features_fast_ridge(
-                X=X_tr_full, y_bin=lab_ref.y_bin[tr], sw=sw_ref,
+                X=X_tr_full, y_bin=lab_ref_y[tr], sw=sw_ref,
                 alpha=ridge_alpha, top_k=top_k_features, candidate_idx=feat_idx
             )
 
@@ -1250,13 +1287,9 @@ def run_tp_sl_selection_fast(
         for z_val in z_max_grid:
             for lo_val in lo_grid:
                 for hi_val in hi_grid:
-                    # Recompute barrier pct for this config
-                    barrier_pct = scaled_atr_pct_dynamic_a(
-                        atr_pct=atr_pct[e],
-                        z=z[e],
-                        atr_base_pct=atr_base_pct[e],
-                        z_max=z_val, lo=lo_val, hi=hi_val
-                    )
+                    barrier_pct = _barrier_cache[
+                        (float(z_val), float(lo_val), float(hi_val))
+                    ]
                     # Compute mean barrier_pct for this vol config to enforce absolute constraints
                     _mean_bp = float(np.nanmedian(barrier_pct)) if barrier_pct.size > 0 else 0.04
                     if _mean_bp <= 0 or np.isnan(_mean_bp):
@@ -1285,11 +1318,20 @@ def run_tp_sl_selection_fast(
                                     continue
                                 seen_cfg5.add(cfg_key_lab)
 
-                                # Label events for this TP/SL/Trail configuration
-                                lab = label_from_cache(cache, barrier_pct, tp_mult=float(tp_mult), sl_mult=float(sl_mult), trail_mult=float(trail_val))
-
-                                # AE until exit for this grid
-                                ae = compute_ae_until_exit_pct(cache, lab.pt_t, lab.sl_t)
+                                if cfg_key_lab in _label_cache:
+                                    lab, ae = _label_cache[cfg_key_lab]
+                                else:
+                                    lab = label_from_cache(
+                                        cache,
+                                        barrier_pct,
+                                        tp_mult=float(tp_mult),
+                                        sl_mult=float(sl_mult),
+                                        trail_mult=float(trail_val),
+                                    )
+                                    ae = compute_ae_until_exit_pct(
+                                        cache, lab.pt_t, lab.sl_t
+                                    )
+                                    _label_cache[cfg_key_lab] = (lab, ae)
 
                                 sl_pct = (float(sl_mult) * barrier_pct).astype(np.float32, copy=False)
                                 w_ae = ae_weight_multiplier(ae, sl_pct, w_min=w_min, w_max=w_max)

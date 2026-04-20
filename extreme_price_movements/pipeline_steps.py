@@ -102,6 +102,8 @@ from extreme_price_movements.telemetry.tprint_hooks import (
 )
 from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 from extreme_price_movements.training import (  # generate_spike_anatomy_history,
+    _build_base_regression_target,
+    _build_base_regression_sample_weight,
     _cap_selected_features,
     _subsample_indices_time_balanced,
     generate_label_datasets,
@@ -149,6 +151,7 @@ def load_features_for_stage_or_all(
     symbols: list[str] | set[str] | tuple[str, ...] | None = None,
     start_ts: pd.Timestamp | None = None,
     end_ts: pd.Timestamp | None = None,
+    respect_stage_time_bounds: bool = True,
 ):
     """Load features with optional active-stage restrictions."""
     stage_view = cfg.get("_active_stage_view")
@@ -167,21 +170,23 @@ def load_features_for_stage_or_all(
         elif allowed_symbols is not None:
             symbols = allowed_symbols
 
-        view_start = stage_view.get("allowed_start_ts")
-        view_end = stage_view.get("allowed_end_ts")
-        if view_start:
-            view_start_ts = pd.to_datetime(view_start)
-            start_ts = (
-                view_start_ts if start_ts is None else max(start_ts, view_start_ts)
-            )
-        if view_end:
-            view_end_ts = pd.to_datetime(view_end)
-            end_ts = view_end_ts if end_ts is None else min(end_ts, view_end_ts)
+        if respect_stage_time_bounds:
+            view_start = stage_view.get("allowed_start_ts")
+            view_end = stage_view.get("allowed_end_ts")
+            if view_start:
+                view_start_ts = pd.to_datetime(view_start)
+                start_ts = (
+                    view_start_ts if start_ts is None else max(start_ts, view_start_ts)
+                )
+            if view_end:
+                view_end_ts = pd.to_datetime(view_end)
+                end_ts = view_end_ts if end_ts is None else min(end_ts, view_end_ts)
 
         tprint(
             f"Loading features for stage {stage_view.get('stage_name', 'stage')}: "
             f"{len(symbols) if symbols is not None else 'ALL'} symbols, "
             f"from {start_ts} to {end_ts}"
+            f"{'' if respect_stage_time_bounds else ' (stage time bounds disabled)'}"
         )
 
     return load_features_selected(
@@ -191,7 +196,11 @@ def load_features_for_stage_or_all(
         symbols=symbols,
         start_ts=start_ts,
         end_ts=end_ts,
-        allowed_periods=stage_view.get("allowed_periods") if stage_view else None,
+        allowed_periods=(
+            stage_view.get("allowed_periods")
+            if stage_view and respect_stage_time_bounds
+            else None
+        ),
     )
 
 
@@ -2154,6 +2163,9 @@ def run_training_step(
         tprint(
             f"Base-only mode: Loading {len(req_keys)} req features (excluded {len(meta_keys - base_keys)} meta-only keys)"
         )
+        req_keys = _base_training_feature_requirements_from_hpo(
+            cfg, datasets, req_keys
+        )
 
     datasets = inject_features_into_datasets(datasets, ts_sig, cfg, req_keys)
 
@@ -2855,7 +2867,10 @@ def run_base_hpo_step(ts_sig, cfg):
     and horizon). Each scope now follows:
     MDI feature selection -> HPO -> final training.
     """
-    from extreme_price_movements.post_race_hpo import run_base_extratrees_hpo
+    from extreme_price_movements.post_race_hpo import (
+        run_base_extratrees_hpo,
+        run_base_extratrees_reg_hpo,
+    )
     from sklearn.ensemble import ExtraTreesRegressor
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
@@ -2881,6 +2896,7 @@ def run_base_hpo_step(ts_sig, cfg):
     results = {}
     for strat in strategies:
         s_id = strat["strategy_id"]
+        side = str(strat.get("trade_side", "long")).lower()
         strategy_datasets: dict[str, pd.DataFrame] = {}
 
         for H in strategy_horizons.get(s_id, []):
@@ -2971,10 +2987,12 @@ def run_base_hpo_step(ts_sig, cfg):
                 else np.full(len(df), "unknown", dtype=object)
             )
             valid_y_mask = np.isfinite(y_all)
+            df_hpo = df.reset_index(drop=True)
             if not valid_y_mask.all():
                 X_all = X_all[valid_y_mask]
                 y_all = y_all[valid_y_mask]
                 sym_col = sym_col[valid_y_mask]
+                df_hpo = df_hpo.iloc[np.flatnonzero(valid_y_mask)].reset_index(drop=True)
 
             if X_all.size == 0 or y_all.size == 0:
                 tprint(f"BASE HPO[{name}]: empty matrix after target filtering.")
@@ -3128,6 +3146,159 @@ def run_base_hpo_step(ts_sig, cfg):
                 f"BASE HPO[{name}] COMPLETE: best_value={result.get('best_value', 'n/a')}"
             )
 
+            try:
+                reg_target_bundle = _build_base_regression_target(
+                    df_hpo,
+                    side=side,
+                    y_ret=np.asarray(df_hpo["__y_ret__"].values, dtype=np.float32)
+                    if "__y_ret__" in df_hpo.columns
+                    else None,
+                )
+                y_reg_all = np.asarray(reg_target_bundle["target"], dtype=np.float32)
+                reg_weight_bundle = _build_base_regression_sample_weight(
+                    y_reg_all,
+                    np.asarray(
+                        reg_target_bundle["residualized_return"], dtype=np.float32
+                    ),
+                )
+                reg_w_all = np.asarray(reg_weight_bundle["sample_weight"], dtype=np.float32)
+                _reg_sel_cfg = dict(cfg.get("base_reg_selector_cfg", {}) or {})
+                if not _reg_sel_cfg:
+                    _reg_sel_cfg = dict(_base_sel_cfg)
+                mdi_reg_base = ExtraTreesRegressor(
+                    n_estimators=int(_reg_sel_cfg.get("analysis_n_estimators", 192)),
+                    max_depth=8,
+                    min_samples_leaf=64,
+                    max_features="sqrt",
+                    n_jobs=2,
+                    random_state=42,
+                )
+                reg_sel_res = mdi_feature_selection_v3(
+                    X_df.iloc[_sel_idx],
+                    y_reg_all[_sel_idx],
+                    candidate_cols=list(X_df.columns),
+                    base_model=mdi_reg_base,
+                    sample_weight=reg_w_all[_sel_idx],
+                    selector_y=y_reg_all[_sel_idx],
+                    selector_target="regression",
+                    selector_loss=str(
+                        _reg_sel_cfg.get(
+                            "base_reg_mdi_selector_loss",
+                            _reg_sel_cfg.get("selector_loss", "huber"),
+                        )
+                    ),
+                    selector_head_name=f"base_reg_{name}",
+                    selector_report_dir=_selector_report_dir,
+                    selector_prev_selected=None,
+                    selector_family_map=dict(
+                        cfg.get("selector_feature_family_map", {}) or {}
+                    ),
+                    selector_focus_top_frac=float(
+                        _reg_sel_cfg.get("selector_focus_top_frac", 1.0)
+                    ),
+                    selector_top_metric=_reg_sel_cfg.get("selector_top_metric", "ic"),
+                    selector_frequency_hit_mode=str(
+                        _reg_sel_cfg.get("selector_frequency_hit_mode", "relative")
+                    ),
+                    selector_frequency_hit_quantile=float(
+                        _reg_sel_cfg.get("selector_frequency_hit_quantile", 0.80)
+                    ),
+                    selector_frequency_hit_abs=float(
+                        _reg_sel_cfg.get("selector_frequency_hit_abs", 1e-6)
+                    ),
+                    selector_interaction_mode=str(
+                        _reg_sel_cfg.get("selector_interaction_mode", "tree_path_lift")
+                    ),
+                    selector_interaction_topk_pairs=int(
+                        _reg_sel_cfg.get("selector_interaction_topk_pairs", 100)
+                    ),
+                    selector_interaction_max_pairs_per_feature=int(
+                        _reg_sel_cfg.get("selector_interaction_max_pairs_per_feature", 8)
+                    ),
+                    selector_interaction_corr_penalty=bool(
+                        _reg_sel_cfg.get("selector_interaction_corr_penalty", True)
+                    ),
+                    selector_family_penalty=bool(
+                        _reg_sel_cfg.get("selector_family_penalty", True)
+                    ),
+                    selector_emit_report=bool(
+                        _reg_sel_cfg.get("selector_emit_report", True)
+                    ),
+                    analysis_n_estimators=int(
+                        _reg_sel_cfg.get("analysis_n_estimators", 192)
+                    ),
+                    analysis_max_samples=int(
+                        _reg_sel_cfg.get("analysis_max_samples", 3000)
+                    ),
+                    min_samples_leaf_pct=float(
+                        _reg_sel_cfg.get("min_samples_leaf_pct", 0.015)
+                    ),
+                    selector_max_missing_frac=float(
+                        _reg_sel_cfg.get("selector_max_missing_frac", 0.15)
+                    ),
+                    selector_near_constant_dominance=float(
+                        _reg_sel_cfg.get("selector_near_constant_dominance", 0.999)
+                    ),
+                    selector_hysteresis_margin=float(
+                        _reg_sel_cfg.get("selector_hysteresis_margin", 0.05)
+                    ),
+                    selector_min_overlap=float(
+                        _reg_sel_cfg.get("selector_min_overlap", 0.70)
+                    ),
+                    composite_weights={
+                        "top30": float(_reg_sel_cfg.get("top30", 0.0)),
+                        "global": float(_reg_sel_cfg.get("global", 0.55)),
+                        "stability": float(_reg_sel_cfg.get("stability", 0.25)),
+                        "frequency": float(_reg_sel_cfg.get("frequency", 0.15)),
+                        "interaction": float(_reg_sel_cfg.get("interaction", 0.05)),
+                    },
+                    end_features=_mdi_target,
+                    cumulative_cap=0.99,
+                    min_share=0.0005,
+                    min_features=_mdi_min,
+                    max_features_pct=0.8,
+                )
+                selected_reg_feats = _cap_selected_features(
+                    list(reg_sel_res.selected_features),
+                    list(X_df.columns),
+                    target_cap=_mdi_target,
+                    min_features=_mdi_min,
+                )
+                if selected_reg_feats:
+                    X_reg_selected = X_df[selected_reg_feats].to_numpy(
+                        dtype=np.float32, copy=False
+                    )
+                    reg_scope = f"{name}__reg_head"
+                    reg_result = run_base_extratrees_reg_hpo(
+                        X_reg_selected,
+                        y_reg_all,
+                        selected_features=selected_reg_feats,
+                        symbols=sym_col,
+                        sample_weight=reg_w_all,
+                        n_trials=int(cfg.get("base_hpo_n_trials", 150)),
+                        n_splits=int(cfg.get("base_hpo_n_splits", 3)),
+                        max_rows=int(cfg.get("base_hpo_max_rows", 6500)),
+                        optuna_patience_trials=int(
+                            cfg.get("base_hpo_patience_trials", 30)
+                        ),
+                        optuna_min_trials_before_stop=int(
+                            cfg.get("base_hpo_min_trials_before_stop", 50)
+                        ),
+                        optuna_meaningful_improvement_pct=float(
+                            cfg.get("base_hpo_meaningful_improvement_pct", 0.005)
+                        ),
+                        out_dir=hpo_out_dir,
+                        study_name=f"base_extratrees_reg_hpo_{name}",
+                        scope_key=reg_scope,
+                    )
+                    strategy_scope_results[reg_scope] = reg_result
+                    results[reg_scope] = reg_result
+                    tprint(
+                        f"BASE REG HPO[{name}] COMPLETE: best_value={reg_result.get('best_value', 'n/a')}"
+                    )
+            except Exception as exc:
+                tprint(f"BASE REG HPO[{name}] skipped: {exc}")
+
         if not strategy_scope_results:
             tprint(f"BASE HPO[{s_id}]: no dataset-level HPO results were produced.")
             continue
@@ -3171,8 +3342,10 @@ def compute_regime_boundaries(feats):
 
 def _extract_required_features(bundle, cfg):
     """Extract required features from the actual runtime bundle first, config second."""
+    model_feature_count = 0
 
     def _add_model_feature_cols(_req, _model):
+        nonlocal model_feature_count
         if _model is None:
             return
         for _attr in (
@@ -3183,9 +3356,14 @@ def _extract_required_features(bundle, cfg):
         ):
             _vals = getattr(_model, _attr, None)
             if isinstance(_vals, (list, tuple, set)):
-                _req.update(str(v) for v in _vals if isinstance(v, str) and v)
+                _added = {
+                    str(v) for v in _vals if isinstance(v, str) and v
+                }
+                model_feature_count += len(_added)
+                _req.update(_added)
 
     def _add_alpha_stack(_req, _alpha_models):
+        nonlocal model_feature_count
         if not isinstance(_alpha_models, dict):
             return
         for _side_bundle in _alpha_models.values():
@@ -3194,20 +3372,24 @@ def _extract_required_features(bundle, cfg):
             for _kind_bundle in _side_bundle.values():
                 if not isinstance(_kind_bundle, dict):
                     continue
-                _req.update(
+                _feat_cols = {
                     str(v)
                     for v in _kind_bundle.get("feat_cols", [])
                     if isinstance(v, str) and v
-                )
+                }
+                model_feature_count += len(_feat_cols)
+                _req.update(_feat_cols)
                 _by_h = _kind_bundle.get("models_by_h", {})
                 if isinstance(_by_h, dict):
                     for _info in _by_h.values():
                         if isinstance(_info, dict):
-                            _req.update(
+                            _feat_cols_h = {
                                 str(v)
                                 for v in _info.get("feat_cols", [])
                                 if isinstance(v, str) and v
-                            )
+                            }
+                            model_feature_count += len(_feat_cols_h)
+                            _req.update(_feat_cols_h)
 
     # Minimal runtime essentials for candidate generation, backtest windowing, and regime boundaries.
     req_feats = {
@@ -3252,22 +3434,26 @@ def _extract_required_features(bundle, cfg):
         if isinstance(_spike, dict):
             for _sp in _spike.values():
                 if isinstance(_sp, dict):
-                    req_feats.update(
+                    _cols = {
                         str(v)
                         for v in _sp.get("columns", [])
                         if isinstance(v, str) and v
-                    )
+                    }
+                    model_feature_count += len(_cols)
+                    req_feats.update(_cols)
                 else:
                     _add_model_feature_cols(req_feats, _sp)
         _spec = bundle.get("specialist_models", {})
         if isinstance(_spec, dict):
             for _name, _mdl in _spec.items():
                 if isinstance(_mdl, dict):
-                    req_feats.update(
+                    _cols = {
                         str(v)
                         for v in _mdl.get("columns", [])
                         if isinstance(v, str) and v
-                    )
+                    }
+                    model_feature_count += len(_cols)
+                    req_feats.update(_cols)
                 else:
                     _add_model_feature_cols(req_feats, _mdl)
 
@@ -3284,7 +3470,7 @@ def _extract_required_features(bundle, cfg):
         return out
 
     # Config baskets are only used as a fallback for models that do not expose feature lists.
-    if len(req_feats) <= 16:
+    if model_feature_count == 0:
         key_lists = [
             "exh_feature_keys",
             "spike_feature_keys",
@@ -3300,12 +3486,39 @@ def _extract_required_features(bundle, cfg):
             if isinstance(vals, (list, tuple, set)):
                 req_feats.update(str(v) for v in vals if isinstance(v, str) and v)
         req_feats.update(_meta_feature_keys_union(cfg))
+        fallback_mode = "config-fallback"
+    else:
+        fallback_mode = "model-derived"
 
     # Drop dynamic prediction columns from config baskets if present.
     req_feats = {f for f in req_feats if not str(f).startswith("pred_")}
     out = sorted(req_feats)
-    tprint(f"Feature load whitelist: keys={len(out)} (config-only)")
+    tprint(
+        f"Feature load whitelist: keys={len(out)} "
+        f"(mode={fallback_mode}, model_feature_refs={model_feature_count})"
+    )
     return out
+
+
+def _extract_strategy_rule_feature_keys(cfg) -> set[str]:
+    required: set[str] = set()
+    for strat in get_strategies(cfg):
+        base_event_trigger = str(strat.get("base_event_trigger", "") or "")
+        if not base_event_trigger:
+            continue
+        for feat_name in re.findall(
+            r"([A-Za-z_][A-Za-z0-9_]*)\s*(?:<=|>=|==|<|>)", base_event_trigger
+        ):
+            if feat_name not in {"Composite"}:
+                required.add(str(feat_name))
+    return required
+
+
+def _risk_optimization_required_feature_keys(bundle, cfg) -> list[str]:
+    req_feats = set(_extract_required_features(bundle, cfg))
+    req_feats.update(_extract_strategy_rule_feature_keys(cfg))
+    req_feats.update({"atr_pct", "trend_pct", "trend_pct_base", "vol_pct", "ret24h"})
+    return sorted(f for f in req_feats if isinstance(f, str) and f)
 
 
 def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
@@ -3318,7 +3531,7 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     run_ts = ts_sig  # Keep original for loading artifacts
     opt_ts = ts_sig  # Used for data filtering
 
-    oos_days = cfg.get("oos_holdout_days", 0)
+    oos_days = int(cfg.get("risk_optimisation_oos_holdout_days", 180))
     if oos_days > 0:
         opt_ts = ts_sig - pd.Timedelta(days=oos_days)
         tprint(
@@ -3336,6 +3549,16 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     # Need Data for optimization (simulation)
     # Use opt_ts to filter training universe and data
     train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=opt_ts)
+    _stage_view = cfg.get("_active_stage_view") or {}
+    _stage_symbols = _stage_view.get("symbols") or None
+    if _stage_symbols:
+        _stage_set = {str(sym) for sym in _stage_symbols if str(sym)}
+        _before_syms = len(train_syms)
+        train_syms = [str(sym) for sym in train_syms if str(sym) in _stage_set]
+        tprint(
+            f"Risk Optimization: intersected training universe with active stage view "
+            f"({_before_syms} -> {len(train_syms)} symbols)"
+        )
     dfs = {}
 
     lookback_days = max(90, int(cfg["fetch_years"] * 365))
@@ -3355,8 +3578,17 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     )
 
     # Load only required features to prevent OOM
-    req_feats = _extract_required_features(bundle, cfg)
-    feats = load_features_for_stage_or_all(cfg, run_ts, cfg["data_root"], feature_keys=req_feats)
+    req_feats = _risk_optimization_required_feature_keys(bundle, cfg)
+    feats = load_features_for_stage_or_all(
+        cfg,
+        run_ts,
+        cfg["data_root"],
+        feature_keys=req_feats,
+        symbols=train_syms,
+        start_ts=panel["close"].index.min(),
+        end_ts=panel["close"].index.max(),
+        respect_stage_time_bounds=False,
+    )
     if feats is None:
         tprint("ERROR: Features not found for risk optimization.")
         return
@@ -5761,23 +5993,45 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     import pyarrow.parquet as pq
     import time
 
-    from extreme_price_movements.data_store import get_feature_path
+    from extreme_price_movements.data_store import (
+        _build_parquet_ts_filters,
+        get_feature_path,
+    )
     from extreme_price_movements.utils import tprint
     if not datasets or not req_keys:
         return datasets
 
-    req_keys = sorted(
-        {
-            str(k)
-            for k in req_keys
-            if isinstance(k, str)
-            and k
-            and not k.startswith("__")
-            and not k.startswith("pred_")
-        }
-    )
-    if not req_keys:
-        return datasets
+    req_keys_by_dataset = None
+    if isinstance(req_keys, dict):
+        req_keys_by_dataset = {}
+        for _name, _keys in req_keys.items():
+            _norm = sorted(
+                {
+                    str(k)
+                    for k in (_keys or [])
+                    if isinstance(k, str)
+                    and k
+                    and not k.startswith("__")
+                    and not k.startswith("pred_")
+                }
+            )
+            req_keys_by_dataset[str(_name)] = _norm
+        if not any(req_keys_by_dataset.values()):
+            return datasets
+        req_keys = sorted({k for vals in req_keys_by_dataset.values() for k in vals})
+    else:
+        req_keys = sorted(
+            {
+                str(k)
+                for k in req_keys
+                if isinstance(k, str)
+                and k
+                and not k.startswith("__")
+                and not k.startswith("pred_")
+            }
+        )
+        if not req_keys:
+            return datasets
 
     all_syms: set[str] = set()
     dataset_meta: dict[str, dict[str, object]] = {}
@@ -5801,7 +6055,12 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         if not s_col or not t_col:
             continue
         dataset_meta[name] = {"df": df, "s_col": s_col, "t_col": t_col}
-        missing = [k for k in req_keys if k not in df.columns]
+        req_keys_local = (
+            req_keys_by_dataset.get(name, [])
+            if isinstance(req_keys_by_dataset, dict)
+            else req_keys
+        )
+        missing = [k for k in req_keys_local if k not in df.columns]
         requested_keys_per_dataset[name] = list(missing)
         if not missing:
             continue
@@ -5829,6 +6088,7 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     dataset_symbol_positions: dict[str, dict[str, np.ndarray]] = {}
     target_buffers: dict[str, dict[str, np.ndarray]] = {}
     injection_stats: dict[str, dict[str, object]] = {}
+    symbol_time_bounds: dict[str, list[pd.Timestamp | None]] = {}
 
     for name, meta in dataset_meta.items():
         df = meta["df"]
@@ -5854,6 +6114,18 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             str(sym): np.asarray(pos, dtype=np.int32)
             for sym, pos in symbol_positions.items()
         }
+        for sym, pos in dataset_symbol_positions[name].items():
+            if pos.size == 0:
+                continue
+            ts_sym = ts_index.take(pos)
+            ts_sym = ts_sym[~pd.isna(ts_sym)]
+            if len(ts_sym) == 0:
+                continue
+            sym_start = pd.Timestamp(ts_sym.min())
+            sym_end = pd.Timestamp(ts_sym.max())
+            bounds = symbol_time_bounds.setdefault(str(sym), [None, None])
+            bounds[0] = sym_start if bounds[0] is None else min(bounds[0], sym_start)
+            bounds[1] = sym_end if bounds[1] is None else max(bounds[1], sym_end)
         buf: dict[str, np.ndarray] = {}
         for key in missing:
             buf[key] = np.full(len(df), np.nan, dtype=np.float32)
@@ -5919,11 +6191,35 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
 
         try:
             read_cols = list(load_cols)
+            sym_bounds = symbol_time_bounds.get(str(sym))
+            read_kwargs = {}
             if "ts" in schema_cols:
                 read_cols = ["ts", *read_cols]
+                if sym_bounds and sym_bounds[0] is not None and sym_bounds[1] is not None:
+                    read_kwargs["filters"] = _build_parquet_ts_filters(
+                        start_ts=sym_bounds[0],
+                        end_ts=sym_bounds[1] + pd.Timedelta(seconds=1),
+                    )
             elif "timestamp" in schema_cols:
                 read_cols = ["timestamp", *read_cols]
-            feat_df = pd.read_parquet(fpath, columns=read_cols)
+                if sym_bounds and sym_bounds[0] is not None and sym_bounds[1] is not None:
+                    start_ts = pd.Timestamp(sym_bounds[0])
+                    end_ts = pd.Timestamp(sym_bounds[1] + pd.Timedelta(seconds=1))
+                    if start_ts.tzinfo is None:
+                        start_ts = start_ts.tz_localize("UTC")
+                    else:
+                        start_ts = start_ts.tz_convert("UTC")
+                    if end_ts.tzinfo is None:
+                        end_ts = end_ts.tz_localize("UTC")
+                    else:
+                        end_ts = end_ts.tz_convert("UTC")
+                    read_kwargs["filters"] = [
+                        [
+                            ("timestamp", ">=", start_ts.to_pydatetime()),
+                            ("timestamp", "<", end_ts.to_pydatetime()),
+                        ]
+                    ]
+            feat_df = pd.read_parquet(fpath, columns=read_cols, **read_kwargs)
         except Exception as exc:
             tprint(f"Feature injection: failed to load {fpath}: {exc}")
             continue
@@ -6056,6 +6352,55 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         f"features into {len(missing_keys_per_dataset)} datasets in {elapsed_total:.1f}s."
     )
     return datasets
+
+
+def _base_training_feature_requirements_from_hpo(cfg, datasets, default_req_keys):
+    from extreme_price_movements.post_race_hpo import load_best_base_extratrees_payload
+    from extreme_price_movements.training import TRAINING_RESIDUALIZATION_FEATURE_KEYS
+
+    hpo_out_dir = cfg.get("base_hpo_out_dir")
+    if not hpo_out_dir:
+        return default_req_keys
+
+    std_inputs = {
+        "p_exh_lag1",
+        "G_VOL",
+        "G_TREND",
+        "mkt_ret24h",
+        "mkt_ret6h",
+        "mkt_trend",
+        "mkt_rv",
+        "trap_score",
+        "gamma_score",
+    }
+    reg_support = set(TRAINING_RESIDUALIZATION_FEATURE_KEYS) | {
+        "realized_volatility_24h",
+    }
+    out = {}
+    found_any_hpo_scope = False
+    default_req_keys = sorted(set(default_req_keys))
+
+    for name in datasets.keys():
+        payload_clf = load_best_base_extratrees_payload(str(hpo_out_dir), scope_key=name)
+        payload_reg = load_best_base_extratrees_payload(
+            str(hpo_out_dir), scope_key=f"{name}__reg_head"
+        )
+        selected = set((payload_clf or {}).get("selected_features", []) or [])
+        selected.update((payload_reg or {}).get("selected_features", []) or [])
+        if selected:
+            found_any_hpo_scope = True
+            out[name] = sorted(selected | std_inputs | reg_support)
+        else:
+            out[name] = list(default_req_keys)
+
+    if found_any_hpo_scope:
+        total_keys = len({k for vals in out.values() for k in vals})
+        tprint(
+            f"Base-only mode: using per-dataset HPO-selected feature requirements "
+            f"for {len(out)} datasets (global_union={total_keys})"
+        )
+        return out
+    return default_req_keys
 
 def _filter_artifact_by_stage_view(df, cfg):
     view = cfg.get("_active_stage_view")

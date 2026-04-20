@@ -31,7 +31,7 @@ import optuna
 from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
 from optuna.samplers import TPESampler
 from scipy.stats import rankdata, spearmanr
-from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.metrics import roc_auc_score, brier_score_loss, average_precision_score
 
 from extreme_price_movements.utils import tprint
@@ -534,6 +534,61 @@ def _fallback_extratrees_base_params(
         "min_impurity_decrease": 1e-4,
         "ccp_alpha": 1e-5,
         "max_leaf_nodes": 512,
+        "n_jobs": 3,
+        "random_state": base_random_state,
+    }
+
+
+def suggest_extratrees_base_reg(
+    trial: optuna.Trial,
+    *,
+    base_random_state: int = 42,
+    n_pos: int = 1000,
+) -> Dict[str, Any]:
+    max_depth = trial.suggest_categorical("max_depth", [6, 7, 8, 9, 10, 11, 12, 13])
+    leaf_frac = trial.suggest_categorical("min_samples_leaf_frac", [0.005, 0.01, 0.02])
+    min_samples_leaf = max(20, int(np.ceil(n_pos * leaf_frac)))
+    split_mult = trial.suggest_categorical("min_samples_split_mult", [2, 3])
+    min_samples_split = max(2, split_mult * min_samples_leaf)
+    max_features = trial.suggest_categorical("max_features", ["sqrt", 0.25, 0.33, 0.5])
+    ccp_alpha = trial.suggest_categorical("ccp_alpha", [1e-5, 1e-6])
+    min_impurity_decrease = trial.suggest_categorical(
+        "min_impurity_decrease", [1e-5, 1e-4]
+    )
+    n_estimators = trial.suggest_categorical("n_estimators", [200, 300, 400, 500, 600])
+    max_leaf_nodes = trial.suggest_categorical("max_leaf_nodes", [256, 512, 1024])
+    return {
+        "n_estimators": n_estimators,
+        "max_depth": max_depth,
+        "min_samples_leaf": min_samples_leaf,
+        "min_samples_split": min_samples_split,
+        "max_features": max_features,
+        "bootstrap": False,
+        "min_impurity_decrease": min_impurity_decrease,
+        "ccp_alpha": ccp_alpha,
+        "max_leaf_nodes": max_leaf_nodes,
+        "criterion": "absolute_error",
+        "n_jobs": 3,
+        "random_state": base_random_state,
+    }
+
+
+def _fallback_extratrees_base_reg_params(
+    *, base_random_state: int = 42, n_pos: int = 1000
+) -> Dict[str, Any]:
+    min_samples_leaf = max(20, int(np.ceil(float(n_pos) * 0.01)))
+    min_samples_split = max(2, 2 * min_samples_leaf)
+    return {
+        "n_estimators": 300,
+        "max_depth": 8,
+        "min_samples_leaf": min_samples_leaf,
+        "min_samples_split": min_samples_split,
+        "max_features": "sqrt",
+        "bootstrap": False,
+        "min_impurity_decrease": 1e-4,
+        "ccp_alpha": 1e-5,
+        "max_leaf_nodes": 512,
+        "criterion": "absolute_error",
         "n_jobs": 3,
         "random_state": base_random_state,
     }
@@ -1554,6 +1609,248 @@ def run_base_extratrees_hpo(
     save_name = os.path.basename(_base_hpo_json_path(out_dir, scope_key=scope_key))
     tprint(f"Base HPO: saved params from current run to {save_name}")
 
+    payload["out_dir"] = out_dir
+    return payload
+
+
+def run_base_extratrees_reg_hpo(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    selected_features: Optional[List[str]] = None,
+    symbols: Optional[np.ndarray] = None,
+    sample_weight: Optional[np.ndarray] = None,
+    n_trials: int = 150,
+    n_splits: int = 3,
+    purge: int = 12,
+    embargo: int = 2,
+    max_rows: int = 6500,
+    random_state: int = 42,
+    out_dir: str = "./hpo_out",
+    study_name: str = "base_extratrees_reg_hpo",
+    scope_key: Optional[str] = None,
+    optuna_patience_trials: int = 30,
+    optuna_min_trials_before_stop: int = 50,
+    optuna_meaningful_improvement_pct: float = 0.005,
+) -> Dict[str, Any]:
+    X = _as_2d(X)
+    y_reg = _as_1d(y).astype(np.float32, copy=False)
+    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32, copy=False)
+
+    os.makedirs(out_dir, exist_ok=True)
+    X, y_reg = _subsample_diverse(
+        X, y_reg, symbols, max_rows=max_rows, rng_seed=random_state
+    )
+    if sw is not None:
+        _, sw = _subsample_diverse(
+            np.zeros((len(sw), 1), dtype=np.float32),
+            sw,
+            symbols,
+            max_rows=max_rows,
+            rng_seed=random_state,
+        )
+    finite_mask = np.isfinite(y_reg)
+    X = X[finite_mask]
+    y_reg = y_reg[finite_mask]
+    if sw is not None and len(sw) == len(finite_mask):
+        sw = sw[finite_mask]
+    if X.shape[0] < 200:
+        raise ValueError("Base reg HPO: insufficient finite rows after filtering.")
+
+    n_positive = int(np.sum(y_reg > 0.0))
+    tprint(
+        f"Base reg HPO: {X.shape[0]} rows, {X.shape[1]} features after subsample; "
+        f"positive_target={n_positive}, zero_target={int(np.sum(y_reg <= 0.0))}"
+    )
+
+    cv = PurgedKFold(n_splits=n_splits, purge=purge, embargo=embargo)
+    splits = cv.split(X)
+    if len(splits) < 2:
+        raise ValueError(
+            "Not enough CV splits — reduce purge/embargo or increase n_splits."
+        )
+
+    sampler = TPESampler(seed=random_state, multivariate=True, group=True)
+    pruner = SuccessiveHalvingPruner(
+        min_resource=1,
+        reduction_factor=2,
+        min_early_stopping_rate=0,
+        bootstrap_count=1,
+    )
+    study = optuna.create_study(
+        direction="maximize",
+        study_name=study_name,
+        sampler=sampler,
+        pruner=pruner,
+    )
+
+    def _pseudo_huber(err: np.ndarray, delta: float = 1.0) -> float:
+        e = np.asarray(err, dtype=np.float64)
+        return float(
+            np.mean((delta**2) * (np.sqrt(1.0 + np.square(e / delta)) - 1.0))
+        )
+
+    def _spearman_safe(a: np.ndarray, b: np.ndarray) -> float:
+        if len(a) < 5:
+            return 0.0
+        try:
+            val = float(spearmanr(a, b).statistic)
+        except Exception:
+            val = 0.0
+        return 0.0 if not np.isfinite(val) else val
+
+    def _top_metric(pred: np.ndarray, target: np.ndarray, frac: float) -> float:
+        n_top = max(5, int(np.ceil(len(pred) * float(frac))))
+        idx = np.argsort(pred)[-n_top:]
+        return _spearman_safe(pred[idx], target[idx])
+
+    def _bucket_monotonicity(pred: np.ndarray, target: np.ndarray) -> float:
+        if len(pred) < 50:
+            return 0.0
+        order = np.argsort(pred)
+        buckets = np.array_split(order, 10)
+        means = np.array(
+            [np.nanmean(target[idx]) if len(idx) else np.nan for idx in buckets],
+            dtype=np.float64,
+        )
+        valid = np.isfinite(means)
+        if int(valid.sum()) < 3:
+            return 0.0
+        return _spearman_safe(np.arange(len(means), dtype=np.float64)[valid], means[valid])
+
+    scope_name = scope_key or study_name
+    patience_callback = _make_optuna_patience_callback(
+        patience=int(optuna_patience_trials),
+        label=f"BASE REG HPO[{scope_name}]",
+        min_delta=0.0,
+        min_trials_before_stop=int(optuna_min_trials_before_stop),
+        meaningful_improvement_pct=float(optuna_meaningful_improvement_pct),
+    )
+
+    def objective(trial: optuna.Trial) -> float:
+        params = suggest_extratrees_base_reg(
+            trial, base_random_state=random_state, n_pos=max(n_positive, 1)
+        )
+        fold_scores: list[float] = []
+        fold_ics: list[float] = []
+        fold_mae: list[float] = []
+        fold_huber: list[float] = []
+        fold_mono: list[float] = []
+        for fold_i, (tr, va) in enumerate(splits):
+            X_tr, y_tr = X[tr], y_reg[tr]
+            X_va, y_va = X[va], y_reg[va]
+            sw_tr = None if sw is None else sw[tr]
+            model = ExtraTreesRegressor(**params)
+            model.fit(X_tr, y_tr, sample_weight=sw_tr)
+            pred = model.predict(X_va).astype(np.float32, copy=False)
+            ic = _spearman_safe(pred, y_va)
+            ic_top20 = _top_metric(pred, y_va, 0.20)
+            ic_top10 = _top_metric(pred, y_va, 0.10)
+            mono = _bucket_monotonicity(pred, y_va)
+            mae = float(np.mean(np.abs(pred - y_va)))
+            huber = _pseudo_huber(pred - y_va, delta=1.0)
+            score = float(
+                0.35 * ic_top10
+                + 0.25 * ic_top20
+                + 0.20 * ic
+                + 0.10 * mono
+                - 0.06 * mae
+                - 0.04 * huber
+            )
+            fold_scores.append(score)
+            fold_ics.append(ic)
+            fold_mae.append(mae)
+            fold_huber.append(huber)
+            fold_mono.append(mono)
+            trial.report(float(np.mean(fold_scores)), step=fold_i)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+
+        trial_score = float(np.mean(fold_scores) - 0.50 * np.std(fold_scores))
+        trial.set_user_attr("mean_ic", float(np.mean(fold_ics)))
+        trial.set_user_attr("mean_mae", float(np.mean(fold_mae)))
+        trial.set_user_attr("mean_huber", float(np.mean(fold_huber)))
+        trial.set_user_attr("mean_mono", float(np.mean(fold_mono)))
+        trial.set_user_attr("objective", trial_score)
+        trial.set_user_attr("fold_scores", [float(v) for v in fold_scores])
+        return trial_score
+
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        timeout=None,
+        gc_after_trial=True,
+        show_progress_bar=True,
+        callbacks=[patience_callback],
+    )
+
+    completed_trials = [
+        t
+        for t in study.trials
+        if t.state == optuna.trial.TrialState.COMPLETE
+        and t.value is not None
+        and np.isfinite(float(t.value))
+    ]
+    if completed_trials:
+        best_trial = max(completed_trials, key=lambda t: float(t.value))
+        best_value = float(best_trial.value)
+        best_params = suggest_extratrees_base_reg(
+            best_trial, base_random_state=random_state, n_pos=max(n_positive, 1)
+        )
+        fallback_used = False
+    else:
+        tprint(
+            "WARNING: Base reg HPO completed with zero finished trials; using conservative fallback params."
+        )
+        best_trial = None
+        best_value = float("nan")
+        best_params = _fallback_extratrees_base_reg_params(
+            base_random_state=random_state, n_pos=max(n_positive, 1)
+        )
+        fallback_used = True
+    best_params.pop("n_jobs", None)
+    best_params.pop("random_state", None)
+
+    payload = {
+        "best_value": best_value,
+        "best_params": best_params,
+        "selected_features": [
+            str(v) for v in (selected_features or []) if isinstance(v, str)
+        ],
+        "n_trials_completed": len(study.trials),
+        "n_trials_finished": int(len(completed_trials)),
+        "n_pos_at_optimisation": n_positive,
+        "search_space": "base_reg_narrow",
+        "fallback_used": bool(fallback_used),
+        "best_trial_metrics": {
+            "mean_ic": float(best_trial.user_attrs.get("mean_ic", best_value))
+            if best_trial is not None
+            else float("nan"),
+            "mean_mae": float(best_trial.user_attrs.get("mean_mae", np.nan))
+            if best_trial is not None
+            else float("nan"),
+            "mean_huber": float(best_trial.user_attrs.get("mean_huber", np.nan))
+            if best_trial is not None
+            else float("nan"),
+            "mean_mono": float(best_trial.user_attrs.get("mean_mono", np.nan))
+            if best_trial is not None
+            else float("nan"),
+            "objective": float(best_trial.user_attrs.get("objective", best_value))
+            if best_trial is not None
+            else float("nan"),
+            "fold_scores": [
+                float(v)
+                for v in (
+                    best_trial.user_attrs.get("fold_scores", [])
+                    if best_trial is not None
+                    else []
+                )
+            ],
+        },
+    }
+    _save_base_hpo_json(out_dir, payload, scope_key=scope_key)
+    save_name = os.path.basename(_base_hpo_json_path(out_dir, scope_key=scope_key))
+    tprint(f"Base reg HPO: saved params from current run to {save_name}")
     payload["out_dir"] = out_dir
     return payload
 

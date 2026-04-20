@@ -551,6 +551,7 @@ def _load_best_strategy(data_root: str, run_id: str) -> Dict[str, Any]:
             pass
 
     candidates = [
+        Path(data_root) / "artifacts" / run_id / "lgbm_sizer" / "strategy_params.json",
         Path(data_root) / "artifacts" / run_id / "et_sizer" / "strategy_params.json",
         Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json",
     ]
@@ -571,7 +572,9 @@ def _load_best_strategy(data_root: str, run_id: str) -> Dict[str, Any]:
                 "threshold_pct": float(
                     row.get("threshold_pct", payload.get("best_threshold_pct", 90.0))
                 ),
-                "model": "et" if "et_sizer" in str(pth) else "ridge",
+                "model": "lgbm"
+                if "lgbm_sizer" in str(pth)
+                else ("et" if "et_sizer" in str(pth) else "ridge"),
                 "tp_mult": float(row.get("tp_mult", 1.0)),
                 "sl_mult": float(row.get("sl_mult", 1.0)),
             }
@@ -589,6 +592,7 @@ def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any
     for model_source, rel_path in [
         ("ridge", "ridge_sizer/strategy_params.json"),
         ("et", "et_sizer/strategy_params.json"),
+        ("lgbm", "lgbm_sizer/strategy_params.json"),
     ]:
         path = Path(data_root) / "artifacts" / run_id / rel_path
         if not path.exists():
@@ -610,7 +614,9 @@ def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any
             cand["strategy_id"] = sid
             cand["model"] = model_source
             cand["source_artifact"] = (
-                "et_sizer" if model_source == "et" else "ridge_sizer"
+                "lgbm_sizer"
+                if model_source == "lgbm"
+                else ("et_sizer" if model_source == "et" else "ridge_sizer")
             )
             candidates.append(cand)
 
@@ -659,7 +665,9 @@ def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
     if consolidated_path.exists():
         df = pd.read_parquet(consolidated_path)
         if "timestamp" in df.columns and "symbol" in df.columns:
-            tprint(f"Using consolidated ridge sizer OOF scores from {consolidated_path}")
+            tprint(
+                f"Using consolidated ridge sizer OOF scores from {consolidated_path}"
+            )
             out = df.copy()
             out["timestamp"] = pd.to_datetime(
                 out["timestamp"], utc=True, errors="coerce"
@@ -669,7 +677,11 @@ def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
 
     if ridge_raw_path.exists():
         df = pd.read_parquet(ridge_raw_path)
-        if "sizer_score_oof" in df.columns and "timestamp" in df.columns and "symbol" in df.columns:
+        if (
+            "sizer_score_oof" in df.columns
+            and "timestamp" in df.columns
+            and "symbol" in df.columns
+        ):
             tprint(f"Using ridge sizer OOF predictions from {ridge_raw_path}")
             pivot = df.pivot_table(
                 index=["timestamp", "symbol"],
@@ -687,8 +699,14 @@ def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
     simple_sizer_oof_path = _art / "oof" / "simple_sizer_oof_all.parquet"
     if simple_sizer_oof_path.exists():
         df = pd.read_parquet(simple_sizer_oof_path)
-        if "timestamp" in df.columns and "symbol" in df.columns and "strategy_id" in df.columns:
-            tprint(f"Using simple_position_sizer OOF scores from {simple_sizer_oof_path}")
+        if (
+            "timestamp" in df.columns
+            and "symbol" in df.columns
+            and "strategy_id" in df.columns
+        ):
+            tprint(
+                f"Using simple_position_sizer OOF scores from {simple_sizer_oof_path}"
+            )
             # Pivot to get scores per strategy
             pivot = df.pivot_table(
                 index=["timestamp", "symbol"],
@@ -818,7 +836,11 @@ def resolve_optimised_selection_frac(
         Path(data_root)
         / "artifacts"
         / run_id
-        / ("et_sizer" if model == "et" else "ridge_sizer")
+        / (
+            "lgbm_sizer"
+            if model == "lgbm"
+            else ("et_sizer" if model == "et" else "ridge_sizer")
+        )
         / "strategy_params.json"
     )
     threshold_pct = float(selected.get("threshold_pct", 90.0))
@@ -1960,7 +1982,9 @@ def _sequential_optimise(
         base_returns_sized = base_returns * sizes
 
         if has_future_paths_ctx:
-            rets = _simulate_barwise_path_policy(base_returns_sized, context, params_to_use)
+            rets = _simulate_barwise_path_policy(
+                base_returns_sized, context, params_to_use
+            )
         else:
             rets = replay_exit_policy(base_returns_sized, context, params_to_use)
 
@@ -3211,7 +3235,7 @@ def run_policy_optimisation(
         train_mask[order[:n_train]] = True
 
         val_mask = np.zeros(n, dtype=bool)
-        val_mask[order[n_train:n_train + n_val]] = True
+        val_mask[order[n_train : n_train + n_val]] = True
 
         # If n_train + n_val < n, the rest is the holdout, which we ignore here during parameter search
         # If we need to ensure all data is used up to the split, we could adjust.
@@ -3359,9 +3383,7 @@ def run_policy_optimisation(
             ts_vals=context.get("timestamps_ms", np.arange(len(base_rets)))
             if "timestamps_ms" in context
             else None,
-            scores=baseline_conf
-            if baseline_conf is not None
-            else None,
+            scores=baseline_conf if baseline_conf is not None else None,
         )
         tprint(
             f"Using wallet-sized baseline: net_pnl={baseline_assess.get('net_pnl', 0.0):.6f}, "
@@ -3388,14 +3410,18 @@ def run_policy_optimisation(
             return (0.05 + (0.15 - 0.05) * (pcts**size_power)).astype(np.float32)
 
         size_power = float(best.get("size_power", 1.0))
-        precomputed_sizes = _compute_position_sizes(context.get("confidence"), size_power)
+        precomputed_sizes = _compute_position_sizes(
+            context.get("confidence"), size_power
+        )
 
         # Apply sizing to base_rets BEFORE simulation
         base_rets_sized = base_rets * precomputed_sizes
 
         # Run simulation with sized returns
         if has_future_paths:
-            final_rets_assess = _simulate_barwise_path_policy(base_rets_sized, context, best)
+            final_rets_assess = _simulate_barwise_path_policy(
+                base_rets_sized, context, best
+            )
             if final_rets_assess is None:
                 final_rets_assess = replay_exit_policy(base_rets_sized, context, best)
         else:

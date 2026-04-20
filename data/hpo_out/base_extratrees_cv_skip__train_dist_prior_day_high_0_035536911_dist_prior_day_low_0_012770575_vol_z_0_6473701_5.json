@@ -1,0 +1,46 @@
+{
+  "scope_key": "train_dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_5",
+  "kind_name": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701",
+  "n_total": 561950,
+  "n_splits": 2,
+  "purge_samples": 10,
+  "embargo_samples": 4,
+  "times_provided": true,
+  "valid_time_count": 561950,
+  "bad_time_count": 0,
+  "unique_time_count": 9985,
+  "monotonic_non_decreasing": false,
+  "first_valid_time": "2022-07-04 05:00:00+00:00",
+  "last_valid_time": "2024-02-24 12:00:00+00:00",
+  "fold_diagnostics": [
+    {
+      "fold": 1,
+      "val_start": 0,
+      "val_end": 280975,
+      "val_size": 280975,
+      "train_size_after_purge": 0,
+      "train_size_before_purge": 0,
+      "excluded_by_purge": 0,
+      "fold_start_valid_time": true,
+      "fold_end_valid_time": true,
+      "purge_seconds": 10,
+      "embargo_seconds": 4,
+      "purge_time_ns": 1656910790000000000
+    },
+    {
+      "fold": 2,
+      "val_start": 280975,
+      "val_end": 561950,
+      "val_size": 280975,
+      "train_size_after_purge": 0,
+      "train_size_before_purge": 280975,
+      "excluded_by_purge": 280975,
+      "fold_start_valid_time": true,
+      "fold_end_valid_time": true,
+      "purge_seconds": 10,
+      "embargo_seconds": 4,
+      "purge_time_ns": 1656910790000000000
+    }
+  ],
+  "reason": "purged_cv_produced_zero_valid_folds"
+}

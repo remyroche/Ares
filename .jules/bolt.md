@@ -47,3 +47,6 @@ Action: In feature injection (`pipeline_steps.py`), replace `pd.concat([df, pd.D
 ## 2025-04-16 - Replace pandas iterrows with numpy arrays
 Learning: `iterrows()` in pandas is extremely slow due to box/unbox overhead and index checking. Simple iteration is often better performed by converting dataframe columns to numpy arrays and using `zip()` to iterate, or vectorizing the operations entirely, especially inside inner loops for tasks like pruning dominance fronts or pairwise metrics processing.
 Action: Search for and replace `iterrows()` with vectorized alternatives or numpy iteration whenever optimizing loops in a DataFrame.
+## 2026-06-25 - Replace pandas iterrows with numpy array extraction and zip
+Learning: `iterrows()` inside inference monitoring loops, specifically `_evaluate_oco_policy` handling 5m bar evaluations, represents a major bottleneck because it instantiates a Pandas Series object for every single row, causing severe CPU overhead during rapid real-time monitoring.
+Action: Replace `iterrows()` loops with numpy array extraction (e.g. `bars["open"].to_numpy()`) and iterate using `zip()` over the arrays. This bypasses the Pandas object creation completely, maintaining exact functional equivalence but providing significant speedups in tight policy evaluation loops.

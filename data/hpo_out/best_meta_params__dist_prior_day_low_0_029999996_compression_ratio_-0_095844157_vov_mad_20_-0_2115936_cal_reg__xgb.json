@@ -1,0 +1,19 @@
+{
+  "scope_key": "dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_cal_reg",
+  "kind": "xgb",
+  "best_params": {
+    "objective": "reg:squarederror",
+    "n_estimators": 500,
+    "max_depth": 4,
+    "learning_rate": 0.02798220627404522,
+    "subsample": 0.6636877771624169,
+    "colsample_bytree": 0.6806182943924277,
+    "colsample_bynode": 0.720770654894632,
+    "gamma": 3.1371055968859145,
+    "reg_alpha": 0.034500993150714254,
+    "reg_lambda": 42.972267138900435,
+    "min_child_weight": 21
+  },
+  "n_trials_completed": 62,
+  "best_trial_number": 1
+}

@@ -1,0 +1,16 @@
+{
+  "ridge_resid_mean": 0.06753137707710266,
+  "ridge_resid_std": 3.44271020753479,
+  "lgbm_best_params": {
+    "num_leaves": 53,
+    "max_depth": 2,
+    "min_data_frac": 0.008900466011060912,
+    "min_sum_hessian": 0.004207053950287938,
+    "feature_fraction": 0.4348501673009197,
+    "bagging_fraction": 0.9598528437324805,
+    "bagging_freq": 6,
+    "min_gain_to_split": 0.013311216080736894
+  },
+  "has_calibration": true,
+  "atr_column": "atr_12_15m"
+}

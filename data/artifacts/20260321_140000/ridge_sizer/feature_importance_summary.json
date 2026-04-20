@@ -1,0 +1,771 @@
+{
+  "generated_by": "simple_position_sizer",
+  "run_id": "20260321_140000",
+  "schema_version": "v1",
+  "strategies": {
+    "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [
+        {
+          "feature": "base_H10_leaf_target_std_mean",
+          "importance": 0.049422066658735275,
+          "metric": "abs_weight",
+          "std": 0.009394530206918716
+        },
+        {
+          "feature": "base_H10_leaf_target_iqr_mean",
+          "importance": 0.032965078949928284,
+          "metric": "abs_weight",
+          "std": 0.015748050063848495
+        },
+        {
+          "feature": "base_H10_leaf_support_q25",
+          "importance": 0.02547903172671795,
+          "metric": "abs_weight",
+          "std": 0.027646247297525406
+        },
+        {
+          "feature": "base_H10",
+          "importance": 0.017433110624551773,
+          "metric": "abs_weight",
+          "std": 0.012647924944758415
+        },
+        {
+          "feature": "base_H10_leaf_support_median",
+          "importance": 0.01611650362610817,
+          "metric": "abs_weight",
+          "std": 0.011976794339716434
+        },
+        {
+          "feature": "base_H10_leaf_support_mean",
+          "importance": 0.013065245933830738,
+          "metric": "abs_weight",
+          "std": 0.007343057543039322
+        },
+        {
+          "feature": "base_H10_pred_mean",
+          "importance": 0.009295373223721981,
+          "metric": "abs_weight",
+          "std": 0.013145644217729568
+        },
+        {
+          "feature": "base_H10_pred_cv",
+          "importance": 0.001955163897946477,
+          "metric": "abs_weight",
+          "std": 0.014700754545629025
+        },
+        {
+          "feature": "base_H10_leaf_support_std",
+          "importance": 0.0017974056536331773,
+          "metric": "abs_weight",
+          "std": 0.002541915513575077
+        },
+        {
+          "feature": "base_H10_vote_top_gap",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        }
+      ],
+      "extratrees_top10": [
+        {
+          "feature": "base_H10_pred_mean",
+          "importance": 0.12340950965881348,
+          "metric": "gain",
+          "std": 0.012031212449073792
+        },
+        {
+          "feature": "base_H10_leaf_support_std",
+          "importance": 0.09208517521619797,
+          "metric": "gain",
+          "std": 0.04235443100333214
+        },
+        {
+          "feature": "base_H10_vote_top_gap",
+          "importance": 0.08837809413671494,
+          "metric": "gain",
+          "std": 0.012418112717568874
+        },
+        {
+          "feature": "base_H10_leaf_support_median",
+          "importance": 0.08533024787902832,
+          "metric": "gain",
+          "std": 0.011407296173274517
+        },
+        {
+          "feature": "base_H10_leaf_support_q25",
+          "importance": 0.07546194642782211,
+          "metric": "gain",
+          "std": 0.011558680795133114
+        },
+        {
+          "feature": "base_H10_vote_margin",
+          "importance": 0.07486748695373535,
+          "metric": "gain",
+          "std": 0.002503755735233426
+        },
+        {
+          "feature": "base_H10_leaf_support_mean",
+          "importance": 0.07130684703588486,
+          "metric": "gain",
+          "std": 0.020618073642253876
+        },
+        {
+          "feature": "base_H10_vote_entropy",
+          "importance": 0.05610308051109314,
+          "metric": "gain",
+          "std": 0.006504918914288282
+        },
+        {
+          "feature": "base_H10_leaf_centroid_dist_median",
+          "importance": 0.04846639931201935,
+          "metric": "gain",
+          "std": 0.009204521775245667
+        },
+        {
+          "feature": "base_H10_pred_std",
+          "importance": 0.04585471749305725,
+          "metric": "gain",
+          "std": 0.010770351625978947
+        }
+      ],
+      "winner_model": "ridge",
+      "winner_pred_prefix_share": 0.0,
+      "winner_top10": [
+        {
+          "feature": "base_H10_leaf_target_std_mean",
+          "importance": 0.049422066658735275,
+          "metric": "abs_weight",
+          "std": 0.009394530206918716
+        },
+        {
+          "feature": "base_H10_leaf_target_iqr_mean",
+          "importance": 0.032965078949928284,
+          "metric": "abs_weight",
+          "std": 0.015748050063848495
+        },
+        {
+          "feature": "base_H10_leaf_support_q25",
+          "importance": 0.02547903172671795,
+          "metric": "abs_weight",
+          "std": 0.027646247297525406
+        },
+        {
+          "feature": "base_H10",
+          "importance": 0.017433110624551773,
+          "metric": "abs_weight",
+          "std": 0.012647924944758415
+        },
+        {
+          "feature": "base_H10_leaf_support_median",
+          "importance": 0.01611650362610817,
+          "metric": "abs_weight",
+          "std": 0.011976794339716434
+        },
+        {
+          "feature": "base_H10_leaf_support_mean",
+          "importance": 0.013065245933830738,
+          "metric": "abs_weight",
+          "std": 0.007343057543039322
+        },
+        {
+          "feature": "base_H10_pred_mean",
+          "importance": 0.009295373223721981,
+          "metric": "abs_weight",
+          "std": 0.013145644217729568
+        },
+        {
+          "feature": "base_H10_pred_cv",
+          "importance": 0.001955163897946477,
+          "metric": "abs_weight",
+          "std": 0.014700754545629025
+        },
+        {
+          "feature": "base_H10_leaf_support_std",
+          "importance": 0.0017974056536331773,
+          "metric": "abs_weight",
+          "std": 0.002541915513575077
+        },
+        {
+          "feature": "base_H10_vote_top_gap",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        }
+      ]
+    },
+    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [
+        {
+          "feature": "base_H10_leaf_target_iqr_mean",
+          "importance": 0.008028856478631496,
+          "metric": "abs_weight",
+          "std": 0.03400738537311554
+        },
+        {
+          "feature": "base_H10",
+          "importance": 0.005076494067907333,
+          "metric": "abs_weight",
+          "std": 0.009192513301968575
+        },
+        {
+          "feature": "base_H10_leaf_support_median",
+          "importance": 0.0004581319517455995,
+          "metric": "abs_weight",
+          "std": 0.0012957928702235222
+        },
+        {
+          "feature": "base_H10_leaf_support_std",
+          "importance": 0.00011133965017506853,
+          "metric": "abs_weight",
+          "std": 0.00031491610570810735
+        },
+        {
+          "feature": "base_H10_vote_margin",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_robust_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_mean",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_cv",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std_robust",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        }
+      ],
+      "extratrees_top10": [
+        {
+          "feature": "base_H10",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_sigma",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_mean",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_cv",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_entropy",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_margin",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_top_gap",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_leaf_support_mean",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_leaf_support_median",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        }
+      ],
+      "winner_model": "ridge",
+      "winner_pred_prefix_share": 0.0,
+      "winner_top10": [
+        {
+          "feature": "base_H10_leaf_target_iqr_mean",
+          "importance": 0.008028856478631496,
+          "metric": "abs_weight",
+          "std": 0.03400738537311554
+        },
+        {
+          "feature": "base_H10",
+          "importance": 0.005076494067907333,
+          "metric": "abs_weight",
+          "std": 0.009192513301968575
+        },
+        {
+          "feature": "base_H10_leaf_support_median",
+          "importance": 0.0004581319517455995,
+          "metric": "abs_weight",
+          "std": 0.0012957928702235222
+        },
+        {
+          "feature": "base_H10_leaf_support_std",
+          "importance": 0.00011133965017506853,
+          "metric": "abs_weight",
+          "std": 0.00031491610570810735
+        },
+        {
+          "feature": "base_H10_vote_margin",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_robust_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_mean",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_cv",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std_robust",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        }
+      ]
+    },
+    "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [
+        {
+          "feature": "base_H10",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_robust_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_mean",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_cv",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std_robust",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_entropy",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_margin",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_top_gap",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        }
+      ],
+      "extratrees_top10": [
+        {
+          "feature": "base_H10",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_sigma",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_mean",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_cv",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_entropy",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_margin",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_top_gap",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_leaf_support_mean",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_leaf_support_median",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        }
+      ],
+      "winner_model": "ridge",
+      "winner_pred_prefix_share": 0.0,
+      "winner_top10": [
+        {
+          "feature": "base_H10",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_robust_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_mean",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_cv",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_pred_std_robust",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_entropy",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_margin",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H10_vote_top_gap",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        }
+      ]
+    },
+    "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [
+        {
+          "feature": "base_H5",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_leaf_centroid_dist_rel_std",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_robust_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_pred_mean",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_pred_std",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_pred_std_robust",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_vote_entropy",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_vote_margin",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_vote_top_gap",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        }
+      ],
+      "extratrees_top10": [
+        {
+          "feature": "base_H5",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_sigma",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_pred_mean",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_pred_std",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_pred_cv",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_vote_entropy",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_vote_margin",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_vote_top_gap",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_leaf_support_mean",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_leaf_support_median",
+          "importance": 0.0,
+          "metric": "gain",
+          "std": 0.0
+        }
+      ],
+      "winner_model": "ridge",
+      "winner_pred_prefix_share": 0.0,
+      "winner_top10": [
+        {
+          "feature": "base_H5",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_leaf_centroid_dist_rel_std",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_robust_sigma",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_pred_mean",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_pred_std",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_pred_std_robust",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_vote_entropy",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_vote_margin",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "base_H5_vote_top_gap",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        }
+      ]
+    }
+  }
+}

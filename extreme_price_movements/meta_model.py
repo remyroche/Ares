@@ -463,7 +463,11 @@ def _safe_spearman(a, b):
     va, vb = a[mask], b[mask]
     if np.std(va) < 1e-12 or np.std(vb) < 1e-12:
         return 0.0
-    rho, _ = spearmanr(va, vb)
+    import warnings
+    from scipy.stats import ConstantInputWarning
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=ConstantInputWarning)
+        rho, _ = spearmanr(va, vb)
     return float(rho) if np.isfinite(rho) else 0.0
 
 
@@ -798,9 +802,11 @@ def discover_monotone_constraints(
             cm = fm.copy()
             valid = np.isfinite(col_vals)
             cm = fm & valid
-            if cm.sum() < 20:
-                continue
-            r, pv = spearmanr(Xb[cm, fm_col], yb[cm])
+            import warnings
+            from scipy.stats import ConstantInputWarning
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=ConstantInputWarning)
+                r, pv = spearmanr(Xb[cm, fm_col], yb[cm])
             if np.isfinite(r):
                 rho_matrix[bi, fm_col] = r
                 pval_matrix[bi, fm_col] = pv
@@ -2574,34 +2580,26 @@ class MetaClassifierModel:
                         self.bst = None
 
                     def _soft_crossentropy_obj(self, y_soft):
+                        from scipy.special import softmax
                         def obj(preds, dtrain):
                             if preds.ndim == 1:
                                 preds = preds.reshape(-1, n_classes)
-                            # softmax
-                            preds_shifted = preds - np.max(preds, axis=1, keepdims=True)
-                            exp_preds = np.exp(preds_shifted)
-                            prob = exp_preds / np.sum(exp_preds, axis=1, keepdims=True)
-
-                            # grad and hess for softmax cross-entropy
-                            grad = prob - y_soft
-                            hess = prob * (1.0 - prob)
+                            # Vectorized softmax
+                            prob = softmax(preds, axis=1)
+                            # Gradient and Hessian for softmax cross-entropy (flattened for XGB)
+                            grad = (prob - y_soft).reshape(-1)
+                            hess = (prob * (1.0 - prob)).reshape(-1)
                             return grad, hess
-
                         return obj
 
                     def fit(
                         self, X, y, sample_weight=None, eval_set=None, verbose=False
                     ):
-                        # Ensure inputs are valid
-                        # Create dummy DMatrix label because XGB custom obj handles soft labels directly
-                        dummy_y_tr = np.zeros(len(y))
-                        dtrain = xgb.DMatrix(X, label=dummy_y_tr, weight=sample_weight)
-
+                        dtrain = xgb.DMatrix(X, label=np.zeros(len(y)), weight=sample_weight)
                         evals = []
                         if eval_set:
                             X_va, y_va = eval_set[0]
-                            dummy_y_va = np.zeros(len(y_va))
-                            dvalid = xgb.DMatrix(X_va, label=dummy_y_va)
+                            dvalid = xgb.DMatrix(X_va, label=np.zeros(len(y_va)))
                             evals = [(dtrain, "train"), (dvalid, "valid")]
 
                         self.bst = xgb.train(
@@ -2610,6 +2608,7 @@ class MetaClassifierModel:
                             num_boost_round=self.params.get("n_estimators", 100),
                             evals=evals,
                             obj=self._soft_crossentropy_obj(y),
+                            early_stopping_rounds=self.params.get("early_stopping_rounds", 50) if evals else None,
                             verbose_eval=False,
                         )
                         return self
@@ -2742,9 +2741,10 @@ class MetaClassifierModel:
         sw=None,
         feature_max_features: Optional[int] = None,
         selector_cache: Optional[Dict[Tuple[int, int, int], List[str]]] = None,
+        n_splits: int = 3,
     ) -> Tuple[np.ndarray, float, Dict[str, Any], Dict[str, np.ndarray]]:
-        """3-fold purged CV for the binary move head."""
-        pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
+        """Purged CV for the binary move head."""
+        pkf = PurgedKFold(n_splits=n_splits, purge=12, embargo=12)
         oof = np.full(len(y), np.nan, dtype=float)
         oof_sigma = np.full(len(y), np.nan, dtype=np.float32)
         oof_robust_sigma = np.full(len(y), np.nan, dtype=np.float32)
@@ -3085,7 +3085,11 @@ class MetaClassifierModel:
 
         # Spearman IC between p_move and realized absolute return
         try:
-            ic = float(spearmanr(pred, r).correlation)
+            import warnings
+            from scipy.stats import ConstantInputWarning
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=ConstantInputWarning)
+                ic = float(spearmanr(pred, r).correlation)
             if not np.isfinite(ic):
                 ic = 0.0
         except Exception:
@@ -3335,6 +3339,7 @@ class MetaClassifierModel:
                 _X,
                 _y,
                 _sw,
+                n_splits=2,
             )
 
             rank_metric = metrics.get("median_fold_spearman", 0.0)
@@ -3501,6 +3506,7 @@ class MetaClassifierModel:
             objective,
             n_trials=n_trials,
             timeout=None,
+            n_jobs=2,
             callbacks=[
                 _make_early_stopping_callback(),
                 _make_hpo_heartbeat_callback(

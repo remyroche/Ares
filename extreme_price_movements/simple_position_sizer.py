@@ -30,7 +30,7 @@ from sklearn.linear_model import ElasticNet, Ridge, RidgeClassifier
 from sklearn.preprocessing import RobustScaler
 
 try:
-    from lightgbm import LGBMRegressor
+    from lightgbm import LGBMRegressor, early_stopping, log_evaluation
 except ImportError:
     LGBMRegressor = None  # type: ignore[assignment, misc]
 
@@ -173,6 +173,12 @@ def _extract_strategy_params_payload(
             "source_horizon": _to_float_or_nan(source_horizon),
         }
         row["feature_importance"] = _summarize_strategy_feature_importance(res)
+        _mix_best = res.get("mix_grid_best_", {})
+        if _mix_best:
+            row["sizer_mix_ridge_w"] = float(_mix_best.get("ridge_w", 1.0))
+            row["sizer_mix_booster_w"] = float(_mix_best.get("booster_w", 0.5))
+            row["sizer_mix_conf_mult"] = float(_mix_best.get("conf_mult", 1.0))
+            row["sizer_mix_winner"] = str(_mix_best.get("winner", ""))
         strategies.append(row)
 
     strategies = sorted(
@@ -894,6 +900,45 @@ def _persist_sizer_oof_predictions(
         break
 
 
+def _persist_booster_bundle(
+    data_root: str,
+    run_id: str,
+    strategy_id: str,
+    res: Dict[str, Any],
+) -> None:
+    import pickle
+
+    out_dir = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "booster_bundles"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    safe_id = strategy_id[:80]
+    winner = res.get("mix_grid_best_", {}).get("winner", "")
+    bundle: Dict[str, Any] = {
+        "strategy_id": strategy_id,
+        "winner": winner,
+        "ridge_resid_mean": res.get("ridge_resid_mean_"),
+        "ridge_resid_std": res.get("ridge_resid_std_"),
+    }
+    if winner == "ridge_plus_et":
+        bundle["fold_models"] = res.get("fold_et_models_", [])
+        bundle["feature_keys"] = res.get("et_feature_keys_", [])
+        bundle["calibration_isotonic"] = res.get("calibration_isotonic_")
+    elif winner == "ridge_plus_lgbm":
+        bundle["fold_models"] = res.get("fold_lgbm_models_", [])
+        bundle["feature_keys"] = res.get("lgbm_feature_keys_", [])
+        bundle["calibration_isotonic"] = res.get("calibration_isotonic_lgbm_")
+    elif winner == "ridge_plus_lgbm_clf":
+        bundle["fold_models"] = res.get("fold_lgbm_clf_models_", [])
+        bundle["feature_keys"] = res.get("lgbm_clf_feature_keys_", [])
+        bundle["calibration_isotonic"] = None
+    else:
+        return
+    if not bundle.get("fold_models"):
+        return
+    pkl_path = out_dir / f"{safe_id}.pkl"
+    with open(pkl_path, "wb") as f:
+        pickle.dump(bundle, f)
+
+
 def _persist_head_to_head_winner(
     data_root: str,
     run_id: str,
@@ -962,6 +1007,26 @@ def _persist_head_to_head_winner(
                     "model_source": "ridge_plus_lgbm",
                 }
             )
+        elif winner == "ridge_plus_lgbm_clf":
+            profit_df = res.get("lgbm_clf_profit_proxy_table_", pd.DataFrame())
+            if profit_df.empty:
+                continue
+            opt = (
+                profit_df[profit_df["is_optimal"]].iloc[0]
+                if "is_optimal" in profit_df.columns
+                else profit_df.sort_values("wallet_pnl", ascending=False).iloc[0]
+            )
+            meta = res.get("_strategy_meta_", {})
+            comparison_rows.append(
+                {
+                    "strategy_id": str(strategy_id),
+                    "wallet_pnl": _to_float_or_nan(opt.get("wallet_pnl", np.nan)),
+                    "net_pnl": _to_float_or_nan(opt.get("net_pnl", np.nan)),
+                    "profit_factor": _to_float_or_nan(opt.get("profit_factor", np.nan)),
+                    "hit_rate": _to_float_or_nan(opt.get("hit_rate", np.nan)),
+                    "model_source": "ridge_plus_lgbm_clf",
+                }
+            )
 
     if comparison_rows:
         comp_path = (
@@ -1025,6 +1090,90 @@ def _persist_head_to_head_winner(
         table_path.parent.mkdir(parents=True, exist_ok=True)
         comp_table.to_csv(table_path, index=False)
         logger.info(f"Persisted pipeline comparison table to {table_path}")
+
+
+def _persist_mix_grid(
+    data_root: str,
+    run_id: str,
+    strategy_results: Dict[str, Any],
+) -> None:
+    rows: List[Dict[str, Any]] = []
+    for strategy_id, res in strategy_results.items():
+        _best = res.get("mix_grid_best_", {})
+        if _best:
+            _best["strategy_id"] = strategy_id
+            rows.append(_best)
+        _tbl = res.get("mix_grid_table_", pd.DataFrame())
+        if not _tbl.empty:
+            _tbl = _tbl.copy()
+            _tbl["strategy_id"] = strategy_id
+            rows.extend(_tbl.to_dict("records"))
+    if not rows:
+        return
+    out_path = (
+        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "mix_grid_results.csv"
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(out_path, index=False)
+
+
+def _persist_detailed_model_metrics(
+    data_root: str,
+    run_id: str,
+    strategy_results: Dict[str, Any],
+) -> None:
+    rows: List[Dict[str, Any]] = []
+    for strategy_id, res in strategy_results.items():
+        for model_tag, eval_key, profit_key in [
+            ("ridge", "ridge_sizer_eval_", "ridge_profit_proxy_table_"),
+            ("et", "et_sizer_eval_", "et_profit_proxy_table_"),
+            ("lgbm", "lgbm_sizer_eval_", "lgbm_profit_proxy_table_"),
+            ("lgbm_clf", "lgbm_clf_sizer_eval_", "lgbm_clf_profit_proxy_table_"),
+        ]:
+            eval_dict = res.get(eval_key, {})
+            profit_df = res.get(profit_key, pd.DataFrame())
+            row: Dict[str, Any] = {
+                "strategy_id": strategy_id,
+                "model": model_tag,
+                "spearman_ic": eval_dict.get("spearman_ret", float("nan")),
+                "top_10_mean_net": eval_dict.get("top_10_mean_net", float("nan")),
+                "top_10_hit_rate": eval_dict.get("top_10_hit_rate", float("nan")),
+                "top_20_mean_net": eval_dict.get("top_20_mean_net", float("nan")),
+                "top_20_hit_rate": eval_dict.get("top_20_hit_rate", float("nan")),
+                "monotonicity": eval_dict.get("monotonicity", float("nan")),
+                "false_safe_rate": eval_dict.get("false_safe_rate", float("nan")),
+                "utility_score": eval_dict.get("utility_score", float("nan")),
+            }
+            if not profit_df.empty and "is_optimal" in profit_df.columns:
+                opt = profit_df[profit_df["is_optimal"]].iloc[0]
+                row["optimal_threshold_pct"] = opt.get("threshold_pct", float("nan"))
+                row["optimal_selection_frac"] = opt.get("selection_frac", float("nan"))
+                row["optimal_wallet_pnl"] = opt.get("wallet_pnl", float("nan"))
+                row["optimal_net_pnl"] = opt.get("net_pnl", float("nan"))
+                row["optimal_hit_rate"] = opt.get("hit_rate", float("nan"))
+                row["optimal_pf"] = opt.get("profit_factor", float("nan"))
+                row["optimal_sortino"] = opt.get("sortino", float("nan"))
+                row["optimal_monthly_sortino"] = opt.get(
+                    "monthly_sortino", float("nan")
+                )
+                row["optimal_stability"] = opt.get("stability", float("nan"))
+                row["optimal_mdd"] = opt.get("max_drawdown", float("nan"))
+                row["optimal_trades_per_day"] = opt.get("trades_per_day", float("nan"))
+                row["optimal_pnl_per_trade"] = opt.get(
+                    "pnl_per_trade_pct", float("nan")
+                )
+            rows.append(row)
+    if not rows:
+        return
+    out_path = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "ridge_sizer"
+        / "detailed_model_metrics.csv"
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(out_path, index=False)
 
 
 def _to_float_or_nan(value: Any) -> float:
@@ -1289,6 +1438,8 @@ def clean_and_standardize(
         else:
             X_clean = scaler.transform(X_clean)
 
+    if X_clean.dtype != np.float32:
+        X_clean = X_clean.astype(np.float32)
     return X_clean, fit_medians, scaler, center_1d, scale_1d
 
 
@@ -2070,34 +2221,33 @@ def _lightweight_hpo_pnl_eval(
     if n == 0:
         return results
 
-    for frac in top_fracs:
-        k = max(1, int(n * frac))
-        idx = np.argpartition(scores, -k)[-k:]
-        rets = y_raw_net_return[idx]
-        net_rets = rets - cost_pct
+    frac = 0.05
+    k = max(1, int(n * frac))
+    idx = np.argpartition(scores, -k)[-k:]
+    rets = y_raw_net_return[idx]
+    net_rets = rets - cost_pct
 
-        sorted_args = np.argsort(scores[idx])
-        allocations = np.linspace(0.05, 0.15, len(idx))
-        wallet_rets = (rets[sorted_args] - cost_pct) * allocations
-        wallet_pnl = float(np.sum(wallet_rets))
+    sorted_args = np.argsort(scores[idx])
+    allocations = np.linspace(0.05, 0.15, len(idx))
+    wallet_rets = (rets[sorted_args] - cost_pct) * allocations
+    wallet_pnl = float(np.sum(wallet_rets))
 
-        gross_win = float(np.sum(net_rets[net_rets > 0]))
-        gross_loss = float(np.abs(np.sum(net_rets[net_rets < 0])))
-        pf = (
-            gross_win / gross_loss
-            if gross_loss > 1e-12
-            else (100.0 if gross_win > 0 else 0.0)
-        )
+    gross_win = float(np.sum(net_rets[net_rets > 0]))
+    gross_loss = float(np.abs(np.sum(net_rets[net_rets < 0])))
+    pf = (
+        gross_win / gross_loss
+        if gross_loss > 1e-12
+        else (100.0 if gross_win > 0 else 0.0)
+    )
 
-        ds = net_rets[net_rets < 0]
-        ds_std = float(np.std(ds)) if len(ds) > 1 else 1e-4
-        sortino = float(np.mean(net_rets)) / ds_std if ds_std > 1e-12 else 0.0
+    ds = net_rets[net_rets < 0]
+    ds_std = float(np.std(ds)) if len(ds) > 1 else 1e-4
+    sortino = float(np.mean(net_rets)) / ds_std if ds_std > 1e-12 else 0.0
 
-        label = f"{frac:.3f}"
-        results[f"wallet_pnl_{label}"] = wallet_pnl
-        results[f"pf_{label}"] = pf
-        results[f"sortino_{label}"] = sortino
-        results[f"tpd_{label}"] = float(len(rets)) / n_days if n_days > 0 else 0.0
+    results["wallet_pnl_0.050"] = wallet_pnl
+    results["pf_0.050"] = pf
+    results["sortino_0.050"] = sortino
+    results["tpd_0.050"] = float(len(rets)) / n_days if n_days > 0 else 0.0
 
     return results
 
@@ -2301,11 +2451,22 @@ def _mdi_select_features(
     feature_names: List[str],
     model_factory: Callable[[], Any],
     n_max: int = 60,
-    n_min: int = 20,
+    n_min: int = 10,
     cumulative_threshold: float = 0.99,
 ) -> List[str]:
+    _valid_mask = np.isfinite(X).all(axis=1) & np.isfinite(y)
+    X_clean, y_clean = X[_valid_mask], y[_valid_mask]
+    n_mdi = min(len(X_clean), 15000)
+    if n_mdi < len(X_clean):
+        _mdi_rng = np.random.RandomState(42)
+        _mdi_idx = _mdi_rng.choice(len(X_clean), n_mdi, replace=False)
+        X_mdi, y_mdi = X_clean[_mdi_idx], y_clean[_mdi_idx]
+    else:
+        X_mdi, y_mdi = X_clean, y_clean
+    if len(X_mdi) < 100:
+        return list(feature_names[:n_min])
     preliminary = model_factory()
-    preliminary.fit(X, y)
+    preliminary.fit(X_mdi, y_mdi)
     if not hasattr(preliminary, "feature_importances_"):
         return list(feature_names)
     importances = np.asarray(preliminary.feature_importances_, dtype=np.float64)
@@ -2442,18 +2603,39 @@ def run_simple_position_sizer(
     ridge_importance_df = pd.DataFrame()
     ridge_profit_proxy_df = pd.DataFrame()
 
-    _hpo_subsample_rate = 0.5
+    _hpo_max_rows_per_fold = 12000
     _hpo_rng = np.random.RandomState(42)
     _hpo_tr_idx_subs: List[np.ndarray] = []
     for _tr_idx, _te_idx in splits:
-        if len(_tr_idx) > 200:
-            n_sub = max(200, int(len(_tr_idx) * _hpo_subsample_rate))
-            _hpo_tr_idx_subs.append(_hpo_rng.choice(_tr_idx, n_sub, replace=False))
+        if len(_tr_idx) > _hpo_max_rows_per_fold:
+            _hpo_tr_idx_subs.append(
+                _hpo_rng.choice(_tr_idx, _hpo_max_rows_per_fold, replace=False)
+            )
         else:
             _hpo_tr_idx_subs.append(_tr_idx)
 
     if use_ridge_head_sizer and used_keys:
         X_heads = np.column_stack([feature_dict[k] for k in used_keys])
+        _n_constant = 0
+        _n_near_constant = 0
+        for _fi, _fk in enumerate(used_keys):
+            _col = X_heads[:, _fi]
+            _std = float(np.nanstd(_col))
+            _n_uniq = int(len(np.unique(_col[~np.isnan(_col)])))
+            if _std < 1e-12 or _n_uniq <= 1:
+                tprint(
+                    f"  WARNING: feature '{_fk}' is constant (std={_std:.2e}, unique={_n_uniq})"
+                )
+                _n_constant += 1
+            elif _n_uniq <= 3:
+                tprint(
+                    f"  WARNING: feature '{_fk}' is near-constant (std={_std:.4f}, unique={_n_uniq})"
+                )
+                _n_near_constant += 1
+        if _n_constant > 0 or _n_near_constant > 0:
+            tprint(
+                f"  Feature quality: {_n_constant} constant, {_n_near_constant} near-constant out of {len(used_keys)} features"
+            )
         best_ridge_utility = -np.inf
         best_ridge_alpha = 1.0
         best_ridge_l1_ratio = 0.0
@@ -2475,7 +2657,7 @@ def run_simple_position_sizer(
             )
             ridge_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
 
-        ridge_trials = 40
+        ridge_trials = 5
         ridge_sampler = TPESampler(seed=42, multivariate=True, group=True)
         ridge_pruner = SuccessiveHalvingPruner(
             min_resource=1,
@@ -2551,9 +2733,8 @@ def run_simple_position_sizer(
             l1_ratio = float(trial.suggest_categorical("l1_ratio", ridge_l1_choices))
 
             # Per-fold metrics storage
-            fold_pnl_10: List[float] = []
-            fold_pnl_20: List[float] = []
-            fold_sortino_10: List[float] = []
+            fold_pnl_5: List[float] = []
+            fold_sortino_5: List[float] = []
             oof_preds_buf = np.full(len(y_raw_net_return), np.nan, dtype=np.float32)
 
             for fold_idx in range(len(splits)):
@@ -2582,48 +2763,36 @@ def run_simple_position_sizer(
                 lw = _lightweight_hpo_pnl_eval(
                     fold_preds,
                     y_raw_net_return[te_idx],
-                    top_fracs=[0.10, 0.20],
+                    top_fracs=[0.05],
                     cost_pct=cost_pct,
                     n_days=n_days_fold,
                 )
-                if f"wallet_pnl_0.100" in lw:
-                    fold_pnl_10.append(lw["wallet_pnl_0.100"])
-                if f"wallet_pnl_0.200" in lw:
-                    fold_pnl_20.append(lw["wallet_pnl_0.200"])
-                if f"sortino_0.100" in lw:
-                    fold_sortino_10.append(lw["sortino_0.100"])
+                if "wallet_pnl_0.050" in lw:
+                    fold_pnl_5.append(lw["wallet_pnl_0.050"])
+                if "sortino_0.050" in lw:
+                    fold_sortino_5.append(lw["sortino_0.050"])
 
                 if trial is not None and fold_idx >= len(splits) // 2:
                     trial.report(
-                        float(np.mean(fold_pnl_10)) if fold_pnl_10 else -1e9,
+                        float(np.mean(fold_pnl_5)) if fold_pnl_5 else -1e9,
                         step=fold_idx,
                     )
                     if trial.should_prune():
                         raise optuna.TrialPruned()
 
-            if not fold_pnl_10:
+            if not fold_pnl_5:
                 return -1e9
 
-            mean_pnl_10 = float(np.mean(fold_pnl_10))
-            std_pnl_10 = float(np.std(fold_pnl_10))
-            mean_pnl_20 = float(np.mean(fold_pnl_20)) if fold_pnl_20 else 0.0
-            std_pnl_20 = float(np.std(fold_pnl_20)) if len(fold_pnl_20) > 1 else 0.0
-            sortino_10 = float(np.mean(fold_sortino_10)) if fold_sortino_10 else 0.0
+            mean_pnl_5 = float(np.mean(fold_pnl_5))
+            std_pnl_5 = float(np.std(fold_pnl_5))
+            sortino_5 = float(np.mean(fold_sortino_5)) if fold_sortino_5 else 0.0
 
-            composite = (
-                0.70 * mean_pnl_10
-                + 0.30 * mean_pnl_20
-                - 0.50 * std_pnl_10
-                - 0.20 * std_pnl_20
-                + 0.15 * sortino_10
-            )
+            composite = 0.75 * mean_pnl_5 - 0.50 * std_pnl_5 + 0.25 * sortino_5
 
             trial.set_user_attr("feature_count", int(X_heads.shape[1]))
-            trial.set_user_attr("mean_pnl_10", mean_pnl_10)
-            trial.set_user_attr("std_pnl_10", std_pnl_10)
-            trial.set_user_attr("mean_pnl_20", mean_pnl_20)
-            trial.set_user_attr("std_pnl_20", std_pnl_20)
-            trial.set_user_attr("sortino_10", sortino_10)
+            trial.set_user_attr("mean_pnl_5", mean_pnl_5)
+            trial.set_user_attr("std_pnl_5", std_pnl_5)
+            trial.set_user_attr("sortino_5", sortino_5)
             trial.set_user_attr("composite_score", composite)
 
             return float(composite)
@@ -2655,6 +2824,7 @@ def run_simple_position_sizer(
                 selection="cyclic",
             )
 
+        tprint("  Starting ElasticNet OOF refit...")
         (
             best_ridge_preds,
             best_ridge_importance,
@@ -2667,6 +2837,7 @@ def run_simple_position_sizer(
             feature_names=used_keys,
             calibration_method=None,
         )
+        tprint("  ElasticNet OOF refit complete.")
         best_ridge_metrics = evaluate_signal(
             f"ElasticNet_Head_Sizer(a={best_ridge_alpha},l1={best_ridge_l1_ratio})",
             best_ridge_preds,
@@ -2770,6 +2941,7 @@ def run_simple_position_sizer(
     ):
         if "X_heads" not in dir() or X_heads is None:
             X_heads = np.column_stack([feature_dict[k] for k in used_keys])
+        tprint("  Starting Barrier Classifier OOF...")
         barrier_clf = SimpleHeadBarrierClassifier()
         (
             barrier_clf_oof_proba,
@@ -2800,6 +2972,9 @@ def run_simple_position_sizer(
     lgbm_sizer_eval: Dict[str, Any] = {}
     lgbm_importance_df = pd.DataFrame()
     lgbm_profit_proxy_df = pd.DataFrame()
+    lgbm_clf_sizer_eval: Dict[str, Any] = {}
+    lgbm_clf_importance_df = pd.DataFrame()
+    lgbm_clf_profit_proxy_df = pd.DataFrame()
 
     _use_any_booster = (use_et_head_sizer or use_lgbm_head_sizer) and used_keys
 
@@ -2872,7 +3047,7 @@ def run_simple_position_sizer(
             )
             et_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
 
-        et_trials = 150
+        et_trials = 5
         et_sampler = TPESampler(seed=42, multivariate=True, group=True)
         et_pruner = SuccessiveHalvingPruner(
             min_resource=1,
@@ -2920,19 +3095,19 @@ def run_simple_position_sizer(
 
             leaf_support = np.zeros(n_samples, dtype=np.float32)
             centroid_dist = np.zeros(n_samples, dtype=np.float32)
-            for t_idx, tree in enumerate(model.estimators_):
+            for t_idx in range(n_trees):
                 leaves = leaf_ids[:, t_idx]
-                unique_leaves = np.unique(leaves)
-                leaf_counts = np.zeros(n_samples, dtype=np.float32)
-                leaf_means = np.zeros(n_samples, dtype=np.float32)
-                for lf in unique_leaves:
-                    mask = leaves == lf
-                    count = np.sum(mask)
-                    mean_val = np.mean(tree_preds[mask, t_idx]) if count > 0 else 0.0
-                    leaf_counts[mask] = float(count)
-                    leaf_means[mask] = float(mean_val)
-                leaf_support += leaf_counts
-                centroid_dist += np.abs(tree_preds[:, t_idx] - leaf_means)
+                leaves_offset = leaves - leaves.min()
+                n_bins = int(leaves_offset.max()) + 1
+                counts = np.bincount(leaves_offset, minlength=n_bins).astype(np.float32)
+                sums = np.bincount(
+                    leaves_offset, weights=tree_preds[:, t_idx], minlength=n_bins
+                )
+                leaf_means = np.where(counts > 0, sums / counts, 0.0).astype(np.float32)
+                sample_counts = counts[leaves_offset]
+                sample_means = leaf_means[leaves_offset]
+                leaf_support += sample_counts
+                centroid_dist += np.abs(tree_preds[:, t_idx] - sample_means)
             leaf_support /= n_trees
             centroid_dist /= n_trees
 
@@ -2982,9 +3157,8 @@ def run_simple_position_sizer(
                 int(np.ceil(min_samples_split_frac * X_et.shape[0])),
             )
 
-            fold_pnl_10: List[float] = []
-            fold_pnl_20: List[float] = []
-            fold_sortino_10: List[float] = []
+            fold_pnl_5: List[float] = []
+            fold_sortino_5: List[float] = []
 
             for fold_idx in range(len(splits)):
                 sub_tr, te_idx, X_tr_clean, X_te_clean = et_sub_scaled_folds[fold_idx]
@@ -3037,48 +3211,36 @@ def run_simple_position_sizer(
                 lw = _lightweight_hpo_pnl_eval(
                     raw_conf,
                     y_raw_net_return[te_idx],
-                    top_fracs=[0.10, 0.20],
+                    top_fracs=[0.05],
                     cost_pct=cost_pct,
                     n_days=n_days_fold,
                 )
-                if "wallet_pnl_0.100" in lw:
-                    fold_pnl_10.append(lw["wallet_pnl_0.100"])
-                if "wallet_pnl_0.200" in lw:
-                    fold_pnl_20.append(lw["wallet_pnl_0.200"])
-                if "sortino_0.100" in lw:
-                    fold_sortino_10.append(lw["sortino_0.100"])
+                if "wallet_pnl_0.050" in lw:
+                    fold_pnl_5.append(lw["wallet_pnl_0.050"])
+                if "sortino_0.050" in lw:
+                    fold_sortino_5.append(lw["sortino_0.050"])
 
                 if trial is not None and fold_idx >= len(splits) // 2:
                     trial.report(
-                        float(np.mean(fold_pnl_10)) if fold_pnl_10 else -1e9,
+                        float(np.mean(fold_pnl_5)) if fold_pnl_5 else -1e9,
                         step=fold_idx,
                     )
                     if trial.should_prune():
                         raise optuna.TrialPruned()
 
-            if not fold_pnl_10:
+            if not fold_pnl_5:
                 return -1e9
 
-            mean_pnl_10 = float(np.mean(fold_pnl_10))
-            std_pnl_10 = float(np.std(fold_pnl_10))
-            mean_pnl_20 = float(np.mean(fold_pnl_20)) if fold_pnl_20 else 0.0
-            std_pnl_20 = float(np.std(fold_pnl_20)) if len(fold_pnl_20) > 1 else 0.0
-            sortino_10 = float(np.mean(fold_sortino_10)) if fold_sortino_10 else 0.0
+            mean_pnl_5 = float(np.mean(fold_pnl_5))
+            std_pnl_5 = float(np.std(fold_pnl_5))
+            sortino_5 = float(np.mean(fold_sortino_5)) if fold_sortino_5 else 0.0
 
-            composite = (
-                0.70 * mean_pnl_10
-                + 0.30 * mean_pnl_20
-                - 0.50 * std_pnl_10
-                - 0.20 * std_pnl_20
-                + 0.15 * sortino_10
-            )
+            composite = 0.75 * mean_pnl_5 - 0.50 * std_pnl_5 + 0.25 * sortino_5
 
             trial.set_user_attr("feature_count", int(X_heads.shape[1]))
-            trial.set_user_attr("mean_pnl_10", mean_pnl_10)
-            trial.set_user_attr("std_pnl_10", std_pnl_10)
-            trial.set_user_attr("mean_pnl_20", mean_pnl_20)
-            trial.set_user_attr("std_pnl_20", std_pnl_20)
-            trial.set_user_attr("sortino_10", sortino_10)
+            trial.set_user_attr("mean_pnl_5", mean_pnl_5)
+            trial.set_user_attr("std_pnl_5", std_pnl_5)
+            trial.set_user_attr("sortino_5", sortino_5)
             trial.set_user_attr("composite_score", composite)
 
             return float(composite)
@@ -3147,6 +3309,9 @@ def run_simple_position_sizer(
         for fold_idx, (tr_idx, te_idx) in enumerate(splits):
             if len(tr_idx) == 0 or len(te_idx) == 0:
                 continue
+            tprint(
+                f"  ET refit fold {fold_idx+1}/{len(splits)}: train={len(tr_idx)} test={len(te_idx)}"
+            )
             X_tr, y_tr = X_et[tr_idx], y_resid_target[tr_idx]
             X_te = X_et[te_idx]
             if X_tr.shape[0] == 0 or X_te.shape[0] == 0:
@@ -3316,6 +3481,7 @@ def run_simple_position_sizer(
         results["ridge_resid_mean_"] = ridge_resid_mean
         results["ridge_resid_std_"] = ridge_resid_std
         results["fold_et_models_"] = fold_et_models
+        results["et_feature_keys_"] = et_selected_keys
         results["et_best_params_"] = best_et_params
         combined_et_objective = best_et_objective
         if not best_combo or combined_et_objective > best_combo_objective:
@@ -3374,7 +3540,7 @@ def run_simple_position_sizer(
             )
             lgbm_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
 
-        lgbm_trials = 150
+        lgbm_trials = 5
         lgbm_sampler = TPESampler(seed=42, multivariate=True, group=True)
         lgbm_pruner = SuccessiveHalvingPruner(
             min_resource=1,
@@ -3391,31 +3557,63 @@ def run_simple_position_sizer(
             y_train_raw: np.ndarray,
         ) -> np.ndarray:
             n_samples = X.shape[0]
-            leaf_preds = model.predict(X_raw, pred_leaf=True)
+            leaf_preds = model.predict(X_raw, pred_leaf=True).astype(np.int32)
             n_trees = leaf_preds.shape[1]
-            booster = model.booster_
 
             leaf_counts_arr = np.zeros((n_samples, n_trees), dtype=np.float32)
             leaf_var_arr = np.zeros((n_samples, n_trees), dtype=np.float32)
             tree_preds_arr = np.zeros((n_samples, n_trees), dtype=np.float32)
             for t_idx in range(n_trees):
                 leaf_ids = leaf_preds[:, t_idx]
-                unique_leaves = np.unique(leaf_ids)
-                for lf in unique_leaves:
-                    mask = leaf_ids == lf
-                    count = float(np.sum(mask))
-                    train_leaf_mask = leaf_preds_train_cache[:, t_idx] == lf
-                    if np.sum(train_leaf_mask) > 1:
-                        lv = float(np.var(y_train_raw[train_leaf_mask]))
-                    else:
-                        lv = 0.0
-                    leaf_counts_arr[mask, t_idx] = count
-                    leaf_var_arr[mask, t_idx] = lv
-                    tree_preds_arr[mask, t_idx] = float(
-                        np.mean(tree_preds_train_cache[train_leaf_mask, t_idx])
-                        if np.sum(train_leaf_mask) > 0
-                        else 0.0
-                    )
+                train_leaf_ids = leaf_preds_train_cache[:, t_idx]
+                leaves_offset = leaf_ids - leaf_ids.min()
+                n_bins = int(leaves_offset.max()) + 1
+                counts = np.bincount(leaves_offset, minlength=n_bins).astype(np.float32)
+                sample_counts = counts[leaves_offset]
+                leaf_counts_arr[:, t_idx] = sample_counts
+
+                train_offset = train_leaf_ids - train_leaf_ids.min()
+                train_n_bins = int(train_offset.max()) + 1
+                train_counts = np.bincount(train_offset, minlength=train_n_bins).astype(
+                    np.float64
+                )
+                train_sum = np.bincount(
+                    train_offset,
+                    weights=y_train_raw.astype(np.float64),
+                    minlength=train_n_bins,
+                )
+                train_sq_sum = np.bincount(
+                    train_offset,
+                    weights=(y_train_raw.astype(np.float64)) ** 2,
+                    minlength=train_n_bins,
+                )
+                train_mean = np.where(train_counts > 0, train_sum / train_counts, 0.0)
+                train_var = np.where(
+                    train_counts > 1,
+                    train_sq_sum / train_counts - train_mean**2,
+                    0.0,
+                ).astype(np.float32)
+                train_pred_sum = np.bincount(
+                    train_offset,
+                    weights=tree_preds_train_cache[:, t_idx].astype(np.float64),
+                    minlength=train_n_bins,
+                )
+                train_pred_mean = np.where(
+                    train_counts > 0, train_pred_sum / train_counts, 0.0
+                ).astype(np.float32)
+
+                remap = np.zeros(n_bins, dtype=np.int32)
+                leaf_min = int(leaf_ids.min())
+                train_min = int(train_leaf_ids.min())
+                valid_bins = np.arange(n_bins) + leaf_min
+                in_range = (valid_bins >= train_min) & (
+                    valid_bins < train_min + train_n_bins
+                )
+                remap[in_range] = valid_bins[in_range] - train_min
+                remap[~in_range] = 0
+
+                leaf_var_arr[:, t_idx] = train_var[remap[leaves_offset]]
+                tree_preds_arr[:, t_idx] = train_pred_mean[remap[leaves_offset]]
 
             n_leaf_avg = np.mean(leaf_counts_arr, axis=1)
             centroid_dist = np.mean(
@@ -3446,24 +3644,27 @@ def run_simple_position_sizer(
         def _lgbm_objective(trial: optuna.trial.Trial) -> float:
             n_estimators = 3000
             num_leaves = int(trial.suggest_int("num_leaves", 8, 128))
-            max_depth = int(trial.suggest_categorical("max_depth", [4, 5, 6]))
-            min_data_frac = float(trial.suggest_float("min_data_frac", 0.01, 0.05))
+            max_depth = int(trial.suggest_categorical("max_depth", [2, 3, 4]))
+            min_data_frac = float(trial.suggest_float("min_data_frac", 0.005, 0.03))
             min_data_in_leaf = max(1, int(np.ceil(min_data_frac * X_lgbm.shape[0])))
             min_sum_hessian = float(
                 trial.suggest_float("min_sum_hessian", 1e-3, 10.0, log=True)
             )
-            feature_fraction = float(trial.suggest_float("feature_fraction", 0.8, 1.0))
+            feature_fraction = float(trial.suggest_float("feature_fraction", 0.4, 1.0))
             bagging_fraction = float(trial.suggest_float("bagging_fraction", 0.7, 1.0))
             bagging_freq = int(trial.suggest_int("bagging_freq", 0, 10))
-            lambda_l1 = float(trial.suggest_float("lambda_l1", 1.0, 10.0, log=True))
-            lambda_l2 = float(trial.suggest_float("lambda_l2", 1.0, 20.0, log=True))
+            _lgbm_hpo_rng = np.random.RandomState(42 + trial.number)
+            lambda_l1 = float(10.0 ** _lgbm_hpo_rng.uniform(-2.0, np.log10(5.0)))
+            lambda_l2 = float(10.0 ** _lgbm_hpo_rng.uniform(-2.0, np.log10(10.0)))
             min_gain_to_split = float(
                 trial.suggest_float("min_gain_to_split", 1e-4, 1e-1, log=True)
             )
 
-            fold_pnl_10: List[float] = []
-            fold_pnl_20: List[float] = []
-            fold_sortino_10: List[float] = []
+            fold_pnl_5: List[float] = []
+            fold_sortino_5: List[float] = []
+            fold_ic_30: List[float] = []
+
+            _lgbm_es_rounds = 50
 
             for fold_idx in range(len(splits)):
                 (
@@ -3476,6 +3677,10 @@ def run_simple_position_sizer(
                     continue
                 y_tr = y_resid_target[sub_tr]
                 y_te = y_raw_net_return[te_idx]
+
+                _es_split = max(1, len(sub_tr) // 5)
+                _es_tr = sub_tr[:-_es_split]
+                _es_val = sub_tr[-_es_split:]
 
                 model = LGBMRegressor(
                     n_estimators=n_estimators,
@@ -3495,11 +3700,17 @@ def run_simple_position_sizer(
                     verbose=-1,
                 )
                 model.fit(
-                    X_tr_clean,
-                    y_tr,
+                    X_tr_clean[:-_es_split],
+                    y_tr[:-_es_split],
+                    eval_set=[(X_tr_clean[-_es_split:], y_tr[-_es_split:])],
+                    callbacks=[
+                        early_stopping(_lgbm_es_rounds, verbose=False),
+                        log_evaluation(period=0),
+                    ],
                 )
+                _best_it = getattr(model, "best_iteration_", n_estimators - 1) + 1
                 lgbm_fold_preds = np.asarray(
-                    model.predict(X_te_clean), dtype=np.float32
+                    model.predict(X_te_clean, num_iteration=_best_it), dtype=np.float32
                 )
 
                 if ridge_oof_available:
@@ -3527,48 +3738,57 @@ def run_simple_position_sizer(
                 lw = _lightweight_hpo_pnl_eval(
                     raw_conf,
                     y_te,
-                    top_fracs=[0.10, 0.20],
+                    top_fracs=[0.05],
                     cost_pct=cost_pct,
                     n_days=n_days_fold,
                 )
-                if "wallet_pnl_0.100" in lw:
-                    fold_pnl_10.append(lw["wallet_pnl_0.100"])
-                if "wallet_pnl_0.200" in lw:
-                    fold_pnl_20.append(lw["wallet_pnl_0.200"])
-                if "sortino_0.100" in lw:
-                    fold_sortino_10.append(lw["sortino_0.100"])
+                if "wallet_pnl_0.050" in lw:
+                    fold_pnl_5.append(lw["wallet_pnl_0.050"])
+                if "sortino_0.050" in lw:
+                    fold_sortino_5.append(lw["sortino_0.050"])
+
+                _combined_raw = raw_conf
+                k_30 = max(1, int(len(_combined_raw) * 0.30))
+                _top_idx = np.argpartition(_combined_raw, -k_30)[-k_30:]
+                try:
+                    _ic_30, _ = spearmanr(
+                        _combined_raw[_top_idx],
+                        y_te[_top_idx],
+                        nan_policy="omit",
+                    )
+                    fold_ic_30.append(float(_ic_30) if pd.notna(_ic_30) else 0.0)
+                except Exception:
+                    fold_ic_30.append(0.0)
 
                 if trial is not None and fold_idx >= len(splits) // 2:
                     trial.report(
-                        float(np.mean(fold_pnl_10)) if fold_pnl_10 else -1e9,
+                        float(np.mean(fold_pnl_5)) if fold_pnl_5 else -1e9,
                         step=fold_idx,
                     )
                     if trial.should_prune():
                         raise optuna.TrialPruned()
 
-            if not fold_pnl_10:
+            if not fold_pnl_5:
                 return -1e9
 
-            mean_pnl_10 = float(np.mean(fold_pnl_10))
-            std_pnl_10 = float(np.std(fold_pnl_10))
-            mean_pnl_20 = float(np.mean(fold_pnl_20)) if fold_pnl_20 else 0.0
-            std_pnl_20 = float(np.std(fold_pnl_20)) if len(fold_pnl_20) > 1 else 0.0
-            sortino_10 = float(np.mean(fold_sortino_10)) if fold_sortino_10 else 0.0
+            mean_pnl_5 = float(np.mean(fold_pnl_5))
+            std_pnl_5 = float(np.std(fold_pnl_5))
+            sortino_5 = float(np.mean(fold_sortino_5)) if fold_sortino_5 else 0.0
+            mean_ic_30 = float(np.mean(fold_ic_30)) if fold_ic_30 else 0.0
 
             composite = (
-                0.70 * mean_pnl_10
-                + 0.30 * mean_pnl_20
-                - 0.50 * std_pnl_10
-                - 0.20 * std_pnl_20
-                + 0.15 * sortino_10
+                0.50 * mean_pnl_5
+                - 0.30 * std_pnl_5
+                + 0.17 * sortino_5
+                + 0.33 * mean_ic_30
             )
 
             trial.set_user_attr("feature_count", int(X_lgbm.shape[1]))
-            trial.set_user_attr("mean_pnl_10", mean_pnl_10)
-            trial.set_user_attr("std_pnl_10", std_pnl_10)
-            trial.set_user_attr("mean_pnl_20", mean_pnl_20)
-            trial.set_user_attr("std_pnl_20", std_pnl_20)
-            trial.set_user_attr("sortino_10", sortino_10)
+            trial.set_user_attr("best_n_estimators", _best_it)
+            trial.set_user_attr("mean_pnl_5", mean_pnl_5)
+            trial.set_user_attr("std_pnl_5", std_pnl_5)
+            trial.set_user_attr("sortino_5", sortino_5)
+            trial.set_user_attr("mean_ic_30", mean_ic_30)
             trial.set_user_attr("composite_score", composite)
 
             return float(composite)
@@ -3586,8 +3806,14 @@ def run_simple_position_sizer(
         if lgbm_study.best_trial is not None:
             best_lgbm_params = dict(lgbm_study.best_trial.params)
 
+        _lgbm_best_n_estimators = 3000
+        if lgbm_study.best_trial is not None:
+            _lgbm_best_n_estimators = int(
+                lgbm_study.best_trial.user_attrs.get("best_n_estimators", 3000)
+            )
+
         def _best_lgbm_model_factory() -> LGBMRegressor:
-            _n_est = 3000
+            _n_est = _lgbm_best_n_estimators
             _nl = int(best_lgbm_params.get("num_leaves", 31))
             _md = int(best_lgbm_params.get("max_depth", 5))
             _mdf = float(best_lgbm_params.get("min_data_frac", 0.02))
@@ -3623,6 +3849,9 @@ def run_simple_position_sizer(
         for fold_idx, (tr_idx, te_idx) in enumerate(splits):
             if len(tr_idx) == 0 or len(te_idx) == 0:
                 continue
+            tprint(
+                f"  LGBM refit fold {fold_idx+1}/{len(splits)}: train={len(tr_idx)} test={len(te_idx)}"
+            )
             X_tr, y_tr = X_lgbm[tr_idx], y_resid_target[tr_idx]
             X_te = X_lgbm[te_idx]
             if X_tr.shape[0] == 0 or X_te.shape[0] == 0:
@@ -3640,21 +3869,45 @@ def run_simple_position_sizer(
             )
 
             model = _best_lgbm_model_factory()
-            model.fit(X_tr_clean, y_tr)
-            preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
+            _es_split = max(1, len(tr_idx) // 5)
+            model.fit(
+                X_tr_clean[:-_es_split],
+                y_tr[:-_es_split],
+                eval_set=[(X_tr_clean[-_es_split:], y_tr[-_es_split:])],
+                callbacks=[
+                    early_stopping(50, verbose=False),
+                    log_evaluation(period=0),
+                ],
+            )
+            _refit_best_it = (
+                getattr(model, "best_iteration_", _lgbm_best_n_estimators - 1) + 1
+            )
+            preds = np.asarray(
+                model.predict(X_te_clean, num_iteration=_refit_best_it),
+                dtype=np.float32,
+            )
             lgbm_oof_preds_raw[te_idx] = preds
             observed_mask_lgbm[te_idx] = True
 
-            leaf_preds_train_cache = model.predict(X_tr_clean, pred_leaf=True)
+            leaf_preds_train_cache = model.predict(X_tr_clean, pred_leaf=True).astype(
+                np.int32
+            )
+            n_trees_actual = leaf_preds_train_cache.shape[1]
+            _max_trees_for_cache = 100
+            _tree_step = max(1, n_trees_actual // _max_trees_for_cache)
+            _tree_indices = list(range(0, n_trees_actual, _tree_step))
             tree_preds_train_cache = np.zeros(
-                (X_tr_clean.shape[0], leaf_preds_train_cache.shape[1]),
+                (X_tr_clean.shape[0], n_trees_actual),
                 dtype=np.float32,
             )
             booster = model.booster_
-            for t_idx in range(leaf_preds_train_cache.shape[1]):
-                tree_preds_train_cache[:, t_idx] = model.predict(X_tr_clean).astype(
-                    np.float32
+            prev = np.zeros(X_tr_clean.shape[0], dtype=np.float64)
+            for t_idx in _tree_indices:
+                cur = booster.predict(X_tr_clean, num_iteration=t_idx + 1).astype(
+                    np.float64
                 )
+                tree_preds_train_cache[:, t_idx] = (cur - prev).astype(np.float32)
+                prev = cur.copy()
 
             conf = _compute_lgbm_confidence(model, X_te_clean, X_te, y_tr)
             lgbm_confidence_all[te_idx] = conf
@@ -3796,6 +4049,7 @@ def run_simple_position_sizer(
         results["total_confidence_lgbm_"] = best_lgbm_preds
         results["calibration_isotonic_lgbm_"] = calibration_isotonic_lgbm
         results["fold_lgbm_models_"] = fold_lgbm_models
+        results["lgbm_feature_keys_"] = lgbm_selected_keys
         results["lgbm_best_params_"] = best_lgbm_params
         combined_lgbm_objective = best_lgbm_objective
         if not best_combo or combined_lgbm_objective > best_combo_objective:
@@ -3807,6 +4061,435 @@ def run_simple_position_sizer(
                 best_simple_score_name = "RidgePlusLGBM_TotalConfidence"
     elif use_lgbm_head_sizer and LGBMRegressor is None:
         tprint("  LGBM skipped: lightgbm not installed")
+
+    # --- LGBM Classifier (3-class Ridge residual direction) ---
+    if (
+        use_lgbm_head_sizer
+        and LGBMRegressor is not None
+        and ridge_oof_available
+        and _use_any_booster
+        and len(used_keys) > 0
+    ):
+        from lightgbm import LGBMClassifier as _LGBMClassifier
+
+        tprint("  LGBM Classifier: building 3-class residual labels...")
+        _resid_atr = ridge_resid / (_atr_safe + 1e-8)
+        _p35 = float(np.percentile(_resid_atr, 35))
+        _p65 = float(np.percentile(_resid_atr, 65))
+        _clf_y = np.ones(len(_resid_atr), dtype=np.int32)
+        _clf_y[_resid_atr < _p35] = 0
+        _clf_y[_resid_atr >= _p65] = 2
+        tprint(
+            f"  LGBM Classifier labels: under={np.sum(_clf_y == 0)} "
+            f"ok={np.sum(_clf_y == 1)} over={np.sum(_clf_y == 2)}"
+        )
+
+        lgbm_clf_selected_keys = _mdi_select_features(
+            X_heads,
+            _clf_y.astype(np.float32),
+            used_keys,
+            model_factory=lambda: ExtraTreesRegressor(
+                n_estimators=200,
+                max_depth=5,
+                random_state=42,
+                n_jobs=2,
+            ),
+        )
+        _lgbm_clf_idx = [
+            used_keys.index(k) for k in lgbm_clf_selected_keys if k in used_keys
+        ]
+        X_lgbm_clf = X_heads[:, _lgbm_clf_idx]
+        tprint(
+            f"  LGBM Clf MDI: {len(lgbm_clf_selected_keys)}/{len(used_keys)} features retained"
+        )
+
+        lgbm_clf_sub_scaled_folds: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        for i, (tr_idx, te_idx) in enumerate(splits):
+            sub_tr = _hpo_tr_idx_subs[i]
+            X_sub = X_lgbm_clf[sub_tr]
+            X_sub_clean, med, sc, c1d, s1d = clean_and_standardize(X_sub)
+            X_te_clean, _, _, _, _ = clean_and_standardize(
+                X_lgbm_clf[te_idx],
+                fit_medians=med,
+                scaler=sc,
+                center_1d=c1d,
+                scale_1d=s1d,
+            )
+            lgbm_clf_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
+
+        lgbm_clf_trials = 5
+        lgbm_clf_sampler = TPESampler(seed=42, multivariate=True, group=True)
+        lgbm_clf_study = optuna.create_study(
+            direction="maximize",
+            sampler=lgbm_clf_sampler,
+            pruner=SuccessiveHalvingPruner(min_resource=1, reduction_factor=3),
+        )
+
+        def _lgbm_clf_objective(trial: optuna.trial.Trial) -> float:
+            n_estimators = 3000
+            num_leaves = int(trial.suggest_int("num_leaves", 8, 64))
+            max_depth = int(trial.suggest_categorical("max_depth", [2, 3, 4]))
+            min_data_frac = float(trial.suggest_float("min_data_frac", 0.005, 0.03))
+            min_data_in_leaf = max(1, int(np.ceil(min_data_frac * X_lgbm_clf.shape[0])))
+            feature_fraction = float(trial.suggest_float("feature_fraction", 0.4, 1.0))
+            bagging_fraction = float(trial.suggest_float("bagging_fraction", 0.7, 1.0))
+            bagging_freq = int(trial.suggest_int("bagging_freq", 1, 10))
+            _rng_lc = np.random.RandomState(42 + trial.number)
+            lambda_l1 = float(10.0 ** _rng_lc.uniform(-2.0, np.log10(5.0)))
+            lambda_l2 = float(10.0 ** _rng_lc.uniform(-2.0, np.log10(10.0)))
+
+            fold_pnl_5: List[float] = []
+            fold_sortino_5: List[float] = []
+            fold_ic_30: List[float] = []
+
+            for fold_idx in range(len(splits)):
+                sub_tr, te_idx, X_tr_clean, X_te_clean = lgbm_clf_sub_scaled_folds[
+                    fold_idx
+                ]
+                if len(sub_tr) == 0 or len(te_idx) == 0:
+                    continue
+                y_tr = _clf_y[sub_tr]
+                y_te = y_raw_net_return[te_idx]
+
+                _es_split = max(1, len(sub_tr) // 5)
+                model = _LGBMClassifier(
+                    n_estimators=n_estimators,
+                    num_leaves=num_leaves,
+                    max_depth=max_depth,
+                    min_child_samples=min_data_in_leaf,
+                    colsample_bytree=feature_fraction,
+                    subsample=bagging_fraction,
+                    subsample_freq=bagging_freq,
+                    reg_alpha=lambda_l1,
+                    reg_lambda=lambda_l2,
+                    objective="multiclass",
+                    num_class=3,
+                    random_state=42,
+                    n_jobs=2,
+                    verbose=-1,
+                )
+                model.fit(
+                    X_tr_clean[:-_es_split],
+                    y_tr[:-_es_split],
+                    eval_set=[(X_tr_clean[-_es_split:], y_tr[-_es_split:])],
+                    callbacks=[
+                        early_stopping(50, verbose=False),
+                        log_evaluation(period=0),
+                    ],
+                )
+                _best_it = getattr(model, "best_iteration_", n_estimators - 1) + 1
+                _proba = np.asarray(
+                    model.predict_proba(X_te_clean, num_iteration=_best_it),
+                    dtype=np.float32,
+                )
+                _clf_score = _proba[:, 0] - _proba[:, 2]
+
+                ridge_fold_preds = ridge_oof_preds[te_idx]
+                _combined = ridge_fold_preds + 0.5 * _clf_score
+                if _use_atr:
+                    raw_conf = np.clip(
+                        _combined * _atr_safe[te_idx],
+                        0.0,
+                        3.0 * _atr_safe[te_idx],
+                    ).astype(np.float32)
+                else:
+                    raw_conf = np.maximum(0.0, _combined * ridge_resid_std).astype(
+                        np.float32
+                    )
+
+                n_days_fold = max(1.0, len(te_idx) / 96.0)
+                lw = _lightweight_hpo_pnl_eval(
+                    raw_conf,
+                    y_te,
+                    top_fracs=[0.05],
+                    cost_pct=cost_pct,
+                    n_days=n_days_fold,
+                )
+                if "wallet_pnl_0.050" in lw:
+                    fold_pnl_5.append(lw["wallet_pnl_0.050"])
+                if "sortino_0.050" in lw:
+                    fold_sortino_5.append(lw["sortino_0.050"])
+
+                k_30 = max(1, int(len(raw_conf) * 0.30))
+                _top_idx = np.argpartition(raw_conf, -k_30)[-k_30:]
+                try:
+                    _ic_30, _ = spearmanr(
+                        raw_conf[_top_idx], y_te[_top_idx], nan_policy="omit"
+                    )
+                    fold_ic_30.append(float(_ic_30) if pd.notna(_ic_30) else 0.0)
+                except Exception:
+                    fold_ic_30.append(0.0)
+
+                if trial is not None and fold_idx >= len(splits) // 2:
+                    trial.report(
+                        float(np.mean(fold_pnl_5)) if fold_pnl_5 else -1e9,
+                        step=fold_idx,
+                    )
+                    if trial.should_prune():
+                        raise optuna.TrialPruned()
+
+            if not fold_pnl_5:
+                return -1e9
+            mean_pnl_5 = float(np.mean(fold_pnl_5))
+            std_pnl_5 = float(np.std(fold_pnl_5))
+            sortino_5 = float(np.mean(fold_sortino_5)) if fold_sortino_5 else 0.0
+            mean_ic_30 = float(np.mean(fold_ic_30)) if fold_ic_30 else 0.0
+            composite = (
+                0.50 * mean_pnl_5
+                - 0.30 * std_pnl_5
+                + 0.17 * sortino_5
+                + 0.33 * mean_ic_30
+            )
+            trial.set_user_attr("mean_pnl_5", mean_pnl_5)
+            trial.set_user_attr("mean_ic_30", mean_ic_30)
+            trial.set_user_attr("composite_score", composite)
+            return float(composite)
+
+        lgbm_clf_study.optimize(
+            _lgbm_clf_objective,
+            n_trials=lgbm_clf_trials,
+            catch=(Exception,),
+            show_progress_bar=False,
+        )
+
+        if lgbm_clf_study.best_trial is not None:
+            best_lgbm_clf_params = dict(lgbm_clf_study.best_params)
+            tprint(
+                f"  LGBM Clf HPO winner: composite={lgbm_clf_study.best_value:.4f} "
+                f"params={best_lgbm_clf_params}"
+            )
+
+            _lgbm_clf_best_n = 3000
+            _lgbm_clf_best_it_attr = lgbm_clf_study.best_trial.user_attrs.get(
+                "best_n_estimators", 3000
+            )
+            if _lgbm_clf_best_it_attr < _lgbm_clf_best_n:
+                _lgbm_clf_best_n = int(_lgbm_clf_best_it_attr)
+
+            def _best_lgbm_clf_factory() -> _LGBMClassifier:
+                _rng_f = np.random.RandomState(42)
+                return _LGBMClassifier(
+                    n_estimators=_lgbm_clf_best_n,
+                    num_leaves=int(best_lgbm_clf_params.get("num_leaves", 31)),
+                    max_depth=int(best_lgbm_clf_params.get("max_depth", 3)),
+                    min_child_samples=max(
+                        1,
+                        int(
+                            np.ceil(
+                                float(best_lgbm_clf_params.get("min_data_frac", 0.01))
+                                * X_lgbm_clf.shape[0]
+                            )
+                        ),
+                    ),
+                    colsample_bytree=float(
+                        best_lgbm_clf_params.get("feature_fraction", 0.7)
+                    ),
+                    subsample=float(best_lgbm_clf_params.get("bagging_fraction", 0.8)),
+                    subsample_freq=int(best_lgbm_clf_params.get("bagging_freq", 1)),
+                    reg_alpha=float(10.0 ** _rng_f.uniform(-2.0, np.log10(5.0))),
+                    reg_lambda=float(10.0 ** _rng_f.uniform(-2.0, np.log10(10.0))),
+                    objective="multiclass",
+                    num_class=3,
+                    random_state=42,
+                    n_jobs=2,
+                    verbose=-1,
+                )
+
+            # Full OOF refit
+            lgbm_clf_oof_preds_raw = np.full(
+                len(y_raw_net_return), np.nan, dtype=np.float32
+            )
+            fold_lgbm_clf_models: List[Any] = []
+            for fold_idx, (tr_idx, te_idx) in enumerate(splits):
+                if len(tr_idx) == 0 or len(te_idx) == 0:
+                    continue
+                tprint(
+                    f"  LGBM Clf refit fold {fold_idx+1}/{len(splits)}: "
+                    f"train={len(tr_idx)} test={len(te_idx)}"
+                )
+                (
+                    X_tr_clean,
+                    medians,
+                    scaler,
+                    center_1d,
+                    scale_1d,
+                ) = clean_and_standardize(X_lgbm_clf[tr_idx])
+                X_te_clean, _, _, _, _ = clean_and_standardize(
+                    X_lgbm_clf[te_idx],
+                    fit_medians=medians,
+                    scaler=scaler,
+                    center_1d=center_1d,
+                    scale_1d=scale_1d,
+                )
+                y_tr = _clf_y[tr_idx]
+                model = _best_lgbm_clf_factory()
+                _es_split = max(1, len(tr_idx) // 5)
+                model.fit(
+                    X_tr_clean[:-_es_split],
+                    y_tr[:-_es_split],
+                    eval_set=[(X_tr_clean[-_es_split:], y_tr[-_es_split:])],
+                    callbacks=[
+                        early_stopping(50, verbose=False),
+                        log_evaluation(period=0),
+                    ],
+                )
+                _refit_best_it = (
+                    getattr(model, "best_iteration_", _lgbm_clf_best_n - 1) + 1
+                )
+                _proba = np.asarray(
+                    model.predict_proba(X_te_clean, num_iteration=_refit_best_it),
+                    dtype=np.float32,
+                )
+                _score = (_proba[:, 0] - _proba[:, 2]).astype(np.float32)
+                lgbm_clf_oof_preds_raw[te_idx] = _score
+                fold_lgbm_clf_models.append(
+                    {
+                        "fold_idx": fold_idx,
+                        "model": model,
+                        "medians": medians,
+                        "scaler": scaler,
+                        "center_1d": center_1d,
+                        "scale_1d": scale_1d,
+                    }
+                )
+
+            _valid_clf = ~np.isnan(lgbm_clf_oof_preds_raw)
+            if _valid_clf.sum() > 0:
+                best_lgbm_clf_preds = lgbm_clf_oof_preds_raw.copy()
+                _combined_clf = ridge_oof_preds + 0.5 * best_lgbm_clf_preds
+                if _use_atr:
+                    raw_conf_clf = np.clip(
+                        _combined_clf * _atr_safe, 0.0, 3.0 * _atr_safe
+                    ).astype(np.float32)
+                else:
+                    raw_conf_clf = np.maximum(
+                        0.0, _combined_clf * ridge_resid_std
+                    ).astype(np.float32)
+
+                best_lgbm_clf_metrics = evaluate_signal(
+                    "LGBM_Clf_Score(under-over)",
+                    raw_conf_clf,
+                    y_raw_net_return,
+                    y_downside,
+                    directionality="return-like",
+                )
+                lgbm_clf_sizer_eval = best_lgbm_clf_metrics
+                best_lgbm_clf_utility = best_lgbm_clf_metrics.get(
+                    "utility_score", -np.inf
+                )
+
+                lgbm_clf_profit_proxy_df, _, _ = evaluate_selection_profit_proxy(
+                    raw_conf_clf,
+                    y_raw_net_return,
+                    timestamps=timestamps,
+                    symbols=_sym_vals,
+                    top_fracs=list(top_fracs),
+                    cost_pct=cost_pct,
+                    n_days=n_days,
+                )
+                best_lgbm_clf_objective = (
+                    float(lgbm_clf_profit_proxy_df["wallet_pnl"].max())
+                    if not lgbm_clf_profit_proxy_df.empty
+                    else float("-inf")
+                )
+                tprint(
+                    f"  LGBM Clf: utility={best_lgbm_clf_utility:.4f}, "
+                    f"wallet_pnl={best_lgbm_clf_objective:.4f}"
+                )
+
+                # --- LGBM Classifier confidence/uncertainty ---
+                def _compute_lgbm_clf_confidence(
+                    fold_dicts: List[Dict[str, Any]],
+                    X_full: np.ndarray,
+                    splits_list: List[Tuple[np.ndarray, np.ndarray]],
+                ) -> np.ndarray:
+                    n = X_full.shape[0]
+                    proba_stacks = np.zeros((n, 3, 0), dtype=np.float32)
+                    for fd in fold_dicts:
+                        te_idx = fd["te_idx"]
+                        m = fd["model"]
+                        X_te_clean, _, _, _, _ = clean_and_standardize(
+                            X_full[te_idx],
+                            fit_medians=fd["medians"],
+                            scaler=fd["scaler"],
+                            center_1d=fd["center_1d"],
+                            scale_1d=fd["scale_1d"],
+                        )
+                        p = np.asarray(m.predict_proba(X_te_clean), dtype=np.float32)
+                        _stack = np.zeros((n, 3, 1), dtype=np.float32)
+                        _stack[te_idx, :, 0] = p
+                        proba_stacks = np.concatenate([proba_stacks, _stack], axis=2)
+
+                    n_obs = proba_stacks.shape[2]
+                    conf_arr = np.ones(n, dtype=np.float32)
+                    under_over_arr = np.zeros(n, dtype=np.float32)
+                    entropy_arr = np.zeros(n, dtype=np.float32)
+                    p_under_var_arr = np.zeros(n, dtype=np.float32)
+                    for i in range(n):
+                        mask = proba_stacks[i, 0, :] > 0
+                        if mask.sum() < 2:
+                            continue
+                        p_under = proba_stacks[i, 0, mask]
+                        p_over = proba_stacks[i, 2, mask]
+                        p_ok = proba_stacks[i, 1, mask]
+                        uo = float(np.mean(p_under - p_over))
+                        under_over_arr[i] = uo
+                        p_mean = np.mean(proba_stacks[i, :, mask], axis=1)
+                        p_mean_clipped = np.clip(p_mean, 1e-12, 1.0)
+                        entropy_arr[i] = float(
+                            -np.sum(p_mean_clipped * np.log(p_mean_clipped))
+                        )
+                        p_under_var_arr[i] = float(np.var(p_under))
+
+                    p_under_over_scaled = _quantile_scale_to_band(under_over_arr)
+                    entropy_inv = _quantile_scale_to_band(1.0 / (entropy_arr + 1e-6))
+                    p_under_var_scaled = _quantile_scale_to_band(p_under_var_arr)
+
+                    log_conf = (
+                        2.0 * np.log(p_under_over_scaled + 1e-12)
+                        + 1.0 * np.log(entropy_inv + 1e-12)
+                        + 1.0 * np.log(p_under_var_scaled + 1e-12)
+                    ) / 4.0
+                    raw_wgm = np.exp(log_conf).astype(np.float32)
+                    median_wgm = float(np.median(raw_wgm))
+                    if abs(median_wgm) > 1e-12:
+                        conf_arr = np.clip(raw_wgm / median_wgm, 0.7, 1.3).astype(
+                            np.float32
+                        )
+                    return conf_arr, under_over_arr, entropy_arr
+
+                lgbm_clf_confidence_all = np.ones(
+                    len(y_raw_net_return), dtype=np.float32
+                )
+                lgbm_clf_under_over = np.zeros(len(y_raw_net_return), dtype=np.float32)
+                lgbm_clf_entropy = np.zeros(len(y_raw_net_return), dtype=np.float32)
+                try:
+                    (
+                        lgbm_clf_confidence_all,
+                        lgbm_clf_under_over,
+                        lgbm_clf_entropy,
+                    ) = _compute_lgbm_clf_confidence(
+                        fold_lgbm_clf_models, X_lgbm_clf, splits
+                    )
+                except Exception as _e_clf_conf:
+                    tprint(f"  LGBM Clf confidence failed: {_e_clf_conf}")
+
+                results["lgbm_clf_oof_score_"] = best_lgbm_clf_preds
+                results["lgbm_clf_confidence_"] = lgbm_clf_confidence_all
+                results["lgbm_clf_under_over_"] = lgbm_clf_under_over
+                results["lgbm_clf_entropy_"] = lgbm_clf_entropy
+                results["fold_lgbm_clf_models_"] = fold_lgbm_clf_models
+                results["lgbm_clf_feature_keys_"] = lgbm_clf_selected_keys
+                results["lgbm_clf_best_params_"] = best_lgbm_clf_params
+
+                combined_lgbm_clf_objective = best_lgbm_clf_objective
+                if not best_combo or combined_lgbm_clf_objective > best_combo_objective:
+                    if (
+                        best_simple_score is None
+                        or combined_lgbm_clf_objective > combined_et_objective
+                    ):
+                        best_simple_score = raw_conf_clf
+                        best_simple_score_name = "RidgePlusLGBM_Clf_TotalConfidence"
 
     # --- 3-Way Pipeline Comparison ---
     comparison: Dict[str, Any] = {}
@@ -3852,6 +4535,20 @@ def run_simple_position_sizer(
                 "wallet_pnl": lgbm_wallet,
             }
         )
+    if lgbm_clf_sizer_eval:
+        lgbm_clf_util = lgbm_clf_sizer_eval.get("utility_score", 0.0)
+        lgbm_clf_wallet = (
+            float(lgbm_clf_profit_proxy_df["wallet_pnl"].max())
+            if not lgbm_clf_profit_proxy_df.empty
+            else 0.0
+        )
+        comparison_rows.append(
+            {
+                "pipeline": "ridge_plus_lgbm_clf",
+                "utility": lgbm_clf_util,
+                "wallet_pnl": lgbm_clf_wallet,
+            }
+        )
     if comparison_rows:
         best_row = max(comparison_rows, key=lambda r: r["wallet_pnl"])
         comparison = {
@@ -3861,7 +4558,7 @@ def run_simple_position_sizer(
             "winner_utility": best_row["utility"],
         }
         tprint(
-            f"3-Way Pipeline Comparison: "
+            f"4-Way Pipeline Comparison: "
             + " | ".join(
                 f"{r['pipeline']}={r['wallet_pnl']:.4f}" for r in comparison_rows
             )
@@ -3871,6 +4568,119 @@ def run_simple_position_sizer(
     results["comparison_table_"] = (
         pd.DataFrame(comparison_rows) if comparison_rows else pd.DataFrame()
     )
+
+    # --- Grid search: ridge/booster ratio + confidence multiplier ---
+    _mix_grid_results: List[Dict[str, Any]] = []
+    _winner_name = comparison.get("winner", "")
+    if _winner_name and _winner_name != "ridge_only" and ridge_oof_available:
+        _booster_raw = None
+        _booster_conf = None
+        _winner_profit_df = pd.DataFrame()
+        if _winner_name == "ridge_plus_et":
+            _booster_raw = results.get("et_raw_residual_preds_")
+            _booster_conf = results.get("et_confidence_")
+            _winner_profit_df = et_profit_proxy_df
+        elif _winner_name == "ridge_plus_lgbm":
+            _booster_raw = results.get("lgbm_raw_residual_preds_")
+            _booster_conf = results.get("lgbm_confidence_")
+            _winner_profit_df = lgbm_profit_proxy_df
+        elif _winner_name == "ridge_plus_lgbm_clf":
+            _booster_raw = results.get("lgbm_clf_oof_score_")
+            _booster_conf = results.get("lgbm_clf_confidence_")
+            _winner_profit_df = lgbm_clf_profit_proxy_df
+
+        if (
+            _booster_raw is not None
+            and _booster_conf is not None
+            and not _winner_profit_df.empty
+        ):
+            if "is_optimal" in _winner_profit_df.columns:
+                _opt_row = _winner_profit_df[_winner_profit_df["is_optimal"]].iloc[0]
+            else:
+                _opt_row = _winner_profit_df.sort_values(
+                    "wallet_pnl", ascending=False
+                ).iloc[0]
+            _opt_frac = float(_opt_row.get("selection_frac", 0.10))
+            _k_opt = max(1, int(len(y_raw_net_return) * _opt_frac))
+
+            _ridge_w_grid = [0.5, 0.7, 0.85, 1.0]
+            _booster_w_grid = [0.1, 0.25, 0.5, 0.75]
+            _conf_m_grid = [0.5, 0.75, 1.0, 1.25]
+
+            for _rw in _ridge_w_grid:
+                for _bw in _booster_w_grid:
+                    for _cm in _conf_m_grid:
+                        _combined = _rw * ridge_oof_preds + _bw * _booster_raw * (
+                            _booster_conf * _cm
+                        )
+                        if _use_atr:
+                            _score = np.clip(
+                                _combined * _atr_safe,
+                                0.0,
+                                3.0 * _atr_safe,
+                            ).astype(np.float32)
+                        else:
+                            _score = np.maximum(
+                                0.0, _combined * ridge_resid_std
+                            ).astype(np.float32)
+
+                        _idx = np.argpartition(_score, -_k_opt)[-_k_opt:]
+                        _sel_rets = y_raw_net_return[_idx]
+                        _sorted_args = np.argsort(_score[_idx])
+                        _allocs = np.linspace(0.05, 0.15, len(_idx))
+                        _w_rets = (_sel_rets[_sorted_args] - cost_pct) * _allocs
+                        _wp = float(np.sum(_w_rets))
+
+                        _net = _sel_rets - cost_pct
+                        _gross_win = float(np.sum(_net[_net > 0]))
+                        _gross_loss = float(np.abs(np.sum(_net[_net < 0])))
+                        _pf = (
+                            _gross_win / _gross_loss
+                            if _gross_loss > 1e-12
+                            else (100.0 if _gross_win > 0 else 0.0)
+                        )
+
+                        _mix_grid_results.append(
+                            {
+                                "winner": _winner_name,
+                                "ridge_w": _rw,
+                                "booster_w": _bw,
+                                "conf_mult": _cm,
+                                "threshold_frac": _opt_frac,
+                                "wallet_pnl": _wp,
+                                "profit_factor": _pf,
+                                "hit_rate": float(np.mean(_sel_rets > 0)),
+                                "trades": len(_sel_rets),
+                            }
+                        )
+
+        if _mix_grid_results:
+            _mix_df = pd.DataFrame(_mix_grid_results)
+            _best_mix = _mix_df.loc[_mix_df["wallet_pnl"].idxmax()]
+            tprint(
+                f"  Mix grid winner: ridge_w={_best_mix['ridge_w']:.2f} "
+                f"booster_w={_best_mix['booster_w']:.2f} "
+                f"conf_mult={_best_mix['conf_mult']:.2f} "
+                f"wallet_pnl={_best_mix['wallet_pnl']:.4f} "
+                f"PF={_best_mix['profit_factor']:.2f} "
+                f"hit={_best_mix['hit_rate']:.2f}"
+            )
+            results["mix_grid_table_"] = _mix_df
+            results["mix_grid_best_"] = {
+                "winner": _best_mix["winner"],
+                "ridge_w": float(_best_mix["ridge_w"]),
+                "booster_w": float(_best_mix["booster_w"]),
+                "conf_mult": float(_best_mix["conf_mult"]),
+                "threshold_frac": float(_best_mix["threshold_frac"]),
+                "wallet_pnl": float(_best_mix["wallet_pnl"]),
+                "profit_factor": float(_best_mix["profit_factor"]),
+            }
+        else:
+            results["mix_grid_table_"] = pd.DataFrame()
+            results["mix_grid_best_"] = {}
+    else:
+        results["mix_grid_table_"] = pd.DataFrame()
+        results["mix_grid_best_"] = {}
 
     # --- Profit Proxy on Best Score ---
     profit_proxy_df = pd.DataFrame()
@@ -3892,6 +4702,8 @@ def run_simple_position_sizer(
         "head_diagnostics_table_": stage_1_df,
         "combo_race_table_": stage_2_df,
         "best_combo_": best_combo,
+        "mix_grid_table_": results.get("mix_grid_table_", pd.DataFrame()),
+        "mix_grid_best_": results.get("mix_grid_best_", {}),
         "ridge_sizer_eval_": ridge_sizer_eval,
         "ridge_importance_table_": ridge_importance_df,
         "ridge_profit_proxy_table_": ridge_profit_proxy_df,
@@ -3901,6 +4713,9 @@ def run_simple_position_sizer(
         "lgbm_sizer_eval_": lgbm_sizer_eval,
         "lgbm_importance_table_": lgbm_importance_df,
         "lgbm_profit_proxy_table_": lgbm_profit_proxy_df,
+        "lgbm_clf_sizer_eval_": lgbm_clf_sizer_eval,
+        "lgbm_clf_importance_table_": lgbm_clf_importance_df,
+        "lgbm_clf_profit_proxy_table_": lgbm_clf_profit_proxy_df,
         "comparison_": comparison,
         "comparison_table_": results.get("comparison_table_", pd.DataFrame()),
         "best_simple_score_": best_simple_score,
@@ -4046,16 +4861,18 @@ def run_simple_position_sizer_from_artifacts(
 
     if not _pool:
         fallback_path = (
-            Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+            Path(data_root)
+            / "artifacts"
+            / run_id
+            / "ridge_sizer"
+            / "strategy_params.json"
         )
         if fallback_path.exists():
             try:
                 payload = json.loads(fallback_path.read_text())
                 buckets = payload.get("buckets", {})
                 for sid, row in buckets.items():
-                    _pool.append(
-                        {"strategy_id": sid, **row}
-                    )
+                    _pool.append({"strategy_id": sid, **row})
                 logger.info(
                     f"Fallback: loaded {len(_pool)} strategies from {fallback_path}"
                 )
@@ -4121,6 +4938,12 @@ def run_simple_position_sizer_from_artifacts(
             logger.info(
                 f"OOF-derived strategy injected: side={_side!r} id={_stripped[:60]}"
             )
+
+    if len(strategies) > top_n_strategies:
+        logger.info(
+            f"Capping {len(strategies)} strategies to top-{top_n_strategies} after OOF injection"
+        )
+        strategies = strategies[:top_n_strategies]
 
     strategy_results = {}
 
@@ -4817,6 +5640,10 @@ def run_simple_position_sizer_from_artifacts(
         logger.info(f"Saved strategy params to {strategy_params_path}")
 
     _persist_head_to_head_winner(data_root, run_id, strategy_results)
+    _persist_detailed_model_metrics(data_root, run_id, strategy_results)
+    _persist_mix_grid(data_root, run_id, strategy_results)
+    for _sid, _sres in strategy_results.items():
+        _persist_booster_bundle(data_root, run_id, _sid, _sres)
     try:
         _fi_path = _persist_feature_importance_summary(
             data_root, run_id, strategy_results

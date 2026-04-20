@@ -2,18 +2,18 @@
   "scope_key": "dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_reg",
   "kind": "xgb",
   "best_params": {
-    "objective": "reg:pseudohubererror",
-    "n_estimators": 1300,
-    "max_depth": 3,
-    "learning_rate": 0.011547153596710128,
-    "subsample": 0.8720813604358002,
-    "colsample_bytree": 0.6564146481549719,
-    "colsample_bynode": 0.6960930504045072,
-    "gamma": 1.2969849519537238,
-    "reg_alpha": 0.13594879188324147,
-    "reg_lambda": 1.4671127283997154,
-    "min_child_weight": 37
+    "objective": "reg:squarederror",
+    "n_estimators": 700,
+    "max_depth": 5,
+    "learning_rate": 0.023179276877039547,
+    "subsample": 0.6324522627359247,
+    "colsample_bytree": 0.7986369820540976,
+    "colsample_bynode": 0.7732573718541413,
+    "gamma": 1.3184538283023486,
+    "reg_alpha": 0.31007662054662555,
+    "reg_lambda": 39.50169851847324,
+    "min_child_weight": 32
   },
-  "n_trials_completed": 150,
-  "best_trial_number": 93
+  "n_trials_completed": 80,
+  "best_trial_number": 19
 }

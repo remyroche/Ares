@@ -47,9 +47,7 @@ def _filter_artifact_by_stage_view(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         sym_col = (
             "__symbol__"
             if "__symbol__" in df.columns
-            else "symbol"
-            if "symbol" in df.columns
-            else None
+            else "symbol" if "symbol" in df.columns else None
         )
         if sym_col:
             df = df[df[sym_col].isin(view["symbols"])]
@@ -61,9 +59,7 @@ def _filter_artifact_by_stage_view(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             else (
                 "timestamp"
                 if "timestamp" in df.columns
-                else "t0"
-                if "t0" in df.columns
-                else None
+                else "t0" if "t0" in df.columns else None
             )
         )
         if ts_col:
@@ -487,6 +483,9 @@ def load_meta_oof_predictions(
         elif (_m_risk := _risk_pat.match(name)) is not None:
             bucket = _m_risk.group(1)
             col_name = f"{_m_risk.group(2)}_h{int(_m_risk.group(3))}"
+        elif name.endswith("_cal_reg"):
+            bucket = name[:-8]
+            col_name = "cal_reg"
         elif name.endswith("_reg"):
             bucket = name[:-4]
             col_name = "reg"
@@ -747,6 +746,19 @@ def load_meta_oof_predictions(
             ) + 0.5 * np.where(np.isfinite(_reg_iqr), _reg_iqr, 0.0)
             combined["edge_noise_pen"] = (
                 _reg / (1.0 + 10.0 * _joint_leaf_noise + 1e-12)
+            ).astype(np.float32)
+
+        if "cal_reg" in combined.columns and "clf" in combined.columns:
+            _cal_r = np.asarray(combined["cal_reg"].values, dtype=float)
+            _clf_raw = np.asarray(combined["clf"].values, dtype=float)
+            _cal_finite = np.where(np.isfinite(_cal_r), _cal_r, 0.0)
+            combined["calibrated_p_move"] = np.clip(
+                _clf_raw + _cal_finite, 0.0, 1.0
+            ).astype(np.float32)
+            combined["cal_residual"] = _cal_finite.astype(np.float32)
+            combined["cal_abs_residual"] = np.abs(_cal_finite).astype(np.float32)
+            combined["cal_adjusted_confidence"] = (
+                np.abs(_cal_finite) * np.abs(_clf_raw - 0.5) * 2.0
             ).astype(np.float32)
 
         inferred_side = next(iter(source_sides), "")

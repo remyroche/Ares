@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from typing import Union, Optional
 
 from extreme_price_movements.pnl import CostModel, trade_return_net_vec
 
@@ -9,7 +10,7 @@ def _bucket3(x: pd.Series) -> pd.Series:
     return pd.cut(q, bins=[0, 1/3, 2/3, 1], labels=["low", "mid", "high"], include_lowest=True)
 
 
-def compute_comprehensive_metrics(trades: pd.DataFrame, fee_pct: float = 0.005, initial_capital: float = 100000.0, cost: CostModel | None = None) -> dict:
+def compute_comprehensive_metrics(trades: pd.DataFrame, fee_pct: float = 0.005, initial_capital: float = 100000.0, cost: Union[CostModel, None] = None) -> dict:
     """Computes comprehensive performance metrics for a set of trades.
 
     Args:

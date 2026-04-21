@@ -312,14 +312,15 @@ def compute_u_policy_labels(
 
 
 def build_base_tp_vs_sl(exit_code: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Build TP-vs-SL labels while excluding timeout rows.
+    """Build TP-vs-Rest labels (including timeouts).
 
     exit_code semantics: 0=SL, 1=TO, 2=TP.
     Returns (y_bin, mask_over_original_rows).
     """
     exit_code = np.asarray(exit_code, np.int32)
-    mask = (exit_code == 0) | (exit_code == 2)
-    y = (exit_code[mask] == 2).astype(np.int32)
+    # Include all valid outcomes in the dataset (aligns Hit Rate with Win Rate)
+    mask = np.ones(len(exit_code), dtype=bool)
+    y = (exit_code == 2).astype(np.int32)
     return y, mask
 
 

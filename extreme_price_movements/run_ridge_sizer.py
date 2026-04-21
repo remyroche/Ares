@@ -47,7 +47,9 @@ def _filter_artifact_by_stage_view(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         sym_col = (
             "__symbol__"
             if "__symbol__" in df.columns
-            else "symbol" if "symbol" in df.columns else None
+            else "symbol"
+            if "symbol" in df.columns
+            else None
         )
         if sym_col:
             df = df[df[sym_col].isin(view["symbols"])]
@@ -59,7 +61,9 @@ def _filter_artifact_by_stage_view(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             else (
                 "timestamp"
                 if "timestamp" in df.columns
-                else "t0" if "t0" in df.columns else None
+                else "t0"
+                if "t0" in df.columns
+                else None
             )
         )
         if ts_col:
@@ -753,7 +757,7 @@ def load_meta_oof_predictions(
             _clf_raw = np.asarray(combined["clf"].values, dtype=float)
             _cal_finite = np.where(np.isfinite(_cal_r), _cal_r, 0.0)
             combined["calibrated_p_move"] = np.clip(
-                _clf_raw + _cal_finite, 0.0, 1.0
+                _clf_raw * (1.0 + _cal_finite), 0.0, 1.0
             ).astype(np.float32)
             combined["cal_residual"] = _cal_finite.astype(np.float32)
             combined["cal_abs_residual"] = np.abs(_cal_finite).astype(np.float32)

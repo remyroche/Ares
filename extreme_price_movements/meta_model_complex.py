@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import importlib.util
 import numpy as np
@@ -107,7 +107,7 @@ class _SplineQuantile:
 
 
 class MetaModel:
-    def __init__(self, strategy_name: Optional[str] = None, reports_dir: str | Path | None = None):
+    def __init__(self, strategy_name: Optional[str] = None, reports_dir: Union[str, Path, None] = None):
         self.strategy_name = strategy_name
         self.model = None
         self._model_type = None

@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Union
 
 import numpy as np
 
@@ -127,12 +127,12 @@ def build_wide_tight_pair_features(
     tight: np.ndarray,
     *,
     base_name: str,
-    sigma_wide: np.ndarray | None = None,
-    sigma_tight: np.ndarray | None = None,
-    robust_sigma_wide: np.ndarray | None = None,
-    robust_sigma_tight: np.ndarray | None = None,
+    sigma_wide: Optional[np.ndarray] = None,
+    sigma_tight: Optional[np.ndarray] = None,
+    robust_sigma_wide: Optional[np.ndarray] = None,
+    robust_sigma_tight: Optional[np.ndarray] = None,
     eps: float = 1e-9,
-) -> dict[str, np.ndarray]:
+) -> Dict[str, np.ndarray]:
     wide = np.asarray(wide, dtype=np.float32).reshape(-1)
     tight = np.asarray(tight, dtype=np.float32).reshape(-1)
     if wide.shape != tight.shape:

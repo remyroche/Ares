@@ -11,6 +11,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, roc_auc_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
     from catboost import CatBoostClassifier
@@ -398,7 +399,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
     def _build_leaf_context(
         self, model, X_train: np.ndarray, y_train: np.ndarray
-    ) -> list[dict[str, np.ndarray]] | None:
+    ) -> Optional[List[Dict[str, np.ndarray]]]:
         inner = model.estimator if isinstance(model, Float64Wrapper) else model
         estimators = getattr(inner, "estimators_", None)
         if not estimators:
@@ -455,11 +456,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         model,
         X,
         *,
-        leaf_context: list[dict[str, np.ndarray]] | None = None,
-        X_train: np.ndarray | None = None,
-        y_train: np.ndarray | None = None,
+        leaf_context: Optional[List[Dict[str, np.ndarray]]] = None,
+        X_train: Optional[np.ndarray] = None,
+        y_train: Optional[np.ndarray] = None,
         eps: float = 1e-12,
-    ) -> dict[str, np.ndarray]:
+    ) -> Dict[str, np.ndarray]:
         inner = model.estimator if isinstance(model, Float64Wrapper) else model
         estimators = getattr(inner, "estimators_", None)
         n = len(X)

@@ -8,7 +8,7 @@ import ccxt
 import glob
 import shutil
 import fcntl
-from typing import Callable
+from typing import Callable, Union, Optional, Tuple, Dict, List, Set, Any
 from datetime import timezone
 import pyarrow.parquet as pq
 
@@ -138,12 +138,12 @@ def _apply_allowed_periods_mask(
 
 
 def _build_parquet_ts_filters(
-    start_ts: pd.Timestamp | None = None,
-    end_ts: pd.Timestamp | None = None,
+    start_ts: Optional[pd.Timestamp] = None,
+    end_ts: Optional[pd.Timestamp] = None,
     allowed_periods=None,
 ):
     """Build pyarrow parquet filters for timestamp pushdown when possible."""
-    def _to_utc_filter_ts(ts: pd.Timestamp | None) -> pd.Timestamp | None:
+    def _to_utc_filter_ts(ts: Optional[pd.Timestamp]) -> Optional[pd.Timestamp]:
         if ts is None:
             return None
         out = pd.Timestamp(ts)
@@ -193,7 +193,7 @@ def _build_parquet_ts_filters(
 
 def _ensure_feature_frame_index(
     df: pd.DataFrame,
-    parquet_path: str | None = None,
+    parquet_path: Optional[str] = None,
 ) -> tuple[pd.DataFrame, str | None]:
     frame = df.copy()
     if isinstance(frame.index, pd.DatetimeIndex):
@@ -226,7 +226,7 @@ def _ensure_feature_frame_index(
 def _recover_feature_index_from_metadata(
     parquet_path: str,
     row_count: int,
-) -> pd.DatetimeIndex | None:
+) -> Optional[pd.DatetimeIndex]:
     meta = _read_feature_metadata(parquet_path)
     if not meta:
         return None
@@ -285,7 +285,7 @@ def make_perp_exchange():
     return ex
 
 
-def _resolve_perp_symbol(exchange, spot_symbol: str) -> str | None:
+def _resolve_perp_symbol(exchange, spot_symbol: str) -> Optional[str]:
     if not spot_symbol or "/" not in spot_symbol:
         return None
     base, quote = spot_symbol.split("/", 1)
@@ -302,7 +302,7 @@ def _resolve_perp_symbol(exchange, spot_symbol: str) -> str | None:
     return None
 
 
-def _extract_float(row: dict, keys: list[str]) -> float | None:
+def _extract_float(row: dict, keys: List[str]) -> Optional[float]:
     if not isinstance(row, dict):
         return None
     info = row.get("info", {}) if isinstance(row.get("info"), dict) else {}
@@ -319,7 +319,7 @@ def _extract_float(row: dict, keys: list[str]) -> float | None:
     return None
 
 
-def _extract_timestamp_ms(row: dict) -> int | None:
+def _extract_timestamp_ms(row: dict) -> Optional[int]:
     if not isinstance(row, dict):
         return None
     info = row.get("info", {}) if isinstance(row.get("info"), dict) else {}
@@ -344,7 +344,7 @@ def _fetch_ccxt_history_paged(
     *,
     value_keys: list[str],
     exchange=None,
-    timeframe: str | None = None,
+    timeframe: Optional[str] = None,
     limit: int = 1000,
 ) -> pd.Series:
     cursor = int(since_ms)

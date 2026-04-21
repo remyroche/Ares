@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Union, List, Tuple
 
 import numpy as np
 from extreme_price_movements.limit_order_pricer import estimate_entry_limit_offset
@@ -11,7 +11,7 @@ def _sigmoid(x: float) -> float:
     return float(1.0 / (1.0 + np.exp(-z)))
 
 
-def flatten_bucket_policy(bucket_cfg: Dict[str, Any] | None) -> Dict[str, Any]:
+def flatten_bucket_policy(bucket_cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not isinstance(bucket_cfg, dict):
         return {}
     out = dict(bucket_cfg)
@@ -45,9 +45,9 @@ def compute_entry_policy_decision(
     entry_px: float,
     atr_frac: float,
     score: float,
-    bucket_cfg: Dict[str, Any] | None,
-    features: Dict[str, Any] | None = None,
-) -> Dict[str, float | bool]:
+    bucket_cfg: Optional[Dict[str, Any]],
+    features: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Union[float, bool]]:
     cfg = flatten_bucket_policy(bucket_cfg)
     ep = cfg.get("entry_policy", {}) if isinstance(cfg.get("entry_policy", {}), dict) else {}
     model = ep.get("model", {}) if isinstance(ep.get("model", {}), dict) else {}

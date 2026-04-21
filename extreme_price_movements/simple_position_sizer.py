@@ -2657,7 +2657,7 @@ def run_simple_position_sizer(
             )
             ridge_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
 
-        ridge_trials = 5
+        ridge_trials = 40
         ridge_sampler = TPESampler(seed=42, multivariate=True, group=True)
         ridge_pruner = SuccessiveHalvingPruner(
             min_resource=1,
@@ -3047,7 +3047,7 @@ def run_simple_position_sizer(
             )
             et_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
 
-        et_trials = 5
+        et_trials = 150
         et_sampler = TPESampler(seed=42, multivariate=True, group=True)
         et_pruner = SuccessiveHalvingPruner(
             min_resource=1,
@@ -3540,7 +3540,7 @@ def run_simple_position_sizer(
             )
             lgbm_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
 
-        lgbm_trials = 5
+        lgbm_trials = 150
         lgbm_sampler = TPESampler(seed=42, multivariate=True, group=True)
         lgbm_pruner = SuccessiveHalvingPruner(
             min_resource=1,
@@ -4117,7 +4117,7 @@ def run_simple_position_sizer(
             )
             lgbm_clf_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
 
-        lgbm_clf_trials = 5
+        lgbm_clf_trials = 150
         lgbm_clf_sampler = TPESampler(seed=42, multivariate=True, group=True)
         lgbm_clf_study = optuna.create_study(
             direction="maximize",

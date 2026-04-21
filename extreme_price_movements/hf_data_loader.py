@@ -17,7 +17,9 @@ Key functions:
 - fetch_specific_period: Fetch data for any timeframe on demand
 """
 
+from __future__ import annotations
 import os
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -314,7 +316,7 @@ def sync_15m_ohlcv_range(
     exchange: ccxt.Exchange,
     symbol: str,
     since_ts: pd.Timestamp,
-    until_ts: pd.Timestamp | None = None,
+    until_ts: Optional[pd.Timestamp] = None,
     full_backfill: bool = True,
 ) -> pd.DataFrame:
     """Ensure local 15m cache covers [since_ts, until_ts] for symbol."""
@@ -470,7 +472,7 @@ def sync_5m_ohlcv_range(
     exchange: ccxt.Exchange,
     symbol: str,
     since_ts: pd.Timestamp,
-    until_ts: pd.Timestamp | None = None,
+    until_ts: Optional[pd.Timestamp] = None,
     full_backfill: bool = True,
 ) -> pd.DataFrame:
     """Ensure local 5m cache covers [since_ts, until_ts] for symbol."""
@@ -685,7 +687,7 @@ def clear_cache(symbol: str = None, timeframe: str = None):
 def bulk_sync_15m_universe(
     symbols: list,
     since_ts: pd.Timestamp,
-    until_ts: pd.Timestamp | None = None,
+    until_ts: Optional[pd.Timestamp] = None,
     quotes: tuple = ("USDT", "USDC", "BUSD"),
     skip_existing: bool = True,
     symbol_order: str = "alpha_asc",

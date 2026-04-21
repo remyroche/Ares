@@ -4,7 +4,7 @@ Sklearn-Compatible Purged K-Fold Cross-Validation (De Prado Framework)
 Prevents data leakage in time series by purging and embargoing samples
 at train/test boundaries.
 """
-from typing import Generator, Tuple
+from typing import Generator, Tuple, Union, Optional
 import numpy as np
 from sklearn.model_selection import BaseCrossValidator
 
@@ -73,7 +73,7 @@ class PurgedKFold(BaseCrossValidator):
         else:
             n_samples = len(X)
         
-        def _walk_forward_layout(total_count: int) -> tuple[int, np.ndarray] | None:
+        def _walk_forward_layout(total_count: int) -> Union[Tuple[int, np.ndarray], None]:
             """Reserve an initial train window, then emit n_splits forward validation folds."""
             if total_count <= self.n_splits:
                 return None
@@ -186,7 +186,7 @@ class PurgedKFold(BaseCrossValidator):
 class IntervalPurgedKFold(BaseCrossValidator):
     """Purged CV using per-sample [t_start, t_end] label intervals plus fixed-bar embargo."""
 
-    def __init__(self, n_splits: int = 5, embargo_bars: int = 10, min_train_size: int | None = None):
+    def __init__(self, n_splits: int = 5, embargo_bars: int = 10, min_train_size: Optional[int] = None):
         if n_splits < 2:
             raise ValueError("n_splits must be >=2")
         self.n_splits = n_splits

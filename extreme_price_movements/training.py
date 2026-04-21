@@ -5597,8 +5597,8 @@ def build_hourly_training_set_and_weights(
             f"tp={_tp_all:.3%} sl={_sl_all:.3%} to={_to_all:.3%}"
         )
 
-    # Target: base classifier can be TP-vs-SL only (exclude timeout rows)
-    _exclude_to = bool(cfg.get("base_exclude_timeout_from_classifier", True))
+    # Target: base classifier must include timeouts to align Hit Rate with Win Rate
+    _exclude_to = bool(cfg.get("base_exclude_timeout_from_classifier", False))
     if _exclude_to:
         _y_tmp, _mask_tmp = build_base_tp_vs_sl(lbl_vals)
         keep_rows = np.asarray(_mask_tmp, dtype=bool)
@@ -7323,9 +7323,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
                         timeout_raw = float((lbl.values == 1).sum()) / max(
                             1, n_events_raw
                         )
-                        auc_bound, tp_sep_top10, tp_over_sl = (
-                            _quality_metrics_from_proxy(lbl, ret, qual)
-                        )
+                        (
+                            auc_bound,
+                            tp_sep_top10,
+                            tp_over_sl,
+                        ) = _quality_metrics_from_proxy(lbl, ret, qual)
                         bind_raw = tp_hit_raw + sl_hit_raw
                         _tp_ts = (lbl.values == OUT_TP).mean(axis=1).astype(np.float64)
                         _tp_roll_win = int(
@@ -11787,7 +11789,7 @@ def train_meta_models_from_artifacts(
             _m.hpo_out_dir = _meta_hpo_out_dir
             _mcw = float(cfg.get("meta_parallel_forest_min_child_weight", 40.0))
             _m.xgb_parallel_forest_params = {
-                "objective": "reg:squarederror",
+                "objective": "reg:pseudohubererror",
                 "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
                 "num_parallel_tree": int(
                     cfg.get("meta_parallel_forest_num_parallel_tree", 20)
@@ -12053,8 +12055,9 @@ def train_meta_models_from_artifacts(
                     else np.full(len(df), 0.02, dtype=np.float64)
                 )
             )
+            _y_move_abs_in = np.where(_y_mid > 0, _y_mid, 0.0)
             _y_move_soft, _y_move, _move_thr = _build_meta_move_soft_target(
-                abs_ret=np.abs(_y_mid),
+                abs_ret=_y_move_abs_in,
                 vol_proxy=_bp_move,
                 thresholds=_move_thresholds,
                 weights=_move_weights,
@@ -12254,30 +12257,111 @@ def train_meta_models_from_artifacts(
             _cal_residual = np.asarray(_cal_target["residual"], dtype=np.float32)
             _cal_valid = np.asarray(_cal_target["valid_mask"], dtype=bool)
             _cal_confidence = np.asarray(_cal_target["confidence"], dtype=np.float32)
-            _cal_residual = np.where(_cal_valid, _cal_residual, 0.0).astype(np.float32)
-            _w_cal = (0.5 + 1.5 * _cal_confidence) * _cal_valid.astype(np.float32)
-            _w_cal = _w_cal / max(float(np.mean(_w_cal)), 1e-12)
+            _cal_valid_r = _cal_residual[_cal_valid]
+            _q33 = float(np.percentile(_cal_valid_r, 33.33))
+            _q66 = float(np.percentile(_cal_valid_r, 66.67))
+            _cal_labels = np.ones(len(_cal_residual), dtype=np.int32)
+            _cal_labels[_cal_residual < _q33] = 0
+            _cal_labels[_cal_residual >= _q66] = 2
+            _n_under = int(np.sum((_cal_labels == 0) & _cal_valid))
+            _n_ok = int(np.sum((_cal_labels == 1) & _cal_valid))
+            _n_over = int(np.sum((_cal_labels == 2) & _cal_valid))
             tprint(
-                f"  Meta calibration reg (aligned): H={primary_h} "
-                f"residual mean={float(np.mean(_cal_residual[_cal_valid])):.4f} "
-                f"std={float(np.std(_cal_residual[_cal_valid])):.4f} "
+                f"  Meta cal_reg (aligned): H={primary_h} 3-class labels "
+                f"under={_n_under} ok={_n_ok} over={_n_over} "
+                f"q33={_q33:.4f} q66={_q66:.4f} "
                 f"valid={int(np.sum(_cal_valid))}/{len(_cal_valid)}"
             )
-            _cal_reg = _configure_meta_reg(f"{k}_cal_reg", "meta_selector_cfg")
-            _cal_reg.hpo_n_trials = max(1, _meta_hpo_trials // 2)
+            _w_cal = np.where(
+                _cal_valid,
+                0.5 + 1.5 * np.nan_to_num(_cal_confidence, nan=0.0),
+                0.0,
+            ).astype(np.float32)
+            _cal_mean = (
+                float(np.mean(_w_cal[_cal_valid])) if np.any(_cal_valid) else 1.0
+            )
+            _w_cal = _w_cal / max(_cal_mean, 1e-12)
             try:
-                _cal_reg.fit(
-                    X_meta_base,
-                    _cal_residual,
-                    sample_weight=_w_cal,
-                    groups=meta_groups,
+                from sklearn.model_selection import StratifiedGroupKFold as _SGKF
+                from xgboost import XGBClassifier as _XGB3
+
+                _vm = _cal_valid
+                _X_v = X_meta_base[_vm]
+                _y_v = _cal_labels[_vm]
+                _w_v = _w_cal[_vm]
+                _g_v = meta_groups[_vm] if meta_groups is not None else None
+                _mcw = float(cfg.get("meta_parallel_forest_min_child_weight", 40.0))
+                _xgb3_params = dict(
+                    objective="multi:softprob",
+                    num_class=3,
+                    n_estimators=int(cfg.get("meta_parallel_forest_rounds", 100)),
+                    num_parallel_tree=int(
+                        cfg.get("meta_parallel_forest_num_parallel_tree", 20)
+                    ),
+                    max_depth=int(cfg.get("meta_parallel_forest_max_depth", 5)),
+                    learning_rate=float(
+                        cfg.get("meta_parallel_forest_learning_rate", 0.05)
+                    ),
+                    subsample=0.75,
+                    colsample_bytree=0.75,
+                    reg_alpha=float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
+                    reg_lambda=float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
+                    min_child_weight=max(1.0, float(_mcw)),
+                    gamma=float(cfg.get("meta_parallel_forest_gamma", 1.5)),
+                    tree_method="hist",
+                    random_state=42,
+                    n_jobs=2,
+                    verbosity=0,
+                    eval_metric="mlogloss",
+                    early_stopping_rounds=int(
+                        cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
+                    ),
                 )
-                meta_models[f"{k}_cal_reg"] = _cal_reg
-                _bucket_y_ret[f"{k}_cal_reg"] = _cal_residual.copy()
+                _n_cal_splits = 3
+                _sgkf = _SGKF(n_splits=_n_cal_splits, shuffle=True, random_state=42)
+                _cal_proba_oof = np.zeros((int(np.sum(_vm)), 3), dtype=np.float32)
+                _refit_model = None
+                for _cal_fi, (_cal_tr, _cal_te) in enumerate(
+                    _sgkf.split(_X_v, _y_v, _g_v)
+                ):
+                    _es = max(1, len(_cal_tr) // 5)
+                    _m = _XGB3(**_xgb3_params)
+                    _m.fit(
+                        _X_v.iloc[_cal_tr] if hasattr(_X_v, "iloc") else _X_v[_cal_tr],
+                        _y_v[_cal_tr],
+                        sample_weight=_w_v[_cal_tr],
+                        eval_set=[
+                            (
+                                _X_v.iloc[_cal_te]
+                                if hasattr(_X_v, "iloc")
+                                else _X_v[_cal_te],
+                                _y_v[_cal_te],
+                            )
+                        ],
+                        verbose=False,
+                    )
+                    _cal_proba_oof[_cal_te] = _m.predict_proba(
+                        _X_v.iloc[_cal_te] if hasattr(_X_v, "iloc") else _X_v[_cal_te]
+                    )
+                    _refit_model = _m
+                _p_under = _cal_proba_oof[:, 0]
+                _p_over = _cal_proba_oof[:, 2]
+                _p_ok = np.clip(_cal_proba_oof[:, 1], 1e-6, None)
+                _cal_score_local = (_p_under - _p_over) / _p_ok
+                _floor = float(np.percentile(_cal_score_local, 5))
+                _cal_score_local = np.clip(_cal_score_local, _floor, None).astype(
+                    np.float32
+                )
+                _cal_score = np.zeros(len(_cal_residual), dtype=np.float32)
+                _cal_score[_vm] = _cal_score_local
+                meta_models[f"{k}_cal_reg"] = _refit_model
+                _bucket_y_ret[f"{k}_cal_reg"] = _cal_score.copy()
                 _bucket_metadata[f"{k}_cal_reg"] = _md
                 tprint(
-                    f"Meta {k}_cal_reg: fitted aligned "
-                    f"({_time.monotonic()-_t_aligned_start:.1f}s)"
+                    f"Meta {k}_cal_reg: fitted 3-class "
+                    f"({_time.monotonic()-_t_aligned_start:.1f}s) "
+                    f"score: mean={float(np.mean(_cal_score_local)):.4f} "
+                    f"floor={_floor:.4f}"
                 )
             except Exception as _e_cal:
                 tprint(f"Meta {k}_cal_reg: skipped ({_e_cal})")
@@ -13273,6 +13357,20 @@ def train_meta_models_from_artifacts(
         w_meta_main = w_meta_main / max(float(np.mean(w_meta_main)), 1e-12)
         w_meta_main = np.clip(w_meta_main, 0.5, 2.0).astype(np.float32)
 
+        _y_bin_sc = np.asarray(_y_bin_for_h_aligned(int(_h_main)), dtype=np.float32)
+        _y_reg_raw = np.asarray(_meta_reg_target, dtype=np.float32)
+        _y_reg_std = float(np.nanstd(_y_reg_raw)) + 1e-6
+        _sign_consist = np.where(
+            np.isfinite(_y_bin_sc),
+            np.where(
+                _y_bin_sc >= 0.5,
+                1.0,
+                np.clip(1.0 - np.abs(_y_reg_raw) / _y_reg_std, 0.3, 1.0),
+            ),
+            1.0,
+        ).astype(np.float32)
+        w_meta_main = w_meta_main * _sign_consist
+
         # Fit bucket-level regressor only when explicitly enabled (default disabled).
         if include_meta_reg:
             meta_reg = MetaModel(reports_dir=reports_dir)
@@ -13286,7 +13384,7 @@ def train_meta_models_from_artifacts(
             )
             meta_reg.hpo_out_dir = _meta_hpo_out_dir
             meta_reg.xgb_parallel_forest_params = {
-                "objective": "reg:squarederror",
+                "objective": "reg:pseudohubererror",
                 "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
                 "num_parallel_tree": int(
                     cfg.get("meta_parallel_forest_num_parallel_tree", 20)
@@ -13362,12 +13460,14 @@ def train_meta_models_from_artifacts(
                 f"mean={float(np.mean(_y_reg)):.4f} std={float(np.std(_y_reg)):.4f} "
                 f"base_reg_col={_meta_reg_base_col or 'none'}"
             )
+            _y_bin_reg = _y_bin_for_h_aligned(int(_h_main))
             meta_reg.fit(
                 X_meta_models,
                 _y_reg,
                 sample_weight=w_meta_main,
                 groups=meta_groups,
                 y_per_horizon=None,
+                y_binary=_y_bin_reg,
             )
             meta_models[_h_label] = meta_reg
             _bucket_y_ret[_h_label] = _y_reg.copy()
@@ -13719,8 +13819,13 @@ def train_meta_models_from_artifacts(
                     else np.full(len(df), 0.02, dtype=np.float64)
                 )
             )
+            _y_move_abs_in_clf = (
+                np.where(_y_mid_clf < 0, np.abs(_y_mid_clf), 0.0)
+                if str(side).lower() == "short"
+                else np.where(_y_mid_clf > 0, np.abs(_y_mid_clf), 0.0)
+            )
             _y_move_soft, _y_move, _move_thr = _build_meta_move_soft_target(
-                abs_ret=np.abs(_y_mid_clf),
+                abs_ret=_y_move_abs_in_clf,
                 vol_proxy=_bp_move_clf,
                 thresholds=_move_thresholds,
                 weights=_move_weights,
@@ -13819,8 +13924,8 @@ def train_meta_models_from_artifacts(
                     use_calibration=bool(cfg.get("meta_clf_use_calibration", True)),
                     move_horizon=int(_mid_h),
                 )
-                meta_models[f"{k}_clf"] = meta_clf
-                _bucket_y_ret[f"{k}_clf"] = _y_move_soft.copy()
+                meta_models[f"{_k_prefix}clf"] = meta_clf
+                _bucket_y_ret[f"{_k_prefix}clf"] = _y_move_soft.copy()
 
                 _md = {}
                 for _cn in [
@@ -13849,7 +13954,9 @@ def train_meta_models_from_artifacts(
                         _md[_cn] = df[_cn].values
                 _bucket_metadata[f"{k}_clf"] = _md
 
-                tprint(f"Meta {k}_clf: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
+                tprint(
+                    f"Meta {_k_prefix}clf: fitted ({_time.monotonic()-_t0_meta:.1f}s)."
+                )
                 _meta_clf_fitted = True
             except RuntimeError as _e_meta_clf:
                 tprint(
@@ -13954,32 +14061,118 @@ def train_meta_models_from_artifacts(
                 _cal_confidence = np.asarray(
                     _cal_target["confidence"], dtype=np.float32
                 )
-                _cal_residual = np.where(_cal_valid, _cal_residual, 0.0).astype(
-                    np.float32
-                )
-                _cal_res_mean = float(np.mean(_cal_residual[_cal_valid]))
-                _cal_res_std = float(np.std(_cal_residual[_cal_valid]))
-                _w_cal = (0.5 + 1.5 * _cal_confidence) * _cal_valid.astype(np.float32)
-                _w_cal = _w_cal / max(float(np.mean(_w_cal)), 1e-12)
+                _cal_valid_r = _cal_residual[_cal_valid]
+                _q33 = float(np.percentile(_cal_valid_r, 33.33))
+                _q66 = float(np.percentile(_cal_valid_r, 66.67))
+                _cal_labels = np.ones(len(_cal_residual), dtype=np.int32)
+                _cal_labels[_cal_residual < _q33] = 0
+                _cal_labels[_cal_residual >= _q66] = 2
+                _n_under = int(np.sum((_cal_labels == 0) & _cal_valid))
+                _n_ok = int(np.sum((_cal_labels == 1) & _cal_valid))
+                _n_over = int(np.sum((_cal_labels == 2) & _cal_valid))
                 tprint(
-                    f"  Meta calibration reg: H={_mid_h} "
-                    f"residual mean={_cal_res_mean:.4f} std={_cal_res_std:.4f} "
-                    f"valid={int(np.sum(_cal_valid))}/{len(_cal_valid)} "
-                    f"weight: min={float(np.min(_w_cal)):.3f} "
-                    f"mean={float(np.mean(_w_cal)):.3f} "
-                    f"max={float(np.max(_w_cal)):.3f}"
+                    f"  Meta cal_reg: H={_mid_h} 3-class labels "
+                    f"under={_n_under} ok={_n_ok} over={_n_over} "
+                    f"q33={_q33:.4f} q66={_q66:.4f} "
+                    f"valid={int(np.sum(_cal_valid))}/{len(_cal_valid)}"
                 )
-                _cal_reg = _configure_meta_reg(f"{k}_cal_reg", "meta_selector_cfg")
-                _cal_reg.hpo_n_trials = max(1, _meta_hpo_trials // 2)
+                _w_cal = np.where(
+                    _cal_valid,
+                    0.5 + 1.5 * np.nan_to_num(_cal_confidence, nan=0.0),
+                    0.0,
+                ).astype(np.float32)
+                _cal_mean = (
+                    float(np.mean(_w_cal[_cal_valid])) if np.any(_cal_valid) else 1.0
+                )
+                _w_cal = _w_cal / max(_cal_mean, 1e-12)
                 try:
-                    _cal_reg.fit(
-                        X_meta_models,
-                        _cal_residual,
-                        sample_weight=_w_cal,
-                        groups=meta_groups,
+                    from sklearn.model_selection import StratifiedGroupKFold as _SGKF
+                    from xgboost import XGBClassifier as _XGB3
+
+                    _vm = _cal_valid
+                    _X_v = X_meta_models[_vm]
+                    _y_v = _cal_labels[_vm]
+                    _w_v = _w_cal[_vm]
+                    _g_v = meta_groups[_vm] if meta_groups is not None else None
+                    _mcw = float(cfg.get("meta_parallel_forest_min_child_weight", 40.0))
+                    _xgb3_params = dict(
+                        objective="multi:softprob",
+                        num_class=3,
+                        n_estimators=int(cfg.get("meta_parallel_forest_rounds", 100)),
+                        num_parallel_tree=int(
+                            cfg.get("meta_parallel_forest_num_parallel_tree", 20)
+                        ),
+                        max_depth=int(cfg.get("meta_parallel_forest_max_depth", 5)),
+                        learning_rate=float(
+                            cfg.get("meta_parallel_forest_learning_rate", 0.05)
+                        ),
+                        subsample=0.75,
+                        colsample_bytree=0.75,
+                        reg_alpha=float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
+                        reg_lambda=float(
+                            cfg.get("meta_parallel_forest_reg_lambda", 15.0)
+                        ),
+                        min_child_weight=max(1.0, float(_mcw)),
+                        gamma=float(cfg.get("meta_parallel_forest_gamma", 1.5)),
+                        tree_method="hist",
+                        random_state=42,
+                        n_jobs=2,
+                        verbosity=0,
+                        eval_metric="mlogloss",
+                        early_stopping_rounds=int(
+                            cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
+                        ),
                     )
-                    meta_models[f"{k}_cal_reg"] = _cal_reg
-                    _bucket_y_ret[f"{k}_cal_reg"] = _cal_residual.copy()
+                    _n_cal_splits = 3
+                    _sgkf = _SGKF(n_splits=_n_cal_splits, shuffle=True, random_state=42)
+                    _cal_proba_oof = np.zeros((int(np.sum(_vm)), 3), dtype=np.float32)
+                    _refit_model = None
+                    for _cal_fi, (_cal_tr, _cal_te) in enumerate(
+                        _sgkf.split(_X_v, _y_v, _g_v)
+                    ):
+                        _m = _XGB3(**_xgb3_params)
+                        _m.fit(
+                            _X_v.iloc[_cal_tr]
+                            if hasattr(_X_v, "iloc")
+                            else _X_v[_cal_tr],
+                            _y_v[_cal_tr],
+                            sample_weight=_w_v[_cal_tr],
+                            eval_set=[
+                                (
+                                    _X_v.iloc[_cal_te]
+                                    if hasattr(_X_v, "iloc")
+                                    else _X_v[_cal_te],
+                                    _y_v[_cal_te],
+                                )
+                            ],
+                            verbose=False,
+                        )
+                        _cal_proba_oof[_cal_te] = _m.predict_proba(
+                            _X_v.iloc[_cal_te]
+                            if hasattr(_X_v, "iloc")
+                            else _X_v[_cal_te]
+                        )
+                        _refit_model = _m
+                    _p_under = _cal_proba_oof[:, 0]
+                    _p_over = _cal_proba_oof[:, 2]
+                    _p_ok = np.clip(_cal_proba_oof[:, 1], 1e-6, None)
+                    _cal_score_local = (_p_under - _p_over) / _p_ok
+                    _floor = float(np.percentile(_cal_score_local, 5))
+                    _cal_score_local = np.clip(_cal_score_local, _floor, None).astype(
+                        np.float32
+                    )
+                    _cal_score = np.zeros(len(_cal_residual), dtype=np.float32)
+                    _cal_score[_vm] = _cal_score_local
+
+                    # Store in meta_models as a standardized head
+                    _cal_head = MetaModel(reports_dir=reports_dir)
+                    _cal_head.strategy_name = f"{k}_cal_reg"
+                    _cal_head.model = _refit_model
+                    _cal_head.oof_probs = _cal_score.copy()
+                    _cal_head.valid_idx_ = np.where(_vm)[0]
+
+                    meta_models[f"{k}_cal_reg"] = _cal_head
+                    _bucket_y_ret[f"{k}_cal_reg"] = _cal_score.copy()
                     _md_cal = {}
                     for _cn in [
                         "timestamp",
@@ -14009,8 +14202,10 @@ def train_meta_models_from_artifacts(
                     _md_cal["__cal_base_prob__"] = _cal_target["prob"]
                     _bucket_metadata[f"{k}_cal_reg"] = _md_cal
                     tprint(
-                        f"Meta {k}_cal_reg: fitted "
-                        f"({_time.monotonic()-_t0_meta:.1f}s)."
+                        f"Meta {k}_cal_reg: fitted 3-class "
+                        f"({_time.monotonic()-_t0_meta:.1f}s) "
+                        f"score: mean={float(np.mean(_cal_score_local)):.4f} "
+                        f"floor={_floor:.4f}"
                     )
                 except Exception as _e_cal:
                     tprint(f"Meta {k}_cal_reg: skipped ({_e_cal})")
@@ -14377,7 +14572,7 @@ def train_meta_models_from_artifacts(
         pass
     import re
 
-    _allowed_meta_suffixes = ["_early_inval"]
+    _allowed_meta_suffixes = ["_early_inval", "_cal_reg"]
     if include_meta_reg:
         _allowed_meta_suffixes.append("_reg")
     if include_meta_clf:
@@ -14772,7 +14967,7 @@ def train_meta_models_from_artifacts(
                         "is_long": is_long,
                     }
                 )
-                if key.endswith("_reg"):
+                if key.endswith(("_reg", "_cal_reg")):
                     _score_sign = int(getattr(meta, "score_sign", 1))
                     oof_df["score_sign"] = _score_sign
                     oof_df["oof_pred_oriented"] = _score_sign * _trim_1d(
@@ -14846,49 +15041,80 @@ def train_meta_models_from_artifacts(
             _n_meta = min(_n_meta, len(oof_df))
 
             if _md:
+                _valid_idx = getattr(meta, "valid_idx_", None)
                 if "__ts__" in _md:
-                    oof_df["timestamp"] = pd.to_datetime(_md["__ts__"]).values[:_n_meta]
+                    _ts_val = pd.to_datetime(_md["__ts__"]).values
+                    if _valid_idx is not None and len(_ts_val) > len(oof_df):
+                        oof_df["timestamp"] = _ts_val[_valid_idx]
+                    else:
+                        oof_df["timestamp"] = _ts_val[:_n_meta]
                 elif "timestamp" in _md:
-                    oof_df["timestamp"] = pd.to_datetime(_md["timestamp"]).values[
-                        :_n_meta
-                    ]
+                    _ts_val = pd.to_datetime(_md["timestamp"]).values
+                    if _valid_idx is not None and len(_ts_val) > len(oof_df):
+                        oof_df["timestamp"] = _ts_val[_valid_idx]
+                    else:
+                        oof_df["timestamp"] = _ts_val[:_n_meta]
 
                 if "__symbol__" in _md:
-                    oof_df["symbol"] = _md["__symbol__"][:_n_meta]
+                    _sym_val = _md["__symbol__"]
+                    if _valid_idx is not None and len(_sym_val) > len(oof_df):
+                        oof_df["symbol"] = _sym_val[_valid_idx]
+                    else:
+                        oof_df["symbol"] = _sym_val[:_n_meta]
                 elif "symbol" in _md:
-                    oof_df["symbol"] = _md["symbol"][:_n_meta]
-                elif "asset" in _md:
-                    oof_df["symbol"] = _md["asset"][:_n_meta]
+                    _sym_val = _md["symbol"]
+                    if _valid_idx is not None and len(_sym_val) > len(oof_df):
+                        oof_df["symbol"] = _sym_val[_valid_idx]
+                    else:
+                        oof_df["symbol"] = _sym_val[:_n_meta]
 
                 if "__y_ret__" in _md:
-                    oof_df["return"] = _md["__y_ret__"][:_n_meta]
-                elif "return" in _md:
-                    oof_df["return"] = _md["return"][:_n_meta]
-                if "__barrier_pct__" in _md:
-                    oof_df["barrier_pct"] = np.asarray(
-                        _md["__barrier_pct__"], dtype=float
-                    )[:_n_meta]
-                if "__y_bin__" in _md:
-                    oof_df["y_bin"] = np.asarray(_md["__y_bin__"], dtype=float)[
-                        :_n_meta
-                    ]
-                elif "y_bin" in _md:
-                    oof_df["y_bin"] = np.asarray(_md["y_bin"], dtype=float)[:_n_meta]
+                    _ret_val = _md["__y_ret__"]
+                    if _valid_idx is not None and len(_ret_val) > len(oof_df):
+                        oof_df["return"] = _ret_val[_valid_idx]
+                    else:
+                        oof_df["return"] = _ret_val[:_n_meta]
 
-                _bucket_base = "_".join(key.split("_")[:2])
+                if "__barrier_pct__" in _md:
+                    _bp_val = np.asarray(_md["__barrier_pct__"], dtype=float)
+                    if _valid_idx is not None and len(_bp_val) > len(oof_df):
+                        oof_df["barrier_pct"] = _bp_val[_valid_idx]
+                    else:
+                        oof_df["barrier_pct"] = _bp_val[:_n_meta]
+
+                if "__y_bin__" in _md:
+                    _bin_val = np.asarray(_md["__y_bin__"], dtype=float)
+                    if _valid_idx is not None and len(_bin_val) > len(oof_df):
+                        oof_df["y_bin"] = _bin_val[_valid_idx]
+                    else:
+                        oof_df["y_bin"] = _bin_val[:_n_meta]
 
                 if "__u_policy_net__" in _md:
-                    oof_df["u_policy_net"] = _md["__u_policy_net__"][:_n_meta]
-                elif f"{_bucket_base}_utility" in _bucket_y_ret:
-                    oof_df["u_policy_net"] = _bucket_y_ret[f"{_bucket_base}_utility"][
-                        :_n_meta
-                    ]
+                    _upn_val = _md["__u_policy_net__"]
+                    if _valid_idx is not None and len(_upn_val) > len(oof_df):
+                        oof_df["u_policy_net"] = _upn_val[_valid_idx]
+                    else:
+                        oof_df["u_policy_net"] = _upn_val[:_n_meta]
+
                 if "__u_policy__" in _md:
-                    oof_df["u_policy"] = _md["__u_policy__"][:_n_meta]
+                    _up_val = _md["__u_policy__"]
+                    if _valid_idx is not None and len(_up_val) > len(oof_df):
+                        oof_df["u_policy"] = _up_val[_valid_idx]
+                    else:
+                        oof_df["u_policy"] = _up_val[:_n_meta]
+
                 if "__y_outcome__" in _md:
-                    oof_df["exit_code"] = _md["__y_outcome__"][:_n_meta]
+                    _out_val = _md["__y_outcome__"]
+                    if _valid_idx is not None and len(_out_val) > len(oof_df):
+                        oof_df["exit_code"] = _out_val[_valid_idx]
+                    else:
+                        oof_df["exit_code"] = _out_val[:_n_meta]
                 elif "exit_code" in _md:
-                    oof_df["exit_code"] = _md["exit_code"][:_n_meta]
+                    _out_val = _md["exit_code"]
+                    if _valid_idx is not None and len(_out_val) > len(oof_df):
+                        oof_df["exit_code"] = _out_val[_valid_idx]
+                    else:
+                        oof_df["exit_code"] = _out_val[:_n_meta]
 
                 _bucket_base = "_".join(key.split("_")[:2])
 
@@ -15044,14 +15270,11 @@ def train_meta_models_from_artifacts(
                     )
                     _bot = np.argsort(_moof[_mv])[:_k10]
                     _mr["spread_10"] = float(
-                        np.mean(_my_move[_mv][_top])
-                        - np.mean(_my_move[_mv][_bot])
+                        np.mean(_my_move[_mv][_top]) - np.mean(_my_move[_mv][_bot])
                     )
                     from sklearn.metrics import brier_score_loss
 
-                    _mr["brier"] = float(
-                        brier_score_loss(_my_move[_mv], _moof[_mv])
-                    )
+                    _mr["brier"] = float(brier_score_loss(_my_move[_mv], _moof[_mv]))
                     _mr["brier_baseline"] = float(
                         brier_score_loss(
                             _my_move[_mv],
@@ -15080,6 +15303,14 @@ def train_meta_models_from_artifacts(
         else:
             _my_move = getattr(_mhm, "y_move", None)
             _y_reg_key = _bucket_y_ret.get(_mhk)
+            if _y_reg_key is None and _mhk.endswith("_cal_reg"):
+                # Fallback: calibration regression uses same target as standard regression
+                _reg_key = _mhk.replace("_cal_reg", "_reg")
+                if "short_" in _mhk and _reg_key not in _bucket_y_ret:
+                    # Strategy might not have a "short_" prefixed reg head, use fallback
+                    _reg_key = _mhk.split("_cal_reg")[0].split("short_")[-1] + "_reg"
+                _y_reg_key = _bucket_y_ret.get(_reg_key)
+
             if _y_reg_key is not None:
                 _yt = np.asarray(_y_reg_key, dtype=float).reshape(-1)[:_mn]
                 _mv = np.isfinite(_moof) & np.isfinite(_yt)
@@ -15093,9 +15324,7 @@ def train_meta_models_from_artifacts(
                     _mr["mae_target"] = float(np.mean(np.abs(_moof[_mv] - _yt[_mv])))
                     _ss_res = np.sum((_moof[_mv] - _yt[_mv]) ** 2)
                     _ss_tot = np.sum((_yt[_mv] - np.mean(_yt[_mv])) ** 2)
-                    _mr["r2_target"] = float(
-                        1.0 - _ss_res / max(_ss_tot, 1e-12)
-                    )
+                    _mr["r2_target"] = float(1.0 - _ss_res / max(_ss_tot, 1e-12))
             _md_bucket = _bucket_metadata.get(_mhk, {})
             for _y_col, _metric_name in [
                 ("__y_bin__", "ic_y_bin"),
@@ -15112,9 +15341,7 @@ def train_meta_models_from_artifacts(
                         )
         _meta_head_metrics[_mhk] = _mr
     if _meta_head_metrics:
-        with open(
-            os.path.join(meta_oof_dir, "meta_head_metrics.json"), "w"
-        ) as _f:
+        with open(os.path.join(meta_oof_dir, "meta_head_metrics.json"), "w") as _f:
             json.dump(_meta_head_metrics, _f, indent=2)
 
     with open(os.path.join(meta_oof_dir, "meta_export_summary.json"), "w") as _f:

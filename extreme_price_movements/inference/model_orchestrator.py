@@ -812,11 +812,32 @@ class ModelOrchestrator:
         meta_pred_val = float(meta_pred.iloc[0]) if len(meta_pred) > 0 else 0.0
         results["meta_pred"] = meta_pred_val
 
+        # Merge Meta Model with Base Model Predictions
+        # Final Prediction = Base Prediction + (Meta Prediction * Volatility Scale)
+        base_key = f"{side}_{kind}"
+        if base_key in alpha_preds:
+            base_pred = alpha_preds[base_key]
+            # Try to find vol scale, fallback to 1.0 if not found
+            if "atr_pct" in meta_base.columns:
+                vol_scale = meta_base["atr_pct"].astype(float).fillna(1.0)
+            elif "realized_volatility_24h" in meta_base.columns:
+                vol_scale = meta_base["realized_volatility_24h"].astype(float).fillna(1.0)
+            else:
+                vol_scale = pd.Series(1.0, index=meta_base.index)
+
+            # Reconstruct the calibrated regression prediction
+            calibrated_reg_pred = base_pred + (meta_pred * vol_scale)
+            results["calibrated_reg_pred"] = float(calibrated_reg_pred.iloc[0]) if len(calibrated_reg_pred) > 0 else 0.0
+
+            meta_base["calibrated_reg_pred"] = calibrated_reg_pred
+
         # =====================================================================
         # STEP 5: Ridge Position Sizing
         # =====================================================================
         ridge_features = meta_base.copy()
         ridge_features["meta_pred"] = meta_pred
+        if "calibrated_reg_pred" in meta_base.columns:
+            ridge_features["calibrated_reg_pred"] = meta_base["calibrated_reg_pred"]
 
         position_size, confidence = self.compute_ridge_position_size(
             ridge_features, side, kind

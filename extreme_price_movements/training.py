@@ -13229,15 +13229,20 @@ def train_meta_models_from_artifacts(
             [
                 c
                 for c in pred_h.columns
-                if c in X_meta_base.columns and c.startswith(f"pred_{k}_H")
+                if c in X_meta_base.columns
+                and (c.startswith(f"pred_{k}_H") or c.startswith("pred_H"))
             ]
         )
         meta_model_cols.extend(
             [
                 c
                 for c in pred_h_reg.columns
-                if c in X_meta_base.columns and c.startswith(f"pred_reg_{k}_H")
+                if c in X_meta_base.columns
+                and (c.startswith(f"pred_reg_{k}_H") or c.startswith("pred_reg_H"))
             ]
+        )
+        meta_model_cols.extend(
+            [c for c in _logit_data.keys() if c in X_meta_base.columns]
         )
         meta_model_cols.extend([c for c in feat_cols if c in X_meta_base.columns])
         meta_model_cols.extend(

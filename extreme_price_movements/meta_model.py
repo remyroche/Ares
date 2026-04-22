@@ -1790,7 +1790,16 @@ class MetaModel:
                 f"  Meta HPO cap[{scope_key}/{kind}]: {len(y)} -> {len(y_hpo)} rows "
                 f"(cap={int(self.hpo_max_rows or 0)})"
             )
-        _stats = _make_meta_hpo_running_stats()
+
+        baseline_p = prev_params if prev_params else params
+        _, _, baseline_metrics, _ = self._cv_evaluate(
+            kind, baseline_p, X_hpo, y_hpo, sw_hpo
+        )
+
+        def z(val: float, key: str, fallback_iqr_factor: float = 0.1) -> float:
+            med = float(baseline_metrics.get(key, 0.0))
+            iqr = max(abs(med) * fallback_iqr_factor, 1e-5)
+            return (val - med) / iqr
 
         def _score_params(_p, _X, _y, _sw):
             _, ic, metrics, _ = self._cv_evaluate(
@@ -1809,57 +1818,16 @@ class MetaModel:
             rank_metric_std = metrics.get("std_fold_spearman", 0.0)
             error_metric = metrics.get("mean_rmse", 1.0)
 
-            stats_rank = _stats["rank_metric"]
-            stats_lift = _stats["top_bucket_lift"]
-            stats_mean = _stats["top_bucket_mean"]
-            stats_ic20 = _stats["reg_top20_ic"]
-            stats_ic_overall = _stats["reg_overall_ic"]
-            stats_std = _stats["rank_metric_std"]
-            stats_err = _stats["error_metric"]
-
-            z_rank = (
-                stats_rank.zscore(rank_metric)
-                if stats_rank.n >= 10
-                else rank_metric * 5.0
-            )
-            z_lift = (
-                stats_lift.zscore(top_bucket_lift)
-                if stats_lift.n >= 10
-                else top_bucket_lift * 5.0
-            )
-            z_mean = (
-                stats_mean.zscore(top_bucket_mean)
-                if stats_mean.n >= 10
-                else top_bucket_mean * 5.0
-            )
-            z_ic20 = (
-                stats_ic20.zscore(top_bucket_ic20)
-                if stats_ic20.n >= 10
-                else top_bucket_ic20 * 5.0
-            )
-            z_ic_overall = (
-                stats_ic_overall.zscore(ic_overall)
-                if stats_ic_overall.n >= 10
-                else ic_overall * 5.0
-            )
-            z_std = (
-                stats_std.zscore(rank_metric_std)
-                if stats_std.n >= 10
-                else rank_metric_std * 5.0
-            )
-            z_err = (
-                stats_err.zscore(error_metric)
-                if stats_err.n >= 10
-                else error_metric * 5.0
-            )
-
-            stats_rank.update(rank_metric)
-            stats_lift.update(top_bucket_lift)
-            stats_mean.update(top_bucket_mean)
-            stats_ic20.update(top_bucket_ic20)
-            stats_ic_overall.update(ic_overall)
-            stats_std.update(rank_metric_std)
-            stats_err.update(error_metric)
+            z_rank = z(rank_metric, "mean_fold_ic_top10")
+            z_lift = z(top_bucket_lift, "mean_top_decile_lift")
+            z_mean = z(top_bucket_mean, "mean_top_decile_mean")
+            z_ic20 = z(top_bucket_ic20, "mean_fold_ic_top20")
+            z_ic_overall = z(ic_overall, "median_fold_spearman")
+            z_std = z(rank_metric_std, "std_fold_spearman")
+            # For error metric, lower is better. Optuna is maximizing composite.
+            # Z-score of error: if error < median, z_err is negative.
+            # Then composite does `- 0.01 * z_err`, so lower error increases composite.
+            z_err = z(error_metric, "mean_rmse")
 
             composite = (
                 0.30 * z_rank
@@ -3453,7 +3421,16 @@ class MetaClassifierModel:
                 f"  Meta clf HPO cap[{scope_key}/{kind}]: {len(y)} -> {len(y_hpo)} rows "
                 f"(cap={int(self.hpo_max_rows or 0)})"
             )
-        _stats = _make_meta_hpo_running_stats()
+
+        baseline_p = prev_params if prev_params else params
+        _, _, baseline_metrics, _ = self._cv_evaluate(
+            kind, baseline_p, X_hpo, y_hpo, sw_hpo
+        )
+
+        def z(val: float, key: str, fallback_iqr_factor: float = 0.1) -> float:
+            med = float(baseline_metrics.get(key, 0.0))
+            iqr = max(abs(med) * fallback_iqr_factor, 1e-5)
+            return (val - med) / iqr
 
         def _score_params(_p, _X, _y, _sw):
             _, _, metrics, _ = self._cv_evaluate(
@@ -3462,7 +3439,7 @@ class MetaClassifierModel:
                 _X,
                 _y,
                 _sw,
-                n_splits=2,
+                n_splits=self.cv_splits,
             )
 
             rank_metric = metrics.get("median_fold_spearman", 0.0)
@@ -3473,57 +3450,13 @@ class MetaClassifierModel:
             rank_metric_std = metrics.get("std_fold_spearman", 0.0)
             error_metric = metrics.get("mean_brier", 0.5)
 
-            stats_rank = _stats["rank_metric"]
-            stats_lift = _stats["top_bucket_lift"]
-            stats_mean = _stats["top_bucket_mean"]
-            stats_prec = _stats["top_bucket_precision"]
-            stats_rec = _stats["top_bucket_recall"]
-            stats_std = _stats["rank_metric_std"]
-            stats_err = _stats["error_metric"]
-
-            z_rank = (
-                stats_rank.zscore(rank_metric)
-                if stats_rank.n >= 10
-                else rank_metric * 5.0
-            )
-            z_lift = (
-                stats_lift.zscore(top_bucket_lift)
-                if stats_lift.n >= 10
-                else top_bucket_lift * 5.0
-            )
-            z_mean = (
-                stats_mean.zscore(top_bucket_mean)
-                if stats_mean.n >= 10
-                else top_bucket_mean * 5.0
-            )
-            z_prec = (
-                stats_prec.zscore(top_bucket_precision)
-                if stats_prec.n >= 10
-                else top_bucket_precision * 5.0
-            )
-            z_rec = (
-                stats_rec.zscore(top_bucket_recall)
-                if stats_rec.n >= 10
-                else top_bucket_recall * 5.0
-            )
-            z_std = (
-                stats_std.zscore(rank_metric_std)
-                if stats_std.n >= 10
-                else rank_metric_std * 5.0
-            )
-            z_err = (
-                stats_err.zscore(error_metric)
-                if stats_err.n >= 10
-                else (error_metric - 0.25) * 5.0
-            )
-
-            stats_rank.update(rank_metric)
-            stats_lift.update(top_bucket_lift)
-            stats_mean.update(top_bucket_mean)
-            stats_prec.update(top_bucket_precision)
-            stats_rec.update(top_bucket_recall)
-            stats_std.update(rank_metric_std)
-            stats_err.update(error_metric)
+            z_rank = z(rank_metric, "median_fold_spearman")
+            z_lift = z(top_bucket_lift, "mean_top_decile_lift")
+            z_mean = z(top_bucket_mean, "mean_top_decile_mean")
+            z_prec = z(top_bucket_precision, "mean_top_decile_precision")
+            z_rec = z(top_bucket_recall, "mean_top_decile_recall")
+            z_std = z(rank_metric_std, "std_fold_spearman")
+            z_err = z(error_metric, "mean_brier")
 
             composite = (
                 0.14 * z_rank

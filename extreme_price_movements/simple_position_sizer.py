@@ -34,6 +34,7 @@ try:
 except ImportError:
     LGBMRegressor = None  # type: ignore[assignment, misc]
 
+from extreme_price_movements.meta_training.trade_filtering import select_top_rank_mask
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.offline_optimisers.params_store import (
     load_inference_candidate_mask_params_per_bucket,
@@ -5391,6 +5392,89 @@ def run_simple_position_sizer_from_artifacts(
         trade_outcomes = trade_outcomes.loc[np.asarray(scorable_mask)].reset_index(
             drop=True
         )
+
+        _base_prob_col = next(
+            (
+                c
+                for c in [
+                    "oof_prob",
+                    "clf",
+                    "pred",
+                    "oof_pred",
+                    "base_h4",
+                    "base_h2",
+                ]
+                if c in active_df.columns
+            ),
+            None,
+        )
+        if _base_prob_col is not None and len(active_df) == len(trade_outcomes):
+            _asset_col = (
+                "symbol"
+                if "symbol" in active_df.columns
+                else "__symbol__"
+                if "__symbol__" in active_df.columns
+                else None
+            )
+            _ts_col = (
+                "timestamp"
+                if "timestamp" in active_df.columns
+                else "__ts__"
+                if "__ts__" in active_df.columns
+                else None
+            )
+            _side_ret = np.asarray(trade_outcomes["return"].values, dtype=np.float32)
+            _y_bin = (_side_ret > 0).astype(np.float32)
+            _mask_res = select_top_rank_mask(
+                base_prob=np.asarray(
+                    active_df[_base_prob_col].values, dtype=np.float32
+                ),
+                strategy_mask=np.ones(len(active_df), dtype=bool),
+                symbols=(
+                    np.asarray(active_df[_asset_col].astype(str).values)
+                    if _asset_col is not None
+                    else np.asarray(np.repeat("all", len(active_df)))
+                ),
+                timestamps=(
+                    pd.to_datetime(active_df[_ts_col], errors="coerce")
+                    if _ts_col is not None
+                    else None
+                ),
+                outcomes=_y_bin,
+                mfe=(
+                    np.asarray(trade_outcomes["mfe_ret"].values, dtype=np.float32)
+                    if "mfe_ret" in trade_outcomes.columns
+                    else None
+                ),
+                mae=(
+                    np.asarray(trade_outcomes["mae_ret"].values, dtype=np.float32)
+                    if "mae_ret" in trade_outcomes.columns
+                    else None
+                ),
+                t_mfe=(
+                    np.asarray(trade_outcomes["t_mfe"].values, dtype=np.float32)
+                    if "t_mfe" in trade_outcomes.columns
+                    else None
+                ),
+                t_mae=(
+                    np.asarray(trade_outcomes["t_mae"].values, dtype=np.float32)
+                    if "t_mae" in trade_outcomes.columns
+                    else None
+                ),
+                tp=(
+                    np.asarray(active_df["__barrier_pct__"].values, dtype=np.float32)
+                    if "__barrier_pct__" in active_df.columns
+                    else np.full(len(active_df), 0.02, dtype=np.float32)
+                ),
+            )
+            _rank_mask = np.asarray(_mask_res.mask, dtype=bool)
+            if int(np.sum(_rank_mask)) > 50:
+                active_df = active_df.loc[_rank_mask].reset_index(drop=True)
+                trade_outcomes = trade_outcomes.loc[_rank_mask].reset_index(drop=True)
+                logger.info(
+                    f"Applied top-rank trade mask in sizer: topx={_mask_res.chosen_topx}% "
+                    f"coverage={_mask_res.coverage:.3f} kept={int(np.sum(_rank_mask))}/{len(_rank_mask)}"
+                )
 
         # Identify columns to use as heads.
         # STRICT RULE: never use realized-outcome columns as predictive heads — they are

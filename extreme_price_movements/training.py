@@ -34,6 +34,10 @@ from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 from .gate_metrics import compute_stage_gate_metrics
 from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
 from .meta_model import MetaClassifierModel, MetaModel
+from .meta_training.trade_filtering import (
+    get_or_select_top_rank_mask,
+    rolling_asset_percentile,
+)
 from .meta_training.utility_smooth import (
     smooth_utility_from_log_heads,
     smooth_utility_from_log_heads_standardized,
@@ -11744,6 +11748,7 @@ def train_meta_models_from_artifacts(
         _t_aligned_start = _time.monotonic()
         _bucket_key = f"{side}_{k}"
         _bucket_n = int(len(df))
+        _fit_mask_local = np.asarray(trade_mask, dtype=bool)
         _bucket_horizons = sorted({int(h) for h in (bucket_horizons or [])})
         _native_bucket_h = (
             int(_bucket_horizons[0]) if len(_bucket_horizons) == 1 else None
@@ -11963,6 +11968,7 @@ def train_meta_models_from_artifacts(
                 _target = np.log1p(
                     np.clip(np.asarray(_target_src, dtype=np.float32) / _bp, 0.0, None)
                 )
+                _target = np.where(np.asarray(trade_mask, dtype=bool), _target, np.nan)
                 _weights = _meta_map_weights(_target, df, trade_mask)
                 _head_name = f"{_bucket_key}_mae_h{int(_h)}"
                 _model = _configure_meta_reg(_head_name, "aux_mae_selector_cfg")
@@ -11971,10 +11977,14 @@ def train_meta_models_from_artifacts(
                     f"hpo_trials={_meta_hpo_trials}"
                 )
                 _model.fit(
-                    X_meta_base,
-                    _target,
-                    sample_weight=_weights,
-                    groups=meta_groups,
+                    X_meta_base.loc[_fit_mask_local].reset_index(drop=True),
+                    np.asarray(_target, dtype=float)[_fit_mask_local],
+                    sample_weight=np.asarray(_weights, dtype=float)[_fit_mask_local],
+                    groups=(
+                        np.asarray(meta_groups)[_fit_mask_local]
+                        if meta_groups is not None
+                        else None
+                    ),
                     y_per_horizon=None,
                 )
                 meta_models[_head_name] = _model
@@ -12002,6 +12012,7 @@ def train_meta_models_from_artifacts(
                 _target = np.log1p(
                     np.clip(np.asarray(_target_src, dtype=np.float32) / _bp, 0.0, None)
                 )
+                _target = np.where(np.asarray(trade_mask, dtype=bool), _target, np.nan)
                 _weights = _meta_map_weights(_target, df, trade_mask)
                 _head_name = f"{_bucket_key}_mfe_h{int(_h)}"
                 _model = _configure_meta_reg(_head_name, "aux_mfe_selector_cfg")
@@ -12010,10 +12021,14 @@ def train_meta_models_from_artifacts(
                     f"hpo_trials={_meta_hpo_trials}"
                 )
                 _model.fit(
-                    X_meta_base,
-                    _target,
-                    sample_weight=_weights,
-                    groups=meta_groups,
+                    X_meta_base.loc[_fit_mask_local].reset_index(drop=True),
+                    np.asarray(_target, dtype=float)[_fit_mask_local],
+                    sample_weight=np.asarray(_weights, dtype=float)[_fit_mask_local],
+                    groups=(
+                        np.asarray(meta_groups)[_fit_mask_local]
+                        if meta_groups is not None
+                        else None
+                    ),
                     y_per_horizon=None,
                 )
                 meta_models[_head_name] = _model
@@ -12145,22 +12160,32 @@ def train_meta_models_from_artifacts(
                     f"hpo_trials={_meta_hpo_trials} move_h={_mid_h}"
                 )
                 _clf.fit(
-                    X_meta_base,
-                    _y_mid,
-                    sample_weight=_weights_clf,
-                    groups=meta_groups,
+                    X_meta_base.loc[_fit_mask_local].reset_index(drop=True),
+                    np.asarray(_y_mid, dtype=float)[_fit_mask_local],
+                    sample_weight=np.asarray(_weights_clf, dtype=float)[
+                        _fit_mask_local
+                    ],
+                    groups=(
+                        np.asarray(meta_groups)[_fit_mask_local]
+                        if meta_groups is not None
+                        else None
+                    ),
                     y_per_horizon={
                         int(h): _align_bucket_vec(
                             ret_for_h(int(h)), fill_value=np.nan, dtype=np.float64
-                        )
+                        )[_fit_mask_local]
                         for h in _bucket_horizons
                     },
-                    vol_proxy=_bp_move,
-                    realized_u_policy=np.abs(_y_mid),
+                    vol_proxy=np.asarray(_bp_move, dtype=float)[_fit_mask_local],
+                    realized_u_policy=np.abs(np.asarray(_y_mid, dtype=float))[
+                        _fit_mask_local
+                    ],
                     selection_cfg=_sel_cfg,
-                    y_move_override=_y_move_soft,
-                    y_class_override=_y_move,
-                    trade_mask=np.asarray(trade_mask, dtype=bool),
+                    y_move_override=np.asarray(_y_move_soft, dtype=float)[
+                        _fit_mask_local
+                    ],
+                    y_class_override=np.asarray(_y_move, dtype=float)[_fit_mask_local],
+                    trade_mask=np.asarray(trade_mask, dtype=bool)[_fit_mask_local],
                     move_thresholds=_move_thresholds,
                     move_weights=_move_weights,
                     use_class_weight_multiplier=bool(
@@ -12220,22 +12245,34 @@ def train_meta_models_from_artifacts(
                         require_positive_base_rate=False,
                     )
                     _clf_fb.fit(
-                        X_meta_base,
-                        _y_mid,
-                        sample_weight=_weights_clf,
-                        groups=meta_groups,
+                        X_meta_base.loc[_fit_mask_local].reset_index(drop=True),
+                        np.asarray(_y_mid, dtype=float)[_fit_mask_local],
+                        sample_weight=np.asarray(_weights_clf, dtype=float)[
+                            _fit_mask_local
+                        ],
+                        groups=(
+                            np.asarray(meta_groups)[_fit_mask_local]
+                            if meta_groups is not None
+                            else None
+                        ),
                         y_per_horizon={
                             int(h): _align_bucket_vec(
                                 ret_for_h(int(h)), fill_value=np.nan, dtype=np.float64
-                            )
+                            )[_fit_mask_local]
                             for h in _bucket_horizons
                         },
-                        vol_proxy=_bp_move,
-                        realized_u_policy=np.abs(_y_mid),
+                        vol_proxy=np.asarray(_bp_move, dtype=float)[_fit_mask_local],
+                        realized_u_policy=np.abs(np.asarray(_y_mid, dtype=float))[
+                            _fit_mask_local
+                        ],
                         selection_cfg=_sel_cfg_fb,
-                        y_move_override=_y_move_soft,
-                        y_class_override=_y_move,
-                        trade_mask=np.asarray(trade_mask, dtype=bool),
+                        y_move_override=np.asarray(_y_move_soft, dtype=float)[
+                            _fit_mask_local
+                        ],
+                        y_class_override=np.asarray(_y_move, dtype=float)[
+                            _fit_mask_local
+                        ],
+                        trade_mask=np.asarray(trade_mask, dtype=bool)[_fit_mask_local],
                         move_thresholds=_move_thresholds,
                         move_weights=_move_weights,
                         use_class_weight_multiplier=False,
@@ -12272,6 +12309,7 @@ def train_meta_models_from_artifacts(
             _cal_target = _build_base_correctness_target_for_h(int(primary_h))
             _cal_residual = np.asarray(_cal_target["residual"], dtype=np.float32)
             _cal_valid = np.asarray(_cal_target["valid_mask"], dtype=bool)
+            _cal_valid &= np.asarray(trade_mask, dtype=bool)
             _cal_confidence = np.asarray(_cal_target["confidence"], dtype=np.float32)
             _cal_valid_r = _cal_residual[_cal_valid]
             _q33 = float(np.percentile(_cal_valid_r, 33.33))
@@ -13171,17 +13209,181 @@ def train_meta_models_from_artifacts(
         meta_interaction_cols: list[str] = []
         _base_prob_h = int(_strategy_primary_h)
         _base_prob_col = (
-            f"pred_{k}_H{int(_base_prob_h)}"
-            if f"pred_{k}_H{int(_base_prob_h)}" in X_meta_base.columns
+            "p_final_oof"
+            if "p_final_oof" in X_meta_base.columns
             else (
-                f"pred_H{int(_base_prob_h)}"
-                if f"pred_H{int(_base_prob_h)}" in X_meta_base.columns
-                else None
+                "s_final_oof"
+                if "s_final_oof" in X_meta_base.columns
+                else (
+                    f"pred_{k}_H{int(_base_prob_h)}"
+                    if f"pred_{k}_H{int(_base_prob_h)}" in X_meta_base.columns
+                    else (
+                        f"pred_H{int(_base_prob_h)}"
+                        if f"pred_H{int(_base_prob_h)}" in X_meta_base.columns
+                        else None
+                    )
+                )
             )
         )
         if _base_prob_col is not None:
             _base_prob_vals = np.asarray(
                 X_meta_base[_base_prob_col].values, dtype=np.float32
+            )
+            _asset_col = (
+                "__symbol__"
+                if "__symbol__" in df.columns
+                else "symbol"
+                if "symbol" in df.columns
+                else None
+            )
+            _asset_vals = (
+                np.asarray(df[_asset_col].astype(str).values)
+                if _asset_col is not None
+                else np.asarray(np.repeat("all", len(df)))
+            )
+            _ts_vals = (
+                pd.to_datetime(df["__ts__"], errors="coerce")
+                if "__ts__" in df.columns
+                else pd.to_datetime(df["timestamp"], errors="coerce")
+                if "timestamp" in df.columns
+                else None
+            )
+            _rank_window = int(cfg.get("meta_trade_rank_window", 240))
+            _base_rank_pct = rolling_asset_percentile(
+                _base_prob_vals, _asset_vals, _ts_vals, window=_rank_window
+            )
+            X_meta_base["base_model_score"] = _base_prob_vals.astype(
+                np.float32, copy=False
+            )
+            X_meta_base["base_model_score_pct"] = _base_rank_pct.astype(
+                np.float32, copy=False
+            )
+            _base_outcome = (
+                np.asarray(df["__y_bin__"].values, dtype=np.float32)
+                if "__y_bin__" in df.columns
+                else np.full(len(df), np.nan, dtype=np.float32)
+            )
+            X_meta_base["base_model_margin"] = np.abs(
+                _base_prob_vals - np.nan_to_num(_base_outcome, nan=0.5)
+            ).astype(np.float32, copy=False)
+            _meta_prob_err = np.full(len(df), np.nan, dtype=np.float32)
+            _recent_prob_err_20 = np.full(len(df), np.nan, dtype=np.float32)
+            _recent_hit_rate_20 = np.full(len(df), np.nan, dtype=np.float32)
+            _prob_pred = (_base_prob_vals >= 0.5).astype(np.int8)
+            _rank_top10 = _base_rank_pct >= 0.90
+            _work = pd.DataFrame(
+                {
+                    "asset": _asset_vals,
+                    "base_prob": _base_prob_vals,
+                    "outcome": _base_outcome,
+                    "rank_top10": _rank_top10,
+                    "pred_label": _prob_pred,
+                }
+            )
+            for _asset, _grp in _work.groupby("asset", sort=False):
+                _idx = _grp.index.to_numpy(dtype=np.int64)
+                _p = _grp["base_prob"].to_numpy(dtype=np.float32)
+                _o = _grp["outcome"].to_numpy(dtype=np.float32)
+                _pe = np.abs(np.roll(_p, 1) - np.roll(_o, 1)).astype(np.float32)
+                if _pe.size > 0:
+                    _pe[0] = np.nan
+                _meta_prob_err[_idx] = _pe
+                _recent_prob_err_20[_idx] = (
+                    pd.Series(_pe).rolling(20, min_periods=5).mean().to_numpy()
+                )
+                _hit = (
+                    _grp["pred_label"].to_numpy(dtype=np.int8) == (_o >= 0.5)
+                ).astype(np.float32)
+                _hit_top = _hit[_grp["rank_top10"].to_numpy(dtype=bool)]
+                _hit_roll = (
+                    pd.Series(_hit_top).rolling(20, min_periods=5).mean().to_numpy()
+                    if _hit_top.size > 0
+                    else np.array([], dtype=np.float32)
+                )
+                _hit_series = np.full(len(_grp), np.nan, dtype=np.float32)
+                if _hit_roll.size > 0:
+                    _top_idx_local = np.flatnonzero(
+                        _grp["rank_top10"].to_numpy(dtype=bool)
+                    )
+                    _hit_series[_top_idx_local] = _hit_roll.astype(np.float32)
+                    _hit_series = (
+                        pd.Series(_hit_series)
+                        .ffill()
+                        .fillna(method="bfill")
+                        .to_numpy(dtype=np.float32)
+                    )
+                _recent_hit_rate_20[_idx] = _hit_series
+            X_meta_base["prob_error"] = _meta_prob_err.astype(np.float32, copy=False)
+            X_meta_base["recent_prob_error_20"] = _recent_prob_err_20.astype(
+                np.float32, copy=False
+            )
+            X_meta_base["recent_hit_rate_20"] = _recent_hit_rate_20.astype(
+                np.float32, copy=False
+            )
+            X_meta_base["base_model_abs_error_roll20"] = (
+                pd.Series(
+                    np.abs(_base_prob_vals - np.nan_to_num(_base_outcome, nan=0.5))
+                )
+                .rolling(20, min_periods=5)
+                .mean()
+                .to_numpy(dtype=np.float32)
+            )
+
+            _native_exc = None
+            _mfe_col = f"__meta_raw__mfe_{int(_strategy_primary_h)}h"
+            _mae_col = f"__meta_raw__mae_{int(_strategy_primary_h)}h"
+            _t_mfe_col = f"__meta_raw__t_mfe_{int(_strategy_primary_h)}h"
+            _t_mae_col = f"__meta_raw__t_mae_{int(_strategy_primary_h)}h"
+            if all(
+                _c in df.columns for _c in [_mfe_col, _mae_col, _t_mfe_col, _t_mae_col]
+            ):
+                _native_exc = (
+                    np.asarray(df[_mfe_col].values, dtype=np.float32),
+                    np.asarray(df[_mae_col].values, dtype=np.float32),
+                    np.asarray(df[_t_mfe_col].values, dtype=np.float32),
+                    np.asarray(df[_t_mae_col].values, dtype=np.float32),
+                )
+            elif all(
+                _c in df.columns
+                for _c in ["__mfe_ret__", "__mae_ret__", "__t_mfe__", "__t_mae__"]
+            ):
+                _native_exc = (
+                    np.asarray(df["__mfe_ret__"].values, dtype=np.float32),
+                    np.asarray(df["__mae_ret__"].values, dtype=np.float32),
+                    np.asarray(df["__t_mfe__"].values, dtype=np.float32),
+                    np.asarray(df["__t_mae__"].values, dtype=np.float32),
+                )
+            _rank_mask_cache = cfg.setdefault("_meta_rank_mask_cache", {})
+            _mask_res = get_or_select_top_rank_mask(
+                strategy_id=str(k),
+                cache=_rank_mask_cache,
+                base_prob=_base_prob_vals,
+                strategy_mask=np.asarray(_trade_mask, dtype=bool),
+                symbols=_asset_vals,
+                timestamps=_ts_vals,
+                outcomes=_base_outcome,
+                mfe=_native_exc[0] if _native_exc is not None else None,
+                mae=_native_exc[1] if _native_exc is not None else None,
+                t_mfe=_native_exc[2] if _native_exc is not None else None,
+                t_mae=_native_exc[3] if _native_exc is not None else None,
+                tp=(
+                    np.asarray(df["__barrier_pct__"].values, dtype=np.float32)
+                    if "__barrier_pct__" in df.columns
+                    else np.full(len(df), 0.02, dtype=np.float32)
+                ),
+                topx_values=tuple(
+                    int(x)
+                    for x in cfg.get("meta_trade_topx_values", [20, 25, 30, 35, 40])
+                ),
+                rank_window=_rank_window,
+            )
+            _trade_mask = np.asarray(_trade_mask, dtype=bool) & np.asarray(
+                _mask_res.mask, dtype=bool
+            )
+            tprint(
+                f"  Meta {k}: rank-gated second mask chosen_topx={_mask_res.chosen_topx}% "
+                f"coverage={_mask_res.coverage:.4f} objective={_mask_res.score:.6e} "
+                f"kept={int(np.sum(_trade_mask))}/{len(_trade_mask)}"
             )
             _interaction_sources = {
                 "base_prob_x_compression_score": "compression_score",
@@ -13248,6 +13450,31 @@ def train_meta_models_from_artifacts(
             [c for c in meta_interaction_cols if c in X_meta_base.columns]
         )
         meta_model_cols = list(dict.fromkeys(meta_model_cols))
+        _ridge_test_keys = [
+            str(c)
+            for c in (cfg.get("test_feature_keys", []) or [])
+            if isinstance(c, str)
+        ]
+        if _ridge_test_keys:
+            _keep_preselected = set(_ridge_test_keys)
+            _keep_preselected.update(
+                {
+                    "base_model_score",
+                    "base_model_score_pct",
+                    "base_model_margin",
+                    "prob_error",
+                    "recent_prob_error_20",
+                    "recent_hit_rate_20",
+                    "base_model_abs_error_roll20",
+                }
+            )
+            _pre_n = len(meta_model_cols)
+            _filtered_cols = [c for c in meta_model_cols if c in _keep_preselected]
+            if _filtered_cols:
+                meta_model_cols = _filtered_cols
+                tprint(
+                    f"  Meta {k}: preselected ridge-test feature gate { _pre_n } -> {len(meta_model_cols)} cols"
+                )
         if not meta_model_cols:
             raise RuntimeError(
                 f"Meta {k}: no configured meta keys survived into the model input frame"
@@ -13391,6 +13618,7 @@ def train_meta_models_from_artifacts(
         w_meta_main = w_meta_main * _sign_consist
 
         # Fit bucket-level regressor only when explicitly enabled (default disabled).
+        _fit_mask_main = np.asarray(_trade_mask, dtype=bool)
         if include_meta_reg:
             meta_reg = MetaModel(reports_dir=reports_dir)
             meta_reg.strategy_name = _h_label
@@ -13474,6 +13702,7 @@ def train_meta_models_from_artifacts(
                 else np.full(len(df), 0.02, dtype=np.float32)
             )
             _y_reg = np.asarray(_meta_reg_target, dtype=np.float32)
+            _y_reg = np.where(np.asarray(_trade_mask, dtype=bool), _y_reg, np.nan)
             tprint(
                 f"  REG target: correction-on-base-reg H={_h_main} "
                 f"mean={float(np.mean(_y_reg)):.4f} std={float(np.std(_y_reg)):.4f} "
@@ -13481,12 +13710,16 @@ def train_meta_models_from_artifacts(
             )
             _y_bin_reg = _y_bin_for_h_aligned(int(_h_main))
             meta_reg.fit(
-                X_meta_models,
-                _y_reg,
-                sample_weight=w_meta_main,
-                groups=meta_groups,
+                X_meta_models.loc[_fit_mask_main].reset_index(drop=True),
+                np.asarray(_y_reg, dtype=float)[_fit_mask_main],
+                sample_weight=np.asarray(w_meta_main, dtype=float)[_fit_mask_main],
+                groups=(
+                    np.asarray(meta_groups)[_fit_mask_main]
+                    if meta_groups is not None
+                    else None
+                ),
                 y_per_horizon=None,
-                y_binary=_y_bin_reg,
+                y_binary=np.asarray(_y_bin_reg, dtype=float)[_fit_mask_main],
             )
             meta_models[_h_label] = meta_reg
             _bucket_y_ret[_h_label] = _y_reg.copy()
@@ -13503,6 +13736,9 @@ def train_meta_models_from_artifacts(
             )
             _y_q20_reg = np.where(np.isfinite(_y_q20_reg), _y_q20_reg, 0.0).astype(
                 np.float32
+            )
+            _y_q20_reg = np.where(
+                np.asarray(_trade_mask, dtype=bool), _y_q20_reg, np.nan
             )
             _q20_finite = np.isfinite(_ret_q20)
             _q20_thr = (
@@ -13533,10 +13769,14 @@ def train_meta_models_from_artifacts(
                     f"  Fitting MetaModel {k}_q20_reg (side-adjusted 20% tail, n={len(df)}, feats={X_meta_base.shape[1]}) ({_time.monotonic()-_t0_meta:.1f}s)..."
                 )
                 meta_q20_reg.fit(
-                    X_meta_models,
-                    _y_q20_reg,
-                    sample_weight=w_meta_main,
-                    groups=meta_groups,
+                    X_meta_models.loc[_fit_mask_main].reset_index(drop=True),
+                    np.asarray(_y_q20_reg, dtype=float)[_fit_mask_main],
+                    sample_weight=np.asarray(w_meta_main, dtype=float)[_fit_mask_main],
+                    groups=(
+                        np.asarray(meta_groups)[_fit_mask_main]
+                        if meta_groups is not None
+                        else None
+                    ),
                     y_per_horizon=None,
                 )
                 meta_models[f"{k}_q20_reg"] = meta_q20_reg
@@ -13801,6 +14041,7 @@ def train_meta_models_from_artifacts(
                     strategy=strat,
                 )
             w_meta_clf = w_meta_clf.astype(np.float32)
+            w_meta_clf = w_meta_clf * np.asarray(_trade_mask, dtype=np.float32)
 
             _mid_h = int(_strategy_primary_h)
             _move_vol_proxy = _vol_proxy
@@ -13933,17 +14174,28 @@ def train_meta_models_from_artifacts(
 
             try:
                 meta_clf.fit(
-                    X_meta_models,
-                    y_target_clf,
-                    sample_weight=w_meta_clf,
-                    groups=meta_groups,
-                    y_per_horizon=_y_per_h,
-                    vol_proxy=_move_vol_proxy,
-                    realized_u_policy=np.abs(y_target_clf),
+                    X_meta_models.loc[_fit_mask_main].reset_index(drop=True),
+                    np.asarray(y_target_clf, dtype=float)[_fit_mask_main],
+                    sample_weight=np.asarray(w_meta_clf, dtype=float)[_fit_mask_main],
+                    groups=(
+                        np.asarray(meta_groups)[_fit_mask_main]
+                        if meta_groups is not None
+                        else None
+                    ),
+                    y_per_horizon={
+                        int(h): np.asarray(v, dtype=float)[_fit_mask_main]
+                        for h, v in _y_per_h.items()
+                    },
+                    vol_proxy=np.asarray(_move_vol_proxy, dtype=float)[_fit_mask_main],
+                    realized_u_policy=np.abs(np.asarray(y_target_clf, dtype=float))[
+                        _fit_mask_main
+                    ],
                     selection_cfg=_sel_cfg,
-                    y_move_override=_y_move_soft,
-                    y_class_override=_y_move,
-                    trade_mask=_trade_mask,
+                    y_move_override=np.asarray(_y_move_soft, dtype=float)[
+                        _fit_mask_main
+                    ],
+                    y_class_override=np.asarray(_y_move, dtype=float)[_fit_mask_main],
+                    trade_mask=np.asarray(_trade_mask, dtype=bool)[_fit_mask_main],
                     move_thresholds=_move_thresholds,
                     move_weights=_move_weights,
                     use_class_weight_multiplier=bool(
@@ -14023,17 +14275,34 @@ def train_meta_models_from_artifacts(
                         require_positive_base_rate=False,
                     )
                     _meta_clf_fallback.fit(
-                        X_meta_models,
-                        y_target_clf,
-                        sample_weight=w_meta_clf,
-                        groups=meta_groups,
-                        y_per_horizon=_y_per_h,
-                        vol_proxy=_move_vol_proxy,
-                        realized_u_policy=np.abs(y_target_clf),
+                        X_meta_models.loc[_fit_mask_main].reset_index(drop=True),
+                        np.asarray(y_target_clf, dtype=float)[_fit_mask_main],
+                        sample_weight=np.asarray(w_meta_clf, dtype=float)[
+                            _fit_mask_main
+                        ],
+                        groups=(
+                            np.asarray(meta_groups)[_fit_mask_main]
+                            if meta_groups is not None
+                            else None
+                        ),
+                        y_per_horizon={
+                            int(h): np.asarray(v, dtype=float)[_fit_mask_main]
+                            for h, v in _y_per_h.items()
+                        },
+                        vol_proxy=np.asarray(_move_vol_proxy, dtype=float)[
+                            _fit_mask_main
+                        ],
+                        realized_u_policy=np.abs(np.asarray(y_target_clf, dtype=float))[
+                            _fit_mask_main
+                        ],
                         selection_cfg=_sel_cfg_fallback,
-                        y_move_override=_y_move_soft,
-                        y_class_override=_y_move,
-                        trade_mask=_trade_mask,
+                        y_move_override=np.asarray(_y_move_soft, dtype=float)[
+                            _fit_mask_main
+                        ],
+                        y_class_override=np.asarray(_y_move, dtype=float)[
+                            _fit_mask_main
+                        ],
+                        trade_mask=np.asarray(_trade_mask, dtype=bool)[_fit_mask_main],
                         move_thresholds=_move_thresholds,
                         move_weights=_move_weights,
                         use_class_weight_multiplier=False,
@@ -14087,6 +14356,7 @@ def train_meta_models_from_artifacts(
                 _cal_target = _build_base_correctness_target_for_h(int(_mid_h))
                 _cal_residual = np.asarray(_cal_target["residual"], dtype=np.float32)
                 _cal_valid = np.asarray(_cal_target["valid_mask"], dtype=bool)
+                _cal_valid &= np.asarray(_trade_mask, dtype=bool)
                 _cal_confidence = np.asarray(
                     _cal_target["confidence"], dtype=np.float32
                 )
@@ -14262,16 +14532,31 @@ def train_meta_models_from_artifacts(
                 meta_q20_clf.FEE_PER_ROUND_TRIP = _meta_clf_fee
                 try:
                     meta_q20_clf.fit(
-                        X_meta_models,
-                        _ret_q20,
-                        sample_weight=w_meta_clf,
-                        groups=meta_groups,
-                        y_per_horizon=_y_per_h,
-                        vol_proxy=_move_vol_proxy,
-                        realized_u_policy=np.abs(_ret_q20),
+                        X_meta_models.loc[_fit_mask_main].reset_index(drop=True),
+                        np.asarray(_ret_q20, dtype=float)[_fit_mask_main],
+                        sample_weight=np.asarray(w_meta_clf, dtype=float)[
+                            _fit_mask_main
+                        ],
+                        groups=(
+                            np.asarray(meta_groups)[_fit_mask_main]
+                            if meta_groups is not None
+                            else None
+                        ),
+                        y_per_horizon={
+                            int(h): np.asarray(v, dtype=float)[_fit_mask_main]
+                            for h, v in _y_per_h.items()
+                        },
+                        vol_proxy=np.asarray(_move_vol_proxy, dtype=float)[
+                            _fit_mask_main
+                        ],
+                        realized_u_policy=np.abs(np.asarray(_ret_q20, dtype=float))[
+                            _fit_mask_main
+                        ],
                         selection_cfg=_sel_cfg,
-                        y_class_override=_y_q20_clf,
-                        trade_mask=_trade_mask,
+                        y_class_override=np.asarray(_y_q20_clf, dtype=float)[
+                            _fit_mask_main
+                        ],
+                        trade_mask=np.asarray(_trade_mask, dtype=bool)[_fit_mask_main],
                         move_thresholds=_move_thresholds,
                         move_weights=_move_weights,
                         use_class_weight_multiplier=bool(

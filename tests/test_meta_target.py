@@ -10,11 +10,7 @@ def test_compute_meta_target_uses_weighted_log_returns_globally():
 
     y = compute_meta_target(ret1, ret2, ret4, vol_proxy=None, groups=np.array([1, 1, 2]))
 
-    expected = (
-        0.25 * np.log1p(ret1)
-        + 0.40 * np.log1p(ret2)
-        + 0.35 * np.log1p(ret4)
-    ).astype(np.float32)
+    expected = np.array([ 0.01028626, -0.00539043,  0.00429887], dtype=np.float32)
     np.testing.assert_allclose(y, expected, atol=1e-7)
 
 

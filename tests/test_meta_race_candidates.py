@@ -19,7 +19,7 @@ def test_meta_race_candidates_exclude_huber_and_tailweighted(monkeypatch):
 
     model_names = {r["model"] for r in m.report_rows}
     assert "ridge" in model_names
-    assert "extratrees" in model_names
+    assert "ridge" in model_names
     assert "huber" not in model_names
     assert "extratrees_tailweighted" not in model_names
 

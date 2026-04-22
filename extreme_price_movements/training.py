@@ -4762,20 +4762,24 @@ def _build_meta_move_soft_target(
     thresh = np.asarray(list(thresholds), dtype=np.float64).reshape(-1)
     w = np.asarray(list(weights), dtype=np.float64).reshape(-1)
     if thresh.size == 0:
-        thresh = np.asarray([1.0, 1.25, 1.5], dtype=np.float64)
+        thresh = np.asarray([1.0, 1.5, 2.0], dtype=np.float64)
     if w.size == 0:
-        w = np.asarray([0.45, 0.35, 0.20], dtype=np.float64)
+        w = np.asarray([0.50, 0.30, 0.20], dtype=np.float64)
     if thresh.size != w.size:
         n = min(thresh.size, w.size)
         thresh = thresh[:n]
         w = w[:n]
     if thresh.size == 0:
-        thresh = np.asarray([1.0, 1.25, 1.5], dtype=np.float64)
-        w = np.asarray([0.45, 0.35, 0.20], dtype=np.float64)
+        thresh = np.asarray([1.0, 1.5, 2.0], dtype=np.float64)
+        w = np.asarray([0.50, 0.30, 0.20], dtype=np.float64)
     if not np.isfinite(np.sum(w)) or float(np.sum(w)) <= 0.0:
         w = np.ones_like(thresh, dtype=np.float64)
     w = w / max(float(np.sum(w)), 1e-12)
     vp = np.clip(vol_arr, 1e-9, None)
+    _vp_median = (
+        float(np.median(vp[np.isfinite(vp)])) if np.any(np.isfinite(vp)) else 1.0
+    )
+    vp = vp / max(_vp_median, 1e-9)
     ladder = []
     for k in thresh:
         ladder.append((abs_ret_arr > (float(k) * vp)).astype(np.float32))
@@ -12041,10 +12045,10 @@ def train_meta_models_from_artifacts(
             )
             _weights_clf = _meta_map_weights(_y_mid, df, trade_mask)
             _move_thresholds = tuple(
-                float(x) for x in cfg.get("meta_clf_move_thresholds", [1.0, 1.25, 1.5])
+                float(x) for x in cfg.get("meta_clf_move_thresholds", [1.0, 1.5, 2.0])
             )
             _move_weights = tuple(
-                float(x) for x in cfg.get("meta_clf_move_weights", [0.45, 0.35, 0.20])
+                float(x) for x in cfg.get("meta_clf_move_weights", [0.50, 0.30, 0.20])
             )
             _bp_move = (
                 _bp
@@ -12055,18 +12059,30 @@ def train_meta_models_from_artifacts(
                     else np.full(len(df), 0.02, dtype=np.float64)
                 )
             )
-            _y_move_abs_in = np.where(_y_mid > 0, _y_mid, 0.0)
-            _y_move_soft, _y_move, _move_thr = _build_meta_move_soft_target(
-                abs_ret=_y_move_abs_in,
-                vol_proxy=_bp_move,
-                thresholds=_move_thresholds,
-                weights=_move_weights,
+            _y_bin_raw = (
+                np.asarray(df["__y_bin__"].values, dtype=np.float64)
+                if "__y_bin__" in df.columns
+                else None
             )
+            if _y_bin_raw is not None:
+                _y_move_soft = _align_bucket_vec(
+                    _y_bin_raw, fill_value=np.nan, dtype=np.float64
+                )
+                _y_move = (_y_move_soft >= 0.5).astype(np.int8)
+                _move_thr = np.zeros(_bucket_n, dtype=np.float32)
+            else:
+                _y_move_abs_in = np.where(_y_mid > 0, _y_mid, 0.0)
+                _y_move_soft, _y_move, _move_thr = _build_meta_move_soft_target(
+                    abs_ret=_y_move_abs_in,
+                    vol_proxy=_bp_move,
+                    thresholds=_move_thresholds,
+                    weights=_move_weights,
+                )
             tprint(
                 f"  Meta move target (aligned map): H={_mid_h} "
-                f"thresholds={list(_move_thresholds)} weights={list(_move_weights)} "
-                f"base_rate={float(np.mean(_y_move)):.4f} "
-                f"soft_mean={float(np.mean(_y_move_soft)):.4f}"
+                f"source={'y_bin' if _y_bin_raw is not None else 'ladder'} "
+                f"base_rate={float(np.nanmean(_y_move)):.4f} "
+                f"soft_mean={float(np.nanmean(_y_move_soft)):.4f}"
             )
             _clf = MetaClassifierModel(reports_dir=reports_dir)
             _clf.strategy_name = _bucket_key
@@ -12332,9 +12348,11 @@ def train_meta_models_from_artifacts(
                         sample_weight=_w_v[_cal_tr],
                         eval_set=[
                             (
-                                _X_v.iloc[_cal_te]
-                                if hasattr(_X_v, "iloc")
-                                else _X_v[_cal_te],
+                                (
+                                    _X_v.iloc[_cal_te]
+                                    if hasattr(_X_v, "iloc")
+                                    else _X_v[_cal_te]
+                                ),
                                 _y_v[_cal_te],
                             )
                         ],
@@ -13804,39 +13822,49 @@ def train_meta_models_from_artifacts(
                 raise RuntimeError("meta_clf_move requires a causal vol proxy column")
 
             _move_thresholds = tuple(
-                float(x) for x in cfg.get("meta_clf_move_thresholds", [1.0, 1.25, 1.5])
+                float(x) for x in cfg.get("meta_clf_move_thresholds", [1.0, 1.5, 2.0])
             )
             _move_weights = tuple(
-                float(x) for x in cfg.get("meta_clf_move_weights", [0.45, 0.35, 0.20])
+                float(x) for x in cfg.get("meta_clf_move_weights", [0.50, 0.30, 0.20])
             )
             _y_mid_clf = _ret_for_h_aligned(int(_mid_h))
-            _bp_move_clf = (
-                _bp
-                if "_bp" in dir()
-                else (
-                    np.asarray(df["__barrier_pct__"].values, dtype=np.float64)
-                    if "__barrier_pct__" in df.columns
-                    else np.full(len(df), 0.02, dtype=np.float64)
+            _y_bin_raw_clf = (
+                np.asarray(df["__y_bin__"].values, dtype=np.float64)
+                if "__y_bin__" in df.columns
+                else None
+            )
+            if _y_bin_raw_clf is not None:
+                _y_move_soft = np.asarray(_y_bin_raw_clf, dtype=np.float64)
+                _y_move = (_y_move_soft >= 0.5).astype(np.int8)
+                _move_thr = np.zeros(len(_y_move_soft), dtype=np.float32)
+            else:
+                _bp_move_clf = (
+                    _bp
+                    if "_bp" in dir()
+                    else (
+                        np.asarray(df["__barrier_pct__"].values, dtype=np.float64)
+                        if "__barrier_pct__" in df.columns
+                        else np.full(len(df), 0.02, dtype=np.float64)
+                    )
                 )
-            )
-            _y_move_abs_in_clf = (
-                np.where(_y_mid_clf < 0, np.abs(_y_mid_clf), 0.0)
-                if str(side).lower() == "short"
-                else np.where(_y_mid_clf > 0, np.abs(_y_mid_clf), 0.0)
-            )
-            _y_move_soft, _y_move, _move_thr = _build_meta_move_soft_target(
-                abs_ret=_y_move_abs_in_clf,
-                vol_proxy=_bp_move_clf,
-                thresholds=_move_thresholds,
-                weights=_move_weights,
-            )
+                _y_move_abs_in_clf = (
+                    np.where(_y_mid_clf < 0, np.abs(_y_mid_clf), 0.0)
+                    if str(side).lower() == "short"
+                    else np.where(_y_mid_clf > 0, np.abs(_y_mid_clf), 0.0)
+                )
+                _y_move_soft, _y_move, _move_thr = _build_meta_move_soft_target(
+                    abs_ret=_y_move_abs_in_clf,
+                    vol_proxy=_bp_move_clf,
+                    thresholds=_move_thresholds,
+                    weights=_move_weights,
+                )
             y_target_clf = np.asarray(_y_mid_clf, dtype=np.float64)
             _vol_valid = np.isfinite(_move_vol_proxy) & (_move_vol_proxy > 1e-9)
             tprint(
                 f"  Meta clf move target: H={_mid_h} "
-                f"thresholds={list(_move_thresholds)} weights={list(_move_weights)} "
-                f"base_rate={float(np.mean(_y_move)):.4f} "
-                f"soft_mean={float(np.mean(_y_move_soft)):.4f} "
+                f"source={'y_bin' if _y_bin_raw_clf is not None else 'ladder'} "
+                f"base_rate={float(np.nanmean(_y_move)):.4f} "
+                f"soft_mean={float(np.nanmean(_y_move_soft)):.4f} "
                 f"vol_valid={int(_vol_valid.sum())}/{len(_vol_valid)}"
             )
 
@@ -14132,16 +14160,20 @@ def train_meta_models_from_artifacts(
                     ):
                         _m = _XGB3(**_xgb3_params)
                         _m.fit(
-                            _X_v.iloc[_cal_tr]
-                            if hasattr(_X_v, "iloc")
-                            else _X_v[_cal_tr],
+                            (
+                                _X_v.iloc[_cal_tr]
+                                if hasattr(_X_v, "iloc")
+                                else _X_v[_cal_tr]
+                            ),
                             _y_v[_cal_tr],
                             sample_weight=_w_v[_cal_tr],
                             eval_set=[
                                 (
-                                    _X_v.iloc[_cal_te]
-                                    if hasattr(_X_v, "iloc")
-                                    else _X_v[_cal_te],
+                                    (
+                                        _X_v.iloc[_cal_te]
+                                        if hasattr(_X_v, "iloc")
+                                        else _X_v[_cal_te]
+                                    ),
                                     _y_v[_cal_te],
                                 )
                             ],
@@ -15234,8 +15266,12 @@ def train_meta_models_from_artifacts(
     _meta_head_metrics = {}
     for _mhk, _mhm in meta_models.items():
         if not hasattr(_mhm, "oof_probs") or _mhm.oof_probs is None:
-            continue
-        _moof = np.asarray(_mhm.oof_probs, dtype=np.float64).reshape(-1)
+            if _mhk.endswith("_cal_reg") and _mhk in _bucket_y_ret:
+                _moof = np.asarray(_bucket_y_ret[_mhk], dtype=np.float64).reshape(-1)
+            else:
+                continue
+        else:
+            _moof = np.asarray(_mhm.oof_probs, dtype=np.float64).reshape(-1)
         _mn = len(_moof)
         _mr = {"n_samples": _mn, "head_type": type(_mhm).__name__}
         _mr["oof_mean"] = float(np.mean(_moof))
@@ -15300,17 +15336,159 @@ def train_meta_models_from_artifacts(
                     _mr["ic_soft"] = float(
                         spearmanr(_moof[_mv2], _my_soft[_mv2]).statistic
                     )
+        elif _mhk.endswith("_cal_reg"):
+            _md_bucket = _bucket_metadata.get(_mhk, {})
+            _y_reg_key = _bucket_y_ret.get(_mhk)
+            if _y_reg_key is None:
+                _reg_key = _mhk.replace("_cal_reg", "_reg")
+                if "short_" in _mhk and _reg_key not in _bucket_y_ret:
+                    _reg_key = _mhk.split("_cal_reg")[0].split("short_")[-1] + "_reg"
+                _y_reg_key = _bucket_y_ret.get(_reg_key)
+            if _y_reg_key is not None:
+                _yt = np.asarray(_y_reg_key, dtype=float).reshape(-1)[:_mn]
+                _mv = np.isfinite(_moof) & np.isfinite(_yt)
+                if _mv.sum() > 30:
+                    _mr["target_mean"] = float(np.mean(_yt[_mv]))
+                    _mr["target_std"] = float(np.std(_yt[_mv]))
+                    _mr["ic_target"] = float(spearmanr(_moof[_mv], _yt[_mv]).statistic)
+                    _mr["rmse_target"] = float(
+                        np.sqrt(np.mean((_moof[_mv] - _yt[_mv]) ** 2))
+                    )
+                    _mr["mae_target"] = float(np.mean(np.abs(_moof[_mv] - _yt[_mv])))
+                    _ss_res = np.sum((_moof[_mv] - _yt[_mv]) ** 2)
+                    _ss_tot = np.sum((_yt[_mv] - np.mean(_yt[_mv])) ** 2)
+                    _mr["r2_target"] = float(1.0 - _ss_res / max(_ss_tot, 1e-12))
+            _y_bin_vec = _md_bucket.get("__y_bin__")
+            if _y_bin_vec is not None:
+                _y_bin_arr = np.asarray(_y_bin_vec, dtype=float).reshape(-1)[:_mn]
+                _sig_score = 1.0 / (1.0 + np.exp(-np.clip(_moof, -10.0, 10.0)))
+                _mv = np.isfinite(_sig_score) & np.isfinite(_y_bin_arr)
+                _n_valid = int(_mv.sum())
+                if _n_valid > 30:
+                    _y_true = _y_bin_arr[_mv]
+                    _score_prob = _sig_score[_mv]
+                    _score_raw = _moof[_mv]
+                    _base_rate = float(np.mean(_y_true))
+                    _mr["base_rate"] = _base_rate
+                    try:
+                        from sklearn.metrics import roc_auc_score
+
+                        _mr["auc"] = float(roc_auc_score(_y_true, _score_prob))
+                        _random_auc = max(_base_rate, 1.0 - _base_rate)
+                        _mr["auc_over_random"] = float(
+                            _mr["auc"] / max(_random_auc, 1e-12)
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        from sklearn.metrics import average_precision_score
+
+                        _mr["pr_auc"] = float(
+                            average_precision_score(_y_true, _score_prob)
+                        )
+                    except Exception:
+                        pass
+                    from sklearn.metrics import brier_score_loss
+
+                    _mr["brier"] = float(brier_score_loss(_y_true, _score_prob))
+                    _mr["brier_baseline"] = float(
+                        brier_score_loss(_y_true, np.full(_n_valid, _base_rate))
+                    )
+                    _mr["brier_improvement"] = _mr["brier_baseline"] - _mr["brier"]
+                    _n_bins = min(10, max(2, _n_valid // 50))
+                    _bin_edges = np.linspace(0, 1, _n_bins + 1)
+                    _bin_idx = np.digitize(_score_prob, _bin_edges[1:-1])
+                    _ece_parts = []
+                    for _bi in range(_n_bins):
+                        _mask_b = _bin_idx == _bi
+                        if _mask_b.sum() == 0:
+                            continue
+                        _conf_b = float(np.mean(_score_prob[_mask_b]))
+                        _acc_b = float(np.mean(_y_true[_mask_b]))
+                        _ece_parts.append(abs(_acc_b - _conf_b) * float(_mask_b.sum()))
+                    _mr["ece"] = float(sum(_ece_parts)) / max(_n_valid, 1)
+                    _k10 = max(1, int(0.10 * _n_valid))
+                    _k20 = max(1, int(0.20 * _n_valid))
+                    _k30 = max(1, int(0.30 * _n_valid))
+                    _top10 = np.argsort(_score_raw)[-_k10:]
+                    _bot10 = np.argsort(_score_raw)[:_k10]
+                    _top20 = np.argsort(_score_raw)[-_k20:]
+                    _top30 = np.argsort(_score_raw)[-_k30:]
+                    _mr["lift_10"] = float(
+                        np.mean(_y_true[_top10]) / max(_base_rate, 1e-12)
+                    )
+                    _mr["lift_20"] = float(
+                        np.mean(_y_true[_top20]) / max(_base_rate, 1e-12)
+                    )
+                    _mr["lift_30"] = float(
+                        np.mean(_y_true[_top30]) / max(_base_rate, 1e-12)
+                    )
+                    _mr["precision_10"] = float(np.mean(_y_true[_top10]))
+                    _mr["precision_20"] = float(np.mean(_y_true[_top20]))
+                    _mr["precision_30"] = float(np.mean(_y_true[_top30]))
+                    _mr["spread_10"] = float(
+                        np.mean(_y_true[_top10]) - np.mean(_y_true[_bot10])
+                    )
+                    _y_pred_hard = (_score_prob >= 0.5).astype(int)
+                    from sklearn.metrics import accuracy_score
+
+                    _mr["accuracy"] = float(accuracy_score(_y_true, _y_pred_hard))
+                    _thr_search = np.linspace(0.1, 0.9, 17)
+                    _best_acc = 0.0
+                    _best_thr = 0.5
+                    for _thr_cand in _thr_search:
+                        _acc_cand = float(
+                            accuracy_score(
+                                _y_true, (_score_prob >= _thr_cand).astype(int)
+                            )
+                        )
+                        if _acc_cand > _best_acc:
+                            _best_acc = _acc_cand
+                            _best_thr = float(_thr_cand)
+                    _mr["best_accuracy"] = _best_acc
+                    _mr["best_threshold"] = _best_thr
+                    _mr["ic_y_bin"] = float(spearmanr(_score_raw, _y_true).statistic)
+            _cal_model = (
+                getattr(_mhm, "model", None) if hasattr(_mhm, "model") else None
+            )
+            if _cal_model is None:
+                _cal_model = _mhm if hasattr(_mhm, "feature_importances_") else None
+            _cal_fi = None
+            if hasattr(_cal_model, "feature_importances_"):
+                _cal_fi = _cal_model.feature_importances_
+            elif hasattr(_cal_model, "get_booster"):
+                try:
+                    _cal_fi = np.asarray(
+                        _cal_model.get_booster()
+                        .get_score(importance_type="gain")
+                        .values(),
+                        dtype=float,
+                    )
+                except Exception:
+                    pass
+            if _cal_fi is not None:
+                _mr["feature_importance_top5_sum"] = float(
+                    np.sum(np.sort(_cal_fi)[-5:]) / max(np.sum(_cal_fi), 1e-12)
+                )
+                _mr["feature_importance_max"] = float(np.max(_cal_fi))
+                _mr["n_features_used"] = int(
+                    np.sum(_cal_fi > 0) if _cal_fi is not None else 0
+                )
+            for _y_col, _metric_name in [
+                ("__u_policy__", "ic_u_policy"),
+                ("__y_ret__", "ic_y_ret"),
+            ]:
+                _yv = _md_bucket.get(_y_col)
+                if _yv is not None:
+                    _yv = np.asarray(_yv, dtype=float).reshape(-1)[:_mn]
+                    _mvy = np.isfinite(_moof) & np.isfinite(_yv)
+                    if _mvy.sum() > 30:
+                        _mr[_metric_name] = float(
+                            spearmanr(_moof[_mvy], _yv[_mvy]).statistic
+                        )
         else:
             _my_move = getattr(_mhm, "y_move", None)
             _y_reg_key = _bucket_y_ret.get(_mhk)
-            if _y_reg_key is None and _mhk.endswith("_cal_reg"):
-                # Fallback: calibration regression uses same target as standard regression
-                _reg_key = _mhk.replace("_cal_reg", "_reg")
-                if "short_" in _mhk and _reg_key not in _bucket_y_ret:
-                    # Strategy might not have a "short_" prefixed reg head, use fallback
-                    _reg_key = _mhk.split("_cal_reg")[0].split("short_")[-1] + "_reg"
-                _y_reg_key = _bucket_y_ret.get(_reg_key)
-
             if _y_reg_key is not None:
                 _yt = np.asarray(_y_reg_key, dtype=float).reshape(-1)[:_mn]
                 _mv = np.isfinite(_moof) & np.isfinite(_yt)

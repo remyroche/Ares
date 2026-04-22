@@ -2,12 +2,12 @@
   "ridge_resid_mean": 0.06753137707710266,
   "ridge_resid_std": 3.44271020753479,
   "et_best_params": {
-    "n_estimators": 800,
-    "max_depth": 3,
-    "max_features": 0.2979914312095726,
+    "n_estimators": 600,
+    "max_depth": 7,
+    "max_features": 0.4991510292120497,
     "criterion": "absolute_error",
-    "min_samples_leaf_frac": 0.011809091556421522,
-    "min_samples_split_frac": 0.023013213230530575
+    "min_samples_leaf_frac": 0.01174880481836174,
+    "min_samples_split_frac": 0.012461551325737036
   },
   "has_calibration": true,
   "atr_column": "atr_12_15m"

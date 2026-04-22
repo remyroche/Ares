@@ -2,18 +2,17 @@
   "scope_key": "short_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928",
   "kind": "xgb_clf",
   "best_params": {
-    "objective": "binary:logitraw",
-    "n_estimators": 500,
+    "n_estimators": 1100,
     "max_depth": 6,
-    "learning_rate": 0.031780189144474454,
-    "subsample": 0.6728584611565692,
-    "colsample_bytree": 0.7753582285665757,
-    "colsample_bynode": 0.7461591869497989,
-    "gamma": 0.5347186534282267,
-    "reg_alpha": 0.004769341126514405,
-    "reg_lambda": 1.252360917041232,
-    "min_child_weight": 2
+    "learning_rate": 0.025071852018858122,
+    "subsample": 0.6074958226597662,
+    "colsample_bytree": 0.6511005764054602,
+    "colsample_bynode": 0.6444115570753538,
+    "gamma": 0.6569709863373031,
+    "reg_alpha": 0.07630922633896545,
+    "reg_lambda": 35.71496738797461,
+    "min_child_weight": 7
   },
-  "n_trials_completed": 143,
-  "best_trial_number": 82
+  "n_trials_completed": 145,
+  "best_trial_number": 83
 }

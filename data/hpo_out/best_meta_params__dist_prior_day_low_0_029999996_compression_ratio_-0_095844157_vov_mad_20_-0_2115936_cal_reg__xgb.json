@@ -5,15 +5,15 @@
     "objective": "reg:squarederror",
     "n_estimators": 500,
     "max_depth": 4,
-    "learning_rate": 0.02798220627404522,
-    "subsample": 0.6636877771624169,
-    "colsample_bytree": 0.6806182943924277,
-    "colsample_bynode": 0.720770654894632,
-    "gamma": 3.1371055968859145,
-    "reg_alpha": 0.034500993150714254,
-    "reg_lambda": 42.972267138900435,
-    "min_child_weight": 21
+    "learning_rate": 0.03934214229111583,
+    "subsample": 0.6093145771066317,
+    "colsample_bytree": 0.6953108498708424,
+    "colsample_bynode": 0.7230427308865571,
+    "gamma": 4.259199208649376,
+    "reg_alpha": 0.027400495227303517,
+    "reg_lambda": 14.57556755406517,
+    "min_child_weight": 39
   },
-  "n_trials_completed": 62,
-  "best_trial_number": 1
+  "n_trials_completed": 72,
+  "best_trial_number": 11
 }

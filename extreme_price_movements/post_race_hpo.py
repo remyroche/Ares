@@ -346,9 +346,7 @@ def suggest_xgboost(
     if max_leaves is not None:
         params["max_leaves"] = max_leaves
 
-    params["objective"] = trial.suggest_categorical(
-        "objective", ["binary:logistic", "binary:logitraw"]
-    )
+    params["objective"] = "binary:logistic"
     params["_use_scale_pos_weight"] = bool(use_spw)
     return params
 

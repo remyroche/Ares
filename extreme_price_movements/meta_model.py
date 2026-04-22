@@ -2194,16 +2194,38 @@ class MetaModel:
             # Let's just catch the error or ensure y_fit has at least some noise.
             pass
 
-        final_model = self._fit_one(
-            kind,
-            tuned_params,
-            Xv_gate,
-            y_fit,
-            Xv_gate,
-            y_fit,
-            sw=sw_fit,
-            feature_names=self.selected_features,
-        )
+        try:
+            final_model = self._fit_one(
+                kind,
+                tuned_params,
+                Xv_gate,
+                y_fit,
+                Xv_gate,
+                y_fit,
+                sw=sw_fit,
+                feature_names=self.selected_features,
+            )
+        except Exception as _fit_err:
+            _obj = str(tuned_params.get("objective", ""))
+            if "pseudohubererror" in _obj or "absoluteerror" in _obj:
+                tprint(
+                    f"  WARNING: Final fit failed with {kind} obj={_obj}: {_fit_err}. "
+                    f"Retrying with reg:squarederror"
+                )
+                tuned_params = dict(tuned_params)
+                tuned_params["objective"] = "reg:squarederror"
+                final_model = self._fit_one(
+                    kind,
+                    tuned_params,
+                    Xv_gate,
+                    y_fit,
+                    Xv_gate,
+                    y_fit,
+                    sw=sw_fit,
+                    feature_names=self.selected_features,
+                )
+            else:
+                raise
 
         self.model = {
             "kind": kind,
@@ -2797,20 +2819,22 @@ class MetaClassifierModel:
         thresh = np.asarray(list(thresholds), dtype=np.float64).reshape(-1)
         w = np.asarray(list(weights), dtype=np.float64).reshape(-1)
         if thresh.size == 0:
-            thresh = np.asarray([1.0, 1.25, 1.5], dtype=np.float64)
+            thresh = np.asarray([1.0, 1.5, 2.0], dtype=np.float64)
         if w.size == 0:
-            w = np.asarray([0.45, 0.35, 0.20], dtype=np.float64)
+            w = np.asarray([0.50, 0.30, 0.20], dtype=np.float64)
         if thresh.size != w.size:
             n = min(thresh.size, w.size)
             thresh = thresh[:n]
             w = w[:n]
         if thresh.size == 0:
-            thresh = np.asarray([1.0, 1.25, 1.5], dtype=np.float64)
-            w = np.asarray([0.45, 0.35, 0.20], dtype=np.float64)
+            thresh = np.asarray([1.0, 1.5, 2.0], dtype=np.float64)
+            w = np.asarray([0.50, 0.30, 0.20], dtype=np.float64)
         if not np.isfinite(np.sum(w)) or float(np.sum(w)) <= 0.0:
             w = np.ones_like(thresh, dtype=np.float64)
         w = w / max(float(np.sum(w)), 1e-12)
         vp = np.clip(vol_proxy, 1e-9, None)
+        _vp_median = float(np.median(vp[np.isfinite(vp)])) if np.any(np.isfinite(vp)) else 1.0
+        vp = vp / max(_vp_median, 1e-9)
         ladder = []
         for k in thresh:
             ladder.append((abs_ret > (float(k) * vp)).astype(np.float32))
@@ -3558,9 +3582,7 @@ class MetaClassifierModel:
                 p["rsm"] = trial.suggest_float("rsm", 0.5, 0.95)
             elif kind == "xgb_clf":
                 p["num_parallel_tree"] = 5
-                p["objective"] = trial.suggest_categorical(
-                    "objective", ["binary:logistic", "binary:logitraw"]
-                )
+                p["objective"] = "binary:logistic"
                 p["n_estimators"] = trial.suggest_int(
                     "n_estimators", 400, 1500, step=100
                 )

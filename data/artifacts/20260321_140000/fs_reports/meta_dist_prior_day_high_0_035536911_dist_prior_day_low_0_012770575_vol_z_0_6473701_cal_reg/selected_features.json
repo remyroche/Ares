@@ -1,0 +1,32 @@
+{
+  "selected_features": [
+    "base_prob_x_entropy",
+    "spike_score",
+    "impact_z",
+    "vol_z_30_calm",
+    "kf_atr_mean",
+    "vol_regime_z",
+    "kf_ret1h_mean",
+    "vol_low",
+    "regime_stability_24h",
+    "vol_high",
+    "liq_low",
+    "vol_state",
+    "rng_z",
+    "kf_innov_var",
+    "kf_vol_ratio_mean",
+    "vol_concentration_12",
+    "vol_regime_switch_12h",
+    "time_since_trough_12h",
+    "vol_scale",
+    "volume_entropy_12",
+    "t_trail_proxy",
+    "liq_score",
+    "time_since_peak_12h",
+    "asset_vol_level",
+    "kf_snr_est",
+    "asset_atr_level",
+    "rvol_hod_base"
+  ],
+  "anchors": []
+}

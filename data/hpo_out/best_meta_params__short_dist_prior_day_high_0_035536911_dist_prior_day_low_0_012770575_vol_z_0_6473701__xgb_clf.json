@@ -1,0 +1,18 @@
+{
+  "scope_key": "short_dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701",
+  "kind": "xgb_clf",
+  "best_params": {
+    "n_estimators": 1300,
+    "max_depth": 5,
+    "learning_rate": 0.05121777378407,
+    "subsample": 0.8800602196396832,
+    "colsample_bytree": 0.606374519469615,
+    "colsample_bynode": 0.6516058556709026,
+    "gamma": 1.1333304604668872,
+    "reg_alpha": 0.08402829650088009,
+    "reg_lambda": 13.094621014897573,
+    "min_child_weight": 11
+  },
+  "n_trials_completed": 62,
+  "best_trial_number": 0
+}

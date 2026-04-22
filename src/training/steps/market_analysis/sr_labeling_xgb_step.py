@@ -18,6 +18,7 @@ from src.training.steps.market_analysis.components.level_generators import (
     RollingKDELevelGenerator,
     HTFLevelGenerator,
 )
+
 try:
     from sklearn.isotonic import IsotonicRegression
 except Exception:
@@ -71,7 +72,10 @@ def _generate_sr_levels(ohlcv: pd.DataFrame) -> pd.DataFrame:
         kde_gen = RollingKDELevelGenerator()
         kde_levels = kde_gen.compute_levels(ohlcv)
 
-        if not kde_levels.empty and "primary_level_volume_depth_ratio" in kde_levels.columns:
+        if (
+            not kde_levels.empty
+            and "primary_level_volume_depth_ratio" in kde_levels.columns
+        ):
             strength = kde_levels["primary_level_volume_depth_ratio"].astype(float)
             strength = strength.replace([np.inf, -np.inf], np.nan)
             if strength.notna().sum() >= 20:
@@ -113,62 +117,117 @@ def _generate_sr_levels(ohlcv: pd.DataFrame) -> pd.DataFrame:
     except Exception as exc:
         tprint_warning(f"Failed to compute HTF levels: {exc}")
 
-    close = ohlcv["close"].astype(float)
+    close_vals = ohlcv["close"].astype(float).reindex(base.index).values
 
-    def _process_row(row: pd.Series) -> Dict[str, Any]:
-        price = float(close.at[row.name]) if row.name in close.index else float("nan")
+    def _safe_get(df, col, default):
+        if col in df.columns:
+            return df[col].values
+        return np.full(len(df), default)
+
+    kde_p = _safe_get(base, "kde_primary_level_price", np.nan)
+    kde_t = _safe_get(base, "kde_primary_level_type", np.nan)
+    kde_tc = _safe_get(base, "kde_primary_level_touch_count", 0)
+    kde_pr = _safe_get(base, "kde_primary_level_prominence", 0.0)
+    kde_vd = _safe_get(base, "kde_primary_level_volume_depth_ratio", 0.0)
+    kde_ft = _safe_get(base, "kde_primary_level_first_touch_ts", pd.NaT)
+    kde_lt = _safe_get(base, "kde_primary_level_last_touch_ts", pd.NaT)
+
+    htf_p = _safe_get(base, "htf_primary_level_price", np.nan)
+    htf_t = _safe_get(base, "htf_primary_level_type", np.nan)
+    htf_tc = _safe_get(base, "htf_primary_level_touch_count", 0)
+    htf_pr = _safe_get(base, "htf_primary_level_prominence", 0.0)
+    htf_vd = _safe_get(base, "htf_primary_level_volume_depth_ratio", 0.0)
+    htf_ft = _safe_get(base, "htf_primary_level_first_touch_ts", pd.NaT)
+    htf_lt = _safe_get(base, "htf_primary_level_last_touch_ts", pd.NaT)
+
+    results = []
+
+    zip_it = zip(
+        close_vals,
+        kde_p,
+        kde_t,
+        kde_tc,
+        kde_pr,
+        kde_vd,
+        kde_ft,
+        kde_lt,
+        htf_p,
+        htf_t,
+        htf_tc,
+        htf_pr,
+        htf_vd,
+        htf_ft,
+        htf_lt,
+    )
+
+    empty_res = {
+        "primary_level_price": float("nan"),
+        "primary_level_type": np.nan,
+        "primary_level_source": np.nan,
+        "primary_level_touch_count": 0,
+        "primary_level_prominence": 0.0,
+        "primary_level_volume_depth_ratio": 0.0,
+        "primary_level_first_touch_ts": pd.NaT,
+        "primary_level_last_touch_ts": pd.NaT,
+        "confluence_score": 0,
+        "weighted_confluence_score": 0.0,
+    }
+
+    for (
+        price,
+        kp,
+        kt,
+        ktc,
+        kpr,
+        kvd,
+        kft,
+        klt,
+        hp,
+        ht,
+        htc,
+        hpr,
+        hvd,
+        hft,
+        hlt,
+    ) in zip_it:
         if not np.isfinite(price):
-            return {
-                "primary_level_price": float("nan"),
-                "primary_level_type": np.nan,
-                "primary_level_source": np.nan,
-                "primary_level_touch_count": 0,
-                "primary_level_prominence": 0.0,
-                "primary_level_volume_depth_ratio": 0.0,
-                "primary_level_first_touch_ts": pd.NaT,
-                "primary_level_last_touch_ts": pd.NaT,
-                "confluence_score": 0,
-                "weighted_confluence_score": 0.0,
-            }
+            results.append(empty_res.copy())
+            continue
 
         candidates = []
-        for prefix, src_tag in [("kde_", "kde"), ("htf_", "htf")]:
-            p_col = f"{prefix}primary_level_price"
-            lp = row.get(p_col, np.nan)
-            if np.isfinite(lp):
-                cand = {
-                    "prefix": prefix,
-                    "source": src_tag,
-                    "price": float(lp),
-                    "type": row.get(f"{prefix}primary_level_type", np.nan),
-                    "dist": abs(float(lp) - price),
-                    "touch_count": row.get(f"{prefix}primary_level_touch_count", 0),
-                    "prominence": row.get(f"{prefix}primary_level_prominence", 0.0),
-                    "volume_depth_ratio": row.get(
-                        f"{prefix}primary_level_volume_depth_ratio", 0.0
-                    ),
-                    "first_touch_ts": row.get(
-                        f"{prefix}primary_level_first_touch_ts", pd.NaT
-                    ),
-                    "last_touch_ts": row.get(
-                        f"{prefix}primary_level_last_touch_ts", pd.NaT
-                    ),
+        if np.isfinite(kp):
+            candidates.append(
+                {
+                    "source": "kde",
+                    "price": float(kp),
+                    "type": kt,
+                    "dist": abs(float(kp) - price),
+                    "touch_count": ktc,
+                    "prominence": kpr,
+                    "volume_depth_ratio": kvd,
+                    "first_touch_ts": kft,
+                    "last_touch_ts": klt,
                 }
-                candidates.append(cand)
+            )
+
+        if np.isfinite(hp):
+            candidates.append(
+                {
+                    "source": "htf",
+                    "price": float(hp),
+                    "type": ht,
+                    "dist": abs(float(hp) - price),
+                    "touch_count": htc,
+                    "prominence": hpr,
+                    "volume_depth_ratio": hvd,
+                    "first_touch_ts": hft,
+                    "last_touch_ts": hlt,
+                }
+            )
 
         if not candidates:
-            return {
-                "primary_level_price": float("nan"),
-                "primary_level_type": np.nan,
-                "primary_level_source": np.nan,
-                "primary_level_touch_count": 0,
-                "primary_level_prominence": 0.0,
-                "primary_level_volume_depth_ratio": 0.0,
-                "primary_level_first_touch_ts": pd.NaT,
-                "primary_level_last_touch_ts": pd.NaT,
-                "confluence_score": 0,
-                "weighted_confluence_score": 0.0,
-            }
+            results.append(empty_res.copy())
+            continue
 
         best = min(candidates, key=lambda x: x["dist"])
 
@@ -189,34 +248,36 @@ def _generate_sr_levels(ohlcv: pd.DataFrame) -> pd.DataFrame:
                 elif cand["source"] == "kde":
                     base_weight = 1.0
                     vol_scale = cand.get("volume_depth_ratio", 1.0)
-                    if np.isfinite(vol_scale):
-                        multiplier = max(0.5, min(vol_scale, 5.0))
+                    if isinstance(vol_scale, (int, float)) and np.isfinite(vol_scale):
+                        multiplier = max(0.5, min(float(vol_scale), 5.0))
 
                 weighted_confluence_score += base_weight * multiplier
 
-        return {
-            "primary_level_price": best["price"],
-            "primary_level_type": best["type"],
-            "primary_level_source": best["source"],
-            "primary_level_touch_count": best.get("touch_count", 0),
-            "primary_level_prominence": best.get("prominence", 0.0),
-            "primary_level_volume_depth_ratio": best.get("volume_depth_ratio", 0.0),
-            "primary_level_first_touch_ts": best.get("first_touch_ts", pd.NaT),
-            "primary_level_last_touch_ts": best.get("last_touch_ts", pd.NaT),
-            "confluence_score": confluence_score,
-            "weighted_confluence_score": weighted_confluence_score,
-        }
-
-    results = []
-    for _, row in base.iterrows():
-        results.append(_process_row(row))
+        results.append(
+            {
+                "primary_level_price": best["price"],
+                "primary_level_type": best["type"],
+                "primary_level_source": best["source"],
+                "primary_level_touch_count": best.get("touch_count", 0),
+                "primary_level_prominence": best.get("prominence", 0.0),
+                "primary_level_volume_depth_ratio": best.get("volume_depth_ratio", 0.0),
+                "primary_level_first_touch_ts": best.get("first_touch_ts", pd.NaT),
+                "primary_level_last_touch_ts": best.get("last_touch_ts", pd.NaT),
+                "confluence_score": confluence_score,
+                "weighted_confluence_score": weighted_confluence_score,
+            }
+        )
 
     sr = pd.DataFrame(results, index=idx)
-    sr["is_support"] = sr["primary_level_type"].astype(str).str.contains(
-        "support", case=False, na=False
+    sr["is_support"] = (
+        sr["primary_level_type"]
+        .astype(str)
+        .str.contains("support", case=False, na=False)
     )
-    sr["is_resistance"] = sr["primary_level_type"].astype(str).str.contains(
-        "resistance", case=False, na=False
+    sr["is_resistance"] = (
+        sr["primary_level_type"]
+        .astype(str)
+        .str.contains("resistance", case=False, na=False)
     )
     return sr
 
@@ -280,12 +341,10 @@ def _build_event_dataset(
     is_resistance = event_df["is_resistance"].astype(bool)
 
     fwd_ret = pd.Series(index=event_df.index, dtype=float)
-    fwd_ret.loc[is_support] = (
-        (fwd_close_evt - level_evt) / level_evt
-    ).loc[is_support]
-    fwd_ret.loc[is_resistance] = (
-        (level_evt - fwd_close_evt) / level_evt
-    ).loc[is_resistance]
+    fwd_ret.loc[is_support] = ((fwd_close_evt - level_evt) / level_evt).loc[is_support]
+    fwd_ret.loc[is_resistance] = ((level_evt - fwd_close_evt) / level_evt).loc[
+        is_resistance
+    ]
 
     fwd_ret = fwd_ret.replace([np.inf, -np.inf], np.nan).dropna()
     event_df = event_df.loc[fwd_ret.index]
@@ -299,7 +358,9 @@ def _build_event_dataset(
 
     abs_ret = y_reg.abs()
     if vol_unit.notna().any():
-        norm_abs_ret = (abs_ret / vol_unit).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        norm_abs_ret = (
+            (abs_ret / vol_unit).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        )
         norm_thr = float(norm_abs_ret.quantile(strong_quantile))
     else:
         norm_abs_ret = abs_ret.copy()
@@ -321,25 +382,37 @@ def _build_event_dataset(
     lvl_feats["dist_to_level_pct"] = ((close - level) / level).loc[event_df.index]
 
     src_series = event_df["primary_level_source"].astype(str)
-    lvl_feats["src_is_kde"] = src_series.str.contains("kde", case=False, na=False).astype(float)
-    lvl_feats["src_is_htf"] = src_series.str.contains("htf|pdh|pdl", case=False, na=False).astype(float)
+    lvl_feats["src_is_kde"] = src_series.str.contains(
+        "kde", case=False, na=False
+    ).astype(float)
+    lvl_feats["src_is_htf"] = src_series.str.contains(
+        "htf|pdh|pdl", case=False, na=False
+    ).astype(float)
 
     lvl_feats["is_support"] = is_support.astype(float)
     lvl_feats["is_resistance"] = is_resistance.astype(float)
 
     lvl_feats["meta_touch_count"] = event_df["primary_level_touch_count"].astype(float)
     lvl_feats["meta_prominence"] = event_df["primary_level_prominence"].astype(float)
-    lvl_feats["meta_vol_depth"] = event_df["primary_level_volume_depth_ratio"].astype(float)
+    lvl_feats["meta_vol_depth"] = event_df["primary_level_volume_depth_ratio"].astype(
+        float
+    )
 
     lvl_feats["confluence_score"] = event_df["confluence_score"].astype(float)
-    lvl_feats["weighted_confluence_score"] = event_df["weighted_confluence_score"].astype(float)
+    lvl_feats["weighted_confluence_score"] = event_df[
+        "weighted_confluence_score"
+    ].astype(float)
 
     current_ts = event_df.index.to_series()
     first_touch = pd.to_datetime(event_df["primary_level_first_touch_ts"])
     last_touch = pd.to_datetime(event_df["primary_level_last_touch_ts"])
 
-    lvl_feats["level_age_hours"] = (current_ts - first_touch).dt.total_seconds() / 3600.0
-    lvl_feats["hours_since_last_test"] = (current_ts - last_touch).dt.total_seconds() / 3600.0
+    lvl_feats["level_age_hours"] = (
+        current_ts - first_touch
+    ).dt.total_seconds() / 3600.0
+    lvl_feats["hours_since_last_test"] = (
+        current_ts - last_touch
+    ).dt.total_seconds() / 3600.0
     lvl_feats["level_age_hours"] = lvl_feats["level_age_hours"].fillna(0.0)
     lvl_feats["hours_since_last_test"] = lvl_feats["hours_since_last_test"].fillna(0.0)
 
@@ -355,7 +428,11 @@ class SRLabelingXGBStep(BaseStep):
 
     def __init__(self, step_name: str = "sr_labeling_xgb") -> None:
         super().__init__(step_name, use_versioned_artifacts=True)
-        self.logger = logger.getChild("SRLabelingXGBStep") if hasattr(logger, "getChild") else logger
+        self.logger = (
+            logger.getChild("SRLabelingXGBStep")
+            if hasattr(logger, "getChild")
+            else logger
+        )
         tprint(f"✅ Initialized {step_name} step (SR Labeling XGB)", "SUCCESS")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -425,7 +502,9 @@ class SRLabelingXGBStep(BaseStep):
             y_cls = y_cls.loc[valid_mask].astype(int)
 
             if len(features) < 200:
-                raise RuntimeError(f"Insufficient SR events for training: {len(features)} < 200")
+                raise RuntimeError(
+                    f"Insufficient SR events for training: {len(features)} < 200"
+                )
 
             X = features.select_dtypes(include=[np.number]).copy()
             X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
@@ -442,7 +521,9 @@ class SRLabelingXGBStep(BaseStep):
             X_test = X.iloc[val_end:]
             y_test = y_cls.loc[X_test.index]
 
-            enable_calibration = bool(config.get("sr_labeling_enable_calibration", True))
+            enable_calibration = bool(
+                config.get("sr_labeling_enable_calibration", True)
+            )
             iso_model = None
             use_calibrated = False
 
@@ -527,9 +608,13 @@ class SRLabelingXGBStep(BaseStep):
                     all_proba = iso_model.predict(all_proba)
                     all_proba = np.clip(all_proba, 0.0, 1.0)
                 except Exception as exc:
-                    tprint_warning(f"Failed to apply isotonic calibration to full series: {exc}")
+                    tprint_warning(
+                        f"Failed to apply isotonic calibration to full series: {exc}"
+                    )
 
-            event_proba = pd.Series(all_proba, index=X.index, name="sr_labeling_xgb_prob")
+            event_proba = pd.Series(
+                all_proba, index=X.index, name="sr_labeling_xgb_prob"
+            )
 
             dense_series = event_proba.reindex(market_data.index).ffill()
 

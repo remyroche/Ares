@@ -1078,11 +1078,12 @@ def compute_pathleaf_scores(
 
 
 def _compute_blended_scores(
-    model, X_va, y_va, feature_names, mdi_weight=0.4, pathleaf_weight=0.6,
+    model, X_va, y_va, feature_names, mdi_weight=0.2, pathleaf_weight=0.8,
     depth_bonus=0.15, is_classifier=True
 ):
     """
-    Compute a blended score between MDI (40%) and PathLeaf Reliability (60%).
+    Compute a blended score between MDI (20%) and PathLeaf Reliability (80%).
+    Ensure both weights are on the same scale using L1 normalization.
     """
     p = len(feature_names)
     # 1. Extract MDI component
@@ -1093,12 +1094,16 @@ def _compute_blended_scores(
         # XGB/LGB
         _, mdi_d, _, gain_sum = extract_gbdt_mdi_metrics(model, feature_names, depth_bonus=depth_bonus)
         # For GBDT, use gain_sum as the primary MDI basis if available, 
-        # but depth-weighted is better for the 40% component per requirement
+        # but depth-weighted is better for the 20% component per requirement
     else:
         mdi_d = np.zeros(p)
     
-    # Normalize MDI to [0, 1]
-    mdi_norm = _robust_norm(mdi_d)
+    # L1 Normalize MDI
+    mdi_sum = np.sum(mdi_d)
+    if mdi_sum > 0:
+        mdi_norm = mdi_d / mdi_sum
+    else:
+        mdi_norm = np.zeros_like(mdi_d)
     
     # 2. Extract PathLeaf component
     pathleaf_vals = np.zeros(p)
@@ -1113,10 +1118,14 @@ def _compute_blended_scores(
         except Exception as e:
             tprint(f"MDI context: PathLeaf scoring failed: {e}")
     
-    # Normalize PathLeaf to [0, 1]
-    pathleaf_norm = _robust_norm(pathleaf_vals)
+    # L1 Normalize PathLeaf
+    pathleaf_sum = np.sum(pathleaf_vals)
+    if pathleaf_sum > 0:
+        pathleaf_norm = pathleaf_vals / pathleaf_sum
+    else:
+        pathleaf_norm = np.zeros_like(pathleaf_vals)
     
-    # 3. Blended Score (40% / 60% per requirement)
+    # 3. Blended Score (20% / 80% per requirement)
     return mdi_weight * mdi_norm + pathleaf_weight * pathleaf_norm
 
 
@@ -1190,6 +1199,31 @@ def mdi_feature_selection_v3(
         if len(candidate_cols) == 0:
             return MDISelectionResult(pd.DataFrame(), [], [])
         X = X[list(candidate_cols)].copy()
+
+    import warnings
+    # Base Model Feature Validation
+    # We expect certain features from base models to be present, especially for meta-model training.
+    # Log their presence/absence.
+    base_preds = [c for c in X.columns if 'reg_pred' in c or 'clf_pred' in c or 'alpha_pred' in c or 'tree_std' in c or 'disagreement' in c]
+    if base_preds:
+        tprint(f"MDI: Validated presence of base model artifact features: {base_preds}")
+    else:
+        # If head is a meta head, emit a stronger warning
+        if selector_head_name and "meta" in str(selector_head_name).lower():
+            warnings.warn(f"MDI: Missing expected base model predictions/uncertainty features for meta model training!")
+        else:
+            tprint(f"MDI: No base model predictions/uncertainty features found (expected if this is base model training).")
+
+    # Pre-MDI checks for constant/missing
+    na_counts = X.isna().sum()
+    cols_with_na = na_counts[na_counts > 0]
+    if not cols_with_na.empty:
+        warnings.warn(f"MDI Pre-check: Found {len(cols_with_na)} columns with NaNs before cleaning. Example: {cols_with_na.index[:5].tolist()}")
+
+    variances = X.nunique()
+    cols_zero_var = variances[variances <= 1]
+    if not cols_zero_var.empty:
+        warnings.warn(f"MDI Pre-check: Found {len(cols_zero_var)} columns with zero/constant variance. Example: {cols_zero_var.index[:5].tolist()}")
 
     # Label artifacts and other internal bookkeeping columns must never reach
     # MDI. They are not predictive features and can cause leakage if exposed.
@@ -1289,7 +1323,7 @@ def mdi_feature_selection_v3(
         if _is_xgb_requested:
             _init_scores = _compute_blended_scores(
                 _m_init, X_np_full[_idx_init], y_np[_idx_init], feature_names_full,
-                mdi_weight=0.4, pathleaf_weight=0.6, depth_bonus=depth_bonus,
+                mdi_weight=0.2, pathleaf_weight=0.8, depth_bonus=depth_bonus,
                 is_classifier=(str(selector_target).lower() in {"classification", "binary", "clf"})
             )
         else:

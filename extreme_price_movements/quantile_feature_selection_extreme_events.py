@@ -173,8 +173,36 @@ def mdi_feature_selection_v3(
     tail_q: float = 0.80,
     **_: dict,
 ) -> MDISelectionResult:
+    import warnings
+
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame")
+
+    # Pre-MDI checks for constant/missing
+    na_counts = X.isna().sum()
+    cols_with_na = na_counts[na_counts > 0]
+    if not cols_with_na.empty:
+        warnings.warn(f"MDI Pre-check: Found {len(cols_with_na)} columns with NaNs before cleaning. Example: {cols_with_na.index[:5].tolist()}")
+
+    variances = X.nunique()
+    cols_zero_var = variances[variances <= 1]
+    if not cols_zero_var.empty:
+        warnings.warn(f"MDI Pre-check: Found {len(cols_zero_var)} columns with zero/constant variance. Example: {cols_zero_var.index[:5].tolist()}")
+
+    # Base Model Feature Validation
+    base_preds = [c for c in X.columns if 'reg_pred' in c or 'clf_pred' in c or 'alpha_pred' in c or 'tree_std' in c or 'disagreement' in c]
+    if base_preds:
+        # tprint is not imported here, standard print/warning used
+        print(f"MDI: Validated presence of base model artifact features: {base_preds}")
+    else:
+        # Check if head is passed via **_ dict to determine if meta
+        kwargs = _
+        selector_head_name = kwargs.get('selector_head_name', None)
+        if selector_head_name and "meta" in str(selector_head_name).lower():
+            warnings.warn(f"MDI: Missing expected base model predictions/uncertainty features for meta model training!")
+        else:
+            print(f"MDI: No base model predictions/uncertainty features found (expected if this is base model training).")
+
     y_np = np.asarray(y, dtype=float)
     target = end_features if end_features is not None else max(min_features, min(max_features, int(np.sqrt(max(1, X.shape[1])) * 3)))
 

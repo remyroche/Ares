@@ -777,6 +777,74 @@ def _fit_predict_fold(
     raise ValueError(f"Unknown model_name={model_name}")
 
 
+
+def _compute_lift_top30(y_score: np.ndarray, y_true: np.ndarray) -> float:
+    """Compute lift in positive rate for top 30% predictions vs baseline positive rate."""
+    y_score = np.asarray(y_score, dtype=np.float64)
+    y_true = np.asarray(y_true, dtype=np.float64)
+
+    if len(y_score) < 10 or len(y_true) < 10:
+        return 0.0
+
+    ranks = rankdata(y_score) / len(y_score)
+    t30_mask = ranks >= 0.70
+
+    if t30_mask.sum() < 2:
+        return 0.0
+
+    top30_pos_rate = float(np.mean(y_true[t30_mask]))
+    baseline = float(np.mean(y_true))
+
+    if baseline < 1e-9:
+        return 0.0
+
+    return (top30_pos_rate - baseline) / baseline
+
+
+def _compute_precision_top10(y_score: np.ndarray, y_true: np.ndarray) -> float:
+    """Compute precision for the top 10% predictions."""
+    y_score = np.asarray(y_score, dtype=np.float64)
+    y_true = np.asarray(y_true, dtype=np.float64)
+
+    if len(y_score) < 10 or len(y_true) < 10:
+        return 0.0
+
+    ranks = rankdata(y_score) / len(y_score)
+    t10_mask = ranks >= 0.90
+
+    if t10_mask.sum() < 1:
+        return 0.0
+
+    return float(np.mean(y_true[t10_mask]))
+
+
+def _compute_pr_auc_top30(y_score: np.ndarray, y_true: np.ndarray) -> float:
+    """Compute PR AUC specifically for the top 30% of predictions."""
+    from sklearn.metrics import precision_recall_curve, auc
+    y_score = np.asarray(y_score, dtype=np.float64)
+    y_true = np.asarray(y_true, dtype=np.int32)
+
+    if len(y_score) < 10 or len(y_true) < 10:
+        return 0.0
+
+    ranks = rankdata(y_score) / len(y_score)
+    t30_mask = ranks >= 0.70
+
+    if t30_mask.sum() < 2:
+        return 0.0
+
+    y_score_top = y_score[t30_mask]
+    y_true_top = y_true[t30_mask]
+
+    baseline = float(np.mean(y_true_top > 0)) if len(y_true_top) > 0 else 0.5
+    if len(np.unique(y_true_top)) < 2:
+        return baseline
+
+    precision, recall, _ = precision_recall_curve(y_true_top, y_score_top)
+    pr_auc = float(auc(recall, precision)) if len(recall) > 1 else baseline
+    return pr_auc
+
+
 def _compute_pr_auc_lift(y_true: np.ndarray, y_score: np.ndarray) -> float:
     """Compute PR AUC lift over baseline (random) PR AUC."""
     from sklearn.metrics import precision_recall_curve, auc
@@ -1503,7 +1571,7 @@ def run_base_extratrees_hpo(
         )
         params["random_state"] = random_state
 
-        fold_ics: List[float] = []
+        fold_Qs: List[float] = []
         for fold_i, (tr, va) in enumerate(splits):
             X_tr, y_tr = X[tr], y_hard[tr]
             X_va, y_va = X[va], y_hard[va]
@@ -1513,32 +1581,28 @@ def run_base_extratrees_hpo(
             clf.fit(X_tr, y_tr, sample_weight=sw_tr)
             proba = clf.predict_proba(X_va)[:, 1].astype(np.float32)
 
-            if len(proba) > 10:
-                ranks = rankdata(proba) / len(proba)
-                t30 = ranks >= 0.70
-                if t30.sum() > 2:
-                    ic = float(spearmanr(proba[t30], y_va[t30]).statistic)
-                else:
-                    ic = 0.0
-            else:
-                ic = 0.0
-            if not np.isfinite(ic):
-                ic = 0.0
+            lift_top30 = _compute_lift_top30(proba, y_va)
+            prec_top10 = _compute_precision_top10(proba, y_va)
+            pr_auc_top30 = _compute_pr_auc_top30(proba, y_va)
 
-            fold_ics.append(ic)
-            interim_mean_ic = float(np.mean(fold_ics))
-            interim_std_ic = float(np.std(fold_ics))
-            interim_score = interim_mean_ic - 1.0 * interim_std_ic
+            Q_f = 0.30 * lift_top30 + 0.35 * prec_top10 + 0.35 * pr_auc_top30
+            if not np.isfinite(Q_f):
+                Q_f = 0.0
+
+            fold_Qs.append(Q_f)
+            interim_mean_Q = float(np.mean(fold_Qs))
+            interim_std_Q = float(np.std(fold_Qs))
+            interim_score = interim_mean_Q - 1.0 * interim_std_Q
             trial.report(interim_score, step=fold_i)
             if trial.should_prune():
                 raise optuna.TrialPruned()
 
-        mean_ic = float(np.mean(fold_ics))
-        std_ic = float(np.std(fold_ics))
-        trial_score = mean_ic - 1.0 * std_ic
-        trial.set_user_attr("mean_ic", mean_ic)
-        trial.set_user_attr("std_ic", std_ic)
-        trial.set_user_attr("fold_ics", [float(v) for v in fold_ics])
+        mean_Q = float(np.mean(fold_Qs))
+        std_Q = float(np.std(fold_Qs))
+        trial_score = mean_Q - 1.0 * std_Q
+        trial.set_user_attr("mean_Q", mean_Q)
+        trial.set_user_attr("std_Q", std_Q)
+        trial.set_user_attr("fold_Qs", [float(v) for v in fold_Qs])
         trial.set_user_attr("objective", trial_score)
         return trial_score
 
@@ -1588,14 +1652,14 @@ def run_base_extratrees_hpo(
         "search_space": "base_narrow",
         "fallback_used": bool(fallback_used),
         "best_trial_metrics": {
-            "mean_ic": float(best_trial.user_attrs.get("mean_ic", best_value))
+            "mean_Q": float(best_trial.user_attrs.get("mean_Q", best_value))
             if best_trial is not None
             else float("nan"),
-            "std_ic": float(best_trial.user_attrs.get("std_ic", 0.0))
+            "std_Q": float(best_trial.user_attrs.get("std_Q", 0.0))
             if best_trial is not None
             else float("nan"),
-            "fold_ics": [
-                float(v) for v in (best_trial.user_attrs.get("fold_ics", []) if best_trial is not None else [])
+            "fold_Qs": [
+                float(v) for v in (best_trial.user_attrs.get("fold_Qs", []) if best_trial is not None else [])
             ],
             "objective": float(best_trial.user_attrs.get("objective", best_value))
             if best_trial is not None

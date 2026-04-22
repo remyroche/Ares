@@ -12798,18 +12798,7 @@ def train_meta_models_from_artifacts(
 
         def _build_meta_regression_target_bundle(h: int) -> dict[str, Any]:
             _ret_h = np.asarray(_ret_for_h_aligned(int(h)), dtype=np.float32)
-            _target_bundle = _build_base_regression_target(
-                df.reset_index(drop=True),
-                side=side,
-                y_ret=_ret_h,
-            )
-            _target_mag = np.asarray(_target_bundle["target"], dtype=np.float32)
-            _residualized_return = np.asarray(
-                _target_bundle["residualized_return"], dtype=np.float32
-            )
-            _raw_vol_norm_return = np.asarray(
-                _target_bundle["raw_vol_norm_return"], dtype=np.float32
-            )
+
             _base_reg_col = (
                 f"pred_reg_{k}_H{int(h)}"
                 if f"pred_reg_{k}_H{int(h)}" in pred_h_reg.columns
@@ -12828,25 +12817,30 @@ def train_meta_models_from_artifacts(
             _base_reg_pred = np.where(
                 np.isfinite(_base_reg_pred), _base_reg_pred, 0.0
             ).astype(np.float32, copy=False)
-            _correction_target = (
-                _target_mag - np.clip(_base_reg_pred, 0.0, None)
-            ).astype(np.float32, copy=False)
 
-            _weight_bundle = _build_base_regression_sample_weight(
-                _target_mag,
-                _residualized_return,
+            vol_scale, vol_source = _resolve_base_reg_vol_normalizer(
+                df.reset_index(drop=True)
             )
-            _weights = np.asarray(
-                _weight_bundle["sample_weight"], dtype=np.float32
-            ).copy()
+
+            # The prompt requested logic:
+            # raw_correction = y_ret_arr - base_reg_pred
+            # meta_reg_target = raw_correction / vol_scale
+            # Here we ensure y_ret_arr is side-aware (as it would be naturally when interpreting base prediction errors).
+            side_sign = np.float32(-1.0 if str(side).lower() == "short" else 1.0)
+            y_ret_arr = _ret_h * side_sign
+
+            _raw_correction = y_ret_arr - _base_reg_pred
+            _correction_target = (_raw_correction / vol_scale).astype(
+                np.float32, copy=False
+            )
+
+            _weights = np.ones(len(df), dtype=np.float32)
             if "__u_policy_net__" in df.columns:
                 _econ_source = np.abs(
                     np.asarray(df["__u_policy_net__"].values, dtype=np.float32)
                 )
             else:
-                _econ_source = np.abs(_residualized_return).astype(
-                    np.float32, copy=False
-                )
+                _econ_source = np.abs(_raw_correction).astype(np.float32, copy=False)
             _econ_finite = np.isfinite(_econ_source)
             _econ_scale = (
                 float(np.nanpercentile(_econ_source[_econ_finite], 75.0))
@@ -12862,19 +12856,21 @@ def train_meta_models_from_artifacts(
 
             return {
                 "training_target": _correction_target,
-                "target_magnitude": _target_mag,
-                "residualized_return": _residualized_return,
-                "raw_vol_norm_return": _raw_vol_norm_return,
+                "target_magnitude": np.abs(_correction_target).astype(
+                    np.float32, copy=False
+                ),
+                "residualized_return": _raw_correction.astype(np.float32, copy=False),
+                "raw_vol_norm_return": _correction_target.astype(
+                    np.float32, copy=False
+                ),
                 "base_reg_pred": _base_reg_pred,
                 "base_reg_col": _base_reg_col,
                 "sample_weight": _weights,
                 "econ_scaled": _econ_scaled.astype(np.float32, copy=False),
-                "target_name": "correction_to_base_positive_part_residualized_return_over_realized_vol",
-                "base_target_name": str(_target_bundle.get("target_name", "")),
-                "vol_source": str(_target_bundle.get("vol_source", "")),
-                "residualization_status": str(
-                    _target_bundle.get("residualization_status", "")
-                ),
+                "target_name": "raw_correction_over_realized_vol",
+                "base_target_name": "raw_correction",
+                "vol_source": vol_source,
+                "residualization_status": "identity",
             }
 
         _meta_reg_bundle = _build_meta_regression_target_bundle(

@@ -34,6 +34,11 @@ from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 from .gate_metrics import compute_stage_gate_metrics
 from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
 from .meta_model import MetaClassifierModel, MetaModel
+from .weak_residual_meta_learner import (
+    WeakResidualMetaClassifier,
+    WeakResidualMetaRegressor,
+    save_weak_meta_outputs,
+)
 from .meta_training.utility_smooth import (
     smooth_utility_from_log_heads,
     smooth_utility_from_log_heads_standardized,
@@ -13392,42 +13397,12 @@ def train_meta_models_from_artifacts(
 
         # Fit bucket-level regressor only when explicitly enabled (default disabled).
         if include_meta_reg:
-            meta_reg = MetaModel(reports_dir=reports_dir)
+            meta_reg = WeakResidualMetaRegressor(
+                strategy_name=_h_label, reports_dir=reports_dir
+            )
             meta_reg.strategy_name = _h_label
             meta_reg.hpo_n_trials = _meta_hpo_trials
             meta_reg.hpo_max_rows = _meta_hpo_max_rows
-            meta_reg.candidate_mode = "xgb_parallel_forest"
-            meta_reg.collect_uncertainty_metrics = False
-            meta_reg.disable_hpo = bool(
-                cfg.get("meta_parallel_forest_disable_hpo", False)
-            )
-            meta_reg.hpo_out_dir = _meta_hpo_out_dir
-            meta_reg.xgb_parallel_forest_params = {
-                "objective": "reg:pseudohubererror",
-                "n_estimators": int(cfg.get("meta_parallel_forest_rounds", 100)),
-                "num_parallel_tree": int(
-                    cfg.get("meta_parallel_forest_num_parallel_tree", 20)
-                ),
-                "max_depth": int(cfg.get("meta_parallel_forest_max_depth", 5)),
-                "learning_rate": float(
-                    cfg.get("meta_parallel_forest_learning_rate", 0.05)
-                ),
-                "subsample": 0.75,
-                "colsample_bytree": 0.75,
-                "reg_alpha": float(cfg.get("meta_parallel_forest_reg_alpha", 2.0)),
-                "reg_lambda": float(cfg.get("meta_parallel_forest_reg_lambda", 15.0)),
-                "min_child_weight": float(
-                    cfg.get("meta_parallel_forest_min_child_weight", 40.0)
-                ),
-                "gamma": float(cfg.get("meta_parallel_forest_gamma", 1.5)),
-                "tree_method": "hist",
-                "random_state": 42,
-                "n_jobs": 2,
-                "verbosity": 0,
-                "early_stopping_rounds": int(
-                    cfg.get("meta_parallel_forest_early_stopping_rounds", 20)
-                ),
-            }
             _meta_sel_cfg = dict(cfg.get("meta_selector_cfg", {}) or {})
             _meta_fs_dir = os.path.join(
                 str(cfg.get("data_root", "data")),
@@ -13900,18 +13875,12 @@ def train_meta_models_from_artifacts(
                 ),
             }
             _meta_clf_fee = float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
-            meta_clf = MetaClassifierModel(reports_dir=reports_dir)
+            meta_clf = WeakResidualMetaClassifier(
+                strategy_name=k, reports_dir=reports_dir
+            )
             meta_clf.strategy_name = k
             meta_clf.hpo_n_trials = _meta_hpo_trials
             meta_clf.hpo_max_rows = _meta_hpo_max_rows
-            meta_clf.candidate_mode = "xgb_parallel_forest"
-            meta_clf.collect_uncertainty_metrics = False
-            meta_clf.disable_hpo = bool(
-                cfg.get("meta_parallel_forest_disable_hpo", False)
-            )
-            meta_clf.hpo_out_dir = _meta_hpo_out_dir
-            meta_clf.xgb_parallel_forest_params = dict(_meta_clf_params)
-            meta_clf.FEE_PER_ROUND_TRIP = _meta_clf_fee
             _sel_cfg = MetaMoveSelectionConfig(
                 min_roc_auc=float(cfg.get("meta_move_min_roc_auc", 0.56)),
                 min_pr_auc=float(cfg.get("meta_move_min_pr_auc", 0.0)),
@@ -13952,6 +13921,20 @@ def train_meta_models_from_artifacts(
                     max_class_weight=float(cfg.get("meta_clf_max_class_weight", 10.0)),
                     use_calibration=bool(cfg.get("meta_clf_use_calibration", True)),
                     move_horizon=int(_mid_h),
+                    base_oof_pred=(
+                        np.asarray(
+                            X_meta_models[_base_prob_col].values, dtype=np.float32
+                        )
+                        if _base_prob_col is not None
+                        and _base_prob_col in X_meta_models.columns
+                        else np.asarray(y_target_clf, dtype=np.float32)
+                    ),
+                    y_true_clf=(
+                        np.asarray(df["__y_bin__"].values, dtype=np.float32)
+                        if "__y_bin__" in df.columns
+                        else np.asarray(_y_move, dtype=np.float32)
+                    ),
+                    base_threshold=float(cfg.get("base_clf_threshold", 0.5)),
                 )
                 meta_models[f"{_k_prefix}clf"] = meta_clf
                 _bucket_y_ret[f"{_k_prefix}clf"] = _y_move_soft.copy()
@@ -13987,6 +13970,47 @@ def train_meta_models_from_artifacts(
                     f"Meta {_k_prefix}clf: fitted ({_time.monotonic()-_t0_meta:.1f}s)."
                 )
                 _meta_clf_fitted = True
+                try:
+                    _base_clf_col = next(
+                        (
+                            c
+                            for c in X_meta_models.columns
+                            if c.startswith("pred_") and "reg" not in c
+                        ),
+                        None,
+                    )
+                    _base_reg_col = next(
+                        (c for c in X_meta_models.columns if c.startswith("pred_reg_")),
+                        None,
+                    )
+                    if (
+                        _base_clf_col is not None
+                        and _base_reg_col is not None
+                        and include_meta_reg
+                    ):
+                        _weak_out_dir = os.path.join(
+                            str(cfg.get("data_root", "data")),
+                            "artifacts",
+                            str(cfg.get("run_id", "default")),
+                            "models",
+                            "weak_meta",
+                            str(k),
+                        )
+                        save_weak_meta_outputs(
+                            out_dir=_weak_out_dir,
+                            base_clf_pred=np.asarray(
+                                X_meta_models[_base_clf_col].values, dtype=np.float32
+                            ),
+                            base_reg_pred=np.asarray(
+                                X_meta_models[_base_reg_col].values, dtype=np.float32
+                            ),
+                            clf_model=meta_clf,
+                            reg_model=meta_reg,
+                        )
+                except Exception as _weak_save_exc:
+                    tprint(
+                        f"Meta {k}: weak-residual output save skipped ({_weak_save_exc})"
+                    )
             except RuntimeError as _e_meta_clf:
                 tprint(
                     f"Meta {k}_clf: skipped "
@@ -13997,20 +14021,12 @@ def train_meta_models_from_artifacts(
                         f"Meta {k}_clf: retrying with hard-label fallback "
                         f"({_time.monotonic()-_t0_meta:.1f}s)."
                     )
-                    _meta_clf_fallback = MetaClassifierModel(reports_dir=reports_dir)
+                    _meta_clf_fallback = WeakResidualMetaClassifier(
+                        strategy_name=k, reports_dir=reports_dir
+                    )
                     _meta_clf_fallback.strategy_name = k
                     _meta_clf_fallback.hpo_n_trials = _meta_hpo_trials
                     _meta_clf_fallback.hpo_max_rows = _meta_hpo_max_rows
-                    _meta_clf_fallback.candidate_mode = "xgb_parallel_forest"
-                    _meta_clf_fallback.collect_uncertainty_metrics = False
-                    _meta_clf_fallback.disable_hpo = bool(
-                        cfg.get("meta_parallel_forest_disable_hpo", False)
-                    )
-                    _meta_clf_fallback.hpo_out_dir = _meta_hpo_out_dir
-                    _meta_clf_fallback.xgb_parallel_forest_params = dict(
-                        _meta_clf_params
-                    )
-                    _meta_clf_fallback.FEE_PER_ROUND_TRIP = _meta_clf_fee
                     _sel_cfg_fallback = MetaMoveSelectionConfig(
                         min_roc_auc=0.0,
                         min_pr_auc=0.0,
@@ -14042,6 +14058,20 @@ def train_meta_models_from_artifacts(
                         ),
                         use_calibration=bool(cfg.get("meta_clf_use_calibration", True)),
                         move_horizon=int(_mid_h),
+                        base_oof_pred=(
+                            np.asarray(
+                                X_meta_models[_base_prob_col].values, dtype=np.float32
+                            )
+                            if _base_prob_col is not None
+                            and _base_prob_col in X_meta_models.columns
+                            else np.asarray(y_target_clf, dtype=np.float32)
+                        ),
+                        y_true_clf=(
+                            np.asarray(df["__y_bin__"].values, dtype=np.float32)
+                            if "__y_bin__" in df.columns
+                            else np.asarray(_y_move, dtype=np.float32)
+                        ),
+                        base_threshold=float(cfg.get("base_clf_threshold", 0.5)),
                     )
                     meta_clf = _meta_clf_fallback
                     meta_models[f"{k}_clf"] = meta_clf
@@ -14757,6 +14787,42 @@ def train_meta_models_from_artifacts(
     def _trim_1d(values, n: int):
         return np.asarray(values).reshape(-1)[: int(n)]
 
+    def _append_weak_meta_oof_fields(oof_df: pd.DataFrame, meta_obj, n_rows: int):
+        """Append weak-residual OOF diagnostics into canonical meta_oof exports.
+
+        This keeps weak-meta outputs in artifacts/<run_id>/meta_oof so downstream
+        consumers (e.g., simple_position_sizer) can access them without reading
+        the sidecar weak_meta directory.
+        """
+        try:
+            _diag = getattr(meta_obj, "_diag", None)
+            if not isinstance(_diag, dict):
+                return oof_df
+
+            def _put(col_name: str, diag_key: str):
+                _v = _diag.get(diag_key)
+                if _v is None:
+                    return
+                _arr = np.asarray(_v).reshape(-1)
+                if len(_arr) >= int(n_rows):
+                    oof_df[col_name] = _trim_1d(_arr, n_rows)
+
+            # Classifier weak-meta fields
+            _put("meta_clf_ridge_pred", "ridge_prob_correct")
+            _put("meta_clf_lgbm_pred", "meta_clf_lgbm_adj")
+            _put("meta_clf_uncertainty", "meta_clf_uncertainty")
+            _put("meta_clf_final_raw", "meta_clf_final_raw")
+            _put("meta_clf_final", "final")
+
+            # Regressor weak-meta fields
+            _put("meta_reg_ridge_pred", "ridge_pred")
+            _put("meta_reg_lgbm_pred", "lgbm_pred")
+            _put("meta_reg_uncertainty", "meta_reg_uncertainty")
+            _put("meta_reg_final", "final")
+        except Exception:
+            return oof_df
+        return oof_df
+
     def compute_meta_expected_value(p_tp, p_sl, ratio):
         return ratio * p_tp - p_sl
 
@@ -15241,6 +15307,21 @@ def train_meta_models_from_artifacts(
                         oof_df[_cn] = _fill_nonfinite_oof_vector(
                             _aux[_cn], global_neutral=0.0
                         ).astype(np.float32, copy=False)
+
+            # Wire weak-residual OOF diagnostics into canonical meta_oof exports.
+            oof_df = _append_weak_meta_oof_fields(oof_df, meta, _n_meta)
+
+            # Universal per-head prediction diagnostics (constant columns so they
+            # travel with every exported head for downstream debugging).
+            if "oof_pred" in oof_df.columns:
+                _pred_arr = np.asarray(oof_df["oof_pred"].values, dtype=np.float64)
+                _pred_fin = _pred_arr[np.isfinite(_pred_arr)]
+                _mean_pred = (
+                    float(np.mean(_pred_fin)) if _pred_fin.size else float("nan")
+                )
+                _std_pred = float(np.std(_pred_fin)) if _pred_fin.size else float("nan")
+                oof_df["diag_mean_pred"] = _mean_pred
+                oof_df["diag_std_pred"] = _std_pred
 
             if key.endswith("_reg") and "oof_pred_oriented" not in oof_df.columns:
                 _score_sign = int(getattr(meta, "score_sign", 1))

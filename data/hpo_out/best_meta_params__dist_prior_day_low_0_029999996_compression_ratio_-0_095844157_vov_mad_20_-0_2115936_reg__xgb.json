@@ -3,17 +3,17 @@
   "kind": "xgb",
   "best_params": {
     "objective": "reg:pseudohubererror",
-    "n_estimators": 800,
-    "max_depth": 6,
-    "learning_rate": 0.04269848263443881,
-    "subsample": 0.7801062253857077,
-    "colsample_bytree": 0.7351698254139486,
-    "colsample_bynode": 0.6282224225525979,
-    "gamma": 0.6324466297225022,
-    "reg_alpha": 0.04189119238324633,
-    "reg_lambda": 1.9733065727040167,
-    "min_child_weight": 16
+    "n_estimators": 600,
+    "max_depth": 3,
+    "learning_rate": 0.014312497867695756,
+    "subsample": 0.8614850435614139,
+    "colsample_bytree": 0.6716369347922089,
+    "colsample_bynode": 0.7980487515617509,
+    "gamma": 3.67261000444041,
+    "reg_alpha": 1.460193218038022,
+    "reg_lambda": 23.846784794810315,
+    "min_child_weight": 10
   },
-  "n_trials_completed": 113,
-  "best_trial_number": 52
+  "n_trials_completed": 50,
+  "best_trial_number": 36
 }

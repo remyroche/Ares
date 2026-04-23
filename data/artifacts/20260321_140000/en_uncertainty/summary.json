@@ -1,0 +1,53 @@
+{
+  "processed": [
+    {
+      "file": "oof_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_H10.parquet",
+      "metrics": "data/artifacts/20260321_140000/en_uncertainty/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_H10_metrics.json",
+      "model": "data/artifacts/20260321_140000/en_uncertainty/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_H10_model.pkl",
+      "processing_contract": "data/artifacts/20260321_140000/en_uncertainty/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_H10_processing_contract.json"
+    },
+    {
+      "file": "oof_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_H10.parquet",
+      "metrics": "data/artifacts/20260321_140000/en_uncertainty/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_H10_metrics.json",
+      "model": "data/artifacts/20260321_140000/en_uncertainty/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_H10_model.pkl",
+      "processing_contract": "data/artifacts/20260321_140000/en_uncertainty/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_H10_processing_contract.json"
+    },
+    {
+      "file": "oof_dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_H5.parquet",
+      "metrics": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_H5_metrics.json",
+      "model": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_H5_model.pkl",
+      "processing_contract": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_H5_processing_contract.json"
+    },
+    {
+      "file": "oof_dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_H5.parquet",
+      "metrics": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_H5_metrics.json",
+      "model": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_H5_model.pkl",
+      "processing_contract": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_H5_processing_contract.json"
+    },
+    {
+      "file": "oof_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5.parquet",
+      "metrics": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5_metrics.json",
+      "model": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5_model.pkl",
+      "processing_contract": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5_processing_contract.json"
+    },
+    {
+      "file": "oof_dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834_H5.parquet",
+      "metrics": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834_H5_metrics.json",
+      "model": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834_H5_model.pkl",
+      "processing_contract": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834_H5_processing_contract.json"
+    },
+    {
+      "file": "oof_dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_H10.parquet",
+      "metrics": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_H10_metrics.json",
+      "model": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_H10_model.pkl",
+      "processing_contract": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_H10_processing_contract.json"
+    },
+    {
+      "file": "oof_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_H10.parquet",
+      "metrics": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_H10_metrics.json",
+      "model": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_H10_model.pkl",
+      "processing_contract": "data/artifacts/20260321_140000/en_uncertainty/dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_H10_processing_contract.json"
+    }
+  ],
+  "skipped": []
+}

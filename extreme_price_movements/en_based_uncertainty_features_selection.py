@@ -315,6 +315,7 @@ def _evaluate_candidate(
     js: list[float] = []
     monos: list[float] = []
     aucs: list[float] = []
+    lifts: list[float] = []
     for i, (tr, va) in enumerate(folds):
         X_tr, X_va = fold_cache[i]
         y_tr = y[tr]
@@ -345,15 +346,21 @@ def _evaluate_candidate(
             p = model.predict_proba(X_va)[:, 1]
             mono = _mono_top3(y_va, p)
             auc = float(roc_auc_score(y_va, p)) if len(np.unique(y_va)) > 1 else 0.5
+        k = max(1, int(np.ceil(0.30 * len(y_va))))
+        top_idx = np.argsort(-p)[:k]
+        hit_top = float(np.mean(y_va[top_idx] >= 0.5)) if mode != "reg" else 0.0
+        hit_all = float(np.mean(y_va >= 0.5)) if mode != "reg" else 0.0
+        lift = hit_top / max(hit_all, 1e-6) if mode != "reg" else 0.0
         monos.append(mono)
         aucs.append(auc)
-        fold_vals.append({"mono_top3": mono, "auc": auc})
+        lifts.append(lift)
+        fold_vals.append({"mono_top3": mono, "auc": auc, "lift_top30": lift})
     mean_mono = float(np.mean(monos))
     std_mono = float(np.std(monos))
     m_stab = float(mean_mono - 0.5 * std_mono)
     mean_auc = float(np.mean(aucs))
-    # J = 0.65 * M_mono_top3 + 0.10 * M_stab_top3 + 0.25 * AUC
-    j = float(0.65 * mean_mono + 0.10 * m_stab + 0.25 * mean_auc)
+    mean_lift = float(np.mean(lifts))
+    j = float(0.40 * mean_mono + 0.40 * m_stab + 0.20 * mean_lift)
     js = [j]
     return CandidateResult(
         alpha=float(alpha),
@@ -402,7 +409,7 @@ def _stage_a_prune(
         scores = np.array([c.mean_j for c in cand_results], dtype=float)
         best_idx = int(np.argmax(scores))
         best_score = float(scores[best_idx])
-        se = float(np.std(scores) / max(math.sqrt(len(scores)), 1.0))
+        se = float(0.75 * np.std(scores) / max(math.sqrt(len(scores)), 1.0))
         contenders = [c for c in cand_results if c.mean_j >= best_score - se]
 
         feat_stats = {
@@ -582,44 +589,82 @@ def _fit_5fold_oof(
     return oof_s, oof_p, fold_transforms, final_bundle
 
 
+def _stratified_subsample(
+    y: np.ndarray, max_rows: int, rng: np.random.Generator | None = None
+) -> np.ndarray:
+    if len(y) <= max_rows:
+        return np.arange(len(y))
+    if rng is None:
+        rng = np.random.default_rng(42)
+    classes, counts = np.unique(y, return_counts=True)
+    per_class = max(1, max_rows // len(classes))
+    idx_parts: list[np.ndarray] = []
+    for cls in classes:
+        cls_idx = np.where(y == cls)[0]
+        if len(cls_idx) > per_class:
+            chosen = rng.choice(cls_idx, size=per_class, replace=False)
+        else:
+            chosen = cls_idx
+        idx_parts.append(chosen)
+    all_idx = np.concatenate(idx_parts)
+    if len(all_idx) > max_rows:
+        all_idx = rng.choice(all_idx, size=max_rows, replace=False)
+    return np.sort(all_idx)
+
+
 def run_en_uncertainty_combiner(
     df: pd.DataFrame,
     *,
     coef_active_threshold: float = 0.01,
     min_improvement: float = 0.0,
     mode: str = "clf",
+    max_rows: int = 0,
 ) -> dict[str, Any]:
     tprint(
         "[en_uncertainty] start run_en_uncertainty_combiner "
         f"rows={len(df)} coef_active_threshold={coef_active_threshold:.4f} "
-        f"min_improvement={min_improvement:.4f}"
+        f"min_improvement={min_improvement:.4f} max_rows={max_rows}"
     )
     mode = str(mode).lower()
-    raw, base_col, y_col = _assemble_raw_features(df, mode=mode)
-    y = np.asarray(df[y_col].values, dtype=np.float32)
-    valid = np.isfinite(y)
-    y = y[valid]
-    raw = raw.loc[valid].reset_index(drop=True)
+    raw_full, base_col, y_col = _assemble_raw_features(df, mode=mode)
+    y_full_raw = np.asarray(df[y_col].values, dtype=np.float32)
+    valid = np.isfinite(y_full_raw)
+    y_full_raw = y_full_raw[valid]
+    raw_full = raw_full.loc[valid].reset_index(drop=True)
     if mode == "clf":
-        y = (y >= 0.5).astype(np.int8)
+        y_full = (y_full_raw >= 0.5).astype(np.int8)
+    else:
+        y_full = y_full_raw
+
+    if max_rows > 0 and len(y_full) > max_rows:
+        ss_idx = _stratified_subsample(y_full if mode == "clf" else (y_full > np.nanmedian(y_full)).astype(np.int8), max_rows)
+        y_search = y_full[ss_idx]
+        raw_search = raw_full.iloc[ss_idx].reset_index(drop=True)
+        tprint(f"[en_uncertainty] subsampled {len(y_search)}/{len(y_full)} for search (max_rows={max_rows})")
+    else:
+        y_search = y_full
+        raw_search = raw_full
+
     tprint(
-        f"[en_uncertainty] valid rows={len(y)} base_col={base_col} y_col={y_col} "
-        f"raw_features={len(raw.columns)}"
+        f"[en_uncertainty] full rows={len(y_full)} search rows={len(y_search)} "
+        f"base_col={base_col} y_col={y_col} raw_features={len(raw_full.columns)}"
     )
 
-    base_pred = np.asarray(raw["base_pred"].values, dtype=float)
+    base_pred_full = np.asarray(raw_full["base_pred"].values, dtype=float)
     if mode == "clf":
-        base_auc = float(roc_auc_score(y, base_pred)) if len(np.unique(y)) > 1 else 0.5
-        base_mono = _mono_top3(y, base_pred)
+        base_auc = float(roc_auc_score(y_full, base_pred_full)) if len(np.unique(y_full)) > 1 else 0.5
+        base_mono = _mono_top3(y_full, base_pred_full)
         base_stab = base_mono
-        base_j = float(0.65 * base_mono + 0.10 * base_stab + 0.25 * base_auc)
-        base_global = _global_metrics(y, np.clip(base_pred, 1e-6, 1 - 1e-6))
+        base_global = _global_metrics(y_full, np.clip(base_pred_full, 1e-6, 1 - 1e-6))
+        base_lift = base_global["lift_top30"]
+        base_j = float(0.40 * base_mono + 0.40 * base_stab + 0.20 * base_lift)
     else:
-        base_auc = _rank_ic(y, base_pred)
-        base_mono = _mono_top3((y > np.nanmedian(y)).astype(float), base_pred)
+        base_auc = _rank_ic(y_full, base_pred_full)
+        base_mono = _mono_top3((y_full > np.nanmedian(y_full)).astype(float), base_pred_full)
         base_stab = float(base_mono)
-        base_j = float(0.65 * base_mono + 0.10 * base_stab + 0.25 * base_auc)
-        base_global = _global_metrics_reg(y, base_pred)
+        base_global = _global_metrics_reg(y_full, base_pred_full)
+        base_lift = 0.0
+        base_j = float(0.40 * base_mono + 0.40 * base_stab + 0.20 * base_lift)
     tprint(
         "[en_uncertainty] BEFORE "
         f"mode={mode} "
@@ -631,27 +676,27 @@ def run_en_uncertainty_combiner(
         f"TopDecHitStd={base_global['top_decile_hit_rate_std']:.4f} ECE_top30={base_global['ece_top30']:.4f}"
     )
 
-    feature_names = [c for c in raw.columns if c not in {"base_pred"}]
+    feature_names = [c for c in raw_search.columns if c not in {"base_pred"}]
     reduced, pruning_hist = _stage_a_prune(
-        raw, y, feature_names, coef_active_threshold=coef_active_threshold, mode=mode
+        raw_search, y_search, feature_names, coef_active_threshold=coef_active_threshold, mode=mode
     )
     tprint(
         f"[en_uncertainty] stage-a done: features {len(feature_names)} -> {len(reduced)} rounds={len(pruning_hist)}"
     )
 
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    folds = list(skf.split(raw.values, y))
+    folds = list(skf.split(raw_search.values, y_search))
     fold_cache: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     for i, (tr, va) in enumerate(folds):
-        X_tr = raw.iloc[tr][reduced].to_numpy(dtype=np.float32)
-        X_va = raw.iloc[va][reduced].to_numpy(dtype=np.float32)
+        X_tr = raw_search.iloc[tr][reduced].to_numpy(dtype=np.float32)
+        X_va = raw_search.iloc[va][reduced].to_numpy(dtype=np.float32)
         fold_cache[i] = _fit_transform_fold(X_tr, X_va)[:2]
 
     results: list[CandidateResult] = []
     for alpha in ALPHA_GRID:
         for l1 in L1_RATIO_GRID:
             results.append(
-                _evaluate_candidate(y, folds, fold_cache, alpha, l1, mode=mode)
+                _evaluate_candidate(y_search, folds, fold_cache, alpha, l1, mode=mode)
             )
 
     scores = np.array([r.mean_j for r in results], dtype=float)
@@ -665,20 +710,29 @@ def run_en_uncertainty_combiner(
         main = len(cols) - inter
         return int(main + 2 * inter)
 
-    contenders = sorted(
-        contenders,
-        key=lambda r: (
-            _model_size(reduced),
-            -r.mean_j,
-            -r.mean_mono,
-            -r.mean_auc,
-        ),
-    )
-    chosen = contenders[0] if contenders else results[best_idx]
+    safe_contenders = [
+        r for r in contenders
+        if r.mean_mono >= base_mono and r.mean_stab >= base_stab
+    ]
+    if safe_contenders:
+        safe_contenders = sorted(safe_contenders, key=lambda r: (-r.mean_j, _model_size(reduced)))
+        chosen = safe_contenders[0]
+    else:
+        contenders = sorted(
+            contenders,
+            key=lambda r: (
+                _model_size(reduced),
+                -r.mean_j,
+                -r.mean_mono,
+                -r.mean_auc,
+            ),
+        )
+        chosen = contenders[0] if contenders else results[best_idx]
     tprint(
         "[en_uncertainty] stage-b chosen "
         f"alpha={chosen.alpha:.4f} l1_ratio={chosen.l1_ratio:.4f} "
-        f"mean_J={chosen.mean_j:.5f} mono={chosen.mean_mono:.5f} auc={chosen.mean_auc:.5f}"
+        f"mean_J={chosen.mean_j:.5f} mono={chosen.mean_mono:.5f} auc={chosen.mean_auc:.5f} "
+        f"from_safe_pool={bool(safe_contenders)}"
     )
 
     guard_monotonic = chosen.mean_mono >= base_mono
@@ -691,16 +745,17 @@ def run_en_uncertainty_combiner(
         f"-> improved={improved}"
     )
     if improved:
+        tprint(f"[en_uncertainty] refitting 5-fold OOF on full data ({len(y_full)} rows)")
         s_oof, p_oof, fold_tf, final_bundle = _fit_5fold_oof(
-            raw, y, reduced, chosen.alpha, chosen.l1_ratio, mode=mode
+            raw_full, y_full, reduced, chosen.alpha, chosen.l1_ratio, mode=mode
         )
     else:
         if mode == "clf":
-            s_oof = _logit(raw["base_pred"].values)
-            p_oof = np.asarray(raw["base_pred"].values, dtype=np.float32)
+            s_oof = _logit(raw_full["base_pred"].values)
+            p_oof = np.asarray(raw_full["base_pred"].values, dtype=np.float32)
         else:
-            s_oof = np.asarray(raw["base_pred"].values, dtype=np.float32)
-            p_oof = np.asarray(raw["base_pred"].values, dtype=np.float32)
+            s_oof = np.asarray(raw_full["base_pred"].values, dtype=np.float32)
+            p_oof = np.asarray(raw_full["base_pred"].values, dtype=np.float32)
         fold_tf = []
         final_bundle = {}
 
@@ -708,15 +763,15 @@ def run_en_uncertainty_combiner(
     out_df["s_final_oof"] = s_oof
     if mode == "clf":
         out_df["p_final_oof"] = p_oof
-        final_global = _global_metrics(y, np.clip(p_oof, 1e-6, 1 - 1e-6))
+        final_global = _global_metrics(y_full, np.clip(p_oof, 1e-6, 1 - 1e-6))
     else:
         out_df["yhat_final_oof"] = p_oof
-        final_global = _global_metrics_reg(y, p_oof)
-    rank_corr = _rank_ic(base_pred, p_oof)
-    base_top_dec = np.zeros(len(y), dtype=bool)
-    final_top_dec = np.zeros(len(y), dtype=bool)
-    k10 = max(1, int(np.ceil(0.10 * len(y))))
-    base_top_dec[np.argsort(-base_pred)[:k10]] = True
+        final_global = _global_metrics_reg(y_full, p_oof)
+    rank_corr = _rank_ic(base_pred_full, p_oof)
+    base_top_dec = np.zeros(len(y_full), dtype=bool)
+    final_top_dec = np.zeros(len(y_full), dtype=bool)
+    k10 = max(1, int(np.ceil(0.10 * len(y_full))))
+    base_top_dec[np.argsort(-base_pred_full)[:k10]] = True
     final_top_dec[np.argsort(-p_oof)[:k10]] = True
     entering = float(np.mean((~base_top_dec) & final_top_dec))
     leaving = float(np.mean(base_top_dec & (~final_top_dec)))
@@ -735,7 +790,7 @@ def run_en_uncertainty_combiner(
     return {
         "base_col": base_col,
         "label_col": y_col,
-        "raw_feature_table": raw,
+        "raw_feature_table": raw_full,
         "selected_features": reduced,
         "selected_hyperparams": {
             "alpha": float(chosen.alpha),
@@ -772,7 +827,7 @@ def run_en_uncertainty_combiner(
     }
 
 
-def run_on_artifacts(data_root: str, run_id: str) -> dict[str, Any]:
+def run_on_artifacts(data_root: str, run_id: str, max_rows: int = 0) -> dict[str, Any]:
     oof_dir = Path(data_root) / "artifacts" / run_id / "oof"
     labels_dir = Path(data_root) / "artifacts" / run_id / "labels"
     out_dir = Path(data_root) / "artifacts" / run_id / "en_uncertainty"
@@ -863,7 +918,7 @@ def run_on_artifacts(data_root: str, run_id: str) -> dict[str, Any]:
                     {"file": p.name, "reason": "missing_y_ret", "mode": _mode}
                 )
                 continue
-            res = run_en_uncertainty_combiner(df, mode=_mode)
+            res = run_en_uncertainty_combiner(df, mode=_mode, max_rows=max_rows)
             oof_cols = res["oof_outputs"]
             df2 = df.copy()
             df2.loc[oof_cols.index, "s_final_oof"] = oof_cols["s_final_oof"].values
@@ -950,8 +1005,9 @@ def main() -> None:
     )
     parser.add_argument("--data-root", type=str, default="data")
     parser.add_argument("--run-id", type=str, required=True)
+    parser.add_argument("--max-rows", type=int, default=15000)
     args = parser.parse_args()
-    summary = run_on_artifacts(args.data_root, args.run_id)
+    summary = run_on_artifacts(args.data_root, args.run_id, max_rows=args.max_rows)
     tprint(
         f"EN uncertainty combiner done: processed={len(summary['processed'])} skipped={len(summary['skipped'])}"
     )

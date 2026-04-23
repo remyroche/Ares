@@ -13818,7 +13818,7 @@ def train_meta_models_from_artifacts(
                 y_ret_filtered = (
                     df["__y_ret__"].values if "__y_ret__" in df.columns else y_target_h
                 )
-                _mask_eval = np.asarray(_trade_mask, dtype=bool)[: len(y_ret_filtered)]
+                _mask_eval = np.asarray(_fit_mask_main, dtype=bool)[: len(y_ret_filtered)]
 
                 def _top_spread(yv, sv, frac=0.10):
                     n = len(yv)
@@ -13829,7 +13829,13 @@ def train_meta_models_from_artifacts(
                     ib = np.argsort(sv)[:ksel]
                     return float(np.mean(yv[it]) - np.mean(yv[ib]))
 
-                pred_oof = np.asarray(meta_reg.oof_probs, dtype=float)
+                pred_oof_subset = np.asarray(meta_reg.oof_probs, dtype=float)
+                _fit_idx = np.where(np.asarray(_fit_mask_main, dtype=bool))[0]
+                pred_oof = np.full(len(df), np.nan, dtype=float)
+                if len(_fit_idx) == len(pred_oof_subset):
+                    pred_oof[_fit_idx] = pred_oof_subset
+                else:
+                    pred_oof[: len(pred_oof_subset)] = pred_oof_subset
                 y_gate_target = (
                     np.asarray(df["__u_policy_net__"].values, dtype=float)
                     if "__u_policy_net__" in df.columns
@@ -15624,12 +15630,10 @@ def train_meta_models_from_artifacts(
                     )
         elif _mhk.endswith("_cal_reg"):
             _md_bucket = _bucket_metadata.get(_mhk, {})
-            _y_reg_key = _bucket_y_ret.get(_mhk)
-            if _y_reg_key is None:
-                _reg_key = _mhk.replace("_cal_reg", "_reg")
-                if "short_" in _mhk and _reg_key not in _bucket_y_ret:
-                    _reg_key = _mhk.split("_cal_reg")[0].split("short_")[-1] + "_reg"
-                _y_reg_key = _bucket_y_ret.get(_reg_key)
+            _reg_key = _mhk.replace("_cal_reg", "_reg")
+            if "short_" in _mhk and _reg_key not in _bucket_y_ret:
+                _reg_key = _mhk.split("_cal_reg")[0].split("short_")[-1] + "_reg"
+            _y_reg_key = _bucket_y_ret.get(_reg_key)
             if _y_reg_key is not None:
                 _yt = np.asarray(_y_reg_key, dtype=float).reshape(-1)[:_mn]
                 _mv = np.isfinite(_moof) & np.isfinite(_yt)

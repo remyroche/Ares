@@ -11,6 +11,142 @@ try:
 except Exception:
     tprint = print
 
+try:
+    from numba import njit
+
+    _HAS_NUMBA = True
+except ImportError:
+    _HAS_NUMBA = False
+
+
+if _HAS_NUMBA:
+
+    @njit(cache=True, fastmath=True)
+    def _rolling_percentile_nb(
+        scores: np.ndarray,
+        starts: np.ndarray,
+        ends: np.ndarray,
+        window: int,
+    ) -> np.ndarray:
+        n = scores.shape[0]
+        out = np.full(n, np.nan, dtype=np.float32)
+        for g in range(starts.shape[0]):
+            lo = starts[g]
+            hi = ends[g]
+            for i in range(lo, hi + 1):
+                if not np.isfinite(scores[i]):
+                    continue
+                start = max(lo, i - window)
+                count = 0
+                below = 0
+                for j in range(start, i):
+                    if np.isfinite(scores[j]):
+                        count += 1
+                        if scores[j] <= scores[i]:
+                            below += 1
+                if count > 0:
+                    out[i] = np.float32(below) / np.float32(count)
+        return out
+
+    def rolling_asset_percentile(
+        scores: np.ndarray,
+        symbols: Iterable[Any],
+        timestamps: Iterable[Any] | None = None,
+        window: int = 240,
+    ) -> np.ndarray:
+        vals = np.asarray(scores, dtype=np.float32)
+        n = len(vals)
+        tprint(f"[trade_filtering] rolling_asset_percentile start: n={n} window={int(window)}")
+        if n == 0:
+            return np.full(n, np.nan, dtype=np.float32)
+        sym = np.asarray(list(symbols))
+        _, group_ids = np.unique(sym, return_inverse=True)
+        group_ids = group_ids.astype(np.int32)
+        n_groups = int(group_ids.max()) + 1
+        starts = np.zeros(n_groups, dtype=np.int64)
+        ends = np.zeros(n_groups, dtype=np.int64)
+        for g in range(n_groups):
+            mask = group_ids == g
+            idxs = np.where(mask)[0]
+            starts[g] = idxs[0]
+            ends[g] = idxs[-1]
+        w = max(int(window), 5)
+        if timestamps is not None:
+            ts = np.asarray(pd.to_datetime(list(timestamps), errors="coerce").astype(np.int64))
+            order = np.lexsort((group_ids, ts))
+            vals_s = vals[order].copy()
+            new_gids = group_ids[order]
+            starts_s = np.zeros(n_groups, dtype=np.int64)
+            ends_s = np.zeros(n_groups, dtype=np.int64)
+            for g in range(n_groups):
+                mask = new_gids == g
+                idxs = np.where(mask)[0]
+                starts_s[g] = idxs[0]
+                ends_s[g] = idxs[-1]
+            ranks_s = _rolling_percentile_nb(vals_s, starts_s, ends_s, w)
+            out = np.full(n, np.nan, dtype=np.float32)
+            out[order] = ranks_s
+        else:
+            out = _rolling_percentile_nb(vals, starts, ends, w)
+        tprint(
+            f"[trade_filtering] rolling_asset_percentile done: finite={int(np.isfinite(out).sum())}/{n}"
+        )
+        return np.clip(out, 0.0, 1.0)
+
+else:
+
+    def rolling_asset_percentile(
+        scores: np.ndarray,
+        symbols: Iterable[Any],
+        timestamps: Iterable[Any] | None = None,
+        window: int = 240,
+    ) -> np.ndarray:
+        vals = np.asarray(scores, dtype=np.float32)
+        n = len(vals)
+        tprint(
+            f"[trade_filtering] rolling_asset_percentile start: n={n} window={int(window)}"
+        )
+        out = np.full(n, np.nan, dtype=np.float32)
+        if n == 0:
+            return out
+        sym = np.asarray(list(symbols))
+        ts = (
+            pd.to_datetime(list(timestamps), errors="coerce")
+            if timestamps is not None
+            else None
+        )
+        df = pd.DataFrame({"score": vals, "symbol": sym})
+        if ts is not None:
+            df["ts"] = ts
+            df = df.sort_values(["symbol", "ts"]).copy()
+        else:
+            df = df.copy()
+        df["orig_idx"] = np.arange(len(df), dtype=np.int64)
+        ranks = np.full(len(df), np.nan, dtype=np.float32)
+        for _, g in df.groupby("symbol", sort=False):
+            gv = g["score"].to_numpy(dtype=np.float32)
+            idx = g.index.to_numpy(dtype=np.int64)
+            for i in range(len(gv)):
+                lo = max(0, i - int(window))
+                hist = gv[lo:i]
+                if hist.size == 0 or not np.isfinite(gv[i]):
+                    ranks[idx[i]] = np.nan
+                    continue
+                finite = hist[np.isfinite(hist)]
+                if finite.size == 0:
+                    ranks[idx[i]] = np.nan
+                    continue
+                ranks[idx[i]] = float(np.mean(finite <= gv[i]))
+        if ts is not None:
+            back = pd.Series(ranks, index=df["orig_idx"].to_numpy(dtype=np.int64))
+            out = back.reindex(np.arange(n)).to_numpy(dtype=np.float32)
+        else:
+            out = ranks.astype(np.float32)
+        tprint(
+            f"[trade_filtering] rolling_asset_percentile done: finite={int(np.isfinite(out).sum())}/{n}"
+        )
+        return np.clip(out, 0.0, 1.0)
+
 
 @dataclass(frozen=True)
 class TopRankMaskResult:
@@ -26,7 +162,6 @@ def get_or_select_top_rank_mask(
     cache: dict[str, TopRankMaskResult] | None = None,
     **kwargs,
 ) -> TopRankMaskResult:
-    """Reuse a previously computed top-rank mask for the same strategy_id."""
     sid = str(strategy_id or "").strip()
     if cache is not None and sid and sid in cache:
         cached = cache[sid]
@@ -44,67 +179,6 @@ def get_or_select_top_rank_mask(
             f"topx={result.chosen_topx} kept={int(result.mask.sum())}/{len(result.mask)}"
         )
     return result
-
-
-def rolling_asset_percentile(
-    scores: np.ndarray,
-    symbols: Iterable[Any],
-    timestamps: Iterable[Any] | None = None,
-    window: int = 240,
-) -> np.ndarray:
-    """Return causal rolling percentile rank in [0,1] per asset.
-
-    The current score is ranked against the previous `window` observations
-    for the same asset (excluding the current row to avoid look-ahead).
-    """
-    vals = np.asarray(scores, dtype=np.float32)
-    n = len(vals)
-    tprint(
-        f"[trade_filtering] rolling_asset_percentile start: n={n} window={int(window)}"
-    )
-    out = np.full(n, np.nan, dtype=np.float32)
-    if n == 0:
-        return out
-    sym = np.asarray(list(symbols))
-    ts = (
-        pd.to_datetime(list(timestamps), errors="coerce")
-        if timestamps is not None
-        else None
-    )
-
-    df = pd.DataFrame({"score": vals, "symbol": sym})
-    if ts is not None:
-        df["ts"] = ts
-        df = df.sort_values(["symbol", "ts"]).copy()
-    else:
-        df = df.copy()
-    df["orig_idx"] = np.arange(len(df), dtype=np.int64)
-
-    ranks = np.full(len(df), np.nan, dtype=np.float32)
-    for _, g in df.groupby("symbol", sort=False):
-        gv = g["score"].to_numpy(dtype=np.float32)
-        idx = g.index.to_numpy(dtype=np.int64)
-        for i in range(len(gv)):
-            lo = max(0, i - int(window))
-            hist = gv[lo:i]
-            if hist.size == 0 or not np.isfinite(gv[i]):
-                ranks[idx[i]] = np.nan
-                continue
-            finite = hist[np.isfinite(hist)]
-            if finite.size == 0:
-                ranks[idx[i]] = np.nan
-                continue
-            ranks[idx[i]] = float(np.mean(finite <= gv[i]))
-
-    if ts is not None:
-        back = pd.Series(ranks, index=df["orig_idx"].to_numpy(dtype=np.int64))
-        out = back.reindex(np.arange(n)).to_numpy(dtype=np.float32)
-    else:
-        out = ranks.astype(np.float32)
-    tprint(
-        f"[trade_filtering] rolling_asset_percentile done: finite={int(np.isfinite(out).sum())}/{n}"
-    )
-    return np.clip(out, 0.0, 1.0)
 
 
 def select_top_rank_mask(

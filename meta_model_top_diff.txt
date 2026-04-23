@@ -1,0 +1,300 @@
+diff --git a/extreme_price_movements/meta_model.py b/extreme_price_movements/meta_model.py
+index ce5599bc6..fc1b8fe01 100644
+--- a/extreme_price_movements/meta_model.py
++++ b/extreme_price_movements/meta_model.py
+@@ -3,30 +3,30 @@
+ No strict guardrails, no monotone constraints. Winner selection by Spearman IC on OOF.
+ Optional Optuna HPO on the winner.
+ """
++
+ from __future__ import annotations
+
++import importlib.util
+ import json
+ import os
+-from typing import Any, Dict, List, Optional, Sequence, Tuple
+ from pathlib import Path
++from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
+-import importlib.util
+ import numpy as np
+ import pandas as pd
+ from scipy.special import logit
+-from scipy.stats import spearmanr, rankdata
++from scipy.stats import rankdata, spearmanr
+ from sklearn.ensemble import ExtraTreesRegressor
+ from sklearn.linear_model import Ridge
++from sklearn.metrics import brier_score_loss, mean_squared_error
+ from sklearn.pipeline import Pipeline
+ from sklearn.preprocessing import RobustScaler
+-from sklearn.metrics import mean_squared_error, brier_score_loss
++from sklearn.isotonic import IsotonicRegression
+
+ from extreme_price_movements.feature_selection_extreme_events import (
+     mdi_feature_selection_v3,
+     mdi_feature_selection_v4_topk,
+ )
+-from extreme_price_movements.purged_cv import PurgedKFold
+-from extreme_price_movements.utils import tprint
+ from extreme_price_movements.path_utils import resolve_reports_dir
+ from extreme_price_movements.policy_ml import (
+     MetaClassifierSelectionConfig,
+@@ -34,7 +34,15 @@ from extreme_price_movements.policy_ml import (
+     pick_meta_classifier_by_utility_top30,
+     pick_meta_move_by_topq,
+ )
++from extreme_price_movements.purged_cv import PurgedKFold
+ from extreme_price_movements.training_utils import robust_sigma
++from extreme_price_movements.utils import tprint
++
++if importlib.util.find_spec("optuna") is not None:
++    import optuna
++    from optuna.pruners import SuccessiveHalvingPruner
++else:
++    optuna = None
+
+ META_CLASS_ORDER = np.array([0, 1, 2], dtype=np.int64)
+
+@@ -72,14 +80,379 @@ class _RunningStats:
+         return (x - self.get_mean()) / std
+
+
+-# Global running stats for meta HPO metrics (populated across trials)
+-_running_stats_meta = {
+-    "rank_metric": _RunningStats(),
+-    "top_bucket_lift": _RunningStats(),
+-    "top_bucket_mean": _RunningStats(),
+-    "rank_metric_std": _RunningStats(),
+-    "error_metric": _RunningStats(),
+-}
++def _make_meta_hpo_running_stats() -> dict[str, _RunningStats]:
++    return {
++        "rank_metric": _RunningStats(),
++        "top_bucket_lift": _RunningStats(),
++        "top_bucket_mean": _RunningStats(),
++        "top_bucket_precision": _RunningStats(),
++        "top_bucket_recall": _RunningStats(),
++        "reg_top20_ic": _RunningStats(),
++        "reg_overall_ic": _RunningStats(),
++        "rank_metric_std": _RunningStats(),
++        "error_metric": _RunningStats(),
++    }
++
++
++def _topk_spearman(pred: np.ndarray, target: np.ndarray, frac: float) -> float:
++    pred = np.asarray(pred, dtype=float)
++    target = np.asarray(target, dtype=float)
++    mask = np.isfinite(pred) & np.isfinite(target)
++    if mask.sum() < 10:
++        return 0.0
++    pred = pred[mask]
++    target = target[mask]
++    k = max(1, int(np.ceil(float(frac) * len(pred))))
++    idx = np.argsort(pred)[-k:]
++    return _safe_spearman(pred[idx], target[idx])
++
++
++def _binary_bss(y_true: np.ndarray, p_pred: np.ndarray) -> float:
++    y = np.asarray(y_true, dtype=float)
++    p = np.asarray(p_pred, dtype=float)
++    mask = np.isfinite(y) & np.isfinite(p)
++    if mask.sum() < 10:
++        return 0.0
++    y = y[mask]
++    p = np.clip(p[mask], 1e-6, 1 - 1e-6)
++    base = float(np.mean(y))
++    brier = float(np.mean((p - y) ** 2))
++    base_brier = float(np.mean((base - y) ** 2))
++    return 1.0 - brier / max(base_brier, 1e-12)
++
++
++def _regression_skill_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
++    y = np.asarray(y_true, dtype=float)
++    p = np.asarray(y_pred, dtype=float)
++    mask = np.isfinite(y) & np.isfinite(p)
++    if mask.sum() < 10:
++        return 0.0
++    y = y[mask]
++    p = p[mask]
++    mse = float(np.mean((p - y) ** 2))
++    base_mse = float(np.mean((np.mean(y) - y) ** 2))
++    return 1.0 - mse / max(base_mse, 1e-12)
++
++
++def _ece_continuous(y_true: np.ndarray, y_pred: np.ndarray, n_bins: int = 10) -> float:
++    y = np.asarray(y_true, dtype=float)
++    p = np.asarray(y_pred, dtype=float)
++    mask = np.isfinite(y) & np.isfinite(p)
++    if mask.sum() < 10:
++        return 0.0
++    y = y[mask]
++    p = p[mask]
++    n_bins = max(1, min(int(n_bins), len(p)))
++    edges = np.quantile(p, np.linspace(0.0, 1.0, n_bins + 1))
++    edges[0] -= 1e-12
++    edges[-1] += 1e-12
++    ece = 0.0
++    for b in range(n_bins):
++        lo, hi = edges[b], edges[b + 1]
++        if b == n_bins - 1:
++            m = (p >= lo) & (p <= hi)
++        else:
++            m = (p >= lo) & (p < hi)
++        if not np.any(m):
++            continue
++        ece += abs(float(np.mean(p[m])) - float(np.mean(y[m]))) * (np.sum(m) / len(p))
++    return float(ece)
++
++
++def _top_fraction_ece(
++    y_true: np.ndarray,
++    y_pred: np.ndarray,
++    frac: float,
++    n_bins: int = 10,
++) -> float:
++    y = np.asarray(y_true, dtype=float)
++    p = np.asarray(y_pred, dtype=float)
++    mask = np.isfinite(y) & np.isfinite(p)
++    if mask.sum() < 20:
++        return 0.0
++    y = y[mask]
++    p = p[mask]
++    k = max(1, int(np.ceil(float(frac) * len(p))))
++    idx = np.argsort(p)[-k:]
++    return _ece_continuous(y[idx], p[idx], n_bins=n_bins)
++
++
++def _extract_top_feature_importance(
++    model: Any,
++    feature_names: Sequence[str],
++    top_n: int = 10,
++) -> dict[str, Any]:
++    """Return top-N feature importances/gains for a fitted estimator."""
++    base = model
++    if hasattr(base, "named_steps") and isinstance(getattr(base, "named_steps"), dict):
++        try:
++            base = list(base.named_steps.values())[-1]
++        except Exception:
++            pass
++    elif hasattr(base, "estimator"):
++        try:
++            base = base.estimator
++        except Exception:
++            pass
++
++    names = list(feature_names)
++    if not names:
++        return {
++            "feature_importance_metric": "none",
++            "feature_importance_top10": [],
++        }
++
++    def _top_rows(values: np.ndarray, metric: str) -> dict[str, Any]:
++        values = np.asarray(values, dtype=float).reshape(-1)
++        if len(values) != len(names):
++            if len(values) < len(names):
++                pad = np.zeros(len(names), dtype=float)
++                pad[: len(values)] = values
++                values = pad
++            else:
++                values = values[: len(names)]
++        order = np.argsort(values)[::-1][: max(1, min(top_n, len(values)))]
++        rows = [
++            {
++                "feature": str(names[i]),
++                "importance": float(values[i]),
++            }
++            for i in order
++        ]
++        return {
++            "feature_importance_metric": metric,
++            "feature_importance_top10": rows,
++        }
++
++    try:
++        if hasattr(base, "get_booster"):
++            booster = base.get_booster()
++            score = booster.get_score(importance_type="gain")
++            values = np.zeros(len(names), dtype=float)
++            for key, val in score.items():
++                idx = None
++                if key.startswith("f"):
++                    try:
++                        idx = int(key[1:])
++                    except Exception:
++                        idx = None
++                if idx is not None and 0 <= idx < len(values):
++                    values[idx] = float(val)
++            return _top_rows(values, "gain")
++        if hasattr(base, "feature_importances_"):
++            values = np.asarray(base.feature_importances_, dtype=float)
++            return _top_rows(values, "feature_importances_")
++    except Exception:
++        pass
++
++    return {
++        "feature_importance_metric": "none",
++        "feature_importance_top10": [],
++    }
++
++
++def _cap_hpo_rows(
++    X: np.ndarray,
++    y: np.ndarray,
++    sw: Optional[np.ndarray],
++    max_rows: Optional[int],
++) -> tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
++    """Cap HPO rows with a time-preserving subsample and mild class balancing."""
++    Xv = np.asarray(X)
++    yv = np.asarray(y)
++    swv = None if sw is None else np.asarray(sw)
++    if max_rows is None or int(max_rows) <= 0 or len(yv) <= int(max_rows):
++        return Xv, yv, swv
++
++    max_rows = int(max_rows)
++    base_idx = np.linspace(0, len(yv) - 1, max_rows, dtype=np.int32)
++
++    # If the target is binary-like, preserve some minority support while
++    # keeping chronological coverage via the baseline linspace sample.
++    finite = np.isfinite(yv)
++    uniq = np.unique(yv[finite]) if finite.any() else np.asarray([], dtype=float)
++    if len(uniq) <= 2 and np.all(np.isin(uniq, [0.0, 1.0])):
++        pos_idx = np.flatnonzero((yv > 0.5) & finite)
++        neg_idx = np.flatnonzero((yv <= 0.5) & finite)
++        keep_pos = min(len(pos_idx), max_rows // 2)
++        keep_neg = min(len(neg_idx), max_rows - keep_pos)
++        bal_idx = np.concatenate(
++            [
++                pos_idx[np.linspace(0, len(pos_idx) - 1, keep_pos, dtype=np.int32)]
++                if keep_pos > 0
++                else np.empty(0, dtype=np.int32),
++                neg_idx[np.linspace(0, len(neg_idx) - 1, keep_neg, dtype=np.int32)]
++                if keep_neg > 0
++                else np.empty(0, dtype=np.int32),
++            ]
++        )
++        idx = np.unique(np.concatenate([base_idx, bal_idx]))
++        if len(idx) > max_rows:
++            idx = idx[np.linspace(0, len(idx) - 1, max_rows, dtype=np.int32)]
++    else:
++        idx = base_idx
++
++    return (
++        Xv[idx],
++        yv[idx],
++        None if swv is None else swv[idx],
++    )
++
++
++def _feature_importance_pred_prefix_summary(
++    fi_summary: dict[str, Any],
++) -> dict[str, float]:
++    rows = list(fi_summary.get("feature_importance_top10", []) or [])
++    pred_sum = 0.0
++    top10_sum = 0.0
++    for row in rows:
++        try:
++            val = float(row.get("importance", 0.0))
++        except Exception:
++            val = 0.0
++        top10_sum += val

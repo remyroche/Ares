@@ -1212,6 +1212,8 @@ def _get_lgbm_base_params(d, leaf_pct, n_samples, classifier, random_state, is_l
     return params
 
 def _train_lgbm_models_and_extract(X_train, y_train, X_val, n_samples, classifier, random_state, return_models=False):
+    # Ensure y_train is already transformed correctly if regression, before being passed to this function.
+
     leaf_matrices = []
     lgb_models = []
     lin_raw_features = []
@@ -1303,6 +1305,12 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
     n_samples = len(X)
     X_np = X.to_numpy(dtype=np.float32)
     y_target = y.astype(np.int32) if classifier else y.astype(np.float32)
+
+    if not classifier:
+        y_rank = pd.Series(y_target).rank(pct=True).to_numpy()
+        y_fit = (0.6 * y_rank + 0.4 * y_target).astype(np.float32)
+    else:
+        y_fit = y_target.copy()
     if base_score is None:
         base_score = np.abs(y_target)
 
@@ -1316,7 +1324,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
 
     for tr, va in cv_gen.split(X_np, y_target):
         val_leaves, val_lin = _train_lgbm_models_and_extract(
-            X_np[tr], y_target[tr], X_np[va], n_samples, classifier, random_state
+            X_np[tr], y_fit[tr], X_np[va], n_samples, classifier, random_state
         )
         if oof_all_leaves is None:
             oof_all_leaves = np.zeros((n_samples, val_leaves.shape[1]), dtype=np.float32)
@@ -1472,7 +1480,8 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
                     else:
                         mdl = ElasticNet(alpha=alpha, l1_ratio=l1, random_state=random_state, max_iter=2000)
 
-                    mdl.fit(Z_iter[tr], y_20k[tr], sample_weight=sample_weights[tr])
+                    y_fit_20k = y_fit[sub_20k_idx]
+                    mdl.fit(Z_iter[tr], y_fit_20k[tr], sample_weight=sample_weights[tr])
 
                     if classifier:
                         if hasattr(mdl, "decision_function"):
@@ -1589,7 +1598,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
 
     # Train full-fit LGBM generators
     full_all_leaves, full_lin_features, lgb_models, lin_models = _train_lgbm_models_and_extract(
-        X_np, y_target, X_np, n_samples, classifier, random_state, return_models=True
+        X_np, y_fit, X_np, n_samples, classifier, random_state, return_models=True
     )
 
     ohe_leaves_full = []
@@ -2707,7 +2716,8 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, classifier: bool =
                     else:
                         mdl = ElasticNet(alpha=alpha, l1_ratio=l1, random_state=random_state, max_iter=2000)
 
-                    mdl.fit(Z_iter[tr], y_20k[tr], sample_weight=sample_weights[tr])
+                    y_fit_20k = y_fit[sub_20k_idx]
+                    mdl.fit(Z_iter[tr], y_fit_20k[tr], sample_weight=sample_weights[tr])
 
                     if classifier:
                         pred_va = mdl.predict_proba(Z_iter[va])[:, 1]

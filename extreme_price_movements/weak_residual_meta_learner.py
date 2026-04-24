@@ -497,7 +497,8 @@ class WeakResidualMetaRegressor:
         ridge = Pipeline(
             [("scaler", RobustScaler()), ("ridge", Ridge(alpha=0.5, random_state=42))]
         )
-        y_t_fit = (0.65 * np.arcsinh(y_t) + 0.35 * y_t).astype(np.float32)
+        y_t_clipped = np.clip(y_t, -5, 5)
+        y_t_fit = (0.7 * np.arcsinh(y_t_clipped) + 0.3 * y_t_clipped).astype(np.float32)
         if sample_weight is None:
             ridge.fit(X_ridge, y_t_fit)
         else:
@@ -1347,7 +1348,8 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
     y_target = y.astype(np.int32) if classifier else y.astype(np.float32)
 
     if not classifier:
-        y_fit = (0.65 * np.arcsinh(y_target) + 0.35 * y_target).astype(np.float32)
+        y_clipped = np.clip(y_target, -5, 5)
+        y_fit = (0.7 * np.arcsinh(y_clipped) + 0.3 * y_clipped).astype(np.float32)
     else:
         y_fit = y_target.copy()
     if base_score is None:
@@ -1894,7 +1896,8 @@ class WeakResidualMetaRegressor:
         ridge = Pipeline(
             [("scaler", RobustScaler()), ("ridge", Ridge(alpha=0.5, random_state=42))]
         )
-        y_t_fit = (0.65 * np.arcsinh(y_t) + 0.35 * y_t).astype(np.float32)
+        y_t_clipped = np.clip(y_t, -5, 5)
+        y_t_fit = (0.7 * np.arcsinh(y_t_clipped) + 0.3 * y_t_clipped).astype(np.float32)
         if sample_weight is None:
             ridge.fit(X_ridge, y_t_fit)
         else:

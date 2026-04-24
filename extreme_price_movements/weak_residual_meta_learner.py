@@ -1437,7 +1437,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
     sub_20k_idx = rng.choice(n_samples, min(20000, n_samples), replace=False)
     Z_20k = Z_oof[sub_20k_idx]
     y_20k = y_target[sub_20k_idx]
-    bs_20k = base_score[sub_20k_idx]
+    bs_20k = base_score[sub_20k_idx] if base_score is not None else np.abs(y_20k)
 
     alpha_grid = [0.05, 0.1, 0.3, 0.5]
     l1_ratio_grid = [0.4, 0.6, 0.8]
@@ -2692,7 +2692,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, classifier: bool =
         iter_models = []
         Z_iter = Z_20k[:, active_features]
 
-        top30_mask = _get_top_k_mask(y_20k, 0.30)
+        top30_mask = _get_top_k_mask(bs_20k, 0.30)
         sample_weights = np.ones(len(y_20k), dtype=np.float32)
         sample_weights[top30_mask] = 1.0 + 0.5 * iteration
 
@@ -2839,7 +2839,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, classifier: bool =
 
     Z_final = Z[:, final_features]
 
-    top30_mask = _get_top_k_mask(y_target, 0.30)
+    top30_mask = _get_top_k_mask(base_score, 0.30)
     sample_weights = np.ones(len(y_target), dtype=np.float32)
     sample_weights[top30_mask] = 1.0 + 0.5 * iteration
 

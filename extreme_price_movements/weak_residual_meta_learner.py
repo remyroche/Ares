@@ -484,12 +484,14 @@ class WeakResidualMetaRegressor:
         ridge = Pipeline(
             [("scaler", RobustScaler()), ("ridge", Ridge(alpha=0.5, random_state=42))]
         )
+        y_rank = pd.Series(y_t).rank(pct=True).to_numpy()
+        y_t_fit = (0.6 * y_rank + 0.4 * y_t).astype(np.float32)
         if sample_weight is None:
-            ridge.fit(X_ridge, y_t)
+            ridge.fit(X_ridge, y_t_fit)
         else:
             ridge.fit(
                 X_ridge,
-                y_t,
+                y_t_fit,
                 ridge__sample_weight=np.asarray(sample_weight, dtype=np.float32),
             )
         ridge_pred = ridge.predict(X_ridge).astype(np.float32)
@@ -1453,6 +1455,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
     best_historical_J = -np.inf
     iteration = 1
     models_history = []
+    prev_preds = bs_20k.copy()
 
     while True:
         folds = int(2 + 0.5 * iteration)
@@ -1465,10 +1468,11 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
         iter_models = []
         Z_iter = Z_20k[:, active_features]
 
-        # Sample weights based on base_score
-        top30_mask = _get_top_k_mask(bs_20k, 0.30)
+        # Base top30 weights using prev_preds
+        top30_mask = _get_top_k_mask(prev_preds, 0.30)
         sample_weights = np.ones(len(y_20k), dtype=np.float32)
-        sample_weights[top30_mask] = 1.0 + 0.5 * iteration
+        top30_weight = min(2.5, 1.0 + 0.25 * iteration)
+        sample_weights[top30_mask] = top30_weight
 
         for alpha in alpha_grid:
             for l1 in l1_ratio_grid:
@@ -1481,7 +1485,24 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
                         mdl = ElasticNet(alpha=alpha, l1_ratio=l1, random_state=random_state, max_iter=2000)
 
                     y_fit_20k = y_fit[sub_20k_idx]
-                    mdl.fit(Z_iter[tr], y_fit_20k[tr], sample_weight=sample_weights[tr])
+
+                    rank_focus_tr = 0.7 + 0.6 * np.sqrt(np.clip((pd.Series(prev_preds[tr]).rank(pct=True).to_numpy()), 0, 1))
+                    if classifier:
+                        y_bin_tr = (y_20k[tr] > 0.5).astype(int)
+                        confidence_tr = np.clip(prev_preds[tr], 0, 1)
+                        pred_class_tr = (prev_preds[tr] > 0.5).astype(int)
+                        match_tr = (y_bin_tr == pred_class_tr)
+                        error_weight_tr = np.where(match_tr,
+                            np.minimum(1.6, 1.0 + 0.2 * confidence_tr),
+                            np.minimum(1.6, 1.0 + 0.5 * confidence_tr))
+                    else:
+                        resid_tr = np.abs(y_20k[tr] - prev_preds[tr])
+                        resid_rank_tr = pd.Series(resid_tr).rank(pct=True).to_numpy()
+                        error_weight_tr = np.minimum(1.6, 1.0 + 0.3 * resid_rank_tr)
+
+                    weight_distillation_tr = sample_weights[tr] * error_weight_tr * np.sqrt(rank_focus_tr)
+
+                    mdl.fit(Z_iter[tr], y_fit_20k[tr], sample_weight=weight_distillation_tr)
 
                     if classifier:
                         if hasattr(mdl, "decision_function"):
@@ -1539,9 +1560,11 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
                         std30 = 0.0
                     J = ic30 - 0.5 * std30
 
-                iter_models.append({'alpha': alpha, 'l1_ratio': l1, 'J': J, 'features': active_features.copy()})
+                iter_models.append({'alpha': alpha, 'l1_ratio': l1, 'J': J, 'features': active_features.copy(), 'oof_preds': oof_preds})
 
         iter_best_J = max(m['J'] for m in iter_models)
+        best_iter_model = max(iter_models, key=lambda m: m['J'])
+        prev_preds = best_iter_model['oof_preds']
         models_history.extend(iter_models)
 
         SE = 0.02
@@ -1834,12 +1857,14 @@ class WeakResidualMetaRegressor:
         ridge = Pipeline(
             [("scaler", RobustScaler()), ("ridge", Ridge(alpha=0.5, random_state=42))]
         )
+        y_rank = pd.Series(y_t).rank(pct=True).to_numpy()
+        y_t_fit = (0.6 * y_rank + 0.4 * y_t).astype(np.float32)
         if sample_weight is None:
-            ridge.fit(X_ridge, y_t)
+            ridge.fit(X_ridge, y_t_fit)
         else:
             ridge.fit(
                 X_ridge,
-                y_t,
+                y_t_fit,
                 ridge__sample_weight=np.asarray(sample_weight, dtype=np.float32),
             )
         ridge_pred = ridge.predict(X_ridge).astype(np.float32)
@@ -2688,6 +2713,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, classifier: bool =
     best_historical_J = -np.inf
     iteration = 1
     models_history = []
+    prev_preds = bs_20k.copy()
 
     while True:
         folds = int(2 + 0.5 * iteration)
@@ -2717,7 +2743,24 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, classifier: bool =
                         mdl = ElasticNet(alpha=alpha, l1_ratio=l1, random_state=random_state, max_iter=2000)
 
                     y_fit_20k = y_fit[sub_20k_idx]
-                    mdl.fit(Z_iter[tr], y_fit_20k[tr], sample_weight=sample_weights[tr])
+
+                    rank_focus_tr = 0.7 + 0.6 * np.sqrt(np.clip((pd.Series(prev_preds[tr]).rank(pct=True).to_numpy()), 0, 1))
+                    if classifier:
+                        y_bin_tr = (y_20k[tr] > 0.5).astype(int)
+                        confidence_tr = np.clip(prev_preds[tr], 0, 1)
+                        pred_class_tr = (prev_preds[tr] > 0.5).astype(int)
+                        match_tr = (y_bin_tr == pred_class_tr)
+                        error_weight_tr = np.where(match_tr,
+                            np.minimum(1.6, 1.0 + 0.2 * confidence_tr),
+                            np.minimum(1.6, 1.0 + 0.5 * confidence_tr))
+                    else:
+                        resid_tr = np.abs(y_20k[tr] - prev_preds[tr])
+                        resid_rank_tr = pd.Series(resid_tr).rank(pct=True).to_numpy()
+                        error_weight_tr = np.minimum(1.6, 1.0 + 0.3 * resid_rank_tr)
+
+                    weight_distillation_tr = sample_weights[tr] * error_weight_tr * np.sqrt(rank_focus_tr)
+
+                    mdl.fit(Z_iter[tr], y_fit_20k[tr], sample_weight=weight_distillation_tr)
 
                     if classifier:
                         pred_va = mdl.predict_proba(Z_iter[va])[:, 1]
@@ -2779,9 +2822,11 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, classifier: bool =
                         std30 = 0.0
                     J = 0.4 * ic30 + 0.3 * ic15 - 0.3 * std30
 
-                iter_models.append({'alpha': alpha, 'l1_ratio': l1, 'J': J, 'features': active_features.copy()})
+                iter_models.append({'alpha': alpha, 'l1_ratio': l1, 'J': J, 'features': active_features.copy(), 'oof_preds': oof_preds})
 
         iter_best_J = max(m['J'] for m in iter_models)
+        best_iter_model = max(iter_models, key=lambda m: m['J'])
+        prev_preds = best_iter_model['oof_preds']
         models_history.extend(iter_models)
 
         SE = 0.02

@@ -1323,6 +1323,7 @@ def _train_lgbm_models_and_extract(X_train, y_train, X_val, n_samples, classifie
         # per-tree raw scores
         num_trees = model.booster_.num_trees()
         prev = np.zeros(len(X_val))
+        tree_scores = []
         for k in range(1, num_trees + 1):
             cum = model.booster_.predict(X_val, raw_score=True, num_iteration=k)
             if cum.ndim > 1 and cum.shape[1] > 1:
@@ -1332,6 +1333,14 @@ def _train_lgbm_models_and_extract(X_train, y_train, X_val, n_samples, classifie
             tree_k_score = cum - prev
             prev = cum
             lin_raw_features.append(tree_k_score.astype(np.float32))
+            tree_scores.append(tree_k_score)
+
+        # Rolling cumulative marginal windows of 5 trees
+        if tree_scores:
+            tree_scores = np.column_stack(tree_scores)
+            for k in range(0, num_trees - 4):
+                window_sum = np.sum(tree_scores[:, k:k+5], axis=1)
+                lin_raw_features.append(window_sum.astype(np.float32))
 
     if return_models:
         return np.hstack(leaf_matrices) if leaf_matrices else np.empty((len(X_val), 0)), \
@@ -1627,7 +1636,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
             top30 = np.array(mets['top30_contrib'])
             top30_mean = np.mean(top30) if len(top30)>0 else 0
             top30_std = np.std(top30) if len(top30)>0 else 1
-            top30_stability = top30_mean / max(top30_std, 1e-6)
+            top30_stability = top30_mean - 0.5 * top30_std
 
             score = (sign_consistency ** 1.5) * median_mag * abs(top30_stability)
             new_active.append((f_idx, score, presence_pct))
@@ -1765,6 +1774,7 @@ def _en_pipeline_predict(X: pd.DataFrame, en_res: dict, classifier: bool = False
 
         num_trees = model.booster_.num_trees()
         prev = np.zeros(n_samples)
+        tree_scores = []
         for k in range(1, num_trees + 1):
             cum = model.booster_.predict(X_np, raw_score=True, num_iteration=k)
             if cum.ndim > 1 and cum.shape[1] > 1:
@@ -1774,6 +1784,13 @@ def _en_pipeline_predict(X: pd.DataFrame, en_res: dict, classifier: bool = False
             tree_k_score = cum - prev
             prev = cum
             lin_raw_features.append(tree_k_score.astype(np.float32))
+            tree_scores.append(tree_k_score)
+
+        if tree_scores:
+            tree_scores = np.column_stack(tree_scores)
+            for k in range(0, num_trees - 4):
+                window_sum = np.sum(tree_scores[:, k:k+5], axis=1)
+                lin_raw_features.append(window_sum.astype(np.float32))
 
     Lin_features = np.column_stack(lin_raw_features) if lin_raw_features else np.empty((n_samples, 0), dtype=np.float32)
 
@@ -2903,7 +2920,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, classifier: bool =
             top30 = np.array(mets['top30_contrib'])
             top30_mean = np.mean(top30) if len(top30)>0 else 0
             top30_std = np.std(top30) if len(top30)>0 else 1
-            top30_stability = top30_mean / max(top30_std, 1e-6)
+            top30_stability = top30_mean - 0.5 * top30_std
 
             score = (sign_consistency ** 1.5) * median_mag * abs(top30_stability)
             new_active.append((f_idx, score, presence_pct))

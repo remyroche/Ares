@@ -70,6 +70,10 @@ neutral_feature_keys = [
 ]
 
 MODEL_FEATURES = [
+    # Kalman Base Features
+    "price_state_slope_1h",
+    "price_state_slope_ratio_1h_6h",
+    "price_minus_state_z",
     # Momentum / structure extensions
     "thrust_decay_4",
     "decel_4",
@@ -456,6 +460,17 @@ REGIME_FEATURE_KEYS = [
 # Helper/base features produced in features.py that should remain selectable by model heads.
 # This increases candidate breadth before MDI pruning.
 HELPER_BASE_FEATURES = [
+    # Kalman Meta Features
+    "price_innovation_z",
+    "rolling_std(price_innovation)",
+    "kalman_gain_1h",
+    "state_uncertainty_1h",
+    "vol_state_slope_1h",
+    "realized_vol_minus_vol_state",
+    "log_volume_state_1h",
+    "volume_state_slope_1h",
+    "price_slope_x_volume_surprise",
+    "vol_state_x_volume_state",
     "ret1h",
     "ret2h",
     "ret4h",
@@ -1848,6 +1863,17 @@ CFG = {
         "adx_7",
     ],
     "meta_shared_feature_keys": [
+        # Kalman Meta Features
+        "price_innovation_z",
+        "rolling_std(price_innovation)",
+        "kalman_gain_1h",
+        "state_uncertainty_1h",
+        "vol_state_slope_1h",
+        "realized_vol_minus_vol_state",
+        "log_volume_state_1h",
+        "volume_state_slope_1h",
+        "price_slope_x_volume_surprise",
+        "vol_state_x_volume_state",
         "ambig",
         "spike_score",
         "grind_score",
@@ -2334,6 +2360,10 @@ CFG["limit_offset_sizer"] = CFG["position_sizer_features"]
 
 POSITION_SIZER_V2_FEATURE_CONFIG = {
     "shared_feature_keys": [
+        # Kalman Position Sizer Features
+        "vol_state_1h",
+        "short_vol_state_over_long_vol_state",
+        "volume_surprise_vs_state",
         "oof_base_mean",
         "oof_base_std",
         "oof_base_min",

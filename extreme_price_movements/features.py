@@ -4,13 +4,12 @@ import pickle
 import re
 import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
-  
+
 
 import pandas as pd
 import numpy as np
 from numba import njit, prange
 from typing import Dict, List, Tuple
-
 
 
 import scipy.special
@@ -633,7 +632,6 @@ def add_regime_gates(
         ((df["mkt_rv"] - rv_mean) / rv_std).clip(-6, 6).fillna(0.0).astype(np.float32)
     )
 
-
     df["mkt_rv_pct"] = (
         0.5 * (1.0 + scipy.special.erf(df["mkt_rv_pct"] / np.sqrt(2.0)))
     ).astype(np.float32)
@@ -830,7 +828,9 @@ def tune_global_kalman_lambda(
     return float(best_lam)
 
 
-def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None, input_feats=None):
+def compute_regime_features(
+    c, h, l, v, atr_base, mkt_gates, rv_24_cache=None, input_feats=None
+):
     """
     Compute regime conditioning features (cusum, vol, etc.).
     Returns a dict of new features.
@@ -946,8 +946,6 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None, i
     assert float(feats["cusum_high"].min().min()) >= -1e-6
     assert float(feats["liq_low"].min().min()) >= -1e-6
 
-
-
     # --- New Features ---
     # Meta
     # trendiness = variance(return_12h) / (12 * variance(return_1h))
@@ -965,14 +963,16 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None, i
 
     # hour_vol / rolling_daily_vol
     # rolling_daily_vol can be ff.numba_rolling_std(ret1h, 96)
-    hour_vol = ff.apply_to_frame(
-        ret1h, ff._numba_rolling_std_nan_safe, 4
-    ).astype(np.float32)
+    hour_vol = ff.apply_to_frame(ret1h, ff._numba_rolling_std_nan_safe, 4).astype(
+        np.float32
+    )
     feats["hour_vol_ratio"] = (hour_vol / (rv_24 + 1e-12)).astype(np.float32)
 
     # jump_intensity = rolling_mean(jump_t, window=48)
     jump_t = (ret1h.abs() > 3 * rv_24).astype(np.float32)
-    feats["jump_intensity"] = ff.numba_rolling_mean(jump_t.to_numpy(), 48).astype(np.float32)
+    feats["jump_intensity"] = ff.numba_rolling_mean(jump_t.to_numpy(), 48).astype(
+        np.float32
+    )
 
     # vol_regime = short_vol / long_vol
     short_vol = ff.apply_to_frame(ret1h, ff._numba_rolling_std_nan_safe, 12).astype(
@@ -989,11 +989,17 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates, rv_24_cache=None, i
     ema_slow = ff.numba_ema_nan_safe(c.to_numpy(), 50)
     ema_slow = pd.DataFrame(ema_slow, index=c.index, columns=c.columns)
 
-    feats["trend_strength"] = ((ema_fast - ema_slow).abs() / (rv_24 + 1e-12)).astype(np.float32)
+    feats["trend_strength"] = ((ema_fast - ema_slow).abs() / (rv_24 + 1e-12)).astype(
+        np.float32
+    )
 
     # log(volume / rolling_volume)
-    rolling_volume = ff.apply_to_frame(v, ff._numba_rolling_mean_nan_safe, 24).astype(np.float32)
-    feats["volume_surge"] = np.log((v / (rolling_volume + 1e-12)).clip(lower=1e-5)).astype(np.float32)
+    rolling_volume = ff.apply_to_frame(v, ff._numba_rolling_mean_nan_safe, 24).astype(
+        np.float32
+    )
+    feats["volume_surge"] = np.log(
+        (v / (rolling_volume + 1e-12)).clip(lower=1e-5)
+    ).astype(np.float32)
     return feats
 
 
@@ -1034,11 +1040,20 @@ def compute_features_hourly(panel, mkt_gates, cfg, requested_feature_keys=None):
             all_keys.update(tu.get_meta_feature_keys(head, cfg))
 
         # Other runtimes
-        for group in ["RIDGE_FEATURE_COLS", "CONTINUOUS_LOCATION_COLS", "TEST_FEATURE_KEYS", "FEATURE_SELECTION_KEYS", "TRAINING_RESIDUALIZATION_FEATURE_KEYS", "MODEL_FEATURES"]:
+        for group in [
+            "RIDGE_FEATURE_COLS",
+            "CONTINUOUS_LOCATION_COLS",
+            "TEST_FEATURE_KEYS",
+            "FEATURE_SELECTION_KEYS",
+            "TRAINING_RESIDUALIZATION_FEATURE_KEYS",
+            "MODEL_FEATURES",
+        ]:
             if group in cfg_mod.CFG:
                 all_keys.update(tu.expand_feature_group_refs(cfg_mod.CFG[group], cfg))
             elif hasattr(cfg_mod, group):
-                all_keys.update(tu.expand_feature_group_refs(getattr(cfg_mod, group), cfg))
+                all_keys.update(
+                    tu.expand_feature_group_refs(getattr(cfg_mod, group), cfg)
+                )
 
         requested_feature_keys = list(all_keys)
 
@@ -1155,12 +1170,13 @@ def _compute_hvn_feature_frames(
     return hvn_results
 
 
-
 def _safe_div(a, b, eps=1e-12):
     return a / (b + eps)
 
+
 def _safe_log_ratio(a, b, eps=1e-12):
     return np.log((a + eps) / (b + eps))
+
 
 def _signed_log1p(x):
     return np.sign(x) * np.log1p(np.abs(x))
@@ -1223,16 +1239,20 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             # We must pass numpy array to numba_rolling_robust_zscore in fast_funcs ?
             # Wait, `numba_rolling_robust_zscore` takes a df but the caller code passed `.to_numpy()`.
             primitive_cache[key] = pd.DataFrame(
-                ff.numba_rolling_robust_zscore(src.to_numpy() if hasattr(src, 'to_numpy') else src, int(window)),
-                index=src.index if hasattr(src, 'index') else None,
-                columns=src.columns if hasattr(src, 'columns') else None
+                ff.numba_rolling_robust_zscore(
+                    src.to_numpy() if hasattr(src, "to_numpy") else src, int(window)
+                ),
+                index=src.index if hasattr(src, "index") else None,
+                columns=src.columns if hasattr(src, "columns") else None,
             ).astype(np.float32)
         return primitive_cache[key]
 
     def _batch_roll_robust_zscore(
         items: list[tuple[str, pd.DataFrame]], window: int
     ) -> dict[str, pd.DataFrame]:
-        pending: list[tuple[str, pd.Index, pd.Index, np.ndarray, tuple[str, str, int]]] = []
+        pending: list[
+            tuple[str, pd.Index, pd.Index, np.ndarray, tuple[str, str, int]]
+        ] = []
         out: dict[str, pd.DataFrame] = {}
 
         for name, src in items:
@@ -1245,7 +1265,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             arr = src.to_numpy(dtype=np.float32, copy=False)
             if arr.ndim == 1:
                 arr = arr.reshape(-1, 1)
-            pending.append((name, src.index, src.columns, np.ascontiguousarray(arr), key))
+            pending.append(
+                (name, src.index, src.columns, np.ascontiguousarray(arr), key)
+            )
 
         if not pending:
             return out
@@ -1276,9 +1298,11 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         key = ("roll_rank_pct", name, int(window))
         if key not in primitive_cache:
             primitive_cache[key] = pd.DataFrame(
-                ff.numba_rolling_rank_pct(src.to_numpy() if hasattr(src, 'to_numpy') else src, int(window)),
-                index=src.index if hasattr(src, 'index') else None,
-                columns=src.columns if hasattr(src, 'columns') else None
+                ff.numba_rolling_rank_pct(
+                    src.to_numpy() if hasattr(src, "to_numpy") else src, int(window)
+                ),
+                index=src.index if hasattr(src, "index") else None,
+                columns=src.columns if hasattr(src, "columns") else None,
             ).astype(np.float32)
         return primitive_cache[key]
 
@@ -1355,14 +1379,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     ret_1 = c_raw.pct_change().fillna(0.0).astype(np.float32)
     ret_sign = np.sign(ret_1).astype(np.float32)
 
-    past_rv_2h = ret_1.rolling(2, min_periods=1).std().shift(1).fillna(0.0).astype(
-        np.float32
+    past_rv_2h = (
+        ret_1.rolling(2, min_periods=1).std().shift(1).fillna(0.0).astype(np.float32)
     )
-    past_rv_4h = ret_1.rolling(4, min_periods=1).std().shift(1).fillna(0.0).astype(
-        np.float32
+    past_rv_4h = (
+        ret_1.rolling(4, min_periods=1).std().shift(1).fillna(0.0).astype(np.float32)
     )
-    past_rv_8h = ret_1.rolling(8, min_periods=1).std().shift(1).fillna(0.0).astype(
-        np.float32
+    past_rv_8h = (
+        ret_1.rolling(8, min_periods=1).std().shift(1).fillna(0.0).astype(np.float32)
     )
     past_entropy_4h = ff.apply_to_frame(ret_sign, ff.binary_entropy_nb, 4).shift(1)
     past_entropy_8h = ff.apply_to_frame(ret_sign, ff.binary_entropy_nb, 8).shift(1)
@@ -1371,11 +1395,11 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     entropy_change = (past_entropy_4h - past_entropy_8h).astype(np.float32)
 
     regime_transitions_8h = ff.apply_to_frame(ret_sign, ff.binary_entropy_nb, 8)
-    regime_transitions_8h = regime_transitions_8h.shift(1).fillna(0.5).astype(
-        np.float32
+    regime_transitions_8h = (
+        regime_transitions_8h.shift(1).fillna(0.5).astype(np.float32)
     )
-    directional_persistence_8h = _rolling_autocorr_df(ret_sign, 8).shift(1).fillna(0.0).astype(
-        np.float32
+    directional_persistence_8h = (
+        _rolling_autocorr_df(ret_sign, 8).shift(1).fillna(0.0).astype(np.float32)
     )
     directional_persistence_8h = ((directional_persistence_8h + 1.0) * 0.5).astype(
         np.float32
@@ -2082,10 +2106,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # rv_24h calculated earlier
     feats["rv_2h"] = _roll_std("ret1h", feats["ret1h"], 2)
-    feats["rv_4h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 4).astype(np.float32)
+    feats["rv_4h"] = ff.apply_to_frame(
+        feats["ret1h"], ff._numba_rolling_std_nan_safe, 4
+    ).astype(np.float32)
     feats["rv_6h"] = _roll_std("ret1h", feats["ret1h"], 6)
     feats["rv_8h"] = _roll_std("ret1h", feats["ret1h"], 8)
-    feats["rv_12h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12).astype(np.float32)
+    feats["rv_12h"] = ff.apply_to_frame(
+        feats["ret1h"], ff._numba_rolling_std_nan_safe, 12
+    ).astype(np.float32)
 
     # New Filter Features (Range & Vol Z-score)
     h_24 = _roll_max("h", h, 24)
@@ -2591,7 +2619,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     if bool(cfg.get("use_regime_features", True)):
         feats.update(
             compute_regime_features(
-                c, h, l, v, atr_base, mkt_gates, rv_24_cache=feats["rv_24h"], input_feats=feats
+                c,
+                h,
+                l,
+                v,
+                atr_base,
+                mkt_gates,
+                rv_24_cache=feats["rv_24h"],
+                input_feats=feats,
             )
         )
 
@@ -3078,6 +3113,95 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     ).astype(np.float32)
     q_score_df = (kalman_lambda * r_score_df).astype(np.float32)
     feats["kf_snr_est"] = (q_score_df / (r_score_df + EPS)).astype(np.float32)
+
+    # --- New Kalman Trends on Price, Realized Volatility, and Log Volume ---
+    log_price_df = np.log(c)
+    rv_input = feats.get("rv_24h", ff.numba_rolling_std(feats["ret1h"], 24)).astype(
+        np.float32
+    )
+    log_vol_df = np.log1p(v).astype(np.float32)
+
+    kf_price_state, kf_price_innov_var, kf_price_unc, r_price = _kalman_local_level_df(
+        log_price_df, kalman_lambda
+    )
+    kf_vol_state, kf_vol_innov_var, kf_vol_unc, r_vol = _kalman_local_level_df(
+        rv_input, kalman_lambda
+    )
+    kf_log_vol_state, kf_log_vol_innov_var, kf_log_vol_unc, r_log_vol = (
+        _kalman_local_level_df(log_vol_df, kalman_lambda)
+    )
+
+    # Base model keys
+    feats["price_state_slope_1h"] = (kf_price_state - kf_price_state.shift(1)).astype(
+        np.float32
+    )
+    feats["price_state_slope_6h"] = (kf_price_state - kf_price_state.shift(6)).astype(
+        np.float32
+    )
+    feats["price_state_slope_ratio_1h_6h"] = (
+        feats["price_state_slope_1h"] / (feats["price_state_slope_6h"].abs() + EPS)
+    ).astype(np.float32)
+
+    # Calculate price minus state standardized by innovation standard deviation
+    price_minus_state = log_price_df - kf_price_state
+    price_innovation_std = np.sqrt(kf_price_innov_var + EPS)
+    feats["price_minus_state_z"] = (price_minus_state / price_innovation_std).astype(
+        np.float32
+    )
+
+    # Meta model keys
+    feats["price_innovation_z"] = feats["price_minus_state_z"]
+    feats["rolling_std(price_innovation)"] = _roll_std(
+        "price_innovation_z", feats["price_innovation_z"], 24
+    )
+    feats["state_uncertainty_1h"] = kf_price_unc.astype(np.float32)
+
+    # Kalman gain estimate: P / (P + R) (Simplified scalar or approx using variance)
+    # Using the uncertainty and observation variance
+    r_price_df = pd.DataFrame(
+        np.repeat(r_price.values.reshape(1, -1), len(c.index), axis=0),
+        index=c.index,
+        columns=c.columns,
+    ).astype(np.float32)
+    feats["kalman_gain_1h"] = (kf_price_unc / (kf_price_unc + r_price_df + EPS)).astype(
+        np.float32
+    )
+
+    feats["vol_state_slope_1h"] = (kf_vol_state - kf_vol_state.shift(1)).astype(
+        np.float32
+    )
+    feats["realized_vol_minus_vol_state"] = (rv_input - kf_vol_state).astype(np.float32)
+    feats["log_volume_state_1h"] = kf_log_vol_state.astype(np.float32)
+    feats["volume_state_slope_1h"] = (
+        kf_log_vol_state - kf_log_vol_state.shift(1)
+    ).astype(np.float32)
+
+    # volume surprise is typically log_volume - state
+    volume_surprise = log_vol_df - kf_log_vol_state
+    feats["price_slope_x_volume_surprise"] = (
+        feats["price_state_slope_1h"] * volume_surprise
+    ).astype(np.float32)
+    feats["vol_state_x_volume_state"] = (kf_vol_state * kf_log_vol_state).astype(
+        np.float32
+    )
+
+    # Position sizer keys
+    feats["vol_state_1h"] = kf_vol_state.astype(np.float32)
+
+    # Need short and long vol state for short_vol_state_over_long_vol_state
+    # Let's say long is 24h vol state and short is 4h vol state, or kalman vs simple.
+    # The requirement is short_vol_state_over_long_vol_state. We can create a longer window kalman
+    kf_vol_state_long, _, _, _ = _kalman_local_level_df(
+        rv_input, kalman_lambda * 0.1
+    )  # Slower adaptation
+    feats["short_vol_state_over_long_vol_state"] = (
+        kf_vol_state / (kf_vol_state_long + EPS)
+    ).astype(np.float32)
+
+    volume_state_std = np.sqrt(kf_log_vol_innov_var + EPS)
+    feats["volume_surprise_vs_state"] = (volume_surprise / volume_state_std).astype(
+        np.float32
+    )
 
     feats["coherence_24"] = (
         dir_s
@@ -4005,16 +4129,47 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "abs_ret6h_sigma_x_vov",
         "amihud_z_x_close_loc",
     ):
-        _clb = feats.get("close_location_in_bar", feats.get("close_position_in_range", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32)))
-        _vov48 = feats.get("volatility_of_volatility_48", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
-        _az = feats.get("amihud_z", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
-        _ap = feats.get("atr_pct", pd.DataFrame(1, index=c.index, columns=c.columns, dtype=np.float32))
-        _dvn = feats.get("dist_vwap_norm", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
-        _rz = feats.get("rvol_z", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
-        _rer = feats.get("range_expansion_ratio", pd.DataFrame(1, index=c.index, columns=c.columns, dtype=np.float32))
-        _hp = feats.get("hurst_proxy_24", pd.DataFrame(0.5, index=c.index, columns=c.columns, dtype=np.float32))
-        _r6 = feats.get("ret6h", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
-        _rv6 = feats.get("rv_6h", pd.DataFrame(1, index=c.index, columns=c.columns, dtype=np.float32))
+        _clb = feats.get(
+            "close_location_in_bar",
+            feats.get(
+                "close_position_in_range",
+                pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32),
+            ),
+        )
+        _vov48 = feats.get(
+            "volatility_of_volatility_48",
+            pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32),
+        )
+        _az = feats.get(
+            "amihud_z",
+            pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32),
+        )
+        _ap = feats.get(
+            "atr_pct",
+            pd.DataFrame(1, index=c.index, columns=c.columns, dtype=np.float32),
+        )
+        _dvn = feats.get(
+            "dist_vwap_norm",
+            pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32),
+        )
+        _rz = feats.get(
+            "rvol_z",
+            pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32),
+        )
+        _rer = feats.get(
+            "range_expansion_ratio",
+            pd.DataFrame(1, index=c.index, columns=c.columns, dtype=np.float32),
+        )
+        _hp = feats.get(
+            "hurst_proxy_24",
+            pd.DataFrame(0.5, index=c.index, columns=c.columns, dtype=np.float32),
+        )
+        _r6 = feats.get(
+            "ret6h", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32)
+        )
+        _rv6 = feats.get(
+            "rv_6h", pd.DataFrame(1, index=c.index, columns=c.columns, dtype=np.float32)
+        )
 
         if _needs_feature("atr_pct_x_amihud_z"):
             _raw = (_ap * _az).astype(np.float32)
@@ -4033,7 +4188,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             _ps_interact_items.append(("dist_vwap_x_vov", _signed_log1p(_raw)))
 
         if _needs_feature("abs_ret6h_sigma_x_vov"):
-            _raw = ((np.abs(_r6) / (_rv6 + np.float32(1e-12))) * _vov48).astype(np.float32)
+            _raw = ((np.abs(_r6) / (_rv6 + np.float32(1e-12))) * _vov48).astype(
+                np.float32
+            )
             _ps_interact_items.append(("abs_ret6h_sigma_x_vov", _signed_log1p(_raw)))
 
         if _needs_feature("amihud_z_x_close_loc"):
@@ -4054,17 +4211,17 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     mkt_ret24h_sq_mean = ff.numba_rolling_mean(
         (mkt_ret24h * mkt_ret24h).to_frame("mkt_ret24h"), 24
     )["mkt_ret24h"]
-    cov_24h = ff.numba_rolling_mean(ret24h.multiply(mkt_ret24h, axis=0), 24) - ret24h_mean.multiply(
-        mkt_ret24h_mean, axis=0
-    )
+    cov_24h = ff.numba_rolling_mean(
+        ret24h.multiply(mkt_ret24h, axis=0), 24
+    ) - ret24h_mean.multiply(mkt_ret24h_mean, axis=0)
     beta_24h = cov_24h.divide(
         mkt_ret24h_sq_mean - mkt_ret24h_mean.pow(2) + 1e-12,
         axis=0,
     )
     feats["beta_24h"] = beta_24h.replace([np.inf, -np.inf], np.nan).astype(np.float32)
-    feats["resid_ret_6h"] = (feats["ret6h"] - beta_24h.multiply(mkt_ret6h, axis=0)).astype(
-        np.float32
-    )
+    feats["resid_ret_6h"] = (
+        feats["ret6h"] - beta_24h.multiply(mkt_ret6h, axis=0)
+    ).astype(np.float32)
     feats["xs_rank_vol_z"] = feats["vol_z"].rank(axis=1, pct=True).astype(np.float32)
 
     # ---------------------------------------------------------------------
@@ -4410,7 +4567,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     if requested_feature_set:
         feats = {k: v for k, v in feats.items() if k in requested_feature_set}
-    tprint(f"Features: {len(feats)} features before CausalTransform. Applying transforms...")
+    tprint(
+        f"Features: {len(feats)} features before CausalTransform. Applying transforms..."
+    )
     # =========================================================================
     # PORTABILITY HARDENING (IN-PLACE)
     # =========================================================================
@@ -4421,7 +4580,16 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     scale_rv = feats.get("rv_24h")
     rz96_items: list[tuple[str, pd.DataFrame]] = []
     if scale_rv is not None:
-        for f in ["mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "dir_path_long_2h", "dir_path_short_2h"]:
+        for f in [
+            "mfe_2h",
+            "mae_2h",
+            "mfe_4h",
+            "mae_4h",
+            "mfe_8h",
+            "mae_8h",
+            "dir_path_long_2h",
+            "dir_path_short_2h",
+        ]:
             if f in feats:
                 feats[f] = _safe_div(feats[f], scale_rv).astype(np.float32)
 
@@ -4433,22 +4601,34 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         if "dir_path_edge_2h" in feats:
             # mfe_scaled / (mae_scaled + eps) -- assume we can just use raw mfe_2h/mae_2h since scales cancel
             if "mfe_2h" in feats and "mae_2h" in feats:
-                feats["dir_path_edge_2h"] = _safe_div(feats["mfe_2h"], feats["mae_2h"]).astype(np.float32)
+                feats["dir_path_edge_2h"] = _safe_div(
+                    feats["mfe_2h"], feats["mae_2h"]
+                ).astype(np.float32)
 
         if "dir_path_risk_skew_2h" in feats:
-            feats["dir_path_risk_skew_2h"] = np.tanh(feats["dir_path_risk_skew_2h"]).astype(np.float32)
+            feats["dir_path_risk_skew_2h"] = np.tanh(
+                feats["dir_path_risk_skew_2h"]
+            ).astype(np.float32)
 
         if "giveback" in feats:
-            feats["giveback"] = _safe_div(feats["giveback"], scale_rv).clip(0, 5.0).astype(np.float32)
+            feats["giveback"] = (
+                _safe_div(feats["giveback"], scale_rv).clip(0, 5.0).astype(np.float32)
+            )
 
         if "tail_against" in feats:
-            feats["tail_against"] = _safe_div(feats["tail_against"], scale_rv).astype(np.float32)
+            feats["tail_against"] = _safe_div(feats["tail_against"], scale_rv).astype(
+                np.float32
+            )
 
         if "dip_velocity" in feats:
-            feats["dip_velocity"] = _safe_div(feats["dip_velocity"], scale_rv).astype(np.float32)
+            feats["dip_velocity"] = _safe_div(feats["dip_velocity"], scale_rv).astype(
+                np.float32
+            )
 
         if "reversion_target_distance" in feats:
-            feats["reversion_target_distance"] = _safe_div(feats["reversion_target_distance"], scale_rv).astype(np.float32)
+            feats["reversion_target_distance"] = _safe_div(
+                feats["reversion_target_distance"], scale_rv
+            ).astype(np.float32)
 
     # 2) Medium / long horizon returns
     if scale_rv is not None:
@@ -4479,10 +4659,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     scale_rv_48 = feats.get("rv_48h")
     if scale_rv_48 is not None and "rv_12h" in feats:
-        feats["rv_12h"] = _safe_log_ratio(feats["rv_12h"], scale_rv_48).astype(np.float32)
+        feats["rv_12h"] = _safe_log_ratio(feats["rv_12h"], scale_rv_48).astype(
+            np.float32
+        )
 
     if scale_rv_long is not None and "rv_48h" in feats:
-        feats["rv_48h"] = _safe_log_ratio(feats["rv_48h"], scale_rv_long).astype(np.float32)
+        feats["rv_48h"] = _safe_log_ratio(feats["rv_48h"], scale_rv_long).astype(
+            np.float32
+        )
 
     if "rv_120h" in feats:
         feats["rv_120h"] = _roll_rank_pct("rv_120h", feats["rv_120h"], 480)
@@ -4505,29 +4689,79 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # 4) Heavy-tailed flow / liquidity / divergence
     # Need to robustify if still raw
-    flow_rz = ["flow_persistence", "cumulative_delta_stall", "delta_stall_6", "vol_price_div", "vol_price_diverge", "return_per_volume", "volume_trend_48"]
+    flow_rz = [
+        "flow_persistence",
+        "cumulative_delta_stall",
+        "delta_stall_6",
+        "vol_price_div",
+        "vol_price_diverge",
+        "return_per_volume",
+        "volume_trend_48",
+    ]
     for f in flow_rz:
         if f in feats:
             rz96_items.append((f, feats[f]))
 
     if "signed_vol" in feats:
-        baseline_vol = ff.numba_rolling_mean(feats["volume"].to_numpy() if "volume" in feats else np.abs(feats["signed_vol"].to_numpy()), 96)
-        feats["signed_vol"] = _safe_div(feats["signed_vol"], pd.DataFrame(baseline_vol, index=feats["signed_vol"].index, columns=feats["signed_vol"].columns)).astype(np.float32)
+        baseline_vol = ff.numba_rolling_mean(
+            (
+                feats["volume"].to_numpy()
+                if "volume" in feats
+                else np.abs(feats["signed_vol"].to_numpy())
+            ),
+            96,
+        )
+        feats["signed_vol"] = _safe_div(
+            feats["signed_vol"],
+            pd.DataFrame(
+                baseline_vol,
+                index=feats["signed_vol"].index,
+                columns=feats["signed_vol"].columns,
+            ),
+        ).astype(np.float32)
 
     for f in ["up_vol", "dn_vol", "up_vol_6", "dn_vol_6"]:
         if f in feats:
             baseline = ff.numba_rolling_quantile(feats[f].to_numpy(), 96, 0.5)
-            feats[f] = _safe_log_ratio(feats[f], pd.DataFrame(baseline, index=feats[f].index, columns=feats[f].columns)).astype(np.float32)
+            feats[f] = _safe_log_ratio(
+                feats[f],
+                pd.DataFrame(baseline, index=feats[f].index, columns=feats[f].columns),
+            ).astype(np.float32)
 
     if "churn" in feats:
         baseline = ff.numba_rolling_quantile(feats["churn"].to_numpy(), 96, 0.5)
-        feats["churn"] = _safe_log_ratio(feats["churn"], pd.DataFrame(baseline, index=feats["churn"].index, columns=feats["churn"].columns)).astype(np.float32)
+        feats["churn"] = _safe_log_ratio(
+            feats["churn"],
+            pd.DataFrame(
+                baseline, index=feats["churn"].index, columns=feats["churn"].columns
+            ),
+        ).astype(np.float32)
 
     if "v_power" in feats:
-        rz96_items.append(("v_power", _frame_like(feats["v_power"], _signed_log1p(feats["v_power"]).to_numpy(dtype=np.float32, copy=False))))
+        rz96_items.append(
+            (
+                "v_power",
+                _frame_like(
+                    feats["v_power"],
+                    _signed_log1p(feats["v_power"]).to_numpy(
+                        dtype=np.float32, copy=False
+                    ),
+                ),
+            )
+        )
 
     if "amihud_illiq" in feats:
-        rz96_items.append(("amihud_illiq", _frame_like(feats["amihud_illiq"], np.log1p(feats["amihud_illiq"]).to_numpy(dtype=np.float32, copy=False))))
+        rz96_items.append(
+            (
+                "amihud_illiq",
+                _frame_like(
+                    feats["amihud_illiq"],
+                    np.log1p(feats["amihud_illiq"]).to_numpy(
+                        dtype=np.float32, copy=False
+                    ),
+                ),
+            )
+        )
 
     for f in ["impact_12", "impact_24", "impact_12_perp", "impact_24_perp"]:
         if f in feats:
@@ -4550,15 +4784,18 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         feats.update(_batch_roll_robust_zscore(rz96_items, 96))
 
     if "volume_price_corr_10h" in feats:
-        feats["volume_price_corr_10h"] = np.tanh(feats["volume_price_corr_10h"]).astype(np.float32)
+        feats["volume_price_corr_10h"] = np.tanh(feats["volume_price_corr_10h"]).astype(
+            np.float32
+        )
 
     # 5) Duration / age
     if "trend_age_hours" in feats:
         tmp = np.log1p(feats["trend_age_hours"])
-        feats["trend_age_hours"] = ff.numba_rolling_rank_pct(tmp.to_numpy(), 480).astype(np.float32)
+        feats["trend_age_hours"] = ff.numba_rolling_rank_pct(
+            tmp.to_numpy(), 480
+        ).astype(np.float32)
 
     # =========================================================================
-
 
     # Transform cache can be enabled for incremental/tail-only runs to persist parquet transforms.
     transform_cache_enabled = bool(cfg.get("feature_transform_cache_enabled", False))
@@ -5154,14 +5391,16 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         # Intrabar range normalized by ATR-units
         ast_intrabar_range_atr = (ast_hl_range / safe_close_vol).astype(np.float32)
         if _needs_feature("z_intrabar_range_atr"):
-            z_items.append(
-                ("z_intrabar_range_atr", ast_intrabar_range_atr)
-            )
+            z_items.append(("z_intrabar_range_atr", ast_intrabar_range_atr))
 
         # Compression/Expansion: Range Spike vs Bollinger Width
         if _needs_feature("z_compression_expansion"):
-            bb_width = (_roll_std("close", c_raw, 20) / c_raw.clip(lower=1e-6)).astype(np.float32)
-            ast_comp_exp = (ast_intrabar_range_atr / bb_width.clip(lower=1e-6)).astype(np.float32)
+            bb_width = (_roll_std("close", c_raw, 20) / c_raw.clip(lower=1e-6)).astype(
+                np.float32
+            )
+            ast_comp_exp = (ast_intrabar_range_atr / bb_width.clip(lower=1e-6)).astype(
+                np.float32
+            )
             z_items.append(("z_compression_expansion", ast_comp_exp))
 
         # 2. Volume
@@ -5170,21 +5409,29 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
         # 3. Breakout / Structure (using z=24 as standard)
         z_win = 24
-        if _needs_feature("z_breakout_up_24", "z_breakout_dn_24", "z_dist_ema_24", "z_dist_vwap_24"):
+        if _needs_feature(
+            "z_breakout_up_24", "z_breakout_dn_24", "z_dist_ema_24", "z_dist_vwap_24"
+        ):
             trailing_high_24 = _roll_max("high", h_raw, z_win).shift(1)
             trailing_low_24 = _roll_min("low", l_raw, z_win).shift(1)
-            
+
             if _needs_feature("z_breakout_up_24"):
-                ast_breakout_up = ((c_raw - trailing_high_24) / safe_close_vol).astype(np.float32)
+                ast_breakout_up = ((c_raw - trailing_high_24) / safe_close_vol).astype(
+                    np.float32
+                )
                 z_items.append(("z_breakout_up_24", ast_breakout_up))
-            
+
             if _needs_feature("z_breakout_dn_24"):
-                ast_breakout_dn = ((trailing_low_24 - c_raw) / safe_close_vol).astype(np.float32)
+                ast_breakout_dn = ((trailing_low_24 - c_raw) / safe_close_vol).astype(
+                    np.float32
+                )
                 z_items.append(("z_breakout_dn_24", ast_breakout_dn))
 
             # Stretch Location (EMA/VWAP)
             if _needs_feature("z_dist_ema_24"):
-                ema_24 = (ff.numba_ema_nan_safe(c_raw.to_numpy(), z_win)).astype(np.float32)
+                ema_24 = (ff.numba_ema_nan_safe(c_raw.to_numpy(), z_win)).astype(
+                    np.float32
+                )
                 ema_24 = pd.DataFrame(ema_24, index=c_raw.index, columns=c_raw.columns)
                 ast_dist_ema = ((c_raw - ema_24) / safe_close_vol).astype(np.float32)
                 z_items.append(("z_dist_ema_24", ast_dist_ema))
@@ -5201,14 +5448,16 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         if _needs_feature("z_atr_norm_ret_24", "z_sm_momentum_24", "z_slope_change_24"):
             ret_24 = (c_raw / c_raw.shift(z_win) - 1.0).astype(np.float32)
             ast_atr_norm_ret = (ret_24 / atr_base.clip(lower=1e-6)).astype(np.float32)
-            
+
             if _needs_feature("z_atr_norm_ret_24"):
                 z_items.append(("z_atr_norm_ret_24", ast_atr_norm_ret))
-            
+
             if _needs_feature("z_sm_momentum_24"):
                 ret_8 = (c_raw / c_raw.shift(8) - 1.0).astype(np.float32)
-                z_items.append(("z_sm_momentum_24", (ret_8 - ret_24).astype(np.float32)))
-            
+                z_items.append(
+                    ("z_sm_momentum_24", (ret_8 - ret_24).astype(np.float32))
+                )
+
             if _needs_feature("z_slope_change_24"):
                 ast_slope_change = (ret_24 - ret_24.shift(1)).astype(np.float32)
                 z_items.append(("z_slope_change_24", ast_slope_change))
@@ -5218,7 +5467,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             ast_abs_moves = (c_raw - c_raw.shift(1)).abs().astype(np.float32)
             sum_abs_moves = _roll_sum("abs_moves", ast_abs_moves, z_win)
             net_move = (c_raw - c_raw.shift(z_win)).astype(np.float32)
-            ast_path_eff = (net_move / sum_abs_moves.clip(lower=1e-9)).astype(np.float32)
+            ast_path_eff = (net_move / sum_abs_moves.clip(lower=1e-9)).astype(
+                np.float32
+            )
             z_items.append(("z_path_efficiency_24", ast_path_eff))
 
         if z_items:
@@ -5285,13 +5536,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     return feats, _feat_index, _feat_columns
 
 
-
-
 # ============================================================
 # Position Sizer V2 Numba/Numpy Feature Builders
 # ============================================================
-
-
 
 
 @njit(cache=True)
@@ -5350,9 +5597,6 @@ def _median_inplace_nb(values: np.ndarray, length: int) -> float:
     if length % 2 == 1:
         return tmp[mid]
     return 0.5 * (tmp[mid - 1] + tmp[mid])
-
-
-
 
 
 @njit(parallel=True, cache=True)
@@ -6086,7 +6330,7 @@ def binary_entropy_nb_parallel(mat: np.ndarray, window: int) -> np.ndarray:
 
 
 def build_position_sizer_feature_frame(
-    raw_inputs: Dict[str, np.ndarray]
+    raw_inputs: Dict[str, np.ndarray],
 ) -> Dict[str, np.ndarray]:
     close = np.ascontiguousarray(raw_inputs.get("close", np.empty(0)), dtype=np.float32)
     high = np.ascontiguousarray(raw_inputs.get("high", np.empty(0)), dtype=np.float32)

@@ -3127,9 +3127,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     kf_vol_state, kf_vol_innov_var, kf_vol_unc, r_vol = _kalman_local_level_df(
         rv_input, kalman_lambda
     )
-    kf_log_vol_state, kf_log_vol_innov_var, kf_log_vol_unc, r_log_vol = (
-        _kalman_local_level_df(log_vol_df, kalman_lambda)
-    )
+    (
+        kf_log_vol_state,
+        kf_log_vol_innov_var,
+        kf_log_vol_unc,
+        r_log_vol,
+    ) = _kalman_local_level_df(log_vol_df, kalman_lambda)
 
     # Base model keys
     feats["price_state_slope_1h"] = (kf_price_state - kf_price_state.shift(1)).astype(
@@ -3202,6 +3205,82 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["volume_surprise_vs_state"] = (volume_surprise / volume_state_std).astype(
         np.float32
     )
+
+    # --- New Trend Stack / Alignment features for base models ---
+    nATR_36h = ff.numba_rolling_mean(h - l, 36) / c
+    nATR_36h_eps = nATR_36h + EPS
+
+    zr_1h = feats.get("ret1h", c.pct_change(1)) / nATR_36h_eps
+    zr_3h = feats.get("ret3h", c.pct_change(3)) / nATR_36h_eps
+    zr_6h = feats.get("ret6h", c.pct_change(6)) / nATR_36h_eps
+    zr_12h = feats.get("ret12h", c.pct_change(12)) / nATR_36h_eps
+    zr_24h = feats.get("ret24h", c.pct_change(24)) / nATR_36h_eps
+
+    feats["trend_stack_3_6_12"] = (zr_3h + zr_6h + zr_12h).astype(np.float32)
+    feats["trend_stack_6_12_24"] = (zr_6h + zr_12h + zr_24h).astype(np.float32)
+
+    feats["zr_1h_minus_zr_6h"] = (zr_1h - zr_6h).astype(np.float32)
+    feats["zr_3h_minus_zr_12h"] = (zr_3h - zr_12h).astype(np.float32)
+    feats["zr_6h_minus_zr_24h"] = (zr_6h - zr_24h).astype(np.float32)
+
+    # Trend dispersion
+    # std across features per row. pd.DataFrame.std does this efficiently
+    feats["trend_dispersion_1_3_6"] = pd.DataFrame(
+        np.std([zr_1h.values, zr_3h.values, zr_6h.values], axis=0),
+        index=c.index,
+        columns=c.columns,
+    ).astype(np.float32)
+    feats["trend_dispersion_3_6_12"] = pd.DataFrame(
+        np.std([zr_3h.values, zr_6h.values, zr_12h.values], axis=0),
+        index=c.index,
+        columns=c.columns,
+    ).astype(np.float32)
+
+    # Note: price_innovation_z may be a df depending on context
+    innovation_z = feats.get("price_innovation_z")
+    if innovation_z is not None:
+        feats["innovation_z_x_zr_1h"] = (innovation_z * zr_1h).astype(np.float32)
+        feats["innovation_z_x_zr_3h"] = (innovation_z * zr_3h).astype(np.float32)
+
+    # Volume and range Z
+    # We'll calculate simple Z scores if not existing.
+    vol_24h_mean = _roll_mean("vol_24", v, 24)
+    vol_24h_std = _roll_std("vol_24", v, 24)
+    vol_z_24h = (v - vol_24h_mean) / (vol_24h_std + EPS)
+
+    vol_48h_mean = _roll_mean("vol_48", v, 48)
+    vol_48h_std = _roll_std("vol_48", v, 48)
+    vol_z_48h = (v - vol_48h_mean) / (vol_48h_std + EPS)
+
+    range_hl = h - l
+    range_24h_mean = _roll_mean("range_hl_24", range_hl, 24)
+    range_24h_std = _roll_std("range_hl_24", range_hl, 24)
+    range_z_24h = (range_hl - range_24h_mean) / (range_24h_std + EPS)
+
+    range_48h_mean = _roll_mean("range_hl_48", range_hl, 48)
+    range_48h_std = _roll_std("range_hl_48", range_hl, 48)
+    range_z_48h = (range_hl - range_48h_mean) / (range_48h_std + EPS)
+
+    feats["zr_1h_x_volume_z_24h"] = (zr_1h * vol_z_24h).astype(np.float32)
+    feats["zr_3h_x_volume_z_24h"] = (zr_3h * vol_z_24h).astype(np.float32)
+    feats["zr_6h_x_volume_z_48h"] = (zr_6h * vol_z_48h).astype(np.float32)
+
+    feats["zr_6h_x_range_z_24h"] = (zr_6h * range_z_24h).astype(np.float32)
+    feats["zr_12h_x_range_z_48h"] = (zr_12h * range_z_48h).astype(np.float32)
+
+    feats["zr_3h"] = zr_3h.astype(np.float32)
+    feats["zr_6h"] = zr_6h.astype(np.float32)
+    feats["zr_12h"] = zr_12h.astype(np.float32)
+
+    feats["trend_alignment_1_3_6"] = (
+        np.sign(zr_1h) + np.sign(zr_3h) + np.sign(zr_6h)
+    ).astype(np.float32)
+    feats["trend_alignment_3_6_12"] = (
+        np.sign(zr_3h) + np.sign(zr_6h) + np.sign(zr_12h)
+    ).astype(np.float32)
+    feats["trend_alignment_6_12_24"] = (
+        np.sign(zr_6h) + np.sign(zr_12h) + np.sign(zr_24h)
+    ).astype(np.float32)
 
     feats["coherence_24"] = (
         dir_s

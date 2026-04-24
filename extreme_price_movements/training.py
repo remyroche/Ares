@@ -8457,6 +8457,14 @@ def generate_label_datasets(
 
         return (H, side, k, variant, X, y, y_ret, w, meta_idx, lbl_vals)
 
+    tprint("Computing custom kalman y_raw targets upstream...")
+    kalman_lambda = tune_global_kalman_lambda(
+        panel["close"], cfg.get("kalman_target_halflife", 12.0)
+    )
+    kalman_price, _, _, _ = _kalman_local_level_df(panel["close"], kalman_lambda)
+    log_close = np.log(panel["close"])
+    log_kalman = np.log(kalman_price)
+
     # Enforce maximum of 2 workers as requested for speed/memory tradeoff
     n_workers = min(2, _choose_parallel_cells(len(tasks), cfg))
 
@@ -8475,7 +8483,31 @@ def generate_label_datasets(
                 if X is not None:
                     df_out = X.copy()
                     df_out["__y_bin__"] = y
-                    df_out["__y_ret__"] = y_ret
+
+                    # Compute y_raw using H
+                    r_close_fwd = log_close.shift(-H) - log_close
+                    r_kalman_fwd = log_kalman.shift(-H) - log_kalman
+
+                    alpha_weight = 0.7
+                    y_raw_panel = alpha_weight * r_close_fwd + (1.0 - alpha_weight) * r_kalman_fwd
+
+                    # align to X
+                    if meta_idx is not None:
+                        idx_ts = meta_idx["ts"]
+                        idx_sym = meta_idx["symbol"]
+                        # Extract from panel format
+                        y_raw_aligned = np.zeros(len(idx_ts), dtype=np.float32)
+                        for i in range(len(idx_ts)):
+                            sym = idx_sym[i]
+                            t = idx_ts[i]
+                            if sym in y_raw_panel.columns and t in y_raw_panel.index:
+                                y_raw_aligned[i] = y_raw_panel.loc[t, sym]
+                            else:
+                                y_raw_aligned[i] = y_ret[i] # fallback
+                        df_out["__y_ret__"] = y_raw_aligned
+                    else:
+                        df_out["__y_ret__"] = y_ret
+
                     df_out["__y_outcome__"] = lbl_vals
                     df_out["__w__"] = w
                     if meta_idx is not None:
@@ -12838,6 +12870,29 @@ def train_meta_models_from_artifacts(
             _correction_target = (_raw_correction / vol_scale).astype(
                 np.float32, copy=False
             )
+
+            # Use rolling MAD upstream
+            df_temp = pd.DataFrame({
+                "__symbol__": df["__symbol__"],
+                "__ts__": df["__ts__"],
+                "resid": _correction_target
+            })
+            df_temp = df_temp.sort_values(["__symbol__", "__ts__"])
+            mad = df_temp.groupby("__symbol__")["resid"].rolling(3 * int(h), min_periods=1).apply(
+                lambda x: np.mean(np.abs(x - np.mean(x))) if len(x) > 0 else 1.0, raw=True
+            ).reset_index(level=0, drop=True)
+            df_temp["mad"] = mad
+            df_temp["mad"] = df_temp.groupby("__symbol__")["mad"].bfill().fillna(1.0)
+
+            # Align back to original order
+            df_temp = df_temp.loc[df.index]
+            _rolling_mad = df_temp["mad"].values.astype(np.float32)
+
+            _correction_target = (_correction_target / _rolling_mad).astype(np.float32, copy=False)
+
+            # The WeakResidualMetaRegressor expects the target to be passed inside y
+            # We already have y_fit = 0.7 * arcsinh(clip(y_t, -5, 5)) + 0.3 * clip(y_t, -5, 5) there
+            # So _correction_target here is the exact raw residual ready to be handled
 
             _weights = np.ones(len(df), dtype=np.float32)
             if "__u_policy_net__" in df.columns:

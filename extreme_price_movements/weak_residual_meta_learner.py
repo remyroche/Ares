@@ -30,6 +30,19 @@ def _ranknorm(x: np.ndarray) -> np.ndarray:
     return out.astype(np.float32)
 
 
+def _signed_rank_target(y: np.ndarray) -> np.ndarray:
+    y = np.asarray(y, dtype=np.float64)
+    out = np.zeros(len(y), dtype=np.float32)
+    pos_mask = y > 0
+    neg_mask = y < 0
+    if np.any(pos_mask):
+        import pandas as pd
+        out[pos_mask] = pd.Series(y[pos_mask]).rank(pct=True).to_numpy()
+    if np.any(neg_mask):
+        import pandas as pd
+        out[neg_mask] = -pd.Series(np.abs(y[neg_mask])).rank(pct=True).to_numpy()
+    return out
+
 def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
     m = np.isfinite(a) & np.isfinite(b)
     if np.sum(m) < 8:
@@ -484,7 +497,7 @@ class WeakResidualMetaRegressor:
         ridge = Pipeline(
             [("scaler", RobustScaler()), ("ridge", Ridge(alpha=0.5, random_state=42))]
         )
-        y_rank = pd.Series(y_t).rank(pct=True).to_numpy()
+        y_rank = _signed_rank_target(y_t)
         y_t_fit = (0.6 * y_rank + 0.4 * y_t).astype(np.float32)
         if sample_weight is None:
             ridge.fit(X_ridge, y_t_fit)
@@ -1025,6 +1038,19 @@ def _jaccard(a: np.ndarray, b: np.ndarray) -> float:
         return 0.0
     return float(inter / union)
 
+def _signed_rank_target(y: np.ndarray) -> np.ndarray:
+    y = np.asarray(y, dtype=np.float64)
+    out = np.zeros(len(y), dtype=np.float32)
+    pos_mask = y > 0
+    neg_mask = y < 0
+    if np.any(pos_mask):
+        import pandas as pd
+        out[pos_mask] = pd.Series(y[pos_mask]).rank(pct=True).to_numpy()
+    if np.any(neg_mask):
+        import pandas as pd
+        out[neg_mask] = -pd.Series(np.abs(y[neg_mask])).rank(pct=True).to_numpy()
+    return out
+
 def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
     m = np.isfinite(a) & np.isfinite(b)
     if np.sum(m) < 8:
@@ -1118,6 +1144,19 @@ def _jaccard(a: np.ndarray, b: np.ndarray) -> float:
     if union == 0:
         return 0.0
     return float(inter / union)
+
+def _signed_rank_target(y: np.ndarray) -> np.ndarray:
+    y = np.asarray(y, dtype=np.float64)
+    out = np.zeros(len(y), dtype=np.float32)
+    pos_mask = y > 0
+    neg_mask = y < 0
+    if np.any(pos_mask):
+        import pandas as pd
+        out[pos_mask] = pd.Series(y[pos_mask]).rank(pct=True).to_numpy()
+    if np.any(neg_mask):
+        import pandas as pd
+        out[neg_mask] = -pd.Series(np.abs(y[neg_mask])).rank(pct=True).to_numpy()
+    return out
 
 def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
     m = np.isfinite(a) & np.isfinite(b)
@@ -1309,7 +1348,7 @@ def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, base_score: np.nda
     y_target = y.astype(np.int32) if classifier else y.astype(np.float32)
 
     if not classifier:
-        y_rank = pd.Series(y_target).rank(pct=True).to_numpy()
+        y_rank = _signed_rank_target(y_target)
         y_fit = (0.6 * y_rank + 0.4 * y_target).astype(np.float32)
     else:
         y_fit = y_target.copy()
@@ -1857,7 +1896,7 @@ class WeakResidualMetaRegressor:
         ridge = Pipeline(
             [("scaler", RobustScaler()), ("ridge", Ridge(alpha=0.5, random_state=42))]
         )
-        y_rank = pd.Series(y_t).rank(pct=True).to_numpy()
+        y_rank = _signed_rank_target(y_t)
         y_t_fit = (0.6 * y_rank + 0.4 * y_t).astype(np.float32)
         if sample_weight is None:
             ridge.fit(X_ridge, y_t_fit)
@@ -2397,6 +2436,19 @@ def _jaccard(a: np.ndarray, b: np.ndarray) -> float:
     if union == 0:
         return 0.0
     return float(inter / union)
+
+def _signed_rank_target(y: np.ndarray) -> np.ndarray:
+    y = np.asarray(y, dtype=np.float64)
+    out = np.zeros(len(y), dtype=np.float32)
+    pos_mask = y > 0
+    neg_mask = y < 0
+    if np.any(pos_mask):
+        import pandas as pd
+        out[pos_mask] = pd.Series(y[pos_mask]).rank(pct=True).to_numpy()
+    if np.any(neg_mask):
+        import pandas as pd
+        out[neg_mask] = -pd.Series(np.abs(y[neg_mask])).rank(pct=True).to_numpy()
+    return out
 
 def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
     m = np.isfinite(a) & np.isfinite(b)

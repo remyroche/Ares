@@ -5,7 +5,8 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pointbiserialr
+from sklearn.metrics import roc_auc_score
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import ElasticNet, Ridge, RidgeClassifier
 from sklearn.linear_model import LogisticRegression
@@ -567,8 +568,13 @@ class WeakResidualMetaRegressor:
             )
         else:
             unc = np.ones(len(unc_raw), dtype=np.float32)
-        final = ridge_pred + 0.3 * lgb_pred * unc
 
+        en_res = _elasticnet_lgbm_pipeline(X_df, signed_residual, classifier=False, random_state=42)
+        en_ridge_pred = en_res['predictions'].astype(np.float32)
+
+        final = ridge_pred + 0.3 * lgb_pred * unc + 0.3 * en_ridge_pred * unc
+
+        self.en_pipeline = en_res
         self.selected_features = list(dict.fromkeys(ridge_feats + lgb_feats))
         self.ridge_model = ridge
         self.lgbm_model = lgbm
@@ -579,6 +585,7 @@ class WeakResidualMetaRegressor:
             "lgbm_features": np.array(lgb_feats, dtype=object),
             "ridge_pred": ridge_pred,
             "lgbm_pred": lgb_pred,
+            "meta_reg_en_ridge_pred": en_ridge_pred,
             "meta_reg_leaf_var": leaf_var,
             "meta_reg_leaf_count": leaf_cnt,
             "meta_reg_support_factor": support_factor.astype(np.float32),
@@ -609,7 +616,12 @@ class WeakResidualMetaRegressor:
         )
         u_dict = self._compute_reg_lgbm_uncertainty(X_lgb_np)
         u = u_dict["uncertainty"]
-        return (r + 0.3 * l * u).astype(np.float32)
+
+        en_ridge_pred = 0.0
+        if hasattr(self, 'en_pipeline') and self.en_pipeline is not None:
+            en_ridge_pred = _en_pipeline_predict(X_df, self.en_pipeline, classifier=False)
+
+        return (r + 0.3 * l * u + 0.3 * en_ridge_pred * u).astype(np.float32)
 
     def predict_uncertainty_features(self, X):
         n = len(X)
@@ -782,8 +794,12 @@ class WeakResidualMetaClassifier:
         unc = _norm_07_13(unc_raw)
         lambda_clf = float(kwargs.get("lambda_clf", 0.3))
         lgb_signed = p3[:, 2] - p3[:, 0]  # p_under - p_over
+
+        en_res = _elasticnet_lgbm_pipeline(X_df, y3, classifier=True, random_state=42)
+        en_ridge_oof_prob = en_res['predictions'].astype(np.float32)
+
         final_raw = np.clip(
-            ridge_oof_prob + lambda_clf * lgb_signed * unc, 1e-4, 1 - 1e-4
+            ridge_oof_prob + lambda_clf * lgb_signed * unc + 0.3 * (en_ridge_oof_prob - 0.5), 1e-4, 1 - 1e-4
         )
 
         final_cal_oof = np.zeros(len(final_raw), dtype=np.float32)
@@ -798,6 +814,7 @@ class WeakResidualMetaClassifier:
         cal = IsotonicRegression(out_of_bounds="clip")
         cal.fit(final_raw, base_clf_correct)
 
+        self.en_pipeline = en_res
         self.selected_features = list(dict.fromkeys(ridge_feats + lgb_feats))
         self.ridge_model = ridge
         self.lgbm_model = clf
@@ -811,6 +828,7 @@ class WeakResidualMetaClassifier:
             "ridge_prob_correct": ridge_oof_prob.astype(np.float32),
             "meta_clf_lgbm_adj": lgb_signed.astype(np.float32),
             "lgbm_pred": lgb_signed.astype(np.float32),  # backward compat
+            "meta_clf_en_ridge_pred": en_ridge_oof_prob.astype(np.float32),
             "meta_clf_entropy": ent.astype(np.float32),
             "meta_clf_extreme_mass": extreme.astype(np.float32),
             "meta_clf_margin": margin.astype(np.float32),
@@ -853,7 +871,12 @@ class WeakResidualMetaClassifier:
             lgb_signed = np.zeros(len(X_df), dtype=np.float32)
             u = np.ones(len(X_df), dtype=np.float32)
         lam = float(self._diag.get("lambda_clf", 0.3))
-        f = np.clip(p_r + lam * lgb_signed * u, 1e-4, 1 - 1e-4)
+
+        en_ridge_pred = 0.5
+        if hasattr(self, 'en_pipeline') and self.en_pipeline is not None:
+            en_ridge_pred = _en_pipeline_predict(X_df, self.en_pipeline, classifier=True)
+
+        f = np.clip(p_r + lam * lgb_signed * u + 0.3 * (en_ridge_pred - 0.5), 1e-4, 1 - 1e-4)
         if self.calibrator is not None:
             f = np.clip(self.calibrator.predict(f), 1e-4, 1 - 1e-4)
         return np.column_stack([1.0 - f, f]).astype(np.float32)
@@ -921,6 +944,9 @@ def save_weak_meta_outputs(
             "meta_clf_lgbm_pred": np.asarray(
                 clf_model._diag.get("meta_clf_lgbm_adj"), dtype=np.float32
             ),
+            "meta_clf_en_ridge_pred": np.asarray(
+                clf_model._diag.get("meta_clf_en_ridge_pred"), dtype=np.float32
+            ),
             "meta_clf_uncertainty": np.asarray(
                 clf_model._diag.get("meta_clf_uncertainty"), dtype=np.float32
             ),
@@ -933,6 +959,9 @@ def save_weak_meta_outputs(
             ),
             "meta_reg_lgbm_pred": np.asarray(
                 reg_model._diag.get("lgbm_pred"), dtype=np.float32
+            ),
+            "meta_reg_en_ridge_pred": np.asarray(
+                reg_model._diag.get("meta_reg_en_ridge_pred"), dtype=np.float32
             ),
             "meta_reg_uncertainty": np.asarray(
                 reg_model._diag.get("meta_reg_uncertainty"), dtype=np.float32
@@ -970,3 +999,599 @@ def save_weak_meta_outputs(
     diag.to_parquet(
         os.path.join(out_dir, "weak_residual_meta_diagnostics.parquet"), index=False
     )
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import RobustScaler
+from sklearn.linear_model import ElasticNet, LogisticRegression, Ridge, RidgeClassifier
+from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.metrics import roc_auc_score
+from scipy.stats import spearmanr, pointbiserialr
+from sklearn.metrics import roc_auc_score
+import warnings
+
+try:
+    import lightgbm as lgb
+except Exception:
+    lgb = None
+
+def _jaccard(a: np.ndarray, b: np.ndarray) -> float:
+    a_b = a.astype(bool)
+    b_b = b.astype(bool)
+    inter = np.sum(a_b & b_b)
+    union = np.sum(a_b | b_b)
+    if union == 0:
+        return 0.0
+    return float(inter / union)
+
+def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
+    m = np.isfinite(a) & np.isfinite(b)
+    if np.sum(m) < 8:
+        return 0.0
+    r = spearmanr(a[m], b[m]).correlation
+    return float(0.0 if not np.isfinite(r) else r)
+
+def _safe_pointbiserial(x: np.ndarray, y: np.ndarray) -> float:
+    # y is binary (0/1)
+    m = np.isfinite(x) & np.isfinite(y)
+    if np.sum(m) < 8:
+        return 0.0
+    r = pointbiserialr(y[m], x[m]).correlation
+    return float(0.0 if not np.isfinite(r) else r)
+
+def _safe_auc(x: np.ndarray, y: np.ndarray) -> float:
+    m = np.isfinite(x) & np.isfinite(y)
+    if np.sum(m) < 10 or len(np.unique(y[m])) < 2:
+        return 0.5
+    try:
+        return float(roc_auc_score(y[m], x[m]))
+    except:
+        return 0.5
+
+def _get_top_k_mask(pred: np.ndarray, pct: float) -> np.ndarray:
+    n = len(pred)
+    k = max(1, int(np.ceil(pct * n)))
+    idx = np.argsort(pred)[-k:]
+    mask = np.zeros(n, dtype=bool)
+    mask[idx] = True
+    return mask
+
+def _fast_corr_matrix(Z, is_binary):
+    n_features = Z.shape[1]
+    corr = np.zeros((n_features, n_features), dtype=np.float32)
+    Z_rank = pd.DataFrame(Z).rank(pct=True).to_numpy()
+
+    dense_mask = ~np.array(is_binary)
+    if np.any(dense_mask):
+        Z_dense = Z_rank[:, dense_mask]
+        corr_dense = np.abs(np.corrcoef(Z_dense.T))
+    else:
+        corr_dense = None
+
+    bin_idx = np.where(is_binary)[0]
+    dense_idx = np.where(~np.array(is_binary))[0]
+
+    if np.any(dense_mask) and corr_dense is not None:
+        for i, d1 in enumerate(dense_idx):
+            for j, d2 in enumerate(dense_idx):
+                corr[d1, d2] = corr_dense[i, j]
+
+    for i, b1 in enumerate(bin_idx):
+        for j, b2 in enumerate(bin_idx):
+            if i == j:
+                corr[b1, b2] = 1.0
+            elif i < j:
+                val = _jaccard(Z[:, b1], Z[:, b2])
+                corr[b1, b2] = val
+                corr[b2, b1] = val
+
+    for d in dense_idx:
+        for b in bin_idx:
+            val = abs(np.corrcoef(Z_rank[:, d], Z[:, b])[0, 1])
+            if not np.isfinite(val):
+                val = 0.0
+            corr[d, b] = val
+            corr[b, d] = val
+
+    return corr
+
+def _elasticnet_lgbm_pipeline(X: pd.DataFrame, y: np.ndarray, classifier: bool = False, random_state: int = 42):
+    rng = np.random.default_rng(random_state)
+    n_samples = len(X)
+
+    if lgb is None:
+        raise RuntimeError("lightgbm is not available.")
+
+    X_np = X.to_numpy(dtype=np.float32)
+    y_target = y.astype(np.int32) if classifier else y.astype(np.float32)
+
+    leaf_matrices = []
+    lgb_models = []
+    unique_leaf_vals = []
+    leaf_feature_names = []
+    ohe_leaves = []
+
+    def get_lgbm_base_params(d, leaf_pct, is_linear=False):
+        min_data = max(10, int(n_samples * leaf_pct))
+        params = {
+            'n_estimators': 400,
+            'learning_rate': 0.05,
+            'max_depth': d,
+            'num_leaves': 2**d if d else 31,
+            'min_data_in_leaf': min_data,
+            'feature_fraction': 0.7,
+            'bagging_fraction': 0.8,
+            'bagging_freq': 1,
+            'lambda_l2': 5.0,
+            'min_gain_to_split': 0.001,
+            'max_bin': 127,
+            'random_state': random_state,
+            'n_jobs': 2,
+        }
+        if is_linear:
+            params['linear_tree'] = True
+        if classifier:
+            params['lambda_l1'] = 0.0
+            params['min_sum_hessian_in_leaf'] = 1e-3
+        return params
+
+    def fit_lgbm(params, is_linear=False):
+        if classifier:
+            _classes = np.unique(y_target)
+            if len(_classes) > 2:
+                model = lgb.LGBMClassifier(objective='multiclass', num_class=len(_classes), **params)
+            else:
+                model = lgb.LGBMClassifier(objective='binary', **params)
+        else:
+            model = lgb.LGBMRegressor(objective='huber', alpha=0.9, **params)
+
+        early_stop = 15 if is_linear else 25
+        # we need eval set for early stopping
+        eval_idx = rng.choice(n_samples, int(0.2*n_samples), replace=False)
+        tr_idx = np.setdiff1d(np.arange(n_samples), eval_idx)
+
+        model.fit(
+            X_np[tr_idx], y_target[tr_idx],
+            eval_set=[(X_np[eval_idx], y_target[eval_idx])],
+            callbacks=[lgb.early_stopping(early_stop, verbose=False)]
+        )
+        return model
+
+    # Depth 3 models
+    for pct in [0.02, 0.04, 0.06]:
+        params = get_lgbm_base_params(3, pct)
+        model = fit_lgbm(params)
+        lgb_models.append(('tree_d3_p' + str(int(pct*100)), model))
+
+    # Depth 4 models
+    for pct in [0.04, 0.06, 0.08]:
+        params = get_lgbm_base_params(4, pct)
+        params['num_leaves'] = 16
+        model = fit_lgbm(params)
+        lgb_models.append(('tree_d4_p' + str(int(pct*100)), model))
+
+    # Extract leaves
+    for name, model in lgb_models:
+        leaves = model.booster_.predict(X_np, pred_leaf=True)
+        if leaves.ndim == 1:
+            leaves = leaves.reshape(-1, 1)
+        for c in range(leaves.shape[1]):
+            col = leaves[:, c]
+            uniques = np.unique(col)
+            unique_leaf_vals.append(uniques)
+            for val in uniques:
+                ohe_leaves.append((col == val).astype(np.float32))
+                leaf_feature_names.append(f"LGBM_{name}_tree{c}_val{val}")
+
+    # Linear Tree LGBM models
+    lin_raw_features = []
+    lin_feature_names = []
+    lin_models = []
+
+    for pct in [0.05, 0.10, 0.15]:
+        params = get_lgbm_base_params(3, pct, is_linear=True)
+        model = fit_lgbm(params, is_linear=True)
+        name = f"linear_lgbm_p{int(pct*100)}"
+        lin_models.append((name, model))
+
+        # model level raw score
+        raw_score = model.predict(X_np, raw_score=True)
+        if raw_score.ndim > 1 and raw_score.shape[1] == 1:
+            raw_score = raw_score.ravel()
+        elif raw_score.ndim > 1: # multiclass
+            for c in range(raw_score.shape[1]):
+                lin_raw_features.append(raw_score[:, c].astype(np.float32))
+                lin_feature_names.append(f"{name}_c{c}_raw_score")
+            continue
+
+        lin_raw_features.append(raw_score.astype(np.float32))
+        lin_feature_names.append(f"{name}_raw_score")
+
+        # per-tree raw scores
+        num_trees = model.booster_.num_trees()
+        prev = np.zeros(n_samples)
+        for k in range(1, num_trees + 1):
+            cum = model.booster_.predict(X_np, raw_score=True, num_iteration=k)
+            if cum.ndim > 1 and cum.shape[1] > 1:
+                # ignore per-tree multiclass raw scores to save complexity
+                continue
+            if cum.ndim > 1:
+                cum = cum.ravel()
+            tree_k_score = cum - prev
+            prev = cum
+            lin_raw_features.append(tree_k_score.astype(np.float32))
+            lin_feature_names.append(f"{name}_tree{k:03d}_raw_score")
+
+    if ohe_leaves:
+        L_features = np.column_stack(ohe_leaves)
+    else:
+        L_features = np.empty((n_samples, 0), dtype=np.float32)
+
+    if lin_raw_features:
+        Lin_features = np.column_stack(lin_raw_features)
+    else:
+        Lin_features = np.empty((n_samples, 0), dtype=np.float32)
+
+    scaler = RobustScaler()
+    X_scaled = scaler.fit_transform(X_np)
+
+    Z = np.hstack([X_scaled, Lin_features, L_features])
+    all_feature_names = list(X.columns) + lin_feature_names + leaf_feature_names
+    is_binary = [False] * X_scaled.shape[1] + [False] * Lin_features.shape[1] + [True] * L_features.shape[1]
+
+    # --- Step 2: IC-based Fast Pruning ---
+    sub_5k_idx = rng.choice(n_samples, min(5000, n_samples), replace=False)
+    Z_5k = Z[sub_5k_idx]
+    y_5k = y_target[sub_5k_idx]
+
+    ic_scores = []
+    for j in range(Z.shape[1]):
+        if classifier:
+            if is_binary[j]:
+                # point-biserial / AUC isn't strictly IC but requested
+                val = max(abs(_safe_pointbiserial(Z_5k[:, j], y_5k)), abs(_safe_auc(Z_5k[:, j], y_5k) - 0.5) * 2)
+            else:
+                val = abs(_safe_auc(Z_5k[:, j], y_5k) - 0.5) * 2
+        else:
+            val = abs(_safe_spearman(Z_5k[:, j], y_5k))
+        ic_scores.append(val)
+    ic_scores = np.array(ic_scores)
+
+    keep_count_1 = int(200 + 0.33 * Z.shape[1])
+    keep_count_1 = min(keep_count_1, Z.shape[1])
+    idx_top_ic = np.argsort(ic_scores)[-keep_count_1:]
+
+    sub_3k_idx = rng.choice(n_samples, min(3000, n_samples), replace=False)
+    Z_3k = Z[sub_3k_idx][:, idx_top_ic]
+    ic_scores_subset = ic_scores[idx_top_ic]
+
+    order = np.argsort(ic_scores_subset)[::-1]
+    keep_idx_2_rel = []
+    dropped_2 = np.zeros(len(order), dtype=bool)
+
+    is_binary_subset = [is_binary[i] for i in idx_top_ic]
+    corr_3k = _fast_corr_matrix(Z_3k, is_binary_subset)
+
+    for i in range(len(order)):
+        curr_i = order[i]
+        if dropped_2[curr_i]:
+            continue
+        keep_idx_2_rel.append(curr_i)
+        dropped_2 |= (corr_3k[curr_i] > 0.98)
+        dropped_2[curr_i] = False
+
+    idx_stage_2 = idx_top_ic[keep_idx_2_rel]
+
+    stability_scores = []
+    for j in range(len(idx_stage_2)):
+        orig_j = idx_stage_2[j]
+        ic_vals = []
+        for _ in range(5):
+            sub_idx = rng.choice(n_samples, min(3000, n_samples), replace=False)
+            if classifier:
+                val = _safe_pointbiserial(Z[sub_idx, orig_j], y_target[sub_idx])
+            else:
+                val = _safe_spearman(Z[sub_idx, orig_j], y_target[sub_idx])
+            ic_vals.append(val)
+        ic_vals = np.array(ic_vals)
+        pos_frac = np.mean(ic_vals > 0)
+        neg_frac = np.mean(ic_vals < 0)
+        sign_consistency = max(pos_frac, neg_frac)
+        stability = np.median(np.abs(ic_vals)) * sign_consistency
+        stability_scores.append(stability)
+
+    stability_scores = np.array(stability_scores)
+    keep_count_3 = int(100 + 0.25 * len(idx_stage_2))
+    keep_count_3 = min(keep_count_3, len(idx_stage_2))
+    idx_top_stab_rel = np.argsort(stability_scores)[-keep_count_3:]
+    idx_stage_3 = idx_stage_2[idx_top_stab_rel]
+
+    sub_5k_idx_2 = rng.choice(n_samples, min(5000, n_samples), replace=False)
+    Z_5k_2 = Z[sub_5k_idx_2][:, idx_stage_3]
+    stab_subset = stability_scores[idx_top_stab_rel]
+
+    order_3 = np.argsort(stab_subset)[::-1]
+    keep_idx_4_rel = []
+    dropped_4 = np.zeros(len(order_3), dtype=bool)
+
+    is_binary_subset_2 = [is_binary[i] for i in idx_stage_3]
+    corr_5k = _fast_corr_matrix(Z_5k_2, is_binary_subset_2)
+
+    for i in range(len(order_3)):
+        curr_i = order_3[i]
+        if dropped_4[curr_i]:
+            continue
+        keep_idx_4_rel.append(curr_i)
+        dropped_4 |= (corr_5k[curr_i] > 0.96)
+        dropped_4[curr_i] = False
+
+    final_fast_pruned_idx = idx_stage_3[keep_idx_4_rel]
+    active_features = list(final_fast_pruned_idx)
+
+    # --- Step 3: Iterative ElasticNet Pruning ---
+    sub_20k_idx = rng.choice(n_samples, min(20000, n_samples), replace=False)
+    Z_20k = Z[sub_20k_idx]
+    y_20k = y_target[sub_20k_idx]
+
+    alpha_grid = [0.05, 0.1, 0.3, 0.5]
+    l1_ratio_grid = [0.4, 0.6, 0.8]
+
+    best_historical_J = -np.inf
+    iteration = 1
+    models_history = []
+
+    while True:
+        folds = int(2 + 0.5 * iteration)
+        threshold = 0.10 * iteration
+
+        cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=random_state) if classifier else KFold(n_splits=folds, shuffle=True, random_state=random_state)
+
+        feature_metrics = {f_idx: {'coeffs': [], 'presence': 0, 'top30_contrib': []} for f_idx in active_features}
+        total_fits = folds * len(alpha_grid) * len(l1_ratio_grid)
+
+        iter_models = []
+        Z_iter = Z_20k[:, active_features]
+
+        top30_mask = _get_top_k_mask(y_20k, 0.30)
+        sample_weights = np.ones(len(y_20k), dtype=np.float32)
+        sample_weights[top30_mask] = 1.0 + 0.5 * iteration
+
+        for alpha in alpha_grid:
+            for l1 in l1_ratio_grid:
+                oof_preds = np.zeros(len(y_20k))
+
+                for tr, va in cv.split(Z_iter, y_20k):
+                    if classifier:
+                        C_val = 1.0 / max(alpha, 1e-6)
+                        mdl = LogisticRegression(penalty='l1', solver='liblinear', C=C_val, random_state=random_state, max_iter=1000)
+                    else:
+                        mdl = ElasticNet(alpha=alpha, l1_ratio=l1, random_state=random_state, max_iter=2000)
+
+                    mdl.fit(Z_iter[tr], y_20k[tr], sample_weight=sample_weights[tr])
+
+                    if classifier:
+                        pred_va = mdl.predict_proba(Z_iter[va])[:, 1]
+                    else:
+                        pred_va = mdl.predict(Z_iter[va])
+
+                    oof_preds[va] = pred_va
+
+                    coefs = np.ravel(mdl.coef_)
+
+                    # Compute feature contribution on va top30
+                    va_top30 = _get_top_k_mask(pred_va, 0.30)
+
+                    for i_act, f_idx in enumerate(active_features):
+                        val = coefs[i_act]
+                        if abs(val) > 1e-6:
+                            feature_metrics[f_idx]['presence'] += 1
+                            feature_metrics[f_idx]['coeffs'].append(val)
+
+                            contrib = Z_iter[va][va_top30, i_act] * val
+                            feature_metrics[f_idx]['top30_contrib'].append(np.mean(contrib) if len(contrib) > 0 else 0)
+
+                m30_mask = _get_top_k_mask(oof_preds, 0.30)
+                m15_mask = _get_top_k_mask(oof_preds, 0.15)
+
+                if classifier:
+                    y_bin = (y_20k > 0.5).astype(float)
+                    hr30 = np.mean(y_bin[m30_mask]) if np.any(m30_mask) else 0.0
+                    hr15 = np.mean(y_bin[m15_mask]) if np.any(m15_mask) else 0.0
+
+                    s_top = oof_preds[m30_mask]
+                    y_top = y_bin[m30_mask]
+                    if len(s_top) >= 10:
+                        q = np.quantile(s_top, np.linspace(0.0, 1.0, 6))
+                        vals = []
+                        for i in range(5):
+                            mm = (s_top >= q[i]) & (s_top < q[i + 1] if i < 4 else s_top <= q[i + 1])
+                            if np.any(mm):
+                                vals.append(float(np.mean(y_top[mm])))
+                        std30 = np.std(vals) if vals else 0.0
+                    else:
+                        std30 = 0.0
+                    J = 0.4 * hr30 + 0.3 * hr15 - 0.3 * std30
+                else:
+                    ic30 = _safe_spearman(oof_preds[m30_mask], y_20k[m30_mask]) if np.any(m30_mask) else 0.0
+                    ic15 = _safe_spearman(oof_preds[m15_mask], y_20k[m15_mask]) if np.any(m15_mask) else 0.0
+
+                    s_top = oof_preds[m30_mask]
+                    y_top = y_20k[m30_mask]
+                    if len(s_top) >= 10:
+                        q = np.quantile(s_top, np.linspace(0.0, 1.0, 6))
+                        vals = []
+                        for i in range(5):
+                            mm = (s_top >= q[i]) & (s_top < q[i + 1] if i < 4 else s_top <= q[i + 1])
+                            if np.any(mm):
+                                vals.append(float(np.mean(y_top[mm])))
+                        std30 = np.std(vals) if vals else 0.0
+                    else:
+                        std30 = 0.0
+                    J = 0.4 * ic30 + 0.3 * ic15 - 0.3 * std30
+
+                iter_models.append({'alpha': alpha, 'l1_ratio': l1, 'J': J, 'features': active_features.copy()})
+
+        iter_best_J = max(m['J'] for m in iter_models)
+        models_history.extend(iter_models)
+
+        SE = 0.02
+        if iter_best_J < best_historical_J - SE:
+            break
+
+        if iter_best_J > best_historical_J:
+            best_historical_J = iter_best_J
+
+        new_active = []
+        for f_idx in active_features:
+            mets = feature_metrics[f_idx]
+            presence_pct = mets['presence'] / total_fits
+            if presence_pct == 0:
+                continue
+            coeffs = np.array(mets['coeffs'])
+            pos_frac = np.mean(coeffs > 0)
+            neg_frac = np.mean(coeffs < 0)
+            sign_consistency = max(pos_frac, neg_frac)
+            median_mag = np.median(np.abs(coeffs))
+
+            top30 = np.array(mets['top30_contrib'])
+            top30_mean = np.mean(top30) if len(top30)>0 else 0
+            top30_std = np.std(top30) if len(top30)>0 else 1
+            top30_stability = top30_mean / max(top30_std, 1e-6)
+
+            score = (sign_consistency ** 1.5) * median_mag * abs(top30_stability)
+            new_active.append((f_idx, score, presence_pct))
+
+        if not new_active:
+            break
+
+        scores = np.array([x[1] for x in new_active])
+        if len(scores) > 1 and np.max(scores) > np.min(scores):
+            scores_scaled = (scores - np.min(scores)) / (np.max(scores) - np.min(scores))
+        else:
+            scores_scaled = np.ones(len(scores))
+
+        final_active = []
+        for i, (f_idx, score, pres) in enumerate(new_active):
+            val = scores_scaled[i] * pres
+            if val >= threshold:
+                final_active.append(f_idx)
+
+        if len(final_active) == len(active_features) or len(final_active) < 5:
+            break
+
+        active_features = final_active
+        iteration += 1
+
+    # --- Step 4: Pareto Selection & Final Model ---
+    models_history.sort(key=lambda x: x['J'], reverse=True)
+    top_5 = models_history[:5]
+
+    best_pareto = None
+    best_pareto_score = -np.inf
+
+    for m in top_5:
+        score = m['J'] - 0.001 * len(m['features'])
+        if score > best_pareto_score:
+            best_pareto_score = score
+            best_pareto = m
+
+    final_features = best_pareto['features']
+
+    Z_final = Z[:, final_features]
+
+    top30_mask = _get_top_k_mask(y_target, 0.30)
+    sample_weights = np.ones(len(y_target), dtype=np.float32)
+    sample_weights[top30_mask] = 1.0 + 0.5 * iteration
+
+    if classifier:
+        final_model = RidgeClassifier(alpha=1.0, random_state=random_state)
+    else:
+        final_model = Ridge(alpha=1.0, random_state=random_state)
+
+    final_model.fit(Z_final, y_target, sample_weight=sample_weights)
+
+    if classifier:
+        final_preds = final_model.decision_function(Z_final)
+        final_preds = 1.0 / (1.0 + np.exp(-final_preds))
+    else:
+        final_preds = final_model.predict(Z_final)
+
+    return {
+        'model': final_model,
+        'features': final_features,
+        'predictions': final_preds,
+        'scaler': scaler,
+        'lgb_models': lgb_models,
+        'lin_models': lin_models,
+        'unique_leaf_vals': unique_leaf_vals,
+        'n_raw_features': X.shape[1]
+    }
+
+def _en_pipeline_predict(X: pd.DataFrame, en_res: dict, classifier: bool = False):
+    X_np = X.to_numpy(dtype=np.float32)
+    n_samples = len(X)
+
+    leaf_matrices = []
+    for name, model in en_res['lgb_models']:
+        leaves = model.booster_.predict(X_np, pred_leaf=True)
+        if leaves.ndim == 1:
+            leaves = leaves.reshape(-1, 1)
+        leaf_matrices.append(leaves)
+
+    if leaf_matrices:
+        all_leaves = np.hstack(leaf_matrices)
+    else:
+        all_leaves = np.empty((n_samples, 0))
+
+    ohe_leaves = []
+    for c in range(all_leaves.shape[1]):
+        col = all_leaves[:, c]
+        uniques = en_res['unique_leaf_vals'][c]
+        for val in uniques:
+            ohe_leaves.append((col == val).astype(np.float32))
+
+    if ohe_leaves:
+        L_features = np.column_stack(ohe_leaves)
+    else:
+        L_features = np.empty((n_samples, 0), dtype=np.float32)
+
+    lin_raw_features = []
+    for name, model in en_res['lin_models']:
+        raw_score = model.predict(X_np, raw_score=True)
+        if raw_score.ndim > 1 and raw_score.shape[1] == 1:
+            raw_score = raw_score.ravel()
+        elif raw_score.ndim > 1:
+            for c in range(raw_score.shape[1]):
+                lin_raw_features.append(raw_score[:, c].astype(np.float32))
+            continue
+
+        lin_raw_features.append(raw_score.astype(np.float32))
+
+        num_trees = model.booster_.num_trees()
+        prev = np.zeros(n_samples)
+        for k in range(1, num_trees + 1):
+            cum = model.booster_.predict(X_np, raw_score=True, num_iteration=k)
+            if cum.ndim > 1 and cum.shape[1] > 1:
+                continue
+            if cum.ndim > 1:
+                cum = cum.ravel()
+            tree_k_score = cum - prev
+            prev = cum
+            lin_raw_features.append(tree_k_score.astype(np.float32))
+
+    if lin_raw_features:
+        Lin_features = np.column_stack(lin_raw_features)
+    else:
+        Lin_features = np.empty((n_samples, 0), dtype=np.float32)
+
+    X_scaled = en_res['scaler'].transform(X_np)
+    Z = np.hstack([X_scaled, Lin_features, L_features])
+
+    Z_final = Z[:, en_res['features']]
+
+    if classifier:
+        preds = en_res['model'].decision_function(Z_final)
+        preds = 1.0 / (1.0 + np.exp(-preds))
+    else:
+        preds = en_res['model'].predict(Z_final)
+
+    return preds

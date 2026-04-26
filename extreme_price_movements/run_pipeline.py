@@ -181,20 +181,49 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
     strategies = load_inference_candidate_mask_params_per_bucket(
         top_n=2, ranking_metric="score_for_best_params"
     )
+    if not strategies:
+        from extreme_price_movements.offline_optimisers.params_store import (
+            REPORTS_DIR as _OPT_REPORTS_DIR,
+        )
+
+        _bucket_csv = (
+            _OPT_REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv"
+        )
+        if _bucket_csv.exists():
+            import json as _json
+
+            _bdf = pd.read_csv(_bucket_csv)
+            if not _bdf.empty and "strategy_id" in _bdf.columns:
+                strategies = []
+                for _, _row in _bdf.iterrows():
+                    _s = {
+                        "strategy_id": str(_row["strategy_id"]),
+                        "trade_side": str(_row.get("trade_side", "long")).lower(),
+                        "base_event_trigger": str(_row.get("base_event_trigger", "")),
+                        "source_horizon": int(_row.get("source_horizon", 5)),
+                    }
+                    _mpj = _row.get("mask_params_json")
+                    if isinstance(_mpj, str) and _mpj.strip().startswith("{"):
+                        try:
+                            _s["mask_params"] = _json.loads(_mpj)
+                        except Exception:
+                            pass
+                    strategies.append(_s)
+                tprint(
+                    f"Fallback: loaded {len(strategies)} strategies from "
+                    f"inference_candidate_mask_best_params_per_bucket.csv"
+                )
     if strategies:
         valid_strategies = [
             s for s in strategies if s.get("source_horizon") is not None
         ]
         dropped = len(strategies) - len(valid_strategies)
         if dropped:
-            from extreme_price_movements.utils import tprint
-
             tprint(
                 f"Dropping {dropped} mask strategies without source_horizon; "
                 "primary training requires one horizon per strategy."
             )
         cfg["strategies"] = valid_strategies
-        from extreme_price_movements.utils import tprint
         from extreme_price_movements.slice_plan_store import (
             load_or_build_slice_plan,
             apply_stage_usage_limits,
@@ -208,9 +237,11 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
             }
         )
         tprint(
-            f"Loaded {len(valid_strategies)} strategies from final_rule_registry.csv "
+            f"Loaded {len(valid_strategies)} strategies "
             f"with source_horizons={horizons}"
         )
+    else:
+        tprint("WARNING: No strategies loaded — will fall back to legacy strategies.")
 
     return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
 
@@ -557,43 +588,37 @@ def _label_artifacts_ready(cfg, ts_sig):
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     from extreme_price_movements.data_store import load_artifact_manifest
 
-    required = []
-    strategies = get_strategies(cfg)
-    for strat in strategies:
-        k = strat["strategy_id"]
-        for h in strategy_runtime_horizons(strat, cfg):
-            required.append(f"train_{k}_{h}")
-
     labels_manifest = load_artifact_manifest(cfg["data_root"], run_id, "labels") or {}
     manifest_datasets = labels_manifest.get("datasets") or {}
-    available_manifest_names = set(manifest_datasets.keys())
-    missing_manifest = [name for name in required if name not in available_manifest_names]
-    if missing_manifest:
-        tprint(
-            f"Label artifacts incomplete for run_id={run_id}: manifest missing {len(missing_manifest)}/{len(required)} required datasets"
-        )
+
+    if not manifest_datasets:
+        tprint(f"Label artifacts incomplete for run_id={run_id}: empty manifest.")
         return False
 
-    for name in required:
+    n_total = len(manifest_datasets)
+    n_valid = 0
+    for name in manifest_datasets:
         fpath = os.path.join(
             cfg["data_root"], "artifacts", run_id, "labels", f"{name}.parquet"
         )
         if not os.path.exists(fpath):
-            tprint(
-                f"Label artifacts incomplete for run_id={run_id}: missing parquet {name}.parquet"
-            )
-            return False
+            continue
         try:
             if os.path.getsize(fpath) <= 0:
-                tprint(
-                    f"Label artifacts incomplete for run_id={run_id}: empty parquet {name}.parquet"
-                )
-                return False
-        except OSError as exc:
-            tprint(
-                f"Label artifacts incomplete for run_id={run_id}: failed to stat {name}.parquet ({exc})"
-            )
-            return False
+                continue
+        except OSError:
+            continue
+        n_valid += 1
+
+    if n_valid == 0:
+        tprint(
+            f"Label artifacts incomplete for run_id={run_id}: {n_total} manifest entries but 0 valid parquet files."
+        )
+        return False
+
+    tprint(
+        f"Label artifacts ready for run_id={run_id}: {n_valid}/{n_total} datasets present."
+    )
     return True
 
 
@@ -665,7 +690,7 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         import psutil
 
         _vmem = psutil.virtual_memory()
-        if float(_vmem.available / (1024 ** 2)) < _tb_worker_fallback_avail_mb:
+        if float(_vmem.available / (1024**2)) < _tb_worker_fallback_avail_mb:
             _tb_worker_target = 1
             _tb_worker_mode = "fixed"
     except Exception:
@@ -985,6 +1010,17 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
             tprint(
                 f"WARNING: invalid EPM_BASE_HPO_TRIALS={_base_hpo_trials_env!r}: {e}"
             )
+    _base_max_strats_env = os.getenv("EPM_BASE_MAX_STRATEGY_IDS")
+    if _base_max_strats_env:
+        try:
+            cfg["base_max_strategy_ids"] = int(_base_max_strats_env)
+            tprint(
+                f"Base override: base_max_strategy_ids={cfg['base_max_strategy_ids']}"
+            )
+        except Exception as e:
+            tprint(
+                f"WARNING: invalid EPM_BASE_MAX_STRATEGY_IDS={_base_max_strats_env!r}: {e}"
+            )
     ts_sig = _resolve_ts_sig(cfg, ts_override)
     if ts_sig is None:
         tprint("ERROR: No feature directories found. Run feature_generation first.")
@@ -1017,31 +1053,24 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         store = PartitionedOHLCVStore(
             root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
         )
-    if _label_artifacts_ready(cfg, ts_sig):
-        tprint("Label artifacts already exist, skipping label refresh...")
-    else:
-        if meta_only:
-            tprint(
-                "ERROR: meta_only requested but labels are missing. Run labels mode first."
-            )
-            return
-        tprint(
-            "Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)..."
-        )
-        run_label_generation_step_v2(ts_sig, None, cfg, store, None)
-
     if not _label_artifacts_ready(cfg, ts_sig):
         tprint(
-            "ERROR: Label generation did not produce required artifacts. Aborting training."
+            "ERROR: Label artifacts are missing. Run 'labels' mode first to generate them."
         )
         return
 
     if not meta_only:
-        tprint("STEP: BASE HPO")
-        try:
-            run_base_hpo_step(ts_sig, cfg)
-        except Exception as e:
-            tprint(f"WARNING: Base HPO failed: {e}")
+        if bool(cfg.get("base_model_race_extratrees_enabled", False)):
+            tprint("STEP: BASE HPO")
+            try:
+                run_base_hpo_step(ts_sig, cfg)
+            except Exception as e:
+                tprint(f"WARNING: Base HPO failed: {e}")
+        else:
+            tprint(
+                "STEP: BASE HPO skipped "
+                "(ExtraTrees base path disabled; RidgeOnLGBM/EBMOnLGBM use all features)."
+            )
 
     state = run_training_step(
         ts_sig,
@@ -1256,7 +1285,9 @@ def _run_offset_generation_stage(cfg, ts_sig):
                     scored_keys.append(
                         (
                             float(
-                                np.nanmean(np.asarray(mdf["oof_u_hat"], dtype=np.float32))
+                                np.nanmean(
+                                    np.asarray(mdf["oof_u_hat"], dtype=np.float32)
+                                )
                             ),
                             mk,
                         )

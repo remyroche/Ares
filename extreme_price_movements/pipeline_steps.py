@@ -52,6 +52,7 @@ from extreme_price_movements.metrics import MetricsLogger
 from extreme_price_movements.model_loader import load_alpha_models
 from extreme_price_movements.offline_optimisers.params_store import (
     apply_offline_optimizer_best_params,
+    load_inference_candidate_mask_params_per_bucket,
 )
 from extreme_price_movements.pnl import CostModel, trade_return_net
 from extreme_price_movements.pnl_asserts import assert_pos_w, assert_units
@@ -392,6 +393,11 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
         "oof_top2_gap",
         "oof_sign_agreement_frac",
         "oof_rank_among_candidates",
+        "oof_u_hat",
+        "oof_log_mae_q70_hat",
+        "oof_log_mfe_hat",
+        "oof_log_dur_hat",
+        "oof_asym_hat",
         "edge_pred",
         "downside_pred",
         "edge_minus_downside",
@@ -1410,6 +1416,40 @@ def _local_store_symbols(store) -> list[str]:
 
 def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizons=None):
     cfg = apply_offline_optimizer_best_params(dict(cfg))
+
+    from extreme_price_movements.offline_optimisers.params_store import (
+        REPORTS_DIR as _OPT_REPORTS_DIR,
+    )
+
+    _bucket_csv = (
+        _OPT_REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv"
+    )
+    if _bucket_csv.exists():
+        import json as _json
+
+        _bdf = pd.read_csv(_bucket_csv)
+        if not _bdf.empty and "strategy_id" in _bdf.columns:
+            _strategies = []
+            for _, _row in _bdf.iterrows():
+                _s = {
+                    "strategy_id": str(_row["strategy_id"]),
+                    "trade_side": str(_row.get("trade_side", "long")).lower(),
+                    "base_event_trigger": str(_row.get("base_event_trigger", "")),
+                    "source_horizon": int(_row.get("source_horizon", 5)),
+                }
+                _mpj = _row.get("mask_params_json")
+                if isinstance(_mpj, str) and _mpj.strip().startswith("{"):
+                    try:
+                        _s["mask_params"] = _json.loads(_mpj)
+                    except Exception:
+                        pass
+                _strategies.append(_s)
+            cfg["strategies"] = _strategies
+            tprint(
+                f"Labels: loaded {len(_strategies)} strategies from "
+                f"inference_candidate_mask_best_params_per_bucket.csv"
+            )
+
     run_id = pd.Timestamp(ts_sig).strftime("%Y%m%d_%H%M%S")
     tprint("STEP: LABEL GENERATION START")
     _labels_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "labels")
@@ -2058,6 +2098,11 @@ def run_training_step(
         s["strategy_id"]: strategy_runtime_horizons(s, cfg) for s in strategies
     }
 
+    _base_max_strats = int(cfg.get("base_max_strategy_ids", 0) or 0)
+    if _base_max_strats > 0 and len(strategies) > _base_max_strats:
+        strategies = strategies[:_base_max_strats]
+        tprint(f"Training step: limiting to first {_base_max_strats} strategies")
+
     found_count = 0
     dataset_cache: dict[str, pd.DataFrame] = {}
 
@@ -2070,6 +2115,20 @@ def run_training_step(
         df_local = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         df_local = _filter_artifact_by_stage_view(df_local, cfg)
         if isinstance(df_local, pd.DataFrame) and not df_local.empty:
+            _max_assets = int(cfg.get("planned_max_assets", 0) or 0)
+            if _max_assets > 0:
+                _sym_col = (
+                    "__symbol__"
+                    if "__symbol__" in df_local.columns
+                    else ("symbol" if "symbol" in df_local.columns else None)
+                )
+                if _sym_col and df_local[_sym_col].nunique() > _max_assets:
+                    _top_syms = (
+                        df_local[_sym_col].value_counts().head(_max_assets).index
+                    )
+                    df_local = df_local[df_local[_sym_col].isin(_top_syms)].reset_index(
+                        drop=True
+                    )
             sort_cols = [
                 c
                 for c in ("__ts__", "timestamp", "__symbol__", "symbol")
@@ -2932,6 +2991,13 @@ def run_base_hpo_step(ts_sig, cfg):
         s["strategy_id"]: strategy_runtime_horizons(s, cfg) for s in strategies
     }
 
+    _base_max_strats = int(cfg.get("base_max_strategy_ids", 0) or 0)
+    if _base_max_strats > 0 and len(strategies) > _base_max_strats:
+        strategies = strategies[:_base_max_strats]
+        tprint(
+            f"Base HPO: limiting to first {_base_max_strats} strategies for this run"
+        )
+
     hpo_out_dir = os.path.join(data_root, "hpo_out")
     os.makedirs(hpo_out_dir, exist_ok=True)
     cfg["base_hpo_out_dir"] = hpo_out_dir
@@ -2952,6 +3018,20 @@ def run_base_hpo_step(ts_sig, cfg):
                 continue
             if "__y_bin__" not in df.columns:
                 continue
+            _max_assets = int(cfg.get("planned_max_assets", 0) or 0)
+            if _max_assets > 0:
+                _sym_col = (
+                    "__symbol__"
+                    if "__symbol__" in df.columns
+                    else ("symbol" if "symbol" in df.columns else None)
+                )
+                if _sym_col and df[_sym_col].nunique() > _max_assets:
+                    _top_syms = df[_sym_col].value_counts().head(_max_assets).index
+                    df = df[df[_sym_col].isin(_top_syms)].reset_index(drop=True)
+                    tprint(
+                        f"  Subsampled {name} to {_max_assets} symbols "
+                        f"({len(df)} rows)"
+                    )
             strategy_datasets[name] = df
 
         if not strategy_datasets:
@@ -6504,7 +6584,8 @@ def _filter_artifact_by_stage_view(df, cfg):
     orig_len = len(df)
     stage_name = view.get("stage_name", "unknown_stage")
 
-    if "symbols" in view and view["symbols"] is not None:
+    _view_syms = view.get("symbols")
+    if _view_syms and len(_view_syms) > 0:
         sym_col = (
             "__symbol__"
             if "__symbol__" in df.columns
@@ -6513,7 +6594,7 @@ def _filter_artifact_by_stage_view(df, cfg):
             else None
         )
         if sym_col:
-            df = df[df[sym_col].isin(view["symbols"])]
+            df = df[df[sym_col].isin(_view_syms)]
 
     periods = view.get("allowed_periods") or None
     if periods:

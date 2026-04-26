@@ -27,6 +27,7 @@ from .candidates import (
 )
 from .config import CANON_HORIZONS
 from .data_store import save_artifact_df
+from .ebm_on_lgbm import train_ebm_on_lgbm_candidate
 
 # from .spike_anatomy import SpikeAnatomyModel
 from .feature_selection_extreme_events import mdi_feature_selection_v3
@@ -37,11 +38,6 @@ from .meta_model import MetaClassifierModel, MetaModel
 from .meta_training.trade_filtering import (
     get_or_select_top_rank_mask,
     rolling_asset_percentile,
-)
-from .weak_residual_meta_learner import (
-    WeakResidualMetaClassifier,
-    WeakResidualMetaRegressor,
-    save_weak_meta_outputs,
 )
 from .meta_training.utility_smooth import (
     smooth_utility_from_log_heads,
@@ -85,6 +81,7 @@ from .policy_ml import (
     policy_rollout_ml,
 )
 from .production_admissibility import ProdGates, production_admissibility_report
+from .ridge_on_lgbm import train_ridge_on_lgbm_candidate
 from .sample_weight_optimization import (
     combine_weights_safely,
     compute_distance_to_barrier_weights,
@@ -114,6 +111,11 @@ from .trap_specialist import (
 )
 from .tree_leaf_policy import tree_regularization_params
 from .utils import tprint
+from .weak_residual_meta_learner import (
+    WeakResidualMetaClassifier,
+    WeakResidualMetaRegressor,
+    save_weak_meta_outputs,
+)
 
 _EXP_INPUT_CLIP = 60.0
 _EXP_OUTPUT_MAX = 1e12
@@ -158,20 +160,37 @@ def _build_base_regression_target(
         _fit_linear_target_residualizer,
     )
 
-    if y_ret is None:
-        if "__y_ret__" not in df_local.columns:
-            raise KeyError(
-                "Base reg target requires __y_ret__ when y_ret is not provided"
-            )
-        y_ret_arr = np.asarray(df_local["__y_ret__"].values, dtype=np.float32)
-    else:
-        y_ret_arr = np.asarray(y_ret, dtype=np.float32)
-    if len(y_ret_arr) != len(df_local):
-        raise ValueError("Base reg target: df/y_ret length mismatch")
-
     side_sign = np.float32(-1.0 if str(side).lower() == "short" else 1.0)
-    vol_scale, vol_source = _resolve_base_reg_vol_normalizer(df_local)
-    z = (side_sign * y_ret_arr / vol_scale).astype(np.float32, copy=False)
+
+    has_blend = "__y_blend_reg__" in df_local.columns
+    if has_blend:
+        y_blend = np.asarray(df_local["__y_blend_reg__"].values, dtype=np.float32)
+        nan_mask = ~np.isfinite(y_blend)
+        if nan_mask.any():
+            y_blend = y_blend.copy()
+            y_blend[nan_mask] = np.float32(0.0)
+        z = (side_sign * y_blend).astype(np.float32, copy=False)
+        if y_ret is None:
+            if "__y_ret__" not in df_local.columns:
+                raise KeyError(
+                    "Base reg target requires __y_ret__ when y_ret is not provided"
+                )
+            y_ret_arr = np.asarray(df_local["__y_ret__"].values, dtype=np.float32)
+        else:
+            y_ret_arr = np.asarray(y_ret, dtype=np.float32)
+    else:
+        if y_ret is None:
+            if "__y_ret__" not in df_local.columns:
+                raise KeyError(
+                    "Base reg target requires __y_ret__ when y_ret is not provided"
+                )
+            y_ret_arr = np.asarray(df_local["__y_ret__"].values, dtype=np.float32)
+        else:
+            y_ret_arr = np.asarray(y_ret, dtype=np.float32)
+        if len(y_ret_arr) != len(df_local):
+            raise ValueError("Base reg target: df/y_ret length mismatch")
+        vol_scale, vol_source = _resolve_base_reg_vol_normalizer(df_local)
+        z = (side_sign * y_ret_arr / vol_scale).astype(np.float32, copy=False)
 
     nuisance_arrays: dict[str, np.ndarray] = {}
     nuisance_resolution: dict[str, str] = {}
@@ -206,10 +225,15 @@ def _build_base_regression_target(
             residualization_status = f"identity_fallback:{exc}"
             residualizer = None
 
-    payoff_target = np.maximum(residualized, 0.0).astype(np.float32, copy=False)
+    if has_blend:
+        target = residualized.astype(np.float32, copy=False)
+    else:
+        target = np.maximum(residualized, 0.0).astype(np.float32, copy=False)
+
     favorable_return = (side_sign * y_ret_arr).astype(np.float32, copy=False)
+    vol_source = vol_source if not has_blend else "blend_atr_arcsinh"
     return {
-        "target": payoff_target,
+        "target": target,
         "side_adjusted_return": favorable_return,
         "raw_vol_norm_return": z.astype(np.float32, copy=False),
         "residualized_return": residualized.astype(np.float32, copy=False),
@@ -217,7 +241,11 @@ def _build_base_regression_target(
         "residualizer": residualizer,
         "residualization_status": residualization_status,
         "nuisance_columns": list(nuisance_arrays.keys()),
-        "target_name": "positive_part_residualized_return_over_realized_vol",
+        "target_name": (
+            "blend_close_kalman_atr_arcsinh"
+            if has_blend
+            else "positive_part_residualized_return_over_realized_vol"
+        ),
     }
 
 
@@ -1121,6 +1149,21 @@ _BASE_REG_INTERACTION_KEYS: tuple[str, ...] = (
 )
 
 
+def _sanitize_tree_fit_matrix(X: Any, context: str) -> np.ndarray:
+    arr = np.asarray(X, dtype=np.float32)
+    bad = ~np.isfinite(arr)
+    bad_count = int(np.sum(bad))
+    if bad_count:
+        tprint(
+            f"WARNING: {context}: replacing {bad_count} non-finite feature values "
+            f"before ExtraTrees fit/predict."
+        )
+        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0).astype(
+            np.float32, copy=False
+        )
+    return arr
+
+
 def _robust_sigma_rows(x_2d: np.ndarray) -> np.ndarray:
     arr = np.asarray(x_2d, dtype=np.float32)
     if arr.ndim != 2 or arr.size == 0:
@@ -1494,6 +1537,7 @@ def _fit_direct_extratrees_reg_head(
         X_np = X.to_numpy(dtype=np.float32, copy=False)
     else:
         X_np = np.asarray(X, dtype=np.float32)
+    X_np = _sanitize_tree_fit_matrix(X_np, f"Direct ExtraTrees reg[{kind_name}]")
 
     y_reg_arr = np.asarray(y_reg, dtype=np.float32)
     y_ret_arr = np.asarray(y_ret, dtype=np.float32)
@@ -1771,6 +1815,7 @@ def _fit_direct_extratrees_base_model(
     kind_name,
     hpo_scope_key=None,
     X,
+    X_full=None,
     y,
     sample_weight=None,
     returns=None,
@@ -1828,6 +1873,314 @@ def _fit_direct_extratrees_base_model(
             X_np = X
     else:
         X_np = X
+    X_np_arr = np.asarray(X_np, dtype=np.float32)
+    X_np = np.nan_to_num(X_np_arr, nan=0.0, posinf=0.0, neginf=0.0).astype(
+        np.float32, copy=False
+    )
+
+    X_full_np = X_np
+    if X_full is not None:
+        if hasattr(X_full, "iloc"):
+            try:
+                X_full_arr = X_full.to_numpy(dtype=np.float32, copy=False)
+            except (ValueError, TypeError):
+                X_full_arr = np.asarray(X_full, dtype=np.float32)
+        else:
+            X_full_arr = np.asarray(X_full, dtype=np.float32)
+        X_full_np = np.nan_to_num(X_full_arr, nan=0.0, posinf=0.0, neginf=0.0).astype(
+            np.float32,
+            copy=False,
+        )
+
+    tprint(
+        f"Base model race [{kind_name}]: ExtraTrees training disabled; "
+        "training EBMOnLGBM candidate only."
+    )
+    p_unweighted_all, p_weighted_all = compute_prevalences(y_hard, sample_weight_arr)
+    race._used_sample_weight_ = sample_weight_arr is not None
+    race.calibration_state_ = race._build_bias_state(
+        p_unweighted_all, p_weighted_all, eps=1e-6
+    )
+    race.calibration_state_["calibration_method"] = "identity"
+    race.calibration_state_["calibration_input"] = "candidate_raw"
+    race.calibrator_ = None
+    race.platt_calibrator_ = None
+
+    full_eval_mask = np.ones(len(y_hard), dtype=bool)
+    y_eval_full = y_hard
+    returns_eval_full = (
+        returns_arr
+        if returns_arr is not None and len(returns_arr) == len(y_hard)
+        else None
+    )
+
+    candidate_results: dict[str, dict[str, Any]] = {}
+    candidate_scores: dict[str, float] = {}
+    candidate_oof: dict[str, np.ndarray] = {}
+
+    _race_X_df = pd.DataFrame(
+        np.asarray(X_full_np, dtype=np.float32),
+        columns=[f"f{i}" for i in range(np.asarray(X_full_np).shape[1])],
+    )
+    for candidate_name, trainer in (("ebm_on_lgbm", train_ebm_on_lgbm_candidate),):
+        try:
+            tprint(
+                f"Model Race [{kind_name}]: training {candidate_name} candidate "
+                "for J_Score race..."
+            )
+            if candidate_name == "ebm_on_lgbm":
+                result = trainer(
+                    _race_X_df,
+                    y,
+                    sample_weight=sample_weight_arr,
+                    random_state=42,
+                    mode="classifier",
+                )
+            else:
+                result = trainer(
+                    _race_X_df,
+                    y,
+                    sample_weight=sample_weight_arr,
+                    random_state=42,
+                )
+            if result is None:
+                tprint(f"Model Race [{kind_name}]: {candidate_name} returned None.")
+                continue
+            oof = np.asarray(result.get("oof_probs"), dtype=np.float32)
+            finite = np.isfinite(oof)
+            race_n = int(
+                result.get("metrics", {}).get(
+                    "race_n", len(np.asarray(result.get("race_idx", [])))
+                )
+            )
+            coverage_denom = race_n if race_n > 0 else len(oof)
+            coverage = (
+                float(np.sum(finite)) / max(float(coverage_denom), 1.0)
+                if len(oof)
+                else 0.0
+            )
+            if coverage <= 0.10 or int(np.sum(finite)) <= 20:
+                tprint(
+                    f"Model Race [{kind_name}]: {candidate_name} insufficient OOF "
+                    f"coverage ({int(np.sum(finite))}/{coverage_denom}={coverage:.1%}; "
+                    f"full_n={len(oof)})."
+                )
+                continue
+            score = float(
+                result.get("metrics", {}).get(
+                    "J_Score", result.get("metrics", {}).get("J_final_oof", 0.0)
+                )
+            )
+            candidate_results[candidate_name] = result
+            candidate_scores[candidate_name] = score
+            candidate_oof[candidate_name] = oof
+            tprint(
+                f"Model Race [{kind_name}]: {candidate_name} J_Score={score:.4f} "
+                f"(race_coverage={coverage:.1%}, n={int(np.sum(finite))})"
+            )
+        except Exception as exc:
+            import traceback
+
+            tprint(f"Model Race [{kind_name}]: {candidate_name} failed: {exc}")
+            traceback.print_exc()
+
+    if not candidate_scores:
+        raise RuntimeError(
+            f"Model Race [{kind_name}]: no EBMOnLGBM candidate "
+            "had sufficient OOF coverage; ExtraTrees training is disabled."
+        )
+
+    tprint(
+        f"Model Race [{kind_name}]: candidate J_Score="
+        + ", ".join(f"{k}={v:.4f}" for k, v in candidate_scores.items())
+    )
+    winning_candidate = max(candidate_scores, key=candidate_scores.get)
+    result = candidate_results[winning_candidate]
+    win_score = float(candidate_scores[winning_candidate])
+    cand_oof_full = candidate_oof[winning_candidate]
+    cand_finite = np.isfinite(cand_oof_full)
+    cand_metrics = result.get("metrics", {})
+    tprint(
+        f"Model Race [{kind_name}]: {winning_candidate} WINS "
+        f"on J_Score={win_score:.4f}"
+    )
+
+    try:
+        cand_auc = (
+            float(roc_auc_score(y_eval_full[cand_finite], cand_oof_full[cand_finite]))
+            if len(np.unique(y_eval_full[cand_finite])) > 1
+            else 0.5
+        )
+    except Exception:
+        cand_auc = 0.5
+    try:
+        cand_brier = float(
+            brier_score_loss(
+                y_eval_full[cand_finite],
+                np.clip(cand_oof_full[cand_finite], 1e-7, 1 - 1e-7),
+            )
+        )
+    except Exception:
+        cand_brier = float("nan")
+    try:
+        from extreme_price_movements.ridge_on_lgbm import _expected_calibration_error
+
+        cand_ece = float(
+            _expected_calibration_error(
+                y_eval_full[cand_finite],
+                np.clip(cand_oof_full[cand_finite], 1e-7, 1 - 1e-7),
+            )
+        )
+    except Exception:
+        cand_ece = float("nan")
+
+    def _mean_return_top_gross(top_frac: float) -> float:
+        try:
+            if returns_eval_full is None or len(returns_eval_full) != len(
+                cand_oof_full
+            ):
+                return float("nan")
+            finite_ret = cand_finite & np.isfinite(returns_eval_full)
+            n_finite_ret = int(np.sum(finite_ret))
+            if n_finite_ret <= 0:
+                return float("nan")
+            n_top = max(1, int(np.ceil(float(top_frac) * n_finite_ret)))
+            top_idx = np.argsort(cand_oof_full[finite_ret])[-n_top:]
+            return float(
+                np.nanmean(
+                    np.asarray(returns_eval_full, dtype=np.float64)[finite_ret][top_idx]
+                )
+            )
+        except Exception:
+            return float("nan")
+
+    cand_mean_return10_gross = _mean_return_top_gross(0.10)
+    cand_mean_return30_gross = _mean_return_top_gross(0.30)
+    cand_stability30 = float(cand_metrics.get("stability30", float("nan")))
+
+    tprint(
+        f"Model Race [{kind_name}]: large-sample pre-final metrics for "
+        f"{winning_candidate} on n={int(np.sum(cand_finite))}: "
+        f"J={float(cand_metrics.get('J_final_oof', 0.0)):.4f}, "
+        f"lift30={float(cand_metrics.get('lift30', 0.0)):.3f}, "
+        f"stability30={cand_stability30:.4f}, "
+        f"mean_return10_gross={cand_mean_return10_gross:.6f}, "
+        f"mean_return30_gross={cand_mean_return30_gross:.6f}, "
+        f"AUC={cand_auc:.4f}, Brier={cand_brier:.4f}, ECE={cand_ece:.4f}."
+    )
+
+    tprint(
+        f"Model Race [{kind_name}]: running deferred full-data fit for winning "
+        f"{winning_candidate}..."
+    )
+    x_full_fit_np = np.asarray(X_full_np, dtype=np.float32)
+    x_full_fit_df = pd.DataFrame(
+        x_full_fit_np, columns=[f"f{i}" for i in range(x_full_fit_np.shape[1])]
+    )
+    y_bin_full = np.asarray(y >= 0.5, dtype=np.int8)
+    w_base_full = (
+        np.ones(len(y_bin_full), dtype=np.float32)
+        if sample_weight_arr is None
+        else np.asarray(sample_weight_arr, dtype=np.float32)
+    )
+    if winning_candidate == "ridge_on_lgbm":
+        from extreme_price_movements.ridge_on_lgbm import _fit_full_model_for_winner
+
+        cand_model = _fit_full_model_for_winner(
+            x_full_fit_np,
+            y_bin_full,
+            w_base_full,
+            result["selected_features_from_cv"],
+            result.get("oof_race", np.full(len(y_bin_full), 0.5, dtype=np.float32)),
+            random_state=42,
+            tree_cfg=result.get("tree_cfg", {}),
+            x_df=x_full_fit_df,
+            selected_feature_names=result.get("selected_feature_names"),
+        )
+    else:
+        from extreme_price_movements.ebm_on_lgbm import fit_ebm_on_lgbm_full_model
+
+        cand_model = fit_ebm_on_lgbm_full_model(
+            x_full_fit_df,
+            y_bin_full,
+            w_base_full,
+            result["selected_features_from_cv"],
+            random_state=42,
+            mode="classifier",
+            oof_probs=cand_oof_full,
+            metrics=cand_metrics,
+            pruning_history=result.get("pruning_history", []),
+            selected_feature_names=result.get("selected_feature_names"),
+        )
+    if cand_model is None:
+        raise RuntimeError(
+            f"Model Race [{kind_name}]: {winning_candidate} won the race but did "
+            "not produce a fitted model; ExtraTrees training is disabled."
+        )
+    tprint(f"Model Race [{kind_name}]: full-data fit complete.")
+
+    training_diagnostics = {
+        "n_total": int(len(y_hard)),
+        "n_eval": int(np.sum(cand_finite)),
+        "class_counts": {
+            "neg": int(len(y_hard) - np.sum(y_hard)),
+            "pos": int(np.sum(y_hard)),
+        },
+        "extratrees_training_disabled": True,
+        "candidate_oof_coverage": {
+            name: float(np.mean(np.isfinite(oof)))
+            for name, oof in candidate_oof.items()
+        },
+    }
+    race.best_model_name = winning_candidate
+    race.metrics = dict(candidate_scores)
+    race.detailed_metrics = {
+        winning_candidate: {
+            "score": win_score,
+            "rank_score": win_score,
+            "J_Score": win_score,
+            "AUC": cand_auc,
+            "Brier": cand_brier,
+            "ECE": cand_ece,
+            "mean_return10_gross": cand_mean_return10_gross,
+            "mean_return30_gross": cand_mean_return30_gross,
+            "J_final_oof": float(cand_metrics.get("J_final_oof", 0.0)),
+            "lift30": float(cand_metrics.get("lift30", 0.0)),
+            "stability30": cand_stability30,
+            "feature_count": int(cand_metrics.get("feature_count", 0)),
+            "n_raw_features": int(cand_metrics.get("n_raw_features_kept", 0)),
+            "n_leaf_features": int(cand_metrics.get("n_leaf_features_kept", 0)),
+            "oof_probs": cand_oof_full.copy(),
+            "training_diagnostics": training_diagnostics,
+        }
+    }
+    race.best_model = cand_model
+    race.oof_probs = cand_oof_full
+    race.raw_rank_scores_ = (
+        (_rankdata(cand_oof_full) - 1.0) / max(len(cand_oof_full) - 1, 1)
+        if len(cand_oof_full) > 0
+        else np.zeros(0, dtype=np.float64)
+    )
+    race.is_degenerate_ = False
+    race.degeneracy_info_ = {"extratrees_training_disabled": True}
+    if isinstance(race.calibration_state_, dict):
+        race.calibration_state_["calibration_method"] = "identity"
+        race.calibration_state_["calibration_input"] = f"{winning_candidate}_raw"
+        race.calibration_state_["train_inference_parity_mode"] = "candidate_oof"
+        race.calibration_state_["post_refit_recalibration_skipped"] = True
+        race.calibration_state_["calibration_source"] = "oof"
+    tprint(
+        f"Model Race [{kind_name}]: using {winning_candidate} as best_model "
+        f"(J_Score={win_score:.4f}, AUC={cand_auc:.4f}, "
+        f"lift30={cand_metrics.get('lift30', 0):.3f})"
+    )
+    return race, {
+        "fit_status": "trained",
+        "failure_reason": None,
+        "metrics_are_fallback": False,
+        "training_diagnostics": training_diagnostics,
+        "degeneracy": race.degeneracy_info_,
+    }
 
     candidate = race._get_candidates(race_mode=True)["extratrees"]
     inner = candidate.estimator if hasattr(candidate, "estimator") else candidate
@@ -2263,6 +2616,70 @@ def _fit_direct_extratrees_base_model(
         race.platt_calibrator_ = None
         tprint(f"Direct ExtraTrees calibration fallback to identity: {exc}")
 
+    et_oof_probs = np.asarray(race.oof_probs, dtype=np.float64).copy()
+    et_score = None
+
+    ridge_lgbm_result = None
+    ridge_lgbm_oof = None
+    ridge_lgbm_score = None
+    tprint(f"RidgeOnLGBM[{kind_name}] disabled; EBMOnLGBM-only race.")
+
+    lgbm_ridge_result = None
+    lgbm_ridge_score = None
+    try:
+        tprint(f"EBMOnLGBM: training EBM candidate for [{kind_name}] J_Score race...")
+        _lr_X_df = pd.DataFrame(
+            X_full_np, columns=[f"f{i}" for i in range(X_full_np.shape[1])]
+        )
+        lgbm_ridge_result = train_ebm_on_lgbm_candidate(
+            _lr_X_df,
+            y,
+            sample_weight=sample_weight_arr,
+            random_state=42,
+            mode="classifier",
+        )
+        if lgbm_ridge_result is not None:
+            lgbm_ridge_oof_raw = np.asarray(
+                lgbm_ridge_result["oof_probs"], dtype=np.float64
+            )
+            _lr_oof_eval = lgbm_ridge_oof_raw[oof_valid_mask]
+            _lr_finite = np.isfinite(_lr_oof_eval)
+            _lr_race_n = int(
+                lgbm_ridge_result.get("metrics", {}).get(
+                    "race_n", len(np.asarray(lgbm_ridge_result.get("race_idx", [])))
+                )
+            )
+            _lr_coverage_denom = _lr_race_n if _lr_race_n > 0 else len(_lr_oof_eval)
+            _lr_coverage = np.sum(_lr_finite) / max(_lr_coverage_denom, 1)
+            if _lr_coverage > 0.10 and np.sum(_lr_finite) > 20:
+                lgbm_ridge_score = float(
+                    lgbm_ridge_result.get("metrics", {}).get(
+                        "J_Score",
+                        lgbm_ridge_result.get("metrics", {}).get("J_final_oof", 0.0),
+                    )
+                )
+                tprint(
+                    f"EBMOnLGBM[{kind_name}] J_Score="
+                    f"{lgbm_ridge_score:.4f} "
+                    f"(coverage={_lr_coverage:.1%}, n={int(np.sum(_lr_finite))})"
+                )
+            else:
+                tprint(
+                    f"EBMOnLGBM[{kind_name}] insufficient OOF coverage "
+                    f"({int(np.sum(_lr_finite))}/{_lr_coverage_denom}={_lr_coverage:.1%}; "
+                    f"full_n={len(_lr_oof_eval)}), skipping."
+                )
+                lgbm_ridge_result = None
+        else:
+            tprint(f"EBMOnLGBM[{kind_name}] returned None, skipping.")
+    except Exception as _lr_exc:
+        import traceback
+
+        tprint(f"EBMOnLGBM[{kind_name}] failed: {_lr_exc}")
+        traceback.print_exc()
+        lgbm_ridge_result = None
+        lgbm_ridge_score = None
+
     oof_probs_eval = np.asarray(race.oof_probs, dtype=np.float64)[oof_valid_mask]
 
     sel = calculate_selection_score(
@@ -2424,6 +2841,161 @@ def _fit_direct_extratrees_base_model(
     race.detailed_metrics = {"extratrees": dm}
     race.best_model = clone(candidate)
     race._fit_model(race.best_model, X_np, y_hard, sample_weight=sample_weight_arr)
+
+    candidate_scores: dict[str, float] = {}
+    if ridge_lgbm_result is not None and ridge_lgbm_score is not None:
+        candidate_scores["ridge_on_lgbm"] = float(ridge_lgbm_score)
+    if lgbm_ridge_result is not None and lgbm_ridge_score is not None:
+        candidate_scores["ebm_on_lgbm"] = float(lgbm_ridge_score)
+    if not candidate_scores:
+        raise RuntimeError(
+            f"Model Race [{kind_name}]: no RidgeOnLGBM/EBMOnLGBM candidates "
+            "had sufficient OOF coverage; ExtraTrees is not part of this race."
+        )
+    tprint(
+        f"Model Race [{kind_name}]: candidate J_Score="
+        + ", ".join(f"{k}={v:.4f}" for k, v in candidate_scores.items())
+    )
+
+    winning_candidate = max(candidate_scores, key=candidate_scores.get)
+    if winning_candidate in {"ridge_on_lgbm", "ebm_on_lgbm"}:
+        result = (
+            ridge_lgbm_result
+            if winning_candidate == "ridge_on_lgbm"
+            else lgbm_ridge_result
+        )
+        win_score = float(candidate_scores[winning_candidate])
+        tprint(
+            f"Model Race [{kind_name}]: {winning_candidate} WINS "
+            f"on J_Score={win_score:.4f}"
+        )
+        _cand_oof_full = np.asarray(result["oof_probs"], dtype=np.float32)
+        _cand_oof_eval = _cand_oof_full[oof_valid_mask]
+        _cand_finite = np.isfinite(_cand_oof_eval)
+        _cand_model = None
+        if np.sum(_cand_finite) > 20:
+            try:
+                cand_auc = (
+                    float(
+                        roc_auc_score(
+                            y_eval[_cand_finite], _cand_oof_eval[_cand_finite]
+                        )
+                    )
+                    if len(np.unique(y_eval[_cand_finite])) > 1
+                    else 0.5
+                )
+            except Exception:
+                cand_auc = 0.5
+            try:
+                cand_brier = float(
+                    brier_score_loss(
+                        y_eval[_cand_finite],
+                        np.clip(_cand_oof_eval[_cand_finite], 1e-7, 1 - 1e-7),
+                    )
+                )
+            except Exception:
+                cand_brier = float("nan")
+            cand_metrics = result.get("metrics", {})
+
+            if (
+                result.get("full_fit_needed")
+                and result.get("selected_features_from_cv") is not None
+            ):
+                tprint(
+                    f"Model Race [{kind_name}]: running deferred full-data fit for winning {winning_candidate}..."
+                )
+                try:
+                    _cand_X_np = np.asarray(X_full_np, dtype=np.float32)
+                    _cand_X_df = pd.DataFrame(
+                        _cand_X_np,
+                        columns=[f"f{i}" for i in range(_cand_X_np.shape[1])],
+                    )
+                    y_bin_full = np.asarray(y >= 0.5, dtype=np.int8)
+                    w_base_full = (
+                        np.ones(len(y_bin_full), dtype=np.float32)
+                        if sample_weight_arr is None
+                        else np.asarray(sample_weight_arr, dtype=np.float32)
+                    )
+                    if winning_candidate == "ridge_on_lgbm":
+                        from extreme_price_movements.ridge_on_lgbm import (
+                            _fit_full_model_for_winner,
+                        )
+
+                        _cand_model = _fit_full_model_for_winner(
+                            _cand_X_np,
+                            y_bin_full,
+                            w_base_full,
+                            result["selected_features_from_cv"],
+                            result.get(
+                                "oof_race",
+                                np.full(len(y_bin_full), 0.5, dtype=np.float32),
+                            ),
+                            random_state=42,
+                            tree_cfg=result.get("tree_cfg", {}),
+                            x_df=_cand_X_df,
+                            selected_feature_names=result.get("selected_feature_names"),
+                        )
+                    else:
+                        from extreme_price_movements.ebm_on_lgbm import (
+                            fit_ebm_on_lgbm_full_model,
+                        )
+
+                        _cand_model = fit_ebm_on_lgbm_full_model(
+                            _cand_X_df,
+                            y_bin_full,
+                            w_base_full,
+                            result["selected_features_from_cv"],
+                            random_state=42,
+                            mode="classifier",
+                            oof_probs=_cand_oof_full,
+                            metrics=cand_metrics,
+                            pruning_history=result.get("pruning_history", []),
+                            selected_feature_names=result.get("selected_feature_names"),
+                        )
+                    tprint(f"Model Race [{kind_name}]: full-data fit complete.")
+                except Exception as _cand_full_exc:
+                    raise RuntimeError(
+                        f"Model Race [{kind_name}]: {winning_candidate} "
+                        f"full-data fit failed; aborting instead of falling back "
+                        f"to ExtraTrees: {_cand_full_exc}"
+                    ) from _cand_full_exc
+            else:
+                _cand_model = result.get("model")
+
+            if _cand_model is not None:
+                race.best_model_name = winning_candidate
+                race.metrics = dict(candidate_scores)
+                race.detailed_metrics[winning_candidate] = {
+                    "score": win_score,
+                    "AUC": cand_auc,
+                    "Brier": cand_brier,
+                    "J_final_oof": float(cand_metrics.get("J_final_oof", 0.0)),
+                    "lift30": float(cand_metrics.get("lift30", 0.0)),
+                    "stability30": float(cand_metrics.get("stability30", 0.0)),
+                    "feature_count": int(cand_metrics.get("feature_count", 0)),
+                    "n_raw_features": int(cand_metrics.get("n_raw_features_kept", 0)),
+                    "n_leaf_features": int(cand_metrics.get("n_leaf_features_kept", 0)),
+                }
+                race.best_model = _cand_model
+                race.oof_probs = _cand_oof_full
+                if isinstance(race.calibration_state_, dict):
+                    race.calibration_state_["calibration_method"] = "identity"
+                    race.calibration_state_[
+                        "calibration_input"
+                    ] = f"{winning_candidate}_raw"
+                tprint(
+                    f"Model Race [{kind_name}]: using {winning_candidate} as best_model "
+                    f"(AUC={cand_auc:.4f}, lift30={cand_metrics.get('lift30', 0):.3f})"
+                )
+            else:
+                raise RuntimeError(
+                    f"Model Race [{kind_name}]: {winning_candidate} won the race "
+                    "but did not produce a fitted model; aborting instead of "
+                    "falling back to ExtraTrees."
+                )
+
+    del ridge_lgbm_result
+    del lgbm_ridge_result
 
     if isinstance(race.calibration_state_, dict):
         race.calibration_state_["train_inference_parity_mode"] = "oof_calibrator"
@@ -6036,6 +6608,56 @@ def build_hourly_training_set_and_weights(
     parts["__n_res__"] = n_res.astype(np.float32)
     parts["__w_consensus__"] = w_consensus.astype(np.float32)
 
+    _close_at_entry = _fast_lookup_cached(
+        c, event_ts, event_sym, lookup_cache=lookup_cache
+    )
+    _close_vals = np.nan_to_num(_close_at_entry, nan=np.nan).astype(np.float32)
+    _close_safe = np.where(_close_vals > 0, _close_vals, np.nan)
+    _log_close_vals = np.log(_close_safe).astype(np.float32)
+    parts["__close__"] = np.nan_to_num(_close_vals, nan=0.0)
+    parts["__log_close__"] = np.nan_to_num(_log_close_vals, nan=0.0)
+
+    _blend_alpha = np.float32(0.7)
+    _n_events = len(event_ts)
+    if H > 0 and _n_events > 0:
+        _kalman_price = feats.get("kalman_price")
+        if _kalman_price is None:
+            raise KeyError(
+                "build_hourly_training_set_and_weights requires feats['kalman_price'] "
+                "for the blended regression target; regenerate Kalman features for "
+                "this run before training."
+            )
+        _kalman_price = _kalman_price.astype(np.float32)
+        _log_c_panel = np.log(c.where(c > 0)).astype(np.float32)
+        _fwd_ts = event_ts + pd.Timedelta(hours=int(H))
+        _log_close_fwd = _fast_lookup_cached(
+            _log_c_panel, _fwd_ts, event_sym, lookup_cache=lookup_cache
+        )
+        r_close_fwd = (_log_close_fwd - _log_close_vals).astype(np.float32)
+        _kalman_at_entry = _fast_lookup_cached(
+            _kalman_price, event_ts, event_sym, lookup_cache=lookup_cache
+        )
+        _kalman_fwd = _fast_lookup_cached(
+            _kalman_price, _fwd_ts, event_sym, lookup_cache=lookup_cache
+        )
+        r_kalman_fwd = (_kalman_fwd - _kalman_at_entry).astype(np.float32)
+        y_raw = (
+            _blend_alpha * r_close_fwd + (np.float32(1.0) - _blend_alpha) * r_kalman_fwd
+        ).astype(np.float32)
+        _sigma = parts.get("__barrier_pct__", None)
+        if _sigma is None:
+            _sigma = np.full(_n_events, np.float32(0.02))
+        y_normed = y_raw / (_sigma + np.float32(1e-8))
+        y_clipped = np.clip(y_normed, np.float32(-5.0), np.float32(5.0))
+        y_blend = (
+            np.float32(0.65) * np.arcsinh(y_clipped) + np.float32(0.35) * y_clipped
+        ).astype(np.float32)
+        parts["__y_blend_reg_raw__"] = y_raw
+        parts["__y_blend_reg__"] = y_blend
+    else:
+        parts["__y_blend_reg_raw__"] = np.zeros(_n_events, dtype=np.float32)
+        parts["__y_blend_reg__"] = np.zeros(_n_events, dtype=np.float32)
+
     lag_ts = ts_arr - np.timedelta64(1, "h")
     _feat_heartbeat_every = max(1, int(cfg.get("label_feature_heartbeat_every", 16)))
     _symbol_chunk_size = max(1, int(cfg.get("label_symbol_chunk_size", 50)))
@@ -6147,6 +6769,10 @@ def build_hourly_training_set_and_weights(
         "__regime_volume_48h__",
         "__regime_trend_12h__",
         "__regime_trend_48h__",
+        "__close__",
+        "__log_close__",
+        "__y_blend_reg__",
+        "__y_blend_reg_raw__",
     ]
     critical_cols = ["ts", "symbol", "y_bin", "y_ret", "w"] + diagnostic_cols
     df = df.dropna(
@@ -8386,6 +9012,8 @@ def generate_label_datasets(
                         fixed_sl,
                     )
                 )
+
+    symbol_vocab = {str(s): i for i, s in enumerate(sorted(set(syms)))}
 
     def _run_one_cell(task):
         (
@@ -13793,7 +14421,9 @@ def train_meta_models_from_artifacts(
                 y_ret_filtered = (
                     df["__y_ret__"].values if "__y_ret__" in df.columns else y_target_h
                 )
-                _mask_eval = np.asarray(_fit_mask_main, dtype=bool)[: len(y_ret_filtered)]
+                _mask_eval = np.asarray(_fit_mask_main, dtype=bool)[
+                    : len(y_ret_filtered)
+                ]
 
                 def _top_spread(yv, sv, frac=0.10):
                     n = len(yv)
@@ -16386,6 +17016,63 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             return None
         _sel_idx = _subsample_indices_time_balanced(len(X), variant_sel_max, y)
         _fit_idx = _subsample_indices_time_balanced(len(X), variant_fit_max, y)
+        if not bool(cfg.get("base_model_race_extratrees_enabled", False)):
+            selected_feats = list(X.columns)
+            top5_feats, top10_feats = selected_feats[:5], selected_feats[:10]
+            tprint(
+                f"Base variant feature selection [{dataset_key}]: skipping MDI/HPO "
+                f"because ExtraTrees is disabled; using all {len(selected_feats)} features."
+            )
+            feature_selection_by_h[int(horizon)] = list(selected_feats)
+            _log_feature_matrix_state(
+                f"Base variant full features [{dataset_key}]",
+                X.iloc[_fit_idx][selected_feats],
+                selected_feats,
+            )
+            if not _feature_guard_ok(
+                f"Base variant full features [{dataset_key}]",
+                selected_feats,
+            ):
+                return None
+            X_sel = X.iloc[_fit_idx][selected_feats]
+            groups = (
+                df_variant["__ts__"].values[_fit_idx]
+                if "__ts__" in df_variant.columns
+                else None
+            )
+            symbols = (
+                df_variant["__symbol__"].values[_fit_idx]
+                if "__symbol__" in df_variant.columns
+                else None
+            )
+            race, base_fit_diag = _fit_direct_extratrees_base_model(
+                kind_name=kind_name,
+                hpo_scope_key=dataset_key,
+                X=X_sel,
+                X_full=X.iloc[_fit_idx],
+                y=y[_fit_idx],
+                sample_weight=w[_fit_idx],
+                returns=y_ret[_fit_idx],
+                groups=groups,
+                symbols=symbols,
+                n_splits=2,
+                cfg=cfg,
+            )
+            if race is None:
+                tprint(
+                    f"WARNING: Base variant {dataset_key} fit failed: "
+                    f"{base_fit_diag.get('failure_reason', 'unknown_failure')}"
+                )
+                return None
+            return {
+                "model": race,
+                "H": int(horizon),
+                "feat_cols": selected_feats,
+                "selected_features": selected_feats,
+                "top5_features": top5_feats,
+                "top10_features": top10_feats,
+                "dataset_key": dataset_key,
+            }
         from sklearn.ensemble import ExtraTreesRegressor
 
         _base_sel_cfg = dict(cfg.get("base_selector_cfg", {}) or {})
@@ -16551,6 +17238,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             kind_name=kind_name,
             hpo_scope_key=dataset_key,
             X=X_sel,
+            X_full=X.iloc[_fit_idx],
             y=y[_fit_idx],
             sample_weight=w[_fit_idx],
             returns=y_ret[_fit_idx],
@@ -16864,209 +17552,249 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         f"strategy={strategy_label} H={H} (n={len(X)})..."
                     )
 
-                    # --- Integrated MDI Feature Selection ---
-                    # Fix: Don't feed raw 300+ features to ModelRace. Select top signal first.
-                    tprint(f"Running MDI Feature Selection for {side} {k}...")
-
-                    # Base model for MDI (ExtraTrees)
-                    from sklearn.ensemble import ExtraTreesRegressor
-
-                    _base_sel_cfg = dict(cfg.get("base_selector_cfg", {}) or {})
-                    _n_training_rows = int(len(X))
-                    _strict_row_cap = max(1, int((_n_training_rows - 1) // 20))
-                    _effective_target_cap = min(200, _strict_row_cap)
-                    _effective_min_features = min(
-                        int(cfg.get("base_mdi_min_features", 30)),
-                        _effective_target_cap,
-                    )
-                    mdi_base = ExtraTreesRegressor(
-                        n_estimators=int(
-                            _base_sel_cfg.get("analysis_n_estimators", 120)
-                        ),
-                        max_depth=8,
-                        min_samples_leaf=16,
-                        max_features="sqrt",
-                        n_jobs=2,
-                        random_state=42,
-                    )
-                    _selector_head = f"base_{side}_{k}_H{H}"
-                    _selector_report_dir = os.path.join(
-                        str(cfg.get("data_root", "data")),
-                        "artifacts",
-                        str(cfg.get("run_id", "default")),
-                        "fs_reports",
-                    )
-                    _prev_sel = None
-                    _prev_run_id = (
-                        cfg.get("prev_run_id")
-                        or cfg.get("prior_run_id")
-                        or cfg.get("warm_start_run_id")
-                    )
-                    if _prev_run_id:
-                        _prev_path = os.path.join(
-                            str(cfg.get("data_root", "data")),
-                            "artifacts",
-                            str(_prev_run_id),
-                            "fs_reports",
-                            _selector_head,
-                            "selected_features.json",
-                        )
-                        if os.path.exists(_prev_path):
-                            try:
-                                with open(_prev_path, "r", encoding="utf-8") as _f:
-                                    _prev_sel = list(
-                                        (json.load(_f) or {}).get(
-                                            "selected_features", []
-                                        )
-                                    )
-                            except Exception:
-                                _prev_sel = None
-
-                    from .post_race_hpo import load_best_base_extratrees_payload
-
-                    _hpo_payload_base = None
-                    if cfg.get("base_hpo_out_dir"):
-                        _hpo_payload_base = load_best_base_extratrees_payload(
-                            str(cfg.get("base_hpo_out_dir")), scope_key=key
-                        )
-                    _selected_from_hpo = list(
-                        (_hpo_payload_base or {}).get("selected_features", []) or []
-                    )
-                    if _selected_from_hpo:
-                        selected_feats = _cap_selected_features(
-                            _selected_from_hpo,
-                            list(X.columns),
-                            target_cap=_effective_target_cap,
-                            min_features=_effective_min_features,
-                        )
+                    if not bool(cfg.get("base_model_race_extratrees_enabled", False)):
+                        selected_feats = list(X.columns)
                         top5_feats, top10_feats = (
                             selected_feats[:5],
                             selected_feats[:10],
                         )
+                        feature_selection_by_h[H] = list(selected_feats)
                         tprint(
-                            f"Base HPO-selected features [{key}]: using {len(selected_feats)}/{X.shape[1]} features from persisted base HPO"
+                            f"Base feature selection [{key}]: skipping MDI/HPO "
+                            f"because ExtraTrees is disabled; using all "
+                            f"{len(selected_feats)} features."
                         )
+                        _log_feature_matrix_state(
+                            f"Base full features [{key}]",
+                            X.iloc[_fit_idx][selected_feats],
+                            selected_feats,
+                        )
+                        if not _feature_guard_ok(
+                            f"Base full features [{key}]", selected_feats
+                        ):
+                            _record_alpha_fit_diag(
+                                side,
+                                k,
+                                H,
+                                fit_status="skipped",
+                                failure_reason="insufficient_features_full_matrix",
+                                metrics_are_fallback=True,
+                                y_fit=y,
+                                selected_features=selected_feats,
+                            )
+                            continue
                     else:
-                        sel_res = mdi_feature_selection_v3(
-                            X.iloc[_sel_idx],
-                            y[_sel_idx],
-                            candidate_cols=list(X.columns),
-                            base_model=mdi_base,
-                            sample_weight=w[_sel_idx],
-                            selector_y=y[_sel_idx],
-                            selector_target=str(
-                                cfg.get("base_mdi_selector_target", "classification")
-                            ),
-                            selector_loss=str(
-                                cfg.get("base_mdi_selector_loss", "binary_logloss")
-                            ),
-                            selector_head_name=_selector_head,
-                            selector_report_dir=_selector_report_dir,
-                            selector_prev_selected=_prev_sel,
-                            selector_family_map=dict(
-                                cfg.get("selector_feature_family_map", {}) or {}
-                            ),
-                            selector_focus_top_frac=float(
-                                _base_sel_cfg.get("selector_focus_top_frac", 1.0)
-                            ),
-                            selector_top_metric=_base_sel_cfg.get(
-                                "selector_top_metric", "ic"
-                            ),
-                            selector_frequency_hit_mode=str(
-                                _base_sel_cfg.get(
-                                    "selector_frequency_hit_mode", "relative"
-                                )
-                            ),
-                            selector_frequency_hit_quantile=float(
-                                _base_sel_cfg.get(
-                                    "selector_frequency_hit_quantile", 0.80
-                                )
-                            ),
-                            selector_frequency_hit_abs=float(
-                                _base_sel_cfg.get("selector_frequency_hit_abs", 1e-6)
-                            ),
-                            selector_interaction_mode=str(
-                                _base_sel_cfg.get(
-                                    "selector_interaction_mode", "tree_path_lift"
-                                )
-                            ),
-                            selector_interaction_topk_pairs=int(
-                                _base_sel_cfg.get(
-                                    "selector_interaction_topk_pairs", 100
-                                )
-                            ),
-                            selector_interaction_max_pairs_per_feature=int(
-                                _base_sel_cfg.get(
-                                    "selector_interaction_max_pairs_per_feature", 8
-                                )
-                            ),
-                            selector_interaction_corr_penalty=bool(
-                                _base_sel_cfg.get(
-                                    "selector_interaction_corr_penalty", True
-                                )
-                            ),
-                            selector_family_penalty=bool(
-                                _base_sel_cfg.get("selector_family_penalty", True)
-                            ),
-                            selector_emit_report=bool(
-                                _base_sel_cfg.get("selector_emit_report", True)
-                            ),
-                            analysis_n_estimators=int(
-                                _base_sel_cfg.get("analysis_n_estimators", 192)
-                            ),
-                            analysis_max_samples=int(
-                                _base_sel_cfg.get("analysis_max_samples", 3000)
-                            ),
-                            min_samples_leaf_pct=float(
-                                _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
-                            ),
-                            selector_max_missing_frac=float(
-                                _base_sel_cfg.get("selector_max_missing_frac", 0.15)
-                            ),
-                            selector_near_constant_dominance=float(
-                                _base_sel_cfg.get(
-                                    "selector_near_constant_dominance", 0.999
-                                )
-                            ),
-                            selector_hysteresis_margin=float(
-                                _base_sel_cfg.get("selector_hysteresis_margin", 0.05)
-                            ),
-                            selector_min_overlap=float(
-                                _base_sel_cfg.get("selector_min_overlap", 0.70)
-                            ),
-                            composite_weights={
-                                "top30": float(_base_sel_cfg.get("top30", 0.0)),
-                                "global": float(_base_sel_cfg.get("global", 0.55)),
-                                "stability": float(
-                                    _base_sel_cfg.get("stability", 0.25)
-                                ),
-                                "frequency": float(
-                                    _base_sel_cfg.get("frequency", 0.15)
-                                ),
-                                "interaction": float(
-                                    _base_sel_cfg.get("interaction", 0.05)
-                                ),
-                            },
-                            end_features=_effective_target_cap,
-                            cumulative_cap=0.99,
-                            min_share=0.0005,
-                            min_features=_effective_min_features,
-                            max_features_pct=0.8,
-                        )
+                        # --- Integrated MDI Feature Selection ---
+                        # Fix: Don't feed raw 300+ features to ModelRace. Select top signal first.
+                        tprint(f"Running MDI Feature Selection for {side} {k}...")
 
-                        selected_feats = _cap_selected_features(
-                            list(sel_res.selected_features),
-                            list(X.columns),
-                            target_cap=_effective_target_cap,
-                            min_features=_effective_min_features,
+                        # Base model for MDI (ExtraTrees)
+                        from sklearn.ensemble import ExtraTreesRegressor
+
+                        _base_sel_cfg = dict(cfg.get("base_selector_cfg", {}) or {})
+                        _n_training_rows = int(len(X))
+                        _strict_row_cap = max(1, int((_n_training_rows - 1) // 20))
+                        _effective_target_cap = min(200, _strict_row_cap)
+                        _effective_min_features = min(
+                            int(cfg.get("base_mdi_min_features", 30)),
+                            _effective_target_cap,
                         )
-                        top5_feats, top10_feats = _mdi_top_feature_lists(
-                            sel_res, selected_feats
+                        mdi_base = ExtraTreesRegressor(
+                            n_estimators=int(
+                                _base_sel_cfg.get("analysis_n_estimators", 120)
+                            ),
+                            max_depth=8,
+                            min_samples_leaf=16,
+                            max_features="sqrt",
+                            n_jobs=2,
+                            random_state=42,
                         )
+                        _selector_head = f"base_{side}_{k}_H{H}"
+                        _selector_report_dir = os.path.join(
+                            str(cfg.get("data_root", "data")),
+                            "artifacts",
+                            str(cfg.get("run_id", "default")),
+                            "fs_reports",
+                        )
+                        _prev_sel = None
+                        _prev_run_id = (
+                            cfg.get("prev_run_id")
+                            or cfg.get("prior_run_id")
+                            or cfg.get("warm_start_run_id")
+                        )
+                        if _prev_run_id:
+                            _prev_path = os.path.join(
+                                str(cfg.get("data_root", "data")),
+                                "artifacts",
+                                str(_prev_run_id),
+                                "fs_reports",
+                                _selector_head,
+                                "selected_features.json",
+                            )
+                            if os.path.exists(_prev_path):
+                                try:
+                                    with open(_prev_path, "r", encoding="utf-8") as _f:
+                                        _prev_sel = list(
+                                            (json.load(_f) or {}).get(
+                                                "selected_features", []
+                                            )
+                                        )
+                                except Exception:
+                                    _prev_sel = None
+
+                        from .post_race_hpo import load_best_base_extratrees_payload
+
+                        _hpo_payload_base = None
+                        if cfg.get("base_hpo_out_dir"):
+                            _hpo_payload_base = load_best_base_extratrees_payload(
+                                str(cfg.get("base_hpo_out_dir")), scope_key=key
+                            )
+                        _selected_from_hpo = list(
+                            (_hpo_payload_base or {}).get("selected_features", []) or []
+                        )
+                        if _selected_from_hpo:
+                            selected_feats = _cap_selected_features(
+                                _selected_from_hpo,
+                                list(X.columns),
+                                target_cap=_effective_target_cap,
+                                min_features=_effective_min_features,
+                            )
+                            top5_feats, top10_feats = (
+                                selected_feats[:5],
+                                selected_feats[:10],
+                            )
+                            tprint(
+                                f"Base HPO-selected features [{key}]: using {len(selected_feats)}/{X.shape[1]} features from persisted base HPO"
+                            )
+                        else:
+                            sel_res = mdi_feature_selection_v3(
+                                X.iloc[_sel_idx],
+                                y[_sel_idx],
+                                candidate_cols=list(X.columns),
+                                base_model=mdi_base,
+                                sample_weight=w[_sel_idx],
+                                selector_y=y[_sel_idx],
+                                selector_target=str(
+                                    cfg.get(
+                                        "base_mdi_selector_target", "classification"
+                                    )
+                                ),
+                                selector_loss=str(
+                                    cfg.get("base_mdi_selector_loss", "binary_logloss")
+                                ),
+                                selector_head_name=_selector_head,
+                                selector_report_dir=_selector_report_dir,
+                                selector_prev_selected=_prev_sel,
+                                selector_family_map=dict(
+                                    cfg.get("selector_feature_family_map", {}) or {}
+                                ),
+                                selector_focus_top_frac=float(
+                                    _base_sel_cfg.get("selector_focus_top_frac", 1.0)
+                                ),
+                                selector_top_metric=_base_sel_cfg.get(
+                                    "selector_top_metric", "ic"
+                                ),
+                                selector_frequency_hit_mode=str(
+                                    _base_sel_cfg.get(
+                                        "selector_frequency_hit_mode", "relative"
+                                    )
+                                ),
+                                selector_frequency_hit_quantile=float(
+                                    _base_sel_cfg.get(
+                                        "selector_frequency_hit_quantile", 0.80
+                                    )
+                                ),
+                                selector_frequency_hit_abs=float(
+                                    _base_sel_cfg.get(
+                                        "selector_frequency_hit_abs", 1e-6
+                                    )
+                                ),
+                                selector_interaction_mode=str(
+                                    _base_sel_cfg.get(
+                                        "selector_interaction_mode", "tree_path_lift"
+                                    )
+                                ),
+                                selector_interaction_topk_pairs=int(
+                                    _base_sel_cfg.get(
+                                        "selector_interaction_topk_pairs", 100
+                                    )
+                                ),
+                                selector_interaction_max_pairs_per_feature=int(
+                                    _base_sel_cfg.get(
+                                        "selector_interaction_max_pairs_per_feature", 8
+                                    )
+                                ),
+                                selector_interaction_corr_penalty=bool(
+                                    _base_sel_cfg.get(
+                                        "selector_interaction_corr_penalty", True
+                                    )
+                                ),
+                                selector_family_penalty=bool(
+                                    _base_sel_cfg.get("selector_family_penalty", True)
+                                ),
+                                selector_emit_report=bool(
+                                    _base_sel_cfg.get("selector_emit_report", True)
+                                ),
+                                analysis_n_estimators=int(
+                                    _base_sel_cfg.get("analysis_n_estimators", 192)
+                                ),
+                                analysis_max_samples=int(
+                                    _base_sel_cfg.get("analysis_max_samples", 3000)
+                                ),
+                                min_samples_leaf_pct=float(
+                                    _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
+                                ),
+                                selector_max_missing_frac=float(
+                                    _base_sel_cfg.get("selector_max_missing_frac", 0.15)
+                                ),
+                                selector_near_constant_dominance=float(
+                                    _base_sel_cfg.get(
+                                        "selector_near_constant_dominance", 0.999
+                                    )
+                                ),
+                                selector_hysteresis_margin=float(
+                                    _base_sel_cfg.get(
+                                        "selector_hysteresis_margin", 0.05
+                                    )
+                                ),
+                                selector_min_overlap=float(
+                                    _base_sel_cfg.get("selector_min_overlap", 0.70)
+                                ),
+                                composite_weights={
+                                    "top30": float(_base_sel_cfg.get("top30", 0.0)),
+                                    "global": float(_base_sel_cfg.get("global", 0.55)),
+                                    "stability": float(
+                                        _base_sel_cfg.get("stability", 0.25)
+                                    ),
+                                    "frequency": float(
+                                        _base_sel_cfg.get("frequency", 0.15)
+                                    ),
+                                    "interaction": float(
+                                        _base_sel_cfg.get("interaction", 0.05)
+                                    ),
+                                },
+                                end_features=_effective_target_cap,
+                                cumulative_cap=0.99,
+                                min_share=0.0005,
+                                min_features=_effective_min_features,
+                                max_features_pct=0.8,
+                            )
+
+                            selected_feats = _cap_selected_features(
+                                list(sel_res.selected_features),
+                                list(X.columns),
+                                target_cap=_effective_target_cap,
+                                min_features=_effective_min_features,
+                            )
+                            top5_feats, top10_feats = _mdi_top_feature_lists(
+                                sel_res, selected_feats
+                            )
                     feature_selection_by_h[H] = list(selected_feats)
-                    tprint(
-                        f"MDI selected {len(selected_feats)} features (from {X.shape[1]}) for H={H}."
-                    )
+                    if bool(cfg.get("base_model_race_extratrees_enabled", False)):
+                        tprint(
+                            f"MDI selected {len(selected_feats)} features "
+                            f"(from {X.shape[1]}) for H={H}."
+                        )
                     _log_feature_matrix_state(
                         f"Base post-MDI [{key}]",
                         (
@@ -17115,6 +17843,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         kind_name=k,
                         hpo_scope_key=key,
                         X=X_sel,
+                        X_full=X.iloc[_fit_idx],
                         y=y_fit,
                         sample_weight=w_fit,
                         returns=y_ret_fit,
@@ -17175,7 +17904,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     w_reg_fit = np.asarray(_w_reg_full[_fit_idx], dtype=np.float32)
                     _base_reg_sel_cfg = dict(cfg.get("base_reg_selector_cfg", {}) or {})
                     if not _base_reg_sel_cfg:
-                        _base_reg_sel_cfg = dict(_base_sel_cfg)
+                        _base_reg_sel_cfg = dict(cfg.get("base_selector_cfg", {}) or {})
                     _hpo_payload_reg = None
                     if cfg.get("base_hpo_out_dir"):
                         _hpo_payload_reg = load_best_base_extratrees_payload(
@@ -17195,6 +17924,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         tprint(
                             f"Base reg HPO-selected features [{key}]: using {len(selected_feats_reg)}/{X.shape[1]} features from persisted reg HPO"
                         )
+                    elif not bool(cfg.get("base_model_race_extratrees_enabled", False)):
+                        tprint(
+                            f"Base reg selector [{key}]: skipped because ExtraTrees "
+                            "training/MDI path is disabled."
+                        )
+                        selected_feats_reg = []
                     else:
                         mdi_reg_base = ExtraTreesRegressor(
                             n_estimators=int(

@@ -13,9 +13,18 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import CubicSpline, UnivariateSpline
 from scipy.stats import rankdata, spearmanr
+from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
 from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
+from .en_uncertainty_ebm import (
+    EBMUncertaintyState,
+    ENUncertaintyAdjuster,
+    compute_uncertainty_features,
+    fit_en_uncertainty_adjuster,
+    fit_uncertainty_state,
+    uncertainty_weighted_prediction,
+)
 from .ridge_on_lgbm import _compute_weight_distillation
 from .utils import tprint
 
@@ -40,6 +49,9 @@ EBM_HPO_EARLY_STOP_PATIENCE = 30
 EBM_HPO_N_JOBS = 3
 EBM_HPO_MIN_LEAF_PCT_LO = 0.02
 EBM_HPO_MIN_LEAF_PCT_HI = 0.08
+EBM_STAGE_LGBM_PRUNE_FRACTION = 0.35
+EBM_STAGE_HPO_FRACTION = 0.10
+EBM_STAGE_FIT_OOF_FRACTION = 0.55
 
 
 @dataclass
@@ -194,7 +206,9 @@ class SplinePostProcessor:
     mode: str = "classifier"
     min_knots: int = 4
     spline: Optional[Any] = None
+    isotonic: Optional[Any] = None
     identity: bool = True
+    calibration_method: str = "identity"
     clip_lo: float = 1e-4
     clip_hi: float = 1.0 - 1e-4
     k: float = 1.0
@@ -257,9 +271,32 @@ class SplinePostProcessor:
         if len(np.unique(raw_pred)) <= 2:
             s_val = 0.0
 
+        if self.mode == "classifier":
+            self.spline = UnivariateSpline(uniq_x, uniq_y, s=s_val)
+            self._check_w_shape(uniq_x)
+            self.identity = False
+            base_pred = self._predict_spline_only(x)
+            if (
+                int(np.sum(mask)) >= max(50, self.min_knots * 5)
+                and len(np.unique(np.round(base_pred, 8))) >= self.min_knots
+                and len(np.unique((yy >= 0.5).astype(np.int8))) > 1
+            ):
+                iso = IsotonicRegression(
+                    y_min=self.clip_lo,
+                    y_max=self.clip_hi,
+                    out_of_bounds="clip",
+                )
+                iso.fit(base_pred, yy)
+                self.isotonic = iso
+                self.calibration_method = "spline_isotonic"
+            else:
+                self.calibration_method = "spline"
+            return self
+
         self.spline = UnivariateSpline(uniq_x, uniq_y, s=s_val)
         self._check_w_shape(uniq_x)
         self.identity = False
+        self.calibration_method = "spline"
         return self
 
     def _check_w_shape(self, x_eval: np.ndarray) -> None:
@@ -276,7 +313,7 @@ class SplinePostProcessor:
             )
             self._w_shape_warned = True
 
-    def predict(self, raw_pred: np.ndarray) -> np.ndarray:
+    def _predict_spline_only(self, raw_pred: np.ndarray) -> np.ndarray:
         x = np.asarray(raw_pred, dtype=np.float64)
         if self.identity or self.spline is None:
             if self.mode == "classifier":
@@ -288,6 +325,13 @@ class SplinePostProcessor:
         return np.nan_to_num(out, nan=0.5 if self.mode == "classifier" else 0.0).astype(
             np.float32
         )
+
+    def predict(self, raw_pred: np.ndarray) -> np.ndarray:
+        out = self._predict_spline_only(raw_pred)
+        if self.mode == "classifier" and self.isotonic is not None:
+            out = np.asarray(self.isotonic.predict(out), dtype=np.float32)
+            out = np.clip(out, self.clip_lo, self.clip_hi)
+        return out.astype(np.float32)
 
 
 class EBMOnLGBMModel:
@@ -303,6 +347,12 @@ class EBMOnLGBMModel:
         self.tree_feature_scales: np.ndarray | None = None
         self.selected_indices: np.ndarray = np.array([], dtype=np.int32)
         self.oof_probs: Optional[np.ndarray] = None
+        self.oof_probs_raw_ebm: Optional[np.ndarray] = None
+        self.oof_probs_en: Optional[np.ndarray] = None
+        self.oof_probs_uncertainty_weighted: Optional[np.ndarray] = None
+        self.oof_uncertainty_features: dict[str, np.ndarray] = {}
+        self.uncertainty_state: EBMUncertaintyState | None = None
+        self.en_adjuster: ENUncertaintyAdjuster | None = None
         self.metrics: dict[str, Any] = {}
         self.pruning_history: list[dict[str, Any]] = []
 
@@ -352,18 +402,47 @@ class EBMOnLGBMModel:
         return np.column_stack([1.0 - p, p]).astype(np.float32)
 
     def predict_uncertainty_features(self, X: Any) -> dict[str, np.ndarray]:
-        preds = np.vstack(
-            [m.predict(self._frame(X)).ravel() for m in self.models]
+        X_df = self._frame(X)
+        feats = compute_uncertainty_features(
+            X_df,
+            self.models,
+            self.mode,
+            _predict_raw_ebm,
+            state=self.uncertainty_state,
+        )
+        pred = self.predict(X)
+        out = {c: feats[c].to_numpy(dtype=np.float32) for c in feats.columns}
+        out["pred_mean"] = pred.astype(np.float32)
+        out["confidence_norm"] = (
+            np.abs(pred - 0.5) * 2.0
+            if self.mode == "classifier"
+            else np.abs(pred) / max(float(np.nanpercentile(np.abs(pred), 95)), 1e-6)
         ).astype(np.float32)
-        pred = np.mean(preds, axis=0)
+        if "ebm_unc_logodds_var" in out:
+            out["pred_std"] = out["ebm_unc_logodds_var"].astype(np.float32)
+        return out
+
+    def predict_with_uncertainty(self, X: Any) -> dict[str, Any]:
+        X_df = self._frame(X)
+        raw_pred = self.predict(X)
+        features = compute_uncertainty_features(
+            X_df,
+            self.models,
+            self.mode,
+            _predict_raw_ebm,
+            state=self.uncertainty_state,
+        )
+        en_pred = (
+            self.en_adjuster.predict(raw_pred, features)
+            if self.en_adjuster is not None and self.mode == "classifier"
+            else raw_pred.copy()
+        ).astype(np.float32)
+        weighted = uncertainty_weighted_prediction(raw_pred, features, en_pred)
         return {
-            "pred_mean": pred.astype(np.float32),
-            "pred_std": np.std(preds, axis=0).astype(np.float32),
-            "confidence_norm": (
-                np.abs(pred - 0.5) * 2.0
-                if self.mode == "classifier"
-                else np.abs(pred) / max(float(np.nanpercentile(np.abs(pred), 95)), 1e-6)
-            ).astype(np.float32),
+            "raw_ebm_pred": raw_pred.astype(np.float32),
+            "en_pred": en_pred.astype(np.float32),
+            "uncertainty_weighted_pred": weighted.astype(np.float32),
+            "features": features,
         }
 
 
@@ -689,10 +768,14 @@ def _metric_pack(
         brier = float(np.mean((p - y) ** 2))
         ece = float("nan")
     stab = _top30_stability(y, p)
+    ic_metrics = _rank_ic_metrics(y, p)
     return {
         "lift30": float(lift30),
         "auc_correct_30": float(auc30),
         "stability30_proxy": float(stab),
+        "stability30": float(stab),
+        "ic_total": float(ic_metrics["ic_total"]),
+        "ic_top30": float(ic_metrics["ic_top30"]),
         "auc": float(auc),
         "pr_auc": float(pr),
         "brier": float(brier),
@@ -722,6 +805,12 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         "J_std": j_std,
         "J_final": float(0.4 * lift + 0.2 * auc30 + 0.4 * stability30),
     }
+
+
+def _hpo_objective_from_aggregate(agg: dict[str, float]) -> float:
+    return float(
+        0.65 * float(agg.get("lift30", 0.0)) + 0.35 * float(agg.get("stability30", 0.0))
+    )
 
 
 def _hpo_leaf_min_pct_formula(
@@ -771,6 +860,21 @@ def _top30_stability(y: np.ndarray, pred: np.ndarray) -> float:
     return float(1.0 / (1.0 + np.std(vals))) if vals else 0.0
 
 
+def _rank_ic_metrics(y: np.ndarray, pred: np.ndarray) -> dict[str, float]:
+    yy = np.asarray(y, dtype=np.float64)
+    pp = np.asarray(pred, dtype=np.float64)
+    m = np.isfinite(yy) & np.isfinite(pp)
+    yy = yy[m]
+    pp = pp[m]
+    if len(yy) < 8:
+        return {"ic_total": 0.0, "ic_top30": 0.0}
+    ic_total = _safe_spearman(pp, yy)
+    k = max(1, int(0.30 * len(pp)))
+    top = np.argsort(pp)[-k:]
+    ic_top30 = _safe_spearman(pp[top], yy[top]) if len(top) >= 8 else 0.0
+    return {"ic_total": float(ic_total), "ic_top30": float(ic_top30)}
+
+
 def _stratified_subsample_indices(
     y: np.ndarray, max_n: int, random_state: int, classifier: bool
 ) -> np.ndarray:
@@ -793,6 +897,93 @@ def _stratified_subsample_indices(
     if len(idx) > max_n:
         idx = np.sort(rng.choice(idx, size=max_n, replace=False).astype(np.int32))
     return idx
+
+
+def _stage_partition_indices(
+    y: np.ndarray,
+    *,
+    timestamps: Any = None,
+    assets: Any = None,
+    random_state: int,
+) -> dict[str, np.ndarray]:
+    """Split current train subset into interwoven LGBM/prune, HPO, and fit/OOF stages."""
+    y_arr = np.asarray(y)
+    n = len(y_arr)
+    if n == 0:
+        empty = np.array([], dtype=np.int32)
+        return {"lgbm_prune": empty, "hpo": empty, "fit_oof": empty}
+
+    if _looks_classifier_target(y_arr):
+        y_bucket = np.asarray(y_arr >= 0.5, dtype=np.int8).astype(str)
+    else:
+        ranks = pd.Series(np.asarray(y_arr, dtype=np.float32)).rank(pct=True).to_numpy()
+        y_bucket = np.clip((ranks * 5).astype(np.int32), 0, 4).astype(str)
+
+    if assets is not None and len(np.asarray(assets)) == n:
+        asset_arr = np.asarray(assets).astype(str)
+        counts = pd.Series(asset_arr).value_counts()
+        common = set(counts[counts >= 20].index.astype(str))
+        asset_bucket = np.asarray(
+            [a if a in common else "__rare_asset__" for a in asset_arr], dtype=object
+        )
+    else:
+        asset_bucket = np.asarray(["__all_assets__"] * n, dtype=object)
+
+    if timestamps is not None and len(np.asarray(timestamps)) == n:
+        ts = pd.to_datetime(np.asarray(timestamps), utc=True, errors="coerce")
+        if bool(pd.Series(ts).notna().any()):
+            week = (
+                pd.Series(ts)
+                .dt.tz_localize(None)
+                .dt.to_period("W")
+                .astype(str)
+                .to_numpy()
+            )
+            week_rank = pd.Series(week).rank(method="dense").to_numpy(dtype=np.int32)
+        else:
+            week_rank = np.arange(n, dtype=np.int32)
+    else:
+        week_rank = np.arange(n, dtype=np.int32)
+
+    strata = np.asarray(
+        [f"{yb}|{ab}" for yb, ab in zip(y_bucket, asset_bucket)], dtype=object
+    )
+    rng = np.random.default_rng(random_state)
+    pattern = np.asarray(["lgbm_prune"] * 7 + ["hpo"] * 2 + ["fit_oof"] * 11)
+    out = {"lgbm_prune": [], "hpo": [], "fit_oof": []}
+    for stratum in np.unique(strata):
+        ids = np.where(strata == stratum)[0]
+        if len(ids) == 0:
+            continue
+        jitter = rng.random(len(ids)) * 1e-6
+        order = np.lexsort((jitter, np.arange(len(ids)) % 997, week_rank[ids]))
+        ordered = ids[order]
+        offset = int(rng.integers(0, len(pattern)))
+        labels = pattern[(np.arange(len(ordered)) + offset) % len(pattern)]
+        for key in out:
+            out[key].extend(ordered[labels == key].tolist())
+
+    result = {
+        key: np.asarray(sorted(vals), dtype=np.int32) for key, vals in out.items()
+    }
+    assigned = np.concatenate([v for v in result.values() if len(v)])
+    if len(np.unique(assigned)) != n:
+        missing = np.setdiff1d(
+            np.arange(n, dtype=np.int32), assigned, assume_unique=False
+        )
+        result["fit_oof"] = np.asarray(
+            sorted(np.concatenate([result["fit_oof"], missing]).tolist()),
+            dtype=np.int32,
+        )
+    tprint(
+        "EBMOnLGBM stage split: "
+        f"lgbm_prune={len(result['lgbm_prune'])}/{n} "
+        f"({len(result['lgbm_prune']) / max(n, 1):.1%}), "
+        f"hpo={len(result['hpo'])}/{n} ({len(result['hpo']) / max(n, 1):.1%}), "
+        f"fit_oof={len(result['fit_oof'])}/{n} "
+        f"({len(result['fit_oof']) / max(n, 1):.1%})."
+    )
+    return result
 
 
 def _looks_classifier_target(y: np.ndarray) -> bool:
@@ -1472,6 +1663,12 @@ def _post_hpo_manage_features(
     spec: dict[str, Any],
     mode: str,
 ) -> tuple[list[str], dict[str, int], dict[str, float]]:
+    """Audit post-HPO shapes without changing the selected feature contract.
+
+    Feature generation and EBM pruning happen once in the candidate race. HPO may
+    change model parameters and this audit may smooth unstable learned shapes,
+    but it must not remove or replace selected raw/LGBM-derived features.
+    """
     if len(feature_names) <= EBM_MIN_FEATURES:
         return (
             feature_names,
@@ -1499,15 +1696,11 @@ def _post_hpo_manage_features(
             binary_mask=binary_mask,
         )
         shape_map = _shape_map(audit_model, feature_names)
-        valid = np.isfinite(scores)
         mas_valid = np.isfinite(mas) & (mas > 0.0)
         mas_threshold = (
             float(np.percentile(mas[mas_valid], 75)) if np.any(mas_valid) else 0.0
         )
-        keep = valid & (scores > 0.0)
         smooth_policy: dict[str, int] = {}
-        dropped = 0
-        smoothed = 0
         for i, name in enumerate(feature_names):
             shape = shape_map.get(name)
             if shape is None or len(shape) <= 1:
@@ -1520,44 +1713,24 @@ def _post_hpo_manage_features(
                 economic_monotone_prior=False,
             )
             if audit.shape_type == "pure_wiggle":
-                action = pure_wiggle_action(
-                    bend_count=audit.bend_count,
-                    fold_stability=1.0 - audit.wiggle_score,
-                    oos_j_score=1.0,
-                    raw_j_score=1.0,
-                    is_tree_leaf=("leaf" in name and name.endswith("_soft")),
-                )
-                if action == "delete":
-                    keep[i] = False
-                    dropped += 1
-                    continue
                 smooth_policy[name] = 7
-                smoothed += 1
             elif audit.shape_type == "monotonic_noise":
                 smooth_policy[name] = 3
-                smoothed += 1
             scores[i] *= max(0.0, 1.0 - audit.penalty)
 
-        keep_idx = np.flatnonzero(keep)
-        if len(keep_idx) < min(EBM_MIN_FEATURES, len(feature_names)):
-            floor = min(EBM_MIN_FEATURES, len(feature_names))
-            keep_idx = np.argsort(scores)[-floor:]
-            keep_idx = np.asarray(sorted(keep_idx.tolist()), dtype=np.int32)
-        managed = [feature_names[int(i)] for i in keep_idx]
-        smooth_policy = {k: v for k, v in smooth_policy.items() if k in set(managed)}
         tprint(
-            "EBMOnLGBM: post-HPO shape management kept "
-            f"{len(managed)}/{len(feature_names)} features, "
-            f"dropped={len(feature_names) - len(managed)}, "
+            "EBMOnLGBM: post-HPO shape management locked "
+            f"{len(feature_names)}/{len(feature_names)} selected features, "
+            "dropped=0, "
             f"smoothed={len(smooth_policy)}."
         )
         return (
-            managed,
+            feature_names,
             smooth_policy,
             {
-                "post_hpo_shape_dropped": float(len(feature_names) - len(managed)),
+                "post_hpo_shape_dropped": 0.0,
                 "post_hpo_shape_smoothed": float(len(smooth_policy)),
-                "post_hpo_shape_features": float(len(managed)),
+                "post_hpo_shape_features": float(len(feature_names)),
             },
         )
     except Exception as exc:
@@ -1571,6 +1744,80 @@ def _post_hpo_manage_features(
                 "post_hpo_shape_features": float(len(feature_names)),
             },
         )
+
+
+def _final_stage_oof_predictions(
+    cls: Any,
+    X: pd.DataFrame,
+    y: np.ndarray,
+    sample_weight: np.ndarray,
+    fit_idx: np.ndarray,
+    spec: dict[str, Any],
+    shape_smoothing_policy: dict[str, int],
+    mode: str,
+    random_state: int,
+) -> np.ndarray:
+    n = len(y)
+    out = np.full(n, np.nan, dtype=np.float32)
+    fit_idx = np.asarray(fit_idx, dtype=np.int32)
+    fit_idx = fit_idx[(fit_idx >= 0) & (fit_idx < n)]
+    if len(fit_idx) < max(20, EBM_CV_SPLITS * 5):
+        return out
+    classifier = mode == "classifier"
+    y_fit_split = (
+        np.asarray(y[fit_idx] >= 0.5, dtype=np.int8)
+        if classifier
+        else np.asarray(y[fit_idx], dtype=np.float32)
+    )
+    splitter: Any = (
+        StratifiedKFold(n_splits=EBM_CV_SPLITS, shuffle=True, random_state=random_state)
+        if classifier and len(np.unique(y_fit_split)) > 1
+        else KFold(n_splits=EBM_CV_SPLITS, shuffle=True, random_state=random_state)
+    )
+    heldout_idx = np.setdiff1d(
+        np.arange(n, dtype=np.int32), fit_idx, assume_unique=False
+    )
+    heldout_preds: list[np.ndarray] = []
+    feature_names = list(X.columns)
+    for fold_i, (tr_local, va_local) in enumerate(
+        splitter.split(np.zeros(len(fit_idx)), y_fit_split), start=1
+    ):
+        tr = fit_idx[tr_local]
+        va = fit_idx[va_local]
+        fold_spec = dict(spec)
+        fold_spec["outer_bags"] = min(int(fold_spec.get("outer_bags", 1)), 3)
+        t0 = time.perf_counter()
+        model = _fit_one_ebm(
+            cls,
+            X.iloc[tr].reset_index(drop=True),
+            y[tr],
+            sample_weight[tr],
+            fold_spec,
+        )
+        _apply_shape_smoothing_policy(model, feature_names, shape_smoothing_policy)
+        raw_tr = _predict_raw_ebm(model, X.iloc[tr].reset_index(drop=True), mode)
+        pp = SplinePostProcessor(mode).fit(raw_tr, y[tr], use_dynamic_smoothing=True)
+        raw_va = _predict_raw_ebm(model, X.iloc[va].reset_index(drop=True), mode)
+        out[va] = pp.predict(raw_va)
+        if len(heldout_idx) > 0:
+            raw_heldout = _predict_raw_ebm(
+                model, X.iloc[heldout_idx].reset_index(drop=True), mode
+            )
+            heldout_preds.append(pp.predict(raw_heldout))
+        tprint(
+            "EBMOnLGBM: final-stage OOF fold "
+            f"{fold_i}/{EBM_CV_SPLITS} fit in {time.perf_counter() - t0:.1f}s."
+        )
+    if heldout_preds and len(heldout_idx) > 0:
+        out[heldout_idx] = np.mean(np.vstack(heldout_preds), axis=0).astype(np.float32)
+    fill = 0.5 if classifier else 0.0
+    out = np.nan_to_num(out, nan=fill, posinf=fill, neginf=fill).astype(np.float32)
+    tprint(
+        "EBMOnLGBM: final-stage OOF predictions generated "
+        f"for {int(np.sum(np.isfinite(out)))}/{n} rows "
+        f"(fit_oof_rows={len(fit_idx)}, heldout_rows={len(heldout_idx)})."
+    )
+    return out
 
 
 def _apply_shape_smoothing_policy(
@@ -2285,6 +2532,7 @@ def _fit_final_model(
     pruning_history: list[dict[str, Any]],
     oof_probs: np.ndarray,
     metrics: dict[str, Any],
+    stage_indices: dict[str, np.ndarray] | None = None,
 ) -> EBMOnLGBMModel:
     tprint(
         f"EBMOnLGBM: full-data fit with {len(selected_features)} raw features "
@@ -2292,35 +2540,49 @@ def _fit_final_model(
     )
     model = EBMOnLGBMModel(mode=mode)
     X_raw = X.reset_index(drop=True)
-    Xs, _, tree_bundle = _augment_with_tree_features(
-        X_raw,
-        y,
+    n_all = len(X_raw)
+    if stage_indices is None:
+        all_idx = np.arange(n_all, dtype=np.int32)
+        stage_indices = {"lgbm_prune": all_idx, "hpo": all_idx, "fit_oof": all_idx}
+    lgbm_idx = np.asarray(stage_indices.get("lgbm_prune", []), dtype=np.int32)
+    hpo_idx = np.asarray(stage_indices.get("hpo", []), dtype=np.int32)
+    fit_idx = np.asarray(stage_indices.get("fit_oof", []), dtype=np.int32)
+    lgbm_idx = lgbm_idx[(lgbm_idx >= 0) & (lgbm_idx < n_all)]
+    hpo_idx = hpo_idx[(hpo_idx >= 0) & (hpo_idx < n_all)]
+    fit_idx = fit_idx[(fit_idx >= 0) & (fit_idx < n_all)]
+    if len(lgbm_idx) == 0:
+        lgbm_idx = np.arange(n_all, dtype=np.int32)
+    if len(hpo_idx) == 0:
+        hpo_idx = np.arange(n_all, dtype=np.int32)
+    if len(fit_idx) == 0:
+        fit_idx = np.arange(n_all, dtype=np.int32)
+
+    _, Xs, tree_bundle = _augment_with_tree_features(
+        X_raw.iloc[lgbm_idx].reset_index(drop=True),
+        y[lgbm_idx],
         X_raw,
         random_state=random_state + 9901,
     )
     if selected_feature_names:
         wanted = [str(c) for c in selected_feature_names]
-        final_active_cols = [c for c in wanted if c in Xs.columns]
         missing = [c for c in wanted if c not in Xs.columns]
+        for col in missing:
+            Xs[col] = 0.0
+        final_active_cols = list(wanted)
         n_raw = int(sum(not c.startswith("lgbm_") for c in final_active_cols))
         n_tree = int(len(final_active_cols) - n_raw)
         if missing:
             tprint(
                 "EBMOnLGBM: full-data fit could not regenerate "
                 f"{len(missing)}/{len(wanted)} candidate-selected features; "
-                "continuing with available selected raw/tree features."
+                "keeping the selected feature contract with zero-filled missing "
+                "raw/tree features."
             )
         tprint(
             "EBMOnLGBM: full-data fit using candidate-selected feature set "
             f"before final contribution prune: {n_raw} raw + {n_tree} tree "
             f"features ({len(final_active_cols)} total)."
         )
-        if len(final_active_cols) < min(EBM_MIN_FEATURES, len(Xs.columns)):
-            tprint(
-                "EBMOnLGBM: candidate-selected feature intersection too small; "
-                "falling back to all regenerated full-data features."
-            )
-            final_active_cols = list(Xs.columns)
     else:
         final_active_cols = list(Xs.columns)
     _log_selected_features("full-data candidate-selected", final_active_cols)
@@ -2357,8 +2619,8 @@ def _fit_final_model(
             "pruner=SuccessiveHalving)."
         )
         from interpret.glassbox import (
-            ExplainableBoostingRegressor,
             ExplainableBoostingClassifier,
+            ExplainableBoostingRegressor,
         )
 
         EBMCls = (
@@ -2367,8 +2629,14 @@ def _fit_final_model(
             else ExplainableBoostingRegressor
         )
 
-        n_sub = min(5000, len(y))
-        idx_sub = np.random.choice(len(y), n_sub, replace=False)
+        hpo_pool = np.asarray(hpo_idx, dtype=np.int32)
+        n_sub = min(5000, len(hpo_pool))
+        rng_hpo = np.random.default_rng(random_state + 44017)
+        idx_sub = (
+            rng_hpo.choice(hpo_pool, n_sub, replace=False)
+            if len(hpo_pool) > n_sub
+            else hpo_pool
+        )
         Xs_sub = Xs.iloc[idx_sub].reset_index(drop=True)
         y_sub = y[idx_sub]
         sw_sub = sample_weight[idx_sub] if sample_weight is not None else np.ones(n_sub)
@@ -2458,17 +2726,19 @@ def _fit_final_model(
                 )
                 fold_metrics.append(metrics)
                 agg = _aggregate_j(fold_metrics)
-                score = float(agg.get("J_final", -999.0))
+                score = _hpo_objective_from_aggregate(agg)
 
                 trial.report(score, step)
                 if trial.should_prune():
                     raise optuna.TrialPruned()
 
             agg = _aggregate_j(fold_metrics)
+            hpo_objective = _hpo_objective_from_aggregate(agg)
             trial.set_user_attr("lift30", float(agg.get("lift30", np.nan)))
             trial.set_user_attr("stability30", float(agg.get("stability30", np.nan)))
             trial.set_user_attr("J_final", float(agg.get("J_final", np.nan)))
-            return float(agg.get("J_final", -999.0))
+            trial.set_user_attr("hpo_objective", float(hpo_objective))
+            return float(hpo_objective)
 
         import logging
 
@@ -2565,8 +2835,11 @@ def _fit_final_model(
                     ),
                 )
             )
-            best_spec["min_samples_leaf"] = max(1, int(best_leaf_min_pct * len(y)))
-            best_spec["outer_bags"] = 1
+            best_spec["min_samples_leaf"] = max(
+                1, int(best_leaf_min_pct * len(fit_idx))
+            )
+            best_spec["min_samples_leaf_pct"] = best_leaf_min_pct
+            best_spec["outer_bags"] = 10
             best_spec["early_stopping_rounds"] = 30
             best_spec["interactions"] = 0
             best_spec["n_jobs"] = int(hpo_runtime_state["n_jobs"])
@@ -2577,6 +2850,7 @@ def _fit_final_model(
                 f"lift30={float(best_trial.user_attrs.get('lift30', np.nan)):.4f}, "
                 "stability30="
                 f"{float(best_trial.user_attrs.get('stability30', np.nan)):.4f}, "
+                "objective=0.65*lift30+0.35*stability30, "
                 f"leaf_min_pct={best_leaf_min_pct:.4f}, final params={best_spec}."
             )
 
@@ -2596,10 +2870,17 @@ def _fit_final_model(
 
     for i in range(1):
         t0 = time.perf_counter()
-        ebm = _fit_one_ebm(cls, Xs[final_active_cols], y, sample_weight, final_spec)
+        ebm = _fit_one_ebm(
+            cls,
+            Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True),
+            y[fit_idx],
+            sample_weight[fit_idx],
+            final_spec,
+        )
         _apply_shape_smoothing_policy(ebm, final_active_cols, shape_smoothing_policy)
-        raw = _predict_raw_ebm(ebm, Xs[final_active_cols], mode)
-        pp = SplinePostProcessor(mode).fit(raw, y, use_dynamic_smoothing=True)
+        X_fit_final = Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True)
+        raw = _predict_raw_ebm(ebm, X_fit_final, mode)
+        pp = SplinePostProcessor(mode).fit(raw, y[fit_idx], use_dynamic_smoothing=True)
         model.models.append(ebm)
         model.postprocessors.append(pp)
         tprint(f"  Final EBM fit in {time.perf_counter() - t0:.1f}s")
@@ -2611,9 +2892,96 @@ def _fit_final_model(
     model.tree_feature_names = list(tree_bundle["tree_feature_names"])
     model.selected_features = final_active_cols
     model.selected_indices = np.array([], dtype=np.int32)
-    model.oof_probs = np.asarray(oof_probs, dtype=np.float32)
+    model.oof_probs = _final_stage_oof_predictions(
+        cls,
+        Xs[final_active_cols],
+        y,
+        sample_weight,
+        fit_idx,
+        final_spec,
+        shape_smoothing_policy,
+        mode,
+        random_state=random_state + 11701,
+    )
+    if model.oof_probs is None or len(model.oof_probs) != len(y):
+        model.oof_probs = np.asarray(oof_probs, dtype=np.float32)
+    try:
+        model.uncertainty_state = fit_uncertainty_state(
+            Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True),
+            final_active_cols,
+        )
+        unc_features = compute_uncertainty_features(
+            Xs[final_active_cols],
+            model.models,
+            mode,
+            _predict_raw_ebm,
+            state=model.uncertainty_state,
+        )
+        model.oof_uncertainty_features = {
+            c: unc_features[c].to_numpy(dtype=np.float32) for c in unc_features.columns
+        }
+        model.oof_probs_raw_ebm = np.asarray(model.oof_probs, dtype=np.float32).copy()
+        if mode == "classifier":
+            model.en_adjuster = fit_en_uncertainty_adjuster(
+                model.oof_probs_raw_ebm,
+                y,
+                unc_features,
+                random_state=random_state + 55021,
+                n_trials=20,
+            )
+            if model.en_adjuster is not None:
+                model.oof_probs_en = model.en_adjuster.predict(
+                    model.oof_probs_raw_ebm, unc_features
+                )
+            else:
+                model.oof_probs_en = model.oof_probs_raw_ebm.copy()
+            model.oof_probs_uncertainty_weighted = uncertainty_weighted_prediction(
+                model.oof_probs_raw_ebm,
+                unc_features,
+                model.oof_probs_en,
+            )
+        else:
+            model.oof_probs_en = model.oof_probs_raw_ebm.copy()
+            model.oof_probs_uncertainty_weighted = model.oof_probs_raw_ebm.copy()
+        tprint(
+            "EBMOnLGBM: generated uncertainty OOF features "
+            f"({len(model.oof_uncertainty_features)} columns)."
+        )
+    except Exception as exc:
+        tprint(f"EBMOnLGBM: uncertainty feature generation skipped ({exc}).")
     model.metrics = dict(metrics)
     model.metrics.update(post_hpo_shape_metrics)
+    model.metrics["feature_count"] = int(len(final_active_cols))
+    model.metrics["n_raw_features_kept"] = int(
+        sum(not c.startswith("lgbm_") for c in final_active_cols)
+    )
+    model.metrics["n_leaf_features_kept"] = int(
+        sum(c.startswith("lgbm_") for c in final_active_cols)
+    )
+    model.metrics["final_outer_bags"] = int(final_spec.get("outer_bags", 0))
+    model.metrics["best_params"] = dict(final_spec)
+    model.metrics["shape_smoothing_policy"] = dict(shape_smoothing_policy)
+    model.metrics["postprocessor_calibration_method"] = (
+        model.postprocessors[0].calibration_method
+        if model.postprocessors
+        else "identity"
+    )
+    if model.en_adjuster is not None:
+        model.metrics["en_uncertainty_alpha"] = float(model.en_adjuster.alpha)
+        model.metrics["en_uncertainty_l1_ratio"] = float(model.en_adjuster.l1_ratio)
+        model.metrics["en_uncertainty_blend"] = float(model.en_adjuster.blend)
+        for key, value in model.en_adjuster.metrics.items():
+            model.metrics[f"en_uncertainty_{key}"] = float(value)
+    try:
+        final_fit_pred = model.predict(X_raw)
+        final_fit_metrics = _metric_pack(
+            y, final_fit_pred, classifier=(mode == "classifier")
+        )
+        final_fit_metrics.update(_aggregate_j([final_fit_metrics]))
+        for key, value in final_fit_metrics.items():
+            model.metrics[f"final_fit_{key}"] = value
+    except Exception as exc:
+        tprint(f"EBMOnLGBM: final-fit metrics skipped ({exc}).")
     model.pruning_history = list(pruning_history)
     return model
 
@@ -2624,6 +2992,8 @@ def train_ebm_on_lgbm_candidate(
     sample_weight: Optional[np.ndarray] = None,
     random_state: int = 42,
     mode: str = "classifier",
+    timestamps: Any = None,
+    assets: Any = None,
 ) -> Optional[dict[str, Any]]:
     tprint("EBMOnLGBM: starting EBM candidate training.")
     t0_total = time.perf_counter()
@@ -2657,12 +3027,21 @@ def train_ebm_on_lgbm_candidate(
     sw = np.nan_to_num(sw, nan=1.0, posinf=1.0, neginf=1.0).astype(np.float32)
     sw = sw / max(float(np.mean(sw)), 1e-6)
 
-    race_idx = _stratified_subsample_indices(
+    stage_indices = _stage_partition_indices(
         y_arr,
-        max_n=min(EBM_RACE_MAX_ROWS, n),
+        timestamps=timestamps,
+        assets=assets,
         random_state=random_state + 701,
-        classifier=classifier,
     )
+    race_idx = np.asarray(stage_indices["lgbm_prune"], dtype=np.int32)
+    if len(race_idx) < 200:
+        race_idx = _stratified_subsample_indices(
+            y_arr,
+            max_n=min(EBM_RACE_MAX_ROWS, n),
+            random_state=random_state + 701,
+            classifier=classifier,
+        )
+        stage_indices["lgbm_prune"] = race_idx
     X_race = X_df.iloc[race_idx].reset_index(drop=True)
     y_race = y_arr[race_idx]
     sw_race = sw[race_idx]
@@ -2896,9 +3275,16 @@ def train_ebm_on_lgbm_candidate(
     metrics["J_final_oof"] = float(metrics.get("J_final", 0.0))
     metrics["J_Score"] = float(metrics["J_final_oof"])
     metrics["feature_count"] = int(len(selected_features))
-    metrics["n_raw_features_kept"] = int(len(selected_features))
-    metrics["n_leaf_features_kept"] = 0
+    metrics["n_raw_features_kept"] = int(
+        sum(not str(name).startswith("lgbm_") for name in selected_features)
+    )
+    metrics["n_leaf_features_kept"] = int(
+        sum(str(name).startswith("lgbm_") for name in selected_features)
+    )
     metrics["race_n"] = int(len(race_idx))
+    metrics["stage_lgbm_prune_n"] = int(len(stage_indices["lgbm_prune"]))
+    metrics["stage_hpo_n"] = int(len(stage_indices["hpo"]))
+    metrics["stage_fit_oof_n"] = int(len(stage_indices["fit_oof"]))
     oof_full = np.full(n, np.nan, dtype=np.float32)
     oof_full[race_idx] = oof_race
     oof_for_full_fit = np.where(
@@ -2941,6 +3327,9 @@ def train_ebm_on_lgbm_candidate(
         "full_fit_needed": True,
         "race_idx": race_idx,
         "oof_race": oof_for_full_fit,
+        "stage_indices": {
+            k: np.asarray(v, dtype=np.int32) for k, v in stage_indices.items()
+        },
         "mode": mode,
     }
 
@@ -2956,6 +3345,7 @@ def fit_ebm_on_lgbm_full_model(
     metrics: Optional[dict[str, Any]] = None,
     pruning_history: Optional[list[dict[str, Any]]] = None,
     selected_feature_names: Optional[list[str]] = None,
+    stage_indices: Optional[dict[str, np.ndarray]] = None,
 ) -> Optional[EBMOnLGBMModel]:
     classifier = mode == "classifier"
     ebm_clf, ebm_reg = _load_ebm_classes()
@@ -3000,4 +3390,5 @@ def fit_ebm_on_lgbm_full_model(
             dtype=np.float32,
         ),
         metrics or {},
+        stage_indices=stage_indices,
     )

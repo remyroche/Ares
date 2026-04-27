@@ -1935,6 +1935,8 @@ def _fit_direct_extratrees_base_model(
                     sample_weight=sample_weight_arr,
                     random_state=42,
                     mode="classifier",
+                    timestamps=groups_arr,
+                    assets=symbols_arr,
                 )
             else:
                 result = trainer(
@@ -2054,8 +2056,47 @@ def _fit_direct_extratrees_base_model(
         except Exception:
             return float("nan")
 
+    def _candidate_rank_return_metrics() -> dict[str, float]:
+        try:
+            if returns_eval_full is None or len(returns_eval_full) != len(
+                cand_oof_full
+            ):
+                return {}
+            pred = np.asarray(cand_oof_full, dtype=np.float64)
+            ret = np.asarray(returns_eval_full, dtype=np.float64)
+            m = cand_finite & np.isfinite(ret)
+            if int(np.sum(m)) < 8:
+                return {}
+            pred_m = pred[m]
+            ret_m = ret[m]
+            ic_total = (
+                float(np.corrcoef(_rankdata(pred_m), _rankdata(ret_m))[0, 1])
+                if float(np.std(pred_m)) > 1e-12 and float(np.std(ret_m)) > 1e-12
+                else 0.0
+            )
+            n_top = max(1, int(np.ceil(0.30 * len(pred_m))))
+            top_idx = np.argsort(pred_m)[-n_top:]
+            pred_top = pred_m[top_idx]
+            ret_top = ret_m[top_idx]
+            ic_top30 = (
+                float(np.corrcoef(_rankdata(pred_top), _rankdata(ret_top))[0, 1])
+                if len(top_idx) >= 8
+                and float(np.std(pred_top)) > 1e-12
+                and float(np.std(ret_top)) > 1e-12
+                else 0.0
+            )
+            return {
+                "IC": float(ic_total),
+                "IC_top30": float(ic_top30),
+                "mean_return10_gross": _mean_return_top_gross(0.10),
+                "mean_return30_gross": _mean_return_top_gross(0.30),
+            }
+        except Exception:
+            return {}
+
     cand_mean_return10_gross = _mean_return_top_gross(0.10)
     cand_mean_return30_gross = _mean_return_top_gross(0.30)
+    cand_rank_return_metrics = _candidate_rank_return_metrics()
     cand_stability30 = float(cand_metrics.get("stability30", float("nan")))
 
     tprint(
@@ -2111,6 +2152,7 @@ def _fit_direct_extratrees_base_model(
             metrics=cand_metrics,
             pruning_history=result.get("pruning_history", []),
             selected_feature_names=result.get("selected_feature_names"),
+            stage_indices=result.get("stage_indices"),
         )
     if cand_model is None:
         raise RuntimeError(
@@ -2118,6 +2160,36 @@ def _fit_direct_extratrees_base_model(
             "not produce a fitted model; ExtraTrees training is disabled."
         )
     tprint(f"Model Race [{kind_name}]: full-data fit complete.")
+    final_cand_metrics = dict(cand_metrics)
+    if hasattr(cand_model, "metrics") and isinstance(cand_model.metrics, dict):
+        final_cand_metrics.update(cand_model.metrics)
+    cand_oof_final = np.asarray(
+        getattr(cand_model, "oof_probs", cand_oof_full), dtype=np.float32
+    )
+    if len(cand_oof_final) != len(cand_oof_full):
+        cand_oof_final = cand_oof_full
+    cand_final_finite = np.isfinite(cand_oof_final)
+    try:
+        cand_auc = (
+            float(
+                roc_auc_score(
+                    y_eval_full[cand_final_finite], cand_oof_final[cand_final_finite]
+                )
+            )
+            if len(np.unique(y_eval_full[cand_final_finite])) > 1
+            else 0.5
+        )
+    except Exception:
+        cand_auc = 0.5
+    try:
+        cand_brier = float(
+            brier_score_loss(
+                y_eval_full[cand_final_finite],
+                np.clip(cand_oof_final[cand_final_finite], 1e-7, 1 - 1e-7),
+            )
+        )
+    except Exception:
+        cand_brier = float("nan")
 
     training_diagnostics = {
         "n_total": int(len(y_hard)),
@@ -2142,29 +2214,57 @@ def _fit_direct_extratrees_base_model(
             "AUC": cand_auc,
             "Brier": cand_brier,
             "ECE": cand_ece,
+            **cand_rank_return_metrics,
             "mean_return10_gross": cand_mean_return10_gross,
             "mean_return30_gross": cand_mean_return30_gross,
-            "J_final_oof": float(cand_metrics.get("J_final_oof", 0.0)),
-            "lift30": float(cand_metrics.get("lift30", 0.0)),
+            "J_final_oof": float(final_cand_metrics.get("J_final_oof", 0.0)),
+            "lift30": float(final_cand_metrics.get("lift30", 0.0)),
             "stability30": cand_stability30,
-            "feature_count": int(cand_metrics.get("feature_count", 0)),
-            "n_raw_features": int(cand_metrics.get("n_raw_features_kept", 0)),
-            "n_leaf_features": int(cand_metrics.get("n_leaf_features_kept", 0)),
-            "oof_probs": cand_oof_full.copy(),
+            "feature_count": int(final_cand_metrics.get("feature_count", 0)),
+            "n_raw_features": int(final_cand_metrics.get("n_raw_features_kept", 0)),
+            "n_leaf_features": int(final_cand_metrics.get("n_leaf_features_kept", 0)),
+            "post_hpo_shape_features": float(
+                final_cand_metrics.get("post_hpo_shape_features", np.nan)
+            ),
+            "post_hpo_shape_dropped": float(
+                final_cand_metrics.get("post_hpo_shape_dropped", np.nan)
+            ),
+            "post_hpo_shape_smoothed": float(
+                final_cand_metrics.get("post_hpo_shape_smoothed", np.nan)
+            ),
+            "final_outer_bags": int(final_cand_metrics.get("final_outer_bags", 0)),
+            "postprocessor_calibration_method": str(
+                final_cand_metrics.get("postprocessor_calibration_method", "identity")
+            ),
+            "best_params": final_cand_metrics.get("best_params", {}),
+            "oof_probs": cand_oof_final.copy(),
             "training_diagnostics": training_diagnostics,
         }
     }
+    _dm_unc = race.detailed_metrics[winning_candidate]
+    for _attr, _key in (
+        ("oof_probs_raw_ebm", "oof_prob_ebm_raw"),
+        ("oof_probs_en", "oof_prob_en"),
+        ("oof_probs_uncertainty_weighted", "oof_prob_uncertainty_weighted"),
+    ):
+        _vec = getattr(cand_model, _attr, None)
+        if _vec is not None:
+            _dm_unc[_key] = np.asarray(_vec, dtype=np.float32).copy()
+    for _uk, _uv in (getattr(cand_model, "oof_uncertainty_features", {}) or {}).items():
+        _dm_unc[f"oof_{_uk}"] = np.asarray(_uv, dtype=np.float32).copy()
     race.best_model = cand_model
-    race.oof_probs = cand_oof_full
+    race.oof_probs = cand_oof_final
     race.raw_rank_scores_ = (
-        (_rankdata(cand_oof_full) - 1.0) / max(len(cand_oof_full) - 1, 1)
-        if len(cand_oof_full) > 0
+        (_rankdata(cand_oof_final) - 1.0) / max(len(cand_oof_final) - 1, 1)
+        if len(cand_oof_final) > 0
         else np.zeros(0, dtype=np.float64)
     )
     race.is_degenerate_ = False
     race.degeneracy_info_ = {"extratrees_training_disabled": True}
     if isinstance(race.calibration_state_, dict):
-        race.calibration_state_["calibration_method"] = "identity"
+        race.calibration_state_["calibration_method"] = str(
+            final_cand_metrics.get("postprocessor_calibration_method", "identity")
+        )
         race.calibration_state_["calibration_input"] = f"{winning_candidate}_raw"
         race.calibration_state_["train_inference_parity_mode"] = "candidate_oof"
         race.calibration_state_["post_refit_recalibration_skipped"] = True
@@ -2637,6 +2737,8 @@ def _fit_direct_extratrees_base_model(
             sample_weight=sample_weight_arr,
             random_state=42,
             mode="classifier",
+            timestamps=groups_arr,
+            assets=symbols_arr,
         )
         if lgbm_ridge_result is not None:
             lgbm_ridge_oof_raw = np.asarray(
@@ -2896,6 +2998,50 @@ def _fit_direct_extratrees_base_model(
             except Exception:
                 cand_brier = float("nan")
             cand_metrics = result.get("metrics", {})
+            cand_rank_return_metrics = {}
+            try:
+                if returns_eval is not None and len(returns_eval) == len(
+                    _cand_oof_eval
+                ):
+                    pred_m = np.asarray(_cand_oof_eval[_cand_finite], dtype=np.float64)
+                    ret_m = np.asarray(returns_eval[_cand_finite], dtype=np.float64)
+                    finite_ret = np.isfinite(pred_m) & np.isfinite(ret_m)
+                    pred_m = pred_m[finite_ret]
+                    ret_m = ret_m[finite_ret]
+                    if len(pred_m) >= 8:
+                        ic_total = (
+                            float(
+                                np.corrcoef(_rankdata(pred_m), _rankdata(ret_m))[0, 1]
+                            )
+                            if float(np.std(pred_m)) > 1e-12
+                            and float(np.std(ret_m)) > 1e-12
+                            else 0.0
+                        )
+                        n10 = max(1, int(np.ceil(0.10 * len(pred_m))))
+                        n30 = max(1, int(np.ceil(0.30 * len(pred_m))))
+                        top10 = np.argsort(pred_m)[-n10:]
+                        top30 = np.argsort(pred_m)[-n30:]
+                        pred_top30 = pred_m[top30]
+                        ret_top30 = ret_m[top30]
+                        ic_top30 = (
+                            float(
+                                np.corrcoef(
+                                    _rankdata(pred_top30), _rankdata(ret_top30)
+                                )[0, 1]
+                            )
+                            if len(top30) >= 8
+                            and float(np.std(pred_top30)) > 1e-12
+                            and float(np.std(ret_top30)) > 1e-12
+                            else 0.0
+                        )
+                        cand_rank_return_metrics = {
+                            "IC": float(ic_total),
+                            "IC_top30": float(ic_top30),
+                            "mean_return10_gross": float(np.nanmean(ret_m[top10])),
+                            "mean_return30_gross": float(np.nanmean(ret_m[top30])),
+                        }
+            except Exception:
+                cand_rank_return_metrics = {}
 
             if (
                 result.get("full_fit_needed")
@@ -2951,8 +3097,14 @@ def _fit_direct_extratrees_base_model(
                             metrics=cand_metrics,
                             pruning_history=result.get("pruning_history", []),
                             selected_feature_names=result.get("selected_feature_names"),
+                            stage_indices=result.get("stage_indices"),
                         )
                     tprint(f"Model Race [{kind_name}]: full-data fit complete.")
+                    final_cand_metrics = dict(cand_metrics)
+                    if hasattr(_cand_model, "metrics") and isinstance(
+                        _cand_model.metrics, dict
+                    ):
+                        final_cand_metrics.update(_cand_model.metrics)
                 except Exception as _cand_full_exc:
                     raise RuntimeError(
                         f"Model Race [{kind_name}]: {winning_candidate} "
@@ -2961,25 +3113,108 @@ def _fit_direct_extratrees_base_model(
                     ) from _cand_full_exc
             else:
                 _cand_model = result.get("model")
+                final_cand_metrics = dict(cand_metrics)
+                if hasattr(_cand_model, "metrics") and isinstance(
+                    _cand_model.metrics, dict
+                ):
+                    final_cand_metrics.update(_cand_model.metrics)
 
             if _cand_model is not None:
+                _cand_oof_final = np.asarray(
+                    getattr(_cand_model, "oof_probs", _cand_oof_full),
+                    dtype=np.float32,
+                )
+                if len(_cand_oof_final) != len(_cand_oof_full):
+                    _cand_oof_final = _cand_oof_full
+                _cand_oof_final_eval = _cand_oof_final[oof_valid_mask]
+                _cand_final_finite = np.isfinite(_cand_oof_final_eval)
+                try:
+                    cand_auc = (
+                        float(
+                            roc_auc_score(
+                                y_eval[_cand_final_finite],
+                                _cand_oof_final_eval[_cand_final_finite],
+                            )
+                        )
+                        if len(np.unique(y_eval[_cand_final_finite])) > 1
+                        else 0.5
+                    )
+                except Exception:
+                    cand_auc = 0.5
+                try:
+                    cand_brier = float(
+                        brier_score_loss(
+                            y_eval[_cand_final_finite],
+                            np.clip(
+                                _cand_oof_final_eval[_cand_final_finite],
+                                1e-7,
+                                1 - 1e-7,
+                            ),
+                        )
+                    )
+                except Exception:
+                    cand_brier = float("nan")
                 race.best_model_name = winning_candidate
                 race.metrics = dict(candidate_scores)
                 race.detailed_metrics[winning_candidate] = {
                     "score": win_score,
                     "AUC": cand_auc,
                     "Brier": cand_brier,
-                    "J_final_oof": float(cand_metrics.get("J_final_oof", 0.0)),
-                    "lift30": float(cand_metrics.get("lift30", 0.0)),
-                    "stability30": float(cand_metrics.get("stability30", 0.0)),
-                    "feature_count": int(cand_metrics.get("feature_count", 0)),
-                    "n_raw_features": int(cand_metrics.get("n_raw_features_kept", 0)),
-                    "n_leaf_features": int(cand_metrics.get("n_leaf_features_kept", 0)),
+                    **cand_rank_return_metrics,
+                    "J_final_oof": float(final_cand_metrics.get("J_final_oof", 0.0)),
+                    "lift30": float(final_cand_metrics.get("lift30", 0.0)),
+                    "stability30": float(final_cand_metrics.get("stability30", 0.0)),
+                    "feature_count": int(final_cand_metrics.get("feature_count", 0)),
+                    "n_raw_features": int(
+                        final_cand_metrics.get("n_raw_features_kept", 0)
+                    ),
+                    "n_leaf_features": int(
+                        final_cand_metrics.get("n_leaf_features_kept", 0)
+                    ),
+                    "post_hpo_shape_features": float(
+                        final_cand_metrics.get("post_hpo_shape_features", np.nan)
+                    ),
+                    "post_hpo_shape_dropped": float(
+                        final_cand_metrics.get("post_hpo_shape_dropped", np.nan)
+                    ),
+                    "post_hpo_shape_smoothed": float(
+                        final_cand_metrics.get("post_hpo_shape_smoothed", np.nan)
+                    ),
+                    "final_outer_bags": int(
+                        final_cand_metrics.get("final_outer_bags", 0)
+                    ),
+                    "postprocessor_calibration_method": str(
+                        final_cand_metrics.get(
+                            "postprocessor_calibration_method", "identity"
+                        )
+                    ),
+                    "best_params": final_cand_metrics.get("best_params", {}),
+                    "oof_probs": _cand_oof_final.copy(),
                 }
+                _dm_unc = race.detailed_metrics[winning_candidate]
+                for _attr, _key in (
+                    ("oof_probs_raw_ebm", "oof_prob_ebm_raw"),
+                    ("oof_probs_en", "oof_prob_en"),
+                    (
+                        "oof_probs_uncertainty_weighted",
+                        "oof_prob_uncertainty_weighted",
+                    ),
+                ):
+                    _vec = getattr(_cand_model, _attr, None)
+                    if _vec is not None:
+                        _dm_unc[_key] = np.asarray(_vec, dtype=np.float32).copy()
+                for _uk, _uv in (
+                    getattr(_cand_model, "oof_uncertainty_features", {}) or {}
+                ).items():
+                    _dm_unc[f"oof_{_uk}"] = np.asarray(_uv, dtype=np.float32).copy()
                 race.best_model = _cand_model
-                race.oof_probs = _cand_oof_full
+                race.oof_probs = _cand_oof_final
                 if isinstance(race.calibration_state_, dict):
-                    race.calibration_state_["calibration_method"] = "identity"
+                    race.calibration_state_["calibration_method"] = str(
+                        final_cand_metrics.get(
+                            "postprocessor_calibration_method", "identity"
+                        )
+                    )
                     race.calibration_state_[
                         "calibration_input"
                     ] = f"{winning_candidate}_raw"
@@ -4758,6 +4993,14 @@ def _write_base_meta_contract_manifest(
         "symbol",
         "y_bin",
         "y_ret",
+        "oof_prob_ebm_raw",
+        "oof_prob_en",
+        "oof_prob_uncertainty_weighted",
+        "oof_ebm_unc_logodds_var",
+        "oof_ebm_unc_entropy_mean",
+        "oof_ebm_unc_conflict",
+        "oof_ebm_unc_support_mean",
+        "oof_ebm_unc_uncertainty_weight",
         "oof_sigma_trees",
         "oof_sigma_robust",
         *[f"oof_tree_{k}" for k in ModelRace._TREE_UNCERTAINTY_KEYS],
@@ -13877,9 +14120,11 @@ def train_meta_models_from_artifacts(
             _ts_vals = (
                 pd.to_datetime(df["__ts__"], errors="coerce")
                 if "__ts__" in df.columns
-                else pd.to_datetime(df["timestamp"], errors="coerce")
-                if "timestamp" in df.columns
-                else None
+                else (
+                    pd.to_datetime(df["timestamp"], errors="coerce")
+                    if "timestamp" in df.columns
+                    else None
+                )
             )
             _rank_window = int(cfg.get("meta_trade_rank_window", 240))
             _base_rank_pct = rolling_asset_percentile(
@@ -15744,6 +15989,27 @@ def train_meta_models_from_artifacts(
             return oof_df
         return oof_df
 
+    def _append_ebm_uncertainty_oof_fields(oof_df: pd.DataFrame, meta_obj, n_rows: int):
+        try:
+            for _attr, _col in (
+                ("oof_probs_raw_ebm", "oof_ebm_raw"),
+                ("oof_probs_en", "oof_ebm_en"),
+                ("oof_probs_uncertainty_weighted", "oof_ebm_uncertainty_weighted"),
+            ):
+                _v = getattr(meta_obj, _attr, None)
+                if _v is not None and len(_v) >= int(n_rows):
+                    oof_df[_col] = _trim_1d(np.asarray(_v, dtype=np.float32), n_rows)
+            for _uk, _uv in (
+                getattr(meta_obj, "oof_uncertainty_features", {}) or {}
+            ).items():
+                if _uv is not None and len(_uv) >= int(n_rows):
+                    oof_df[f"oof_{_uk}"] = _trim_1d(
+                        np.asarray(_uv, dtype=np.float32), n_rows
+                    )
+        except Exception:
+            return oof_df
+        return oof_df
+
     def compute_meta_expected_value(p_tp, p_sl, ratio):
         return ratio * p_tp - p_sl
 
@@ -16231,6 +16497,7 @@ def train_meta_models_from_artifacts(
 
             # Wire weak-residual OOF diagnostics into canonical meta_oof exports.
             oof_df = _append_weak_meta_oof_fields(oof_df, meta, _n_meta)
+            oof_df = _append_ebm_uncertainty_oof_fields(oof_df, meta, _n_meta)
 
             # Universal per-head prediction diagnostics (constant columns so they
             # travel with every exported head for downstream debugging).
@@ -18578,7 +18845,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     if _metric_key in (
                         "oof_sigma_trees",
                         "oof_sigma_robust",
+                        "oof_prob_ebm_raw",
+                        "oof_prob_en",
+                        "oof_prob_uncertainty_weighted",
                     ) or _metric_key.startswith("oof_tree_"):
+                        if _metric_vals is not None and len(_metric_vals) >= _n:
+                            _payload[_metric_key] = np.asarray(
+                                _metric_vals, dtype=np.float32
+                            )[:_n][_finite_oof_mask]
+                    elif _metric_key.startswith("oof_ebm_unc_"):
                         if _metric_vals is not None and len(_metric_vals) >= _n:
                             _payload[_metric_key] = np.asarray(
                                 _metric_vals, dtype=np.float32
@@ -18785,7 +19060,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             if _metric_key in (
                                 "oof_sigma_trees",
                                 "oof_sigma_robust",
+                                "oof_prob_ebm_raw",
+                                "oof_prob_en",
+                                "oof_prob_uncertainty_weighted",
                             ) or _metric_key.startswith("oof_tree_"):
+                                if _metric_vals is not None and len(_metric_vals) >= _n:
+                                    _payload[_metric_key] = np.asarray(
+                                        _metric_vals, dtype=np.float32
+                                    )[:_n]
+                            elif _metric_key.startswith("oof_ebm_unc_"):
                                 if _metric_vals is not None and len(_metric_vals) >= _n:
                                     _payload[_metric_key] = np.asarray(
                                         _metric_vals, dtype=np.float32

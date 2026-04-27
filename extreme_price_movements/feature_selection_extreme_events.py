@@ -1453,6 +1453,7 @@ def mdi_feature_selection_v3(
     metrics_df_sorted = pd.DataFrame()
     mean_model_fit_score = float("nan")
     last_fold_share: List[np.ndarray] = []
+    last_fold_blended: List[np.ndarray] = []
     last_fold_top_imp: List[np.ndarray] = []
     last_fold_rest_imp: List[np.ndarray] = []
     last_pair_scores: List[Dict[Tuple[str, str], float]] = []
@@ -1726,6 +1727,7 @@ def mdi_feature_selection_v3(
         metrics_df_sorted = metrics_df.sort_values('composite_rank')
 
         last_fold_share = fold_share_curr
+        last_fold_blended = fold_blended_curr
         last_fold_top_imp = fold_top_imp_curr
         last_fold_rest_imp = fold_rest_imp_curr
         last_pair_scores = fold_pair_curr
@@ -1743,6 +1745,7 @@ def mdi_feature_selection_v3(
                 coarse_features = metrics_df_sorted.index[:coarse_keep_n].tolist()
                 coarse_idx = [metrics_df.index.get_loc(f) for f in coarse_features]
                 last_fold_share = [arr[coarse_idx] for arr in fold_share_curr]
+                last_fold_blended = [arr[coarse_idx] for arr in fold_blended_curr]
                 last_fold_top_imp = [arr[coarse_idx] for arr in fold_top_imp_curr]
                 last_fold_rest_imp = [arr[coarse_idx] for arr in fold_rest_imp_curr]
                 last_features = list(coarse_features)
@@ -1824,8 +1827,8 @@ def mdi_feature_selection_v3(
     n_final = min(max(n_selected_cap, n_min_hard), n_max_hard)
 
     # Fold-level ranking stability and thresholded frequency
-    if len(fold_blended_curr) > 0:
-        fs = np.vstack(fold_blended_curr)
+    if len(last_fold_blended) > 0:
+        fs = np.vstack(last_fold_blended)
         ranks = np.argsort(np.argsort(-fs, axis=1), axis=1) + 1
         med_rank = np.median(ranks, axis=0)
         mad_rank = np.mean(np.abs(ranks - med_rank), axis=0)
@@ -1841,7 +1844,9 @@ def mdi_feature_selection_v3(
             if not np.isfinite(thr):
                 continue
             hits += (row >= thr).astype(float)
-        frequency_score = np.clip(hits / max(float(len(fold_blended_curr)), 1.0), 0.0, 1.0)
+        frequency_score = np.clip(
+            hits / max(float(len(last_fold_blended)), 1.0), 0.0, 1.0
+        )
     elif len(last_fold_share) > 0:
         # Fallback to share if blended failed (should not happen)
         fs = np.vstack(last_fold_share)

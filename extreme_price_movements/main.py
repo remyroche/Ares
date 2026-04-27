@@ -798,6 +798,18 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
             f"Meta training: intersected base OOF symbol universe with active stage view "
             f"({_before} -> {len(base_oof_symbols)} symbols)"
         )
+    _planned_max_assets = int(cfg.get("planned_max_assets", 0) or 0)
+    if base_oof_symbols and _planned_max_assets > 0:
+        _before = len(base_oof_symbols)
+        base_oof_symbols = sorted(str(sym) for sym in base_oof_symbols)[
+            :_planned_max_assets
+        ]
+        if len(base_oof_symbols) < _before:
+            tprint(
+                "Meta training: capped base OOF symbol universe "
+                f"({_before} -> {len(base_oof_symbols)} symbols) based on "
+                f"planned_max_assets={_planned_max_assets}"
+            )
     if base_oof_symbols:
         tprint(
             f"Filtering meta training to {len(base_oof_symbols)} symbols with base-model OOF predictions"

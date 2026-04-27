@@ -270,24 +270,39 @@ def get_meta_feature_keys(head: str, cfg: Dict[str, Any]) -> List[str]:
     shared = _filter_meta_shared_feature_keys(
         expand_feature_group_refs(cfg.get("meta_shared_feature_keys", []), cfg)
     )
+    base_union = set(get_base_feature_keys("long", cfg)) | set(
+        get_base_feature_keys("short", cfg)
+    )
+    meta_product = set(
+        expand_feature_group_refs(cfg.get("meta_product_feature_keys", []), cfg)
+    )
+
+    def _filter_shared_overlap(specific_keys: List[str]) -> List[str]:
+        allowed_overlap = set(specific_keys) | meta_product
+        return [
+            k
+            for k in shared
+            if (k not in base_union) or (k in allowed_overlap)
+        ]
 
     if head == "reg":
         specific = expand_feature_group_refs(cfg.get("meta_reg_feature_keys", []), cfg)
-        return dedupe_keep_order(shared + specific)
+        return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
     elif head == "clf":
         specific = expand_feature_group_refs(cfg.get("meta_clf_feature_keys", []), cfg)
-        return dedupe_keep_order(shared + specific)
+        return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
     elif head == "mfe":
         specific = expand_feature_group_refs(cfg.get("meta_mfe_feature_keys", []), cfg)
-        return dedupe_keep_order(shared + specific)
+        return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
     elif head == "mae":
         specific = expand_feature_group_refs(cfg.get("meta_mae_feature_keys", []), cfg)
-        return dedupe_keep_order(shared + specific)
+        return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
     elif head == "asym":
         mfe_specific = expand_feature_group_refs(cfg.get("meta_mfe_feature_keys", []), cfg)
         mae_specific = expand_feature_group_refs(cfg.get("meta_mae_feature_keys", []), cfg)
         asym_specific = expand_feature_group_refs(cfg.get("meta_asym_feature_keys", []), cfg)
-        return dedupe_keep_order(shared + mfe_specific + mae_specific + asym_specific)
+        specific = mfe_specific + mae_specific + asym_specific
+        return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
 
 def validate_feature_keys_exist(df, keys: List[str], context: str) -> None:
     missing = [k for k in keys if k not in df.columns]

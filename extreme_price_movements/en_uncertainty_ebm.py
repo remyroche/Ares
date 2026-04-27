@@ -670,17 +670,19 @@ def _stability_by_group(
     y: np.ndarray, pred: np.ndarray, groups: np.ndarray | None
 ) -> float:
     if groups is None or len(groups) != len(pred):
-        return float(_top_mean(y, pred, 0.30))
+        return 0.0
     vals: list[float] = []
     g = np.asarray(groups)
     for key in np.unique(g):
         mask = g == key
         if int(np.sum(mask)) >= 10:
             vals.append(_top_mean(np.asarray(y)[mask], np.asarray(pred)[mask], 0.30))
-    if not vals:
-        return float(_top_mean(y, pred, 0.30))
+    if len(vals) < 3:
+        return 0.0
     arr = np.asarray(vals, dtype=np.float32)
-    return float(np.mean(arr) - np.std(arr))
+    mean_v = float(np.nanmean(arr))
+    std_v = float(np.nanstd(arr, ddof=1)) if len(arr) > 1 else 0.0
+    return float(np.clip(1.0 / (1.0 + std_v / (abs(mean_v) + 1e-6)), 0.0, 1.0))
 
 
 def _guardrails_ok(y: np.ndarray, base_pred: np.ndarray, pred: np.ndarray) -> bool:

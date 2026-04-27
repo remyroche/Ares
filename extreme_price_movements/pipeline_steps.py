@@ -2283,7 +2283,9 @@ def run_training_step(
             trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
         )
 
-    if not meta_only:
+    if (not meta_only) and bool(
+        cfg.get("legacy_en_uncertainty_combiner_enabled", False)
+    ):
         try:
             from extreme_price_movements.en_based_uncertainty_features_selection import (
                 run_on_artifacts as _run_en_uncertainty_combiner,
@@ -2297,6 +2299,11 @@ def run_training_step(
             )
         except Exception as _e_en:
             tprint(f"EN uncertainty combiner skipped: {_e_en}")
+    elif not meta_only:
+        tprint(
+            "Legacy EN uncertainty combiner disabled; using in-model EBM EN "
+            "uncertainty artifacts only."
+        )
 
     # Specialist Models are now trained inside train_models_from_artifacts
     # using artifacts loaded above.

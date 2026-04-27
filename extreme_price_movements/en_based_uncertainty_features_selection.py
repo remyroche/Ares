@@ -249,15 +249,19 @@ def _top_slice_metrics(
     hit_all = float(np.mean(y_all >= 0.5))
     lift = hit_top / max(hit_all, 1e-6)
     ic = _rank_ic(y_top, p[idx])
-    # chunked IC std as stability proxy
+    # Bounded top-slice stability: high when local hit rates are consistent.
     chunks = np.array_split(np.arange(len(idx)), min(5, len(idx)))
+    chunk_hits = []
     chunk_ics = []
     for c in chunks:
         if len(c) < 3:
             continue
+        chunk_hits.append(float(np.mean(y_top[c] >= 0.5)))
         chunk_ics.append(_rank_ic(y_top[c], p[idx][c]))
     ic_std = float(np.std(chunk_ics)) if chunk_ics else 0.0
-    stability = float(ic - 0.5 * ic_std)
+    hit_mean = float(np.mean(chunk_hits)) if chunk_hits else hit_top
+    hit_std = float(np.std(chunk_hits, ddof=1)) if len(chunk_hits) > 1 else 0.0
+    stability = float(np.clip(1.0 / (1.0 + hit_std / (abs(hit_mean) + 1e-6)), 0.0, 1.0))
     # top decile hit rate std
     order = np.argsort(-p)
     decs = np.array_split(order, 10)
@@ -637,10 +641,17 @@ def run_en_uncertainty_combiner(
         y_full = y_full_raw
 
     if max_rows > 0 and len(y_full) > max_rows:
-        ss_idx = _stratified_subsample(y_full if mode == "clf" else (y_full > np.nanmedian(y_full)).astype(np.int8), max_rows)
+        ss_idx = _stratified_subsample(
+            y_full
+            if mode == "clf"
+            else (y_full > np.nanmedian(y_full)).astype(np.int8),
+            max_rows,
+        )
         y_search = y_full[ss_idx]
         raw_search = raw_full.iloc[ss_idx].reset_index(drop=True)
-        tprint(f"[en_uncertainty] subsampled {len(y_search)}/{len(y_full)} for search (max_rows={max_rows})")
+        tprint(
+            f"[en_uncertainty] subsampled {len(y_search)}/{len(y_full)} for search (max_rows={max_rows})"
+        )
     else:
         y_search = y_full
         raw_search = raw_full
@@ -652,7 +663,11 @@ def run_en_uncertainty_combiner(
 
     base_pred_full = np.asarray(raw_full["base_pred"].values, dtype=float)
     if mode == "clf":
-        base_auc = float(roc_auc_score(y_full, base_pred_full)) if len(np.unique(y_full)) > 1 else 0.5
+        base_auc = (
+            float(roc_auc_score(y_full, base_pred_full))
+            if len(np.unique(y_full)) > 1
+            else 0.5
+        )
         base_mono = _mono_top3(y_full, base_pred_full)
         base_stab = base_mono
         base_global = _global_metrics(y_full, np.clip(base_pred_full, 1e-6, 1 - 1e-6))
@@ -660,7 +675,9 @@ def run_en_uncertainty_combiner(
         base_j = float(0.40 * base_mono + 0.40 * base_stab + 0.20 * base_lift)
     else:
         base_auc = _rank_ic(y_full, base_pred_full)
-        base_mono = _mono_top3((y_full > np.nanmedian(y_full)).astype(float), base_pred_full)
+        base_mono = _mono_top3(
+            (y_full > np.nanmedian(y_full)).astype(float), base_pred_full
+        )
         base_stab = float(base_mono)
         base_global = _global_metrics_reg(y_full, base_pred_full)
         base_lift = 0.0
@@ -678,7 +695,11 @@ def run_en_uncertainty_combiner(
 
     feature_names = [c for c in raw_search.columns if c not in {"base_pred"}]
     reduced, pruning_hist = _stage_a_prune(
-        raw_search, y_search, feature_names, coef_active_threshold=coef_active_threshold, mode=mode
+        raw_search,
+        y_search,
+        feature_names,
+        coef_active_threshold=coef_active_threshold,
+        mode=mode,
     )
     tprint(
         f"[en_uncertainty] stage-a done: features {len(feature_names)} -> {len(reduced)} rounds={len(pruning_hist)}"
@@ -711,11 +732,12 @@ def run_en_uncertainty_combiner(
         return int(main + 2 * inter)
 
     safe_contenders = [
-        r for r in contenders
-        if r.mean_mono >= base_mono and r.mean_stab >= base_stab
+        r for r in contenders if r.mean_mono >= base_mono and r.mean_stab >= base_stab
     ]
     if safe_contenders:
-        safe_contenders = sorted(safe_contenders, key=lambda r: (-r.mean_j, _model_size(reduced)))
+        safe_contenders = sorted(
+            safe_contenders, key=lambda r: (-r.mean_j, _model_size(reduced))
+        )
         chosen = safe_contenders[0]
     else:
         contenders = sorted(
@@ -745,7 +767,9 @@ def run_en_uncertainty_combiner(
         f"-> improved={improved}"
     )
     if improved:
-        tprint(f"[en_uncertainty] refitting 5-fold OOF on full data ({len(y_full)} rows)")
+        tprint(
+            f"[en_uncertainty] refitting 5-fold OOF on full data ({len(y_full)} rows)"
+        )
         s_oof, p_oof, fold_tf, final_bundle = _fit_5fold_oof(
             raw_full, y_full, reduced, chosen.alpha, chosen.l1_ratio, mode=mode
         )

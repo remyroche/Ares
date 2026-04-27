@@ -777,6 +777,11 @@ def _metric_pack(
     if len(y) < 8:
         return {
             "lift30": 0.0,
+            "lift10": 0.0,
+            "hit_rate10": 0.0,
+            "hit_rate30": 0.0,
+            "precision10": 0.0,
+            "precision30": 0.0,
             "auc_correct_30": 0.5,
             "stability30_proxy": 0.0,
             "stability30": 0.0,
@@ -791,10 +796,15 @@ def _metric_pack(
         }
     k = max(1, int(0.30 * len(y)))
     top = np.argsort(p)[-k:]
+    k10 = max(1, int(np.ceil(0.10 * len(y))))
+    top10 = np.argsort(p)[-k10:]
     if classifier:
         yb = (y >= 0.5).astype(np.int8)
         base = float(np.mean(yb))
         top_rate = float(np.mean(yb[top])) if len(top) else 0.0
+        hit_rate10 = float(np.mean(yb[top10])) if len(top10) else 0.0
+        hit_rate30 = top_rate
+        lift10 = hit_rate10 / max(base, 1e-6)
         lift30 = top_rate / max(base, 1e-6)
         auc30 = 0.5
         if len(np.unique(yb[top])) > 1:
@@ -808,6 +818,9 @@ def _metric_pack(
         brier = float(brier_score_loss(yb, p_clip))
         ece = _compute_ece(yb, p_clip)
     else:
+        hit_rate10 = float(np.mean(y[top10])) if len(top10) else 0.0
+        hit_rate30 = float(np.mean(y[top])) if len(top) else 0.0
+        lift10 = float(hit_rate10 / (np.mean(np.abs(y)) + 1e-6))
         lift30 = float(np.mean(y[top]) / (np.mean(np.abs(y)) + 1e-6))
         auc30 = max(0.0, _safe_spearman(p[top], y[top]))
         auc = max(0.0, _safe_spearman(p, y))
@@ -824,6 +837,11 @@ def _metric_pack(
     ic_metrics = _rank_ic_metrics(y, p)
     return {
         "lift30": float(lift30),
+        "lift10": float(lift10),
+        "hit_rate10": float(hit_rate10),
+        "hit_rate30": float(hit_rate30),
+        "precision10": float(hit_rate10),
+        "precision30": float(hit_rate30),
         "auc_correct_30": float(auc30),
         "stability30_proxy": float(stab_proxy),
         "stability30": float(stability30),
@@ -849,6 +867,9 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         return {"J_final": -999.0, "J_mean": -999.0, "J_std": 0.0}
     j = np.asarray([_fold_j(m) for m in fold_metrics], dtype=np.float64)
     lift = float(np.mean([m.get("lift30", 0.0) for m in fold_metrics]))
+    lift10 = float(np.mean([m.get("lift10", 0.0) for m in fold_metrics]))
+    hit_rate10 = float(np.mean([m.get("hit_rate10", 0.0) for m in fold_metrics]))
+    hit_rate30 = float(np.mean([m.get("hit_rate30", 0.0) for m in fold_metrics]))
     auc30 = float(np.mean([m.get("auc_correct_30", 0.0) for m in fold_metrics]))
     stability_vals = np.asarray(
         [m.get("stability30", 0.0) for m in fold_metrics], dtype=np.float64
@@ -859,8 +880,14 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         np.mean(stability_vals)
         - (np.std(stability_vals, ddof=1) if len(stability_vals) > 1 else 0.0)
     )
+    stability30 = float(np.clip(stability30, 0.0, 1.0))
     return {
         "lift30": lift,
+        "lift10": lift10,
+        "hit_rate10": hit_rate10,
+        "hit_rate30": hit_rate30,
+        "precision10": hit_rate10,
+        "precision30": hit_rate30,
         "auc_correct_30": auc30,
         "stability30": stability30,
         "stability30_n_groups": float(
@@ -872,7 +899,15 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     }
 
 
-def _hpo_objective_from_aggregate(agg: dict[str, float]) -> float:
+def _hpo_objective_from_aggregate(
+    agg: dict[str, float], objective_mode: str = "base"
+) -> float:
+    if str(objective_mode).lower() == "meta":
+        return float(
+            0.30 * float(agg.get("hit_rate30", agg.get("precision30", 0.0)))
+            + 0.20 * float(agg.get("hit_rate10", agg.get("precision10", 0.0)))
+            + 0.50 * float(agg.get("stability30", 0.0))
+        )
     return float(
         0.65 * float(agg.get("lift30", 0.0)) + 0.35 * float(agg.get("stability30", 0.0))
     )
@@ -1083,8 +1118,10 @@ def _grouped_top30_stability(
     arr = np.asarray(vals, dtype=np.float64)
     mean_v = float(np.mean(arr))
     std_v = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+    cv_v = float(std_v / (abs(mean_v) + 1e-6))
+    stability_v = float(1.0 / (1.0 + cv_v))
     return {
-        "stability30": float(mean_v - 2.0 * std_v),
+        "stability30": float(np.clip(stability_v, 0.0, 1.0)),
         "stability30_n_groups": float(len(arr)),
         "stability30_group_mean": mean_v,
         "stability30_group_std": std_v,
@@ -2064,7 +2101,9 @@ def _final_stage_oof_predictions(
             sample_weight[tr],
             fold_spec,
         )
-        _apply_shape_smoothing_policy(model, feature_names, shape_smoothing_policy)
+        _apply_shape_smoothing_policy(
+            model, feature_names, shape_smoothing_policy, log=False
+        )
         raw_tr = _predict_raw_ebm(model, X.iloc[tr].reset_index(drop=True), mode)
         pp = SplinePostProcessor(mode).fit(raw_tr, y[tr], use_dynamic_smoothing=True)
         raw_va = _predict_raw_ebm(model, X.iloc[va].reset_index(drop=True), mode)
@@ -2152,6 +2191,8 @@ def _apply_shape_smoothing_policy(
     model: Any,
     feature_names: list[str],
     smooth_policy: dict[str, int],
+    *,
+    log: bool = False,
 ) -> None:
     if not smooth_policy:
         return
@@ -2183,8 +2224,11 @@ def _apply_shape_smoothing_policy(
         except Exception:
             scores[ti] = smoothed.astype(np.float64, copy=False)
             changed += 1
-    if changed:
-        tprint(f"EBMOnLGBM: applied post-HPO shape smoothing to {changed} terms.")
+    if changed and log:
+        tprint(
+            "EBMOnLGBM: applied saved post-HPO shape smoothing policy "
+            f"to {changed} terms."
+        )
 
 
 def _contribution_correlation_prune(
@@ -2937,6 +2981,7 @@ def _fit_final_model(
     timestamps: Any = None,
     assets: Any = None,
     tree_feature_bundle: dict[str, Any] | None = None,
+    hpo_objective_mode: str = "base",
 ) -> EBMOnLGBMModel:
     tprint(
         f"EBMOnLGBM: full-data fit with {len(selected_features)} raw features "
@@ -3196,14 +3241,14 @@ def _fit_final_model(
                 )
                 fold_metrics.append(metrics)
                 agg = _aggregate_j(fold_metrics)
-                score = _hpo_objective_from_aggregate(agg)
+                score = _hpo_objective_from_aggregate(agg, hpo_objective_mode)
 
                 trial.report(score, step)
                 if trial.should_prune():
                     raise optuna.TrialPruned()
 
             agg = _aggregate_j(fold_metrics)
-            hpo_objective = _hpo_objective_from_aggregate(agg)
+            hpo_objective = _hpo_objective_from_aggregate(agg, hpo_objective_mode)
             trial.set_user_attr("lift30", float(agg.get("lift30", np.nan)))
             trial.set_user_attr("stability30", float(agg.get("stability30", np.nan)))
             trial.set_user_attr("J_final", float(agg.get("J_final", np.nan)))
@@ -3348,7 +3393,7 @@ def _fit_final_model(
                 f"lift30={float(best_trial.user_attrs.get('lift30', np.nan)):.4f}, "
                 "stability30="
                 f"{float(best_trial.user_attrs.get('stability30', np.nan)):.4f}, "
-                "objective=0.65*lift30+0.35*stability30, "
+                f"objective_mode={hpo_objective_mode}, "
                 f"leaf_min_pct={best_leaf_min_pct:.4f}, final params={best_spec}."
             )
 
@@ -3401,7 +3446,9 @@ def _fit_final_model(
             final_sample_weight[fit_idx],
             final_spec,
         )
-        _apply_shape_smoothing_policy(ebm, final_active_cols, shape_smoothing_policy)
+        _apply_shape_smoothing_policy(
+            ebm, final_active_cols, shape_smoothing_policy, log=True
+        )
         X_fit_final = Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True)
         raw = _predict_raw_ebm(ebm, X_fit_final, mode)
         pp = SplinePostProcessor(mode).fit(raw, y[fit_idx], use_dynamic_smoothing=True)
@@ -3606,6 +3653,7 @@ def train_ebm_on_lgbm_candidate(
     mode: str = "classifier",
     timestamps: Any = None,
     assets: Any = None,
+    hpo_objective_mode: str = "base",
 ) -> Optional[dict[str, Any]]:
     tprint("EBMOnLGBM: starting EBM candidate training.")
     t0_total = time.perf_counter()
@@ -3965,6 +4013,7 @@ def train_ebm_on_lgbm_candidate(
         },
         "tree_feature_bundle": tree_feature_bundle,
         "mode": mode,
+        "hpo_objective_mode": hpo_objective_mode,
     }
 
 
@@ -3983,6 +4032,7 @@ def fit_ebm_on_lgbm_full_model(
     timestamps: Any = None,
     assets: Any = None,
     tree_feature_bundle: Optional[dict[str, Any]] = None,
+    hpo_objective_mode: str = "base",
 ) -> Optional[EBMOnLGBMModel]:
     classifier = mode == "classifier"
     ebm_clf, ebm_reg = _load_ebm_classes()
@@ -4031,4 +4081,5 @@ def fit_ebm_on_lgbm_full_model(
         timestamps=timestamps,
         assets=assets,
         tree_feature_bundle=tree_feature_bundle,
+        hpo_objective_mode=hpo_objective_mode,
     )

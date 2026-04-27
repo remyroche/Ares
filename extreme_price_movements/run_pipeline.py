@@ -1519,7 +1519,25 @@ def run_all(cfg, ts_override=None):
 def run_train_meta(cfg, ts_override=None, store=None):
     """Re-run only meta model training, reusing existing base models."""
     _maintenance_checkpoint("train_meta:start")
+    cfg["meta_train_regression_bucket_model"] = False
     cfg.setdefault("meta_train_q20_regression", False)
+    cfg["meta_train_q20_regression"] = False
+    cfg["meta_train_calibration_reg"] = False
+    cfg["meta_train_aligned_mae_heads"] = False
+    cfg["meta_train_aligned_mfe_heads"] = False
+    cfg["meta_train_aux_heads"] = False
+    cfg["meta_clf_enabled"] = True
+    cfg["meta_clf_top_frac"] = 0.50
+    cfg["meta_move_top_frac"] = 0.50
+    cfg["meta_train_tbm_clf_head"] = True
+    cfg["meta_train_correctness_clf_head"] = True
+    cfg["meta_model_backend"] = "ebm_on_lgbm_only"
+    cfg["meta_training_pipeline_version"] = "legacy"
+    cfg["meta_run_pre_risk_optimisation"] = False
+    tprint(
+        "Meta training forced to EBMOnLGBM-only: regression/XGB/Ridge heads disabled; "
+        "correctness + TBM classifier heads enabled; top fraction=50%."
+    )
     _meta_hpo_trials_env = os.getenv("EPM_META_HPO_TRIALS")
     if _meta_hpo_trials_env:
         try:
@@ -1593,6 +1611,17 @@ def run_train_meta(cfg, ts_override=None, store=None):
         tprint(f"Slice plan loading failed: {e}")
 
     _load_mask_params_by_mode(cfg)
+    _meta_max_strategy_ids = int(cfg.get("meta_max_strategy_ids", 0) or 0)
+    if _meta_max_strategy_ids > 0:
+        from extreme_price_movements.strategy_registry import get_strategies
+
+        _strategies = get_strategies(cfg)
+        if len(_strategies) > _meta_max_strategy_ids:
+            cfg["strategies"] = _strategies[:_meta_max_strategy_ids]
+            tprint(
+                "Meta training: limiting all train_meta stages, including risk "
+                f"optimisation, to first {_meta_max_strategy_ids} strategies"
+            )
     from extreme_price_movements.main import train_daily_meta
 
     if store is None:
@@ -1600,14 +1629,16 @@ def run_train_meta(cfg, ts_override=None, store=None):
             root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
         )
 
-    # Verify that before training the meta model, we optimise the TP & SL values.
-    tprint("Optimising TP:SL before meta-training...")
-    try:
-        run_risk_opt(cfg, parsed_ts_sig=ts_sig, skip_maintenance=True, store=store)
-    except Exception as _e_risk:
-        tprint(
-            f"WARNING: risk optimisation failed ({_e_risk}); proceeding with existing barrier params."
-        )
+    if bool(cfg.get("meta_run_pre_risk_optimisation", False)):
+        tprint("Optimising TP:SL before meta-training...")
+        try:
+            run_risk_opt(cfg, parsed_ts_sig=ts_sig, skip_maintenance=True, store=store)
+        except Exception as _e_risk:
+            tprint(
+                f"WARNING: risk optimisation failed ({_e_risk}); proceeding with existing barrier params."
+            )
+    else:
+        tprint("Meta pre-risk optimisation disabled for EBM-only train_meta.")
 
     # Meta training reuses local artifacts and does not require a live exchange.
     result = train_daily_meta(ts_sig, None, cfg, store, None)

@@ -7,6 +7,7 @@ from extreme_price_movements.ebm_on_lgbm import (
     _feature_shape_scores,
     _fit_final_model,
     _hpo_objective_from_aggregate,
+    _metric_pack,
     _post_hpo_manage_features,
     _prescreen_features,
     _select_smallest_within_one_se,
@@ -86,6 +87,19 @@ def test_hpo_objective_uses_lift_and_stability_weights():
     score = _hpo_objective_from_aggregate({"lift30": 2.0, "stability30": 0.5})
 
     assert score == 0.65 * 2.0 + 0.35 * 0.5
+
+
+def test_metric_pack_uses_grouped_stability_when_groups_available():
+    y = np.array(([0, 1] * 30) + ([0, 0, 1, 1] * 15) + ([1, 1, 0, 0] * 15))
+    pred = np.linspace(0.0, 1.0, len(y), dtype=np.float32)
+    groups = np.array(["w1"] * 60 + ["w2"] * 60 + ["w3"] * 60)
+
+    metrics = _metric_pack(y, pred, classifier=True, groups=groups)
+
+    assert metrics["stability30_n_groups"] == 3.0
+    assert metrics["stability30"] != metrics["stability30_proxy"]
+    assert "stability30_group_mean" in metrics
+    assert "stability30_group_std" in metrics
 
 
 def test_stage_partition_uses_interwoven_ratio_without_overlap():

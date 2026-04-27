@@ -3,9 +3,12 @@ from __future__ import annotations
 import gc
 import inspect
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
 
@@ -44,14 +47,31 @@ EBM_TREE_LGBM_MAX_FIT_ROWS = 30000
 EBM_TREE_LGBM_EARLY_STOPPING_ROUNDS = 25
 EBM_FINAL_MODEL_COUNT = 5
 EBM_SPEC_N_JOBS = 1
-EBM_HPO_TRIALS = 150
-EBM_HPO_EARLY_STOP_PATIENCE = 30
+EBM_HPO_TRIALS = 200
+EBM_HPO_EARLY_STOP_PATIENCE = 50
 EBM_HPO_N_JOBS = 3
 EBM_HPO_MIN_LEAF_PCT_LO = 0.02
 EBM_HPO_MIN_LEAF_PCT_HI = 0.08
 EBM_STAGE_LGBM_PRUNE_FRACTION = 0.35
 EBM_STAGE_HPO_FRACTION = 0.10
 EBM_STAGE_FIT_OOF_FRACTION = 0.55
+
+
+def _quiet_interpret_logging() -> None:
+    """Keep Interpret's native boosting internals from flooding long pipeline logs."""
+    for name in (
+        "interpret",
+        "interpret.utils",
+        "interpret.utils._native",
+        "interpret.utils._compressed_dataset",
+        "interpret.glassbox",
+        "interpret.glassbox._ebm",
+        "interpret.glassbox._ebm._boost",
+    ):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
+_quiet_interpret_logging()
 
 
 @dataclass
@@ -364,12 +384,21 @@ class EBMOnLGBMModel:
         X_df = X_df.replace([np.inf, -np.inf], 0.0).fillna(0.0)
         if self.tree_models and self.raw_selected_features:
             raw_df = X_df.reindex(columns=self.raw_selected_features, fill_value=0.0)
-            x_raw = raw_df.to_numpy(dtype=np.float32)
-
-            X_tree, out_names, _ = _compute_soft_tree_features_ebm(
-                self.tree_models, x_raw, self.tree_feature_scales
-            )
-            tree_df = pd.DataFrame(X_tree, columns=out_names, index=raw_df.index)
+            if self.tree_feature_config.get("oof_tree_features"):
+                tree_df = _compute_oof_bundle_tree_frame(
+                    self.tree_feature_config,
+                    raw_df,
+                    selected_tree_names=self.tree_feature_names,
+                )
+            else:
+                x_raw = raw_df.to_numpy(dtype=np.float32)
+                X_tree, out_names, _ = _compute_soft_tree_features_ebm(
+                    self.tree_models,
+                    x_raw,
+                    self.tree_feature_scales,
+                    selected_names=set(self.tree_feature_names),
+                )
+                tree_df = pd.DataFrame(X_tree, columns=out_names, index=raw_df.index)
             missing = [c for c in self.tree_feature_names if c not in tree_df.columns]
             for m in missing:
                 tree_df[m] = 0.0
@@ -447,7 +476,10 @@ class EBMOnLGBMModel:
 
 
 def _compute_soft_tree_features_ebm(
-    models: list[Any], X_raw: np.ndarray, scales: np.ndarray | None = None
+    models: list[Any],
+    X_raw: np.ndarray,
+    scales: np.ndarray | None = None,
+    selected_names: set[str] | None = None,
 ) -> tuple[np.ndarray, list[str], np.ndarray]:
     n_instances, n_features = X_raw.shape
 
@@ -559,13 +591,18 @@ def _compute_soft_tree_features_ebm(
                 soft_leaves[:, leaf_idx] = data["prob"]
                 leaf_values[leaf_idx] = data["value"]
 
-            tree_pred = np.sum(soft_leaves * leaf_values, axis=1)
-            all_features.append(tree_pred.reshape(-1, 1))
-            out_names.append(f"{model_prefix}_tree{ti}_value")
+            value_name = f"{model_prefix}_tree{ti}_value"
+            if selected_names is None or value_name in selected_names:
+                tree_pred = np.sum(soft_leaves * leaf_values, axis=1)
+                all_features.append(tree_pred.reshape(-1, 1))
+                out_names.append(value_name)
 
             for leaf_idx in range(n_leaves):
+                leaf_name = f"{model_prefix}_tree{ti}_leaf{leaf_idx}_soft"
+                if selected_names is not None and leaf_name not in selected_names:
+                    continue
                 all_features.append(soft_leaves[:, leaf_idx].reshape(-1, 1))
-                out_names.append(f"{model_prefix}_tree{ti}_leaf{leaf_idx}_soft")
+                out_names.append(leaf_name)
 
     if not all_features:
         return np.zeros((n_instances, 0), dtype=np.float32), [], final_scales
@@ -688,6 +725,7 @@ def _inner_tree_fit_split(
 
 def _load_ebm_classes() -> tuple[Any, Any] | tuple[None, None]:
     try:
+        _quiet_interpret_logging()
         from interpret.glassbox import (  # type: ignore
             ExplainableBoostingClassifier,
             ExplainableBoostingRegressor,
@@ -710,6 +748,7 @@ def _filter_model_kwargs(cls: Any, params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _make_ebm(cls: Any, params: dict[str, Any]) -> Any:
+    _quiet_interpret_logging()
     return cls(**_filter_model_kwargs(cls, params))
 
 
@@ -724,11 +763,15 @@ def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _metric_pack(
-    y_true: np.ndarray, pred: np.ndarray, classifier: bool
+    y_true: np.ndarray,
+    pred: np.ndarray,
+    classifier: bool,
+    groups: Any = None,
 ) -> dict[str, float]:
     y = np.asarray(y_true, dtype=np.float64)
     p = np.asarray(pred, dtype=np.float64)
     m = np.isfinite(y) & np.isfinite(p)
+    grp = np.asarray(groups, dtype=object)[m] if groups is not None else None
     y = y[m]
     p = p[m]
     if len(y) < 8:
@@ -736,6 +779,10 @@ def _metric_pack(
             "lift30": 0.0,
             "auc_correct_30": 0.5,
             "stability30_proxy": 0.0,
+            "stability30": 0.0,
+            "stability30_n_groups": 0.0,
+            "stability30_group_mean": 0.0,
+            "stability30_group_std": 0.0,
             "auc": 0.5,
             "pr_auc": 0.0,
             "brier": 1.0,
@@ -767,13 +814,22 @@ def _metric_pack(
         pr = auc
         brier = float(np.mean((p - y) ** 2))
         ece = float("nan")
-    stab = _top30_stability(y, p)
+    stab_proxy = _top30_stability(y, p)
+    stab_metrics = _grouped_top30_stability(y, p, classifier=classifier, groups=grp)
+    stability30 = (
+        stab_metrics["stability30"]
+        if stab_metrics["stability30_n_groups"] >= 3
+        else stab_proxy
+    )
     ic_metrics = _rank_ic_metrics(y, p)
     return {
         "lift30": float(lift30),
         "auc_correct_30": float(auc30),
-        "stability30_proxy": float(stab),
-        "stability30": float(stab),
+        "stability30_proxy": float(stab_proxy),
+        "stability30": float(stability30),
+        "stability30_n_groups": float(stab_metrics["stability30_n_groups"]),
+        "stability30_group_mean": float(stab_metrics["stability30_group_mean"]),
+        "stability30_group_std": float(stab_metrics["stability30_group_std"]),
         "ic_total": float(ic_metrics["ic_total"]),
         "ic_top30": float(ic_metrics["ic_top30"]),
         "auc": float(auc),
@@ -794,13 +850,22 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     j = np.asarray([_fold_j(m) for m in fold_metrics], dtype=np.float64)
     lift = float(np.mean([m.get("lift30", 0.0) for m in fold_metrics]))
     auc30 = float(np.mean([m.get("auc_correct_30", 0.0) for m in fold_metrics]))
+    stability_vals = np.asarray(
+        [m.get("stability30", 0.0) for m in fold_metrics], dtype=np.float64
+    )
     j_mean = float(np.mean(j))
     j_std = float(np.std(j, ddof=1)) if len(j) > 1 else 0.0
-    stability30 = float(j_mean - 2.0 * j_std)
+    stability30 = float(
+        np.mean(stability_vals)
+        - (np.std(stability_vals, ddof=1) if len(stability_vals) > 1 else 0.0)
+    )
     return {
         "lift30": lift,
         "auc_correct_30": auc30,
         "stability30": stability30,
+        "stability30_n_groups": float(
+            np.sum([m.get("stability30_n_groups", 0.0) for m in fold_metrics])
+        ),
         "J_mean": j_mean,
         "J_std": j_std,
         "J_final": float(0.4 * lift + 0.2 * auc30 + 0.4 * stability30),
@@ -811,6 +876,108 @@ def _hpo_objective_from_aggregate(agg: dict[str, float]) -> float:
     return float(
         0.65 * float(agg.get("lift30", 0.0)) + 0.35 * float(agg.get("stability30", 0.0))
     )
+
+
+def _ebm_hpo_warm_start_path() -> Path:
+    raw = os.environ.get("EPM_EBM_HPO_WARM_START_PATH")
+    if raw:
+        return Path(raw).expanduser()
+    return Path("data/artifacts/ebm_on_lgbm_hpo_best_params.json")
+
+
+def _clip_float_param(value: Any, lo: float, hi: float) -> float:
+    return float(np.clip(float(value), lo, hi))
+
+
+def _clip_int_param(value: Any, lo: int, hi: int) -> int:
+    return int(np.clip(int(round(float(value))), lo, hi))
+
+
+def _sanitize_ebm_hpo_trial_params(params: dict[str, Any]) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    if "learning_rate" in params:
+        sanitized["learning_rate"] = _clip_float_param(
+            params["learning_rate"], 0.01, 0.05
+        )
+    if "max_bins" in params:
+        sanitized["max_bins"] = _clip_int_param(params["max_bins"], 16, 48)
+    if "smoothing_rounds" in params:
+        sanitized["smoothing_rounds"] = _clip_int_param(
+            params["smoothing_rounds"], 200, 500
+        )
+    if "max_leaves" in params:
+        sanitized["max_leaves"] = _clip_int_param(params["max_leaves"], 2, 3)
+    if "reg_alpha" in params:
+        sanitized["reg_alpha"] = _clip_float_param(params["reg_alpha"], 0.01, 2.0)
+    if "reg_lambda" in params:
+        sanitized["reg_lambda"] = _clip_float_param(params["reg_lambda"], 0.5, 10.0)
+    if "greedy_ratio" in params:
+        sanitized["greedy_ratio"] = _clip_float_param(params["greedy_ratio"], 0.1, 20.0)
+    required = {
+        "learning_rate",
+        "max_bins",
+        "smoothing_rounds",
+        "max_leaves",
+        "reg_alpha",
+        "reg_lambda",
+        "greedy_ratio",
+    }
+    return sanitized if required.issubset(sanitized) else {}
+
+
+def _load_ebm_hpo_warm_start() -> tuple[dict[str, Any], Path] | tuple[None, Path]:
+    path = _ebm_hpo_warm_start_path()
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except FileNotFoundError:
+        return None, path
+    except Exception as exc:
+        tprint(f"  EBMOnLGBM: ignoring unreadable HPO warm-start cache {path}: {exc}")
+        return None, path
+    if not isinstance(payload, dict):
+        return None, path
+    params = payload.get("best_params", payload)
+    if not isinstance(params, dict):
+        return None, path
+    sanitized = _sanitize_ebm_hpo_trial_params(params)
+    return (sanitized or None), path
+
+
+def _save_ebm_hpo_warm_start(
+    *,
+    best_params: dict[str, Any],
+    best_value: float,
+    best_trial_number: int,
+    best_trial_attrs: dict[str, Any],
+    leaf_min_pct: float,
+) -> None:
+    path = _ebm_hpo_warm_start_path()
+    params = _sanitize_ebm_hpo_trial_params(best_params)
+    if not params:
+        return
+    payload = {
+        "schema_version": 1,
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "best_params": params,
+        "min_samples_leaf_pct": float(leaf_min_pct),
+        "best_value": float(best_value),
+        "best_trial_number": int(best_trial_number),
+        "metrics": {
+            "lift30": float(best_trial_attrs.get("lift30", np.nan)),
+            "stability30": float(best_trial_attrs.get("stability30", np.nan)),
+            "hpo_objective": float(best_trial_attrs.get("hpo_objective", best_value)),
+        },
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with tmp_path.open("w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+        os.replace(tmp_path, path)
+    except Exception as exc:
+        tprint(f"  EBMOnLGBM: failed to persist HPO warm-start cache {path}: {exc}")
 
 
 def _hpo_leaf_min_pct_formula(
@@ -858,6 +1025,107 @@ def _top30_stability(y: np.ndarray, pred: np.ndarray) -> float:
         if np.any(m):
             vals.append(float(np.mean(yy[m])))
     return float(1.0 / (1.0 + np.std(vals))) if vals else 0.0
+
+
+def _grouped_top30_stability(
+    y: np.ndarray,
+    pred: np.ndarray,
+    classifier: bool,
+    groups: Any = None,
+    min_groups: int = 3,
+    min_group_n: int = 20,
+) -> dict[str, float]:
+    if groups is None:
+        return {
+            "stability30": 0.0,
+            "stability30_n_groups": 0.0,
+            "stability30_group_mean": 0.0,
+            "stability30_group_std": 0.0,
+        }
+    yy = np.asarray(y, dtype=np.float64)
+    pp = np.asarray(pred, dtype=np.float64)
+    gg = np.asarray(groups, dtype=object)
+    n = min(len(yy), len(pp), len(gg))
+    yy = yy[:n]
+    pp = pp[:n]
+    gg = gg[:n]
+    m = np.isfinite(yy) & np.isfinite(pp)
+    yy = yy[m]
+    pp = pp[m]
+    gg = gg[m]
+    vals: list[float] = []
+    for g in pd.unique(pd.Series(gg)):
+        gm = gg == g
+        if int(np.sum(gm)) < int(min_group_n):
+            continue
+        yg = yy[gm]
+        pg = pp[gm]
+        k = max(3, int(np.ceil(0.30 * len(pg))))
+        if k >= len(pg):
+            continue
+        top = np.argsort(pg)[-k:]
+        if classifier:
+            yb = (yg >= 0.5).astype(np.int8)
+            base = float(np.mean(yb))
+            if base <= 1e-6:
+                continue
+            vals.append(float(np.mean(yb[top]) / base))
+        else:
+            denom = float(np.mean(np.abs(yg))) + 1e-6
+            vals.append(float(np.mean(yg[top]) / denom))
+    if len(vals) < int(min_groups):
+        return {
+            "stability30": 0.0,
+            "stability30_n_groups": float(len(vals)),
+            "stability30_group_mean": float(np.mean(vals)) if vals else 0.0,
+            "stability30_group_std": float(np.std(vals)) if vals else 0.0,
+        }
+    arr = np.asarray(vals, dtype=np.float64)
+    mean_v = float(np.mean(arr))
+    std_v = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+    return {
+        "stability30": float(mean_v - 2.0 * std_v),
+        "stability30_n_groups": float(len(arr)),
+        "stability30_group_mean": mean_v,
+        "stability30_group_std": std_v,
+    }
+
+
+def _stability_group_labels(
+    n: int,
+    timestamps: Any = None,
+    assets: Any = None,
+) -> np.ndarray | None:
+    if n <= 0:
+        return None
+    if timestamps is None or len(np.asarray(timestamps)) != n:
+        if assets is None or len(np.asarray(assets)) != n:
+            return None
+        return np.asarray(assets).astype(str)
+    ts = pd.to_datetime(np.asarray(timestamps), utc=True, errors="coerce")
+    week = (
+        pd.Series(ts)
+        .dt.tz_localize(None)
+        .dt.to_period("W")
+        .astype(str)
+        .to_numpy(dtype=object)
+    )
+    week = np.where(pd.isna(week), "__unknown_week__", week).astype(object)
+    if assets is None or len(np.asarray(assets)) != n:
+        return week.astype(str)
+    asset_arr = np.asarray(assets).astype(str)
+    counts = pd.Series(asset_arr).value_counts()
+    common = set(counts[counts >= 20].index.astype(str))
+    asset_bucket = np.asarray(
+        [a if a in common else "__rare_asset__" for a in asset_arr], dtype=object
+    )
+    combined = np.asarray(
+        [f"{w}|{a}" for w, a in zip(week.astype(str), asset_bucket.astype(str))],
+        dtype=object,
+    )
+    if pd.Series(combined).value_counts().ge(20).sum() >= 3:
+        return combined.astype(str)
+    return week.astype(str)
 
 
 def _rank_ic_metrics(y: np.ndarray, pred: np.ndarray) -> dict[str, float]:
@@ -1397,7 +1665,9 @@ def _fit_one_ebm(
             fit_params["sample_weight"] = sample_weight
     except Exception:
         fit_params["sample_weight"] = sample_weight
+    _quiet_interpret_logging()
     model.fit(X_fit, y, **fit_params)
+    _quiet_interpret_logging()
     return model
 
 
@@ -1820,6 +2090,64 @@ def _final_stage_oof_predictions(
     return out
 
 
+def _oof_distilled_sample_weights(
+    cls: Any,
+    X: pd.DataFrame,
+    y: np.ndarray,
+    base_weight: np.ndarray,
+    fit_idx: np.ndarray,
+    spec: dict[str, Any],
+    shape_smoothing_policy: dict[str, int],
+    mode: str,
+    random_state: int,
+    passes: int = 2,
+    label: str = "distill",
+) -> tuple[np.ndarray, np.ndarray]:
+    classifier = mode == "classifier"
+    base = np.nan_to_num(
+        np.asarray(base_weight, dtype=np.float32), nan=1.0, posinf=1.0, neginf=1.0
+    )
+    base = base / max(float(np.mean(base)), 1e-6)
+    current = base.copy()
+    prev_oof: np.ndarray | None = None
+    last_oof = np.full(
+        len(y), 0.5 if classifier else float(np.nanmean(y)), dtype=np.float32
+    )
+    for pass_i in range(1, max(1, int(passes)) + 1):
+        t0 = time.perf_counter()
+        last_oof = _final_stage_oof_predictions(
+            cls,
+            X,
+            y,
+            current,
+            fit_idx,
+            spec,
+            shape_smoothing_policy,
+            mode,
+            random_state=random_state + pass_i * 7919,
+        )
+        multiplier = _compute_weight_distillation(
+            y,
+            last_oof,
+            prev_oof if prev_oof is not None else last_oof,
+            is_classifier=classifier,
+        )
+        current = base * multiplier
+        current = np.nan_to_num(current, nan=1.0, posinf=1.0, neginf=1.0).astype(
+            np.float32
+        )
+        current = current / max(float(np.mean(current)), 1e-6)
+        prev_oof = last_oof.copy()
+        tprint(
+            "EBMOnLGBM: OOF-only distilled weights "
+            f"{label} pass {pass_i}/{max(1, int(passes))} "
+            f"in {time.perf_counter() - t0:.1f}s "
+            f"(mean={float(np.mean(current)):.3f}, "
+            f"p90={float(np.percentile(current, 90)):.3f})."
+        )
+    return current.astype(np.float32), last_oof.astype(np.float32)
+
+
 def _apply_shape_smoothing_policy(
     model: Any,
     feature_names: list[str],
@@ -2139,7 +2467,9 @@ def _augment_with_oof_tree_features(
     select_parts: list[pd.DataFrame] = []
     eval_parts: list[pd.DataFrame] = []
     fold_models: list[Any] = []
+    fold_models_by_fold: list[list[Any]] = []
     fold_tree_names: list[list[str]] = []
+    fold_scales: list[np.ndarray] = []
 
     for fold_i, (tr, va) in enumerate(
         splitter.split(np.zeros(len(y_split)), y_split), start=1
@@ -2229,7 +2559,9 @@ def _augment_with_oof_tree_features(
             random_state=random_state + fold_i * 5021,
         )
         fold_models.extend(models)
+        fold_models_by_fold.append(list(models))
         fold_tree_names.append(tree_names)
+        fold_scales.append(np.asarray(scales, dtype=np.float32))
         va_tree = pd.DataFrame(va_arr, columns=tree_names, dtype=np.float32)
         va_tree.index = X_select_raw.index[va]
         select_parts.append(va_tree)
@@ -2292,16 +2624,77 @@ def _augment_with_oof_tree_features(
         eval_aug,
         {
             "models": fold_models,
+            "models_by_fold": fold_models_by_fold,
             "tree_feature_names_by_fold": fold_tree_names,
+            "tree_feature_scales_by_fold": fold_scales,
+            "tree_feature_names": list(select_tree.columns),
             "oof_tree_features": True,
         },
     )
+
+
+def _compute_oof_bundle_tree_frame(
+    tree_bundle: dict[str, Any],
+    X_raw: pd.DataFrame,
+    selected_tree_names: list[str] | None = None,
+) -> pd.DataFrame:
+    """Compute inference/final-fit tree features from pruning OOF LGBM folds."""
+    models_by_fold = tree_bundle.get("models_by_fold") or []
+    scales_by_fold = tree_bundle.get("tree_feature_scales_by_fold") or []
+    names_by_fold = tree_bundle.get("tree_feature_names_by_fold") or []
+    if not models_by_fold:
+        models = list(tree_bundle.get("models", []))
+        scales = tree_bundle.get("tree_feature_scales")
+        arr, names, _ = _compute_soft_tree_features_ebm(
+            models,
+            np.nan_to_num(
+                X_raw.to_numpy(dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+            ),
+            scales,
+            selected_names=set(selected_tree_names) if selected_tree_names else None,
+        )
+        return pd.DataFrame(arr, columns=names, index=X_raw.index, dtype=np.float32)
+
+    target_names = (
+        [str(c) for c in selected_tree_names]
+        if selected_tree_names
+        else sorted(set().union(*(set(map(str, names)) for names in names_by_fold)))
+    )
+    out = pd.DataFrame(0.0, index=X_raw.index, columns=target_names, dtype=np.float32)
+    counts = pd.Series(0.0, index=target_names, dtype=np.float32)
+    x_raw = np.nan_to_num(
+        X_raw.to_numpy(dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+    )
+    for fold_i, models in enumerate(models_by_fold):
+        scales = scales_by_fold[fold_i] if fold_i < len(scales_by_fold) else None
+        arr, names, _ = _compute_soft_tree_features_ebm(
+            list(models), x_raw, scales, selected_names=set(target_names)
+        )
+        if arr.shape[1] == 0:
+            continue
+        frame = pd.DataFrame(arr, columns=names, index=X_raw.index, dtype=np.float32)
+        allowed = (
+            set(map(str, names_by_fold[fold_i]))
+            if fold_i < len(names_by_fold)
+            else set(frame.columns)
+        )
+        cols = [c for c in target_names if c in frame.columns and c in allowed]
+        if not cols:
+            continue
+        out.loc[:, cols] += frame.loc[:, cols].astype(np.float32)
+        counts.loc[cols] += 1.0
+    for col in target_names:
+        c = float(counts.loc[col])
+        if c > 0.0:
+            out[col] = out[col] / c
+    return out.astype(np.float32)
 
 
 def _build_ebm_fold_cache(
     X: pd.DataFrame,
     y: np.ndarray,
     sample_weight: np.ndarray,
+    groups: np.ndarray | None,
     y_split: np.ndarray,
     splitter: Any,
     classifier: bool,
@@ -2359,6 +2752,7 @@ def _build_ebm_fold_cache(
                 "y_sub": y[sub],
                 "sw_sub": sample_weight[sub],
                 "y_va": y[va],
+                "groups_va": groups[va] if groups is not None else None,
             }
         )
     return fold_cache
@@ -2393,7 +2787,12 @@ def _fit_ebm_spec_on_cache(
             va = fold["va"]
             oof[va] = pred_va
             fold_metrics.append(
-                _metric_pack(fold["y_va"], pred_va, classifier=classifier)
+                _metric_pack(
+                    fold["y_va"],
+                    pred_va,
+                    classifier=classifier,
+                    groups=fold.get("groups_va"),
+                )
             )
             shape_models.append(model)
         except Exception as exc:
@@ -2421,6 +2820,7 @@ def _fit_round_oof(
     X: pd.DataFrame,
     y: np.ndarray,
     sample_weight: np.ndarray,
+    groups: np.ndarray | None,
     classifier: bool,
     random_state: int,
     round_id: int,
@@ -2457,6 +2857,7 @@ def _fit_round_oof(
         X=X,
         y=y,
         sample_weight=sample_weight,
+        groups=groups,
         y_split=y_split,
         splitter=splitter,
         classifier=classifier,
@@ -2533,6 +2934,9 @@ def _fit_final_model(
     oof_probs: np.ndarray,
     metrics: dict[str, Any],
     stage_indices: dict[str, np.ndarray] | None = None,
+    timestamps: Any = None,
+    assets: Any = None,
+    tree_feature_bundle: dict[str, Any] | None = None,
 ) -> EBMOnLGBMModel:
     tprint(
         f"EBMOnLGBM: full-data fit with {len(selected_features)} raw features "
@@ -2556,13 +2960,33 @@ def _fit_final_model(
         hpo_idx = np.arange(n_all, dtype=np.int32)
     if len(fit_idx) == 0:
         fit_idx = np.arange(n_all, dtype=np.int32)
-
-    _, Xs, tree_bundle = _augment_with_tree_features(
-        X_raw.iloc[lgbm_idx].reset_index(drop=True),
-        y[lgbm_idx],
-        X_raw,
-        random_state=random_state + 9901,
+    stability_groups = _stability_group_labels(
+        n_all, timestamps=timestamps, assets=assets
     )
+
+    if tree_feature_bundle and tree_feature_bundle.get("oof_tree_features"):
+        tree_bundle = dict(tree_feature_bundle)
+        selected_tree_names = [
+            str(c) for c in (selected_feature_names or []) if str(c).startswith("lgbm_")
+        ]
+        tree_df = _compute_oof_bundle_tree_frame(
+            tree_bundle,
+            X_raw,
+            selected_tree_names=selected_tree_names
+            or list(tree_bundle.get("tree_feature_names", [])),
+        )
+        Xs = pd.concat([X_raw, tree_df], axis=1)
+        tprint(
+            "EBMOnLGBM: full-data fit reusing pruning-stage OOF LGBM "
+            f"bundle with {tree_df.shape[1]} tree-state features."
+        )
+    else:
+        _, Xs, tree_bundle = _augment_with_tree_features(
+            X_raw.iloc[lgbm_idx].reset_index(drop=True),
+            y[lgbm_idx],
+            X_raw,
+            random_state=random_state + 9901,
+        )
     if selected_feature_names:
         wanted = [str(c) for c in selected_feature_names]
         missing = [c for c in wanted if c not in Xs.columns]
@@ -2597,6 +3021,34 @@ def _fit_final_model(
         HAS_OPTUNA = False
 
     final_spec = _ebm_specs(pruning=False, random_state=random_state)[0]
+    hpo_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
+    weight_transfer_metrics: dict[str, float | str] = {}
+    try:
+        pre_hpo_spec = dict(final_spec)
+        pre_hpo_spec["max_bins"] = min(int(pre_hpo_spec.get("max_bins", 48)), 48)
+        pre_hpo_spec["outer_bags"] = 1
+        hpo_sample_weight, _pre_hpo_oof = _oof_distilled_sample_weights(
+            cls,
+            Xs[final_active_cols],
+            y,
+            sample_weight,
+            fit_idx,
+            pre_hpo_spec,
+            {},
+            mode,
+            random_state=random_state + 22103,
+            passes=2,
+            label="pre-HPO",
+        )
+        weight_transfer_metrics["hpo_weight_source"] = "fit_oof_oof_distilled"
+        weight_transfer_metrics["hpo_weight_mean"] = float(np.mean(hpo_sample_weight))
+        weight_transfer_metrics["hpo_weight_p90"] = float(
+            np.percentile(hpo_sample_weight, 90)
+        )
+    except Exception as exc:
+        hpo_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
+        weight_transfer_metrics["hpo_weight_source"] = "base_weight_fallback"
+        tprint(f"EBMOnLGBM: pre-HPO OOF-only weight distillation skipped ({exc}).")
 
     post_hpo_shape_metrics: dict[str, float] = {}
     shape_smoothing_policy: dict[str, int] = {}
@@ -2618,6 +3070,7 @@ def _fit_final_model(
             f"subsample=5000, folds=3, outer_bags=1, n_jobs={hpo_n_jobs}, "
             "pruner=SuccessiveHalving)."
         )
+        _quiet_interpret_logging()
         from interpret.glassbox import (
             ExplainableBoostingClassifier,
             ExplainableBoostingRegressor,
@@ -2639,7 +3092,11 @@ def _fit_final_model(
         )
         Xs_sub = Xs.iloc[idx_sub].reset_index(drop=True)
         y_sub = y[idx_sub]
-        sw_sub = sample_weight[idx_sub] if sample_weight is not None else np.ones(n_sub)
+        sw_sub = (
+            hpo_sample_weight[idx_sub]
+            if hpo_sample_weight is not None
+            else np.ones(n_sub)
+        )
 
         from sklearn.model_selection import KFold
 
@@ -2652,9 +3109,12 @@ def _fit_final_model(
 
         def objective(trial):
             lr = trial.suggest_float("learning_rate", 0.01, 0.05)
-            max_bins = trial.suggest_int("max_bins", 16, 64)
+            max_bins = trial.suggest_int("max_bins", 16, 48)
             smoothing_rounds = trial.suggest_int("smoothing_rounds", 200, 500)
             max_leaves = trial.suggest_int("max_leaves", 2, 3)
+            reg_alpha = trial.suggest_float("reg_alpha", 0.01, 2.0, log=True)
+            reg_lambda = trial.suggest_float("reg_lambda", 0.5, 10.0, log=True)
+            greedy_ratio = trial.suggest_float("greedy_ratio", 0.1, 20.0, log=True)
             outer_bags = 1
             active_cols = [
                 c
@@ -2680,6 +3140,9 @@ def _fit_final_model(
                 "max_bins": max_bins,
                 "smoothing_rounds": smoothing_rounds,
                 "max_leaves": max_leaves,
+                "reg_alpha": reg_alpha,
+                "reg_lambda": reg_lambda,
+                "greedy_ratio": greedy_ratio,
                 "outer_bags": outer_bags,
                 "min_samples_leaf": max(1, int(leaf_min_pct * n_sub)),
                 "early_stopping_rounds": 30,
@@ -2722,7 +3185,14 @@ def _fit_final_model(
                 )
 
                 metrics = _metric_pack(
-                    y_sub[va], pred, classifier=(mode == "classifier")
+                    y_sub[va],
+                    pred,
+                    classifier=(mode == "classifier"),
+                    groups=(
+                        stability_groups[idx_sub][va]
+                        if stability_groups is not None
+                        else None
+                    ),
                 )
                 fold_metrics.append(metrics)
                 agg = _aggregate_j(fold_metrics)
@@ -2740,8 +3210,6 @@ def _fit_final_model(
             trial.set_user_attr("hpo_objective", float(hpo_objective))
             return float(hpo_objective)
 
-        import logging
-
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         study = optuna.create_study(
             direction="maximize",
@@ -2751,23 +3219,47 @@ def _fit_final_model(
                 min_early_stopping_rate=0,
             ),
         )
+        enqueued_hpo_params: list[dict[str, Any]] = []
+
+        def _enqueue_hpo_trial(params: dict[str, Any], label: str) -> None:
+            sanitized = _sanitize_ebm_hpo_trial_params(params)
+            if not sanitized:
+                return
+            if any(sanitized == existing for existing in enqueued_hpo_params):
+                return
+            study.enqueue_trial(sanitized)
+            enqueued_hpo_params.append(sanitized)
+            if label:
+                tprint(f"  EBMOnLGBM: enqueued HPO warm-start trial ({label}).")
+
+        warm_params, warm_path = _load_ebm_hpo_warm_start()
+        if hpo_trials > 0 and warm_params is not None:
+            _enqueue_hpo_trial(warm_params, str(warm_path))
         if hpo_trials > 0:
-            study.enqueue_trial(
+            _enqueue_hpo_trial(
                 {
                     "learning_rate": 0.05,
                     "max_bins": 32,
                     "smoothing_rounds": 200,
                     "max_leaves": 3,
-                }
+                    "reg_alpha": 0.1,
+                    "reg_lambda": 3.0,
+                    "greedy_ratio": 0.1,
+                },
+                "",
             )
         if hpo_trials > 1:
-            study.enqueue_trial(
+            _enqueue_hpo_trial(
                 {
                     "learning_rate": 0.01,
-                    "max_bins": 64,
+                    "max_bins": 48,
                     "smoothing_rounds": 350,
                     "max_leaves": 3,
-                }
+                    "reg_alpha": 1.0,
+                    "reg_lambda": 6.0,
+                    "greedy_ratio": 1.0,
+                },
+                "",
             )
 
         hpo_state = {
@@ -2784,11 +3276,10 @@ def _fit_final_model(
                 if value > float(hpo_state["best_value"]) + 1e-12:
                     hpo_state["best_value"] = value
                     hpo_state["best_trial"] = int(trial.number)
-                    hpo_state["completed_since_improvement"] = 0
-                else:
-                    hpo_state["completed_since_improvement"] = (
-                        int(hpo_state["completed_since_improvement"]) + 1
-                    )
+            if int(hpo_state["best_trial"]) >= 0:
+                hpo_state["completed_since_improvement"] = max(
+                    0, int(trial.number) - int(hpo_state["best_trial"])
+                )
             n_done = len(study.trials)
             if n_done == 1 or n_done % 5 == 0 or n_done >= hpo_trials:
                 best = study.best_trial if len(study.trials) else None
@@ -2829,7 +3320,7 @@ def _fit_final_model(
                     "leaf_min_pct",
                     _hpo_leaf_min_pct_formula(
                         max_leaves=int(best_spec.get("max_leaves", 3)),
-                        max_bins=int(best_spec.get("max_bins", 64)),
+                        max_bins=int(best_spec.get("max_bins", 48)),
                         smoothing_rounds=int(best_spec.get("smoothing_rounds", 25)),
                         n_features=len(Xs.columns),
                     ),
@@ -2844,6 +3335,13 @@ def _fit_final_model(
             best_spec["interactions"] = 0
             best_spec["n_jobs"] = int(hpo_runtime_state["n_jobs"])
             final_spec = best_spec
+            _save_ebm_hpo_warm_start(
+                best_params=best_spec,
+                best_value=float(best_trial.value),
+                best_trial_number=int(best_trial.number),
+                best_trial_attrs=dict(best_trial.user_attrs),
+                leaf_min_pct=best_leaf_min_pct,
+            )
             tprint(
                 "  EBMOnLGBM: HPO complete. "
                 f"Best trial={best_trial.number}, value={best_trial.value:.4f}, "
@@ -2862,11 +3360,37 @@ def _fit_final_model(
         cls,
         Xs,
         y,
-        sample_weight,
+        hpo_sample_weight,
         final_active_cols,
         final_spec,
         mode,
     )
+
+    try:
+        final_sample_weight, _ = _oof_distilled_sample_weights(
+            cls,
+            Xs[final_active_cols],
+            y,
+            sample_weight,
+            fit_idx,
+            final_spec,
+            shape_smoothing_policy,
+            mode,
+            random_state=random_state + 33107,
+            passes=2,
+            label="final",
+        )
+        weight_transfer_metrics["final_weight_source"] = "fit_oof_oof_distilled"
+        weight_transfer_metrics["final_weight_mean"] = float(
+            np.mean(final_sample_weight)
+        )
+        weight_transfer_metrics["final_weight_p90"] = float(
+            np.percentile(final_sample_weight, 90)
+        )
+    except Exception as exc:
+        final_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
+        weight_transfer_metrics["final_weight_source"] = "base_weight_fallback"
+        tprint(f"EBMOnLGBM: final OOF-only weight distillation skipped ({exc}).")
 
     for i in range(1):
         t0 = time.perf_counter()
@@ -2874,7 +3398,7 @@ def _fit_final_model(
             cls,
             Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True),
             y[fit_idx],
-            sample_weight[fit_idx],
+            final_sample_weight[fit_idx],
             final_spec,
         )
         _apply_shape_smoothing_policy(ebm, final_active_cols, shape_smoothing_policy)
@@ -2886,17 +3410,25 @@ def _fit_final_model(
         tprint(f"  Final EBM fit in {time.perf_counter() - t0:.1f}s")
 
     model.raw_selected_features = list(X_raw.columns)
-    model.tree_models = list(tree_bundle["models"])
-    model.tree_feature_config = dict(tree_bundle["tree_feature_config"])
-    model.tree_feature_scales = tree_bundle["tree_feature_scales"]
-    model.tree_feature_names = list(tree_bundle["tree_feature_names"])
+    model.tree_models = list(tree_bundle.get("models", []))
+    model.tree_feature_config = dict(tree_bundle.get("tree_feature_config", {}))
+    for key in (
+        "oof_tree_features",
+        "models_by_fold",
+        "tree_feature_names_by_fold",
+        "tree_feature_scales_by_fold",
+    ):
+        if key in tree_bundle:
+            model.tree_feature_config[key] = tree_bundle[key]
+    model.tree_feature_scales = tree_bundle.get("tree_feature_scales")
+    model.tree_feature_names = list(tree_bundle.get("tree_feature_names", []))
     model.selected_features = final_active_cols
     model.selected_indices = np.array([], dtype=np.int32)
     model.oof_probs = _final_stage_oof_predictions(
         cls,
         Xs[final_active_cols],
         y,
-        sample_weight,
+        final_sample_weight,
         fit_idx,
         final_spec,
         shape_smoothing_policy,
@@ -2951,6 +3483,83 @@ def _fit_final_model(
         tprint(f"EBMOnLGBM: uncertainty feature generation skipped ({exc}).")
     model.metrics = dict(metrics)
     model.metrics.update(post_hpo_shape_metrics)
+    model.metrics.update(weight_transfer_metrics)
+    for key in (
+        "J_final_oof",
+        "J_Score",
+        "lift30",
+        "stability30",
+        "auc",
+        "brier",
+        "ece",
+        "ic_total",
+        "ic_top30",
+    ):
+        if key in metrics:
+            model.metrics[f"candidate_prune_{key}"] = metrics[key]
+    try:
+        fit_oof_pred = np.asarray(model.oof_probs, dtype=np.float32)[fit_idx]
+        fit_oof_y = np.asarray(y, dtype=np.float32)[fit_idx]
+        fit_oof_mask = np.isfinite(fit_oof_pred) & np.isfinite(fit_oof_y)
+        if int(np.sum(fit_oof_mask)) >= 8:
+            fit_oof_metrics = _metric_pack(
+                fit_oof_y[fit_oof_mask],
+                fit_oof_pred[fit_oof_mask],
+                classifier=(mode == "classifier"),
+                groups=(
+                    stability_groups[fit_idx][fit_oof_mask]
+                    if stability_groups is not None
+                    else None
+                ),
+            )
+            fit_oof_metrics.update(_aggregate_j([fit_oof_metrics]))
+            for key, value in fit_oof_metrics.items():
+                model.metrics[key] = value
+                model.metrics[f"fit_oof_{key}"] = value
+            model.metrics["J_final_oof"] = float(
+                fit_oof_metrics.get("J_final", fit_oof_metrics.get("lift30", 0.0))
+            )
+            model.metrics["J_Score"] = float(model.metrics["J_final_oof"])
+            model.metrics["metrics_assessment_slice"] = "fit_oof"
+            model.metrics["metrics_assessment_n"] = int(np.sum(fit_oof_mask))
+        else:
+            model.metrics["metrics_assessment_slice"] = "candidate_prune_eval"
+            model.metrics["metrics_assessment_n"] = int(np.sum(fit_oof_mask))
+    except Exception as exc:
+        model.metrics["metrics_assessment_slice"] = "candidate_prune_eval"
+        tprint(f"EBMOnLGBM: fit_oof metrics skipped ({exc}).")
+    for key in (
+        "J_final_oof",
+        "lift30",
+        "stability30",
+        "auc",
+        "brier",
+        "ece",
+        "ic_total",
+        "ic_top30",
+    ):
+        before = model.metrics.get(f"candidate_prune_{key}")
+        after = model.metrics.get(key)
+        if before is None or after is None:
+            continue
+        try:
+            before_f = float(before)
+            after_f = float(after)
+        except Exception:
+            continue
+        model.metrics[f"metric_stage_prune_{key}"] = before_f
+        model.metrics[f"metric_stage_fit_oof_{key}"] = after_f
+        model.metrics[f"metric_stage_delta_{key}"] = after_f - before_f
+    if "metric_stage_prune_lift30" in model.metrics:
+        tprint(
+            "EBMOnLGBM: stage metric comparison "
+            f"lift30 {model.metrics['metric_stage_prune_lift30']:.4f} -> "
+            f"{model.metrics['metric_stage_fit_oof_lift30']:.4f}, "
+            f"stability30 {model.metrics.get('metric_stage_prune_stability30', np.nan):.4f} -> "
+            f"{model.metrics.get('metric_stage_fit_oof_stability30', np.nan):.4f}, "
+            f"auc {model.metrics.get('metric_stage_prune_auc', np.nan):.4f} -> "
+            f"{model.metrics.get('metric_stage_fit_oof_auc', np.nan):.4f}."
+        )
     model.metrics["feature_count"] = int(len(final_active_cols))
     model.metrics["n_raw_features_kept"] = int(
         sum(not c.startswith("lgbm_") for c in final_active_cols)
@@ -2975,7 +3584,10 @@ def _fit_final_model(
     try:
         final_fit_pred = model.predict(X_raw)
         final_fit_metrics = _metric_pack(
-            y, final_fit_pred, classifier=(mode == "classifier")
+            y,
+            final_fit_pred,
+            classifier=(mode == "classifier"),
+            groups=stability_groups,
         )
         final_fit_metrics.update(_aggregate_j([final_fit_metrics]))
         for key, value in final_fit_metrics.items():
@@ -3069,9 +3681,24 @@ def train_ebm_on_lgbm_candidate(
     sw_select = sw_race[select_local]
     X_eval = X_race.iloc[eval_local].reset_index(drop=True)
     y_eval = y_race[eval_local]
+    race_groups = _stability_group_labels(
+        len(race_idx),
+        timestamps=(
+            np.asarray(timestamps)[race_idx]
+            if timestamps is not None and len(np.asarray(timestamps)) == n
+            else None
+        ),
+        assets=(
+            np.asarray(assets)[race_idx]
+            if assets is not None and len(np.asarray(assets)) == n
+            else None
+        ),
+    )
+    select_groups = race_groups[select_local] if race_groups is not None else None
+    eval_groups = race_groups[eval_local] if race_groups is not None else None
 
     tprint("EBMOnLGBM: augmenting with tree features BEFORE prescreening...")
-    X_select, X_eval, _ = _augment_with_oof_tree_features(
+    X_select, X_eval, tree_feature_bundle = _augment_with_oof_tree_features(
         X_select,
         y_select,
         X_eval,
@@ -3121,6 +3748,7 @@ def train_ebm_on_lgbm_candidate(
             X_select,
             y_select,
             current_weights,
+            select_groups,
             classifier=classifier,
             random_state=random_state,
             round_id=round_id,
@@ -3270,7 +3898,12 @@ def train_ebm_on_lgbm_candidate(
     eval_pred = np.mean(np.vstack(eval_preds), axis=0).astype(np.float32)
     oof_race = np.full(len(y_race), np.nan, dtype=np.float32)
     oof_race[eval_local] = eval_pred
-    metrics = _metric_pack(y_eval, eval_pred, classifier=classifier)
+    metrics = _metric_pack(
+        y_eval,
+        eval_pred,
+        classifier=classifier,
+        groups=eval_groups,
+    )
     metrics.update(_aggregate_j([metrics]))
     metrics["J_final_oof"] = float(metrics.get("J_final", 0.0))
     metrics["J_Score"] = float(metrics["J_final_oof"])
@@ -3330,6 +3963,7 @@ def train_ebm_on_lgbm_candidate(
         "stage_indices": {
             k: np.asarray(v, dtype=np.int32) for k, v in stage_indices.items()
         },
+        "tree_feature_bundle": tree_feature_bundle,
         "mode": mode,
     }
 
@@ -3346,6 +3980,9 @@ def fit_ebm_on_lgbm_full_model(
     pruning_history: Optional[list[dict[str, Any]]] = None,
     selected_feature_names: Optional[list[str]] = None,
     stage_indices: Optional[dict[str, np.ndarray]] = None,
+    timestamps: Any = None,
+    assets: Any = None,
+    tree_feature_bundle: Optional[dict[str, Any]] = None,
 ) -> Optional[EBMOnLGBMModel]:
     classifier = mode == "classifier"
     ebm_clf, ebm_reg = _load_ebm_classes()
@@ -3391,4 +4028,7 @@ def fit_ebm_on_lgbm_full_model(
         ),
         metrics or {},
         stage_indices=stage_indices,
+        timestamps=timestamps,
+        assets=assets,
+        tree_feature_bundle=tree_feature_bundle,
     )

@@ -41,11 +41,11 @@
   },
   "direction_report": {
     "direction_mean_u": {
-      "fade": -0.0038628722853525574,
-      "follow": 0.005835173310974976
+      "fade": -0.003862872647201573,
+      "follow": 0.005835173811318476
     },
     "best_direction_overall": "follow",
-    "direction_gap": 0.009698045596327533
+    "direction_gap": 0.009698046458520048
   },
   "verdict": {
     "policy_profitable_at_any_offset": true,

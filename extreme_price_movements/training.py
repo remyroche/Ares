@@ -2153,6 +2153,9 @@ def _fit_direct_extratrees_base_model(
             pruning_history=result.get("pruning_history", []),
             selected_feature_names=result.get("selected_feature_names"),
             stage_indices=result.get("stage_indices"),
+            timestamps=groups_arr,
+            assets=symbols_arr,
+            tree_feature_bundle=result.get("tree_feature_bundle"),
         )
     if cand_model is None:
         raise RuntimeError(
@@ -2190,6 +2193,38 @@ def _fit_direct_extratrees_base_model(
         )
     except Exception:
         cand_brier = float("nan")
+    if final_cand_metrics.get("metrics_assessment_slice") == "fit_oof":
+        cand_auc = float(final_cand_metrics.get("auc", cand_auc))
+        cand_brier = float(final_cand_metrics.get("brier", cand_brier))
+        cand_stability30 = float(
+            final_cand_metrics.get("stability30", cand_stability30)
+        )
+        _assess_idx = np.asarray(
+            (result.get("stage_indices", {}) or {}).get("fit_oof", []), dtype=np.int32
+        )
+        _assess_idx = _assess_idx[
+            (_assess_idx >= 0)
+            & (_assess_idx < len(cand_oof_final))
+            & (_assess_idx < len(returns_eval_full))
+        ]
+        _assess_mask = np.isfinite(cand_oof_final[_assess_idx]) & np.isfinite(
+            returns_eval_full[_assess_idx]
+        )
+        _assess_idx = _assess_idx[_assess_mask]
+        if len(_assess_idx) >= 8:
+            _pred_assess = cand_oof_final[_assess_idx]
+            _ret_assess = returns_eval_full[_assess_idx]
+            _n10 = max(1, int(np.ceil(0.10 * len(_assess_idx))))
+            _n30 = max(1, int(np.ceil(0.30 * len(_assess_idx))))
+            _top10 = np.argsort(_pred_assess)[-_n10:]
+            _top30 = np.argsort(_pred_assess)[-_n30:]
+            cand_mean_return10_gross = float(np.nanmean(_ret_assess[_top10]))
+            cand_mean_return30_gross = float(np.nanmean(_ret_assess[_top30]))
+            cand_rank_return_metrics = {
+                **cand_rank_return_metrics,
+                "mean_return10_gross": cand_mean_return10_gross,
+                "mean_return30_gross": cand_mean_return30_gross,
+            }
 
     training_diagnostics = {
         "n_total": int(len(y_hard)),
@@ -2242,6 +2277,11 @@ def _fit_direct_extratrees_base_model(
         }
     }
     _dm_unc = race.detailed_metrics[winning_candidate]
+    for _metric_key, _metric_val in final_cand_metrics.items():
+        if _metric_key.startswith("metric_stage_") or _metric_key.startswith(
+            "metrics_assessment_"
+        ):
+            _dm_unc[_metric_key] = _metric_val
     for _attr, _key in (
         ("oof_probs_raw_ebm", "oof_prob_ebm_raw"),
         ("oof_probs_en", "oof_prob_en"),
@@ -3098,6 +3138,9 @@ def _fit_direct_extratrees_base_model(
                             pruning_history=result.get("pruning_history", []),
                             selected_feature_names=result.get("selected_feature_names"),
                             stage_indices=result.get("stage_indices"),
+                            timestamps=groups_arr,
+                            assets=symbols_arr,
+                            tree_feature_bundle=result.get("tree_feature_bundle"),
                         )
                     tprint(f"Model Race [{kind_name}]: full-data fit complete.")
                     final_cand_metrics = dict(cand_metrics)
@@ -3154,6 +3197,9 @@ def _fit_direct_extratrees_base_model(
                     )
                 except Exception:
                     cand_brier = float("nan")
+                if final_cand_metrics.get("metrics_assessment_slice") == "fit_oof":
+                    cand_auc = float(final_cand_metrics.get("auc", cand_auc))
+                    cand_brier = float(final_cand_metrics.get("brier", cand_brier))
                 race.best_model_name = winning_candidate
                 race.metrics = dict(candidate_scores)
                 race.detailed_metrics[winning_candidate] = {
@@ -3192,6 +3238,11 @@ def _fit_direct_extratrees_base_model(
                     "oof_probs": _cand_oof_final.copy(),
                 }
                 _dm_unc = race.detailed_metrics[winning_candidate]
+                for _metric_key, _metric_val in final_cand_metrics.items():
+                    if _metric_key.startswith(
+                        "metric_stage_"
+                    ) or _metric_key.startswith("metrics_assessment_"):
+                        _dm_unc[_metric_key] = _metric_val
                 for _attr, _key in (
                     ("oof_probs_raw_ebm", "oof_prob_ebm_raw"),
                     ("oof_probs_en", "oof_prob_en"),

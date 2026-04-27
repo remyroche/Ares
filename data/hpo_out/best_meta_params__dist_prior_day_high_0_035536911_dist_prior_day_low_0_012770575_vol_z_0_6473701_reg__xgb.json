@@ -4,16 +4,16 @@
   "best_params": {
     "objective": "reg:pseudohubererror",
     "n_estimators": 900,
-    "max_depth": 6,
-    "learning_rate": 0.02555427746320395,
-    "subsample": 0.6511304605271568,
-    "colsample_bytree": 0.6571116976306045,
-    "colsample_bynode": 0.6546934049765678,
-    "gamma": 0.5094699302420621,
-    "reg_alpha": 0.052125384929962756,
-    "reg_lambda": 1.1190857693171468,
-    "min_child_weight": 7
+    "max_depth": 5,
+    "learning_rate": 0.015924769670080066,
+    "subsample": 0.8604262147244843,
+    "colsample_bytree": 0.6261894837262794,
+    "colsample_bynode": 0.7369657841986784,
+    "gamma": 0.8670151319373943,
+    "reg_alpha": 0.05159282074935397,
+    "reg_lambda": 2.0661994848174867,
+    "min_child_weight": 37
   },
-  "n_trials_completed": 150,
-  "best_trial_number": 144
+  "n_trials_completed": 137,
+  "best_trial_number": 75
 }

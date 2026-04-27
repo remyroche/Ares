@@ -107,19 +107,28 @@ def _build_mask_for_mode(
     z_bars = max(int(round(z_hours * bph)), 1)
     duration_bars = max(int(round(duration_hours * bph)), 1)
     tprint("candidate_selector: calling _compute_z_cache...")
-    zc = _compute_z_cache(
-        high=high_arr,
-        low=low_arr,
-        close=close_arr,
-        ret_1=ret_1,
-        vol_g=vol_g,
-        asset_groups=asset_groups,
-        z=z_bars,
-        bph=bph,
-        volume=volume_arr,
-        precomputed=feats_1d,
-    )
-    tprint("candidate_selector: _compute_z_cache complete.")
+    if not hasattr(_build_mask_for_mode, "_zc_cache"):
+        _build_mask_for_mode._zc_cache = {}
+    _zc_cache = _build_mask_for_mode._zc_cache
+    _zc_key = int(z_bars)
+    if _zc_key in _zc_cache:
+        zc = _zc_cache[_zc_key]
+        tprint("candidate_selector: _compute_z_cache complete (cached).")
+    else:
+        zc = _compute_z_cache(
+            high=high_arr,
+            low=low_arr,
+            close=close_arr,
+            ret_1=ret_1,
+            vol_g=vol_g,
+            asset_groups=asset_groups,
+            z=z_bars,
+            bph=bph,
+            volume=volume_arr,
+            precomputed=feats_1d,
+        )
+        _zc_cache[_zc_key] = zc
+        tprint("candidate_selector: _compute_z_cache complete.")
 
     name = str(mask_cfg.get("name", "") or "")
     feature_base = str(mask_cfg.get("feature_base", "") or "")

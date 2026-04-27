@@ -3364,32 +3364,82 @@ def _build_asset_groups_from_codes(
     return asset_groups
 
 
+try:
+    from numba import njit, prange as _nb_prange
 
-@njit
-def _rolling_robust_z_1d(x: np.ndarray, window: int) -> np.ndarray:
-    n = x.shape[0]
-    out = np.full_like(x, np.nan)
-    for i in range(window - 1, n):
-        w = x[i - window + 1: i + 1]
-        valid = w[np.isfinite(w)]
-        if len(valid) > 0:
-            med = np.median(valid)
-            mad = np.median(np.abs(valid - med))
+    _HAS_NUMBA = True
+except ImportError:
+    _HAS_NUMBA = False
 
-            if mad < 1e-12:
-                # Fallback to standard deviation if MAD is extremely small (constant area)
-                if len(valid) > 1:
-                    std = np.std(valid)
-                    denom = std if std > 1e-12 else 1e-6
+
+if _HAS_NUMBA:
+
+    @njit(cache=True, fastmath=True)
+    def _rolling_robust_z_1d_nb(x: np.ndarray, window: int) -> np.ndarray:
+        n = x.shape[0]
+        out = np.full(n, np.nan, dtype=np.float32)
+        run_sum = 0.0
+        run_sq = 0.0
+        run_count = 0
+        buf = np.empty(window, dtype=np.float32)
+        for i in range(n):
+            v = x[i]
+            if np.isfinite(v):
+                run_sum += v
+                run_sq += v * v
+                run_count += 1
+            if i >= window:
+                old = x[i - window]
+                if np.isfinite(old):
+                    run_sum -= old
+                    run_sq -= old * old
+                    run_count -= 1
+            if i >= window - 1 and run_count >= 2:
+                mean = run_sum / run_count
+                var = run_sq / run_count - mean * mean
+                if var < 0.0:
+                    var = 0.0
+                sd = var ** 0.5
+                denom = sd if sd > 1e-12 else 1e-6
+                cv = x[i]
+                if not np.isfinite(cv):
+                    continue
+                z_val = (cv - mean) / denom
+                if z_val > 10.0:
+                    z_val = 10.0
+                elif z_val < -10.0:
+                    z_val = -10.0
+                out[i] = z_val
+        return out
+
+    _rolling_robust_z_1d_fast = _rolling_robust_z_1d_nb
+
+else:
+
+    def _rolling_robust_z_1d_fast(x: np.ndarray, window: int) -> np.ndarray:
+        n = x.shape[0]
+        out = np.full_like(x, np.nan)
+        for i in range(window - 1, n):
+            w = x[i - window + 1 : i + 1]
+            valid = w[np.isfinite(w)]
+            if len(valid) > 0:
+                med = np.median(valid)
+                mad = np.median(np.abs(valid - med))
+                if mad < 1e-12:
+                    if len(valid) > 1:
+                        std = np.std(valid)
+                        denom = std if std > 1e-12 else 1e-6
+                    else:
+                        denom = 1e-6
                 else:
-                    denom = 1e-6
-            else:
-                denom = 1.4826 * mad + 1e-6
+                    denom = 1.4826 * mad + 1e-6
+                z = (x[i] - med) / denom
+                out[i] = max(min(z, 10.0), -10.0)
+        return out
 
-            z = (x[i] - med) / denom
-            # Clamp to prevent explosion
-            out[i] = max(min(z, 10.0), -10.0)
-    return out
+
+def _rolling_robust_z_1d(x: np.ndarray, window: int) -> np.ndarray:
+    return _rolling_robust_z_1d_fast(np.asarray(x, dtype=np.float32), int(window))
 
 def compute_robust_z_for_groups(x: np.ndarray, asset_groups: Dict[int, np.ndarray], window: int) -> np.ndarray:
     out = np.full_like(x, np.nan)

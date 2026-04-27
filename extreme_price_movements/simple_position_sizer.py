@@ -34,6 +34,7 @@ try:
 except ImportError:
     LGBMRegressor = None  # type: ignore[assignment, misc]
 
+from extreme_price_movements.meta_training.trade_filtering import select_top_rank_mask
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.offline_optimisers.params_store import (
     load_inference_candidate_mask_params_per_bucket,
@@ -56,6 +57,102 @@ from extreme_price_movements.run_ridge_sizer import (
 from extreme_price_movements.src_utils_tprint import tprint
 
 logger = logging.getLogger(__name__)
+
+
+def _rolling_mad(values: np.ndarray, window: int) -> np.ndarray:
+    """Causal rolling median absolute deviation."""
+    arr = np.asarray(values, dtype=np.float32)
+    out = np.full(len(arr), np.nan, dtype=np.float32)
+    window = max(1, int(window))
+    for i in range(len(arr)):
+        start = max(0, i + 1 - window)
+        sample = arr[start : i + 1]
+        sample = sample[np.isfinite(sample)]
+        if sample.size == 0:
+            continue
+        med = float(np.median(sample))
+        out[i] = float(np.median(np.abs(sample - med)))
+    return out
+
+
+def _compute_true_range_atr_pct(
+    df: pd.DataFrame,
+    *,
+    horizon: int,
+    symbol_col: str = "symbol",
+) -> np.ndarray:
+    """Compute ATR(4*h)/close in row order, grouped by symbol when available."""
+    window = max(1, int(4 * max(1, horizon)))
+    if not {"high", "low", "close"}.issubset(df.columns):
+        return np.full(len(df), np.nan, dtype=np.float32)
+
+    work = df[["high", "low", "close"]].copy()
+    work["_pos"] = np.arange(len(work), dtype=np.int32)
+    if symbol_col in df.columns:
+        work[symbol_col] = df[symbol_col].values
+    groups = (
+        work.groupby(symbol_col, sort=False)
+        if symbol_col in work.columns
+        else [(None, work)]
+    )
+    atr_pct = np.full(len(df), np.nan, dtype=np.float32)
+    for _, grp in groups:
+        idx = grp["_pos"].to_numpy(dtype=np.int32)
+        high = pd.to_numeric(grp["high"], errors="coerce").astype(float)
+        low = pd.to_numeric(grp["low"], errors="coerce").astype(float)
+        close = pd.to_numeric(grp["close"], errors="coerce").astype(float)
+        prev_close = close.shift(1)
+        tr = pd.concat(
+            [(high - low).abs(), (high - prev_close).abs(), (low - prev_close).abs()],
+            axis=1,
+        ).max(axis=1)
+        atr = tr.rolling(window=window, min_periods=max(1, window // 2)).mean()
+        atr_pct[idx] = (atr / close.replace(0.0, np.nan)).to_numpy(dtype=np.float32)
+    return atr_pct
+
+
+def _build_blended_sizer_target(
+    df: pd.DataFrame,
+    *,
+    horizon: int,
+    alpha: float = 0.7,
+    symbol_col: str = "symbol",
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[str]]:
+    """Build blended close/Kalman forward-return target normalized by ATR."""
+    if not {"close", "kalman_price"}.issubset(df.columns):
+        return None, None, None
+
+    h = max(1, int(horizon))
+    work = df[["close", "kalman_price"]].copy()
+    work["_pos"] = np.arange(len(work), dtype=np.int32)
+    if symbol_col in df.columns:
+        work[symbol_col] = df[symbol_col].values
+    groups = (
+        work.groupby(symbol_col, sort=False)
+        if symbol_col in work.columns
+        else [(None, work)]
+    )
+    y_raw = np.full(len(df), np.nan, dtype=np.float32)
+
+    for _, grp in groups:
+        idx = grp["_pos"].to_numpy(dtype=np.int32)
+        close = pd.to_numeric(grp["close"], errors="coerce").astype(float)
+        kalman = pd.to_numeric(grp["kalman_price"], errors="coerce").astype(float)
+        log_close = np.log(close.where(close > 0.0))
+        r_close_fwd = log_close.shift(-h) - log_close
+        r_kalman_fwd = kalman.shift(-h) - kalman
+        y_raw[idx] = (
+            float(alpha) * r_close_fwd + (1.0 - float(alpha)) * r_kalman_fwd
+        ).to_numpy(dtype=np.float32)
+
+    atr_pct = _compute_true_range_atr_pct(df, horizon=h, symbol_col=symbol_col)
+    y = y_raw / (atr_pct + 1e-8)
+    y = np.clip(y, -5.0, 5.0).astype(np.float32)
+    y_final = (0.65 * np.arcsinh(y) + 0.35 * y).astype(np.float32)
+    valid = np.isfinite(y_final)
+    if valid.mean() < 0.5:
+        return None, None, None
+    return y_final, atr_pct.astype(np.float32), f"atr_{4 * h}_over_close"
 
 
 def _infer_side_label(
@@ -2504,6 +2601,7 @@ def run_simple_position_sizer(
     config_feature_keys: Optional[List[str]] = None,
     y_atr_target: Optional[np.ndarray] = None,
     atr_vals: Optional[np.ndarray] = None,
+    target_horizon: int = 1,
 ) -> Dict[str, Any]:
     """
     Main orchestrator for the simple position sizer diagnostic framework.
@@ -2992,14 +3090,33 @@ def run_simple_position_sizer(
         )
 
         if ridge_oof_available:
-            ridge_resid = y_model_target - ridge_oof_preds
-            ridge_resid_mean = float(np.mean(ridge_resid))
-            ridge_resid_std = float(np.std(ridge_resid)) + 1e-6
-            y_resid_target = (ridge_resid - ridge_resid_mean) / ridge_resid_std
+            ridge_resid = np.asarray(y_raw_net_return, dtype=np.float32) - np.asarray(
+                ridge_oof_preds, dtype=np.float32
+            )
+            resid_atr = ridge_resid / (_atr_safe + 1e-8)
+            resid_mad = _rolling_mad(
+                resid_atr,
+                window=max(1, int(3 * max(1, target_horizon))),
+            )
+            resid_z = resid_atr / (resid_mad + 1e-8)
+            resid_z = np.clip(resid_z, -5.0, 5.0).astype(np.float32)
+            if not np.isfinite(resid_z).all():
+                finite_resid_z = resid_z[np.isfinite(resid_z)]
+                fill_resid_z = (
+                    float(np.nanmedian(finite_resid_z)) if finite_resid_z.size else 0.0
+                )
+                resid_z = np.where(np.isfinite(resid_z), resid_z, fill_resid_z).astype(
+                    np.float32
+                )
+            y_resid_target = (0.7 * np.arcsinh(resid_z) + 0.3 * resid_z).astype(
+                np.float32
+            )
+            ridge_resid_mean = float(np.nanmean(ridge_resid))
+            ridge_resid_std = float(np.nanstd(ridge_resid)) + 1e-6
             tprint(
                 f"  Residual target: resid_mean={ridge_resid_mean:.6f}, "
                 f"resid_std={ridge_resid_std:.6f}, "
-                f"target_mean={float(np.mean(y_resid_target)):.6f}"
+                f"target_mean={float(np.nanmean(y_resid_target)):.6f}"
             )
         else:
             y_resid_target = y_model_target
@@ -5392,6 +5509,89 @@ def run_simple_position_sizer_from_artifacts(
             drop=True
         )
 
+        _base_prob_col = next(
+            (
+                c
+                for c in [
+                    "oof_prob",
+                    "clf",
+                    "pred",
+                    "oof_pred",
+                    "base_h4",
+                    "base_h2",
+                ]
+                if c in active_df.columns
+            ),
+            None,
+        )
+        if _base_prob_col is not None and len(active_df) == len(trade_outcomes):
+            _asset_col = (
+                "symbol"
+                if "symbol" in active_df.columns
+                else "__symbol__"
+                if "__symbol__" in active_df.columns
+                else None
+            )
+            _ts_col = (
+                "timestamp"
+                if "timestamp" in active_df.columns
+                else "__ts__"
+                if "__ts__" in active_df.columns
+                else None
+            )
+            _side_ret = np.asarray(trade_outcomes["return"].values, dtype=np.float32)
+            _y_bin = (_side_ret > 0).astype(np.float32)
+            _mask_res = select_top_rank_mask(
+                base_prob=np.asarray(
+                    active_df[_base_prob_col].values, dtype=np.float32
+                ),
+                strategy_mask=np.ones(len(active_df), dtype=bool),
+                symbols=(
+                    np.asarray(active_df[_asset_col].astype(str).values)
+                    if _asset_col is not None
+                    else np.asarray(np.repeat("all", len(active_df)))
+                ),
+                timestamps=(
+                    pd.to_datetime(active_df[_ts_col], errors="coerce")
+                    if _ts_col is not None
+                    else None
+                ),
+                outcomes=_y_bin,
+                mfe=(
+                    np.asarray(trade_outcomes["mfe_ret"].values, dtype=np.float32)
+                    if "mfe_ret" in trade_outcomes.columns
+                    else None
+                ),
+                mae=(
+                    np.asarray(trade_outcomes["mae_ret"].values, dtype=np.float32)
+                    if "mae_ret" in trade_outcomes.columns
+                    else None
+                ),
+                t_mfe=(
+                    np.asarray(trade_outcomes["t_mfe"].values, dtype=np.float32)
+                    if "t_mfe" in trade_outcomes.columns
+                    else None
+                ),
+                t_mae=(
+                    np.asarray(trade_outcomes["t_mae"].values, dtype=np.float32)
+                    if "t_mae" in trade_outcomes.columns
+                    else None
+                ),
+                tp=(
+                    np.asarray(active_df["__barrier_pct__"].values, dtype=np.float32)
+                    if "__barrier_pct__" in active_df.columns
+                    else np.full(len(active_df), 0.02, dtype=np.float32)
+                ),
+            )
+            _rank_mask = np.asarray(_mask_res.mask, dtype=bool)
+            if int(np.sum(_rank_mask)) > 50:
+                active_df = active_df.loc[_rank_mask].reset_index(drop=True)
+                trade_outcomes = trade_outcomes.loc[_rank_mask].reset_index(drop=True)
+                logger.info(
+                    f"Applied top-rank trade mask in sizer: topx={_mask_res.chosen_topx}% "
+                    f"coverage={_mask_res.coverage:.3f} kept={int(np.sum(_rank_mask))}/{len(_rank_mask)}"
+                )
+
         # Identify columns to use as heads.
         # STRICT RULE: never use realized-outcome columns as predictive heads — they are
         # hindsight by construction (MFE, MAE, bars_to_mfe, policy returns, labels).
@@ -5567,17 +5767,31 @@ def run_simple_position_sizer_from_artifacts(
             else np.zeros(len(y_raw_net_return))
         )
 
-        y_atr_target = None
-        atr_vals = None
-        atr_col = None
-        for _atr_c in ("atr_12_15m", "atr_pct"):
-            if _atr_c in trade_outcomes.columns:
-                atr_col = _atr_c
-                break
-            if _atr_c in active_df.columns:
-                atr_col = _atr_c
-                break
-        if atr_col is not None:
+        try:
+            target_horizon = max(1, int(float(strategy.get("source_horizon", 1))))
+        except (TypeError, ValueError):
+            target_horizon = 1
+
+        y_atr_target, atr_vals, atr_col = _build_blended_sizer_target(
+            active_df,
+            horizon=target_horizon,
+        )
+        if y_atr_target is not None:
+            logger.info(
+                f"Blended sizer target via close/kalman_price: horizon={target_horizon}, "
+                f"valid={np.isfinite(y_atr_target).mean():.1%}, "
+                f"target std={float(np.nanstd(y_atr_target)):.6f}"
+            )
+
+        if y_atr_target is None:
+            for _atr_c in ("atr_12_15m", "atr_pct"):
+                if _atr_c in trade_outcomes.columns:
+                    atr_col = _atr_c
+                    break
+                if _atr_c in active_df.columns:
+                    atr_col = _atr_c
+                    break
+        if y_atr_target is None and atr_col is not None:
             _atr_raw = (
                 trade_outcomes[atr_col].values
                 if atr_col in trade_outcomes.columns
@@ -5620,6 +5834,7 @@ def run_simple_position_sizer_from_artifacts(
             use_lgbm_head_sizer=use_lgbm_head_sizer,
             y_atr_target=y_atr_target,
             atr_vals=atr_vals,
+            target_horizon=target_horizon,
         )
 
         res["_strategy_meta_"] = {

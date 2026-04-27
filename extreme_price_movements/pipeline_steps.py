@@ -17,9 +17,6 @@ from extreme_price_movements.config import (
     HELPER_BASE_FEATURES,
     POSITION_SIZER_V2_FEATURE_CONFIG,
 )
-
-
-
 from extreme_price_movements.data_store import (
     _atomic_write_parquet,
     _ensure_feature_frame_index,
@@ -55,6 +52,7 @@ from extreme_price_movements.metrics import MetricsLogger
 from extreme_price_movements.model_loader import load_alpha_models
 from extreme_price_movements.offline_optimisers.params_store import (
     apply_offline_optimizer_best_params,
+    load_inference_candidate_mask_params_per_bucket,
 )
 from extreme_price_movements.pnl import CostModel, trade_return_net
 from extreme_price_movements.pnl_asserts import assert_pos_w, assert_units
@@ -66,6 +64,7 @@ from extreme_price_movements.reports.bucket_report import (
     report_optimise,
     report_ridge_sizer,
 )
+
 try:
     from extreme_price_movements.reports.report_generator import (
         generate_backtest_report,
@@ -73,6 +72,7 @@ try:
         generate_training_report,
     )
 except ModuleNotFoundError:
+
     def generate_backtest_report(*args, **kwargs):
         raise ModuleNotFoundError(
             "extreme_price_movements.reports.report_generator is not available"
@@ -87,6 +87,11 @@ except ModuleNotFoundError:
         raise ModuleNotFoundError(
             "extreme_price_movements.reports.report_generator is not available"
         )
+
+
+from extreme_price_movements.feature_selection_extreme_events import (
+    mdi_feature_selection_v3,
+)
 from extreme_price_movements.ridge_position_sizer import (
     RidgePositionSizer,
     run_ridge_position_sizer_step,
@@ -100,10 +105,9 @@ from extreme_price_movements.telemetry.tprint_hooks import (
     emit_bucket_summary,
     emit_run_header,
 )
-from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 from extreme_price_movements.training import (  # generate_spike_anatomy_history,
-    _build_base_regression_target,
     _build_base_regression_sample_weight,
+    _build_base_regression_target,
     _cap_selected_features,
     _subsample_indices_time_balanced,
     generate_label_datasets,
@@ -111,9 +115,9 @@ from extreme_price_movements.training import (  # generate_spike_anatomy_history
     train_models_from_artifacts,
 )
 from extreme_price_movements.training_utils import (
+    build_wide_tight_pair_features,
     get_base_feature_keys,
     get_meta_feature_keys,
-    build_wide_tight_pair_features,
 )
 from extreme_price_movements.universe import (
     apply_hardcoded_universe_exclusions,
@@ -389,6 +393,11 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
         "oof_top2_gap",
         "oof_sign_agreement_frac",
         "oof_rank_among_candidates",
+        "oof_u_hat",
+        "oof_log_mae_q70_hat",
+        "oof_log_mfe_hat",
+        "oof_log_dur_hat",
+        "oof_asym_hat",
         "edge_pred",
         "downside_pred",
         "edge_minus_downside",
@@ -485,7 +494,10 @@ def _labeling_feature_keys(cfg) -> set[str]:
         from extreme_price_movements.strategy_registry import get_strategies
 
         selected_strategies = cfg.get("strategies", [])
-        if not isinstance(selected_strategies, (list, tuple)) or not selected_strategies:
+        if (
+            not isinstance(selected_strategies, (list, tuple))
+            or not selected_strategies
+        ):
             selected_strategies = get_strategies(cfg)
         tprint(
             f"Label feature key scope: using {len(selected_strategies)} selected strategies"
@@ -523,7 +535,11 @@ def _align_features_to_panel(
 
         # Fast path: skip reindex if columns and index match exactly
         if list(df.columns) == list(symbols) and df.index.equals(close.index):
-            out[k] = df.astype(np.float32, copy=False) if df.dtypes.iloc[0] != np.float32 else df
+            out[k] = (
+                df.astype(np.float32, copy=False)
+                if df.dtypes.iloc[0] != np.float32
+                else df
+            )
         else:
             out[k] = df.reindex(index=close.index, columns=symbols).astype(
                 np.float32, copy=False
@@ -1400,6 +1416,40 @@ def _local_store_symbols(store) -> list[str]:
 
 def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizons=None):
     cfg = apply_offline_optimizer_best_params(dict(cfg))
+
+    from extreme_price_movements.offline_optimisers.params_store import (
+        REPORTS_DIR as _OPT_REPORTS_DIR,
+    )
+
+    _bucket_csv = (
+        _OPT_REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv"
+    )
+    if _bucket_csv.exists():
+        import json as _json
+
+        _bdf = pd.read_csv(_bucket_csv)
+        if not _bdf.empty and "strategy_id" in _bdf.columns:
+            _strategies = []
+            for _, _row in _bdf.iterrows():
+                _s = {
+                    "strategy_id": str(_row["strategy_id"]),
+                    "trade_side": str(_row.get("trade_side", "long")).lower(),
+                    "base_event_trigger": str(_row.get("base_event_trigger", "")),
+                    "source_horizon": int(_row.get("source_horizon", 5)),
+                }
+                _mpj = _row.get("mask_params_json")
+                if isinstance(_mpj, str) and _mpj.strip().startswith("{"):
+                    try:
+                        _s["mask_params"] = _json.loads(_mpj)
+                    except Exception:
+                        pass
+                _strategies.append(_s)
+            cfg["strategies"] = _strategies
+            tprint(
+                f"Labels: loaded {len(_strategies)} strategies from "
+                f"inference_candidate_mask_best_params_per_bucket.csv"
+            )
+
     run_id = pd.Timestamp(ts_sig).strftime("%Y%m%d_%H%M%S")
     tprint("STEP: LABEL GENERATION START")
     _labels_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "labels")
@@ -1496,7 +1546,9 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     lookback_days = max(90, int(cfg["fetch_years"] * 365))
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
     with Timer("Data Load"):
+
         def load_sym(s):
             df = store.load(s)
             if not df.empty:
@@ -1568,7 +1620,10 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
 
     # Keep feature-key selection consistent with the shared cache/feature generation logic.
     label_feature_keys = _labeling_feature_keys(cfg)
-    feats = load_features_for_stage_or_all(cfg, ts_sig, cfg["data_root"],
+    feats = load_features_for_stage_or_all(
+        cfg,
+        ts_sig,
+        cfg["data_root"],
         feature_keys=sorted(label_feature_keys),
         symbols=train_syms,
     )
@@ -1733,7 +1788,9 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         ):
             with open(_manifest_path, "r", encoding="utf-8") as _mf:
                 _manifest_payload = json.load(_mf)
-            tprint(f"Preserving existing incremental labels manifest at {_manifest_path}")
+            tprint(
+                f"Preserving existing incremental labels manifest at {_manifest_path}"
+            )
         else:
             with open(_manifest_path, "w", encoding="utf-8") as _mf:
                 json.dump(_manifest_payload, _mf, indent=2, sort_keys=True)
@@ -1941,9 +1998,11 @@ def _consolidate_layer_oof_from_disk(
                 ("oof_sigma_robust", "robust_sigma"),
             ):
                 if sigma_col in df.columns:
-                    mini[_sigma_column_name(model_key, suffix)] = pd.to_numeric(
-                        df[sigma_col], errors="coerce"
-                    ).astype(np.float32).values[: len(mini)]
+                    mini[_sigma_column_name(model_key, suffix)] = (
+                        pd.to_numeric(df[sigma_col], errors="coerce")
+                        .astype(np.float32)
+                        .values[: len(mini)]
+                    )
             merged = (
                 mini
                 if merged.empty
@@ -1976,10 +2035,18 @@ def _consolidate_layer_oof_from_disk(
                 merged[wide_col].values,
                 merged[tight_col].values,
                 base_name=root,
-                sigma_wide=merged[sigma_wide_col].values if sigma_wide_col in merged.columns else None,
-                sigma_tight=merged[sigma_tight_col].values if sigma_tight_col in merged.columns else None,
-                robust_sigma_wide=merged[robust_sigma_wide_col].values if robust_sigma_wide_col in merged.columns else None,
-                robust_sigma_tight=merged[robust_sigma_tight_col].values if robust_sigma_tight_col in merged.columns else None,
+                sigma_wide=merged[sigma_wide_col].values
+                if sigma_wide_col in merged.columns
+                else None,
+                sigma_tight=merged[sigma_tight_col].values
+                if sigma_tight_col in merged.columns
+                else None,
+                robust_sigma_wide=merged[robust_sigma_wide_col].values
+                if robust_sigma_wide_col in merged.columns
+                else None,
+                robust_sigma_tight=merged[robust_sigma_tight_col].values
+                if robust_sigma_tight_col in merged.columns
+                else None,
             )
             pair_block = pd.DataFrame(pair_features, index=merged.index)
             merged = pd.concat([merged, pair_block], axis=1, copy=False)
@@ -2031,6 +2098,11 @@ def run_training_step(
         s["strategy_id"]: strategy_runtime_horizons(s, cfg) for s in strategies
     }
 
+    _base_max_strats = int(cfg.get("base_max_strategy_ids", 0) or 0)
+    if _base_max_strats > 0 and len(strategies) > _base_max_strats:
+        strategies = strategies[:_base_max_strats]
+        tprint(f"Training step: limiting to first {_base_max_strats} strategies")
+
     found_count = 0
     dataset_cache: dict[str, pd.DataFrame] = {}
 
@@ -2043,6 +2115,20 @@ def run_training_step(
         df_local = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         df_local = _filter_artifact_by_stage_view(df_local, cfg)
         if isinstance(df_local, pd.DataFrame) and not df_local.empty:
+            _max_assets = int(cfg.get("planned_max_assets", 0) or 0)
+            if _max_assets > 0:
+                _sym_col = (
+                    "__symbol__"
+                    if "__symbol__" in df_local.columns
+                    else ("symbol" if "symbol" in df_local.columns else None)
+                )
+                if _sym_col and df_local[_sym_col].nunique() > _max_assets:
+                    _top_syms = (
+                        df_local[_sym_col].value_counts().head(_max_assets).index
+                    )
+                    df_local = df_local[df_local[_sym_col].isin(_top_syms)].reset_index(
+                        drop=True
+                    )
             sort_cols = [
                 c
                 for c in ("__ts__", "timestamp", "__symbol__", "symbol")
@@ -2090,7 +2176,9 @@ def run_training_step(
                     tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
 
     if not include_variant_datasets:
-        tprint("Model-training dataset loader: primary-only mode, variant label artifacts are excluded.")
+        tprint(
+            "Model-training dataset loader: primary-only mode, variant label artifacts are excluded."
+        )
 
     tprint("Spike anatomy and specialist label datasets are disabled.")
 
@@ -2163,9 +2251,7 @@ def run_training_step(
         tprint(
             f"Base-only mode: Loading {len(req_keys)} req features (excluded {len(meta_keys - base_keys)} meta-only keys)"
         )
-        req_keys = _base_training_feature_requirements_from_hpo(
-            cfg, datasets, req_keys
-        )
+        req_keys = _base_training_feature_requirements_from_hpo(cfg, datasets, req_keys)
 
     datasets = inject_features_into_datasets(datasets, ts_sig, cfg, req_keys)
 
@@ -2196,6 +2282,21 @@ def run_training_step(
         alpha_metrics = (
             trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
         )
+
+    if not meta_only:
+        try:
+            from extreme_price_movements.en_based_uncertainty_features_selection import (
+                run_on_artifacts as _run_en_uncertainty_combiner,
+            )
+
+            _en_summary = _run_en_uncertainty_combiner(cfg["data_root"], run_id)
+            tprint(
+                "EN uncertainty combiner: "
+                f"processed={len(_en_summary.get('processed', []))} "
+                f"skipped={len(_en_summary.get('skipped', []))}"
+            )
+        except Exception as _e_en:
+            tprint(f"EN uncertainty combiner skipped: {_e_en}")
 
     # Specialist Models are now trained inside train_models_from_artifacts
     # using artifacts loaded above.
@@ -2867,11 +2968,12 @@ def run_base_hpo_step(ts_sig, cfg):
     and horizon). Each scope now follows:
     MDI feature selection -> HPO -> final training.
     """
+    from sklearn.ensemble import ExtraTreesRegressor
+
     from extreme_price_movements.post_race_hpo import (
         run_base_extratrees_hpo,
         run_base_extratrees_reg_hpo,
     )
-    from sklearn.ensemble import ExtraTreesRegressor
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     data_root = cfg.get("data_root", "data")
@@ -2888,6 +2990,13 @@ def run_base_hpo_step(ts_sig, cfg):
     strategy_horizons = {
         s["strategy_id"]: strategy_runtime_horizons(s, cfg) for s in strategies
     }
+
+    _base_max_strats = int(cfg.get("base_max_strategy_ids", 0) or 0)
+    if _base_max_strats > 0 and len(strategies) > _base_max_strats:
+        strategies = strategies[:_base_max_strats]
+        tprint(
+            f"Base HPO: limiting to first {_base_max_strats} strategies for this run"
+        )
 
     hpo_out_dir = os.path.join(data_root, "hpo_out")
     os.makedirs(hpo_out_dir, exist_ok=True)
@@ -2909,13 +3018,31 @@ def run_base_hpo_step(ts_sig, cfg):
                 continue
             if "__y_bin__" not in df.columns:
                 continue
+            _max_assets = int(cfg.get("planned_max_assets", 0) or 0)
+            if _max_assets > 0:
+                _sym_col = (
+                    "__symbol__"
+                    if "__symbol__" in df.columns
+                    else ("symbol" if "symbol" in df.columns else None)
+                )
+                if _sym_col and df[_sym_col].nunique() > _max_assets:
+                    _top_syms = df[_sym_col].value_counts().head(_max_assets).index
+                    df = df[df[_sym_col].isin(_top_syms)].reset_index(drop=True)
+                    tprint(
+                        f"  Subsampled {name} to {_max_assets} symbols "
+                        f"({len(df)} rows)"
+                    )
             strategy_datasets[name] = df
 
         if not strategy_datasets:
             tprint(f"BASE HPO: no data rows loaded for strategy {s_id}.")
             continue
 
-        base_req_keys = set(str(v) for v in (strat.get("feature_keys") or []) if isinstance(v, str) and v)
+        base_req_keys = set(
+            str(v)
+            for v in (strat.get("feature_keys") or [])
+            if isinstance(v, str) and v
+        )
         base_req_keys.update(
             {
                 "p_exh_lag1",
@@ -2992,7 +3119,9 @@ def run_base_hpo_step(ts_sig, cfg):
                 X_all = X_all[valid_y_mask]
                 y_all = y_all[valid_y_mask]
                 sym_col = sym_col[valid_y_mask]
-                df_hpo = df_hpo.iloc[np.flatnonzero(valid_y_mask)].reset_index(drop=True)
+                df_hpo = df_hpo.iloc[np.flatnonzero(valid_y_mask)].reset_index(
+                    drop=True
+                )
 
             if X_all.size == 0 or y_all.size == 0:
                 tprint(f"BASE HPO[{name}]: empty matrix after target filtering.")
@@ -3001,7 +3130,9 @@ def run_base_hpo_step(ts_sig, cfg):
             missing_frac = float(np.mean(~np.isfinite(X_all)))
             if missing_frac > 0.0:
                 col_medians = np.nanmedian(X_all, axis=0)
-                col_medians = np.where(np.isfinite(col_medians), col_medians, 0.0).astype(
+                col_medians = np.where(
+                    np.isfinite(col_medians), col_medians, 0.0
+                ).astype(
                     np.float32,
                     copy=False,
                 )
@@ -3028,7 +3159,9 @@ def run_base_hpo_step(ts_sig, cfg):
             _mdi_min = min(
                 int(
                     cfg.get(
-                        "base_variant_mdi_min_features" if is_variant_scope else "base_mdi_min_features",
+                        "base_variant_mdi_min_features"
+                        if is_variant_scope
+                        else "base_mdi_min_features",
                         30,
                     )
                 ),
@@ -3052,13 +3185,19 @@ def run_base_hpo_step(ts_sig, cfg):
                 base_model=mdi_base,
                 sample_weight=None,
                 selector_y=y_all[_sel_idx],
-                selector_target=str(cfg.get("base_mdi_selector_target", "classification")),
+                selector_target=str(
+                    cfg.get("base_mdi_selector_target", "classification")
+                ),
                 selector_loss=str(cfg.get("base_mdi_selector_loss", "binary_logloss")),
                 selector_head_name=f"base_{name}",
                 selector_report_dir=_selector_report_dir,
                 selector_prev_selected=None,
-                selector_family_map=dict(cfg.get("selector_feature_family_map", {}) or {}),
-                selector_focus_top_frac=float(_base_sel_cfg.get("selector_focus_top_frac", 1.0)),
+                selector_family_map=dict(
+                    cfg.get("selector_feature_family_map", {}) or {}
+                ),
+                selector_focus_top_frac=float(
+                    _base_sel_cfg.get("selector_focus_top_frac", 1.0)
+                ),
                 selector_top_metric=_base_sel_cfg.get("selector_top_metric", "ic"),
                 selector_frequency_hit_mode=str(
                     _base_sel_cfg.get("selector_frequency_hit_mode", "relative")
@@ -3084,10 +3223,18 @@ def run_base_hpo_step(ts_sig, cfg):
                 selector_family_penalty=bool(
                     _base_sel_cfg.get("selector_family_penalty", True)
                 ),
-                selector_emit_report=bool(_base_sel_cfg.get("selector_emit_report", True)),
-                analysis_n_estimators=int(_base_sel_cfg.get("analysis_n_estimators", 192)),
-                analysis_max_samples=int(_base_sel_cfg.get("analysis_max_samples", 3000)),
-                min_samples_leaf_pct=float(_base_sel_cfg.get("min_samples_leaf_pct", 0.015)),
+                selector_emit_report=bool(
+                    _base_sel_cfg.get("selector_emit_report", True)
+                ),
+                analysis_n_estimators=int(
+                    _base_sel_cfg.get("analysis_n_estimators", 192)
+                ),
+                analysis_max_samples=int(
+                    _base_sel_cfg.get("analysis_max_samples", 3000)
+                ),
+                min_samples_leaf_pct=float(
+                    _base_sel_cfg.get("min_samples_leaf_pct", 0.015)
+                ),
                 selector_max_missing_frac=float(
                     _base_sel_cfg.get("selector_max_missing_frac", 0.15)
                 ),
@@ -3097,7 +3244,9 @@ def run_base_hpo_step(ts_sig, cfg):
                 selector_hysteresis_margin=float(
                     _base_sel_cfg.get("selector_hysteresis_margin", 0.05)
                 ),
-                selector_min_overlap=float(_base_sel_cfg.get("selector_min_overlap", 0.70)),
+                selector_min_overlap=float(
+                    _base_sel_cfg.get("selector_min_overlap", 0.70)
+                ),
                 composite_weights={
                     "top30": float(_base_sel_cfg.get("top30", 0.0)),
                     "global": float(_base_sel_cfg.get("global", 0.55)),
@@ -3134,8 +3283,12 @@ def run_base_hpo_step(ts_sig, cfg):
                 n_splits=int(cfg.get("base_hpo_n_splits", 3)),
                 max_rows=int(cfg.get("base_hpo_max_rows", 6500)),
                 optuna_patience_trials=int(cfg.get("base_hpo_patience_trials", 30)),
-                optuna_min_trials_before_stop=int(cfg.get("base_hpo_min_trials_before_stop", 50)),
-                optuna_meaningful_improvement_pct=float(cfg.get("base_hpo_meaningful_improvement_pct", 0.005)),
+                optuna_min_trials_before_stop=int(
+                    cfg.get("base_hpo_min_trials_before_stop", 50)
+                ),
+                optuna_meaningful_improvement_pct=float(
+                    cfg.get("base_hpo_meaningful_improvement_pct", 0.005)
+                ),
                 out_dir=hpo_out_dir,
                 study_name=f"base_extratrees_hpo_{name}",
                 scope_key=name,
@@ -3161,7 +3314,9 @@ def run_base_hpo_step(ts_sig, cfg):
                         reg_target_bundle["residualized_return"], dtype=np.float32
                     ),
                 )
-                reg_w_all = np.asarray(reg_weight_bundle["sample_weight"], dtype=np.float32)
+                reg_w_all = np.asarray(
+                    reg_weight_bundle["sample_weight"], dtype=np.float32
+                )
                 _reg_sel_cfg = dict(cfg.get("base_reg_selector_cfg", {}) or {})
                 if not _reg_sel_cfg:
                     _reg_sel_cfg = dict(_base_sel_cfg)
@@ -3213,7 +3368,9 @@ def run_base_hpo_step(ts_sig, cfg):
                         _reg_sel_cfg.get("selector_interaction_topk_pairs", 100)
                     ),
                     selector_interaction_max_pairs_per_feature=int(
-                        _reg_sel_cfg.get("selector_interaction_max_pairs_per_feature", 8)
+                        _reg_sel_cfg.get(
+                            "selector_interaction_max_pairs_per_feature", 8
+                        )
                     ),
                     selector_interaction_corr_penalty=bool(
                         _reg_sel_cfg.get("selector_interaction_corr_penalty", True)
@@ -3356,9 +3513,7 @@ def _extract_required_features(bundle, cfg):
         ):
             _vals = getattr(_model, _attr, None)
             if isinstance(_vals, (list, tuple, set)):
-                _added = {
-                    str(v) for v in _vals if isinstance(v, str) and v
-                }
+                _added = {str(v) for v in _vals if isinstance(v, str) and v}
                 model_feature_count += len(_added)
                 _req.update(_added)
 
@@ -3766,7 +3921,10 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             feat_start_ts = min(df.index.min() for df in dfs.values() if not df.empty)
         except ValueError:
             feat_start_ts = None
-    feats = load_features_for_stage_or_all(cfg, ts_sig, cfg["data_root"],
+    feats = load_features_for_stage_or_all(
+        cfg,
+        ts_sig,
+        cfg["data_root"],
         feature_keys=req_feats,
         symbols=train_syms,
         start_ts=feat_start_ts,
@@ -5938,9 +6096,7 @@ def run_feature_generation_step(
         if close_panel_light is not None and not close_panel_light.empty
         else panel_close_ref
     )
-    snapshot_expected_keys = {
-        k for k in expected_keys if not str(k).startswith("oof_")
-    }
+    snapshot_expected_keys = {k for k in expected_keys if not str(k).startswith("oof_")}
     skip_snapshot_validation = bool(cfg.get("skip_feature_snapshot_validation", False))
     skip_postsave_checks = bool(cfg.get("skip_feature_postsave_checks", False))
     if skip_snapshot_validation or skip_postsave_checks:
@@ -5967,7 +6123,10 @@ def run_feature_generation_step(
         _generate_feature_health_reports(
             ts_sig, cfg["data_root"], allowed_symbols=train_syms
         )
-        health_feats = load_features_for_stage_or_all(cfg, ts_sig, cfg["data_root"],
+        health_feats = load_features_for_stage_or_all(
+            cfg,
+            ts_sig,
+            cfg["data_root"],
             feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
             symbols=train_syms,
         )
@@ -5988,16 +6147,18 @@ def run_feature_generation_step(
 
 
 def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
+    import time
+
     import numpy as np
     import pandas as pd
     import pyarrow.parquet as pq
-    import time
 
     from extreme_price_movements.data_store import (
         _build_parquet_ts_filters,
         get_feature_path,
     )
     from extreme_price_movements.utils import tprint
+
     if not datasets or not req_keys:
         return datasets
 
@@ -6103,7 +6264,9 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         }
         if not missing:
             continue
-        ts_index = pd.DatetimeIndex(pd.to_datetime(df[t_col], utc=True, errors="coerce"))
+        ts_index = pd.DatetimeIndex(
+            pd.to_datetime(df[t_col], utc=True, errors="coerce")
+        )
         dataset_ts_index[name] = ts_index
         symbol_positions = (
             pd.Series(np.arange(len(df), dtype=np.int32))
@@ -6195,14 +6358,22 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             read_kwargs = {}
             if "ts" in schema_cols:
                 read_cols = ["ts", *read_cols]
-                if sym_bounds and sym_bounds[0] is not None and sym_bounds[1] is not None:
+                if (
+                    sym_bounds
+                    and sym_bounds[0] is not None
+                    and sym_bounds[1] is not None
+                ):
                     read_kwargs["filters"] = _build_parquet_ts_filters(
                         start_ts=sym_bounds[0],
                         end_ts=sym_bounds[1] + pd.Timedelta(seconds=1),
                     )
             elif "timestamp" in schema_cols:
                 read_cols = ["timestamp", *read_cols]
-                if sym_bounds and sym_bounds[0] is not None and sym_bounds[1] is not None:
+                if (
+                    sym_bounds
+                    and sym_bounds[0] is not None
+                    and sym_bounds[1] is not None
+                ):
                     start_ts = pd.Timestamp(sym_bounds[0])
                     end_ts = pd.Timestamp(sym_bounds[1] + pd.Timedelta(seconds=1))
                     if start_ts.tzinfo is None:
@@ -6381,7 +6552,9 @@ def _base_training_feature_requirements_from_hpo(cfg, datasets, default_req_keys
     default_req_keys = sorted(set(default_req_keys))
 
     for name in datasets.keys():
-        payload_clf = load_best_base_extratrees_payload(str(hpo_out_dir), scope_key=name)
+        payload_clf = load_best_base_extratrees_payload(
+            str(hpo_out_dir), scope_key=name
+        )
         payload_reg = load_best_base_extratrees_payload(
             str(hpo_out_dir), scope_key=f"{name}__reg_head"
         )
@@ -6402,6 +6575,7 @@ def _base_training_feature_requirements_from_hpo(cfg, datasets, default_req_keys
         return out
     return default_req_keys
 
+
 def _filter_artifact_by_stage_view(df, cfg):
     view = cfg.get("_active_stage_view")
     if not view or df is None or df.empty:
@@ -6410,14 +6584,29 @@ def _filter_artifact_by_stage_view(df, cfg):
     orig_len = len(df)
     stage_name = view.get("stage_name", "unknown_stage")
 
-    if "symbols" in view and view["symbols"] is not None:
-        sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+    _view_syms = view.get("symbols")
+    if _view_syms and len(_view_syms) > 0:
+        sym_col = (
+            "__symbol__"
+            if "__symbol__" in df.columns
+            else "symbol"
+            if "symbol" in df.columns
+            else None
+        )
         if sym_col:
-            df = df[df[sym_col].isin(view["symbols"])]
+            df = df[df[sym_col].isin(_view_syms)]
 
     periods = view.get("allowed_periods") or None
     if periods:
-        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
+        ts_col = (
+            "__ts__"
+            if "__ts__" in df.columns
+            else "timestamp"
+            if "timestamp" in df.columns
+            else "t0"
+            if "t0" in df.columns
+            else None
+        )
         if ts_col:
             df_ts = pd.to_datetime(df[ts_col], utc=True, errors="coerce")
             mask = np.zeros(len(df), dtype=bool)
@@ -6437,7 +6626,15 @@ def _filter_artifact_by_stage_view(df, cfg):
             df = df.loc[mask]
 
     if view.get("allowed_start_ts") or view.get("allowed_end_ts"):
-        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
+        ts_col = (
+            "__ts__"
+            if "__ts__" in df.columns
+            else "timestamp"
+            if "timestamp" in df.columns
+            else "t0"
+            if "t0" in df.columns
+            else None
+        )
         if ts_col:
             df_ts = pd.to_datetime(df[ts_col], utc=True)
             if view.get("allowed_start_ts"):
@@ -6448,15 +6645,31 @@ def _filter_artifact_by_stage_view(df, cfg):
 
     new_len = len(df)
     if orig_len != new_len:
-        tprint(f"[{stage_name}] Filtered artifact: {orig_len} -> {new_len} rows (-{orig_len - new_len}) based on active stage limits.")
+        tprint(
+            f"[{stage_name}] Filtered artifact: {orig_len} -> {new_len} rows (-{orig_len - new_len}) based on active stage limits."
+        )
 
     return df
     if "symbols" in view and view["symbols"] is not None:
-        sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+        sym_col = (
+            "__symbol__"
+            if "__symbol__" in df.columns
+            else "symbol"
+            if "symbol" in df.columns
+            else None
+        )
         if sym_col:
             df = df[df[sym_col].isin(view["symbols"])]
     if view.get("allowed_start_ts") or view.get("allowed_end_ts"):
-        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else "t0" if "t0" in df.columns else None
+        ts_col = (
+            "__ts__"
+            if "__ts__" in df.columns
+            else "timestamp"
+            if "timestamp" in df.columns
+            else "t0"
+            if "t0" in df.columns
+            else None
+        )
         if ts_col:
             df_ts = pd.to_datetime(df[ts_col], utc=True)
             if view.get("allowed_start_ts"):
@@ -6465,7 +6678,6 @@ def _filter_artifact_by_stage_view(df, cfg):
             if view.get("allowed_end_ts"):
                 df = df[df_ts <= pd.to_datetime(view["allowed_end_ts"])]
     return df
-
 
     tprint("Resolving unique symbols and timestamps for feature injection...")
     all_syms = set()

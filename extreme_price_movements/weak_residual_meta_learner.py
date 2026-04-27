@@ -1,22 +1,40 @@
 from __future__ import annotations
 
 import os
+import warnings
 from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
+from scipy import sparse
 from scipy.stats import spearmanr
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.isotonic import IsotonicRegression
-from sklearn.linear_model import ElasticNet, Ridge, RidgeClassifier
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import ElasticNet, LogisticRegression, Ridge, RidgeClassifier
 from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import OneHotEncoder, RobustScaler
+
+from .utils import tprint
+from .ebm_on_lgbm import train_ebm_on_lgbm_candidate, fit_ebm_on_lgbm_full_model
 
 try:
     import lightgbm as lgb
 except Exception:  # pragma: no cover
     lgb = None
+
+
+WR_META_CV_SPLITS = 3
+WR_META_ALPHA_GRID = (0.1, 0.5, 1.0)
+WR_META_L1_RATIO_GRID = (0.5, 0.8)
+WR_META_SIGN_CONSISTENCY = (0.6, 0.7, 0.75, 0.8, 0.85)
+WR_META_RESID_EPS = 1e-8
+WR_META_EN_N_JOBS = 2
+WR_META_EN_SUBSAMPLE_ROWS = 5000
+WR_META_EN_TOL = 3e-4
+WR_META_LOGIT_MAX_ITER = 2000
+WR_META_EN_MAX_ITER = 4000
 
 
 def _ranknorm(x: np.ndarray) -> np.ndarray:
@@ -35,6 +53,32 @@ def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
         return 0.0
     r = spearmanr(a[m], b[m]).correlation
     return float(0.0 if not np.isfinite(r) else r)
+
+
+def _vectorized_spearman_scores_2d(
+    X: np.ndarray, y: np.ndarray, *, signed: bool = True
+) -> np.ndarray:
+    x = np.asarray(X, dtype=np.float32)
+    if x.ndim == 1:
+        x = x.reshape(-1, 1)
+    if x.shape[1] == 0:
+        return np.zeros(0, dtype=np.float32)
+    yv = np.asarray(y, dtype=np.float64)
+    rows = np.isfinite(yv)
+    if int(np.sum(rows)) < 8:
+        return np.zeros(x.shape[1], dtype=np.float32)
+    xr = pd.DataFrame(x[rows]).rank(pct=True).to_numpy(dtype=np.float64)
+    yr = pd.Series(yv[rows]).rank(pct=True).to_numpy(dtype=np.float64)
+    xr = xr - np.nanmean(xr, axis=0)
+    yr = yr - np.nanmean(yr)
+    x_std = np.sqrt(np.nanmean(xr * xr, axis=0))
+    y_std = float(np.sqrt(np.nanmean(yr * yr)))
+    denom = np.maximum(x_std * max(y_std, 1e-12), 1e-12)
+    corr = np.nanmean(xr * yr[:, None], axis=0) / denom
+    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+    if not signed:
+        corr = np.abs(corr)
+    return corr.astype(np.float32)
 
 
 def _ece(y_true: np.ndarray, prob: np.ndarray, bins: int = 10) -> float:
@@ -169,6 +213,72 @@ def _z(x: np.ndarray) -> np.ndarray:
     return (x - np.nanmean(x)) / s
 
 
+def _fit_wr_en_combo(
+    alpha: float,
+    l1: float,
+    fold_cache: list[dict[str, Any]],
+    yv: np.ndarray,
+    classifier: bool,
+) -> Optional[dict[str, Any]]:
+    oof = np.zeros(len(yv), dtype=np.float32)
+    fold_stats = []
+    coef = np.zeros(fold_cache[0]["n_features"], dtype=np.float64)
+    convergence_hits = 0
+    for fold in fold_cache:
+        sub = fold["sub_idx"]
+        try:
+            if classifier:
+                c_val = 1.0 / max(alpha, 1e-6)
+                mdl = LogisticRegression(
+                    penalty="l1",
+                    solver="liblinear",
+                    C=c_val,
+                    max_iter=WR_META_LOGIT_MAX_ITER,
+                    tol=WR_META_EN_TOL,
+                    random_state=42,
+                )
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always", ConvergenceWarning)
+                    mdl.fit(fold["Xtr"][sub], fold["y_split_tr"][sub])
+                pred = mdl.predict_proba(fold["Xva"])[:, 1].astype(np.float32)
+                coef += np.abs(np.ravel(mdl.coef_))
+            else:
+                mdl = ElasticNet(
+                    alpha=alpha,
+                    l1_ratio=l1,
+                    max_iter=WR_META_EN_MAX_ITER,
+                    tol=WR_META_EN_TOL,
+                    random_state=42,
+                )
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always", ConvergenceWarning)
+                    mdl.fit(fold["Xtr"][sub], fold["yv_tr"][sub])
+                pred = mdl.predict(fold["Xva"]).astype(np.float32)
+                coef += np.abs(mdl.coef_)
+            convergence_hits += int(
+                any(issubclass(w.category, ConvergenceWarning) for w in caught)
+            )
+            if hasattr(mdl, "n_iter_") and int(np.max(mdl.n_iter_)) >= (
+                WR_META_LOGIT_MAX_ITER if classifier else WR_META_EN_MAX_ITER
+            ):
+                convergence_hits += 1
+        except Exception:
+            return None
+        va = fold["va"]
+        oof[va] = pred
+        fold_stats.append(_metric_pack(yv[va], oof[va], classifier=classifier))
+    if not fold_stats:
+        return None
+    metrics = {
+        k: float(np.mean([r[k] for r in fold_stats])) for k in fold_stats[0].keys()
+    }
+    return {
+        "metrics": metrics,
+        "coef": coef / max(1, len(fold_cache)),
+        "convergence_hits": int(convergence_hits),
+    }
+
+
 def _preridge_elasticnet_select(
     X: pd.DataFrame,
     y: np.ndarray,
@@ -181,50 +291,66 @@ def _preridge_elasticnet_select(
         return cols
     Xv = X.to_numpy(dtype=np.float32)
     yv = np.asarray(y, dtype=np.float32)
-    grid = [(a, l) for a in (0.01, 0.05, 0.1, 0.5, 1.0) for l in (0.2, 0.5, 0.8)]
+    grid = [(a, l) for a in WR_META_ALPHA_GRID for l in WR_META_L1_RATIO_GRID]
     cv = (
-        StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        StratifiedKFold(n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=42)
         if classifier
-        else KFold(n_splits=5, shuffle=True, random_state=42)
+        else KFold(n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=42)
     )
     y_split = yv.astype(np.int8) if classifier else yv
-    rec = []
-    coef_maps = []
-    for alpha, l1 in grid:
-        oof = np.zeros(len(yv), dtype=np.float32)
-        fold_stats = []
-        coef = np.zeros(Xv.shape[1], dtype=np.float64)
-        for tr, va in cv.split(Xv, y_split):
-            sc = RobustScaler()
-            Xtr = sc.fit_transform(Xv[tr])
-            Xva = sc.transform(Xv[va])
-            if classifier:
-                # Deliberate classifier-aligned sparse linear selector (L1 logistic),
-                # used only as a feature ranking/filter stage before RidgeClassifier.
-                c_val = 1.0 / max(alpha, 1e-6)
-                mdl = LogisticRegression(
-                    penalty="l1",
-                    solver="liblinear",
-                    C=c_val,
-                    max_iter=2000,
-                    random_state=42,
-                )
-                mdl.fit(Xtr, y_split[tr])
-                oof[va] = mdl.predict_proba(Xva)[:, 1].astype(np.float32)
-                coef += np.abs(np.ravel(mdl.coef_))
-            else:
-                mdl = ElasticNet(
-                    alpha=alpha, l1_ratio=l1, max_iter=4000, random_state=42
-                )
-                mdl.fit(Xtr, yv[tr])
-                oof[va] = mdl.predict(Xva).astype(np.float32)
-                coef += np.abs(mdl.coef_)
-            fold_stats.append(_metric_pack(yv[va], oof[va], classifier=classifier))
-        coef_maps.append(coef / max(1, cv.get_n_splits()))
-        metrics = {
-            k: float(np.mean([r[k] for r in fold_stats])) for k in fold_stats[0].keys()
-        }
-        rec.append(metrics)
+    fold_cache: list[dict[str, Any]] = []
+    for fold_id, (tr, va) in enumerate(cv.split(Xv, y_split), start=1):
+        sc = RobustScaler()
+        Xtr = sc.fit_transform(Xv[tr])
+        Xva = sc.transform(Xv[va])
+        if classifier:
+            sub_strata = y_split[tr]
+        else:
+            sub_rank = pd.Series(yv[tr]).rank(pct=True).to_numpy(dtype=np.float32)
+            sub_strata = np.clip((sub_rank * 5).astype(np.int32), 0, 4)
+        sub_idx = _stratified_subsample_idx(
+            sub_strata,
+            max_n=WR_META_EN_SUBSAMPLE_ROWS,
+            seed=42 + fold_id,
+        )
+        fold_cache.append(
+            {
+                "tr": tr,
+                "va": va,
+                "Xtr": Xtr,
+                "Xva": Xva,
+                "yv_tr": yv[tr],
+                "y_split_tr": y_split[tr],
+                "sub_idx": sub_idx,
+                "n_features": Xv.shape[1],
+            }
+        )
+    tprint(
+        f"WRMeta EN selector: {len(grid)} hyperparameter combos across "
+        f"{len(fold_cache)} cached folds (subsample={WR_META_EN_SUBSAMPLE_ROWS}, "
+        f"n_jobs={WR_META_EN_N_JOBS}, tol={WR_META_EN_TOL:g})"
+    )
+    results = Parallel(n_jobs=WR_META_EN_N_JOBS, prefer="threads")(
+        delayed(_fit_wr_en_combo)(
+            alpha,
+            l1,
+            fold_cache,
+            yv,
+            classifier,
+        )
+        for alpha, l1 in grid
+    )
+    valid = [r for r in results if r is not None]
+    if not valid:
+        return cols[:max_keep]
+    conv_hits = int(sum(r.get("convergence_hits", 0) for r in valid))
+    if conv_hits > 0:
+        tprint(
+            f"WRMeta EN selector convergence monitor: {conv_hits} fold fits hit "
+            f"warning/max_iter (tol={WR_META_EN_TOL:g}, n_jobs={WR_META_EN_N_JOBS})"
+        )
+    rec = [r["metrics"] for r in valid]
+    coef_maps = [r["coef"] for r in valid]
     lift_z = _z(np.array([r["lift30"] for r in rec]))
     ic_z = _z(np.array([r["ic30"] for r in rec]))
     stab_z = _z(np.array([r["stability30"] for r in rec]))
@@ -238,7 +364,7 @@ def _preridge_elasticnet_select(
 
 
 def _cluster_redundant_features(
-    X: pd.DataFrame, y: np.ndarray, thr: float = 0.97
+    X: pd.DataFrame, y: np.ndarray, thr: float = 0.98
 ) -> list[str]:
     cols = list(X.columns)
     if len(cols) <= 2:
@@ -254,9 +380,7 @@ def _cluster_redundant_features(
     sub = pd.DataFrame(xs[idx], columns=cols).rank(pct=True)
     corr = np.abs(np.corrcoef(sub.to_numpy(dtype=np.float64), rowvar=False))
     yv = np.asarray(y, dtype=np.float64)
-    rel = np.array(
-        [abs(_safe_spearman(X[c].values, yv)) for c in cols], dtype=np.float64
-    )
+    rel = np.abs(_vectorized_spearman_scores_2d(xs, yv, signed=True)).astype(np.float64)
     keep = []
     dropped = np.zeros(len(cols), dtype=bool)
     for i in np.argsort(rel)[::-1]:
@@ -284,29 +408,35 @@ def _univariate_screen(
     buckets = np.clip((rp * 5).astype(np.int32), 0, 4)
     idx = _stratified_subsample_idx(buckets, max_n=25000, seed=42)
     Xs = X.iloc[idx]
+    xs_mat = Xs.to_numpy(dtype=np.float32)
     y_s = np.asarray(y, dtype=np.float64)[idx]
     r_s = np.asarray(ridge_pred, dtype=np.float64)[idx]
     sr_s = np.asarray(signed_residual, dtype=np.float64)[idx]
     b_s = buckets[idx]
-    scores = []
-    for c in cols:
-        z = np.asarray(Xs[c].values, dtype=np.float64)
-        c1 = []
-        c2 = []
-        for b in range(5):
-            m = b_s == b
-            if np.sum(m) < 8:
-                continue
-            c1.append(_safe_spearman(z[m], sr_s[m]))
-            c2.append(_safe_spearman((z[m] * r_s[m]), y_s[m]))
-        if not c1:
-            scores.append(-1e9)
+    c1_rows: list[np.ndarray] = []
+    c2_rows: list[np.ndarray] = []
+    for b in range(5):
+        m = b_s == b
+        if np.sum(m) < 8:
             continue
-        c1 = np.asarray(c1)
-        c2 = np.asarray(c2)
-        sc = abs(np.mean(c1)) - 0.5 * np.std(c1) + abs(np.mean(c2)) - 0.5 * np.std(c2)
-        scores.append(float(sc))
-    ord_idx = np.argsort(np.asarray(scores))[::-1][:top_k]
+        c1_rows.append(_vectorized_spearman_scores_2d(xs_mat[m], sr_s[m], signed=True))
+        c2_rows.append(
+            _vectorized_spearman_scores_2d(
+                xs_mat[m] * r_s[m, None].astype(np.float32), y_s[m], signed=True
+            )
+        )
+    if not c1_rows:
+        return cols[:top_k]
+    c1 = np.vstack(c1_rows).astype(np.float64, copy=False)
+    c2 = np.vstack(c2_rows).astype(np.float64, copy=False)
+    scores = (
+        np.abs(np.nanmean(c1, axis=0))
+        - 0.5 * np.nanstd(c1, axis=0)
+        + np.abs(np.nanmean(c2, axis=0))
+        - 0.5 * np.nanstd(c2, axis=0)
+    )
+    scores = np.nan_to_num(scores, nan=-1e9, posinf=-1e9, neginf=-1e9)
+    ord_idx = np.argsort(scores)[::-1][:top_k]
     return [cols[i] for i in ord_idx]
 
 
@@ -326,11 +456,13 @@ def _iterative_fold_presence_prune(
     if classifier:
         _classes, _counts = np.unique(y_split, return_counts=True)
         if len(_classes) >= 2 and int(np.min(_counts)) >= 5:
-            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            cv = StratifiedKFold(
+                n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=42
+            )
         else:
-            cv = KFold(n_splits=5, shuffle=True, random_state=42)
+            cv = KFold(n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=42)
     else:
-        cv = KFold(n_splits=5, shuffle=True, random_state=42)
+        cv = KFold(n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=42)
     Xv = X.to_numpy(dtype=np.float32)
     yv = np.asarray(target)
     for tr, va in cv.split(Xv, y_split):
@@ -369,8 +501,8 @@ def _iterative_fold_presence_prune(
                 presence[c] += 1
                 gain[c] += float(imp[i])
     curr = set(cols)
-    for ratio in (0.3, 0.4, 0.5, 0.6, 0.7, 0.8):
-        need = max(1, int(np.ceil(5 * ratio)))
+    for ratio in WR_META_SIGN_CONSISTENCY:
+        need = max(1, int(np.ceil(WR_META_CV_SPLITS * ratio)))
         curr = {c for c in curr if presence.get(c, 0) >= need}
         if len(curr) <= min_features:
             break
@@ -382,15 +514,216 @@ def _iterative_fold_presence_prune(
     return [c for c in cols if c in curr]
 
 
+def _one_hot_encoder() -> OneHotEncoder:
+    try:
+        return OneHotEncoder(handle_unknown="ignore", sparse_output=True)
+    except TypeError:  # pragma: no cover - older sklearn
+        return OneHotEncoder(handle_unknown="ignore", sparse=True)
+
+
+def _resolve_atr_scale(
+    X: pd.DataFrame,
+    n: int,
+    kwargs: dict[str, Any],
+    target_horizon: Optional[int],
+) -> np.ndarray:
+    for key in (
+        "atr",
+        "atr_scale",
+        "atr_target",
+        "atr_4h",
+        "atr_pct",
+        "residual_atr",
+    ):
+        val = kwargs.get(key)
+        if val is not None:
+            arr = np.asarray(val, dtype=np.float32)
+            if len(arr) == n:
+                return np.maximum(np.abs(arr), WR_META_RESID_EPS).astype(np.float32)
+
+    if target_horizon is not None and target_horizon > 0:
+        for col in (
+            f"atr_{4 * int(target_horizon)}",
+            f"atr_pct_{4 * int(target_horizon)}",
+            f"atr_h{4 * int(target_horizon)}",
+        ):
+            if col in X.columns:
+                arr = X[col].to_numpy(dtype=np.float32)
+                return np.maximum(np.abs(arr), WR_META_RESID_EPS).astype(np.float32)
+
+    for col in ("atr", "ATR", "atr_pct", "atr_ratio"):
+        if col in X.columns:
+            arr = X[col].to_numpy(dtype=np.float32)
+            return np.maximum(np.abs(arr), WR_META_RESID_EPS).astype(np.float32)
+
+    return np.ones(n, dtype=np.float32)
+
+
+def _mad_scale(x: np.ndarray) -> float:
+    v = np.asarray(x, dtype=np.float64)
+    v = v[np.isfinite(v)]
+    if len(v) == 0:
+        return 1.0
+    med = float(np.median(v))
+    mad = float(np.median(np.abs(v - med)))
+    if not np.isfinite(mad) or mad < WR_META_RESID_EPS:
+        mad = float(np.nanstd(v))
+    return max(mad, WR_META_RESID_EPS)
+
+
+def _build_residual_target(
+    *,
+    y_base_target: np.ndarray,
+    base_oof_pred: np.ndarray,
+    atr_scale: np.ndarray,
+) -> tuple[np.ndarray, dict[str, float]]:
+    raw_resid = (
+        np.asarray(y_base_target, dtype=np.float32)
+        - np.asarray(base_oof_pred, dtype=np.float32)
+    ).astype(np.float32)
+    resid_atr = raw_resid / (
+        np.asarray(atr_scale, dtype=np.float32) + WR_META_RESID_EPS
+    )
+    mad = _mad_scale(resid_atr)
+    resid_z = np.clip(resid_atr / (mad + WR_META_RESID_EPS), -5.0, 5.0)
+    target = (0.7 * np.arcsinh(resid_z) + 0.3 * resid_z).astype(np.float32)
+    diag = {
+        "resid_mad": float(mad),
+        "resid_target_std": float(np.nanstd(target)),
+        "raw_resid_std": float(np.nanstd(raw_resid)),
+        "atr_scale_median": float(np.nanmedian(atr_scale)),
+    }
+    return target, diag
+
+
+def _lgbm_leaf_ridge_fit(
+    X: pd.DataFrame,
+    target: np.ndarray,
+    *,
+    sample_weight: Optional[np.ndarray] = None,
+    random_state: int = 42,
+) -> dict[str, Any]:
+    n = len(X)
+    empty = {
+        "oof_pred": np.zeros(n, dtype=np.float32),
+        "model": None,
+        "scaler": None,
+        "encoder": None,
+        "ridge": None,
+        "features": list(X.columns),
+        "score": 0.0,
+    }
+    if lgb is None or X.shape[1] == 0 or n < WR_META_CV_SPLITS * 8:
+        return empty
+
+    Xv = X.to_numpy(dtype=np.float32)
+    yv = np.asarray(target, dtype=np.float32)
+    sw = (
+        np.ones(n, dtype=np.float32)
+        if sample_weight is None
+        else np.asarray(sample_weight, dtype=np.float32)
+    )
+    cv = KFold(n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=random_state)
+    oof = np.zeros(n, dtype=np.float32)
+    for fold_id, (tr, va) in enumerate(cv.split(Xv)):
+        tree = lgb.LGBMRegressor(
+            objective="huber",
+            n_estimators=250,
+            max_depth=3,
+            min_data_in_leaf=80,
+            learning_rate=0.04,
+            random_state=random_state + fold_id,
+            n_jobs=2,
+            verbosity=-1,
+        )
+        tree.fit(Xv[tr], yv[tr], sample_weight=sw[tr])
+        leaves_tr = np.asarray(tree.predict(Xv[tr], pred_leaf=True), dtype=np.int32)
+        leaves_va = np.asarray(tree.predict(Xv[va], pred_leaf=True), dtype=np.int32)
+        if leaves_tr.ndim == 1:
+            leaves_tr = leaves_tr.reshape(-1, 1)
+            leaves_va = leaves_va.reshape(-1, 1)
+        enc = _one_hot_encoder()
+        Ltr = enc.fit_transform(leaves_tr)
+        Lva = enc.transform(leaves_va)
+        sc = RobustScaler()
+        Xtr = sparse.hstack(
+            [sparse.csr_matrix(sc.fit_transform(Xv[tr])), Ltr], format="csr"
+        )
+        Xva = sparse.hstack(
+            [sparse.csr_matrix(sc.transform(Xv[va])), Lva], format="csr"
+        )
+        ridge = Ridge(alpha=1.0, random_state=random_state)
+        ridge.fit(Xtr, yv[tr], sample_weight=sw[tr])
+        oof[va] = ridge.predict(Xva).astype(np.float32)
+
+    full_tree = lgb.LGBMRegressor(
+        objective="huber",
+        n_estimators=250,
+        max_depth=3,
+        min_data_in_leaf=80,
+        learning_rate=0.04,
+        random_state=random_state,
+        n_jobs=2,
+        verbosity=-1,
+    )
+    full_tree.fit(Xv, yv, sample_weight=sw)
+    leaves = np.asarray(full_tree.predict(Xv, pred_leaf=True), dtype=np.int32)
+    if leaves.ndim == 1:
+        leaves = leaves.reshape(-1, 1)
+    encoder = _one_hot_encoder()
+    L = encoder.fit_transform(leaves)
+    scaler = RobustScaler()
+    design = sparse.hstack(
+        [sparse.csr_matrix(scaler.fit_transform(Xv)), L], format="csr"
+    )
+    ridge = Ridge(alpha=1.0, random_state=random_state)
+    ridge.fit(design, yv, sample_weight=sw)
+    empty.update(
+        {
+            "oof_pred": oof.astype(np.float32),
+            "model": full_tree,
+            "scaler": scaler,
+            "encoder": encoder,
+            "ridge": ridge,
+            "score": _safe_spearman(oof, yv),
+        }
+    )
+    return empty
+
+
+def _lgbm_leaf_ridge_predict(bundle: dict[str, Any], X: pd.DataFrame) -> np.ndarray:
+    model = bundle.get("model")
+    scaler = bundle.get("scaler")
+    encoder = bundle.get("encoder")
+    ridge = bundle.get("ridge")
+    if model is None or scaler is None or encoder is None or ridge is None:
+        return np.zeros(len(X), dtype=np.float32)
+    Xv = X.to_numpy(dtype=np.float32)
+    leaves = np.asarray(model.predict(Xv, pred_leaf=True), dtype=np.int32)
+    if leaves.ndim == 1:
+        leaves = leaves.reshape(-1, 1)
+    design = sparse.hstack(
+        [sparse.csr_matrix(scaler.transform(Xv)), encoder.transform(leaves)],
+        format="csr",
+    )
+    return ridge.predict(design).astype(np.float32)
+
+
 class WeakResidualMetaRegressor:
     def __init__(
-        self, strategy_name: Optional[str] = None, reports_dir: Optional[str] = None
+        self,
+        strategy_name: Optional[str] = None,
+        reports_dir: Optional[str] = None,
+        lambda_reg: float = 0.3,
     ):
         self.strategy_name = strategy_name
         self.reports_dir = reports_dir
+        self.lambda_reg = lambda_reg
         self.selected_features: list[str] = []
         self.ridge_model: Optional[Pipeline] = None
         self.lgbm_model: Optional[Any] = None
+        self.lgbm_leaf_ridge_bundle: Optional[dict[str, Any]] = None
+        self.ebm_model: Optional[Any] = None
         self.oof_probs: Optional[np.ndarray] = None
         self.model: Optional[Any] = None
         self._diag: Dict[str, np.ndarray] = {}
@@ -400,6 +733,23 @@ class WeakResidualMetaRegressor:
         self._reg_unc_C: float = 1.0
         self._reg_unc_lo: float = 0.0
         self._reg_unc_hi: float = 1.0
+
+    def __repr__(self) -> str:
+        n_feat = len(self.selected_features)
+        has_lgbm = self.lgbm_model is not None
+        return (
+            f"WeakResidualMetaRegressor("
+            f"strategy={self.strategy_name!r}, "
+            f"features={n_feat}, "
+            f"lambda_reg={self.lambda_reg}, "
+            f"lgbm={has_lgbm}, "
+            f"ebm={self.ebm_model is not None})"
+        )
+
+    def clear_diagnostics(self) -> None:
+        self._diag = {}
+        self._leaf_var_maps = []
+        self._leaf_cnt_maps = []
 
     def _compute_reg_lgbm_uncertainty(
         self, X_lgb_np: np.ndarray
@@ -443,13 +793,23 @@ class WeakResidualMetaRegressor:
             vmap = self._leaf_var_maps[t] if t < len(self._leaf_var_maps) else {}
             cmap = self._leaf_cnt_maps[t] if t < len(self._leaf_cnt_maps) else {}
             ids = leaf[:, t]
-            lv += np.array(
-                [float(vmap.get(int(i), 0.0)) for i in ids], dtype=np.float64
-            )
-            lc += np.array([float(cmap.get(int(i), 1)) for i in ids], dtype=np.float64)
-            lc_trees[:, t] = np.array(
-                [float(cmap.get(int(i), 1)) for i in ids], dtype=np.float64
-            )
+            if vmap:
+                max_leaf = max(vmap.keys()) + 1
+                lookup_v = np.zeros(max_leaf, dtype=np.float64)
+                for k, v in vmap.items():
+                    lookup_v[k] = v
+                safe_ids = np.clip(ids, 0, max_leaf - 1)
+                lv += lookup_v[safe_ids]
+            if cmap:
+                max_leaf_c = max(cmap.keys()) + 1
+                lookup_c = np.zeros(max_leaf_c, dtype=np.float64)
+                lookup_c.fill(1.0)
+                for k, v in cmap.items():
+                    lookup_c[k] = v
+                safe_ids_c = np.clip(ids, 0, max_leaf_c - 1)
+                cnt_vals = lookup_c[safe_ids_c]
+                lc += cnt_vals
+                lc_trees[:, t] = cnt_vals
         mean_leaf_var = (lv / max(n_trees, 1)).astype(np.float32)
         mean_leaf_count = (lc / max(n_trees, 1)).astype(np.float32)
         support_factor = np.log1p(mean_leaf_count) / max(
@@ -471,44 +831,106 @@ class WeakResidualMetaRegressor:
         }
 
     def fit(
-        self, X, y, sample_weight=None, groups=None, y_per_horizon=None, y_binary=None
+        self,
+        X,
+        y,
+        sample_weight=None,
+        groups=None,
+        y_per_horizon=None,
+        y_binary=None,
+        **kwargs,
     ):
+        from extreme_price_movements.utils import tprint as _tprint
+
         X_df = pd.DataFrame(X).replace([np.inf, -np.inf], 0.0).fillna(0.0)
         y_t = np.asarray(y, dtype=np.float32)
+        _tprint(f"WRMetaRegressor.fit: n={len(y_t)}, p={X_df.shape[1]}")
 
         ridge_feats = _preridge_elasticnet_select(
             X_df, y_t, classifier=False, max_keep=120
         )
         X_ridge = X_df[ridge_feats]
+        X_ridge_np = X_ridge.to_numpy(dtype=np.float32)
+        sw = (
+            np.ones(len(X_ridge_np), dtype=np.float32)
+            if sample_weight is None
+            else np.asarray(sample_weight, dtype=np.float32)
+        )
+
+        cv = KFold(n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=42)
+        ridge_oof_pred = np.zeros(len(X_ridge_np), dtype=np.float32)
+        for tr, va in cv.split(X_ridge_np):
+            fold = Pipeline(
+                [
+                    ("scaler", RobustScaler()),
+                    ("ridge", Ridge(alpha=0.5, random_state=42)),
+                ]
+            )
+            fold.fit(X_ridge_np[tr], y_t[tr], ridge__sample_weight=sw[tr])
+            ridge_oof_pred[va] = fold.predict(X_ridge_np[va]).astype(np.float32)
+
         ridge = Pipeline(
             [("scaler", RobustScaler()), ("ridge", Ridge(alpha=0.5, random_state=42))]
         )
-        if sample_weight is None:
-            ridge.fit(X_ridge, y_t)
-        else:
-            ridge.fit(
-                X_ridge,
-                y_t,
-                ridge__sample_weight=np.asarray(sample_weight, dtype=np.float32),
-            )
-        ridge_pred = ridge.predict(X_ridge).astype(np.float32)
+        ridge.fit(X_ridge_np, y_t, ridge__sample_weight=sw)
+        _tprint(
+            f"  Ridge CV done: {len(ridge_feats)} features, residual std={np.std(y_t - ridge_oof_pred):.4f}"
+        )
 
-        ridge_target = y_t
-        signed_residual = (ridge_target - ridge_pred).astype(np.float32)
+        target_horizon = kwargs.get("target_horizon")
+        if target_horizon is None and y_per_horizon is not None:
+            target_horizon = kwargs.get("horizon")
+        target_horizon_int = int(target_horizon) if target_horizon is not None else None
+        y_base_target = np.asarray(kwargs.get("y_base_target", y_t), dtype=np.float32)
+        base_pred_for_resid = np.asarray(
+            kwargs.get("base_oof_pred", ridge_oof_pred), dtype=np.float32
+        )
+        atr_scale = _resolve_atr_scale(
+            X_df, len(y_t), kwargs, target_horizon_int
+        ).astype(np.float32)
+        signed_residual, resid_diag = _build_residual_target(
+            y_base_target=y_base_target,
+            base_oof_pred=base_pred_for_resid,
+            atr_scale=atr_scale,
+        )
+        ridge_target = y_base_target
         lgb_feats = _cluster_redundant_features(
-            X_df[ridge_feats], signed_residual, thr=0.97
+            X_df[ridge_feats], signed_residual, thr=0.98
         )
         X_lgb0 = X_df[lgb_feats]
         lgb_feats = _univariate_screen(
-            X_lgb0, ridge_target, ridge_pred, signed_residual, top_k=150
+            X_lgb0, ridge_target, ridge_oof_pred, signed_residual, top_k=150
+        )
+        lgb_feats = _cluster_redundant_features(
+            X_lgb0[lgb_feats], signed_residual, thr=0.95
         )
         X_lgb1 = X_lgb0[lgb_feats]
         lgb_feats = _iterative_fold_presence_prune(
             X_lgb1, signed_residual, classifier=False, min_features=40
         )
         X_lgb = X_lgb1[lgb_feats]
+        _tprint(
+            f"  Feature selection: ridge={len(ridge_feats)} -> lgb={len(lgb_feats)}"
+        )
 
         if lgb is not None and X_lgb.shape[1] > 0:
+            X_lgb_np = X_lgb.to_numpy(dtype=np.float32)
+            lgb_oof_pred = np.zeros(len(X_lgb_np), dtype=np.float32)
+            cv_lgb = KFold(n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=42)
+            for tr, va in cv_lgb.split(X_lgb_np):
+                fold_lgb = lgb.LGBMRegressor(
+                    objective="huber",
+                    n_estimators=500,
+                    max_depth=2,
+                    min_data_in_leaf=100,
+                    learning_rate=0.05,
+                    random_state=42,
+                    n_jobs=2,
+                    verbosity=-1,
+                )
+                fold_lgb.fit(X_lgb_np[tr], signed_residual[tr])
+                lgb_oof_pred[va] = fold_lgb.predict(X_lgb_np[va]).astype(np.float32)
+
             lgbm = lgb.LGBMRegressor(
                 objective="huber",
                 n_estimators=500,
@@ -517,10 +939,14 @@ class WeakResidualMetaRegressor:
                 learning_rate=0.05,
                 random_state=42,
                 n_jobs=2,
+                verbosity=-1,
             )
-            X_lgb_np = X_lgb.to_numpy(dtype=np.float32)
             lgbm.fit(X_lgb_np, signed_residual)
-            lgb_pred = lgbm.predict(X_lgb_np).astype(np.float32)
+            lgb_pred = lgb_oof_pred
+            _tprint(
+                f"  LightGBM CV done: OOF residual correlation={_safe_spearman(lgb_oof_pred, signed_residual):.4f}"
+            )
+
             train_leaf = np.asarray(
                 lgbm.booster_.predict(X_lgb_np, pred_leaf=True), dtype=np.int64
             )
@@ -528,8 +954,6 @@ class WeakResidualMetaRegressor:
                 train_leaf = train_leaf.reshape(-1, 1)
             self._leaf_var_maps = []
             self._leaf_cnt_maps = []
-            # Note: these maps are fit on the same rows used to train this v1 model.
-            # Diagnostics on train rows are therefore optimistic by construction.
             for t in range(train_leaf.shape[1]):
                 ids = train_leaf[:, t]
                 vmap: dict[int, float] = {}
@@ -553,6 +977,57 @@ class WeakResidualMetaRegressor:
             self._leaf_var_maps = []
             self._leaf_cnt_maps = []
 
+        leaf_ridge_bundle = _lgbm_leaf_ridge_fit(
+            X_lgb,
+            signed_residual,
+            sample_weight=sw,
+            random_state=47,
+        )
+        leaf_ridge_pred = np.asarray(
+            leaf_ridge_bundle.get("oof_pred", np.zeros(len(X_df), dtype=np.float32)),
+            dtype=np.float32,
+        )
+        leaf_ridge_score = float(leaf_ridge_bundle.get("score", 0.0))
+        lgb_score = _safe_spearman(lgb_pred, signed_residual)
+
+        ebm_res = train_ebm_on_lgbm_candidate(
+            X_lgb,
+            signed_residual,
+            sample_weight=sw,
+            random_state=42,
+            mode="regressor",
+        )
+        ebm_score = 0.0
+        ebm_oof = np.zeros(len(X_df), dtype=np.float32)
+        if ebm_res and "oof_probs" in ebm_res:
+            ebm_oof = np.asarray(ebm_res["oof_probs"], dtype=np.float32)
+            ebm_score = _safe_spearman(ebm_oof, signed_residual)
+            _tprint(f"  EBM CV done: OOF residual correlation={ebm_score:.4f}")
+
+        scores = {
+            "lgbm": lgb_score,
+            "leaf_ridge": leaf_ridge_score,
+            "ebm": ebm_score,
+        }
+        residual_model_name = max(scores, key=scores.get)
+
+        if residual_model_name == "ebm":
+            residual_pred = ebm_oof
+            self.ebm_model = fit_ebm_on_lgbm_full_model(
+                X_lgb,
+                signed_residual,
+                sample_weight=sw,
+                selected_features_from_cv=ebm_res.get("selected_features_from_cv"),
+                random_state=42,
+                mode="regressor",
+            )
+        elif residual_model_name == "leaf_ridge":
+            residual_pred = leaf_ridge_pred
+            self.ebm_model = None
+        else:
+            residual_pred = lgb_pred
+            self.ebm_model = None
+
         self._reg_unc_a = 1.0
         self._reg_unc_C = float(np.percentile(leaf_cnt, 95))
         support_factor = np.log1p(leaf_cnt) / max(np.log1p(self._reg_unc_C), 1e-6)
@@ -567,49 +1042,73 @@ class WeakResidualMetaRegressor:
             )
         else:
             unc = np.ones(len(unc_raw), dtype=np.float32)
-        final = ridge_pred + 0.3 * lgb_pred * unc
+        _tprint(f"  Uncertainty: lo={self._reg_unc_lo:.4f} hi={self._reg_unc_hi:.4f}")
+        final = ridge_oof_pred + self.lambda_reg * residual_pred * unc
 
         self.selected_features = list(dict.fromkeys(ridge_feats + lgb_feats))
         self.ridge_model = ridge
         self.lgbm_model = lgbm
+        self.lgbm_leaf_ridge_bundle = leaf_ridge_bundle
         self.model = ridge
         self.oof_probs = final.astype(np.float32)
         self._diag = {
-            "ridge_features": np.array(ridge_feats, dtype=object),
-            "lgbm_features": np.array(lgb_feats, dtype=object),
-            "ridge_pred": ridge_pred,
-            "lgbm_pred": lgb_pred,
+            "ridge_features": list(ridge_feats),
+            "lgbm_features": list(lgb_feats),
+            "ridge_pred": ridge_oof_pred.astype(np.float32),
+            "lgbm_pred": lgb_pred.astype(np.float32),
+            "lgbm_leaf_ridge_pred": leaf_ridge_pred.astype(np.float32),
+            "ebm_pred": ebm_oof.astype(np.float32),
+            "residual_model_name": residual_model_name,
+            "residual_pred": residual_pred.astype(np.float32),
             "meta_reg_leaf_var": leaf_var,
             "meta_reg_leaf_count": leaf_cnt,
             "meta_reg_support_factor": support_factor.astype(np.float32),
             "meta_reg_uncertainty": unc.astype(np.float32),
             "final": final.astype(np.float32),
-            "unc_lo": np.float32(self._reg_unc_lo),
-            "unc_hi": np.float32(self._reg_unc_hi),
-            "unc_a": np.float32(self._reg_unc_a),
-            "leaf_count_cap_C": np.float32(self._reg_unc_C),
-            # Persist compact leaf maps in diagnostic payload for artifact tracing.
-            "leaf_var_maps": np.array(self._leaf_var_maps, dtype=object),
-            "leaf_cnt_maps": np.array(self._leaf_cnt_maps, dtype=object),
+            "unc_lo": float(self._reg_unc_lo),
+            "unc_hi": float(self._reg_unc_hi),
+            "unc_a": float(self._reg_unc_a),
+            "leaf_count_cap_C": float(self._reg_unc_C),
+            "leaf_var_maps": self._leaf_var_maps,
+            "leaf_cnt_maps": self._leaf_cnt_maps,
+            "lambda_reg": float(self.lambda_reg),
+            "resid_target": signed_residual.astype(np.float32),
+            "resid_target_uses_raw_base": kwargs.get("base_oof_pred") is not None,
+            **resid_diag,
         }
+        _tprint(f"WRMetaRegressor.fit: complete, final std={np.std(final):.4f}")
         return self
 
     def predict(self, X):
         X_df = pd.DataFrame(X).replace([np.inf, -np.inf], 0.0).fillna(0.0)
-        rf = [c for c in self._diag.get("ridge_features", []) if c in X_df.columns]
+        rf = [c for c in self.selected_features if c in X_df.columns]
         lf = [c for c in self._diag.get("lgbm_features", []) if c in X_df.columns]
-        r = self.ridge_model.predict(X_df.reindex(columns=rf, fill_value=0.0)).astype(
-            np.float32
-        )
+        X_ridge = X_df.reindex(columns=rf, fill_value=0.0).to_numpy(dtype=np.float32)
+        r = self.ridge_model.predict(X_ridge).astype(np.float32)
         X_lgb_np = X_df.reindex(columns=lf, fill_value=0.0).to_numpy(dtype=np.float32)
         l = (
             self.lgbm_model.predict(X_lgb_np).astype(np.float32)
             if self.lgbm_model is not None and len(lf) > 0
             else np.zeros(len(X_df), dtype=np.float32)
         )
+        lr = (
+            _lgbm_leaf_ridge_predict(
+                self.lgbm_leaf_ridge_bundle,
+                X_df.reindex(columns=lf, fill_value=0.0),
+            )
+            if self.lgbm_leaf_ridge_bundle is not None and len(lf) > 0
+            else np.zeros(len(X_df), dtype=np.float32)
+        )
+        residual_model_name = self._diag.get("residual_model_name", "lgbm")
+        if residual_model_name == "ebm" and self.ebm_model is not None:
+            residual_pred = self.ebm_model.predict(X_df).astype(np.float32)
+        elif residual_model_name == "leaf_ridge":
+            residual_pred = lr
+        else:
+            residual_pred = l
         u_dict = self._compute_reg_lgbm_uncertainty(X_lgb_np)
         u = u_dict["uncertainty"]
-        return (r + 0.3 * l * u).astype(np.float32)
+        return (r + self.lambda_reg * residual_pred * u).astype(np.float32)
 
     def predict_uncertainty_features(self, X):
         n = len(X)
@@ -664,7 +1163,24 @@ class WeakResidualMetaClassifier:
         self.oof_probs: Optional[np.ndarray] = None
         self._diag: Dict[str, np.ndarray] = {}
 
+    def __repr__(self) -> str:
+        n_feat = len(self.selected_features)
+        has_lgbm = self.lgbm_model is not None
+        has_cal = self.calibrator is not None
+        return (
+            f"WeakResidualMetaClassifier("
+            f"strategy={self.strategy_name!r}, "
+            f"features={n_feat}, "
+            f"lgbm={has_lgbm}, "
+            f"calibrator={has_cal})"
+        )
+
+    def clear_diagnostics(self) -> None:
+        self._diag = {}
+
     def fit(self, X, y, sample_weight=None, groups=None, **kwargs):
+        from extreme_price_movements.utils import tprint as _tprint
+
         X_df = pd.DataFrame(X).replace([np.inf, -np.inf], 0.0).fillna(0.0)
 
         base_oof_pred = kwargs.get("base_oof_pred")
@@ -679,6 +1195,9 @@ class WeakResidualMetaClassifier:
         y_true = (np.asarray(y_true_clf, dtype=np.float32) > 0.5).astype(np.int8)
         base_pred_class = (base_prob >= base_threshold).astype(np.int8)
         base_clf_correct = (base_pred_class == y_true).astype(np.int8)
+        _tprint(
+            f"WRMetaClassifier.fit: n={len(y_true)}, p={X_df.shape[1]}, base_acc={float(np.mean(base_clf_correct)):.3f}"
+        )
 
         ridge_feats = _preridge_elasticnet_select(
             X_df, base_clf_correct.astype(np.float32), classifier=True, max_keep=120
@@ -691,7 +1210,7 @@ class WeakResidualMetaClassifier:
             else np.asarray(sample_weight, dtype=np.float32)
         )
 
-        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        cv = StratifiedKFold(n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=42)
         ridge_oof_prob = np.zeros(len(X_ridge_np), dtype=np.float32)
         for tr, va in cv.split(X_ridge_np, base_clf_correct):
             fold = Pipeline(
@@ -715,6 +1234,9 @@ class WeakResidualMetaClassifier:
             ]
         )
         ridge.fit(X_ridge_np, base_clf_correct, ridge__sample_weight=sw)
+        _tprint(
+            f"  Ridge CV done: OOF IC={_safe_spearman(ridge_oof_prob, base_clf_correct.astype(np.float32)):.4f}"
+        )
 
         clf_residual = base_clf_correct.astype(np.float32) - ridge_oof_prob
         y3 = np.ones(len(clf_residual), dtype=np.int32)
@@ -723,9 +1245,12 @@ class WeakResidualMetaClassifier:
             y3[va] = 1
             y3[va][clf_residual[va] < q1] = 0
             y3[va][clf_residual[va] >= q2] = 2
+        _tprint(
+            f"  y3 class distribution: {dict(zip(*np.unique(y3, return_counts=True)))}"
+        )
 
         lgb_feats = _cluster_redundant_features(
-            X_df[ridge_feats], clf_residual, thr=0.97
+            X_df[ridge_feats], clf_residual, thr=0.98
         )
         X_lgb0 = X_df[lgb_feats]
         lgb_feats = _univariate_screen(
@@ -735,16 +1260,32 @@ class WeakResidualMetaClassifier:
             clf_residual,
             top_k=150,
         )
+        lgb_feats = _cluster_redundant_features(
+            X_lgb0[lgb_feats], clf_residual, thr=0.95
+        )
         X_lgb1 = X_lgb0[lgb_feats]
         lgb_feats = _iterative_fold_presence_prune(
             X_lgb1, y3, classifier=True, min_features=40
         )
         X_lgb = X_lgb1[lgb_feats]
+        _tprint(
+            f"  Feature selection: ridge={len(ridge_feats)} -> lgb={len(lgb_feats)}"
+        )
 
-        if lgb is not None and X_lgb.shape[1] > 0:
+        y3_classes, y3_counts = np.unique(y3, return_counts=True)
+        can_fit_lgbm_clf = (
+            lgb is not None
+            and X_lgb.shape[1] > 0
+            and len(y3_classes) == 3
+            and int(np.min(y3_counts)) >= WR_META_CV_SPLITS
+        )
+
+        if can_fit_lgbm_clf:
             X_lgb_np = X_lgb.to_numpy(dtype=np.float32)
             p3 = np.zeros((len(X_lgb_np), 3), dtype=np.float32)
-            cv_lgb = StratifiedKFold(n_splits=5, shuffle=True, random_state=44)
+            cv_lgb = StratifiedKFold(
+                n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=44
+            )
             for tr, va in cv_lgb.split(X_lgb_np, y3):
                 clf_fold = lgb.LGBMClassifier(
                     objective="multiclass",
@@ -755,6 +1296,7 @@ class WeakResidualMetaClassifier:
                     learning_rate=0.05,
                     random_state=42,
                     n_jobs=2,
+                    verbosity=-1,
                 )
                 clf_fold.fit(X_lgb_np[tr], y3[tr])
                 p3[va] = clf_fold.predict_proba(X_lgb_np[va]).astype(np.float32)
@@ -767,8 +1309,10 @@ class WeakResidualMetaClassifier:
                 learning_rate=0.05,
                 random_state=42,
                 n_jobs=2,
+                verbosity=-1,
             )
             clf.fit(X_lgb_np, y3)
+            _tprint(f"  LightGBM 3-class CV done")
         else:
             clf = None
             p3 = np.full((len(X_lgb), 3), 1.0 / 3.0, dtype=np.float32)
@@ -787,7 +1331,9 @@ class WeakResidualMetaClassifier:
         )
 
         final_cal_oof = np.zeros(len(final_raw), dtype=np.float32)
-        cal_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=43)
+        cal_cv = StratifiedKFold(
+            n_splits=WR_META_CV_SPLITS, shuffle=True, random_state=43
+        )
         for tr, va in cal_cv.split(final_raw.reshape(-1, 1), base_clf_correct):
             cal_fold = IsotonicRegression(out_of_bounds="clip")
             cal_fold.fit(final_raw[tr], base_clf_correct[tr])
@@ -805,8 +1351,8 @@ class WeakResidualMetaClassifier:
         self.model = ridge
         self.oof_probs = final.astype(np.float32)
         self._diag = {
-            "ridge_features": np.array(ridge_feats, dtype=object),
-            "lgbm_features": np.array(lgb_feats, dtype=object),
+            "ridge_features": list(ridge_feats),
+            "lgbm_features": list(lgb_feats),
             "base_clf_correct": base_clf_correct.astype(np.float32),
             "ridge_prob_correct": ridge_oof_prob.astype(np.float32),
             "meta_clf_lgbm_adj": lgb_signed.astype(np.float32),
@@ -827,9 +1373,8 @@ class WeakResidualMetaClassifier:
         X_df = pd.DataFrame(X).replace([np.inf, -np.inf], 0.0).fillna(0.0)
         rf = [c for c in self._diag.get("ridge_features", []) if c in X_df.columns]
         lf = [c for c in self._diag.get("lgbm_features", []) if c in X_df.columns]
-        score = self.ridge_model.decision_function(
-            X_df.reindex(columns=rf, fill_value=0.0)
-        ).astype(np.float32)
+        X_ridge = X_df.reindex(columns=rf, fill_value=0.0).to_numpy(dtype=np.float32)
+        score = self.ridge_model.decision_function(X_ridge).astype(np.float32)
         p_r = 1.0 / (1.0 + np.exp(-score))
         if self.lgbm_model is not None and len(lf) > 0:
             p3 = self.lgbm_model.predict_proba(

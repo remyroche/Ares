@@ -1,0 +1,21 @@
+{
+  "alpha_to_c_mapping": "C = 1 / alpha",
+  "mode": "clf",
+  "winsorization": "1-99 percentile per fold on train split only",
+  "standardization": "z-score per fold on train split only",
+  "uncertainty_direction_rule": "higher = more uncertain; vote_margin/vote_top_gap/leaf_support flipped",
+  "required_outputs": [
+    "s_final_oof",
+    "p_final_oof"
+  ],
+  "live_inference_preprocess_keys": [
+    "features",
+    "lower",
+    "upper",
+    "mean",
+    "std",
+    "alpha",
+    "l1_ratio",
+    "C"
+  ]
+}

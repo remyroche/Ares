@@ -72,29 +72,55 @@
   ],
   "strategies": [
     {
-      "trade_side": "short",
-      "strategy_id": "dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928",
+      "trade_side": "long",
+      "strategy_id": "dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898",
       "horizons": [
-        10
+        5
       ],
       "oof_files": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_H10.parquet"
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5.parquet"
       ],
       "native_model_dirs": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/short_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_H10"
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/long_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5"
       ]
     },
     {
-      "trade_side": "short",
-      "strategy_id": "dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936",
+      "trade_side": "long",
+      "strategy_id": "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639",
+      "horizons": [
+        5
+      ],
+      "oof_files": [
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_H5.parquet"
+      ],
+      "native_model_dirs": [
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/long_dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_H5"
+      ]
+    },
+    {
+      "trade_side": "long",
+      "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
       "horizons": [
         10
       ],
       "oof_files": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_H10.parquet"
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_H10.parquet"
       ],
       "native_model_dirs": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/short_dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_H10"
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/long_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_H10"
+      ]
+    },
+    {
+      "trade_side": "long",
+      "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+      "horizons": [
+        10
+      ],
+      "oof_files": [
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_H10.parquet"
+      ],
+      "native_model_dirs": [
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/long_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_H10"
       ]
     },
     {
@@ -124,42 +150,29 @@
       ]
     },
     {
-      "trade_side": "long",
-      "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+      "trade_side": "short",
+      "strategy_id": "dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928",
       "horizons": [
         10
       ],
       "oof_files": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_H10.parquet"
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_H10.parquet"
       ],
       "native_model_dirs": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/long_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_H10"
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/short_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_H10"
       ]
     },
     {
-      "trade_side": "long",
-      "strategy_id": "dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898",
+      "trade_side": "short",
+      "strategy_id": "dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936",
       "horizons": [
-        5
+        10
       ],
       "oof_files": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5.parquet"
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_H10.parquet"
       ],
       "native_model_dirs": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/long_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5"
-      ]
-    },
-    {
-      "trade_side": "long",
-      "strategy_id": "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639",
-      "horizons": [
-        5
-      ],
-      "oof_files": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_H5.parquet"
-      ],
-      "native_model_dirs": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/long_dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_H5"
+        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/short_dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_H10"
       ]
     }
   ]

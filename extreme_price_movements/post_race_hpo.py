@@ -32,7 +32,7 @@ from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
 from optuna.samplers import TPESampler
 from scipy.stats import rankdata, spearmanr
 from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
-from sklearn.metrics import roc_auc_score, brier_score_loss, average_precision_score
+from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
 
 from extreme_price_movements.utils import tprint
 
@@ -565,7 +565,7 @@ def suggest_extratrees_base_reg(
         "min_impurity_decrease": min_impurity_decrease,
         "ccp_alpha": ccp_alpha,
         "max_leaf_nodes": max_leaf_nodes,
-        "criterion": "absolute_error",
+        "criterion": "squared_error",
         "n_jobs": 3,
         "random_state": base_random_state,
     }
@@ -586,7 +586,7 @@ def _fallback_extratrees_base_reg_params(
         "min_impurity_decrease": 1e-4,
         "ccp_alpha": 1e-5,
         "max_leaf_nodes": 512,
-        "criterion": "absolute_error",
+        "criterion": "squared_error",
         "n_jobs": 3,
         "random_state": base_random_state,
     }
@@ -674,7 +674,9 @@ def _make_optuna_patience_callback(
             return
         if int(trial.number) < int(min_trials_before_stop):
             return
-        if best_trial_number >= 0 and (int(trial.number) - best_trial_number) >= int(patience):
+        if best_trial_number >= 0 and (int(trial.number) - best_trial_number) >= int(
+            patience
+        ):
             tprint(
                 f"{label}: early stopping after {patience} trials without improvement "
                 f"(best={best_value:.6f}, last_improved_trial={best_trial_number})"
@@ -777,7 +779,6 @@ def _fit_predict_fold(
     raise ValueError(f"Unknown model_name={model_name}")
 
 
-
 def _compute_lift_top30(y_score: np.ndarray, y_true: np.ndarray) -> float:
     """Compute lift in positive rate for top 30% predictions vs baseline positive rate."""
     y_score = np.asarray(y_score, dtype=np.float64)
@@ -820,7 +821,8 @@ def _compute_precision_top10(y_score: np.ndarray, y_true: np.ndarray) -> float:
 
 def _compute_pr_auc_top30(y_score: np.ndarray, y_true: np.ndarray) -> float:
     """Compute PR AUC specifically for the top 30% of predictions."""
-    from sklearn.metrics import precision_recall_curve, auc
+    from sklearn.metrics import auc, precision_recall_curve
+
     y_score = np.asarray(y_score, dtype=np.float64)
     y_true = np.asarray(y_true, dtype=np.int32)
 
@@ -847,7 +849,7 @@ def _compute_pr_auc_top30(y_score: np.ndarray, y_true: np.ndarray) -> float:
 
 def _compute_pr_auc_lift(y_true: np.ndarray, y_score: np.ndarray) -> float:
     """Compute PR AUC lift over baseline (random) PR AUC."""
-    from sklearn.metrics import precision_recall_curve, auc
+    from sklearn.metrics import auc, precision_recall_curve
 
     y_true = np.asarray(y_true, dtype=np.int32)
     y_score = np.asarray(y_score, dtype=np.float64)
@@ -981,12 +983,14 @@ def make_objective(
                 except Exception:
                     brier = 1.0  # Worst case
 
-                fold_metrics.append({
-                    "pr_auc_lift": pr_auc_lift,
-                    "top30_abs_ret_lift": top30_abs_ret_lift,
-                    "ic_t30": ic_t30,
-                    "brier": brier,
-                })
+                fold_metrics.append(
+                    {
+                        "pr_auc_lift": pr_auc_lift,
+                        "top30_abs_ret_lift": top30_abs_ret_lift,
+                        "ic_t30": ic_t30,
+                        "brier": brier,
+                    }
+                )
 
         # Aggregate metrics across all folds/seeds
         if not fold_metrics:
@@ -1013,11 +1017,31 @@ def make_objective(
         stats_brier = _running_stats_base["brier"]
 
         # Compute z-scores (using population stats if available, else use trial as reference)
-        z_pr = stats_pr.zscore(trial_pr_auc_lift) if stats_pr.n >= 10 else trial_pr_auc_lift * 5.0
-        z_top30 = stats_top30.zscore(trial_top30_abs_ret_lift) if stats_top30.n >= 10 else trial_top30_abs_ret_lift * 5.0
-        z_median_ic = stats_median_ic.zscore(trial_median_ic_t30) if stats_median_ic.n >= 10 else trial_median_ic_t30 * 5.0
-        z_std_ic = stats_std_ic.zscore(trial_std_ic_t30) if stats_std_ic.n >= 10 else trial_std_ic_t30 * 5.0
-        z_brier = stats_brier.zscore(trial_brier) if stats_brier.n >= 10 else (trial_brier - 0.25) * 5.0
+        z_pr = (
+            stats_pr.zscore(trial_pr_auc_lift)
+            if stats_pr.n >= 10
+            else trial_pr_auc_lift * 5.0
+        )
+        z_top30 = (
+            stats_top30.zscore(trial_top30_abs_ret_lift)
+            if stats_top30.n >= 10
+            else trial_top30_abs_ret_lift * 5.0
+        )
+        z_median_ic = (
+            stats_median_ic.zscore(trial_median_ic_t30)
+            if stats_median_ic.n >= 10
+            else trial_median_ic_t30 * 5.0
+        )
+        z_std_ic = (
+            stats_std_ic.zscore(trial_std_ic_t30)
+            if stats_std_ic.n >= 10
+            else trial_std_ic_t30 * 5.0
+        )
+        z_brier = (
+            stats_brier.zscore(trial_brier)
+            if stats_brier.n >= 10
+            else (trial_brier - 0.25) * 5.0
+        )
 
         # Update running stats with this trial's values for future trials
         stats_pr.update(trial_pr_auc_lift)
@@ -1032,7 +1056,7 @@ def make_objective(
             + 0.3 * z_top30
             + 0.2 * z_median_ic
             - 0.2 * z_std_ic  # Penalize high std
-            - 0.1 * z_brier   # Penalize high Brier
+            - 0.1 * z_brier  # Penalize high Brier
         )
 
         # Report intermediate value for pruning
@@ -1492,7 +1516,7 @@ def run_base_extratrees_hpo(
     os.makedirs(out_dir, exist_ok=True)
 
     X, y_hard = _subsample_diverse(
-        X, y_hard, symbols, max_rows=max_rows, rng_seed=random_state
+        X, y_hard, symbols, max_rows=min(max_rows, 7500), rng_seed=random_state
     )
     if sw is not None and sw.shape[0] != y_hard.shape[0]:
         sw = None
@@ -1510,15 +1534,12 @@ def run_base_extratrees_hpo(
             "Not enough CV splits — reduce purge/embargo or increase n_splits."
         )
 
-    total_rounds = n_splits
-    warmup_steps = max(1, int(np.ceil(0.20 * total_rounds)))
-
     sampler = TPESampler(seed=random_state, multivariate=True, group=True)
     pruner = SuccessiveHalvingPruner(
         min_resource=1,
         reduction_factor=2,
         min_early_stopping_rate=0,
-        bootstrap_count=5,
+        bootstrap_count=1,
     )
 
     study = optuna.create_study(
@@ -1528,7 +1549,9 @@ def run_base_extratrees_hpo(
         pruner=pruner,
     )
 
-    def _log_best_trial(study_obj: optuna.Study, trial_obj: optuna.trial.FrozenTrial) -> None:
+    def _log_best_trial(
+        study_obj: optuna.Study, trial_obj: optuna.trial.FrozenTrial
+    ) -> None:
         completed = [
             t
             for t in study_obj.trials
@@ -1576,6 +1599,24 @@ def run_base_extratrees_hpo(
             X_tr, y_tr = X[tr], y_hard[tr]
             X_va, y_va = X[va], y_hard[va]
             sw_tr = None if sw is None else sw[tr]
+
+            if len(tr) > 5000:
+                rng = np.random.default_rng(random_state + fold_i)
+                _pos = np.where(y_tr == 1)[0]
+                _neg = np.where(y_tr == 0)[0]
+                _n_pos = max(1, int(5000 * len(_pos) / len(tr)))
+                _n_neg = 5000 - _n_pos
+                _sub = np.sort(
+                    np.concatenate(
+                        [
+                            rng.choice(_pos, min(len(_pos), _n_pos), replace=False),
+                            rng.choice(_neg, min(len(_neg), _n_neg), replace=False),
+                        ]
+                    ).astype(np.int64)
+                )
+                X_tr = X_tr[_sub]
+                y_tr = y_tr[_sub]
+                sw_tr = None if sw_tr is None else sw_tr[_sub]
 
             clf = build_extratrees(params)
             clf.fit(X_tr, y_tr, sample_weight=sw_tr)
@@ -1645,7 +1686,9 @@ def run_base_extratrees_hpo(
     payload = {
         "best_value": best_value,
         "best_params": best_params,
-        "selected_features": [str(v) for v in (selected_features or []) if isinstance(v, str)],
+        "selected_features": [
+            str(v) for v in (selected_features or []) if isinstance(v, str)
+        ],
         "n_trials_completed": len(study.trials),
         "n_trials_finished": int(len(completed_trials)),
         "n_pos_at_optimisation": n_pos,
@@ -1659,7 +1702,12 @@ def run_base_extratrees_hpo(
             if best_trial is not None
             else float("nan"),
             "fold_Qs": [
-                float(v) for v in (best_trial.user_attrs.get("fold_Qs", []) if best_trial is not None else [])
+                float(v)
+                for v in (
+                    best_trial.user_attrs.get("fold_Qs", [])
+                    if best_trial is not None
+                    else []
+                )
             ],
             "objective": float(best_trial.user_attrs.get("objective", best_value))
             if best_trial is not None
@@ -1697,18 +1745,22 @@ def run_base_extratrees_reg_hpo(
 ) -> Dict[str, Any]:
     X = _as_2d(X)
     y_reg = _as_1d(y).astype(np.float32, copy=False)
-    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32, copy=False)
+    sw = (
+        None
+        if sample_weight is None
+        else _as_1d(sample_weight).astype(np.float32, copy=False)
+    )
 
     os.makedirs(out_dir, exist_ok=True)
     X, y_reg = _subsample_diverse(
-        X, y_reg, symbols, max_rows=max_rows, rng_seed=random_state
+        X, y_reg, symbols, max_rows=min(max_rows, 7500), rng_seed=random_state
     )
     if sw is not None:
         _, sw = _subsample_diverse(
             np.zeros((len(sw), 1), dtype=np.float32),
             sw,
             symbols,
-            max_rows=max_rows,
+            max_rows=min(max_rows, 7500),
             rng_seed=random_state,
         )
     finite_mask = np.isfinite(y_reg)
@@ -1778,7 +1830,9 @@ def run_base_extratrees_reg_hpo(
         valid = np.isfinite(means)
         if int(valid.sum()) < 3:
             return 0.0
-        return _spearman_safe(np.arange(len(means), dtype=np.float64)[valid], means[valid])
+        return _spearman_safe(
+            np.arange(len(means), dtype=np.float64)[valid], means[valid]
+        )
 
     scope_name = scope_key or study_name
     patience_callback = _make_optuna_patience_callback(
@@ -1802,6 +1856,15 @@ def run_base_extratrees_reg_hpo(
             X_tr, y_tr = X[tr], y_reg[tr]
             X_va, y_va = X[va], y_reg[va]
             sw_tr = None if sw is None else sw[tr]
+
+            if len(tr) > 5000:
+                rng = np.random.default_rng(random_state + fold_i)
+                _sub = rng.choice(len(tr), size=5000, replace=False)
+                _sub.sort()
+                X_tr = X_tr[_sub]
+                y_tr = y_tr[_sub]
+                sw_tr = None if sw_tr is None else sw_tr[_sub]
+
             model = ExtraTreesRegressor(**params)
             model.fit(X_tr, y_tr, sample_weight=sw_tr)
             pred = model.predict(X_va).astype(np.float32, copy=False)

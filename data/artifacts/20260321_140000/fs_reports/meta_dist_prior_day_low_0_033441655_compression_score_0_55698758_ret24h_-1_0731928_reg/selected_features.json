@@ -1,30 +1,8 @@
 {
   "selected_features": [
-    "vol_concentration_12",
-    "asset_atr_level",
     "vol_regime_z",
     "volume_entropy_12",
-    "kf_ret1h_mean",
-    "vol_state",
-    "vol_z_30_calm",
-    "time_since_peak_12h",
-    "asset_vol_level",
-    "spike_score",
-    "rng_z",
-    "kf_atr_mean",
-    "vol_regime_switch_12h",
-    "kf_innov_var",
-    "time_since_trough_12h",
-    "impact_z",
-    "vol_low",
-    "rvol_hod_base",
-    "base_prob_x_entropy",
-    "regime_stability_24h",
-    "liq_score",
-    "vol_high",
-    "vol_scale",
-    "t_trail_proxy",
-    "kf_vol_ratio_mean"
+    "coherence_24"
   ],
   "anchors": []
 }

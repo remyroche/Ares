@@ -2458,6 +2458,7 @@ class MetaClassifierModel:
         self.monotone_constraints: Optional[Dict[str, int]] = None
         self.collect_uncertainty_metrics: bool = False
         self.hpo_n_trials: Optional[int] = None
+        self.cv_splits: int = 2
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)

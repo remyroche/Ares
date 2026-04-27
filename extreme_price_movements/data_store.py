@@ -5,6 +5,7 @@ import concurrent.futures
 import numpy as np
 import pandas as pd
 import ccxt
+import gc as _gc
 import glob
 import shutil
 import fcntl
@@ -71,7 +72,9 @@ def _normalize_feature_index(
     if idx.dtype == object:
         safe_values = []
         for value in idx_vals:
-            if isinstance(value, (int, np.integer, float, np.floating)) and not pd.isna(value):
+            if isinstance(value, (int, np.integer, float, np.floating)) and not pd.isna(
+                value
+            ):
                 safe_values.append(pd.NaT)
             else:
                 safe_values.append(value)
@@ -101,7 +104,9 @@ def _coerce_feature_values_float32(values) -> np.ndarray:
     return pd.to_numeric(series, errors="coerce").to_numpy(dtype=np.float32, copy=False)
 
 
-def _normalize_allowed_periods(allowed_periods) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+def _normalize_allowed_periods(
+    allowed_periods,
+) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
     normalized: list[tuple[pd.Timestamp, pd.Timestamp]] = []
     if not allowed_periods:
         return normalized
@@ -143,6 +148,7 @@ def _build_parquet_ts_filters(
     allowed_periods=None,
 ):
     """Build pyarrow parquet filters for timestamp pushdown when possible."""
+
     def _to_utc_filter_ts(ts: Optional[pd.Timestamp]) -> Optional[pd.Timestamp]:
         if ts is None:
             return None
@@ -171,7 +177,11 @@ def _build_parquet_ts_filters(
                     period_start = max(period_start, start_ts)
                 if end_ts is not None:
                     period_end = min(period_end, end_ts)
-                if period_end is not None and period_start is not None and period_end > period_start:
+                if (
+                    period_end is not None
+                    and period_start is not None
+                    and period_end > period_start
+                ):
                     clipped.append((period_start, period_end))
             periods = clipped
 
@@ -245,17 +255,19 @@ def _recover_feature_index_from_metadata(
         return pd.DatetimeIndex([start], tz="UTC")
     return pd.date_range(start=start, end=end, periods=row_count, tz="UTC")
 
+
 class FileLock:
     """
     Simple file-based lock using fcntl for Unix-like systems.
     """
+
     def __init__(self, lock_file):
         self.lock_file = lock_file
         self.handle = None
 
     def __enter__(self):
         try:
-            self.handle = open(self.lock_file, 'w')
+            self.handle = open(self.lock_file, "w")
             # Blocking exclusive lock
             fcntl.flock(self.handle, fcntl.LOCK_EX)
         except Exception as e:
@@ -272,6 +284,7 @@ class FileLock:
                 self.handle.close()
             except Exception as e:
                 tprint(f"Error releasing lock {self.lock_file}: {e}")
+
 
 def make_spot_exchange():
     ex = ccxt.binance({"enableRateLimit": True})
@@ -323,7 +336,14 @@ def _extract_timestamp_ms(row: dict) -> Optional[int]:
     if not isinstance(row, dict):
         return None
     info = row.get("info", {}) if isinstance(row.get("info"), dict) else {}
-    for k in ["timestamp", "fundingTimestamp", "time", "transactTime", "calcTime", "fundingTime"]:
+    for k in [
+        "timestamp",
+        "fundingTimestamp",
+        "time",
+        "transactTime",
+        "calcTime",
+        "fundingTime",
+    ]:
         val = row.get(k)
         if val is None:
             val = info.get(k)
@@ -398,13 +418,18 @@ def _fetch_ccxt_history_paged(
     out = df.groupby("ts")["value"].last().sort_index().astype(np.float32)
     return out
 
+
 @retry_with_backoff(retries=3, backoff_in_seconds=2)
-def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", limit=1000):
+def _fetch_ohlcv_paged(
+    exchange, symbol, since_ms, until_ms, timeframe="1h", limit=1000
+):
     # Reduced logging: entry log removed
     out = []
     since = since_ms
     while True:
-        batch = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=limit)
+        batch = exchange.fetch_ohlcv(
+            symbol, timeframe=timeframe, since=since, limit=limit
+        )
         if not batch:
             break
         for row in batch:
@@ -424,14 +449,15 @@ def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", lim
         time.sleep(exchange.rateLimit / 1000)
 
     if not out:
-        return pd.DataFrame(columns=["ts","open","high","low","close","volume"]).set_index(
-            pd.DatetimeIndex([], tz="UTC", name="ts")
-        )
+        return pd.DataFrame(
+            columns=["ts", "open", "high", "low", "close", "volume"]
+        ).set_index(pd.DatetimeIndex([], tz="UTC", name="ts"))
 
-    df = pd.DataFrame(out, columns=["ts","open","high","low","close","volume"])
+    df = pd.DataFrame(out, columns=["ts", "open", "high", "low", "close", "volume"])
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
     df = df.drop_duplicates("ts").set_index("ts").sort_index()
     return df
+
 
 def fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe="1h", limit=1000):
     chunk_ms = int(pd.Timedelta(days=7).total_seconds() * 1000)
@@ -440,11 +466,14 @@ def fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe="1h", limit=
     start = since_ms
     while start < now_ms:
         end = min(start + chunk_ms, now_ms)
-        df = _fetch_ohlcv_paged(exchange, symbol, start, end, timeframe=timeframe, limit=limit)
+        df = _fetch_ohlcv_paged(
+            exchange, symbol, start, end, timeframe=timeframe, limit=limit
+        )
         if len(df):
             yield df
         start = end
         time.sleep(exchange.rateLimit / 1000)
+
 
 class PartitionedOHLCVStore:
     def __init__(self, root_dir="data", timeframe="1h"):
@@ -495,12 +524,23 @@ class PartitionedOHLCVStore:
         if df.empty:
             return df
         out = df.copy()
-        for col in ["open", "high", "low", "close", "volume", "funding_rate", "open_interest", "spot_close"]:
+        for col in [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "funding_rate",
+            "open_interest",
+            "spot_close",
+        ]:
             if col in out.columns:
                 out[col] = pd.to_numeric(out[col], errors="coerce").astype(np.float32)
         return out
 
-    def load(self, symbol: str, columns=None, start_ts=None, end_ts=None) -> pd.DataFrame:
+    def load(
+        self, symbol: str, columns=None, start_ts=None, end_ts=None
+    ) -> pd.DataFrame:
         """
         Load data for symbol with optimized file filtering.
         columns: list of columns to read (optimization).
@@ -509,23 +549,23 @@ class PartitionedOHLCVStore:
         """
         sym_dir = self._get_symbol_dir(symbol)
         if not os.path.exists(sym_dir):
-            return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
-                pd.DatetimeIndex([], tz="UTC", name="ts")
-            )
+            return pd.DataFrame(
+                columns=["open", "high", "low", "close", "volume"]
+            ).set_index(pd.DatetimeIndex([], tz="UTC", name="ts"))
 
         try:
             # 1. Gather and filter files by timestamp BEFORE reading
             files_to_read = []
             s_ts_sec = int(start_ts.timestamp()) if start_ts else 0
             e_ts_sec = int(end_ts.timestamp()) if end_ts else 2**63 - 1
-            
+
             for root, dirs, files in os.walk(sym_dir):
                 for f in files:
                     if not f.endswith(".parquet"):
                         continue
-                    
+
                     fpath = os.path.join(root, f)
-                    
+
                     # Parse filename for timestamp range
                     if start_ts is not None or end_ts is not None:
                         try:
@@ -534,19 +574,19 @@ class PartitionedOHLCVStore:
                             if len(parts) >= 3:
                                 f_min = int(parts[-2])
                                 f_max = int(parts[-1])
-                                
+
                                 # Check overlap: [f_min, f_max] ∩ [s_ts_sec, e_ts_sec]
                                 if f_min > e_ts_sec or f_max < s_ts_sec:
                                     continue  # Skip non-overlapping files
                         except (ValueError, IndexError):
                             pass  # Include file if parsing fails
-                    
+
                     files_to_read.append(fpath)
 
             if not files_to_read:
-                return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
-                    pd.DatetimeIndex([], tz="UTC", name="ts")
-                )
+                return pd.DataFrame(
+                    columns=["open", "high", "low", "close", "volume"]
+                ).set_index(pd.DatetimeIndex([], tz="UTC", name="ts"))
 
             # 2. Read only filtered files with column selection
             read_cols = None
@@ -561,10 +601,10 @@ class PartitionedOHLCVStore:
             try:
                 # Try with pandas default first
                 df = pd.read_parquet(files_to_read, columns=read_cols)
-                
+
                 # Convert any categorical columns to string to avoid downstream issues
                 for col in df.columns:
-                    if df[col].dtype.name == 'category':
+                    if df[col].dtype.name == "category":
                         df[col] = df[col].astype(str)
             except Exception as e:
                 # Fallback: read files one by one and concatenate
@@ -574,16 +614,18 @@ class PartitionedOHLCVStore:
                         part_df = pd.read_parquet(fpath, columns=read_cols)
                         # Convert categorical columns to string
                         for col in part_df.columns:
-                            if part_df[col].dtype.name == 'category':
+                            if part_df[col].dtype.name == "category":
                                 part_df[col] = part_df[col].astype(str)
                         dfs.append(part_df)
                     except Exception:
                         continue
-                
+
                 if dfs:
                     df = pd.concat(dfs, ignore_index=True)
                 else:
-                    df = pd.DataFrame(columns=read_cols) if read_cols else pd.DataFrame()
+                    df = (
+                        pd.DataFrame(columns=read_cols) if read_cols else pd.DataFrame()
+                    )
 
             if "ts" in df.columns:
                 df["ts"] = pd.to_datetime(df["ts"], utc=True)
@@ -603,14 +645,20 @@ class PartitionedOHLCVStore:
             return self._downcast(df)
         except Exception as e:
             tprint(f"Error loading {symbol}: {e}")
-            return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
-                pd.DatetimeIndex([], tz="UTC", name="ts")
-            )
+            return pd.DataFrame(
+                columns=["open", "high", "low", "close", "volume"]
+            ).set_index(pd.DatetimeIndex([], tz="UTC", name="ts"))
 
-    def save_partitioned(self, symbol: str, df: pd.DataFrame, defer_compact: bool = False):
+    def save_partitioned(
+        self, symbol: str, df: pd.DataFrame, defer_compact: bool = False
+    ):
         # Safely check if df is a valid DataFrame
         try:
-            if df is None or not isinstance(df, (pd.DataFrame, pd.Series)) or (hasattr(df, 'empty') and df.empty):
+            if (
+                df is None
+                or not isinstance(df, (pd.DataFrame, pd.Series))
+                or (hasattr(df, "empty") and df.empty)
+            ):
                 return
         except Exception:
             return
@@ -618,30 +666,41 @@ class PartitionedOHLCVStore:
         df = self._downcast(df)
         df_reset = df.reset_index().rename(columns={"index": "ts"})
         if "ts" not in df_reset.columns:
-             df_reset = df.reset_index()
-             if df_reset.columns[0] != "ts":
-                  df_reset.rename(columns={df_reset.columns[0]: "ts"}, inplace=True)
+            df_reset = df.reset_index()
+            if df_reset.columns[0] != "ts":
+                df_reset.rename(columns={df_reset.columns[0]: "ts"}, inplace=True)
 
         df_reset["ts"] = pd.to_datetime(df_reset["ts"], utc=True)
-        for c in ["open", "high", "low", "close", "volume", "funding_rate", "open_interest", "spot_close"]:
+        for c in [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "funding_rate",
+            "open_interest",
+            "spot_close",
+        ]:
             if c in df_reset.columns:
                 df_reset[c] = df_reset[c].astype(np.float32)
 
         df_reset["year"] = df_reset["ts"].dt.year
-        
+
         sym_dir = self._get_symbol_dir(symbol)
-        
+
         for year, group in df_reset.groupby("year"):
             part_dir = os.path.join(sym_dir, f"year={year}")
             os.makedirs(part_dir, exist_ok=True)
-            
+
             ts_min = int(group["ts"].min().value // 10**9)
             ts_max = int(group["ts"].max().value // 10**9)
             fname = f"part-{ts_min}-{ts_max}.parquet"
             fpath = os.path.join(part_dir, fname)
 
             write_df = group.drop(columns=["year"])
-            write_df.to_parquet(fpath, index=False, engine="pyarrow", compression="zstd")
+            write_df.to_parquet(
+                fpath, index=False, engine="pyarrow", compression="zstd"
+            )
 
             if not defer_compact:
                 self.compact_partition(symbol, year)
@@ -680,9 +739,11 @@ class PartitionedOHLCVStore:
 
         try:
             # Atomic write pattern
-            merged.to_parquet(temp_fpath, index=False, engine="pyarrow", compression="zstd")
+            merged.to_parquet(
+                temp_fpath, index=False, engine="pyarrow", compression="zstd"
+            )
             os.replace(temp_fpath, new_fpath)
-            
+
             # Log cumulative stats
             interval_sec = pd.to_timedelta(self.timeframe).total_seconds()
             ts_min_val = merged["ts"].min().value // 10**9
@@ -690,17 +751,23 @@ class PartitionedOHLCVStore:
             duration_sec = ts_max_val - ts_min_val + interval_sec
             days_covered = duration_sec / 86400.0
             avg_rows = len(merged) / days_covered if days_covered > 0 else 0
-            
-            ts_min_dt = pd.Timestamp(ts_min_val, unit='s', tz='UTC').strftime('%Y-%m-%d')
-            ts_max_dt = pd.Timestamp(ts_max_val, unit='s', tz='UTC').strftime('%Y-%m-%d')
-            tprint(f"Updated {new_fpath}: {len(merged)} rows, {ts_min_dt} -> {ts_max_dt} ({days_covered:.0f}d, ~{avg_rows:.0f} r/d)")
+
+            ts_min_dt = pd.Timestamp(ts_min_val, unit="s", tz="UTC").strftime(
+                "%Y-%m-%d"
+            )
+            ts_max_dt = pd.Timestamp(ts_max_val, unit="s", tz="UTC").strftime(
+                "%Y-%m-%d"
+            )
+            tprint(
+                f"Updated {new_fpath}: {len(merged)} rows, {ts_min_dt} -> {ts_max_dt} ({days_covered:.0f}d, ~{avg_rows:.0f} r/d)"
+            )
 
             for f in files:
                 if f != new_fpath:
                     try:
                         os.remove(f)
                     except OSError:
-                        pass # race condition if already deleted
+                        pass  # race condition if already deleted
 
         except Exception as e:
             tprint(f"Error compacting {symbol} {year}: {e}")
@@ -734,25 +801,29 @@ class PartitionedOHLCVStore:
             if start_ms >= now_ms:
                 return self.load(symbol)
 
-            start_dt = pd.to_datetime(start_ms, unit='ms', utc=True).strftime('%Y-%m-%d %H:%M')
+            start_dt = pd.to_datetime(start_ms, unit="ms", utc=True).strftime(
+                "%Y-%m-%d %H:%M"
+            )
             tprint(f"FETCH incr: {symbol} from {start_dt}")
-            
+
             # Progressive fetch and save (defer compaction to end)
             has_new_data = False
             touched_years = set()
-            for chunk_df in fetch_ohlcv_all_7d_chunks(exchange, symbol, start_ms, timeframe=self.timeframe, limit=1000):
+            for chunk_df in fetch_ohlcv_all_7d_chunks(
+                exchange, symbol, start_ms, timeframe=self.timeframe, limit=1000
+            ):
                 if not chunk_df.empty:
                     has_new_data = True
                     fresh = self._downcast(chunk_df)
                     self.save_partitioned(symbol, fresh, defer_compact=True)
                     touched_years.update(fresh.index.year.unique())
-                    
+
                     # Update metadata incrementally
                     new_last = fresh.index.max()
                     new_last_ms = int(new_last.value // 10**6)
                     if new_last_ms > last_ts_ms:
-                         self._write_meta(symbol, {"last_ts_ms": new_last_ms})
-                         last_ts_ms = new_last_ms
+                        self._write_meta(symbol, {"last_ts_ms": new_last_ms})
+                        last_ts_ms = new_last_ms
 
             # Single compaction pass per year at the end
             for yr in sorted(touched_years):
@@ -790,12 +861,16 @@ class PartitionedOHLCVStore:
             if not perp_symbol:
                 raise ValueError(f"No perp symbol found for {symbol}")
 
-            start_dt = pd.to_datetime(start_ms, unit="ms", utc=True).strftime("%Y-%m-%d %H:%M")
+            start_dt = pd.to_datetime(start_ms, unit="ms", utc=True).strftime(
+                "%Y-%m-%d %H:%M"
+            )
             tprint(f"FETCH perp incr: {symbol} ({perp_symbol}) from {start_dt}")
 
             touched_years = set()
             has_new_data = False
-            for chunk_df in fetch_ohlcv_all_7d_chunks(exchange, perp_symbol, start_ms, timeframe=self.timeframe, limit=1000):
+            for chunk_df in fetch_ohlcv_all_7d_chunks(
+                exchange, perp_symbol, start_ms, timeframe=self.timeframe, limit=1000
+            ):
                 if chunk_df.empty:
                     continue
                 chunk = chunk_df.sort_index()
@@ -806,7 +881,9 @@ class PartitionedOHLCVStore:
 
                 # Keep funding/OI fetch bounded to this chunk so we can checkpoint incrementally.
                 chunk_start_ms = int(chunk.index.min().value // 10**6)
-                chunk_end_ms = int((chunk.index.max() + pd.Timedelta(hours=1)).value // 10**6)
+                chunk_end_ms = int(
+                    (chunk.index.max() + pd.Timedelta(hours=1)).value // 10**6
+                )
                 chunk_end_ms = min(chunk_end_ms, now_ms)
 
                 funding = pd.Series(dtype=np.float32)
@@ -828,14 +905,23 @@ class PartitionedOHLCVStore:
                         perp_symbol,
                         chunk_start_ms,
                         chunk_end_ms,
-                        value_keys=["openInterestAmount", "openInterestValue", "openInterest", "sumOpenInterest"],
+                        value_keys=[
+                            "openInterestAmount",
+                            "openInterestValue",
+                            "openInterest",
+                            "sumOpenInterest",
+                        ],
                         exchange=exchange,
                         timeframe=self.timeframe,
                         limit=500,
                     )
 
-                chunk["funding_rate"] = funding.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
-                chunk["open_interest"] = oi.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
+                chunk["funding_rate"] = (
+                    funding.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
+                )
+                chunk["open_interest"] = (
+                    oi.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
+                )
 
                 fresh = self._downcast(chunk)
                 self.save_partitioned(symbol, fresh, defer_compact=True)
@@ -915,7 +1001,9 @@ def _read_feature_metadata(parquet_path: str) -> dict | None:
         return None
 
 
-def _infer_feature_bounds_from_file(parquet_path: str) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+def _infer_feature_bounds_from_file(
+    parquet_path: str,
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
     try:
         pf = pq.ParquetFile(parquet_path)
     except Exception:
@@ -943,7 +1031,9 @@ def _infer_feature_bounds_from_file(parquet_path: str) -> tuple[pd.Timestamp | N
         return None, None
 
 
-def get_feature_bounds(parquet_path: str) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+def get_feature_bounds(
+    parquet_path: str,
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
     meta = _read_feature_metadata(parquet_path)
     if meta:
         first_ts = pd.Timestamp(meta["first_ts"]) if meta.get("first_ts") else None
@@ -953,12 +1043,16 @@ def get_feature_bounds(parquet_path: str) -> tuple[pd.Timestamp | None, pd.Times
     return _infer_feature_bounds_from_file(parquet_path)
 
 
-def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFrame) -> int:
+def append_symbol_features(
+    parquet_path: str, symbol: str, new_data: pd.DataFrame
+) -> int:
     if new_data.empty:
         return 0
 
     new_data = new_data.sort_index()
-    new_data, new_reason = _ensure_feature_frame_index(new_data, parquet_path=parquet_path)
+    new_data, new_reason = _ensure_feature_frame_index(
+        new_data, parquet_path=parquet_path
+    )
     if new_reason not in {None, "ts_column_indexed", "recovered_from_metadata"}:
         raise ValueError(
             f"append_symbol_features received invalid index for {symbol}: {new_reason}"
@@ -974,11 +1068,19 @@ def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFram
             try:
                 existing = pd.read_parquet(parquet_path)
             except Exception as e:
-                tprint(f"Warning: quarantining unreadable feature file {parquet_path}: {e}")
+                tprint(
+                    f"Warning: quarantining unreadable feature file {parquet_path}: {e}"
+                )
                 _quarantine_corrupt_feature_file(parquet_path)
             else:
-                existing, existing_reason = _ensure_feature_frame_index(existing, parquet_path=parquet_path)
-                if existing_reason not in {None, "ts_column_indexed", "recovered_from_metadata"}:
+                existing, existing_reason = _ensure_feature_frame_index(
+                    existing, parquet_path=parquet_path
+                )
+                if existing_reason not in {
+                    None,
+                    "ts_column_indexed",
+                    "recovered_from_metadata",
+                }:
                     tprint(
                         f"Warning: quarantining feature file with invalid index {parquet_path}: "
                         f"{existing_reason}"
@@ -990,7 +1092,8 @@ def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFram
 
         incoming_cols = list(new_data.columns)
         all_cols = sorted(
-            set(incoming_cols) | (set(existing.columns) if existing is not None else set())
+            set(incoming_cols)
+            | (set(existing.columns) if existing is not None else set())
         )
 
         if existing is not None:
@@ -1010,7 +1113,9 @@ def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFram
                 and c not in required_cols
             ]
             if drop_cols:
-                existing_aligned = existing_aligned.drop(columns=drop_cols, errors="ignore")
+                existing_aligned = existing_aligned.drop(
+                    columns=drop_cols, errors="ignore"
+                )
                 new_data = new_data.drop(columns=drop_cols, errors="ignore")
 
             combined = existing_aligned.reindex(
@@ -1066,13 +1171,15 @@ def save_features(
         symbols = list(first_val.columns)
         time_index = first_val.index
         feat_keys = [k for k in feats if hasattr(feats[k], "columns")]
-        col_maps = {k: {c: j for j, c in enumerate(feats[k].columns)} for k in feat_keys}
+        col_maps = {
+            k: {c: j for j, c in enumerate(feats[k].columns)} for k in feat_keys
+        }
         arrays = {k: feats[k].values for k in feat_keys}
     else:
         # Numpy array mode — stream symbol-by-symbol to avoid feature stacking spikes.
-        import gc as _gc
-        assert feat_index is not None and feat_columns is not None, \
-            "feat_index and feat_columns required when feats contains numpy arrays"
+        assert (
+            feat_index is not None and feat_columns is not None
+        ), "feat_index and feat_columns required when feats contains numpy arrays"
         symbols = list(feat_columns)
         time_index = feat_index
         feat_keys = [
@@ -1083,7 +1190,9 @@ def save_features(
         n_feats = len(feat_keys)
         total = len(symbols)
 
-        tprint(f"  Saving {n_feats} features × {total} symbols in streaming symbol mode...")
+        tprint(
+            f"  Saving {n_feats} features × {total} symbols in streaming symbol mode..."
+        )
 
         worker_count = max(1, int(save_workers or 1))
         max_pending = max(1, worker_count * 2)
@@ -1194,7 +1303,9 @@ def save_features(
                     if count % 200 == 0:
                         _gc.collect()
 
-        tprint(f"Feature save complete. {count}/{total} symbols saved ({n_feats} features).")
+        tprint(
+            f"Feature save complete. {count}/{total} symbols saved ({n_feats} features)."
+        )
         return
 
     total = len(symbols)
@@ -1239,7 +1350,10 @@ def save_features(
         if count % 100 == 0:
             _gc.collect()
 
-    tprint(f"Feature save complete. {count}/{total} symbols saved ({n_feats} features).")
+    tprint(
+        f"Feature save complete. {count}/{total} symbols saved ({n_feats} features)."
+    )
+
 
 def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     """
@@ -1253,21 +1367,21 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     """
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
     in_dir = os.path.join(root_dir, "features", ts_str)
-    
+
     if not os.path.exists(in_dir):
         return None
-        
+
     files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
     if not files:
         return None
-        
+
     tprint(f"Found {len(files)} feature files in {in_dir}. Loading...")
-    
+
     # Build Dict[Feat -> Dict[Symbol -> Series]] incrementally to reduce peak memory.
     # Previous implementation stored all symbol DataFrames first, then pivoted, which
     # could double memory pressure on large universes.
     feat_buffers = {}
-    
+
     start_load = time.time()
     total_files = len(files)
     progress_every = 25 if total_files >= 100 else 10
@@ -1308,11 +1422,12 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
 
     # Encourage timely memory reclamation after file ingest loop
     import gc as _gc
+
     _gc.collect()
-            
+
     if not feat_buffers:
         return None
-    
+
     feats_out = {}
     for k, data in feat_buffers.items():
         # Construct DF for this feature: Index=Time, Cols=Symbols
@@ -1320,7 +1435,7 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
 
     feat_buffers.clear()
     _gc.collect()
-        
+
     tprint(f"Loaded {len(feats_out)} feature matrices.")
     return feats_out
 
@@ -1337,6 +1452,7 @@ class LazyFeatureDict:
         if k in self._raw:
             if log:
                 from extreme_price_movements.utils import tprint
+
                 tprint(f"Lazy-assembling DataFrame for '{k}'...")
             data = self._raw.pop(k)
             clean_data = {}
@@ -1391,9 +1507,7 @@ class LazyFeatureDict:
         if total == 0:
             return
 
-        tprint(
-            f"Pre-materializing {total} feature matrices in grouped mode..."
-        )
+        tprint(f"Pre-materializing {total} feature matrices in grouped mode...")
         clean_data_by_key: dict[str, dict[str, pd.Series]] = {
             k: {} for k in target_keys
         }
@@ -1475,7 +1589,7 @@ class LazyFeatureDict:
 
     def keys(self):
         return list(self._assembled.keys()) + list(self._raw.keys())
-        
+
     def __iter__(self):
         return iter(self.keys())
 
@@ -1487,15 +1601,15 @@ class LazyFeatureDict:
             return self[k]
         except KeyError:
             return default
-            
+
     def items(self):
         for k in self.keys():
             yield k, self[k]
-            
+
     def values(self):
         for k in self.keys():
             yield self[k]
-            
+
     def pop(self, k, default=None):
         if k in self._assembled:
             return self._assembled.pop(k)
@@ -1506,23 +1620,25 @@ class LazyFeatureDict:
         if default is not None:
             return default
         raise KeyError(k)
-        
+
     def copy(self):
         cloned = LazyFeatureDict({})
         cloned._assembled = dict(self._assembled)
         cloned._symbol_indices = dict(self._symbol_indices)
         cloned._raw = {
-            k: dict(v) if isinstance(v, dict) else v
-            for k, v in self._raw.items()
+            k: dict(v) if isinstance(v, dict) else v for k, v in self._raw.items()
         }
         return cloned
 
     def materialize(self, keys=None, progress_every=25):
-        target_keys = list(self.keys()) if keys is None else [k for k in keys if k in self]
+        target_keys = (
+            list(self.keys()) if keys is None else [k for k in keys if k in self]
+        )
         total = len(target_keys)
         if total == 0:
             return
         self._assemble_many_keys(target_keys, progress_every=progress_every)
+
 
 def load_features_selected(
     ts: pd.Timestamp,
@@ -1545,11 +1661,15 @@ def load_features_selected(
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
     in_dir = os.path.join(root_dir, "features", ts_str)
     if not os.path.exists(in_dir):
-        tprint(f"load_features_selected: in_dir not found: {in_dir} (cwd={os.getcwd()})")
+        tprint(
+            f"load_features_selected: in_dir not found: {in_dir} (cwd={os.getcwd()})"
+        )
         return None
 
     feature_set = set(feature_keys) if feature_keys else None
-    symbol_set = {_normalize_spot_symbol(str(sym)) for sym in symbols} if symbols else None
+    symbol_set = (
+        {_normalize_spot_symbol(str(sym)) for sym in symbols} if symbols else None
+    )
     start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
     end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
     if start_ts is not None and start_ts.tzinfo is not None:
@@ -1581,7 +1701,9 @@ def load_features_selected(
     else:
         files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
         if not files:
-            tprint(f"load_features_selected: no symbol=*.parquet files found in {in_dir}")
+            tprint(
+                f"load_features_selected: no symbol=*.parquet files found in {in_dir}"
+            )
             return None
 
     feat_buffers: dict[str, dict[str, np.ndarray]] = {}
@@ -1623,13 +1745,16 @@ def load_features_selected(
                     [
                         c
                         for c in schema_names
-                        if c not in {"__symbol__", "ts"} and not c.startswith("__index_level_")
+                        if c not in {"__symbol__", "ts"}
+                        and not c.startswith("__index_level_")
                     ]
                 )
             else:
                 cols_to_read.extend([c for c in feature_set if c in schema_names])
 
-            if not cols_to_read or (len(cols_to_read) == 1 and cols_to_read[0] == "__symbol__"):
+            if not cols_to_read or (
+                len(cols_to_read) == 1 and cols_to_read[0] == "__symbol__"
+            ):
                 if i % progress_every == 0 or i == total_files:
                     elapsed = time.time() - start_load
                     tprint(
@@ -1658,8 +1783,16 @@ def load_features_selected(
                 continue
             _idx = df.index
             if isinstance(_idx, pd.DatetimeIndex) and _idx.tz is not None:
-                _s = start_ts.tz_localize(_idx.tz) if start_ts is not None and start_ts.tzinfo is None else start_ts
-                _e = end_ts.tz_localize(_idx.tz) if end_ts is not None and end_ts.tzinfo is None else end_ts
+                _s = (
+                    start_ts.tz_localize(_idx.tz)
+                    if start_ts is not None and start_ts.tzinfo is None
+                    else start_ts
+                )
+                _e = (
+                    end_ts.tz_localize(_idx.tz)
+                    if end_ts is not None and end_ts.tzinfo is None
+                    else end_ts
+                )
             else:
                 _s = start_ts
                 _e = end_ts
@@ -1678,7 +1811,7 @@ def load_features_selected(
                     )
                 continue
             if not df.index.is_unique:
-                df = df[~df.index.duplicated(keep='last')]
+                df = df[~df.index.duplicated(keep="last")]
 
             if "__symbol__" in df.columns:
                 if not df.empty:
@@ -1710,7 +1843,7 @@ def load_features_selected(
                 )
             df.index = normalized_idx
             if not df.index.is_unique:
-                df = df[~df.index.duplicated(keep='last')]
+                df = df[~df.index.duplicated(keep="last")]
             idx_vals = df.index.to_numpy(copy=False)
             symbol_indices[real_sym] = idx_vals
             for k in df.columns:
@@ -1733,7 +1866,9 @@ def load_features_selected(
     if not feat_buffers:
         return None
 
-    tprint(f"Loaded raw arrays for {len(feat_buffers)} features. Returning LazyFeatureDict proxy.")
+    tprint(
+        f"Loaded raw arrays for {len(feat_buffers)} features. Returning LazyFeatureDict proxy."
+    )
     return LazyFeatureDict(feat_buffers, symbol_indices=symbol_indices)
 
 
@@ -1766,8 +1901,9 @@ def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
         "start": start.isoformat(),
         "end": end.isoformat(),
         "expected_rows": expected_rows,
-        "actual_rows": actual_rows
+        "actual_rows": actual_rows,
     }
+
 
 def to_panel(dfs_by_symbol: dict[str, pd.DataFrame]):
     keys = ["open", "high", "low", "close", "volume"]
@@ -1782,13 +1918,17 @@ def to_panel(dfs_by_symbol: dict[str, pd.DataFrame]):
     keys.extend(extra_keys)
     panel = {}
     for k in keys:
-        cols = [df[k].rename(sym) for sym, df in dfs_by_symbol.items() if k in df.columns]
+        cols = [
+            df[k].rename(sym) for sym, df in dfs_by_symbol.items() if k in df.columns
+        ]
         if not cols:
             continue
         panel[k] = pd.concat(cols, axis=1).sort_index()
     return panel
 
+
 OHLCVStore = PartitionedOHLCVStore
+
 
 def get_feature_path(root_dir: str, ts: pd.Timestamp, symbol: str) -> str:
     """
@@ -1798,7 +1938,10 @@ def get_feature_path(root_dir: str, ts: pd.Timestamp, symbol: str) -> str:
     safe_sym = symbol.replace("/", "_")
     return os.path.join(root_dir, "features", ts_str, f"symbol={safe_sym}.parquet")
 
-def save_artifact_df(df: pd.DataFrame, root_dir: str, run_id: str, category: str, name: str):
+
+def save_artifact_df(
+    df: pd.DataFrame, root_dir: str, run_id: str, category: str, name: str
+):
     """
     Save a DataFrame as an artifact for a specific run.
     Path: root_dir/artifacts/{run_id}/{category}/{name}.parquet
@@ -1809,6 +1952,7 @@ def save_artifact_df(df: pd.DataFrame, root_dir: str, run_id: str, category: str
     tprint(f"Saving artifact: {fpath}")
     df.to_parquet(fpath, engine="pyarrow", compression="zstd")
 
+
 def load_artifact_manifest(root_dir: str, run_id: str, category: str) -> dict | None:
     """Load the JSON manifest for a saved artifact category if present."""
     if category == "labels":
@@ -1816,9 +1960,7 @@ def load_artifact_manifest(root_dir: str, run_id: str, category: str) -> dict | 
             root_dir, "artifacts", run_id, category, "labels_manifest.json"
         )
     else:
-        fpath = os.path.join(
-            root_dir, "artifacts", run_id, category, "manifest.json"
-        )
+        fpath = os.path.join(root_dir, "artifacts", run_id, category, "manifest.json")
     if not os.path.exists(fpath):
         return None
     try:
@@ -1827,7 +1969,10 @@ def load_artifact_manifest(root_dir: str, run_id: str, category: str) -> dict | 
     except Exception:
         return None
 
-def load_artifact_df(root_dir: str, run_id: str, category: str, name: str) -> pd.DataFrame:
+
+def load_artifact_df(
+    root_dir: str, run_id: str, category: str, name: str
+) -> pd.DataFrame:
     """
     Load an artifact DataFrame. Returns None if not found.
     """
@@ -1835,7 +1980,7 @@ def load_artifact_df(root_dir: str, run_id: str, category: str, name: str) -> pd
     if os.path.exists(fpath):
         tprint(f"Loading artifact: {fpath}")
         df = pd.read_parquet(fpath)
-        
+
         # Normalize: ensure 'ts' and 'symbol' exist if their dunder versions do.
         # This fixes inconsistencies between training.py and pipeline_steps.py.
         if "__ts__" in df.columns and "ts" not in df.columns:

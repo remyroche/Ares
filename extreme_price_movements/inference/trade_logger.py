@@ -7,16 +7,17 @@ This module handles CSV logging of trade decisions with detailed metrics:
 - Human-readable trade explanations
 """
 
-import os
-from typing import Dict, List, Any, Optional
-from datetime import datetime
 import csv
+import json
+import os
+import sqlite3
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
 from extreme_price_movements.utils import tprint
-
 
 # Default log directory
 DEFAULT_LOG_DIR = "extreme_price_movements/logs"
@@ -34,6 +35,10 @@ TRADE_LOG_COLUMNS = [
     "strategy_id",
     # Asset & market context
     "entry_price",
+    "expected_entry_price",
+    "realized_entry_price",
+    "price_slippage_pct",
+    "spread_proxy_pct",
     "atr",
     "atr_frac",
     "volume",
@@ -51,6 +56,9 @@ TRADE_LOG_COLUMNS = [
     "meta_confidence",
     "calibrated_score",
     "rank_threshold",
+    "base_pred",
+    "base_rank_pct",
+    "base_gate_top_frac",
     # Model predictions - Ridge position sizer
     "ridge_position_size",
     "ridge_confidence",
@@ -71,7 +79,14 @@ TRADE_LOG_COLUMNS = [
     "G_VOLUME",
     "vol_z",
     "trend_pct",
+    "trend",
+    "entropy",
+    "vol_of_vol",
+    "kurtosis",
+    "jump_frequency",
     "mkt_rv_ratio",
+    "funding_cost",
+    "borrow_cost",
     # Candidate selection thresholds used
     "threshold_extreme_pct",
     "threshold_min_range",
@@ -85,6 +100,10 @@ TRADE_LOG_COLUMNS = [
     "stop_price",
     "stop_price_updated",
     "limit_price",
+    "exit_reason",
+    "actual_entry_price",
+    "actual_exit_price",
+    "realized_exit_price",
     # Aggtrades data (live mode)
     "aggtrades_count",
     "orderbook_snapshot",
@@ -101,6 +120,7 @@ class TradeLogger:
 
     output_path: str = "inference_trades.csv"
     run_id: Optional[str] = None
+    db_path: Optional[str] = None
 
     # Internal state
     _log_file: str = field(init=False, repr=False)
@@ -116,10 +136,12 @@ class TradeLogger:
             os.makedirs(log_dir, exist_ok=True)
 
         self._log_file = self.output_path
+        self.db_path = self.db_path or os.path.splitext(self.output_path)[0] + ".sqlite"
 
         # Initialize CSV file with headers
         if not os.path.exists(self._log_file):
             self._write_header()
+        self._init_db()
 
         self._initialized = True
         tprint(f"TradeLogger initialized: {self._log_file}")
@@ -134,6 +156,68 @@ class TradeLogger:
         with open(self._log_file, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=TRADE_LOG_COLUMNS)
             writer.writeheader()
+
+    def _init_db(self) -> None:
+        """Create the durable trade diagnostics table if needed."""
+        if not self.db_path:
+            return
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+        columns = ", ".join(f'"{col}" TEXT' for col in TRADE_LOG_COLUMNS)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    {columns},
+                    record_hash TEXT UNIQUE
+                )
+                """
+            )
+            conn.commit()
+
+    def _stringify_value(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (dict, list, tuple)):
+            return json.dumps(value, sort_keys=True, default=str)
+        return str(value)
+
+    def _normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        return {col: record.get(col, "") for col in TRADE_LOG_COLUMNS}
+
+    def _write_db_record(self, record: Dict[str, Any]) -> None:
+        """Append a trade row to sqlite with idempotent duplicate protection."""
+        if not self.db_path:
+            return
+        normalized = self._normalize_record(record)
+        record_hash = "|".join(
+            self._stringify_value(normalized.get(col))
+            for col in (
+                "timestamp",
+                "run_id",
+                "symbol",
+                "side",
+                "action",
+                "strategy_id",
+                "expected_entry_price",
+                "realized_entry_price",
+            )
+        )
+        cols = list(TRADE_LOG_COLUMNS) + ["record_hash"]
+        placeholders = ", ".join("?" for _ in cols)
+        quoted_cols = ", ".join(f'"{col}"' for col in cols)
+        values = [
+            self._stringify_value(normalized.get(col)) for col in TRADE_LOG_COLUMNS
+        ]
+        values.append(record_hash)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                f"INSERT OR IGNORE INTO trades ({quoted_cols}) VALUES ({placeholders})",
+                values,
+            )
+            conn.commit()
 
     def log_trade(
         self,
@@ -170,6 +254,12 @@ class TradeLogger:
             "strategy_id": decision.get("strategy_id"),
             # Asset & market context
             "entry_price": market_data.get("close"),
+            "expected_entry_price": decision.get("expected_entry_price")
+            or decision.get("entry_px"),
+            "realized_entry_price": decision.get("realized_entry_price")
+            or decision.get("price"),
+            "price_slippage_pct": decision.get("price_slippage_pct"),
+            "spread_proxy_pct": decision.get("spread_proxy_pct"),
             "atr": market_data.get("atr"),
             "atr_frac": market_data.get("atr_frac"),
             "volume": market_data.get("volume"),
@@ -187,6 +277,11 @@ class TradeLogger:
             "meta_confidence": model_results.get("meta_confidence"),
             "calibrated_score": decision.get("calibrated_score"),
             "rank_threshold": decision.get("rank_threshold"),
+            "base_pred": model_results.get("base_pred") or decision.get("base_pred"),
+            "base_rank_pct": model_results.get("base_rank_pct")
+            or decision.get("base_rank_pct"),
+            "base_gate_top_frac": model_results.get("base_gate_top_frac")
+            or decision.get("base_gate_top_frac"),
             # Ridge position sizer
             "ridge_position_size": model_results.get("position_size"),
             "ridge_confidence": model_results.get("ridge_confidence"),
@@ -207,7 +302,14 @@ class TradeLogger:
             "G_VOLUME": market_data.get("G_VOLUME"),
             "vol_z": market_data.get("vol_z"),
             "trend_pct": market_data.get("trend_pct"),
+            "trend": market_data.get("trend"),
+            "entropy": market_data.get("entropy"),
+            "vol_of_vol": market_data.get("vol_of_vol"),
+            "kurtosis": market_data.get("kurtosis"),
+            "jump_frequency": market_data.get("jump_frequency"),
             "mkt_rv_ratio": market_data.get("mkt_rv_ratio"),
+            "funding_cost": market_data.get("funding_cost"),
+            "borrow_cost": market_data.get("borrow_cost"),
             # Candidate thresholds
             "threshold_extreme_pct": config.get("extreme_pct"),
             "threshold_min_range": config.get("min_range_pct"),
@@ -221,10 +323,17 @@ class TradeLogger:
             "stop_price": decision.get("stop_price"),
             "stop_price_updated": decision.get("stop_price_updated"),
             "limit_price": decision.get("limit_price"),
+            "exit_reason": decision.get("exit_reason"),
+            "actual_entry_price": decision.get("actual_entry_price")
+            or decision.get("realized_entry_price")
+            or decision.get("price"),
+            "actual_exit_price": decision.get("actual_exit_price"),
+            "realized_exit_price": decision.get("realized_exit_price")
+            or decision.get("actual_exit_price"),
             # Aggtrades (live mode)
-            "aggtrades_count": len(decision.get("aggtrades", []))
-            if decision.get("aggtrades")
-            else 0,
+            "aggtrades_count": (
+                len(decision.get("aggtrades", [])) if decision.get("aggtrades") else 0
+            ),
             "orderbook_snapshot": decision.get("orderbook_snapshot"),
             "net_pnl": decision.get("net_pnl"),
             # Status
@@ -236,6 +345,7 @@ class TradeLogger:
         with open(self._log_file, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=TRADE_LOG_COLUMNS)
             writer.writerow(record)
+        self._write_db_record(record)
 
         # Generate and print explanation
         explanation = self.explain_trade(record)
@@ -538,8 +648,8 @@ class TradeLogger:
             "symbol": symbol,
             "side": side,
             "action": action,
-            "size": size,
-            "price": price,
+            "entry_price": price,
+            "ridge_position_size": size,
             "mode": mode,
             "status": status,
             "error": error or "",
@@ -547,7 +657,9 @@ class TradeLogger:
 
         # Add context fields (map to new columns)
         if context:
-            row["position_size"] = context.get("position_size", "")
+            row["ridge_position_size"] = context.get(
+                "position_size", row.get("ridge_position_size", "")
+            )
             row["meta_pred"] = context.get("meta_mr_pred", "")
             row["alpha_long_mr_pred"] = context.get("alpha_mr_pred", "")
             row["alpha_long_tf_pred"] = context.get("alpha_tf_pred", "")
@@ -556,11 +668,23 @@ class TradeLogger:
             row["ret24h"] = context.get("ret24h", "")
             row["range_12h_pct"] = context.get("range_12h_pct", "")
             row["volatility_zscore"] = context.get("volatility_zscore", "")
+            row["strategy_id"] = context.get("strategy_id", "")
+            row["calibrated_score"] = context.get("calibrated_score", "")
+            row["rank_threshold"] = context.get("rank_threshold", "")
+            row["expected_entry_price"] = context.get("expected_entry_price", "")
+            row["realized_entry_price"] = context.get("realized_entry_price", "")
+            row["price_slippage_pct"] = context.get("price_slippage_pct", "")
+            row["spread_proxy_pct"] = context.get("spread_proxy_pct", "")
+            for col in TRADE_LOG_COLUMNS:
+                if col in context and col not in row:
+                    row[col] = context[col]
 
         # Write row
+        row = self._normalize_record(row)
         with open(self._log_file, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=TRADE_LOG_COLUMNS)
             writer.writerow(row)
+        self._write_db_record(row)
 
         tprint(f"Logged trade: {action} {side} {symbol} {size}@{price}")
 

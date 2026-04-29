@@ -1530,13 +1530,26 @@ def run_train_meta(cfg, ts_override=None, store=None):
     cfg["meta_clf_top_frac"] = 0.50
     cfg["meta_move_top_frac"] = 0.50
     cfg["meta_train_tbm_clf_head"] = True
-    cfg["meta_train_correctness_clf_head"] = True
+    _correctness_env = (
+        str(os.getenv("EPM_META_TRAIN_CORRECTNESS_CLF_HEAD", "1")).strip().lower()
+    )
+    cfg["meta_train_correctness_clf_head"] = _correctness_env not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
     cfg["meta_model_backend"] = "ebm_on_lgbm_only"
     cfg["meta_training_pipeline_version"] = "legacy"
     cfg["meta_run_pre_risk_optimisation"] = False
+    _head_msg = (
+        "correctness + TBM classifier heads"
+        if cfg["meta_train_correctness_clf_head"]
+        else "TBM classifier head only"
+    )
     tprint(
         "Meta training forced to EBMOnLGBM-only: regression/XGB/Ridge heads disabled; "
-        "correctness + TBM classifier heads enabled; top fraction=50%."
+        f"{_head_msg} enabled; top fraction=50%."
     )
     _meta_hpo_trials_env = os.getenv("EPM_META_HPO_TRIALS")
     if _meta_hpo_trials_env:

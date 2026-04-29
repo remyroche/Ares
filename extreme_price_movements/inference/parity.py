@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import csv
 import json
+import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 import pandas as pd
 
@@ -13,6 +15,447 @@ from extreme_price_movements.simple_position_sizer import (
     load_calibration_contract,
 )
 from extreme_price_movements.utils import tprint
+
+LIVE_UNAVAILABLE_FEATURES: Set[str] = {
+    "reg_gate_target",
+    "reg_train_target",
+    "reg_target_positive",
+    "reg_raw_vol_norm",
+    "y_move",
+    "y_move_soft",
+    "move_threshold",
+    "barrier_pct",
+    "bars_to_mfe",
+    "reg_weight",
+}
+
+
+def _bundle_payload(model_bundle: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(model_bundle, dict):
+        return {}
+    return model_bundle.get("bundle", model_bundle)
+
+
+def _alpha_strategy_index(model_bundle: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Normalize flat and nested alpha model bundle layouts."""
+    bundle = _bundle_payload(model_bundle)
+    alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
+    out: Dict[str, Dict[str, Any]] = {}
+    if not isinstance(alpha_models, dict):
+        return out
+    for key, value in alpha_models.items():
+        if not isinstance(value, dict):
+            continue
+        if "model" in value or "feat_cols" in value:
+            out[str(key)] = value
+            continue
+        for nested_key, model_info in value.items():
+            if isinstance(model_info, dict):
+                out[f"{key}_{nested_key}"] = model_info
+    return out
+
+
+def _meta_model_keys(model_bundle: Dict[str, Any]) -> Set[str]:
+    bundle = _bundle_payload(model_bundle)
+    meta_models = bundle.get("meta_models", {}) if isinstance(bundle, dict) else {}
+    return (
+        set(str(key) for key in meta_models.keys())
+        if isinstance(meta_models, dict)
+        else set()
+    )
+
+
+def _candidate_meta_keys(strategy_id: str) -> Set[str]:
+    sid = str(strategy_id or "")
+    core = strategy_core_id(sid)
+    side = strategy_side(sid)
+    bases = {sid, core}
+    if side and core:
+        bases.add(f"{side}_{core}")
+    out: Set[str] = set()
+    for base in bases:
+        if not base:
+            continue
+        out.add(base)
+        for suffix in ("_clf", "_tbm_clf", "_reg", "_early_inval"):
+            out.add(f"{base}{suffix}")
+    return out
+
+
+def strategy_core_id(strategy_id: str) -> str:
+    """Return the side-agnostic strategy id used by policy artifacts."""
+    sid = str(strategy_id or "")
+    for prefix in ("long_", "short_"):
+        if sid.startswith(prefix):
+            sid = sid[len(prefix) :]
+            break
+    return re.sub(r"_H\d+$", "", sid)
+
+
+def strategy_side(strategy_id: str) -> str:
+    """Infer strategy side from its identifier when available."""
+    sid = str(strategy_id or "").lower()
+    if sid.startswith("long_"):
+        return "long"
+    if sid.startswith("short_"):
+        return "short"
+    return ""
+
+
+def strategy_id_matches(strategy_id: str, allowed: Optional[Set[str]]) -> bool:
+    """Match either full side-prefixed ids or policy core ids."""
+    if allowed is None:
+        return True
+    sid = str(strategy_id or "")
+    return sid in allowed or strategy_core_id(sid) in allowed
+
+
+def _normalise_symbol(symbol: str) -> str:
+    raw = str(symbol or "").strip().upper().replace("_", "/")
+    if "/" in raw:
+        return raw
+    for quote in ("USDT", "USDC", "BUSD", "USD1", "FDUSD", "BTC", "ETH"):
+        if raw.endswith(quote) and len(raw) > len(quote):
+            return f"{raw[:-len(quote)]}/{quote}"
+    return raw
+
+
+def _strategy_ids_from_rows(rows: Any, *, side_aware: bool = False) -> Set[str]:
+    out: Set[str] = set()
+    if not isinstance(rows, list):
+        return out
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("selected") is False:
+            continue
+        sid = (
+            row.get("strategy_for_inference")
+            or row.get("strategy_id")
+            or row.get("strategy")
+            or row.get("selected_strategy")
+        )
+        if sid:
+            sid_s = str(sid)
+            side = str(row.get("side") or strategy_side(sid_s)).lower()
+            core = strategy_core_id(sid_s)
+            if side_aware and side in {"long", "short"} and core:
+                out.add(f"{side}_{core}")
+            else:
+                out.add(sid_s)
+                if core not in {"mr", "tf"}:
+                    out.add(core)
+    return {s for s in out if s}
+
+
+def _strategy_aliases(strategy_id: str) -> Set[str]:
+    sid = str(strategy_id or "")
+    core = strategy_core_id(sid)
+    side = strategy_side(sid)
+    aliases = {sid, core}
+    if side and core:
+        aliases.add(f"{side}_{core}")
+    return {alias for alias in aliases if alias}
+
+
+def _with_strategy_aliases(strategy_ids: Set[str]) -> Set[str]:
+    """Return strategy ids plus side/core aliases used by persisted artifacts."""
+    out: Set[str] = set()
+    for sid in strategy_ids:
+        sid_s = str(sid or "")
+        if not sid_s:
+            continue
+        out.add(sid_s)
+        core = strategy_core_id(sid_s)
+        if core and core not in {"mr", "tf", "none"}:
+            out.add(core)
+            out.add(f"long_{core}")
+            out.add(f"short_{core}")
+        side = strategy_side(sid_s)
+        if side and core:
+            out.add(f"{side}_{core}")
+    return out
+
+
+def load_strategy_for_inference_filter(
+    data_root: str, run_id: str
+) -> Optional[Set[str]]:
+    """Load the explicit deployment strategy set if present.
+
+    ``policy_optimiser.py`` is the preferred source. ``holdout_strategy_eval.py``
+    can still write the root artifact, but it is no longer mandatory for live
+    inference readiness.
+    """
+    base = Path(data_root) / "artifacts" / run_id
+    paths = [
+        base / "policy_params" / "strategy_for_inference.json",
+        base / "ridge_sizer" / "strategy_for_inference.json",
+        base / "policy_params" / "strategy_for_inference.csv",
+        base / "ridge_sizer" / "strategy_for_inference.csv",
+        base / "strategy_for_inference.json",
+        base / "strategy_for_inference.csv",
+    ]
+
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            if path.suffix.lower() == ".csv":
+                with path.open("r", newline="") as f:
+                    rows = list(csv.DictReader(f))
+                selected = _strategy_ids_from_rows(rows, side_aware=True)
+            else:
+                payload = json.loads(path.read_text())
+                if isinstance(payload, dict):
+                    rows = (
+                        payload.get("strategies")
+                        or payload.get("strategy_for_inference")
+                        or payload.get("selected_strategies")
+                        or []
+                    )
+                    if isinstance(rows, str):
+                        rows = [{"strategy_id": rows}]
+                    selected = _strategy_ids_from_rows(rows, side_aware=True)
+                    sid = payload.get("strategy_id") or payload.get("selected_strategy")
+                    if sid:
+                        selected.add(str(sid))
+                        selected.add(strategy_core_id(str(sid)))
+                else:
+                    selected = _strategy_ids_from_rows(payload, side_aware=True)
+            if selected:
+                tprint(
+                    f"[StrategyFilter] Loaded {len(selected)} deployment inference ids from {path}"
+                )
+                return selected
+        except Exception as exc:
+            tprint(f"[StrategyFilter] Error loading {path}: {exc}")
+    return None
+
+
+def load_strategy_asset_exclusion_filter(
+    data_root: str, run_id: str
+) -> Dict[str, Set[str]]:
+    """Load per-strategy symbols excluded by policy optimiser asset diagnostics."""
+    base = Path(data_root) / "artifacts" / run_id
+    paths = [
+        base / "strategy_for_inference.json",
+        base / "policy_params" / "strategy_for_inference.json",
+        base / "ridge_sizer" / "strategy_for_inference.json",
+    ]
+    exclusions: Dict[str, Set[str]] = {}
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text())
+            if not isinstance(payload, dict):
+                continue
+            raw_exclusions = payload.get("asset_exclusions", {})
+            if isinstance(raw_exclusions, dict):
+                for sid, symbols in raw_exclusions.items():
+                    if not isinstance(symbols, list):
+                        continue
+                    cleaned = {
+                        _normalise_symbol(str(sym))
+                        for sym in symbols
+                        if _normalise_symbol(str(sym))
+                    }
+                    for alias in _strategy_aliases(str(sid)):
+                        exclusions.setdefault(alias, set()).update(cleaned)
+            rows = (
+                payload.get("strategies")
+                or payload.get("strategy_for_inference")
+                or payload.get("selected_strategies")
+                or []
+            )
+            if isinstance(rows, dict):
+                rows = [rows]
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict) or row.get("selected") is False:
+                        continue
+                    sid = (
+                        row.get("strategy_for_inference")
+                        or row.get("strategy_id")
+                        or row.get("strategy")
+                        or row.get("selected_strategy")
+                    )
+                    if not sid:
+                        continue
+                    symbols = (
+                        row.get("excluded_symbols")
+                        or row.get("blocked_symbols")
+                        or row.get("asset_exclusions")
+                        or []
+                    )
+                    if not isinstance(symbols, list):
+                        continue
+                    cleaned = {
+                        _normalise_symbol(str(sym))
+                        for sym in symbols
+                        if _normalise_symbol(str(sym))
+                    }
+                    for alias in _strategy_aliases(str(sid)):
+                        exclusions.setdefault(alias, set()).update(cleaned)
+            if exclusions:
+                tprint(
+                    f"[StrategyFilter] Loaded asset exclusions for "
+                    f"{len(exclusions)} strategy aliases from {path}"
+                )
+                return exclusions
+        except Exception as exc:
+            tprint(f"[StrategyFilter] Error loading asset exclusions {path}: {exc}")
+    return exclusions
+
+
+def load_policy_params_by_strategy(
+    data_root: str, run_id: str
+) -> Dict[str, Dict[str, Any]]:
+    """Load best policy optimiser params keyed by full and core strategy ids."""
+    paths = [
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "policy_params"
+        / "best_policy_params.json",
+        Path(data_root) / "artifacts" / run_id / "best_policy_params.json",
+    ]
+    out: Dict[str, Dict[str, Any]] = {}
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text())
+            strategies = (
+                payload.get("strategies", []) if isinstance(payload, dict) else []
+            )
+            for row in strategies:
+                if not isinstance(row, dict) or not row.get("strategy_id"):
+                    continue
+                params = dict(row)
+                sid = str(params["strategy_id"])
+                core = strategy_core_id(sid)
+                out[sid] = params
+                out[core] = params
+                side = strategy_side(sid)
+                if side:
+                    out[f"{side}_{core}"] = params
+            if out:
+                tprint(
+                    f"[PolicyParams] Loaded {len(strategies)} policy optimiser rows from {path}"
+                )
+                return out
+        except Exception as exc:
+            tprint(f"[PolicyParams] Error loading {path}: {exc}")
+    return out
+
+
+def load_policy_strategy_filter(data_root: str, run_id: str) -> Optional[Set[str]]:
+    """Load strategies that have policy optimiser params available for inference."""
+    params = load_policy_params_by_strategy(data_root, run_id)
+    if not params:
+        return None
+    selected = _with_strategy_aliases(set(params.keys()))
+    tprint(f"[StrategyFilter] Loaded {len(selected)} policy-param strategy aliases")
+    return selected
+
+
+def load_profitable_sizer_strategy_filter(
+    data_root: str,
+    run_id: str,
+    *,
+    min_wallet_pnl: float = 0.0,
+    min_net_pnl: float = 0.0,
+) -> Optional[Set[str]]:
+    """Load strategies tagged/proven profitable by simple_position_sizer.
+
+    The current simple_position_sizer artifact lives under ``ridge_sizer`` and
+    stores one row per strategy. Future reruns also write explicit downstream
+    allow fields; older artifacts are interpreted using positive wallet and
+    net PnL.
+    """
+    paths = [
+        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json",
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "simple_sizer"
+        / "strategy_params.json",
+    ]
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text())
+            rows = payload.get("strategies", []) if isinstance(payload, dict) else []
+            selected: Set[str] = set()
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                sid = str(row.get("strategy_id") or row.get("strategy") or "")
+                if not sid:
+                    continue
+                explicit_allowed = row.get("allow_downstream")
+                if explicit_allowed is None:
+                    explicit_allowed = row.get("profitable_for_downstream")
+                if explicit_allowed is None:
+                    wallet_pnl = float(row.get("wallet_pnl", float("nan")))
+                    net_pnl = float(row.get("net_pnl", float("nan")))
+                    is_allowed = (
+                        pd.notna(wallet_pnl)
+                        and pd.notna(net_pnl)
+                        and wallet_pnl > float(min_wallet_pnl)
+                        and net_pnl > float(min_net_pnl)
+                    )
+                else:
+                    is_allowed = bool(explicit_allowed)
+                if is_allowed:
+                    selected.add(sid)
+            selected = _with_strategy_aliases(selected)
+            tprint(
+                f"[StrategyFilter] Loaded {len(selected)} profitable sizer aliases from {path}"
+            )
+            return selected
+        except Exception as exc:
+            tprint(f"[StrategyFilter] Error loading {path}: {exc}")
+    return None
+
+
+def resolve_deployment_strategy_filter(
+    data_root: str,
+    run_id: str,
+) -> Optional[Set[str]]:
+    """Resolve the deployable inference strategy set.
+
+    Deployment prefers strategies selected by ``policy_optimiser.py`` and then
+    intersects them with simple_position_sizer profitability plus available
+    policy optimiser params. ``holdout_strategy_eval.py`` output is optional:
+    if present it is accepted as a compatible strategy_for_inference artifact,
+    but it is not a prerequisite for production readiness.
+    """
+    accepted = load_strategy_for_inference_filter(data_root, run_id)
+    if accepted is None:
+        accepted = load_strategy_acceptance_filter(data_root, run_id)
+    profitable = load_profitable_sizer_strategy_filter(data_root, run_id)
+    policy_ready = load_policy_strategy_filter(data_root, run_id)
+
+    filters = [
+        f for f in (accepted, profitable, policy_ready) if f is not None and len(f) > 0
+    ]
+    if not filters:
+        return None
+
+    selected = set(filters[0])
+    for f in filters[1:]:
+        selected = {
+            sid
+            for sid in selected
+            if any(strategy_id_matches(sid, {candidate}) for candidate in f)
+        }
+    tprint(
+        "[StrategyFilter] Deployment strategies resolved: " f"{len(selected)} aliases"
+    )
+    return selected
 
 
 def load_strategy_acceptance_filter(data_root: str, run_id: str) -> Optional[Set[str]]:
@@ -32,11 +475,7 @@ def load_strategy_acceptance_filter(data_root: str, run_id: str) -> Optional[Set
         try:
             payload = json.loads(path.read_text())
             strategies = payload.get("strategies", [])
-            accepted = {
-                str(s["strategy_id"])
-                for s in strategies
-                if isinstance(s, dict) and s.get("strategy_id")
-            }
+            accepted = _strategy_ids_from_rows(strategies)
             tprint(
                 f"[StrategyFilter] Loaded {len(accepted)} accepted strategies from {path}"
             )
@@ -55,7 +494,11 @@ def apply_strategy_acceptance_filter(
     if accepted_strategies is None:
         return df
     n_before = len(df)
-    out = df[df[strategy_col].astype(str).isin(accepted_strategies)].copy()
+    out = df[
+        df[strategy_col]
+        .astype(str)
+        .map(lambda sid: strategy_id_matches(sid, accepted_strategies))
+    ].copy()
     tprint(f"[StrategyFilter] {n_before} -> {len(out)} rows after acceptance filtering")
     return out
 
@@ -134,4 +577,213 @@ def validate_calibration_artifacts(
             raise ValueError(
                 f"Calibration artifact schema mismatch for strategy {sid}: missing={missing}"
             )
+    return True
+
+
+def validate_live_feature_contract(
+    model_bundle: Dict[str, Any],
+    *,
+    strict: bool = True,
+) -> bool:
+    """Validate that active runtime models do not require unavailable targets.
+
+    Training may persist diagnostic or tree-search feature lists that include
+    target-derived fields. Those are acceptable as artifacts, but live
+    inference must not open positions with an active model that directly
+    consumes them.
+    """
+    active_features: Set[str] = set()
+    ridge_sizer = (
+        model_bundle.get("ridge_sizer") if isinstance(model_bundle, dict) else None
+    )
+    for attr in ("model_names_", "model_names_ridge_"):
+        vals = getattr(ridge_sizer, attr, None)
+        if vals:
+            active_features.update(str(v) for v in vals)
+
+    bundle = (
+        model_bundle.get("bundle", model_bundle)
+        if isinstance(model_bundle, dict)
+        else {}
+    )
+    alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
+    for value in alpha_models.values():
+        if not isinstance(value, dict):
+            continue
+        if "feat_cols" in value:
+            active_features.update(str(v) for v in value.get("feat_cols", []) or [])
+            continue
+        for model_info in value.values():
+            if isinstance(model_info, dict):
+                active_features.update(
+                    str(v) for v in model_info.get("feat_cols", []) or []
+                )
+
+    ridge_weights = bundle.get("ridge_weights", {}) if isinstance(bundle, dict) else {}
+    if isinstance(ridge_weights, dict):
+        weight_map = ridge_weights.get("weights", {}) or {}
+        if isinstance(weight_map, dict):
+            for key in weight_map.keys():
+                if not isinstance(key, str):
+                    continue
+                for prefix in (
+                    "long_mr_",
+                    "short_mr_",
+                    "long_tf_",
+                    "short_tf_",
+                ):
+                    if key.startswith(prefix):
+                        active_features.add(key[len(prefix) :])
+                        break
+        params_per_bucket = ridge_weights.get("params_per_bucket", {}) or {}
+        if isinstance(params_per_bucket, dict):
+            for bucket_cfg in params_per_bucket.values():
+                if isinstance(bucket_cfg, dict):
+                    active_features.update(
+                        str(v) for v in bucket_cfg.get("feature_names", []) or []
+                    )
+
+    unavailable = sorted(active_features & LIVE_UNAVAILABLE_FEATURES)
+    if unavailable:
+        message = (
+            "Active live model artifacts include target-derived/unavailable fields: "
+            f"{unavailable}. Retrain without these features or explicitly replace "
+            "the active model before deployment."
+        )
+        if strict:
+            raise ValueError(message)
+        tprint(f"[FeatureContract] WARNING: {message}")
+        return False
+    return True
+
+
+def validate_deployment_model_coverage(
+    model_bundle: Dict[str, Any],
+    accepted_strategies: Optional[Set[str]],
+    *,
+    strict: bool = True,
+) -> bool:
+    """Require every deployable strategy to have the full inference model chain.
+
+    The runtime must not silently fall back from meta-model inference to
+    alpha-only decisions for accepted deployment strategies. This validator
+    checks the loaded alpha/base model, a matching meta model, and the position
+    sizer/policy artifacts before the inference loop is allowed to run.
+    """
+    alpha_by_strategy = _alpha_strategy_index(model_bundle)
+    selected_alpha = {
+        sid: info
+        for sid, info in alpha_by_strategy.items()
+        if strategy_id_matches(sid, accepted_strategies)
+    }
+    meta_keys = _meta_model_keys(model_bundle)
+    bundle = _bundle_payload(model_bundle)
+    ridge_weights = bundle.get("ridge_weights", {}) if isinstance(bundle, dict) else {}
+    ridge_sizer = (
+        model_bundle.get("ridge_sizer") if isinstance(model_bundle, dict) else None
+    )
+    bucket_params = (
+        model_bundle.get("bucket_params", {}) if isinstance(model_bundle, dict) else {}
+    )
+    ridge_params_per_bucket = (
+        ridge_weights.get("params_per_bucket", {})
+        if isinstance(ridge_weights, dict)
+        else {}
+    )
+
+    errors: List[str] = []
+    if accepted_strategies and not selected_alpha:
+        errors.append(
+            "no loaded alpha/base model matches the accepted deployment strategies"
+        )
+    if not alpha_by_strategy:
+        errors.append("no alpha/base models loaded")
+    if not meta_keys:
+        errors.append("no meta models loaded")
+    if ridge_sizer is None and not ridge_weights:
+        errors.append("no position sizer or ridge weights loaded")
+    if selected_alpha and not bucket_params and not ridge_params_per_bucket:
+        errors.append("no policy/sizer bucket params loaded")
+
+    for sid, info in selected_alpha.items():
+        if info.get("model") is None:
+            errors.append(f"{sid}: alpha/base model object missing")
+        if not info.get("feat_cols"):
+            errors.append(f"{sid}: alpha/base feature contract missing")
+        if not (_candidate_meta_keys(sid) & meta_keys):
+            errors.append(f"{sid}: matching meta model missing")
+
+    if selected_alpha and (bucket_params or ridge_params_per_bucket):
+        bucket_sources = []
+        if isinstance(bucket_params, dict):
+            bucket_sources.append(bucket_params.get("buckets", bucket_params))
+        if isinstance(ridge_params_per_bucket, dict):
+            bucket_sources.append(ridge_params_per_bucket)
+        for sid in selected_alpha:
+            core = strategy_core_id(sid)
+            if not any(
+                isinstance(buckets, dict)
+                and (
+                    core in buckets
+                    or sid in buckets
+                    or f"{strategy_side(sid)}_{core}" in buckets
+                )
+                for buckets in bucket_sources
+            ):
+                errors.append(f"{sid}: policy/sizer bucket params missing")
+
+    if errors:
+        message = "Deployment model coverage failed: " + "; ".join(errors)
+        if strict:
+            raise ValueError(message)
+        tprint(f"[ModelCoverage] WARNING: {message}")
+        return False
+    return True
+
+
+def validate_required_feature_frames(
+    features: Dict[str, Any],
+    required_feature_keys: Optional[Iterable[str]],
+    *,
+    symbols: Optional[Iterable[str]] = None,
+    strict: bool = True,
+) -> bool:
+    """Require loaded/generated features to cover all active model contracts."""
+    required = {str(key) for key in (required_feature_keys or set()) if str(key)}
+    if not required:
+        return True
+    feature_map = features if isinstance(features, dict) else {}
+    missing_keys = sorted(key for key in required if key not in feature_map)
+    invalid_keys: List[str] = []
+    missing_symbol_keys: Dict[str, List[str]] = {}
+    symbol_list = [str(sym) for sym in (symbols or []) if str(sym)]
+
+    for key in sorted(required - set(missing_keys)):
+        value = feature_map.get(key)
+        if isinstance(value, pd.Series):
+            if value.dropna().empty:
+                invalid_keys.append(key)
+            continue
+        if not isinstance(value, pd.DataFrame) or value.empty:
+            invalid_keys.append(key)
+            continue
+        if symbol_list:
+            missing_symbols = [sym for sym in symbol_list if sym not in value.columns]
+            if missing_symbols:
+                missing_symbol_keys[key] = missing_symbols[:10]
+
+    if missing_keys or invalid_keys or missing_symbol_keys:
+        parts = []
+        if missing_keys:
+            parts.append(f"missing_keys={missing_keys[:30]}")
+        if invalid_keys:
+            parts.append(f"invalid_or_empty={invalid_keys[:30]}")
+        if missing_symbol_keys:
+            sample = {key: vals for key, vals in list(missing_symbol_keys.items())[:10]}
+            parts.append(f"missing_symbols={sample}")
+        message = "Required inference features unavailable: " + "; ".join(parts)
+        if strict:
+            raise ValueError(message)
+        tprint(f"[FeatureContract] WARNING: {message}")
+        return False
     return True

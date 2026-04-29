@@ -13,8 +13,10 @@ stub.load_base_oof_predictions = lambda *a, **k: {}
 sys.modules.setdefault("extreme_price_movements.run_ridge_sizer", stub)
 
 from extreme_price_movements.policy_optimiser import (
+    MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE,
     _load_best_strategy,
     build_replay_context,
+    build_strategy_for_inference_payload,
     replay_exit_policy,
     resolve_optimised_selection_frac,
 )
@@ -219,3 +221,61 @@ def test_selection_frac_uses_optimised_positive_pnl_threshold(tmp_path):
     )
     # fallback should choose threshold 85% => top 15%
     assert np.isclose(frac, 0.15)
+
+
+def test_strategy_for_inference_selects_top_two_per_side_and_rejects_low_pnl(
+    tmp_path,
+):
+    run_id = "20260101_000000"
+    rows = []
+    for idx, pnl in enumerate([0.006, 0.005, 0.004]):
+        rows.append(
+            {
+                "strategy_id": f"long_s{idx}",
+                "side": "long",
+                "metrics_final": {
+                    "net_pnl": pnl * 100,
+                    "n_trades": 100,
+                    "profit_factor": 2.0,
+                    "weekly_wallet_vol": 0.1,
+                    "monthly_wallet_vol": 0.1,
+                },
+                "avg_holding_time_hours": 4.0,
+                "opportunities_per_day": 20.0,
+            }
+        )
+    rows.append(
+        {
+            "strategy_id": "short_low",
+            "side": "short",
+            "metrics_final": {
+                "net_pnl": (MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE / 2.0) * 100,
+                "n_trades": 100,
+                "profit_factor": 2.0,
+                "weekly_wallet_vol": 0.1,
+                "monthly_wallet_vol": 0.1,
+            },
+            "avg_holding_time_hours": 2.0,
+            "opportunities_per_day": 20.0,
+        }
+    )
+
+    payload = build_strategy_for_inference_payload(
+        rows, data_root=str(tmp_path), run_id=run_id
+    )
+
+    selected_ids = {row["strategy_id"] for row in payload["strategies"]}
+    rejected = {
+        row["strategy_id"]: row["reject_reasons"]
+        for row in payload["rejected_strategies"]
+    }
+    assert selected_ids == {"long_s0", "long_s1"}
+    assert rejected["long_s2"] == ["outside_top_2_per_side"]
+    assert "avg_net_pnl_per_trade_below_0_2pct" in rejected["short_low"]
+    assert (
+        tmp_path
+        / "artifacts"
+        / run_id
+        / "policy_params"
+        / "strategy_for_inference.json"
+    ).exists()

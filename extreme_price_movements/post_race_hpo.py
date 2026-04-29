@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import optuna
-from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
+from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from scipy.stats import rankdata, spearmanr
 from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
@@ -1535,11 +1535,11 @@ def run_base_extratrees_hpo(
         )
 
     sampler = TPESampler(seed=random_state, multivariate=True, group=True)
-    pruner = SuccessiveHalvingPruner(
-        min_resource=1,
-        reduction_factor=2,
-        min_early_stopping_rate=0,
-        bootstrap_count=1,
+    pruner = MedianPruner(
+        n_startup_trials=10,
+        n_warmup_steps=0,
+        interval_steps=1,
+        n_min_trials=5,
     )
 
     study = optuna.create_study(
@@ -1695,12 +1695,16 @@ def run_base_extratrees_hpo(
         "search_space": "base_narrow",
         "fallback_used": bool(fallback_used),
         "best_trial_metrics": {
-            "mean_Q": float(best_trial.user_attrs.get("mean_Q", best_value))
-            if best_trial is not None
-            else float("nan"),
-            "std_Q": float(best_trial.user_attrs.get("std_Q", 0.0))
-            if best_trial is not None
-            else float("nan"),
+            "mean_Q": (
+                float(best_trial.user_attrs.get("mean_Q", best_value))
+                if best_trial is not None
+                else float("nan")
+            ),
+            "std_Q": (
+                float(best_trial.user_attrs.get("std_Q", 0.0))
+                if best_trial is not None
+                else float("nan")
+            ),
             "fold_Qs": [
                 float(v)
                 for v in (
@@ -1709,9 +1713,11 @@ def run_base_extratrees_hpo(
                     else []
                 )
             ],
-            "objective": float(best_trial.user_attrs.get("objective", best_value))
-            if best_trial is not None
-            else float("nan"),
+            "objective": (
+                float(best_trial.user_attrs.get("objective", best_value))
+                if best_trial is not None
+                else float("nan")
+            ),
         },
     }
 
@@ -1785,11 +1791,11 @@ def run_base_extratrees_reg_hpo(
         )
 
     sampler = TPESampler(seed=random_state, multivariate=True, group=True)
-    pruner = SuccessiveHalvingPruner(
-        min_resource=1,
-        reduction_factor=2,
-        min_early_stopping_rate=0,
-        bootstrap_count=1,
+    pruner = MedianPruner(
+        n_startup_trials=10,
+        n_warmup_steps=0,
+        interval_steps=1,
+        n_min_trials=5,
     )
     study = optuna.create_study(
         direction="maximize",
@@ -1800,9 +1806,7 @@ def run_base_extratrees_reg_hpo(
 
     def _pseudo_huber(err: np.ndarray, delta: float = 1.0) -> float:
         e = np.asarray(err, dtype=np.float64)
-        return float(
-            np.mean((delta**2) * (np.sqrt(1.0 + np.square(e / delta)) - 1.0))
-        )
+        return float(np.mean((delta**2) * (np.sqrt(1.0 + np.square(e / delta)) - 1.0)))
 
     def _spearman_safe(a: np.ndarray, b: np.ndarray) -> float:
         if len(a) < 5:
@@ -1948,21 +1952,31 @@ def run_base_extratrees_reg_hpo(
         "search_space": "base_reg_narrow",
         "fallback_used": bool(fallback_used),
         "best_trial_metrics": {
-            "mean_ic": float(best_trial.user_attrs.get("mean_ic", best_value))
-            if best_trial is not None
-            else float("nan"),
-            "mean_mae": float(best_trial.user_attrs.get("mean_mae", np.nan))
-            if best_trial is not None
-            else float("nan"),
-            "mean_huber": float(best_trial.user_attrs.get("mean_huber", np.nan))
-            if best_trial is not None
-            else float("nan"),
-            "mean_mono": float(best_trial.user_attrs.get("mean_mono", np.nan))
-            if best_trial is not None
-            else float("nan"),
-            "objective": float(best_trial.user_attrs.get("objective", best_value))
-            if best_trial is not None
-            else float("nan"),
+            "mean_ic": (
+                float(best_trial.user_attrs.get("mean_ic", best_value))
+                if best_trial is not None
+                else float("nan")
+            ),
+            "mean_mae": (
+                float(best_trial.user_attrs.get("mean_mae", np.nan))
+                if best_trial is not None
+                else float("nan")
+            ),
+            "mean_huber": (
+                float(best_trial.user_attrs.get("mean_huber", np.nan))
+                if best_trial is not None
+                else float("nan")
+            ),
+            "mean_mono": (
+                float(best_trial.user_attrs.get("mean_mono", np.nan))
+                if best_trial is not None
+                else float("nan")
+            ),
+            "objective": (
+                float(best_trial.user_attrs.get("objective", best_value))
+                if best_trial is not None
+                else float("nan")
+            ),
             "fold_scores": [
                 float(v)
                 for v in (

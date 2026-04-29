@@ -7,190 +7,129 @@
       "barrier_clf_top10": [],
       "elasticnet_top10": [
         {
-          "feature": "base_H10_leaf_target_std_mean",
-          "importance": 0.049422066658735275,
+          "feature": "clf",
+          "importance": 0.15629994869232178,
           "metric": "abs_weight",
-          "std": 0.009394530206918716
+          "std": 0.1896827071905136
         },
         {
-          "feature": "base_H10_leaf_target_iqr_mean",
-          "importance": 0.032965078949928284,
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.15611141920089722,
           "metric": "abs_weight",
-          "std": 0.015748050063848495
+          "std": 0.18950967490673065
         },
         {
-          "feature": "base_H10_leaf_support_q25",
-          "importance": 0.02547903172671795,
+          "feature": "edge_tbm",
+          "importance": 0.15601468086242676,
           "metric": "abs_weight",
-          "std": 0.027646247297525406
+          "std": 0.18960857391357422
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.07823879271745682,
+          "metric": "abs_weight",
+          "std": 0.4005334973335266
+        },
+        {
+          "feature": "edge_x_winrate_20",
+          "importance": 0.03996060788631439,
+          "metric": "abs_weight",
+          "std": 0.6027632355690002
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.035857751965522766,
+          "metric": "abs_weight",
+          "std": 0.3899535834789276
         },
         {
           "feature": "base_H10",
-          "importance": 0.017433110624551773,
+          "importance": 0.024382034316658974,
           "metric": "abs_weight",
-          "std": 0.012647924944758415
+          "std": 0.43052157759666443
         },
         {
-          "feature": "base_H10_leaf_support_median",
-          "importance": 0.01611650362610817,
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.011311511509120464,
           "metric": "abs_weight",
-          "std": 0.011976794339716434
+          "std": 0.054687030613422394
         },
         {
-          "feature": "base_H10_leaf_support_mean",
-          "importance": 0.013065245933830738,
+          "feature": "edge_x_amihud_z",
+          "importance": -0.04303630813956261,
           "metric": "abs_weight",
-          "std": 0.007343057543039322
+          "std": 0.24926836788654327
         },
         {
-          "feature": "base_H10_pred_mean",
-          "importance": 0.009295373223721981,
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.11920401453971863,
           "metric": "abs_weight",
-          "std": 0.013145644217729568
-        },
-        {
-          "feature": "base_H10_pred_cv",
-          "importance": 0.001955163897946477,
-          "metric": "abs_weight",
-          "std": 0.014700754545629025
-        },
-        {
-          "feature": "base_H10_leaf_support_std",
-          "importance": 0.0017974056536331773,
-          "metric": "abs_weight",
-          "std": 0.002541915513575077
-        },
-        {
-          "feature": "base_H10_vote_top_gap",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.4046204686164856
         }
       ],
-      "extratrees_top10": [
-        {
-          "feature": "base_H10_pred_mean",
-          "importance": 0.12257281690835953,
-          "metric": "gain",
-          "std": 0.029677947983145714
-        },
-        {
-          "feature": "base_H10_leaf_support_mean",
-          "importance": 0.08869191259145737,
-          "metric": "gain",
-          "std": 0.011271653696894646
-        },
-        {
-          "feature": "base_H10_leaf_support_median",
-          "importance": 0.08484261482954025,
-          "metric": "gain",
-          "std": 0.0075365654192864895
-        },
-        {
-          "feature": "base_H10_vote_top_gap",
-          "importance": 0.0829838290810585,
-          "metric": "gain",
-          "std": 0.012322990223765373
-        },
-        {
-          "feature": "base_H10_leaf_support_std",
-          "importance": 0.08268827944993973,
-          "metric": "gain",
-          "std": 0.0335058867931366
-        },
-        {
-          "feature": "base_H10_vote_margin",
-          "importance": 0.0811963900923729,
-          "metric": "gain",
-          "std": 0.012904183939099312
-        },
-        {
-          "feature": "base_H10_leaf_support_q25",
-          "importance": 0.07556548714637756,
-          "metric": "gain",
-          "std": 0.016711365431547165
-        },
-        {
-          "feature": "base_H10_vote_entropy",
-          "importance": 0.0461442656815052,
-          "metric": "gain",
-          "std": 0.005622780881822109
-        },
-        {
-          "feature": "base_H10_leaf_centroid_dist_median",
-          "importance": 0.0451703704893589,
-          "metric": "gain",
-          "std": 0.007985059171915054
-        },
-        {
-          "feature": "base_H10_sigma",
-          "importance": 0.04386173188686371,
-          "metric": "gain",
-          "std": 0.010881176218390465
-        }
-      ],
+      "extratrees_top10": [],
       "winner_model": "ridge",
-      "winner_pred_prefix_share": 0.0,
+      "winner_pred_prefix_share": 0.1902829974432946,
       "winner_top10": [
         {
-          "feature": "base_H10_leaf_target_std_mean",
-          "importance": 0.049422066658735275,
+          "feature": "clf",
+          "importance": 0.15629994869232178,
           "metric": "abs_weight",
-          "std": 0.009394530206918716
+          "std": 0.1896827071905136
         },
         {
-          "feature": "base_H10_leaf_target_iqr_mean",
-          "importance": 0.032965078949928284,
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.15611141920089722,
           "metric": "abs_weight",
-          "std": 0.015748050063848495
+          "std": 0.18950967490673065
         },
         {
-          "feature": "base_H10_leaf_support_q25",
-          "importance": 0.02547903172671795,
+          "feature": "edge_tbm",
+          "importance": 0.15601468086242676,
           "metric": "abs_weight",
-          "std": 0.027646247297525406
+          "std": 0.18960857391357422
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.07823879271745682,
+          "metric": "abs_weight",
+          "std": 0.4005334973335266
+        },
+        {
+          "feature": "edge_x_winrate_20",
+          "importance": 0.03996060788631439,
+          "metric": "abs_weight",
+          "std": 0.6027632355690002
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.035857751965522766,
+          "metric": "abs_weight",
+          "std": 0.3899535834789276
         },
         {
           "feature": "base_H10",
-          "importance": 0.017433110624551773,
+          "importance": 0.024382034316658974,
           "metric": "abs_weight",
-          "std": 0.012647924944758415
+          "std": 0.43052157759666443
         },
         {
-          "feature": "base_H10_leaf_support_median",
-          "importance": 0.01611650362610817,
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.011311511509120464,
           "metric": "abs_weight",
-          "std": 0.011976794339716434
+          "std": 0.054687030613422394
         },
         {
-          "feature": "base_H10_leaf_support_mean",
-          "importance": 0.013065245933830738,
+          "feature": "edge_x_amihud_z",
+          "importance": -0.04303630813956261,
           "metric": "abs_weight",
-          "std": 0.007343057543039322
+          "std": 0.24926836788654327
         },
         {
-          "feature": "base_H10_pred_mean",
-          "importance": 0.009295373223721981,
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.11920401453971863,
           "metric": "abs_weight",
-          "std": 0.013145644217729568
-        },
-        {
-          "feature": "base_H10_pred_cv",
-          "importance": 0.001955163897946477,
-          "metric": "abs_weight",
-          "std": 0.014700754545629025
-        },
-        {
-          "feature": "base_H10_leaf_support_std",
-          "importance": 0.0017974056536331773,
-          "metric": "abs_weight",
-          "std": 0.002541915513575077
-        },
-        {
-          "feature": "base_H10_vote_top_gap",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.4046204686164856
         }
       ]
     },
@@ -198,190 +137,259 @@
       "barrier_clf_top10": [],
       "elasticnet_top10": [
         {
-          "feature": "base_H10_leaf_target_std_mean",
-          "importance": 0.032348308712244034,
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.04479258880019188,
           "metric": "abs_weight",
-          "std": 0.09044065326452255
+          "std": 0.08175856620073318
         },
         {
-          "feature": "base_H10_pred_mean",
-          "importance": 0.022946350276470184,
+          "feature": "edge_x_winrate_20",
+          "importance": 0.013628176413476467,
           "metric": "abs_weight",
-          "std": 0.039771661162376404
+          "std": 0.02235165424644947
         },
         {
-          "feature": "base_H10_leaf_support_median",
-          "importance": 0.015063267201185226,
+          "feature": "edge_tbm",
+          "importance": 0.0051636663265526295,
           "metric": "abs_weight",
-          "std": 0.042936697602272034
+          "std": 0.0075912089087069035
         },
         {
-          "feature": "base_H10_pred_cv",
-          "importance": 0.012498385272920132,
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.005163663066923618,
           "metric": "abs_weight",
-          "std": 0.0894378274679184
+          "std": 0.007591207046061754
         },
         {
-          "feature": "base_H10_leaf_support_std",
-          "importance": 0.008760210126638412,
+          "feature": "clf",
+          "importance": 0.00516364723443985,
           "metric": "abs_weight",
-          "std": 0.08261231333017349
+          "std": 0.007591197267174721
         },
         {
-          "feature": "base_H10_leaf_target_iqr_mean",
-          "importance": 0.00699623441323638,
+          "feature": "edge_x_amihud_z",
+          "importance": 0.002033176366239786,
           "metric": "abs_weight",
-          "std": 0.060221899300813675
+          "std": 0.005750690586864948
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.001711781951598823,
+          "metric": "abs_weight",
+          "std": 0.00484165083616972
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.0005270544206723571,
+          "metric": "abs_weight",
+          "std": 0.0014907352160662413
         },
         {
           "feature": "base_H10",
-          "importance": 0.003376042004674673,
+          "importance": 0.0,
           "metric": "abs_weight",
-          "std": 0.020671600475907326
+          "std": 0.0
         },
         {
-          "feature": "base_H10_leaf_support_mean",
-          "importance": 0.0014117587124928832,
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.02301778458058834,
           "metric": "abs_weight",
-          "std": 0.04522337764501572
-        },
-        {
-          "feature": "base_H10_leaf_centroid_dist_rel_std",
-          "importance": 0.001325023826211691,
-          "metric": "abs_weight",
-          "std": 0.019325703382492065
-        },
-        {
-          "feature": "base_H10_leaf_centroid_dist_cv",
-          "importance": 0.0013250175397843122,
-          "metric": "abs_weight",
-          "std": 0.019325729459524155
+          "std": 0.058223530650138855
         }
       ],
-      "extratrees_top10": [
-        {
-          "feature": "base_H10",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_sigma",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_pred_mean",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_pred_std",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_pred_cv",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_vote_entropy",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_vote_margin",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_vote_top_gap",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_leaf_support_mean",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_leaf_support_median",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        }
-      ],
+      "extratrees_top10": [],
       "winner_model": "ridge",
-      "winner_pred_prefix_share": 0.0,
+      "winner_pred_prefix_share": 0.05102356258361803,
       "winner_top10": [
         {
-          "feature": "base_H10_leaf_target_std_mean",
-          "importance": 0.032348308712244034,
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.04479258880019188,
           "metric": "abs_weight",
-          "std": 0.09044065326452255
+          "std": 0.08175856620073318
         },
         {
-          "feature": "base_H10_pred_mean",
-          "importance": 0.022946350276470184,
+          "feature": "edge_x_winrate_20",
+          "importance": 0.013628176413476467,
           "metric": "abs_weight",
-          "std": 0.039771661162376404
+          "std": 0.02235165424644947
         },
         {
-          "feature": "base_H10_leaf_support_median",
-          "importance": 0.015063267201185226,
+          "feature": "edge_tbm",
+          "importance": 0.0051636663265526295,
           "metric": "abs_weight",
-          "std": 0.042936697602272034
+          "std": 0.0075912089087069035
         },
         {
-          "feature": "base_H10_pred_cv",
-          "importance": 0.012498385272920132,
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.005163663066923618,
           "metric": "abs_weight",
-          "std": 0.0894378274679184
+          "std": 0.007591207046061754
         },
         {
-          "feature": "base_H10_leaf_support_std",
-          "importance": 0.008760210126638412,
+          "feature": "clf",
+          "importance": 0.00516364723443985,
           "metric": "abs_weight",
-          "std": 0.08261231333017349
+          "std": 0.007591197267174721
         },
         {
-          "feature": "base_H10_leaf_target_iqr_mean",
-          "importance": 0.00699623441323638,
+          "feature": "edge_x_amihud_z",
+          "importance": 0.002033176366239786,
           "metric": "abs_weight",
-          "std": 0.060221899300813675
+          "std": 0.005750690586864948
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.001711781951598823,
+          "metric": "abs_weight",
+          "std": 0.00484165083616972
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.0005270544206723571,
+          "metric": "abs_weight",
+          "std": 0.0014907352160662413
         },
         {
           "feature": "base_H10",
-          "importance": 0.003376042004674673,
+          "importance": 0.0,
           "metric": "abs_weight",
-          "std": 0.020671600475907326
+          "std": 0.0
         },
         {
-          "feature": "base_H10_leaf_support_mean",
-          "importance": 0.0014117587124928832,
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.02301778458058834,
           "metric": "abs_weight",
-          "std": 0.04522337764501572
+          "std": 0.058223530650138855
+        }
+      ]
+    },
+    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [
+        {
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.04479258880019188,
+          "metric": "abs_weight",
+          "std": 0.08175856620073318
         },
         {
-          "feature": "base_H10_leaf_centroid_dist_rel_std",
-          "importance": 0.001325023826211691,
+          "feature": "edge_x_winrate_20",
+          "importance": 0.013628176413476467,
           "metric": "abs_weight",
-          "std": 0.019325703382492065
+          "std": 0.02235165424644947
         },
         {
-          "feature": "base_H10_leaf_centroid_dist_cv",
-          "importance": 0.0013250175397843122,
+          "feature": "edge_tbm",
+          "importance": 0.0051636663265526295,
           "metric": "abs_weight",
-          "std": 0.019325729459524155
+          "std": 0.0075912089087069035
+        },
+        {
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.005163663066923618,
+          "metric": "abs_weight",
+          "std": 0.007591207046061754
+        },
+        {
+          "feature": "clf",
+          "importance": 0.00516364723443985,
+          "metric": "abs_weight",
+          "std": 0.007591197267174721
+        },
+        {
+          "feature": "edge_x_amihud_z",
+          "importance": 0.002033176366239786,
+          "metric": "abs_weight",
+          "std": 0.005750690586864948
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.001711781951598823,
+          "metric": "abs_weight",
+          "std": 0.00484165083616972
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.0005270544206723571,
+          "metric": "abs_weight",
+          "std": 0.0014907352160662413
+        },
+        {
+          "feature": "base_H10",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.02301778458058834,
+          "metric": "abs_weight",
+          "std": 0.058223530650138855
+        }
+      ],
+      "extratrees_top10": [],
+      "winner_model": "ridge",
+      "winner_pred_prefix_share": 0.05102356258361803,
+      "winner_top10": [
+        {
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.04479258880019188,
+          "metric": "abs_weight",
+          "std": 0.08175856620073318
+        },
+        {
+          "feature": "edge_x_winrate_20",
+          "importance": 0.013628176413476467,
+          "metric": "abs_weight",
+          "std": 0.02235165424644947
+        },
+        {
+          "feature": "edge_tbm",
+          "importance": 0.0051636663265526295,
+          "metric": "abs_weight",
+          "std": 0.0075912089087069035
+        },
+        {
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.005163663066923618,
+          "metric": "abs_weight",
+          "std": 0.007591207046061754
+        },
+        {
+          "feature": "clf",
+          "importance": 0.00516364723443985,
+          "metric": "abs_weight",
+          "std": 0.007591197267174721
+        },
+        {
+          "feature": "edge_x_amihud_z",
+          "importance": 0.002033176366239786,
+          "metric": "abs_weight",
+          "std": 0.005750690586864948
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.001711781951598823,
+          "metric": "abs_weight",
+          "std": 0.00484165083616972
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.0005270544206723571,
+          "metric": "abs_weight",
+          "std": 0.0014907352160662413
+        },
+        {
+          "feature": "base_H10",
+          "importance": 0.0,
+          "metric": "abs_weight",
+          "std": 0.0
+        },
+        {
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.02301778458058834,
+          "metric": "abs_weight",
+          "std": 0.058223530650138855
         }
       ]
     },
@@ -389,190 +397,259 @@
       "barrier_clf_top10": [],
       "elasticnet_top10": [
         {
-          "feature": "base_H10",
-          "importance": 0.0,
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.9127814173698425,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.9153122901916504
         },
         {
-          "feature": "base_H10_vote_top_gap",
-          "importance": 0.0,
+          "feature": "edge_tbm",
+          "importance": 0.5751349925994873,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.507215678691864
         },
         {
-          "feature": "base_H10_leaf_centroid_dist_rel_std",
-          "importance": 0.0,
+          "feature": "clf",
+          "importance": 0.5710484981536865,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.5046510100364685
         },
         {
-          "feature": "base_H10_robust_sigma",
-          "importance": 0.0,
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.3499026298522949,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.9621878266334534
         },
-        {
-          "feature": "base_H10_pred_mean",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_pred_std",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_pred_cv",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_pred_std_robust",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_vote_entropy",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_vote_margin",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
-        }
-      ],
-      "extratrees_top10": [
         {
           "feature": "base_H10",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
+          "importance": 0.2304747849702835,
+          "metric": "abs_weight",
+          "std": 0.8310592174530029
         },
         {
-          "feature": "base_H10_sigma",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.15095533430576324,
+          "metric": "abs_weight",
+          "std": 0.7136566042900085
         },
         {
-          "feature": "base_H10_pred_mean",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
+          "feature": "edge_x_winrate_20",
+          "importance": -0.2512277364730835,
+          "metric": "abs_weight",
+          "std": 0.44212445616722107
         },
         {
-          "feature": "base_H10_pred_std",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
+          "feature": "edge_x_amihud_z",
+          "importance": -0.4852944016456604,
+          "metric": "abs_weight",
+          "std": 1.0559812784194946
         },
         {
-          "feature": "base_H10_pred_cv",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
+          "feature": "edge_x_rank_ic_50",
+          "importance": -0.7784013748168945,
+          "metric": "abs_weight",
+          "std": 1.2452890872955322
         },
         {
-          "feature": "base_H10_vote_entropy",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_vote_margin",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_vote_top_gap",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_leaf_support_mean",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H10_leaf_support_median",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
+          "feature": "edge_x_brier_50",
+          "importance": -1.3748724460601807,
+          "metric": "abs_weight",
+          "std": 1.5916019678115845
         }
       ],
+      "extratrees_top10": [],
       "winner_model": "ridge",
-      "winner_pred_prefix_share": 0.0,
+      "winner_pred_prefix_share": 0.16069830517563102,
       "winner_top10": [
         {
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.9127814173698425,
+          "metric": "abs_weight",
+          "std": 0.9153122901916504
+        },
+        {
+          "feature": "edge_tbm",
+          "importance": 0.5751349925994873,
+          "metric": "abs_weight",
+          "std": 0.507215678691864
+        },
+        {
+          "feature": "clf",
+          "importance": 0.5710484981536865,
+          "metric": "abs_weight",
+          "std": 0.5046510100364685
+        },
+        {
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.3499026298522949,
+          "metric": "abs_weight",
+          "std": 0.9621878266334534
+        },
+        {
           "feature": "base_H10",
-          "importance": 0.0,
+          "importance": 0.2304747849702835,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.8310592174530029
         },
         {
-          "feature": "base_H10_vote_top_gap",
-          "importance": 0.0,
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.15095533430576324,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.7136566042900085
         },
         {
-          "feature": "base_H10_leaf_centroid_dist_rel_std",
-          "importance": 0.0,
+          "feature": "edge_x_winrate_20",
+          "importance": -0.2512277364730835,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.44212445616722107
         },
         {
-          "feature": "base_H10_robust_sigma",
-          "importance": 0.0,
+          "feature": "edge_x_amihud_z",
+          "importance": -0.4852944016456604,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 1.0559812784194946
         },
         {
-          "feature": "base_H10_pred_mean",
-          "importance": 0.0,
+          "feature": "edge_x_rank_ic_50",
+          "importance": -0.7784013748168945,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 1.2452890872955322
         },
         {
-          "feature": "base_H10_pred_std",
-          "importance": 0.0,
+          "feature": "edge_x_brier_50",
+          "importance": -1.3748724460601807,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 1.5916019678115845
+        }
+      ]
+    },
+    "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [
+        {
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.9127814173698425,
+          "metric": "abs_weight",
+          "std": 0.9153122901916504
         },
         {
-          "feature": "base_H10_pred_cv",
-          "importance": 0.0,
+          "feature": "edge_tbm",
+          "importance": 0.5751349925994873,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.507215678691864
         },
         {
-          "feature": "base_H10_pred_std_robust",
-          "importance": 0.0,
+          "feature": "clf",
+          "importance": 0.5710484981536865,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.5046510100364685
         },
         {
-          "feature": "base_H10_vote_entropy",
-          "importance": 0.0,
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.3499026298522949,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.9621878266334534
         },
         {
-          "feature": "base_H10_vote_margin",
-          "importance": 0.0,
+          "feature": "base_H10",
+          "importance": 0.2304747849702835,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.8310592174530029
+        },
+        {
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.15095533430576324,
+          "metric": "abs_weight",
+          "std": 0.7136566042900085
+        },
+        {
+          "feature": "edge_x_winrate_20",
+          "importance": -0.2512277364730835,
+          "metric": "abs_weight",
+          "std": 0.44212445616722107
+        },
+        {
+          "feature": "edge_x_amihud_z",
+          "importance": -0.4852944016456604,
+          "metric": "abs_weight",
+          "std": 1.0559812784194946
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": -0.7784013748168945,
+          "metric": "abs_weight",
+          "std": 1.2452890872955322
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": -1.3748724460601807,
+          "metric": "abs_weight",
+          "std": 1.5916019678115845
+        }
+      ],
+      "extratrees_top10": [],
+      "winner_model": "ridge",
+      "winner_pred_prefix_share": 0.16069830517563102,
+      "winner_top10": [
+        {
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.9127814173698425,
+          "metric": "abs_weight",
+          "std": 0.9153122901916504
+        },
+        {
+          "feature": "edge_tbm",
+          "importance": 0.5751349925994873,
+          "metric": "abs_weight",
+          "std": 0.507215678691864
+        },
+        {
+          "feature": "clf",
+          "importance": 0.5710484981536865,
+          "metric": "abs_weight",
+          "std": 0.5046510100364685
+        },
+        {
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.3499026298522949,
+          "metric": "abs_weight",
+          "std": 0.9621878266334534
+        },
+        {
+          "feature": "base_H10",
+          "importance": 0.2304747849702835,
+          "metric": "abs_weight",
+          "std": 0.8310592174530029
+        },
+        {
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.15095533430576324,
+          "metric": "abs_weight",
+          "std": 0.7136566042900085
+        },
+        {
+          "feature": "edge_x_winrate_20",
+          "importance": -0.2512277364730835,
+          "metric": "abs_weight",
+          "std": 0.44212445616722107
+        },
+        {
+          "feature": "edge_x_amihud_z",
+          "importance": -0.4852944016456604,
+          "metric": "abs_weight",
+          "std": 1.0559812784194946
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": -0.7784013748168945,
+          "metric": "abs_weight",
+          "std": 1.2452890872955322
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": -1.3748724460601807,
+          "metric": "abs_weight",
+          "std": 1.5916019678115845
         }
       ]
     },
@@ -580,190 +657,389 @@
       "barrier_clf_top10": [],
       "elasticnet_top10": [
         {
-          "feature": "base_H5",
-          "importance": 0.0,
+          "feature": "edge_x_winrate_20",
+          "importance": 0.1264113038778305,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.12029565125703812
         },
         {
-          "feature": "base_H5_sigma",
-          "importance": 0.0,
+          "feature": "edge_x_vol_of_vol",
+          "importance": 0.07721973210573196,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.11644180119037628
         },
         {
-          "feature": "base_H5_leaf_centroid_dist_rel_std",
-          "importance": 0.0,
+          "feature": "edge_x_brier_50",
+          "importance": 0.07363531738519669,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.11228148639202118
         },
         {
-          "feature": "base_H5_robust_sigma",
-          "importance": 0.0,
+          "feature": "clf",
+          "importance": 0.07287704199552536,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.10813519358634949
         },
         {
-          "feature": "base_H5_pred_mean",
-          "importance": 0.0,
+          "feature": "edge_tbm",
+          "importance": 0.07287703454494476,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.10813519358634949
         },
         {
-          "feature": "base_H5_pred_std",
-          "importance": 0.0,
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.0726073682308197,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.1073182225227356
         },
         {
-          "feature": "base_H5_pred_std_robust",
-          "importance": 0.0,
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.04957788437604904,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.15355265140533447
         },
         {
-          "feature": "base_H5_vote_entropy",
-          "importance": 0.0,
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.003600992262363434,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.1331234872341156
         },
-        {
-          "feature": "base_H5_vote_margin",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H5_vote_top_gap",
-          "importance": 0.0,
-          "metric": "abs_weight",
-          "std": 0.0
-        }
-      ],
-      "extratrees_top10": [
         {
           "feature": "base_H5",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
+          "importance": -0.01957814209163189,
+          "metric": "abs_weight",
+          "std": 0.06208337843418121
         },
         {
-          "feature": "base_H5_sigma",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H5_pred_mean",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H5_pred_std",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H5_pred_cv",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H5_vote_entropy",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H5_vote_margin",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H5_vote_top_gap",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H5_leaf_support_mean",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
-        },
-        {
-          "feature": "base_H5_leaf_support_median",
-          "importance": 0.0,
-          "metric": "gain",
-          "std": 0.0
+          "feature": "edge_x_amihud_z",
+          "importance": -0.0456249862909317,
+          "metric": "abs_weight",
+          "std": 0.06374729424715042
         }
       ],
+      "extratrees_top10": [],
       "winner_model": "ridge",
-      "winner_pred_prefix_share": 0.0,
+      "winner_pred_prefix_share": 0.11825115471613783,
       "winner_top10": [
         {
+          "feature": "edge_x_winrate_20",
+          "importance": 0.1264113038778305,
+          "metric": "abs_weight",
+          "std": 0.12029565125703812
+        },
+        {
+          "feature": "edge_x_vol_of_vol",
+          "importance": 0.07721973210573196,
+          "metric": "abs_weight",
+          "std": 0.11644180119037628
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.07363531738519669,
+          "metric": "abs_weight",
+          "std": 0.11228148639202118
+        },
+        {
+          "feature": "clf",
+          "importance": 0.07287704199552536,
+          "metric": "abs_weight",
+          "std": 0.10813519358634949
+        },
+        {
+          "feature": "edge_tbm",
+          "importance": 0.07287703454494476,
+          "metric": "abs_weight",
+          "std": 0.10813519358634949
+        },
+        {
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.0726073682308197,
+          "metric": "abs_weight",
+          "std": 0.1073182225227356
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.04957788437604904,
+          "metric": "abs_weight",
+          "std": 0.15355265140533447
+        },
+        {
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.003600992262363434,
+          "metric": "abs_weight",
+          "std": 0.1331234872341156
+        },
+        {
           "feature": "base_H5",
-          "importance": 0.0,
+          "importance": -0.01957814209163189,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.06208337843418121
         },
         {
-          "feature": "base_H5_sigma",
-          "importance": 0.0,
+          "feature": "edge_x_amihud_z",
+          "importance": -0.0456249862909317,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.06374729424715042
+        }
+      ]
+    },
+    "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [
+        {
+          "feature": "edge_x_winrate_20",
+          "importance": 0.1264113038778305,
+          "metric": "abs_weight",
+          "std": 0.12029565125703812
         },
         {
-          "feature": "base_H5_leaf_centroid_dist_rel_std",
-          "importance": 0.0,
+          "feature": "edge_x_vol_of_vol",
+          "importance": 0.07721973210573196,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.11644180119037628
         },
         {
-          "feature": "base_H5_robust_sigma",
-          "importance": 0.0,
+          "feature": "edge_x_brier_50",
+          "importance": 0.07363531738519669,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.11228148639202118
         },
         {
-          "feature": "base_H5_pred_mean",
-          "importance": 0.0,
+          "feature": "clf",
+          "importance": 0.07287704199552536,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.10813519358634949
         },
         {
-          "feature": "base_H5_pred_std",
-          "importance": 0.0,
+          "feature": "edge_tbm",
+          "importance": 0.07287703454494476,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.10813519358634949
         },
         {
-          "feature": "base_H5_pred_std_robust",
-          "importance": 0.0,
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.0726073682308197,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.1073182225227356
         },
         {
-          "feature": "base_H5_vote_entropy",
-          "importance": 0.0,
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.04957788437604904,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.15355265140533447
         },
         {
-          "feature": "base_H5_vote_margin",
-          "importance": 0.0,
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.003600992262363434,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.1331234872341156
         },
         {
-          "feature": "base_H5_vote_top_gap",
-          "importance": 0.0,
+          "feature": "base_H5",
+          "importance": -0.01957814209163189,
           "metric": "abs_weight",
-          "std": 0.0
+          "std": 0.06208337843418121
+        },
+        {
+          "feature": "edge_x_amihud_z",
+          "importance": -0.0456249862909317,
+          "metric": "abs_weight",
+          "std": 0.06374729424715042
+        }
+      ],
+      "extratrees_top10": [],
+      "winner_model": "ridge",
+      "winner_pred_prefix_share": 0.11825115471613783,
+      "winner_top10": [
+        {
+          "feature": "edge_x_winrate_20",
+          "importance": 0.1264113038778305,
+          "metric": "abs_weight",
+          "std": 0.12029565125703812
+        },
+        {
+          "feature": "edge_x_vol_of_vol",
+          "importance": 0.07721973210573196,
+          "metric": "abs_weight",
+          "std": 0.11644180119037628
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.07363531738519669,
+          "metric": "abs_weight",
+          "std": 0.11228148639202118
+        },
+        {
+          "feature": "clf",
+          "importance": 0.07287704199552536,
+          "metric": "abs_weight",
+          "std": 0.10813519358634949
+        },
+        {
+          "feature": "edge_tbm",
+          "importance": 0.07287703454494476,
+          "metric": "abs_weight",
+          "std": 0.10813519358634949
+        },
+        {
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.0726073682308197,
+          "metric": "abs_weight",
+          "std": 0.1073182225227356
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.04957788437604904,
+          "metric": "abs_weight",
+          "std": 0.15355265140533447
+        },
+        {
+          "feature": "edge_x_volatility_zscore",
+          "importance": 0.003600992262363434,
+          "metric": "abs_weight",
+          "std": 0.1331234872341156
+        },
+        {
+          "feature": "base_H5",
+          "importance": -0.01957814209163189,
+          "metric": "abs_weight",
+          "std": 0.06208337843418121
+        },
+        {
+          "feature": "edge_x_amihud_z",
+          "importance": -0.0456249862909317,
+          "metric": "abs_weight",
+          "std": 0.06374729424715042
+        }
+      ]
+    },
+    "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [
+        {
+          "feature": "edge_tbm",
+          "importance": 0.06401649117469788,
+          "metric": "abs_weight",
+          "std": 0.08468855917453766
+        },
+        {
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.06401648372411728,
+          "metric": "abs_weight",
+          "std": 0.08468840271234512
+        },
+        {
+          "feature": "clf",
+          "importance": 0.06401559710502625,
+          "metric": "abs_weight",
+          "std": 0.08468742668628693
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.052978649735450745,
+          "metric": "abs_weight",
+          "std": 0.08092047274112701
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.045475900173187256,
+          "metric": "abs_weight",
+          "std": 0.05313153192400932
+        },
+        {
+          "feature": "base_H5",
+          "importance": 0.029103364795446396,
+          "metric": "abs_weight",
+          "std": 0.07883042842149734
+        },
+        {
+          "feature": "edge_x_amihud_z",
+          "importance": 0.022753672674298286,
+          "metric": "abs_weight",
+          "std": 0.07501840591430664
+        },
+        {
+          "feature": "edge_x_winrate_20",
+          "importance": 0.0004240282578393817,
+          "metric": "abs_weight",
+          "std": 0.047501884400844574
+        },
+        {
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.024476319551467896,
+          "metric": "abs_weight",
+          "std": 0.07369595021009445
+        },
+        {
+          "feature": "edge_x_volatility_zscore",
+          "importance": -0.0714617371559143,
+          "metric": "abs_weight",
+          "std": 0.10801252722740173
+        }
+      ],
+      "extratrees_top10": [],
+      "winner_model": "ridge",
+      "winner_pred_prefix_share": 0.14591574634957302,
+      "winner_top10": [
+        {
+          "feature": "edge_tbm",
+          "importance": 0.06401649117469788,
+          "metric": "abs_weight",
+          "std": 0.08468855917453766
+        },
+        {
+          "feature": "oof_ebm_uncertainty_weighted",
+          "importance": 0.06401648372411728,
+          "metric": "abs_weight",
+          "std": 0.08468840271234512
+        },
+        {
+          "feature": "clf",
+          "importance": 0.06401559710502625,
+          "metric": "abs_weight",
+          "std": 0.08468742668628693
+        },
+        {
+          "feature": "edge_x_brier_50",
+          "importance": 0.052978649735450745,
+          "metric": "abs_weight",
+          "std": 0.08092047274112701
+        },
+        {
+          "feature": "edge_x_rank_ic_50",
+          "importance": 0.045475900173187256,
+          "metric": "abs_weight",
+          "std": 0.05313153192400932
+        },
+        {
+          "feature": "base_H5",
+          "importance": 0.029103364795446396,
+          "metric": "abs_weight",
+          "std": 0.07883042842149734
+        },
+        {
+          "feature": "edge_x_amihud_z",
+          "importance": 0.022753672674298286,
+          "metric": "abs_weight",
+          "std": 0.07501840591430664
+        },
+        {
+          "feature": "edge_x_winrate_20",
+          "importance": 0.0004240282578393817,
+          "metric": "abs_weight",
+          "std": 0.047501884400844574
+        },
+        {
+          "feature": "edge_x_vol_of_vol",
+          "importance": -0.024476319551467896,
+          "metric": "abs_weight",
+          "std": 0.07369595021009445
+        },
+        {
+          "feature": "edge_x_volatility_zscore",
+          "importance": -0.0714617371559143,
+          "metric": "abs_weight",
+          "std": 0.10801252722740173
         }
       ]
     }

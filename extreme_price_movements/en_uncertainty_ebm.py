@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -7,6 +8,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import expit, logit
 from scipy.stats import rankdata
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import ElasticNet
 from sklearn.preprocessing import StandardScaler
 
@@ -276,7 +278,7 @@ def fit_en_uncertainty_adjuster(
     returns: np.ndarray | None = None,
     groups: np.ndarray | None = None,
     random_state: int = 42,
-    n_trials: int = 20,
+    n_trials: int = 30,
 ) -> ENUncertaintyAdjuster | None:
     p = np.asarray(base_pred, dtype=np.float32).reshape(-1)
     y_arr = np.asarray(y, dtype=np.float32).reshape(-1)
@@ -302,10 +304,19 @@ def fit_en_uncertainty_adjuster(
     best_l1 = 0.7
     best_blend = 0.0
     best_metrics: dict[str, float] = {}
+    best_residual_std = 0.0
+    best_coef_nnz = 0
+    base_blend_metric = _selection_metrics(
+        y_arr[blend_idx],
+        p[blend_idx],
+        returns=None if returns is None else np.asarray(returns)[:n][blend_idx],
+        groups=None if groups is None else np.asarray(groups)[:n][blend_idx],
+    )
 
     def _run_trial(alpha: float, l1_ratio: float) -> float:
         nonlocal current_weights
         nonlocal best_alpha, best_blend, best_l1, best_metrics, best_model, best_score
+        nonlocal best_coef_nnz, best_residual_std
         mdl = ElasticNet(
             alpha=float(alpha),
             l1_ratio=float(l1_ratio),
@@ -313,7 +324,11 @@ def fit_en_uncertainty_adjuster(
             selection="cyclic",
             random_state=random_state,
         )
-        mdl.fit(X_fit, target[fit_idx], sample_weight=current_weights)
+        with warnings.catch_warnings():
+            if float(alpha) <= 0.0:
+                warnings.filterwarnings("ignore", category=ConvergenceWarning)
+                warnings.filterwarnings("ignore", message=".*alpha=0.*")
+            mdl.fit(X_fit, target[fit_idx], sample_weight=current_weights)
         train_resid = np.asarray(mdl.predict(X_fit), dtype=np.float32)
         current_weights = update_rank_weights(
             current_weights, apply_en_prediction(p[fit_idx], train_resid, 1.0)
@@ -328,13 +343,22 @@ def fit_en_uncertainty_adjuster(
                 returns=None if returns is None else np.asarray(returns)[:n][blend_idx],
                 groups=None if groups is None else np.asarray(groups)[:n][blend_idx],
             )
-            score = (
-                0.50 * metric["precision30"]
-                + 0.35 * metric["stability30"]
-                + 0.15 * metric["mean_gross_return10"]
+            lift_delta = float(metric["precision30"] - base_blend_metric["precision30"])
+            stability_delta = float(
+                metric["stability30"] - base_blend_metric["stability30"]
+            )
+            return10_delta = float(
+                metric["mean_gross_return10"] - base_blend_metric["mean_gross_return10"]
+            )
+            score = 0.4 * lift_delta + 0.4 * stability_delta + 0.2 * return10_delta
+            gates_ok = (
+                metric["precision30"] + 1e-6 >= 0.95 * base_blend_metric["precision30"]
+                and metric["stability30"] + 1e-6
+                >= 0.95 * base_blend_metric["stability30"]
             )
             if (
-                _guardrails_ok(y_arr[blend_idx], p[blend_idx], pred)
+                gates_ok
+                and _guardrails_ok(y_arr[blend_idx], p[blend_idx], pred)
                 and score > best_score
             ):
                 best_score = float(score)
@@ -344,6 +368,20 @@ def fit_en_uncertainty_adjuster(
                 best_blend = float(blend)
                 best_metrics = dict(metric)
                 best_metrics["objective"] = float(score)
+                best_metrics["lift30_delta"] = float(lift_delta)
+                best_metrics["stability30_delta"] = float(stability_delta)
+                best_metrics["mean_gross_return10_delta"] = float(return10_delta)
+                best_metrics["base_precision30"] = float(
+                    base_blend_metric["precision30"]
+                )
+                best_metrics["base_stability30"] = float(
+                    base_blend_metric["stability30"]
+                )
+                best_metrics["base_mean_gross_return10"] = float(
+                    base_blend_metric["mean_gross_return10"]
+                )
+                best_residual_std = float(np.nanstd(blend_resid))
+                best_coef_nnz = int(np.sum(np.abs(mdl.coef_) > 1e-12))
             trial_best = max(trial_best, float(score))
         return float(trial_best if np.isfinite(trial_best) else -1e9)
 
@@ -355,29 +393,109 @@ def fit_en_uncertainty_adjuster(
 
         def objective(trial: Any) -> float:
             alpha = float(
-                np.round(trial.suggest_float("alpha", 0.1, 5.0) * 10.0) / 10.0
+                np.round(trial.suggest_float("alpha", 0.0, 1.0) * 10.0) / 10.0
             )
             l1_ratio = float(
                 np.round(trial.suggest_float("l1_ratio", 0.4, 0.9) * 10.0) / 10.0
             )
-            alpha = float(np.clip(alpha, 0.1, 5.0))
+            alpha = float(np.clip(alpha, 0.0, 1.0))
             l1_ratio = float(np.clip(l1_ratio, 0.4, 0.9))
             trial.set_user_attr("alpha_rounded", alpha)
             trial.set_user_attr("l1_ratio_rounded", l1_ratio)
             return _run_trial(alpha, l1_ratio)
 
-        study.enqueue_trial({"alpha": 1.0, "l1_ratio": 0.7})
+        for alpha, l1_ratio in (
+            (1.0, 0.7),
+            (0.0, 0.4),
+            (0.0, 0.7),
+            (0.0, 0.9),
+            (0.1, 0.4),
+            (0.1, 0.7),
+            (0.1, 0.9),
+            (0.2, 0.4),
+        ):
+            study.enqueue_trial({"alpha": alpha, "l1_ratio": l1_ratio})
         study.optimize(objective, n_trials=max(int(n_trials), 1))
     except Exception:
         for alpha, l1_ratio in _trial_grid(random_state, n_trials):
             _run_trial(alpha, l1_ratio)
     if best_model is None:
         return None
+    full_base_metric = _selection_metrics(
+        y_arr,
+        p,
+        returns=None if returns is None else np.asarray(returns)[:n],
+        groups=None if groups is None else np.asarray(groups)[:n],
+    )
+    full_resid = np.asarray(
+        best_model.predict(scaler.transform(X).astype(np.float32, copy=False)),
+        dtype=np.float32,
+    )
+    full_best_blend = 0.0
+    full_best_score = -np.inf
+    full_best_metrics: dict[str, float] = {}
+    for blend in BLEND_GRID:
+        full_pred = apply_en_prediction(p, full_resid, float(blend))
+        metric = _selection_metrics(
+            y_arr,
+            full_pred,
+            returns=None if returns is None else np.asarray(returns)[:n],
+            groups=None if groups is None else np.asarray(groups)[:n],
+        )
+        lift_delta = float(metric["precision30"] - full_base_metric["precision30"])
+        stability_delta = float(
+            metric["stability30"] - full_base_metric["stability30"]
+        )
+        return10_delta = float(
+            metric["mean_gross_return10"]
+            - full_base_metric["mean_gross_return10"]
+        )
+        score = 0.4 * lift_delta + 0.4 * stability_delta + 0.2 * return10_delta
+        gates_ok = (
+            metric["precision30"] + 1e-6 >= 0.95 * full_base_metric["precision30"]
+            and metric["stability30"] + 1e-6
+            >= 0.95 * full_base_metric["stability30"]
+            and _guardrails_ok(y_arr, p, full_pred)
+        )
+        if gates_ok and score > full_best_score:
+            full_best_score = float(score)
+            full_best_blend = float(blend)
+            full_best_metrics = dict(metric)
+            full_best_metrics["objective"] = float(score)
+            full_best_metrics["lift30_delta"] = float(lift_delta)
+            full_best_metrics["stability30_delta"] = float(stability_delta)
+            full_best_metrics["mean_gross_return10_delta"] = float(return10_delta)
+    if not full_best_metrics:
+        full_best_metrics = dict(full_base_metric)
+        full_best_metrics["objective"] = 0.0
+        full_best_metrics["lift30_delta"] = 0.0
+        full_best_metrics["stability30_delta"] = 0.0
+        full_best_metrics["mean_gross_return10_delta"] = 0.0
+    full_best_metrics["base_precision30"] = float(full_base_metric["precision30"])
+    full_best_metrics["base_stability30"] = float(full_base_metric["stability30"])
+    full_best_metrics["base_mean_gross_return10"] = float(
+        full_base_metric["mean_gross_return10"]
+    )
+    if abs(full_best_blend - best_blend) > 1e-9:
+        tprint(
+            "EBM uncertainty EN: full-OOF hard gate changed blend "
+            f"{best_blend:.2f} -> {full_best_blend:.2f} "
+            f"(lift30 {full_base_metric['precision30']:.4f} -> "
+            f"{full_best_metrics['precision30']:.4f}, "
+            f"stability30 {full_base_metric['stability30']:.4f} -> "
+            f"{full_best_metrics['stability30']:.4f})."
+        )
+    best_blend = float(full_best_blend)
+    best_score = float(full_best_metrics["objective"])
+    best_metrics.update(full_best_metrics)
     tprint(
         "EBM uncertainty EN: "
         f"alpha={best_alpha:.2f}, l1_ratio={best_l1:.2f}, blend={best_blend:.2f}, "
-        f"objective={best_score:.4f}."
+        f"objective={best_score:.4f}, residual_std={best_residual_std:.6f}, "
+        f"coef_nnz={best_coef_nnz}."
     )
+    best_metrics["residual_std"] = float(best_residual_std)
+    best_metrics["coef_nnz"] = float(best_coef_nnz)
     return ENUncertaintyAdjuster(
         feature_names=feature_names,
         alpha=best_alpha,
@@ -629,11 +747,18 @@ def _fit_blend_split(y: np.ndarray, random_state: int) -> tuple[np.ndarray, np.n
 
 def _trial_grid(random_state: int, n_trials: int) -> list[tuple[float, float]]:
     rng = np.random.default_rng(random_state + 911)
-    params: list[tuple[float, float]] = [(1.0, 0.7), (0.5, 0.8), (2.0, 0.6)]
+    params: list[tuple[float, float]] = [
+        (1.0, 0.7),
+        (0.0, 0.4),
+        (0.0, 0.7),
+        (0.0, 0.9),
+        (0.5, 0.8),
+        (0.2, 0.6),
+    ]
     while len(params) < max(int(n_trials), 1):
-        alpha = float(np.round(rng.uniform(0.1, 5.0) * 10.0) / 10.0)
+        alpha = float(np.round(rng.uniform(0.0, 1.0) * 10.0) / 10.0)
         l1 = float(np.round(rng.uniform(0.4, 0.9) * 10.0) / 10.0)
-        params.append((float(np.clip(alpha, 0.1, 5.0)), float(np.clip(l1, 0.4, 0.9))))
+        params.append((float(np.clip(alpha, 0.0, 1.0)), float(np.clip(l1, 0.4, 0.9))))
     return params[: max(int(n_trials), 1)]
 
 
@@ -669,20 +794,52 @@ def _top_mean(values: np.ndarray, pred: np.ndarray, frac: float) -> float:
 def _stability_by_group(
     y: np.ndarray, pred: np.ndarray, groups: np.ndarray | None
 ) -> float:
+    yy = np.asarray(y, dtype=np.float64)
+    pp = np.asarray(pred, dtype=np.float64)
+    m = np.isfinite(yy) & np.isfinite(pp)
+    yy = yy[m]
+    pp = pp[m]
+    if len(yy) < 8:
+        return 0.0
     if groups is None or len(groups) != len(pred):
-        return 0.0
+        return _top30_bucket_stability(yy, pp)
     vals: list[float] = []
-    g = np.asarray(groups)
-    for key in np.unique(g):
+    g = np.asarray(groups, dtype=object)[m]
+    for key in pd.unique(pd.Series(g)):
         mask = g == key
-        if int(np.sum(mask)) >= 10:
-            vals.append(_top_mean(np.asarray(y)[mask], np.asarray(pred)[mask], 0.30))
+        if int(np.sum(mask)) < 20:
+            continue
+        y_group = yy[mask]
+        p_group = pp[mask]
+        vals.append(_top_mean(y_group, p_group, 0.30))
     if len(vals) < 3:
-        return 0.0
+        return _top30_bucket_stability(yy, pp)
     arr = np.asarray(vals, dtype=np.float32)
     mean_v = float(np.nanmean(arr))
     std_v = float(np.nanstd(arr, ddof=1)) if len(arr) > 1 else 0.0
     return float(np.clip(1.0 / (1.0 + std_v / (abs(mean_v) + 1e-6)), 0.0, 1.0))
+
+
+def _top30_bucket_stability(y: np.ndarray, pred: np.ndarray) -> float:
+    yy = np.asarray(y, dtype=np.float64)
+    pp = np.asarray(pred, dtype=np.float64)
+    if len(pp) < 20:
+        return 0.0
+    top_n = max(1, int(np.ceil(0.30 * len(pp))))
+    top_idx = np.argsort(pp)[-top_n:]
+    score_top = pp[top_idx]
+    y_top = yy[top_idx]
+    qs = np.quantile(score_top, np.linspace(0.0, 1.0, 6))
+    vals: list[float] = []
+    for i in range(5):
+        right_mask = score_top <= qs[i + 1] if i == 4 else score_top < qs[i + 1]
+        mask = (score_top >= qs[i]) & right_mask
+        if np.any(mask):
+            vals.append(float(np.mean(y_top[mask])))
+    if not vals:
+        return 0.0
+    arr = np.asarray(vals, dtype=np.float64)
+    return float(1.0 / (1.0 + np.std(arr)))
 
 
 def _guardrails_ok(y: np.ndarray, base_pred: np.ndarray, pred: np.ndarray) -> bool:

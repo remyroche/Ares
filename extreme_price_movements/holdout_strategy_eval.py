@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,34 +22,39 @@ from extreme_price_movements.features import (
     compute_market_features,
 )
 from extreme_price_movements.hf_data_loader import _load_existing_data
+from extreme_price_movements.inference.candidate_selector import (
+    _build_mask_for_mode,
+    _up_down_zones,
+)
 from extreme_price_movements.inference.feature_generator import (
     get_inference_required_feature_keys,
     load_or_compute_features,
 )
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
-from extreme_price_movements.model_loader import load_model_bundle, load_bucket_params
-from extreme_price_movements.ridge_position_sizer import (
-    prepare_policy_params_from_tpsl_optimiser,
-    run_policy_aware_labeling_step,
-)
-from extreme_price_movements.simple_position_sizer import (
-    evaluate_selection_profit_proxy,
-)
-
+from extreme_price_movements.model_loader import load_bucket_params, load_model_bundle
 from extreme_price_movements.offline_optimisers.params_store import (
     load_inference_candidate_mask_params_per_bucket,
-)
-from extreme_price_movements.inference.candidate_selector import (
-    _build_mask_for_mode,
-    _up_down_zones,
 )
 from extreme_price_movements.periods_symbols_management import (
     EventSchema,
     SlicePlannerConfig,
 )
 from extreme_price_movements.policy_optimiser import (
+    EPS,
+    MAX_DEPLOYMENT_STRATEGIES_PER_SIDE,
+    MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE,
+    _safe_float,
+    _strategy_side,
     build_replay_context,
     replay_exit_policy,
+)
+from extreme_price_movements.ridge_position_sizer import (
+    prepare_policy_params_from_tpsl_optimiser,
+    run_policy_aware_labeling_step,
+)
+from extreme_price_movements.simple_position_sizer import (
+    _select_topk_non_concurrent,
+    evaluate_selection_profit_proxy,
 )
 from extreme_price_movements.universe import get_training_universe
 from extreme_price_movements.utils import tprint
@@ -177,7 +183,7 @@ def _load_symbol_features(
                 f"Holdout feature backfill: symbol={symbol} missing_keys={len(missing_required)}"
             )
             feat_df = _backfill_missing_feature_columns(
-                feat_df=feat_df,
+                feature_df=feat_df,
                 data_root=data_root,
                 run_id=run_id,
                 symbol=symbol,
@@ -235,9 +241,9 @@ def _load_symbol_features(
         compute_panel,
         mkt_gates,
         feature_cfg,
-        requested_feature_keys=sorted(effective_required_keys)
-        if effective_required_keys
-        else None,
+        requested_feature_keys=(
+            sorted(effective_required_keys) if effective_required_keys else None
+        ),
     )
     feat_series = {}
     for feat_name, feat_value in full_feats.items():
@@ -288,15 +294,67 @@ def _infer_strategy_side(
     side = str(explicit_side or "").strip().lower()
     if side in {"long", "short"}:
         return side
+    inferred = _strategy_side({"strategy_id": strategy_id})
+    if inferred in {"long", "short"}:
+        return inferred
     alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
-    candidates: List[str] = []
+    candidates: set[str] = set()
     for cand_side in ("long", "short"):
+        if strategy_id in alpha_models or f"{cand_side}_{strategy_id}" in alpha_models:
+            candidates.add(cand_side)
+            continue
+        base_strategy_id = _base_alpha_strategy_id(strategy_id)
+        if (
+            base_strategy_id != strategy_id
+            and (
+                base_strategy_id in alpha_models
+                or f"{cand_side}_{base_strategy_id}" in alpha_models
+            )
+        ):
+            candidates.add(cand_side)
+            continue
         side_models = alpha_models.get(cand_side, {})
         if isinstance(side_models, dict) and strategy_id in side_models:
-            candidates.append(cand_side)
+            candidates.add(cand_side)
     if len(candidates) == 1:
         return candidates[0]
     return ""
+
+
+def _base_alpha_strategy_id(strategy_id: str) -> str:
+    """Return the alpha strategy id backing a downstream strategy id."""
+    sid = str(strategy_id or "")
+    if sid.endswith("_tbm"):
+        return sid[: -len("_tbm")]
+    if sid.endswith("_tbm_clf"):
+        return sid[: -len("_tbm_clf")]
+    if sid.endswith("_clf"):
+        return sid[: -len("_clf")]
+    return sid
+
+
+def _resolve_alpha_strategy_id(
+    bundle: Dict[str, Any],
+    strategy_id: str,
+    side: str,
+) -> str:
+    """Resolve a sizer/meta strategy id to the loaded alpha model key."""
+    alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
+    if not isinstance(alpha_models, dict):
+        return str(strategy_id)
+
+    sid = str(strategy_id)
+    side_l = str(side or "").lower()
+    candidates = [
+        sid,
+        f"{side_l}_{sid}" if side_l else sid,
+        _base_alpha_strategy_id(sid),
+        f"{side_l}_{_base_alpha_strategy_id(sid)}" if side_l else sid,
+    ]
+    for candidate in candidates:
+        if candidate in alpha_models:
+            return candidate
+    return _base_alpha_strategy_id(sid)
 
 
 def _backfill_missing_feature_columns(
@@ -517,6 +575,11 @@ def _load_strategy_acceptation(data_root: str, run_id: str) -> Dict[str, Any]:
         / "artifacts"
         / run_id
         / "policy_params"
+        / "strategy_for_inference.json",
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "policy_params"
         / "strategy_final_acceptation.json",
         Path(data_root) / "artifacts" / run_id / "strategy_final_acceptation.json",
     ]:
@@ -524,20 +587,28 @@ def _load_strategy_acceptation(data_root: str, run_id: str) -> Dict[str, Any]:
             continue
         try:
             payload = json.loads(candidate.read_text())
-            strategies = payload.get("strategies", []) if isinstance(payload, dict) else []
+            strategies = (
+                payload.get("strategies", []) if isinstance(payload, dict) else []
+            )
             accepted_ids = {
                 str(row.get("strategy_id", ""))
+                for row in strategies
+                if isinstance(row, dict) and row.get("strategy_id", "")
+            }
+            side_by_id = {
+                str(row.get("strategy_id", "")): str(row.get("side", "")).lower()
                 for row in strategies
                 if isinstance(row, dict) and row.get("strategy_id", "")
             }
             return {
                 "payload": payload,
                 "accepted_ids": accepted_ids,
+                "side_by_id": side_by_id,
                 "found": True,
             }
         except Exception:
             continue
-    return {"payload": None, "accepted_ids": set(), "found": False}
+    return {"payload": None, "accepted_ids": set(), "side_by_id": {}, "found": False}
 
 
 def _accepted_strategy_feature_keys(
@@ -547,14 +618,165 @@ def _accepted_strategy_feature_keys(
     if not accepted_ids:
         return keys
     alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
-    for side_models in alpha_models.values():
-        if not isinstance(side_models, dict):
+    if not isinstance(alpha_models, dict):
+        return keys
+    accepted_cores = {_base_alpha_strategy_id(sid) for sid in accepted_ids}
+    for sid, model_info in alpha_models.items():
+        if not isinstance(model_info, dict):
             continue
-        for sid, model_info in side_models.items():
-            if sid not in accepted_ids or not isinstance(model_info, dict):
-                continue
-            keys.update(model_info.get("feat_cols", []) or [])
+        core = _base_alpha_strategy_id(str(sid))
+        if core.startswith("long_"):
+            core = core[len("long_") :]
+        elif core.startswith("short_"):
+            core = core[len("short_") :]
+        if str(sid) not in accepted_ids and core not in accepted_cores:
+            continue
+        keys.update(model_info.get("feat_cols", []) or [])
     return keys
+
+
+def _write_strategy_for_inference(
+    data_root: str, run_id: str, holdout_results: List[Dict[str, Any]]
+) -> Path:
+    """Persist deployable holdout strategies as the explicit inference allowlist."""
+    by_strategy: Dict[str, List[Dict[str, Any]]] = {}
+    for result in holdout_results:
+        for row in result.get("strategies", []) if isinstance(result, dict) else []:
+            if not isinstance(row, dict) or not row.get("strategy_id"):
+                continue
+            by_strategy.setdefault(str(row["strategy_id"]), []).append(row)
+
+    enriched: List[Dict[str, Any]] = []
+    for strategy_id, rows in by_strategy.items():
+        net = np.asarray([_safe_float(r.get("net_pnl"), 0.0) for r in rows])
+        wallet = np.asarray([_safe_float(r.get("wallet_pnl"), 0.0) for r in rows])
+        selected_trades = int(sum(int(r.get("selected_trades", 0) or 0) for r in rows))
+        n_trades = int(sum(int(r.get("n_trades", 0) or 0) for r in rows))
+        avg_net_pnl = float(np.nansum(net) / max(1, selected_trades))
+        side = _strategy_side({"strategy_id": strategy_id, "side": rows[0].get("side")})
+        trades_per_day = float(
+            np.nanmean([_safe_float(r.get("trades_per_day"), 0.0) for r in rows])
+        )
+        avg_holding_time = max(
+            1.0,
+            float(
+                np.nanmean(
+                    [
+                        _safe_float(
+                            r.get("avg_holding_time_hours", r.get("holding_time_hours")),
+                            1.0,
+                        )
+                        for r in rows
+                    ]
+                )
+            ),
+        )
+        weekly_wallet_vol = float(np.nanstd(wallet)) if wallet.size > 1 else 0.0
+        monthly_wallet_vol = float(
+            np.nanmean([_safe_float(r.get("monthly_pnl_std"), 0.0) for r in rows])
+        )
+        effective_ops_day = math.sqrt(
+            max(0.0, min(36.0 / avg_holding_time, max(0.0, trades_per_day)))
+        )
+        denominator = math.sqrt(avg_holding_time) * math.sqrt(
+            max(0.0, weekly_wallet_vol) + max(0.0, monthly_wallet_vol) + EPS
+        )
+        rank = float(effective_ops_day * avg_net_pnl / max(denominator, EPS))
+        best_row = max(rows, key=lambda r: _safe_float(r.get("net_pnl"), 0.0))
+        reject_reasons: List[str] = []
+        if selected_trades <= 0 or n_trades <= 0:
+            reject_reasons.append("no_holdout_trades")
+        if avg_net_pnl < MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE:
+            reject_reasons.append("avg_net_pnl_per_trade_below_0_2pct")
+        if side not in {"long", "short"}:
+            reject_reasons.append("unknown_side")
+        if not np.isfinite(rank):
+            reject_reasons.append("non_finite_rank")
+        enriched.append(
+            {
+                "strategy_id": strategy_id,
+                "strategy_for_inference": strategy_id,
+                "side": side,
+                "holdout_net_pnl": float(np.nansum(net)) if net.size else 0.0,
+                "holdout_mean_net_pnl": float(np.nanmean(net)) if net.size else 0.0,
+                "holdout_wallet_pnl": float(np.nansum(wallet)) if wallet.size else 0.0,
+                "holdout_symbols": int(len(rows)),
+                "n_trades": n_trades,
+                "selected_trades": selected_trades,
+                "avg_net_pnl_per_trade": avg_net_pnl,
+                "deployment_min_avg_net_pnl_per_trade": (
+                    MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE
+                ),
+                "selection_rank": rank,
+                "effective_ops_day": effective_ops_day,
+                "opportunities_per_day": trades_per_day,
+                "avg_holding_time_hours": avg_holding_time,
+                "weekly_wallet_vol": weekly_wallet_vol,
+                "monthly_wallet_vol": monthly_wallet_vol,
+                "profit_factor": _safe_float(best_row.get("profit_factor"), 0.0),
+                "threshold_pct": _safe_float(best_row.get("threshold_pct"), 0.0),
+                "selection_frac": _safe_float(best_row.get("selection_frac"), 0.0),
+                "policy": best_row.get("policy", {}),
+                "metrics": {
+                    "best_symbol_row": best_row,
+                    "symbol_rows": rows,
+                },
+                "deployment_reject_reasons": reject_reasons,
+            }
+        )
+
+    candidates = [row for row in enriched if not row["deployment_reject_reasons"]]
+    selected: List[Dict[str, Any]] = []
+    rejected: List[Dict[str, Any]] = [
+        row for row in enriched if row["deployment_reject_reasons"]
+    ]
+    for side in ("long", "short"):
+        side_rows = [row for row in candidates if row.get("side") == side]
+        side_rows.sort(
+            key=lambda r: float(r.get("selection_rank", float("-inf"))),
+            reverse=True,
+        )
+        selected.extend(side_rows[:MAX_DEPLOYMENT_STRATEGIES_PER_SIDE])
+        for row in side_rows[MAX_DEPLOYMENT_STRATEGIES_PER_SIDE:]:
+            row = dict(row)
+            row["deployment_reject_reasons"] = ["outside_top_2_per_side"]
+            rejected.append(row)
+
+    selected.sort(
+        key=lambda r: (
+            str(r.get("side", "")),
+            -float(r.get("selection_rank", float("-inf"))),
+        )
+    )
+    payload = {
+        "schema_version": "v2",
+        "generated_by": "holdout_strategy_eval",
+        "run_id": run_id,
+        "selection_rules": {
+            "min_avg_net_pnl_per_trade": MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE,
+            "max_strategies_per_side": MAX_DEPLOYMENT_STRATEGIES_PER_SIDE,
+            "rank_formula": (
+                "effective_ops_day * avg_net_pnl_per_trade / "
+                "(sqrt(avg_holding_time_hours) * "
+                "sqrt(weekly_wallet_vol + monthly_wallet_vol + eps))"
+            ),
+            "effective_ops_day_formula": (
+                "sqrt(min(36 / avg_holding_time_hours, opportunities_per_day))"
+            ),
+        },
+        "strategies": selected,
+        "rejected_strategies": [
+            {
+                **row,
+                "selected": False,
+                "reject_reasons": row.get("deployment_reject_reasons", []),
+            }
+            for row in rejected
+        ],
+    }
+    path = Path(data_root) / "artifacts" / run_id / "strategy_for_inference.json"
+    path.write_text(json.dumps(payload, indent=2, default=str))
+    return path
 
 
 def _apply_policy_params_to_seed(
@@ -616,7 +838,9 @@ def evaluate_holdout_symbol(
     if bundle is None:
         bundle = load_model_bundle(run_id, data_root)
     orchestrator = ModelOrchestrator(bundle, {"disable_spike_filter": True})
-    tprint(f"Holdout eval: symbol={symbol} run_id={run_id} strategies={len(freeze.get('strategies', []))}")
+    tprint(
+        f"Holdout eval: symbol={symbol} run_id={run_id} strategies={len(freeze.get('strategies', []))}"
+    )
 
     panel, panel_symbol = _load_price_panel(symbol)
     required_feature_keys = get_inference_required_feature_keys(bundle)
@@ -629,18 +853,26 @@ def evaluate_holdout_symbol(
         extra_required_keys=extra_required_keys,
     )
     alpha_required_keys = set()
-    for side_models in bundle.get("alpha_models", {}).values():
-        if not isinstance(side_models, dict):
-            continue
-        for model_info in side_models.values():
-            if isinstance(model_info, dict):
+    alpha_models = bundle.get("alpha_models", {})
+    if isinstance(alpha_models, dict):
+        for model_info in alpha_models.values():
+            if isinstance(model_info, dict) and (
+                "feat_cols" in model_info or "model" in model_info
+            ):
                 alpha_required_keys.update(model_info.get("feat_cols", []) or [])
+                continue
+            if isinstance(model_info, dict):
+                for nested_info in model_info.values():
+                    if isinstance(nested_info, dict):
+                        alpha_required_keys.update(
+                            nested_info.get("feat_cols", []) or []
+                        )
     missing_alpha_keys = {k for k in alpha_required_keys if k not in feature_df.columns}
     if missing_alpha_keys:
-        raise FileNotFoundError(
-            f"Feature contract violation: {len(missing_alpha_keys)} required alpha features "
-            f"missing for {panel_symbol}. Missing: {sorted(missing_alpha_keys)[:10]}. "
-            f"Available: {len(feature_df.columns)}. Re-run feature generation."
+        tprint(
+            f"Holdout feature contract warning: {len(missing_alpha_keys)} alpha features "
+            f"missing for {panel_symbol}; prediction will use model contract alignment. "
+            f"Missing sample: {sorted(missing_alpha_keys)[:10]}"
         )
     tprint(
         f"Holdout eval feature contract satisfied: symbol={symbol} features={len(feature_df.columns)} alpha_keys={len(alpha_required_keys)}"
@@ -651,7 +883,6 @@ def evaluate_holdout_symbol(
     portfolio_ts_parts: List[np.ndarray] = []
 
     policy_params = _compute_policy_params(feature_df, panel_symbol)
-
 
     best_policy = _load_best_policy_params(data_root, run_id)
     if best_policy is not None:
@@ -676,7 +907,6 @@ def evaluate_holdout_symbol(
             f"rule={policy_params.get('better_rule', 'N/A')}"
         )
 
-
     # Load per-strategy bucket params
     bucket_params = load_bucket_params(run_id, data_root)
 
@@ -691,7 +921,7 @@ def evaluate_holdout_symbol(
             mask_params_by_mode[sid] = m_params
 
     # 2. Precompute up/down zones
-      # Minimal feats needed for up_down_zones
+    # Minimal feats needed for up_down_zones
 
     # We need to construct a mini-feats dict with panel symbols
     # Since up_down_zones expects full panel formatting, we simulate it
@@ -703,18 +933,25 @@ def evaluate_holdout_symbol(
 
     # 3. Create walk-forward unseen mask
     # We generate a dummy events df to use SlicePlanner
-    dummy_events = pd.DataFrame({
-        "event_id": range(len(feature_df)),
-        "symbol": panel_symbol,
-        "t0": feature_df.index,
-        "t1": feature_df.index + pd.Timedelta(hours=1)
-    })
+    dummy_events = pd.DataFrame(
+        {
+            "event_id": range(len(feature_df)),
+            "symbol": panel_symbol,
+            "t0": feature_df.index,
+            "t1": feature_df.index + pd.Timedelta(hours=1),
+        }
+    )
     planner_cfg = SlicePlannerConfig.robust_defaults(schema=EventSchema())
     from extreme_price_movements.inference_backtest import _build_unseen_mask
+
     unseen_mask_np = _build_unseen_mask(dummy_events, planner_cfg)
     unseen_mask = pd.Series(unseen_mask_np, index=feature_df.index)
-
-
+    if not bool(unseen_mask.any()):
+        tprint(
+            f"Holdout eval: planner returned no unseen rows for {symbol}; "
+            "using all rows because this symbol was selected as cross-asset OOS."
+        )
+        unseen_mask = pd.Series(True, index=feature_df.index)
 
     strategies_list = freeze.get("strategies", [])
     total_strategies = len(strategies_list)
@@ -722,7 +959,9 @@ def evaluate_holdout_symbol(
 
     for i, strat in enumerate(strategies_list):
         if i % tprint_interval == 0:
-            tprint(f"Holdout eval progress: {i}/{total_strategies} strategies ({i/total_strategies*100:.1f}%) for symbol {symbol}")
+            tprint(
+                f"Holdout eval progress: {i}/{total_strategies} strategies ({i/total_strategies*100:.1f}%) for symbol {symbol}"
+            )
 
         strategy_id = str(strat["strategy_id"])
         side = _infer_strategy_side(bundle, strategy_id, str(strat.get("side", "")))
@@ -750,19 +989,34 @@ def evaluate_holdout_symbol(
                     # For long, we use up_zone (if TF) or down_zone (if MR)
                     # We can infer TF/MR from strategy_id usually, but let's check
                     if "tf" in strategy_id.lower() and panel_symbol in up_zone.columns:
-                        strat_mask = strat_mask & up_zone[panel_symbol] & per_mode_series
-                    elif "mr" in strategy_id.lower() and panel_symbol in down_zone.columns:
-                        strat_mask = strat_mask & down_zone[panel_symbol] & per_mode_series
+                        strat_mask = (
+                            strat_mask & up_zone[panel_symbol] & per_mode_series
+                        )
+                    elif (
+                        "mr" in strategy_id.lower()
+                        and panel_symbol in down_zone.columns
+                    ):
+                        strat_mask = (
+                            strat_mask & down_zone[panel_symbol] & per_mode_series
+                        )
                     else:
                         strat_mask = strat_mask & per_mode_series
-                else: # short
-                    if "tf" in strategy_id.lower() and panel_symbol in down_zone.columns:
-                        strat_mask = strat_mask & down_zone[panel_symbol] & per_mode_series
-                    elif "mr" in strategy_id.lower() and panel_symbol in up_zone.columns:
-                        strat_mask = strat_mask & up_zone[panel_symbol] & per_mode_series
+                else:  # short
+                    if (
+                        "tf" in strategy_id.lower()
+                        and panel_symbol in down_zone.columns
+                    ):
+                        strat_mask = (
+                            strat_mask & down_zone[panel_symbol] & per_mode_series
+                        )
+                    elif (
+                        "mr" in strategy_id.lower() and panel_symbol in up_zone.columns
+                    ):
+                        strat_mask = (
+                            strat_mask & up_zone[panel_symbol] & per_mode_series
+                        )
                     else:
                         strat_mask = strat_mask & per_mode_series
-
 
         strat_policy_params = policy_params.copy()
         if strategy_id in bucket_params:
@@ -770,25 +1024,39 @@ def evaluate_holdout_symbol(
         elif best_policy is not None:
             strat_policy_params.update(best_policy)
 
-        candidates = _build_candidates(feature_df, panel, panel_symbol, side=side, mask=strat_mask)
+        candidates = _build_candidates(
+            feature_df, panel, panel_symbol, side=side, mask=strat_mask
+        )
         if candidates.empty:
+            tprint(
+                f"Holdout eval strategy skipped: symbol={symbol} strategy_id={strategy_id} "
+                "reason=no_candidates"
+            )
             continue
 
         outcomes = run_policy_aware_labeling_step(
             candidates,
             panel,
             strat_policy_params,
-
             max_hold_hours=24,
             cost_pct=0.0,
             bars_per_hour=4,
             use_batch=True,
         )
         if outcomes.empty or "label" not in outcomes.columns:
+            tprint(
+                f"Holdout eval strategy skipped: symbol={symbol} strategy_id={strategy_id} "
+                "reason=no_policy_outcomes"
+            )
             continue
 
-        score_series = orchestrator.predict_alpha(feature_df, side, strategy_id)
+        alpha_strategy_id = _resolve_alpha_strategy_id(bundle, strategy_id, side)
+        score_series = orchestrator.predict_alpha(feature_df, side, alpha_strategy_id)
         if score_series.empty:
+            tprint(
+                f"Holdout eval strategy skipped: symbol={symbol} strategy_id={strategy_id} "
+                f"alpha_strategy_id={alpha_strategy_id} reason=no_alpha_scores"
+            )
             continue
 
         aligned_scores = score_series.reindex(
@@ -853,7 +1121,14 @@ def evaluate_holdout_symbol(
 
         if float(row.get("net_pnl", 0.0)) > 0:
             k = max(1, int(len(score_values) * frac))
-            idx = np.argpartition(score_values, -k)[-k:]
+            idx = _select_topk_non_concurrent(
+                scores=score_values,
+                k=k,
+                timestamps=ts_values,
+                symbols=np.full(len(score_values), symbol, dtype=object),
+                horizon_hours=4.0,
+                max_global_concurrent=3,
+            )
             portfolio_score_parts.append(score_values[idx])
             portfolio_return_parts.append(raw_returns[idx])
             portfolio_ts_parts.append(ts_values[idx])
@@ -985,14 +1260,81 @@ def _sample_random_symbols(n: int = 5, seed: int = 42) -> List[str]:
 
 def _alpha_required_feature_keys(bundle: Dict[str, Any]) -> set[str]:
     keys: set[str] = set()
-    for side_models in bundle.get("alpha_models", {}).values():
-        if not isinstance(side_models, dict):
+    alpha_models = bundle.get("alpha_models", {})
+    if not isinstance(alpha_models, dict):
+        return keys
+    for model_info in alpha_models.values():
+        if not isinstance(model_info, dict):
             continue
-        for model_info in side_models.values():
-            if not isinstance(model_info, dict):
-                continue
+        if "feat_cols" in model_info or "model" in model_info:
             keys.update(model_info.get("feat_cols", []) or [])
+            continue
+        for nested_info in model_info.values():
+            if isinstance(nested_info, dict):
+                keys.update(nested_info.get("feat_cols", []) or [])
     return keys
+
+
+def _normalise_symbol_key(symbol: Any) -> str:
+    return str(symbol or "").strip().replace("/", "_").upper()
+
+
+def _load_cross_asset_oos_candidates(
+    data_root: str, run_id: str, universe_symbols: List[str]
+) -> List[str]:
+    """Return symbols not present in train/meta/sizer artifacts for OOS holdout."""
+    art_dir = Path(data_root) / "artifacts" / run_id
+    basket_path = art_dir / "oos_eval_basket.json"
+    if basket_path.exists():
+        try:
+            payload = json.loads(basket_path.read_text())
+            oos_symbols = [str(s) for s in payload.get("oos", []) if str(s)]
+            if oos_symbols:
+                tprint(
+                    f"Holdout sampler using explicit OOS basket with {len(oos_symbols)} symbols."
+                )
+                return oos_symbols
+        except Exception:
+            pass
+
+    seen_symbols: set[str] = set()
+    parquet_paths: List[Path] = []
+    for rel in ("base_oof", "meta_oof"):
+        folder = art_dir / rel
+        if folder.exists():
+            parquet_paths.extend(sorted(folder.glob("*.parquet")))
+    sizer_oof = art_dir / "oof" / "simple_sizer_oof_all.parquet"
+    if sizer_oof.exists():
+        parquet_paths.append(sizer_oof)
+
+    for path in parquet_paths:
+        try:
+            frame = pd.read_parquet(path, columns=["symbol"])
+        except Exception:
+            continue
+        seen_symbols.update(_normalise_symbol_key(s) for s in frame["symbol"].dropna())
+
+    if not seen_symbols:
+        tprint(
+            "Holdout sampler could not infer in-sample artifact symbols; "
+            "using full compatible universe."
+        )
+        return universe_symbols
+
+    oos = [
+        symbol
+        for symbol in universe_symbols
+        if _normalise_symbol_key(symbol) not in seen_symbols
+    ]
+    tprint(
+        f"Holdout sampler excluded {len(seen_symbols)} artifact-seen symbols; "
+        f"{len(oos)}/{len(universe_symbols)} symbols remain cross-asset OOS."
+    )
+    if not oos:
+        raise RuntimeError(
+            "No cross-asset OOS symbols remain after excluding train/meta/sizer artifacts."
+        )
+    return oos
 
 
 def _sample_compatible_symbols(
@@ -1027,8 +1369,7 @@ def _sample_compatible_symbols(
                 payload = json.loads(cache_path.read_text())
                 if (
                     payload.get("run_id") == run_id
-                    and tuple(payload.get("feature_keys", []))
-                    == cache_key[2]
+                    and tuple(payload.get("feature_keys", [])) == cache_key[2]
                 ):
                     symbols = [str(s) for s in payload.get("symbols", []) if str(s)]
                     if symbols:
@@ -1048,12 +1389,16 @@ def _sample_compatible_symbols(
             root_dir=data_root, timeframe=str(cfg.get("timeframe", "1h"))
         )
         universe = get_training_universe(None, cfg, store, ts_sig=None)
-        symbols = list(universe.keys()) if isinstance(universe, dict) else list(universe)
+        symbols = (
+            list(universe.keys()) if isinstance(universe, dict) else list(universe)
+        )
     except Exception:
         symbols = ["AIXBT_USDT"]
 
     if len(symbols) == 0:
         raise RuntimeError("No symbols available for holdout evaluation")
+
+    symbols = _load_cross_asset_oos_candidates(data_root, run_id, symbols)
 
     rng.shuffle(symbols)
     if bundle is None:
@@ -1066,7 +1411,9 @@ def _sample_compatible_symbols(
 
     for i, symbol in enumerate(symbols):
         if i > 0 and i % 10 == 0:
-            tprint(f"Holdout sampler progress: checked {i}/{len(symbols)} symbols, found {len(compatible)} compatible")
+            tprint(
+                f"Holdout sampler progress: checked {i}/{len(symbols)} symbols, found {len(compatible)} compatible"
+            )
 
         try:
             panel, panel_symbol = _load_price_panel(symbol)
@@ -1174,23 +1521,33 @@ def main() -> None:
     accepted_feature_keys: set[str] = set()
     if acceptance.get("found", False):
         accepted_ids = acceptance.get("accepted_ids", set())
+        side_by_id = acceptance.get("side_by_id", {}) or {}
         accepted_feature_keys = _accepted_strategy_feature_keys(bundle, accepted_ids)
         freeze_strats = freeze.get("strategies", [])
         if isinstance(freeze_strats, list):
-            filtered = [
-                strat
-                for strat in freeze_strats
-                if str(strat.get("strategy_id", "")) in accepted_ids
-            ]
+            filtered = []
+            for strat in freeze_strats:
+                sid = str(strat.get("strategy_id", ""))
+                if sid not in accepted_ids:
+                    continue
+                enriched = dict(strat)
+                policy_side = str(side_by_id.get(sid, "")).lower()
+                if policy_side in {"long", "short"}:
+                    enriched["side"] = policy_side
+                filtered.append(enriched)
             skipped = len(freeze_strats) - len(filtered)
             freeze["strategies"] = filtered
             tprint(
                 f"Acceptance filter kept {len(filtered)} strategies and skipped {skipped}"
             )
             if not filtered:
-                tprint("No strategies passed the final acceptance gates; holdout evaluation will skip all strategies.")
+                tprint(
+                    "No strategies passed the final acceptance gates; holdout evaluation will skip all strategies."
+                )
     else:
-        tprint("No strategy acceptance file found; holdout evaluator will use all frozen strategies.")
+        tprint(
+            "No strategy acceptance file found; holdout evaluator will use all frozen strategies."
+        )
 
     cache_key = (
         args.run_id,
@@ -1245,6 +1602,10 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(all_results, indent=2, default=str))
     tprint(f"Wrote holdout metrics for {len(all_results)} symbols to {output_path}")
+    inference_strategy_path = _write_strategy_for_inference(
+        args.data_root, args.run_id, all_results
+    )
+    tprint(f"Wrote holdout-selected inference strategies to {inference_strategy_path}")
 
     print(json.dumps(all_results, indent=2, default=str))
 

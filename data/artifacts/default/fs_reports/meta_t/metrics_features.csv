@@ -1,0 +1,3 @@
+,share_mu,share_std,share_stab,freq_mu,freq_std,freq_stab,mdi_depth_mu,mdi_depth_std,mdi_depth_stab,mdi_cov_mu,mdi_cov_std,mdi_cov_stab,blended_mu,blended_std,blended_stab,composite_rank,top30_support,top30_lift,global_importance,stability_score,frequency_score,interaction_support,median_rank,mean_abs_rank_dev,final_score,final_rank
+f1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.5,0.0,0.0,0.0,1.0,0.0,0.0,1.0,0.0,0.25,1.5
+f2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.5,0.0,0.0,0.0,1.0,0.0,0.0,2.0,0.0,0.25,1.5

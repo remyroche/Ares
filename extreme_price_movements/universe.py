@@ -1,21 +1,29 @@
-import requests
-import pandas as pd
+import glob
+import os
+import random
 import time
 from dataclasses import dataclass
-import os
-import glob
+from typing import Optional
+
+import pandas as pd
+import requests
+
 from extreme_price_movements.utils import tprint
 
 BINANCE_API = "https://api.binance.com"
-HARDCODED_EXCLUDED_SYMBOLS = frozenset({
-    "CHESS/USDT",
-    "DATA/USDT",
-    "DF/USDT",
-    "ESP/USDT",
-    "FOGO/USDT",
-    "FRAX/USDT",
-    "MANTRA/USDT",
-})
+REQUEST_TIMEOUT_SECONDS = 30
+REQUEST_MAX_RETRIES = 3
+HARDCODED_EXCLUDED_SYMBOLS = frozenset(
+    {
+        "CHESS/USDT",
+        "DATA/USDT",
+        "DF/USDT",
+        "ESP/USDT",
+        "FOGO/USDT",
+        "FRAX/USDT",
+        "MANTRA/USDT",
+    }
+)
 DEDUP_QUOTES = ("USDT",)
 DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}
 SUPPORTED_TRAINING_QUOTES = frozenset(DEDUP_QUOTES)
@@ -29,6 +37,71 @@ SPOT_QUOTE_SUFFIXES = (
     "BTC",
     "ETH",
 )
+
+
+def _request_error_category(exc: Exception) -> str:
+    text = f"{exc.__class__.__name__} {exc}".lower()
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if status_code == 429 or "429" in text or "too many requests" in text:
+        return "rate_limited"
+    if status_code in {418, 403, 401} or "forbidden" in text or "unauthorized" in text:
+        return "auth_or_blocked"
+    if status_code is not None and 500 <= int(status_code) < 600:
+        return "server_error"
+    if "timeout" in text:
+        return "timeout"
+    if "connection" in text or "network" in text:
+        return "network"
+    return "request_error"
+
+
+def _request_retry_after(exc: Exception) -> Optional[float]:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    value = headers.get("Retry-After") or headers.get("retry-after")
+    if value is None:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _binance_get_json(path: str) -> object:
+    """GET a public Binance REST path with retry-after/backoff logging."""
+    url = f"{BINANCE_API}{path}"
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, REQUEST_MAX_RETRIES + 1):
+        try:
+            tprint(
+                f"Binance public GET {path}: attempt={attempt}/{REQUEST_MAX_RETRIES}"
+            )
+            response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:
+            last_exc = exc
+            category = _request_error_category(exc)
+            tprint(
+                f"Binance public GET failed {path}: category={category} "
+                f"attempt={attempt}/{REQUEST_MAX_RETRIES}: {exc}"
+            )
+            if attempt < REQUEST_MAX_RETRIES:
+                retry_after = _request_retry_after(exc)
+                if retry_after is not None:
+                    tprint(
+                        f"Binance Retry-After for {path}: sleeping {retry_after:.2f}s"
+                    )
+                    time.sleep(retry_after)
+                else:
+                    time.sleep(
+                        min(8.0, 2.0 ** (attempt - 1)) + random.uniform(0.0, 0.25)
+                    )
+    assert last_exc is not None
+    raise last_exc
 
 
 def _normalize_symbol(symbol: str) -> str:
@@ -71,7 +144,11 @@ def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
             continue
         rank = DEDUP_QUOTE_PRIORITY[quote]
         current = best_by_base.get(base)
-        if current is None or rank < current[0] or (rank == current[0] and symbol < current[1]):
+        if (
+            current is None
+            or rank < current[0]
+            or (rank == current[0] and symbol < current[1])
+        ):
             best_by_base[base] = (rank, symbol)
 
     deduped = set(passthrough)
@@ -80,7 +157,9 @@ def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
 
     removed = original_count - len(result)
     if removed > 0:
-        tprint(f"Quote deduplication removed {removed} duplicate symbols: {original_count} → {len(result)}")
+        tprint(
+            f"Quote deduplication removed {removed} duplicate symbols: {original_count} → {len(result)}"
+        )
     return result
 
 
@@ -98,7 +177,9 @@ def apply_hardcoded_universe_exclusions(symbols: list[str]) -> list[str]:
             continue
         cleaned.append(norm)
     if removed:
-        tprint(f"Hardcoded universe exclusions removed {removed} symbols: {sorted(HARDCODED_EXCLUDED_SYMBOLS)}")
+        tprint(
+            f"Hardcoded universe exclusions removed {removed} symbols: {sorted(HARDCODED_EXCLUDED_SYMBOLS)}"
+        )
     if unsupported:
         tprint(
             f"Unsupported quote filtering removed {unsupported} symbols "
@@ -106,10 +187,11 @@ def apply_hardcoded_universe_exclusions(symbols: list[str]) -> list[str]:
         )
     return sorted(set(cleaned))
 
+
 def fetch_binance_cross_margin_pairs():
-    tprint(f"Entering function: fetch_binance_cross_margin_pairs in universe.py")
+    tprint("Entering function: fetch_binance_cross_margin_pairs in universe.py")
     cache_file = os.path.join(os.path.dirname(__file__), ".margin_universe_cache.json")
-    
+
     # Check disk cache first
     try:
         if os.path.exists(cache_file):
@@ -117,27 +199,28 @@ def fetch_binance_cross_margin_pairs():
             # Use cache if it's less than 24h old
             if (time.time() - mtime) < 86400:
                 import json
+
                 with open(cache_file, "r") as f:
                     margin_pairs = json.load(f)
-                tprint(f"Loaded {len(margin_pairs)} cross margin pairs from disk cache.")
+                tprint(
+                    f"Loaded {len(margin_pairs)} cross margin pairs from disk cache."
+                )
                 return margin_pairs
     except Exception as e:
         tprint(f"Warning: Failed to read margin universe cache: {e}")
 
-    # Use public exchangeInfo endpoint instead of SAPI
-    r = requests.get(f"{BINANCE_API}/api/v3/exchangeInfo", timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    
+    data = _binance_get_json("/api/v3/exchangeInfo")
+
     # Filter for margin permitted symbols
     margin_pairs = []
     for s in data.get("symbols", []):
-         if s.get("isMarginTradingAllowed", False):
-             margin_pairs.append(s)
-             
+        if s.get("isMarginTradingAllowed", False):
+            margin_pairs.append(s)
+
     # Update disk cache
     try:
         import json
+
         with open(cache_file, "w") as f:
             json.dump(margin_pairs, f)
     except Exception as e:
@@ -145,6 +228,7 @@ def fetch_binance_cross_margin_pairs():
 
     tprint(f"Fetched {len(margin_pairs)} cross margin pairs from exchangeInfo.")
     return margin_pairs
+
 
 def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDT",)):
     tprint(f"Entering function: margin_pairs_to_spot_symbols in universe.py")
@@ -161,11 +245,11 @@ def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDT",)):
         s = row.get("symbol", "")
         for q in quotes:
             if s.endswith(q):
-                base = s[:-len(q)]
+                base = s[: -len(q)]
                 if base:
                     out.add(f"{base}/{q}")
                     breakdown[q] += 1
-                break # Matched one quote
+                break  # Matched one quote
 
     res = sorted(out)
 
@@ -173,22 +257,23 @@ def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDT",)):
     tprint(f"Found {len(res)} spot symbols. Breakdown: {breakdown_str}")
     return res
 
+
 def fetch_24h_tickers():
-    tprint(f"Entering function: fetch_24h_tickers in universe.py")
-    r = requests.get(f"{BINANCE_API}/api/v3/ticker/24hr", timeout=30)
-    r.raise_for_status()
-    data = r.json()
+    tprint("Entering function: fetch_24h_tickers in universe.py")
+    data = _binance_get_json("/api/v3/ticker/24hr")
     tprint(f"Fetched {len(data)} 24h tickers.")
     return data
 
-from typing import Optional
 
 @dataclass
 class MarginUniverseCache:
     symbols: list[str]
     asof_day: pd.Timestamp
 
-def refresh_margin_universe_daily(cache: Optional[MarginUniverseCache], quotes=("USDT",)) -> MarginUniverseCache:
+
+def refresh_margin_universe_daily(
+    cache: Optional[MarginUniverseCache], quotes=("USDT",)
+) -> MarginUniverseCache:
     tprint(f"Entering function: refresh_margin_universe_daily in universe.py")
     today = pd.Timestamp.utcnow().floor("D")
     if cache is not None and cache.asof_day == today:
@@ -197,9 +282,12 @@ def refresh_margin_universe_daily(cache: Optional[MarginUniverseCache], quotes=(
 
     tprint("Refreshing margin universe...")
     pairs = fetch_binance_cross_margin_pairs()
-    syms = apply_hardcoded_universe_exclusions(margin_pairs_to_spot_symbols(pairs, quotes=quotes))
+    syms = apply_hardcoded_universe_exclusions(
+        margin_pairs_to_spot_symbols(pairs, quotes=quotes)
+    )
     tprint(f"Refreshed margin universe: {len(syms)} symbols.")
     return MarginUniverseCache(symbols=syms, asof_day=today)
+
 
 def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M: int):
     """
@@ -212,7 +300,9 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
     # Deduplicate quote variants (USDT > USDC > BUSD) before volume ranking
     margin_symbols = deduplicate_symbols_by_base(margin_symbols)
     market_basket = deduplicate_symbols_by_base(market_basket)
-    tprint(f"Building universe from {len(margin_symbols)} margin symbols + {len(market_basket)} basket symbols (Remove bottom 30 by volume).")
+    tprint(
+        f"Building universe from {len(margin_symbols)} margin symbols + {len(market_basket)} basket symbols (Remove bottom 30 by volume)."
+    )
     try:
         tickers = fetch_24h_tickers()
         vol_map = {}
@@ -239,13 +329,23 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
             top_m = [x[1] for x in scored]
         tprint(f"Selected {len(top_m)} symbols by volume (removed bottom {bottom_n}).")
 
-        final = apply_hardcoded_universe_exclusions(list(set(top_m).union(set(market_basket))))
-        tprint(f"Universe selected: {len(final)} symbols (All except bottom {bottom_n} by vol + basket)")
+        final = apply_hardcoded_universe_exclusions(
+            list(set(top_m).union(set(market_basket)))
+        )
+        tprint(
+            f"Universe selected: {len(final)} symbols (All except bottom {bottom_n} by vol + basket)"
+        )
         return final
 
     except Exception as e:
-        tprint(f"Error fetching tickers for universe selection: {e}. Fallback to alphabet.")
-        return apply_hardcoded_universe_exclusions(list(set(margin_symbols).union(set(market_basket))))
+        tprint(
+            "Error fetching tickers for universe selection: "
+            f"{_request_error_category(e)}: {e}. Fallback to alphabet."
+        )
+        return apply_hardcoded_universe_exclusions(
+            list(set(margin_symbols).union(set(market_basket)))
+        )
+
 
 def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
     """
@@ -253,6 +353,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
     1. Fetch Universe (All except bottom 30 by volume)
     2. Union with Market Basket
     """
+
     def _local_store_symbols(_store):
         out = []
         ohlcv_dir = getattr(_store, "ohlcv_dir", None)
@@ -268,7 +369,9 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
 
     offline_universe = bool(cfg.get("offline_backtest_skip_universe_refresh", False))
     if offline_universe:
-        tprint("Training universe: offline mode enabled, skipping margin refresh and live ticker ranking.")
+        tprint(
+            "Training universe: offline mode enabled, skipping margin refresh and live ticker ranking."
+        )
         local_syms = _local_store_symbols(store)
         base_syms = margin_symbols if margin_symbols is not None else local_syms
         if not base_syms:
@@ -278,7 +381,9 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         train_syms = apply_hardcoded_universe_exclusions(train_syms)
         M = int(cfg.get("fetch_symbols_M", 9999))
         if len(train_syms) > M:
-            tprint(f"Offline mode: limiting universe from {len(train_syms)} to top {M} (alphabetical fallback)")
+            tprint(
+                f"Offline mode: limiting universe from {len(train_syms)} to top {M} (alphabetical fallback)"
+            )
             train_syms = train_syms[:M]
         return train_syms
 
@@ -289,18 +394,29 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
             mu = refresh_margin_universe_daily(None, quotes=("USDT",))
             margin_symbols = mu.symbols
         except Exception as e:
-            tprint(f"Warning: margin universe refresh failed ({e}); falling back to local store symbols.")
+            tprint(
+                "Warning: margin universe refresh failed "
+                f"({_request_error_category(e)}: {e}); "
+                "falling back to local store symbols."
+            )
             margin_symbols = _local_store_symbols(store)
             if not margin_symbols:
-                tprint("Warning: local store symbol fallback empty; using market basket only.")
+                tprint(
+                    "Warning: local store symbol fallback empty; using market basket only."
+                )
                 margin_symbols = list(cfg.get("market_basket", []))
 
-    syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
+    syms_all = build_fetch_universe(
+        margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"]
+    )
     train_syms = deduplicate_symbols_by_base(list(set(syms_all)))
     train_syms = apply_hardcoded_universe_exclusions(train_syms)
     return train_syms
 
-def select_live_candidates(margin_symbols: list[str], market_basket: list[str], pct: float = 0.05):
+
+def select_live_candidates(
+    margin_symbols: list[str], market_basket: list[str], pct: float = 0.05
+):
     """
     Selects candidates for 1h analysis.
     Returns list of symbols to fetch (margin symbols + market basket).
@@ -309,7 +425,9 @@ def select_live_candidates(margin_symbols: list[str], market_basket: list[str], 
     tprint(f"Entering function: select_live_candidates in universe.py")
     margin_symbols = apply_hardcoded_universe_exclusions(list(margin_symbols))
     market_basket = apply_hardcoded_universe_exclusions(list(market_basket))
-    tprint(f"Selecting live candidates from {len(margin_symbols)} margin symbols + {len(market_basket)} basket")
+    tprint(
+        f"Selecting live candidates from {len(margin_symbols)} margin symbols + {len(market_basket)} basket"
+    )
 
     # Simply return margin symbols + market basket (no price change filtering)
     candidates = set(margin_symbols + market_basket)

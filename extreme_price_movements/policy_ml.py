@@ -5,13 +5,15 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
-import numpy as np
 from extreme_price_movements.utils import tprint
 
 
-def load_best_policy_params_from_optimise(data_root: str, run_id: str) -> Dict[str, Any]:
+def load_best_policy_params_from_optimise(
+    data_root: str, run_id: str
+) -> Dict[str, Any]:
     """Load optimize output params for policy-aligned ML targets.
 
     Expected path: {data_root}/artifacts/{run_id}/models/bucket_params.json
@@ -96,7 +98,11 @@ def _policy_rollout_sizer_aligned(
     if not np.isfinite(entry_px) or entry_px <= 0.0:
         return PolicyOutcome(0.0, 0, 1, 0.0, 0.0, "timeout")
 
-    atr_here = float(atr_pct.loc[ts_entry]) if ts_entry in atr_pct.index else float(atr_pct.iloc[int(t0)]) if int(t0) < len(atr_pct) else 0.02
+    atr_here = (
+        float(atr_pct.loc[ts_entry])
+        if ts_entry in atr_pct.index
+        else float(atr_pct.iloc[int(t0)]) if int(t0) < len(atr_pct) else 0.02
+    )
     atr_here = max(float(np.nan_to_num(atr_here, nan=0.02)), 1e-6)
     sl_abs = static_policy["sl_atr_mult"] * atr_here * entry_px
     tp_abs = static_policy["tp_sl_ratio"] * sl_abs
@@ -212,7 +218,12 @@ def policy_rollout_engine(
         symbol=None,
         cost=None,
     )
-    bars = int(max(0, ((pd.Timestamp(exit_ts) - pd.Timestamp(ts_entry)).total_seconds() // 3600)))
+    bars = int(
+        max(
+            0,
+            ((pd.Timestamp(exit_ts) - pd.Timestamp(ts_entry)).total_seconds() // 3600),
+        )
+    )
     mae = float((extras or {}).get("mae_pct", 0.0))
     mfe = float((extras or {}).get("mfe_pct", 0.0))
     return PolicyOutcome(
@@ -296,8 +307,12 @@ def compute_u_policy_labels(
     _gross_u = np.log1p(np.clip(r_policy.astype(np.float64), -0.999999, None))
     _net_u = np.log1p(np.clip(r_policy_net.astype(np.float64), -0.999999, None))
     assert bool(np.all(np.isfinite(_net_u))), "u_policy_net contains non-finite values"
-    assert bool(np.all(r_policy_net <= r_policy + 1e-12)), "r_policy_net must be <= r_policy for fee_rt >= 0"
-    assert bool(np.all(_net_u <= _gross_u + 1e-12)), "u_policy_net must be <= u_policy for fee_rt >= 0"
+    assert bool(
+        np.all(r_policy_net <= r_policy + 1e-12)
+    ), "r_policy_net must be <= r_policy for fee_rt >= 0"
+    assert bool(
+        np.all(_net_u <= _gross_u + 1e-12)
+    ), "u_policy_net must be <= u_policy for fee_rt >= 0"
     return {
         "r_policy": r_policy,
         "r_policy_net": r_policy_net,
@@ -329,14 +344,19 @@ def log_mae(mae_ret: np.ndarray) -> np.ndarray:
     return np.log1p(np.maximum(mae_ret, 0.0))
 
 
-def sizing_score(mu_hat: np.ndarray, mae_ret_hat: np.ndarray, p_work: np.ndarray,
-                 p_sl: Optional[np.ndarray] = None, eps: float = 1e-6) -> np.ndarray:
+def sizing_score(
+    mu_hat: np.ndarray,
+    mae_ret_hat: np.ndarray,
+    p_work: np.ndarray,
+    p_sl: Optional[np.ndarray] = None,
+    eps: float = 1e-6,
+) -> np.ndarray:
     """Dimension-consistent sizing score in utility/risk space."""
     mu_hat = np.asarray(mu_hat, np.float64)
     risk_hat = log_mae(mae_ret_hat)
     s = (mu_hat / (risk_hat + eps)) * np.asarray(p_work, np.float64)
     if p_sl is not None:
-        s *= (1.0 - np.asarray(p_sl, np.float64))
+        s *= 1.0 - np.asarray(p_sl, np.float64)
     return s
 
 
@@ -370,7 +390,9 @@ class MetaMoveSelectionConfig:
     require_positive_base_rate: bool = True
 
 
-def expected_utility(p_pred: np.ndarray, u_tp: float, u_to: float, u_sl: float) -> np.ndarray:
+def expected_utility(
+    p_pred: np.ndarray, u_tp: float, u_to: float, u_sl: float
+) -> np.ndarray:
     """Expected utility from multiclass [SL, TO, TP] probabilities."""
     return p_pred[:, 2] * u_tp + p_pred[:, 1] * u_to + p_pred[:, 0] * u_sl
 
@@ -387,8 +409,12 @@ def pick_meta_classifier_by_utility_top30(
     y_true = np.asarray(y_true)
     p_pred = np.asarray(p_pred, dtype=float)
     realized_u_policy = np.asarray(realized_u_policy, dtype=float)
-    tm = np.ones(len(y_true), dtype=bool) if trade_mask is None else np.asarray(trade_mask, dtype=bool)
-    tm = tm[:len(y_true)]
+    tm = (
+        np.ones(len(y_true), dtype=bool)
+        if trade_mask is None
+        else np.asarray(trade_mask, dtype=bool)
+    )
+    tm = tm[: len(y_true)]
 
     # Sanitize probabilities before ALL metric computations (including log_loss).
     p_pred = np.where(np.isfinite(p_pred), p_pred, 0.0)
@@ -408,14 +434,21 @@ def pick_meta_classifier_by_utility_top30(
             else:
                 ll = 999.0
         else:
-            ll = float(log_loss(y_true[tm], p_pred[tm], labels=[0, 1, 2])) if np.any(tm) else 999.0
+            ll = (
+                float(log_loss(y_true[tm], p_pred[tm], labels=[0, 1, 2]))
+                if np.any(tm)
+                else 999.0
+            )
     except Exception as exc:
-        tprint(f"Warning: failed to compute classifier log_loss after probability sanitation: {exc}")
+        tprint(
+            f"Warning: failed to compute classifier log_loss after probability sanitation: {exc}"
+        )
         ll = 999.0
     passed_gate = ll <= float(cfg.max_logloss)
 
     # Dynamic utility weights from realized outcomes on this OOF vector.
     if bool(cfg.dynamic_utility_from_realized):
+
         def _class_mean(k: int, dflt: float) -> float:
             if y_true.ndim == 2:
                 # Soft labels mapping: k_hard -> k_soft (0:SL->1, 1:TO->2, 2:TP->0)
@@ -434,6 +467,7 @@ def pick_meta_classifier_by_utility_top30(
                     if np.isfinite(v):
                         return v
             return dflt
+
         u_sl = _class_mean(0, float(cfg.u_sl))
         u_to = _class_mean(1, float(cfg.u_to))
         u_tp = _class_mean(2, float(cfg.u_tp))
@@ -448,7 +482,22 @@ def pick_meta_classifier_by_utility_top30(
         U = expected_utility(p_pred, u_tp, u_to, u_sl)
     valid_idx = np.where(tm)[0]
     if len(valid_idx) == 0:
-        return {"logloss": ll, "passed_gate": 0.0, "topU_mean": float("nan"), "top_realized_u_mean": float("nan"), "baseline_realized_u_mean": float("nan"), "realized_lift_vs_baseline": float("nan"), "top_n": 0.0, "top_n_ok": 0.0, "lift_ok": 0.0, "u_tp": float(u_tp), "u_to": float(u_to), "u_sl": float(u_sl), "passed_econ": 0.0, "selection_score": float("-inf") }
+        return {
+            "logloss": ll,
+            "passed_gate": 0.0,
+            "topU_mean": float("nan"),
+            "top_realized_u_mean": float("nan"),
+            "baseline_realized_u_mean": float("nan"),
+            "realized_lift_vs_baseline": float("nan"),
+            "top_n": 0.0,
+            "top_n_ok": 0.0,
+            "lift_ok": 0.0,
+            "u_tp": float(u_tp),
+            "u_to": float(u_to),
+            "u_sl": float(u_sl),
+            "passed_econ": 0.0,
+            "selection_score": float("-inf"),
+        }
     U = U[valid_idx]
     realized_u_policy = realized_u_policy[valid_idx]
     n = len(U)
@@ -462,7 +511,9 @@ def pick_meta_classifier_by_utility_top30(
 
     top_n_ok = bool(k >= int(cfg.min_top_n))
     lift_ok = bool(realized_lift >= float(cfg.min_lift_vs_baseline))
-    passed_econ = (top_realized_u_mean > 0.0) if bool(cfg.require_positive_oof_utility) else True
+    passed_econ = (
+        (top_realized_u_mean > 0.0) if bool(cfg.require_positive_oof_utility) else True
+    )
     passed_econ = bool(passed_econ and top_n_ok and lift_ok)
 
     return {
@@ -496,6 +547,7 @@ def pick_meta_move_by_topq(
     Selection is based on ranking rows by p_move and checking whether the
     top slice shows higher realized absolute return and positive lift.
     """
+    from scipy.stats import spearmanr
     from sklearn.metrics import (
         average_precision_score,
         balanced_accuracy_score,
@@ -504,14 +556,22 @@ def pick_meta_move_by_topq(
         roc_auc_score,
         roc_curve,
     )
-    from scipy.stats import spearmanr
 
     y_true = np.asarray(y_true).reshape(-1)
     p_pred = np.asarray(p_pred, dtype=float).reshape(-1)
     realized_abs_return = np.asarray(realized_abs_return, dtype=float).reshape(-1)
-    tm = np.ones(len(y_true), dtype=bool) if trade_mask is None else np.asarray(trade_mask, dtype=bool)
+    tm = (
+        np.ones(len(y_true), dtype=bool)
+        if trade_mask is None
+        else np.asarray(trade_mask, dtype=bool)
+    )
     tm = tm[: len(y_true)]
-    valid = tm & np.isfinite(y_true) & np.isfinite(p_pred) & np.isfinite(realized_abs_return)
+    valid = (
+        tm
+        & np.isfinite(y_true)
+        & np.isfinite(p_pred)
+        & np.isfinite(realized_abs_return)
+    )
 
     if valid.sum() == 0:
         return {
@@ -572,7 +632,9 @@ def pick_meta_move_by_topq(
         if np.isfinite(rho_val):
             rho = float(rho_val)
 
-    k = max(1, int(np.ceil(float(cfg.top_frac) * len(p))))
+    top_frac = float(getattr(cfg, "top_frac", 0.10))
+    top_fracs = tuple(getattr(cfg, "top_fracs", (top_frac,)))
+    k = max(1, int(np.ceil(top_frac * len(p))))
     top_idx = np.argsort(-p)[:k]
     top_mean = float(np.mean(r[top_idx]))
     top_hit = float(np.mean(y[top_idx]))
@@ -580,26 +642,33 @@ def pick_meta_move_by_topq(
     lift = top_mean - baseline_mean
 
     topq_metrics = {}
-    for frac in cfg.top_fracs:
+    for frac in top_fracs:
         kk = max(1, int(np.ceil(float(frac) * len(p))))
         idx = np.argsort(-p)[:kk]
-        topq_metrics[f"top{int(round(frac*100)):02d}_absret_mean"] = float(np.mean(r[idx]))
-        topq_metrics[f"top{int(round(frac*100)):02d}_lift"] = float(np.mean(r[idx]) - baseline_mean)
+        topq_metrics[f"top{int(round(frac*100)):02d}_absret_mean"] = float(
+            np.mean(r[idx])
+        )
+        topq_metrics[f"top{int(round(frac*100)):02d}_lift"] = float(
+            np.mean(r[idx]) - baseline_mean
+        )
         topq_metrics[f"top{int(round(frac*100)):02d}_hit_rate"] = float(np.mean(y[idx]))
 
     passed_gate = (
         np.isfinite(roc)
         and np.isfinite(pr)
         and np.isfinite(bal_best)
-        and roc >= float(cfg.min_roc_auc)
-        and pr >= float(cfg.min_pr_auc)
-        and bal_best >= float(cfg.min_balanced_accuracy)
-        and rho >= float(cfg.min_ic)
+        and roc >= float(getattr(cfg, "min_roc_auc", 0.56))
+        and pr >= float(getattr(cfg, "min_pr_auc", 0.0))
+        and bal_best >= float(getattr(cfg, "min_balanced_accuracy", 0.0))
+        and rho >= float(getattr(cfg, "min_ic", 0.0))
     )
-    passed_econ = bool(k >= int(cfg.min_top_n) and lift >= float(cfg.min_lift_vs_baseline))
-    if bool(cfg.require_positive_top_lift):
+    passed_econ = bool(
+        k >= int(getattr(cfg, "min_top_n", 50))
+        and lift >= float(getattr(cfg, "min_lift_vs_baseline", 0.0))
+    )
+    if bool(getattr(cfg, "require_positive_top_lift", True)):
         passed_econ = bool(passed_econ and top_mean > baseline_mean)
-    if bool(cfg.require_positive_base_rate):
+    if bool(getattr(cfg, "require_positive_base_rate", True)):
         passed_gate = bool(passed_gate and base_rate > 0.0)
 
     return {

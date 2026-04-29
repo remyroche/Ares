@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import optuna
 import pandas as pd
-from optuna.pruners import MedianPruner, SuccessiveHalvingPruner
+from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from scipy.stats import linregress, spearmanr
 from sklearn.calibration import CalibratedClassifierCV
@@ -29,8 +30,27 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import ElasticNet, Ridge, RidgeClassifier
 from sklearn.preprocessing import RobustScaler
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 try:
     from lightgbm import LGBMRegressor, early_stopping, log_evaluation
+    import lightgbm.sklearn as _lgbm_sklearn
+
+    def _lgbm_check_xy_compat(X: Any, y: Any, **kwargs: Any) -> Any:
+        if "force_all_finite" in kwargs and "ensure_all_finite" not in kwargs:
+            kwargs["ensure_all_finite"] = kwargs.pop("force_all_finite")
+        return _lgbm_check_xy_original(X, y, **kwargs)
+
+    def _lgbm_check_array_compat(array: Any, **kwargs: Any) -> Any:
+        if "force_all_finite" in kwargs and "ensure_all_finite" not in kwargs:
+            kwargs["ensure_all_finite"] = kwargs.pop("force_all_finite")
+        return _lgbm_check_array_original(array, **kwargs)
+
+    _lgbm_check_xy_original = _lgbm_sklearn._LGBMCheckXY
+    _lgbm_check_array_original = _lgbm_sklearn._LGBMCheckArray
+    _lgbm_sklearn._LGBMCheckXY = _lgbm_check_xy_compat
+    _lgbm_sklearn._LGBMCheckArray = _lgbm_check_array_compat
 except ImportError:
     LGBMRegressor = None  # type: ignore[assignment, misc]
 
@@ -57,6 +77,7 @@ from extreme_price_movements.run_ridge_sizer import (
 from extreme_price_movements.src_utils_tprint import tprint
 
 logger = logging.getLogger(__name__)
+MIN_POLICY_AVG_PNL_PER_TRADE_PCT = 0.2
 
 
 def _rolling_mad(values: np.ndarray, window: int) -> np.ndarray:
@@ -269,6 +290,36 @@ def _extract_strategy_params_payload(
             "source_target": source_target,
             "source_horizon": _to_float_or_nan(source_horizon),
         }
+        row["profitable_for_downstream"] = bool(
+            np.isfinite(row["wallet_pnl"])
+            and np.isfinite(row["net_pnl"])
+            and np.isfinite(row["net_pnl_per_trade_pct"])
+            and float(row["wallet_pnl"]) > 0.0
+            and float(row["net_pnl"]) > 0.0
+            and float(row["net_pnl_per_trade_pct"])
+            > MIN_POLICY_AVG_PNL_PER_TRADE_PCT
+        )
+        row["allow_downstream"] = bool(row["profitable_for_downstream"])
+        row["downstream_min_pnl_per_trade_pct"] = float(
+            MIN_POLICY_AVG_PNL_PER_TRADE_PCT
+        )
+        reject_reasons: List[str] = []
+        if not (np.isfinite(row["wallet_pnl"]) and float(row["wallet_pnl"]) > 0.0):
+            reject_reasons.append("wallet_pnl_not_positive")
+        if not (np.isfinite(row["net_pnl"]) and float(row["net_pnl"]) > 0.0):
+            reject_reasons.append("net_pnl_not_positive")
+        if not (
+            np.isfinite(row["net_pnl_per_trade_pct"])
+            and float(row["net_pnl_per_trade_pct"])
+            > MIN_POLICY_AVG_PNL_PER_TRADE_PCT
+        ):
+            reject_reasons.append("avg_pnl_per_trade_below_0_2pct")
+        row["downstream_reject_reasons"] = reject_reasons
+        row["downstream_filter_tag"] = (
+            "profitable"
+            if row["profitable_for_downstream"]
+            else "blocked_avg_pnl_per_trade_below_0_2pct"
+        )
         row["feature_importance"] = _summarize_strategy_feature_importance(res)
         _mix_best = res.get("mix_grid_best_", {})
         if _mix_best:
@@ -387,9 +438,11 @@ def _summarize_strategy_feature_importance(res: Dict[str, Any]) -> Dict[str, Any
                 {
                     "feature": str(row.get("feature", "")),
                     "importance": float(row.get("importance_value", np.nan)),
-                    "std": float(row.get("importance_std", np.nan))
-                    if np.isfinite(row.get("importance_std", np.nan))
-                    else None,
+                    "std": (
+                        float(row.get("importance_std", np.nan))
+                        if np.isfinite(row.get("importance_std", np.nan))
+                        else None
+                    ),
                     "metric": str(row.get("importance_metric", "")),
                 }
             )
@@ -624,10 +677,62 @@ def compute_full_calibration_curves(
     return calibration_data
 
 
+def compute_oof_rank_calibration_curves(
+    oof_predictions: pd.DataFrame,
+    strategy_col: str = "strategy_id",
+    score_col: str = "sizer_score_oof",
+    n_points: int = 1000,
+) -> Dict[str, Dict[str, Any]]:
+    """Calibrate raw OOF sizer scores to empirical within-strategy rank percentiles.
+
+    This fallback is used when the full realized-return calibration inputs are
+    not persisted but OOF sizer scores are. It preserves cross-strategy
+    comparability for inference gating by mapping each strategy's raw score
+    distribution to the same [0, 1] rank scale.
+    """
+    calibration_data: Dict[str, Dict[str, Any]] = {}
+    if oof_predictions.empty or strategy_col not in oof_predictions.columns:
+        return calibration_data
+    if score_col not in oof_predictions.columns:
+        return calibration_data
+
+    for strategy_id, group in oof_predictions.groupby(strategy_col):
+        scores = pd.to_numeric(group[score_col], errors="coerce").dropna()
+        if len(scores) < 50:
+            continue
+        sorted_scores = np.sort(scores.to_numpy(dtype=np.float64))
+        if sorted_scores.size == 0:
+            continue
+        ranks = np.linspace(0.0, 1.0, sorted_scores.size, dtype=np.float64)
+        stride = max(1, int(np.ceil(sorted_scores.size / max(1, int(n_points)))))
+        curve = [
+            (float(sorted_scores[i]), float(ranks[i]))
+            for i in range(0, sorted_scores.size, stride)
+        ]
+        if curve[-1][0] != float(sorted_scores[-1]):
+            curve.append((float(sorted_scores[-1]), 1.0))
+        calibration_data[str(strategy_id)] = {
+            "strategy_id": str(strategy_id),
+            "n_samples": int(sorted_scores.size),
+            "raw_score_range": (
+                float(sorted_scores[0]),
+                float(sorted_scores[-1]),
+            ),
+            "calibrated_score_range": (0.0, 1.0),
+            "p75_threshold": 0.75,
+            "p90_threshold": 0.90,
+            "calibration_curve": curve,
+            "calibration_method": "empirical_oof_rank_percentile",
+        }
+    return calibration_data
+
+
 def save_calibration_curves(
     calibration_data: Dict[str, Dict[str, Any]],
     data_root: str,
     run_id: str,
+    *,
+    calibration_method: str = "isotonic_win_probability",
 ) -> Path:
     """Save calibration curves as JSON artifact."""
     path = (
@@ -661,7 +766,12 @@ def save_calibration_curves(
         "generated_by": "simple_position_sizer",
         "run_id": run_id,
         "required_strategy_fields": ["p75_threshold", "calibration_curve"],
-        "rank_semantics": "calibrated_p75_threshold",
+        "rank_semantics": (
+            "empirical_oof_rank_percentile"
+            if calibration_method == "empirical_oof_rank_percentile"
+            else "calibrated_p75_threshold"
+        ),
+        "calibration_method": calibration_method,
         "disagreement_feature_contract": "engine._calculate_disagreement_features",
     }
     contract_path.write_text(json.dumps(contract_payload, indent=2))
@@ -885,11 +995,22 @@ def _persist_sizer_oof_predictions(
     for strategy_id, res in strategy_results.items():
         ridge_preds = res.get("ridge_sizer_scores_")
         et_preds = res.get("et_sizer_scores_")
+        lgbm_preds = res.get("lgbm_sizer_scores_")
         total_conf = res.get("total_confidence_")
+        total_conf_lgbm = res.get("total_confidence_lgbm_")
+        ctx = res.get("_sizer_oof_context_", {})
 
         preds = total_conf
         if preds is None:
-            preds = ridge_preds if ridge_preds is not None else et_preds
+            preds = (
+                ridge_preds
+                if ridge_preds is not None
+                else (
+                    total_conf_lgbm
+                    if total_conf_lgbm is not None
+                    else (lgbm_preds if lgbm_preds is not None else et_preds)
+                )
+            )
         if preds is None:
             continue
 
@@ -903,9 +1024,18 @@ def _persist_sizer_oof_predictions(
 
         for idx in range(n_preds):
             score = float(preds[idx]) if np.isfinite(preds[idx]) else np.nan
+            timestamp_val = np.nan
+            symbol_val = np.nan
+            if isinstance(ctx, dict):
+                if "timestamp" in ctx and idx < len(ctx["timestamp"]):
+                    timestamp_val = ctx["timestamp"][idx]
+                if "symbol" in ctx and idx < len(ctx["symbol"]):
+                    symbol_val = ctx["symbol"][idx]
             row_data = {
                 "row_idx": row_idx + idx,
                 "strategy_id": strategy_id,
+                "timestamp": timestamp_val,
+                "symbol": symbol_val,
                 "sizer_score_oof": score,
                 "total_confidence": score,
                 "model": winner,
@@ -918,12 +1048,27 @@ def _persist_sizer_oof_predictions(
                 row_data["et_score"] = (
                     float(et_preds[idx]) if np.isfinite(et_preds[idx]) else np.nan
                 )
+            if lgbm_preds is not None and idx < len(lgbm_preds):
+                row_data["lgbm_score"] = (
+                    float(lgbm_preds[idx])
+                    if np.isfinite(lgbm_preds[idx])
+                    else np.nan
+                )
             all_rows.append(row_data)
 
         row_idx += n_preds
 
     if all_rows:
         df = pd.DataFrame(all_rows)
+        missing_context = int(
+            df["timestamp"].isna().sum() + df["symbol"].isna().sum()
+        )
+        if missing_context:
+            logger.warning(
+                "simple_position_sizer OOF context has %d missing timestamp/symbol "
+                "values; policy optimiser will drop unmatched rows.",
+                missing_context,
+            )
         out_path = (
             Path(data_root)
             / "artifacts"
@@ -1044,6 +1189,59 @@ def _persist_head_to_head_winner(
     comparison_rows: List[Dict[str, Any]] = []
     et_winner_rows: List[Dict[str, Any]] = []
     lgbm_winner_rows: List[Dict[str, Any]] = []
+
+    def _winner_policy_row(
+        *,
+        strategy_id: str,
+        meta: Dict[str, Any],
+        opt: Any,
+        model_source: str,
+    ) -> Dict[str, Any]:
+        wallet_pnl = _to_float_or_nan(opt.get("wallet_pnl", np.nan))
+        net_pnl = _to_float_or_nan(opt.get("net_pnl", np.nan))
+        pnl_per_trade_pct = _to_float_or_nan(
+            opt.get("pnl_per_trade_pct", opt.get("pnl_per_trade", np.nan))
+        )
+        reject_reasons: List[str] = []
+        if not (np.isfinite(wallet_pnl) and wallet_pnl > 0.0):
+            reject_reasons.append("wallet_pnl_not_positive")
+        if not (np.isfinite(net_pnl) and net_pnl > 0.0):
+            reject_reasons.append("net_pnl_not_positive")
+        if not (
+            np.isfinite(pnl_per_trade_pct)
+            and pnl_per_trade_pct > MIN_POLICY_AVG_PNL_PER_TRADE_PCT
+        ):
+            reject_reasons.append("avg_pnl_per_trade_below_0_2pct")
+        profitable_for_downstream = len(reject_reasons) == 0
+        return {
+            "strategy_id": str(strategy_id),
+            "side": _infer_side_label(
+                strategy_id=str(strategy_id), strategy_meta=meta
+            ),
+            "threshold_pct": _to_float_or_nan(opt.get("threshold_pct", np.nan)),
+            "selection_frac": _to_float_or_nan(opt.get("selection_frac", np.nan)),
+            "wallet_pnl": wallet_pnl,
+            "net_pnl": net_pnl,
+            "pnl_per_trade": pnl_per_trade_pct,
+            "net_pnl_per_trade_pct": pnl_per_trade_pct,
+            "profit_factor": _to_float_or_nan(opt.get("profit_factor", np.nan)),
+            "hit_rate": _to_float_or_nan(opt.get("hit_rate", np.nan)),
+            "trades_per_day": _to_float_or_nan(opt.get("trades_per_day", np.nan)),
+            "trades_selected": _to_float_or_nan(opt.get("trades_selected", np.nan)),
+            "model_source": model_source,
+            "profitable_for_downstream": bool(profitable_for_downstream),
+            "allow_downstream": bool(profitable_for_downstream),
+            "downstream_min_pnl_per_trade_pct": float(
+                MIN_POLICY_AVG_PNL_PER_TRADE_PCT
+            ),
+            "downstream_reject_reasons": reject_reasons,
+            "downstream_filter_tag": (
+                "profitable"
+                if profitable_for_downstream
+                else "blocked_avg_pnl_per_trade_below_0_2pct"
+            ),
+        }
+
     for strategy_id, res in strategy_results.items():
         comp = res.get("comparison_", {})
         if not comp:
@@ -1061,21 +1259,12 @@ def _persist_head_to_head_winner(
             )
             meta = res.get("_strategy_meta_", {})
             et_winner_rows.append(
-                {
-                    "strategy_id": str(strategy_id),
-                    "side": _infer_side_label(
-                        strategy_id=str(strategy_id), strategy_meta=meta
-                    ),
-                    "threshold_pct": _to_float_or_nan(opt.get("threshold_pct", np.nan)),
-                    "selection_frac": _to_float_or_nan(
-                        opt.get("selection_frac", np.nan)
-                    ),
-                    "wallet_pnl": _to_float_or_nan(opt.get("wallet_pnl", np.nan)),
-                    "net_pnl": _to_float_or_nan(opt.get("net_pnl", np.nan)),
-                    "profit_factor": _to_float_or_nan(opt.get("profit_factor", np.nan)),
-                    "hit_rate": _to_float_or_nan(opt.get("hit_rate", np.nan)),
-                    "model_source": "ridge_plus_et",
-                }
+                _winner_policy_row(
+                    strategy_id=str(strategy_id),
+                    meta=meta,
+                    opt=opt,
+                    model_source="ridge_plus_et",
+                )
             )
         elif winner == "ridge_plus_lgbm":
             profit_df = res.get("lgbm_profit_proxy_table_", pd.DataFrame())
@@ -1088,21 +1277,12 @@ def _persist_head_to_head_winner(
             )
             meta = res.get("_strategy_meta_", {})
             lgbm_winner_rows.append(
-                {
-                    "strategy_id": str(strategy_id),
-                    "side": _infer_side_label(
-                        strategy_id=str(strategy_id), strategy_meta=meta
-                    ),
-                    "threshold_pct": _to_float_or_nan(opt.get("threshold_pct", np.nan)),
-                    "selection_frac": _to_float_or_nan(
-                        opt.get("selection_frac", np.nan)
-                    ),
-                    "wallet_pnl": _to_float_or_nan(opt.get("wallet_pnl", np.nan)),
-                    "net_pnl": _to_float_or_nan(opt.get("net_pnl", np.nan)),
-                    "profit_factor": _to_float_or_nan(opt.get("profit_factor", np.nan)),
-                    "hit_rate": _to_float_or_nan(opt.get("hit_rate", np.nan)),
-                    "model_source": "ridge_plus_lgbm",
-                }
+                _winner_policy_row(
+                    strategy_id=str(strategy_id),
+                    meta=meta,
+                    opt=opt,
+                    model_source="ridge_plus_lgbm",
+                )
             )
         elif winner == "ridge_plus_lgbm_clf":
             profit_df = res.get("lgbm_clf_profit_proxy_table_", pd.DataFrame())
@@ -1233,6 +1413,12 @@ def _persist_detailed_model_metrics(
                 "strategy_id": strategy_id,
                 "model": model_tag,
                 "spearman_ic": eval_dict.get("spearman_ret", float("nan")),
+                "top_1_mean_net": eval_dict.get("top_1_mean_net", float("nan")),
+                "top_1_hit_rate": eval_dict.get("top_1_hit_rate", float("nan")),
+                "top_2_5_mean_net": eval_dict.get("top_2_5_mean_net", float("nan")),
+                "top_2_5_hit_rate": eval_dict.get("top_2_5_hit_rate", float("nan")),
+                "top_5_mean_net": eval_dict.get("top_5_mean_net", float("nan")),
+                "top_5_hit_rate": eval_dict.get("top_5_hit_rate", float("nan")),
                 "top_10_mean_net": eval_dict.get("top_10_mean_net", float("nan")),
                 "top_10_hit_rate": eval_dict.get("top_10_hit_rate", float("nan")),
                 "top_20_mean_net": eval_dict.get("top_20_mean_net", float("nan")),
@@ -1353,6 +1539,19 @@ _RIDGE_HEAD_EXACT = {
     "Upside",
     "Downside",
     "EdgeSharpe",
+    "winrate_20",
+    "winrate_50",
+    "brier_50",
+    "logloss_50",
+    "rank_ic_50",
+    "consecutive_losses",
+    "edge_tbm",
+    "edge_x_winrate_20",
+    "edge_x_rank_ic_50",
+    "edge_x_brier_50",
+    "edge_x_volatility_zscore",
+    "edge_x_amihud_z",
+    "edge_x_vol_of_vol",
 }
 _RIDGE_HEAD_PREFIXES = (
     "base_h",
@@ -1363,6 +1562,90 @@ _RIDGE_HEAD_PREFIXES = (
     "asym_h",
     "oof_p_",
 )
+
+_NON_HEAD_DROP_FEATURES = {
+    "impact_z",
+    "dv_z",
+    "rng_z",
+    "score",
+    "early_inval",
+    "oof_p_tp",
+    "oof_p_sl",
+    "oof_p_time",
+    "vol_concentration_12",
+    "volume_entropy_12",
+    "clv_t",
+    "body_ratio_15m",
+    "rejection_proxy",
+    "range_norm_12",
+    "sv_imb_24",
+    "press_24",
+    "impact_24",
+    "ts_24",
+    "atr_12_15m",
+    "clf_center",
+    "clf_entropy",
+    "base_clf_centered",
+    "oof_base_meta_correctness_prob",
+    "clf_prefix_std",
+    "clf_leaf_support_q25",
+    "clf_leaf_target_iqr_mean",
+    "reg",
+    "reg_mean",
+    "reg_std",
+    "reg_range",
+    "reg_pred",
+    "reg_prefix_std",
+    "reg_leaf_support_q25",
+    "reg_leaf_target_iqr_mean",
+    "utility",
+    "mae_q70",
+    "mfe",
+    "oof_u_hat",
+    "oof_log_mae_q70_hat",
+    "oof_log_mfe_hat",
+    "oof_asym_hat",
+    "Upside",
+    "Downside",
+    "EdgeSharpe",
+    "risk_reward_ratio",
+    "high_utility_pred",
+    "risk_adjusted_pred",
+    "utility_disagreement",
+    "sign_agree",
+    "joint_confidence",
+    "conflict_score",
+    "joint_instability",
+    "edge_unc_pen",
+    "edge_support_pen",
+    "edge_noise_pen",
+    "vol_of_vol",
+    "volatility_of_volatility_48",
+    "vov_ratio",
+    "vov_fast_slow_ratio",
+    "rvol_hod_base",
+    "rvol_z",
+    "volume_price_corr_10h",
+    "variance_ratio_10_48",
+    "hurst_proxy_24",
+    "dist_vwap_norm",
+    "z_vwap_24",
+    "climax_range_12",
+    "climax_vol_12",
+}
+
+_LIVE_UNAVAILABLE_SIZER_FEATURES = {
+    "reg_gate_target",
+    "reg_train_target",
+    "reg_target_positive",
+    "reg_raw_vol_norm",
+    "y_move",
+    "y_move_soft",
+    "move_threshold",
+    "barrier_pct",
+    "bars_to_mfe",
+    "reg_weight",
+}
 
 
 def _config_sizer_features() -> set:
@@ -1387,6 +1670,116 @@ def collect_ridge_head_columns(df: pd.DataFrame) -> List[str]:
             if np.issubdtype(df[col].dtype, np.number):
                 cols.append(col)
     return cols
+
+
+def _is_classifier_head_feature(col: str) -> bool:
+    c = str(col).lower()
+    return (
+        c == "clf"
+        or c.startswith("oof_p_")
+        or "meta_clf" in c
+        or c in {"oof_ebm_raw", "oof_ebm_en", "oof_ebm_uncertainty_weighted"}
+    )
+
+
+def _augment_meta_clf_reliability_features(
+    active_df: pd.DataFrame, trade_outcomes: pd.DataFrame
+) -> pd.DataFrame:
+    out = active_df.copy()
+    edge_col = next(
+        (c for c in ("oof_p_tp", "clf", "oof_p_move") if c in out.columns),
+        None,
+    )
+    if edge_col is None:
+        return out
+    edge = np.asarray(out[edge_col], dtype=np.float64)
+    valid_edge = np.isfinite(edge)
+    if int(np.sum(valid_edge)) < 30:
+        return out
+    q90 = float(np.nanquantile(edge[valid_edge], 0.90))
+    top_mask = valid_edge & (edge >= q90)
+
+    mfe = (
+        np.asarray(trade_outcomes["mfe_ret"], dtype=np.float64)
+        if "mfe_ret" in trade_outcomes.columns
+        else np.full(len(out), np.nan, dtype=np.float64)
+    )
+    tp = np.full(len(out), 0.02, dtype=np.float64)
+    for c in ("__barrier_pct__", "barrier_pct", "tp", "tp_pct"):
+        if c in out.columns:
+            tp = np.asarray(out[c], dtype=np.float64)
+            break
+        if c in trade_outcomes.columns:
+            tp = np.asarray(trade_outcomes[c], dtype=np.float64)
+            break
+    y_win = (mfe > tp).astype(np.float64)
+    y_win[~np.isfinite(mfe) | ~np.isfinite(tp)] = np.nan
+
+    winrate_20 = np.full(len(out), np.nan, dtype=np.float64)
+    winrate_50 = np.full(len(out), np.nan, dtype=np.float64)
+    brier_50 = np.full(len(out), np.nan, dtype=np.float64)
+    logloss_50 = np.full(len(out), np.nan, dtype=np.float64)
+    rank_ic_50 = np.full(len(out), np.nan, dtype=np.float64)
+    consecutive_losses = np.zeros(len(out), dtype=np.float64)
+
+    top_idx = np.where(top_mask)[0]
+    seen_idx: list[int] = []
+    current_losses = 0.0
+    for idx in top_idx:
+        seen_idx.append(int(idx))
+        recent20 = seen_idx[-20:]
+        recent50 = seen_idx[-50:]
+        y20 = y_win[recent20]
+        y50 = y_win[recent50]
+        p50 = np.clip(edge[recent50], 1e-6, 1.0 - 1e-6)
+        m20 = np.isfinite(y20)
+        m50 = np.isfinite(y50) & np.isfinite(p50)
+        if int(np.sum(m20)) > 0:
+            winrate_20[idx] = float(np.mean(y20[m20]))
+        if int(np.sum(m50)) > 0:
+            yv = y50[m50]
+            pv = p50[m50]
+            winrate_50[idx] = float(np.mean(yv))
+            brier_50[idx] = float(np.mean((pv - yv) ** 2))
+            logloss_50[idx] = float(
+                -np.mean(yv * np.log(pv) + (1.0 - yv) * np.log(1.0 - pv))
+            )
+            if len(yv) >= 8 and np.std(yv) > 1e-12 and np.std(pv) > 1e-12:
+                rank_ic_50[idx] = float(spearmanr(pv, yv).correlation)
+        if np.isfinite(y_win[idx]) and y_win[idx] < 0.5:
+            current_losses += 1.0
+        else:
+            current_losses = 0.0
+        consecutive_losses[idx] = current_losses
+
+    for arr, name in (
+        (winrate_20, "winrate_20"),
+        (winrate_50, "winrate_50"),
+        (brier_50, "brier_50"),
+        (logloss_50, "logloss_50"),
+        (rank_ic_50, "rank_ic_50"),
+        (consecutive_losses, "consecutive_losses"),
+    ):
+        s = pd.Series(arr)
+        out[name] = s.ffill().fillna(0.0).to_numpy(dtype=np.float32)
+
+    edge_safe = np.nan_to_num(edge, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+    out["edge_tbm"] = edge_safe
+    out["edge_x_winrate_20"] = edge_safe * np.asarray(
+        out["winrate_20"], dtype=np.float32
+    )
+    out["edge_x_rank_ic_50"] = edge_safe * np.asarray(
+        out["rank_ic_50"], dtype=np.float32
+    )
+    out["edge_x_brier_50"] = edge_safe * np.asarray(out["brier_50"], dtype=np.float32)
+    for src, dst in (
+        ("volatility_zscore", "edge_x_volatility_zscore"),
+        ("amihud_z", "edge_x_amihud_z"),
+        ("vol_of_vol", "edge_x_vol_of_vol"),
+    ):
+        if src in out.columns:
+            out[dst] = edge_safe * np.asarray(out[src], dtype=np.float32)
+    return out
 
 
 def detect_meta_head_keys(
@@ -1679,7 +2072,7 @@ def evaluate_signal(
 
     # Top slice metrics
     top_metrics = compute_top_slice_metrics(
-        eval_scores, y_raw_net_return, top_fracs=(0.1, 0.2)
+        eval_scores, y_raw_net_return, top_fracs=(0.01, 0.025, 0.05, 0.1, 0.2)
     )
     metrics.update(top_metrics)
 
@@ -1723,6 +2116,7 @@ def _fit_predict_oof_regressor_with_pruning(
     trial_name: str = "",
     min_report_frac: float = 0.2,
     calibration_method: Optional[str] = None,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, pd.DataFrame]:
     """Fit a fold-local regressor with optional Optuna pruning and OOF calibration."""
     n_samples = len(y)
@@ -1737,6 +2131,11 @@ def _fit_predict_oof_regressor_with_pruning(
 
         X_tr, y_tr = X[tr_idx], y[tr_idx]
         X_te = X[te_idx]
+        w_tr = (
+            np.asarray(sample_weight, dtype=np.float32)[tr_idx]
+            if sample_weight is not None
+            else None
+        )
         if X_tr.shape[0] == 0 or X_te.shape[0] == 0:
             continue
 
@@ -1750,7 +2149,10 @@ def _fit_predict_oof_regressor_with_pruning(
         )
 
         model = model_factory()
-        model.fit(X_tr_clean, y_tr)
+        if w_tr is not None:
+            model.fit(X_tr_clean, y_tr, sample_weight=w_tr)
+        else:
+            model.fit(X_tr_clean, y_tr)
         preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
         oof_preds[te_idx] = preds
         observed_mask[te_idx] = True
@@ -2306,12 +2708,265 @@ def calibrate_barrier_probabilities(
     return calibrated.astype(np.float32)
 
 
+def _select_topk_non_concurrent(
+    scores: np.ndarray,
+    k: int,
+    timestamps: Optional[np.ndarray] = None,
+    symbols: Optional[np.ndarray] = None,
+    horizon_hours: float = 4.0,
+    max_global_concurrent: int = 3,
+) -> np.ndarray:
+    n = len(scores)
+    if n <= 0:
+        return np.array([], dtype=np.int32)
+    k = max(1, min(int(k), n))
+    order = np.argsort(np.asarray(scores, dtype=np.float64))[::-1]
+    if (
+        timestamps is None
+        or symbols is None
+        or len(timestamps) != n
+        or len(symbols) != n
+    ):
+        return order[:k].astype(np.int32)
+    ts = pd.to_datetime(timestamps, utc=True, errors="coerce")
+    syms = np.asarray(symbols).astype(str)
+    horizon = pd.Timedelta(hours=max(1e-6, float(horizon_hours)))
+    max_global = max(1, int(max_global_concurrent))
+    active_trades: List[Tuple[pd.Timestamp, str]] = []
+    out: List[int] = []
+    for idx in order:
+        if len(out) >= k:
+            break
+        t = ts[idx]
+        if pd.isna(t):
+            continue
+        s = syms[idx]
+        active_trades = [(e, sym) for e, sym in active_trades if e > t]
+        symbol_already_active = any(sym == s for _, sym in active_trades)
+        if symbol_already_active:
+            continue
+        if len(active_trades) >= max_global:
+            continue
+        out.append(int(idx))
+        active_trades.append((t + horizon, s))
+    if len(out) < k:
+        chosen = set(out)
+        for idx in order:
+            if len(out) >= k:
+                break
+            if int(idx) not in chosen:
+                out.append(int(idx))
+    return np.asarray(out, dtype=np.int32)
+
+
+def _weighted_period_std(
+    values: np.ndarray, weights: np.ndarray, timestamps: Optional[np.ndarray], freq: str
+) -> float:
+    if timestamps is None or len(values) == 0:
+        return 0.0
+    ts = pd.to_datetime(timestamps, utc=True, errors="coerce")
+    v = np.asarray(values, dtype=np.float64)
+    w = np.asarray(weights, dtype=np.float64)
+    m = np.isfinite(v) & np.isfinite(w) & (w > 0) & pd.notna(ts)
+    if int(np.sum(m)) < 4:
+        return 0.0
+    df = pd.DataFrame({"ts": ts[m], "v": v[m], "w": w[m]})
+    grouped = df.groupby(df["ts"].dt.to_period(freq), sort=False)
+    vals: List[float] = []
+    for _, g in grouped:
+        sw = float(np.sum(g["w"].values))
+        if sw <= 1e-12:
+            continue
+        vals.append(float(np.sum(g["v"].values * g["w"].values) / sw))
+    return float(np.std(vals, ddof=1)) if len(vals) >= 2 else 0.0
+
+
+def _weighted_group_std(
+    values: np.ndarray, weights: np.ndarray, groups: np.ndarray
+) -> float:
+    v = np.asarray(values, dtype=np.float64)
+    w = np.asarray(weights, dtype=np.float64)
+    g = np.asarray(groups)
+    m = np.isfinite(v) & np.isfinite(w) & (w > 0)
+    if int(np.sum(m)) < 4:
+        return 0.0
+    g_codes, _ = pd.factorize(g[m], sort=False)
+    if len(g_codes) == 0:
+        return 0.0
+    w_m = w[m]
+    v_m = v[m]
+    sum_w = np.bincount(g_codes, weights=w_m)
+    sum_vw = np.bincount(g_codes, weights=v_m * w_m)
+    valid = sum_w > 1e-12
+    if int(np.sum(valid)) < 2:
+        return 0.0
+    group_ret = np.divide(
+        sum_vw[valid],
+        sum_w[valid],
+        out=np.zeros_like(sum_vw[valid]),
+        where=sum_w[valid] > 1e-12,
+    )
+    group_w = sum_w[valid]
+    mu = float(np.sum(group_ret * group_w) / (np.sum(group_w) + 1e-12))
+    var = float(np.sum(group_w * (group_ret - mu) ** 2) / (np.sum(group_w) + 1e-12))
+    return float(np.sqrt(max(var, 0.0)))
+
+
+def _make_tail_weight_from_base_pred(base_pred: np.ndarray) -> np.ndarray:
+    rank = (
+        pd.Series(np.asarray(base_pred, dtype=np.float64))
+        .rank(pct=True)
+        .to_numpy(dtype=np.float64)
+    )
+    tail_weight = np.clip((rank - 0.80) / 0.15, 0.0, 1.0)
+    tail_weight = np.where(rank >= 0.98, 1.0, tail_weight)
+    return tail_weight.astype(np.float32)
+
+
+def _normalized_tail_fit_weight(
+    base_pred: np.ndarray, min_weight: float = 0.15
+) -> np.ndarray:
+    w = np.asarray(_make_tail_weight_from_base_pred(base_pred), dtype=np.float64)
+    w = np.clip(w, float(min_weight), 1.0)
+    w = np.nan_to_num(w, nan=1.0, posinf=1.0, neginf=1.0)
+    w /= max(float(np.mean(w)), 1e-9)
+    return w.astype(np.float32)
+
+
+def _score_tail_20(
+    y: np.ndarray,
+    pred: np.ndarray,
+    week_id: np.ndarray,
+    month_id: np.ndarray,
+    fixed_tail_weight: Optional[np.ndarray] = None,
+) -> float:
+    y = np.asarray(y, dtype=np.float64)
+    tail_weight = (
+        _make_tail_weight_from_base_pred(pred)
+        if fixed_tail_weight is None
+        else np.asarray(fixed_tail_weight, dtype=np.float64)
+    )
+    avg_return_tail = float(np.sum(y * tail_weight) / (np.sum(tail_weight) + 1e-12))
+    std_weekly_tail = _weighted_group_std(y, tail_weight, np.asarray(week_id))
+    std_monthly_tail = _weighted_group_std(y, tail_weight, np.asarray(month_id))
+    return float(avg_return_tail - 0.25 * std_weekly_tail - 0.15 * std_monthly_tail)
+
+
+def _rank_weighted_tail_components(
+    scores: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: Optional[np.ndarray],
+    horizon_hours: float,
+) -> Dict[str, float]:
+    s = np.asarray(scores, dtype=np.float64)
+    r = np.asarray(returns, dtype=np.float64)
+    m = np.isfinite(s) & np.isfinite(r)
+    if int(np.sum(m)) < 20:
+        return {
+            "avg_top10_return": 0.0,
+            "avg_top30_return": 0.0,
+            "std_weekly_top10": 0.0,
+            "std_weekly_top30": 0.0,
+            "std_monthly_top10": 0.0,
+            "std_monthly_top30": 0.0,
+            "score_tail_20": 0.0,
+            "score": 0.0,
+        }
+    s = s[m]
+    r = r[m]
+    ts = (
+        np.asarray(timestamps)[m]
+        if timestamps is not None and len(timestamps) == len(m)
+        else None
+    )
+    sy = (
+        np.asarray(symbols)[m]
+        if symbols is not None and len(symbols) == len(m)
+        else None
+    )
+    q = pd.Series(s).rank(pct=True, method="average").to_numpy(dtype=np.float64)
+
+    def _band_stats(mask: np.ndarray) -> Tuple[float, float, float]:
+        if int(np.sum(mask)) < 5:
+            return 0.0, 0.0, 0.0
+        idx = np.where(mask)[0]
+        idx = idx[
+            _select_topk_non_concurrent(
+                s[idx],
+                len(idx),
+                timestamps=ts[idx] if ts is not None else None,
+                symbols=sy[idx] if sy is not None else None,
+                horizon_hours=horizon_hours,
+            )
+        ]
+        qq = q[idx]
+        lo, hi = float(np.min(qq)), float(np.max(qq))
+        u = np.clip((qq - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+        w = np.clip(np.power(u, 1.5), 1e-4, 1.0)
+        avg = float(np.sum(r[idx] * w) / max(float(np.sum(w)), 1e-9))
+        w_std = _weighted_period_std(
+            r[idx], w, ts[idx] if ts is not None else None, "W"
+        )
+        m_std = _weighted_period_std(
+            r[idx], w, ts[idx] if ts is not None else None, "M"
+        )
+        return avg, w_std, m_std
+
+    avg30, w30, m30 = _band_stats((q >= 0.70) & (q <= 0.99))
+    avg10, w10, m10 = _band_stats((q >= 0.90) & (q <= 0.99))
+    score = avg10 + 0.75 * avg30 - (0.25 * w10 + 0.25 * w30) - (0.15 * m10 + 0.15 * m30)
+    return {
+        "avg_top10_return": float(avg10),
+        "avg_top30_return": float(avg30),
+        "std_weekly_top10": float(w10),
+        "std_weekly_top30": float(w30),
+        "std_monthly_top10": float(m10),
+        "std_monthly_top30": float(m30),
+        "score_tail_20": float(score),
+        "score": float(score),
+    }
+
+
+def _update_ridge_round_weights(
+    current_weight: np.ndarray,
+    oof_prediction: np.ndarray,
+    y_true: np.ndarray,
+) -> np.ndarray:
+    w = np.asarray(current_weight, dtype=np.float64).reshape(-1)
+    p = np.asarray(oof_prediction, dtype=np.float64).reshape(-1)
+    y = np.asarray(y_true, dtype=np.float64).reshape(-1)
+    n = min(len(w), len(p), len(y))
+    if n <= 0:
+        return np.asarray(current_weight, dtype=np.float32)
+    w, p, y = w[:n], p[:n], y[:n]
+    top_focus = np.clip(
+        np.asarray(_make_tail_weight_from_base_pred(p), dtype=np.float64),
+        0.15,
+        1.0,
+    )
+    confidence = np.abs(p - 0.5) * 2.0
+    confidence = np.clip(confidence, 0.0, 1.0)
+    strength = confidence * top_focus
+    correct_mult = 1.0 + 0.15 * strength
+    wrong_mult = 1.0 + 0.45 * strength
+    pred_weight = np.where(y > 0.0, correct_mult, wrong_mult)
+    new_weight = w * top_focus * confidence * pred_weight
+    new_weight = np.nan_to_num(new_weight, nan=1.0, posinf=1.0, neginf=1.0)
+    new_weight = np.clip(new_weight, 1e-3, 50.0)
+    new_weight /= max(float(np.mean(new_weight)), 1e-9)
+    return new_weight.astype(np.float32)
+
+
 def _lightweight_hpo_pnl_eval(
     scores: np.ndarray,
     y_raw_net_return: np.ndarray,
     top_fracs: List[float],
     cost_pct: float = 0.003,
     n_days: float = 365.0,
+    timestamps: Optional[np.ndarray] = None,
+    symbols: Optional[np.ndarray] = None,
+    horizon_hours: float = 4.0,
 ) -> Dict[str, float]:
     results: Dict[str, float] = {}
     n = len(scores)
@@ -2320,7 +2975,9 @@ def _lightweight_hpo_pnl_eval(
 
     frac = 0.05
     k = max(1, int(n * frac))
-    idx = np.argpartition(scores, -k)[-k:]
+    idx = _select_topk_non_concurrent(
+        scores, k, timestamps=timestamps, symbols=symbols, horizon_hours=horizon_hours
+    )
     rets = y_raw_net_return[idx]
     net_rets = rets - cost_pct
 
@@ -2354,11 +3011,24 @@ def evaluate_selection_profit_proxy(
     y_raw_net_return: np.ndarray,
     timestamps: Optional[np.ndarray] = None,
     symbols: Optional[np.ndarray] = None,
-    top_fracs: List[float] = [0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.25, 0.3],
+    top_fracs: List[float] = [
+        0.01,
+        0.025,
+        0.05,
+        0.075,
+        0.1,
+        0.125,
+        0.15,
+        0.175,
+        0.2,
+        0.25,
+        0.3,
+    ],
     start_equity: float = 100000.0,
     cost_pct: float = 0.003,
     n_days: float = 365.0,
     wallet_range: Tuple[float, float] = (0.05, 0.15),
+    horizon_hours: float = 4.0,
 ) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """
     Evaluates "Could this generate profit?" using:
@@ -2373,7 +3043,13 @@ def evaluate_selection_profit_proxy(
 
     for frac in top_fracs:
         k = max(1, int(n_samples * frac))
-        idx = np.argpartition(scores, -k)[-k:]
+        idx = _select_topk_non_concurrent(
+            scores=scores,
+            k=k,
+            timestamps=timestamps,
+            symbols=symbols,
+            horizon_hours=horizon_hours,
+        )
 
         selected_rets = y_raw_net_return[idx]
         selected_ts = (
@@ -2534,7 +3210,13 @@ def evaluate_selection_profit_proxy(
         # Recalculate k for the optimal frac to get indexed returns
         frac_opt = df.loc[opt_idx, "selection_frac"]
         k_opt = max(1, int(n_samples * frac_opt))
-        idx_opt = np.argpartition(scores, -k_opt)[-k_opt:]
+        idx_opt = _select_topk_non_concurrent(
+            scores=scores,
+            k=k_opt,
+            timestamps=timestamps,
+            symbols=symbols,
+            horizon_hours=horizon_hours,
+        )
         opt_rets = y_raw_net_return[idx_opt] - cost_pct
         if timestamps is not None and len(timestamps) == n_samples:
             opt_ts = np.asarray(timestamps)[idx_opt]
@@ -2563,7 +3245,24 @@ def _mdi_select_features(
     if len(X_mdi) < 100:
         return list(feature_names[:n_min])
     preliminary = model_factory()
-    preliminary.fit(X_mdi, y_mdi)
+    try:
+        preliminary.fit(X_mdi, y_mdi)
+    except TypeError as exc:
+        if "force_all_finite" not in str(exc):
+            raise
+        tprint(
+            "  MDI feature selection: LightGBM/sklearn validation API mismatch; "
+            "falling back to ExtraTrees importance."
+        )
+        preliminary = ExtraTreesRegressor(
+            n_estimators=120,
+            max_depth=5,
+            min_samples_leaf=max(20, int(0.01 * len(X_mdi))),
+            max_features="sqrt",
+            random_state=42,
+            n_jobs=-1,
+        )
+        preliminary.fit(X_mdi, y_mdi)
     if not hasattr(preliminary, "feature_importances_"):
         return list(feature_names)
     importances = np.asarray(preliminary.feature_importances_, dtype=np.float64)
@@ -2595,7 +3294,7 @@ def run_simple_position_sizer(
     lambda_grid: Optional[List[float]] = None,
     top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
     use_ridge_head_sizer: bool = True,
-    use_et_head_sizer: bool = True,
+    use_et_head_sizer: bool = False,
     use_lgbm_head_sizer: bool = True,
     use_barrier_classifier: bool = True,
     config_feature_keys: Optional[List[str]] = None,
@@ -2628,16 +3327,32 @@ def run_simple_position_sizer(
             f"ATR mean={float(np.mean(_atr_safe)):.6f}"
         )
 
+    # ExtraTrees head race removed by design (keep flag for backward compatibility).
+    use_et_head_sizer = False
+
     detected_heads = detect_meta_head_keys(
         feature_dict, config_overrides=config_feature_keys
     )
-    used_keys = [k for k in detected_heads.keys() if k in feature_dict]
+    used_keys = [
+        k
+        for k in detected_heads.keys()
+        if k in feature_dict and k not in _LIVE_UNAVAILABLE_SIZER_FEATURES
+    ]
     missing_keys = [k for k in detected_heads.keys() if k not in feature_dict]
+    dropped_live_unavailable = [
+        k for k in detected_heads.keys() if k in _LIVE_UNAVAILABLE_SIZER_FEATURES
+    ]
+    if dropped_live_unavailable:
+        tprint(
+            "  Dropped live-unavailable target-derived sizer features: "
+            f"{dropped_live_unavailable}"
+        )
 
     feature_coverage_report = {
         "detected_candidates": list(detected_heads.keys()),
         "used_heads": used_keys,
         "missing_heads": missing_keys,
+        "dropped_live_unavailable": dropped_live_unavailable,
         "head_classification": detected_heads,
     }
 
@@ -2659,6 +3374,7 @@ def run_simple_position_sizer(
     best_simple_score_name = None
     best_combo_profit_proxy_df = pd.DataFrame()
     best_combo_objective = float("-inf")
+    combined_et_objective = float("-inf")
 
     if not stage_2_df.empty:
         best_simple_score_name = best_combo["combo_name"]
@@ -2714,6 +3430,11 @@ def run_simple_position_sizer(
 
     if use_ridge_head_sizer and used_keys:
         X_heads = np.column_stack([feature_dict[k] for k in used_keys])
+        ridge_round_weights = (
+            np.ones(len(y_raw_net_return), dtype=np.float32)
+            if sample_weight is None
+            else np.asarray(sample_weight, dtype=np.float32)
+        )
         _n_constant = 0
         _n_near_constant = 0
         for _fi, _fk in enumerate(used_keys):
@@ -2744,26 +3465,7 @@ def run_simple_position_sizer(
         best_ridge_opt_rets = np.array([])
         best_ridge_opt_ts = np.array([])
 
-        ridge_scaled_folds = _precompute_fold_standardization(X_heads, splits)
-        ridge_sub_scaled_folds: List[Tuple[np.ndarray, np.ndarray, np.ndarray]] = []
-        for i, (tr_idx, te_idx) in enumerate(splits):
-            sub_tr = _hpo_tr_idx_subs[i]
-            X_sub = X_heads[sub_tr]
-            X_sub_clean, med, sc, c1d, s1d = clean_and_standardize(X_sub)
-            X_te_clean, _, _, _, _ = clean_and_standardize(
-                X_heads[te_idx], fit_medians=med, scaler=sc, center_1d=c1d, scale_1d=s1d
-            )
-            ridge_sub_scaled_folds.append((sub_tr, te_idx, X_sub_clean, X_te_clean))
-
         ridge_trials = 40
-        ridge_sampler = TPESampler(seed=42, multivariate=True, group=True)
-        ridge_pruner = SuccessiveHalvingPruner(
-            min_resource=1,
-            reduction_factor=3,
-        )
-        ridge_study = optuna.create_study(
-            direction="maximize", sampler=ridge_sampler, pruner=ridge_pruner
-        )
         optuna_patience_trials = 40
 
         def _make_patience_callback(
@@ -2823,98 +3525,21 @@ def run_simple_position_sizer(
 
             return _callback
 
+        def _make_median_pruner() -> MedianPruner:
+            return MedianPruner(
+                n_startup_trials=10,
+                n_warmup_steps=0,
+                interval_steps=1,
+                n_min_trials=5,
+            )
+
         ridge_alpha_choices = [1e-2, 3e-2, 1e-1, 3e-1, 1.0, 3.0, 5.0]
         ridge_l1_choices = [0.0, 0.05, 0.10, 0.20, 0.30, 0.40]
 
-        def _ridge_objective(trial: optuna.trial.Trial) -> float:
-            alpha = float(trial.suggest_categorical("alpha", ridge_alpha_choices))
-            l1_ratio = float(trial.suggest_categorical("l1_ratio", ridge_l1_choices))
-
-            # Per-fold metrics storage
-            fold_pnl_5: List[float] = []
-            fold_sortino_5: List[float] = []
-            oof_preds_buf = np.full(len(y_raw_net_return), np.nan, dtype=np.float32)
-
-            for fold_idx in range(len(splits)):
-                sub_tr, te_idx, X_tr_clean, X_te_clean = ridge_sub_scaled_folds[
-                    fold_idx
-                ]
-                if len(sub_tr) == 0 or len(te_idx) == 0:
-                    continue
-                y_tr = y_model_target[sub_tr]
-                y_te = y_model_target[te_idx]
-
-                model = ElasticNet(
-                    alpha=alpha,
-                    l1_ratio=l1_ratio,
-                    fit_intercept=True,
-                    max_iter=10000,
-                    tol=1e-4,
-                    random_state=42,
-                    selection="cyclic",
-                )
-                model.fit(X_tr_clean, y_tr)
-                fold_preds = np.asarray(model.predict(X_te_clean), dtype=np.float32)
-                oof_preds_buf[te_idx] = fold_preds
-
-                n_days_fold = max(1.0, len(te_idx) / 96.0)
-                lw = _lightweight_hpo_pnl_eval(
-                    fold_preds,
-                    y_raw_net_return[te_idx],
-                    top_fracs=[0.05],
-                    cost_pct=cost_pct,
-                    n_days=n_days_fold,
-                )
-                if "wallet_pnl_0.050" in lw:
-                    fold_pnl_5.append(lw["wallet_pnl_0.050"])
-                if "sortino_0.050" in lw:
-                    fold_sortino_5.append(lw["sortino_0.050"])
-
-                if trial is not None and fold_idx >= len(splits) // 2:
-                    trial.report(
-                        float(np.mean(fold_pnl_5)) if fold_pnl_5 else -1e9,
-                        step=fold_idx,
-                    )
-                    if trial.should_prune():
-                        raise optuna.TrialPruned()
-
-            if not fold_pnl_5:
-                return -1e9
-
-            mean_pnl_5 = float(np.mean(fold_pnl_5))
-            std_pnl_5 = float(np.std(fold_pnl_5))
-            sortino_5 = float(np.mean(fold_sortino_5)) if fold_sortino_5 else 0.0
-
-            composite = 0.75 * mean_pnl_5 - 0.50 * std_pnl_5 + 0.25 * sortino_5
-
-            trial.set_user_attr("feature_count", int(X_heads.shape[1]))
-            trial.set_user_attr("mean_pnl_5", mean_pnl_5)
-            trial.set_user_attr("std_pnl_5", std_pnl_5)
-            trial.set_user_attr("sortino_5", sortino_5)
-            trial.set_user_attr("composite_score", composite)
-
-            return float(composite)
-
-        ridge_study.optimize(
-            _ridge_objective,
-            n_trials=ridge_trials,
-            gc_after_trial=True,
-            callbacks=[
-                _make_patience_callback(
-                    patience=optuna_patience_trials, label="ElasticNet HPO"
-                )
-            ],
-        )
-        if ridge_study.best_trial is not None:
-            best_ridge_alpha = float(ridge_study.best_trial.params.get("alpha", 1.0))
-            best_ridge_l1_ratio = float(
-                ridge_study.best_trial.params.get("l1_ratio", 0.0)
-            )
-
-        def _best_ridge_model_factory() -> ElasticNet:
+        def _best_ridge_model_factory(alpha: float, l1_ratio: float) -> ElasticNet:
             return ElasticNet(
-                alpha=best_ridge_alpha,
-                l1_ratio=best_ridge_l1_ratio,
+                alpha=alpha,
+                l1_ratio=l1_ratio,
                 fit_intercept=True,
                 max_iter=10000,
                 tol=1e-4,
@@ -2922,20 +3547,225 @@ def run_simple_position_sizer(
                 selection="cyclic",
             )
 
-        tprint("  Starting ElasticNet OOF refit...")
+        def _build_sub_scaled_folds(
+            x_round: np.ndarray,
+        ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+            out: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+            for i, (_tr_idx, te_idx) in enumerate(splits):
+                sub_tr = _hpo_tr_idx_subs[i]
+                x_sub = x_round[sub_tr]
+                x_sub_clean, med, sc, c1d, s1d = clean_and_standardize(x_sub)
+                x_te_clean, _, _, _, _ = clean_and_standardize(
+                    x_round[te_idx],
+                    fit_medians=med,
+                    scaler=sc,
+                    center_1d=c1d,
+                    scale_1d=s1d,
+                )
+                out.append((sub_tr, te_idx, x_sub_clean, x_te_clean))
+            return out
+
+        def _optimize_ridge_hpo(
+            x_round: np.ndarray,
+            feature_count: int,
+            round_weights: np.ndarray,
+            round_label: str,
+        ) -> Tuple[float, float]:
+            sub_scaled = _build_sub_scaled_folds(x_round)
+            round_study = optuna.create_study(
+                direction="maximize",
+                sampler=TPESampler(seed=42, multivariate=True, group=True),
+                pruner=_make_median_pruner(),
+            )
+
+            def _ridge_objective(trial: optuna.trial.Trial) -> float:
+                alpha = float(trial.suggest_categorical("alpha", ridge_alpha_choices))
+                l1_ratio = float(
+                    trial.suggest_categorical("l1_ratio", ridge_l1_choices)
+                )
+                fold_scores: List[float] = []
+                for fold_idx in range(len(splits)):
+                    sub_tr, te_idx, x_tr_clean, x_te_clean = sub_scaled[fold_idx]
+                    if len(sub_tr) == 0 or len(te_idx) == 0:
+                        continue
+                    model = _best_ridge_model_factory(alpha=alpha, l1_ratio=l1_ratio)
+                    model.fit(
+                        x_tr_clean,
+                        y_model_target[sub_tr],
+                        sample_weight=np.asarray(
+                            round_weights[sub_tr], dtype=np.float32
+                        ),
+                    )
+                    fold_preds = np.asarray(model.predict(x_te_clean), dtype=np.float32)
+                    tail = _rank_weighted_tail_components(
+                        scores=fold_preds,
+                        returns=y_raw_net_return[te_idx],
+                        timestamps=np.asarray(timestamps)[te_idx],
+                        symbols=(
+                            np.asarray(_sym_vals)[te_idx]
+                            if _sym_vals is not None
+                            and len(_sym_vals) == len(y_raw_net_return)
+                            else None
+                        ),
+                        horizon_hours=float(max(1, target_horizon)),
+                    )
+                    fold_scores.append(float(tail.get("score_tail_20", 0.0)))
+                    if trial is not None and fold_idx >= len(splits) // 2:
+                        trial.report(
+                            float(np.mean(fold_scores)) if fold_scores else -1e9,
+                            step=fold_idx,
+                        )
+                        if trial.should_prune():
+                            raise optuna.TrialPruned()
+                if not fold_scores:
+                    return -1e9
+                composite = float(np.mean(fold_scores))
+                trial.set_user_attr("feature_count", int(feature_count))
+                trial.set_user_attr("score_tail_20_mean", composite)
+                trial.set_user_attr("composite_score", composite)
+                return composite
+
+            round_study.optimize(
+                _ridge_objective,
+                n_trials=ridge_trials,
+                gc_after_trial=True,
+                callbacks=[
+                    _make_patience_callback(
+                        patience=optuna_patience_trials,
+                        label=f"ElasticNet HPO {round_label}",
+                    )
+                ],
+            )
+            if round_study.best_trial is None:
+                return 1.0, 0.0
+            return (
+                float(round_study.best_trial.params.get("alpha", 1.0)),
+                float(round_study.best_trial.params.get("l1_ratio", 0.0)),
+            )
+
+        # 1) Feature-selection fit (pre-HPO), then weight update.
+        seed_alpha = 0.1
+        seed_l1_ratio = 0.05
+        tprint("  ElasticNet pre-HPO feature-selection fit...")
         (
-            best_ridge_preds,
-            best_ridge_importance,
+            fs_oof_preds,
+            fs_importance,
         ) = _fit_predict_oof_regressor_with_pruning(
             X=X_heads,
             y=y_model_target,
             y_downside=y_downside,
             splits=splits,
-            model_factory=_best_ridge_model_factory,
-            feature_names=used_keys,
+            model_factory=lambda: _best_ridge_model_factory(
+                alpha=seed_alpha, l1_ratio=seed_l1_ratio
+            ),
+            feature_names=list(used_keys),
             calibration_method=None,
+            sample_weight=ridge_round_weights,
         )
-        tprint("  ElasticNet OOF refit complete.")
+        ridge_round_weights = _update_ridge_round_weights(
+            ridge_round_weights, fs_oof_preds, y_raw_net_return
+        )
+        round_feature_names = list(used_keys)
+        if not fs_importance.empty and "head_name" in fs_importance.columns:
+            imp_df = fs_importance.copy()
+            if "abs_weight" in imp_df.columns:
+                imp_df = imp_df.sort_values("abs_weight", ascending=False)
+                non_zero = (
+                    imp_df[imp_df["abs_weight"] > 1e-8]["head_name"]
+                    .astype(str)
+                    .tolist()
+                )
+                if len(non_zero) >= 5:
+                    round_feature_names = non_zero
+        round_feature_idx = [
+            used_keys.index(k) for k in round_feature_names if k in used_keys
+        ]
+        if len(round_feature_idx) == 0:
+            round_feature_idx = list(range(X_heads.shape[1]))
+            round_feature_names = list(used_keys)
+        X_heads_selected = X_heads[:, round_feature_idx]
+
+        # 2) Single HPO on selected features with distilled weights.
+        best_ridge_alpha, best_ridge_l1_ratio = _optimize_ridge_hpo(
+            X_heads_selected, len(round_feature_names), ridge_round_weights, "Final"
+        )
+
+        # 3) Two refits with weight updates between rounds.
+        tprint("  Starting ElasticNet OOF refit Round-1...")
+        (
+            best_ridge_preds,
+            best_ridge_importance,
+        ) = _fit_predict_oof_regressor_with_pruning(
+            X=X_heads_selected,
+            y=y_model_target,
+            y_downside=y_downside,
+            splits=splits,
+            model_factory=lambda: _best_ridge_model_factory(
+                alpha=best_ridge_alpha, l1_ratio=best_ridge_l1_ratio
+            ),
+            feature_names=round_feature_names,
+            calibration_method=None,
+            sample_weight=ridge_round_weights,
+        )
+        tprint("  ElasticNet OOF refit Round-1 complete.")
+        ridge_round1_tail = _rank_weighted_tail_components(
+            scores=best_ridge_preds,
+            returns=y_raw_net_return,
+            timestamps=timestamps,
+            symbols=_sym_vals,
+            horizon_hours=float(max(1, target_horizon)),
+        )
+        tprint(
+            f"  ElasticNet Round-1 score_tail_20={ridge_round1_tail['score_tail_20']:.6f}"
+        )
+        ridge_round_weights = _update_ridge_round_weights(
+            ridge_round_weights, best_ridge_preds, y_raw_net_return
+        )
+        tprint("  Starting ElasticNet Round-2 OOF refit (distilled weights)...")
+        (
+            best_ridge_preds,
+            best_ridge_importance,
+        ) = _fit_predict_oof_regressor_with_pruning(
+            X=X_heads_selected,
+            y=y_model_target,
+            y_downside=y_downside,
+            splits=splits,
+            model_factory=lambda: _best_ridge_model_factory(
+                alpha=best_ridge_alpha, l1_ratio=best_ridge_l1_ratio
+            ),
+            feature_names=round_feature_names,
+            calibration_method=None,
+            sample_weight=ridge_round_weights,
+        )
+        ridge_round2_tail = _rank_weighted_tail_components(
+            scores=best_ridge_preds,
+            returns=y_raw_net_return,
+            timestamps=timestamps,
+            symbols=_sym_vals,
+            horizon_hours=float(max(1, target_horizon)),
+        )
+        tprint(
+            f"  ElasticNet Round-2 score_tail_20={ridge_round2_tail['score_tail_20']:.6f}"
+        )
+        ridge_round_weights = _update_ridge_round_weights(
+            ridge_round_weights, best_ridge_preds, y_raw_net_return
+        )
+        # Persist final distilled model fitted on full data for downstream usage.
+        (
+            X_full_clean,
+            full_medians,
+            full_scaler,
+            full_center_1d,
+            full_scale_1d,
+        ) = clean_and_standardize(X_heads_selected)
+        ridge_final_model = _best_ridge_model_factory(
+            alpha=best_ridge_alpha, l1_ratio=best_ridge_l1_ratio
+        )
+        ridge_final_model.fit(
+            X_full_clean,
+            y_model_target,
+            sample_weight=np.asarray(ridge_round_weights, dtype=np.float32),
+        )
         best_ridge_metrics = evaluate_signal(
             f"ElasticNet_Head_Sizer(a={best_ridge_alpha},l1={best_ridge_l1_ratio})",
             best_ridge_preds,
@@ -3007,6 +3837,28 @@ def run_simple_position_sizer(
         results["ridge_profit_proxy_table_"] = ridge_profit_proxy_df
         results["ridge_opt_rets_"] = best_ridge_opt_rets
         results["ridge_opt_ts_"] = best_ridge_opt_ts
+        results["ridge_score_tail_20_round1_"] = float(
+            ridge_round1_tail["score_tail_20"]
+        )
+        results["ridge_score_tail_20_round2_"] = float(
+            ridge_round2_tail["score_tail_20"]
+        )
+        results["ridge_tail_score_round1_"] = float(ridge_round1_tail["score_tail_20"])
+        results["ridge_tail_score_round2_"] = float(ridge_round2_tail["score_tail_20"])
+        results["ridge_distilled_round_weights_"] = np.asarray(
+            ridge_round_weights, dtype=np.float32
+        )
+        results["ridge_selected_feature_names_"] = list(round_feature_names)
+        results["ridge_selected_feature_idx_"] = np.asarray(
+            round_feature_idx, dtype=np.int32
+        )
+        results["ridge_final_model_"] = ridge_final_model
+        results["ridge_final_model_preproc_"] = {
+            "medians": full_medians,
+            "scaler": full_scaler,
+            "center_1d": full_center_1d,
+            "scale_1d": full_scale_1d,
+        }
         if not best_combo or best_ridge_objective > best_combo_objective:
             best_simple_score = ridge_oof_preds
             best_simple_score_name = "ElasticNet_Head_Sizer"
@@ -3128,6 +3980,22 @@ def run_simple_position_sizer(
             X_heads
         )
 
+    def _quantile_scale_to_band(
+        arr: np.ndarray, low: float = 0.7, high: float = 1.3
+    ) -> np.ndarray:
+        n = len(arr)
+        if n == 0:
+            return np.array([], dtype=np.float32)
+        ranks = np.argsort(np.argsort(arr)).astype(np.float64) / max(n - 1, 1)
+        delta_r = ranks - 0.5
+        mapped = 1.0 + np.sign(delta_r) * 1.2 * (delta_r**2)
+        mapped = np.clip(mapped, low, high)
+        median_val = float(np.median(mapped))
+        if abs(median_val) > 1e-12:
+            mapped = mapped * (1.0 / median_val)
+        mapped = np.clip(mapped, low, high)
+        return mapped.astype(np.float32)
+
     if use_et_head_sizer and used_keys:
         best_et_utility = -np.inf
         best_et_preds = None
@@ -3166,10 +4034,7 @@ def run_simple_position_sizer(
 
         et_trials = 150
         et_sampler = TPESampler(seed=42, multivariate=True, group=True)
-        et_pruner = SuccessiveHalvingPruner(
-            min_resource=1,
-            reduction_factor=3,
-        )
+        et_pruner = _make_median_pruner()
         et_study = optuna.create_study(
             direction="maximize", sampler=et_sampler, pruner=et_pruner
         )
@@ -3177,22 +4042,6 @@ def run_simple_position_sizer(
         et_n_estimators_choices = [200, 300, 400, 500, 600, 800, 1000]
         et_max_depth_choices = [3, 4, 5, 6, 7]
         et_criterion_choices = ["absolute_error"]
-
-        def _quantile_scale_to_band(
-            arr: np.ndarray, low: float = 0.7, high: float = 1.3
-        ) -> np.ndarray:
-            n = len(arr)
-            if n == 0:
-                return np.array([], dtype=np.float32)
-            ranks = np.argsort(np.argsort(arr)).astype(np.float64) / max(n - 1, 1)
-            delta_r = ranks - 0.5
-            mapped = 1.0 + np.sign(delta_r) * 1.2 * (delta_r**2)
-            mapped = np.clip(mapped, low, high)
-            median_val = float(np.median(mapped))
-            if abs(median_val) > 1e-12:
-                mapped = mapped * (1.0 / median_val)
-            mapped = np.clip(mapped, low, high)
-            return mapped.astype(np.float32)
 
         def _compute_et_confidence(
             model: ExtraTreesRegressor,
@@ -3639,6 +4488,11 @@ def run_simple_position_sizer(
             used_keys.index(k) for k in lgbm_selected_keys if k in used_keys
         ]
         X_lgbm = X_heads[:, lgbm_selected_idx]
+        lgbm_tail_weight_full = _normalized_tail_fit_weight(
+            ridge_oof_preds
+            if ridge_oof_available and ridge_oof_preds is not None
+            else y_model_target
+        )
         tprint(
             f"  LGBM MDI feature selection: {len(lgbm_selected_keys)}/{len(used_keys)} features retained"
         )
@@ -3659,13 +4513,16 @@ def run_simple_position_sizer(
 
         lgbm_trials = 150
         lgbm_sampler = TPESampler(seed=42, multivariate=True, group=True)
-        lgbm_pruner = SuccessiveHalvingPruner(
-            min_resource=1,
-            reduction_factor=3,
-        )
+        lgbm_pruner = _make_median_pruner()
         lgbm_study = optuna.create_study(
             direction="maximize", sampler=lgbm_sampler, pruner=lgbm_pruner
         )
+
+        def _as_2d_leaf_predictions(values: np.ndarray) -> np.ndarray:
+            arr = np.asarray(values, dtype=np.int32)
+            if arr.ndim == 1:
+                arr = arr.reshape(-1, 1)
+            return arr
 
         def _compute_lgbm_confidence(
             model: LGBMRegressor,
@@ -3674,7 +4531,9 @@ def run_simple_position_sizer(
             y_train_raw: np.ndarray,
         ) -> np.ndarray:
             n_samples = X.shape[0]
-            leaf_preds = model.predict(X_raw, pred_leaf=True).astype(np.int32)
+            leaf_preds = _as_2d_leaf_predictions(
+                model.predict(X_raw, pred_leaf=True)
+            )
             n_trees = leaf_preds.shape[1]
 
             leaf_counts_arr = np.zeros((n_samples, n_trees), dtype=np.float32)
@@ -3819,6 +4678,9 @@ def run_simple_position_sizer(
                 model.fit(
                     X_tr_clean[:-_es_split],
                     y_tr[:-_es_split],
+                    sample_weight=np.asarray(
+                        lgbm_tail_weight_full[sub_tr[:-_es_split]], dtype=np.float32
+                    ),
                     eval_set=[(X_tr_clean[-_es_split:], y_tr[-_es_split:])],
                     callbacks=[
                         early_stopping(_lgbm_es_rounds, verbose=False),
@@ -3920,14 +4782,185 @@ def run_simple_position_sizer(
                 )
             ],
         )
+        _lgbm_hpo_cache_path = Path(".cache") / "lgbm_residual_hpo_round1.json"
+        _lgbm_hpo_cache_path.parent.mkdir(parents=True, exist_ok=True)
         if lgbm_study.best_trial is not None:
             best_lgbm_params = dict(lgbm_study.best_trial.params)
+            try:
+                _lgbm_hpo_cache_path.write_text(
+                    json.dumps(
+                        {
+                            "feature_count": int(X_lgbm.shape[1]),
+                            "params": best_lgbm_params,
+                            "best_n_estimators": int(
+                                lgbm_study.best_trial.user_attrs.get(
+                                    "best_n_estimators", 3000
+                                )
+                            ),
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+            except Exception as _cache_exc:
+                tprint(f"  LGBM round-1 HPO cache write skipped: {_cache_exc}")
+
+        # Round-2 HPO: same search/pruning rules with round-1 JSON params as warm-start.
+        lgbm_study_round2 = optuna.create_study(
+            direction="maximize",
+            sampler=TPESampler(seed=43, multivariate=True, group=True),
+            pruner=_make_median_pruner(),
+        )
+        try:
+            if _lgbm_hpo_cache_path.exists():
+                _payload = json.loads(_lgbm_hpo_cache_path.read_text())
+                _cached_params = _payload.get("params", {})
+                if isinstance(_cached_params, dict) and _cached_params:
+                    lgbm_study_round2.enqueue_trial(_cached_params)
+        except Exception as _cache_exc:
+            tprint(f"  LGBM round-2 HPO cache read skipped: {_cache_exc}")
+
+        lgbm_study_round2.optimize(
+            _lgbm_objective,
+            n_trials=max(40, lgbm_trials // 2),
+            gc_after_trial=True,
+            callbacks=[
+                _make_patience_callback(
+                    patience=30, label="LGBM Residual HPO Round-2", min_trials=30
+                )
+            ],
+        )
+        if lgbm_study_round2.best_trial is not None:
+            best_lgbm_params = dict(lgbm_study_round2.best_trial.params)
+            lgbm_study = lgbm_study_round2
 
         _lgbm_best_n_estimators = 3000
         if lgbm_study.best_trial is not None:
             _lgbm_best_n_estimators = int(
                 lgbm_study.best_trial.user_attrs.get("best_n_estimators", 3000)
             )
+
+        # LGBM residual feature diagnostics (2 folds x 4 variants).
+        lgbm_feature_diag_df = pd.DataFrame()
+        lgbm_feature_diag_meta: Dict[str, Any] = {}
+        try:
+            _diag_n = min(len(y_raw_net_return), 10000)
+            _diag_idx = (
+                np.random.RandomState(42).choice(
+                    len(y_raw_net_return), _diag_n, replace=False
+                )
+                if _diag_n < len(y_raw_net_return)
+                else np.arange(len(y_raw_net_return))
+            )
+            _diag_idx = np.sort(_diag_idx)
+            _diag_X = X_lgbm[_diag_idx]
+            _diag_y = y_raw_net_return[_diag_idx]
+            _diag_ridge = (
+                np.asarray(ridge_oof_preds[_diag_idx], dtype=np.float32)
+                if ridge_oof_available and ridge_oof_preds is not None
+                else np.zeros(_diag_n, dtype=np.float32)
+            )
+            _diag_ts = pd.to_datetime(
+                np.asarray(timestamps)[_diag_idx], utc=True, errors="coerce"
+            )
+            _diag_week = _diag_ts.to_period("W").astype(str)
+            _diag_month = _diag_ts.to_period("M").astype(str)
+            _split = _diag_n // 2
+            _diag_folds = [np.arange(0, _split), np.arange(_split, _diag_n)]
+            _base_l1 = float(best_lgbm_params.get("lambda_l1", 0.1))
+            _base_ff = float(best_lgbm_params.get("feature_fraction", 0.8))
+            _variants = [
+                {"name": "base", "l1": _base_l1, "ff": _base_ff},
+                {"name": "l1_up", "l1": _base_l1 * 1.5, "ff": _base_ff},
+                {"name": "ff_down", "l1": _base_l1, "ff": _base_ff * 0.66},
+                {"name": "l1_up_ff_down", "l1": _base_l1 * 1.5, "ff": _base_ff * 0.66},
+            ]
+            _diag_rows: List[Dict[str, Any]] = []
+            _presence = np.zeros(len(lgbm_selected_keys), dtype=np.int32)
+            _gain_sum = np.zeros(len(lgbm_selected_keys), dtype=np.float64)
+            _split_sum = np.zeros(len(lgbm_selected_keys), dtype=np.float64)
+            for _fid, _val_idx in enumerate(_diag_folds):
+                _tr_idx = np.setdiff1d(np.arange(_diag_n), _val_idx)
+                x_tr, y_tr = _diag_X[_tr_idx], y_resid_target[_diag_idx][_tr_idx]
+                x_val = _diag_X[_val_idx]
+                x_tr_clean, med, sc, c1d, s1d = clean_and_standardize(x_tr)
+                x_val_clean, _, _, _, _ = clean_and_standardize(
+                    x_val, fit_medians=med, scaler=sc, center_1d=c1d, scale_1d=s1d
+                )
+                for _v in _variants:
+                    _model = LGBMRegressor(
+                        n_estimators=_lgbm_best_n_estimators,
+                        num_leaves=int(best_lgbm_params.get("num_leaves", 31)),
+                        max_depth=int(best_lgbm_params.get("max_depth", 3)),
+                        min_child_samples=max(
+                            1,
+                            int(
+                                np.ceil(
+                                    float(best_lgbm_params.get("min_data_frac", 0.02))
+                                    * len(_tr_idx)
+                                )
+                            ),
+                        ),
+                        min_sum_hessian_in_leaf=float(
+                            best_lgbm_params.get("min_sum_hessian", 1e-3)
+                        ),
+                        colsample_bytree=float(np.clip(_v["ff"], 0.05, 1.0)),
+                        subsample=float(best_lgbm_params.get("bagging_fraction", 0.8)),
+                        subsample_freq=int(best_lgbm_params.get("bagging_freq", 1)),
+                        reg_alpha=float(max(_v["l1"], 0.0)),
+                        reg_lambda=float(best_lgbm_params.get("lambda_l2", 1.0)),
+                        min_gain_to_split=float(
+                            best_lgbm_params.get("min_gain_to_split", 1e-4)
+                        ),
+                        objective="mae",
+                        random_state=42 + _fid,
+                        n_jobs=2,
+                        verbose=-1,
+                    )
+                    _diag_w = np.asarray(
+                        lgbm_tail_weight_full[_diag_idx][_tr_idx], dtype=np.float32
+                    )
+                    _model.fit(x_tr_clean, y_tr, sample_weight=_diag_w)
+                    _pred = np.asarray(_model.predict(x_val_clean), dtype=np.float32)
+                    _combined = _diag_ridge[_val_idx] + 0.8 * _pred
+                    _score = _score_tail_20(
+                        y=_diag_y[_val_idx],
+                        pred=_combined,
+                        week_id=np.asarray(_diag_week)[_val_idx],
+                        month_id=np.asarray(_diag_month)[_val_idx],
+                    )
+                    _diag_rows.append(
+                        {
+                            "fold": _fid,
+                            "variant": _v["name"],
+                            "score_tail_20": float(_score),
+                        }
+                    )
+                    _g = np.asarray(_model.feature_importances_, dtype=np.float64)
+                    _s = np.asarray(
+                        _model.booster_.feature_importance(importance_type="split"),
+                        dtype=np.float64,
+                    )
+                    _presence += (_s > 0).astype(np.int32)
+                    _gain_sum += _g
+                    _split_sum += _s
+            lgbm_feature_diag_df = pd.DataFrame(_diag_rows)
+            lgbm_feature_diag_meta = {
+                "feature_presence": pd.DataFrame(
+                    {
+                        "feature": lgbm_selected_keys,
+                        "model_presence_count": _presence,
+                        "model_presence_rate": _presence
+                        / max(1, len(_diag_folds) * len(_variants)),
+                        "mean_gain": _gain_sum
+                        / max(1, len(_diag_folds) * len(_variants)),
+                        "mean_split_count": _split_sum
+                        / max(1, len(_diag_folds) * len(_variants)),
+                    }
+                ).sort_values("model_presence_count", ascending=False)
+            }
+        except Exception as _diag_exc:
+            tprint(f"  LGBM feature diagnostics skipped: {_diag_exc}")
 
         def _best_lgbm_model_factory() -> LGBMRegressor:
             _n_est = _lgbm_best_n_estimators
@@ -3990,6 +5023,9 @@ def run_simple_position_sizer(
             model.fit(
                 X_tr_clean[:-_es_split],
                 y_tr[:-_es_split],
+                sample_weight=np.asarray(
+                    lgbm_tail_weight_full[tr_idx[:-_es_split]], dtype=np.float32
+                ),
                 eval_set=[(X_tr_clean[-_es_split:], y_tr[-_es_split:])],
                 callbacks=[
                     early_stopping(50, verbose=False),
@@ -4006,8 +5042,8 @@ def run_simple_position_sizer(
             lgbm_oof_preds_raw[te_idx] = preds
             observed_mask_lgbm[te_idx] = True
 
-            leaf_preds_train_cache = model.predict(X_tr_clean, pred_leaf=True).astype(
-                np.int32
+            leaf_preds_train_cache = _as_2d_leaf_predictions(
+                model.predict(X_tr_clean, pred_leaf=True)
             )
             n_trees_actual = leaf_preds_train_cache.shape[1]
             _max_trees_for_cache = 100
@@ -4168,6 +5204,24 @@ def run_simple_position_sizer(
         results["fold_lgbm_models_"] = fold_lgbm_models
         results["lgbm_feature_keys_"] = lgbm_selected_keys
         results["lgbm_best_params_"] = best_lgbm_params
+        results["lgbm_feature_diag_table_"] = lgbm_feature_diag_df
+        results["lgbm_feature_diag_meta_"] = lgbm_feature_diag_meta
+        results["lgbm_uncertainty_aware_oof_"] = best_lgbm_preds
+        if (
+            isinstance(best_lgbm_profit_proxy, pd.DataFrame)
+            and not best_lgbm_profit_proxy.empty
+            and "is_optimal" in best_lgbm_profit_proxy.columns
+        ):
+            _opt_lgbm = best_lgbm_profit_proxy[best_lgbm_profit_proxy["is_optimal"]]
+            if not _opt_lgbm.empty:
+                results["lgbm_optimal_threshold_"] = {
+                    "selection_frac": float(
+                        _opt_lgbm.iloc[0].get("selection_frac", np.nan)
+                    ),
+                    "threshold_pct": str(_opt_lgbm.iloc[0].get("threshold_pct", "")),
+                    "wallet_pnl": float(_opt_lgbm.iloc[0].get("wallet_pnl", np.nan)),
+                    "net_pnl": float(_opt_lgbm.iloc[0].get("net_pnl", np.nan)),
+                }
         combined_lgbm_objective = best_lgbm_objective
         if not best_combo or combined_lgbm_objective > best_combo_objective:
             if (
@@ -4196,6 +5250,9 @@ def run_simple_position_sizer(
         _clf_y = np.ones(len(_resid_atr), dtype=np.int32)
         _clf_y[_resid_atr < _p35] = 0
         _clf_y[_resid_atr >= _p65] = 2
+        lgbm_clf_tail_weight_full = _normalized_tail_fit_weight(
+            ridge_oof_preds if ridge_oof_preds is not None else y_model_target
+        )
         tprint(
             f"  LGBM Classifier labels: under={np.sum(_clf_y == 0)} "
             f"ok={np.sum(_clf_y == 1)} over={np.sum(_clf_y == 2)}"
@@ -4239,7 +5296,7 @@ def run_simple_position_sizer(
         lgbm_clf_study = optuna.create_study(
             direction="maximize",
             sampler=lgbm_clf_sampler,
-            pruner=SuccessiveHalvingPruner(min_resource=1, reduction_factor=3),
+            pruner=_make_median_pruner(),
         )
 
         def _lgbm_clf_objective(trial: optuna.trial.Trial) -> float:
@@ -4288,6 +5345,10 @@ def run_simple_position_sizer(
                 model.fit(
                     X_tr_clean[:-_es_split],
                     y_tr[:-_es_split],
+                    sample_weight=np.asarray(
+                        lgbm_clf_tail_weight_full[sub_tr[:-_es_split]],
+                        dtype=np.float32,
+                    ),
                     eval_set=[(X_tr_clean[-_es_split:], y_tr[-_es_split:])],
                     callbacks=[
                         early_stopping(50, verbose=False),
@@ -4444,6 +5505,10 @@ def run_simple_position_sizer(
                 model.fit(
                     X_tr_clean[:-_es_split],
                     y_tr[:-_es_split],
+                    sample_weight=np.asarray(
+                        lgbm_clf_tail_weight_full[tr_idx[:-_es_split]],
+                        dtype=np.float32,
+                    ),
                     eval_set=[(X_tr_clean[-_es_split:], y_tr[-_es_split:])],
                     callbacks=[
                         early_stopping(50, verbose=False),
@@ -4848,7 +5913,9 @@ def run_simple_position_sizer(
         "oof_p_tp_": results.get("oof_p_tp_"),
         "oof_p_sl_": results.get("oof_p_sl_"),
         "oof_p_time_": results.get("oof_p_time_"),
+        "ridge_sizer_scores_": results.get("ridge_sizer_scores_"),
         "et_raw_residual_preds_": results.get("et_raw_residual_preds_"),
+        "et_sizer_scores_": results.get("et_sizer_scores_"),
         "et_confidence_": results.get("et_confidence_"),
         "raw_confidence_": results.get("raw_confidence_"),
         "total_confidence_": results.get("total_confidence_"),
@@ -4858,6 +5925,7 @@ def run_simple_position_sizer(
         "fold_et_models_": results.get("fold_et_models_"),
         "et_best_params_": results.get("et_best_params_"),
         "lgbm_raw_residual_preds_": results.get("lgbm_raw_residual_preds_"),
+        "lgbm_sizer_scores_": results.get("lgbm_sizer_scores_"),
         "lgbm_confidence_": results.get("lgbm_confidence_"),
         "raw_confidence_lgbm_": results.get("raw_confidence_lgbm_"),
         "total_confidence_lgbm_": results.get("total_confidence_lgbm_"),
@@ -4954,7 +6022,7 @@ def run_simple_position_sizer_from_artifacts(
     run_id: str,
     top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
     use_ridge_head_sizer: bool = True,
-    use_et_head_sizer: bool = True,
+    use_et_head_sizer: bool = False,
     use_lgbm_head_sizer: bool = True,
     top_n_strategies: int = 4,
     time_filter: Optional[Tuple[Any, Any]] = None,
@@ -5247,9 +6315,7 @@ def run_simple_position_sizer_from_artifacts(
                 inferred_side = (
                     "long"
                     if str(src_key).startswith("long_")
-                    else "short"
-                    if str(src_key).startswith("short_")
-                    else ""
+                    else "short" if str(src_key).startswith("short_") else ""
                 )
             if inferred_side and not trade_side:
                 trade_side = inferred_side
@@ -5268,9 +6334,7 @@ def run_simple_position_sizer_from_artifacts(
                 trade_side = (
                     "long"
                     if strategy_id.startswith("long_")
-                    else "short"
-                    if strategy_id.startswith("short_")
-                    else ""
+                    else "short" if strategy_id.startswith("short_") else ""
                 )
 
         # 3. Join OOF onto the Full Labels to ensure 100% coverage
@@ -5508,6 +6572,7 @@ def run_simple_position_sizer_from_artifacts(
         trade_outcomes = trade_outcomes.loc[np.asarray(scorable_mask)].reset_index(
             drop=True
         )
+        active_df = _augment_meta_clf_reliability_features(active_df, trade_outcomes)
 
         _base_prob_col = next(
             (
@@ -5528,16 +6593,12 @@ def run_simple_position_sizer_from_artifacts(
             _asset_col = (
                 "symbol"
                 if "symbol" in active_df.columns
-                else "__symbol__"
-                if "__symbol__" in active_df.columns
-                else None
+                else "__symbol__" if "__symbol__" in active_df.columns else None
             )
             _ts_col = (
                 "timestamp"
                 if "timestamp" in active_df.columns
-                else "__ts__"
-                if "__ts__" in active_df.columns
-                else None
+                else "__ts__" if "__ts__" in active_df.columns else None
             )
             _side_ret = np.asarray(trade_outcomes["return"].values, dtype=np.float32)
             _y_bin = (_side_ret > 0).astype(np.float32)
@@ -5616,6 +6677,11 @@ def run_simple_position_sizer_from_artifacts(
 
         head_cols = [
             c for c in collect_ridge_head_columns(active_df) if not _is_hindsight(c)
+        ]
+        head_cols = [
+            c
+            for c in head_cols
+            if (c not in _NON_HEAD_DROP_FEATURES) or _is_classifier_head_feature(c)
         ]
 
         numeric_head_cols: List[str] = []
@@ -5843,6 +6909,35 @@ def run_simple_position_sizer_from_artifacts(
             "source_horizon": strategy.get("source_horizon", np.nan),
             "atr_column": atr_col,
         }
+        _score_ref = res.get("total_confidence_")
+        if _score_ref is None:
+            _score_ref = res.get("ridge_sizer_scores_")
+        if _score_ref is None:
+            _score_ref = res.get("lgbm_sizer_scores_")
+        if _score_ref is None:
+            _score_ref = res.get("et_sizer_scores_")
+        _n_score = len(_score_ref) if _score_ref is not None else len(trade_outcomes)
+        _ctx: Dict[str, Any] = {}
+        if "timestamp" in active_df.columns:
+            _ctx["timestamp"] = (
+                pd.to_datetime(active_df["timestamp"], utc=True, errors="coerce")
+                .astype(str)
+                .to_numpy()[:_n_score]
+            )
+        elif "timestamp" in trade_outcomes.columns:
+            _ctx["timestamp"] = (
+                pd.to_datetime(trade_outcomes["timestamp"], utc=True, errors="coerce")
+                .astype(str)
+                .to_numpy()[:_n_score]
+            )
+        if "symbol" in active_df.columns:
+            _ctx["symbol"] = active_df["symbol"].astype(str).to_numpy()[:_n_score]
+        elif "symbol" in trade_outcomes.columns:
+            _ctx["symbol"] = (
+                trade_outcomes["symbol"].astype(str).to_numpy()[:_n_score]
+            )
+        if _ctx:
+            res["_sizer_oof_context_"] = _ctx
         strategy_results[strategy_id] = res
 
     strategy_params_path = _save_strategy_params_payload(

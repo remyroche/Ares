@@ -1,0 +1,12 @@
+{
+  "schema_version": "v1",
+  "generated_by": "simple_position_sizer",
+  "run_id": "20260321_140000",
+  "required_strategy_fields": [
+    "p75_threshold",
+    "calibration_curve"
+  ],
+  "rank_semantics": "empirical_oof_rank_percentile",
+  "calibration_method": "empirical_oof_rank_percentile",
+  "disagreement_feature_contract": "engine._calculate_disagreement_features"
+}

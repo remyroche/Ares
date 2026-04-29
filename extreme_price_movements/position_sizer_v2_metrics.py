@@ -2,22 +2,31 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple
 
+
+def _top_frac_label(frac: float) -> str:
+    pct = float(frac) * 100.0
+    if abs(pct - round(pct)) < 1e-9:
+        return str(int(round(pct)))
+    return (f"{pct:.3f}".rstrip("0").rstrip(".")).replace(".", "_")
+
 def compute_top_slice_metrics(scores: np.ndarray, realized_returns: np.ndarray, top_fracs: Tuple[float, ...] = (0.1, 0.2)) -> Dict[str, float]:
     """Computes mean realized returns and hit rates for top quantiles."""
     metrics = {}
     n = len(scores)
     if n == 0:
         for f in top_fracs:
-            metrics[f"top_{int(f*100)}_mean_net"] = 0.0
-            metrics[f"top_{int(f*100)}_hit_rate"] = 0.0
+            label = _top_frac_label(f)
+            metrics[f"top_{label}_mean_net"] = 0.0
+            metrics[f"top_{label}_hit_rate"] = 0.0
         return metrics
 
     for f in top_fracs:
         k = max(1, int(n * f))
         idx = np.argpartition(scores, -k)[-k:]
         rets = realized_returns[idx]
-        metrics[f"top_{int(f*100)}_mean_net"] = float(np.mean(rets))
-        metrics[f"top_{int(f*100)}_hit_rate"] = float(np.mean(rets > 0))
+        label = _top_frac_label(f)
+        metrics[f"top_{label}_mean_net"] = float(np.mean(rets))
+        metrics[f"top_{label}_hit_rate"] = float(np.mean(rets > 0))
     return metrics
 
 def compute_bucket_monotonicity(scores: np.ndarray, realized_values: np.ndarray, n_buckets: int = 10) -> float:

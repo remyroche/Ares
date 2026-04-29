@@ -57,6 +57,12 @@ EBM_STAGE_HPO_FRACTION = 0.10
 EBM_STAGE_FIT_OOF_FRACTION = 0.55
 
 
+def _candidate_gate_thresholds() -> tuple[float, float]:
+    min_lift30 = float(os.environ.get("EPM_EBM_CANDIDATE_MIN_LIFT30", 1.0))
+    min_stability30 = float(os.environ.get("EPM_EBM_CANDIDATE_MIN_STABILITY30", 0.50))
+    return min_lift30, min_stability30
+
+
 def _quiet_interpret_logging() -> None:
     """Keep Interpret's native boosting internals from flooding long pipeline logs."""
     for name in (
@@ -777,10 +783,16 @@ def _metric_pack(
     if len(y) < 8:
         return {
             "lift30": 0.0,
+            "lift20": 0.0,
             "lift10": 0.0,
+            "lift5": 0.0,
             "hit_rate10": 0.0,
+            "hit_rate5": 0.0,
+            "hit_rate20": 0.0,
             "hit_rate30": 0.0,
             "precision10": 0.0,
+            "precision5": 0.0,
+            "precision20": 0.0,
             "precision30": 0.0,
             "auc_correct_30": 0.5,
             "stability30_proxy": 0.0,
@@ -794,17 +806,27 @@ def _metric_pack(
             "ece": _compute_ece(y, p),
             "oof_std": 0.0,
         }
-    k = max(1, int(0.30 * len(y)))
-    top = np.argsort(p)[-k:]
-    k10 = max(1, int(np.ceil(0.10 * len(y))))
-    top10 = np.argsort(p)[-k10:]
+    order = np.argsort(p)
+
+    def _top_idx(frac: float) -> np.ndarray:
+        k_frac = max(1, int(np.ceil(float(frac) * len(y))))
+        return order[-k_frac:]
+
+    top = _top_idx(0.30)
+    top20 = _top_idx(0.20)
+    top10 = _top_idx(0.10)
+    top5 = _top_idx(0.05)
     if classifier:
         yb = (y >= 0.5).astype(np.int8)
         base = float(np.mean(yb))
         top_rate = float(np.mean(yb[top])) if len(top) else 0.0
+        hit_rate20 = float(np.mean(yb[top20])) if len(top20) else 0.0
         hit_rate10 = float(np.mean(yb[top10])) if len(top10) else 0.0
+        hit_rate5 = float(np.mean(yb[top5])) if len(top5) else 0.0
         hit_rate30 = top_rate
+        lift20 = hit_rate20 / max(base, 1e-6)
         lift10 = hit_rate10 / max(base, 1e-6)
+        lift5 = hit_rate5 / max(base, 1e-6)
         lift30 = top_rate / max(base, 1e-6)
         auc30 = 0.5
         if len(np.unique(yb[top])) > 1:
@@ -818,10 +840,15 @@ def _metric_pack(
         brier = float(brier_score_loss(yb, p_clip))
         ece = _compute_ece(yb, p_clip)
     else:
+        denom = float(np.mean(np.abs(y)) + 1e-6)
+        hit_rate5 = float(np.mean(y[top5])) if len(top5) else 0.0
         hit_rate10 = float(np.mean(y[top10])) if len(top10) else 0.0
+        hit_rate20 = float(np.mean(y[top20])) if len(top20) else 0.0
         hit_rate30 = float(np.mean(y[top])) if len(top) else 0.0
-        lift10 = float(hit_rate10 / (np.mean(np.abs(y)) + 1e-6))
-        lift30 = float(np.mean(y[top]) / (np.mean(np.abs(y)) + 1e-6))
+        lift5 = float(hit_rate5 / denom)
+        lift10 = float(hit_rate10 / denom)
+        lift20 = float(hit_rate20 / denom)
+        lift30 = float(hit_rate30 / denom)
         auc30 = max(0.0, _safe_spearman(p[top], y[top]))
         auc = max(0.0, _safe_spearman(p, y))
         pr = auc
@@ -837,10 +864,16 @@ def _metric_pack(
     ic_metrics = _rank_ic_metrics(y, p)
     return {
         "lift30": float(lift30),
+        "lift20": float(lift20),
         "lift10": float(lift10),
+        "lift5": float(lift5),
+        "hit_rate5": float(hit_rate5),
         "hit_rate10": float(hit_rate10),
+        "hit_rate20": float(hit_rate20),
         "hit_rate30": float(hit_rate30),
+        "precision5": float(hit_rate5),
         "precision10": float(hit_rate10),
+        "precision20": float(hit_rate20),
         "precision30": float(hit_rate30),
         "auc_correct_30": float(auc30),
         "stability30_proxy": float(stab_proxy),
@@ -867,8 +900,12 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         return {"J_final": -999.0, "J_mean": -999.0, "J_std": 0.0}
     j = np.asarray([_fold_j(m) for m in fold_metrics], dtype=np.float64)
     lift = float(np.mean([m.get("lift30", 0.0) for m in fold_metrics]))
+    lift20 = float(np.mean([m.get("lift20", 0.0) for m in fold_metrics]))
     lift10 = float(np.mean([m.get("lift10", 0.0) for m in fold_metrics]))
+    lift5 = float(np.mean([m.get("lift5", 0.0) for m in fold_metrics]))
+    hit_rate5 = float(np.mean([m.get("hit_rate5", 0.0) for m in fold_metrics]))
     hit_rate10 = float(np.mean([m.get("hit_rate10", 0.0) for m in fold_metrics]))
+    hit_rate20 = float(np.mean([m.get("hit_rate20", 0.0) for m in fold_metrics]))
     hit_rate30 = float(np.mean([m.get("hit_rate30", 0.0) for m in fold_metrics]))
     auc30 = float(np.mean([m.get("auc_correct_30", 0.0) for m in fold_metrics]))
     stability_vals = np.asarray(
@@ -883,10 +920,16 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     stability30 = float(np.clip(stability30, 0.0, 1.0))
     return {
         "lift30": lift,
+        "lift20": lift20,
         "lift10": lift10,
+        "lift5": lift5,
+        "hit_rate5": hit_rate5,
         "hit_rate10": hit_rate10,
+        "hit_rate20": hit_rate20,
         "hit_rate30": hit_rate30,
+        "precision5": hit_rate5,
         "precision10": hit_rate10,
+        "precision20": hit_rate20,
         "precision30": hit_rate30,
         "auc_correct_30": auc30,
         "stability30": stability30,
@@ -2318,7 +2361,25 @@ def _contribution_correlation_prune(
 
 
 def _select_smallest_within_one_se(history: list[dict[str, Any]]) -> dict[str, Any]:
-    valid = [h for h in history if "J_final" in h and "J_se" in h]
+    valid = [
+        h
+        for h in history
+        if "J_final" in h
+        and "J_se" in h
+        and h.get("active_indices") is not None
+        and bool(h.get("candidate_gate_passed", True))
+    ]
+    if not valid:
+        valid = [
+            h
+            for h in history
+            if "J_final" in h and "J_se" in h and h.get("active_indices") is not None
+        ]
+        if valid:
+            tprint(
+                "EBMOnLGBM: all pruning candidates failed gates; "
+                "falling back to ungated 1SE selection."
+            )
     if not valid:
         return {}
     best = max(valid, key=lambda h: float(h["J_final"]))
@@ -2326,8 +2387,34 @@ def _select_smallest_within_one_se(history: list[dict[str, Any]]) -> dict[str, A
     contenders = [h for h in valid if float(h["J_final"]) >= cut]
     return min(
         contenders,
-        key=lambda h: int(h.get("n_features_end", h.get("n_features", 10**9))),
+        key=lambda h: (
+            int(h.get("n_features_end", h.get("n_features", 10**9))),
+            -float(h.get("J_final", -np.inf)),
+        ),
     )
+
+
+def _feature_pruning_candidate_gate(rec: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+    min_lift30, min_stability30 = _candidate_gate_thresholds()
+    lift30 = float(rec.get("lift30", np.nan))
+    stability30 = float(rec.get("stability30", np.nan))
+    j_final = float(rec.get("J_final", np.nan))
+    n_features = int(rec.get("n_features_end", rec.get("n_features", 0)))
+    checks = {
+        "finite_score": bool(np.isfinite(j_final)),
+        "min_lift30": bool(np.isfinite(lift30) and lift30 >= min_lift30),
+        "min_stability30": bool(
+            np.isfinite(stability30) and stability30 >= min_stability30
+        ),
+        "min_features": bool(n_features >= EBM_MIN_FEATURES),
+    }
+    details: dict[str, Any] = {
+        "candidate_gate_passed": bool(all(checks.values())),
+        "candidate_gate_min_lift30": float(min_lift30),
+        "candidate_gate_min_stability30": float(min_stability30),
+    }
+    details.update({f"candidate_gate_{k}": bool(v) for k, v in checks.items()})
+    return bool(details["candidate_gate_passed"]), details
 
 
 def _round_drop_fraction(round_id: int) -> float:
@@ -3059,7 +3146,7 @@ def _fit_final_model(
 
     try:
         import optuna
-        from optuna.pruners import SuccessiveHalvingPruner
+        from optuna.pruners import MedianPruner
 
         HAS_OPTUNA = True
     except ImportError:
@@ -3106,14 +3193,22 @@ def _fit_final_model(
             )
         )
         hpo_n_jobs = int(os.environ.get("EPM_EBM_HPO_N_JOBS", EBM_HPO_N_JOBS))
+        hpo_folds = int(os.environ.get("EPM_EBM_HPO_FOLDS", 3))
+        hpo_pruner_startup = int(os.environ.get("EPM_EBM_HPO_MEDIAN_STARTUP", 10))
+        hpo_pruner_min_trials = int(os.environ.get("EPM_EBM_HPO_MEDIAN_MIN_TRIALS", 5))
         hpo_trials = max(0, hpo_trials)
         hpo_patience = max(1, hpo_patience)
         hpo_n_jobs = min(4, max(1, hpo_n_jobs))
+        hpo_folds = min(3, max(2, hpo_folds))
+        hpo_pruner_startup = max(0, hpo_pruner_startup)
+        hpo_pruner_min_trials = max(1, hpo_pruner_min_trials)
         tprint(
             "  EBMOnLGBM: running Optuna HPO with Bends Analysis "
             f"(trials={hpo_trials}, early_stop_patience={hpo_patience}, "
-            f"subsample=5000, folds=3, outer_bags=1, n_jobs={hpo_n_jobs}, "
-            "pruner=SuccessiveHalving)."
+            f"subsample=5000, folds={hpo_folds}, outer_bags=1, "
+            f"n_jobs={hpo_n_jobs}, "
+            "pruner=Median"
+            f"(startup={hpo_pruner_startup}, min_trials={hpo_pruner_min_trials}))."
         )
         _quiet_interpret_logging()
         from interpret.glassbox import (
@@ -3145,7 +3240,7 @@ def _fit_final_model(
 
         from sklearn.model_selection import KFold
 
-        kf = KFold(n_splits=3, shuffle=True, random_state=random_state)
+        kf = KFold(n_splits=hpo_folds, shuffle=True, random_state=random_state)
 
         global_hp_state = {
             "feature_j_scores": {c: 1.0 for c in Xs.columns},
@@ -3258,10 +3353,11 @@ def _fit_final_model(
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         study = optuna.create_study(
             direction="maximize",
-            pruner=SuccessiveHalvingPruner(
-                min_resource=1,
-                reduction_factor=3,
-                min_early_stopping_rate=0,
+            pruner=MedianPruner(
+                n_startup_trials=hpo_pruner_startup,
+                n_warmup_steps=0,
+                interval_steps=1,
+                n_min_trials=hpo_pruner_min_trials,
             ),
         )
         enqueued_hpo_params: list[dict[str, Any]] = []
@@ -3358,6 +3454,18 @@ def _fit_final_model(
             )
 
         if HAS_OPTUNA:
+            from optuna.trial import TrialState
+
+            hpo_state_counts = {
+                state.name.lower(): int(
+                    sum(1 for trial in study.trials if trial.state == state)
+                )
+                for state in (
+                    TrialState.COMPLETE,
+                    TrialState.PRUNED,
+                    TrialState.FAIL,
+                )
+            }
             best_trial = study.best_trial
             best_spec = dict(best_trial.params)
             best_leaf_min_pct = float(
@@ -3389,6 +3497,8 @@ def _fit_final_model(
             )
             tprint(
                 "  EBMOnLGBM: HPO complete. "
+                "trial_states="
+                f"{hpo_state_counts}, "
                 f"Best trial={best_trial.number}, value={best_trial.value:.4f}, "
                 f"lift30={float(best_trial.user_attrs.get('lift30', np.nan)):.4f}, "
                 "stability30="
@@ -3505,8 +3615,9 @@ def _fit_final_model(
                 model.oof_probs_raw_ebm,
                 y,
                 unc_features,
+                groups=stability_groups,
                 random_state=random_state + 55021,
-                n_trials=20,
+                n_trials=30,
             )
             if model.en_adjuster is not None:
                 model.oof_probs_en = model.en_adjuster.predict(
@@ -3867,10 +3978,15 @@ def train_ebm_on_lgbm_candidate(
         rec["drop_fraction"] = float(drop_frac)
         rec["feature_score_mean"] = float(np.mean(shape_scores))
         rec["active_indices"] = next_active.copy()
+        gate_passed, gate_details = _feature_pruning_candidate_gate(rec)
+        rec.update(gate_details)
         history.append(rec)
+        gate_msg = "passed" if gate_passed else "failed"
         tprint(
             f"EBMOnLGBM round {round_id}: J={best_j:.4f}, SE={best_se:.4f}, "
-            f"pruned {len(active)} -> {len(next_active)}."
+            f"pruned {len(active)} -> {len(next_active)}; "
+            f"candidate gates {gate_msg} "
+            f"(lift30={rec['lift30']:.4f}, stability30={rec['stability30']:.4f})."
         )
 
         current_oof = np.asarray(best["oof"], dtype=np.float32)
@@ -3892,6 +4008,13 @@ def train_ebm_on_lgbm_candidate(
     chosen_round = _select_smallest_within_one_se(history)
     if chosen_round and chosen_round.get("active_indices") is not None:
         selected_active = np.asarray(chosen_round["active_indices"], dtype=np.int32)
+        tprint(
+            "EBMOnLGBM: selected smallest gated feature candidate within 1SE "
+            f"(round={int(chosen_round.get('round', -1))}, "
+            f"features={len(selected_active)}, "
+            f"J={float(chosen_round.get('J_final', np.nan)):.4f}, "
+            f"SE={float(chosen_round.get('J_se', np.nan)):.4f})."
+        )
     else:
         selected_active = active
 
@@ -4047,9 +4170,9 @@ def fit_ebm_on_lgbm_full_model(
     X_df.columns = [str(c) for c in X_df.columns]
     idx = np.asarray(selected_features_from_cv, dtype=np.int32)
     idx = idx[(idx >= 0) & (idx < X_df.shape[1])]
-    if len(idx) == 0:
-        return None
     selected_features = [X_df.columns[i] for i in idx]
+    if len(selected_features) == 0 and not selected_feature_names:
+        return None
     y_arr = (
         np.asarray(y >= 0.5, dtype=np.int8)
         if classifier

@@ -8,18 +8,18 @@ This module handles fetching OHLCV data for inference with:
 - Rate limiting between requests
 """
 
+import random
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone
+import traceback
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
+from typing import Any, Dict, List, Optional
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-from extreme_price_movements.data_store import PartitionedOHLCVStore, make_spot_exchange
-from extreme_price_movements.utils import tprint, retry_with_backoff
 from extreme_price_movements import hf_data_loader
-
+from extreme_price_movements.data_store import PartitionedOHLCVStore, make_spot_exchange
+from extreme_price_movements.utils import tprint
 
 # Default configuration
 DEFAULT_TIMEFRAME = "1h"
@@ -27,6 +27,57 @@ DEFAULT_LOOKBACK_HOURS = 24 * 60
 MAX_RETRIES = 3
 BACKOFF_BASE = 1.0
 RATE_LIMIT_DELAY = 0.1  # seconds between requests
+
+
+def classify_api_error(exc: Exception) -> str:
+    """Classify exchange/API failures into stable operational buckets."""
+    text = f"{exc.__class__.__name__} {exc}".lower()
+    if "429" in text or "rate limit" in text or "too many requests" in text:
+        return "rate_limited"
+    if "retry-after" in text:
+        return "retry_after"
+    if "timeout" in text or "timed out" in text:
+        return "timeout"
+    if "network" in text or "connection" in text or "temporarily unavailable" in text:
+        return "network"
+    if "auth" in text or "permission" in text or "forbidden" in text or "401" in text:
+        return "auth_or_permission"
+    if "invalid symbol" in text or "bad symbol" in text or "unknown symbol" in text:
+        return "invalid_symbol"
+    return "api_error"
+
+
+def _retry_after_seconds(exc: Exception) -> Optional[float]:
+    """Extract Retry-After from common ccxt/request exception shapes."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        headers = getattr(exc, "headers", None)
+    if not headers:
+        return None
+    value = None
+    try:
+        value = headers.get("Retry-After") or headers.get("retry-after")
+    except Exception:
+        return None
+    if value is None:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _sleep_for_api_error(exc: Exception, *, attempt: int) -> None:
+    """Respect Retry-After when present, otherwise apply small jittered backoff."""
+    retry_after = _retry_after_seconds(exc)
+    if retry_after is not None:
+        tprint(f"API retry-after received; sleeping {retry_after:.2f}s")
+        time.sleep(retry_after)
+        return
+    delay = min(8.0, BACKOFF_BASE * (2.0 ** max(attempt - 1, 0)))
+    delay += random.uniform(0.0, 0.25)
+    time.sleep(delay)
 
 
 class DataFetcher:
@@ -42,6 +93,14 @@ class DataFetcher:
         self.exchange = exchange if exchange is not None else make_spot_exchange()
         self.data_root = data_root
         self.ohlcv_store = PartitionedOHLCVStore(data_root, timeframe="1h")
+        self.api_error_counts: Dict[str, int] = {}
+        self.dead_letter_symbols: Dict[str, str] = {}
+
+    def _record_api_error(self, symbol: str, exc: Exception, *, context: str) -> None:
+        category = classify_api_error(exc)
+        self.api_error_counts[category] = self.api_error_counts.get(category, 0) + 1
+        self.dead_letter_symbols[symbol] = f"{context}:{category}:{exc}"
+        tprint(f"[DataFetcher] {context} failed for {symbol}: {category}: {exc}")
 
     def initialize_with_historical_data(
         self, symbols: List[str], lookback_hours: int = DEFAULT_LOOKBACK_HOURS
@@ -59,11 +118,24 @@ class DataFetcher:
         # Get current time
         now = pd.Timestamp.now(tz="UTC")
 
-        for symbol in symbols:
-            tprint(f"Initializing data for {symbol}...")
+        updated = 0
+        skipped = 0
+        failed = 0
+        total = len(symbols)
+        tprint(f"Initializing historical data batch: symbols={total}")
+
+        for i, symbol in enumerate(symbols, start=1):
+            if i == 1 or i == total or i % 25 == 0:
+                tprint(f"Historical data init progress: {i}/{total}")
 
             # Check existing data range
-            existing_data = self.ohlcv_store.load(symbol, start_ts=None, end_ts=now)
+            try:
+                existing_data = self.ohlcv_store.load(symbol, start_ts=None, end_ts=now)
+            except Exception as exc:
+                failed += 1
+                tprint(f"Error loading stored OHLCV for {symbol}: {exc}")
+                tprint(traceback.format_exc())
+                continue
 
             # Safely check existing data
             try:
@@ -80,9 +152,6 @@ class DataFetcher:
                 last_ts = existing_data.index.max()
                 if (now - last_ts) > pd.Timedelta(hours=1):
                     # Fetch missing data
-                    tprint(
-                        f"  Found gap for {symbol}: last data at {last_ts}, fetching missing..."
-                    )
                     missing_data = self.fetch_ohlcv(
                         symbol, start=last_ts + pd.Timedelta(hours=1), end=now
                     )
@@ -98,14 +167,11 @@ class DataFetcher:
                         self.ohlcv_store.save_partitioned(
                             symbol=symbol, df=existing_data
                         )
-                        tprint(f"  Updated {symbol} with {len(missing_data)} new rows")
+                        updated += 1
                 else:
-                    tprint(f"  {symbol} data is up to date (last: {last_ts})")
+                    skipped += 1
             else:
                 # No data - fetch from lookback
-                tprint(
-                    f"  No existing data for {symbol}, fetching last {lookback_hours}h..."
-                )
                 start = now - pd.Timedelta(hours=lookback_hours)
                 data = self.fetch_ohlcv(symbol, start=start, end=now)
                 # Validate data is a proper DataFrame before saving
@@ -113,11 +179,14 @@ class DataFetcher:
                     hasattr(data, "empty") and data.empty
                 ):
                     self.ohlcv_store.save_partitioned(symbol=symbol, df=data)
-                    tprint(f"  Fetched {len(data)} rows for {symbol}")
+                    updated += 1
                 else:
-                    tprint(
-                        f"  Warning: No valid data returned for {symbol} (type: {type(data).__name__}), skipping save"
-                    )
+                    failed += 1
+                    tprint(f"Warning: No valid data returned for {symbol}; skipping")
+        tprint(
+            "Historical data init batch complete: "
+            f"updated={updated} up_to_date={skipped} failed={failed}"
+        )
 
     def fetch_ohlcv(
         self, symbol: str, start: pd.Timestamp, end: pd.Timestamp
@@ -135,13 +204,17 @@ class DataFetcher:
         # Rate limiting
         time.sleep(RATE_LIMIT_DELAY)
 
-        # Fetch 15m data from exchange
-        ohlcv_15m = self._fetch_with_retry(
-            symbol,
-            timeframe="15m",
-            since=int(start.timestamp() * 1000),
-            limit=1200,  # Max for 15m
-        )
+        try:
+            # Fetch 15m data from exchange
+            ohlcv_15m = self._fetch_with_retry(
+                symbol,
+                timeframe="15m",
+                since=int(start.timestamp() * 1000),
+                limit=1200,  # Max for 15m
+            )
+        except Exception as exc:
+            self._record_api_error(symbol, exc, context="fetch_ohlcv")
+            return pd.DataFrame()
 
         # Validate response
         if ohlcv_15m is None:
@@ -191,7 +264,6 @@ class DataFetcher:
 
         return df_1h
 
-    @retry_with_backoff(retries=MAX_RETRIES, backoff_in_seconds=BACKOFF_BASE)
     def _fetch_with_retry(
         self, symbol: str, timeframe: str, since: int, limit: int
     ) -> List[List]:
@@ -206,17 +278,31 @@ class DataFetcher:
         Returns:
             List of OHLCV candles
         """
-        try:
-            ohlcv = self.exchange.fetch_ohlcv(
-                symbol=symbol,
-                timeframe=timeframe,
-                since=since,
-                limit=limit,
-            )
-            return ohlcv
-        except Exception as e:
-            tprint(f"Error fetching OHLCV for {symbol} ({timeframe}): {e}")
-            raise
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                if attempt > 1:
+                    tprint(
+                        f"[DataFetcher] retrying OHLCV {symbol} {timeframe}: "
+                        f"attempt={attempt}/{MAX_RETRIES}"
+                    )
+                return self.exchange.fetch_ohlcv(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    since=since,
+                    limit=limit,
+                )
+            except Exception as exc:
+                last_exc = exc
+                category = classify_api_error(exc)
+                tprint(
+                    f"[DataFetcher] OHLCV API error for {symbol} {timeframe}: "
+                    f"category={category} attempt={attempt}/{MAX_RETRIES}: {exc}"
+                )
+                if attempt < MAX_RETRIES:
+                    _sleep_for_api_error(exc, attempt=attempt)
+        assert last_exc is not None
+        raise last_exc
 
     def _resample_to_hourly(self, df_15m: pd.DataFrame) -> pd.DataFrame:
         """Calculate rolling 1h aggregation over 15m data to produce overlapping 1h bars.
@@ -372,10 +458,140 @@ class DataFetcher:
             return existing
         else:
             # No existing data - fetch full lookback
-            tprint(f"No existing data for {symbol}, fetching full lookback...")
             return self.fetch_ohlcv(
                 symbol, start=now - pd.Timedelta(hours=DEFAULT_LOOKBACK_HOURS), end=now
             )
+
+    def fetch_latest_hourly_symbol(
+        self,
+        symbol: str,
+        *,
+        target_hour: Optional[pd.Timestamp] = None,
+    ) -> pd.DataFrame:
+        """Fetch and persist the latest closed 1h candle for one symbol."""
+        now = pd.Timestamp.now(tz="UTC")
+        if target_hour is None:
+            target_hour = now.floor("h") - pd.Timedelta(hours=1)
+        target_hour = pd.Timestamp(target_hour)
+        if target_hour.tzinfo is None:
+            target_hour = target_hour.tz_localize("UTC")
+        else:
+            target_hour = target_hour.tz_convert("UTC")
+
+        ohlcv = self._fetch_with_retry(
+            symbol,
+            timeframe="1h",
+            since=int(target_hour.timestamp() * 1000),
+            limit=1,
+        )
+        if not ohlcv:
+            return pd.DataFrame()
+        df = pd.DataFrame(
+            ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
+        )
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+        df = df.set_index("timestamp").sort_index()
+        df = df[df.index <= target_hour]
+        if df.empty:
+            return pd.DataFrame()
+        df = df[~df.index.duplicated(keep="last")]
+        self.ohlcv_store.save_partitioned(symbol=symbol, df=df, defer_compact=True)
+        return df
+
+    def fetch_hourly_universe_once(
+        self,
+        symbols: List[str],
+        *,
+        max_workers: int = 16,
+        no_progress_timeout_seconds: float = 60.0,
+        target_hour: Optional[pd.Timestamp] = None,
+        check_recent_gaps_days: int = 7,
+        backfill_fn: Optional[Any] = None,
+    ) -> Dict[str, pd.DataFrame]:
+        """Fetch one closed 1h candle for the full live universe.
+
+        The batch uses bounded fanout and stops waiting when no symbol has
+        produced new OHLCV for ``no_progress_timeout_seconds``.
+        """
+        workers = max(1, min(int(max_workers), 32))
+        if target_hour is None:
+            target_hour = pd.Timestamp.now(tz="UTC").floor("h") - pd.Timedelta(hours=1)
+        target_hour = pd.Timestamp(target_hour)
+        if target_hour.tzinfo is None:
+            target_hour = target_hour.tz_localize("UTC")
+        else:
+            target_hour = target_hour.tz_convert("UTC")
+
+        out: Dict[str, pd.DataFrame] = {}
+        failed = 0
+        empty = 0
+        canceled = 0
+        gap_backfills = 0
+        tprint(
+            "Hourly OHLCV universe batch start: "
+            f"symbols={len(symbols)} workers={workers} target_hour={target_hour}"
+        )
+        executor = ThreadPoolExecutor(max_workers=workers)
+        futures = {
+            executor.submit(
+                self.fetch_latest_hourly_symbol, sym, target_hour=target_hour
+            ): sym
+            for sym in symbols
+        }
+        pending = set(futures.keys())
+        last_data_time = time.monotonic()
+        try:
+            while pending:
+                done, pending = wait(pending, timeout=1.0, return_when=FIRST_COMPLETED)
+                if not done:
+                    quiet_for = time.monotonic() - last_data_time
+                    if quiet_for >= float(no_progress_timeout_seconds):
+                        canceled = len(pending)
+                        for fut in pending:
+                            fut.cancel()
+                        tprint(
+                            "Hourly OHLCV batch no-progress timeout: "
+                            f"quiet_for={quiet_for:.1f}s canceled={canceled}"
+                        )
+                        break
+                    continue
+                for fut in done:
+                    sym = futures[fut]
+                    try:
+                        df = fut.result()
+                    except Exception as exc:
+                        failed += 1
+                        self._record_api_error(sym, exc, context="hourly_ohlcv")
+                        continue
+                    if isinstance(df, pd.DataFrame) and not df.empty:
+                        out[sym] = df
+                        last_data_time = time.monotonic()
+                    else:
+                        empty += 1
+                    if check_recent_gaps_days > 0 and self.has_recent_gap(
+                        sym, days=check_recent_gaps_days
+                    ):
+                        try:
+                            self.trigger_gap_backfill(
+                                sym,
+                                days=check_recent_gaps_days,
+                                backfill_fn=backfill_fn,
+                            )
+                            gap_backfills += 1
+                        except Exception as exc:
+                            failed += 1
+                            self._record_api_error(sym, exc, context="gap_backfill")
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+        tprint(
+            "Hourly OHLCV universe batch complete: "
+            f"requested={len(symbols)} updated={len(out)} empty={empty} "
+            f"failed={failed} canceled={canceled} gap_backfills={gap_backfills} "
+            f"dead_letters={len(self.dead_letter_symbols)} "
+            f"errors={self.api_error_counts}"
+        )
+        return out
 
     def has_recent_gap(self, symbol: str, days: int = 7) -> bool:
         """Return True if stored hourly OHLCV has gaps in the recent window."""
@@ -434,28 +650,51 @@ class DataFetcher:
         """Incrementally update a symbol universe using bounded worker fanout."""
         workers = max(1, min(int(max_workers), 32))
         out: Dict[str, pd.DataFrame] = {}
+        submitted = 0
+        skipped_probe = 0
+        failed = 0
+        gap_backfills = 0
+        tprint(
+            f"Incremental universe batch start: symbols={len(symbols)} workers={workers} "
+            f"lightweight_probe={use_lightweight_probe}"
+        )
         with ThreadPoolExecutor(max_workers=workers) as ex:
             futures = {}
             for sym in symbols:
                 if use_lightweight_probe and (not self.needs_incremental_update(sym)):
+                    skipped_probe += 1
                     continue
                 futures[ex.submit(self.fetch_incremental, sym)] = sym
+                submitted += 1
             for fut in as_completed(futures):
                 sym = futures[fut]
                 try:
                     out[sym] = fut.result()
                 except Exception as exc:
-                    tprint(f"Incremental fetch failed for {sym}: {exc}")
+                    failed += 1
+                    self._record_api_error(sym, exc, context="fetch_incremental")
+                    tprint(traceback.format_exc())
                     continue
                 if check_recent_gaps_days > 0 and self.has_recent_gap(
                     sym, days=check_recent_gaps_days
                 ):
                     tprint(f"Detected recent gap for {sym}; invoking backfill")
-                    self.trigger_gap_backfill(
-                        sym,
-                        days=check_recent_gaps_days,
-                        backfill_fn=backfill_fn,
-                    )
+                    try:
+                        self.trigger_gap_backfill(
+                            sym,
+                            days=check_recent_gaps_days,
+                            backfill_fn=backfill_fn,
+                        )
+                        gap_backfills += 1
+                    except Exception as exc:
+                        failed += 1
+                        self._record_api_error(sym, exc, context="gap_backfill")
+        tprint(
+            f"Incremental universe batch complete: requested={len(symbols)} "
+            f"submitted={submitted} skipped_probe={skipped_probe} updated={len(out)} "
+            f"failed={failed} gap_backfills={gap_backfills} workers={workers} "
+            f"dead_letters={len(self.dead_letter_symbols)} errors={self.api_error_counts}"
+        )
         return out
 
     def get_panel(
@@ -506,10 +745,17 @@ def make_exchange() -> Any:
     Returns:
         ccxt.binance exchange instance with rate limiting enabled
     """
-    return make_spot_exchange()
+    try:
+        ex = make_spot_exchange()
+        tprint("Created Binance spot exchange and loaded markets")
+        return ex
+    except Exception as exc:
+        tprint(
+            f"Failed to create Binance spot exchange: {classify_api_error(exc)}: {exc}"
+        )
+        raise
 
 
-@retry_with_backoff(retries=MAX_RETRIES, backoff_in_seconds=BACKOFF_BASE)
 def fetch_ohlcv(
     exchange: Any,
     symbol: str,
@@ -529,20 +775,27 @@ def fetch_ohlcv(
     Returns:
         List of OHLCV candles [timestamp, open, high, low, close, volume]
     """
-    try:
-        # Rate limiting
-        time.sleep(RATE_LIMIT_DELAY)
-
-        ohlcv = exchange.fetch_ohlcv(
-            symbol=symbol,
-            timeframe=timeframe,
-            since=since,
-            limit=limit,
-        )
-        return ohlcv
-    except Exception as e:
-        tprint(f"Error fetching OHLCV for {symbol}: {e}")
-        raise
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            time.sleep(RATE_LIMIT_DELAY)
+            return exchange.fetch_ohlcv(
+                symbol=symbol,
+                timeframe=timeframe,
+                since=since,
+                limit=limit,
+            )
+        except Exception as exc:
+            last_exc = exc
+            category = classify_api_error(exc)
+            tprint(
+                f"Error fetching OHLCV for {symbol}: category={category} "
+                f"attempt={attempt}/{MAX_RETRIES}: {exc}"
+            )
+            if attempt < MAX_RETRIES:
+                _sleep_for_api_error(exc, attempt=attempt)
+    assert last_exc is not None
+    raise last_exc
 
 
 def convert_ohlcv_to_dataframe(ohlcv: List[List], symbol: str) -> pd.DataFrame:
@@ -603,6 +856,11 @@ def fetch_ohlcv_for_symbols(
     limit = lookback_periods + 24  # Add buffer
 
     results = {}
+    failed = 0
+    tprint(
+        f"Fetching OHLCV batch: symbols={len(symbols)} timeframe={timeframe} "
+        f"lookback_periods={lookback_periods}"
+    )
 
     for symbol in symbols:
         try:
@@ -610,13 +868,17 @@ def fetch_ohlcv_for_symbols(
             if ohlcv:
                 df = convert_ohlcv_to_dataframe(ohlcv, symbol)
                 results[symbol] = df
-                tprint(f"Fetched {len(df)} candles for {symbol}")
             else:
                 tprint(f"No data for {symbol}")
         except Exception as e:
-            tprint(f"Failed to fetch {symbol}: {e}")
+            failed += 1
+            tprint(f"Failed to fetch {symbol}: {classify_api_error(e)}: {e}")
             continue
 
+    tprint(
+        f"OHLCV batch complete: requested={len(symbols)} fetched={len(results)} "
+        f"failed={failed}"
+    )
     return results
 
 
@@ -641,7 +903,10 @@ def fetch_latest_ohlcv(
             return convert_ohlcv_to_dataframe(ohlcv, symbol)
         return None
     except Exception as e:
-        tprint(f"Error fetching latest OHLCV for {symbol}: {e}")
+        tprint(
+            f"Error fetching latest OHLCV for {symbol}: "
+            f"{classify_api_error(e)}: {e}"
+        )
         return None
 
 

@@ -1,3 +1,5 @@
+import sqlite3
+
 import pandas as pd
 
 from extreme_price_movements.inference.trade_logger import TradeLogger
@@ -37,3 +39,10 @@ def test_trade_logger_includes_required_parity_fields(tmp_path):
     }
     assert required.issubset(df.columns)
     assert df.loc[0, "strategy_id"] == "long_mr"
+
+    db_path = path.with_suffix(".sqlite")
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT strategy_id, orderbook_snapshot, net_pnl FROM trades"
+        ).fetchall()
+    assert rows == [("long_mr", "top5", "0.01")]

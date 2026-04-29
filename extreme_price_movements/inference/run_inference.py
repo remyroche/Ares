@@ -23,16 +23,17 @@ def _configure_numba_threading_layer() -> None:
     for _layer in _preferred_numba_layers:
         try:
             import importlib
+
             from numba import config as _numba_config
 
             os.environ["NUMBA_THREADING_LAYER"] = _layer
             _numba_config.THREADING_LAYER = _layer
             _threading_mod = importlib.import_module("numba.np.ufunc.parallel")
             _threading_mod._launch_threads()
-            print(f"Using Numba threading layer: {_layer}")
+            tprint(f"Using Numba threading layer: {_layer}")
             return
         except Exception as e:
-            print(f"Threading layer {_layer} failed: {e}")
+            tprint(f"Threading layer {_layer} failed: {e}")
             os.environ.pop("NUMBA_THREADING_LAYER", None)
     os.environ["NUMBA_THREADING_LAYER"] = "workqueue"
     try:
@@ -41,53 +42,63 @@ def _configure_numba_threading_layer() -> None:
         _numba_config.THREADING_LAYER = "workqueue"
     except Exception:
         pass
-    print("Falling back to Numba threading layer: workqueue")
+    tprint("Falling back to Numba threading layer: workqueue")
 
 
 import argparse
 import sys
 import threading
 import time
-from typing import Dict, List, Any, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-from extreme_price_movements.inference.config import (
-    load_inference_config,
-    load_full_state,
-    get_inference_defaults,
-    get_candidate_thresholds,
-    get_margin_universe,
-    get_runtime_cfg,
-)
-from extreme_price_movements.inference.data_fetcher import (
-    make_exchange,
-    fetch_and_build_panel,
-    fetch_latest_ohlcv,
-    DataFetcher,
-)
+from extreme_price_movements import hf_data_loader
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.inference.candidate_selector import (
     select_candidates,
 )
+from extreme_price_movements.inference.config import (
+    get_candidate_thresholds,
+    get_inference_defaults,
+    get_runtime_cfg,
+    load_full_state,
+    load_inference_config,
+    resolve_inference_universes,
+)
+from extreme_price_movements.inference.daily_reporter import DailyDeploymentReporter
+from extreme_price_movements.inference.data_fetcher import (
+    DataFetcher,
+    classify_api_error,
+    fetch_and_build_panel,
+    fetch_latest_ohlcv,
+    make_exchange,
+)
 from extreme_price_movements.inference.feature_generator import (
-    generate_features,
-    load_or_compute_features,
-    get_inference_required_feature_keys,
-    get_features_for_candidates,
-    get_market_data,
     compute_selector_features,
+    generate_features,
+    get_features_for_candidates,
+    get_inference_required_feature_keys,
+    get_market_data,
+    load_or_compute_features,
 )
 from extreme_price_movements.inference.model_orchestrator import (
     ModelOrchestrator,
 )
 from extreme_price_movements.inference.parity import (
-    calibration_size_multiplier,
     calibrated_score_and_threshold,
-    load_strategy_acceptance_filter,
+    calibration_size_multiplier,
+    load_policy_params_by_strategy,
+    load_strategy_asset_exclusion_filter,
+    resolve_deployment_strategy_filter,
+    strategy_core_id,
+    strategy_id_matches,
     validate_calibration_artifacts,
+    validate_deployment_model_coverage,
+    validate_live_feature_contract,
+    validate_required_feature_frames,
 )
 from extreme_price_movements.inference.trade_executor import (
     TradeExecutor,
@@ -98,9 +109,7 @@ from extreme_price_movements.inference.trade_logger import (
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.simple_position_sizer import load_calibration_curves
-from extreme_price_movements import hf_data_loader
 from extreme_price_movements.utils import tprint
-
 
 # Default symbols to trade
 DEFAULT_SYMBOLS = [
@@ -144,6 +153,13 @@ def _build_market_snapshot(
         "G_VOLUME",
         "vol_z",
         "trend_pct",
+        "trend",
+        "entropy",
+        "vol_of_vol",
+        "kurtosis",
+        "jump_frequency",
+        "funding_cost",
+        "borrow_cost",
         "mkt_rv_ratio",
     ]:
         feat_df = feats.get(feat_name)
@@ -170,6 +186,14 @@ def _build_executor_bucket_params(config: Dict[str, Any]) -> Dict[str, Any]:
         bucket_params.setdefault(
             "cooldown_hours", float(ridge_sizer.best_params_.get("cooldown_hours", 0.0))
         )
+    policy_params = load_policy_params_by_strategy(
+        str(config.get("data_root", "data")), str(config.get("run_id", ""))
+    )
+    for strategy_id, params in policy_params.items():
+        existing = bucket_params.get(strategy_id, {})
+        merged = dict(existing) if isinstance(existing, dict) else {}
+        merged.update(params)
+        bucket_params[strategy_id] = merged
     return bucket_params
 
 
@@ -188,6 +212,23 @@ def _subset_panel(
     return out
 
 
+def _effective_runtime_model_bundle(
+    full_state: Dict[str, Any],
+    config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Mirror ModelOrchestrator's runtime bundle overlay for validation."""
+    effective = dict(full_state or {})
+    loaded_bundle = effective.get("bundle", {}) if isinstance(effective, dict) else {}
+    runtime_bundle = config.get("model_bundle", {}) if isinstance(config, dict) else {}
+    bundle = dict(loaded_bundle or {})
+    if isinstance(runtime_bundle, dict):
+        for key, value in runtime_bundle.items():
+            if value:
+                bundle[key] = value
+    effective["bundle"] = bundle
+    return effective
+
+
 def _select_candidates_and_load_features(
     *,
     panel: Dict[str, pd.DataFrame],
@@ -203,13 +244,10 @@ def _select_candidates_and_load_features(
     min_range_pct = thresholds.get("min_range_pct")
     if thresholds.get("min_move_12h_pct") is not None:
         min_range_pct = None
+    _ = min_range_pct
     long_cands, short_cands = select_candidates(
         panel=panel,
         feats=selector_feats,
-        extreme_pct=thresholds["extreme_pct"],
-        min_move_12h_pct=thresholds.get("min_move_12h_pct", 0.06),
-        min_range_pct=min_range_pct,
-        min_vol_zscore=thresholds["min_vol_zscore"],
         metric=str(thresholds.get("metric", "ret12h")),
     )
     selected_symbols = sorted(set(long_cands + short_cands))
@@ -223,6 +261,12 @@ def _select_candidates_and_load_features(
         cfg=cfg,
         lookback_hours=lookback_hours,
         required_feature_keys=required_feature_keys,
+    )
+    validate_required_feature_frames(
+        model_feats,
+        required_feature_keys,
+        symbols=selected_symbols,
+        strict=True,
     )
     return thresholds, long_cands, short_cands, model_feats
 
@@ -258,6 +302,143 @@ def _is_symbol_cooldown_blocked(
     )
 
 
+def _is_symbol_blocked_for_strategy(
+    symbol: str,
+    strategy_id: str,
+    strategy_asset_exclusions: Optional[Dict[str, set[str]]],
+) -> bool:
+    """Return True when policy optimiser excludes a symbol for this strategy."""
+    if not strategy_asset_exclusions:
+        return False
+    symbol_norm = str(symbol or "").strip().upper().replace("_", "/")
+    sid = str(strategy_id or "")
+    core = strategy_core_id(sid)
+    aliases = {sid, core}
+    side = sid.split("_", 1)[0].lower() if "_" in sid else ""
+    if side in {"long", "short"} and core:
+        aliases.add(f"{side}_{core}")
+    for alias in aliases:
+        blocked = strategy_asset_exclusions.get(alias)
+        if not blocked:
+            continue
+        blocked_norm = {str(sym).upper().replace("_", "/") for sym in blocked}
+        if symbol_norm in blocked_norm:
+            return True
+    return False
+
+
+def _record_trade_execution_health(
+    portfolio_mgr: Optional[PortfolioManager],
+    trade_result: Dict[str, Any],
+) -> None:
+    """Feed exchange execution failures into portfolio hard-gate counters."""
+    if portfolio_mgr is None:
+        return
+    success = bool(
+        trade_result.get("success", False) or trade_result.get("status") == "recorded"
+    )
+    if success:
+        portfolio_mgr.record_order_result(True)
+        return
+    error_text = str(trade_result.get("error", "") or "")
+    category = str(trade_result.get("error_category", "") or "")
+    rejection_categories = {
+        "insufficient_balance",
+        "invalid_precision_or_filter",
+        "symbol_halted",
+        "order_rejected",
+        "duplicate_client_order_id",
+        "cancel_failed",
+        "stop_loss_failed",
+    }
+    api_failure_categories = {
+        "network_timeout",
+        "rate_limited",
+        "auth_or_permission",
+        "exchange_error",
+    }
+    is_rejected = category in rejection_categories or (
+        "reject" in error_text.lower()
+        or str(trade_result.get("status", "")).lower() == "rejected"
+    )
+    portfolio_mgr.record_order_result(
+        False,
+        rejected=is_rejected,
+        error=f"{category}: {error_text}" if category else error_text,
+    )
+    if category in api_failure_categories:
+        portfolio_mgr.record_api_call(
+            False,
+            error=f"order execution failed: {category}: {error_text}",
+        )
+
+
+def _sleep_until_hourly_ohlcv_window(
+    now: pd.Timestamp,
+    *,
+    delay_seconds: float = 5.0,
+) -> None:
+    """Wait a few seconds after the hour so Binance has published the new kline."""
+    current_hour = pd.Timestamp(now).floor("h")
+    seconds_into_hour = (pd.Timestamp.now(tz="UTC") - current_hour).total_seconds()
+    remaining = float(delay_seconds) - float(seconds_into_hour)
+    if remaining > 0:
+        tprint(f"Waiting {remaining:.1f}s for hourly OHLCV publication window")
+        time.sleep(remaining)
+
+
+def _select_top_base_prediction_symbols(
+    orchestrator: ModelOrchestrator,
+    candidate_features: pd.DataFrame,
+    candidates: List[str],
+    side: str,
+    strategy_id: str,
+    *,
+    top_frac: float = 0.25,
+) -> Dict[str, Dict[str, float]]:
+    """Rank base-model predictions and keep only the top fraction for meta."""
+    if not hasattr(orchestrator, "predict_alpha"):
+        return {
+            str(symbol): {"base_pred": float("nan"), "base_rank_pct": 1.0}
+            for symbol in candidates
+        }
+    try:
+        preds = orchestrator.predict_alpha(candidate_features, side, strategy_id)
+    except Exception as exc:
+        tprint(
+            f"Base prediction gate failed for {side}/{strategy_id}; "
+            f"falling back to all candidates: {exc}"
+        )
+        return {
+            str(symbol): {"base_pred": float("nan"), "base_rank_pct": 1.0}
+            for symbol in candidates
+        }
+    if not isinstance(preds, pd.Series) or preds.empty:
+        return {}
+
+    ranked = preds.reindex(candidates).replace([np.inf, -np.inf], np.nan).dropna()
+    if ranked.empty:
+        return {}
+    top_n = max(1, int(np.ceil(len(ranked) * float(top_frac))))
+    winners = ranked.sort_values(ascending=False).head(top_n)
+    ranks = ranked.rank(method="first", pct=True, ascending=True)
+    min_kept_score = float(winners.min()) if len(winners) else float("nan")
+    tprint(
+        f"Base gate {side}/{strategy_core_id(strategy_id)}: "
+        f"{len(winners)}/{len(ranked)} candidates kept for meta "
+        f"(min_base_pred={min_kept_score:.6g})"
+    )
+    return {
+        str(symbol): {
+            "base_pred": float(score),
+            "base_rank_pct": float(ranks.loc[symbol]),
+            "base_gate_top_frac": float(top_frac),
+            "base_gate_min_kept_score": min_kept_score,
+        }
+        for symbol, score in winners.items()
+    }
+
+
 def run_inference_step(
     orchestrator: ModelOrchestrator,
     panel: Dict[str, pd.DataFrame],
@@ -271,6 +452,7 @@ def run_inference_step(
     calibration_data: Optional[Dict[str, Dict[str, Any]]] = None,
     portfolio_mgr: Optional[PortfolioManager] = None,
     initial_rank_threshold: float = 0.5,
+    strategy_asset_exclusions: Optional[Dict[str, set[str]]] = None,
 ) -> Dict[str, Any]:
     """Run a single inference step.
 
@@ -299,12 +481,6 @@ def run_inference_step(
     long_cands, short_cands = select_candidates(
         panel=panel,
         feats=feats,
-        extreme_pct=thresholds["extreme_pct"],
-        min_move_12h_pct=thresholds.get("min_move_12h_pct", 0.06),
-        min_range_pct=None
-        if thresholds.get("min_move_12h_pct") is not None
-        else thresholds.get("min_range_pct"),
-        min_vol_zscore=thresholds["min_vol_zscore"],
         metric=str(thresholds.get("metric", "ret12h")),
     )
 
@@ -350,48 +526,120 @@ def run_inference_step(
 
         # Run full inference chain
         try:
-            bucket_kind = "mr"
-            for symbol in candidates:
-                if symbol not in candidate_features.index:
-                    continue
-                chain_results = orchestrator.run_full_chain(
-                    symbol, side, candidate_features.loc[[symbol]]
-                )
-                strategy_id = str(chain_results.get("strategy_id") or f"{side}_mr")
-                raw_score = float(chain_results.get("meta_pred", 0.0) or 0.0)
-                calibrated_score, rank_threshold = calibrated_score_and_threshold(
-                    raw_score=raw_score,
-                    strategy_id=strategy_id,
-                    calibration_data=calibration_data,
-                    default_threshold=initial_rank_threshold,
-                )
-                chain_results["strategy_id"] = strategy_id
-                chain_results["calibrated_score"] = calibrated_score
-                chain_results["rank_threshold"] = rank_threshold
-                if (
-                    accepted_strategies is not None
-                    and strategy_id not in accepted_strategies
+            decision_rows: List[Dict[str, Any]] = []
+            strategy_ids = (
+                orchestrator.available_strategies(side, accepted_strategies)
+                if hasattr(orchestrator, "available_strategies")
+                else [f"{side}_mr"]
+            )
+            for selected_strategy in strategy_ids:
+                if all(
+                    _is_symbol_blocked_for_strategy(
+                        symbol, str(selected_strategy), strategy_asset_exclusions
+                    )
+                    for symbol in candidates
                 ):
+                    tprint(
+                        f"Asset exclusion block: all {side} candidates skipped for "
+                        f"{selected_strategy}"
+                    )
                     continue
-                if calibrated_score < rank_threshold:
-                    continue
-                position_sizes = pd.Series(
-                    [chain_results.get("position_size", 0.0)],
-                    index=[symbol],
-                    dtype=float,
+                base_gate = _select_top_base_prediction_symbols(
+                    orchestrator=orchestrator,
+                    candidate_features=candidate_features,
+                    candidates=candidates,
+                    side=side,
+                    strategy_id=str(selected_strategy),
                 )
-                if symbol not in position_sizes.index:
-                    continue
-                size = position_sizes[symbol]
-                size *= calibration_size_multiplier(
-                    raw_score=raw_score,
-                    strategy_id=strategy_id,
-                    calibration_data=calibration_data,
-                    default_threshold=initial_rank_threshold,
-                )
-                if abs(size) < 0.01:
-                    continue
-                bucket_key = f"{side.lower()}_{bucket_kind}"
+                for symbol in candidates:
+                    if (
+                        symbol not in candidate_features.index
+                        or symbol not in base_gate
+                    ):
+                        continue
+                    if _is_symbol_blocked_for_strategy(
+                        symbol, str(selected_strategy), strategy_asset_exclusions
+                    ):
+                        tprint(
+                            f"Asset exclusion block: {symbol} skipped for "
+                            f"{selected_strategy}"
+                        )
+                        continue
+                    try:
+                        chain_results = orchestrator.run_full_chain(
+                            symbol,
+                            side,
+                            candidate_features.loc[[symbol]],
+                            panel=panel,
+                            kind=selected_strategy,
+                        )
+                    except TypeError as exc:
+                        if "kind" not in str(exc):
+                            raise
+                        chain_results = orchestrator.run_full_chain(
+                            symbol, side, candidate_features.loc[[symbol]]
+                        )
+                    strategy_id = str(
+                        chain_results.get("strategy_id")
+                        or strategy_core_id(str(selected_strategy))
+                    )
+                    if accepted_strategies is not None and not strategy_id_matches(
+                        strategy_id, accepted_strategies
+                    ):
+                        continue
+                    if _is_symbol_blocked_for_strategy(
+                        symbol, strategy_id, strategy_asset_exclusions
+                    ):
+                        tprint(
+                            f"Asset exclusion block: {symbol} skipped for {strategy_id}"
+                        )
+                        continue
+                    chain_results.update(base_gate.get(symbol, {}))
+                    if chain_results.get("action") != "enter":
+                        continue
+                    raw_score = float(chain_results.get("meta_pred", 0.0) or 0.0)
+                    calibrated_score, rank_threshold = calibrated_score_and_threshold(
+                        raw_score=raw_score,
+                        strategy_id=strategy_id,
+                        calibration_data=calibration_data,
+                        default_threshold=initial_rank_threshold,
+                    )
+                    if calibrated_score < rank_threshold:
+                        continue
+                    size = float(chain_results.get("position_size", 0.0) or 0.0)
+                    size *= calibration_size_multiplier(
+                        raw_score=raw_score,
+                        strategy_id=strategy_id,
+                        calibration_data=calibration_data,
+                        default_threshold=initial_rank_threshold,
+                    )
+                    if abs(size) < 0.01:
+                        continue
+                    chain_results["strategy_id"] = strategy_id
+                    chain_results["calibrated_score"] = calibrated_score
+                    chain_results["rank_threshold"] = rank_threshold
+                    decision_rows.append(
+                        {
+                            "symbol": symbol,
+                            "side": side,
+                            "size": size,
+                            "strategy_id": strategy_id,
+                            "raw_score": raw_score,
+                            "calibrated_score": calibrated_score,
+                            "rank_threshold": rank_threshold,
+                            "chain_results": chain_results,
+                        }
+                    )
+
+            decision_rows.sort(
+                key=lambda row: float(row.get("calibrated_score", 0.0)), reverse=True
+            )
+            for decision in decision_rows:
+                symbol = str(decision["symbol"])
+                strategy_id = str(decision["strategy_id"])
+                chain_results = dict(decision["chain_results"])
+                size = float(decision["size"])
+                bucket_key = strategy_core_id(strategy_id)
                 cooldown_hours = (
                     float(executor.get_cooldown_hours(bucket_key))
                     if hasattr(executor, "get_cooldown_hours")
@@ -409,18 +657,27 @@ def run_inference_step(
                     )
                     continue
                 if portfolio_mgr is not None:
+                    requested_position_usdt = (
+                        abs(float(size))
+                        if abs(float(size)) > 1.0
+                        else abs(float(size)) * float(portfolio_mgr.portfolio_value)
+                    )
                     can_enter, info = portfolio_mgr.can_enter_position(
                         symbol=symbol,
                         side=side,
                         strategy_id=strategy_id,
-                        confidence_score=calibrated_score,
-                        initial_threshold=rank_threshold,
+                        confidence_score=float(decision["calibrated_score"]),
+                        initial_threshold=float(decision["rank_threshold"]),
                         current_time=now_utc,
+                        requested_position_size=requested_position_usdt,
                     )
                     chain_results["portfolio_gate"] = info
                     if not can_enter:
                         continue
-                    size = min(float(size), float(info.get("position_size_cap", size)))
+                    size = min(
+                        requested_position_usdt,
+                        float(info.get("position_size_cap", requested_position_usdt)),
+                    )
                 close = panel.get("close")
                 price = None
                 if close is not None and symbol in close.columns:
@@ -436,20 +693,46 @@ def run_inference_step(
                     "position_size": size,
                     "meta_pred": chain_results.get("meta_pred", ""),
                     "action": chain_results.get("action", ""),
+                    "base_pred": chain_results.get("base_pred", ""),
+                    "base_rank_pct": chain_results.get("base_rank_pct", ""),
+                    "base_gate_top_frac": chain_results.get("base_gate_top_frac", ""),
+                    "ridge_confidence": chain_results.get("ridge_confidence", ""),
                 }
                 features_log = {}
-                for feat_name in ["ret24h", "range_12h_pct", "volatility_zscore"]:
+                for feat_name in [
+                    "ret24h",
+                    "range_12h_pct",
+                    "volatility_zscore",
+                    "vol_zscore",
+                    "volume",
+                    "vol_z",
+                    "trend_pct",
+                    "trend",
+                    "entropy",
+                    "vol_of_vol",
+                    "kurtosis",
+                    "jump_frequency",
+                    "funding_cost",
+                    "borrow_cost",
+                    "mkt_rv_ratio",
+                    "G_VOL",
+                    "G_TREND",
+                    "G_VOLUME",
+                ]:
                     if feat_name in feats:
                         feat_df = feats[feat_name]
                         if symbol in feat_df.columns:
-                            features_log[feat_name] = feat_df[symbol].dropna().iloc[-1]
+                            vals = feat_df[symbol].dropna()
+                            if not vals.empty:
+                                features_log[feat_name] = vals.iloc[-1]
                 trade_result = executor.execute_trade(
                     symbol=symbol,
                     side=side,
                     size=abs(size),
-                    price=price,
+                    price=float(chain_results.get("entry_px") or price),
                     bucket_key=bucket_key,
                 )
+                _record_trade_execution_health(portfolio_mgr, trade_result)
                 if portfolio_mgr is not None and (
                     trade_result.get("success", False)
                     or trade_result.get("status") == "recorded"
@@ -466,13 +749,23 @@ def run_inference_step(
                     symbol=symbol,
                     side=side,
                     size=abs(size),
-                    price=price,
+                    price=trade_result.get("realized_entry_price", price),
                     predictions=predictions,
                     features=features_log,
                     mode=executor.mode,
                     strategy_id=strategy_id,
-                    calibrated_score=calibrated_score,
-                    rank_threshold=rank_threshold,
+                    calibrated_score=float(decision["calibrated_score"]),
+                    rank_threshold=float(decision["rank_threshold"]),
+                    expected_entry_price=trade_result.get("expected_entry_price"),
+                    realized_entry_price=trade_result.get("realized_entry_price"),
+                    price_slippage_pct=trade_result.get("price_slippage_pct"),
+                    spread_proxy_pct=trade_result.get("spread_proxy_pct"),
+                    orderbook_snapshot=trade_result.get("orderbook_snapshot"),
+                    stop_price=chain_results.get("stop_px")
+                    or trade_result.get("stop_price"),
+                    actual_entry_price=trade_result.get("realized_entry_price"),
+                    exit_reason=trade_result.get("exit_reason"),
+                    net_pnl=trade_result.get("net_pnl"),
                 )
                 results["trades"].append(
                     {
@@ -481,6 +774,8 @@ def run_inference_step(
                         "size": size,
                         "price": price,
                         "result": trade_result,
+                        "strategy_id": strategy_id,
+                        "calibrated_score": float(decision["calibrated_score"]),
                     }
                 )
         except Exception as e:
@@ -519,6 +814,9 @@ def run_inference_loop(
     full_state = config["full_state"]
     thresholds = config["thresholds"]
     run_id = config["run_id"]
+    data_root = str(config.get("data_root", "data"))
+    accepted_strategies = resolve_deployment_strategy_filter(data_root, run_id)
+    strategy_asset_exclusions = load_strategy_asset_exclusion_filter(data_root, run_id)
 
     # Initialize orchestrator
     orchestrator = ModelOrchestrator(model_bundle, full_state)
@@ -739,6 +1037,8 @@ def run_inference_loop(
                 executor=executor,
                 logger=logger,
                 max_candidates=max_candidates,
+                accepted_strategies=accepted_strategies,
+                strategy_asset_exclusions=strategy_asset_exclusions,
             )
 
             tprint(f"Executed {len(results['trades'])} trades")
@@ -750,7 +1050,7 @@ def run_inference_loop(
             tprint(f"Error in inference loop: {e}")
             import traceback
 
-            traceback.print_exc()
+            tprint(traceback.format_exc())
 
         # Wait for next iteration
         time.sleep(inference_interval)
@@ -789,19 +1089,44 @@ def main():
         default=24 * 60,
         help="Lookback hours for features",
     )
+    parser.add_argument(
+        "--execution-account",
+        choices=["spot", "margin"],
+        default="spot",
+        help="Execution account for live orders (default: spot)",
+    )
+    parser.add_argument(
+        "--margin-mode",
+        choices=["cross", "isolated"],
+        default="cross",
+        help="Margin mode when --execution-account margin is used",
+    )
     args = parser.parse_args()
 
     # Initialize components
     config = load_inference_config()
+    config["execution_account"] = args.execution_account
+    config["margin_mode"] = args.margin_mode
+    config["mode"] = "live" if args.live else "shadow"
     exchange = make_exchange()
     model_bundle = load_full_state(config["run_id"], config["data_root"])
-    required_feature_keys = get_inference_required_feature_keys(model_bundle)
+    effective_model_bundle = _effective_runtime_model_bundle(model_bundle, config)
+    validate_live_feature_contract(effective_model_bundle, strict=True)
+    required_feature_keys = get_inference_required_feature_keys(effective_model_bundle)
     calibration_data = load_calibration_curves(config["data_root"], config["run_id"])
     validate_calibration_artifacts(
         config["data_root"], config["run_id"], calibration_data, strict=False
     )
-    accepted_strategies = load_strategy_acceptance_filter(
+    accepted_strategies = resolve_deployment_strategy_filter(
         config["data_root"], config["run_id"]
+    )
+    strategy_asset_exclusions = load_strategy_asset_exclusion_filter(
+        config["data_root"], config["run_id"]
+    )
+    validate_deployment_model_coverage(
+        effective_model_bundle,
+        accepted_strategies,
+        strict=True,
     )
 
     # Initialize data fetcher with incremental updates
@@ -816,13 +1141,26 @@ def main():
     )
     panel_lookback_hours = max(int(args.lookback_hours), panel_warmup_hours)
 
-    # Get symbols
-    symbols = args.symbols or get_margin_universe(exchange)
+    # Step 9 universe split:
+    # - download_symbols: full live Binance USDT margin universe, refreshed daily
+    # - symbols: tradable subset restricted to the active training universe
+    universe_state = resolve_inference_universes(
+        exchange,
+        data_root=config["data_root"],
+        run_id=config["run_id"],
+        explicit_symbols=args.symbols,
+    )
+    download_symbols = list(universe_state["download_symbols"])
+    symbols = list(universe_state["tradable_symbols"])
+    if not symbols:
+        tprint(
+            "Warning: tradable universe is empty after training-universe restriction"
+        )
 
     # Initialize on startup with historical data
-    print("Initializing with historical data...")
+    tprint("Initializing with historical data...")
     data_fetcher.initialize_with_historical_data(
-        symbols, lookback_hours=args.lookback_hours
+        download_symbols, lookback_hours=args.lookback_hours
     )
 
     # Initialize other components
@@ -834,6 +1172,12 @@ def main():
         config=config,
     )
     logger = TradeLogger()
+    daily_reporter = DailyDeploymentReporter(
+        state_path=str(
+            config.get("daily_report_state_path")
+            or "extreme_price_movements/logs/daily_report_state.json"
+        )
+    )
     portfolio_mgr = PortfolioManager(
         max_positions=4,
         max_portfolio_pct=0.30,
@@ -858,6 +1202,9 @@ def main():
                 args.challenger_interval,
                 panel_lookback_hours,
                 required_feature_keys,
+                accepted_strategies,
+                calibration_data,
+                strategy_asset_exclusions,
             ),
             daemon=True,
         )
@@ -865,30 +1212,55 @@ def main():
 
     # Main inference loop - run every 15m
     last_hourly_sync = None
+    last_universe_refresh_day = pd.Timestamp.utcnow().floor("D")
     while True:
         try:
             current_time = pd.Timestamp.now(tz="UTC").floor("15min")
-            print(f"\n=== Running 15m inference at {current_time} ===")
+            tprint(f"\n=== Running 15m inference at {current_time} ===")
+
+            current_day = pd.Timestamp.utcnow().floor("D")
+            if current_day > last_universe_refresh_day and not args.symbols:
+                universe_state = resolve_inference_universes(
+                    exchange,
+                    data_root=config["data_root"],
+                    run_id=config["run_id"],
+                )
+                download_symbols[:] = universe_state["download_symbols"]
+                symbols[:] = universe_state["tradable_symbols"]
+                last_universe_refresh_day = current_day
+                tprint(
+                    "Daily Binance universe refresh complete: "
+                    f"download={len(download_symbols)} tradable={len(symbols)}"
+                )
 
             # Fetch full universe hourly, shortly after the hour boundary.
             current_hour = current_time.floor("h")
             if (last_hourly_sync is None) or (current_hour > last_hourly_sync):
-                data_fetcher.fetch_incremental_universe(
-                    symbols,
-                    max_workers=8,
+                _sleep_until_hourly_ohlcv_window(
+                    current_time,
+                    delay_seconds=float(config.get("hourly_ohlcv_delay_seconds", 5.0)),
+                )
+                data_fetcher.fetch_hourly_universe_once(
+                    download_symbols,
+                    max_workers=int(config.get("hourly_ohlcv_workers", 16)),
+                    no_progress_timeout_seconds=float(
+                        config.get("hourly_ohlcv_no_progress_timeout_seconds", 60.0)
+                    ),
                     check_recent_gaps_days=7,
-                    use_lightweight_probe=True,
                 )
                 last_hourly_sync = current_hour
 
-            panel = data_fetcher.get_panel(symbols, lookback_hours=panel_lookback_hours)
+            panel = data_fetcher.get_panel(
+                download_symbols, lookback_hours=panel_lookback_hours
+            )
+            tradable_panel = _subset_panel(panel, symbols)
             (
                 thresholds,
                 long_cands,
                 short_cands,
                 features,
             ) = _select_candidates_and_load_features(
-                panel=panel,
+                panel=tradable_panel,
                 symbols=symbols,
                 run_id=config["run_id"],
                 data_root=config["data_root"],
@@ -897,112 +1269,35 @@ def main():
                 required_feature_keys=required_feature_keys,
             )
 
-            # Run full model chain for each candidate
-            for symbol in long_cands + short_cands:
-                side = "long" if symbol in long_cands else "short"
-                bucket_key = f"{side.lower()}_mr"
-                cooldown_hours = (
-                    float(executor.get_cooldown_hours(bucket_key))
-                    if hasattr(executor, "get_cooldown_hours")
-                    else 0.0
+            results = run_inference_step(
+                orchestrator=orchestrator,
+                panel=tradable_panel,
+                feats=features,
+                thresholds=thresholds,
+                executor=executor,
+                logger=logger,
+                max_candidates=max(len(long_cands) + len(short_cands), 1),
+                accepted_strategies=accepted_strategies,
+                calibration_data=calibration_data,
+                portfolio_mgr=portfolio_mgr,
+                initial_rank_threshold=0.5,
+                strategy_asset_exclusions=strategy_asset_exclusions,
+            )
+            tprint(
+                f"Inference batch complete: download_symbols={len(download_symbols)} "
+                f"tradable_symbols={len(symbols)} "
+                f"candidates={len(long_cands) + len(short_cands)} "
+                f"trades={len(results['trades'])}"
+            )
+            try:
+                daily_reporter.maybe_run(
+                    exchange=exchange,
+                    portfolio_mgr=portfolio_mgr,
+                    trade_logger=logger,
+                    config=config,
                 )
-                if _is_symbol_cooldown_blocked(
-                    symbol,
-                    now=current_time,
-                    logger=logger,
-                    executor=executor,
-                    cooldown_hours=cooldown_hours,
-                ):
-                    tprint(
-                        f"Cooldown block: {symbol} skipped for {cooldown_hours:.1f}h window"
-                    )
-                    continue
-
-                market_data = _build_market_snapshot(symbol, panel, features)
-                result = orchestrator.run_full_chain(symbol, side, features, panel)
-                strategy_id = str(result.get("strategy_id") or bucket_key)
-                raw_score = float(result.get("meta_pred", 0.0) or 0.0)
-                calibrated_score, rank_threshold = calibrated_score_and_threshold(
-                    raw_score=raw_score,
-                    strategy_id=strategy_id,
-                    calibration_data=calibration_data,
-                    default_threshold=0.5,
-                )
-                result["strategy_id"] = strategy_id
-                result["calibrated_score"] = calibrated_score
-                result["rank_threshold"] = rank_threshold
-                if (
-                    accepted_strategies is not None
-                    and strategy_id not in accepted_strategies
-                ):
-                    tprint(f"Strategy acceptance block: {strategy_id} ({symbol})")
-                    continue
-                if calibrated_score < rank_threshold:
-                    tprint(
-                        f"Confidence block: {symbol} calibrated={calibrated_score:.4f} < threshold={rank_threshold:.4f}"
-                    )
-                    continue
-
-                if result.get("action") == "enter":
-                    size_mult = calibration_size_multiplier(
-                        raw_score=raw_score,
-                        strategy_id=strategy_id,
-                        calibration_data=calibration_data,
-                        default_threshold=rank_threshold,
-                    )
-                    result["position_size"] = (
-                        float(result.get("position_size", 0.0) or 0.0) * size_mult
-                    )
-                    can_enter, info = portfolio_mgr.can_enter_position(
-                        symbol=symbol,
-                        side=side,
-                        strategy_id=strategy_id,
-                        confidence_score=calibrated_score,
-                        initial_threshold=rank_threshold,
-                        current_time=current_time,
-                    )
-                    result["portfolio_gate"] = info
-                    if not can_enter:
-                        tprint(f"Portfolio block: {symbol} reason={info.get('reason')}")
-                        continue
-                    req_size = float(result.get("position_size", 0.0) or 0.0)
-                    size_cap = float(info.get("position_size_cap", req_size))
-                    result["position_size"] = min(req_size, size_cap)
-
-                if result.get("action") == "enter":
-                    trade_result = executor.execute_trade(
-                        symbol=symbol,
-                        side=side,
-                        size=result.get("position_size"),
-                        bucket_key=bucket_key,
-                    )
-                    result["trade_execution"] = trade_result
-                    if (
-                        trade_result.get("success", False)
-                        or trade_result.get("status") == "recorded"
-                    ):
-                        portfolio_mgr.record_position_open(
-                            symbol=symbol,
-                            side=side,
-                            strategy_id=strategy_id,
-                            position_size=float(
-                                result.get("position_size", 0.0) or 0.0
-                            ),
-                            entry_price=float(
-                                result.get(
-                                    "entry_px",
-                                    market_data.get("close", np.nan) or np.nan,
-                                )
-                            ),
-                            entry_time=current_time,
-                        )
-
-                    logger.log_trade(
-                        result,
-                        orchestrator.get_last_results(),
-                        market_data,
-                        {**config, "mode": executor.mode, **thresholds},
-                    )
+            except Exception as exc:
+                tprint(f"Daily deployment report failed: {exc}")
 
             # Sleep until next 15-minute interval
             next_interval = current_time + pd.Timedelta(minutes=15)
@@ -1011,14 +1306,14 @@ def main():
                 time.sleep(sleep_seconds)
 
         except KeyboardInterrupt:
-            print("Shutting down...")
+            tprint("Shutting down...")
             executor.shutdown()
             break
         except Exception as e:
-            print(f"Error in inference loop: {e}")
+            tprint(f"Error in inference loop: {e}")
             import traceback
 
-            traceback.print_exc()
+            tprint(traceback.format_exc())
             time.sleep(60)  # Wait 1 minute on error
 
 
@@ -1032,8 +1327,12 @@ def run_challenger_monitor(
     interval,
     panel_lookback_hours,
     required_feature_keys=None,
+    accepted_strategies=None,
+    calibration_data=None,
+    strategy_asset_exclusions=None,
 ):
     """
+    calibration_data = calibration_data or {}
     Run challenger monitoring every 5 minutes.
 
     Check existing candidates for better opportunities and monitor OCO orders:
@@ -1052,13 +1351,11 @@ def run_challenger_monitor(
     while True:
         try:
             current_time = pd.Timestamp.now(tz="UTC")
-            print(f"\n=== Challenger monitor at {current_time} ===")
+            tprint(f"\n=== Challenger monitor at {current_time} ===")
 
-            # Fetch latest data (incremental, bounded fanout)
-            data_fetcher.fetch_incremental_universe(
-                symbols, max_workers=8, check_recent_gaps_days=7
-            )
-
+            # Full-universe OHLCV ingestion is handled hourly by the main loop.
+            # The 5m challenger reads the latest persisted panel and avoids
+            # creating an extra all-symbol API burst.
             panel = data_fetcher.get_panel(symbols, lookback_hours=panel_lookback_hours)
             (
                 thresholds,
@@ -1094,7 +1391,56 @@ def run_challenger_monitor(
                     continue
                 market_data = _build_market_snapshot(symbol, panel, features)
 
-                result = orchestrator.run_full_chain(symbol, side, features, panel)
+                result: Dict[str, Any] = {}
+                strategy_ids = (
+                    orchestrator.available_strategies(side, accepted_strategies)
+                    if hasattr(orchestrator, "available_strategies")
+                    else [f"{side}_mr"]
+                )
+                for selected_strategy in strategy_ids:
+                    if _is_symbol_blocked_for_strategy(
+                        symbol, str(selected_strategy), strategy_asset_exclusions
+                    ):
+                        continue
+                    try:
+                        candidate_result = orchestrator.run_full_chain(
+                            symbol, side, features, panel, kind=selected_strategy
+                        )
+                    except TypeError as exc:
+                        if "kind" not in str(exc):
+                            raise
+                        candidate_result = orchestrator.run_full_chain(
+                            symbol, side, features, panel
+                        )
+                    strategy_id = str(
+                        candidate_result.get("strategy_id")
+                        or strategy_core_id(str(selected_strategy))
+                    )
+                    if _is_symbol_blocked_for_strategy(
+                        symbol, strategy_id, strategy_asset_exclusions
+                    ):
+                        continue
+                    raw_score = float(candidate_result.get("meta_pred", 0.0) or 0.0)
+                    calibrated_score, rank_threshold = calibrated_score_and_threshold(
+                        raw_score=raw_score,
+                        strategy_id=strategy_id,
+                        calibration_data=calibration_data,
+                        default_threshold=0.5,
+                    )
+                    if (
+                        candidate_result.get("action") == "enter"
+                        and calibrated_score >= rank_threshold
+                    ):
+                        candidate_result["strategy_id"] = strategy_id
+                        candidate_result["calibrated_score"] = calibrated_score
+                        candidate_result["rank_threshold"] = rank_threshold
+                        result = candidate_result
+                        break
+                if not result:
+                    continue
+                bucket_key = strategy_core_id(
+                    str(result.get("strategy_id", bucket_key))
+                )
 
                 # Compare with existing positions
                 current_pos = executor.get_position(symbol)
@@ -1126,7 +1472,9 @@ def run_challenger_monitor(
             )
             exchange = executor.exchange
             if active_positions and exchange is not None:
-                print(f"Monitoring {len(active_positions)} active OCO positions...")
+                if hasattr(executor, "monitor_orders_once"):
+                    executor.monitor_orders_once()
+                tprint(f"Monitoring {len(active_positions)} active OCO positions...")
                 for symbol, position_state in active_positions.items():
                     try:
                         entry_time = position_state.get("entry_time")
@@ -1158,16 +1506,19 @@ def run_challenger_monitor(
                                 symbol, position_state, ohlcv_5m, executor
                             )
                     except Exception as e:
-                        print(f"  Error fetching 5m data for {symbol}: {e}")
+                        tprint(
+                            f"  Error fetching 5m data for {symbol}: "
+                            f"{classify_api_error(e)}: {e}"
+                        )
                         continue
 
             time.sleep(interval)
 
         except Exception as e:
-            print(f"Error in challenger monitor: {e}")
+            tprint(f"Error in challenger monitor: {e}")
             import traceback
 
-            traceback.print_exc()
+            tprint(traceback.format_exc())
             time.sleep(interval)
 
 
@@ -1211,13 +1562,18 @@ def _evaluate_oco_policy(
         bucket_key = position_state.get("bucket_key", "")
         params = executor.get_bucket_params(bucket_key)
         stop_price = float(position_state.get("stop_price", np.nan))
-        limit_price = float(position_state.get("limit_price", np.nan))
         peak_price = float(position_state.get("peak_price", entry_price) or entry_price)
         mfe = float(position_state.get("mfe", 0.0) or 0.0)
         giveback_pct = float(params.get("giveback_pct", 0.005))
         trail_mult = float(params.get("trail_mult", 0.25))
         profit_lock = float(params.get("profit_lock_amount", 0.003))
-        mfe_threshold = float(params.get("mfe_early_exit_threshold", 0.02))
+        enable_trailing = bool(params.get("enable_trailing", True))
+        trailing_power = float(params.get("trailing_power", 1.0))
+        trailing_squash_divisor = max(
+            float(params.get("trailing_squash_divisor", 1.0)), 1e-6
+        )
+        trailing_override_alpha = float(params.get("trailing_override_alpha", 0.0))
+        giveback_beta = float(params.get("giveback_beta", 1.0))
         last_bar_ts = bars.index[-1]
 
         for bar_ts, row in bars.iterrows():
@@ -1228,31 +1584,29 @@ def _evaluate_oco_policy(
 
             if side == "long":
                 mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))
-                if (
-                    (np.isfinite(stop_price) and bar_low <= stop_price)
-                    or (np.isfinite(limit_price) and bar_high >= limit_price)
-                    or (mfe >= mfe_threshold)
-                ):
-                    if np.isfinite(stop_price) and bar_low <= stop_price:
-                        exit_reason = "stop_loss_5m"
-                        exit_price = stop_price
-                    elif mfe >= mfe_threshold:
-                        exit_reason = "early_exit_5m"
-                        exit_price = bar_close
-                    else:
-                        exit_reason = "take_profit_5m"
-                        exit_price = limit_price
+                if np.isfinite(stop_price) and bar_low <= stop_price:
+                    exit_reason = "stop_loss_5m"
+                    exit_price = stop_price
                     executor.close_position(
                         symbol, price=float(exit_price), reason=exit_reason
                     )
                     return
                 peak_price = max(peak_price, bar_high)
                 new_stop = stop_price
-                if peak_price > entry_price:
+                if enable_trailing and peak_price > entry_price:
                     giveback_stop = peak_price * (1.0 - giveback_pct)
                     trailing_stop = entry_price + trail_mult * (
                         peak_price - entry_price
                     )
+                    if trailing_override_alpha > 0.0:
+                        activation = trailing_override_alpha * max(giveback_pct, 1e-6)
+                        excess = max(mfe - activation, 0.0)
+                        dynamic_dist = excess**trailing_power / trailing_squash_divisor
+                        if dynamic_dist > 0.0:
+                            trailing_stop = max(
+                                trailing_stop,
+                                peak_price * (1.0 - dynamic_dist * giveback_beta),
+                            )
                     locked_stop = entry_price * (1.0 + profit_lock)
                     new_stop = max(
                         float(stop_price), giveback_stop, trailing_stop, locked_stop
@@ -1261,31 +1615,29 @@ def _evaluate_oco_policy(
                     stop_price = float(new_stop)
             else:
                 mfe = max(mfe, (entry_price - bar_low) / max(entry_price, 1e-12))
-                if (
-                    (np.isfinite(stop_price) and bar_high >= stop_price)
-                    or (np.isfinite(limit_price) and bar_low <= limit_price)
-                    or (mfe >= mfe_threshold)
-                ):
-                    if np.isfinite(stop_price) and bar_high >= stop_price:
-                        exit_reason = "stop_loss_5m"
-                        exit_price = stop_price
-                    elif mfe >= mfe_threshold:
-                        exit_reason = "early_exit_5m"
-                        exit_price = bar_close
-                    else:
-                        exit_reason = "take_profit_5m"
-                        exit_price = limit_price
+                if np.isfinite(stop_price) and bar_high >= stop_price:
+                    exit_reason = "stop_loss_5m"
+                    exit_price = stop_price
                     executor.close_position(
                         symbol, price=float(exit_price), reason=exit_reason
                     )
                     return
                 peak_price = min(peak_price, bar_low)
                 new_stop = stop_price
-                if peak_price < entry_price:
+                if enable_trailing and peak_price < entry_price:
                     giveback_stop = peak_price * (1.0 + giveback_pct)
                     trailing_stop = entry_price - trail_mult * (
                         entry_price - peak_price
                     )
+                    if trailing_override_alpha > 0.0:
+                        activation = trailing_override_alpha * max(giveback_pct, 1e-6)
+                        excess = max(mfe - activation, 0.0)
+                        dynamic_dist = excess**trailing_power / trailing_squash_divisor
+                        if dynamic_dist > 0.0:
+                            trailing_stop = min(
+                                trailing_stop,
+                                peak_price * (1.0 + dynamic_dist * giveback_beta),
+                            )
                     locked_stop = entry_price * (1.0 - profit_lock)
                     new_stop = min(
                         float(stop_price), giveback_stop, trailing_stop, locked_stop
@@ -1296,13 +1648,12 @@ def _evaluate_oco_policy(
         executor.update_position_policy_state(
             symbol,
             stop_price=stop_price,
-            limit_price=limit_price,
             peak_price=peak_price,
             mfe=mfe,
             last_5m_eval_ts=last_bar_ts,
         )
     except Exception as e:
-        print(f"  [OCO] Error evaluating OCO policy for {symbol}: {e}")
+        tprint(f"  [STOP_LOSS] Error evaluating stop policy for {symbol}: {e}")
 
 
 if __name__ == "__main__":

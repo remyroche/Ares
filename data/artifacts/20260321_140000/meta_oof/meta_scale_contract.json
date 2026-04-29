@@ -1,6 +1,9 @@
 {
   "oof_p_move": "probability of a materially large move",
   "oof_p_move_raw": "raw probability before calibration",
+  "oof_base_clf": "base classifier OOF probability aligned to the meta rows",
+  "oof_meta_clf": "meta correctness classifier OOF probability used for combination",
+  "oof_base_meta_correctness_prob": "best grid-selected base+meta combined OOF probability",
   "oof_p_early_inval": "probability",
   "oof_ev": "expected payoff multiple"
 }

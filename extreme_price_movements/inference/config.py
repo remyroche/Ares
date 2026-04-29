@@ -7,19 +7,22 @@ This module loads all configuration needed for inference:
 - Other config parameters
 """
 
-from typing import Dict, Any, Optional, List
 import csv
+import json
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import pandas as pd
 
 from extreme_price_movements.config import CFG
-from extreme_price_movements.offline_optimisers.params_store import (
-    apply_offline_optimizer_best_params,
-    INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV,
-)
 from extreme_price_movements.model_loader import (
     find_latest_run_id,
     load_full_state,
     load_model_bundle,
+)
+from extreme_price_movements.offline_optimisers.params_store import (
+    INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV,
+    apply_offline_optimizer_best_params,
 )
 from extreme_price_movements.utils import tprint
 
@@ -129,6 +132,7 @@ def load_inference_config(
         "run_id": run_id,
         "thresholds": thresholds,
         "tbm_params": tbm_params,
+        "runtime_cfg": runtime_cfg,
         "model_bundle": model_bundle,
         "full_state": full_state,
         "data_root": data_root,
@@ -259,17 +263,83 @@ def get_inference_defaults() -> Dict[str, Any]:
     }
 
 
-# Margin universe cache - lazy loaded
+# Margin universe cache - lazy loaded and refreshed once per UTC day.
 _MARGIN_UNIVERSE_CACHE = None
+_MARGIN_UNIVERSE_CACHE_DAY = None
 
 
-def _load_universe_from_exchange(exchange: Any) -> List[str]:
+def _normalise_symbol(symbol: str) -> str:
+    raw = str(symbol or "").strip().upper().replace("_", "/")
+    if "/" in raw:
+        return raw
+    for quote in ("USDT", "USDC", "BUSD", "USD1", "FDUSD", "BTC", "ETH"):
+        if raw.endswith(quote) and len(raw) > len(quote):
+            return f"{raw[:-len(quote)]}/{quote}"
+    return raw
+
+
+def _parse_market_listed_at(meta: Dict[str, Any]) -> Optional[int]:
+    """Return exchange listing/onboarding timestamp in milliseconds when present."""
+    info = meta.get("info", {}) if isinstance(meta, dict) else {}
+    candidates = []
+    if isinstance(meta, dict):
+        candidates.extend(
+            [
+                meta.get("onboardDate"),
+                meta.get("onboardTimestamp"),
+                meta.get("listingTime"),
+                meta.get("listedAt"),
+                meta.get("created"),
+                meta.get("createdAt"),
+            ]
+        )
+    if isinstance(info, dict):
+        candidates.extend(
+            [
+                info.get("onboardDate"),
+                info.get("onboardTimestamp"),
+                info.get("listingTime"),
+                info.get("listedAt"),
+                info.get("created"),
+                info.get("createdAt"),
+            ]
+        )
+    for value in candidates:
+        if value in (None, ""):
+            continue
+        try:
+            if isinstance(value, str) and not value.isdigit():
+                parsed = pd.Timestamp(value)
+                if parsed.tzinfo is None:
+                    parsed = parsed.tz_localize("UTC")
+                else:
+                    parsed = parsed.tz_convert("UTC")
+                return int(parsed.value // 10**6)
+            numeric = float(value)
+            if numeric < 10**11:
+                numeric *= 1000.0
+            return int(numeric)
+        except Exception:
+            continue
+    return None
+
+
+def _load_universe_from_exchange(
+    exchange: Any,
+    *,
+    min_age_days: int = 180,
+) -> List[str]:
     """Build inference universe from exchange.load_markets() metadata.
 
-    Filters to active USDT symbols and margin-capable markets when flags exist.
+    Filters to active USDT symbols and margin-capable markets. If listing age
+    metadata exists, symbols younger than ``min_age_days`` are excluded.
     """
     markets = exchange.load_markets()
     selected: List[str] = []
+    age_cutoff_ms = int(
+        (pd.Timestamp.utcnow() - pd.Timedelta(days=int(min_age_days))).value // 10**6
+    )
+    skipped_young = 0
     for symbol, meta in (markets or {}).items():
         if not isinstance(meta, dict):
             continue
@@ -278,18 +348,31 @@ def _load_universe_from_exchange(exchange: Any) -> List[str]:
             continue
         if not bool(meta.get("active", True)):
             continue
+        info = meta.get("info", {}) if isinstance(meta.get("info", {}), dict) else {}
         margin_ok = bool(
-            meta.get("margin", True)
-            or meta.get("spot", False)
-            and meta.get("info", {}).get("isMarginTradingAllowed", False)
+            meta.get("margin", False) or info.get("isMarginTradingAllowed", False)
         )
         if not margin_ok:
             continue
-        selected.append(str(symbol))
+        listed_at_ms = _parse_market_listed_at(meta)
+        if listed_at_ms is not None and listed_at_ms > age_cutoff_ms:
+            skipped_young += 1
+            continue
+        selected.append(_normalise_symbol(str(symbol)))
+    if skipped_young:
+        tprint(
+            f"Exchange universe age filter removed {skipped_young} symbols "
+            f"younger than {min_age_days}d"
+        )
     return sorted(set(selected))
 
 
-def get_margin_universe(exchange=None) -> List[str]:
+def get_margin_universe(
+    exchange=None,
+    *,
+    force_refresh: bool = False,
+    min_age_days: int = 180,
+) -> List[str]:
     """Get list of margin-enabled symbols from cache.
 
     Args:
@@ -298,12 +381,22 @@ def get_margin_universe(exchange=None) -> List[str]:
     Returns:
         List of margin-enabled trading symbols
     """
-    global _MARGIN_UNIVERSE_CACHE
+    global _MARGIN_UNIVERSE_CACHE, _MARGIN_UNIVERSE_CACHE_DAY
 
-    if _MARGIN_UNIVERSE_CACHE is None:
+    import json
+    import os
+
+    today = pd.Timestamp.utcnow().floor("D")
+    cache_stale = (
+        _MARGIN_UNIVERSE_CACHE_DAY is None or _MARGIN_UNIVERSE_CACHE_DAY < today
+    )
+    if force_refresh or cache_stale or _MARGIN_UNIVERSE_CACHE is None:
         if exchange is not None and hasattr(exchange, "load_markets"):
             try:
-                _MARGIN_UNIVERSE_CACHE = _load_universe_from_exchange(exchange)
+                _MARGIN_UNIVERSE_CACHE = _load_universe_from_exchange(
+                    exchange, min_age_days=min_age_days
+                )
+                _MARGIN_UNIVERSE_CACHE_DAY = today
                 if _MARGIN_UNIVERSE_CACHE:
                     tprint(
                         f"Loaded {len(_MARGIN_UNIVERSE_CACHE)} margin-enabled symbols from exchange markets"
@@ -311,9 +404,6 @@ def get_margin_universe(exchange=None) -> List[str]:
                     return _MARGIN_UNIVERSE_CACHE
             except Exception as exc:
                 tprint(f"Exchange universe load failed, falling back to cache: {exc}")
-        import json
-        import os
-
         cache_path = os.path.join(
             os.path.dirname(__file__), "..", ".margin_universe_cache.json"
         )
@@ -340,12 +430,167 @@ def get_margin_universe(exchange=None) -> List[str]:
             margin_data = json.load(f)
 
         # Extract symbols that have margin trading enabled
-        _MARGIN_UNIVERSE_CACHE = [
-            item["symbol"]
-            for item in margin_data
-            if item.get("isMarginTradingAllowed", False)
-        ]
+        _MARGIN_UNIVERSE_CACHE = sorted(
+            {
+                _normalise_symbol(str(item["symbol"]))
+                for item in margin_data
+                if item.get("isMarginTradingAllowed", False)
+            }
+        )
+        _MARGIN_UNIVERSE_CACHE_DAY = today
 
         tprint(f"Loaded {len(_MARGIN_UNIVERSE_CACHE)} margin-enabled symbols")
 
     return _MARGIN_UNIVERSE_CACHE
+
+
+def _symbols_from_csv(path: Path) -> Set[str]:
+    with path.open("r", newline="") as f:
+        reader = csv.DictReader(f)
+        symbols = {
+            _normalise_symbol(row.get("symbol", ""))
+            for row in reader
+            if row.get("symbol")
+        }
+    symbols.discard("")
+    return symbols
+
+
+def _symbols_from_parquet(path: Path, column: str) -> Set[str]:
+    frame = pd.read_parquet(path, columns=[column])
+    symbols = {
+        _normalise_symbol(str(sym)) for sym in frame[column].dropna().unique().tolist()
+    }
+    symbols.discard("")
+    return symbols
+
+
+def _label_manifest_symbol_sources(
+    run_dir: Path,
+    *,
+    max_sources: int = 5,
+) -> List[Tuple[str, Path, Set[str]]]:
+    """Read symbol universes from label parquet files referenced by manifests."""
+    out: List[Tuple[str, Path, Set[str]]] = []
+    manifest_paths = [
+        run_dir / "labels" / "labels_manifest.json",
+        run_dir / "labels_backup_20260424" / "labels_manifest.json",
+    ]
+    for manifest_path in manifest_paths:
+        if not manifest_path.exists():
+            continue
+        try:
+            payload = json.loads(manifest_path.read_text())
+            datasets = payload.get("datasets", {})
+            if not isinstance(datasets, dict):
+                continue
+            rows = [
+                (str(name), meta)
+                for name, meta in datasets.items()
+                if isinstance(meta, dict) and meta.get("file")
+            ]
+            rows.sort(key=lambda item: int(item[1].get("rows", 0) or 0), reverse=True)
+            for name, meta in rows[:max_sources]:
+                columns = set(meta.get("columns", []) or [])
+                symbol_col = "__symbol__" if "__symbol__" in columns else "symbol"
+                if symbol_col not in columns:
+                    continue
+                label_path = manifest_path.parent / str(meta["file"])
+                if not label_path.exists():
+                    continue
+                symbols = _symbols_from_parquet(label_path, symbol_col)
+                if symbols:
+                    out.append(
+                        (f"{manifest_path.parent.name}:{name}", label_path, symbols)
+                    )
+        except Exception as exc:
+            tprint(f"Warning: failed to inspect label manifest {manifest_path}: {exc}")
+    return out
+
+
+def load_trained_symbol_universe(data_root: str, run_id: str) -> Set[str]:
+    """Load symbols covered by the training artifacts for the active run."""
+    run_dir = Path(data_root) / "artifacts" / str(run_id)
+    sources: List[Tuple[str, Path, Set[str]]] = []
+    csv_candidates = [
+        run_dir / "features" / "feature_health_symbol_summary.csv",
+        run_dir / "feature_health_symbol_summary.csv",
+    ]
+    for path in csv_candidates:
+        if not path.exists():
+            continue
+        try:
+            symbols = _symbols_from_csv(path)
+            if symbols:
+                sources.append((path.name, path, symbols))
+        except Exception as exc:
+            tprint(f"Warning: failed to load trained symbol summary {path}: {exc}")
+
+    parquet_candidates = [
+        (run_dir / "baseline_events.parquet", "symbol"),
+        (run_dir / "ohlc.parquet", "symbol"),
+    ]
+    for path, column in parquet_candidates:
+        if not path.exists():
+            continue
+        try:
+            symbols = _symbols_from_parquet(path, column)
+            if symbols:
+                sources.append((path.name, path, symbols))
+        except Exception as exc:
+            tprint(f"Warning: failed to load trained symbols from {path}: {exc}")
+
+    sources.extend(_label_manifest_symbol_sources(run_dir))
+    if not sources:
+        return set()
+
+    sources.sort(key=lambda item: len(item[2]), reverse=True)
+    source_sizes = ", ".join(f"{label}={len(symbols)}" for label, _, symbols in sources)
+    tprint(f"Trained symbol source sizes: {source_sizes}")
+
+    label, path, symbols = sources[0]
+    if len(symbols) < 25:
+        tprint(
+            f"Warning: trained symbol universe is very small ({len(symbols)} symbols); "
+            "inspect training artifacts before deployment"
+        )
+    tprint(f"Loaded {len(symbols)} trained symbols from {path} ({label})")
+    return symbols
+
+
+def resolve_inference_universes(
+    exchange: Any,
+    *,
+    data_root: str,
+    run_id: str,
+    explicit_symbols: Optional[List[str]] = None,
+) -> Dict[str, List[str]]:
+    """Resolve Step-9 download and tradable universes.
+
+    ``download_symbols`` is the daily Binance margin/USDT universe. ``tradable_symbols``
+    is further restricted to assets represented in training artifacts.
+    """
+    if explicit_symbols:
+        live_symbols = sorted({_normalise_symbol(s) for s in explicit_symbols})
+    else:
+        live_symbols = get_margin_universe(exchange, force_refresh=True)
+    trained_symbols = load_trained_symbol_universe(data_root, run_id)
+    if trained_symbols:
+        tradable_symbols = sorted(set(live_symbols).intersection(trained_symbols))
+        dropped = len(set(live_symbols) - set(tradable_symbols))
+        tprint(
+            f"Tradable universe restricted to trained symbols: "
+            f"download={len(live_symbols)} tradable={len(tradable_symbols)} "
+            f"dropped_untrained={dropped}"
+        )
+    else:
+        tradable_symbols = live_symbols
+        tprint(
+            "Warning: no trained symbol universe artifact found; "
+            "using live universe for tradability"
+        )
+    return {
+        "download_symbols": live_symbols,
+        "tradable_symbols": tradable_symbols,
+        "trained_symbols": sorted(trained_symbols),
+    }

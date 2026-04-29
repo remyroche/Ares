@@ -24,6 +24,12 @@ from extreme_price_movements.entry_policy import (
 from extreme_price_movements.inference.feature_generator import (
     get_features_for_candidates,
 )
+from extreme_price_movements.inference.parity import (
+    LIVE_UNAVAILABLE_FEATURES,
+    strategy_core_id,
+    strategy_id_matches,
+    strategy_side,
+)
 from extreme_price_movements.utils import tprint
 
 
@@ -47,14 +53,30 @@ class ModelOrchestrator:
             if isinstance(model_bundle, dict) and "bundle" in model_bundle
             else {}
         )
-        self.bundle = (
+        loaded_bundle = (
             model_bundle.get("bundle", {})
             if isinstance(model_bundle, dict) and "bundle" in model_bundle
             else (model_bundle or {})
         )
+        runtime_bundle = (
+            self.cfg.get("model_bundle", {}) if isinstance(self.cfg, dict) else {}
+        )
+        if (
+            isinstance(model_bundle, dict)
+            and "bundle" in model_bundle
+            and isinstance(runtime_bundle, dict)
+            and runtime_bundle
+        ):
+            self.bundle = dict(loaded_bundle)
+            for key, value in runtime_bundle.items():
+                if value:
+                    self.bundle[key] = value
+        else:
+            self.bundle = loaded_bundle
 
         # Extract models from bundle
         self.alpha_models = self.bundle.get("alpha_models", {})
+        self.alpha_by_strategy = self._build_alpha_strategy_index()
         self.meta_models = self.bundle.get("meta_models", {})
         self.spike_models = self.bundle.get("spike_models", {})  # GMM models
         self.ridge_weights = self.bundle.get("ridge_weights", {})
@@ -92,8 +114,45 @@ class ModelOrchestrator:
         # Extract feature columns from alpha models
         self.feature_columns = self._extract_feature_columns()
 
+    def _build_alpha_strategy_index(self) -> Dict[str, Dict[str, Any]]:
+        """Normalize flat and nested alpha bundle layouts."""
+        out: Dict[str, Dict[str, Any]] = {}
+        if not isinstance(self.alpha_models, dict):
+            return out
+        for key, value in self.alpha_models.items():
+            if not isinstance(value, dict):
+                continue
+            if "model" in value or "feat_cols" in value:
+                out[str(key)] = value
+                continue
+            for nested_key, model_info in value.items():
+                if isinstance(model_info, dict):
+                    out[f"{key}_{nested_key}"] = model_info
+        return out
+
+    def available_strategies(
+        self, side: str, allowed: Optional[set[str]] = None
+    ) -> List[str]:
+        """Return loaded strategies for a side after optional selection filtering."""
+        side_l = str(side).lower()
+        selected: List[str] = []
+        for sid in sorted(self.alpha_by_strategy.keys()):
+            inferred = strategy_side(sid)
+            if inferred and inferred != side_l:
+                continue
+            if not strategy_id_matches(sid, allowed):
+                continue
+            selected.append(sid)
+        return selected
+
     def _normalize_bucket_key(self, side: str, kind: str) -> str:
         return f"{str(side).lower()}_{str(kind).lower()}"
+
+    def _policy_bucket_key(self, side: str, kind: str) -> str:
+        core = strategy_core_id(str(kind or ""))
+        if core and core not in {"mr", "tf", "none"}:
+            return core
+        return self._normalize_bucket_key(side, kind)
 
     def _align_alpha_feature_contract(
         self,
@@ -148,7 +207,7 @@ class ModelOrchestrator:
         return aligned.reindex(columns=feat_cols, fill_value=0.0).fillna(0.0)
 
     def _get_bucket_policy(self, side: str, kind: str) -> Dict[str, Any]:
-        bucket_key = self._normalize_bucket_key(side, kind)
+        bucket_key = self._policy_bucket_key(side, kind)
         bucket_cfg = {}
         if isinstance(self.ridge_params_per_bucket, dict):
             bucket_cfg = self.ridge_params_per_bucket.get(bucket_key, {}) or {}
@@ -160,6 +219,7 @@ class ModelOrchestrator:
             )
             bucket_cfg = (
                 buckets.get(bucket_key.upper(), {})
+                or buckets.get(bucket_key, {})
                 or self.bucket_params.get(bucket_key, {})
                 or {}
             )
@@ -185,6 +245,27 @@ class ModelOrchestrator:
                 return df
         return pd.DataFrame(index=[symbol])
 
+    def _latest_panel_price(self, symbol: str, panel: Any) -> float:
+        if not isinstance(panel, dict):
+            return 1.0
+        close = panel.get("close")
+        if not isinstance(close, pd.DataFrame) or symbol not in close.columns:
+            return 1.0
+        series = close[symbol].dropna()
+        if series.empty:
+            return 1.0
+        price = float(series.iloc[-1])
+        return price if np.isfinite(price) and price > 0.0 else 1.0
+
+    def _latest_atr_frac(self, features: pd.DataFrame) -> float:
+        for col in ("atr_pct", "atr_pct_base", "realized_volatility_24h"):
+            if col not in features.columns:
+                continue
+            val = float(features[col].iloc[0])
+            if np.isfinite(val) and val > 0.0:
+                return val
+        return 0.01
+
     def _extract_feature_columns(self) -> Dict[str, List[str]]:
         """Extract feature column names from all loaded alpha models.
 
@@ -192,6 +273,12 @@ class ModelOrchestrator:
             Dictionary mapping ``"{side}_{kind}"`` to feature columns.
         """
         columns = {}
+
+        if self.alpha_by_strategy:
+            for sid, model_info in self.alpha_by_strategy.items():
+                if isinstance(model_info, dict):
+                    columns[sid] = model_info.get("feat_cols", [])
+            return columns
 
         for side in ["long", "short"]:
             if side not in self.alpha_models:
@@ -229,13 +316,16 @@ class ModelOrchestrator:
         Returns:
             Series of predictions indexed by symbol
         """
-        key = f"{side}_{kind}"
-
-        if side not in self.alpha_models or kind not in self.alpha_models[side]:
+        key = str(kind)
+        model_info = self.alpha_by_strategy.get(key)
+        if model_info is None:
+            nested_key = f"{side}_{kind}"
+            model_info = self.alpha_by_strategy.get(nested_key)
+            key = nested_key if model_info is not None else key
+        if model_info is None:
             tprint(f"Warning: Alpha model not found for {key}")
             return pd.Series(dtype=float)
 
-        model_info = self.alpha_models[side][kind]
         model = model_info.get("model")
         feat_cols = model_info.get("feat_cols", [])
 
@@ -276,20 +366,15 @@ class ModelOrchestrator:
         """
         results = {}
 
-        side_models = (
-            self.alpha_models.get(side, {})
-            if isinstance(self.alpha_models, dict)
-            else {}
-        )
-        for kind in sorted(side_models.keys()):
+        for kind in self.available_strategies(side):
             preds = self.predict_alpha(features, side, kind)
             # Defensive check: ensure preds is a DataFrame/Series
             if isinstance(preds, pd.DataFrame):
                 if not preds.empty:
-                    results[f"{side}_{kind}"] = preds
+                    results[kind] = preds
             elif isinstance(preds, pd.Series):
                 if not preds.empty:
-                    results[f"{side}_{kind}"] = preds
+                    results[kind] = preds
             else:
                 # Skip if preds is not a DataFrame or Series
                 continue
@@ -361,7 +446,17 @@ class ModelOrchestrator:
         Returns:
             Series of meta predictions
         """
-        key = f"{side}_{kind}"
+        key = str(kind)
+        if key not in self.meta_models:
+            side_key = f"{side}_{kind}"
+            clf_key = f"{key}_clf"
+            tbm_key = f"{key}_tbm_clf"
+            if side_key in self.meta_models:
+                key = side_key
+            elif clf_key in self.meta_models:
+                key = clf_key
+            elif tbm_key in self.meta_models:
+                key = tbm_key
 
         if key not in self.meta_models:
             tprint(f"Warning: Meta model not found for {key}")
@@ -492,43 +587,40 @@ class ModelOrchestrator:
         Returns:
             Tuple of (position_sizes Series, confidence dict)
         """
-        bucket_key = self._normalize_bucket_key(side, kind)
+        bucket_key = self._policy_bucket_key(side, kind)
         ridge_preds = None
 
         if self.ridge_sizer is not None:
             try:
-                from extreme_price_movements.simple_position_sizer import (
-                    clean_and_standardize,
-                )
-
                 model_names = getattr(self.ridge_sizer, "feature_names", None)
                 if model_names is None:
                     model_names = getattr(self.ridge_sizer, "model_names_", [])
                 model_names = list(model_names)
+                unavailable = sorted(set(model_names) & LIVE_UNAVAILABLE_FEATURES)
+                if unavailable:
+                    raise ValueError(
+                        "Ridge position sizer requires live-unavailable fields: "
+                        f"{unavailable}"
+                    )
 
                 if model_names:
                     for col in model_names:
                         if col not in features.columns:
                             features[col] = 0.0
 
-                    X = features[model_names].to_numpy(dtype=float)
-
-                    fit_medians = getattr(self.ridge_sizer, "fit_medians_", None)
-                    scaler = getattr(self.ridge_sizer, "scaler_", None)
-                    center_1d = getattr(self.ridge_sizer, "center_1d_", None)
-                    scale_1d = getattr(self.ridge_sizer, "scale_1d_", None)
-
-                    X_clean, _, _, _, _ = clean_and_standardize(
-                        X,
-                        fit_medians=fit_medians,
-                        scaler=scaler,
-                        center_1d=center_1d,
-                        scale_1d=scale_1d,
-                    )
-
-                    model = getattr(self.ridge_sizer, "model", self.ridge_sizer)
-                    ridge_preds = np.asarray(model.predict(X_clean), dtype=float)
+                    if hasattr(self.ridge_sizer, "predict"):
+                        ridge_preds = np.asarray(
+                            self.ridge_sizer.predict(features), dtype=float
+                        )
+                    else:
+                        model = getattr(self.ridge_sizer, "model", None)
+                        if model is not None and hasattr(model, "predict"):
+                            X = features[model_names].to_numpy(dtype=float)
+                            X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+                            ridge_preds = np.asarray(model.predict(X), dtype=float)
             except Exception as e:
+                if "live-unavailable" in str(e):
+                    raise
                 tprint(f"Warning: ridge_sizer.predict failed for {bucket_key}: {e}")
 
         if ridge_preds is None:
@@ -547,6 +639,12 @@ class ModelOrchestrator:
                 return pd.Series(0.0, index=features.index), {"confidence": 0.0}
 
             feature_names = list(bucket_weights.keys())
+            unavailable = sorted(set(feature_names) & LIVE_UNAVAILABLE_FEATURES)
+            if unavailable:
+                raise ValueError(
+                    "Flattened ridge weights require live-unavailable fields: "
+                    f"{unavailable}"
+                )
             X = (
                 features.reindex(columns=feature_names, fill_value=0.0)
                 .fillna(0.0)
@@ -561,7 +659,7 @@ class ModelOrchestrator:
         final_preds = ridge_preds.copy()
         mix_meta: Dict[str, float] = {}
         if self.booster_bundles and isinstance(self.bucket_params, dict):
-            strategy_id = self._find_strategy_id_for_bucket(bucket_key)
+            strategy_id = bucket_key or self._find_strategy_id_for_bucket(bucket_key)
             booster_bundle = None
             if strategy_id:
                 booster_bundle = self.booster_bundles.get(strategy_id)
@@ -732,10 +830,22 @@ class ModelOrchestrator:
         if symbol not in features.index:
             features.index = pd.Index([symbol] * len(features))
 
+        if kind is None:
+            strategies = self.available_strategies(side)
+            kind = strategies[0] if strategies else "mr"
+        strategy_id = strategy_core_id(str(kind))
+        results["strategy_id"] = strategy_id
+
         # =====================================================================
         # STEP 2: Alpha (Base) Model Predictions
         # =====================================================================
-        alpha_preds = self.predict_alpha_all_horizons(features, side)
+        alpha_pred = self.predict_alpha(features, side, str(kind))
+        alpha_preds = (
+            {str(kind): alpha_pred}
+            if isinstance(alpha_pred, (pd.DataFrame, pd.Series))
+            and not alpha_pred.empty
+            else {}
+        )
         results["alpha_preds"] = alpha_preds
 
         if not alpha_preds:
@@ -778,33 +888,20 @@ class ModelOrchestrator:
         # =====================================================================
         # STEP 4: Meta Model Prediction
         # =====================================================================
-        if kind is None:
-            side_models = (
-                self.alpha_models.get(side, {})
-                if isinstance(self.alpha_models, dict)
-                else {}
-            )
-            kind = (
-                "mr"
-                if "mr" in side_models
-                else (next(iter(sorted(side_models.keys())), "mr"))
-            )
-
         meta_pred = self.predict_meta(meta_base, side, kind)
         if not isinstance(meta_pred, (pd.DataFrame, pd.Series)) or meta_pred.empty:
-            if not self.meta_models:
-                fallback_key = f"{side}_{kind}"
-                fallback_pred = alpha_preds.get(fallback_key)
-                if (
-                    isinstance(fallback_pred, (pd.DataFrame, pd.Series))
-                    and not fallback_pred.empty
-                ):
-                    meta_pred = (
-                        fallback_pred
-                        if isinstance(fallback_pred, pd.Series)
-                        else fallback_pred.iloc[:, 0]
-                    )
-                    results["meta_pred_fallback"] = "alpha_only"
+            fallback_key = str(kind)
+            fallback_pred = alpha_preds.get(fallback_key)
+            if (
+                isinstance(fallback_pred, (pd.DataFrame, pd.Series))
+                and not fallback_pred.empty
+            ):
+                meta_pred = (
+                    fallback_pred
+                    if isinstance(fallback_pred, pd.Series)
+                    else fallback_pred.iloc[:, 0]
+                )
+                results["meta_pred_fallback"] = "alpha_only"
             if not isinstance(meta_pred, (pd.DataFrame, pd.Series)) or meta_pred.empty:
                 results["action"] = "no_meta_prediction"
                 return results
@@ -814,20 +911,26 @@ class ModelOrchestrator:
 
         # Merge Meta Model with Base Model Predictions
         # Final Prediction = Base Prediction + (Meta Prediction * Volatility Scale)
-        base_key = f"{side}_{kind}"
+        base_key = str(kind)
         if base_key in alpha_preds:
             base_pred = alpha_preds[base_key]
             # Try to find vol scale, fallback to 1.0 if not found
             if "atr_pct" in meta_base.columns:
                 vol_scale = meta_base["atr_pct"].astype(float).fillna(1.0)
             elif "realized_volatility_24h" in meta_base.columns:
-                vol_scale = meta_base["realized_volatility_24h"].astype(float).fillna(1.0)
+                vol_scale = (
+                    meta_base["realized_volatility_24h"].astype(float).fillna(1.0)
+                )
             else:
                 vol_scale = pd.Series(1.0, index=meta_base.index)
 
             # Reconstruct the calibrated regression prediction
             calibrated_reg_pred = base_pred + (meta_pred * vol_scale)
-            results["calibrated_reg_pred"] = float(calibrated_reg_pred.iloc[0]) if len(calibrated_reg_pred) > 0 else 0.0
+            results["calibrated_reg_pred"] = (
+                float(calibrated_reg_pred.iloc[0])
+                if len(calibrated_reg_pred) > 0
+                else 0.0
+            )
 
             meta_base["calibrated_reg_pred"] = calibrated_reg_pred
 
@@ -867,6 +970,8 @@ class ModelOrchestrator:
             features=features,
             position_result=position_result,
             kind=kind,
+            entry_price=self._latest_panel_price(symbol, panel),
+            atr_frac=self._latest_atr_frac(features),
         )
 
         results["entry_policy"] = entry_decision

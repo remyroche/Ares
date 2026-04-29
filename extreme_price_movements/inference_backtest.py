@@ -25,6 +25,12 @@ from extreme_price_movements.inference.candidate_selector import (
     _build_mask_for_mode,
     _up_down_zones,
 )
+from extreme_price_movements.inference.parity import (
+    apply_strategy_acceptance_filter,
+    calibration_size_multiplier,
+    load_strategy_acceptance_filter,
+    validate_calibration_artifacts,
+)
 from extreme_price_movements.inference.run_inference import _evaluate_oco_policy
 from extreme_price_movements.periods_symbols_management import (
     EventSchema,
@@ -34,14 +40,8 @@ from extreme_price_movements.periods_symbols_management import (
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.position_sizer_v2 import _apply_sizing_mode
 from extreme_price_movements.simple_position_sizer import (
-    load_calibration_curves,
     calibrate_score,
-)
-from extreme_price_movements.inference.parity import (
-    apply_strategy_acceptance_filter,
-    calibration_size_multiplier,
-    load_strategy_acceptance_filter,
-    validate_calibration_artifacts,
+    load_calibration_curves,
 )
 from extreme_price_movements.utils import tprint
 
@@ -231,12 +231,12 @@ def _compute_slice_metrics(
         "sortino": float(sortino),
         "sharpe": float(sharpe),
         "calmar": float(calmar),
-        "pnl_variation_timeslices": float(by_month.std(ddof=0))
-        if len(by_month) > 1
-        else 0.0,
-        "pnl_variation_assets": float(by_asset.std(ddof=0))
-        if len(by_asset) > 1
-        else 0.0,
+        "pnl_variation_timeslices": (
+            float(by_month.std(ddof=0)) if len(by_month) > 1 else 0.0
+        ),
+        "pnl_variation_assets": (
+            float(by_asset.std(ddof=0)) if len(by_asset) > 1 else 0.0
+        ),
         "avg_holding_hours": float(d["holding_hours"].mean()),
     }
 
@@ -403,12 +403,16 @@ def run_inference_backtest(
     holding_hours: list[float] = []
     win_flags: list[bool] = []
     portfolio_states: list[Dict[str, Any]] = []
+    expected_entry_prices: list[float] = []
+    realized_entry_prices: list[float] = []
+    exit_prices: list[float] = []
+    entry_slippage_pct: list[float] = []
 
     # Track PortfolioManager state for each timestamp
     current_time: Optional[pd.Timestamp] = None
     position_size_cap: float = 0.0
 
-    for row in df.itertuples(index=False):
+    for row_pos, row in enumerate(df.itertuples(index=False)):
         symbol = str(getattr(row, "symbol"))
         side = str(getattr(row, cfg.side_col)).lower()
         is_long = side in {"long", "buy", "1", "up"}
@@ -533,10 +537,16 @@ def run_inference_backtest(
             )
         hold_h = max((bars.index[-1] - bars.index[0]).total_seconds() / 3600.0, 0.0)
 
-        processed_row_positions.append(getattr(row, "Index", 0))
+        processed_row_positions.append(row_pos)
         net_returns.append(float(net_ret))
         holding_hours.append(float(hold_h))
         win_flags.append(bool(net_ret > 0.0))
+        expected_entry_prices.append(float(entry_px))
+        realized_entry_prices.append(float(entry_exec))
+        exit_prices.append(float(exit_px))
+        entry_slippage_pct.append(
+            float((entry_exec - entry_px) / max(abs(entry_px), 1e-12))
+        )
 
         # Record portfolio state for this trade
         if portfolio_mgr is not None:
@@ -546,6 +556,10 @@ def run_inference_backtest(
     df["net_ret"] = np.asarray(net_returns, dtype=float)
     df["holding_hours"] = np.asarray(holding_hours, dtype=float)
     df["is_win"] = np.asarray(win_flags, dtype=bool)
+    df["expected_entry_price"] = np.asarray(expected_entry_prices, dtype=float)
+    df["realized_entry_price"] = np.asarray(realized_entry_prices, dtype=float)
+    df["exit_price"] = np.asarray(exit_prices, dtype=float)
+    df["entry_slippage_pct"] = np.asarray(entry_slippage_pct, dtype=float)
     if df.empty:
         result = {
             "n_unseen": int(unseen_mask.sum()),

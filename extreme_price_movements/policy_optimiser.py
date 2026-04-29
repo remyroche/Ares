@@ -29,6 +29,8 @@ from extreme_price_movements.simple_offset_generator import (
 from extreme_price_movements.utils import tprint
 
 EPS = 1e-9
+MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE = 0.002
+MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 2
 logger = logging.getLogger(__name__)
 
 
@@ -54,6 +56,28 @@ def _strategy_description(row: Dict[str, Any]) -> str:
 
 def _safe_log(x: float) -> float:
     return float(math.log(max(float(x), EPS)))
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    if not np.isfinite(out):
+        return float(default)
+    return out
+
+
+def _strategy_side(row: Dict[str, Any]) -> str:
+    side = str(row.get("side", "") or "").strip().lower()
+    if side in {"long", "short"}:
+        return side
+    strategy_id = str(row.get("strategy_id", "") or "").lower()
+    if strategy_id.startswith("long_"):
+        return "long"
+    if strategy_id.startswith("short_"):
+        return "short"
+    return "unknown"
 
 
 def _compute_strategy_D(row: Dict[str, Any]) -> float:
@@ -197,6 +221,255 @@ def strategy_final_acceptation(
     return payload
 
 
+def _avg_net_pnl_per_trade(row: Dict[str, Any]) -> float:
+    metrics = row.get("metrics_final")
+    if not isinstance(metrics, dict):
+        metrics = row.get("metrics_final_val")
+    if not isinstance(metrics, dict):
+        metrics = row
+    net_pnl = _safe_float(
+        metrics.get("net_pnl", row.get("final_net_pnl_full", row.get("final_net_pnl")))
+    )
+    n_trades = int(
+        max(
+            0,
+            _safe_float(
+                metrics.get(
+                    "n_trades",
+                    row.get("n_trades", row.get("trades_selected", 0)),
+                )
+            ),
+        )
+    )
+    return net_pnl / max(1, n_trades)
+
+
+def _deployment_rank(row: Dict[str, Any]) -> float:
+    metrics = row.get("metrics_final")
+    if not isinstance(metrics, dict):
+        metrics = row.get("metrics_final_val")
+    if not isinstance(metrics, dict):
+        metrics = row
+    avg_net_pnl = _avg_net_pnl_per_trade(row)
+    avg_holding_time = max(1.0, _safe_float(row.get("avg_holding_time_hours"), 1.0))
+    opportunities_per_day = max(0.0, _safe_float(row.get("opportunities_per_day"), 0.0))
+    effective_ops_day = math.sqrt(
+        max(0.0, min(36.0 / avg_holding_time, opportunities_per_day))
+    )
+    weekly_wallet_vol = max(0.0, _safe_float(metrics.get("weekly_wallet_vol"), 0.0))
+    monthly_wallet_vol = max(0.0, _safe_float(metrics.get("monthly_wallet_vol"), 0.0))
+    denominator = math.sqrt(avg_holding_time) * math.sqrt(
+        weekly_wallet_vol + monthly_wallet_vol + EPS
+    )
+    return float(effective_ops_day * avg_net_pnl / max(denominator, EPS))
+
+
+def _deployment_rank_components(row: Dict[str, Any]) -> Dict[str, float]:
+    metrics = row.get("metrics_final")
+    if not isinstance(metrics, dict):
+        metrics = row.get("metrics_final_val")
+    if not isinstance(metrics, dict):
+        metrics = row
+    avg_holding_time = max(1.0, _safe_float(row.get("avg_holding_time_hours"), 1.0))
+    opportunities_per_day = max(0.0, _safe_float(row.get("opportunities_per_day"), 0.0))
+    weekly_wallet_vol = max(0.0, _safe_float(metrics.get("weekly_wallet_vol"), 0.0))
+    monthly_wallet_vol = max(0.0, _safe_float(metrics.get("monthly_wallet_vol"), 0.0))
+    effective_ops_day = math.sqrt(
+        max(0.0, min(36.0 / avg_holding_time, opportunities_per_day))
+    )
+    return {
+        "avg_holding_time_hours": avg_holding_time,
+        "opportunities_per_day": opportunities_per_day,
+        "effective_ops_day": effective_ops_day,
+        "weekly_wallet_vol": weekly_wallet_vol,
+        "monthly_wallet_vol": monthly_wallet_vol,
+    }
+
+
+def _opportunities_per_day(timestamps: pd.Series) -> float:
+    ts = pd.to_datetime(timestamps, utc=True, errors="coerce").dropna()
+    if ts.empty:
+        return 0.0
+    elapsed_days = max(
+        1.0,
+        float((ts.max() - ts.min()).total_seconds()) / (24.0 * 3600.0),
+    )
+    return float(len(ts) / elapsed_days)
+
+
+def _asset_profit_factor_exclusions(
+    *,
+    symbols: np.ndarray,
+    net_rets: np.ndarray,
+    avg_profit_factor: float,
+) -> Dict[str, Any]:
+    if len(symbols) != len(net_rets) or len(net_rets) == 0:
+        return {"excluded_symbols": [], "asset_metrics": []}
+    threshold = float((1.0 + max(0.0, avg_profit_factor)) / 2.0)
+    frame = pd.DataFrame({"symbol": symbols.astype(str), "net_ret": net_rets})
+    asset_rows: List[Dict[str, Any]] = []
+    excluded: List[str] = []
+    for symbol, group in frame.groupby("symbol", sort=True):
+        vals = np.asarray(group["net_ret"], dtype=np.float64)
+        gross_win = float(np.sum(vals[vals > 0.0]))
+        gross_loss = float(np.abs(np.sum(vals[vals < 0.0])))
+        if gross_loss > EPS:
+            pf = min(gross_win / gross_loss, 100.0)
+        elif gross_win > EPS:
+            pf = 100.0
+        else:
+            pf = 0.0
+        reject = bool(pf < threshold)
+        if reject:
+            excluded.append(str(symbol))
+        asset_rows.append(
+            {
+                "symbol": str(symbol),
+                "profit_factor": float(pf),
+                "profit_factor_threshold": threshold,
+                "n_trades": int(len(vals)),
+                "net_pnl": float(np.sum(vals)),
+                "avg_net_pnl_per_trade": float(np.mean(vals)) if len(vals) else 0.0,
+                "excluded": reject,
+            }
+        )
+    return {"excluded_symbols": excluded, "asset_metrics": asset_rows}
+
+
+def build_strategy_for_inference_payload(
+    strategy_rows: List[Dict[str, Any]],
+    *,
+    data_root: str,
+    run_id: str,
+    output_filename: str = "strategy_for_inference.json",
+) -> Dict[str, Any]:
+    """Select deployable strategies and persist the live inference contract."""
+    enriched: List[Dict[str, Any]] = []
+    for row in strategy_rows:
+        if not isinstance(row, dict):
+            continue
+        metrics = row.get("metrics_final")
+        if not isinstance(metrics, dict):
+            metrics = {}
+        avg_net_pnl = _avg_net_pnl_per_trade(row)
+        rank = _deployment_rank(row)
+        components = _deployment_rank_components(row)
+        side = _strategy_side(row)
+        enriched_row = dict(row)
+        enriched_row["side"] = side
+        enriched_row["avg_net_pnl_per_trade"] = float(avg_net_pnl)
+        enriched_row["selection_rank"] = float(rank)
+        enriched_row.update(components)
+        enriched_row["deployment_min_avg_net_pnl_per_trade"] = (
+            MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE
+        )
+        enriched_row["deployment_reject_reasons"] = []
+        if avg_net_pnl < MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE:
+            enriched_row["deployment_reject_reasons"].append(
+                "avg_net_pnl_per_trade_below_0_2pct"
+            )
+        if side not in {"long", "short"}:
+            enriched_row["deployment_reject_reasons"].append("unknown_side")
+        if not np.isfinite(rank):
+            enriched_row["deployment_reject_reasons"].append("non_finite_rank")
+        enriched.append(enriched_row)
+
+    candidates = [row for row in enriched if not row.get("deployment_reject_reasons")]
+    selected: List[Dict[str, Any]] = []
+    rejected: List[Dict[str, Any]] = [
+        row for row in enriched if row.get("deployment_reject_reasons")
+    ]
+    for side in ("long", "short"):
+        side_rows = [row for row in candidates if row.get("side") == side]
+        side_rows.sort(
+            key=lambda row: float(row.get("selection_rank", float("-inf"))),
+            reverse=True,
+        )
+        selected.extend(side_rows[:MAX_DEPLOYMENT_STRATEGIES_PER_SIDE])
+        for row in side_rows[MAX_DEPLOYMENT_STRATEGIES_PER_SIDE:]:
+            row = dict(row)
+            row["deployment_reject_reasons"] = ["outside_top_2_per_side"]
+            rejected.append(row)
+
+    selected.sort(
+        key=lambda row: (
+            str(row.get("side", "")),
+            -float(row.get("selection_rank", float("-inf"))),
+        )
+    )
+    asset_exclusions = {
+        str(row.get("strategy_id")): sorted(
+            set(str(sym) for sym in row.get("excluded_symbols", []) if str(sym))
+        )
+        for row in selected
+        if row.get("strategy_id")
+    }
+    payload = {
+        "schema_version": "v2",
+        "generated_by": "policy_optimiser",
+        "run_id": run_id,
+        "selection_rules": {
+            "min_avg_net_pnl_per_trade": MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE,
+            "max_strategies_per_side": MAX_DEPLOYMENT_STRATEGIES_PER_SIDE,
+            "rank_formula": (
+                "effective_ops_day * avg_net_pnl_per_trade / "
+                "(sqrt(avg_holding_time_hours) * "
+                "sqrt(weekly_wallet_vol + monthly_wallet_vol + eps))"
+            ),
+            "effective_ops_day_formula": (
+                "sqrt(min(36 / avg_holding_time_hours, opportunities_per_day))"
+            ),
+            "asset_pf_reject_formula": "PF(asset) < (1 + strategy_profit_factor) / 2",
+        },
+        "strategies": [
+            {
+                "strategy_id": row.get("strategy_id", ""),
+                "strategy_for_inference": row.get("strategy_id", ""),
+                "side": row.get("side", ""),
+                "selected": True,
+                "selection_rank": row.get("selection_rank", 0.0),
+                "avg_net_pnl_per_trade": row.get("avg_net_pnl_per_trade", 0.0),
+                "effective_ops_day": row.get("effective_ops_day", 0.0),
+                "opportunities_per_day": row.get("opportunities_per_day", 0.0),
+                "avg_holding_time_hours": row.get("avg_holding_time_hours", 0.0),
+                "weekly_wallet_vol": row.get("weekly_wallet_vol", 0.0),
+                "monthly_wallet_vol": row.get("monthly_wallet_vol", 0.0),
+                "profit_factor": row.get("profit_factor", 0.0),
+                "excluded_symbols": sorted(
+                    set(str(sym) for sym in row.get("excluded_symbols", []))
+                ),
+                "asset_metrics": row.get("asset_metrics", []),
+                "metrics": row,
+            }
+            for row in selected
+        ],
+        "rejected_strategies": [
+            {
+                "strategy_id": row.get("strategy_id", ""),
+                "side": row.get("side", ""),
+                "selected": False,
+                "selection_rank": row.get("selection_rank", 0.0),
+                "avg_net_pnl_per_trade": row.get("avg_net_pnl_per_trade", 0.0),
+                "reject_reasons": row.get("deployment_reject_reasons", []),
+                "metrics": row,
+            }
+            for row in rejected
+        ],
+        "asset_exclusions": asset_exclusions,
+    }
+    out_dir = Path(data_root) / "artifacts" / run_id / "policy_params"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(payload, indent=2, default=float)
+    path = out_dir / output_filename
+    path.write_text(text)
+    (Path(data_root) / "artifacts" / run_id / output_filename).write_text(text)
+    tprint(
+        f"Wrote strategy_for_inference selection -> {path} "
+        f"(selected={len(selected)} rejected={len(rejected)})"
+    )
+    return payload
+
+
 def _metric_score(
     rets: np.ndarray,
     cost_pct: float = 0.003,
@@ -226,6 +499,8 @@ def _metric_score(
             "trade_return_skew": 0.0,
             "neg_months_pct": 0.0,
             "worst_week_dd_mag": 0.0,
+            "weekly_wallet_vol": 0.0,
+            "monthly_wallet_vol": 0.0,
         }
     if executed_mask is not None:
         executed_mask = np.asarray(executed_mask, dtype=bool)
@@ -344,6 +619,7 @@ def _metric_score(
         )
         neg_weeks = sum(1 for p in weekly_pnls if p < 0)
         worst_week_dd_mag = max(0.0, -min(weekly_pnls)) if weekly_pnls else 0.0
+        weekly_wallet_vol = float(np.std(weekly_pnls)) if len(weekly_pnls) > 1 else 0.0
 
         # --- monthly ---
         monthly_pnls: List[float] = []
@@ -372,6 +648,9 @@ def _metric_score(
         )
         neg_months = sum(1 for p in monthly_pnls if p < 0)
         neg_months_pct = float(neg_months / max(1, len(monthly_pnls)))
+        monthly_wallet_vol = (
+            float(np.std(monthly_pnls)) if len(monthly_pnls) > 1 else 0.0
+        )
     else:
         # No timestamps: fall back to per-trade Sortino and chunk-based aggregations
         weekly_sortino = float(np.mean(net_rets) / ds_std)
@@ -394,14 +673,20 @@ def _metric_score(
         ]
         neg_months = sum(1 for p in synthetic_pnls if p < 0)
         neg_months_pct = float(neg_months / max(1, len(synthetic_pnls)))
+        weekly_wallet_vol = float(np.std(net_rets)) if len(net_rets) > 1 else 0.0
+        monthly_wallet_vol = (
+            float(np.std(synthetic_pnls)) if len(synthetic_pnls) > 1 else 0.0
+        )
 
     result = {
         "net_pnl": float(np.sum(net_rets)),
         "sortino": float(np.mean(net_rets)) / ds_std,
         "hit_rate": float(np.mean(net_rets > 0)),
-        "profit_factor": min(gross_win / gross_loss, 100.0)
-        if gross_loss > EPS
-        else (100.0 if gross_win > EPS else 0.0),
+        "profit_factor": (
+            min(gross_win / gross_loss, 100.0)
+            if gross_loss > EPS
+            else (100.0 if gross_win > EPS else 0.0)
+        ),
         "max_drawdown": float(np.max(dd)) if len(dd) else 0.0,
         "ulcer": ulcer,
         "tuw": tuw,
@@ -416,6 +701,8 @@ def _metric_score(
         "trade_return_skew": trade_return_skew,
         "neg_months_pct": neg_months_pct,
         "worst_week_dd_mag": worst_week_dd_mag,
+        "weekly_wallet_vol": weekly_wallet_vol,
+        "monthly_wallet_vol": monthly_wallet_vol,
     }
 
     _pnl_direct = float(np.sum(net_rets))
@@ -572,9 +859,11 @@ def _load_best_strategy(data_root: str, run_id: str) -> Dict[str, Any]:
                 "threshold_pct": float(
                     row.get("threshold_pct", payload.get("best_threshold_pct", 90.0))
                 ),
-                "model": "lgbm"
-                if "lgbm_sizer" in str(pth)
-                else ("et" if "et_sizer" in str(pth) else "ridge"),
+                "model": (
+                    "lgbm"
+                    if "lgbm_sizer" in str(pth)
+                    else ("et" if "et_sizer" in str(pth) else "ridge")
+                ),
                 "tp_mult": float(row.get("tp_mult", 1.0)),
                 "sl_mult": float(row.get("sl_mult", 1.0)),
             }
@@ -588,6 +877,30 @@ def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any
     higher baseline net_pnl so policy optimisation starts from the stronger
     source model.
     """
+
+    def _passes_sizer_policy_gate(row: Dict[str, Any]) -> bool:
+        allow_downstream = row.get("allow_downstream", None)
+        profitable_for_downstream = row.get("profitable_for_downstream", None)
+        if allow_downstream is False or profitable_for_downstream is False:
+            return False
+        wallet_pnl = _safe_float(row.get("wallet_pnl"), float("nan"))
+        net_pnl = _safe_float(row.get("net_pnl"), float("nan"))
+        pnl_per_trade_pct = _safe_float(
+            row.get(
+                "net_pnl_per_trade_pct",
+                row.get("pnl_per_trade_pct", row.get("pnl_per_trade", float("nan"))),
+            ),
+            float("nan"),
+        )
+        return bool(
+            math.isfinite(wallet_pnl)
+            and math.isfinite(net_pnl)
+            and math.isfinite(pnl_per_trade_pct)
+            and wallet_pnl > 0.0
+            and net_pnl > 0.0
+            and pnl_per_trade_pct > 0.2
+        )
+
     candidates: List[Dict[str, Any]] = []
     for model_source, rel_path in [
         ("ridge", "ridge_sizer/strategy_params.json"),
@@ -609,6 +922,8 @@ def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any
                 continue
             sid = str(row.get("strategy_id", "") or "")
             if not sid:
+                continue
+            if not _passes_sizer_policy_gate(row):
                 continue
             cand = dict(row)
             cand["strategy_id"] = sid
@@ -1935,9 +2250,9 @@ def _sequential_optimise(
 
     # Track best validation performance and corresponding params
     best_val_params = dict(params)
-    param_history: List[
-        Tuple[str, Any, float, float]
-    ] = []  # (param_name, value, train_pnl, val_pnl)
+    param_history: List[Tuple[str, Any, float, float]] = (
+        []
+    )  # (param_name, value, train_pnl, val_pnl)
 
     # Use path-based simulation when future paths available - this is the FAIR comparison
     def _get_position_sizes(
@@ -2024,14 +2339,16 @@ def _sequential_optimise(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
             sizes=None,  # Sizing already applied during simulation
-            ts_vals=context.get("timestamps_ms", np.arange(len(baseline_rets)))[
-                val_mask
-            ]
-            if "timestamps_ms" in context
-            else None,
-            scores=context.get("confidence")[val_mask]
-            if context.get("confidence") is not None
-            else None,
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(baseline_rets)))[val_mask]
+                if "timestamps_ms" in context
+                else None
+            ),
+            scores=(
+                context.get("confidence")[val_mask]
+                if context.get("confidence") is not None
+                else None
+            ),
         )
         baseline_val_metrics["robust_downside_ratio"] = baseline_val_metrics[
             "net_pnl"
@@ -2059,14 +2376,16 @@ def _sequential_optimise(
                 executed_mask[train_mask] if executed_mask is not None else None
             ),
             sizes=None,  # Sizing already applied during simulation
-            ts_vals=context.get("timestamps_ms", np.arange(len(baseline_rets)))[
-                train_mask
-            ]
-            if "timestamps_ms" in context
-            else None,
-            scores=context.get("confidence")[train_mask]
-            if context.get("confidence") is not None
-            else None,
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(baseline_rets)))[train_mask]
+                if "timestamps_ms" in context
+                else None
+            ),
+            scores=(
+                context.get("confidence")[train_mask]
+                if context.get("confidence") is not None
+                else None
+            ),
         )
         baseline_train_metrics["robust_downside_ratio"] = baseline_train_metrics[
             "net_pnl"
@@ -2208,14 +2527,18 @@ def _sequential_optimise(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
                     sizes=None,  # Sizing already applied during simulation
-                    ts_vals=context.get("timestamps_ms", np.arange(len(current_rets)))[
-                        train_mask
-                    ]
-                    if "timestamps_ms" in context
-                    else None,
-                    scores=context.get("confidence")[train_mask]
-                    if context.get("confidence") is not None
-                    else None,
+                    ts_vals=(
+                        context.get("timestamps_ms", np.arange(len(current_rets)))[
+                            train_mask
+                        ]
+                        if "timestamps_ms" in context
+                        else None
+                    ),
+                    scores=(
+                        context.get("confidence")[train_mask]
+                        if context.get("confidence") is not None
+                        else None
+                    ),
                 )
                 # Compute robust downside ratio
                 current_metrics["robust_downside_ratio"] = current_metrics[
@@ -2275,14 +2598,18 @@ def _sequential_optimise(
                             else None
                         ),
                         sizes=None,  # Sizing already applied during simulation
-                        ts_vals=context.get("timestamps_ms", np.arange(len(f_rets)))[
-                            fold_mask
-                        ]
-                        if "timestamps_ms" in context
-                        else None,
-                        scores=context.get("confidence")[fold_mask]
-                        if context.get("confidence") is not None
-                        else None,
+                        ts_vals=(
+                            context.get("timestamps_ms", np.arange(len(f_rets)))[
+                                fold_mask
+                            ]
+                            if "timestamps_ms" in context
+                            else None
+                        ),
+                        scores=(
+                            context.get("confidence")[fold_mask]
+                            if context.get("confidence") is not None
+                            else None
+                        ),
                     )
                     f_metrics["robust_downside_ratio"] = f_metrics["net_pnl"] / np.sqrt(
                         f_metrics["robust_downside_semi_variance"]
@@ -2313,14 +2640,16 @@ def _sequential_optimise(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
                     sizes=None,  # Sizing already applied during simulation
-                    ts_vals=context.get("timestamps_ms", np.arange(len(rets)))[
-                        train_mask
-                    ]
-                    if "timestamps_ms" in context
-                    else None,
-                    scores=context.get("confidence")[train_mask]
-                    if context.get("confidence") is not None
-                    else None,
+                    ts_vals=(
+                        context.get("timestamps_ms", np.arange(len(rets)))[train_mask]
+                        if "timestamps_ms" in context
+                        else None
+                    ),
+                    scores=(
+                        context.get("confidence")[train_mask]
+                        if context.get("confidence") is not None
+                        else None
+                    ),
                 )
                 metrics["robust_downside_ratio"] = metrics["net_pnl"] / np.sqrt(
                     metrics["robust_downside_semi_variance"]
@@ -2476,14 +2805,18 @@ def _sequential_optimise(
                                 else None
                             ),
                             sizes=None,  # Sizing already applied during simulation
-                            ts_vals=context.get(
-                                "timestamps_ms", np.arange(len(f_rets))
-                            )[f_mask]
-                            if "timestamps_ms" in context
-                            else None,
-                            scores=context.get("confidence")[f_mask]
-                            if context.get("confidence") is not None
-                            else None,
+                            ts_vals=(
+                                context.get("timestamps_ms", np.arange(len(f_rets)))[
+                                    f_mask
+                                ]
+                                if "timestamps_ms" in context
+                                else None
+                            ),
+                            scores=(
+                                context.get("confidence")[f_mask]
+                                if context.get("confidence") is not None
+                                else None
+                            ),
                         )
                         f_metrics["robust_downside_ratio"] = f_metrics[
                             "net_pnl"
@@ -2527,17 +2860,23 @@ def _sequential_optimise(
                                     if executed_mask is not None
                                     else None
                                 ),
-                                sizes=None  # Sizing already applied during simulation
-                                if g_sizes is not None
-                                else None,
-                                ts_vals=context.get(
-                                    "timestamps_ms", np.arange(len(g_rets))
-                                )[train_mask]
-                                if "timestamps_ms" in context
-                                else None,
-                                scores=context.get("confidence")[train_mask]
-                                if context.get("confidence") is not None
-                                else None,
+                                sizes=(
+                                    None  # Sizing already applied during simulation
+                                    if g_sizes is not None
+                                    else None
+                                ),
+                                ts_vals=(
+                                    context.get(
+                                        "timestamps_ms", np.arange(len(g_rets))
+                                    )[train_mask]
+                                    if "timestamps_ms" in context
+                                    else None
+                                ),
+                                scores=(
+                                    context.get("confidence")[train_mask]
+                                    if context.get("confidence") is not None
+                                    else None
+                                ),
                             )
                             g_metrics["robust_downside_ratio"] = g_metrics[
                                 "net_pnl"
@@ -2625,19 +2964,24 @@ def _sequential_optimise(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
                     sizes=None,  # Sizing already applied during simulation
-                    ts_vals=context.get("timestamps_ms", np.arange(len(current_rets)))[
-                        train_mask
-                    ]
-                    if "timestamps_ms" in context
-                    else None,
-                    scores=context.get("confidence")[train_mask]
-                    if context.get("confidence") is not None
-                    else None,
+                    ts_vals=(
+                        context.get("timestamps_ms", np.arange(len(current_rets)))[
+                            train_mask
+                        ]
+                        if "timestamps_ms" in context
+                        else None
+                    ),
+                    scores=(
+                        context.get("confidence")[train_mask]
+                        if context.get("confidence") is not None
+                        else None
+                    ),
                 )
-                current_train_metrics_grid[
-                    "robust_downside_ratio"
-                ] = current_train_metrics_grid["net_pnl"] / np.sqrt(
-                    current_train_metrics_grid["robust_downside_semi_variance"]
+                current_train_metrics_grid["robust_downside_ratio"] = (
+                    current_train_metrics_grid["net_pnl"]
+                    / np.sqrt(
+                        current_train_metrics_grid["robust_downside_semi_variance"]
+                    )
                 )
                 current_train_score = _calculate_custom_score(
                     current_train_metrics_grid, family_train_scores_all_metrics
@@ -2698,14 +3042,16 @@ def _sequential_optimise(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
                     sizes=None,  # Sizing already applied during simulation
-                    ts_vals=context.get("timestamps_ms", np.arange(len(rets)))[
-                        train_mask
-                    ]
-                    if "timestamps_ms" in context
-                    else None,
-                    scores=context.get("confidence")[train_mask]
-                    if context.get("confidence") is not None
-                    else None,
+                    ts_vals=(
+                        context.get("timestamps_ms", np.arange(len(rets)))[train_mask]
+                        if "timestamps_ms" in context
+                        else None
+                    ),
+                    scores=(
+                        context.get("confidence")[train_mask]
+                        if context.get("confidence") is not None
+                        else None
+                    ),
                 )
                 combo_metrics["robust_downside_ratio"] = combo_metrics[
                     "net_pnl"
@@ -2756,14 +3102,16 @@ def _sequential_optimise(
                     executed_mask[val_mask] if executed_mask is not None else None
                 ),
                 sizes=None,  # Sizing already applied during simulation
-                ts_vals=context.get("timestamps_ms", np.arange(len(family_rets)))[
-                    val_mask
-                ]
-                if "timestamps_ms" in context
-                else None,
-                scores=context.get("confidence")[val_mask]
-                if context.get("confidence") is not None
-                else None,
+                ts_vals=(
+                    context.get("timestamps_ms", np.arange(len(family_rets)))[val_mask]
+                    if "timestamps_ms" in context
+                    else None
+                ),
+                scores=(
+                    context.get("confidence")[val_mask]
+                    if context.get("confidence") is not None
+                    else None
+                ),
             )
             family_val_metrics["robust_downside_ratio"] = family_val_metrics[
                 "net_pnl"
@@ -2780,17 +3128,23 @@ def _sequential_optimise(
                 executed_mask=(
                     executed_mask[val_mask] if executed_mask is not None else None
                 ),
-                sizes=None  # Sizing already applied during simulation
-                if baseline_val_sizes is not None
-                else None,
-                ts_vals=context.get("timestamps_ms", np.arange(len(baseline_val_rets)))[
-                    val_mask
-                ]
-                if "timestamps_ms" in context
-                else None,
-                scores=context.get("confidence")[val_mask]
-                if context.get("confidence") is not None
-                else None,
+                sizes=(
+                    None  # Sizing already applied during simulation
+                    if baseline_val_sizes is not None
+                    else None
+                ),
+                ts_vals=(
+                    context.get("timestamps_ms", np.arange(len(baseline_val_rets)))[
+                        val_mask
+                    ]
+                    if "timestamps_ms" in context
+                    else None
+                ),
+                scores=(
+                    context.get("confidence")[val_mask]
+                    if context.get("confidence") is not None
+                    else None
+                ),
             )
             baseline_val_metrics["robust_downside_ratio"] = baseline_val_metrics[
                 "net_pnl"
@@ -2982,14 +3336,18 @@ def _sequential_optimise(
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
-            ts_vals=context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))[
-                val_mask
-            ]
-            if "timestamps_ms" in context
-            else None,
-            scores=context.get("confidence")[val_mask]
-            if context.get("confidence") is not None
-            else None,
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))[
+                    val_mask
+                ]
+                if "timestamps_ms" in context
+                else None
+            ),
+            scores=(
+                context.get("confidence")[val_mask]
+                if context.get("confidence") is not None
+                else None
+            ),
         )
     else:
         params["metrics_baseline"] = _metric_score(
@@ -2999,12 +3357,16 @@ def _sequential_optimise(
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
-            ts_vals=context.get("timestamps_ms", np.arange(len(base_returns)))[val_mask]
-            if "timestamps_ms" in context
-            else None,
-            scores=context.get("confidence")[val_mask]
-            if context.get("confidence") is not None
-            else None,
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(base_returns)))[val_mask]
+                if "timestamps_ms" in context
+                else None
+            ),
+            scores=(
+                context.get("confidence")[val_mask]
+                if context.get("confidence") is not None
+                else None
+            ),
         )
     # Use the params that achieved best validation performance, not just final accumulated
     # This prevents overfitting to training set during sequential optimization
@@ -3016,12 +3378,16 @@ def _sequential_optimise(
         already_net=False,
         executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
         sizes=None,  # Sizing already applied during simulation
-        ts_vals=context.get("timestamps_ms", np.arange(len(val_mask)))[val_mask]
-        if "timestamps_ms" in context
-        else None,
-        scores=context.get("confidence")[val_mask]
-        if context.get("confidence") is not None
-        else None,
+        ts_vals=(
+            context.get("timestamps_ms", np.arange(len(val_mask)))[val_mask]
+            if "timestamps_ms" in context
+            else None
+        ),
+        scores=(
+            context.get("confidence")[val_mask]
+            if context.get("confidence") is not None
+            else None
+        ),
     )
     best_val_params["_param_history_"] = param_history  # For diagnostics
     return best_val_params
@@ -3072,6 +3438,48 @@ def _fast_concurrency_mask(
     return mask
 
 
+def _select_topk_non_concurrent(
+    scores: np.ndarray,
+    k: int,
+    entry_timestamps: np.ndarray,
+    exit_timestamps: np.ndarray,
+    symbols: np.ndarray,
+    max_global_concurrent: int = 3,
+) -> np.ndarray:
+    n = len(scores)
+    if n <= 0:
+        return np.array([], dtype=np.int32)
+    k = max(1, min(int(k), n))
+    if len(entry_timestamps) != n or len(exit_timestamps) != n or len(symbols) != n:
+        return np.argsort(np.asarray(scores, dtype=np.float64), kind="stable")[-k:]
+    mask = _fast_concurrency_mask(
+        np.asarray(entry_timestamps),
+        np.asarray(exit_timestamps),
+        np.asarray(symbols).astype(str),
+        np.asarray(scores, dtype=np.float64),
+        max_global_concurrent=max_global_concurrent,
+    )
+    selected = np.flatnonzero(mask)
+    if selected.size == 0:
+        return np.argsort(np.asarray(scores, dtype=np.float64), kind="stable")[-k:]
+    selected_scores = np.asarray(scores, dtype=np.float64)[selected]
+    order = np.argsort(selected_scores, kind="stable")[::-1]
+    selected_sorted = selected[order]
+    if selected_sorted.size >= k:
+        return np.asarray(selected_sorted[:k], dtype=np.int32)
+    chosen = set(int(i) for i in selected_sorted.tolist())
+    out: List[int] = [int(i) for i in selected_sorted.tolist()]
+    global_rank = np.argsort(np.asarray(scores, dtype=np.float64), kind="stable")[::-1]
+    for idx in global_rank:
+        i = int(idx)
+        if i not in chosen:
+            out.append(i)
+            chosen.add(i)
+        if len(out) >= k:
+            break
+    return np.asarray(out[:k], dtype=np.int32)
+
+
 def run_policy_optimisation(
     data_root: str,
     run_id: str,
@@ -3093,6 +3501,7 @@ def run_policy_optimisation(
 
     meta_oofs = load_meta_oof_predictions(data_root, run_id)
     if stage_view:
+        _unfiltered_meta_oofs = meta_oofs
         filtered_meta: Dict[str, pd.DataFrame] = {}
         for key, mdf in meta_oofs.items():
             mdf_f = _filter_df_by_stage_view(mdf, stage_view)
@@ -3100,48 +3509,43 @@ def run_policy_optimisation(
                 filtered_meta[key] = mdf_f
         meta_oofs = filtered_meta
         if not meta_oofs:
-            tprint("Policy optimiser stage filtering removed all meta OOF rows.")
-            return {}
+            tprint(
+                "Policy optimiser stage filtering removed all meta OOF rows; "
+                "falling back to unfiltered OOF rows for this run."
+            )
+            meta_oofs = _unfiltered_meta_oofs
 
     sizer_scores = _load_sizer_oof_scores(data_root, run_id)
+    _unfiltered_sizer_scores = sizer_scores
     sizer_scores = _filter_df_by_stage_view(sizer_scores, stage_view)
     if sizer_scores.empty:
-        tprint("Policy optimiser stage filtering removed all sizer OOF rows.")
+        tprint(
+            "Policy optimiser stage filtering removed all sizer OOF rows; "
+            "falling back to unfiltered sizer OOF rows for this run."
+        )
+        sizer_scores = _unfiltered_sizer_scores
+    if sizer_scores.empty:
+        tprint("No sizer OOF rows available for policy optimisation.")
         return {}
     strategy_rows: List[Dict[str, Any]] = []
     for selected in selected_candidates:
         key = next((k for k in meta_oofs.keys() if selected["strategy_id"] in k), None)
         if key is None:
-            scored_keys = []
-            for mk, mdf in meta_oofs.items():
-                if hasattr(mdf, "columns") and "oof_u_hat" in mdf.columns:
-                    scored_keys.append(
-                        (
-                            float(
-                                np.nanmean(
-                                    np.asarray(mdf["oof_u_hat"], dtype=np.float32)
-                                )
-                            ),
-                            mk,
-                        )
-                    )
-            if scored_keys:
-                scored_keys.sort(reverse=True)
-                key = scored_keys[0][1]
-                tprint(
-                    f"Strategy {selected['strategy_id']} not found in meta OOF; "
-                    f"falling back to best available bucket {key}."
-                )
-            else:
-                key = next(iter(meta_oofs.keys()), None)
-                if key is None:
-                    tprint(
-                        "No meta OOF buckets available; skipping policy optimisation."
-                    )
-                    return {}
+            tprint(
+                f"Strategy {selected['strategy_id']} not found in meta OOF; "
+                "skipping policy optimisation for this candidate."
+            )
+            continue
 
         outcomes = load_trade_outcomes(data_root, run_id, meta_oofs[key])
+        unfiltered_outcomes = outcomes
         outcomes = _filter_df_by_stage_view(outcomes, stage_view)
+        if outcomes.empty and unfiltered_outcomes is not None and not unfiltered_outcomes.empty:
+            tprint(
+                f"Policy optimiser stage filtering removed all trade outcomes for "
+                f"{selected['strategy_id']}; falling back to unfiltered outcomes."
+            )
+            outcomes = unfiltered_outcomes
         if outcomes.empty:
             continue
         outcomes = _attach_sizer_score(outcomes, sizer_scores, selected["strategy_id"])
@@ -3149,6 +3553,35 @@ def run_policy_optimisation(
             raise RuntimeError(
                 f"Could not attach simple_position_sizer scores for {selected['strategy_id']}"
             )
+        pre_sizer_rows = len(outcomes)
+        sizer_score = pd.to_numeric(outcomes["sizer_score"], errors="coerce")
+        finite_sizer_mask = np.isfinite(np.asarray(sizer_score, dtype=np.float64))
+        outcomes = outcomes.loc[finite_sizer_mask].copy()
+        if outcomes.empty:
+            tprint(
+                f"Strategy {selected['strategy_id']} has no finite simple-sizer "
+                "OOF rows after timestamp/symbol alignment; skipping."
+            )
+            continue
+        outcomes["sizer_score"] = np.asarray(
+            sizer_score.loc[finite_sizer_mask], dtype=np.float32
+        )
+        selected_side = _strategy_side(selected)
+        if selected_side == "unknown" and "is_long" in outcomes.columns:
+            is_long_vals = np.asarray(outcomes["is_long"].values, dtype=np.float64)
+            finite_long = np.isfinite(is_long_vals)
+            if finite_long.any():
+                selected_side = (
+                    "long"
+                    if float(np.nanmean(is_long_vals[finite_long])) >= 0.5
+                    else "short"
+                )
+        if selected_side in {"long", "short"}:
+            selected["side"] = selected_side
+        tprint(
+            f"Strategy {selected['strategy_id']}: using {len(outcomes)}/"
+            f"{pre_sizer_rows} finite simple-sizer OOF rows for policy optimisation."
+        )
 
         conf, conf_name = _resolve_selection_score(outcomes)
         frac = resolve_optimised_selection_frac(
@@ -3157,7 +3590,31 @@ def run_policy_optimisation(
             selected=selected,
         )
         k = max(1, int(len(conf) * frac))
-        selected_idx = np.argsort(conf, kind="stable")[-k:]
+        entry_ts = pd.to_datetime(
+            outcomes.get("timestamp", pd.Series(np.arange(len(outcomes)))),
+            utc=True,
+            errors="coerce",
+        ).view("int64")
+        entry_ts = np.where(entry_ts > 0, entry_ts // 1_000_000, 0).astype(np.int64)
+        exit_bars = np.maximum(
+            1,
+            np.asarray(
+                outcomes.get("exit_bar", pd.Series(np.ones(len(outcomes)))),
+                dtype=np.int64,
+            ),
+        )
+        exit_ts = entry_ts + exit_bars * 3_600_000
+        selected_idx = _select_topk_non_concurrent(
+            scores=conf,
+            k=k,
+            entry_timestamps=entry_ts,
+            exit_timestamps=exit_ts,
+            symbols=np.asarray(
+                outcomes.get("symbol", pd.Series([""] * len(outcomes))).astype(str)
+            ),
+            max_global_concurrent=3,
+        )
+        policy_idx = np.asarray(selected_idx, dtype=np.int64)
 
         sizer_stub = {
             "best_simple_score_": conf,
@@ -3201,6 +3658,9 @@ def run_policy_optimisation(
         if use_offset_optimiser:
             offset_result = run_simple_offset_generator_from_sizer(
                 sizer_results=sizer_stub, trade_outcomes=outcomes, cost_pct=cost_pct
+            )
+            policy_idx = np.asarray(
+                offset_result.get("above_threshold_idx", selected_idx), dtype=np.int64
             )
             base_rets = np.asarray(
                 outcomes.get("return", pd.Series(np.zeros(len(outcomes)))).values,
@@ -3317,6 +3777,7 @@ def run_policy_optimisation(
             cost_pct=cost_pct,
             executed_mask=executed_mask,
         )
+        best["side"] = selected.get("side", selected_side)
         best["source_model"] = selected.get("model", "")
         best["source_artifact"] = selected.get("source_artifact", "")
         best["selected_key"] = key
@@ -3344,14 +3805,16 @@ def run_policy_optimisation(
                     cost_pct=cost_pct,
                     already_net=False,
                     executed_mask=executed_mask,
-                    ts_vals=context.get(
-                        "timestamps_ms", np.arange(len(baseline_rets_raw))
-                    )
-                    if "timestamps_ms" in context
-                    else None,
-                    scores=context.get("confidence")
-                    if context.get("confidence") is not None
-                    else None,
+                    ts_vals=(
+                        context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))
+                        if "timestamps_ms" in context
+                        else None
+                    ),
+                    scores=(
+                        context.get("confidence")
+                        if context.get("confidence") is not None
+                        else None
+                    ),
                 )
                 pre_capped_pnl = (
                     float(np.mean(base_rets) * len(base_rets))
@@ -3380,9 +3843,11 @@ def run_policy_optimisation(
             cost_pct=cost_pct,
             already_net=False,
             executed_mask=executed_mask,
-            ts_vals=context.get("timestamps_ms", np.arange(len(base_rets)))
-            if "timestamps_ms" in context
-            else None,
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(base_rets)))
+                if "timestamps_ms" in context
+                else None
+            ),
             scores=baseline_conf if baseline_conf is not None else None,
         )
         tprint(
@@ -3436,14 +3901,18 @@ def run_policy_optimisation(
                 executed_mask=(
                     executed_mask[val_mask] if executed_mask is not None else None
                 ),
-                ts_vals=context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))[
-                    val_mask
-                ]
-                if "timestamps_ms" in context
-                else None,
-                scores=context.get("confidence")[val_mask]
-                if context.get("confidence") is not None
-                else None,
+                ts_vals=(
+                    context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))[
+                        val_mask
+                    ]
+                    if "timestamps_ms" in context
+                    else None
+                ),
+                scores=(
+                    context.get("confidence")[val_mask]
+                    if context.get("confidence") is not None
+                    else None
+                ),
             )
         else:
             # Sizing already applied to base_rets during baseline computation
@@ -3455,14 +3924,16 @@ def run_policy_optimisation(
                 executed_mask=(
                     executed_mask[val_mask] if executed_mask is not None else None
                 ),
-                ts_vals=context.get("timestamps_ms", np.arange(len(base_rets)))[
-                    val_mask
-                ]
-                if "timestamps_ms" in context
-                else None,
-                scores=context.get("confidence")[val_mask]
-                if context.get("confidence") is not None
-                else None,
+                ts_vals=(
+                    context.get("timestamps_ms", np.arange(len(base_rets)))[val_mask]
+                    if "timestamps_ms" in context
+                    else None
+                ),
+                scores=(
+                    context.get("confidence")[val_mask]
+                    if context.get("confidence") is not None
+                    else None
+                ),
             )
 
         final_val_assess = _metric_score(
@@ -3472,14 +3943,18 @@ def run_policy_optimisation(
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
-            ts_vals=context.get("timestamps_ms", np.arange(len(final_rets_assess)))[
-                val_mask
-            ]
-            if "timestamps_ms" in context
-            else None,
-            scores=context.get("confidence")[val_mask]
-            if context.get("confidence") is not None
-            else None,
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(final_rets_assess)))[
+                    val_mask
+                ]
+                if "timestamps_ms" in context
+                else None
+            ),
+            scores=(
+                context.get("confidence")[val_mask]
+                if context.get("confidence") is not None
+                else None
+            ),
         )
 
         # Also compute full-set metrics for reporting
@@ -3488,12 +3963,16 @@ def run_policy_optimisation(
             cost_pct=cost_pct,
             already_net=False,
             executed_mask=executed_mask,
-            ts_vals=context.get("timestamps_ms", np.arange(len(final_rets_assess)))
-            if "timestamps_ms" in context
-            else None,
-            scores=context.get("confidence")
-            if context.get("confidence") is not None
-            else None,
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(final_rets_assess)))
+                if "timestamps_ms" in context
+                else None
+            ),
+            scores=(
+                context.get("confidence")
+                if context.get("confidence") is not None
+                else None
+            ),
         )
 
         # Compare on VALIDATION SET (fair - same period used for optimization)
@@ -3550,6 +4029,65 @@ def run_policy_optimisation(
         best["wallet_range"] = [0.05, 0.15]
         best["sizer_wallet_pnl"] = sizer_wallet_pnl
         best["sizer_net_pnl"] = float(selected.get("net_pnl", 0.0))
+        final_metrics = best.get("metrics_final", {})
+        final_profit_factor = (
+            _safe_float(final_metrics.get("profit_factor"), 0.0)
+            if isinstance(final_metrics, dict)
+            else 0.0
+        )
+        lengths = np.asarray(
+            context.get(
+                "_cached_lengths_",
+                context.get("bars_since_entry", np.ones(len(base_rets))),
+            ),
+            dtype=np.float64,
+        )
+        if lengths.shape[0] == len(base_rets):
+            avg_holding_time_hours = float(np.nanmean(np.maximum(1.0, lengths)))
+        else:
+            avg_holding_time_hours = 1.0
+        best["avg_holding_time_hours"] = avg_holding_time_hours
+        best["opportunities_per_day"] = _opportunities_per_day(
+            outcomes.get("timestamp", pd.Series(np.arange(len(outcomes))))
+        )
+        if isinstance(final_metrics, dict):
+            best["weekly_wallet_vol"] = _safe_float(
+                final_metrics.get("weekly_wallet_vol"), 0.0
+            )
+            best["monthly_wallet_vol"] = _safe_float(
+                final_metrics.get("monthly_wallet_vol"), 0.0
+            )
+            best["profit_factor"] = final_profit_factor
+        final_net_trade_rets = np.asarray(final_rets_assess, dtype=np.float64) - float(
+            cost_pct
+        )
+        if executed_mask is not None and len(executed_mask) == len(
+            final_net_trade_rets
+        ):
+            exec_mask = np.asarray(executed_mask, dtype=bool)
+            final_net_trade_rets = final_net_trade_rets[exec_mask]
+            policy_idx_for_assets = (
+                policy_idx[exec_mask]
+                if len(policy_idx) == len(exec_mask)
+                else policy_idx
+            )
+        else:
+            policy_idx_for_assets = policy_idx
+        if "symbol" in outcomes.columns and len(policy_idx_for_assets) == len(
+            final_net_trade_rets
+        ):
+            asset_selection = _asset_profit_factor_exclusions(
+                symbols=np.asarray(outcomes["symbol"].astype(str).values)[
+                    policy_idx_for_assets
+                ],
+                net_rets=final_net_trade_rets,
+                avg_profit_factor=final_profit_factor,
+            )
+            best["excluded_symbols"] = asset_selection["excluded_symbols"]
+            best["asset_metrics"] = asset_selection["asset_metrics"]
+        else:
+            best["excluded_symbols"] = []
+            best["asset_metrics"] = []
 
         # Build progression table for this strategy
         if "_progression_" in best:
@@ -3700,6 +4238,12 @@ def run_policy_optimisation(
         "best_strategy_id": strategy_rows[0].get("strategy_id", ""),
         "best_source_model": strategy_rows[0].get("source_model", ""),
     }
+    strategy_for_inference = build_strategy_for_inference_payload(
+        strategy_rows,
+        data_root=data_root,
+        run_id=run_id,
+    )
+    payload["strategy_for_inference"] = strategy_for_inference
     out_dir = Path(data_root) / "artifacts" / run_id / "policy_params"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "best_policy_params.json"

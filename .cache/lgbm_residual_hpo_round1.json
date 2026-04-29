@@ -1,0 +1,14 @@
+{
+  "best_n_estimators": 20,
+  "feature_count": 10,
+  "params": {
+    "bagging_fraction": 0.7693758799239513,
+    "bagging_freq": 3,
+    "feature_fraction": 0.5187500250219863,
+    "max_depth": 2,
+    "min_data_frac": 0.005593848338407439,
+    "min_gain_to_split": 0.00024985766831198223,
+    "min_sum_hessian": 0.003780558109476994,
+    "num_leaves": 79
+  }
+}

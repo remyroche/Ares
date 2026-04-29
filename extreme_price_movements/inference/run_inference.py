@@ -1576,11 +1576,14 @@ def _evaluate_oco_policy(
         giveback_beta = float(params.get("giveback_beta", 1.0))
         last_bar_ts = bars.index[-1]
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        # ⚡ Bolt: Replace O(N) Pandas iterrows with much faster direct numpy array iteration
+        for bar_ts, bar_high, bar_low in zip(
+            bars.index.to_numpy(),
+            bars["high"].to_numpy(),
+            bars["low"].to_numpy(),
+        ):
+            bar_high = float(bar_high)
+            bar_low = float(bar_low)
 
             if side == "long":
                 mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))

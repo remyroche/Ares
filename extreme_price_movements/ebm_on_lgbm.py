@@ -2671,18 +2671,14 @@ def _oof_distilled_sample_weights(
             last_oof,
             classifier=classifier,
         )
-        current = base * multiplier * fp_avoid
-        current = np.nan_to_num(current, nan=1.0, posinf=1.0, neginf=1.0).astype(
-            np.float32
-        )
-        current = current / max(float(np.mean(current)), 1e-6)
+        current, ess = _normalize_rank_based_weights(base * multiplier * fp_avoid)
         prev_oof = last_oof.copy()
         tprint(
             "EBMOnLGBM: OOF-only distilled weights "
             f"{label} pass {pass_i}/{max(1, int(passes))} "
             f"in {time.perf_counter() - t0:.1f}s "
             f"(mean={float(np.mean(current)):.3f}, "
-            f"p90={float(np.percentile(current, 90)):.3f})."
+            f"p90={float(np.percentile(current, 90)):.3f}, ess={ess:.1f})."
         )
     return current.astype(np.float32), last_oof.astype(np.float32)
 
@@ -2692,25 +2688,55 @@ def _false_positive_avoidance_weight(
     pred: np.ndarray,
     classifier: bool,
     threshold: float = 0.80,
+    trade_top_frac: float | None = None,
     positive_recall_top_frac_multiplier: float = 1.5,
     fp_upweight: float = 1.60,
     top_positive_upweight: float = 1.25,
+    max_weight: float = 4.0,
 ) -> np.ndarray:
     if not classifier:
         return np.ones(len(pred), dtype=np.float32)
     yb = np.asarray(y_true, dtype=np.float32)
-    pp = np.asarray(pred, dtype=np.float32)
-    w = np.where((yb < 0.5) & (pp >= threshold), fp_upweight, 1.0).astype(np.float32)
-    # Balance false-positive suppression with top-rank positive recall:
-    # if top-x% is penalized for negatives, reinforce positives in top-(1.5*x)%.
-    x = float(np.clip(1.0 - threshold, 1e-3, 0.5))
+    pp = np.nan_to_num(np.asarray(pred, dtype=np.float32), nan=-np.inf)
+    if len(pp) == 0:
+        return np.ones(0, dtype=np.float32)
+    if trade_top_frac is None:
+        trade_top_frac = 1.0 - float(threshold)
+    trade_top_frac = float(np.clip(trade_top_frac, 1e-3, 0.95))
     pos_top_frac = float(
-        np.clip(positive_recall_top_frac_multiplier * x, x, 0.95)
+        np.clip(
+            positive_recall_top_frac_multiplier * trade_top_frac,
+            trade_top_frac,
+            0.95,
+        )
     )
-    pos_cut = float(np.quantile(pp, 1.0 - pos_top_frac))
-    pos_top_mask = (yb >= 0.5) & (pp >= pos_cut)
-    w[pos_top_mask] = np.maximum(w[pos_top_mask], top_positive_upweight)
-    return w.astype(np.float32)
+    rank_pct = pd.Series(pp).rank(method="average", pct=True).to_numpy(dtype=np.float32)
+    trade_top_mask = rank_pct >= 1.0 - trade_top_frac
+    pos_support_mask = rank_pct >= 1.0 - pos_top_frac
+    w = np.ones(len(pp), dtype=np.float32)
+    fp_mask = (yb < 0.5) & trade_top_mask
+    pos_mask = (yb >= 0.5) & pos_support_mask
+    w[fp_mask] = fp_upweight
+    w[pos_mask] = np.maximum(w[pos_mask], top_positive_upweight)
+    return np.clip(w, 1.0, max_weight).astype(np.float32)
+
+
+def _normalize_rank_based_weights(
+    weights: np.ndarray,
+    *,
+    min_weight: float = 0.25,
+    max_weight: float = 4.0,
+) -> tuple[np.ndarray, float]:
+    w = np.nan_to_num(
+        np.asarray(weights, dtype=np.float32),
+        nan=1.0,
+        posinf=max_weight,
+        neginf=min_weight,
+    )
+    w = np.clip(w, min_weight, max_weight)
+    w = w / max(float(np.mean(w)), 1e-6)
+    ess = float((w.sum() ** 2) / max(np.sum(w**2), 1e-6))
+    return w.astype(np.float32), ess
 
 
 def _apply_shape_smoothing_policy(
@@ -3174,21 +3200,62 @@ def _augment_with_oof_tree_features(
                 params,
                 model_seed,
             )
-            pred_oof = np.asarray(model0.booster_.predict(x_fit_tr), dtype=np.float32)
+            pred_fit = np.full(len(y_fit_tr), np.nan, dtype=np.float32)
+            if classifier:
+                split_target = np.asarray(y_fit_tr >= 0.5, dtype=np.int8)
+                class_counts = np.bincount(split_target, minlength=2)
+                nested_splits = int(min(3, np.min(class_counts)))
+                nested_splits = max(nested_splits, 0)
+            else:
+                split_target = np.asarray(y_fit_tr, dtype=np.float32)
+                nested_splits = 3 if len(y_fit_tr) >= 120 else 2 if len(y_fit_tr) >= 40 else 0
+            if nested_splits >= 2:
+                nested_splitter = (
+                    StratifiedKFold(
+                        n_splits=nested_splits,
+                        shuffle=True,
+                        random_state=model_seed + 11,
+                    )
+                    if classifier
+                    else KFold(
+                        n_splits=nested_splits,
+                        shuffle=True,
+                        random_state=model_seed + 11,
+                    )
+                )
+                for nested_tr, nested_va in nested_splitter.split(
+                    np.zeros(len(y_fit_tr)), split_target
+                ):
+                    nested_model = _fit_lgbm_tree_feature_model(
+                        x_fit_tr[nested_tr],
+                        y_fit_tr[nested_tr],
+                        x_fit_tr[nested_va],
+                        y_fit_tr[nested_va],
+                        params,
+                        model_seed + 101 + int(nested_va[0]),
+                    )
+                    pred_fit[nested_va] = np.asarray(
+                        nested_model.booster_.predict(x_fit_tr[nested_va]),
+                        dtype=np.float32,
+                    )
+            if not np.all(np.isfinite(pred_fit)):
+                pred_fit = np.asarray(
+                    model0.booster_.predict(x_fit_tr), dtype=np.float32
+                )
             distill_w = _compute_weight_distillation(
                 np.asarray(y_fit_tr, dtype=np.float32),
-                pred_oof,
+                pred_fit,
                 None,
                 is_classifier=classifier,
             )
-            rank = pd.Series(pred_oof).rank(pct=True).to_numpy(dtype=np.float32)
-            top20_mask = rank >= 0.80
-            top_boost = np.where(top20_mask, 1.25, 1.0).astype(np.float32)
-            fp_hard_upweight = np.where(
-                (np.asarray(y_fit_tr, dtype=np.float32) < 0.5) & (pred_oof >= 0.8),
-                1.6,
-                1.0,
-            ).astype(np.float32)
+            fp_avoid_w = _false_positive_avoidance_weight(
+                np.asarray(y_fit_tr, dtype=np.float32),
+                pred_fit,
+                classifier=classifier,
+            )
+            fit_sample_weight, fit_ess = _normalize_rank_based_weights(
+                distill_w * fp_avoid_w
+            )
             model = _fit_lgbm_tree_feature_model(
                 x_fit_tr,
                 y_fit_tr,
@@ -3196,14 +3263,18 @@ def _augment_with_oof_tree_features(
                 y_fit_va,
                 params,
                 model_seed + 17,
-                sample_weight=(distill_w * top_boost * fp_hard_upweight).astype(
-                    np.float32
-                ),
+                sample_weight=fit_sample_weight,
+            )
+            tprint(
+                "EBMOnLGBM tree features: nested OOF weighting "
+                f"fold {fold_i}/{EBM_CV_SPLITS} bundle {i + 1}/{len(grid)} "
+                f"(ess={fit_ess:.1f})."
             )
             models.append(model)
         fit_arr, fit_names, scales = _compute_soft_tree_features_ebm(models, x_fit_tr, None)
         va_arr, tree_names, _ = _compute_soft_tree_features_ebm(models, x_va, scales)
         ev_arr, _, _ = _compute_soft_tree_features_ebm(models, x_ev, scales)
+        generated_leaf_names = [n for n in tree_names if "_leaf" in n]
         kept_tree_names = _select_leaf_names_from_score_matrix(
             fit_arr,
             fit_names,
@@ -3221,8 +3292,16 @@ def _augment_with_oof_tree_features(
         leaf_screen_diagnostics.append(
             {
                 "fold": int(fold_i),
-                "total_leaves_generated": int(len([n for n in tree_names if "_leaf" in n])),
+                "total_leaves_generated": int(len(generated_leaf_names)),
                 "total_leaves_retained": int(len([n for n in tree_names if "_leaf" in n])),
+                "total_leaf_features_dropped": int(
+                    len(generated_leaf_names)
+                    - len([n for n in tree_names if "_leaf" in n])
+                ),
+                "retention_frac": float(
+                    len([n for n in tree_names if "_leaf" in n])
+                    / max(len(generated_leaf_names), 1)
+                ),
             }
         )
         va_tree = pd.DataFrame(va_arr, columns=tree_names, dtype=np.float32)
@@ -4545,7 +4624,7 @@ def train_ebm_on_lgbm_candidate(
             current_oof,
             classifier=classifier,
         )
-        current_weights = current_weights / max(float(np.mean(current_weights)), 1e-6)
+        current_weights, _current_ess = _normalize_rank_based_weights(current_weights)
         active = next_active
         if best_seen is None or best_j > float(best_seen["J_final"]):
             best_seen = {
@@ -4587,7 +4666,7 @@ def train_ebm_on_lgbm_candidate(
         np.asarray(best_seen["oof"], dtype=np.float32),
         classifier=classifier,
     )
-    final_weights = final_weights / max(float(np.mean(final_weights)), 1e-6)
+    final_weights, _final_ess = _normalize_rank_based_weights(final_weights)
     mode_name = "classifier" if classifier else "regressor"
     specs = _ebm_specs(pruning=False, random_state=random_state)[:EBM_FINAL_MODEL_COUNT]
     selected_features = _contribution_correlation_prune(

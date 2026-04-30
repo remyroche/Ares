@@ -4,6 +4,7 @@ import pandas as pd
 import extreme_price_movements.ebm_on_lgbm as lor
 from extreme_price_movements.ebm_on_lgbm import (
     SplinePostProcessor,
+    _false_positive_avoidance_weight,
     _feature_shape_scores,
     _fit_final_model,
     _hpo_objective_from_aggregate,
@@ -22,6 +23,8 @@ from extreme_price_movements.ebm_on_lgbm import (
 
 
 class FakeEBMClassifier:
+    fit_sample_weights = []
+
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.coef_ = None
@@ -29,6 +32,9 @@ class FakeEBMClassifier:
         self.term_features_ = []
 
     def fit(self, X, y, sample_weight=None):
+        self.__class__.fit_sample_weights.append(
+            None if sample_weight is None else np.asarray(sample_weight, dtype=np.float32)
+        )
         x = np.asarray(X, dtype=np.float32)
         yy = np.asarray(y, dtype=np.float32)
         yy = yy - float(np.mean(yy))
@@ -329,6 +335,135 @@ def test_final_fit_keeps_missing_selected_tree_feature_contract(monkeypatch):
     assert model.selected_features == selected
     assert model.metrics["feature_count"] == len(selected)
     assert model.metrics["n_leaf_features_kept"] == 1
+
+
+def test_false_positive_avoidance_weight_is_rank_based_for_top20pct():
+    y = np.array([0, 1, 0, 1, 0, 0, 0, 0, 0], dtype=np.float32)
+    pred = np.array([0.79, 0.78, 0.77, 0.76, 0.10, 0.09, 0.08, 0.07, 0.06], dtype=np.float32)
+
+    w = _false_positive_avoidance_weight(y, pred, classifier=True, threshold=0.80)
+
+    assert w[0] > 1.0
+    assert w[2] == 1.0
+
+
+def test_false_positive_avoidance_weight_supports_positives_in_top30pct():
+    y = np.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.float32)
+    pred = np.array([0.60, 0.59, 0.99, 0.98, 0.20, 0.19, 0.18, 0.17, 0.16, 0.15], dtype=np.float32)
+
+    w = _false_positive_avoidance_weight(y, pred, classifier=True, threshold=0.80)
+
+    assert w[0] > 1.0
+    assert w[1] > 1.0
+
+
+def test_leaf_screen_diagnostics_report_generated_and_dropped(monkeypatch):
+    rng = np.random.default_rng(123)
+    x = rng.normal(size=(120, 6)).astype(np.float32)
+    X_select = pd.DataFrame(x, columns=[f"f{i}" for i in range(6)])
+    X_eval = X_select.iloc[:20].copy()
+    y = (x[:, 0] > 0).astype(np.int8)
+
+    def fake_fit_model(*args, **kwargs):
+        class _Booster:
+            def predict(self, X):
+                return np.linspace(0.1, 0.9, len(X), dtype=np.float32)
+
+        class _Model:
+            booster_ = _Booster()
+
+        return _Model()
+
+    def fake_compute(models, X, scales):
+        del models, scales
+        arr = np.tile(np.linspace(0.1, 0.9, 6, dtype=np.float32), (len(X), 1))
+        names = [
+            *(f"lgbm_depth3_minpct0200_tree0_leaf{i}_soft" for i in range(4)),
+            "lgbm_depth3_minpct0200_tree1_leaf0_soft",
+            "lgbm_depth3_minpct0200_tree1_leaf1_soft",
+        ]
+        return arr, names, np.ones(arr.shape[1], dtype=np.float32)
+
+    monkeypatch.setattr(lor, "_fit_lgbm_tree_feature_model", fake_fit_model)
+    monkeypatch.setattr(lor, "_compute_soft_tree_features_ebm", fake_compute)
+    monkeypatch.setattr(
+        lor,
+        "_select_leaf_names_from_score_matrix",
+        lambda X_score, names, cap: names[:3],
+    )
+    monkeypatch.setattr(
+        lor,
+        "_target_aware_tree_feature_cap",
+        lambda sel, ev, names, y, classifier, random_state: (sel, ev, names),
+    )
+    monkeypatch.setattr(lor, "_subsample_tree_fit_rows", lambda X, y, random_state: (X, y))
+    monkeypatch.setattr(
+        lor,
+        "_inner_tree_fit_split",
+        lambda X, y, random_state: (X, y, X[: min(10, len(X))], y[: min(10, len(y))]),
+    )
+
+    _sel, _eval, bundle = lor._augment_with_oof_tree_features(
+        X_select,
+        y,
+        X_eval,
+        random_state=42,
+        classifier=True,
+    )
+
+    diag = bundle["leaf_screen_diagnostics"][0]
+    assert diag["total_leaves_generated"] >= diag["total_leaves_retained"]
+    assert diag["total_leaf_features_dropped"] == (
+        diag["total_leaves_generated"] - diag["total_leaves_retained"]
+    )
+
+
+def test_final_fit_records_non_uniform_sample_weight(monkeypatch):
+    FakeEBMClassifier.fit_sample_weights = []
+    rng = np.random.default_rng(55)
+    x = rng.normal(size=(220, 4)).astype(np.float32)
+    y = (x[:, 0] + rng.normal(scale=0.2, size=220) > 0).astype(np.int8)
+    X = pd.DataFrame(x, columns=[f"f{i}" for i in range(x.shape[1])])
+    sample_weight = np.linspace(0.5, 1.5, len(y), dtype=np.float32)
+
+    monkeypatch.setattr(
+        lor,
+        "_augment_with_tree_features",
+        lambda X_train_raw, y_train, X_eval_raw, random_state: (
+            X_train_raw.copy(),
+            X_eval_raw.copy(),
+            {"models": [], "tree_feature_config": {}, "tree_feature_names": [], "tree_feature_scales": None},
+        ),
+    )
+    monkeypatch.setattr(
+        lor,
+        "_oof_distilled_sample_weights",
+        lambda *args, **kwargs: (sample_weight.copy(), np.full(len(y), 0.5, dtype=np.float32)),
+    )
+    monkeypatch.setattr(
+        lor,
+        "_final_stage_oof_predictions",
+        lambda *args, **kwargs: np.full(len(y), 0.5, dtype=np.float32),
+    )
+
+    model = _fit_final_model(
+        FakeEBMClassifier,
+        X,
+        y,
+        sample_weight,
+        ["f0", "f1"],
+        ["f0", "f1"],
+        "classifier",
+        42,
+        [],
+        np.full(len(y), 0.5, dtype=np.float32),
+        {},
+    )
+
+    assert model is not None
+    recorded = [w for w in FakeEBMClassifier.fit_sample_weights if w is not None]
+    assert recorded
+    assert np.ptp(recorded[-1]) > 0.0
 
 
 def test_train_ebm_on_lgbm_candidate_with_fake_ebm(monkeypatch):

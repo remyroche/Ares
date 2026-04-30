@@ -33,7 +33,7 @@ from extreme_price_movements.utils import tprint
 
 EPS = 1e-9
 MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE = 0.002
-MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 1
+MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 2
 SIMPLE_POSITION_SIZER_ARTIFACT_DIR = "simple_position_sizer"
 POLICY_OPTIMISER_CANDIDATE_FRAC = 0.15
 POLICY_OPTIMISER_ASSESSMENT_FRAC = 0.05
@@ -326,7 +326,7 @@ def _deployment_order_rank_threshold(row: Dict[str, Any]) -> float:
     )
     avg_holding_hours = max(1.0, _safe_float(row.get("avg_holding_time_hours"), 1.0))
     threshold = (avg_top1_trades_per_day / 24.0) * 2.0 / avg_holding_hours * 0.95
-    return float(np.clip(threshold, 0.0, 1.0))
+    return float(np.clip(max(0.95, threshold), 0.0, 1.0))
 
 
 def _opportunities_per_day(timestamps: pd.Series) -> float:

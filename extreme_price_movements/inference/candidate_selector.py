@@ -31,8 +31,10 @@ def _fallback_rank_candidates(
     metric_df = feats.get(metric)
     if not isinstance(metric_df, pd.DataFrame):
         metric_df = close.pct_change(12).fillna(0.0)
-    latest_metric = metric_df.reindex(columns=close.columns).iloc[-1].replace(
-        [np.inf, -np.inf], np.nan
+    latest_metric = (
+        metric_df.reindex(columns=close.columns)
+        .iloc[-1]
+        .replace([np.inf, -np.inf], np.nan)
     )
     valid = latest_metric.notna()
 
@@ -43,16 +45,20 @@ def _fallback_rank_candidates(
     range_df = feats.get("range_12h_pct")
     min_range = float(cfg.get("train_min_range_pct", 0.06) or 0.0)
     if isinstance(range_df, pd.DataFrame) and min_range > 0.0:
-        latest_range = range_df.reindex(columns=close.columns).iloc[-1].replace(
-            [np.inf, -np.inf], np.nan
+        latest_range = (
+            range_df.reindex(columns=close.columns)
+            .iloc[-1]
+            .replace([np.inf, -np.inf], np.nan)
         )
         valid &= latest_range >= min_range
 
     vol_df = feats.get("volatility_zscore")
     min_vol = float(cfg.get("train_min_vol_zscore", 1.5) or 0.0)
     if isinstance(vol_df, pd.DataFrame) and min_vol > 0.0:
-        latest_vol = vol_df.reindex(columns=close.columns).iloc[-1].replace(
-            [np.inf, -np.inf], np.nan
+        latest_vol = (
+            vol_df.reindex(columns=close.columns)
+            .iloc[-1]
+            .replace([np.inf, -np.inf], np.nan)
         )
         vol_valid = latest_vol >= min_vol
         if bool(vol_valid.any()):
@@ -70,9 +76,59 @@ def _fallback_rank_candidates(
     extreme_pct = float(cfg.get("train_extreme_pct_hourly", 0.05) or 0.05)
     n_keep = max(1, int(np.ceil(len(latest_metric.dropna()) * extreme_pct)))
     long_candidates = (
-        eligible[eligible > 0.0].sort_values(ascending=False).head(n_keep).index.tolist()
+        eligible[eligible > 0.0]
+        .sort_values(ascending=False)
+        .head(n_keep)
+        .index.tolist()
     )
-    short_candidates = eligible[eligible < 0.0].sort_values().head(n_keep).index.tolist()
+    short_candidates = (
+        eligible[eligible < 0.0].sort_values().head(n_keep).index.tolist()
+    )
+    return long_candidates, short_candidates
+
+
+def _rescue_rank_candidates(
+    panel: Dict[str, pd.DataFrame],
+    feats: Dict[str, pd.DataFrame],
+    *,
+    metric: str,
+    cfg: Dict[str, Any],
+) -> Tuple[List[str], List[str]]:
+    """Return a bounded rank-only pool when live masks are silent."""
+    close = panel.get("close")
+    if not isinstance(close, pd.DataFrame) or close.empty:
+        return [], []
+
+    metric_df = feats.get(metric)
+    if not isinstance(metric_df, pd.DataFrame):
+        metric_df = close.pct_change(12).fillna(0.0)
+    latest_metric = (
+        metric_df.reindex(columns=close.columns)
+        .iloc[-1]
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+    )
+    if latest_metric.empty:
+        return [], []
+
+    extreme_pct = float(cfg.get("candidate_mask_rescue_extreme_pct", 0.02) or 0.02)
+    min_per_side = int(cfg.get("candidate_mask_rescue_min_per_side", 5) or 5)
+    max_per_side = int(cfg.get("candidate_mask_rescue_max_per_side", 12) or 12)
+    n_keep = int(np.ceil(float(len(latest_metric)) * max(extreme_pct, 0.0)))
+    n_keep = max(1, min(max_per_side, max(min_per_side, n_keep)))
+
+    long_candidates = (
+        latest_metric[latest_metric > 0.0]
+        .sort_values(ascending=False)
+        .head(n_keep)
+        .index.tolist()
+    )
+    short_candidates = (
+        latest_metric[latest_metric < 0.0]
+        .sort_values(ascending=True)
+        .head(n_keep)
+        .index.tolist()
+    )
     return long_candidates, short_candidates
 
 
@@ -81,10 +137,17 @@ def _build_mask_for_mode(
     feats: Dict[str, pd.DataFrame],
     mask_cfg: Dict[str, Any],
 ) -> pd.DataFrame:
-    from extreme_price_movements.lgbm_based_mask_generation import FeatureProcessor, CanonicalRuleMaskResolver
-    from extreme_price_movements.mask_optimiser import _compute_z_cache, _generate_event_masks, _generate_event_masks_fast
+    from extreme_price_movements.lgbm_based_mask_generation import (
+        FeatureProcessor,
+        CanonicalRuleMaskResolver,
+    )
+    from extreme_price_movements.mask_optimiser import (
+        _compute_z_cache,
+        _generate_event_masks,
+        _generate_event_masks_fast,
+    )
 
-    close_df = panel['close']
+    close_df = panel["close"]
     n_ts, n_syms = close_df.shape
 
     idx_flat = np.repeat(close_df.index.to_numpy(), n_syms)
@@ -92,25 +155,21 @@ def _build_mask_for_mode(
 
     feats_1d = {}
     for k, v in feats.items():
-        if hasattr(v, 'to_numpy'):
+        if hasattr(v, "to_numpy"):
             feats_1d[k] = v.to_numpy(dtype=np.float32).ravel()
         else:
             feats_1d[k] = np.asarray(v, dtype=np.float32).ravel()
 
     fp = FeatureProcessor()
-    X, metadata, _ = fp.prepare_features(
-        feats_1d, idx_flat, sym_flat, mask_cfg
-    )
+    X, metadata, _ = fp.prepare_features(feats_1d, idx_flat, sym_flat, mask_cfg)
     resolver = CanonicalRuleMaskResolver(X, metadata)
-    tprint(f"candidate_selector: CanonicalRuleMaskResolver initialized for mask_cfg name {mask_cfg.get('name')}")
+    tprint(
+        f"candidate_selector: CanonicalRuleMaskResolver initialized for mask_cfg name {mask_cfg.get('name')}"
+    )
 
     def _normalize_legacy_base_event(base_event: str) -> str:
         base_event = str(base_event or "").strip()
-        if (
-            base_event
-            and "|" not in base_event
-            and base_event.startswith("price_")
-        ):
+        if base_event and "|" not in base_event and base_event.startswith("price_"):
             return f"({base_event}==1)|(*)|(*)"
         return base_event
 
@@ -119,13 +178,17 @@ def _build_mask_for_mode(
         try:
             mask_1d = resolver.get_mask(base)
             mask_2d = mask_1d.reshape((n_ts, n_syms))
-            return pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
+            return pd.DataFrame(
+                mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool
+            )
         except Exception:
             pass
 
     family = str(mask_cfg.get("family", "")).strip()
     if not family:
-        return pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+        return pd.DataFrame(
+            False, index=close_df.index, columns=close_df.columns, dtype=bool
+        )
 
     idx = close_df.index
     if len(idx) >= 2:
@@ -135,27 +198,68 @@ def _build_mask_for_mode(
         bph = 1
 
     close_arr = close_df.to_numpy(dtype=np.float32, copy=False).ravel()
-    high_arr = panel["high"].reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
-    low_arr = panel["low"].reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
+    high_arr = (
+        panel["high"]
+        .reindex(index=idx, columns=close_df.columns)
+        .to_numpy(dtype=np.float32, copy=False)
+        .ravel()
+    )
+    low_arr = (
+        panel["low"]
+        .reindex(index=idx, columns=close_df.columns)
+        .to_numpy(dtype=np.float32, copy=False)
+        .ravel()
+    )
     volume_df = panel.get("volume")
     volume_arr = None
     if isinstance(volume_df, pd.DataFrame):
-        volume_arr = volume_df.reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
+        volume_arr = (
+            volume_df.reindex(index=idx, columns=close_df.columns)
+            .to_numpy(dtype=np.float32, copy=False)
+            .ravel()
+        )
 
     ret1_df = feats.get("ret1h")
     if isinstance(ret1_df, pd.DataFrame):
-        ret_1 = ret1_df.reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
+        ret_1 = (
+            ret1_df.reindex(index=idx, columns=close_df.columns)
+            .to_numpy(dtype=np.float32, copy=False)
+            .ravel()
+        )
     else:
-        ret_1 = close_df.pct_change().fillna(0.0).to_numpy(dtype=np.float32, copy=False).ravel()
+        ret_1 = (
+            close_df.pct_change()
+            .fillna(0.0)
+            .to_numpy(dtype=np.float32, copy=False)
+            .ravel()
+        )
 
     vol_df = feats.get("atr_pct_base")
     if not isinstance(vol_df, pd.DataFrame):
         vol_df = feats.get("atr_pct")
     if isinstance(vol_df, pd.DataFrame):
-        vol_g = vol_df.reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False).ravel()
+        vol_g = (
+            vol_df.reindex(index=idx, columns=close_df.columns)
+            .to_numpy(dtype=np.float32, copy=False)
+            .ravel()
+        )
     else:
         close_safe = np.maximum(close_df.to_numpy(dtype=np.float32, copy=False), 1e-6)
-        vol_g = ((panel["high"].reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False) - panel["low"].reindex(index=idx, columns=close_df.columns).to_numpy(dtype=np.float32, copy=False)) / close_safe).astype(np.float32).ravel()
+        vol_g = (
+            (
+                (
+                    panel["high"]
+                    .reindex(index=idx, columns=close_df.columns)
+                    .to_numpy(dtype=np.float32, copy=False)
+                    - panel["low"]
+                    .reindex(index=idx, columns=close_df.columns)
+                    .to_numpy(dtype=np.float32, copy=False)
+                )
+                / close_safe
+            )
+            .astype(np.float32)
+            .ravel()
+        )
 
     asset_groups = {
         int(i): np.arange(i, n_ts * n_syms, n_syms, dtype=np.int32)
@@ -216,13 +320,19 @@ def _build_mask_for_mode(
                 "threshold": float(parsed_threshold),
             }
 
-    if candidate is None and family in {"std_threshold", "abs_move_threshold", "std_plus_abs"}:
+    if candidate is None and family in {
+        "std_threshold",
+        "abs_move_threshold",
+        "std_plus_abs",
+    }:
         move_df = feats.get("ret12h")
         if not isinstance(move_df, pd.DataFrame):
             move_df = close_df.pct_change(12).fillna(0.0)
         move_df = move_df.reindex(index=idx, columns=close_df.columns).fillna(0.0)
         if family == "std_threshold":
-            threshold_df = move_df.rolling(24 * 30, min_periods=2).std().fillna(0.0) * float(mask_cfg.get("param", 0.0) or 0.0)
+            threshold_df = move_df.rolling(24 * 30, min_periods=2).std().fillna(
+                0.0
+            ) * float(mask_cfg.get("param", 0.0) or 0.0)
             mask_h_df = move_df >= threshold_df
             mask_l_df = (-move_df) >= threshold_df
         elif family == "abs_move_threshold":
@@ -237,7 +347,9 @@ def _build_mask_for_mode(
             else:
                 std_val = 0.0
                 abs_val = float(param_val or 0.0) / 100.0
-            threshold_df = move_df.rolling(24 * 30, min_periods=2).std().fillna(0.0) * std_val
+            threshold_df = (
+                move_df.rolling(24 * 30, min_periods=2).std().fillna(0.0) * std_val
+            )
             mask_h_df = (move_df >= threshold_df) & (move_df >= abs_val)
             mask_l_df = ((-move_df) >= threshold_df) & ((-move_df) >= abs_val)
 
@@ -255,7 +367,9 @@ def _build_mask_for_mode(
         else:
             param_val = mask_cfg.get("param")
             if param_val is None:
-                return pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+                return pd.DataFrame(
+                    False, index=close_df.index, columns=close_df.columns, dtype=bool
+                )
             mask_h, mask_l = _generate_event_masks(
                 family=family,
                 param_val=param_val,
@@ -268,12 +382,18 @@ def _build_mask_for_mode(
             )
             tprint("candidate_selector: _generate_event_masks complete.")
         mask_2d = (mask_h | mask_l).reshape((n_ts, n_syms))
-        return pd.DataFrame(mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool)
+        return pd.DataFrame(
+            mask_2d, index=close_df.index, columns=close_df.columns, dtype=bool
+        )
     except Exception:
-        return pd.DataFrame(False, index=close_df.index, columns=close_df.columns, dtype=bool)
+        return pd.DataFrame(
+            False, index=close_df.index, columns=close_df.columns, dtype=bool
+        )
 
 
-def _up_down_zones(feats: Dict[str, pd.DataFrame], panel: Dict[str, pd.DataFrame], metric: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def _up_down_zones(
+    feats: Dict[str, pd.DataFrame], panel: Dict[str, pd.DataFrame], metric: str
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     if metric in feats:
         metric_df = feats[metric]
     else:
@@ -307,10 +427,10 @@ def select_candidates(
     chop_thr: float = 0.5,
 ) -> Tuple[List[str], List[str]]:
     """Select trade candidates using mask optimiser logic.
-    
+
     Applies the candidate selection algorithm with optimized parameters from
     mask_optimiser.py instead of the legacy threshold selection.
-    
+
     Args:
         panel: Price panel with open, high, low, close, volume DataFrames
         feats: Feature dictionary with computed market features
@@ -320,12 +440,15 @@ def select_candidates(
         min_vol_zscore: Deprecated and unsupported (raises)
         metric: Performance metric to rank by
         chop_thr: Maximum choppiness score threshold
-        
+
     Returns:
         Tuple of (long_candidates, short_candidates) - lists of symbol strings
     """
     cfg = _resolve_runtime_cfg()
-    if any(v is not None for v in (extreme_pct, min_move_12h_pct, min_range_pct, min_vol_zscore)):
+    if any(
+        v is not None
+        for v in (extreme_pct, min_move_12h_pct, min_range_pct, min_vol_zscore)
+    ):
         raise ValueError(
             "Legacy threshold overrides are not supported after per-mode mask migration. "
             "Use persisted candidate_mask_params_by_mode instead."
@@ -337,24 +460,32 @@ def select_candidates(
         "z_hours": cfg.get("z_hours", 12.0),
         "duration_hours": cfg.get("duration_hours", 1.0),
     }
-    
+
     try:
         up_zone, down_zone = _up_down_zones(feats, panel, metric=metric)
-        m_up_tf = _build_mask_for_mode(panel, feats, mode_cfg.get("price_up_tf", default_cfg))
-        m_up_mr = _build_mask_for_mode(panel, feats, mode_cfg.get("price_up_mr", default_cfg))
-        m_down_tf = _build_mask_for_mode(panel, feats, mode_cfg.get("price_down_tf", default_cfg))
-        m_down_mr = _build_mask_for_mode(panel, feats, mode_cfg.get("price_down_mr", default_cfg))
+        m_up_tf = _build_mask_for_mode(
+            panel, feats, mode_cfg.get("price_up_tf", default_cfg)
+        )
+        m_up_mr = _build_mask_for_mode(
+            panel, feats, mode_cfg.get("price_up_mr", default_cfg)
+        )
+        m_down_tf = _build_mask_for_mode(
+            panel, feats, mode_cfg.get("price_down_tf", default_cfg)
+        )
+        m_down_mr = _build_mask_for_mode(
+            panel, feats, mode_cfg.get("price_down_mr", default_cfg)
+        )
 
         long_mask = (up_zone & m_up_tf) | (down_zone & m_down_mr)
         short_mask = (up_zone & m_up_mr) | (down_zone & m_down_tf)
 
     except Exception as e:
         raise RuntimeError(f"Per-mode candidate mask generation failed: {e}") from e
-    
+
     if long_mask.empty and short_mask.empty:
         tprint("No candidates found - candidate masks are empty")
         return [], []
-    
+
     latest_ts = long_mask.index[-1]
     latest_long = long_mask.loc[latest_ts]
     latest_short = short_mask.loc[latest_ts]
@@ -377,10 +508,28 @@ def select_candidates(
             "used rank/threshold fallback "
             f"long={len(long_candidates)} short={len(short_candidates)}"
         )
-    
-    tprint(f"Selected {len(long_candidates)} long candidates, "
-           f"{len(short_candidates)} short candidates")
-    
+    if (
+        not long_candidates
+        and not short_candidates
+        and bool(cfg.get("candidate_mask_rank_rescue_enabled", True))
+    ):
+        long_candidates, short_candidates = _rescue_rank_candidates(
+            panel,
+            feats,
+            metric=metric,
+            cfg=cfg,
+        )
+        tprint(
+            "candidate_selector: strict fallback was silent; "
+            "used rank-only rescue pool "
+            f"long={len(long_candidates)} short={len(short_candidates)}"
+        )
+
+    tprint(
+        f"Selected {len(long_candidates)} long candidates, "
+        f"{len(short_candidates)} short candidates"
+    )
+
     return long_candidates, short_candidates
 
 
@@ -397,7 +546,10 @@ def select_candidates_at_timestamp(
 ) -> Tuple[List[str], List[str]]:
     """Select candidates at a specific timestamp using mask_optimiser logic."""
     cfg = _resolve_runtime_cfg()
-    if any(v is not None for v in (extreme_pct, min_move_12h_pct, min_range_pct, min_vol_zscore)):
+    if any(
+        v is not None
+        for v in (extreme_pct, min_move_12h_pct, min_range_pct, min_vol_zscore)
+    ):
         raise ValueError(
             "Legacy threshold overrides are not supported after per-mode mask migration. "
             "Use persisted candidate_mask_params_by_mode instead."
@@ -412,31 +564,79 @@ def select_candidates_at_timestamp(
 
     try:
         up_zone, down_zone = _up_down_zones(feats, panel, metric=metric)
-        m_up_tf = _build_mask_for_mode(panel, feats, mode_cfg.get("price_up_tf", default_cfg))
-        m_up_mr = _build_mask_for_mode(panel, feats, mode_cfg.get("price_up_mr", default_cfg))
-        m_down_tf = _build_mask_for_mode(panel, feats, mode_cfg.get("price_down_tf", default_cfg))
-        m_down_mr = _build_mask_for_mode(panel, feats, mode_cfg.get("price_down_mr", default_cfg))
+        m_up_tf = _build_mask_for_mode(
+            panel, feats, mode_cfg.get("price_up_tf", default_cfg)
+        )
+        m_up_mr = _build_mask_for_mode(
+            panel, feats, mode_cfg.get("price_up_mr", default_cfg)
+        )
+        m_down_tf = _build_mask_for_mode(
+            panel, feats, mode_cfg.get("price_down_tf", default_cfg)
+        )
+        m_down_mr = _build_mask_for_mode(
+            panel, feats, mode_cfg.get("price_down_mr", default_cfg)
+        )
 
         long_mask = (up_zone & m_up_tf) | (down_zone & m_down_mr)
         short_mask = (up_zone & m_up_mr) | (down_zone & m_down_tf)
 
     except Exception as e:
-        raise RuntimeError(f"Per-mode candidate mask generation at timestamp failed: {e}") from e
-    
+        raise RuntimeError(
+            f"Per-mode candidate mask generation at timestamp failed: {e}"
+        ) from e
+
     if long_mask.empty and short_mask.empty:
         return [], []
-    
+
     # Check if requested timestamp exists
     if ts not in long_mask.index:
         # Find nearest timestamp
         tprint(f"Timestamp {ts} not in mask, using nearest")
         ts = long_mask.index[np.abs(long_mask.index - ts).argmin()]
-    
+
     long_candidates = long_mask.loc[ts]
     short_candidates = short_mask.loc[ts]
     long_candidates = long_candidates[long_candidates].index.tolist()
     short_candidates = short_candidates[short_candidates].index.tolist()
-    
+    if (
+        not long_candidates
+        and not short_candidates
+        and bool(cfg.get("candidate_mask_empty_fallback_enabled", True))
+    ):
+        sliced_panel = {
+            key: value.loc[:ts] if isinstance(value, pd.DataFrame) else value
+            for key, value in panel.items()
+        }
+        sliced_feats = {
+            key: value.loc[:ts] if isinstance(value, pd.DataFrame) else value
+            for key, value in feats.items()
+        }
+        long_candidates, short_candidates = _fallback_rank_candidates(
+            sliced_panel,
+            sliced_feats,
+            metric=metric,
+            cfg=cfg,
+        )
+    if (
+        not long_candidates
+        and not short_candidates
+        and bool(cfg.get("candidate_mask_rank_rescue_enabled", True))
+    ):
+        sliced_panel = {
+            key: value.loc[:ts] if isinstance(value, pd.DataFrame) else value
+            for key, value in panel.items()
+        }
+        sliced_feats = {
+            key: value.loc[:ts] if isinstance(value, pd.DataFrame) else value
+            for key, value in feats.items()
+        }
+        long_candidates, short_candidates = _rescue_rank_candidates(
+            sliced_panel,
+            sliced_feats,
+            metric=metric,
+            cfg=cfg,
+        )
+
     return long_candidates, short_candidates
 
 
@@ -447,53 +647,57 @@ def filter_candidates_by_direction(
     lookback_hours: int = 24,
 ) -> List[str]:
     """Filter candidates based on price direction.
-    
+
     Args:
         candidates: List of candidate symbols
         panel: Price panel
         side: "long" or "short"
         lookback_hours: Hours to look back for direction
-        
+
     Returns:
         Filtered list of candidates
     """
     if not candidates:
         return []
-    
+
     close = panel.get("close")
     # Safely check for empty - handle case where close might be a string or other type
     try:
-        is_empty = close is None or not isinstance(close, (pd.DataFrame, pd.Series)) or (hasattr(close, 'empty') and close.empty)
+        is_empty = (
+            close is None
+            or not isinstance(close, (pd.DataFrame, pd.Series))
+            or (hasattr(close, "empty") and close.empty)
+        )
     except Exception as e:
         tprint(f"Error checking close.empty: {e}, type: {type(close)}")
         is_empty = True
-    
+
     if is_empty:
         return candidates
-    
+
     filtered = []
     for sym in candidates:
         if sym not in close.columns:
             continue
-        
+
         try:
             # Get recent prices
             recent_prices = close[sym].dropna()
             if len(recent_prices) < 2:
                 continue
-            
+
             # Calculate return over lookback period
             current_price = recent_prices.iloc[-1]
             past_price = recent_prices.iloc[-min(lookback_hours, len(recent_prices))]
-            
+
             if past_price > 0:
                 ret = (current_price / past_price) - 1
-                
+
                 if side == "long" and ret > 0:
                     filtered.append(sym)
                 elif side == "short" and ret < 0:
                     filtered.append(sym)
         except (KeyError, IndexError, ZeroDivisionError):
             continue
-    
+
     return filtered

@@ -140,11 +140,20 @@ def strategy_id_matches(strategy_id: str, allowed: Optional[Set[str]]) -> bool:
     if allowed is None:
         return True
     sid = str(strategy_id or "")
+    sid_side = strategy_side(sid)
     aliases = _strategy_aliases(sid)
-    allowed_aliases: Set[str] = set()
     for candidate in allowed:
-        allowed_aliases.update(_strategy_aliases(str(candidate)))
-    return bool(aliases & allowed_aliases)
+        candidate_s = str(candidate)
+        candidate_side = strategy_side(candidate_s)
+        if (
+            sid_side in {"long", "short"}
+            and candidate_side in {"long", "short"}
+            and sid_side != candidate_side
+        ):
+            continue
+        if aliases & _strategy_aliases(candidate_s):
+            return True
+    return False
 
 
 def _normalise_symbol(symbol: str) -> str:
@@ -206,11 +215,9 @@ def _with_strategy_aliases(strategy_ids: Set[str]) -> Set[str]:
             continue
         out.add(sid_s)
         core = strategy_core_id(sid_s)
-        if core and core not in {"mr", "tf", "none"}:
-            out.add(core)
-            out.add(f"long_{core}")
-            out.add(f"short_{core}")
         side = strategy_side(sid_s)
+        if core and core not in {"mr", "tf", "none"} and not side:
+            out.add(core)
         if side and core:
             out.add(f"{side}_{core}")
     return out
@@ -479,6 +486,7 @@ def resolve_deployment_strategy_filter(
     but it is not a prerequisite for production readiness.
     """
     accepted = load_strategy_for_inference_filter(data_root, run_id)
+    explicit_strategy_for_inference = accepted is not None
     if accepted is not None and len(accepted) == 0:
         tprint(
             "[StrategyFilter] Explicit strategy_for_inference is empty; "
@@ -520,8 +528,15 @@ def resolve_deployment_strategy_filter(
             for sid in selected
             if any(strategy_id_matches(sid, {candidate}) for candidate in profitable)
         }
-        if profitable_selected:
+        if profitable_selected and not explicit_strategy_for_inference:
             selected = profitable_selected
+        elif profitable_selected and len(profitable_selected) < len(selected):
+            tprint(
+                "[StrategyFilter] Explicit strategy_for_inference selects "
+                f"{len(selected)} aliases; profitable sizer allow-list would reduce "
+                f"this to {len(profitable_selected)} aliases, so the explicit "
+                "deployment contract is authoritative for this run"
+            )
         elif policy_selected:
             tprint(
                 "[StrategyFilter] Profitable sizer allow-list has no overlap with "

@@ -49,12 +49,33 @@ def compute_entry_policy_decision(
     features: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Union[float, bool]]:
     cfg = flatten_bucket_policy(bucket_cfg)
-    ep = cfg.get("entry_policy", {}) if isinstance(cfg.get("entry_policy", {}), dict) else {}
+    ep = (
+        cfg.get("entry_policy", {})
+        if isinstance(cfg.get("entry_policy", {}), dict)
+        else {}
+    )
     model = ep.get("model", {}) if isinstance(ep.get("model", {}), dict) else {}
     obj = ep.get("objective", {}) if isinstance(ep.get("objective", {}), dict) else {}
-    adapt = ep.get("adaptation", {}) if isinstance(ep.get("adaptation", {}), dict) else {}
-    offset_engine = ep.get("offset_engine", {}) if isinstance(ep.get("offset_engine", {}), dict) else {}
+    adapt = (
+        ep.get("adaptation", {}) if isinstance(ep.get("adaptation", {}), dict) else {}
+    )
+    offset_engine = (
+        ep.get("offset_engine", {})
+        if isinstance(ep.get("offset_engine", {}), dict)
+        else {}
+    )
     f = features or {}
+    has_utility_features = any(
+        key in f
+        for key in (
+            "u_hat_z",
+            "mae_hat_z",
+            "mfe_hat_z",
+            "u_hat",
+            "mae_hat",
+            "mfe_hat",
+        )
+    )
 
     u_z = _get_metric(f, "u_hat_z", float(np.tanh(score)))
     mae_z = _get_metric(f, "mae_hat_z", float(np.clip(abs(np.tanh(score)), 0.0, 3.0)))
@@ -111,7 +132,9 @@ def compute_entry_policy_decision(
     if engine_mode == "estimator_only":
         limit_offset_bps = estimator_offset_bps
     elif engine_mode == "blended":
-        limit_offset_bps = (1.0 - blend_lambda) * policy_offset_bps + blend_lambda * estimator_offset_bps
+        limit_offset_bps = (
+            1.0 - blend_lambda
+        ) * policy_offset_bps + blend_lambda * estimator_offset_bps
     else:
         engine_mode = "policy_only"
         blend_lambda = 0.0
@@ -120,9 +143,20 @@ def compute_entry_policy_decision(
     limit_offset_pct = float(np.clip(limit_offset_bps / 10000.0, 0.0, 0.10))
     best_delta = float(np.clip(limit_offset_pct / max(atr_frac, 1e-6), 0.0, 10.0))
     delta_price = best_delta * atr_frac * entry_px
-    best_p = _sigmoid(alpha0 + alpha_u * u_z - alpha_mae * mae_z - beta_delta * best_delta)
+    best_p = _sigmoid(
+        alpha0 + alpha_u * u_z - alpha_mae * mae_z - beta_delta * best_delta
+    )
     best_eu = best_p * (a * u_z + best_delta - lambda_risk * mae_z - c_atr)
-    place = bool(best_eu >= min_eu)
+    if has_utility_features:
+        place = bool(best_eu >= min_eu)
+        reason = "expected_utility_pass" if place else "expected_utility_reject"
+    else:
+        # Live inference is already gated by OOF-calibrated rank thresholds. When
+        # no forward-safe utility/MAE/MFE features are available, this policy is
+        # only an execution-parameter calculator and must not add a synthetic
+        # veto based on proxy values derived from the model score.
+        place = True
+        reason = "score_only_policy_no_utility_veto"
 
     q_sl = float(adapt.get("q_sl", 1.3))
     eta = float(adapt.get("eta_stop", 0.4))
@@ -145,11 +179,31 @@ def compute_entry_policy_decision(
     kill_c_k_mae = float(adapt.get("kill_c_k_mae", 0.08))
     hold_h_k_dur = float(adapt.get("hold_h_k_dur", 0.20))
 
-    trail_mult_eff = float(np.clip(trail_base * (1.0 + trail_mult_k_delta * best_delta + trail_mult_k_mfe * mfe_z), 0.05, 1.2))
-    giveback_pct_eff = float(np.clip(giveback_base * (1.0 + giveback_k_delta * best_delta + giveback_k_dur * dur_z), 0.001, 0.05))
-    profit_lock_amount_eff = float(np.clip(lock_amt_base * (1.0 + lock_amt_k_u * u_z), 0.0005, 0.05))
-    kill_c_eff = float(np.clip(kill_c_base * (1.0 + kill_c_k_mae * max(mae_z, 0.0)), 0.0001, 0.05))
-    max_hold_hours_eff = float(np.clip(hold_h_base * (1.0 + hold_h_k_dur * dur_z), 4.0, 72.0))
+    trail_mult_eff = float(
+        np.clip(
+            trail_base
+            * (1.0 + trail_mult_k_delta * best_delta + trail_mult_k_mfe * mfe_z),
+            0.05,
+            1.2,
+        )
+    )
+    giveback_pct_eff = float(
+        np.clip(
+            giveback_base
+            * (1.0 + giveback_k_delta * best_delta + giveback_k_dur * dur_z),
+            0.001,
+            0.05,
+        )
+    )
+    profit_lock_amount_eff = float(
+        np.clip(lock_amt_base * (1.0 + lock_amt_k_u * u_z), 0.0005, 0.05)
+    )
+    kill_c_eff = float(
+        np.clip(kill_c_base * (1.0 + kill_c_k_mae * max(mae_z, 0.0)), 0.0001, 0.05)
+    )
+    max_hold_hours_eff = float(
+        np.clip(hold_h_base * (1.0 + hold_h_k_dur * dur_z), 4.0, 72.0)
+    )
 
     return {
         "u_hat_z": float(u_z),
@@ -161,6 +215,8 @@ def compute_entry_policy_decision(
         "p_fill_star": float(best_p),
         "eu_star": float(best_eu),
         "place_order": place,
+        "reason": reason,
+        "has_utility_features": bool(has_utility_features),
         "limit_offset_bps_dynamic": float(limit_offset_bps),
         "limit_offset_bps_policy": float(policy_offset_bps),
         "limit_offset_bps_estimator": float(estimator_offset_bps),

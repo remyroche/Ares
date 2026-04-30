@@ -132,7 +132,7 @@ def test_deployment_strategy_filter_policy_selection_suffices_without_holdout(
 
     selected = resolve_deployment_strategy_filter(str(tmp_path), run_id)
 
-    assert selected == {"rule_a", "long_rule_a", "short_rule_a"}
+    assert selected == {"short_rule_a"}
 
 
 def test_deployment_strategy_filter_uses_policy_when_sizer_allowlist_is_stale(
@@ -177,7 +177,7 @@ def test_deployment_strategy_filter_uses_policy_when_sizer_allowlist_is_stale(
 
     selected = resolve_deployment_strategy_filter(str(tmp_path), run_id)
 
-    assert selected == {"rule_a", "long_rule_a", "short_rule_a"}
+    assert selected == {"long_rule_a"}
 
 
 def test_strategy_asset_exclusion_filter_reads_strategy_for_inference(tmp_path):

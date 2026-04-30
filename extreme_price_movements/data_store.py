@@ -40,6 +40,27 @@ def _normalize_spot_symbol(symbol: str) -> str:
     return norm
 
 
+def _load_dotenv_if_present(path: str = ".env") -> None:
+    """Load simple KEY=VALUE env files without overwriting process env."""
+    env_path = os.path.abspath(path)
+    if not os.path.exists(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if not key or key in os.environ:
+                    continue
+                value = value.strip().strip('"').strip("'")
+                os.environ[key] = value
+    except Exception as exc:
+        tprint(f"Could not load dotenv file {env_path}: {exc}")
+
+
 def _symbol_alias_candidates(symbol: str) -> list[str]:
     canonical = _normalize_spot_symbol(symbol)
     raw = str(symbol or "").upper().strip()
@@ -287,7 +308,13 @@ class FileLock:
 
 
 def make_spot_exchange():
-    ex = ccxt.binance({"enableRateLimit": True})
+    _load_dotenv_if_present()
+    api_key = os.environ.get("BINANCE_API_KEY", "").strip()
+    api_secret = os.environ.get("BINANCE_API_SECRET", "").strip()
+    config: Dict[str, Any] = {"enableRateLimit": True}
+    if api_key and api_secret:
+        config.update({"apiKey": api_key, "secret": api_secret})
+    ex = ccxt.binance(config)
     ex.load_markets()
     return ex
 

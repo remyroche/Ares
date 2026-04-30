@@ -272,18 +272,28 @@ def _resolve_ts_sig(cfg: dict, ts_override=None) -> pd.Timestamp:
 
 
 def _choose_policy_stage_view(materialized: dict) -> Optional[dict]:
-    """Prefer ridge_sizer_fit-backed slices, then backtest-eval fallback."""
-    for key in ("sizer_train", "holdout_strategy_eval"):
+    """Select the policy-optimiser training/tuning slice, then the eval fallback."""
+    preferred_keys = (
+        "sizer_train",
+        "utility_policy_optimisation",
+        "holdout_strategy_eval",
+    )
+    for key in preferred_keys:
         stage_view = materialized.get(key)
         if not isinstance(stage_view, dict):
             continue
         periods = stage_view.get("allowed_periods") or []
         symbols = stage_view.get("symbols") or []
         if periods and symbols:
-            tprint(
+            msg = (
                 f"Policy optimiser using slice stage '{key}' "
                 f"(periods={len(periods)}, symbols={len(symbols)})"
             )
+            if key == "sizer_train":
+                msg += " — repurposing the former sizer slice as the primary policy-optimisation train/tuning split."
+            elif key == "holdout_strategy_eval":
+                msg += " — using evaluation holdout fallback only."
+            tprint(msg)
             return stage_view
     return None
 
@@ -1633,8 +1643,10 @@ def run_train_meta(cfg, ts_override=None, store=None):
     cfg["meta_train_aligned_mfe_heads"] = False
     cfg["meta_train_aux_heads"] = False
     cfg["meta_clf_enabled"] = True
-    cfg["meta_clf_top_frac"] = 0.50
-    cfg["meta_move_top_frac"] = 0.50
+    _meta_top_frac = float(os.getenv("EPM_META_TOP_FRAC", "0.15"))
+    cfg["meta_clf_top_frac"] = _meta_top_frac
+    cfg["meta_move_top_frac"] = _meta_top_frac
+    cfg["meta_trade_topx_values"] = [40]
     cfg["meta_train_tbm_clf_head"] = True
     _correctness_env = (
         str(os.getenv("EPM_META_TRAIN_CORRECTNESS_CLF_HEAD", "1")).strip().lower()
@@ -1655,7 +1667,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
     )
     tprint(
         "Meta training forced to EBMOnLGBM-only: regression/XGB/Ridge heads disabled; "
-        f"{_head_msg} enabled; top fraction=50%."
+        f"{_head_msg} enabled; top fraction={_meta_top_frac:.0%}."
     )
     _meta_hpo_trials_env = os.getenv("EPM_META_HPO_TRIALS")
     if _meta_hpo_trials_env:

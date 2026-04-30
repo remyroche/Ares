@@ -107,6 +107,10 @@ class DataFetcher:
         self.dead_letter_symbols[symbol] = f"{context}:{category}:{exc}"
         tprint(f"[DataFetcher] {context} failed for {symbol}: {category}: {exc}")
 
+    def _log_microdata_error(self, symbol: str, exc: Exception, *, context: str) -> None:
+        category = classify_api_error(exc)
+        tprint(f"[DataFetcher] {context} failed for {symbol}: {category}: {exc}")
+
     def initialize_with_historical_data(
         self, symbols: List[str], lookback_hours: int = DEFAULT_LOOKBACK_HOURS
     ):
@@ -512,6 +516,7 @@ class DataFetcher:
         target_hour: Optional[pd.Timestamp] = None,
         check_recent_gaps_days: int = 7,
         backfill_fn: Optional[Any] = None,
+        refresh_microdata: bool = False,
     ) -> Dict[str, pd.DataFrame]:
         """Fetch one closed 1h candle for the full live universe.
 
@@ -571,7 +576,13 @@ class DataFetcher:
                     if isinstance(df, pd.DataFrame) and not df.empty:
                         out[sym] = df
                         last_data_time = time.monotonic()
-                        self.update_microdata_symbol(sym)
+                        if refresh_microdata:
+                            try:
+                                self.update_microdata_symbol(sym)
+                            except Exception as exc:
+                                self._log_microdata_error(
+                                    sym, exc, context="microdata_refresh"
+                                )
                     else:
                         empty += 1
                     if check_recent_gaps_days > 0 and self.has_recent_gap(
@@ -652,6 +663,7 @@ class DataFetcher:
         check_recent_gaps_days: int = 7,
         backfill_fn: Optional[Any] = None,
         use_lightweight_probe: bool = True,
+        refresh_microdata: bool = False,
     ) -> Dict[str, pd.DataFrame]:
         """Incrementally update a symbol universe using bounded worker fanout."""
         workers = max(1, min(int(max_workers), 32))
@@ -676,12 +688,16 @@ class DataFetcher:
                 sym = futures[fut]
                 try:
                     out[sym] = fut.result()
-                    self.update_microdata_symbol(sym)
                 except Exception as exc:
                     failed += 1
                     self._record_api_error(sym, exc, context="fetch_incremental")
                     tprint(traceback.format_exc())
                     continue
+                if refresh_microdata:
+                    try:
+                        self.update_microdata_symbol(sym)
+                    except Exception as exc:
+                        self._log_microdata_error(sym, exc, context="microdata_refresh")
                 if check_recent_gaps_days > 0 and self.has_recent_gap(
                     sym, days=check_recent_gaps_days
                 ):
@@ -743,7 +759,7 @@ class DataFetcher:
                 rec.to_parquet(ob_path)
                 out["orderbook"] = True
         except Exception as exc:
-            self._record_api_error(symbol, exc, context="microdata_orderbook")
+            self._log_microdata_error(symbol, exc, context="microdata_orderbook")
 
         try:
             fr_df = None
@@ -782,12 +798,22 @@ class DataFetcher:
                 fr_df.to_parquet(fr_path)
                 out["funding"] = True
         except Exception as exc:
-            self._record_api_error(symbol, exc, context="microdata_funding")
+            self._log_microdata_error(symbol, exc, context="microdata_funding")
         return out
 
     def _load_microdata_panel(self, symbols: List[str]) -> Dict[str, pd.DataFrame]:
         idx_union = None
-        orderbook_mid = {}
+        orderbook_fields = {
+            "mid": {},
+            "best_bid": {},
+            "best_ask": {},
+            "bid_qty_1": {},
+            "ask_qty_1": {},
+            "cum_bid_qty_l10": {},
+            "cum_ask_qty_l10": {},
+            "cum_bid_qty_l20": {},
+            "cum_ask_qty_l20": {},
+        }
         funding_rate = {}
         for sym in symbols:
             key = self._symbol_file_key(sym)
@@ -796,7 +822,11 @@ class DataFetcher:
             if obp.exists():
                 ob = pd.read_parquet(obp)
                 ob.index = pd.to_datetime(ob.index, utc=True)
-                orderbook_mid[sym] = pd.to_numeric(ob.get("mid"), errors="coerce")
+                for field_name in orderbook_fields:
+                    if field_name in ob.columns:
+                        orderbook_fields[field_name][sym] = pd.to_numeric(
+                            ob[field_name], errors="coerce"
+                        )
                 idx_union = ob.index if idx_union is None else idx_union.union(ob.index)
             if frp.exists():
                 fr = pd.read_parquet(frp)
@@ -809,9 +839,17 @@ class DataFetcher:
             return {}
         idx_union = pd.DatetimeIndex(idx_union).sort_values().unique()
         out = {}
-        if orderbook_mid:
+        if orderbook_fields["mid"]:
             out["orderbook_hourly"] = (
-                pd.DataFrame(orderbook_mid).reindex(idx_union).astype(np.float32)
+                pd.DataFrame(orderbook_fields["mid"])
+                .reindex(idx_union)
+                .astype(np.float32)
+            )
+        for field_name, by_symbol in orderbook_fields.items():
+            if not by_symbol:
+                continue
+            out[f"orderbook_{field_name}"] = (
+                pd.DataFrame(by_symbol).reindex(idx_union).astype(np.float32)
             )
         if funding_rate:
             out["funding_rate"] = (

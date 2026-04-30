@@ -16,15 +16,22 @@ REQUEST_MAX_RETRIES = 3
 HARDCODED_EXCLUDED_SYMBOLS = frozenset(
     {
         "CHESS/USDT",
+        "CHESS/USDC",
         "DATA/USDT",
+        "DATA/USDC",
         "DF/USDT",
+        "DF/USDC",
         "ESP/USDT",
+        "ESP/USDC",
         "FOGO/USDT",
+        "FOGO/USDC",
         "FRAX/USDT",
+        "FRAX/USDC",
         "MANTRA/USDT",
+        "MANTRA/USDC",
     }
 )
-DEDUP_QUOTES = ("USDT",)
+DEDUP_QUOTES = ("USDC",)
 DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}
 SUPPORTED_TRAINING_QUOTES = frozenset(DEDUP_QUOTES)
 SPOT_QUOTE_SUFFIXES = (
@@ -230,7 +237,7 @@ def fetch_binance_cross_margin_pairs():
     return margin_pairs
 
 
-def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDT",)):
+def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDC",)):
     tprint(f"Entering function: margin_pairs_to_spot_symbols in universe.py")
 
     # Backward compatibility for single quote string
@@ -272,7 +279,7 @@ class MarginUniverseCache:
 
 
 def refresh_margin_universe_daily(
-    cache: Optional[MarginUniverseCache], quotes=("USDT",)
+    cache: Optional[MarginUniverseCache], quotes=("USDC",)
 ) -> MarginUniverseCache:
     tprint(f"Entering function: refresh_margin_universe_daily in universe.py")
     today = pd.Timestamp.utcnow().floor("D")
@@ -297,7 +304,7 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
     tprint(f"Entering function: build_fetch_universe in universe.py")
     margin_symbols = apply_hardcoded_universe_exclusions(list(margin_symbols))
     market_basket = apply_hardcoded_universe_exclusions(list(market_basket))
-    # Deduplicate quote variants (USDT > USDC > BUSD) before volume ranking
+    # Deduplicate quote variants (preferred quote first in DEDUP_QUOTES) before volume ranking
     margin_symbols = deduplicate_symbols_by_base(margin_symbols)
     market_basket = deduplicate_symbols_by_base(market_basket)
     tprint(
@@ -391,7 +398,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         # Fallback if not provided.
         # Prefer live refresh; if unavailable (e.g., offline/DNS issues), use local store symbols.
         try:
-            mu = refresh_margin_universe_daily(None, quotes=("USDT",))
+            mu = refresh_margin_universe_daily(None, quotes=("USDC",))
             margin_symbols = mu.symbols
         except Exception as e:
             tprint(

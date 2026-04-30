@@ -26,6 +26,12 @@ import optuna
 logger = logging.getLogger(__name__)
 
 # Parameter grids (moved to Optuna suggest variables directly below)
+TOP_POLICY_RANK_THRESHOLD = 0.85
+TOP_POLICY_LABEL = "top_15"
+DEFAULT_FORWARD_BARS = 96
+MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 2
+DEPLOYMENT_RANK_THRESHOLD_FLOOR = 0.95
+DEPLOYMENT_SELECTION_METRIC = "top_5"
 
 
 def compute_position_size(rank_pct: np.ndarray, size_power: float) -> np.ndarray:
@@ -51,12 +57,39 @@ def simulate_and_score(
 ) -> Dict[str, float]:
     """
     Fully self-contained, vectorized, bar-by-bar simulator.
-    Checks TP/SL pessimistically (worst-case ordering if multiple exits can trigger same bar).
+    Checks TP/SL pessimistically, computes fees properly per trade.
     """
     n_trades, max_bars = f_opens.shape
+    if n_trades == 0:
+        return {
+            "net_pnl": 0.0,
+            "mean_net_trade": 0.0,
+            "win_rate": 0.0,
+            "total_trades": 0,
+            "raw_gains": np.array([], dtype=np.float32),
+            "sizes": np.array([], dtype=np.float32),
+        }
 
     # 1. Entry
     entry_prices = f_opens[:, 0].copy()
+    valid_entry = np.isfinite(entry_prices) & (entry_prices > 0.0)
+    if not np.all(valid_entry):
+        df_sub = df_sub.iloc[np.flatnonzero(valid_entry)].copy()
+        f_opens = f_opens[valid_entry]
+        f_highs = f_highs[valid_entry]
+        f_lows = f_lows[valid_entry]
+        f_closes = f_closes[valid_entry]
+        entry_prices = f_opens[:, 0].copy()
+        n_trades, max_bars = f_opens.shape
+        if n_trades == 0:
+            return {
+                "net_pnl": 0.0,
+                "mean_net_trade": 0.0,
+                "win_rate": 0.0,
+                "total_trades": 0,
+                "raw_gains": np.array([], dtype=np.float32),
+                "sizes": np.array([], dtype=np.float32),
+            }
 
     # 2. Position sizing (dynamically scaled)
     sizes = compute_position_size(df_sub["rank_pct"].values, size_power)
@@ -76,8 +109,9 @@ def simulate_and_score(
 
     sl_dist = barrier_price_dist * sl_mult
     tp_act = barrier_price_dist * trailing_activation_mult
-    x_dist = barrier_price_dist * capital_protect_mfe_mult
-    lock_dist = x_dist - capital_protect_regression_frac * (x_dist + sl_dist)
+    protect_enabled = float(capital_protect_mfe_mult) > 0.0
+    x_dist = barrier_price_dist * max(float(capital_protect_mfe_mult), 0.0)
+    lock_dist = x_dist - float(capital_protect_regression_frac) * (x_dist + sl_dist)
 
     active = np.ones(n_trades, dtype=bool)
     protect_active = np.zeros(n_trades, dtype=bool)
@@ -115,42 +149,46 @@ def simulate_and_score(
 
         entry = entry_prices[active_idx]
 
-        # 2. Capital protection (fixed floor until trailing activation)
-        cap_trigger = max_favorable[active_idx] >= x_dist[active_idx]
-        if np.any(cap_trigger):
-            triggered_idx = active_idx[cap_trigger]
-            protect_active[triggered_idx] = True
+        # 2. Optional capital protection before trailing activates.
+        if protect_enabled:
+            cap_trigger = max_favorable[active_idx] >= x_dist[active_idx]
+            if np.any(cap_trigger):
+                protect_active[active_idx[cap_trigger]] = True
 
-        if np.any(protect_active[active_idx]):
-            pa_mask = protect_active[active_idx]
-            pa_idx = active_idx[pa_mask]
-            pa_entry = entry_prices[pa_idx]
-            pa_long = is_long_arr[pa_idx]
-            pa_short = is_short_arr[pa_idx]
-            orig_sl_long = pa_entry - sl_dist[pa_idx]
-            orig_sl_short = pa_entry + sl_dist[pa_idx]
-            cap_sl_long = pa_entry + lock_dist[pa_idx]
-            cap_sl_short = pa_entry - lock_dist[pa_idx]
-            eff_sl_long = np.maximum(orig_sl_long, cap_sl_long)
-            eff_sl_short = np.minimum(orig_sl_short, cap_sl_short)
-            cap_hit_long = pa_long & (f_lows[pa_idx, j] <= eff_sl_long)
-            cap_hit_short = pa_short & (f_highs[pa_idx, j] >= eff_sl_short)
-            if np.any(cap_hit_long):
-                hit = pa_idx[cap_hit_long]
-                exit_rets[hit] = (
-                    eff_sl_long[cap_hit_long] - pa_entry[cap_hit_long]
-                ) / pa_entry[cap_hit_long]
-                active[hit] = False
-            if np.any(cap_hit_short):
-                hit = pa_idx[cap_hit_short]
-                exit_rets[hit] = (
-                    pa_entry[cap_hit_short] - eff_sl_short[cap_hit_short]
-                ) / pa_entry[cap_hit_short]
-                active[hit] = False
+            protected_idx = active_idx[protect_active[active_idx]]
+            if len(protected_idx) > 0:
+                protected_entry = entry_prices[protected_idx]
+                protected_long = is_long_arr[protected_idx]
+                protected_short = is_short_arr[protected_idx]
+                orig_sl_long = protected_entry - sl_dist[protected_idx]
+                orig_sl_short = protected_entry + sl_dist[protected_idx]
+                cap_sl_long = protected_entry + lock_dist[protected_idx]
+                cap_sl_short = protected_entry - lock_dist[protected_idx]
+                eff_sl_long = np.maximum(orig_sl_long, cap_sl_long)
+                eff_sl_short = np.minimum(orig_sl_short, cap_sl_short)
+                cap_hit_long = protected_long & (
+                    f_lows[protected_idx, j] <= eff_sl_long
+                )
+                cap_hit_short = protected_short & (
+                    f_highs[protected_idx, j] >= eff_sl_short
+                )
+                if np.any(cap_hit_long):
+                    hit = protected_idx[cap_hit_long]
+                    exit_rets[hit] = (
+                        eff_sl_long[cap_hit_long] - protected_entry[cap_hit_long]
+                    ) / protected_entry[cap_hit_long]
+                    active[hit] = False
+                if np.any(cap_hit_short):
+                    hit = protected_idx[cap_hit_short]
+                    exit_rets[hit] = (
+                        protected_entry[cap_hit_short] - eff_sl_short[cap_hit_short]
+                    ) / protected_entry[cap_hit_short]
+                    active[hit] = False
 
-        active_idx = np.where(active)[0]
-        if len(active_idx) == 0:
-            break
+            active_idx = np.where(active)[0]
+            if len(active_idx) == 0:
+                break
+            entry = entry_prices[active_idx]
 
         # 3. Check Trailing
         trail_active = max_favorable[active_idx] > tp_act[active_idx]
@@ -191,31 +229,61 @@ def simulate_and_score(
         cur_fav_long = f_highs[:, j] - entry_prices
         cur_fav_short = entry_prices - f_lows[:, j]
         cur_fav = np.where(is_long_arr, cur_fav_long, cur_fav_short)
+        cur_fav = np.where(np.isfinite(cur_fav), cur_fav, 0.0)
         max_favorable = np.maximum(max_favorable, np.where(active, cur_fav, 0.0))
 
     # 5. Force exit remaining at max bars
     active_end = active
     if np.any(active_end):
         end_idx = np.flatnonzero(active_end)
-        b_close = f_closes[end_idx, -1]
+        close_rows = f_closes[end_idx]
+        finite_close = np.isfinite(close_rows)
+        last_pos = np.maximum(np.sum(finite_close, axis=1) - 1, 0)
+        b_close = close_rows[np.arange(len(end_idx)), last_pos]
         v_ent = entry_prices[end_idx]
         v_s = side[end_idx]
         exit_rets[end_idx] = v_s * (b_close / v_ent - 1.0)
 
     # 6. Apply fees and compute net
-    # Fee is charged on trade size notionals only (entry+exit notionals approximated as 2x size).
-    fees = 2.0 * sizes * cost_pct
+    fees = sizes * cost_pct + sizes * (1 + exit_rets) * cost_pct
     gross_gain = sizes * exit_rets
     net_gain = gross_gain - fees
 
     return {
         "net_pnl": float(np.sum(net_gain)),
-        "mean_net_trade": float(np.mean(net_gain)),
-        "win_rate": float(np.mean(net_gain > 0)),
+        "mean_net_trade": float(np.mean(net_gain)) if len(net_gain) else 0.0,
+        "win_rate": float(np.mean(net_gain > 0)) if len(net_gain) else 0.0,
         "total_trades": len(net_gain),
         "raw_gains": net_gain,
         "sizes": sizes,
     }
+
+
+def _build_top5_validation_diagnostic(
+    selected_rows: pd.DataFrame,
+    metrics: Dict[str, Any],
+) -> Optional[pd.DataFrame]:
+    raw_gains = np.asarray(metrics.get("raw_gains", np.array([], dtype=np.float32)))
+    if len(raw_gains) != len(selected_rows):
+        logger.warning(
+            "Skipping top-5 validation diagnostic due to length mismatch: "
+            "rows=%s raw_gains=%s",
+            len(selected_rows),
+            len(raw_gains),
+        )
+        return None
+    if "timestamp" not in selected_rows.columns:
+        logger.warning("Skipping top-5 validation diagnostic: missing timestamp.")
+        return None
+    diagnostic = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(selected_rows["timestamp"], errors="coerce"),
+            "net_gain": raw_gains.astype(np.float32, copy=False),
+        }
+    ).dropna()
+    if diagnostic.empty:
+        return None
+    return diagnostic
 
 
 def optimise_position_sizing(
@@ -337,11 +405,182 @@ def calculate_advanced_metrics(
     }
 
 
+def _json_safe(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return [_json_safe(v) for v in obj.tolist()]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, (pd.Timestamp,)):
+        return obj.isoformat()
+    return obj
+
+
+def _strategy_side(strategy_id: str) -> str:
+    sid = str(strategy_id).lower()
+    if sid.startswith("short"):
+        return "short"
+    if sid.startswith("long"):
+        return "long"
+    return "unknown"
+
+
+def _elapsed_days(metrics: Dict[str, Any]) -> float:
+    try:
+        start = pd.Timestamp(metrics.get("start_date"))
+        end = pd.Timestamp(metrics.get("end_date"))
+        days = float((end - start).total_seconds()) / 86400.0
+    except Exception:
+        days = 0.0
+    return max(days, 1.0)
+
+
+def _deployment_rank_threshold(metrics: Dict[str, Any]) -> float:
+    """Return the minimum per-strategy prediction rank percentile for live entry."""
+    top1 = metrics.get("top_1", {}) if isinstance(metrics, dict) else {}
+    n_top1 = float(top1.get("n_trades", 0.0) or 0.0)
+    top1_days = _elapsed_days(top1) if top1 else 1.0
+    avg_top1_trades_per_day = n_top1 / max(top1_days, 1.0)
+    avg_holding_hours = DEFAULT_FORWARD_BARS * 15.0 / 60.0
+    threshold = (avg_top1_trades_per_day / 24.0) * 2.0 / avg_holding_hours * 0.95
+    return float(np.clip(max(DEPLOYMENT_RANK_THRESHOLD_FLOOR, threshold), 0.0, 1.0))
+
+
+def _selection_rank(metrics: Dict[str, Any]) -> float:
+    selected = metrics.get(DEPLOYMENT_SELECTION_METRIC, {})
+    avg_pnl = float(selected.get("avg_pnl_bankroll", 0.0) or 0.0)
+    holding_hours = DEFAULT_FORWARD_BARS * 15.0 / 60.0
+    weekly_vol = float(selected.get("w_std", 0.0) or 0.0)
+    monthly_vol = float(selected.get("m_std", 0.0) or 0.0)
+    n_trades = float(selected.get("n_trades", 0.0) or 0.0)
+    ops_per_day = n_trades / _elapsed_days(selected)
+    effective_ops_day = np.sqrt(max(0.0, min(36.0 / holding_hours, ops_per_day)))
+    denom = np.sqrt(holding_hours) * np.sqrt(max(weekly_vol + monthly_vol, 1e-9))
+    return float(effective_ops_day * avg_pnl / max(denom, 1e-9))
+
+
+def _policy_runtime_params(best_params: Dict[str, Any]) -> Dict[str, Any]:
+    params = dict(best_params)
+    params["enable_trailing"] = True
+    if "trailing_activation_mult" in params:
+        params["trailing_override_alpha"] = params["trailing_activation_mult"]
+    return params
+
+
+def _build_deployment_payload(
+    *,
+    run_id: str,
+    oos_results_json: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Select deployable strategies from the chronological OOS policy slice."""
+    rows: List[Dict[str, Any]] = []
+    rejected: List[Dict[str, Any]] = []
+    for strategy_id, result in oos_results_json.get("strategies", {}).items():
+        if not isinstance(result, dict):
+            continue
+        metrics = result.get("validation_metrics", {})
+        if not isinstance(metrics, dict):
+            metrics = {}
+        selection_metrics = metrics.get(DEPLOYMENT_SELECTION_METRIC, {})
+        avg_pnl = float(selection_metrics.get("avg_pnl_bankroll", 0.0) or 0.0)
+        side = _strategy_side(strategy_id)
+        row = {
+            "strategy_id": strategy_id,
+            "strategy_for_inference": strategy_id,
+            "canonical_strategy_id": strategy_id,
+            "side": side,
+            "selected": False,
+            "selection_metric": DEPLOYMENT_SELECTION_METRIC,
+            "selection_rank": _selection_rank(metrics),
+            "deployment_rank_threshold": _deployment_rank_threshold(metrics),
+            "avg_net_pnl_per_trade": avg_pnl,
+            "avg_holding_time_hours": DEFAULT_FORWARD_BARS * 15.0 / 60.0,
+            "avg_trades_per_day_at_top_1pct": float(
+                (metrics.get("top_1", {}).get("n_trades", 0.0) or 0.0)
+                / _elapsed_days(metrics.get("top_1", {}))
+            ),
+            "best_size_power": result.get("best_size_power"),
+            **_policy_runtime_params(result.get("best_params", {})),
+            "metrics": result,
+        }
+        reject_reasons: List[str] = []
+        if side not in {"long", "short"}:
+            reject_reasons.append("unknown_side")
+        if avg_pnl <= 0.0:
+            reject_reasons.append(f"{DEPLOYMENT_SELECTION_METRIC}_net_pnl_not_positive")
+        if not np.isfinite(float(row["selection_rank"])):
+            reject_reasons.append("non_finite_selection_rank")
+        if reject_reasons:
+            row["reject_reasons"] = reject_reasons
+            rejected.append(row)
+        else:
+            rows.append(row)
+
+    selected: List[Dict[str, Any]] = []
+    for side in ("long", "short"):
+        side_rows = [row for row in rows if row["side"] == side]
+        side_rows.sort(key=lambda row: float(row["selection_rank"]), reverse=True)
+        for row in side_rows[:MAX_DEPLOYMENT_STRATEGIES_PER_SIDE]:
+            selected_row = dict(row)
+            selected_row["selected"] = True
+            selected.append(selected_row)
+        for row in side_rows[MAX_DEPLOYMENT_STRATEGIES_PER_SIDE:]:
+            rejected_row = dict(row)
+            rejected_row["reject_reasons"] = ["outside_top_2_per_side"]
+            rejected.append(rejected_row)
+
+    selected.sort(
+        key=lambda row: (
+            str(row.get("side", "")),
+            -float(row.get("selection_rank", 0.0)),
+        )
+    )
+    return {
+        "schema_version": "simple_policy_v1",
+        "generated_by": "simple_policy_optimiser",
+        "run_id": run_id,
+        "selection_rules": {
+            "max_strategies_per_side": MAX_DEPLOYMENT_STRATEGIES_PER_SIDE,
+            "selection_metric": DEPLOYMENT_SELECTION_METRIC,
+            "min_selection_metric_avg_net_pnl_per_trade": 0.0,
+            "runtime_rank_threshold_formula": (
+                "max(0.95, avg_trades_per_day_at_top_1pct / 24 * 2 / "
+                "avg_holding_time_hours * 0.95)"
+            ),
+            "runtime_rank_threshold_scope": "per_strategy_prediction_rank_only",
+            "ranking_space": "OOF per-strategy rank percentiles",
+        },
+        "strategies": selected,
+        "rejected_strategies": rejected,
+        "reconciliation": {
+            "policy_optimized": len(oos_results_json.get("strategies", {})),
+            "deployment_selected": len(selected),
+            "deployment_rejected": len(rejected),
+        },
+        "asset_exclusions": {},
+    }
+
+
 def run_simple_policy_optimisation(
     data_root: str,
     run_id: str,
     cost_pct: float = 0.0015,
 ):
+    artifacts_root = Path(data_root) / "artifacts"
+    if run_id is None:
+        candidates = [p for p in artifacts_root.iterdir() if p.is_dir()]
+        if not candidates:
+            logger.error(f"No artifact runs found under {artifacts_root}")
+            return
+        run_id = max(candidates, key=lambda p: p.stat().st_mtime).name
+        logger.info(f"No run_id supplied; using latest artifact run {run_id}")
     meta_oof_dir = Path(data_root) / "artifacts" / run_id / "meta_oof"
     if not meta_oof_dir.exists():
         logger.error(f"Directory not found: {meta_oof_dir}")
@@ -362,37 +601,27 @@ def run_simple_policy_optimisation(
 
     results_json = {}
     strategy_top5_daily_weekly: list[dict[str, Any]] = []
-
-    def _apply_concurrency_limits(df_in: pd.DataFrame) -> pd.DataFrame:
-        if "timestamp" not in df_in.columns or "symbol" not in df_in.columns:
-            return df_in
-        d = df_in.sort_values(["timestamp", "rank_pct"], ascending=[True, False]).copy()
-        d["timestamp"] = pd.to_datetime(d["timestamp"], errors="coerce")
-        d = d.dropna(subset=["timestamp"])
-        d["exit_time_est"] = d["timestamp"] + pd.Timedelta(hours=24)
-        kept_rows = []
-        active: list[tuple[pd.Timestamp, str]] = []
-        for i, row in d.iterrows():
-            ts = row["timestamp"]
-            sym = str(row["symbol"])
-            active = [(et, s) for (et, s) in active if et > ts]
-            if sum(1 for _, s in active if s == sym) >= 1:
-                continue
-            if len(active) >= 3:
-                continue
-            kept_rows.append(i)
-            active.append((row["exit_time_est"], sym))
-        out = d.loc[kept_rows].drop(columns=["exit_time_est"])
-        logger.info(f"Concurrency filter: kept {len(out)}/{len(d)} rows.")
-        return out
+    oos_results_json = {
+        "generated_by": "simple_policy_optimiser",
+        "run_id": run_id,
+        "rank_threshold": TOP_POLICY_RANK_THRESHOLD,
+        "rank_slice": TOP_POLICY_LABEL,
+        "cost_pct": cost_pct,
+        "split": "chronological_top15_oof_policy_holdout",
+        "strategies": {},
+    }
 
     for strategy_id, df in meta_oof.items():
         logger.info(f"Optimising strategy: {strategy_id}")
 
-        # Strict source contract: only TBM meta-classifier head predictions are allowed.
+        if "clf" not in df.columns and "oof_p_tp" in df.columns:
+            df["clf"] = df["oof_p_tp"]
+        elif "clf" not in df.columns and "oof_pred" in df.columns:
+            df["clf"] = df["oof_pred"]
+
         if "clf" not in df.columns:
             logger.warning(
-                f"Strategy {strategy_id} missing TBM meta-clf column 'clf'. Skipping."
+                f"Strategy {strategy_id} has no valid clf or oof_p_tp score. Skipping."
             )
             continue
 
@@ -404,9 +633,8 @@ def run_simple_policy_optimisation(
             else:
                 df["side"] = 1
 
-        # Only evaluate on top 5% to speed up and focus on high-conviction trades
-        df_top = df[df["rank_pct"] >= 0.95].copy()
-        df_top = _apply_concurrency_limits(df_top)
+        # Optimise policy on the deployment-relevant top 15% slice.
+        df_top = df[df["rank_pct"] >= TOP_POLICY_RANK_THRESHOLD].copy()
 
         if "timestamp" in df_top.columns:
             df_top = df_top.sort_values("timestamp").reset_index(drop=True)
@@ -427,7 +655,7 @@ def run_simple_policy_optimisation(
 
         def _fetch_paths(df_subset):
             n_events = len(df_subset)
-            path_len = 96  # 24 hours at 15m resolution
+            path_len = DEFAULT_FORWARD_BARS  # 24 hours at 15m resolution
             f_op = np.full((n_events, path_len), np.nan, dtype=np.float32)
             f_hi = np.full((n_events, path_len), np.nan, dtype=np.float32)
             f_lo = np.full((n_events, path_len), np.nan, dtype=np.float32)
@@ -442,8 +670,13 @@ def run_simple_policy_optimisation(
                     klines = klines.rename(columns={"index": "ts"})
 
                 k_ts = klines["ts"].astype("int64").values // 10**6
+                rel_pos_by_index = {
+                    idx: pos for pos, idx in enumerate(df_subset.index.to_numpy())
+                }
                 for df_idx, row in group.iterrows():
-                    rel_idx = np.where(df_subset.index == df_idx)[0][0]
+                    rel_idx = rel_pos_by_index.get(df_idx)
+                    if rel_idx is None:
+                        continue
                     event_ts = int(pd.Timestamp(row["timestamp"]).timestamp() * 1000)
 
                     idx_arr = np.searchsorted(k_ts, event_ts)
@@ -451,18 +684,20 @@ def run_simple_policy_optimisation(
                         end_idx = min(idx_arr + path_len, len(k_ts))
                         actual_len = end_idx - idx_arr
                         if actual_len > 0:
-                            f_op[rel_idx, :actual_len] = klines["open"].values[
-                                idx_arr:end_idx
-                            ]
-                            f_hi[rel_idx, :actual_len] = klines["high"].values[
-                                idx_arr:end_idx
-                            ]
-                            f_lo[rel_idx, :actual_len] = klines["low"].values[
-                                idx_arr:end_idx
-                            ]
-                            f_cl[rel_idx, :actual_len] = klines["close"].values[
-                                idx_arr:end_idx
-                            ]
+                            opens = klines["open"].values[idx_arr:end_idx]
+                            highs = klines["high"].values[idx_arr:end_idx]
+                            lows = klines["low"].values[idx_arr:end_idx]
+                            closes = klines["close"].values[idx_arr:end_idx]
+                            f_op[rel_idx, :actual_len] = opens
+                            f_hi[rel_idx, :actual_len] = highs
+                            f_lo[rel_idx, :actual_len] = lows
+                            f_cl[rel_idx, :actual_len] = closes
+                            if actual_len < path_len:
+                                last_close = closes[-1]
+                                f_op[rel_idx, actual_len:] = last_close
+                                f_hi[rel_idx, actual_len:] = last_close
+                                f_lo[rel_idx, actual_len:] = last_close
+                                f_cl[rel_idx, actual_len:] = last_close
             return f_op, f_hi, f_lo, f_cl
 
         opt_paths = _fetch_paths(df_opt)
@@ -489,11 +724,6 @@ def run_simple_policy_optimisation(
             capital_protect_regression_frac = trial.suggest_categorical(
                 "capital_protect_regression_frac", [0.25, 0.35, 0.45, 0.55, 0.65]
             )
-
-            if trailing_squash_divisor < (1.25 * trailing_activation_mult):
-                raise optuna.TrialPruned(
-                    "Invalid geometry: trailing_squash_divisor < 1.25 * trailing_activation_mult"
-                )
 
             metrics = simulate_and_score(
                 df_opt,
@@ -573,6 +803,7 @@ def run_simple_policy_optimisation(
         ]:
             strategy_results["metrics"][subset_name] = {}
             for top_pct, rank_thresh in [
+                (TOP_POLICY_LABEL, TOP_POLICY_RANK_THRESHOLD),
                 ("top_10", 0.90),
                 ("top_5", 0.95),
                 ("top_1", 0.99),
@@ -635,12 +866,11 @@ def run_simple_policy_optimisation(
                         f"PnL Std (W / M): {adv_metrics['w_std'] * 100:.2f}% / {adv_metrics['m_std'] * 100:.2f}%"
                     )
 
-        # strategy-level series for IC diagnostics (top5 / val set)
         val_mask_top5 = df_val["rank_pct"] >= 0.95
         if np.any(val_mask_top5):
             mask_idx = np.where(val_mask_top5)[0]
             f_op, f_hi, f_lo, f_cl = val_paths
-            m = simulate_and_score(
+            diagnostic_metrics = simulate_and_score(
                 df_val[val_mask_top5].copy(),
                 f_op[mask_idx],
                 f_hi[mask_idx],
@@ -650,45 +880,46 @@ def run_simple_policy_optimisation(
                 size_power=best_size_power,
                 **best_params,
             )
-            tdf = pd.DataFrame(
-                {
-                    "timestamp": pd.to_datetime(df_val[val_mask_top5]["timestamp"]),
-                    "net_gain": m.get("net_gains", np.array([], dtype=np.float32)),
-                }
-            ).dropna()
-            if not tdf.empty:
-                daily = tdf.set_index("timestamp")["net_gain"].resample("D").sum().pct_change().replace([np.inf, -np.inf], np.nan).dropna()
-                weekly = tdf.set_index("timestamp")["net_gain"].resample("W").sum().pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+            diagnostic_df = _build_top5_validation_diagnostic(
+                df_val[val_mask_top5].copy(),
+                diagnostic_metrics,
+            )
+            if diagnostic_df is not None and not diagnostic_df.empty:
+                daily = (
+                    diagnostic_df.set_index("timestamp")["net_gain"]
+                    .resample("D")
+                    .sum()
+                    .pct_change()
+                    .replace([np.inf, -np.inf], np.nan)
+                    .dropna()
+                )
+                weekly = (
+                    diagnostic_df.set_index("timestamp")["net_gain"]
+                    .resample("W")
+                    .sum()
+                    .pct_change()
+                    .replace([np.inf, -np.inf], np.nan)
+                    .dropna()
+                )
                 strategy_top5_daily_weekly.append(
                     {"strategy_id": strategy_id, "daily": daily, "weekly": weekly}
                 )
 
-        # per-symbol diagnostics table
-        symbol_rows = []
-        for symbol, g in df_val.groupby("symbol"):
-            row = {"symbol": str(symbol), "n_trades": int(len(g))}
-            for label, thr in [("20", 0.80), ("10", 0.90), ("5", 0.95), ("1", 0.99)]:
-                msk_sym = g["rank_pct"] >= thr
-                msk_all = df_val["rank_pct"] >= thr
-                hit_sym = float(np.mean(g.loc[msk_sym, "label"] > 0)) if np.any(msk_sym) and "label" in g.columns else np.nan
-                hit_all = float(np.mean(df_val.loc[msk_all, "label"] > 0)) if np.any(msk_all) and "label" in df_val.columns else np.nan
-                row[f"hit_rate_ratio_{label}"] = float(hit_sym / max(hit_all, 1e-6)) if np.isfinite(hit_sym) and np.isfinite(hit_all) else np.nan
-                # stability ratio versus others (hit-rate stdev proxy)
-                others = df_val[df_val["symbol"] != symbol]
-                hit_oth = float(np.mean(others.loc[others["rank_pct"] >= thr, "label"] > 0)) if len(others) and "label" in others.columns else np.nan
-                row[f"stability_ratio_{label}"] = float(hit_sym / max(hit_oth, 1e-6)) if np.isfinite(hit_sym) and np.isfinite(hit_oth) else np.nan
-                row[f"net_pnl_per_trade_{label}"] = float(np.mean(g.loc[msk_sym, "tbm_ret"])) if np.any(msk_sym) and "tbm_ret" in g.columns else np.nan
-            symbol_rows.append(row)
-        strategy_results["symbol_diagnostics"] = symbol_rows
-
         results_json[strategy_id] = strategy_results
+        oos_results_json["strategies"][strategy_id] = {
+            "best_params": best_params,
+            "best_size_power": float(best_size_power),
+            "validation_metrics": strategy_results["metrics"].get("val", {}),
+            "validation_rows_top15": int(len(df_val)),
+            "optimisation_rows_top15": int(len(df_opt)),
+        }
 
-    # Cross-strategy IC diagnostics table
     ic_rows = []
     for item in strategy_top5_daily_weekly:
-        d, w = item["daily"], item["weekly"]
-        idx = d.index.intersection(w.index)
-        ic = float(d.loc[idx].corr(w.loc[idx])) if len(idx) >= 3 else np.nan
+        daily = item["daily"]
+        weekly = item["weekly"]
+        idx = daily.index.intersection(weekly.index)
+        ic = float(daily.loc[idx].corr(weekly.loc[idx])) if len(idx) >= 3 else np.nan
         ic_rows.append(
             {
                 "strategy_id": item["strategy_id"],
@@ -699,14 +930,31 @@ def run_simple_policy_optimisation(
             }
         )
     results_json["__cross_strategy_diagnostics__"] = {"ic_table": ic_rows}
-    logger.info("Cross-strategy IC table (daily vs weekly pct-change, top5):")
-    if ic_rows:
-        logger.info(pd.DataFrame(ic_rows).to_string(index=False))
 
     output_path = meta_oof_dir.parent / "policy_optimisation.json"
     with open(output_path, "w") as f:
-        json.dump(results_json, f, indent=4)
+        json.dump(_json_safe(results_json), f, indent=4)
     logger.info(f"Saved policy optimisation results to {output_path}")
+    oos_output_path = meta_oof_dir.parent / "policy_optimisation_oos_metrics.json"
+    with open(oos_output_path, "w") as f:
+        json.dump(_json_safe(oos_results_json), f, indent=4)
+    logger.info(f"Saved OOS policy metrics to {oos_output_path}")
+
+    deployment_payload = _build_deployment_payload(
+        run_id=run_id,
+        oos_results_json=oos_results_json,
+    )
+    policy_params_dir = meta_oof_dir.parent / "policy_params"
+    policy_params_dir.mkdir(parents=True, exist_ok=True)
+    deployment_text = json.dumps(_json_safe(deployment_payload), indent=2)
+    for deployment_path in [
+        policy_params_dir / "strategy_for_inference.json",
+        meta_oof_dir.parent / "strategy_for_inference.json",
+        policy_params_dir / "best_policy_params.json",
+        meta_oof_dir.parent / "best_policy_params.json",
+    ]:
+        deployment_path.write_text(deployment_text)
+        logger.info(f"Saved deployment policy contract to {deployment_path}")
 
 
 if __name__ == "__main__":
@@ -715,9 +963,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--data_root",
-        type=str,
-        default="/Users/remyroche/Documents/Ares/extreme_price_movements/data",
+        "--data_root", type=str, default="/Users/remyroche/Documents/Ares/data"
     )
     parser.add_argument("--run_id", type=str, default=None)
     args = parser.parse_args()

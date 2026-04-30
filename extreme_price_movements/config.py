@@ -871,7 +871,7 @@ CFG = {
     "meta_clf_u_sl": -2.5,
     "meta_clf_top_frac": 0.50,
     "meta_move_top_frac": 0.50,
-    "meta_trade_topx_values": [50],
+    "meta_trade_topx_values": [15],
     "meta_product_feature_keys": [
         "trend_slope_24h",
         "trend_slope_48h",

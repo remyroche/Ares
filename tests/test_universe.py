@@ -3,6 +3,7 @@ from extreme_price_movements.universe import (
     _is_supported_training_symbol,
     _normalize_symbol,
     apply_hardcoded_universe_exclusions,
+    margin_pairs_to_spot_symbols,
 )
 
 
@@ -13,8 +14,8 @@ def test_normalize_symbol_handles_underscore_and_compact_forms():
 
 
 def test_supported_training_symbol_rejects_unsupported_quotes():
-    assert _is_supported_training_symbol("ETH/USDT")
-    assert not _is_supported_training_symbol("ETH_USDC")
+    assert _is_supported_training_symbol("ETH/USDC")
+    assert not _is_supported_training_symbol("ETH_USDT")
     assert not _is_supported_training_symbol("BTC/USD1")
     assert not _is_supported_training_symbol("BNBFDUSD")
     assert not _is_supported_training_symbol("AAVE/BTC")
@@ -23,16 +24,24 @@ def test_supported_training_symbol_rejects_unsupported_quotes():
 def test_apply_hardcoded_universe_exclusions_filters_aliases_and_unsupported_quotes():
     out = apply_hardcoded_universe_exclusions(
         [
-            "ETHUSDT",
-            "ETH_USDT",
-            "ETH/USDT",
+            "ETHUSDC",
+            "ETH_USDC",
+            "ETH/USDC",
             "BTC/USD1",
             "BNBFDUSD",
-            "CHESSUSDT",
-            "FRAX_USDT",
+            "CHESSUSDC",
+            "FRAX_USDC",
         ]
     )
-    assert out == ["ETH/USDT"]
+    assert out == ["ETH/USDC"]
+
+
+def test_margin_pairs_to_spot_symbols_defaults_to_usdc():
+    pairs = [{"symbol": "BTCUSDT"}, {"symbol": "BTCUSDC"}, {"symbol": "ETHUSDC"}]
+
+    out = margin_pairs_to_spot_symbols(pairs)
+
+    assert out == ["BTC/USDC", "ETH/USDC"]
 
 
 def test_binance_get_json_retries_after_rate_limit(monkeypatch):

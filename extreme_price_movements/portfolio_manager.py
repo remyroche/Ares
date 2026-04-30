@@ -422,7 +422,10 @@ class PortfolioManager:
             positions = []
             fetch_positions = getattr(exchange, "fetch_positions", None)
             if callable(fetch_positions):
-                raw_positions = fetch_positions(position_params)
+                try:
+                    raw_positions = fetch_positions([], position_params)
+                except TypeError:
+                    raw_positions = fetch_positions(position_params)
                 for pos in raw_positions or []:
                     if not isinstance(pos, dict):
                         continue
@@ -506,9 +509,9 @@ class PortfolioManager:
 
         # 1. Check max positions
         if n_positions >= self.max_positions:
-            info[
-                "reason"
-            ] = f"max_positions_reached ({n_positions}/{self.max_positions})"
+            info["reason"] = (
+                f"max_positions_reached ({n_positions}/{self.max_positions})"
+            )
             info["constraints_checked"].append("max_positions")
             return False, info
 
@@ -533,18 +536,18 @@ class PortfolioManager:
         # 4. Check same-side concentration (max 75% -> 3 of 4)
         side_count = sum(1 for p in open_positions if p.side == side)
         if side_count >= self.max_same_side:
-            info[
-                "reason"
-            ] = f"max_same_side_reached ({side_count} {side}, max {self.max_same_side})"
+            info["reason"] = (
+                f"max_same_side_reached ({side_count} {side}, max {self.max_same_side})"
+            )
             info["constraints_checked"].append("max_same_side")
             return False, info
 
         # 5. Check same-strategy concentration (max 50% -> 2 of 4)
         strategy_count = sum(1 for p in open_positions if p.strategy_id == strategy_id)
         if strategy_count >= self.max_same_strategy:
-            info[
-                "reason"
-            ] = f"max_same_strategy_reached ({strategy_count} {strategy_id}, max {self.max_same_strategy})"
+            info["reason"] = (
+                f"max_same_strategy_reached ({strategy_count} {strategy_id}, max {self.max_same_strategy})"
+            )
             info["constraints_checked"].append("max_same_strategy")
             return False, info
 
@@ -556,9 +559,9 @@ class PortfolioManager:
 
         # 7. Check confidence against dynamic threshold
         if confidence_score < final_threshold:
-            info[
-                "reason"
-            ] = f"confidence_below_threshold ({confidence_score:.4f} < {final_threshold:.4f})"
+            info["reason"] = (
+                f"confidence_below_threshold ({confidence_score:.4f} < {final_threshold:.4f})"
+            )
             info["constraints_checked"].append("confidence_threshold")
             return False, info
 

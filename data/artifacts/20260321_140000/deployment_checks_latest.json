@@ -1,0 +1,245 @@
+{
+  "summary": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "failures": []
+  },
+  "results": [
+    {
+      "name": "Artifact manifest verified",
+      "passed": true,
+      "details": {
+        "run_id": "20260321_140000",
+        "required": {
+          "run_dir": true,
+          "labels_manifest": true,
+          "base_meta_contract": true,
+          "meta_feature_contract": true,
+          "policy_params": true,
+          "strategy_for_inference": true,
+          "sizer_params": true,
+          "calibration_contract": true
+        },
+        "labels_datasets": [
+          "train_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_10",
+          "train_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_5",
+          "train_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_10",
+          "train_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_5",
+          "train_dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_10",
+          "train_dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_5",
+          "train_dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_10",
+          "train_dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639_5",
+          "train_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_10",
+          "train_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_5",
+          "train_dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834_10",
+          "train_dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834_5",
+          "train_dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_10",
+          "train_dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936_5",
+          "train_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_10",
+          "train_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_5"
+        ],
+        "policy_param_paths": [
+          "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/policy_params/best_policy_params.json",
+          "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/best_policy_params.json"
+        ],
+        "strategy_filter_paths": [
+          "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/strategy_for_inference.json",
+          "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/policy_params/strategy_for_inference.json",
+          "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/ridge_sizer/strategy_for_inference.json",
+          "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/strategy_for_inference.csv",
+          "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/policy_params/strategy_for_inference.csv",
+          "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/ridge_sizer/strategy_for_inference.csv"
+        ]
+      },
+      "error": ""
+    },
+    {
+      "name": "Feature parity verified",
+      "passed": true,
+      "details": {
+        "model_bundle_keys": [
+          "booster_bundles",
+          "bucket_params",
+          "bundle",
+          "regime_adaptors",
+          "risk_params",
+          "ts_trained"
+        ],
+        "feature_contract_ok": true,
+        "meta_feature_contract_ok": true,
+        "model_coverage_ok": true
+      },
+      "error": ""
+    },
+    {
+      "name": "Candidate selection parity verified",
+      "passed": true,
+      "details": {
+        "accepted_strategy_count": 4,
+        "accepted_strategy_sample": [
+          "long_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+          "long_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+          "short_dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701",
+          "short_dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936"
+        ],
+        "probe": {}
+      },
+      "error": ""
+    },
+    {
+      "name": "Calibration parity verified",
+      "passed": true,
+      "details": {
+        "calibrated_strategy_count": 1
+      },
+      "error": ""
+    },
+    {
+      "name": "Portfolio/risk constraints verified",
+      "passed": true,
+      "details": {
+        "same_asset_reason": "symbol_already_has_position (BTC/USDC)",
+        "next_position_cap": 1500.0,
+        "next_final_threshold": 0.625
+      },
+      "error": ""
+    },
+    {
+      "name": "Exchange filters verified",
+      "passed": true,
+      "details": {
+        "valid_order_checked": true,
+        "invalid_order_rejected": true
+      },
+      "error": ""
+    },
+    {
+      "name": "Order lifecycle tested",
+      "passed": true,
+      "details": {
+        "entry_status": "recorded",
+        "entry_success": null,
+        "close_success": null,
+        "close_status": "closed"
+      },
+      "error": ""
+    },
+    {
+      "name": "Stop-loss lifecycle tested",
+      "passed": true,
+      "details": {
+        "initial_stop_price": 99.0,
+        "updated_stop_price": 99.5,
+        "threshold_update_success": true
+      },
+      "error": ""
+    },
+    {
+      "name": "Data freshness monitored",
+      "passed": true,
+      "details": {
+        "dead_letter_symbols": 0,
+        "api_error_counts": {},
+        "has_hourly_batch": true,
+        "has_gap_check": true
+      },
+      "error": ""
+    },
+    {
+      "name": "DB persistence idempotent",
+      "passed": true,
+      "details": {
+        "db_path": "/var/folders/dr/hz7y0z9j0x39z7519pbshgqh0000gn/T/tmp52u3b43k/trades.db",
+        "row_count_after_duplicate_write": 1
+      },
+      "error": ""
+    },
+    {
+      "name": "Reconciliation process working",
+      "passed": true,
+      "details": {
+        "total_balance": 1000.0,
+        "exchange_open_positions": 0,
+        "local_open_positions": 0,
+        "errors": []
+      },
+      "error": ""
+    },
+    {
+      "name": "Daily reports working",
+      "passed": true,
+      "details": {
+        "sent": true,
+        "email_result": {
+          "success": true,
+          "recipient": "deployment@example.com"
+        },
+        "transfer_result": {
+          "success": true,
+          "skipped": true,
+          "reason": "transfer_disabled"
+        },
+        "amount_to_save": 0.0,
+        "trade_count": 0,
+        "total_balance": 1000.0,
+        "previous_best_balance": 1000.0
+      },
+      "error": ""
+    },
+    {
+      "name": "Kill switch working",
+      "passed": true,
+      "details": {
+        "reason": "manual_reset_required",
+        "manual_reset_required": true,
+        "hard_limit_reason": "failed_api_calls_5m 10 >= 10",
+        "daily_loss_pct": 0.0,
+        "weekly_loss_pct": 0.0,
+        "failed_api_calls_5m": 0,
+        "consecutive_order_rejections": 0,
+        "consecutive_losing_trades": 0,
+        "allowed_to_open": false
+      },
+      "error": ""
+    },
+    {
+      "name": "Manual override available",
+      "passed": true,
+      "details": {
+        "before": {
+          "reason": "manual_reset_required",
+          "manual_reset_required": true,
+          "hard_limit_reason": "failed_api_calls_5m 10 >= 10",
+          "daily_loss_pct": 0.0,
+          "weekly_loss_pct": 0.0,
+          "failed_api_calls_5m": 0,
+          "consecutive_order_rejections": 0,
+          "consecutive_losing_trades": 0,
+          "allowed_to_open": false
+        },
+        "after": {
+          "reason": "allowed",
+          "manual_reset_required": false,
+          "hard_limit_reason": "",
+          "daily_loss_pct": 0.0,
+          "weekly_loss_pct": 0.0,
+          "failed_api_calls_5m": 0,
+          "consecutive_order_rejections": 0,
+          "consecutive_losing_trades": 0,
+          "allowed_to_open": true
+        }
+      },
+      "error": ""
+    },
+    {
+      "name": "Tiny-cap live shadow passed",
+      "passed": true,
+      "details": {
+        "mode": "shadow",
+        "size": 5.0
+      },
+      "error": ""
+    }
+  ]
+}

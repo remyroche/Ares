@@ -20,6 +20,7 @@ from extreme_price_movements.policy_optimiser import (
     replay_exit_policy,
     resolve_optimised_selection_frac,
 )
+from extreme_price_movements.run_pipeline import _choose_policy_stage_view
 
 
 def _load_best_policy_params_local(data_root: str, run_id: str):
@@ -131,37 +132,60 @@ def test_run_all_wires_offset_before_policy(monkeypatch):
     assert events.index("sizer") < events.index("offset") < events.index("policy")
 
 
+def test_choose_policy_stage_view_prefers_repurposed_sizer_slice():
+    materialized = {
+        "holdout_strategy_eval": {"allowed_periods": [1], "symbols": ["BTC/USDC"]},
+        "utility_policy_optimisation": {
+            "allowed_periods": [1, 2],
+            "symbols": ["BTC/USDC"],
+        },
+        "sizer_train": {"allowed_periods": [1, 2, 3], "symbols": ["BTC/USDC"]},
+    }
+
+    chosen = _choose_policy_stage_view(materialized)
+
+    assert chosen is materialized["sizer_train"]
+
+
+def test_choose_policy_stage_view_falls_back_in_expected_order():
+    utility_only = {
+        "utility_policy_optimisation": {
+            "allowed_periods": [1],
+            "symbols": ["BTC/USDC"],
+        },
+        "holdout_strategy_eval": {"allowed_periods": [2], "symbols": ["ETH/USDC"]},
+    }
+    holdout_only = {
+        "holdout_strategy_eval": {"allowed_periods": [2], "symbols": ["ETH/USDC"]}
+    }
+
+    assert _choose_policy_stage_view(utility_only) is utility_only[
+        "utility_policy_optimisation"
+    ]
+    assert _choose_policy_stage_view(holdout_only) is holdout_only[
+        "holdout_strategy_eval"
+    ]
+
+
 def test_best_strategy_uses_head_to_head_winner(tmp_path):
     run_id = "20260101_000000"
-    root = tmp_path / "artifacts" / run_id
-    (root / "ridge_sizer").mkdir(parents=True)
-    (root / "et_sizer").mkdir(parents=True)
+    root = tmp_path / "artifacts" / run_id / "simple_position_sizer"
+    root.mkdir(parents=True)
 
-    (root / "ridge_sizer" / "head_to_head_comparison.json").write_text(
-        json.dumps([{"strategy_id": "s_et", "winner": "et"}])
-    )
-    (root / "et_sizer" / "strategy_params.json").write_text(
+    (root / "strategy_params.json").write_text(
         json.dumps(
             {
+                "generated_by": "simple_position_sizer",
                 "best_strategy_id": "s_et",
                 "best_threshold_pct": 85.0,
                 "buckets": {"s_et": {"threshold_pct": 85.0, "net_pnl": 2.0}},
             }
         )
     )
-    (root / "ridge_sizer" / "strategy_params.json").write_text(
-        json.dumps(
-            {
-                "best_strategy_id": "s_ridge",
-                "best_threshold_pct": 90.0,
-                "buckets": {"s_ridge": {"threshold_pct": 90.0, "net_pnl": 5.0}},
-            }
-        )
-    )
 
     best = _load_best_strategy(str(tmp_path), run_id)
     assert best["strategy_id"] == "s_et"
-    assert best["model"] == "et"
+    assert best["model"] == "meta_clf_only"
 
 
 def test_shared_replay_context_semantics_are_stable():
@@ -202,14 +226,23 @@ def test_shared_replay_context_semantics_are_stable():
 
 def test_selection_frac_uses_optimised_positive_pnl_threshold(tmp_path):
     run_id = "20260101_000000"
-    root = tmp_path / "artifacts" / run_id / "ridge_sizer"
+    root = tmp_path / "artifacts" / run_id / "simple_position_sizer"
     root.mkdir(parents=True)
     (root / "strategy_params.json").write_text(
         json.dumps(
             {
+                "generated_by": "simple_position_sizer",
                 "buckets": {
-                    "s1": {"threshold_pct": 95.0, "net_pnl": -0.2},
-                    "s2": {"threshold_pct": 85.0, "net_pnl": 1.2},
+                    "s1": {
+                        "threshold_pct": 95.0,
+                        "net_pnl": -0.2,
+                        "selection_frac": 0.12,
+                    },
+                    "s2": {
+                        "threshold_pct": 85.0,
+                        "net_pnl": 1.2,
+                        "selection_frac": 0.20,
+                    },
                 }
             }
         )
@@ -220,7 +253,7 @@ def test_selection_frac_uses_optimised_positive_pnl_threshold(tmp_path):
         selected={"strategy_id": "s1", "model": "ridge", "threshold_pct": 95.0},
     )
     # fallback should choose threshold 85% => top 15%
-    assert np.isclose(frac, 0.15)
+    assert np.isclose(frac, 0.12)
 
 
 def test_strategy_for_inference_selects_top_two_per_side_and_rejects_low_pnl(
@@ -270,7 +303,7 @@ def test_strategy_for_inference_selects_top_two_per_side_and_rejects_low_pnl(
         for row in payload["rejected_strategies"]
     }
     assert selected_ids == {"long_s0", "long_s1"}
-    assert rejected["long_s2"] == ["outside_top_2_per_side"]
+    assert rejected["long_s2"] == ["outside_top_1_per_side"]
     assert "avg_net_pnl_per_trade_below_0_2pct" in rejected["short_low"]
     assert (
         tmp_path

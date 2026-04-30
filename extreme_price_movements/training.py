@@ -14572,7 +14572,7 @@ def train_meta_models_from_artifacts(
                     else np.full(len(df), 0.02, dtype=np.float32)
                 ),
                 topx_values=tuple(
-                    int(x) for x in cfg.get("meta_trade_topx_values", [50])
+                    int(x) for x in cfg.get("meta_trade_topx_values", [40])
                 ),
                 rank_window=_rank_window,
             )

@@ -87,6 +87,7 @@ from extreme_price_movements.inference.feature_generator import (
     get_inference_required_feature_keys,
     get_market_data,
     load_or_compute_features,
+    raw_required_feature_keys,
 )
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.inference.parity import (
@@ -115,6 +116,8 @@ from extreme_price_movements.inference.trade_logger import (
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.simple_position_sizer import load_calibration_curves
 from extreme_price_movements.utils import tprint
+
+_FEATURE_COMPUTE_LOCK = threading.RLock()
 
 
 def _load_normalized_threshold_map(
@@ -236,7 +239,7 @@ def _deployment_rank_threshold_from_strategy_row(row: Dict[str, Any]) -> float:
         avg_holding_hours = 1.0
     avg_holding_hours = max(1.0, avg_holding_hours)
     threshold = (avg_top1_trades_per_day / 24.0) * 2.0 / avg_holding_hours * 0.95
-    return float(np.clip(threshold, 0.0, 1.0))
+    return float(np.clip(max(0.95, threshold), 0.0, 1.0))
 
 
 def _attach_rank_percentile_scores(
@@ -260,7 +263,7 @@ def _attach_rank_percentile_scores(
         finite = np.isfinite(scores)
         if not finite.any():
             continue
-        ranks = pd.Series(scores[finite]).rank(method="average", pct=True).to_numpy()
+        ranks = pd.Series(scores[finite]).rank(method="max", pct=True).to_numpy()
         rank_out = np.full(len(scores), np.nan, dtype=np.float64)
         rank_out[finite] = ranks
         for local_i, row_i in enumerate(indices):
@@ -421,36 +424,38 @@ def _select_candidates_and_load_features(
     lookback_hours: int,
     required_feature_keys: Optional[set[str]],
 ) -> tuple[Dict[str, float], List[str], List[str], Dict[str, pd.DataFrame]]:
-    selector_feats = compute_selector_features(panel, symbols)
-    thresholds = get_candidate_thresholds()
-    min_range_pct = thresholds.get("min_range_pct")
-    if thresholds.get("min_move_12h_pct") is not None:
-        min_range_pct = None
-    _ = min_range_pct
-    long_cands, short_cands = select_candidates(
-        panel=panel,
-        feats=selector_feats,
-        metric=str(thresholds.get("metric", "ret12h")),
-    )
-    selected_symbols = sorted(set(long_cands + short_cands))
-    if not selected_symbols:
-        return thresholds, long_cands, short_cands, selector_feats
-    model_feats = load_or_compute_features(
-        panel=_subset_panel(panel, selected_symbols),
-        basket_syms=selected_symbols,
-        run_id=run_id,
-        data_root=data_root,
-        cfg=cfg,
-        lookback_hours=lookback_hours,
-        required_feature_keys=required_feature_keys,
-    )
-    validate_required_feature_frames(
-        model_feats,
-        required_feature_keys,
-        symbols=selected_symbols,
-        strict=True,
-    )
-    return thresholds, long_cands, short_cands, model_feats
+    with _FEATURE_COMPUTE_LOCK:
+        raw_feature_keys = raw_required_feature_keys(required_feature_keys)
+        selector_feats = compute_selector_features(panel, symbols)
+        thresholds = get_candidate_thresholds()
+        min_range_pct = thresholds.get("min_range_pct")
+        if thresholds.get("min_move_12h_pct") is not None:
+            min_range_pct = None
+        _ = min_range_pct
+        long_cands, short_cands = select_candidates(
+            panel=panel,
+            feats=selector_feats,
+            metric=str(thresholds.get("metric", "ret12h")),
+        )
+        selected_symbols = sorted(set(long_cands + short_cands))
+        if not selected_symbols:
+            return thresholds, long_cands, short_cands, selector_feats
+        model_feats = load_or_compute_features(
+            panel=_subset_panel(panel, selected_symbols),
+            basket_syms=selected_symbols,
+            run_id=run_id,
+            data_root=data_root,
+            cfg=cfg,
+            lookback_hours=lookback_hours,
+            required_feature_keys=raw_feature_keys,
+        )
+        validate_required_feature_frames(
+            model_feats,
+            raw_feature_keys,
+            symbols=selected_symbols,
+            strict=True,
+        )
+        return thresholds, long_cands, short_cands, model_feats
 
 
 def _is_symbol_cooldown_blocked(
@@ -872,8 +877,8 @@ def run_inference_step(
                             1.0, normalized_threshold + viability_margin
                         )
                         threshold_score = np.nan
-                    rank_score = float(chain_results.get("position_size", 0.0) or 0.0)
-                    size = rank_score
+                    rank_score = float(calibrated_score)
+                    size = float(chain_results.get("position_size", 0.0) or 0.0)
                     size *= calibration_size_multiplier(
                         raw_score=raw_score,
                         strategy_id=strategy_id,
@@ -933,7 +938,11 @@ def run_inference_step(
                 filtered_decision_rows.append(decision)
             decision_rows = filtered_decision_rows
             decision_rows.sort(
-                key=lambda row: float(row.get("threshold_score", 0.0)), reverse=True
+                key=lambda row: (
+                    float(row.get("threshold_score", 0.0)),
+                    float(row.get("calibrated_score", 0.0)),
+                ),
+                reverse=True,
             )
             for decision in decision_rows:
                 symbol = str(decision["symbol"])
@@ -967,7 +976,12 @@ def run_inference_step(
                         symbol=symbol,
                         side=side,
                         strategy_id=strategy_id,
-                        confidence_score=float(decision["calibrated_score"]),
+                        confidence_score=float(
+                            decision.get(
+                                "threshold_score",
+                                decision.get("calibrated_score", 0.0),
+                            )
+                        ),
                         initial_threshold=float(decision["effective_threshold"]),
                         current_time=now_utc,
                         requested_position_size=requested_position_usdt,
@@ -1617,6 +1631,17 @@ def main():
             f"(default: {DEFAULT_LIVE_QUOTE_CURRENCY})"
         ),
     )
+    parser.add_argument(
+        "--max-position-pct",
+        type=float,
+        default=0.15,
+        help="Maximum fraction of portfolio equity per position (default: 0.15)",
+    )
+    parser.add_argument(
+        "--run-once",
+        action="store_true",
+        help="Run one inference batch and exit after optional daily reporting.",
+    )
     args = parser.parse_args()
 
     # Initialize components
@@ -1624,6 +1649,7 @@ def main():
     config["execution_account"] = args.execution_account
     config["margin_mode"] = args.margin_mode
     config["live_quote_currency"] = str(args.live_quote_currency or "USDC").upper()
+    config["max_position_pct"] = float(args.max_position_pct)
     config["mode"] = "live" if args.live else "shadow"
     exchange = make_exchange()
     runtime_bucket_params = _attach_runtime_bucket_params(config)
@@ -1716,14 +1742,16 @@ def main():
         max_positions=4,
         max_portfolio_pct=None,
         max_position_usdt=None,
-        max_position_pct=0.15,
+        max_position_pct=float(args.max_position_pct),
         cooldown_hours=24.0,
-        max_same_side_pct=1.0,
+        max_same_side_pct=0.50,
         max_same_strategy_pct=0.50,
     )
 
     # Setup scheduling
-    if args.challenger_interval > 0:
+    if args.run_once and args.challenger_interval > 0:
+        tprint("Run-once mode: background challenger monitor disabled")
+    if args.challenger_interval > 0 and not args.run_once:
         # Start background challenger monitoring thread
         challenger_thread = threading.Thread(
             target=run_challenger_monitor,
@@ -1838,6 +1866,10 @@ def main():
             except Exception as exc:
                 tprint(f"Daily deployment report failed: {exc}")
 
+            if args.run_once:
+                executor.shutdown()
+                break
+
             # Sleep until next 15-minute interval
             next_interval = current_time + pd.Timedelta(minutes=15)
             sleep_seconds = (next_interval - pd.Timestamp.now(tz="UTC")).total_seconds()
@@ -1853,6 +1885,9 @@ def main():
             import traceback
 
             tprint(traceback.format_exc())
+            if args.run_once:
+                executor.shutdown()
+                raise
             time.sleep(60)  # Wait 1 minute on error
 
 

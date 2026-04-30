@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 from extreme_price_movements.inference import config as inference_config
@@ -193,6 +194,48 @@ def test_fetch_incremental_universe_respects_lightweight_probe(monkeypatch):
     assert calls == ["A/USDT"]
 
 
+def test_fetch_incremental_universe_skips_microdata_refresh_by_default(monkeypatch):
+    fetcher = DataFetcher(exchange=object(), data_root="data")
+    micro_calls = []
+
+    monkeypatch.setattr(
+        fetcher,
+        "fetch_incremental",
+        lambda symbol: pd.DataFrame({"close": [1.0]}),
+    )
+    monkeypatch.setattr(fetcher, "has_recent_gap", lambda symbol, days=7: False)
+    monkeypatch.setattr(
+        fetcher,
+        "update_microdata_symbol",
+        lambda symbol: micro_calls.append(symbol),
+    )
+
+    fetcher.fetch_incremental_universe(["A/USDT"], refresh_microdata=False)
+
+    assert micro_calls == []
+
+
+def test_fetch_incremental_universe_microdata_failure_is_not_dead_letter(monkeypatch):
+    fetcher = DataFetcher(exchange=object(), data_root="data")
+
+    monkeypatch.setattr(
+        fetcher,
+        "fetch_incremental",
+        lambda symbol: pd.DataFrame({"close": [1.0]}),
+    )
+    monkeypatch.setattr(fetcher, "has_recent_gap", lambda symbol, days=7: False)
+    monkeypatch.setattr(
+        fetcher,
+        "update_microdata_symbol",
+        lambda symbol: (_ for _ in ()).throw(TimeoutError("microdata timeout")),
+    )
+
+    out = fetcher.fetch_incremental_universe(["A/USDT"], refresh_microdata=True)
+
+    assert set(out.keys()) == {"A/USDT"}
+    assert fetcher.dead_letter_symbols == {}
+
+
 def test_fetch_incremental_universe_records_dead_letters(monkeypatch):
     fetcher = DataFetcher(exchange=object(), data_root="data")
 
@@ -243,3 +286,30 @@ def test_fetch_hourly_universe_once_saves_latest_closed_candle(tmp_path, monkeyp
     assert pd.Timestamp(stored.index.max()) == target_hour
     assert "B/USDT" in fetcher.dead_letter_symbols
     assert fetcher.api_error_counts["timeout"] == 1
+
+
+def test_load_microdata_panel_preserves_saved_orderbook_fields(tmp_path):
+    fetcher = DataFetcher(exchange=object(), data_root=str(tmp_path))
+    idx = pd.date_range("2026-01-01", periods=2, freq="1h", tz="UTC")
+    pd.DataFrame(
+        {
+            "mid": [1.0, 1.1],
+            "best_bid": [0.9, 1.0],
+            "best_ask": [1.1, 1.2],
+            "bid_qty_1": [10.0, 11.0],
+            "ask_qty_1": [12.0, 13.0],
+            "cum_bid_qty_l10": [20.0, 21.0],
+            "cum_ask_qty_l10": [22.0, 23.0],
+            "cum_bid_qty_l20": [30.0, 31.0],
+            "cum_ask_qty_l20": [32.0, 33.0],
+        },
+        index=idx,
+    ).to_parquet(fetcher.orderbook_dir / "A_USDT.parquet")
+
+    panel = fetcher._load_microdata_panel(["A/USDT"])
+
+    assert "orderbook_hourly" in panel
+    assert "orderbook_best_bid" in panel
+    assert "orderbook_cum_bid_qty_l20" in panel
+    np.testing.assert_allclose(panel["orderbook_hourly"]["A/USDT"], [1.0, 1.1])
+    np.testing.assert_allclose(panel["orderbook_best_bid"]["A/USDT"], [0.9, 1.0])

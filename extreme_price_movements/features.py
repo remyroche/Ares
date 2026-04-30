@@ -723,8 +723,9 @@ def compute_liquidity_features(volume_df: pd.DataFrame, avg_window: int = 720):
     """Compute liquidity ratios from volume relative to lagged rolling baseline."""
     vol_avg = volume_df.rolling(avg_window).mean().shift(1)
     liq_ratio = volume_df / (vol_avg + EPS)
-    liq_low = (1.0 - liq_ratio).clip(lower=0.0)
-    return liq_ratio.astype(np.float32), liq_low.astype(np.float32)
+    liq_low = (1.0 - liq_ratio).clip(lower=0.0).astype(np.float32)
+    liq_low = liq_low.clip(lower=0.0)
+    return liq_ratio.astype(np.float32), liq_low
 
 
 def add_interactions(
@@ -922,7 +923,9 @@ def compute_regime_features(
     # 7. Liquidity ratio and low-liquidity hinge
     liq_ratio, liq_low = compute_liquidity_features(v, avg_window=24 * 30)
     feats["liquidity_ratio"] = liq_ratio
-    feats["liq_low"] = liq_low
+    feats["liq_low"] = liq_low.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(
+        lower=0.0
+    )
     # 8. CUSUM normalization and high-regime hinge
     cusum_strength_norm, cusum_high = compute_cusum_regime_features(
         feats["cusum_strength"].abs(), h=6.0
@@ -1106,9 +1109,18 @@ def _compute_hvn_feature_frames(
 
     max_workers = min(8, multiprocessing.cpu_count())
 
+    main_path = getattr(__import__("__main__"), "__file__", "") or ""
+    if not main_path or main_path == "<stdin>" or not os.path.exists(main_path):
+        tprint(
+            "HVN/LVN: process pool disabled because the current Python entrypoint "
+            "is not importable by spawn workers."
+        )
+        can_use_process_pool = False
+    else:
+        can_use_process_pool = True
+
     try:
         os.sysconf("SC_SEM_NSEMS_MAX")
-        can_use_process_pool = True
     except (AttributeError, ValueError, OSError, PermissionError):
         can_use_process_pool = False
 
@@ -1142,7 +1154,7 @@ def _compute_hvn_feature_frames(
                         completed += 1
                         if completed % 50 == 0:
                             tprint(f"HVN/LVN: {completed}/{total_cols}")
-        except (OSError, PermissionError) as e:
+        except Exception as e:
             tprint(
                 f"HVN/LVN: process pool unavailable ({e}); falling back to single-process."
             )

@@ -1,0 +1,36 @@
+{
+  "ok": true,
+  "forced_integration": true,
+  "errors": [],
+  "run_id": "20260321_140000",
+  "symbols_requested": 278,
+  "symbols_loaded": 278,
+  "required_feature_keys": 438,
+  "features_generated": 440,
+  "long_candidates": 3,
+  "short_candidates": 3,
+  "long_candidate_sample": [
+    "DEXE/USDT",
+    "JST/USDT",
+    "ZEC/USDT"
+  ],
+  "short_candidate_sample": [
+    "COS/USDT",
+    "C98/USDT",
+    "PHB/USDT"
+  ],
+  "trades": 0,
+  "trade_sample": [],
+  "executor_open_positions": 0,
+  "portfolio_open_positions": 0,
+  "monitor_result": {},
+  "api_error_counts": {},
+  "dead_letter_symbols": 0,
+  "timings": {
+    "config_artifacts_s": 25.859405291994335,
+    "panel_load_s": 1.8345910420175642,
+    "candidate_and_feature_s": 6.055999083007919,
+    "model_portfolio_shadow_s": 5.028030665998813,
+    "total_s": 39.17557216700516
+  }
+}

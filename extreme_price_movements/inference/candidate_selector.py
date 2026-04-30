@@ -16,6 +16,66 @@ from extreme_price_movements.inference.config import _resolve_runtime_cfg
 from extreme_price_movements.utils import tprint
 
 
+def _fallback_rank_candidates(
+    panel: Dict[str, pd.DataFrame],
+    feats: Dict[str, pd.DataFrame],
+    *,
+    metric: str,
+    cfg: Dict[str, Any],
+) -> Tuple[List[str], List[str]]:
+    """Select candidates with the legacy rank/range filters when masks are silent."""
+    close = panel.get("close")
+    if not isinstance(close, pd.DataFrame) or close.empty:
+        return [], []
+
+    metric_df = feats.get(metric)
+    if not isinstance(metric_df, pd.DataFrame):
+        metric_df = close.pct_change(12).fillna(0.0)
+    latest_metric = metric_df.reindex(columns=close.columns).iloc[-1].replace(
+        [np.inf, -np.inf], np.nan
+    )
+    valid = latest_metric.notna()
+
+    min_move = float(cfg.get("train_min_move_12h_pct", 0.06) or 0.0)
+    if min_move > 0.0:
+        valid &= latest_metric.abs() >= min_move
+
+    range_df = feats.get("range_12h_pct")
+    min_range = float(cfg.get("train_min_range_pct", 0.06) or 0.0)
+    if isinstance(range_df, pd.DataFrame) and min_range > 0.0:
+        latest_range = range_df.reindex(columns=close.columns).iloc[-1].replace(
+            [np.inf, -np.inf], np.nan
+        )
+        valid &= latest_range >= min_range
+
+    vol_df = feats.get("volatility_zscore")
+    min_vol = float(cfg.get("train_min_vol_zscore", 1.5) or 0.0)
+    if isinstance(vol_df, pd.DataFrame) and min_vol > 0.0:
+        latest_vol = vol_df.reindex(columns=close.columns).iloc[-1].replace(
+            [np.inf, -np.inf], np.nan
+        )
+        vol_valid = latest_vol >= min_vol
+        if bool(vol_valid.any()):
+            valid &= vol_valid
+        else:
+            tprint(
+                "candidate_selector: volatility fallback filter skipped because "
+                "no latest symbols passed it"
+            )
+
+    eligible = latest_metric[valid].dropna()
+    if eligible.empty:
+        return [], []
+
+    extreme_pct = float(cfg.get("train_extreme_pct_hourly", 0.05) or 0.05)
+    n_keep = max(1, int(np.ceil(len(latest_metric.dropna()) * extreme_pct)))
+    long_candidates = (
+        eligible[eligible > 0.0].sort_values(ascending=False).head(n_keep).index.tolist()
+    )
+    short_candidates = eligible[eligible < 0.0].sort_values().head(n_keep).index.tolist()
+    return long_candidates, short_candidates
+
+
 def _build_mask_for_mode(
     panel: Dict[str, pd.DataFrame],
     feats: Dict[str, pd.DataFrame],
@@ -300,6 +360,23 @@ def select_candidates(
     latest_short = short_mask.loc[latest_ts]
     long_candidates = latest_long[latest_long].index.tolist()
     short_candidates = latest_short[latest_short].index.tolist()
+
+    if (
+        not long_candidates
+        and not short_candidates
+        and bool(cfg.get("candidate_mask_empty_fallback_enabled", True))
+    ):
+        long_candidates, short_candidates = _fallback_rank_candidates(
+            panel,
+            feats,
+            metric=metric,
+            cfg=cfg,
+        )
+        tprint(
+            "candidate_selector: optimized masks were silent; "
+            "used rank/threshold fallback "
+            f"long={len(long_candidates)} short={len(short_candidates)}"
+        )
     
     tprint(f"Selected {len(long_candidates)} long candidates, "
            f"{len(short_candidates)} short candidates")

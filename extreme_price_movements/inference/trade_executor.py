@@ -197,7 +197,7 @@ def _execution_account(config: Optional[Dict[str, Any]]) -> str:
     """Return configured execution account type."""
     cfg = config or {}
     raw = str(
-        cfg.get("execution_account", cfg.get("account_type", "spot")) or "spot"
+        cfg.get("execution_account", cfg.get("account_type", "margin")) or "margin"
     ).lower()
     if raw in {"margin", "cross_margin", "isolated_margin"}:
         return "margin"
@@ -1465,7 +1465,28 @@ class TradeExecutor:
         """Fetch live order statuses for active stop-loss orders once."""
         if self.oco_executor is not None:
             return self.oco_executor.monitor_order_statuses()
-        return {}
+        statuses: Dict[str, Dict[str, Any]] = {}
+        now_utc = pd.Timestamp.now(tz="UTC")
+        with self._state_lock:
+            items = list(self.positions.items())
+            for symbol, state in items:
+                if not isinstance(state, dict):
+                    continue
+                status = {
+                    "status": "open",
+                    "mode": "shadow",
+                    "symbol": symbol,
+                    "side": state.get("side"),
+                    "size": state.get("size"),
+                    "entry_price": state.get("entry_price"),
+                    "stop_price": state.get("stop_price"),
+                    "bucket_key": state.get("bucket_key"),
+                    "last_order_check_ts": now_utc,
+                }
+                state["last_order_status"] = "open"
+                state["last_order_check_ts"] = now_utc
+                statuses[symbol] = status
+        return statuses
 
     def update_position_policy_state(
         self,
@@ -1525,7 +1546,7 @@ class TradeExecutor:
         """Get current OCO positions."""
         if self.oco_executor:
             return self.oco_executor.get_active_positions()
-        return {}
+        return self.get_active_positions()
 
     def fetch_5m_ohlcv_for_positions(self) -> Dict[str, pd.DataFrame]:
         """Fetch 5m OHLCV for all active OCO positions.
@@ -1538,7 +1559,52 @@ class TradeExecutor:
         """
         if self.oco_executor:
             return self.oco_executor.fetch_5m_ohlcv_for_positions()
-        return {}
+        results: Dict[str, pd.DataFrame] = {}
+        if self.exchange is None:
+            with self._state_lock:
+                items = list(self.positions.items())
+            for symbol, state in items:
+                if not isinstance(state, dict):
+                    continue
+                bars = state.get("ohlcv_5m_latest", state.get("ohlcv_5m"))
+                if (
+                    bars is not None
+                    and isinstance(bars, (pd.DataFrame, pd.Series))
+                    and not (hasattr(bars, "empty") and bars.empty)
+                ):
+                    results[symbol] = pd.DataFrame(bars)
+            return results
+
+        current_time = pd.Timestamp.now(tz="UTC")
+        with self._state_lock:
+            items = list(self.positions.items())
+        for symbol, state in items:
+            if not isinstance(state, dict):
+                continue
+            try:
+                entry_time = pd.Timestamp(state.get("entry_time", current_time))
+                bars = hf_data_loader.fetch_ohlcv_5m(
+                    self.exchange,
+                    symbol,
+                    entry_time - pd.Timedelta(hours=1),
+                    current_time + pd.Timedelta(hours=1),
+                )
+                if (
+                    bars is not None
+                    and isinstance(bars, (pd.DataFrame, pd.Series))
+                    and not (hasattr(bars, "empty") and bars.empty)
+                ):
+                    frame = pd.DataFrame(bars)
+                    results[symbol] = frame
+                    with self._state_lock:
+                        if symbol in self.positions:
+                            self.positions[symbol]["ohlcv_5m"] = frame
+            except Exception as exc:
+                tprint(
+                    f"Error fetching shadow 5m OHLCV for {symbol}: "
+                    f"{_classify_exchange_error(exc)}: {exc}"
+                )
+        return results
 
     def shutdown(self):
         """Shutdown executor and cleanup resources."""

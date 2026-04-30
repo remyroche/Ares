@@ -35,14 +35,16 @@ class _FakeExchange:
     def __init__(self):
         self.transfers = []
 
-    def fetch_balance(self):
+    def fetch_balance(self, params=None):
+        self.balance_params = params
         return {
-            "total": {"USDT": 1_100.0},
-            "free": {"USDT": 1_000.0},
-            "used": {"USDT": 100.0},
+            "total": {"USDC": 1_100.0},
+            "free": {"USDC": 1_000.0},
+            "used": {"USDC": 100.0},
         }
 
-    def fetch_positions(self):
+    def fetch_positions(self, params=None):
+        self.position_params = params
         return [{"symbol": "BTC/USDT", "contracts": 0.1}]
 
     def sapiPostAssetTransfer(self, payload):

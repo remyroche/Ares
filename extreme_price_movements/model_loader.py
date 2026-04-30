@@ -766,6 +766,29 @@ def load_booster_bundles(run_id: str, data_root: str) -> dict:
     return bundles
 
 
+def load_regime_adaptors(run_id: str, data_root: str) -> dict:
+    adaptor_dir = os.path.join(
+        data_root, "artifacts", run_id, "ridge_sizer", "regime_adaptors"
+    )
+    if not os.path.isdir(adaptor_dir):
+        return {}
+    adaptors = {}
+    for root, _, files in os.walk(adaptor_dir):
+        if "regime_adaptor.json" not in files:
+            continue
+        path = os.path.join(root, "regime_adaptor.json")
+        try:
+            with open(path, "r") as f:
+                payload = json.load(f)
+            sid = str(payload.get("strategy_id", os.path.basename(root)))
+            adaptors[sid] = payload
+        except Exception as e:
+            tprint(f"WARNING: Failed to load regime adaptor {path}: {e}")
+    if adaptors:
+        tprint(f"  Loaded {len(adaptors)} regime adaptors from {adaptor_dir}")
+    return adaptors
+
+
 # Convenience function for full state loading
 def load_full_state(run_id: str, data_root: str) -> dict:
     """Load complete training state including bundle and risk params.
@@ -846,6 +869,7 @@ def load_full_state(run_id: str, data_root: str) -> dict:
 
         # Load booster bundles (ET/LGBM/LGBM_clf fold models)
         state["booster_bundles"] = load_booster_bundles(run_id, data_root)
+        state["regime_adaptors"] = load_regime_adaptors(run_id, data_root)
 
         tprint(f"Loaded full state for run_id={run_id}")
         return state

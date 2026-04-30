@@ -5,10 +5,8 @@ A lightweight, diagnostic-first module that evaluates whether upstream meta-mode
 are economically sufficient before any complex policy optimization. It answers:
 "Can these upstream inputs be used to generate a profit proxy?"
 
-Focuses on:
-1. Stage 1: head-level diagnostics
-2. Stage 2: small-combo race
-3. Simple Ridge-based sizer using only meta-model heads as inputs.
+The active deployment path uses the exported meta classifier score directly; the older
+Ridge/Ridge+LGBM race remains in the file for compatibility but is bypassed.
 """
 
 from __future__ import annotations
@@ -37,20 +35,22 @@ try:
     from lightgbm import LGBMRegressor, early_stopping, log_evaluation
     import lightgbm.sklearn as _lgbm_sklearn
 
-    def _lgbm_check_xy_compat(X: Any, y: Any, **kwargs: Any) -> Any:
-        if "force_all_finite" in kwargs and "ensure_all_finite" not in kwargs:
-            kwargs["ensure_all_finite"] = kwargs.pop("force_all_finite")
-        return _lgbm_check_xy_original(X, y, **kwargs)
+    _lgbm_check_xy_original = getattr(_lgbm_sklearn, "_LGBMCheckXY", None)
+    _lgbm_check_array_original = getattr(_lgbm_sklearn, "_LGBMCheckArray", None)
+    if _lgbm_check_xy_original is not None and _lgbm_check_array_original is not None:
 
-    def _lgbm_check_array_compat(array: Any, **kwargs: Any) -> Any:
-        if "force_all_finite" in kwargs and "ensure_all_finite" not in kwargs:
-            kwargs["ensure_all_finite"] = kwargs.pop("force_all_finite")
-        return _lgbm_check_array_original(array, **kwargs)
+        def _lgbm_check_xy_compat(X: Any, y: Any, **kwargs: Any) -> Any:
+            if "force_all_finite" in kwargs and "ensure_all_finite" not in kwargs:
+                kwargs["ensure_all_finite"] = kwargs.pop("force_all_finite")
+            return _lgbm_check_xy_original(X, y, **kwargs)
 
-    _lgbm_check_xy_original = _lgbm_sklearn._LGBMCheckXY
-    _lgbm_check_array_original = _lgbm_sklearn._LGBMCheckArray
-    _lgbm_sklearn._LGBMCheckXY = _lgbm_check_xy_compat
-    _lgbm_sklearn._LGBMCheckArray = _lgbm_check_array_compat
+        def _lgbm_check_array_compat(array: Any, **kwargs: Any) -> Any:
+            if "force_all_finite" in kwargs and "ensure_all_finite" not in kwargs:
+                kwargs["ensure_all_finite"] = kwargs.pop("force_all_finite")
+            return _lgbm_check_array_original(array, **kwargs)
+
+        _lgbm_sklearn._LGBMCheckXY = _lgbm_check_xy_compat
+        _lgbm_sklearn._LGBMCheckArray = _lgbm_check_array_compat
 except ImportError:
     LGBMRegressor = None  # type: ignore[assignment, misc]
 
@@ -69,6 +69,10 @@ from extreme_price_movements.position_sizer_v2_metrics import (
     compute_false_safe_rate,
     compute_top_slice_metrics,
 )
+from extreme_price_movements.regime_adaptor import (
+    fit_regime_adaptor,
+    save_regime_adaptor_outputs,
+)
 from extreme_price_movements.run_ridge_sizer import (
     load_base_oof_predictions,
     load_meta_oof_predictions,
@@ -77,7 +81,31 @@ from extreme_price_movements.run_ridge_sizer import (
 from extreme_price_movements.src_utils_tprint import tprint
 
 logger = logging.getLogger(__name__)
+SIMPLE_POSITION_SIZER_ARTIFACT_DIR = "simple_position_sizer"
 MIN_POLICY_AVG_PNL_PER_TRADE_PCT = 0.2
+PRIMARY_TAIL_FRACS: Tuple[float, ...] = (0.01, 0.05)
+REPORT_TAIL_FRACS: Tuple[float, ...] = (0.01, 0.05, 0.10)
+
+
+def _tail_wallet_objective(df: pd.DataFrame) -> float:
+    """Score model-race candidates on the deployment-relevant top 1%/5% tails."""
+    if df.empty or "selection_frac" not in df.columns:
+        return float("-inf")
+    weights = {0.01: 0.35, 0.05: 0.65}
+    total = 0.0
+    weight_sum = 0.0
+    for frac, weight in weights.items():
+        rows = df[np.isclose(df["selection_frac"].astype(float), frac)]
+        if rows.empty or "wallet_pnl" not in rows.columns:
+            continue
+        val = float(rows["wallet_pnl"].iloc[0])
+        if not np.isfinite(val):
+            continue
+        total += weight * val
+        weight_sum += weight
+    if weight_sum <= 0.0:
+        return float("-inf")
+    return float(total / weight_sum)
 
 
 def _rolling_mad(values: np.ndarray, window: int) -> np.ndarray:
@@ -205,7 +233,11 @@ def _infer_side_label(
 
 def _strategy_params_path(data_root: str, run_id: str) -> Path:
     return (
-        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
+        / "strategy_params.json"
     )
 
 
@@ -214,7 +246,7 @@ def _frozen_strategy_thresholds_path(data_root: str, run_id: str) -> Path:
         Path(data_root)
         / "artifacts"
         / run_id
-        / "ridge_sizer"
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
         / "frozen_strategy_thresholds.json"
     )
 
@@ -289,6 +321,9 @@ def _extract_strategy_params_payload(
             ),
             "source_target": source_target,
             "source_horizon": _to_float_or_nan(source_horizon),
+            "meta_oof_available": bool(strategy_meta.get("meta_oof_available", False)),
+            "regime_adaptor_enabled": bool(res.get("regime_adaptor_enabled_", False)),
+            "regime_adaptor_path": str(res.get("regime_adaptor_path_", "") or ""),
         }
         row["profitable_for_downstream"] = bool(
             np.isfinite(row["wallet_pnl"])
@@ -296,8 +331,7 @@ def _extract_strategy_params_payload(
             and np.isfinite(row["net_pnl_per_trade_pct"])
             and float(row["wallet_pnl"]) > 0.0
             and float(row["net_pnl"]) > 0.0
-            and float(row["net_pnl_per_trade_pct"])
-            > MIN_POLICY_AVG_PNL_PER_TRADE_PCT
+            and float(row["net_pnl_per_trade_pct"]) > MIN_POLICY_AVG_PNL_PER_TRADE_PCT
         )
         row["allow_downstream"] = bool(row["profitable_for_downstream"])
         row["downstream_min_pnl_per_trade_pct"] = float(
@@ -310,8 +344,7 @@ def _extract_strategy_params_payload(
             reject_reasons.append("net_pnl_not_positive")
         if not (
             np.isfinite(row["net_pnl_per_trade_pct"])
-            and float(row["net_pnl_per_trade_pct"])
-            > MIN_POLICY_AVG_PNL_PER_TRADE_PCT
+            and float(row["net_pnl_per_trade_pct"]) > MIN_POLICY_AVG_PNL_PER_TRADE_PCT
         ):
             reject_reasons.append("avg_pnl_per_trade_below_0_2pct")
         row["downstream_reject_reasons"] = reject_reasons
@@ -503,7 +536,9 @@ def _persist_feature_importance_summary(
                     }
                 )
 
-    out_dir = Path(data_root) / "artifacts" / run_id / "ridge_sizer"
+    out_dir = (
+        Path(data_root) / "artifacts" / run_id / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path = out_dir / "feature_importance_summary.json"
     json_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
@@ -589,8 +624,22 @@ def compute_full_calibration_curves(
         return calibration_data
 
     # Merge predictions with realized returns
-    merged = oof_predictions.merge(
-        realized_returns[["symbol", "timestamp", return_col]],
+    oof_aligned = oof_predictions.copy()
+    realized_aligned = realized_returns.copy()
+    oof_aligned["timestamp"] = pd.to_datetime(
+        oof_aligned["timestamp"], utc=True, errors="coerce"
+    ).dt.tz_convert(None)
+    realized_aligned["timestamp"] = pd.to_datetime(
+        realized_aligned["timestamp"], utc=True, errors="coerce"
+    ).dt.tz_convert(None)
+    oof_aligned["symbol"] = oof_aligned["symbol"].astype(str)
+    realized_aligned["symbol"] = realized_aligned["symbol"].astype(str)
+    oof_aligned = oof_aligned.dropna(subset=["symbol", "timestamp", score_col])
+    realized_aligned = realized_aligned.dropna(
+        subset=["symbol", "timestamp", return_col]
+    )
+    merged = oof_aligned.merge(
+        realized_aligned[["symbol", "timestamp", return_col]],
         on=["symbol", "timestamp"],
         how="inner",
     )
@@ -739,7 +788,7 @@ def save_calibration_curves(
         Path(data_root)
         / "artifacts"
         / run_id
-        / "ridge_sizer"
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
         / "confidence_calibration.json"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -758,7 +807,7 @@ def save_calibration_curves(
         Path(data_root)
         / "artifacts"
         / run_id
-        / "ridge_sizer"
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
         / "confidence_calibration.contract.json"
     )
     contract_payload = {
@@ -790,7 +839,7 @@ def load_calibration_curves(
         Path(data_root)
         / "artifacts"
         / run_id
-        / "ridge_sizer"
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
         / "confidence_calibration.json"
     )
     if not path.exists():
@@ -809,7 +858,7 @@ def load_calibration_contract(
         Path(data_root)
         / "artifacts"
         / run_id
-        / "ridge_sizer"
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
         / "confidence_calibration.contract.json"
     )
     if not path.exists():
@@ -967,7 +1016,7 @@ def write_holdout_multi_metrics(
         Path(data_root)
         / "artifacts"
         / run_id
-        / "ridge_sizer"
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
         / "holdout_multi_metrics.json"
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -996,11 +1045,23 @@ def _persist_sizer_oof_predictions(
         ridge_preds = res.get("ridge_sizer_scores_")
         et_preds = res.get("et_sizer_scores_")
         lgbm_preds = res.get("lgbm_sizer_scores_")
+        meta_clf_preds = res.get("meta_clf_only_scores_")
+        best_score = res.get("best_simple_score_")
         total_conf = res.get("total_confidence_")
         total_conf_lgbm = res.get("total_confidence_lgbm_")
+        raw_best_score = res.get("sizer_score_raw_oof_")
+        deployment_score = res.get("regime_deployment_score_oof_")
+        deployment_rank = res.get("regime_deployment_score_rank_oof_")
+        regime_weight = res.get("regime_weight_oof_")
+        regime_eligible = res.get("regime_eligible_oof_")
+        regime_enabled = bool(res.get("regime_adaptor_enabled_", False))
         ctx = res.get("_sizer_oof_context_", {})
 
-        preds = total_conf
+        preds = best_score
+        if preds is None:
+            preds = meta_clf_preds
+        if preds is None:
+            preds = total_conf
         if preds is None:
             preds = (
                 ridge_preds
@@ -1024,6 +1085,11 @@ def _persist_sizer_oof_predictions(
 
         for idx in range(n_preds):
             score = float(preds[idx]) if np.isfinite(preds[idx]) else np.nan
+            total_conf_score = np.nan
+            if total_conf is not None and idx < len(total_conf):
+                total_conf_score = (
+                    float(total_conf[idx]) if np.isfinite(total_conf[idx]) else np.nan
+                )
             timestamp_val = np.nan
             symbol_val = np.nan
             if isinstance(ctx, dict):
@@ -1037,9 +1103,39 @@ def _persist_sizer_oof_predictions(
                 "timestamp": timestamp_val,
                 "symbol": symbol_val,
                 "sizer_score_oof": score,
-                "total_confidence": score,
+                "total_confidence": total_conf_score,
                 "model": winner,
+                "winner_score_source": str(
+                    res.get("best_simple_score_name_", winner) or winner
+                ),
+                "regime_adaptor_enabled": regime_enabled,
             }
+            if raw_best_score is not None and idx < len(raw_best_score):
+                row_data["sizer_score_raw_oof"] = (
+                    float(raw_best_score[idx])
+                    if np.isfinite(raw_best_score[idx])
+                    else np.nan
+                )
+            if deployment_score is not None and idx < len(deployment_score):
+                row_data["deployment_score_oof"] = (
+                    float(deployment_score[idx])
+                    if np.isfinite(deployment_score[idx])
+                    else -np.inf
+                )
+            if deployment_rank is not None and idx < len(deployment_rank):
+                row_data["deployment_score_rank_oof"] = (
+                    float(deployment_rank[idx])
+                    if np.isfinite(deployment_rank[idx])
+                    else np.nan
+                )
+            if regime_weight is not None and idx < len(regime_weight):
+                row_data["regime_weight"] = (
+                    float(regime_weight[idx])
+                    if np.isfinite(regime_weight[idx])
+                    else np.nan
+                )
+            if regime_eligible is not None and idx < len(regime_eligible):
+                row_data["regime_eligible"] = bool(regime_eligible[idx])
             if ridge_preds is not None and idx < len(ridge_preds):
                 row_data["ridge_score"] = (
                     float(ridge_preds[idx]) if np.isfinite(ridge_preds[idx]) else np.nan
@@ -1050,8 +1146,12 @@ def _persist_sizer_oof_predictions(
                 )
             if lgbm_preds is not None and idx < len(lgbm_preds):
                 row_data["lgbm_score"] = (
-                    float(lgbm_preds[idx])
-                    if np.isfinite(lgbm_preds[idx])
+                    float(lgbm_preds[idx]) if np.isfinite(lgbm_preds[idx]) else np.nan
+                )
+            if meta_clf_preds is not None and idx < len(meta_clf_preds):
+                row_data["meta_clf_score"] = (
+                    float(meta_clf_preds[idx])
+                    if np.isfinite(meta_clf_preds[idx])
                     else np.nan
                 )
             all_rows.append(row_data)
@@ -1060,9 +1160,7 @@ def _persist_sizer_oof_predictions(
 
     if all_rows:
         df = pd.DataFrame(all_rows)
-        missing_context = int(
-            df["timestamp"].isna().sum() + df["symbol"].isna().sum()
-        )
+        missing_context = int(df["timestamp"].isna().sum() + df["symbol"].isna().sum())
         if missing_context:
             logger.warning(
                 "simple_position_sizer OOF context has %d missing timestamp/symbol "
@@ -1150,7 +1248,13 @@ def _persist_booster_bundle(
 ) -> None:
     import pickle
 
-    out_dir = Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "booster_bundles"
+    out_dir = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
+        / "booster_bundles"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_id = strategy_id[:80]
     winner = res.get("mix_grid_best_", {}).get("winner", "")
@@ -1215,9 +1319,7 @@ def _persist_head_to_head_winner(
         profitable_for_downstream = len(reject_reasons) == 0
         return {
             "strategy_id": str(strategy_id),
-            "side": _infer_side_label(
-                strategy_id=str(strategy_id), strategy_meta=meta
-            ),
+            "side": _infer_side_label(strategy_id=str(strategy_id), strategy_meta=meta),
             "threshold_pct": _to_float_or_nan(opt.get("threshold_pct", np.nan)),
             "selection_frac": _to_float_or_nan(opt.get("selection_frac", np.nan)),
             "wallet_pnl": wallet_pnl,
@@ -1231,9 +1333,7 @@ def _persist_head_to_head_winner(
             "model_source": model_source,
             "profitable_for_downstream": bool(profitable_for_downstream),
             "allow_downstream": bool(profitable_for_downstream),
-            "downstream_min_pnl_per_trade_pct": float(
-                MIN_POLICY_AVG_PNL_PER_TRADE_PCT
-            ),
+            "downstream_min_pnl_per_trade_pct": float(MIN_POLICY_AVG_PNL_PER_TRADE_PCT),
             "downstream_reject_reasons": reject_reasons,
             "downstream_filter_tag": (
                 "profitable"
@@ -1310,7 +1410,7 @@ def _persist_head_to_head_winner(
             Path(data_root)
             / "artifacts"
             / run_id
-            / "ridge_sizer"
+            / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
             / "head_to_head_comparison.json"
         )
         comp_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1361,7 +1461,7 @@ def _persist_head_to_head_winner(
             Path(data_root)
             / "artifacts"
             / run_id
-            / "ridge_sizer"
+            / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
             / "pipeline_comparison_table.csv"
         )
         table_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1388,10 +1488,80 @@ def _persist_mix_grid(
     if not rows:
         return
     out_path = (
-        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "mix_grid_results.csv"
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
+        / "mix_grid_results.csv"
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(out_path, index=False)
+
+
+def _persist_normalized_strategy_thresholds(data_root: str, run_id: str) -> None:
+    """Persist cross-strategy normalized thresholds and viability margins."""
+    params_path = _strategy_params_path(data_root, run_id)
+    if not params_path.exists():
+        return
+    try:
+        payload = json.loads(params_path.read_text())
+    except Exception:
+        return
+    rows = payload.get("strategies", []) if isinstance(payload, dict) else []
+    if not isinstance(rows, list) or not rows:
+        return
+    df = pd.DataFrame([r for r in rows if isinstance(r, dict)]).copy()
+    if df.empty:
+        return
+    for c in ("selection_frac", "profit_factor", "hit_rate"):
+        if c not in df.columns:
+            df[c] = np.nan
+    df = df[df["strategy_id"].astype(str).str.len() > 0].copy()
+    if df.empty:
+        return
+    df["selection_frac"] = pd.to_numeric(df["selection_frac"], errors="coerce")
+    df["profit_factor"] = pd.to_numeric(df["profit_factor"], errors="coerce")
+    df["hit_rate"] = pd.to_numeric(df["hit_rate"], errors="coerce")
+
+    base_thr = np.clip(1.0 - df["selection_frac"].fillna(0.5).to_numpy(), 0.01, 0.99)
+    quality = np.log1p(
+        np.maximum(df["profit_factor"].fillna(1.0).to_numpy() - 1.0, 0.0)
+    ) + 0.5 * np.clip(df["hit_rate"].fillna(0.5).to_numpy() - 0.5, -0.4, 0.4)
+    q_rank = pd.Series(quality).rank(method="average", pct=True).to_numpy()
+    mult = 1.05 - 0.20 * np.clip(q_rank, 0.0, 1.0)
+    norm_thr = np.clip(base_thr * mult, 0.05, 0.98)
+    margin = np.clip(0.05 - 0.05 * np.clip(q_rank, 0.0, 1.0), 0.01, 0.05)
+
+    by_strategy: Dict[str, Dict[str, float]] = {}
+    for i, sid in enumerate(df["strategy_id"].astype(str).tolist()):
+        by_strategy[sid] = {
+            "normalized_threshold": float(norm_thr[i]),
+            "viability_margin": float(margin[i]),
+            "base_rank_threshold": float(base_thr[i]),
+            "quality_rank": float(q_rank[i]),
+            "selection_frac": (
+                float(df["selection_frac"].iloc[i])
+                if np.isfinite(df["selection_frac"].iloc[i])
+                else float("nan")
+            ),
+        }
+
+    out = {
+        "schema_version": "v1",
+        "generated_by": "simple_position_sizer",
+        "run_id": run_id,
+        "threshold_space": "rank_percentile",
+        "strategies": by_strategy,
+    }
+    out_path = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
+        / "normalized_strategy_thresholds.json"
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(out, indent=2))
 
 
 def _persist_detailed_model_metrics(
@@ -1452,11 +1622,59 @@ def _persist_detailed_model_metrics(
         Path(data_root)
         / "artifacts"
         / run_id
-        / "ridge_sizer"
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
         / "detailed_model_metrics.csv"
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(out_path, index=False)
+
+
+def _persist_regime_adaptor_summary(
+    data_root: str,
+    run_id: str,
+    strategy_results: Dict[str, Any],
+) -> None:
+    out_dir = (
+        Path(data_root) / "artifacts" / run_id / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    table_specs = [
+        ("regime_diagnostics_fixed", "regime_fixed_diagnostics_"),
+        ("regime_diagnostics_adaptive", "regime_adaptive_diagnostics_"),
+        ("regime_asset_diagnostics", "regime_asset_diagnostics_"),
+        ("regime_before_after_metrics", "regime_metrics_table_"),
+    ]
+    summary: Dict[str, Any] = {"schema_version": "v1", "strategies": {}}
+    for strategy_id, res in strategy_results.items():
+        adaptor = res.get("regime_adaptor_", {}) or {}
+        selection_score = adaptor.get("selection_score", np.nan)
+        try:
+            selection_score_f = float(selection_score)
+        except (TypeError, ValueError):
+            selection_score_f = float("nan")
+        summary["strategies"][str(strategy_id)] = {
+            "enabled": bool(res.get("regime_adaptor_enabled_", False)),
+            "artifact_path": str(res.get("regime_adaptor_path_", "") or ""),
+            "selection_score": (
+                selection_score_f if np.isfinite(selection_score_f) else None
+            ),
+        }
+    for filename, key in table_specs:
+        frames = [
+            frame
+            for frame in (res.get(key) for res in strategy_results.values())
+            if isinstance(frame, pd.DataFrame) and not frame.empty
+        ]
+        if not frames:
+            continue
+        df = pd.concat(frames, ignore_index=True)
+        df.to_parquet(out_dir / f"{filename}.parquet", index=False)
+        (out_dir / f"{filename}.json").write_text(
+            df.to_json(orient="records", indent=2)
+        )
+    (out_dir / "regime_adaptor_summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True)
+    )
 
 
 def _to_float_or_nan(value: Any) -> float:
@@ -2090,15 +2308,17 @@ def evaluate_signal(
     )
 
     # Calculate simple utility score for ranking:
-    # Reward high top 10% returns, high monotonicity, low false safe rate.
-    # Normalizing top 10% returns heuristically
-    top10_ret = metrics.get("top_10_mean_net", 0.0)
+    # Reward the deployment-relevant top 1%/5% tails, plus monotonicity, and
+    # penalize false-safe predictions.
+    top1_ret = metrics.get("top_1_mean_net", 0.0)
+    top5_ret = metrics.get("top_5_mean_net", 0.0)
+    tail_ret = 0.35 * float(top1_ret) + 0.65 * float(top5_ret)
     mono = max(0.0, metrics["monotonicity"])
     fs_penalty = metrics["false_safe_rate"]
 
     # Very simple empirical utility proxy.
     # Keep it for diagnostics, but do not use it as the HPO target.
-    utility = (np.sign(top10_ret) * (np.abs(top10_ret) ** 0.5) * 10) + mono - fs_penalty
+    utility = (np.sign(tail_ret) * (np.abs(tail_ret) ** 0.5) * 10) + mono - fs_penalty
     metrics["utility_score"] = float(utility)
 
     return metrics
@@ -2864,13 +3084,20 @@ def _rank_weighted_tail_components(
     m = np.isfinite(s) & np.isfinite(r)
     if int(np.sum(m)) < 20:
         return {
+            "avg_top1_return": 0.0,
+            "avg_top5_return": 0.0,
             "avg_top10_return": 0.0,
             "avg_top30_return": 0.0,
+            "std_weekly_top1": 0.0,
+            "std_weekly_top5": 0.0,
             "std_weekly_top10": 0.0,
             "std_weekly_top30": 0.0,
+            "std_monthly_top1": 0.0,
+            "std_monthly_top5": 0.0,
             "std_monthly_top10": 0.0,
             "std_monthly_top30": 0.0,
             "score_tail_20": 0.0,
+            "score_tail_1_5": 0.0,
             "score": 0.0,
         }
     s = s[m]
@@ -2913,17 +3140,28 @@ def _rank_weighted_tail_components(
         )
         return avg, w_std, m_std
 
-    avg30, w30, m30 = _band_stats((q >= 0.70) & (q <= 0.99))
+    avg1, w1, m1 = _band_stats(q >= 0.99)
+    avg5, w5, m5 = _band_stats(q >= 0.95)
     avg10, w10, m10 = _band_stats((q >= 0.90) & (q <= 0.99))
-    score = avg10 + 0.75 * avg30 - (0.25 * w10 + 0.25 * w30) - (0.15 * m10 + 0.15 * m30)
+    avg30, w30, m30 = _band_stats((q >= 0.70) & (q <= 0.99))
+    score = (
+        0.35 * avg1 + 0.65 * avg5 - (0.20 * w1 + 0.30 * w5) - (0.10 * m1 + 0.20 * m5)
+    )
     return {
+        "avg_top1_return": float(avg1),
+        "avg_top5_return": float(avg5),
         "avg_top10_return": float(avg10),
         "avg_top30_return": float(avg30),
+        "std_weekly_top1": float(w1),
+        "std_weekly_top5": float(w5),
         "std_weekly_top10": float(w10),
         "std_weekly_top30": float(w30),
+        "std_monthly_top1": float(m1),
+        "std_monthly_top5": float(m5),
         "std_monthly_top10": float(m10),
         "std_monthly_top30": float(m30),
         "score_tail_20": float(score),
+        "score_tail_1_5": float(score),
         "score": float(score),
     }
 
@@ -2973,37 +3211,60 @@ def _lightweight_hpo_pnl_eval(
     if n == 0:
         return results
 
-    frac = 0.05
-    k = max(1, int(n * frac))
-    idx = _select_topk_non_concurrent(
-        scores, k, timestamps=timestamps, symbols=symbols, horizon_hours=horizon_hours
-    )
-    rets = y_raw_net_return[idx]
-    net_rets = rets - cost_pct
+    for frac in top_fracs:
+        frac_f = float(frac)
+        k = max(1, int(n * frac_f))
+        idx = _select_topk_non_concurrent(
+            scores,
+            k,
+            timestamps=timestamps,
+            symbols=symbols,
+            horizon_hours=horizon_hours,
+        )
+        rets = y_raw_net_return[idx]
+        net_rets = rets - cost_pct
 
-    sorted_args = np.argsort(scores[idx])
-    allocations = np.linspace(0.05, 0.15, len(idx))
-    wallet_rets = (rets[sorted_args] - cost_pct) * allocations
-    wallet_pnl = float(np.sum(wallet_rets))
+        sorted_args = np.argsort(scores[idx])
+        allocations = np.linspace(0.05, 0.15, len(idx))
+        wallet_rets = (rets[sorted_args] - cost_pct) * allocations
+        wallet_pnl = float(np.sum(wallet_rets))
 
-    gross_win = float(np.sum(net_rets[net_rets > 0]))
-    gross_loss = float(np.abs(np.sum(net_rets[net_rets < 0])))
-    pf = (
-        gross_win / gross_loss
-        if gross_loss > 1e-12
-        else (100.0 if gross_win > 0 else 0.0)
-    )
+        gross_win = float(np.sum(net_rets[net_rets > 0]))
+        gross_loss = float(np.abs(np.sum(net_rets[net_rets < 0])))
+        pf = (
+            gross_win / gross_loss
+            if gross_loss > 1e-12
+            else (100.0 if gross_win > 0 else 0.0)
+        )
 
-    ds = net_rets[net_rets < 0]
-    ds_std = float(np.std(ds)) if len(ds) > 1 else 1e-4
-    sortino = float(np.mean(net_rets)) / ds_std if ds_std > 1e-12 else 0.0
+        ds = net_rets[net_rets < 0]
+        ds_std = float(np.std(ds)) if len(ds) > 1 else 1e-4
+        sortino = float(np.mean(net_rets)) / ds_std if ds_std > 1e-12 else 0.0
+        suffix = f"{frac_f:.3f}"
 
-    results["wallet_pnl_0.050"] = wallet_pnl
-    results["pf_0.050"] = pf
-    results["sortino_0.050"] = sortino
-    results["tpd_0.050"] = float(len(rets)) / n_days if n_days > 0 else 0.0
+        results[f"wallet_pnl_{suffix}"] = wallet_pnl
+        results[f"pf_{suffix}"] = pf
+        results[f"sortino_{suffix}"] = sortino
+        results[f"tpd_{suffix}"] = float(len(rets)) / n_days if n_days > 0 else 0.0
 
     return results
+
+
+def _lightweight_top1_top5_score(
+    metrics: Dict[str, float],
+) -> Tuple[float, Dict[str, float]]:
+    """Return the compact HPO objective and named top-tail components."""
+    pnl_1 = float(metrics.get("wallet_pnl_0.010", 0.0))
+    pnl_5 = float(metrics.get("wallet_pnl_0.050", 0.0))
+    sortino_1 = float(metrics.get("sortino_0.010", 0.0))
+    sortino_5 = float(metrics.get("sortino_0.050", 0.0))
+    composite = 0.35 * pnl_1 + 0.65 * pnl_5 + 0.10 * sortino_1 + 0.20 * sortino_5
+    return float(composite), {
+        "pnl_1": pnl_1,
+        "pnl_5": pnl_5,
+        "sortino_1": sortino_1,
+        "sortino_5": sortino_5,
+    }
 
 
 def evaluate_selection_profit_proxy(
@@ -3292,7 +3553,7 @@ def run_simple_position_sizer(
     start_equity: float = 100000.0,
     cost_pct: float = 0.003,
     lambda_grid: Optional[List[float]] = None,
-    top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
+    top_fracs: Tuple[float, ...] = REPORT_TAIL_FRACS,
     use_ridge_head_sizer: bool = True,
     use_et_head_sizer: bool = False,
     use_lgbm_head_sizer: bool = True,
@@ -3304,7 +3565,9 @@ def run_simple_position_sizer(
 ) -> Dict[str, Any]:
     """
     Main orchestrator for the simple position sizer diagnostic framework.
-    By default runs both Ridge and ExtraTrees, compares them, and selects the best.
+    Uses the exported meta classifier head directly; the older Ridge/LGBM race is
+    intentionally bypassed to keep downstream policy optimisation tied to the
+    calibrated meta score selected upstream.
     """
     if lambda_grid is None:
         lambda_grid = [0.25, 0.5, 1.0, 2.0]
@@ -3329,6 +3592,16 @@ def run_simple_position_sizer(
 
     # ExtraTrees head race removed by design (keep flag for backward compatibility).
     use_et_head_sizer = False
+    direct_meta_clf_only = True
+    if direct_meta_clf_only:
+        if use_ridge_head_sizer or use_lgbm_head_sizer or use_barrier_classifier:
+            tprint(
+                "  Direct meta_clf_only sizer mode: skipping Ridge, Ridge+LGBM, "
+                "barrier classifier, and their feature-selection/HPO stages."
+            )
+        use_ridge_head_sizer = False
+        use_lgbm_head_sizer = False
+        use_barrier_classifier = False
 
     detected_heads = detect_meta_head_keys(
         feature_dict, config_overrides=config_feature_keys
@@ -3365,10 +3638,17 @@ def run_simple_position_sizer(
         timestamps, n_samples, n_splits=5, symbols=symbols
     )
 
-    combo_candidates = build_combo_candidates(feature_dict, detected_heads, lambda_grid)
-    stage_2_df, best_combo = run_stage_2_combo_race(
-        combo_candidates, y_raw_net_return, y_downside, splits
-    )
+    combo_candidates: Dict[str, np.ndarray] = {}
+    if direct_meta_clf_only:
+        stage_2_df = pd.DataFrame()
+        best_combo: Dict[str, Any] = {}
+    else:
+        combo_candidates = build_combo_candidates(
+            feature_dict, detected_heads, lambda_grid
+        )
+        stage_2_df, best_combo = run_stage_2_combo_race(
+            combo_candidates, y_raw_net_return, y_downside, splits
+        )
 
     best_simple_score = None
     best_simple_score_name = None
@@ -3376,7 +3656,7 @@ def run_simple_position_sizer(
     best_combo_objective = float("-inf")
     combined_et_objective = float("-inf")
 
-    if not stage_2_df.empty:
+    if not direct_meta_clf_only and not stage_2_df.empty:
         best_simple_score_name = best_combo["combo_name"]
         best_simple_score = combo_candidates[best_simple_score_name]
 
@@ -3410,12 +3690,14 @@ def run_simple_position_sizer(
             n_days=n_days,
         )
         if not best_combo_profit_proxy_df.empty:
-            best_combo_objective = float(best_combo_profit_proxy_df["wallet_pnl"].max())
+            best_combo_objective = _tail_wallet_objective(best_combo_profit_proxy_df)
 
     # --- ElasticNet Sizer (replaces Ridge) ---
     ridge_sizer_eval: Dict[str, Any] = {}
     ridge_importance_df = pd.DataFrame()
     ridge_profit_proxy_df = pd.DataFrame()
+    ridge_oof_preds: Optional[np.ndarray] = None
+    ridge_oof_available = False
 
     _hpo_max_rows_per_fold = 12000
     _hpo_rng = np.random.RandomState(42)
@@ -3787,11 +4069,7 @@ def run_simple_position_sizer(
             cost_pct=cost_pct,
             n_days=n_days,
         )
-        best_ridge_objective = (
-            float(best_ridge_profit_proxy["wallet_pnl"].max())
-            if not best_ridge_profit_proxy.empty
-            else float("-inf")
-        )
+        best_ridge_objective = _tail_wallet_objective(best_ridge_profit_proxy)
 
         tprint(
             f"ElasticNet HPO winner: alpha={best_ridge_alpha}, l1_ratio={best_ridge_l1_ratio} "
@@ -4177,12 +4455,16 @@ def run_simple_position_sizer(
                 lw = _lightweight_hpo_pnl_eval(
                     raw_conf,
                     y_raw_net_return[te_idx],
-                    top_fracs=[0.05],
+                    top_fracs=list(PRIMARY_TAIL_FRACS),
                     cost_pct=cost_pct,
                     n_days=n_days_fold,
                 )
+                tail_score, _ = _lightweight_top1_top5_score(lw)
+                fold_pnl_5.append(tail_score)
                 if "wallet_pnl_0.050" in lw:
-                    fold_pnl_5.append(lw["wallet_pnl_0.050"])
+                    trial.set_user_attr("last_wallet_pnl_5", lw["wallet_pnl_0.050"])
+                if "wallet_pnl_0.010" in lw:
+                    trial.set_user_attr("last_wallet_pnl_1", lw["wallet_pnl_0.010"])
                 if "sortino_0.050" in lw:
                     fold_sortino_5.append(lw["sortino_0.050"])
 
@@ -4204,7 +4486,7 @@ def run_simple_position_sizer(
             composite = 0.75 * mean_pnl_5 - 0.50 * std_pnl_5 + 0.25 * sortino_5
 
             trial.set_user_attr("feature_count", int(X_heads.shape[1]))
-            trial.set_user_attr("mean_pnl_5", mean_pnl_5)
+            trial.set_user_attr("mean_top1_top5_score", mean_pnl_5)
             trial.set_user_attr("std_pnl_5", std_pnl_5)
             trial.set_user_attr("sortino_5", sortino_5)
             trial.set_user_attr("composite_score", composite)
@@ -4402,11 +4684,7 @@ def run_simple_position_sizer(
             cost_pct=cost_pct,
             n_days=n_days,
         )
-        best_et_objective = (
-            float(best_et_profit_proxy["wallet_pnl"].max())
-            if not best_et_profit_proxy.empty
-            else float("-inf")
-        )
+        best_et_objective = _tail_wallet_objective(best_et_profit_proxy)
 
         tprint(
             "ET Residual HPO winner: "
@@ -4531,9 +4809,7 @@ def run_simple_position_sizer(
             y_train_raw: np.ndarray,
         ) -> np.ndarray:
             n_samples = X.shape[0]
-            leaf_preds = _as_2d_leaf_predictions(
-                model.predict(X_raw, pred_leaf=True)
-            )
+            leaf_preds = _as_2d_leaf_predictions(model.predict(X_raw, pred_leaf=True))
             n_trees = leaf_preds.shape[1]
 
             leaf_counts_arr = np.zeros((n_samples, n_trees), dtype=np.float32)
@@ -4717,12 +4993,16 @@ def run_simple_position_sizer(
                 lw = _lightweight_hpo_pnl_eval(
                     raw_conf,
                     y_te,
-                    top_fracs=[0.05],
+                    top_fracs=list(PRIMARY_TAIL_FRACS),
                     cost_pct=cost_pct,
                     n_days=n_days_fold,
                 )
+                tail_score, _ = _lightweight_top1_top5_score(lw)
+                fold_pnl_5.append(tail_score)
                 if "wallet_pnl_0.050" in lw:
-                    fold_pnl_5.append(lw["wallet_pnl_0.050"])
+                    trial.set_user_attr("last_wallet_pnl_5", lw["wallet_pnl_0.050"])
+                if "wallet_pnl_0.010" in lw:
+                    trial.set_user_attr("last_wallet_pnl_1", lw["wallet_pnl_0.010"])
                 if "sortino_0.050" in lw:
                     fold_sortino_5.append(lw["sortino_0.050"])
 
@@ -5163,11 +5443,7 @@ def run_simple_position_sizer(
             cost_pct=cost_pct,
             n_days=n_days,
         )
-        best_lgbm_objective = (
-            float(best_lgbm_profit_proxy["wallet_pnl"].max())
-            if not best_lgbm_profit_proxy.empty
-            else float("-inf")
-        )
+        best_lgbm_objective = _tail_wallet_objective(best_lgbm_profit_proxy)
 
         tprint(
             f"LGBM Residual HPO winner: "
@@ -5379,12 +5655,16 @@ def run_simple_position_sizer(
                 lw = _lightweight_hpo_pnl_eval(
                     raw_conf,
                     y_te,
-                    top_fracs=[0.05],
+                    top_fracs=list(PRIMARY_TAIL_FRACS),
                     cost_pct=cost_pct,
                     n_days=n_days_fold,
                 )
+                tail_score, _ = _lightweight_top1_top5_score(lw)
+                fold_pnl_5.append(tail_score)
                 if "wallet_pnl_0.050" in lw:
-                    fold_pnl_5.append(lw["wallet_pnl_0.050"])
+                    trial.set_user_attr("last_wallet_pnl_5", lw["wallet_pnl_0.050"])
+                if "wallet_pnl_0.010" in lw:
+                    trial.set_user_attr("last_wallet_pnl_1", lw["wallet_pnl_0.010"])
                 if "sortino_0.050" in lw:
                     fold_sortino_5.append(lw["sortino_0.050"])
 
@@ -5527,6 +5807,7 @@ def run_simple_position_sizer(
                 fold_lgbm_clf_models.append(
                     {
                         "fold_idx": fold_idx,
+                        "te_idx": np.asarray(te_idx, dtype=np.int64),
                         "model": model,
                         "medians": medians,
                         "scaler": scaler,
@@ -5569,10 +5850,8 @@ def run_simple_position_sizer(
                     cost_pct=cost_pct,
                     n_days=n_days,
                 )
-                best_lgbm_clf_objective = (
-                    float(lgbm_clf_profit_proxy_df["wallet_pnl"].max())
-                    if not lgbm_clf_profit_proxy_df.empty
-                    else float("-inf")
+                best_lgbm_clf_objective = _tail_wallet_objective(
+                    lgbm_clf_profit_proxy_df
                 )
                 tprint(
                     f"  LGBM Clf: utility={best_lgbm_clf_utility:.4f}, "
@@ -5673,29 +5952,154 @@ def run_simple_position_sizer(
                         best_simple_score = raw_conf_clf
                         best_simple_score_name = "RidgePlusLGBM_Clf_TotalConfidence"
 
-    # --- 3-Way Pipeline Comparison ---
+    # --- Direct Meta-Classifier Head Baseline ---
+    meta_clf_only_eval = {}
+    meta_clf_only_profit_proxy_df = pd.DataFrame()
+    meta_clf_only_score: Optional[np.ndarray] = None
+    meta_clf_only_name: Optional[str] = None
+    meta_clf_only_variants: List[Dict[str, Any]] = []
+    if len(used_keys) > 0:
+        clf_priority = [
+            "clf",
+            "oof_p_tp",
+            "oof_meta_prob",
+            "oof_prob",
+        ]
+        clf_key = next((k for k in clf_priority if k in feature_dict), None)
+        if clf_key is None:
+            clf_key = next(
+                (
+                    k
+                    for k in used_keys
+                    if k in feature_dict and _is_classifier_head_feature(k)
+                ),
+                None,
+            )
+        if clf_key is not None:
+            raw_meta_clf_score = np.asarray(feature_dict[clf_key], dtype=np.float32)
+            finite_mask = np.isfinite(raw_meta_clf_score)
+            if finite_mask.any():
+                # Variant 1: rank-normalized head score (0..1), preserves top-k ranking.
+                rank_meta_clf_score = np.full_like(raw_meta_clf_score, np.nan)
+                ranks = pd.Series(raw_meta_clf_score[finite_mask]).rank(
+                    method="average", pct=True
+                )
+                rank_meta_clf_score[finite_mask] = np.asarray(ranks, dtype=np.float32)
+                rank_meta_clf_score = np.clip(rank_meta_clf_score, 0.0, 1.0)
+
+                # Variant 2: fold-wise OOF isotonic-calibrated head score.
+                calibrated_meta_clf_score = rank_meta_clf_score.copy()
+                calibrated_variant_available = False
+                calibrated_variant_coverage = 0.0
+                try:
+                    from sklearn.isotonic import IsotonicRegression
+
+                    y_win_full = (y_raw_net_return > float(cost_pct)).astype(np.float32)
+                    oof_calibrated = np.full_like(rank_meta_clf_score, np.nan)
+                    observed_calibration = np.zeros(len(y_win_full), dtype=bool)
+                    for tr_idx, te_idx in splits:
+                        tr_idx = np.asarray(tr_idx, dtype=np.int64)
+                        te_idx = np.asarray(te_idx, dtype=np.int64)
+                        tr_mask = finite_mask[tr_idx]
+                        te_mask = finite_mask[te_idx]
+                        if int(np.sum(tr_mask)) < 64 or int(np.sum(te_mask)) == 0:
+                            continue
+                        y_tr = y_win_full[tr_idx][tr_mask]
+                        if len(np.unique(y_tr)) < 2:
+                            continue
+                        iso = IsotonicRegression(out_of_bounds="clip")
+                        iso.fit(rank_meta_clf_score[tr_idx][tr_mask], y_tr)
+                        te_obs = te_idx[te_mask]
+                        oof_calibrated[te_obs] = iso.transform(
+                            rank_meta_clf_score[te_obs]
+                        ).astype(np.float32)
+                        observed_calibration[te_obs] = True
+                    calibrated_count = int(np.sum(observed_calibration & finite_mask))
+                    finite_count = int(np.sum(finite_mask))
+                    calibrated_variant_coverage = calibrated_count / max(
+                        1, finite_count
+                    )
+                    if calibrated_count >= 30 and calibrated_variant_coverage >= 0.80:
+                        calibrated_meta_clf_score = np.where(
+                            observed_calibration,
+                            oof_calibrated,
+                            np.nan,
+                        ).astype(np.float32)
+                        calibrated_variant_available = True
+                except Exception as e:
+                    tprint(f"MetaClfOnly isotonic calibration skipped: {e}")
+
+                variants = [
+                    ("ranknorm", rank_meta_clf_score),
+                ]
+                if calibrated_variant_available:
+                    variants.append(("oof_isotonic", calibrated_meta_clf_score))
+                best_variant_wallet = float("-inf")
+                for variant_name, variant_score in variants:
+                    v_eval = evaluate_signal(
+                        f"MetaClfOnly({clf_key})[{variant_name}]",
+                        variant_score,
+                        y_raw_net_return,
+                        y_downside,
+                        directionality="classification-like",
+                    )
+                    v_profit_proxy_df, v_opt_rets, v_opt_ts = (
+                        evaluate_selection_profit_proxy(
+                            variant_score,
+                            y_raw_net_return,
+                            timestamps=timestamps,
+                            symbols=_sym_vals,
+                            top_fracs=list(top_fracs),
+                            cost_pct=cost_pct,
+                            n_days=n_days,
+                        )
+                    )
+                    v_wallet = _tail_wallet_objective(v_profit_proxy_df)
+                    meta_clf_only_variants.append(
+                        {
+                            "variant": variant_name,
+                            "head_key": clf_key,
+                            "wallet_pnl": v_wallet,
+                            "utility_score": float(v_eval.get("utility_score", np.nan)),
+                            "oof_calibration_coverage": (
+                                float(calibrated_variant_coverage)
+                                if variant_name == "oof_isotonic"
+                                else np.nan
+                            ),
+                        }
+                    )
+                    if v_wallet > best_variant_wallet:
+                        best_variant_wallet = v_wallet
+                        meta_clf_only_score = variant_score
+                        meta_clf_only_name = f"MetaClfOnly_{clf_key}_{variant_name}"
+                        meta_clf_only_eval = v_eval
+                        meta_clf_only_profit_proxy_df = v_profit_proxy_df
+                        results["meta_clf_only_scores_"] = variant_score
+                        results["meta_clf_only_key_"] = clf_key
+                        results["meta_clf_only_variant_"] = variant_name
+                        results["meta_clf_only_opt_rets_"] = v_opt_rets
+                        results["meta_clf_only_opt_ts_"] = v_opt_ts
+                if meta_clf_only_variants:
+                    results["meta_clf_only_variants_table_"] = pd.DataFrame(
+                        meta_clf_only_variants
+                    )
+
+    # --- Pipeline Comparison ---
     comparison: Dict[str, Any] = {}
     comparison_rows = []
-    ridge_util = ridge_sizer_eval.get("utility_score", 0.0) if ridge_sizer_eval else 0.0
-    ridge_wallet = (
-        float(ridge_profit_proxy_df["wallet_pnl"].max())
-        if not ridge_profit_proxy_df.empty
-        else 0.0
-    )
-    comparison_rows.append(
-        {
-            "pipeline": "ridge_only",
-            "utility": ridge_util,
-            "wallet_pnl": ridge_wallet,
-        }
-    )
+    if ridge_sizer_eval:
+        ridge_util = ridge_sizer_eval.get("utility_score", 0.0)
+        ridge_wallet = _tail_wallet_objective(ridge_profit_proxy_df)
+        comparison_rows.append(
+            {
+                "pipeline": "ridge_only",
+                "utility": ridge_util,
+                "wallet_pnl": ridge_wallet,
+            }
+        )
     if et_sizer_eval:
         et_util = et_sizer_eval.get("utility_score", 0.0)
-        et_wallet = (
-            float(et_profit_proxy_df["wallet_pnl"].max())
-            if not et_profit_proxy_df.empty
-            else 0.0
-        )
+        et_wallet = _tail_wallet_objective(et_profit_proxy_df)
         comparison_rows.append(
             {
                 "pipeline": "ridge_plus_et",
@@ -5705,11 +6109,7 @@ def run_simple_position_sizer(
         )
     if lgbm_sizer_eval:
         lgbm_util = lgbm_sizer_eval.get("utility_score", 0.0)
-        lgbm_wallet = (
-            float(lgbm_profit_proxy_df["wallet_pnl"].max())
-            if not lgbm_profit_proxy_df.empty
-            else 0.0
-        )
+        lgbm_wallet = _tail_wallet_objective(lgbm_profit_proxy_df)
         comparison_rows.append(
             {
                 "pipeline": "ridge_plus_lgbm",
@@ -5719,16 +6119,22 @@ def run_simple_position_sizer(
         )
     if lgbm_clf_sizer_eval:
         lgbm_clf_util = lgbm_clf_sizer_eval.get("utility_score", 0.0)
-        lgbm_clf_wallet = (
-            float(lgbm_clf_profit_proxy_df["wallet_pnl"].max())
-            if not lgbm_clf_profit_proxy_df.empty
-            else 0.0
-        )
+        lgbm_clf_wallet = _tail_wallet_objective(lgbm_clf_profit_proxy_df)
         comparison_rows.append(
             {
                 "pipeline": "ridge_plus_lgbm_clf",
                 "utility": lgbm_clf_util,
                 "wallet_pnl": lgbm_clf_wallet,
+            }
+        )
+    if meta_clf_only_eval:
+        meta_clf_util = meta_clf_only_eval.get("utility_score", 0.0)
+        meta_clf_wallet = _tail_wallet_objective(meta_clf_only_profit_proxy_df)
+        comparison_rows.append(
+            {
+                "pipeline": "meta_clf_only",
+                "utility": meta_clf_util,
+                "wallet_pnl": meta_clf_wallet,
             }
         )
     if comparison_rows:
@@ -5740,12 +6146,15 @@ def run_simple_position_sizer(
             "winner_utility": best_row["utility"],
         }
         tprint(
-            f"4-Way Pipeline Comparison: "
+            f"Sizer Pipeline Comparison: "
             + " | ".join(
                 f"{r['pipeline']}={r['wallet_pnl']:.4f}" for r in comparison_rows
             )
             + f" | winner={comparison['winner']}"
         )
+        if comparison["winner"] == "meta_clf_only" and meta_clf_only_score is not None:
+            best_simple_score = meta_clf_only_score
+            best_simple_score_name = meta_clf_only_name or "meta_clf_only"
     results["comparison_"] = comparison
     results["comparison_table_"] = (
         pd.DataFrame(comparison_rows) if comparison_rows else pd.DataFrame()
@@ -5776,7 +6185,16 @@ def run_simple_position_sizer(
             and _booster_conf is not None
             and not _winner_profit_df.empty
         ):
-            if "is_optimal" in _winner_profit_df.columns:
+            _primary_rows = _winner_profit_df[
+                _winner_profit_df["selection_frac"]
+                .astype(float)
+                .isin(list(PRIMARY_TAIL_FRACS))
+            ]
+            if not _primary_rows.empty:
+                _opt_row = _primary_rows.sort_values(
+                    "wallet_pnl", ascending=False
+                ).iloc[0]
+            elif "is_optimal" in _winner_profit_df.columns:
                 _opt_row = _winner_profit_df[_winner_profit_df["is_optimal"]].iloc[0]
             else:
                 _opt_row = _winner_profit_df.sort_values(
@@ -5898,6 +6316,8 @@ def run_simple_position_sizer(
         "lgbm_clf_sizer_eval_": lgbm_clf_sizer_eval,
         "lgbm_clf_importance_table_": lgbm_clf_importance_df,
         "lgbm_clf_profit_proxy_table_": lgbm_clf_profit_proxy_df,
+        "meta_clf_only_eval_": meta_clf_only_eval,
+        "meta_clf_only_profit_proxy_table_": meta_clf_only_profit_proxy_df,
         "comparison_": comparison,
         "comparison_table_": results.get("comparison_table_", pd.DataFrame()),
         "best_simple_score_": best_simple_score,
@@ -6020,7 +6440,7 @@ def run_bucketed_simple_position_sizer(
 def run_simple_position_sizer_from_artifacts(
     data_root: str,
     run_id: str,
-    top_fracs: Tuple[float, ...] = (0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2),
+    top_fracs: Tuple[float, ...] = REPORT_TAIL_FRACS,
     use_ridge_head_sizer: bool = True,
     use_et_head_sizer: bool = False,
     use_lgbm_head_sizer: bool = True,
@@ -6049,7 +6469,7 @@ def run_simple_position_sizer_from_artifacts(
             Path(data_root)
             / "artifacts"
             / run_id
-            / "ridge_sizer"
+            / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
             / "strategy_params.json"
         )
         if fallback_path.exists():
@@ -6908,14 +7328,96 @@ def run_simple_position_sizer_from_artifacts(
             "source_target": strategy.get("source_target", ""),
             "source_horizon": strategy.get("source_horizon", np.nan),
             "atr_column": atr_col,
+            "meta_oof_available": bool(resolved_meta_key),
+            "resolved_meta_oof_key": resolved_meta_key,
+            "resolved_base_oof_key": resolved_base_key,
         }
-        _score_ref = res.get("total_confidence_")
+        _score_ref = res.get("best_simple_score_")
+        if _score_ref is None:
+            _score_ref = res.get("total_confidence_")
         if _score_ref is None:
             _score_ref = res.get("ridge_sizer_scores_")
         if _score_ref is None:
             _score_ref = res.get("lgbm_sizer_scores_")
         if _score_ref is None:
             _score_ref = res.get("et_sizer_scores_")
+        if _score_ref is not None:
+            try:
+                _sym_for_regime = (
+                    trade_outcomes["symbol"].astype(str).values
+                    if "symbol" in trade_outcomes.columns
+                    else (
+                        active_df["symbol"].astype(str).values
+                        if "symbol" in active_df.columns
+                        else None
+                    )
+                )
+                _regime_fit = fit_regime_adaptor(
+                    feature_frame=active_df,
+                    pred_calibrated=np.asarray(_score_ref, dtype=np.float32),
+                    returns=np.asarray(y_raw_net_return, dtype=np.float32),
+                    timestamps=timestamps,
+                    symbols=_sym_for_regime,
+                    strategy_id=strategy_id,
+                    model_name=str(res.get("best_simple_score_name_", "sizer")),
+                    cost_pct=0.003,
+                )
+                _artifact_path = save_regime_adaptor_outputs(
+                    data_root=data_root,
+                    run_id=run_id,
+                    strategy_id=strategy_id,
+                    fit=_regime_fit,
+                )
+                res["sizer_score_raw_oof_"] = np.asarray(_score_ref, dtype=np.float32)
+                res["regime_adaptor_"] = _regime_fit.artifact
+                res["regime_adaptor_path_"] = str(_artifact_path)
+                res["regime_adaptor_enabled_"] = bool(
+                    _regime_fit.artifact.get("enable_regime_adaptor", False)
+                )
+                res["regime_weight_oof_"] = _regime_fit.regime_weight_oof
+                res["regime_eligible_oof_"] = _regime_fit.eligible_oof
+                res["regime_deployment_score_oof_"] = _regime_fit.deployment_score_oof
+                res["regime_deployment_score_rank_oof_"] = (
+                    _regime_fit.deployment_score_rank_oof
+                )
+                res["regime_metrics_table_"] = _regime_fit.metrics
+                res["regime_fixed_diagnostics_"] = _regime_fit.fixed_diagnostics
+                res["regime_adaptive_diagnostics_"] = _regime_fit.adaptive_diagnostics
+                res["regime_asset_diagnostics_"] = _regime_fit.asset_diagnostics
+                if res["regime_adaptor_enabled_"]:
+                    res["best_simple_score_"] = _regime_fit.deployment_score_rank_oof
+                    _score_ref = res["best_simple_score_"]
+                    (
+                        _adj_profit,
+                        _adj_opt_rets,
+                        _adj_opt_ts,
+                    ) = evaluate_selection_profit_proxy(
+                        np.asarray(_score_ref, dtype=np.float32),
+                        y_raw_net_return,
+                        timestamps=timestamps,
+                        symbols=_sym_for_regime,
+                        top_fracs=list(top_fracs) + [0.3],
+                        cost_pct=0.003,
+                    )
+                    if not _adj_profit.empty:
+                        res["profit_proxy_table_raw_"] = res.get(
+                            "profit_proxy_table_", pd.DataFrame()
+                        )
+                        res["profit_proxy_table_"] = _adj_profit
+                        res["opt_rets_"] = _adj_opt_rets
+                        res["opt_ts_"] = _adj_opt_ts
+                logger.info(
+                    "Regime adaptor for %s: enabled=%s artifact=%s",
+                    strategy_id[:50],
+                    res["regime_adaptor_enabled_"],
+                    _artifact_path,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Regime adaptor failed for strategy %s: %s",
+                    strategy_id[:50],
+                    exc,
+                )
         _n_score = len(_score_ref) if _score_ref is not None else len(trade_outcomes)
         _ctx: Dict[str, Any] = {}
         if "timestamp" in active_df.columns:
@@ -6933,9 +7435,7 @@ def run_simple_position_sizer_from_artifacts(
         if "symbol" in active_df.columns:
             _ctx["symbol"] = active_df["symbol"].astype(str).to_numpy()[:_n_score]
         elif "symbol" in trade_outcomes.columns:
-            _ctx["symbol"] = (
-                trade_outcomes["symbol"].astype(str).to_numpy()[:_n_score]
-            )
+            _ctx["symbol"] = trade_outcomes["symbol"].astype(str).to_numpy()[:_n_score]
         if _ctx:
             res["_sizer_oof_context_"] = _ctx
         strategy_results[strategy_id] = res
@@ -6952,6 +7452,8 @@ def run_simple_position_sizer_from_artifacts(
     _persist_head_to_head_winner(data_root, run_id, strategy_results)
     _persist_detailed_model_metrics(data_root, run_id, strategy_results)
     _persist_mix_grid(data_root, run_id, strategy_results)
+    _persist_regime_adaptor_summary(data_root, run_id, strategy_results)
+    _persist_normalized_strategy_thresholds(data_root, run_id)
     for _sid, _sres in strategy_results.items():
         _persist_booster_bundle(data_root, run_id, _sid, _sres)
     try:
@@ -7126,15 +7628,36 @@ def run_simple_position_sizer_from_artifacts(
     # Compute and Save Full Calibration Curves
     # =============================================================================
     try:
-        # Collect all OOF predictions for calibration
+        # Collect row-level OOF predictions for calibration.  The threshold-grid
+        # profit proxy table is strategy-level and does not carry symbol/timestamp
+        # context, so calibration must use the same OOF arrays persisted for the
+        # policy optimiser.
         all_oof_preds = []
         for strategy_id, res in strategy_results.items():
-            if "profit_proxy_table_" in res:
-                table = res["profit_proxy_table_"]
-                if isinstance(table, pd.DataFrame) and not table.empty:
-                    # Extract scored rows with predictions
-                    table["strategy"] = strategy_id
-                    all_oof_preds.append(table)
+            preds = res.get("best_simple_score_")
+            if preds is None:
+                preds = res.get("total_confidence_")
+            ctx = res.get("_sizer_oof_context_", {})
+            if preds is None or not isinstance(ctx, dict):
+                continue
+            n_preds = len(preds)
+            timestamps = ctx.get("timestamp")
+            symbols = ctx.get("symbol")
+            if timestamps is None or symbols is None:
+                continue
+            n_ctx = min(n_preds, len(timestamps), len(symbols))
+            if n_ctx <= 0:
+                continue
+            all_oof_preds.append(
+                pd.DataFrame(
+                    {
+                        "strategy": strategy_id,
+                        "timestamp": np.asarray(timestamps)[:n_ctx],
+                        "symbol": np.asarray(symbols).astype(str)[:n_ctx],
+                        "sizer_score": np.asarray(preds, dtype=np.float64)[:n_ctx],
+                    }
+                )
+            )
 
         if all_oof_preds:
             oof_df = pd.concat(all_oof_preds, ignore_index=True)

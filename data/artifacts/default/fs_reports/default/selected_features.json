@@ -1,27 +1,10 @@
 {
   "selected_features": [
-    "atr_pct_base",
-    "direction_entropy_20",
-    "session_progress",
-    "regime_transition_entropy_12h",
-    "body_pct",
-    "asset_vol_level",
-    "kf_atr_mean",
-    "entropy_jump_24h",
-    "vp_profile_entropy",
-    "vp_in_lvn_above_zone",
-    "climax",
-    "signed_vol",
-    "volume_capitulation",
-    "compression_score",
-    "time_since_peak_12h",
-    "volume_entropy_24",
-    "spectral_entropy_ret_24",
-    "volatility_of_volatility_48",
-    "clv_collapse",
-    "ema50_gt_ema200",
-    "ft_2",
-    "regime_stability_24h"
+    "feat_1",
+    "feat_3",
+    "feat_2",
+    "feat_0",
+    "feat_9"
   ],
   "anchors": []
 }

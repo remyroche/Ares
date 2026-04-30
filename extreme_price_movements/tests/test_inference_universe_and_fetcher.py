@@ -8,22 +8,29 @@ class _FakeExchange:
     def load_markets(self):
         return {
             "BTC/USDT": {"quote": "USDT", "active": True, "margin": True},
+            "BTC/USDC": {"quote": "USDC", "active": True, "margin": True},
             "ETH/USDT": {
                 "quote": "USDT",
                 "active": True,
                 "info": {"isMarginTradingAllowed": True},
             },
+            "ETH/USDC": {
+                "quote": "USDC",
+                "active": True,
+                "info": {"isMarginTradingAllowed": True},
+            },
             "XRP/BTC": {"quote": "BTC", "active": True, "margin": True},
-            "DOGE/USDT": {"quote": "USDT", "active": False, "margin": True},
-            "SOL/USDT": {"quote": "USDT", "active": True, "margin": False},
+            "DOGE/USDC": {"quote": "USDC", "active": False, "margin": True},
+            "SOL/USDC": {"quote": "USDC", "active": True, "margin": False},
         }
 
 
 def test_get_margin_universe_uses_exchange_market_metadata(monkeypatch):
     monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE", None)
     monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_DAY", None)
+    monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_QUOTE", None)
     symbols = inference_config.get_margin_universe(exchange=_FakeExchange())
-    assert symbols == ["BTC/USDT", "ETH/USDT"]
+    assert symbols == ["BTC/USDC", "ETH/USDC"]
 
 
 def test_get_margin_universe_filters_young_symbols(monkeypatch):
@@ -39,8 +46,14 @@ def test_get_margin_universe_filters_young_symbols(monkeypatch):
                     "margin": True,
                     "info": {"onboardDate": old_ms},
                 },
-                "NEW/USDT": {
-                    "quote": "USDT",
+                "OLD/USDC": {
+                    "quote": "USDC",
+                    "active": True,
+                    "margin": True,
+                    "info": {"onboardDate": old_ms},
+                },
+                "NEW/USDC": {
+                    "quote": "USDC",
                     "active": True,
                     "margin": True,
                     "info": {"onboardDate": now_ms},
@@ -49,8 +62,9 @@ def test_get_margin_universe_filters_young_symbols(monkeypatch):
 
     monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE", None)
     monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_DAY", None)
+    monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_QUOTE", None)
     symbols = inference_config.get_margin_universe(exchange=_Exchange())
-    assert symbols == ["OLD/USDT"]
+    assert symbols == ["OLD/USDC"]
 
 
 def test_resolve_inference_universes_restricts_tradable_to_training_symbols(
@@ -66,19 +80,21 @@ def test_resolve_inference_universes_restricts_tradable_to_training_symbols(
     class _Exchange:
         def load_markets(self):
             return {
-                "BTC/USDT": {"quote": "USDT", "active": True, "margin": True},
-                "ETH/USDT": {"quote": "USDT", "active": True, "margin": True},
+                "BTC/USDC": {"quote": "USDC", "active": True, "margin": True},
+                "ETH/USDC": {"quote": "USDC", "active": True, "margin": True},
             }
 
     monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE", None)
     monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_DAY", None)
+    monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_QUOTE", None)
     out = inference_config.resolve_inference_universes(
         _Exchange(), data_root=str(data_root), run_id="run1"
     )
 
-    assert out["download_symbols"] == ["BTC/USDT", "ETH/USDT"]
-    assert out["tradable_symbols"] == ["ETH/USDT"]
+    assert out["download_symbols"] == ["BTC/USDC", "ETH/USDC"]
+    assert out["tradable_symbols"] == ["ETH/USDC"]
     assert out["trained_symbols"] == ["ETH/USDT"]
+    assert out["live_quote_currency"] == "USDC"
 
 
 def test_trained_universe_prefers_label_manifest_over_tiny_health_summary(tmp_path):
@@ -107,6 +123,27 @@ def test_trained_universe_prefers_label_manifest_over_tiny_health_summary(tmp_pa
     )
 
     assert symbols == {"BTC/USDT", "ETH/USDT", "SOL/USDT"}
+
+
+def test_resolve_inference_universes_maps_explicit_usdt_symbols_to_usdc(
+    tmp_path, monkeypatch
+):
+    data_root = tmp_path / "data"
+    feature_dir = data_root / "artifacts" / "run1" / "features"
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "feature_health_symbol_summary.csv").write_text(
+        "symbol,rows\nBTC/USDT,100\nETH/USDT,100\n"
+    )
+
+    out = inference_config.resolve_inference_universes(
+        object(),
+        data_root=str(data_root),
+        run_id="run1",
+        explicit_symbols=["BTC/USDT", "SOL/USDT"],
+    )
+
+    assert out["download_symbols"] == ["BTC/USDC", "SOL/USDC"]
+    assert out["tradable_symbols"] == ["BTC/USDC"]
 
 
 def test_fetch_incremental_universe_triggers_backfill_on_recent_gaps(monkeypatch):

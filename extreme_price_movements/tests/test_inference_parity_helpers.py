@@ -131,7 +131,52 @@ def test_deployment_strategy_filter_policy_selection_suffices_without_holdout(
 
     selected = resolve_deployment_strategy_filter(str(tmp_path), run_id)
 
-    assert selected == {"short_rule_a"}
+    assert selected == {"rule_a", "long_rule_a", "short_rule_a"}
+
+
+def test_deployment_strategy_filter_uses_policy_when_sizer_allowlist_is_stale(
+    tmp_path,
+):
+    run_id = "20260101_000000"
+    art = tmp_path / "artifacts" / run_id
+    (art / "ridge_sizer").mkdir(parents=True)
+    (art / "policy_params").mkdir(parents=True)
+
+    (art / "policy_params" / "strategy_for_inference.json").write_text(
+        json.dumps(
+            {
+                "generated_by": "policy_optimiser",
+                "strategies": [
+                    {
+                        "strategy_id": "rule_a",
+                        "strategy_for_inference": "rule_a",
+                        "side": "long",
+                        "selected": True,
+                    }
+                ],
+            }
+        )
+    )
+    (art / "ridge_sizer" / "strategy_params.json").write_text(
+        json.dumps(
+            {
+                "strategies": [
+                    {
+                        "strategy_id": "old_rule",
+                        "wallet_pnl": 1.0,
+                        "net_pnl": 2.0,
+                    }
+                ]
+            }
+        )
+    )
+    (art / "policy_params" / "best_policy_params.json").write_text(
+        json.dumps({"strategies": [{"strategy_id": "rule_a"}]})
+    )
+
+    selected = resolve_deployment_strategy_filter(str(tmp_path), run_id)
+
+    assert selected == {"rule_a", "long_rule_a", "short_rule_a"}
 
 
 def test_strategy_asset_exclusion_filter_reads_strategy_for_inference(tmp_path):
@@ -164,11 +209,42 @@ def test_strategy_asset_exclusion_filter_reads_strategy_for_inference(tmp_path):
     assert "short_ignored" not in exclusions
 
 
+def test_strategy_asset_exclusion_filter_skips_empty_root_artifact(tmp_path):
+    run_id = "20260101_000000"
+    art = tmp_path / "artifacts" / run_id
+    (art / "policy_params").mkdir(parents=True)
+    (art / "strategy_for_inference.json").write_text(
+        json.dumps({"asset_exclusions": {"long_rule": []}})
+    )
+    (art / "policy_params" / "strategy_for_inference.json").write_text(
+        json.dumps(
+            {
+                "strategies": [
+                    {
+                        "strategy_id": "long_rule",
+                        "selected": True,
+                        "excluded_symbols": ["DEXE/USDT"],
+                    }
+                ]
+            }
+        )
+    )
+
+    exclusions = load_strategy_asset_exclusion_filter(str(tmp_path), run_id)
+
+    assert exclusions["long_rule"] == {"DEXE/USDT"}
+
+
 def test_strategy_matching_normalizes_model_horizon_suffixes():
     accepted = {"complex_rule"}
 
     assert strategy_core_id("short_complex_rule_H10") == "complex_rule"
     assert strategy_id_matches("short_complex_rule_H10", accepted)
+
+
+def test_strategy_matching_treats_side_aware_and_core_aliases_as_equivalent():
+    assert strategy_id_matches("rule_a", {"long_rule_a"})
+    assert strategy_id_matches("long_rule_a", {"rule_a"})
 
 
 def test_apply_strategy_acceptance_filter_blocks_non_accepted():
@@ -255,6 +331,39 @@ def test_live_required_features_exclude_target_derived_sizer_fields():
 
     required = get_inference_required_feature_keys(bundle)
     assert "reg_gate_target" not in required
+    assert validate_live_feature_contract(bundle, strict=True)
 
+
+def test_required_feature_keys_can_be_limited_to_deployment_strategies():
+    bundle = {
+        "bundle": {
+            "alpha_models": {
+                "long_kept": {"model": object(), "feat_cols": ["ret24h"]},
+                "short_rejected": {
+                    "model": object(),
+                    "feat_cols": ["vov_mad_20_G_VOL_0"],
+                },
+            },
+            "meta_models": {},
+        }
+    }
+
+    required = get_inference_required_feature_keys(bundle, {"long_kept"})
+
+    assert "ret24h" in required
+    assert "vov_mad_20_G_VOL_0" not in required
+
+
+def test_live_contract_rejects_target_derived_active_alpha_features():
+    bundle = {
+        "bundle": {
+            "alpha_models": {
+                "long_rule": {
+                    "model": object(),
+                    "feat_cols": ["ret24h", "reg_gate_target"],
+                }
+            }
+        }
+    }
     with pytest.raises(ValueError, match="target-derived/unavailable"):
         validate_live_feature_contract(bundle, strict=True)

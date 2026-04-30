@@ -1420,12 +1420,13 @@ def run_all(cfg, ts_override=None):
                 slice_plan = load_or_build_slice_plan(
                     cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
                 )
-                if "utility_policy_optimisation" in slice_plan.get(
-                    "materialized_views", {}
-                ):
-                    stage_view = slice_plan["materialized_views"][
-                        "utility_policy_optimisation"
-                    ]
+                materialized = slice_plan.get("materialized_views", {})
+                stage_view = None
+                if "holdout_strategy_eval" in materialized:
+                    stage_view = materialized["holdout_strategy_eval"]
+                elif "utility_policy_optimisation" in materialized:
+                    stage_view = materialized["utility_policy_optimisation"]
+                if stage_view is not None:
                     cfg["_active_stage_view"] = apply_stage_usage_limits(
                         stage_view,
                         max_assets=cfg.get("planned_max_assets"),
@@ -2110,12 +2111,13 @@ def main():
                 slice_plan = load_or_build_slice_plan(
                     cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
                 )
-                if "utility_policy_optimisation" in slice_plan.get(
-                    "materialized_views", {}
-                ):
-                    stage_view = slice_plan["materialized_views"][
-                        "utility_policy_optimisation"
-                    ]
+                materialized = slice_plan.get("materialized_views", {})
+                stage_view = None
+                if "holdout_strategy_eval" in materialized:
+                    stage_view = materialized["holdout_strategy_eval"]
+                elif "utility_policy_optimisation" in materialized:
+                    stage_view = materialized["utility_policy_optimisation"]
+                if stage_view is not None:
                     cfg["_active_stage_view"] = apply_stage_usage_limits(
                         stage_view,
                         max_assets=cfg.get("planned_max_assets"),

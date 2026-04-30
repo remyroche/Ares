@@ -1,0 +1,45 @@
+{
+  "schema_version": "v1",
+  "strategies": {
+    "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805": {
+      "artifact_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50/regime_adaptor.json",
+      "enabled": false,
+      "selection_score": 0.0
+    },
+    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701": {
+      "artifact_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701/regime_adaptor.json",
+      "enabled": false,
+      "selection_score": -0.005560631925283201
+    },
+    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm": {
+      "artifact_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm/regime_adaptor.json",
+      "enabled": false,
+      "selection_score": -0.005560631925283201
+    },
+    "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575": {
+      "artifact_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575/regime_adaptor.json",
+      "enabled": false,
+      "selection_score": 0.12613388655442553
+    },
+    "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm": {
+      "artifact_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm/regime_adaptor.json",
+      "enabled": false,
+      "selection_score": 0.12613388655442553
+    },
+    "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701": {
+      "artifact_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701/regime_adaptor.json",
+      "enabled": true,
+      "selection_score": 0.0012766645153797817
+    },
+    "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm": {
+      "artifact_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm/regime_adaptor.json",
+      "enabled": true,
+      "selection_score": 0.0012766645153797817
+    },
+    "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639": {
+      "artifact_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639/regime_adaptor.json",
+      "enabled": false,
+      "selection_score": 0.0
+    }
+  }
+}

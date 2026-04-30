@@ -14,169 +14,46 @@
       "strategy_description": "thr=70.0% | sel=0.300",
       "metrics": {
         "allow_downstream": true,
-        "asset_group_cv_pnl": 1.4346663653170262,
-        "asset_group_positive_share": 0.7819548872180451,
-        "avg_wallet_growth_per_month_pct": 13.101690562310717,
-        "calmar_ratio": 69.75580125605585,
+        "asset_group_cv_pnl": 1.5280957918669495,
+        "asset_group_positive_share": 0.75,
+        "avg_wallet_growth_per_month_pct": 12.538640477289094,
+        "calmar_ratio": 33.37430480922206,
         "downstream_filter_tag": "profitable",
         "downstream_min_pnl_per_trade_pct": 0.2,
         "downstream_reject_reasons": [],
-        "expectancy_tstat": 0.2228059470653534,
+        "expectancy_tstat": 0.20426470041275024,
         "feature_importance": {
           "barrier_clf_top10": [],
-          "elasticnet_top10": [
-            {
-              "feature": "oof_ebm_uncertainty_weighted",
-              "importance": 0.9127814173698425,
-              "metric": "abs_weight",
-              "std": 0.9153122901916504
-            },
-            {
-              "feature": "edge_tbm",
-              "importance": 0.5751349925994873,
-              "metric": "abs_weight",
-              "std": 0.507215678691864
-            },
-            {
-              "feature": "clf",
-              "importance": 0.5710484981536865,
-              "metric": "abs_weight",
-              "std": 0.5046510100364685
-            },
-            {
-              "feature": "edge_x_volatility_zscore",
-              "importance": 0.3499026298522949,
-              "metric": "abs_weight",
-              "std": 0.9621878266334534
-            },
-            {
-              "feature": "base_H10",
-              "importance": 0.2304747849702835,
-              "metric": "abs_weight",
-              "std": 0.8310592174530029
-            },
-            {
-              "feature": "edge_x_vol_of_vol",
-              "importance": -0.15095533430576324,
-              "metric": "abs_weight",
-              "std": 0.7136566042900085
-            },
-            {
-              "feature": "edge_x_winrate_20",
-              "importance": -0.2512277364730835,
-              "metric": "abs_weight",
-              "std": 0.44212445616722107
-            },
-            {
-              "feature": "edge_x_amihud_z",
-              "importance": -0.4852944016456604,
-              "metric": "abs_weight",
-              "std": 1.0559812784194946
-            },
-            {
-              "feature": "edge_x_rank_ic_50",
-              "importance": -0.7784013748168945,
-              "metric": "abs_weight",
-              "std": 1.2452890872955322
-            },
-            {
-              "feature": "edge_x_brier_50",
-              "importance": -1.3748724460601807,
-              "metric": "abs_weight",
-              "std": 1.5916019678115845
-            }
-          ],
+          "elasticnet_top10": [],
           "extratrees_top10": [],
-          "winner_model": "ridge",
-          "winner_pred_prefix_share": 0.16069830517563102,
-          "winner_top10": [
-            {
-              "feature": "oof_ebm_uncertainty_weighted",
-              "importance": 0.9127814173698425,
-              "metric": "abs_weight",
-              "std": 0.9153122901916504
-            },
-            {
-              "feature": "edge_tbm",
-              "importance": 0.5751349925994873,
-              "metric": "abs_weight",
-              "std": 0.507215678691864
-            },
-            {
-              "feature": "clf",
-              "importance": 0.5710484981536865,
-              "metric": "abs_weight",
-              "std": 0.5046510100364685
-            },
-            {
-              "feature": "edge_x_volatility_zscore",
-              "importance": 0.3499026298522949,
-              "metric": "abs_weight",
-              "std": 0.9621878266334534
-            },
-            {
-              "feature": "base_H10",
-              "importance": 0.2304747849702835,
-              "metric": "abs_weight",
-              "std": 0.8310592174530029
-            },
-            {
-              "feature": "edge_x_vol_of_vol",
-              "importance": -0.15095533430576324,
-              "metric": "abs_weight",
-              "std": 0.7136566042900085
-            },
-            {
-              "feature": "edge_x_winrate_20",
-              "importance": -0.2512277364730835,
-              "metric": "abs_weight",
-              "std": 0.44212445616722107
-            },
-            {
-              "feature": "edge_x_amihud_z",
-              "importance": -0.4852944016456604,
-              "metric": "abs_weight",
-              "std": 1.0559812784194946
-            },
-            {
-              "feature": "edge_x_rank_ic_50",
-              "importance": -0.7784013748168945,
-              "metric": "abs_weight",
-              "std": 1.2452890872955322
-            },
-            {
-              "feature": "edge_x_brier_50",
-              "importance": -1.3748724460601807,
-              "metric": "abs_weight",
-              "std": 1.5916019678115845
-            }
-          ]
+          "winner_model": "et",
+          "winner_pred_prefix_share": null,
+          "winner_top10": []
         },
-        "hit_rate": 0.5642013353877761,
-        "max_drawdown": 0.39781703136781144,
-        "monthly_group_cv_pnl": 1.4015121717106571,
-        "monthly_pnl_std": 1.6205011228140849,
-        "monthly_sortino": 3.7001937251209465,
-        "net_pnl": 27.750045776367188,
-        "net_pnl_per_trade_pct": 0.7126359983658754,
-        "pnl_per_trade": 0.7126359983658754,
-        "profit_factor": 1.659205553977785,
+        "hit_rate": 0.5534155110426296,
+        "max_drawdown": 0.7528674753753369,
+        "meta_oof_available": true,
+        "monthly_group_cv_pnl": 1.4956819140658424,
+        "monthly_pnl_std": 1.5658811748299346,
+        "monthly_sortino": 2.16585181375942,
+        "net_pnl": 25.126428604125977,
+        "net_pnl_per_trade_pct": 0.6452601079642007,
+        "pnl_per_trade": 0.6452601079642007,
+        "profit_factor": 1.5889999470621647,
         "profitable_for_downstream": true,
+        "regime_adaptor_enabled": false,
+        "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575/regime_adaptor.json",
         "selection_frac": 0.3,
         "side": "",
-        "sizer_mix_booster_w": 0.25,
-        "sizer_mix_conf_mult": 1.25,
-        "sizer_mix_ridge_w": 1.0,
-        "sizer_mix_winner": "ridge_plus_lgbm",
         "source_horizon": NaN,
         "source_target": "",
-        "stability": 0.9497453754273959,
+        "stability": 0.9435481507354101,
         "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
         "threshold_pct": 70.0,
         "trades_per_day": 10.668493150684931,
-        "wallet_pnl": 3.1444057349545718,
+        "wallet_pnl": 3.0092737145493826,
         "strategy_description": "thr=70.0% | sel=0.300",
-        "D": 1.3116545353087972
+        "D": 1.0516866387753119
       },
       "n_trades": 0
     },
@@ -185,169 +62,46 @@
       "strategy_description": "thr=70.0% | sel=0.300",
       "metrics": {
         "allow_downstream": true,
-        "asset_group_cv_pnl": 1.4346663653170262,
-        "asset_group_positive_share": 0.7819548872180451,
-        "avg_wallet_growth_per_month_pct": 13.101690562310717,
-        "calmar_ratio": 69.75580125605585,
+        "asset_group_cv_pnl": 1.5280957918669495,
+        "asset_group_positive_share": 0.75,
+        "avg_wallet_growth_per_month_pct": 12.538640477289094,
+        "calmar_ratio": 33.37430480922206,
         "downstream_filter_tag": "profitable",
         "downstream_min_pnl_per_trade_pct": 0.2,
         "downstream_reject_reasons": [],
-        "expectancy_tstat": 0.2228059470653534,
+        "expectancy_tstat": 0.20426470041275024,
         "feature_importance": {
           "barrier_clf_top10": [],
-          "elasticnet_top10": [
-            {
-              "feature": "oof_ebm_uncertainty_weighted",
-              "importance": 0.9127814173698425,
-              "metric": "abs_weight",
-              "std": 0.9153122901916504
-            },
-            {
-              "feature": "edge_tbm",
-              "importance": 0.5751349925994873,
-              "metric": "abs_weight",
-              "std": 0.507215678691864
-            },
-            {
-              "feature": "clf",
-              "importance": 0.5710484981536865,
-              "metric": "abs_weight",
-              "std": 0.5046510100364685
-            },
-            {
-              "feature": "edge_x_volatility_zscore",
-              "importance": 0.3499026298522949,
-              "metric": "abs_weight",
-              "std": 0.9621878266334534
-            },
-            {
-              "feature": "base_H10",
-              "importance": 0.2304747849702835,
-              "metric": "abs_weight",
-              "std": 0.8310592174530029
-            },
-            {
-              "feature": "edge_x_vol_of_vol",
-              "importance": -0.15095533430576324,
-              "metric": "abs_weight",
-              "std": 0.7136566042900085
-            },
-            {
-              "feature": "edge_x_winrate_20",
-              "importance": -0.2512277364730835,
-              "metric": "abs_weight",
-              "std": 0.44212445616722107
-            },
-            {
-              "feature": "edge_x_amihud_z",
-              "importance": -0.4852944016456604,
-              "metric": "abs_weight",
-              "std": 1.0559812784194946
-            },
-            {
-              "feature": "edge_x_rank_ic_50",
-              "importance": -0.7784013748168945,
-              "metric": "abs_weight",
-              "std": 1.2452890872955322
-            },
-            {
-              "feature": "edge_x_brier_50",
-              "importance": -1.3748724460601807,
-              "metric": "abs_weight",
-              "std": 1.5916019678115845
-            }
-          ],
+          "elasticnet_top10": [],
           "extratrees_top10": [],
-          "winner_model": "ridge",
-          "winner_pred_prefix_share": 0.16069830517563102,
-          "winner_top10": [
-            {
-              "feature": "oof_ebm_uncertainty_weighted",
-              "importance": 0.9127814173698425,
-              "metric": "abs_weight",
-              "std": 0.9153122901916504
-            },
-            {
-              "feature": "edge_tbm",
-              "importance": 0.5751349925994873,
-              "metric": "abs_weight",
-              "std": 0.507215678691864
-            },
-            {
-              "feature": "clf",
-              "importance": 0.5710484981536865,
-              "metric": "abs_weight",
-              "std": 0.5046510100364685
-            },
-            {
-              "feature": "edge_x_volatility_zscore",
-              "importance": 0.3499026298522949,
-              "metric": "abs_weight",
-              "std": 0.9621878266334534
-            },
-            {
-              "feature": "base_H10",
-              "importance": 0.2304747849702835,
-              "metric": "abs_weight",
-              "std": 0.8310592174530029
-            },
-            {
-              "feature": "edge_x_vol_of_vol",
-              "importance": -0.15095533430576324,
-              "metric": "abs_weight",
-              "std": 0.7136566042900085
-            },
-            {
-              "feature": "edge_x_winrate_20",
-              "importance": -0.2512277364730835,
-              "metric": "abs_weight",
-              "std": 0.44212445616722107
-            },
-            {
-              "feature": "edge_x_amihud_z",
-              "importance": -0.4852944016456604,
-              "metric": "abs_weight",
-              "std": 1.0559812784194946
-            },
-            {
-              "feature": "edge_x_rank_ic_50",
-              "importance": -0.7784013748168945,
-              "metric": "abs_weight",
-              "std": 1.2452890872955322
-            },
-            {
-              "feature": "edge_x_brier_50",
-              "importance": -1.3748724460601807,
-              "metric": "abs_weight",
-              "std": 1.5916019678115845
-            }
-          ]
+          "winner_model": "et",
+          "winner_pred_prefix_share": null,
+          "winner_top10": []
         },
-        "hit_rate": 0.5642013353877761,
-        "max_drawdown": 0.39781703136781144,
-        "monthly_group_cv_pnl": 1.4015121717106571,
-        "monthly_pnl_std": 1.6205011228140849,
-        "monthly_sortino": 3.7001937251209465,
-        "net_pnl": 27.750045776367188,
-        "net_pnl_per_trade_pct": 0.7126359983658754,
-        "pnl_per_trade": 0.7126359983658754,
-        "profit_factor": 1.659205553977785,
+        "hit_rate": 0.5534155110426296,
+        "max_drawdown": 0.7528674753753369,
+        "meta_oof_available": true,
+        "monthly_group_cv_pnl": 1.4956819140658424,
+        "monthly_pnl_std": 1.5658811748299346,
+        "monthly_sortino": 2.16585181375942,
+        "net_pnl": 25.126428604125977,
+        "net_pnl_per_trade_pct": 0.6452601079642007,
+        "pnl_per_trade": 0.6452601079642007,
+        "profit_factor": 1.5889999470621647,
         "profitable_for_downstream": true,
+        "regime_adaptor_enabled": false,
+        "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm/regime_adaptor.json",
         "selection_frac": 0.3,
         "side": "",
-        "sizer_mix_booster_w": 0.25,
-        "sizer_mix_conf_mult": 1.25,
-        "sizer_mix_ridge_w": 1.0,
-        "sizer_mix_winner": "ridge_plus_lgbm",
         "source_horizon": NaN,
         "source_target": "",
-        "stability": 0.9497453754273959,
+        "stability": 0.9435481507354101,
         "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm",
         "threshold_pct": 70.0,
         "trades_per_day": 10.668493150684931,
-        "wallet_pnl": 3.1444057349545718,
+        "wallet_pnl": 3.0092737145493826,
         "strategy_description": "thr=70.0% | sel=0.300",
-        "D": 1.3116545353087972
+        "D": 1.0516866387753119
       },
       "n_trades": 0
     },
@@ -356,169 +110,46 @@
       "strategy_description": "thr=70.0% | sel=0.300",
       "metrics": {
         "allow_downstream": true,
-        "asset_group_cv_pnl": 1.9136024204629987,
-        "asset_group_positive_share": 0.6948529411764706,
-        "avg_wallet_growth_per_month_pct": 7.6742174657034825,
-        "calmar_ratio": 41.95706986448679,
+        "asset_group_cv_pnl": 1.8821272698897695,
+        "asset_group_positive_share": 0.7058823529411765,
+        "avg_wallet_growth_per_month_pct": 7.72602450445366,
+        "calmar_ratio": 32.45785225470832,
         "downstream_filter_tag": "profitable",
         "downstream_min_pnl_per_trade_pct": 0.2,
         "downstream_reject_reasons": [],
-        "expectancy_tstat": 0.1651550978422165,
+        "expectancy_tstat": 0.17139412462711334,
         "feature_importance": {
           "barrier_clf_top10": [],
-          "elasticnet_top10": [
-            {
-              "feature": "edge_x_volatility_zscore",
-              "importance": 0.04479258880019188,
-              "metric": "abs_weight",
-              "std": 0.08175856620073318
-            },
-            {
-              "feature": "edge_x_winrate_20",
-              "importance": 0.013628176413476467,
-              "metric": "abs_weight",
-              "std": 0.02235165424644947
-            },
-            {
-              "feature": "edge_tbm",
-              "importance": 0.0051636663265526295,
-              "metric": "abs_weight",
-              "std": 0.0075912089087069035
-            },
-            {
-              "feature": "oof_ebm_uncertainty_weighted",
-              "importance": 0.005163663066923618,
-              "metric": "abs_weight",
-              "std": 0.007591207046061754
-            },
-            {
-              "feature": "clf",
-              "importance": 0.00516364723443985,
-              "metric": "abs_weight",
-              "std": 0.007591197267174721
-            },
-            {
-              "feature": "edge_x_amihud_z",
-              "importance": 0.002033176366239786,
-              "metric": "abs_weight",
-              "std": 0.005750690586864948
-            },
-            {
-              "feature": "edge_x_brier_50",
-              "importance": 0.001711781951598823,
-              "metric": "abs_weight",
-              "std": 0.00484165083616972
-            },
-            {
-              "feature": "edge_x_rank_ic_50",
-              "importance": 0.0005270544206723571,
-              "metric": "abs_weight",
-              "std": 0.0014907352160662413
-            },
-            {
-              "feature": "base_H10",
-              "importance": 0.0,
-              "metric": "abs_weight",
-              "std": 0.0
-            },
-            {
-              "feature": "edge_x_vol_of_vol",
-              "importance": -0.02301778458058834,
-              "metric": "abs_weight",
-              "std": 0.058223530650138855
-            }
-          ],
+          "elasticnet_top10": [],
           "extratrees_top10": [],
-          "winner_model": "ridge",
-          "winner_pred_prefix_share": 0.05102356258361803,
-          "winner_top10": [
-            {
-              "feature": "edge_x_volatility_zscore",
-              "importance": 0.04479258880019188,
-              "metric": "abs_weight",
-              "std": 0.08175856620073318
-            },
-            {
-              "feature": "edge_x_winrate_20",
-              "importance": 0.013628176413476467,
-              "metric": "abs_weight",
-              "std": 0.02235165424644947
-            },
-            {
-              "feature": "edge_tbm",
-              "importance": 0.0051636663265526295,
-              "metric": "abs_weight",
-              "std": 0.0075912089087069035
-            },
-            {
-              "feature": "oof_ebm_uncertainty_weighted",
-              "importance": 0.005163663066923618,
-              "metric": "abs_weight",
-              "std": 0.007591207046061754
-            },
-            {
-              "feature": "clf",
-              "importance": 0.00516364723443985,
-              "metric": "abs_weight",
-              "std": 0.007591197267174721
-            },
-            {
-              "feature": "edge_x_amihud_z",
-              "importance": 0.002033176366239786,
-              "metric": "abs_weight",
-              "std": 0.005750690586864948
-            },
-            {
-              "feature": "edge_x_brier_50",
-              "importance": 0.001711781951598823,
-              "metric": "abs_weight",
-              "std": 0.00484165083616972
-            },
-            {
-              "feature": "edge_x_rank_ic_50",
-              "importance": 0.0005270544206723571,
-              "metric": "abs_weight",
-              "std": 0.0014907352160662413
-            },
-            {
-              "feature": "base_H10",
-              "importance": 0.0,
-              "metric": "abs_weight",
-              "std": 0.0
-            },
-            {
-              "feature": "edge_x_vol_of_vol",
-              "importance": -0.02301778458058834,
-              "metric": "abs_weight",
-              "std": 0.058223530650138855
-            }
-          ]
+          "winner_model": "et",
+          "winner_pred_prefix_share": null,
+          "winner_top10": []
         },
-        "hit_rate": 0.5557549346321456,
-        "max_drawdown": 0.4002170557018332,
-        "monthly_group_cv_pnl": 1.4122289685229261,
-        "monthly_pnl_std": 0.9485623151687868,
-        "monthly_sortino": 2.355325185956996,
-        "net_pnl": 16.791934967041016,
-        "net_pnl_per_trade_pct": 0.4304520627285572,
-        "pnl_per_trade": 0.4304520627285572,
-        "profit_factor": 1.45062961529004,
+        "hit_rate": 0.5603691361189439,
+        "max_drawdown": 0.5354354750398028,
+        "meta_oof_available": true,
+        "monthly_group_cv_pnl": 1.4072984084181315,
+        "monthly_pnl_std": 0.9783024450119006,
+        "monthly_sortino": 2.151374999625275,
+        "net_pnl": 17.379085540771484,
+        "net_pnl_per_trade_pct": 0.4455033463412327,
+        "pnl_per_trade": 0.4455033463412327,
+        "profit_factor": 1.4718664098022765,
         "profitable_for_downstream": true,
+        "regime_adaptor_enabled": false,
+        "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701/regime_adaptor.json",
         "selection_frac": 0.3,
         "side": "",
-        "sizer_mix_booster_w": 0.25,
-        "sizer_mix_conf_mult": 1.25,
-        "sizer_mix_ridge_w": 1.0,
-        "sizer_mix_winner": "ridge_plus_lgbm",
         "source_horizon": NaN,
         "source_target": "",
-        "stability": 0.9358498378286754,
+        "stability": 0.946593010117542,
         "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
         "threshold_pct": 70.0,
         "trades_per_day": 10.687671232876712,
-        "wallet_pnl": 1.9185543664258706,
+        "wallet_pnl": 1.931506126113415,
         "strategy_description": "thr=70.0% | sel=0.300",
-        "D": 1.0512365365536125
+        "D": 1.0214800240057407
       },
       "n_trades": 0
     },
@@ -527,169 +158,142 @@
       "strategy_description": "thr=70.0% | sel=0.300",
       "metrics": {
         "allow_downstream": true,
-        "asset_group_cv_pnl": 1.9136024204629987,
-        "asset_group_positive_share": 0.6948529411764706,
-        "avg_wallet_growth_per_month_pct": 7.6742174657034825,
-        "calmar_ratio": 41.95706986448679,
+        "asset_group_cv_pnl": 1.8821272698897695,
+        "asset_group_positive_share": 0.7058823529411765,
+        "avg_wallet_growth_per_month_pct": 7.72602450445366,
+        "calmar_ratio": 32.45785225470832,
         "downstream_filter_tag": "profitable",
         "downstream_min_pnl_per_trade_pct": 0.2,
         "downstream_reject_reasons": [],
-        "expectancy_tstat": 0.1651550978422165,
+        "expectancy_tstat": 0.17139412462711334,
         "feature_importance": {
           "barrier_clf_top10": [],
-          "elasticnet_top10": [
-            {
-              "feature": "edge_x_volatility_zscore",
-              "importance": 0.04479258880019188,
-              "metric": "abs_weight",
-              "std": 0.08175856620073318
-            },
-            {
-              "feature": "edge_x_winrate_20",
-              "importance": 0.013628176413476467,
-              "metric": "abs_weight",
-              "std": 0.02235165424644947
-            },
-            {
-              "feature": "edge_tbm",
-              "importance": 0.0051636663265526295,
-              "metric": "abs_weight",
-              "std": 0.0075912089087069035
-            },
-            {
-              "feature": "oof_ebm_uncertainty_weighted",
-              "importance": 0.005163663066923618,
-              "metric": "abs_weight",
-              "std": 0.007591207046061754
-            },
-            {
-              "feature": "clf",
-              "importance": 0.00516364723443985,
-              "metric": "abs_weight",
-              "std": 0.007591197267174721
-            },
-            {
-              "feature": "edge_x_amihud_z",
-              "importance": 0.002033176366239786,
-              "metric": "abs_weight",
-              "std": 0.005750690586864948
-            },
-            {
-              "feature": "edge_x_brier_50",
-              "importance": 0.001711781951598823,
-              "metric": "abs_weight",
-              "std": 0.00484165083616972
-            },
-            {
-              "feature": "edge_x_rank_ic_50",
-              "importance": 0.0005270544206723571,
-              "metric": "abs_weight",
-              "std": 0.0014907352160662413
-            },
-            {
-              "feature": "base_H10",
-              "importance": 0.0,
-              "metric": "abs_weight",
-              "std": 0.0
-            },
-            {
-              "feature": "edge_x_vol_of_vol",
-              "importance": -0.02301778458058834,
-              "metric": "abs_weight",
-              "std": 0.058223530650138855
-            }
-          ],
+          "elasticnet_top10": [],
           "extratrees_top10": [],
-          "winner_model": "ridge",
-          "winner_pred_prefix_share": 0.05102356258361803,
-          "winner_top10": [
-            {
-              "feature": "edge_x_volatility_zscore",
-              "importance": 0.04479258880019188,
-              "metric": "abs_weight",
-              "std": 0.08175856620073318
-            },
-            {
-              "feature": "edge_x_winrate_20",
-              "importance": 0.013628176413476467,
-              "metric": "abs_weight",
-              "std": 0.02235165424644947
-            },
-            {
-              "feature": "edge_tbm",
-              "importance": 0.0051636663265526295,
-              "metric": "abs_weight",
-              "std": 0.0075912089087069035
-            },
-            {
-              "feature": "oof_ebm_uncertainty_weighted",
-              "importance": 0.005163663066923618,
-              "metric": "abs_weight",
-              "std": 0.007591207046061754
-            },
-            {
-              "feature": "clf",
-              "importance": 0.00516364723443985,
-              "metric": "abs_weight",
-              "std": 0.007591197267174721
-            },
-            {
-              "feature": "edge_x_amihud_z",
-              "importance": 0.002033176366239786,
-              "metric": "abs_weight",
-              "std": 0.005750690586864948
-            },
-            {
-              "feature": "edge_x_brier_50",
-              "importance": 0.001711781951598823,
-              "metric": "abs_weight",
-              "std": 0.00484165083616972
-            },
-            {
-              "feature": "edge_x_rank_ic_50",
-              "importance": 0.0005270544206723571,
-              "metric": "abs_weight",
-              "std": 0.0014907352160662413
-            },
-            {
-              "feature": "base_H10",
-              "importance": 0.0,
-              "metric": "abs_weight",
-              "std": 0.0
-            },
-            {
-              "feature": "edge_x_vol_of_vol",
-              "importance": -0.02301778458058834,
-              "metric": "abs_weight",
-              "std": 0.058223530650138855
-            }
-          ]
+          "winner_model": "et",
+          "winner_pred_prefix_share": null,
+          "winner_top10": []
         },
-        "hit_rate": 0.5557549346321456,
-        "max_drawdown": 0.4002170557018332,
-        "monthly_group_cv_pnl": 1.4122289685229261,
-        "monthly_pnl_std": 0.9485623151687868,
-        "monthly_sortino": 2.355325185956996,
-        "net_pnl": 16.791934967041016,
-        "net_pnl_per_trade_pct": 0.4304520627285572,
-        "pnl_per_trade": 0.4304520627285572,
-        "profit_factor": 1.45062961529004,
+        "hit_rate": 0.5603691361189439,
+        "max_drawdown": 0.5354354750398028,
+        "meta_oof_available": true,
+        "monthly_group_cv_pnl": 1.4072984084181315,
+        "monthly_pnl_std": 0.9783024450119006,
+        "monthly_sortino": 2.151374999625275,
+        "net_pnl": 17.379085540771484,
+        "net_pnl_per_trade_pct": 0.4455033463412327,
+        "pnl_per_trade": 0.4455033463412327,
+        "profit_factor": 1.4718664098022765,
         "profitable_for_downstream": true,
+        "regime_adaptor_enabled": false,
+        "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm/regime_adaptor.json",
         "selection_frac": 0.3,
         "side": "",
-        "sizer_mix_booster_w": 0.25,
-        "sizer_mix_conf_mult": 1.25,
-        "sizer_mix_ridge_w": 1.0,
-        "sizer_mix_winner": "ridge_plus_lgbm",
         "source_horizon": NaN,
         "source_target": "",
-        "stability": 0.9358498378286754,
+        "stability": 0.946593010117542,
         "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm",
         "threshold_pct": 70.0,
         "trades_per_day": 10.687671232876712,
-        "wallet_pnl": 1.9185543664258706,
+        "wallet_pnl": 1.931506126113415,
         "strategy_description": "thr=70.0% | sel=0.300",
-        "D": 1.0512365365536125
+        "D": 1.0214800240057407
+      },
+      "n_trades": 0
+    },
+    {
+      "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701",
+      "strategy_description": "thr=70.0% | sel=0.300",
+      "metrics": {
+        "allow_downstream": true,
+        "asset_group_cv_pnl": 2.74721208447153,
+        "asset_group_positive_share": 0.656934306569343,
+        "avg_wallet_growth_per_month_pct": 6.629616613662065,
+        "calmar_ratio": 16.024977311175924,
+        "downstream_filter_tag": "profitable",
+        "downstream_min_pnl_per_trade_pct": 0.2,
+        "downstream_reject_reasons": [],
+        "expectancy_tstat": 0.11428464204072952,
+        "feature_importance": {
+          "barrier_clf_top10": [],
+          "elasticnet_top10": [],
+          "extratrees_top10": [],
+          "winner_model": "et",
+          "winner_pred_prefix_share": null,
+          "winner_top10": []
+        },
+        "hit_rate": 0.5127870563674322,
+        "max_drawdown": 0.832946397456523,
+        "meta_oof_available": true,
+        "monthly_group_cv_pnl": 1.3359538917772824,
+        "monthly_pnl_std": 0.7132896905564381,
+        "monthly_sortino": 2.4749951308555165,
+        "net_pnl": 13.347947120666504,
+        "net_pnl_per_trade_pct": 0.34832847392135974,
+        "pnl_per_trade": 0.34832847392135974,
+        "profit_factor": 1.3005350923528174,
+        "profitable_for_downstream": true,
+        "regime_adaptor_enabled": true,
+        "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701/regime_adaptor.json",
+        "selection_frac": 0.3,
+        "side": "",
+        "source_horizon": NaN,
+        "source_target": "",
+        "stability": 0.9260496435338443,
+        "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701",
+        "threshold_pct": 70.0,
+        "trades_per_day": 10.498630136986302,
+        "wallet_pnl": 1.6574041534155164,
+        "strategy_description": "thr=70.0% | sel=0.300",
+        "D": 0.9936761387705071
+      },
+      "n_trades": 0
+    },
+    {
+      "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm",
+      "strategy_description": "thr=70.0% | sel=0.300",
+      "metrics": {
+        "allow_downstream": true,
+        "asset_group_cv_pnl": 2.74721208447153,
+        "asset_group_positive_share": 0.656934306569343,
+        "avg_wallet_growth_per_month_pct": 6.629616613662065,
+        "calmar_ratio": 16.024977311175924,
+        "downstream_filter_tag": "profitable",
+        "downstream_min_pnl_per_trade_pct": 0.2,
+        "downstream_reject_reasons": [],
+        "expectancy_tstat": 0.11428464204072952,
+        "feature_importance": {
+          "barrier_clf_top10": [],
+          "elasticnet_top10": [],
+          "extratrees_top10": [],
+          "winner_model": "et",
+          "winner_pred_prefix_share": null,
+          "winner_top10": []
+        },
+        "hit_rate": 0.5127870563674322,
+        "max_drawdown": 0.832946397456523,
+        "meta_oof_available": true,
+        "monthly_group_cv_pnl": 1.3359538917772824,
+        "monthly_pnl_std": 0.7132896905564381,
+        "monthly_sortino": 2.4749951308555165,
+        "net_pnl": 13.347947120666504,
+        "net_pnl_per_trade_pct": 0.34832847392135974,
+        "pnl_per_trade": 0.34832847392135974,
+        "profit_factor": 1.3005350923528174,
+        "profitable_for_downstream": true,
+        "regime_adaptor_enabled": true,
+        "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm/regime_adaptor.json",
+        "selection_frac": 0.3,
+        "side": "",
+        "source_horizon": NaN,
+        "source_target": "",
+        "stability": 0.9260496435338443,
+        "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm",
+        "threshold_pct": 70.0,
+        "trades_per_day": 10.498630136986302,
+        "wallet_pnl": 1.6574041534155164,
+        "strategy_description": "thr=70.0% | sel=0.300",
+        "D": 0.9936761387705071
       },
       "n_trades": 0
     }

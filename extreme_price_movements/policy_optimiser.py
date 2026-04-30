@@ -11,6 +11,7 @@ import itertools
 import json
 import logging
 import math
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -18,7 +19,9 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
+from extreme_price_movements.inference.parity import strategy_core_id
 from extreme_price_movements.run_ridge_sizer import (
+    load_base_oof_predictions,
     load_meta_oof_predictions,
     load_trade_outcomes,
 )
@@ -30,7 +33,12 @@ from extreme_price_movements.utils import tprint
 
 EPS = 1e-9
 MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE = 0.002
-MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 2
+MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 1
+SIMPLE_POSITION_SIZER_ARTIFACT_DIR = "simple_position_sizer"
+POLICY_OPTIMISER_CANDIDATE_FRAC = 0.15
+POLICY_OPTIMISER_ASSESSMENT_FRAC = 0.05
+POLICY_OPTIMISER_DIAGNOSTIC_FRAC = 0.01
+POLICY_OPTIMISER_OFFSET_LIMITER_ENABLED = False
 logger = logging.getLogger(__name__)
 
 
@@ -77,6 +85,21 @@ def _strategy_side(row: Dict[str, Any]) -> str:
         return "long"
     if strategy_id.startswith("short_"):
         return "short"
+    target = str(row.get("source_target", "") or "").lower()
+    if target.startswith("long_") or target == "long":
+        return "long"
+    if target.startswith("short_") or target == "short":
+        return "short"
+    meta_key = str(
+        row.get("meta_model_key")
+        or row.get("alpha_model_key")
+        or row.get("model_key")
+        or ""
+    ).lower()
+    if meta_key.startswith("long_"):
+        return "long"
+    if meta_key.startswith("short_"):
+        return "short"
     return "unknown"
 
 
@@ -113,9 +136,15 @@ def _compute_strategy_D(row: Dict[str, Any]) -> float:
     )
 
 
-def _load_ridge_strategy_rows(data_root: str, run_id: str) -> Dict[str, Dict[str, Any]]:
+def _load_simple_sizer_strategy_rows(
+    data_root: str, run_id: str
+) -> Dict[str, Dict[str, Any]]:
     path = (
-        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json"
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
+        / "strategy_params.json"
     )
     if not path.exists():
         return {}
@@ -145,13 +174,13 @@ def strategy_final_acceptation(
     output_filename: str = "strategy_final_acceptation.json",
 ) -> Dict[str, Any]:
     """Filter policy candidates by hard gates and write the acceptance artifact."""
-    ridge_rows = _load_ridge_strategy_rows(data_root, run_id)
+    simple_sizer_rows = _load_simple_sizer_strategy_rows(data_root, run_id)
     accepted: List[Dict[str, Any]] = []
     for row in strategy_rows:
         if not isinstance(row, dict):
             continue
         strategy_id = str(row.get("strategy_id", "") or "")
-        source_row = ridge_rows.get(strategy_id, row)
+        source_row = simple_sizer_rows.get(strategy_id, row)
         accepted_row = dict(source_row)
         accepted_row["strategy_id"] = strategy_id
         accepted_row["strategy_description"] = _strategy_description(source_row)
@@ -286,6 +315,20 @@ def _deployment_rank_components(row: Dict[str, Any]) -> Dict[str, float]:
     }
 
 
+def _deployment_order_rank_threshold(row: Dict[str, Any]) -> float:
+    """Return per-strategy prediction-rank threshold for live order placement."""
+    avg_top1_trades_per_day = _safe_float(
+        row.get(
+            "avg_trades_per_day_at_top_1pct",
+            row.get("top1_avg_trades_per_day", row.get("opportunities_per_day", 0.0)),
+        ),
+        0.0,
+    )
+    avg_holding_hours = max(1.0, _safe_float(row.get("avg_holding_time_hours"), 1.0))
+    threshold = (avg_top1_trades_per_day / 24.0) * 2.0 / avg_holding_hours * 0.95
+    return float(np.clip(threshold, 0.0, 1.0))
+
+
 def _opportunities_per_day(timestamps: pd.Series) -> float:
     ts = pd.to_datetime(timestamps, utc=True, errors="coerce").dropna()
     if ts.empty:
@@ -295,6 +338,57 @@ def _opportunities_per_day(timestamps: pd.Series) -> float:
         float((ts.max() - ts.min()).total_seconds()) / (24.0 * 3600.0),
     )
     return float(len(ts) / elapsed_days)
+
+
+def _active_trades_per_day(timestamps: pd.Series) -> Tuple[float, int]:
+    ts = pd.to_datetime(timestamps, utc=True, errors="coerce").dropna()
+    if ts.empty:
+        return 0.0, 0
+    active_days = int(ts.dt.floor("D").nunique())
+    if active_days <= 0:
+        return 0.0, 0
+    return float(len(ts) / active_days), active_days
+
+
+def _average_holding_hours_from_rows(rows: pd.DataFrame) -> float:
+    if rows.empty:
+        return 0.0
+    for col in ("exit_bar", "bars_since_entry", "holding_bars"):
+        if col in rows.columns:
+            vals = pd.to_numeric(rows[col], errors="coerce").to_numpy(dtype=np.float64)
+            vals = vals[np.isfinite(vals)]
+            if vals.size:
+                return float(np.nanmean(np.maximum(1.0, vals)))
+    if {"timestamp", "exit_timestamp"}.issubset(rows.columns):
+        entry = pd.to_datetime(rows["timestamp"], utc=True, errors="coerce")
+        exit_ts = pd.to_datetime(rows["exit_timestamp"], utc=True, errors="coerce")
+        hours = (exit_ts - entry).dt.total_seconds().to_numpy(dtype=np.float64) / 3600.0
+        hours = hours[np.isfinite(hours)]
+        if hours.size:
+            return float(np.nanmean(np.maximum(1.0, hours)))
+    return 0.0
+
+
+def _top_slice_opportunity_diagnostics(
+    *,
+    outcomes: pd.DataFrame,
+    selected_idx: np.ndarray,
+    frac: float,
+) -> Dict[str, Any]:
+    selected_idx = np.asarray(selected_idx, dtype=np.int64)
+    selected_idx = selected_idx[(selected_idx >= 0) & (selected_idx < len(outcomes))]
+    rows = outcomes.iloc[selected_idx] if selected_idx.size else outcomes.iloc[:0]
+    timestamps = rows.get("timestamp", pd.Series(dtype="datetime64[ns]"))
+    active_trades_per_day, active_days = _active_trades_per_day(timestamps)
+    return {
+        "top_frac": float(frac),
+        "n_trades": int(len(rows)),
+        "active_days": int(active_days),
+        "avg_trades_per_day": _opportunities_per_day(timestamps),
+        "avg_trades_per_active_day": active_trades_per_day,
+        "avg_trades_per_calendar_day": _opportunities_per_day(timestamps),
+        "avg_holding_hours": _average_holding_hours_from_rows(rows),
+    }
 
 
 def _asset_profit_factor_exclusions(
@@ -345,6 +439,7 @@ def build_strategy_for_inference_payload(
 ) -> Dict[str, Any]:
     """Select deployable strategies and persist the live inference contract."""
     enriched: List[Dict[str, Any]] = []
+    tolerance = 1e-6
     for row in strategy_rows:
         if not isinstance(row, dict):
             continue
@@ -360,6 +455,9 @@ def build_strategy_for_inference_payload(
         enriched_row["avg_net_pnl_per_trade"] = float(avg_net_pnl)
         enriched_row["selection_rank"] = float(rank)
         enriched_row.update(components)
+        enriched_row["deployment_rank_threshold"] = _deployment_order_rank_threshold(
+            enriched_row
+        )
         enriched_row["deployment_min_avg_net_pnl_per_trade"] = (
             MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE
         )
@@ -372,6 +470,38 @@ def build_strategy_for_inference_payload(
             enriched_row["deployment_reject_reasons"].append("unknown_side")
         if not np.isfinite(rank):
             enriched_row["deployment_reject_reasons"].append("non_finite_rank")
+        if row.get("meta_oof_available") is False:
+            enriched_row["deployment_reject_reasons"].append("no_matching_meta_oof")
+        if row.get("base_oof_available") is False:
+            enriched_row["deployment_reject_reasons"].append("no_matching_base_oof")
+        if bool(row.get("empty_trade_outcomes", False)):
+            enriched_row["deployment_reject_reasons"].append("empty_trade_outcomes")
+        if bool(row.get("no_finite_sizer_oof", False)):
+            enriched_row["deployment_reject_reasons"].append("no_finite_sizer_oof")
+        baseline_net_pnl = _safe_float(row.get("baseline_net_pnl"), np.nan)
+        final_net_pnl = _safe_float(row.get("final_net_pnl"), np.nan)
+        baseline_pf = _safe_float(row.get("baseline_profit_factor"), np.nan)
+        final_pf = _safe_float(row.get("final_profit_factor"), np.nan)
+        if (
+            np.isfinite(baseline_net_pnl)
+            and np.isfinite(final_net_pnl)
+            and final_net_pnl < baseline_net_pnl - tolerance
+        ):
+            enriched_row["deployment_reject_reasons"].append(
+                "policy_replay_worse_than_baseline"
+            )
+        if avg_net_pnl < 0.0:
+            enriched_row["deployment_reject_reasons"].append(
+                "final_avg_net_pnl_per_trade_negative"
+            )
+        if (
+            np.isfinite(baseline_pf)
+            and np.isfinite(final_pf)
+            and final_pf < baseline_pf - tolerance
+        ):
+            enriched_row["deployment_reject_reasons"].append(
+                "final_profit_factor_worse_than_baseline"
+            )
         enriched.append(enriched_row)
 
     candidates = [row for row in enriched if not row.get("deployment_reject_reasons")]
@@ -381,6 +511,22 @@ def build_strategy_for_inference_payload(
     ]
     for side in ("long", "short"):
         side_rows = [row for row in candidates if row.get("side") == side]
+        dedup_by_core: Dict[str, Dict[str, Any]] = {}
+        for row in side_rows:
+            sid = str(row.get("strategy_id", "") or "")
+            core = strategy_core_id(sid)
+            prev = dedup_by_core.get(core)
+            if prev is None or float(row.get("selection_rank", -np.inf)) > float(
+                prev.get("selection_rank", -np.inf)
+            ):
+                dedup_by_core[core] = row
+            else:
+                dup_row = dict(row)
+                dup_row["deployment_reject_reasons"] = [
+                    "duplicate_core_strategy_variant"
+                ]
+                rejected.append(dup_row)
+        side_rows = list(dedup_by_core.values())
         side_rows.sort(
             key=lambda row: float(row.get("selection_rank", float("-inf"))),
             reverse=True,
@@ -388,7 +534,7 @@ def build_strategy_for_inference_payload(
         selected.extend(side_rows[:MAX_DEPLOYMENT_STRATEGIES_PER_SIDE])
         for row in side_rows[MAX_DEPLOYMENT_STRATEGIES_PER_SIDE:]:
             row = dict(row)
-            row["deployment_reject_reasons"] = ["outside_top_2_per_side"]
+            row["deployment_reject_reasons"] = ["outside_top_1_per_side"]
             rejected.append(row)
 
     selected.sort(
@@ -411,6 +557,11 @@ def build_strategy_for_inference_payload(
         "selection_rules": {
             "min_avg_net_pnl_per_trade": MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE,
             "max_strategies_per_side": MAX_DEPLOYMENT_STRATEGIES_PER_SIDE,
+            "runtime_rank_threshold_formula": (
+                "avg_trades_per_calendar_day_at_top_1pct / 24 * 2 / "
+                "avg_holding_time_hours * 0.95"
+            ),
+            "runtime_rank_threshold_scope": "per_strategy_prediction_rank_only",
             "rank_formula": (
                 "effective_ops_day * avg_net_pnl_per_trade / "
                 "(sqrt(avg_holding_time_hours) * "
@@ -424,13 +575,65 @@ def build_strategy_for_inference_payload(
         "strategies": [
             {
                 "strategy_id": row.get("strategy_id", ""),
+                "canonical_strategy_id": strategy_core_id(
+                    str(row.get("strategy_id", "") or "")
+                ),
                 "strategy_for_inference": row.get("strategy_id", ""),
+                "meta_oof_available": bool(row.get("meta_oof_available", True)),
+                "base_oof_available": bool(row.get("base_oof_available", True)),
+                "policy_replay_source": str(
+                    row.get("policy_replay_source", "deployment")
+                ),
+                "n_trades": int(
+                    row.get(
+                        "n_trades",
+                        row.get("trades_selected", row.get("trades_total", 0)),
+                    )
+                    or 0
+                ),
+                "baseline_vs_policy_delta": {
+                    "net_pnl_delta": _safe_float(row.get("net_pnl_delta"), 0.0),
+                    "profit_factor_delta": _safe_float(
+                        row.get("final_profit_factor"), np.nan
+                    )
+                    - _safe_float(row.get("baseline_profit_factor"), np.nan),
+                },
                 "side": row.get("side", ""),
                 "selected": True,
                 "selection_rank": row.get("selection_rank", 0.0),
+                "deployment_rank_threshold": row.get("deployment_rank_threshold", 0.0),
                 "avg_net_pnl_per_trade": row.get("avg_net_pnl_per_trade", 0.0),
                 "effective_ops_day": row.get("effective_ops_day", 0.0),
                 "opportunities_per_day": row.get("opportunities_per_day", 0.0),
+                "avg_trades_per_day_at_top_1pct": row.get(
+                    "avg_trades_per_day_at_top_1pct",
+                    row.get("top1_avg_trades_per_day", 0.0),
+                ),
+                "top1_active_days": row.get("top1_active_days", 0),
+                "top1_avg_trades_per_active_day": row.get(
+                    "top1_avg_trades_per_active_day",
+                    row.get("top1_avg_trades_per_day", 0.0),
+                ),
+                "top1_avg_trades_per_calendar_day": row.get(
+                    "top1_avg_trades_per_calendar_day", 0.0
+                ),
+                "avg_holding_hours_at_top_1pct": row.get(
+                    "avg_holding_hours_at_top_1pct",
+                    row.get("top1_avg_holding_hours", 0.0),
+                ),
+                "policy_candidate_frac": row.get("policy_candidate_frac", 0.0),
+                "policy_assessment_frac": row.get("policy_assessment_frac", 0.0),
+                "policy_diagnostic_frac": row.get("policy_diagnostic_frac", 0.0),
+                "top1_n_trades": row.get("top1_n_trades", 0),
+                "top5_n_trades": row.get("top5_n_trades", 0),
+                "top5_active_days": row.get("top5_active_days", 0),
+                "top5_avg_trades_per_active_day": row.get(
+                    "top5_avg_trades_per_active_day",
+                    row.get("top5_avg_trades_per_day", 0.0),
+                ),
+                "top5_avg_trades_per_calendar_day": row.get(
+                    "top5_avg_trades_per_calendar_day", 0.0
+                ),
                 "avg_holding_time_hours": row.get("avg_holding_time_hours", 0.0),
                 "weekly_wallet_vol": row.get("weekly_wallet_vol", 0.0),
                 "monthly_wallet_vol": row.get("monthly_wallet_vol", 0.0),
@@ -443,6 +646,33 @@ def build_strategy_for_inference_payload(
             }
             for row in selected
         ],
+        "reconciliation": {
+            "sizer_oof_total": int(len(strategy_rows)),
+            "sizer_downstream_pass": int(
+                sum(
+                    1
+                    for row in strategy_rows
+                    if bool(row.get("allow_downstream", True))
+                    and bool(row.get("profitable_for_downstream", True))
+                )
+            ),
+            "meta_oof_matched": int(
+                sum(
+                    1
+                    for row in strategy_rows
+                    if bool(row.get("meta_oof_available", True))
+                )
+            ),
+            "policy_optimized": int(len(strategy_rows)),
+            "deployment_selected": int(len(selected)),
+            "deployment_rejected": int(len(rejected)),
+            "deployment_skipped_with_reasons": {
+                str(r.get("strategy_id", "")): list(
+                    r.get("deployment_reject_reasons", [])
+                )
+                for r in rejected
+            },
+        },
         "rejected_strategies": [
             {
                 "strategy_id": row.get("strategy_id", ""),
@@ -474,6 +704,7 @@ def _metric_score(
     rets: np.ndarray,
     cost_pct: float = 0.003,
     already_net: bool = False,
+    already_sized: bool = False,
     executed_mask: Optional[np.ndarray] = None,
     sizes: Optional[np.ndarray] = None,
     ts_vals: Optional[np.ndarray] = None,
@@ -482,6 +713,11 @@ def _metric_score(
     if len(rets) == 0:
         return {
             "net_pnl": 0.0,
+            "gross_pnl": 0.0,
+            "fee_pnl": 0.0,
+            "avg_net_pnl_per_trade": 0.0,
+            "avg_gross_pnl_per_trade": 0.0,
+            "trades_per_calendar_day": 0.0,
             "sortino": 0.0,
             "hit_rate": 0.0,
             "profit_factor": 0.0,
@@ -508,16 +744,59 @@ def _metric_score(
             rets = rets[executed_mask]
             if sizes is not None and sizes.shape[0] == executed_mask.shape[0]:
                 sizes = sizes[executed_mask]
+            if ts_vals is not None and len(ts_vals) == executed_mask.shape[0]:
+                ts_vals = np.asarray(ts_vals)[executed_mask]
+            if scores is not None and len(scores) == executed_mask.shape[0]:
+                scores = np.asarray(scores)[executed_mask]
 
+    if len(rets) == 0:
+        return {
+            "net_pnl": 0.0,
+            "gross_pnl": 0.0,
+            "fee_pnl": 0.0,
+            "avg_net_pnl_per_trade": 0.0,
+            "avg_gross_pnl_per_trade": 0.0,
+            "trades_per_calendar_day": 0.0,
+            "sortino": 0.0,
+            "hit_rate": 0.0,
+            "profit_factor": 0.0,
+            "max_drawdown": 0.0,
+            "ulcer": 0.0,
+            "tuw": 0.0,
+            "pct_negative_trades": 0.0,
+            "n_trades": 0,
+            "robust_downside_semi_variance": 1e-12,
+            "pnl_top_25pct_taken_trades": 0.0,
+            "weekly_sortino": 0.0,
+            "monthly_sortino": 0.0,
+            "median_pnl_per_winning_trade": 0.0,
+            "weekly_gtp": 0.0,
+            "trade_return_skew": 0.0,
+            "neg_months_pct": 0.0,
+            "worst_week_dd_mag": 0.0,
+            "weekly_wallet_vol": 0.0,
+            "monthly_wallet_vol": 0.0,
+        }
+
+    sizes_were_provided = sizes is not None
     if sizes is None:
         sizes = np.ones_like(rets)
 
-    # Apply sizing and exact fee calculation. Fee is proportional to size * 0.003
-    # rets are raw returns here, we multiply by size then subtract fee * size
-    if already_net:
-        net_rets = rets.astype(np.float64) * sizes
+    # Apply sizing and exact fee calculation.
+    # `already_sized=True` means `rets` already includes position size scaling.
+    # In that case, only fees are applied again using `sizes`.
+    # `already_net=True` means `rets` are already after fee; we only return them.
+    if already_sized:
+        gross_rets = rets.astype(np.float64)
     else:
-        net_rets = (rets.astype(np.float64) - float(cost_pct)) * sizes
+        gross_rets = rets.astype(np.float64) * sizes
+
+    if already_net:
+        net_rets = gross_rets
+        fee_rets = np.zeros_like(net_rets, dtype=np.float64)
+    else:
+        fee_rets = float(cost_pct) * sizes.astype(np.float64)
+        net_rets = gross_rets - fee_rets
 
     downside = net_rets[net_rets < 0]
     full_std = float(np.std(net_rets)) if len(net_rets) > 1 else 1e-6
@@ -575,11 +854,17 @@ def _metric_score(
     # Weekly/monthly aggregations using actual timestamps when available
     n = len(net_rets)
     _has_ts = ts_vals is not None and len(ts_vals) == n and np.std(ts_vals) > 1e-6
+    trades_per_calendar_day = 0.0
     if _has_ts:
         ts_arr = np.asarray(ts_vals, dtype=np.float64)
         ts_order = np.argsort(ts_arr)
         sorted_ts = ts_arr[ts_order]
         sorted_rets = net_rets[ts_order]
+        elapsed_days = max(
+            1.0,
+            float(sorted_ts[-1] - sorted_ts[0]) / (24.0 * 3600.0 * 1000.0),
+        )
+        trades_per_calendar_day = float(n / elapsed_days)
 
         weekly_period = 7.0 * 24.0 * 3600.0 * 1000.0
         monthly_period = 30.0 * 24.0 * 3600.0 * 1000.0
@@ -677,9 +962,17 @@ def _metric_score(
         monthly_wallet_vol = (
             float(np.std(synthetic_pnls)) if len(synthetic_pnls) > 1 else 0.0
         )
+        trades_per_calendar_day = float(n / 725.0)
 
     result = {
         "net_pnl": float(np.sum(net_rets)),
+        "gross_pnl": float(np.sum(gross_rets)),
+        "fee_pnl": float(np.sum(fee_rets)),
+        "avg_net_pnl_per_trade": float(np.mean(net_rets)) if len(net_rets) else 0.0,
+        "avg_gross_pnl_per_trade": (
+            float(np.mean(gross_rets)) if len(gross_rets) else 0.0
+        ),
+        "trades_per_calendar_day": trades_per_calendar_day,
         "sortino": float(np.mean(net_rets)) / ds_std,
         "hit_rate": float(np.mean(net_rets > 0)),
         "profit_factor": (
@@ -704,6 +997,13 @@ def _metric_score(
         "weekly_wallet_vol": weekly_wallet_vol,
         "monthly_wallet_vol": monthly_wallet_vol,
     }
+    result["avg_net_pnl_per_trade_pct"] = float(result["avg_net_pnl_per_trade"]) * 100.0
+    result["avg_gross_pnl_per_trade_pct"] = (
+        float(result["avg_gross_pnl_per_trade"]) * 100.0
+    )
+    result["fee_model"] = "cost_pct_times_position_size"
+    result["return_units"] = "decimal_return"
+    result["pnl_basis"] = "sized" if already_sized or sizes_were_provided else "unsized"
 
     _pnl_direct = float(np.sum(net_rets))
     _pnl_parts = gross_win - gross_loss
@@ -759,6 +1059,59 @@ def _metric_score(
     return result
 
 
+def _top_fraction_metrics(
+    rets: np.ndarray,
+    *,
+    fractions: Tuple[float, ...] = (0.01, 0.05, 0.10, 0.20, 0.30),
+    cost_pct: float = 0.003,
+    already_net: bool = False,
+    already_sized: bool = False,
+    sizes: Optional[np.ndarray] = None,
+    executed_mask: Optional[np.ndarray] = None,
+    ts_vals: Optional[np.ndarray] = None,
+    scores: Optional[np.ndarray] = None,
+) -> Dict[str, Dict[str, float]]:
+    n = len(rets)
+    if n == 0 or scores is None or len(scores) != n:
+        return {}
+    score_arr = np.asarray(scores, dtype=np.float64)
+    finite = np.isfinite(score_arr)
+    if not finite.any():
+        return {}
+    finite_idx = np.flatnonzero(finite)
+    ranked_idx = finite_idx[np.argsort(score_arr[finite], kind="stable")[::-1]]
+    out: Dict[str, Dict[str, float]] = {}
+    for frac in fractions:
+        frac = min(max(float(frac), 0.0), 1.0)
+        if frac <= 0.0:
+            continue
+        k = max(1, int(math.ceil(len(ranked_idx) * frac)))
+        idx = ranked_idx[:k]
+        out[f"top_{int(round(frac * 10000)):04d}bp"] = _metric_score(
+            np.asarray(rets)[idx],
+            cost_pct=cost_pct,
+            already_net=already_net,
+            already_sized=already_sized,
+            sizes=(
+                np.asarray(sizes)[idx]
+                if sizes is not None and len(sizes) == n
+                else None
+            ),
+            executed_mask=(
+                np.asarray(executed_mask)[idx]
+                if executed_mask is not None and len(executed_mask) == n
+                else None
+            ),
+            ts_vals=(
+                np.asarray(ts_vals)[idx]
+                if ts_vals is not None and len(ts_vals) == n
+                else None
+            ),
+            scores=score_arr[idx],
+        )
+    return out
+
+
 def _resolve_selection_score(outcomes: pd.DataFrame) -> Tuple[np.ndarray, str]:
     """Return the sizer ranking score for trade selection."""
     candidate_cols = ["sizer_score"]
@@ -794,89 +1147,64 @@ def _robust_apply(
 
 
 def _load_best_strategy(data_root: str, run_id: str) -> Dict[str, Any]:
-    """Load the post head-to-head winner from sizer artifacts.
-
-    Preference order:
-      1) explicit winner from ridge_sizer/head_to_head_comparison.json
-      2) best_strategy_id from et/ridge strategy_params.json (higher net_pnl)
-    """
-    comparison_path = (
+    """Load the simple_position_sizer winner only."""
+    params_path = (
         Path(data_root)
         / "artifacts"
         / run_id
-        / "ridge_sizer"
-        / "head_to_head_comparison.json"
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
+        / "strategy_params.json"
     )
-    if comparison_path.exists():
-        try:
-            rows = json.loads(comparison_path.read_text())
-            et_winners = [r for r in rows if str(r.get("winner", "")).lower() == "et"]
-            if et_winners:
-                et_params = (
-                    Path(data_root)
-                    / "artifacts"
-                    / run_id
-                    / "et_sizer"
-                    / "strategy_params.json"
-                )
-                if et_params.exists():
-                    payload = json.loads(et_params.read_text())
-                    sid = str(payload.get("best_strategy_id", ""))
-                    bucket = (payload.get("buckets", {}) or {}).get(sid, {})
-                    return {
-                        "strategy_id": sid,
-                        "threshold_pct": float(
-                            bucket.get(
-                                "threshold_pct", payload.get("best_threshold_pct", 90.0)
-                            )
-                        ),
-                        "model": "et",
-                        "tp_mult": float(bucket.get("tp_mult", 1.0)),
-                        "sl_mult": float(bucket.get("sl_mult", 1.0)),
-                    }
-        except Exception:
-            pass
+    if not params_path.exists():
+        return {}
+    payload = json.loads(params_path.read_text())
+    if str(payload.get("generated_by", "")) != "simple_position_sizer":
+        return {}
+    buckets = payload.get("buckets", {})
+    sid = str(payload.get("best_strategy_id", ""))
+    row = buckets.get(sid, {}) if isinstance(buckets, dict) else {}
+    return {
+        "strategy_id": sid,
+        "threshold_pct": float(
+            row.get("threshold_pct", payload.get("best_threshold_pct", 90.0))
+        ),
+        "model": "meta_clf_only",
+        "tp_mult": float(row.get("tp_mult", 1.0)),
+        "sl_mult": float(row.get("sl_mult", 1.0)),
+    }
 
-    candidates = [
-        Path(data_root) / "artifacts" / run_id / "lgbm_sizer" / "strategy_params.json",
-        Path(data_root) / "artifacts" / run_id / "et_sizer" / "strategy_params.json",
-        Path(data_root) / "artifacts" / run_id / "ridge_sizer" / "strategy_params.json",
-    ]
-    best: Dict[str, Any] = {}
-    best_pnl = -1e18
-    for pth in candidates:
-        if not pth.exists():
-            continue
-        payload = json.loads(pth.read_text())
-        buckets = payload.get("buckets", {})
-        sid = str(payload.get("best_strategy_id", ""))
-        row = buckets.get(sid, {}) if isinstance(buckets, dict) else {}
-        pnl = float(row.get("net_pnl", -1e18))
-        if pnl > best_pnl:
-            best_pnl = pnl
-            best = {
-                "strategy_id": sid,
-                "threshold_pct": float(
-                    row.get("threshold_pct", payload.get("best_threshold_pct", 90.0))
-                ),
-                "model": (
-                    "lgbm"
-                    if "lgbm_sizer" in str(pth)
-                    else ("et" if "et_sizer" in str(pth) else "ridge")
-                ),
-                "tp_mult": float(row.get("tp_mult", 1.0)),
-                "sl_mult": float(row.get("sl_mult", 1.0)),
-            }
-    return best
+
+def _load_sizer_oof_strategy_metadata(
+    data_root: str, run_id: str
+) -> Dict[str, Dict[str, Any]]:
+    path = (
+        Path(data_root) / "artifacts" / run_id / "oof" / "simple_sizer_oof_all.parquet"
+    )
+    if not path.exists():
+        return {}
+    try:
+        df = pd.read_parquet(
+            path, columns=["strategy_id", "model", "winner_score_source"]
+        )
+    except Exception:
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for sid, g in df.groupby("strategy_id", sort=False):
+        row: Dict[str, Any] = {}
+        if "model" in g.columns:
+            vals = g["model"].dropna().astype(str)
+            if not vals.empty:
+                row["model"] = vals.mode().iloc[0]
+        if "winner_score_source" in g.columns:
+            vals = g["winner_score_source"].dropna().astype(str)
+            if not vals.empty:
+                row["winner_score_source"] = vals.mode().iloc[0]
+        out[str(sid)] = row
+    return out
 
 
 def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any]]:
-    """Load all strategy rows from ridge/et sizer artifacts.
-
-    When the same strategy_id appears in both artifacts, keep the row with the
-    higher baseline net_pnl so policy optimisation starts from the stronger
-    source model.
-    """
+    """Load policy candidates from the latest simple_position_sizer artifact only."""
 
     def _passes_sizer_policy_gate(row: Dict[str, Any]) -> bool:
         allow_downstream = row.get("allow_downstream", None)
@@ -901,38 +1229,42 @@ def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any
             and pnl_per_trade_pct > 0.2
         )
 
+    rel_path = f"{SIMPLE_POSITION_SIZER_ARTIFACT_DIR}/strategy_params.json"
+    path = Path(data_root) / "artifacts" / run_id / rel_path
+    if not path.exists():
+        tprint(
+            "Policy optimiser: no simple_position_sizer strategy_params artifact found."
+        )
+        return []
+    try:
+        payload = json.loads(path.read_text())
+    except Exception:
+        return []
+    if str(payload.get("generated_by", "")) != "simple_position_sizer":
+        return []
+    tprint(
+        "Policy optimiser: loading candidates from latest simple_position_sizer "
+        f"artifact {rel_path}."
+    )
+
+    oof_strategy_metadata = _load_sizer_oof_strategy_metadata(data_root, run_id)
     candidates: List[Dict[str, Any]] = []
-    for model_source, rel_path in [
-        ("ridge", "ridge_sizer/strategy_params.json"),
-        ("et", "et_sizer/strategy_params.json"),
-        ("lgbm", "lgbm_sizer/strategy_params.json"),
-    ]:
-        path = Path(data_root) / "artifacts" / run_id / rel_path
-        if not path.exists():
-            continue
-        try:
-            payload = json.loads(path.read_text())
-        except Exception:
-            continue
-        rows = payload.get("strategies", []) if isinstance(payload, dict) else []
-        if not isinstance(rows, list):
-            continue
+    rows = payload.get("strategies", []) if isinstance(payload, dict) else []
+    if isinstance(rows, list):
         for row in rows:
             if not isinstance(row, dict):
                 continue
             sid = str(row.get("strategy_id", "") or "")
             if not sid:
                 continue
-            if not _passes_sizer_policy_gate(row):
-                continue
             cand = dict(row)
+            cand["_passes_sizer_policy_gate"] = bool(_passes_sizer_policy_gate(row))
             cand["strategy_id"] = sid
-            cand["model"] = model_source
-            cand["source_artifact"] = (
-                "lgbm_sizer"
-                if model_source == "lgbm"
-                else ("et_sizer" if model_source == "et" else "ridge_sizer")
-            )
+            oof_meta = oof_strategy_metadata.get(sid, {})
+            cand["model"] = str(oof_meta.get("model") or "meta_clf_only")
+            if oof_meta.get("winner_score_source"):
+                cand["winner_score_source"] = str(oof_meta["winner_score_source"])
+            cand["source_artifact"] = SIMPLE_POSITION_SIZER_ARTIFACT_DIR
             candidates.append(cand)
 
     merged: Dict[str, Dict[str, Any]] = {}
@@ -961,56 +1293,8 @@ def _load_strategy_candidates(data_root: str, run_id: str) -> List[Dict[str, Any
 
 
 def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
-    """Load the sizer OOF score matrix.
-
-    Resolution order:
-    1. ``oof/ridge_sizer_scores_all.parquet`` — consolidated ridge sizer
-       OOF predictions (``sizer_score_oof`` pivoted per strategy).
-    2. ``ridge_sizer/ridge_sizer_oof_all.parquet`` — raw ridge sizer OOF
-       with ``sizer_score_oof`` column and ``bucket`` key.
-    3. ``oof/sizer_oof_all.parquet`` — fallback containing raw ``clf``
-       from the meta model (less accurate, wallet_pnl may not match).
-    """
+    """Load simple_position_sizer OOF scores only."""
     _art = Path(data_root) / "artifacts" / run_id
-
-    consolidated_path = _art / "oof" / "ridge_sizer_scores_all.parquet"
-    ridge_raw_path = _art / "ridge_sizer" / "ridge_sizer_oof_all.parquet"
-    fallback_path = _art / "oof" / "sizer_oof_all.parquet"
-
-    if consolidated_path.exists():
-        df = pd.read_parquet(consolidated_path)
-        if "timestamp" in df.columns and "symbol" in df.columns:
-            tprint(
-                f"Using consolidated ridge sizer OOF scores from {consolidated_path}"
-            )
-            out = df.copy()
-            out["timestamp"] = pd.to_datetime(
-                out["timestamp"], utc=True, errors="coerce"
-            ).dt.tz_convert(None)
-            out["symbol"] = out["symbol"].astype(str)
-            return out
-
-    if ridge_raw_path.exists():
-        df = pd.read_parquet(ridge_raw_path)
-        if (
-            "sizer_score_oof" in df.columns
-            and "timestamp" in df.columns
-            and "symbol" in df.columns
-        ):
-            tprint(f"Using ridge sizer OOF predictions from {ridge_raw_path}")
-            pivot = df.pivot_table(
-                index=["timestamp", "symbol"],
-                columns="bucket",
-                values="sizer_score_oof",
-            ).reset_index()
-            out = pivot.copy()
-            out["timestamp"] = pd.to_datetime(
-                out["timestamp"], utc=True, errors="coerce"
-            ).dt.tz_convert(None)
-            out["symbol"] = out["symbol"].astype(str)
-            return out
-
-    # Check for simple_position_sizer OOF predictions (ElasticNet/ExtraTrees winners)
     simple_sizer_oof_path = _art / "oof" / "simple_sizer_oof_all.parquet"
     if simple_sizer_oof_path.exists():
         df = pd.read_parquet(simple_sizer_oof_path)
@@ -1022,11 +1306,16 @@ def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
             tprint(
                 f"Using simple_position_sizer OOF scores from {simple_sizer_oof_path}"
             )
+            score_col = (
+                "deployment_score_oof"
+                if "deployment_score_oof" in df.columns
+                else "sizer_score_oof"
+            )
             # Pivot to get scores per strategy
             pivot = df.pivot_table(
                 index=["timestamp", "symbol"],
                 columns="strategy_id",
-                values="sizer_score_oof",
+                values=score_col,
             ).reset_index()
             out = pivot.copy()
             out["timestamp"] = pd.to_datetime(
@@ -1035,37 +1324,10 @@ def _load_sizer_oof_scores(data_root: str, run_id: str) -> pd.DataFrame:
             out["symbol"] = out["symbol"].astype(str)
             return out
 
-    # Check for et_sizer params (fallback warning)
-    et_sizer_path = _art / "et_sizer" / "strategy_params.json"
-    simple_sizer_path = _art / "simple_sizer" / "strategy_params.json"
-    for sp in (et_sizer_path, simple_sizer_path):
-        if sp.exists():
-            tprint(
-                f"Found simple_position_sizer params at {sp}. "
-                "Note: simple_position_sizer does not save OOF predictions to parquet. "
-                "Using meta classifier probs as fallback. To use simple_position_sizer "
-                "predictions, run simple_position_sizer first to generate OOF parquet."
-            )
-
-    if not fallback_path.exists():
-        raise FileNotFoundError(
-            f"No sizer OOF score matrix found. Checked: {consolidated_path}, "
-            f"{ridge_raw_path}, {fallback_path}"
-        )
-    tprint(
-        "WARNING: Using fallback sizer_oof_all (clf column, NOT ridge predictions). "
-        "wallet_pnl will NOT match sizer reported values. "
-        "Re-run the ridge sizer step to generate ridge_sizer_oof_all.parquet."
+    raise FileNotFoundError(
+        "Policy optimiser requires simple_position_sizer OOF predictions only. "
+        f"Missing {simple_sizer_oof_path}"
     )
-    df = pd.read_parquet(fallback_path)
-    if "timestamp" not in df.columns or "symbol" not in df.columns:
-        raise ValueError(f"sizer OOF score matrix is missing timestamp/symbol")
-    out = df.copy()
-    out["timestamp"] = pd.to_datetime(
-        out["timestamp"], utc=True, errors="coerce"
-    ).dt.tz_convert(None)
-    out["symbol"] = out["symbol"].astype(str)
-    return out
 
 
 def _attach_sizer_score(
@@ -1086,6 +1348,46 @@ def _attach_sizer_score(
         score_df, on=["timestamp", "symbol"], how="left", validate="one_to_one"
     )
     return merged
+
+
+def _resolve_policy_context_oof(
+    strategy_id: str,
+    meta_oofs: Dict[str, pd.DataFrame],
+    base_oofs: Dict[str, pd.DataFrame],
+) -> Tuple[str, pd.DataFrame, str]:
+    """Resolve the OOF rows used for outcomes while scores come from the sizer.
+
+    simple_position_sizer may persist both base-style ids and *_tbm variants.  The
+    policy score is always attached from simple_sizer_oof_all.parquet; this helper
+    only chooses the trade-context frame needed to replay exits.
+    """
+    sid = str(strategy_id or "")
+    candidates = [sid]
+    if sid.endswith("_tbm"):
+        candidates.append(sid[: -len("_tbm")])
+    else:
+        candidates.append(f"{sid}_tbm")
+    meta_contains = [
+        str(key) for key in meta_oofs if sid and (sid in str(key) or str(key) in sid)
+    ]
+    base_contains = [
+        str(key) for key in base_oofs if sid and (sid in str(key) or str(key) in sid)
+    ]
+
+    for source, oofs, keys in (
+        ("meta", meta_oofs, candidates + meta_contains),
+        ("base", base_oofs, candidates + base_contains),
+    ):
+        seen: set[str] = set()
+        for key in keys:
+            if key in seen:
+                continue
+            seen.add(key)
+            found = oofs.get(key)
+            if found is not None:
+                return key, found, source
+
+    raise KeyError(f"No matching base/meta OOF context for strategy_id={sid}")
 
 
 def _filter_df_by_stage_view(
@@ -1139,88 +1441,41 @@ def _filter_df_by_stage_view(
 def resolve_optimised_selection_frac(
     *, data_root: str, run_id: str, selected: Dict[str, Any]
 ) -> float:
-    """Return selection fraction from ranked threshold with optimised pnl.
+    """Return the exact selection fraction chosen upstream by the sizer race.
 
-    Uses the selected strategy threshold from `strategy_params.json` generated by
-    simple_position_sizer (which stores the optimal ranked threshold). If the selected
-    row has non-positive pnl, fallback to the highest positive-pnl threshold in the
-    same model artifact.
+    Contract:
+    - Must come from upstream `selection_frac` (selected row or persisted strategy row).
+    - No threshold-derived fallback is allowed.
     """
-    model = str(selected.get("model", "ridge")).lower()
+    explicit_frac = _safe_float(selected.get("selection_frac"), float("nan"))
+    if np.isfinite(explicit_frac) and explicit_frac > 0.0:
+        return float(max(0.01, min(1.0, explicit_frac)))
+
     params_path = (
         Path(data_root)
         / "artifacts"
         / run_id
-        / (
-            "lgbm_sizer"
-            if model == "lgbm"
-            else ("et_sizer" if model == "et" else "ridge_sizer")
-        )
+        / SIMPLE_POSITION_SIZER_ARTIFACT_DIR
         / "strategy_params.json"
     )
-    threshold_pct = float(selected.get("threshold_pct", 90.0))
     if params_path.exists():
         try:
             payload = json.loads(params_path.read_text())
             buckets = payload.get("buckets", {}) or {}
             sid = str(selected.get("strategy_id", ""))
             row = buckets.get(sid, {}) if isinstance(buckets, dict) else {}
-
-            # Find the threshold just above the one that allows a positive PnL for this specific strategy
-            strategy_buckets = payload.get("strategy_buckets", {}).get(sid, [])
-            if not strategy_buckets:
-                # Fallback to the old logic if strategy_buckets detailed list is missing
-                row_pnl = float(row.get("net_pnl", 0.0))
-                threshold_pct = float(row.get("threshold_pct", threshold_pct))
-                if row_pnl <= 0.0 and isinstance(buckets, dict):
-                    positive_rows = [
-                        r
-                        for r in buckets.values()
-                        if float(r.get("net_pnl", -1e18)) > 0.0
-                    ]
-                    if positive_rows:
-                        best_pos = max(
-                            positive_rows, key=lambda r: float(r.get("net_pnl", -1e18))
-                        )
-                        threshold_pct = float(
-                            best_pos.get("threshold_pct", threshold_pct)
-                        )
-            else:
-                # We have detailed bucket evaluation.
-                # Sort by threshold ascending (wider selection to tighter selection)
-                sorted_buckets = sorted(
-                    strategy_buckets, key=lambda r: float(r.get("threshold_pct", 100.0))
-                )
-                positive_threshold = None
-
-                # Find the first (widest) threshold that produces positive net PnL
-                for b in sorted_buckets:
-                    if float(b.get("net_pnl", -1e18)) > 0.0:
-                        positive_threshold = float(b.get("threshold_pct", 100.0))
-                        break
-
-                if positive_threshold is not None:
-                    # We want the threshold "just above" the one that allows a positive PnL.
-                    # This gives us a wider base of trades for optimization.
-                    # Find the first bucket with threshold slightly higher (more selective) than positive_threshold.
-                    just_above = None
-                    for b in sorted_buckets:
-                        cand_thr = float(b.get("threshold_pct", 100.0))
-                        if cand_thr > positive_threshold + 1e-6:
-                            just_above = cand_thr
-                            break
-
-                    threshold_pct = (
-                        just_above if just_above is not None else positive_threshold
-                    )
-                else:
-                    threshold_pct = float(row.get("threshold_pct", threshold_pct))
-
+            row_frac = _safe_float(row.get("selection_frac"), float("nan"))
+            if np.isfinite(row_frac) and row_frac > 0.0:
+                return float(max(0.01, min(1.0, row_frac)))
         except Exception:
             pass
 
-    frac = max(0.01, min(1.0, 1.0 - threshold_pct / 100.0))
-    return float(frac)
+    sid = str(selected.get("strategy_id", "") or "")
+    raise ValueError(
+        "Missing upstream selection_frac for policy optimisation "
+        f"(strategy_id='{sid}'). selection_frac must be persisted by the "
+        "simple_position_sizer artifact."
+    )
 
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
@@ -1554,7 +1809,10 @@ def _simulate_tpsl_from_paths_unified(
 
 
 def _simulate_barwise_path_policy(
-    returns: np.ndarray, context: Dict[str, np.ndarray], params: Dict[str, Any]
+    returns: np.ndarray,
+    context: Dict[str, np.ndarray],
+    params: Dict[str, Any],
+    sizes: Optional[np.ndarray] = None,
 ) -> Optional[np.ndarray]:
     """Replay the policy using actual 15m OHLC paths and causal bar-by-bar logic."""
     # DELEGATE to baseline function for simple TP/SL (ensures identical results)
@@ -1570,13 +1828,18 @@ def _simulate_barwise_path_policy(
         tp_mult = float(params.get("tp_mult", 1.0))
         sl_mult = float(params.get("sl_mult", 1.0))
         # Call the baseline simulation directly for identical results
-        return _simulate_tpsl_from_paths_unified(
+        baseline_rets = _simulate_tpsl_from_paths_unified(
             context,
             tp_mult=tp_mult,
             sl_mult=sl_mult,
             enable_trailing=False,
             is_baseline=True,
         )
+        if baseline_rets is not None and sizes is not None:
+            size_arr = np.asarray(sizes, dtype=np.float32)
+            if size_arr.shape[0] == baseline_rets.shape[0]:
+                baseline_rets = baseline_rets * size_arr
+        return baseline_rets
 
     required = ("future_opens", "future_highs", "future_lows", "future_closes")
     if not all(col in context for col in required):
@@ -1958,6 +2221,11 @@ def _simulate_barwise_path_policy(
     # Inject lengths into context so downstream components can use them
     context["_cached_lengths_"] = exit_lengths
 
+    if sizes is not None:
+        size_arr = np.asarray(sizes, dtype=np.float32)
+        if size_arr.shape[0] == exit_rets.shape[0]:
+            exit_rets = exit_rets * size_arr
+
     return exit_rets.astype(np.float32)
 
 
@@ -2198,12 +2466,6 @@ def _sequential_optimise(
     # Each family is tested separately - if it degrades performance, it's disabled
     param_families: List[Tuple[str, List[Tuple[str, List[Any]]]]] = [
         (
-            "position_sizing",
-            [
-                ("size_power", [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]),
-            ],
-        ),
-        (
             "trailing_stop",
             [
                 ("trailing_power", [1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]),
@@ -2230,6 +2492,12 @@ def _sequential_optimise(
                     [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
                 ),
                 ("giveback_beta", [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]),
+            ],
+        ),
+        (
+            "position_sizing",
+            [
+                ("size_power", [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]),
             ],
         ),
         (
@@ -2293,14 +2561,12 @@ def _sequential_optimise(
         # Compute sizes upfront based on confidence scores
         sizes = _get_position_sizes(base_returns, params_to_use, evaluate_mask)
 
-        # Apply sizing to returns BEFORE simulation
-        base_returns_sized = base_returns * sizes
-
         if has_future_paths_ctx:
             rets = _simulate_barwise_path_policy(
-                base_returns_sized, context, params_to_use
+                base_returns, context, params_to_use, sizes=sizes
             )
         else:
+            base_returns_sized = base_returns * sizes
             rets = replay_exit_policy(base_returns_sized, context, params_to_use)
 
         if rets is not None:
@@ -2324,8 +2590,8 @@ def _sequential_optimise(
 
                 rets = np.where(conc_mask, rets, np.nan)
 
-        # Return only rets (sizing already applied), sizes=None for metric calculation
-        return rets, None
+        # Return sized returns and corresponding sizes used during simulation.
+        return rets, sizes
 
     # Test each parameter family incrementally
     # If a family degrades performance, disable it and move to next
@@ -2338,7 +2604,8 @@ def _sequential_optimise(
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
-            sizes=None,  # Sizing already applied during simulation
+            already_sized=True,
+            sizes=baseline_sizes[val_mask],
             ts_vals=(
                 context.get("timestamps_ms", np.arange(len(baseline_rets)))[val_mask]
                 if "timestamps_ms" in context
@@ -2375,7 +2642,8 @@ def _sequential_optimise(
             executed_mask=(
                 executed_mask[train_mask] if executed_mask is not None else None
             ),
-            sizes=None,  # Sizing already applied during simulation
+            already_sized=True,
+            sizes=baseline_sizes[train_mask],
             ts_vals=(
                 context.get("timestamps_ms", np.arange(len(baseline_rets)))[train_mask]
                 if "timestamps_ms" in context
@@ -2526,7 +2794,8 @@ def _sequential_optimise(
                     executed_mask=(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
-                    sizes=None,  # Sizing already applied during simulation
+                    already_sized=True,
+                    sizes=current_sizes[train_mask],
                     ts_vals=(
                         context.get("timestamps_ms", np.arange(len(current_rets)))[
                             train_mask
@@ -2597,7 +2866,8 @@ def _sequential_optimise(
                             if executed_mask is not None
                             else None
                         ),
-                        sizes=None,  # Sizing already applied during simulation
+                        already_sized=True,
+                        sizes=f_sizes[fold_mask],
                         ts_vals=(
                             context.get("timestamps_ms", np.arange(len(f_rets)))[
                                 fold_mask
@@ -2628,7 +2898,7 @@ def _sequential_optimise(
                     fold_scores.append(f_score)
 
                 # Full train evaluation
-                rets, _ = _simulate_policy(trial_params, train_mask)
+                rets, objective_sizes = _simulate_policy(trial_params, train_mask)
                 if rets is None:
                     return -1e18
 
@@ -2639,7 +2909,8 @@ def _sequential_optimise(
                     executed_mask=(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
-                    sizes=None,  # Sizing already applied during simulation
+                    already_sized=True,
+                    sizes=objective_sizes[train_mask],
                     ts_vals=(
                         context.get("timestamps_ms", np.arange(len(rets)))[train_mask]
                         if "timestamps_ms" in context
@@ -2804,7 +3075,8 @@ def _sequential_optimise(
                                 if executed_mask is not None
                                 else None
                             ),
-                            sizes=None,  # Sizing already applied during simulation
+                            already_sized=True,
+                            sizes=f_sizes[f_mask],
                             ts_vals=(
                                 context.get("timestamps_ms", np.arange(len(f_rets)))[
                                     f_mask
@@ -2860,11 +3132,8 @@ def _sequential_optimise(
                                     if executed_mask is not None
                                     else None
                                 ),
-                                sizes=(
-                                    None  # Sizing already applied during simulation
-                                    if g_sizes is not None
-                                    else None
-                                ),
+                                already_sized=True,
+                                sizes=g_sizes[train_mask],
                                 ts_vals=(
                                     context.get(
                                         "timestamps_ms", np.arange(len(g_rets))
@@ -2963,7 +3232,8 @@ def _sequential_optimise(
                     executed_mask=(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
-                    sizes=None,  # Sizing already applied during simulation
+                    already_sized=True,
+                    sizes=current_sizes[train_mask],
                     ts_vals=(
                         context.get("timestamps_ms", np.arange(len(current_rets)))[
                             train_mask
@@ -3031,7 +3301,7 @@ def _sequential_optimise(
                     else:
                         trial[name] = cand
 
-                rets, _ = _simulate_policy(trial, train_mask)
+                rets, trial_sizes = _simulate_policy(trial, train_mask)
                 if rets is None:
                     continue
                 combo_metrics = _metric_score(
@@ -3041,7 +3311,8 @@ def _sequential_optimise(
                     executed_mask=(
                         executed_mask[train_mask] if executed_mask is not None else None
                     ),
-                    sizes=None,  # Sizing already applied during simulation
+                    already_sized=True,
+                    sizes=trial_sizes[train_mask],
                     ts_vals=(
                         context.get("timestamps_ms", np.arange(len(rets)))[train_mask]
                         if "timestamps_ms" in context
@@ -3101,7 +3372,8 @@ def _sequential_optimise(
                 executed_mask=(
                     executed_mask[val_mask] if executed_mask is not None else None
                 ),
-                sizes=None,  # Sizing already applied during simulation
+                already_sized=True,
+                sizes=family_sizes[val_mask],
                 ts_vals=(
                     context.get("timestamps_ms", np.arange(len(family_rets)))[val_mask]
                     if "timestamps_ms" in context
@@ -3128,11 +3400,8 @@ def _sequential_optimise(
                 executed_mask=(
                     executed_mask[val_mask] if executed_mask is not None else None
                 ),
-                sizes=(
-                    None  # Sizing already applied during simulation
-                    if baseline_val_sizes is not None
-                    else None
-                ),
+                already_sized=True,
+                sizes=baseline_val_sizes[val_mask],
                 ts_vals=(
                     context.get("timestamps_ms", np.arange(len(baseline_val_rets)))[
                         val_mask
@@ -3333,6 +3602,8 @@ def _sequential_optimise(
             baseline_rets_raw[val_mask],
             cost_pct=cost_pct,
             already_net=False,
+            already_sized=False,
+            sizes=baseline_sizes[val_mask],
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
@@ -3354,6 +3625,8 @@ def _sequential_optimise(
             base_returns[val_mask],
             cost_pct=cost_pct,
             already_net=False,
+            already_sized=False,
+            sizes=baseline_sizes[val_mask],
             executed_mask=(
                 executed_mask[val_mask] if executed_mask is not None else None
             ),
@@ -3377,7 +3650,8 @@ def _sequential_optimise(
         cost_pct=cost_pct,
         already_net=False,
         executed_mask=(executed_mask[val_mask] if executed_mask is not None else None),
-        sizes=None,  # Sizing already applied during simulation
+        already_sized=True,
+        sizes=final_sizes[val_mask],
         ts_vals=(
             context.get("timestamps_ms", np.arange(len(val_mask)))[val_mask]
             if "timestamps_ms" in context
@@ -3490,15 +3764,34 @@ def run_policy_optimisation(
     stage_view: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     tprint("POLICY OPTIMISER START")
+    if use_offset_optimiser and not POLICY_OPTIMISER_OFFSET_LIMITER_ENABLED:
+        tprint("Policy optimiser: offset limiter disabled for this run.")
+    use_offset_optimiser = bool(
+        use_offset_optimiser and POLICY_OPTIMISER_OFFSET_LIMITER_ENABLED
+    )
     selected_candidates = _load_strategy_candidates(data_root, run_id)
     if not selected_candidates:
-        selected = _load_best_strategy(data_root, run_id)
-        if selected.get("strategy_id"):
-            selected_candidates = [selected]
-    if not selected_candidates:
-        tprint("No selected strategy found; skipping policy optimisation.")
+        tprint(
+            "No simple_position_sizer candidates passed policy gates; "
+            "skipping policy optimisation."
+        )
         return {}
+    max_candidates: Optional[int] = None
+    max_candidates_env = os.getenv("EPM_POLICY_MAX_STRATEGY_IDS", "").strip()
+    if max_candidates_env:
+        try:
+            max_candidates = max(1, int(max_candidates_env))
+            tprint(
+                "Policy optimiser: limiting successfully optimised candidates "
+                f"to {max_candidates} via EPM_POLICY_MAX_STRATEGY_IDS."
+            )
+        except ValueError:
+            tprint(
+                "WARNING: invalid EPM_POLICY_MAX_STRATEGY_IDS="
+                f"{max_candidates_env!r}; ignoring."
+            )
 
+    base_oofs = load_base_oof_predictions(data_root, run_id)
     meta_oofs = load_meta_oof_predictions(data_root, run_id)
     if stage_view:
         _unfiltered_meta_oofs = meta_oofs
@@ -3529,18 +3822,27 @@ def run_policy_optimisation(
         return {}
     strategy_rows: List[Dict[str, Any]] = []
     for selected in selected_candidates:
-        key = next((k for k in meta_oofs.keys() if selected["strategy_id"] in k), None)
-        if key is None:
+        if max_candidates is not None and len(strategy_rows) >= max_candidates:
+            break
+        try:
+            key, context_oof, context_source = _resolve_policy_context_oof(
+                str(selected["strategy_id"]), meta_oofs, base_oofs
+            )
+        except KeyError:
             tprint(
-                f"Strategy {selected['strategy_id']} not found in meta OOF; "
+                f"Strategy {selected['strategy_id']} not found in base/meta OOF context; "
                 "skipping policy optimisation for this candidate."
             )
             continue
 
-        outcomes = load_trade_outcomes(data_root, run_id, meta_oofs[key])
+        outcomes = load_trade_outcomes(data_root, run_id, context_oof)
         unfiltered_outcomes = outcomes
         outcomes = _filter_df_by_stage_view(outcomes, stage_view)
-        if outcomes.empty and unfiltered_outcomes is not None and not unfiltered_outcomes.empty:
+        if (
+            outcomes.empty
+            and unfiltered_outcomes is not None
+            and not unfiltered_outcomes.empty
+        ):
             tprint(
                 f"Policy optimiser stage filtering removed all trade outcomes for "
                 f"{selected['strategy_id']}; falling back to unfiltered outcomes."
@@ -3580,16 +3882,26 @@ def run_policy_optimisation(
             selected["side"] = selected_side
         tprint(
             f"Strategy {selected['strategy_id']}: using {len(outcomes)}/"
-            f"{pre_sizer_rows} finite simple-sizer OOF rows for policy optimisation."
+            f"{pre_sizer_rows} finite simple-sizer OOF rows for policy optimisation "
+            f"(context={context_source}:{key})."
         )
 
         conf, conf_name = _resolve_selection_score(outcomes)
-        frac = resolve_optimised_selection_frac(
+        upstream_sizer_frac = resolve_optimised_selection_frac(
             data_root=data_root,
             run_id=run_id,
             selected=selected,
         )
+        frac = min(
+            float(upstream_sizer_frac),
+            float(POLICY_OPTIMISER_CANDIDATE_FRAC),
+        )
+        frac = max(1.0 / float(max(1, len(conf))), min(1.0, frac))
         k = max(1, int(len(conf) * frac))
+        assessment_frac = min(frac, float(POLICY_OPTIMISER_ASSESSMENT_FRAC))
+        assessment_frac = max(1.0 / float(max(1, len(conf))), min(1.0, assessment_frac))
+        k_assess = max(1, int(len(conf) * assessment_frac))
+        k_diag = max(1, int(len(conf) * POLICY_OPTIMISER_DIAGNOSTIC_FRAC))
         entry_ts = pd.to_datetime(
             outcomes.get("timestamp", pd.Series(np.arange(len(outcomes)))),
             utc=True,
@@ -3614,7 +3926,44 @@ def run_policy_optimisation(
             ),
             max_global_concurrent=3,
         )
+        assessment_idx = _select_topk_non_concurrent(
+            scores=conf,
+            k=k_assess,
+            entry_timestamps=entry_ts,
+            exit_timestamps=exit_ts,
+            symbols=np.asarray(
+                outcomes.get("symbol", pd.Series([""] * len(outcomes))).astype(str)
+            ),
+            max_global_concurrent=3,
+        )
+        diagnostic_idx = _select_topk_non_concurrent(
+            scores=conf,
+            k=k_diag,
+            entry_timestamps=entry_ts,
+            exit_timestamps=exit_ts,
+            symbols=np.asarray(
+                outcomes.get("symbol", pd.Series([""] * len(outcomes))).astype(str)
+            ),
+            max_global_concurrent=3,
+        )
         policy_idx = np.asarray(selected_idx, dtype=np.int64)
+        top1_diagnostics = _top_slice_opportunity_diagnostics(
+            outcomes=outcomes,
+            selected_idx=diagnostic_idx,
+            frac=POLICY_OPTIMISER_DIAGNOSTIC_FRAC,
+        )
+        top5_diagnostics = _top_slice_opportunity_diagnostics(
+            outcomes=outcomes,
+            selected_idx=assessment_idx,
+            frac=assessment_frac,
+        )
+        tprint(
+            f"Policy optimiser selection: upstream_sizer_frac={upstream_sizer_frac:.3f}, "
+            f"candidate_frac={frac:.3f}, assessment_frac={assessment_frac:.3f}, "
+            f"top1_trades_per_active_day={top1_diagnostics['avg_trades_per_active_day']:.2f}, "
+            f"top1_trades_per_calendar_day={top1_diagnostics['avg_trades_per_calendar_day']:.2f}, "
+            f"top1_avg_holding_hours={top1_diagnostics['avg_holding_hours']:.2f}"
+        )
 
         sizer_stub = {
             "best_simple_score_": conf,
@@ -3678,13 +4027,32 @@ def run_policy_optimisation(
         )
         order = np.argsort(ts.view("int64"))
         n = len(base_rets)
+        assessment_set = set(int(i) for i in np.asarray(assessment_idx).tolist())
+        assessment_mask = np.asarray(
+            [int(i) in assessment_set for i in np.asarray(policy_idx).tolist()],
+            dtype=bool,
+        )
+        if assessment_mask.shape[0] != n or not assessment_mask.any():
+            assessment_mask = np.zeros(n, dtype=bool)
+            local_scores = np.asarray(
+                path_bundle.get("confidence", np.zeros(n)), dtype=np.float64
+            )
+            if local_scores.shape[0] != n:
+                local_scores = np.zeros(n, dtype=np.float64)
+            local_k = max(1, min(n, int(len(conf) * POLICY_OPTIMISER_ASSESSMENT_FRAC)))
+            local_order = np.argsort(local_scores, kind="stable")[::-1]
+            assessment_mask[local_order[:local_k]] = True
+        tprint(
+            f"Policy assessment slice: {int(np.sum(assessment_mask))}/{n} "
+            f"selected trades ({assessment_frac:.1%} of source opportunities)."
+        )
 
-        # USE UPSTREAM TRAIN/VAL FROM GLOBAL PARTITIONER
-        # stage_view contains train_base+train_meta data (70% of total).
-        # Split that into train/val for parameter search, reserve holdout_frac for final OOS eval.
-        # Chronological split: first (1-holdout_frac) for train/val, last holdout_frac for final eval.
-
-        n_train_val = int(n * (1.0 - holdout_frac))
+        # USE UPSTREAM TRAIN/VAL FROM GLOBAL PARTITIONER.
+        # Policy optimisation is downstream of the sizer OOF handoff, so we do
+        # not reserve an additional local holdout here. All available candidate
+        # rows are eligible for train/validation splitting; actual trading and
+        # reporting still use the configured top-k slices.
+        n_train_val = int(n)
         n_train = int(n_train_val * 0.70)  # 70% of train_val for training params
         n_val = n_train_val - n_train
 
@@ -3696,9 +4064,6 @@ def run_policy_optimisation(
 
         val_mask = np.zeros(n, dtype=bool)
         val_mask[order[n_train : n_train + n_val]] = True
-
-        # If n_train + n_val < n, the rest is the holdout, which we ignore here during parameter search
-        # If we need to ensure all data is used up to the split, we could adjust.
 
         ae_fit = _robust_fit(path_bundle["AE_vel"], train_mask)
         pr_fit = _robust_fit(path_bundle["pressure"], train_mask)
@@ -3733,6 +4098,14 @@ def run_policy_optimisation(
         )
         context["p_tp"] = path_bundle.get("p_tp", np.full(len(base_rets), np.nan))
         context["p_sl"] = path_bundle.get("p_sl", np.full(len(base_rets), np.nan))
+        context_ts = pd.to_datetime(
+            np.asarray(path_bundle.get("timestamps", np.arange(len(base_rets)))),
+            utc=True,
+            errors="coerce",
+        )
+        context["timestamps_ms"] = (
+            np.asarray(context_ts.view("int64"), dtype=np.int64) // 1_000_000
+        )
         context.update(path_matrices)
 
         # CRITICAL FIX: Prioritize sizer's profitable TP/SL geometry over label-derived values
@@ -3778,7 +4151,12 @@ def run_policy_optimisation(
             executed_mask=executed_mask,
         )
         best["side"] = selected.get("side", selected_side)
-        best["source_model"] = selected.get("model", "")
+        source_model = str(selected.get("model") or selected.get("pipeline") or "")
+        if not source_model:
+            score_source = str(selected.get("winner_score_source") or "")
+            if "MetaClfOnly" in score_source or "meta_clf" in score_source:
+                source_model = "meta_clf_only"
+        best["source_model"] = source_model
         best["source_artifact"] = selected.get("source_artifact", "")
         best["selected_key"] = key
         best["selection_score"] = conf_name
@@ -3786,11 +4164,40 @@ def run_policy_optimisation(
         # Get sizer's reported wallet_pnl early for logging and skip logic
         sizer_wallet_pnl = float(selected.get("wallet_pnl", 0.0))
 
+        # Compute baseline sizes once using the same sizing formula as the
+        # policy optimiser. Diagnostics below keep unsized/simple-sizer and
+        # wallet-sized bases separate.
+        baseline_sizes = np.ones(len(base_rets), dtype=np.float32)
+        baseline_conf = context.get("confidence")
+        if baseline_conf is not None and len(baseline_conf) == len(base_rets):
+            ranks = np.argsort(np.argsort(baseline_conf.astype(np.float64)))
+            pcts = ranks / float(max(1, len(ranks) - 1))
+            baseline_sizes = (0.05 + (0.15 - 0.05) * pcts).astype(np.float32)
+
+        simple_sizer_equivalent_assess = _metric_score(
+            base_rets,
+            cost_pct=cost_pct,
+            already_net=False,
+            already_sized=False,
+            sizes=np.ones(len(base_rets), dtype=np.float32),
+            executed_mask=executed_mask,
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(base_rets)))
+                if "timestamps_ms" in context
+                else None
+            ),
+            scores=baseline_conf if baseline_conf is not None else None,
+        )
+        simple_sizer_equivalent_assess["source"] = "base_rets_flat_fee_unsized"
+
         has_future_paths = all(
             col in context
             for col in ("future_opens", "future_highs", "future_lows", "future_closes")
         )
         baseline_rets_raw = None
+        path_assess_sized: Optional[Dict[str, float]] = None
+        path_assess_unsized: Optional[Dict[str, float]] = None
+        path_delta_mean: Optional[float] = None
         if has_future_paths:
             baseline_rets_raw = _simulate_tpsl_from_paths_unified(
                 context,
@@ -3800,10 +4207,30 @@ def run_policy_optimisation(
                 is_baseline=True,
             )
             if baseline_rets_raw is not None:
-                path_assess = _metric_score(
+                path_assess_sized = _metric_score(
                     baseline_rets_raw,
                     cost_pct=cost_pct,
                     already_net=False,
+                    already_sized=False,
+                    sizes=baseline_sizes,
+                    executed_mask=executed_mask,
+                    ts_vals=(
+                        context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))
+                        if "timestamps_ms" in context
+                        else None
+                    ),
+                    scores=(
+                        context.get("confidence")
+                        if context.get("confidence") is not None
+                        else None
+                    ),
+                )
+                path_assess_unsized = _metric_score(
+                    baseline_rets_raw,
+                    cost_pct=cost_pct,
+                    already_net=False,
+                    already_sized=False,
+                    sizes=np.ones(len(baseline_rets_raw), dtype=np.float32),
                     executed_mask=executed_mask,
                     ts_vals=(
                         context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))
@@ -3821,27 +4248,27 @@ def run_policy_optimisation(
                     if len(base_rets) > 0
                     else 0.0
                 )
-                tprint(
-                    f"Path-sim baseline: net_pnl={path_assess.get('net_pnl', 0.0):.6f} "
-                    f"(vs pre-capped={pre_capped_pnl:.6f}, sizer wallet_pnl={sizer_wallet_pnl:.6f})"
+                path_delta_mean = float(
+                    np.nanmean(np.asarray(baseline_rets_raw, dtype=np.float64))
+                    - np.nanmean(np.asarray(base_rets, dtype=np.float64))
                 )
-                baseline_rets_raw = None
-
-        # Compute baseline sizes (same formula as policy sizing)
-        baseline_sizes = np.ones(len(base_rets), dtype=np.float32)
-        baseline_conf = context.get("confidence")
-        if baseline_conf is not None and len(baseline_conf) == len(base_rets):
-            ranks = np.argsort(np.argsort(baseline_conf.astype(np.float64)))
-            pcts = ranks / float(max(1, len(ranks) - 1))
-            baseline_sizes = (0.05 + (0.15 - 0.05) * pcts).astype(np.float32)
+                tprint(
+                    "Path-sim baseline diagnostic: "
+                    f"sized_net_pnl={path_assess_sized.get('net_pnl', 0.0):.6f}, "
+                    f"unsized_net_pnl={path_assess_unsized.get('net_pnl', 0.0):.6f}, "
+                    f"mean_return_delta_vs_sizer={path_delta_mean:.6f} "
+                    f"(pre-capped={pre_capped_pnl:.6f}, sizer wallet_pnl={sizer_wallet_pnl:.6f})"
+                )
 
         # Apply sizing BEFORE metrics (consistent with policy simulation)
         base_rets_sized = base_rets * baseline_sizes
 
-        baseline_assess = _metric_score(
+        wallet_sized_baseline_assess = _metric_score(
             base_rets_sized,
             cost_pct=cost_pct,
             already_net=False,
+            already_sized=True,
+            sizes=baseline_sizes,
             executed_mask=executed_mask,
             ts_vals=(
                 context.get("timestamps_ms", np.arange(len(base_rets)))
@@ -3851,12 +4278,12 @@ def run_policy_optimisation(
             scores=baseline_conf if baseline_conf is not None else None,
         )
         tprint(
-            f"Using wallet-sized baseline: net_pnl={baseline_assess.get('net_pnl', 0.0):.6f}, "
+            "Wallet-sized baseline diagnostic: "
+            f"net_pnl={wallet_sized_baseline_assess.get('net_pnl', 0.0):.6f}, "
             f"sizer wallet_pnl={sizer_wallet_pnl:.6f}"
         )
 
         # Only optimize strategies with positive sizer-reported PnL
-        baseline_pnl = float(baseline_assess.get("net_pnl", 0.0))
         if sizer_wallet_pnl <= 0:
             tprint(
                 f"Strategy {selected['strategy_id'][:40]} has non-positive sizer PnL ({sizer_wallet_pnl:.4f}); skipping optimization."
@@ -3879,37 +4306,50 @@ def run_policy_optimisation(
             context.get("confidence"), size_power
         )
 
-        # Apply sizing to base_rets BEFORE simulation
-        base_rets_sized = base_rets * precomputed_sizes
-
-        # Run simulation with sized returns
+        # Run simulation with position sizing applied inside the path replay. This
+        # keeps gross/net per-trade metrics on the same basis as the optimiser.
         if has_future_paths:
             final_rets_assess = _simulate_barwise_path_policy(
-                base_rets_sized, context, best
+                base_rets, context, best, sizes=precomputed_sizes
             )
             if final_rets_assess is None:
+                base_rets_sized = base_rets * precomputed_sizes
                 final_rets_assess = replay_exit_policy(base_rets_sized, context, best)
         else:
+            base_rets_sized = base_rets * precomputed_sizes
             final_rets_assess = replay_exit_policy(base_rets_sized, context, best)
 
-        # Compute metrics on validation set for fair comparison
+        assessment_val_mask = val_mask & assessment_mask
+        if not assessment_val_mask.any():
+            assessment_val_mask = assessment_mask.copy()
+        if not assessment_val_mask.any():
+            assessment_val_mask = val_mask.copy()
+        assessment_full_mask = assessment_mask.copy()
+        if not assessment_full_mask.any():
+            assessment_full_mask = np.ones(len(base_rets), dtype=bool)
+
+        # Compute metrics on the top-5% assessment slice for fair comparison.
         if baseline_rets_raw is not None:
             baseline_val_assess = _metric_score(
-                baseline_rets_raw[val_mask],
+                baseline_rets_raw[assessment_val_mask],
                 cost_pct=cost_pct,
                 already_net=False,
+                already_sized=False,
+                sizes=baseline_sizes[assessment_val_mask],
                 executed_mask=(
-                    executed_mask[val_mask] if executed_mask is not None else None
+                    executed_mask[assessment_val_mask]
+                    if executed_mask is not None
+                    else None
                 ),
                 ts_vals=(
                     context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))[
-                        val_mask
+                        assessment_val_mask
                     ]
                     if "timestamps_ms" in context
                     else None
                 ),
                 scores=(
-                    context.get("confidence")[val_mask]
+                    context.get("confidence")[assessment_val_mask]
                     if context.get("confidence") is not None
                     else None
                 ),
@@ -3917,51 +4357,62 @@ def run_policy_optimisation(
         else:
             # Sizing already applied to base_rets during baseline computation
             baseline_val_assess = _metric_score(
-                base_rets[val_mask],
+                base_rets_sized[assessment_val_mask],
                 cost_pct=cost_pct,
                 already_net=False,
-                sizes=None,  # Sizing already applied during simulation
+                already_sized=True,
+                sizes=baseline_sizes[assessment_val_mask],
                 executed_mask=(
-                    executed_mask[val_mask] if executed_mask is not None else None
+                    executed_mask[assessment_val_mask]
+                    if executed_mask is not None
+                    else None
                 ),
                 ts_vals=(
-                    context.get("timestamps_ms", np.arange(len(base_rets)))[val_mask]
+                    context.get("timestamps_ms", np.arange(len(base_rets)))[
+                        assessment_val_mask
+                    ]
                     if "timestamps_ms" in context
                     else None
                 ),
                 scores=(
-                    context.get("confidence")[val_mask]
+                    context.get("confidence")[assessment_val_mask]
                     if context.get("confidence") is not None
                     else None
                 ),
             )
 
         final_val_assess = _metric_score(
-            final_rets_assess[val_mask],
+            final_rets_assess[assessment_val_mask],
             cost_pct=cost_pct,
             already_net=False,
+            already_sized=True,
+            sizes=precomputed_sizes[assessment_val_mask],
             executed_mask=(
-                executed_mask[val_mask] if executed_mask is not None else None
+                executed_mask[assessment_val_mask]
+                if executed_mask is not None
+                else None
             ),
             ts_vals=(
                 context.get("timestamps_ms", np.arange(len(final_rets_assess)))[
-                    val_mask
+                    assessment_val_mask
                 ]
                 if "timestamps_ms" in context
                 else None
             ),
             scores=(
-                context.get("confidence")[val_mask]
+                context.get("confidence")[assessment_val_mask]
                 if context.get("confidence") is not None
                 else None
             ),
         )
 
-        # Also compute full-set metrics for reporting
-        final_assess = _metric_score(
+        # Also compute full candidate-slice and top-5 assessment-slice metrics.
+        final_candidate_assess = _metric_score(
             final_rets_assess,
             cost_pct=cost_pct,
             already_net=False,
+            already_sized=True,
+            sizes=precomputed_sizes,
             executed_mask=executed_mask,
             ts_vals=(
                 context.get("timestamps_ms", np.arange(len(final_rets_assess)))
@@ -3974,6 +4425,176 @@ def run_policy_optimisation(
                 else None
             ),
         )
+        if baseline_rets_raw is not None:
+            baseline_candidate_assess = _metric_score(
+                baseline_rets_raw,
+                cost_pct=cost_pct,
+                already_net=False,
+                already_sized=False,
+                sizes=baseline_sizes,
+                executed_mask=executed_mask,
+                ts_vals=(
+                    context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))
+                    if "timestamps_ms" in context
+                    else None
+                ),
+                scores=(
+                    context.get("confidence")
+                    if context.get("confidence") is not None
+                    else None
+                ),
+            )
+            baseline_assess = _metric_score(
+                baseline_rets_raw[assessment_full_mask],
+                cost_pct=cost_pct,
+                already_net=False,
+                already_sized=False,
+                sizes=baseline_sizes[assessment_full_mask],
+                executed_mask=(
+                    executed_mask[assessment_full_mask]
+                    if executed_mask is not None
+                    else None
+                ),
+                ts_vals=(
+                    context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))[
+                        assessment_full_mask
+                    ]
+                    if "timestamps_ms" in context
+                    else None
+                ),
+                scores=(
+                    context.get("confidence")[assessment_full_mask]
+                    if context.get("confidence") is not None
+                    else None
+                ),
+            )
+        else:
+            baseline_candidate_assess = dict(wallet_sized_baseline_assess)
+        baseline_assess = _metric_score(
+            base_rets_sized[assessment_full_mask],
+            cost_pct=cost_pct,
+            already_net=False,
+            already_sized=True,
+            sizes=baseline_sizes[assessment_full_mask],
+            executed_mask=(
+                executed_mask[assessment_full_mask]
+                if executed_mask is not None
+                else None
+            ),
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(base_rets_sized)))[
+                    assessment_full_mask
+                ]
+                if "timestamps_ms" in context
+                else None
+            ),
+            scores=(
+                context.get("confidence")[assessment_full_mask]
+                if context.get("confidence") is not None
+                else None
+            ),
+        )
+        if baseline_rets_raw is not None:
+            baseline_assess = _metric_score(
+                baseline_rets_raw[assessment_full_mask],
+                cost_pct=cost_pct,
+                already_net=False,
+                already_sized=False,
+                sizes=baseline_sizes[assessment_full_mask],
+                executed_mask=(
+                    executed_mask[assessment_full_mask]
+                    if executed_mask is not None
+                    else None
+                ),
+                ts_vals=(
+                    context.get("timestamps_ms", np.arange(len(baseline_rets_raw)))[
+                        assessment_full_mask
+                    ]
+                    if "timestamps_ms" in context
+                    else None
+                ),
+                scores=(
+                    context.get("confidence")[assessment_full_mask]
+                    if context.get("confidence") is not None
+                    else None
+                ),
+            )
+        final_assess = _metric_score(
+            final_rets_assess[assessment_full_mask],
+            cost_pct=cost_pct,
+            already_net=False,
+            already_sized=True,
+            sizes=precomputed_sizes[assessment_full_mask],
+            executed_mask=(
+                executed_mask[assessment_full_mask]
+                if executed_mask is not None
+                else None
+            ),
+            ts_vals=(
+                context.get("timestamps_ms", np.arange(len(final_rets_assess)))[
+                    assessment_full_mask
+                ]
+                if "timestamps_ms" in context
+                else None
+            ),
+            scores=(
+                context.get("confidence")[assessment_full_mask]
+                if context.get("confidence") is not None
+                else None
+            ),
+        )
+
+        basic_policy_metrics = dict(baseline_assess)
+        basic_policy_metrics_val = dict(baseline_val_assess)
+        advanced_policy_metrics = dict(final_assess)
+        advanced_policy_metrics_val = dict(final_val_assess)
+        metric_scores = (
+            context.get("confidence")
+            if context.get("confidence") is not None
+            else np.asarray(conf, dtype=np.float32)[policy_idx]
+        )
+        metric_ts = (
+            context.get("timestamps_ms", np.arange(len(final_rets_assess)))
+            if "timestamps_ms" in context
+            else None
+        )
+        if baseline_rets_raw is not None:
+            baseline_top_fraction_metrics = _top_fraction_metrics(
+                baseline_rets_raw,
+                cost_pct=cost_pct,
+                already_net=False,
+                already_sized=False,
+                sizes=baseline_sizes,
+                executed_mask=executed_mask,
+                ts_vals=metric_ts,
+                scores=metric_scores,
+            )
+        else:
+            baseline_top_fraction_metrics = _top_fraction_metrics(
+                base_rets_sized,
+                cost_pct=cost_pct,
+                already_net=False,
+                already_sized=True,
+                sizes=baseline_sizes,
+                executed_mask=executed_mask,
+                ts_vals=metric_ts,
+                scores=metric_scores,
+            )
+        final_top_fraction_metrics = _top_fraction_metrics(
+            final_rets_assess,
+            cost_pct=cost_pct,
+            already_net=False,
+            already_sized=True,
+            sizes=precomputed_sizes,
+            executed_mask=executed_mask,
+            ts_vals=metric_ts,
+            scores=metric_scores,
+        )
+        best_candidate_metrics = {
+            "baseline_candidate_slice": baseline_candidate_assess,
+            "advanced_candidate_slice": final_candidate_assess,
+            "candidate_frac": float(frac),
+        }
 
         # Compare on VALIDATION SET (fair - same period used for optimization)
         baseline_val_pnl = float(baseline_val_assess.get("net_pnl", 0.0))
@@ -3997,8 +4618,13 @@ def run_policy_optimisation(
                 best = dict(fixed)
                 best["_param_history_"] = param_history  # Keep for analysis
                 best["_reverted_to_baseline_"] = True  # Flag for diagnostics
-                final_rets_assess = np.asarray(base_rets, dtype=np.float32)
+                final_rets_assess = np.asarray(base_rets_sized, dtype=np.float32)
                 final_assess = dict(baseline_assess)
+                final_val_assess = dict(baseline_val_assess)
+                final_candidate_assess = dict(baseline_candidate_assess)
+                final_top_fraction_metrics = dict(baseline_top_fraction_metrics)
+                advanced_policy_metrics = dict(final_assess)
+                advanced_policy_metrics_val = dict(baseline_val_assess)
             else:
                 # Without future paths, the comparison is unfair - log but don't revert
                 logger.info(
@@ -4008,10 +4634,71 @@ def run_policy_optimisation(
                     "but future paths unavailable for fair comparison - keeping optimised params."
                 )
 
+        best_candidate_metrics = {
+            "baseline_candidate_slice": baseline_candidate_assess,
+            "advanced_candidate_slice": final_candidate_assess,
+            "candidate_frac": float(frac),
+        }
+
         best["metrics_baseline"] = baseline_assess
         best["metrics_baseline_val"] = baseline_val_assess
         best["metrics_final"] = final_assess
         best["metrics_final_val"] = final_val_assess
+        best["metrics_top_fractions"] = {
+            "baseline": baseline_top_fraction_metrics,
+            "final": final_top_fraction_metrics,
+        }
+        best["metrics_wallet_sized_baseline_diagnostic"] = wallet_sized_baseline_assess
+        best["metrics_simple_sizer_equivalent_baseline"] = (
+            simple_sizer_equivalent_assess
+        )
+        if path_assess_sized is not None:
+            best["metrics_path_sized_baseline_diagnostic"] = path_assess_sized
+        if path_assess_unsized is not None:
+            best["metrics_path_unsized_baseline_diagnostic"] = path_assess_unsized
+        if path_delta_mean is not None:
+            best["path_replay_mean_return_delta_vs_sizer"] = float(path_delta_mean)
+        best["metrics_sizer_reference"] = {
+            "source": "simple_position_sizer.strategy_params",
+            "net_pnl": _safe_float(selected.get("net_pnl"), 0.0),
+            "wallet_pnl": _safe_float(selected.get("wallet_pnl"), 0.0),
+            "hit_rate": _safe_float(selected.get("hit_rate"), 0.0),
+            "profit_factor": _safe_float(selected.get("profit_factor"), 0.0),
+            "monthly_sortino": _safe_float(selected.get("monthly_sortino"), 0.0),
+            "max_drawdown": _safe_float(selected.get("max_drawdown"), 0.0),
+            "net_pnl_per_trade_pct": _safe_float(
+                selected.get("net_pnl_per_trade_pct"), 0.0
+            ),
+            "selection_frac": _safe_float(selected.get("selection_frac"), 0.0),
+            "threshold_pct": _safe_float(selected.get("threshold_pct"), 0.0),
+        }
+        best["metrics_candidate_top15"] = best_candidate_metrics
+        best["policy_passes"] = {
+            "basic_tpsl_only": {
+                "metrics": basic_policy_metrics,
+                "metrics_val": basic_policy_metrics_val,
+                "flags": {
+                    "tp_mult": float(tp_mult_to_use),
+                    "sl_mult": float(sl_mult_to_use),
+                    "enable_trailing": False,
+                    "enable_early_exit": False,
+                    "enable_compression": False,
+                    "enable_barrier_conf": False,
+                },
+            },
+            "advanced_policy_final": {
+                "metrics": advanced_policy_metrics,
+                "metrics_val": advanced_policy_metrics_val,
+                "flags": {
+                    "tp_mult": float(best.get("tp_mult", tp_mult_to_use)),
+                    "sl_mult": float(best.get("sl_mult", sl_mult_to_use)),
+                    "enable_trailing": bool(best.get("enable_trailing", False)),
+                    "enable_early_exit": bool(best.get("enable_early_exit", False)),
+                    "enable_compression": bool(best.get("enable_compression", False)),
+                    "enable_barrier_conf": bool(best.get("enable_barrier_conf", False)),
+                },
+            },
+        }
         # Use VALIDATION SET metrics for fair delta comparison
         best["baseline_net_pnl"] = float(baseline_val_assess.get("net_pnl", 0.0))
         best["final_net_pnl"] = float(final_val_assess.get("net_pnl", 0.0))
@@ -4024,7 +4711,45 @@ def run_policy_optimisation(
         )
         # Store selection parameters for comparison with sizer
         best["selection_frac"] = frac
-        best["threshold_pct"] = float(selected.get("threshold_pct", 90.0))
+        best["upstream_sizer_selection_frac"] = upstream_sizer_frac
+        best["policy_candidate_frac"] = frac
+        best["policy_assessment_frac"] = min(frac, POLICY_OPTIMISER_ASSESSMENT_FRAC)
+        best["policy_diagnostic_frac"] = POLICY_OPTIMISER_DIAGNOSTIC_FRAC
+        best["upstream_threshold_pct"] = float(selected.get("threshold_pct", 90.0))
+        best["threshold_pct"] = float(100.0 * (1.0 - frac))
+        best["assessment_threshold_pct"] = float(
+            100.0 * (1.0 - min(frac, POLICY_OPTIMISER_ASSESSMENT_FRAC))
+        )
+        best["top1_n_trades"] = int(top1_diagnostics.get("n_trades", 0))
+        best["top1_active_days"] = int(top1_diagnostics.get("active_days", 0))
+        best["top1_avg_trades_per_day"] = float(
+            top1_diagnostics.get("avg_trades_per_day", 0.0)
+        )
+        best["top1_avg_trades_per_active_day"] = float(
+            top1_diagnostics.get("avg_trades_per_active_day", 0.0)
+        )
+        best["top1_avg_trades_per_calendar_day"] = float(
+            top1_diagnostics.get("avg_trades_per_calendar_day", 0.0)
+        )
+        best["top1_avg_holding_hours"] = float(
+            top1_diagnostics.get("avg_holding_hours", 0.0)
+        )
+        best["avg_trades_per_day_at_top_1pct"] = best["top1_avg_trades_per_day"]
+        best["avg_holding_hours_at_top_1pct"] = best["top1_avg_holding_hours"]
+        best["top5_n_trades"] = int(top5_diagnostics.get("n_trades", 0))
+        best["top5_active_days"] = int(top5_diagnostics.get("active_days", 0))
+        best["top5_avg_trades_per_day"] = float(
+            top5_diagnostics.get("avg_trades_per_day", 0.0)
+        )
+        best["top5_avg_trades_per_active_day"] = float(
+            top5_diagnostics.get("avg_trades_per_active_day", 0.0)
+        )
+        best["top5_avg_trades_per_calendar_day"] = float(
+            top5_diagnostics.get("avg_trades_per_calendar_day", 0.0)
+        )
+        best["top5_avg_holding_hours"] = float(
+            top5_diagnostics.get("avg_holding_hours", 0.0)
+        )
         best["cost_pct"] = cost_pct
         best["wallet_range"] = [0.05, 0.15]
         best["sizer_wallet_pnl"] = sizer_wallet_pnl
@@ -4046,6 +4771,32 @@ def run_policy_optimisation(
             avg_holding_time_hours = float(np.nanmean(np.maximum(1.0, lengths)))
         else:
             avg_holding_time_hours = 1.0
+        policy_idx_arr = np.asarray(policy_idx, dtype=np.int64)
+
+        def _avg_holding_for_original_indices(original_idx: np.ndarray) -> float:
+            if lengths.shape[0] != len(policy_idx_arr):
+                return 0.0
+            wanted = set(int(i) for i in np.asarray(original_idx, dtype=np.int64))
+            if not wanted:
+                return 0.0
+            local_mask = np.asarray(
+                [int(i) in wanted for i in policy_idx_arr], dtype=bool
+            )
+            if not local_mask.any():
+                return 0.0
+            vals = np.asarray(lengths[local_mask], dtype=np.float64)
+            vals = vals[np.isfinite(vals)]
+            if vals.size == 0:
+                return 0.0
+            return float(np.nanmean(np.maximum(1.0, vals)))
+
+        top1_holding_from_paths = _avg_holding_for_original_indices(diagnostic_idx)
+        top5_holding_from_paths = _avg_holding_for_original_indices(assessment_idx)
+        if top1_holding_from_paths > 0.0:
+            best["top1_avg_holding_hours"] = top1_holding_from_paths
+            best["avg_holding_hours_at_top_1pct"] = top1_holding_from_paths
+        if top5_holding_from_paths > 0.0:
+            best["top5_avg_holding_hours"] = top5_holding_from_paths
         best["avg_holding_time_hours"] = avg_holding_time_hours
         best["opportunities_per_day"] = _opportunities_per_day(
             outcomes.get("timestamp", pd.Series(np.arange(len(outcomes))))
@@ -4093,7 +4844,6 @@ def run_policy_optimisation(
         if "_progression_" in best:
             try:
                 import datetime
-                import os
 
                 dt_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 prog_filename = f"policy_progression_{dt_str}.md"
@@ -4174,7 +4924,7 @@ def run_policy_optimisation(
                             return str(val)
 
                     n_trades = m.get("n_trades", 0)
-                    trades_per_day = n_trades / 725.0
+                    trades_per_day = m.get("trades_per_calendar_day", n_trades / 725.0)
                     avg_pnl = (
                         m.get("net_pnl", 0.0) / max(1, n_trades)
                         if n_trades > 0

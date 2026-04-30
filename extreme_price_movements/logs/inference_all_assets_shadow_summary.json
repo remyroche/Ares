@@ -1,0 +1,132 @@
+{
+  "ok": true,
+  "errors": [],
+  "run_id": "20260321_140000",
+  "symbols_requested": 278,
+  "symbols_loaded": 278,
+  "panel_first_ts": "2026-02-28 19:00:00+00:00",
+  "panel_last_ts": "2026-04-29 16:00:00+00:00",
+  "required_feature_keys": 438,
+  "features_generated": 440,
+  "feature_shape_sample": {
+    "ffd_rv_24_06": [
+      351,
+      6
+    ],
+    "ffd_rv_12_06": [
+      351,
+      6
+    ],
+    "loc_bb_channel_pos_24": [
+      351,
+      6
+    ],
+    "vp_air_pocket_score": [
+      351,
+      6
+    ],
+    "G_EXH_EFFORT": [
+      351,
+      6
+    ],
+    "bars_since_ema20_ema50_cross_log_norm": [
+      351,
+      6
+    ],
+    "ft_4": [
+      351,
+      6
+    ],
+    "adx_10": [
+      351,
+      6
+    ],
+    "volatility_zscore": [
+      351,
+      6
+    ],
+    "excess_coh": [
+      351,
+      6
+    ],
+    "atr_compression_ratio": [
+      351,
+      6
+    ],
+    "exh_qual": [
+      351,
+      6
+    ],
+    "dir_path_short_2h": [
+      351,
+      6
+    ],
+    "ffd_strength_04": [
+      351,
+      6
+    ],
+    "ffd_mr_z_04": [
+      351,
+      6
+    ],
+    "jump_rate_10h": [
+      351,
+      6
+    ],
+    "vol_state_x_volume_state": [
+      351,
+      6
+    ],
+    "breakout_confirmed": [
+      351,
+      6
+    ],
+    "loc_pivot_ladder_pos_24": [
+      351,
+      6
+    ],
+    "ffd_ema_spread_04": [
+      351,
+      6
+    ]
+  },
+  "accepted_strategies": [
+    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm",
+    "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+    "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm",
+    "long_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+    "long_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm",
+    "long_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+    "long_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm",
+    "short_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+    "short_bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm",
+    "short_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+    "short_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm"
+  ],
+  "long_candidates": 3,
+  "short_candidates": 3,
+  "long_candidate_sample": [
+    "DEXE/USDT",
+    "JST/USDT",
+    "ZEC/USDT"
+  ],
+  "short_candidate_sample": [
+    "COS/USDT",
+    "C98/USDT",
+    "PHB/USDT"
+  ],
+  "trades": 0,
+  "trade_sample": [],
+  "executor_open_positions": 0,
+  "portfolio_open_positions": 0,
+  "api_error_counts": {},
+  "dead_letter_symbols": 0,
+  "timings": {
+    "config_artifacts_s": 26.116475499991793,
+    "panel_load_s": 2.285274916997878,
+    "candidate_and_feature_s": 8.446877500013215,
+    "model_portfolio_shadow_s": 4.349596416024724,
+    "total_s": 41.690729416994145
+  }
+}

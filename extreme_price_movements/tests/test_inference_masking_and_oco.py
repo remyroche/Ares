@@ -2,12 +2,38 @@ import pandas as pd
 import pytest
 
 from extreme_price_movements.inference.candidate_selector import select_candidates
-from extreme_price_movements.inference.run_inference import _evaluate_oco_policy
+from extreme_price_movements.inference.feature_generator import (
+    _synthesize_live_safe_feature_keys,
+)
+from extreme_price_movements.inference.run_inference import (
+    _evaluate_oco_policy,
+    _monitor_active_position_price_action,
+)
 from extreme_price_movements.inference.trade_executor import (
     TradeExecutor,
     _classify_exchange_error,
 )
 from extreme_price_movements.optimise import _select_candidate_trade_mask
+
+
+def test_synthesize_live_safe_timestamp_dayofweek_feature():
+    idx = pd.date_range("2026-03-06", periods=4, freq="1d", tz="UTC")
+    close = pd.DataFrame({"BTC/USDT": [1.0, 1.0, 1.0, 1.0]}, index=idx)
+
+    feats = _synthesize_live_safe_feature_keys(
+        {},
+        {"close": close},
+        ["BTC/USDT"],
+        {"timestamp.dayofweek>=5"},
+    )
+
+    assert "timestamp.dayofweek>=5" in feats
+    assert feats["timestamp.dayofweek>=5"]["BTC/USDT"].tolist() == [
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+    ]
 
 
 def test_select_candidates_uses_ret12h_move_and_vol_thresholds():
@@ -105,6 +131,65 @@ def test_select_candidates_rejects_legacy_threshold_overrides():
         )
 
 
+def test_select_candidates_falls_back_when_optimized_masks_are_silent():
+    idx = pd.date_range("2026-03-01", periods=13, freq="1h", tz="UTC")
+    symbols = ["A", "B", "C", "D"]
+    close = pd.DataFrame(
+        {
+            "A": [100] * 12 + [109],
+            "B": [100] * 12 + [101],
+            "C": [100] * 12 + [99],
+            "D": [100] * 12 + [91],
+        },
+        index=idx,
+    )
+    panel = {
+        "close": close,
+        "high": close * 1.04,
+        "low": close * 0.96,
+        "open": close,
+        "volume": close,
+    }
+    feats = {
+        "ret12h": close / close.shift(12) - 1.0,
+        "range_12h_pct": pd.DataFrame(0.08, index=idx, columns=symbols),
+        "volatility_zscore": pd.DataFrame(1.7, index=idx, columns=symbols),
+    }
+
+    import extreme_price_movements.inference.candidate_selector as cs
+
+    cs._resolve_runtime_cfg = lambda: {
+        "train_extreme_pct_hourly": 0.25,
+        "train_min_move_12h_pct": 0.06,
+        "train_min_range_pct": 0.06,
+        "train_min_vol_zscore": 1.5,
+        "candidate_mask_empty_fallback_enabled": True,
+        "candidate_mask_params_by_mode": {
+            mode: {
+                "family": "abs_move_threshold",
+                "param": 999.0,
+                "z_hours": 1.0,
+                "duration_hours": 1.0,
+            }
+            for mode in (
+                "price_up_tf",
+                "price_up_mr",
+                "price_down_tf",
+                "price_down_mr",
+            )
+        },
+    }
+
+    long_cands, short_cands = select_candidates(
+        panel=panel,
+        feats=feats,
+        metric="ret12h",
+    )
+
+    assert long_cands == ["A"]
+    assert short_cands == ["D"]
+
+
 def test_candidate_trade_mask_respects_side_specific_extremes():
     idx = pd.date_range("2026-03-01", periods=2, freq="1h", tz="UTC")
     ret12h = pd.DataFrame(
@@ -168,6 +253,76 @@ def test_5m_exit_takes_priority_over_threshold_update():
     )
     _evaluate_oco_policy("BTC/USDT", pos, bars, executor)
     assert "BTC/USDT" not in executor.get_active_positions()
+
+
+def test_shadow_executor_exposes_monitorable_open_positions():
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        bucket_params={"long_mr": {"sl_mult": 1.0}},
+    )
+
+    rec = executor.execute_trade(
+        "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
+    )
+    positions = executor.get_oco_positions()
+    statuses = executor.monitor_orders_once()
+
+    assert rec["status"] == "recorded"
+    assert "BTC/USDT" in positions
+    assert statuses["BTC/USDT"]["status"] == "open"
+    assert statuses["BTC/USDT"]["mode"] == "shadow"
+    assert statuses["BTC/USDT"]["stop_price"] < 100.0
+    assert executor.get_active_positions()["BTC/USDT"]["last_order_status"] == "open"
+
+
+def test_shadow_monitor_updates_stop_from_trailing_price_action():
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        bucket_params={
+            "long_mr": {
+                "sl_mult": 1.0,
+                "trail_mult": 0.25,
+                "giveback_pct": 0.01,
+                "profit_lock_amount": 0.003,
+            }
+        },
+    )
+    rec = executor.execute_trade(
+        "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
+    )
+    assert rec["status"] == "recorded"
+    initial_stop = executor.get_active_positions()["BTC/USDT"]["stop_price"]
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 102.0],
+            "high": [103.0, 106.0],
+            "low": [100.0, 104.0],
+            "close": [102.0, 105.0],
+        },
+        index=pd.date_range("2026-03-01 00:05", periods=2, freq="5min", tz="UTC"),
+    )
+    executor.update_position_policy_state(
+        "BTC/USDT",
+        last_5m_eval_ts=pd.Timestamp("2026-03-01 00:00", tz="UTC"),
+    )
+    executor.positions["BTC/USDT"]["entry_time"] = pd.Timestamp(
+        "2026-03-01 00:00", tz="UTC"
+    )
+    executor.positions["BTC/USDT"]["ohlcv_5m_latest"] = bars
+
+    statuses = _monitor_active_position_price_action(
+        executor,
+        exchange=None,
+        now=pd.Timestamp("2026-03-01 00:15", tz="UTC"),
+    )
+    updated = executor.get_active_positions()["BTC/USDT"]
+
+    assert updated["stop_price"] > initial_stop
+    assert updated["peak_price"] == 106.0
+    assert statuses["BTC/USDT"]["price_action"]["stop_price_before"] == initial_stop
+    assert statuses["BTC/USDT"]["price_action"]["stop_price_after"] > initial_stop
 
 
 def test_live_executor_places_stop_loss_only_not_oco_or_take_profit(monkeypatch):

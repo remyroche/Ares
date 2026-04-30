@@ -48,6 +48,11 @@ from extreme_price_movements.policy_optimiser import (
     build_replay_context,
     replay_exit_policy,
 )
+from extreme_price_movements.regime_adaptor import (
+    apply_regime_adaptor,
+    load_regime_adaptor,
+    safe_strategy_slug,
+)
 from extreme_price_movements.ridge_position_sizer import (
     prepare_policy_params_from_tpsl_optimiser,
     run_policy_aware_labeling_step,
@@ -1063,6 +1068,44 @@ def evaluate_holdout_symbol(
             pd.DatetimeIndex(outcomes["timestamp"].values)
         )
         score_values = _fill_nonfinite(aligned_scores.to_numpy(dtype=np.float64))
+        adaptor_path = (
+            Path(data_root)
+            / "artifacts"
+            / run_id
+            / "ridge_sizer"
+            / "regime_adaptors"
+            / safe_strategy_slug(strategy_id)
+            / "regime_adaptor.json"
+        )
+        if adaptor_path.exists():
+            try:
+                adaptor = load_regime_adaptor(adaptor_path)
+                if bool(adaptor.get("enable_regime_adaptor", False)):
+                    feature_rows = feature_df.reindex(
+                        pd.DatetimeIndex(outcomes["timestamp"].values)
+                    )
+                    applied = apply_regime_adaptor(
+                        feature_rows.reset_index(drop=True),
+                        score_values,
+                        adaptor,
+                        timestamps=np.asarray(outcomes["timestamp"].values),
+                        symbols=np.repeat(panel_symbol, len(score_values)),
+                    )
+                    score_values = np.asarray(
+                        applied["deployment_score_rank"], dtype=np.float64
+                    )
+                    eligible = np.asarray(applied["eligible"], dtype=bool)
+                    if not bool(eligible.any()):
+                        tprint(
+                            f"Holdout eval strategy skipped: symbol={symbol} "
+                            f"strategy_id={strategy_id} reason=all_regime_gated"
+                        )
+                        continue
+            except Exception as exc:
+                tprint(
+                    f"Warning: holdout regime adaptor failed for "
+                    f"{strategy_id[:60]}: {exc}"
+                )
         raw_returns = np.asarray(outcomes["label"].values, dtype=np.float64)
         ts_values = np.asarray(outcomes["timestamp"].values)
 

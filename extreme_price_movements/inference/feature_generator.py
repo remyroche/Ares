@@ -7,7 +7,8 @@ This module generates features for inference:
 - Computes per-symbol features needed by candidate selector
 """
 
-from typing import Any, Dict, List, Optional, Set
+import re
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -18,7 +19,10 @@ from extreme_price_movements.features import (
     compute_features_hourly,
     compute_market_features,
 )
-from extreme_price_movements.inference.parity import LIVE_UNAVAILABLE_FEATURES
+from extreme_price_movements.inference.parity import (
+    LIVE_UNAVAILABLE_FEATURES,
+    strategy_id_matches,
+)
 from extreme_price_movements.utils import tprint
 
 
@@ -295,6 +299,9 @@ def load_or_compute_features(
             merged = _synthesize_gated_feature_keys(
                 merged, panel, basket_syms, required_feature_keys
             )
+            merged = _synthesize_live_safe_feature_keys(
+                merged, panel, basket_syms, required_feature_keys
+            )
         return merged
 
     tail_warmup_hours = _required_tail_warmup_hours(
@@ -358,6 +365,9 @@ def load_or_compute_features(
         merged_feats = _synthesize_gated_feature_keys(
             merged_feats, panel, basket_syms, required_feature_keys
         )
+        merged_feats = _synthesize_live_safe_feature_keys(
+            merged_feats, panel, basket_syms, required_feature_keys
+        )
     new_rows = 0
     if full_tail_feats:
         for df in full_tail_feats.values():
@@ -368,9 +378,34 @@ def load_or_compute_features(
     return merged_feats
 
 
-def get_inference_required_feature_keys(model_bundle: Dict[str, Any]) -> Set[str]:
+def _model_key_matches_allowed(
+    model_key: str,
+    allowed: Optional[Set[str]],
+) -> bool:
+    if allowed is None:
+        return True
+    key = str(model_key or "")
+    if strategy_id_matches(key, allowed):
+        return True
+    return any(
+        key == allowed_key
+        or key.startswith(f"{allowed_key}_")
+        or allowed_key.startswith(f"{key}_")
+        for allowed_key in allowed
+    )
+
+
+def get_inference_required_feature_keys(
+    model_bundle: Dict[str, Any],
+    accepted_strategies: Optional[Iterable[str]] = None,
+) -> Set[str]:
     """Extract the union of raw feature keys needed by live inference models."""
     required: Set[str] = set()
+    allowed = (
+        {str(strategy) for strategy in accepted_strategies if str(strategy)}
+        if accepted_strategies is not None
+        else None
+    )
     bundle = (
         model_bundle.get("bundle", model_bundle)
         if isinstance(model_bundle, dict)
@@ -378,18 +413,24 @@ def get_inference_required_feature_keys(model_bundle: Dict[str, Any]) -> Set[str
     )
 
     alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
-    for value in alpha_models.values():
+    for key, value in alpha_models.items():
+        if not _model_key_matches_allowed(str(key), allowed):
+            continue
         if not isinstance(value, dict):
             continue
         if "feat_cols" in value:
             required.update(value.get("feat_cols", []) or [])
             continue
-        for model_info in value.values():
+        for nested_key, model_info in value.items():
+            if not _model_key_matches_allowed(f"{key}_{nested_key}", allowed):
+                continue
             if isinstance(model_info, dict):
                 required.update(model_info.get("feat_cols", []) or [])
 
     meta_models = bundle.get("meta_models", {}) if isinstance(bundle, dict) else {}
-    for meta in meta_models.values():
+    for key, meta in meta_models.items():
+        if not _model_key_matches_allowed(str(key), allowed):
+            continue
         selected = getattr(meta, "selected_features", None)
         if selected:
             required.update(selected)
@@ -397,10 +438,11 @@ def get_inference_required_feature_keys(model_bundle: Dict[str, Any]) -> Set[str
     ridge_sizer = (
         model_bundle.get("ridge_sizer") if isinstance(model_bundle, dict) else None
     )
-    for attr in ("model_names_", "model_names_ridge_", "limit_offset_features_"):
-        vals = getattr(ridge_sizer, attr, None)
-        if vals:
-            required.update([v for v in vals if v != "sizer_score_oof"])
+    if allowed is None:
+        for attr in ("model_names_", "model_names_ridge_", "limit_offset_features_"):
+            vals = getattr(ridge_sizer, attr, None)
+            if vals:
+                required.update([v for v in vals if v != "sizer_score_oof"])
 
     booster_bundles = (
         model_bundle.get("booster_bundles", {})
@@ -408,9 +450,28 @@ def get_inference_required_feature_keys(model_bundle: Dict[str, Any]) -> Set[str
         else {}
     )
     if isinstance(booster_bundles, dict):
-        for booster in booster_bundles.values():
+        for key, booster in booster_bundles.items():
+            if not _model_key_matches_allowed(str(key), allowed):
+                continue
             if isinstance(booster, dict):
                 required.update(booster.get("feature_keys", []) or [])
+
+    regime_adaptors = (
+        model_bundle.get("regime_adaptors", {})
+        if isinstance(model_bundle, dict)
+        else {}
+    )
+    if isinstance(regime_adaptors, dict):
+        for key, adaptor in regime_adaptors.items():
+            if not _model_key_matches_allowed(str(key), allowed):
+                continue
+            if isinstance(adaptor, dict):
+                mapping = adaptor.get("feature_mapping", {}) or {}
+                for value in mapping.values():
+                    if isinstance(value, str):
+                        required.add(value)
+                    elif isinstance(value, dict):
+                        required.update(str(v) for v in value.values() if isinstance(v, str))
 
     ridge_weights = bundle.get("ridge_weights", {}) if isinstance(bundle, dict) else {}
     params_per_bucket = (
@@ -418,7 +479,9 @@ def get_inference_required_feature_keys(model_bundle: Dict[str, Any]) -> Set[str
         if isinstance(ridge_weights, dict)
         else {}
     )
-    for bucket_cfg in params_per_bucket.values():
+    for key, bucket_cfg in params_per_bucket.items():
+        if not _model_key_matches_allowed(str(key), allowed):
+            continue
         if isinstance(bucket_cfg, dict):
             required.update(bucket_cfg.get("feature_names", []) or [])
 
@@ -559,6 +622,77 @@ def _broadcast_series_to_symbols(
 ) -> pd.DataFrame:
     values = np.repeat(series.to_numpy(dtype=np.float32)[:, None], len(columns), axis=1)
     return pd.DataFrame(values, index=series.index, columns=columns)
+
+
+def _zero_frame_like_panel(
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+) -> Optional[pd.DataFrame]:
+    close = panel.get("close")
+    if not isinstance(close, pd.DataFrame) or close.empty:
+        return None
+    valid_syms = [sym for sym in basket_syms if sym in close.columns]
+    if not valid_syms:
+        return None
+    return pd.DataFrame(0.0, index=close.index, columns=valid_syms, dtype=np.float32)
+
+
+def _synthesize_live_safe_feature_keys(
+    feats: Dict[str, pd.DataFrame],
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    required_feature_keys: Optional[Set[str]],
+) -> Dict[str, pd.DataFrame]:
+    """Materialize deterministic training fallbacks used by live-safe models."""
+    if not required_feature_keys:
+        return feats
+
+    required = set(required_feature_keys)
+    missing = sorted(
+        key for key in ({"p_exh_lag1", "retest_accept"} & required) if key not in feats
+    )
+    calendar_missing = sorted(
+        key
+        for key in required
+        if key not in feats and re.fullmatch(r"timestamp\.dayofweek>=\d+", key)
+    )
+    if not missing and not calendar_missing:
+        return feats
+
+    zero_frame = _zero_frame_like_panel(panel, basket_syms)
+    if zero_frame is None:
+        return feats
+
+    out = dict(feats)
+    close = panel.get("close")
+    for key in calendar_missing:
+        match = re.fullmatch(r"timestamp\.dayofweek>=(\d+)", key)
+        if (
+            match
+            and isinstance(close, pd.DataFrame)
+            and isinstance(close.index, pd.DatetimeIndex)
+        ):
+            threshold = int(match.group(1))
+            idx = close.index
+            if idx.tz is None:
+                idx = idx.tz_localize("UTC")
+            else:
+                idx = idx.tz_convert("UTC")
+            weekend = pd.Series(
+                (idx.dayofweek >= threshold).astype(np.float32),
+                index=close.index,
+            )
+            out[key] = _broadcast_series_to_symbols(
+                weekend,
+                list(zero_frame.columns),
+            )
+    for key in missing:
+        out[key] = zero_frame.copy()
+    tprint(
+        "Synthesized live-safe training fallback features for inference: "
+        f"{missing + calendar_missing}"
+    )
+    return out
 
 
 def _synthesize_gated_feature_keys(

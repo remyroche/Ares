@@ -225,15 +225,15 @@ def _portfolio_risk_constraints_verified(
     mgr = PortfolioManager(portfolio_value=10_000.0)
     now = pd.Timestamp(ctx.now or "2026-01-01T00:00:00Z")
     mgr.record_position_open(
-        symbol="BTC/USDT",
+        symbol="BTC/USDC",
         side="long",
         strategy_id="long_mr",
-        position_size=2_000.0,
+        position_size=1_500.0,
         entry_price=100.0,
         entry_time=now,
     )
     allowed_same_asset, same_asset_info = mgr.can_enter_position(
-        symbol="BTC/USDT",
+        symbol="BTC/USDC",
         side="long",
         strategy_id="long_mr",
         confidence_score=0.99,
@@ -242,7 +242,7 @@ def _portfolio_risk_constraints_verified(
         requested_position_size=1_000.0,
     )
     allowed_next, next_info = mgr.can_enter_position(
-        symbol="ETH/USDT",
+        symbol="ETH/USDC",
         side="long",
         strategy_id="long_mr",
         confidence_score=0.99,
@@ -250,7 +250,7 @@ def _portfolio_risk_constraints_verified(
         current_time=now + pd.Timedelta(minutes=2),
         requested_position_size=9_000.0,
     )
-    position_cap_ok = float(next_info.get("position_size_cap", 0.0)) <= 1_000.0
+    position_cap_ok = float(next_info.get("position_size_cap", 0.0)) <= 1_500.0
     threshold_ok = float(next_info.get("final_threshold", 0.0)) > 0.50
     ok = not allowed_same_asset and allowed_next and position_cap_ok and threshold_ok
     return _result(

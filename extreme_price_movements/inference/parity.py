@@ -107,7 +107,11 @@ def strategy_id_matches(strategy_id: str, allowed: Optional[Set[str]]) -> bool:
     if allowed is None:
         return True
     sid = str(strategy_id or "")
-    return sid in allowed or strategy_core_id(sid) in allowed
+    aliases = _strategy_aliases(sid)
+    allowed_aliases: Set[str] = set()
+    for candidate in allowed:
+        allowed_aliases.update(_strategy_aliases(str(candidate)))
+    return bool(aliases & allowed_aliases)
 
 
 def _normalise_symbol(symbol: str) -> str:
@@ -152,7 +156,9 @@ def _strategy_aliases(strategy_id: str) -> Set[str]:
     sid = str(strategy_id or "")
     core = strategy_core_id(sid)
     side = strategy_side(sid)
-    aliases = {sid, core}
+    aliases = {sid}
+    if core and core not in {"mr", "tf", "none"}:
+        aliases.add(core)
     if side and core:
         aliases.add(f"{side}_{core}")
     return {alias for alias in aliases if alias}
@@ -222,11 +228,10 @@ def load_strategy_for_inference_filter(
                         selected.add(strategy_core_id(str(sid)))
                 else:
                     selected = _strategy_ids_from_rows(payload, side_aware=True)
-            if selected:
-                tprint(
-                    f"[StrategyFilter] Loaded {len(selected)} deployment inference ids from {path}"
-                )
-                return selected
+            tprint(
+                f"[StrategyFilter] Loaded {len(selected)} deployment inference ids from {path}"
+            )
+            return selected
         except Exception as exc:
             tprint(f"[StrategyFilter] Error loading {path}: {exc}")
     return None
@@ -238,9 +243,9 @@ def load_strategy_asset_exclusion_filter(
     """Load per-strategy symbols excluded by policy optimiser asset diagnostics."""
     base = Path(data_root) / "artifacts" / run_id
     paths = [
-        base / "strategy_for_inference.json",
         base / "policy_params" / "strategy_for_inference.json",
         base / "ridge_sizer" / "strategy_for_inference.json",
+        base / "strategy_for_inference.json",
     ]
     exclusions: Dict[str, Set[str]] = {}
     for path in paths:
@@ -297,7 +302,7 @@ def load_strategy_asset_exclusion_filter(
                     }
                     for alias in _strategy_aliases(str(sid)):
                         exclusions.setdefault(alias, set()).update(cleaned)
-            if exclusions:
+            if any(symbols for symbols in exclusions.values()):
                 tprint(
                     f"[StrategyFilter] Loaded asset exclusions for "
                     f"{len(exclusions)} strategy aliases from {path}"
@@ -326,11 +331,19 @@ def load_policy_params_by_strategy(
             continue
         try:
             payload = json.loads(path.read_text())
-            strategies = (
-                payload.get("strategies", []) if isinstance(payload, dict) else []
-            )
+            strategies = []
+            if isinstance(payload, dict):
+                strategy_for_inference = payload.get("strategy_for_inference")
+                if isinstance(strategy_for_inference, dict):
+                    strategies = strategy_for_inference.get("strategies", [])
+                elif isinstance(strategy_for_inference, list):
+                    strategies = strategy_for_inference
+                else:
+                    strategies = payload.get("strategies", [])
             for row in strategies:
                 if not isinstance(row, dict) or not row.get("strategy_id"):
+                    continue
+                if row.get("selected") is False:
                     continue
                 params = dict(row)
                 sid = str(params["strategy_id"])
@@ -340,11 +353,10 @@ def load_policy_params_by_strategy(
                 side = strategy_side(sid)
                 if side:
                     out[f"{side}_{core}"] = params
-            if out:
-                tprint(
-                    f"[PolicyParams] Loaded {len(strategies)} policy optimiser rows from {path}"
-                )
-                return out
+            tprint(
+                f"[PolicyParams] Loaded {len(strategies)} selected policy optimiser rows from {path}"
+            )
+            return out
         except Exception as exc:
             tprint(f"[PolicyParams] Error loading {path}: {exc}")
     return out
@@ -434,24 +446,54 @@ def resolve_deployment_strategy_filter(
     but it is not a prerequisite for production readiness.
     """
     accepted = load_strategy_for_inference_filter(data_root, run_id)
+    if accepted is not None and len(accepted) == 0:
+        tprint(
+            "[StrategyFilter] Explicit strategy_for_inference is empty; "
+            "no strategies are deployable until policy_optimiser selects one"
+        )
+        return set()
     if accepted is None:
         accepted = load_strategy_acceptance_filter(data_root, run_id)
     profitable = load_profitable_sizer_strategy_filter(data_root, run_id)
     policy_ready = load_policy_strategy_filter(data_root, run_id)
 
-    filters = [
-        f for f in (accepted, profitable, policy_ready) if f is not None and len(f) > 0
-    ]
-    if not filters:
+    filters = {
+        "accepted": accepted,
+        "profitable": profitable,
+        "policy_ready": policy_ready,
+    }
+    active_filters = {
+        name: f for name, f in filters.items() if f is not None and len(f) > 0
+    }
+    if not active_filters:
         return None
 
-    selected = set(filters[0])
-    for f in filters[1:]:
-        selected = {
+    selected = set(active_filters.get("accepted") or next(iter(active_filters.values())))
+    policy_selected = selected
+    if policy_ready is not None and len(policy_ready) > 0:
+        policy_selected = {
+            sid
+            for sid in policy_selected
+            if any(strategy_id_matches(sid, {candidate}) for candidate in policy_ready)
+        }
+        if policy_selected:
+            selected = policy_selected
+
+    if profitable is not None and len(profitable) > 0:
+        profitable_selected = {
             sid
             for sid in selected
-            if any(strategy_id_matches(sid, {candidate}) for candidate in f)
+            if any(strategy_id_matches(sid, {candidate}) for candidate in profitable)
         }
+        if profitable_selected:
+            selected = profitable_selected
+        elif policy_selected:
+            tprint(
+                "[StrategyFilter] Profitable sizer allow-list has no overlap with "
+                "policy-selected deployment strategies; using policy optimiser "
+                "strategy_for_inference as authoritative for this run"
+            )
+    selected = _with_strategy_aliases(selected)
     tprint(
         "[StrategyFilter] Deployment strategies resolved: " f"{len(selected)} aliases"
     )
@@ -598,8 +640,17 @@ def validate_live_feature_contract(
     )
     for attr in ("model_names_", "model_names_ridge_"):
         vals = getattr(ridge_sizer, attr, None)
-        if vals:
-            active_features.update(str(v) for v in vals)
+        if not vals:
+            continue
+        vals_s = [str(v) for v in vals]
+        unavailable = sorted(set(vals_s) & LIVE_UNAVAILABLE_FEATURES)
+        if unavailable:
+            tprint(
+                "[FeatureContract] Ignoring legacy ridge_sizer feature list for "
+                f"live contract because it contains target-derived fields: {unavailable}"
+            )
+            continue
+        active_features.update(vals_s)
 
     bundle = (
         model_bundle.get("bundle", model_bundle)

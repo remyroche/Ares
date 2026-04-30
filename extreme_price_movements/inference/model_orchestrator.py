@@ -30,6 +30,7 @@ from extreme_price_movements.inference.parity import (
     strategy_id_matches,
     strategy_side,
 )
+from extreme_price_movements.regime_adaptor import apply_regime_adaptor
 from extreme_price_movements.utils import tprint
 
 
@@ -93,6 +94,11 @@ class ModelOrchestrator:
         )
         self.booster_bundles = (
             self.full_state.get("booster_bundles", {})
+            if isinstance(self.full_state, dict)
+            else {}
+        )
+        self.regime_adaptors = (
+            self.full_state.get("regime_adaptors", {})
             if isinstance(self.full_state, dict)
             else {}
         )
@@ -589,6 +595,7 @@ class ModelOrchestrator:
         """
         bucket_key = self._policy_bucket_key(side, kind)
         ridge_preds = None
+        skipped_unsafe_sizer = False
 
         if self.ridge_sizer is not None:
             try:
@@ -598,10 +605,12 @@ class ModelOrchestrator:
                 model_names = list(model_names)
                 unavailable = sorted(set(model_names) & LIVE_UNAVAILABLE_FEATURES)
                 if unavailable:
-                    raise ValueError(
-                        "Ridge position sizer requires live-unavailable fields: "
-                        f"{unavailable}"
+                    skipped_unsafe_sizer = True
+                    tprint(
+                        "Ignoring legacy ridge position sizer for live inference; "
+                        f"it requires target-derived fields: {unavailable}"
                     )
+                    model_names = []
 
                 if model_names:
                     for col in model_names:
@@ -635,6 +644,16 @@ class ModelOrchestrator:
                 if isinstance(k, str) and k.startswith(prefix)
             }
             if not bucket_weights:
+                fallback_size = self._policy_fallback_position_size(bucket_key)
+                if fallback_size > 0.0:
+                    if skipped_unsafe_sizer:
+                        tprint(
+                            f"Using policy fallback sizing for {bucket_key}: "
+                            f"{fallback_size:.6g}"
+                        )
+                    return pd.Series(
+                        fallback_size, index=features.index
+                    ), {"confidence": min(1.0, fallback_size)}
                 tprint(f"Warning: No flattened ridge weights found for {bucket_key}")
                 return pd.Series(0.0, index=features.index), {"confidence": 0.0}
 
@@ -695,11 +714,64 @@ class ModelOrchestrator:
                         mix_meta["mix_booster_w"] = mix_booster_w
                         mix_meta["mix_conf_mult"] = mix_conf_mult
 
+        strategy_id_for_regime = bucket_key or self._find_strategy_id_for_bucket(bucket_key)
+        adaptor = None
+        if isinstance(self.regime_adaptors, dict):
+            adaptor = self.regime_adaptors.get(strategy_id_for_regime)
+            if adaptor is None:
+                for sid, candidate in self.regime_adaptors.items():
+                    if strategy_id_matches(str(sid), {str(strategy_id_for_regime)}):
+                        adaptor = candidate
+                        break
+        if isinstance(adaptor, dict) and bool(adaptor.get("enable_regime_adaptor", False)):
+            try:
+                applied = apply_regime_adaptor(
+                    features,
+                    final_preds,
+                    adaptor,
+                    timestamps=features.index,
+                    symbols=np.repeat("live", len(features)),
+                )
+                final_preds = np.asarray(applied["deployment_score_rank"], dtype=float)
+                mix_meta["regime_adaptor_enabled"] = 1.0
+                mix_meta["regime_eligible_share"] = float(np.mean(applied["eligible"]))
+                mix_meta["regime_weight_mean"] = float(np.mean(applied["regime_weight"]))
+            except Exception as exc:
+                tprint(f"Warning: regime adaptor failed for {bucket_key}: {exc}")
+
         conf = np.clip(np.abs(final_preds), 0.0, 1.0)
         return (
             pd.Series(final_preds, index=features.index),
             {"confidence": float(np.nanmean(conf)) if len(conf) else 0.0, **mix_meta},
         )
+
+    def _policy_fallback_position_size(self, bucket_key: str) -> float:
+        """Return a conservative live sizing fallback from persisted policy params."""
+        if not isinstance(self.bucket_params, dict) or not bucket_key:
+            return 0.0
+        bucket_cfg = {}
+        buckets = self.bucket_params.get("buckets", {})
+        if isinstance(buckets, dict):
+            bucket_cfg = buckets.get(bucket_key, {}) or buckets.get(
+                f"{bucket_key}_tbm", {}
+            )
+        if not bucket_cfg:
+            bucket_cfg = self.bucket_params.get(bucket_key, {}) or {}
+        if not isinstance(bucket_cfg, dict):
+            return 0.0
+
+        raw = bucket_cfg.get("selection_frac")
+        if raw is None:
+            raw = bucket_cfg.get("position_size")
+        if raw is None:
+            return 0.0
+        try:
+            size = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        if not np.isfinite(size) or size <= 0.0:
+            return 0.0
+        return float(np.clip(size, 0.0, 0.30))
 
     # =========================================================================
     # STEP 6: Entry Policy (Limit Offset Optimizer)

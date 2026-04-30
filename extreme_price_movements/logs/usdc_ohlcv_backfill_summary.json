@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-04-29T21:25:46.337592+00:00",
+  "data_root": "data",
+  "timeframe": "1h",
+  "lookback_hours": 1440,
+  "requested_symbols": 272,
+  "updated": 272,
+  "skipped_current": 0,
+  "empty": 0,
+  "failed": 0,
+  "failures": {},
+  "finished_at": "2026-04-29T21:29:28.837592+00:00"
+}

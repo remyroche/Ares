@@ -1,8 +1,29 @@
-import pandas as pd
+import logging
+from typing import Callable, List, Literal, Optional
+
 import numpy as np
-import shap
-from typing import Callable, List, Optional, Tuple, Literal
+import pandas as pd
+
 from extreme_price_movements.feature_select.scoring import UtilityConfig
+
+logger = logging.getLogger(__name__)
+_SHAP_FALLBACK_LOGGED = False
+
+
+def _fallback_model_importance(model: object, feature_names: List[str]) -> pd.DataFrame:
+    """Return tree-model importances when SHAP is unavailable."""
+    raw = getattr(model, "feature_importances_", None)
+    if raw is None and hasattr(model, "booster_"):
+        try:
+            raw = model.booster_.feature_importance(importance_type="gain")
+        except Exception:
+            raw = None
+    values = np.asarray(raw if raw is not None else [], dtype=np.float32)
+    if values.shape[0] != len(feature_names):
+        values = np.zeros(len(feature_names), dtype=np.float32)
+    values = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
+    return pd.DataFrame({"feature": feature_names, "shap_mean_abs": values})
+
 
 def block_permutation_importance(
     model,
@@ -100,13 +121,32 @@ def compute_shap_importance(
 
     X_sample = X_sample[feature_names]
 
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X_sample)
+    global _SHAP_FALLBACK_LOGGED
+    try:
+        import shap
+
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X_sample)
+    except Exception as exc:
+        if not _SHAP_FALLBACK_LOGGED:
+            logger.warning(
+                "SHAP importance unavailable; using model feature importances "
+                "as fallback: %s",
+                exc,
+            )
+            _SHAP_FALLBACK_LOGGED = True
+        return _fallback_model_importance(model, feature_names)
 
     if isinstance(shap_values, list) and len(shap_values) == 2:
         shap_values = shap_values[1]
 
-    shap_mean_abs = np.mean(np.abs(shap_values), axis=0)
+    shap_arr = np.asarray(shap_values)
+    if shap_arr.ndim == 3 and shap_arr.shape[-1] == 2:
+        shap_arr = shap_arr[:, :, 1]
+    if shap_arr.ndim != 2 or shap_arr.shape[1] != len(feature_names):
+        return _fallback_model_importance(model, feature_names)
+
+    shap_mean_abs = np.mean(np.abs(shap_arr), axis=0)
 
     return pd.DataFrame({
         "feature": feature_names,

@@ -4,1317 +4,333 @@
   "buckets": {
     "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805": {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 0.9863598974995726,
-      "asset_group_positive_share": 0.8455882352941176,
-      "avg_wallet_growth_per_month_pct": 23.68576570719502,
-      "calmar_ratio": 145.69792760379488,
+      "asset_group_cv_pnl": 0.8911003381883519,
+      "asset_group_positive_share": 0.8676470588235294,
+      "avg_wallet_growth_per_month_pct": 24.798986790671947,
+      "calmar_ratio": 200.88623602349995,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.26427918672561646,
+      "expectancy_tstat": 0.2857908010482788,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "clf",
-            "importance": 0.15629994869232178,
-            "metric": "abs_weight",
-            "std": 0.1896827071905136
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.15611141920089722,
-            "metric": "abs_weight",
-            "std": 0.18950967490673065
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.15601468086242676,
-            "metric": "abs_weight",
-            "std": 0.18960857391357422
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07823879271745682,
-            "metric": "abs_weight",
-            "std": 0.4005334973335266
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.03996060788631439,
-            "metric": "abs_weight",
-            "std": 0.6027632355690002
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.035857751965522766,
-            "metric": "abs_weight",
-            "std": 0.3899535834789276
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.024382034316658974,
-            "metric": "abs_weight",
-            "std": 0.43052157759666443
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.011311511509120464,
-            "metric": "abs_weight",
-            "std": 0.054687030613422394
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.04303630813956261,
-            "metric": "abs_weight",
-            "std": 0.24926836788654327
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.11920401453971863,
-            "metric": "abs_weight",
-            "std": 0.4046204686164856
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.1902829974432946,
-        "winner_top10": [
-          {
-            "feature": "clf",
-            "importance": 0.15629994869232178,
-            "metric": "abs_weight",
-            "std": 0.1896827071905136
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.15611141920089722,
-            "metric": "abs_weight",
-            "std": 0.18950967490673065
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.15601468086242676,
-            "metric": "abs_weight",
-            "std": 0.18960857391357422
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07823879271745682,
-            "metric": "abs_weight",
-            "std": 0.4005334973335266
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.03996060788631439,
-            "metric": "abs_weight",
-            "std": 0.6027632355690002
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.035857751965522766,
-            "metric": "abs_weight",
-            "std": 0.3899535834789276
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.024382034316658974,
-            "metric": "abs_weight",
-            "std": 0.43052157759666443
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.011311511509120464,
-            "metric": "abs_weight",
-            "std": 0.054687030613422394
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.04303630813956261,
-            "metric": "abs_weight",
-            "std": 0.24926836788654327
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.11920401453971863,
-            "metric": "abs_weight",
-            "std": 0.4046204686164856
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.555511235208084,
-      "max_drawdown": 0.36578691490865944,
-      "monthly_group_cv_pnl": 1.0659280116767442,
-      "monthly_pnl_std": 2.272319416542339,
-      "monthly_sortino": 11.72680083405851,
-      "net_pnl": 53.294395446777344,
-      "net_pnl_per_trade_pct": 0.7086078373457964,
-      "pnl_per_trade": 0.7086078373457964,
-      "profit_factor": 1.8278639001529298,
+      "hit_rate": 0.5656162744315916,
+      "max_drawdown": 0.28038103997265396,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 0.9946374719731642,
+      "monthly_pnl_std": 2.2409059652921295,
+      "monthly_sortino": 10.75515605063599,
+      "net_pnl": 56.32469177246094,
+      "net_pnl_per_trade_pct": 0.7488989731745903,
+      "pnl_per_trade": 0.7488989731745903,
+      "profit_factor": 1.9206358687783647,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.5,
-      "sizer_mix_conf_mult": 0.75,
-      "sizer_mix_ridge_w": 0.85,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9626128778373843,
+      "stability": 0.9773736807987653,
       "strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
       "threshold_pct": 70.0,
       "trades_per_day": 20.605479452054794,
-      "wallet_pnl": 5.921441426798755
+      "wallet_pnl": 6.199746697667987
     },
     "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701": {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 1.9136024204629987,
-      "asset_group_positive_share": 0.6948529411764706,
-      "avg_wallet_growth_per_month_pct": 7.6742174657034825,
-      "calmar_ratio": 41.95706986448679,
+      "asset_group_cv_pnl": 1.8821272698897695,
+      "asset_group_positive_share": 0.7058823529411765,
+      "avg_wallet_growth_per_month_pct": 7.72602450445366,
+      "calmar_ratio": 32.45785225470832,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.1651550978422165,
+      "expectancy_tstat": 0.17139412462711334,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.04479258880019188,
-            "metric": "abs_weight",
-            "std": 0.08175856620073318
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.013628176413476467,
-            "metric": "abs_weight",
-            "std": 0.02235165424644947
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.0051636663265526295,
-            "metric": "abs_weight",
-            "std": 0.0075912089087069035
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.005163663066923618,
-            "metric": "abs_weight",
-            "std": 0.007591207046061754
-          },
-          {
-            "feature": "clf",
-            "importance": 0.00516364723443985,
-            "metric": "abs_weight",
-            "std": 0.007591197267174721
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.002033176366239786,
-            "metric": "abs_weight",
-            "std": 0.005750690586864948
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.001711781951598823,
-            "metric": "abs_weight",
-            "std": 0.00484165083616972
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.0005270544206723571,
-            "metric": "abs_weight",
-            "std": 0.0014907352160662413
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.0,
-            "metric": "abs_weight",
-            "std": 0.0
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.02301778458058834,
-            "metric": "abs_weight",
-            "std": 0.058223530650138855
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.05102356258361803,
-        "winner_top10": [
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.04479258880019188,
-            "metric": "abs_weight",
-            "std": 0.08175856620073318
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.013628176413476467,
-            "metric": "abs_weight",
-            "std": 0.02235165424644947
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.0051636663265526295,
-            "metric": "abs_weight",
-            "std": 0.0075912089087069035
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.005163663066923618,
-            "metric": "abs_weight",
-            "std": 0.007591207046061754
-          },
-          {
-            "feature": "clf",
-            "importance": 0.00516364723443985,
-            "metric": "abs_weight",
-            "std": 0.007591197267174721
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.002033176366239786,
-            "metric": "abs_weight",
-            "std": 0.005750690586864948
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.001711781951598823,
-            "metric": "abs_weight",
-            "std": 0.00484165083616972
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.0005270544206723571,
-            "metric": "abs_weight",
-            "std": 0.0014907352160662413
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.0,
-            "metric": "abs_weight",
-            "std": 0.0
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.02301778458058834,
-            "metric": "abs_weight",
-            "std": 0.058223530650138855
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5557549346321456,
-      "max_drawdown": 0.4002170557018332,
-      "monthly_group_cv_pnl": 1.4122289685229261,
-      "monthly_pnl_std": 0.9485623151687868,
-      "monthly_sortino": 2.355325185956996,
-      "net_pnl": 16.791934967041016,
-      "net_pnl_per_trade_pct": 0.4304520627285572,
-      "pnl_per_trade": 0.4304520627285572,
-      "profit_factor": 1.45062961529004,
+      "hit_rate": 0.5603691361189439,
+      "max_drawdown": 0.5354354750398028,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.4072984084181315,
+      "monthly_pnl_std": 0.9783024450119006,
+      "monthly_sortino": 2.151374999625275,
+      "net_pnl": 17.379085540771484,
+      "net_pnl_per_trade_pct": 0.4455033463412327,
+      "pnl_per_trade": 0.4455033463412327,
+      "profit_factor": 1.4718664098022765,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.25,
-      "sizer_mix_ridge_w": 1.0,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9358498378286754,
+      "stability": 0.946593010117542,
       "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
       "threshold_pct": 70.0,
       "trades_per_day": 10.687671232876712,
-      "wallet_pnl": 1.9185543664258706
+      "wallet_pnl": 1.931506126113415
     },
     "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm": {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 1.9136024204629987,
-      "asset_group_positive_share": 0.6948529411764706,
-      "avg_wallet_growth_per_month_pct": 7.6742174657034825,
-      "calmar_ratio": 41.95706986448679,
+      "asset_group_cv_pnl": 1.8821272698897695,
+      "asset_group_positive_share": 0.7058823529411765,
+      "avg_wallet_growth_per_month_pct": 7.72602450445366,
+      "calmar_ratio": 32.45785225470832,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.1651550978422165,
+      "expectancy_tstat": 0.17139412462711334,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.04479258880019188,
-            "metric": "abs_weight",
-            "std": 0.08175856620073318
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.013628176413476467,
-            "metric": "abs_weight",
-            "std": 0.02235165424644947
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.0051636663265526295,
-            "metric": "abs_weight",
-            "std": 0.0075912089087069035
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.005163663066923618,
-            "metric": "abs_weight",
-            "std": 0.007591207046061754
-          },
-          {
-            "feature": "clf",
-            "importance": 0.00516364723443985,
-            "metric": "abs_weight",
-            "std": 0.007591197267174721
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.002033176366239786,
-            "metric": "abs_weight",
-            "std": 0.005750690586864948
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.001711781951598823,
-            "metric": "abs_weight",
-            "std": 0.00484165083616972
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.0005270544206723571,
-            "metric": "abs_weight",
-            "std": 0.0014907352160662413
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.0,
-            "metric": "abs_weight",
-            "std": 0.0
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.02301778458058834,
-            "metric": "abs_weight",
-            "std": 0.058223530650138855
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.05102356258361803,
-        "winner_top10": [
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.04479258880019188,
-            "metric": "abs_weight",
-            "std": 0.08175856620073318
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.013628176413476467,
-            "metric": "abs_weight",
-            "std": 0.02235165424644947
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.0051636663265526295,
-            "metric": "abs_weight",
-            "std": 0.0075912089087069035
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.005163663066923618,
-            "metric": "abs_weight",
-            "std": 0.007591207046061754
-          },
-          {
-            "feature": "clf",
-            "importance": 0.00516364723443985,
-            "metric": "abs_weight",
-            "std": 0.007591197267174721
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.002033176366239786,
-            "metric": "abs_weight",
-            "std": 0.005750690586864948
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.001711781951598823,
-            "metric": "abs_weight",
-            "std": 0.00484165083616972
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.0005270544206723571,
-            "metric": "abs_weight",
-            "std": 0.0014907352160662413
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.0,
-            "metric": "abs_weight",
-            "std": 0.0
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.02301778458058834,
-            "metric": "abs_weight",
-            "std": 0.058223530650138855
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5557549346321456,
-      "max_drawdown": 0.4002170557018332,
-      "monthly_group_cv_pnl": 1.4122289685229261,
-      "monthly_pnl_std": 0.9485623151687868,
-      "monthly_sortino": 2.355325185956996,
-      "net_pnl": 16.791934967041016,
-      "net_pnl_per_trade_pct": 0.4304520627285572,
-      "pnl_per_trade": 0.4304520627285572,
-      "profit_factor": 1.45062961529004,
+      "hit_rate": 0.5603691361189439,
+      "max_drawdown": 0.5354354750398028,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.4072984084181315,
+      "monthly_pnl_std": 0.9783024450119006,
+      "monthly_sortino": 2.151374999625275,
+      "net_pnl": 17.379085540771484,
+      "net_pnl_per_trade_pct": 0.4455033463412327,
+      "pnl_per_trade": 0.4455033463412327,
+      "profit_factor": 1.4718664098022765,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.25,
-      "sizer_mix_ridge_w": 1.0,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9358498378286754,
+      "stability": 0.946593010117542,
       "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm",
       "threshold_pct": 70.0,
       "trades_per_day": 10.687671232876712,
-      "wallet_pnl": 1.9185543664258706
+      "wallet_pnl": 1.931506126113415
     },
     "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575": {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 1.4346663653170262,
-      "asset_group_positive_share": 0.7819548872180451,
-      "avg_wallet_growth_per_month_pct": 13.101690562310717,
-      "calmar_ratio": 69.75580125605585,
+      "asset_group_cv_pnl": 1.5280957918669495,
+      "asset_group_positive_share": 0.75,
+      "avg_wallet_growth_per_month_pct": 12.538640477289094,
+      "calmar_ratio": 33.37430480922206,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.2228059470653534,
+      "expectancy_tstat": 0.20426470041275024,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.9127814173698425,
-            "metric": "abs_weight",
-            "std": 0.9153122901916504
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.5751349925994873,
-            "metric": "abs_weight",
-            "std": 0.507215678691864
-          },
-          {
-            "feature": "clf",
-            "importance": 0.5710484981536865,
-            "metric": "abs_weight",
-            "std": 0.5046510100364685
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.3499026298522949,
-            "metric": "abs_weight",
-            "std": 0.9621878266334534
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.2304747849702835,
-            "metric": "abs_weight",
-            "std": 0.8310592174530029
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.15095533430576324,
-            "metric": "abs_weight",
-            "std": 0.7136566042900085
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": -0.2512277364730835,
-            "metric": "abs_weight",
-            "std": 0.44212445616722107
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.4852944016456604,
-            "metric": "abs_weight",
-            "std": 1.0559812784194946
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": -0.7784013748168945,
-            "metric": "abs_weight",
-            "std": 1.2452890872955322
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": -1.3748724460601807,
-            "metric": "abs_weight",
-            "std": 1.5916019678115845
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.16069830517563102,
-        "winner_top10": [
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.9127814173698425,
-            "metric": "abs_weight",
-            "std": 0.9153122901916504
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.5751349925994873,
-            "metric": "abs_weight",
-            "std": 0.507215678691864
-          },
-          {
-            "feature": "clf",
-            "importance": 0.5710484981536865,
-            "metric": "abs_weight",
-            "std": 0.5046510100364685
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.3499026298522949,
-            "metric": "abs_weight",
-            "std": 0.9621878266334534
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.2304747849702835,
-            "metric": "abs_weight",
-            "std": 0.8310592174530029
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.15095533430576324,
-            "metric": "abs_weight",
-            "std": 0.7136566042900085
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": -0.2512277364730835,
-            "metric": "abs_weight",
-            "std": 0.44212445616722107
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.4852944016456604,
-            "metric": "abs_weight",
-            "std": 1.0559812784194946
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": -0.7784013748168945,
-            "metric": "abs_weight",
-            "std": 1.2452890872955322
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": -1.3748724460601807,
-            "metric": "abs_weight",
-            "std": 1.5916019678115845
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5642013353877761,
-      "max_drawdown": 0.39781703136781144,
-      "monthly_group_cv_pnl": 1.4015121717106571,
-      "monthly_pnl_std": 1.6205011228140849,
-      "monthly_sortino": 3.7001937251209465,
-      "net_pnl": 27.750045776367188,
-      "net_pnl_per_trade_pct": 0.7126359983658754,
-      "pnl_per_trade": 0.7126359983658754,
-      "profit_factor": 1.659205553977785,
+      "hit_rate": 0.5534155110426296,
+      "max_drawdown": 0.7528674753753369,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.4956819140658424,
+      "monthly_pnl_std": 1.5658811748299346,
+      "monthly_sortino": 2.16585181375942,
+      "net_pnl": 25.126428604125977,
+      "net_pnl_per_trade_pct": 0.6452601079642007,
+      "pnl_per_trade": 0.6452601079642007,
+      "profit_factor": 1.5889999470621647,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.25,
-      "sizer_mix_ridge_w": 1.0,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9497453754273959,
+      "stability": 0.9435481507354101,
       "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
       "threshold_pct": 70.0,
       "trades_per_day": 10.668493150684931,
-      "wallet_pnl": 3.1444057349545718
+      "wallet_pnl": 3.0092737145493826
     },
     "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm": {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 1.4346663653170262,
-      "asset_group_positive_share": 0.7819548872180451,
-      "avg_wallet_growth_per_month_pct": 13.101690562310717,
-      "calmar_ratio": 69.75580125605585,
+      "asset_group_cv_pnl": 1.5280957918669495,
+      "asset_group_positive_share": 0.75,
+      "avg_wallet_growth_per_month_pct": 12.538640477289094,
+      "calmar_ratio": 33.37430480922206,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.2228059470653534,
+      "expectancy_tstat": 0.20426470041275024,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.9127814173698425,
-            "metric": "abs_weight",
-            "std": 0.9153122901916504
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.5751349925994873,
-            "metric": "abs_weight",
-            "std": 0.507215678691864
-          },
-          {
-            "feature": "clf",
-            "importance": 0.5710484981536865,
-            "metric": "abs_weight",
-            "std": 0.5046510100364685
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.3499026298522949,
-            "metric": "abs_weight",
-            "std": 0.9621878266334534
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.2304747849702835,
-            "metric": "abs_weight",
-            "std": 0.8310592174530029
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.15095533430576324,
-            "metric": "abs_weight",
-            "std": 0.7136566042900085
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": -0.2512277364730835,
-            "metric": "abs_weight",
-            "std": 0.44212445616722107
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.4852944016456604,
-            "metric": "abs_weight",
-            "std": 1.0559812784194946
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": -0.7784013748168945,
-            "metric": "abs_weight",
-            "std": 1.2452890872955322
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": -1.3748724460601807,
-            "metric": "abs_weight",
-            "std": 1.5916019678115845
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.16069830517563102,
-        "winner_top10": [
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.9127814173698425,
-            "metric": "abs_weight",
-            "std": 0.9153122901916504
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.5751349925994873,
-            "metric": "abs_weight",
-            "std": 0.507215678691864
-          },
-          {
-            "feature": "clf",
-            "importance": 0.5710484981536865,
-            "metric": "abs_weight",
-            "std": 0.5046510100364685
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.3499026298522949,
-            "metric": "abs_weight",
-            "std": 0.9621878266334534
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.2304747849702835,
-            "metric": "abs_weight",
-            "std": 0.8310592174530029
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.15095533430576324,
-            "metric": "abs_weight",
-            "std": 0.7136566042900085
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": -0.2512277364730835,
-            "metric": "abs_weight",
-            "std": 0.44212445616722107
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.4852944016456604,
-            "metric": "abs_weight",
-            "std": 1.0559812784194946
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": -0.7784013748168945,
-            "metric": "abs_weight",
-            "std": 1.2452890872955322
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": -1.3748724460601807,
-            "metric": "abs_weight",
-            "std": 1.5916019678115845
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5642013353877761,
-      "max_drawdown": 0.39781703136781144,
-      "monthly_group_cv_pnl": 1.4015121717106571,
-      "monthly_pnl_std": 1.6205011228140849,
-      "monthly_sortino": 3.7001937251209465,
-      "net_pnl": 27.750045776367188,
-      "net_pnl_per_trade_pct": 0.7126359983658754,
-      "pnl_per_trade": 0.7126359983658754,
-      "profit_factor": 1.659205553977785,
+      "hit_rate": 0.5534155110426296,
+      "max_drawdown": 0.7528674753753369,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.4956819140658424,
+      "monthly_pnl_std": 1.5658811748299346,
+      "monthly_sortino": 2.16585181375942,
+      "net_pnl": 25.126428604125977,
+      "net_pnl_per_trade_pct": 0.6452601079642007,
+      "pnl_per_trade": 0.6452601079642007,
+      "profit_factor": 1.5889999470621647,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.25,
-      "sizer_mix_ridge_w": 1.0,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9497453754273959,
+      "stability": 0.9435481507354101,
       "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm",
       "threshold_pct": 70.0,
       "trades_per_day": 10.668493150684931,
-      "wallet_pnl": 3.1444057349545718
+      "wallet_pnl": 3.0092737145493826
     },
     "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701": {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 3.0324263583048006,
-      "asset_group_positive_share": 0.6231884057971014,
-      "avg_wallet_growth_per_month_pct": 6.381693532923759,
-      "calmar_ratio": 15.082068891438364,
+      "asset_group_cv_pnl": 2.74721208447153,
+      "asset_group_positive_share": 0.656934306569343,
+      "avg_wallet_growth_per_month_pct": 6.629616613662065,
+      "calmar_ratio": 16.024977311175924,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.10540711134672165,
+      "expectancy_tstat": 0.11428464204072952,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.1264113038778305,
-            "metric": "abs_weight",
-            "std": 0.12029565125703812
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": 0.07721973210573196,
-            "metric": "abs_weight",
-            "std": 0.11644180119037628
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07363531738519669,
-            "metric": "abs_weight",
-            "std": 0.11228148639202118
-          },
-          {
-            "feature": "clf",
-            "importance": 0.07287704199552536,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.07287703454494476,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.0726073682308197,
-            "metric": "abs_weight",
-            "std": 0.1073182225227356
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.04957788437604904,
-            "metric": "abs_weight",
-            "std": 0.15355265140533447
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.003600992262363434,
-            "metric": "abs_weight",
-            "std": 0.1331234872341156
-          },
-          {
-            "feature": "base_H5",
-            "importance": -0.01957814209163189,
-            "metric": "abs_weight",
-            "std": 0.06208337843418121
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.0456249862909317,
-            "metric": "abs_weight",
-            "std": 0.06374729424715042
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.11825115471613783,
-        "winner_top10": [
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.1264113038778305,
-            "metric": "abs_weight",
-            "std": 0.12029565125703812
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": 0.07721973210573196,
-            "metric": "abs_weight",
-            "std": 0.11644180119037628
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07363531738519669,
-            "metric": "abs_weight",
-            "std": 0.11228148639202118
-          },
-          {
-            "feature": "clf",
-            "importance": 0.07287704199552536,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.07287703454494476,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.0726073682308197,
-            "metric": "abs_weight",
-            "std": 0.1073182225227356
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.04957788437604904,
-            "metric": "abs_weight",
-            "std": 0.15355265140533447
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.003600992262363434,
-            "metric": "abs_weight",
-            "std": 0.1331234872341156
-          },
-          {
-            "feature": "base_H5",
-            "importance": -0.01957814209163189,
-            "metric": "abs_weight",
-            "std": 0.06208337843418121
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.0456249862909317,
-            "metric": "abs_weight",
-            "std": 0.06374729424715042
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.4986951983298539,
-      "max_drawdown": 0.8376547006678676,
-      "monthly_group_cv_pnl": 1.30180794037981,
-      "monthly_pnl_std": 0.6578590627726105,
-      "monthly_sortino": 4.232694174318235,
-      "net_pnl": 12.633565902709961,
-      "net_pnl_per_trade_pct": 0.3296859577951451,
-      "pnl_per_trade": 0.3296859577951451,
-      "profit_factor": 1.2733442225965692,
+      "hit_rate": 0.5127870563674322,
+      "max_drawdown": 0.832946397456523,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.3359538917772824,
+      "monthly_pnl_std": 0.7132896905564381,
+      "monthly_sortino": 2.4749951308555165,
+      "net_pnl": 13.347947120666504,
+      "net_pnl_per_trade_pct": 0.34832847392135974,
+      "pnl_per_trade": 0.34832847392135974,
+      "profit_factor": 1.3005350923528174,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": true,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.1,
-      "sizer_mix_conf_mult": 0.5,
-      "sizer_mix_ridge_w": 0.5,
-      "sizer_mix_winner": "ridge_plus_lgbm_clf",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.8998668569604559,
+      "stability": 0.9260496435338443,
       "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701",
       "threshold_pct": 70.0,
       "trades_per_day": 10.498630136986302,
-      "wallet_pnl": 1.5954233832309397
+      "wallet_pnl": 1.6574041534155164
     },
     "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm": {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 3.0324263583048006,
-      "asset_group_positive_share": 0.6231884057971014,
-      "avg_wallet_growth_per_month_pct": 6.381693532923759,
-      "calmar_ratio": 15.082068891438364,
+      "asset_group_cv_pnl": 2.74721208447153,
+      "asset_group_positive_share": 0.656934306569343,
+      "avg_wallet_growth_per_month_pct": 6.629616613662065,
+      "calmar_ratio": 16.024977311175924,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.10540711134672165,
+      "expectancy_tstat": 0.11428464204072952,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.1264113038778305,
-            "metric": "abs_weight",
-            "std": 0.12029565125703812
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": 0.07721973210573196,
-            "metric": "abs_weight",
-            "std": 0.11644180119037628
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07363531738519669,
-            "metric": "abs_weight",
-            "std": 0.11228148639202118
-          },
-          {
-            "feature": "clf",
-            "importance": 0.07287704199552536,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.07287703454494476,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.0726073682308197,
-            "metric": "abs_weight",
-            "std": 0.1073182225227356
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.04957788437604904,
-            "metric": "abs_weight",
-            "std": 0.15355265140533447
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.003600992262363434,
-            "metric": "abs_weight",
-            "std": 0.1331234872341156
-          },
-          {
-            "feature": "base_H5",
-            "importance": -0.01957814209163189,
-            "metric": "abs_weight",
-            "std": 0.06208337843418121
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.0456249862909317,
-            "metric": "abs_weight",
-            "std": 0.06374729424715042
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.11825115471613783,
-        "winner_top10": [
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.1264113038778305,
-            "metric": "abs_weight",
-            "std": 0.12029565125703812
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": 0.07721973210573196,
-            "metric": "abs_weight",
-            "std": 0.11644180119037628
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07363531738519669,
-            "metric": "abs_weight",
-            "std": 0.11228148639202118
-          },
-          {
-            "feature": "clf",
-            "importance": 0.07287704199552536,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.07287703454494476,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.0726073682308197,
-            "metric": "abs_weight",
-            "std": 0.1073182225227356
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.04957788437604904,
-            "metric": "abs_weight",
-            "std": 0.15355265140533447
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.003600992262363434,
-            "metric": "abs_weight",
-            "std": 0.1331234872341156
-          },
-          {
-            "feature": "base_H5",
-            "importance": -0.01957814209163189,
-            "metric": "abs_weight",
-            "std": 0.06208337843418121
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.0456249862909317,
-            "metric": "abs_weight",
-            "std": 0.06374729424715042
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.4986951983298539,
-      "max_drawdown": 0.8376547006678676,
-      "monthly_group_cv_pnl": 1.30180794037981,
-      "monthly_pnl_std": 0.6578590627726105,
-      "monthly_sortino": 4.232694174318235,
-      "net_pnl": 12.633565902709961,
-      "net_pnl_per_trade_pct": 0.3296859577951451,
-      "pnl_per_trade": 0.3296859577951451,
-      "profit_factor": 1.2733442225965692,
+      "hit_rate": 0.5127870563674322,
+      "max_drawdown": 0.832946397456523,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.3359538917772824,
+      "monthly_pnl_std": 0.7132896905564381,
+      "monthly_sortino": 2.4749951308555165,
+      "net_pnl": 13.347947120666504,
+      "net_pnl_per_trade_pct": 0.34832847392135974,
+      "pnl_per_trade": 0.34832847392135974,
+      "profit_factor": 1.3005350923528174,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": true,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.1,
-      "sizer_mix_conf_mult": 0.5,
-      "sizer_mix_ridge_w": 0.5,
-      "sizer_mix_winner": "ridge_plus_lgbm_clf",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.8998668569604559,
+      "stability": 0.9260496435338443,
       "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm",
       "threshold_pct": 70.0,
       "trades_per_day": 10.498630136986302,
-      "wallet_pnl": 1.5954233832309397
+      "wallet_pnl": 1.6574041534155164
     },
     "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639": {
       "allow_downstream": false,
-      "asset_group_cv_pnl": 3.6469247492306174,
-      "asset_group_positive_share": 0.5977859778597786,
-      "avg_wallet_growth_per_month_pct": 3.5275602435264535,
-      "calmar_ratio": 9.841137290184232,
+      "asset_group_cv_pnl": 4.170086392028276,
+      "asset_group_positive_share": 0.5882352941176471,
+      "avg_wallet_growth_per_month_pct": 3.3936507471132296,
+      "calmar_ratio": 8.551583727181951,
       "downstream_filter_tag": "blocked_avg_pnl_per_trade_below_0_2pct",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [
         "avg_pnl_per_trade_below_0_2pct"
       ],
-      "expectancy_tstat": 0.07781750708818436,
+      "expectancy_tstat": 0.07160435616970062,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_tbm",
-            "importance": 0.06401649117469788,
-            "metric": "abs_weight",
-            "std": 0.08468855917453766
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.06401648372411728,
-            "metric": "abs_weight",
-            "std": 0.08468840271234512
-          },
-          {
-            "feature": "clf",
-            "importance": 0.06401559710502625,
-            "metric": "abs_weight",
-            "std": 0.08468742668628693
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.052978649735450745,
-            "metric": "abs_weight",
-            "std": 0.08092047274112701
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.045475900173187256,
-            "metric": "abs_weight",
-            "std": 0.05313153192400932
-          },
-          {
-            "feature": "base_H5",
-            "importance": 0.029103364795446396,
-            "metric": "abs_weight",
-            "std": 0.07883042842149734
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.022753672674298286,
-            "metric": "abs_weight",
-            "std": 0.07501840591430664
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.0004240282578393817,
-            "metric": "abs_weight",
-            "std": 0.047501884400844574
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.024476319551467896,
-            "metric": "abs_weight",
-            "std": 0.07369595021009445
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": -0.0714617371559143,
-            "metric": "abs_weight",
-            "std": 0.10801252722740173
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.14591574634957302,
-        "winner_top10": [
-          {
-            "feature": "edge_tbm",
-            "importance": 0.06401649117469788,
-            "metric": "abs_weight",
-            "std": 0.08468855917453766
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.06401648372411728,
-            "metric": "abs_weight",
-            "std": 0.08468840271234512
-          },
-          {
-            "feature": "clf",
-            "importance": 0.06401559710502625,
-            "metric": "abs_weight",
-            "std": 0.08468742668628693
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.052978649735450745,
-            "metric": "abs_weight",
-            "std": 0.08092047274112701
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.045475900173187256,
-            "metric": "abs_weight",
-            "std": 0.05313153192400932
-          },
-          {
-            "feature": "base_H5",
-            "importance": 0.029103364795446396,
-            "metric": "abs_weight",
-            "std": 0.07883042842149734
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.022753672674298286,
-            "metric": "abs_weight",
-            "std": 0.07501840591430664
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.0004240282578393817,
-            "metric": "abs_weight",
-            "std": 0.047501884400844574
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.024476319551467896,
-            "metric": "abs_weight",
-            "std": 0.07369595021009445
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": -0.0714617371559143,
-            "metric": "abs_weight",
-            "std": 0.10801252722740173
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5325520833333334,
-      "max_drawdown": 0.6923992739943656,
-      "monthly_group_cv_pnl": 3.1536326987844814,
-      "monthly_pnl_std": 0.8595536177616326,
-      "monthly_sortino": 0.8129565449137884,
-      "net_pnl": 6.813996315002441,
-      "net_pnl_per_trade_pct": 0.17744782070318857,
-      "pnl_per_trade": 0.17744782070318857,
-      "profit_factor": 1.1948193110897876,
+      "hit_rate": 0.5302083333333333,
+      "max_drawdown": 0.7261798327065283,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 3.3757348558619364,
+      "monthly_pnl_std": 0.8385308435199748,
+      "monthly_sortino": 0.8408772889173128,
+      "net_pnl": 6.209987640380859,
+      "net_pnl_per_trade_pct": 0.1617184281349182,
+      "pnl_per_trade": 0.1617184281349182,
+      "profit_factor": 1.1777874345465114,
       "profitable_for_downstream": false,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.0,
-      "sizer_mix_ridge_w": 0.7,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.7626695834214562,
+      "stability": 0.7826560574237692,
       "strategy_id": "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639",
       "threshold_pct": 70.0,
       "trades_per_day": 10.520547945205479,
-      "wallet_pnl": 0.8818900608816135
+      "wallet_pnl": 0.8484126867783075
     }
   },
   "fee_pct": 0.003,
@@ -1324,1317 +340,333 @@
   "strategies": [
     {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 0.9863598974995726,
-      "asset_group_positive_share": 0.8455882352941176,
-      "avg_wallet_growth_per_month_pct": 23.68576570719502,
-      "calmar_ratio": 145.69792760379488,
+      "asset_group_cv_pnl": 0.8911003381883519,
+      "asset_group_positive_share": 0.8676470588235294,
+      "avg_wallet_growth_per_month_pct": 24.798986790671947,
+      "calmar_ratio": 200.88623602349995,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.26427918672561646,
+      "expectancy_tstat": 0.2857908010482788,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "clf",
-            "importance": 0.15629994869232178,
-            "metric": "abs_weight",
-            "std": 0.1896827071905136
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.15611141920089722,
-            "metric": "abs_weight",
-            "std": 0.18950967490673065
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.15601468086242676,
-            "metric": "abs_weight",
-            "std": 0.18960857391357422
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07823879271745682,
-            "metric": "abs_weight",
-            "std": 0.4005334973335266
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.03996060788631439,
-            "metric": "abs_weight",
-            "std": 0.6027632355690002
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.035857751965522766,
-            "metric": "abs_weight",
-            "std": 0.3899535834789276
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.024382034316658974,
-            "metric": "abs_weight",
-            "std": 0.43052157759666443
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.011311511509120464,
-            "metric": "abs_weight",
-            "std": 0.054687030613422394
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.04303630813956261,
-            "metric": "abs_weight",
-            "std": 0.24926836788654327
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.11920401453971863,
-            "metric": "abs_weight",
-            "std": 0.4046204686164856
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.1902829974432946,
-        "winner_top10": [
-          {
-            "feature": "clf",
-            "importance": 0.15629994869232178,
-            "metric": "abs_weight",
-            "std": 0.1896827071905136
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.15611141920089722,
-            "metric": "abs_weight",
-            "std": 0.18950967490673065
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.15601468086242676,
-            "metric": "abs_weight",
-            "std": 0.18960857391357422
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07823879271745682,
-            "metric": "abs_weight",
-            "std": 0.4005334973335266
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.03996060788631439,
-            "metric": "abs_weight",
-            "std": 0.6027632355690002
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.035857751965522766,
-            "metric": "abs_weight",
-            "std": 0.3899535834789276
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.024382034316658974,
-            "metric": "abs_weight",
-            "std": 0.43052157759666443
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.011311511509120464,
-            "metric": "abs_weight",
-            "std": 0.054687030613422394
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.04303630813956261,
-            "metric": "abs_weight",
-            "std": 0.24926836788654327
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.11920401453971863,
-            "metric": "abs_weight",
-            "std": 0.4046204686164856
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.555511235208084,
-      "max_drawdown": 0.36578691490865944,
-      "monthly_group_cv_pnl": 1.0659280116767442,
-      "monthly_pnl_std": 2.272319416542339,
-      "monthly_sortino": 11.72680083405851,
-      "net_pnl": 53.294395446777344,
-      "net_pnl_per_trade_pct": 0.7086078373457964,
-      "pnl_per_trade": 0.7086078373457964,
-      "profit_factor": 1.8278639001529298,
+      "hit_rate": 0.5656162744315916,
+      "max_drawdown": 0.28038103997265396,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 0.9946374719731642,
+      "monthly_pnl_std": 2.2409059652921295,
+      "monthly_sortino": 10.75515605063599,
+      "net_pnl": 56.32469177246094,
+      "net_pnl_per_trade_pct": 0.7488989731745903,
+      "pnl_per_trade": 0.7488989731745903,
+      "profit_factor": 1.9206358687783647,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.5,
-      "sizer_mix_conf_mult": 0.75,
-      "sizer_mix_ridge_w": 0.85,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9626128778373843,
+      "stability": 0.9773736807987653,
       "strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
       "threshold_pct": 70.0,
       "trades_per_day": 20.605479452054794,
-      "wallet_pnl": 5.921441426798755
+      "wallet_pnl": 6.199746697667987
     },
     {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 1.4346663653170262,
-      "asset_group_positive_share": 0.7819548872180451,
-      "avg_wallet_growth_per_month_pct": 13.101690562310717,
-      "calmar_ratio": 69.75580125605585,
+      "asset_group_cv_pnl": 1.5280957918669495,
+      "asset_group_positive_share": 0.75,
+      "avg_wallet_growth_per_month_pct": 12.538640477289094,
+      "calmar_ratio": 33.37430480922206,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.2228059470653534,
+      "expectancy_tstat": 0.20426470041275024,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.9127814173698425,
-            "metric": "abs_weight",
-            "std": 0.9153122901916504
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.5751349925994873,
-            "metric": "abs_weight",
-            "std": 0.507215678691864
-          },
-          {
-            "feature": "clf",
-            "importance": 0.5710484981536865,
-            "metric": "abs_weight",
-            "std": 0.5046510100364685
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.3499026298522949,
-            "metric": "abs_weight",
-            "std": 0.9621878266334534
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.2304747849702835,
-            "metric": "abs_weight",
-            "std": 0.8310592174530029
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.15095533430576324,
-            "metric": "abs_weight",
-            "std": 0.7136566042900085
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": -0.2512277364730835,
-            "metric": "abs_weight",
-            "std": 0.44212445616722107
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.4852944016456604,
-            "metric": "abs_weight",
-            "std": 1.0559812784194946
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": -0.7784013748168945,
-            "metric": "abs_weight",
-            "std": 1.2452890872955322
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": -1.3748724460601807,
-            "metric": "abs_weight",
-            "std": 1.5916019678115845
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.16069830517563102,
-        "winner_top10": [
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.9127814173698425,
-            "metric": "abs_weight",
-            "std": 0.9153122901916504
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.5751349925994873,
-            "metric": "abs_weight",
-            "std": 0.507215678691864
-          },
-          {
-            "feature": "clf",
-            "importance": 0.5710484981536865,
-            "metric": "abs_weight",
-            "std": 0.5046510100364685
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.3499026298522949,
-            "metric": "abs_weight",
-            "std": 0.9621878266334534
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.2304747849702835,
-            "metric": "abs_weight",
-            "std": 0.8310592174530029
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.15095533430576324,
-            "metric": "abs_weight",
-            "std": 0.7136566042900085
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": -0.2512277364730835,
-            "metric": "abs_weight",
-            "std": 0.44212445616722107
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.4852944016456604,
-            "metric": "abs_weight",
-            "std": 1.0559812784194946
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": -0.7784013748168945,
-            "metric": "abs_weight",
-            "std": 1.2452890872955322
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": -1.3748724460601807,
-            "metric": "abs_weight",
-            "std": 1.5916019678115845
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5642013353877761,
-      "max_drawdown": 0.39781703136781144,
-      "monthly_group_cv_pnl": 1.4015121717106571,
-      "monthly_pnl_std": 1.6205011228140849,
-      "monthly_sortino": 3.7001937251209465,
-      "net_pnl": 27.750045776367188,
-      "net_pnl_per_trade_pct": 0.7126359983658754,
-      "pnl_per_trade": 0.7126359983658754,
-      "profit_factor": 1.659205553977785,
+      "hit_rate": 0.5534155110426296,
+      "max_drawdown": 0.7528674753753369,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.4956819140658424,
+      "monthly_pnl_std": 1.5658811748299346,
+      "monthly_sortino": 2.16585181375942,
+      "net_pnl": 25.126428604125977,
+      "net_pnl_per_trade_pct": 0.6452601079642007,
+      "pnl_per_trade": 0.6452601079642007,
+      "profit_factor": 1.5889999470621647,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.25,
-      "sizer_mix_ridge_w": 1.0,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9497453754273959,
+      "stability": 0.9435481507354101,
       "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
       "threshold_pct": 70.0,
       "trades_per_day": 10.668493150684931,
-      "wallet_pnl": 3.1444057349545718
+      "wallet_pnl": 3.0092737145493826
     },
     {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 1.4346663653170262,
-      "asset_group_positive_share": 0.7819548872180451,
-      "avg_wallet_growth_per_month_pct": 13.101690562310717,
-      "calmar_ratio": 69.75580125605585,
+      "asset_group_cv_pnl": 1.5280957918669495,
+      "asset_group_positive_share": 0.75,
+      "avg_wallet_growth_per_month_pct": 12.538640477289094,
+      "calmar_ratio": 33.37430480922206,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.2228059470653534,
+      "expectancy_tstat": 0.20426470041275024,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.9127814173698425,
-            "metric": "abs_weight",
-            "std": 0.9153122901916504
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.5751349925994873,
-            "metric": "abs_weight",
-            "std": 0.507215678691864
-          },
-          {
-            "feature": "clf",
-            "importance": 0.5710484981536865,
-            "metric": "abs_weight",
-            "std": 0.5046510100364685
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.3499026298522949,
-            "metric": "abs_weight",
-            "std": 0.9621878266334534
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.2304747849702835,
-            "metric": "abs_weight",
-            "std": 0.8310592174530029
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.15095533430576324,
-            "metric": "abs_weight",
-            "std": 0.7136566042900085
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": -0.2512277364730835,
-            "metric": "abs_weight",
-            "std": 0.44212445616722107
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.4852944016456604,
-            "metric": "abs_weight",
-            "std": 1.0559812784194946
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": -0.7784013748168945,
-            "metric": "abs_weight",
-            "std": 1.2452890872955322
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": -1.3748724460601807,
-            "metric": "abs_weight",
-            "std": 1.5916019678115845
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.16069830517563102,
-        "winner_top10": [
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.9127814173698425,
-            "metric": "abs_weight",
-            "std": 0.9153122901916504
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.5751349925994873,
-            "metric": "abs_weight",
-            "std": 0.507215678691864
-          },
-          {
-            "feature": "clf",
-            "importance": 0.5710484981536865,
-            "metric": "abs_weight",
-            "std": 0.5046510100364685
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.3499026298522949,
-            "metric": "abs_weight",
-            "std": 0.9621878266334534
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.2304747849702835,
-            "metric": "abs_weight",
-            "std": 0.8310592174530029
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.15095533430576324,
-            "metric": "abs_weight",
-            "std": 0.7136566042900085
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": -0.2512277364730835,
-            "metric": "abs_weight",
-            "std": 0.44212445616722107
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.4852944016456604,
-            "metric": "abs_weight",
-            "std": 1.0559812784194946
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": -0.7784013748168945,
-            "metric": "abs_weight",
-            "std": 1.2452890872955322
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": -1.3748724460601807,
-            "metric": "abs_weight",
-            "std": 1.5916019678115845
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5642013353877761,
-      "max_drawdown": 0.39781703136781144,
-      "monthly_group_cv_pnl": 1.4015121717106571,
-      "monthly_pnl_std": 1.6205011228140849,
-      "monthly_sortino": 3.7001937251209465,
-      "net_pnl": 27.750045776367188,
-      "net_pnl_per_trade_pct": 0.7126359983658754,
-      "pnl_per_trade": 0.7126359983658754,
-      "profit_factor": 1.659205553977785,
+      "hit_rate": 0.5534155110426296,
+      "max_drawdown": 0.7528674753753369,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.4956819140658424,
+      "monthly_pnl_std": 1.5658811748299346,
+      "monthly_sortino": 2.16585181375942,
+      "net_pnl": 25.126428604125977,
+      "net_pnl_per_trade_pct": 0.6452601079642007,
+      "pnl_per_trade": 0.6452601079642007,
+      "profit_factor": 1.5889999470621647,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.25,
-      "sizer_mix_ridge_w": 1.0,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9497453754273959,
+      "stability": 0.9435481507354101,
       "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm",
       "threshold_pct": 70.0,
       "trades_per_day": 10.668493150684931,
-      "wallet_pnl": 3.1444057349545718
+      "wallet_pnl": 3.0092737145493826
     },
     {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 1.9136024204629987,
-      "asset_group_positive_share": 0.6948529411764706,
-      "avg_wallet_growth_per_month_pct": 7.6742174657034825,
-      "calmar_ratio": 41.95706986448679,
+      "asset_group_cv_pnl": 1.8821272698897695,
+      "asset_group_positive_share": 0.7058823529411765,
+      "avg_wallet_growth_per_month_pct": 7.72602450445366,
+      "calmar_ratio": 32.45785225470832,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.1651550978422165,
+      "expectancy_tstat": 0.17139412462711334,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.04479258880019188,
-            "metric": "abs_weight",
-            "std": 0.08175856620073318
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.013628176413476467,
-            "metric": "abs_weight",
-            "std": 0.02235165424644947
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.0051636663265526295,
-            "metric": "abs_weight",
-            "std": 0.0075912089087069035
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.005163663066923618,
-            "metric": "abs_weight",
-            "std": 0.007591207046061754
-          },
-          {
-            "feature": "clf",
-            "importance": 0.00516364723443985,
-            "metric": "abs_weight",
-            "std": 0.007591197267174721
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.002033176366239786,
-            "metric": "abs_weight",
-            "std": 0.005750690586864948
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.001711781951598823,
-            "metric": "abs_weight",
-            "std": 0.00484165083616972
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.0005270544206723571,
-            "metric": "abs_weight",
-            "std": 0.0014907352160662413
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.0,
-            "metric": "abs_weight",
-            "std": 0.0
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.02301778458058834,
-            "metric": "abs_weight",
-            "std": 0.058223530650138855
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.05102356258361803,
-        "winner_top10": [
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.04479258880019188,
-            "metric": "abs_weight",
-            "std": 0.08175856620073318
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.013628176413476467,
-            "metric": "abs_weight",
-            "std": 0.02235165424644947
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.0051636663265526295,
-            "metric": "abs_weight",
-            "std": 0.0075912089087069035
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.005163663066923618,
-            "metric": "abs_weight",
-            "std": 0.007591207046061754
-          },
-          {
-            "feature": "clf",
-            "importance": 0.00516364723443985,
-            "metric": "abs_weight",
-            "std": 0.007591197267174721
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.002033176366239786,
-            "metric": "abs_weight",
-            "std": 0.005750690586864948
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.001711781951598823,
-            "metric": "abs_weight",
-            "std": 0.00484165083616972
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.0005270544206723571,
-            "metric": "abs_weight",
-            "std": 0.0014907352160662413
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.0,
-            "metric": "abs_weight",
-            "std": 0.0
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.02301778458058834,
-            "metric": "abs_weight",
-            "std": 0.058223530650138855
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5557549346321456,
-      "max_drawdown": 0.4002170557018332,
-      "monthly_group_cv_pnl": 1.4122289685229261,
-      "monthly_pnl_std": 0.9485623151687868,
-      "monthly_sortino": 2.355325185956996,
-      "net_pnl": 16.791934967041016,
-      "net_pnl_per_trade_pct": 0.4304520627285572,
-      "pnl_per_trade": 0.4304520627285572,
-      "profit_factor": 1.45062961529004,
+      "hit_rate": 0.5603691361189439,
+      "max_drawdown": 0.5354354750398028,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.4072984084181315,
+      "monthly_pnl_std": 0.9783024450119006,
+      "monthly_sortino": 2.151374999625275,
+      "net_pnl": 17.379085540771484,
+      "net_pnl_per_trade_pct": 0.4455033463412327,
+      "pnl_per_trade": 0.4455033463412327,
+      "profit_factor": 1.4718664098022765,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.25,
-      "sizer_mix_ridge_w": 1.0,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9358498378286754,
+      "stability": 0.946593010117542,
       "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
       "threshold_pct": 70.0,
       "trades_per_day": 10.687671232876712,
-      "wallet_pnl": 1.9185543664258706
+      "wallet_pnl": 1.931506126113415
     },
     {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 1.9136024204629987,
-      "asset_group_positive_share": 0.6948529411764706,
-      "avg_wallet_growth_per_month_pct": 7.6742174657034825,
-      "calmar_ratio": 41.95706986448679,
+      "asset_group_cv_pnl": 1.8821272698897695,
+      "asset_group_positive_share": 0.7058823529411765,
+      "avg_wallet_growth_per_month_pct": 7.72602450445366,
+      "calmar_ratio": 32.45785225470832,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.1651550978422165,
+      "expectancy_tstat": 0.17139412462711334,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.04479258880019188,
-            "metric": "abs_weight",
-            "std": 0.08175856620073318
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.013628176413476467,
-            "metric": "abs_weight",
-            "std": 0.02235165424644947
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.0051636663265526295,
-            "metric": "abs_weight",
-            "std": 0.0075912089087069035
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.005163663066923618,
-            "metric": "abs_weight",
-            "std": 0.007591207046061754
-          },
-          {
-            "feature": "clf",
-            "importance": 0.00516364723443985,
-            "metric": "abs_weight",
-            "std": 0.007591197267174721
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.002033176366239786,
-            "metric": "abs_weight",
-            "std": 0.005750690586864948
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.001711781951598823,
-            "metric": "abs_weight",
-            "std": 0.00484165083616972
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.0005270544206723571,
-            "metric": "abs_weight",
-            "std": 0.0014907352160662413
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.0,
-            "metric": "abs_weight",
-            "std": 0.0
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.02301778458058834,
-            "metric": "abs_weight",
-            "std": 0.058223530650138855
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.05102356258361803,
-        "winner_top10": [
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.04479258880019188,
-            "metric": "abs_weight",
-            "std": 0.08175856620073318
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.013628176413476467,
-            "metric": "abs_weight",
-            "std": 0.02235165424644947
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.0051636663265526295,
-            "metric": "abs_weight",
-            "std": 0.0075912089087069035
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.005163663066923618,
-            "metric": "abs_weight",
-            "std": 0.007591207046061754
-          },
-          {
-            "feature": "clf",
-            "importance": 0.00516364723443985,
-            "metric": "abs_weight",
-            "std": 0.007591197267174721
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.002033176366239786,
-            "metric": "abs_weight",
-            "std": 0.005750690586864948
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.001711781951598823,
-            "metric": "abs_weight",
-            "std": 0.00484165083616972
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.0005270544206723571,
-            "metric": "abs_weight",
-            "std": 0.0014907352160662413
-          },
-          {
-            "feature": "base_H10",
-            "importance": 0.0,
-            "metric": "abs_weight",
-            "std": 0.0
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.02301778458058834,
-            "metric": "abs_weight",
-            "std": 0.058223530650138855
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5557549346321456,
-      "max_drawdown": 0.4002170557018332,
-      "monthly_group_cv_pnl": 1.4122289685229261,
-      "monthly_pnl_std": 0.9485623151687868,
-      "monthly_sortino": 2.355325185956996,
-      "net_pnl": 16.791934967041016,
-      "net_pnl_per_trade_pct": 0.4304520627285572,
-      "pnl_per_trade": 0.4304520627285572,
-      "profit_factor": 1.45062961529004,
+      "hit_rate": 0.5603691361189439,
+      "max_drawdown": 0.5354354750398028,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.4072984084181315,
+      "monthly_pnl_std": 0.9783024450119006,
+      "monthly_sortino": 2.151374999625275,
+      "net_pnl": 17.379085540771484,
+      "net_pnl_per_trade_pct": 0.4455033463412327,
+      "pnl_per_trade": 0.4455033463412327,
+      "profit_factor": 1.4718664098022765,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.25,
-      "sizer_mix_ridge_w": 1.0,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.9358498378286754,
+      "stability": 0.946593010117542,
       "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm",
       "threshold_pct": 70.0,
       "trades_per_day": 10.687671232876712,
-      "wallet_pnl": 1.9185543664258706
+      "wallet_pnl": 1.931506126113415
     },
     {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 3.0324263583048006,
-      "asset_group_positive_share": 0.6231884057971014,
-      "avg_wallet_growth_per_month_pct": 6.381693532923759,
-      "calmar_ratio": 15.082068891438364,
+      "asset_group_cv_pnl": 2.74721208447153,
+      "asset_group_positive_share": 0.656934306569343,
+      "avg_wallet_growth_per_month_pct": 6.629616613662065,
+      "calmar_ratio": 16.024977311175924,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.10540711134672165,
+      "expectancy_tstat": 0.11428464204072952,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.1264113038778305,
-            "metric": "abs_weight",
-            "std": 0.12029565125703812
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": 0.07721973210573196,
-            "metric": "abs_weight",
-            "std": 0.11644180119037628
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07363531738519669,
-            "metric": "abs_weight",
-            "std": 0.11228148639202118
-          },
-          {
-            "feature": "clf",
-            "importance": 0.07287704199552536,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.07287703454494476,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.0726073682308197,
-            "metric": "abs_weight",
-            "std": 0.1073182225227356
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.04957788437604904,
-            "metric": "abs_weight",
-            "std": 0.15355265140533447
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.003600992262363434,
-            "metric": "abs_weight",
-            "std": 0.1331234872341156
-          },
-          {
-            "feature": "base_H5",
-            "importance": -0.01957814209163189,
-            "metric": "abs_weight",
-            "std": 0.06208337843418121
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.0456249862909317,
-            "metric": "abs_weight",
-            "std": 0.06374729424715042
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.11825115471613783,
-        "winner_top10": [
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.1264113038778305,
-            "metric": "abs_weight",
-            "std": 0.12029565125703812
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": 0.07721973210573196,
-            "metric": "abs_weight",
-            "std": 0.11644180119037628
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07363531738519669,
-            "metric": "abs_weight",
-            "std": 0.11228148639202118
-          },
-          {
-            "feature": "clf",
-            "importance": 0.07287704199552536,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.07287703454494476,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.0726073682308197,
-            "metric": "abs_weight",
-            "std": 0.1073182225227356
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.04957788437604904,
-            "metric": "abs_weight",
-            "std": 0.15355265140533447
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.003600992262363434,
-            "metric": "abs_weight",
-            "std": 0.1331234872341156
-          },
-          {
-            "feature": "base_H5",
-            "importance": -0.01957814209163189,
-            "metric": "abs_weight",
-            "std": 0.06208337843418121
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.0456249862909317,
-            "metric": "abs_weight",
-            "std": 0.06374729424715042
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.4986951983298539,
-      "max_drawdown": 0.8376547006678676,
-      "monthly_group_cv_pnl": 1.30180794037981,
-      "monthly_pnl_std": 0.6578590627726105,
-      "monthly_sortino": 4.232694174318235,
-      "net_pnl": 12.633565902709961,
-      "net_pnl_per_trade_pct": 0.3296859577951451,
-      "pnl_per_trade": 0.3296859577951451,
-      "profit_factor": 1.2733442225965692,
+      "hit_rate": 0.5127870563674322,
+      "max_drawdown": 0.832946397456523,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.3359538917772824,
+      "monthly_pnl_std": 0.7132896905564381,
+      "monthly_sortino": 2.4749951308555165,
+      "net_pnl": 13.347947120666504,
+      "net_pnl_per_trade_pct": 0.34832847392135974,
+      "pnl_per_trade": 0.34832847392135974,
+      "profit_factor": 1.3005350923528174,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": true,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.1,
-      "sizer_mix_conf_mult": 0.5,
-      "sizer_mix_ridge_w": 0.5,
-      "sizer_mix_winner": "ridge_plus_lgbm_clf",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.8998668569604559,
+      "stability": 0.9260496435338443,
       "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701",
       "threshold_pct": 70.0,
       "trades_per_day": 10.498630136986302,
-      "wallet_pnl": 1.5954233832309397
+      "wallet_pnl": 1.6574041534155164
     },
     {
       "allow_downstream": true,
-      "asset_group_cv_pnl": 3.0324263583048006,
-      "asset_group_positive_share": 0.6231884057971014,
-      "avg_wallet_growth_per_month_pct": 6.381693532923759,
-      "calmar_ratio": 15.082068891438364,
+      "asset_group_cv_pnl": 2.74721208447153,
+      "asset_group_positive_share": 0.656934306569343,
+      "avg_wallet_growth_per_month_pct": 6.629616613662065,
+      "calmar_ratio": 16.024977311175924,
       "downstream_filter_tag": "profitable",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [],
-      "expectancy_tstat": 0.10540711134672165,
+      "expectancy_tstat": 0.11428464204072952,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.1264113038778305,
-            "metric": "abs_weight",
-            "std": 0.12029565125703812
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": 0.07721973210573196,
-            "metric": "abs_weight",
-            "std": 0.11644180119037628
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07363531738519669,
-            "metric": "abs_weight",
-            "std": 0.11228148639202118
-          },
-          {
-            "feature": "clf",
-            "importance": 0.07287704199552536,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.07287703454494476,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.0726073682308197,
-            "metric": "abs_weight",
-            "std": 0.1073182225227356
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.04957788437604904,
-            "metric": "abs_weight",
-            "std": 0.15355265140533447
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.003600992262363434,
-            "metric": "abs_weight",
-            "std": 0.1331234872341156
-          },
-          {
-            "feature": "base_H5",
-            "importance": -0.01957814209163189,
-            "metric": "abs_weight",
-            "std": 0.06208337843418121
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.0456249862909317,
-            "metric": "abs_weight",
-            "std": 0.06374729424715042
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.11825115471613783,
-        "winner_top10": [
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.1264113038778305,
-            "metric": "abs_weight",
-            "std": 0.12029565125703812
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": 0.07721973210573196,
-            "metric": "abs_weight",
-            "std": 0.11644180119037628
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.07363531738519669,
-            "metric": "abs_weight",
-            "std": 0.11228148639202118
-          },
-          {
-            "feature": "clf",
-            "importance": 0.07287704199552536,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "edge_tbm",
-            "importance": 0.07287703454494476,
-            "metric": "abs_weight",
-            "std": 0.10813519358634949
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.0726073682308197,
-            "metric": "abs_weight",
-            "std": 0.1073182225227356
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.04957788437604904,
-            "metric": "abs_weight",
-            "std": 0.15355265140533447
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": 0.003600992262363434,
-            "metric": "abs_weight",
-            "std": 0.1331234872341156
-          },
-          {
-            "feature": "base_H5",
-            "importance": -0.01957814209163189,
-            "metric": "abs_weight",
-            "std": 0.06208337843418121
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": -0.0456249862909317,
-            "metric": "abs_weight",
-            "std": 0.06374729424715042
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.4986951983298539,
-      "max_drawdown": 0.8376547006678676,
-      "monthly_group_cv_pnl": 1.30180794037981,
-      "monthly_pnl_std": 0.6578590627726105,
-      "monthly_sortino": 4.232694174318235,
-      "net_pnl": 12.633565902709961,
-      "net_pnl_per_trade_pct": 0.3296859577951451,
-      "pnl_per_trade": 0.3296859577951451,
-      "profit_factor": 1.2733442225965692,
+      "hit_rate": 0.5127870563674322,
+      "max_drawdown": 0.832946397456523,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 1.3359538917772824,
+      "monthly_pnl_std": 0.7132896905564381,
+      "monthly_sortino": 2.4749951308555165,
+      "net_pnl": 13.347947120666504,
+      "net_pnl_per_trade_pct": 0.34832847392135974,
+      "pnl_per_trade": 0.34832847392135974,
+      "profit_factor": 1.3005350923528174,
       "profitable_for_downstream": true,
+      "regime_adaptor_enabled": true,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.1,
-      "sizer_mix_conf_mult": 0.5,
-      "sizer_mix_ridge_w": 0.5,
-      "sizer_mix_winner": "ridge_plus_lgbm_clf",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.8998668569604559,
+      "stability": 0.9260496435338443,
       "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm",
       "threshold_pct": 70.0,
       "trades_per_day": 10.498630136986302,
-      "wallet_pnl": 1.5954233832309397
+      "wallet_pnl": 1.6574041534155164
     },
     {
       "allow_downstream": false,
-      "asset_group_cv_pnl": 3.6469247492306174,
-      "asset_group_positive_share": 0.5977859778597786,
-      "avg_wallet_growth_per_month_pct": 3.5275602435264535,
-      "calmar_ratio": 9.841137290184232,
+      "asset_group_cv_pnl": 4.170086392028276,
+      "asset_group_positive_share": 0.5882352941176471,
+      "avg_wallet_growth_per_month_pct": 3.3936507471132296,
+      "calmar_ratio": 8.551583727181951,
       "downstream_filter_tag": "blocked_avg_pnl_per_trade_below_0_2pct",
       "downstream_min_pnl_per_trade_pct": 0.2,
       "downstream_reject_reasons": [
         "avg_pnl_per_trade_below_0_2pct"
       ],
-      "expectancy_tstat": 0.07781750708818436,
+      "expectancy_tstat": 0.07160435616970062,
       "feature_importance": {
         "barrier_clf_top10": [],
-        "elasticnet_top10": [
-          {
-            "feature": "edge_tbm",
-            "importance": 0.06401649117469788,
-            "metric": "abs_weight",
-            "std": 0.08468855917453766
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.06401648372411728,
-            "metric": "abs_weight",
-            "std": 0.08468840271234512
-          },
-          {
-            "feature": "clf",
-            "importance": 0.06401559710502625,
-            "metric": "abs_weight",
-            "std": 0.08468742668628693
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.052978649735450745,
-            "metric": "abs_weight",
-            "std": 0.08092047274112701
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.045475900173187256,
-            "metric": "abs_weight",
-            "std": 0.05313153192400932
-          },
-          {
-            "feature": "base_H5",
-            "importance": 0.029103364795446396,
-            "metric": "abs_weight",
-            "std": 0.07883042842149734
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.022753672674298286,
-            "metric": "abs_weight",
-            "std": 0.07501840591430664
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.0004240282578393817,
-            "metric": "abs_weight",
-            "std": 0.047501884400844574
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.024476319551467896,
-            "metric": "abs_weight",
-            "std": 0.07369595021009445
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": -0.0714617371559143,
-            "metric": "abs_weight",
-            "std": 0.10801252722740173
-          }
-        ],
+        "elasticnet_top10": [],
         "extratrees_top10": [],
-        "winner_model": "ridge",
-        "winner_pred_prefix_share": 0.14591574634957302,
-        "winner_top10": [
-          {
-            "feature": "edge_tbm",
-            "importance": 0.06401649117469788,
-            "metric": "abs_weight",
-            "std": 0.08468855917453766
-          },
-          {
-            "feature": "oof_ebm_uncertainty_weighted",
-            "importance": 0.06401648372411728,
-            "metric": "abs_weight",
-            "std": 0.08468840271234512
-          },
-          {
-            "feature": "clf",
-            "importance": 0.06401559710502625,
-            "metric": "abs_weight",
-            "std": 0.08468742668628693
-          },
-          {
-            "feature": "edge_x_brier_50",
-            "importance": 0.052978649735450745,
-            "metric": "abs_weight",
-            "std": 0.08092047274112701
-          },
-          {
-            "feature": "edge_x_rank_ic_50",
-            "importance": 0.045475900173187256,
-            "metric": "abs_weight",
-            "std": 0.05313153192400932
-          },
-          {
-            "feature": "base_H5",
-            "importance": 0.029103364795446396,
-            "metric": "abs_weight",
-            "std": 0.07883042842149734
-          },
-          {
-            "feature": "edge_x_amihud_z",
-            "importance": 0.022753672674298286,
-            "metric": "abs_weight",
-            "std": 0.07501840591430664
-          },
-          {
-            "feature": "edge_x_winrate_20",
-            "importance": 0.0004240282578393817,
-            "metric": "abs_weight",
-            "std": 0.047501884400844574
-          },
-          {
-            "feature": "edge_x_vol_of_vol",
-            "importance": -0.024476319551467896,
-            "metric": "abs_weight",
-            "std": 0.07369595021009445
-          },
-          {
-            "feature": "edge_x_volatility_zscore",
-            "importance": -0.0714617371559143,
-            "metric": "abs_weight",
-            "std": 0.10801252722740173
-          }
-        ]
+        "winner_model": "et",
+        "winner_pred_prefix_share": null,
+        "winner_top10": []
       },
-      "hit_rate": 0.5325520833333334,
-      "max_drawdown": 0.6923992739943656,
-      "monthly_group_cv_pnl": 3.1536326987844814,
-      "monthly_pnl_std": 0.8595536177616326,
-      "monthly_sortino": 0.8129565449137884,
-      "net_pnl": 6.813996315002441,
-      "net_pnl_per_trade_pct": 0.17744782070318857,
-      "pnl_per_trade": 0.17744782070318857,
-      "profit_factor": 1.1948193110897876,
+      "hit_rate": 0.5302083333333333,
+      "max_drawdown": 0.7261798327065283,
+      "meta_oof_available": true,
+      "monthly_group_cv_pnl": 3.3757348558619364,
+      "monthly_pnl_std": 0.8385308435199748,
+      "monthly_sortino": 0.8408772889173128,
+      "net_pnl": 6.209987640380859,
+      "net_pnl_per_trade_pct": 0.1617184281349182,
+      "pnl_per_trade": 0.1617184281349182,
+      "profit_factor": 1.1777874345465114,
       "profitable_for_downstream": false,
+      "regime_adaptor_enabled": false,
+      "regime_adaptor_path": "data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639/regime_adaptor.json",
       "selection_frac": 0.3,
       "side": "",
-      "sizer_mix_booster_w": 0.25,
-      "sizer_mix_conf_mult": 1.0,
-      "sizer_mix_ridge_w": 0.7,
-      "sizer_mix_winner": "ridge_plus_lgbm",
       "source_horizon": NaN,
       "source_target": "",
-      "stability": 0.7626695834214562,
+      "stability": 0.7826560574237692,
       "strategy_id": "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639",
       "threshold_pct": 70.0,
       "trades_per_day": 10.520547945205479,
-      "wallet_pnl": 0.8818900608816135
+      "wallet_pnl": 0.8484126867783075
     }
   ]
 }

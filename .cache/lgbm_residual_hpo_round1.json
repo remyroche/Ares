@@ -1,14 +1,14 @@
 {
-  "best_n_estimators": 20,
+  "best_n_estimators": 16,
   "feature_count": 10,
   "params": {
-    "bagging_fraction": 0.7693758799239513,
-    "bagging_freq": 3,
-    "feature_fraction": 0.5187500250219863,
-    "max_depth": 2,
-    "min_data_frac": 0.005593848338407439,
-    "min_gain_to_split": 0.00024985766831198223,
-    "min_sum_hessian": 0.003780558109476994,
-    "num_leaves": 79
+    "bagging_fraction": 0.9347845752631946,
+    "bagging_freq": 4,
+    "feature_fraction": 0.8042755629911753,
+    "max_depth": 4,
+    "min_data_frac": 0.005774282355766484,
+    "min_gain_to_split": 0.06475492100703739,
+    "min_sum_hessian": 0.17717570271769403,
+    "num_leaves": 127
   }
 }

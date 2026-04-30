@@ -15,6 +15,11 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import pandas as pd
 
 from extreme_price_movements.config import CFG
+from extreme_price_movements.inference.symbol_mapping import (
+    convert_symbol_quote,
+    normalise_symbol,
+    symbol_bases,
+)
 from extreme_price_movements.model_loader import (
     find_latest_run_id,
     load_full_state,
@@ -48,6 +53,9 @@ def _load_inference_candidate_mask_params() -> Dict[str, Any]:
 
 # Default paths
 DEFAULT_DATA_ROOT = "data"
+DEFAULT_EXECUTION_ACCOUNT = "margin"
+DEFAULT_MARGIN_MODE = "cross"
+DEFAULT_LIVE_QUOTE_CURRENCY = "USDC"
 
 
 def get_candidate_thresholds(thresholds_csv: Optional[str] = None) -> Dict[str, float]:
@@ -136,6 +144,9 @@ def load_inference_config(
         "model_bundle": model_bundle,
         "full_state": full_state,
         "data_root": data_root,
+        "execution_account": DEFAULT_EXECUTION_ACCOUNT,
+        "margin_mode": DEFAULT_MARGIN_MODE,
+        "live_quote_currency": DEFAULT_LIVE_QUOTE_CURRENCY,
     }
 
     tprint(f"Inference config loaded successfully for run {run_id}")
@@ -266,16 +277,11 @@ def get_inference_defaults() -> Dict[str, Any]:
 # Margin universe cache - lazy loaded and refreshed once per UTC day.
 _MARGIN_UNIVERSE_CACHE = None
 _MARGIN_UNIVERSE_CACHE_DAY = None
+_MARGIN_UNIVERSE_CACHE_QUOTE = None
 
 
 def _normalise_symbol(symbol: str) -> str:
-    raw = str(symbol or "").strip().upper().replace("_", "/")
-    if "/" in raw:
-        return raw
-    for quote in ("USDT", "USDC", "BUSD", "USD1", "FDUSD", "BTC", "ETH"):
-        if raw.endswith(quote) and len(raw) > len(quote):
-            return f"{raw[:-len(quote)]}/{quote}"
-    return raw
+    return normalise_symbol(symbol)
 
 
 def _parse_market_listed_at(meta: Dict[str, Any]) -> Optional[int]:
@@ -328,14 +334,16 @@ def _load_universe_from_exchange(
     exchange: Any,
     *,
     min_age_days: int = 180,
+    quote_currency: str = "USDC",
 ) -> List[str]:
     """Build inference universe from exchange.load_markets() metadata.
 
-    Filters to active USDT symbols and margin-capable markets. If listing age
+    Filters to active quote-currency symbols and margin-capable markets. If listing age
     metadata exists, symbols younger than ``min_age_days`` are excluded.
     """
     markets = exchange.load_markets()
     selected: List[str] = []
+    quote_currency = str(quote_currency or "USDC").upper()
     age_cutoff_ms = int(
         (pd.Timestamp.utcnow() - pd.Timedelta(days=int(min_age_days))).value // 10**6
     )
@@ -344,7 +352,7 @@ def _load_universe_from_exchange(
         if not isinstance(meta, dict):
             continue
         quote = str(meta.get("quote") or "").upper()
-        if quote != "USDT":
+        if quote != quote_currency:
             continue
         if not bool(meta.get("active", True)):
             continue
@@ -372,6 +380,7 @@ def get_margin_universe(
     *,
     force_refresh: bool = False,
     min_age_days: int = 180,
+    quote_currency: str = "USDC",
 ) -> List[str]:
     """Get list of margin-enabled symbols from cache.
 
@@ -381,7 +390,7 @@ def get_margin_universe(
     Returns:
         List of margin-enabled trading symbols
     """
-    global _MARGIN_UNIVERSE_CACHE, _MARGIN_UNIVERSE_CACHE_DAY
+    global _MARGIN_UNIVERSE_CACHE, _MARGIN_UNIVERSE_CACHE_DAY, _MARGIN_UNIVERSE_CACHE_QUOTE
 
     import json
     import os
@@ -390,13 +399,18 @@ def get_margin_universe(
     cache_stale = (
         _MARGIN_UNIVERSE_CACHE_DAY is None or _MARGIN_UNIVERSE_CACHE_DAY < today
     )
-    if force_refresh or cache_stale or _MARGIN_UNIVERSE_CACHE is None:
+    quote_currency = str(quote_currency or "USDC").upper()
+    quote_changed = _MARGIN_UNIVERSE_CACHE_QUOTE != quote_currency
+    if force_refresh or cache_stale or quote_changed or _MARGIN_UNIVERSE_CACHE is None:
         if exchange is not None and hasattr(exchange, "load_markets"):
             try:
                 _MARGIN_UNIVERSE_CACHE = _load_universe_from_exchange(
-                    exchange, min_age_days=min_age_days
+                    exchange,
+                    min_age_days=min_age_days,
+                    quote_currency=quote_currency,
                 )
                 _MARGIN_UNIVERSE_CACHE_DAY = today
+                _MARGIN_UNIVERSE_CACHE_QUOTE = quote_currency
                 if _MARGIN_UNIVERSE_CACHE:
                     tprint(
                         f"Loaded {len(_MARGIN_UNIVERSE_CACHE)} margin-enabled symbols from exchange markets"
@@ -429,15 +443,19 @@ def get_margin_universe(
         with open(cache_path, "r") as f:
             margin_data = json.load(f)
 
-        # Extract symbols that have margin trading enabled
+        # Extract symbols that have margin trading enabled for the requested quote.
         _MARGIN_UNIVERSE_CACHE = sorted(
             {
                 _normalise_symbol(str(item["symbol"]))
                 for item in margin_data
                 if item.get("isMarginTradingAllowed", False)
+                and _normalise_symbol(str(item.get("symbol", ""))).endswith(
+                    f"/{quote_currency}"
+                )
             }
         )
         _MARGIN_UNIVERSE_CACHE_DAY = today
+        _MARGIN_UNIVERSE_CACHE_QUOTE = quote_currency
 
         tprint(f"Loaded {len(_MARGIN_UNIVERSE_CACHE)} margin-enabled symbols")
 
@@ -564,24 +582,40 @@ def resolve_inference_universes(
     data_root: str,
     run_id: str,
     explicit_symbols: Optional[List[str]] = None,
+    live_quote_currency: str = "USDC",
 ) -> Dict[str, List[str]]:
     """Resolve Step-9 download and tradable universes.
 
-    ``download_symbols`` is the daily Binance margin/USDT universe. ``tradable_symbols``
-    is further restricted to assets represented in training artifacts.
+    ``download_symbols`` is the daily Binance margin/live-quote universe.
+    ``tradable_symbols`` is further restricted by base asset to symbols represented
+    in training artifacts, so a model trained on ``BTC/USDT`` can trade
+    ``BTC/USDC``.
     """
+    live_quote_currency = str(live_quote_currency or "USDC").upper()
     if explicit_symbols:
-        live_symbols = sorted({_normalise_symbol(s) for s in explicit_symbols})
+        live_symbols = sorted(
+            {
+                convert_symbol_quote(_normalise_symbol(s), live_quote_currency)
+                for s in explicit_symbols
+            }
+        )
     else:
-        live_symbols = get_margin_universe(exchange, force_refresh=True)
+        live_symbols = get_margin_universe(
+            exchange, force_refresh=True, quote_currency=live_quote_currency
+        )
     trained_symbols = load_trained_symbol_universe(data_root, run_id)
     if trained_symbols:
-        tradable_symbols = sorted(set(live_symbols).intersection(trained_symbols))
+        trained_bases = symbol_bases(trained_symbols)
+        tradable_symbols = sorted(
+            sym
+            for sym in set(live_symbols)
+            if _normalise_symbol(sym).split("/")[0] in trained_bases
+        )
         dropped = len(set(live_symbols) - set(tradable_symbols))
         tprint(
             f"Tradable universe restricted to trained symbols: "
             f"download={len(live_symbols)} tradable={len(tradable_symbols)} "
-            f"dropped_untrained={dropped}"
+            f"dropped_untrained={dropped} live_quote={live_quote_currency}"
         )
     else:
         tradable_symbols = live_symbols
@@ -593,4 +627,5 @@ def resolve_inference_universes(
         "download_symbols": live_symbols,
         "tradable_symbols": tradable_symbols,
         "trained_symbols": sorted(trained_symbols),
+        "live_quote_currency": live_quote_currency,
     }

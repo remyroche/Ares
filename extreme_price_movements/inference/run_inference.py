@@ -46,10 +46,13 @@ def _configure_numba_threading_layer() -> None:
 
 
 import argparse
+import json
+import os
 import sys
 import threading
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -57,10 +60,11 @@ import pandas as pd
 
 from extreme_price_movements import hf_data_loader
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
-from extreme_price_movements.inference.candidate_selector import (
-    select_candidates,
-)
+from extreme_price_movements.inference.candidate_selector import select_candidates
 from extreme_price_movements.inference.config import (
+    DEFAULT_EXECUTION_ACCOUNT,
+    DEFAULT_LIVE_QUOTE_CURRENCY,
+    DEFAULT_MARGIN_MODE,
     get_candidate_thresholds,
     get_inference_defaults,
     get_runtime_cfg,
@@ -84,9 +88,7 @@ from extreme_price_movements.inference.feature_generator import (
     get_market_data,
     load_or_compute_features,
 )
-from extreme_price_movements.inference.model_orchestrator import (
-    ModelOrchestrator,
-)
+from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.inference.parity import (
     calibrated_score_and_threshold,
     calibration_size_multiplier,
@@ -100,9 +102,11 @@ from extreme_price_movements.inference.parity import (
     validate_live_feature_contract,
     validate_required_feature_frames,
 )
-from extreme_price_movements.inference.trade_executor import (
-    TradeExecutor,
+from extreme_price_movements.inference.symbol_mapping import (
+    normalise_symbol,
+    symbol_base,
 )
+from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
     log_trade_decision,
@@ -111,18 +115,169 @@ from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.simple_position_sizer import load_calibration_curves
 from extreme_price_movements.utils import tprint
 
+
+def _load_normalized_threshold_map(
+    data_root: str, run_id: str
+) -> Dict[str, Dict[str, Any]]:
+    rows_out: Dict[str, Dict[str, Any]] = {}
+    path = (
+        Path(data_root)
+        / "artifacts"
+        / run_id
+        / "ridge_sizer"
+        / "normalized_strategy_thresholds.json"
+    )
+    if path.exists():
+        try:
+            payload = json.loads(path.read_text())
+            rows = payload.get("strategies", {}) if isinstance(payload, dict) else {}
+            if isinstance(rows, dict):
+                threshold_space = str(payload.get("threshold_space", "") or "")
+                for sid, row in rows.items():
+                    if isinstance(row, dict):
+                        row = dict(row)
+                        row.setdefault("threshold_space", threshold_space)
+                        rows_out[str(sid)] = row
+        except Exception as exc:
+            tprint(f"Could not load normalized strategy thresholds: {exc}")
+
+    base = Path(data_root) / "artifacts" / run_id
+    strategy_paths = [
+        base / "policy_params" / "strategy_for_inference.json",
+        base / "strategy_for_inference.json",
+    ]
+    for strategy_path in strategy_paths:
+        if not strategy_path.exists():
+            continue
+        try:
+            payload = json.loads(strategy_path.read_text())
+            strategies = (
+                payload.get("strategies", []) if isinstance(payload, dict) else []
+            )
+            if not isinstance(strategies, list):
+                continue
+            loaded = 0
+            for row in strategies:
+                if not isinstance(row, dict) or row.get("selected") is False:
+                    continue
+                sid = str(
+                    row.get("strategy_for_inference")
+                    or row.get("strategy_id")
+                    or row.get("canonical_strategy_id")
+                    or ""
+                )
+                if not sid:
+                    continue
+                threshold = _deployment_rank_threshold_from_strategy_row(row)
+                nrow = {
+                    "threshold_space": "rank_percentile",
+                    "normalized_threshold": threshold,
+                    "deployment_rank_threshold": threshold,
+                    "viability_margin": 0.0,
+                    "threshold_source": str(strategy_path),
+                    "threshold_scope": "per_strategy_prediction_rank_only",
+                    "avg_trades_per_day_at_top_1pct": float(
+                        row.get("avg_trades_per_day_at_top_1pct", 0.0) or 0.0
+                    ),
+                    "avg_holding_time_hours": float(
+                        row.get("avg_holding_time_hours", 0.0) or 0.0
+                    ),
+                }
+                aliases = {
+                    sid,
+                    str(row.get("strategy_id", "") or ""),
+                    str(row.get("canonical_strategy_id", "") or ""),
+                    strategy_core_id(sid),
+                }
+                side = str(row.get("side", "") or "").lower()
+                core = strategy_core_id(sid)
+                if side in {"long", "short"} and core:
+                    aliases.add(f"{side}_{core}")
+                for alias in aliases:
+                    if alias:
+                        rows_out[str(alias)] = dict(nrow)
+                loaded += 1
+            tprint(f"Loaded {loaded} deployment rank thresholds from {strategy_path}")
+            break
+        except Exception as exc:
+            tprint(
+                f"Could not load deployment rank thresholds from {strategy_path}: {exc}"
+            )
+    return rows_out
+
+
+def _deployment_rank_threshold_from_strategy_row(row: Dict[str, Any]) -> float:
+    """Compute the live per-strategy rank gate saved by policy_optimiser.py."""
+    try:
+        saved = float(row.get("deployment_rank_threshold", np.nan))
+    except Exception:
+        saved = np.nan
+    if np.isfinite(saved):
+        return float(np.clip(saved, 0.0, 1.0))
+
+    try:
+        avg_top1_trades_per_day = float(
+            row.get("avg_trades_per_day_at_top_1pct")
+            or row.get("top1_avg_trades_per_day")
+            or row.get("opportunities_per_day")
+            or 0.0
+        )
+    except Exception:
+        avg_top1_trades_per_day = 0.0
+    try:
+        avg_holding_hours = float(
+            row.get("avg_holding_time_hours")
+            or row.get("avg_holding_hours_at_top_1pct")
+            or row.get("top1_avg_holding_hours")
+            or 1.0
+        )
+    except Exception:
+        avg_holding_hours = 1.0
+    avg_holding_hours = max(1.0, avg_holding_hours)
+    threshold = (avg_top1_trades_per_day / 24.0) * 2.0 / avg_holding_hours * 0.95
+    return float(np.clip(threshold, 0.0, 1.0))
+
+
+def _attach_rank_percentile_scores(
+    decision_rows: List[Dict[str, Any]],
+    *,
+    score_key: str = "rank_score",
+) -> None:
+    """Attach per-strategy percentile ranks for live rank-threshold gates."""
+    if not decision_rows:
+        return
+    by_strategy: Dict[str, List[int]] = {}
+    for i, row in enumerate(decision_rows):
+        sid = str(row.get("strategy_id", ""))
+        if sid:
+            by_strategy.setdefault(sid, []).append(i)
+    for indices in by_strategy.values():
+        scores = np.asarray(
+            [float(decision_rows[i].get(score_key, np.nan)) for i in indices],
+            dtype=np.float64,
+        )
+        finite = np.isfinite(scores)
+        if not finite.any():
+            continue
+        ranks = pd.Series(scores[finite]).rank(method="average", pct=True).to_numpy()
+        rank_out = np.full(len(scores), np.nan, dtype=np.float64)
+        rank_out[finite] = ranks
+        for local_i, row_i in enumerate(indices):
+            decision_rows[row_i]["sizer_rank_percentile"] = float(rank_out[local_i])
+
+
 # Default symbols to trade
 DEFAULT_SYMBOLS = [
-    "BTC/USDT",
-    "ETH/USDT",
-    "BNB/USDT",
-    "SOL/USDT",
-    "XRP/USDT",
-    "ADA/USDT",
-    "DOGE/USDT",
-    "AVAX/USDT",
-    "DOT/USDT",
-    "MATIC/USDT",
+    "BTC/USDC",
+    "ETH/USDC",
+    "BNB/USDC",
+    "SOL/USDC",
+    "XRP/USDC",
+    "ADA/USDC",
+    "DOGE/USDC",
+    "AVAX/USDC",
+    "DOT/USDC",
+    "MATIC/USDC",
 ]
 
 
@@ -195,6 +350,32 @@ def _build_executor_bucket_params(config: Dict[str, Any]) -> Dict[str, Any]:
         merged.update(params)
         bucket_params[strategy_id] = merged
     return bucket_params
+
+
+def _attach_runtime_bucket_params(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach policy-optimiser params to runtime model config and return them."""
+    bucket_params = _build_executor_bucket_params(config)
+    model_bundle = config.setdefault("model_bundle", {})
+    if isinstance(model_bundle, dict):
+        model_bundle["bucket_params"] = bucket_params
+    full_state = config.setdefault("full_state", {})
+    if isinstance(full_state, dict):
+        full_state["bucket_params"] = bucket_params
+    return bucket_params
+
+
+def _force_shadow_entry_for_integration(executor: Any) -> bool:
+    """Return True only for explicit shadow-mode integration smoke passes."""
+    if getattr(executor, "mode", None) != "shadow":
+        return False
+    cfg = getattr(executor, "config", {}) or {}
+    if bool(cfg.get("force_shadow_entry_for_integration", False)):
+        return True
+    return str(os.getenv("EPM_FORCE_SHADOW_ENTRY", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 def _subset_panel(
@@ -310,7 +491,8 @@ def _is_symbol_blocked_for_strategy(
     """Return True when policy optimiser excludes a symbol for this strategy."""
     if not strategy_asset_exclusions:
         return False
-    symbol_norm = str(symbol or "").strip().upper().replace("_", "/")
+    symbol_norm = normalise_symbol(symbol)
+    symbol_base_norm = symbol_base(symbol_norm)
     sid = str(strategy_id or "")
     core = strategy_core_id(sid)
     aliases = {sid, core}
@@ -321,8 +503,9 @@ def _is_symbol_blocked_for_strategy(
         blocked = strategy_asset_exclusions.get(alias)
         if not blocked:
             continue
-        blocked_norm = {str(sym).upper().replace("_", "/") for sym in blocked}
-        if symbol_norm in blocked_norm:
+        blocked_norm = {normalise_symbol(str(sym)) for sym in blocked}
+        blocked_bases = {symbol_base(sym) for sym in blocked_norm}
+        if symbol_norm in blocked_norm or symbol_base_norm in blocked_bases:
             return True
     return False
 
@@ -450,9 +633,12 @@ def run_inference_step(
     *,
     accepted_strategies: Optional[set[str]] = None,
     calibration_data: Optional[Dict[str, Dict[str, Any]]] = None,
+    normalized_thresholds: Optional[Dict[str, Dict[str, Any]]] = None,
     portfolio_mgr: Optional[PortfolioManager] = None,
     initial_rank_threshold: float = 0.5,
     strategy_asset_exclusions: Optional[Dict[str, set[str]]] = None,
+    preselected_long_candidates: Optional[List[str]] = None,
+    preselected_short_candidates: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Run a single inference step.
 
@@ -476,13 +662,20 @@ def run_inference_step(
     }
     now_utc = pd.Timestamp.now(tz="UTC")
     calibration_data = calibration_data or {}
+    normalized_thresholds = normalized_thresholds or {}
 
-    # Step 1: Select candidates
-    long_cands, short_cands = select_candidates(
-        panel=panel,
-        feats=feats,
-        metric=str(thresholds.get("metric", "ret12h")),
-    )
+    # Step 1: Select candidates. When the caller already selected candidates
+    # on selector-only features before loading the full model feature set, keep
+    # that exact set so the expensive model pass does not silently re-filter it.
+    if preselected_long_candidates is None or preselected_short_candidates is None:
+        long_cands, short_cands = select_candidates(
+            panel=panel,
+            feats=feats,
+            metric=str(thresholds.get("metric", "ret12h")),
+        )
+    else:
+        long_cands = list(preselected_long_candidates)
+        short_cands = list(preselected_short_candidates)
 
     # Limit candidates
     long_cands = long_cands[:max_candidates]
@@ -533,11 +726,38 @@ def run_inference_step(
                 else [f"{side}_mr"]
             )
             for selected_strategy in strategy_ids:
+                eligible_candidates = [
+                    symbol
+                    for symbol in candidates
+                    if not _is_symbol_blocked_for_strategy(
+                        symbol, str(selected_strategy), strategy_asset_exclusions
+                    )
+                ]
+                if not eligible_candidates:
+                    if candidates:
+                        tprint(
+                            f"Asset exclusion block: all {side} candidates skipped for "
+                            f"{selected_strategy}"
+                        )
+                    continue
+                eligible_features = candidate_features.loc[
+                    [
+                        symbol
+                        for symbol in eligible_candidates
+                        if symbol in candidate_features.index
+                    ]
+                ]
+                if eligible_features.empty:
+                    tprint(
+                        f"Feature block: no feature rows available after asset "
+                        f"filter for {side}/{selected_strategy}"
+                    )
+                    continue
                 if all(
                     _is_symbol_blocked_for_strategy(
                         symbol, str(selected_strategy), strategy_asset_exclusions
                     )
-                    for symbol in candidates
+                    for symbol in eligible_candidates
                 ):
                     tprint(
                         f"Asset exclusion block: all {side} candidates skipped for "
@@ -546,12 +766,12 @@ def run_inference_step(
                     continue
                 base_gate = _select_top_base_prediction_symbols(
                     orchestrator=orchestrator,
-                    candidate_features=candidate_features,
-                    candidates=candidates,
+                    candidate_features=eligible_features,
+                    candidates=eligible_candidates,
                     side=side,
                     strategy_id=str(selected_strategy),
                 )
-                for symbol in candidates:
+                for symbol in eligible_candidates:
                     if (
                         symbol not in candidate_features.index
                         or symbol not in base_gate
@@ -596,6 +816,28 @@ def run_inference_step(
                         continue
                     chain_results.update(base_gate.get(symbol, {}))
                     if chain_results.get("action") != "enter":
+                        if _force_shadow_entry_for_integration(executor):
+                            tprint(
+                                f"Shadow integration override: forcing entry for "
+                                f"{symbol} {side}/{strategy_id} after "
+                                f"action={chain_results.get('action')} "
+                                f"reason={chain_results.get('reason', '')}"
+                            )
+                            chain_results["action"] = "enter"
+                            chain_results["forced_shadow_entry"] = True
+                        else:
+                            tprint(
+                                f"Entry policy block: {symbol} {side}/{strategy_id} "
+                                f"action={chain_results.get('action')} "
+                                f"reason={chain_results.get('reason', '')}"
+                            )
+                            continue
+                    if chain_results.get("action") != "enter":
+                        tprint(
+                            f"Entry policy block: {symbol} {side}/{strategy_id} "
+                            f"action={chain_results.get('action')} "
+                            f"reason={chain_results.get('reason', '')}"
+                        )
                         continue
                     raw_score = float(chain_results.get("meta_pred", 0.0) or 0.0)
                     calibrated_score, rank_threshold = calibrated_score_and_threshold(
@@ -604,9 +846,33 @@ def run_inference_step(
                         calibration_data=calibration_data,
                         default_threshold=initial_rank_threshold,
                     )
-                    if calibrated_score < rank_threshold:
-                        continue
-                    size = float(chain_results.get("position_size", 0.0) or 0.0)
+                    nrow = normalized_thresholds.get(strategy_id, {})
+                    threshold_space = str(nrow.get("threshold_space", "") or "")
+                    normalized_threshold = float(
+                        nrow.get("normalized_threshold", rank_threshold)
+                    )
+                    viability_margin = float(nrow.get("viability_margin", 0.0))
+                    if threshold_space == "calibrated_score":
+                        effective_threshold = min(
+                            1.0,
+                            max(rank_threshold, normalized_threshold)
+                            + viability_margin,
+                        )
+                        threshold_score = calibrated_score
+                        if calibrated_score < effective_threshold:
+                            tprint(
+                                f"Calibration block: {symbol} {side}/{strategy_id} "
+                                f"score={calibrated_score:.6f} "
+                                f"threshold={effective_threshold:.6f}"
+                            )
+                            continue
+                    else:
+                        effective_threshold = min(
+                            1.0, normalized_threshold + viability_margin
+                        )
+                        threshold_score = np.nan
+                    rank_score = float(chain_results.get("position_size", 0.0) or 0.0)
+                    size = rank_score
                     size *= calibration_size_multiplier(
                         raw_score=raw_score,
                         strategy_id=strategy_id,
@@ -614,10 +880,17 @@ def run_inference_step(
                         default_threshold=initial_rank_threshold,
                     )
                     if abs(size) < 0.01:
+                        tprint(
+                            f"Size block: {symbol} {side}/{strategy_id} "
+                            f"size={size:.6f}"
+                        )
                         continue
                     chain_results["strategy_id"] = strategy_id
                     chain_results["calibrated_score"] = calibrated_score
                     chain_results["rank_threshold"] = rank_threshold
+                    chain_results["normalized_threshold"] = normalized_threshold
+                    chain_results["viability_margin"] = viability_margin
+                    chain_results["effective_threshold"] = effective_threshold
                     decision_rows.append(
                         {
                             "symbol": symbol,
@@ -626,13 +899,40 @@ def run_inference_step(
                             "strategy_id": strategy_id,
                             "raw_score": raw_score,
                             "calibrated_score": calibrated_score,
+                            "threshold_space": threshold_space or "rank_percentile",
+                            "rank_score": rank_score,
+                            "threshold_score": threshold_score,
                             "rank_threshold": rank_threshold,
+                            "normalized_threshold": normalized_threshold,
+                            "effective_threshold": effective_threshold,
                             "chain_results": chain_results,
                         }
                     )
 
+            _attach_rank_percentile_scores(decision_rows)
+            filtered_decision_rows: List[Dict[str, Any]] = []
+            for decision in decision_rows:
+                if str(decision.get("threshold_space", "")) == "calibrated_score":
+                    filtered_decision_rows.append(decision)
+                    continue
+                rank_pct = float(decision.get("sizer_rank_percentile", np.nan))
+                threshold = float(decision.get("effective_threshold", 1.0))
+                if not np.isfinite(rank_pct) or rank_pct < threshold:
+                    tprint(
+                        f"Rank-threshold block: {decision['symbol']} "
+                        f"{decision['side']}/{decision['strategy_id']} "
+                        f"rank={rank_pct:.6f} threshold={threshold:.6f}"
+                    )
+                    continue
+                decision["threshold_score"] = rank_pct
+                chain_results = dict(decision["chain_results"])
+                chain_results["sizer_rank_percentile"] = rank_pct
+                chain_results["effective_threshold"] = threshold
+                decision["chain_results"] = chain_results
+                filtered_decision_rows.append(decision)
+            decision_rows = filtered_decision_rows
             decision_rows.sort(
-                key=lambda row: float(row.get("calibrated_score", 0.0)), reverse=True
+                key=lambda row: float(row.get("threshold_score", 0.0)), reverse=True
             )
             for decision in decision_rows:
                 symbol = str(decision["symbol"])
@@ -667,12 +967,16 @@ def run_inference_step(
                         side=side,
                         strategy_id=strategy_id,
                         confidence_score=float(decision["calibrated_score"]),
-                        initial_threshold=float(decision["rank_threshold"]),
+                        initial_threshold=float(decision["effective_threshold"]),
                         current_time=now_utc,
                         requested_position_size=requested_position_usdt,
                     )
                     chain_results["portfolio_gate"] = info
                     if not can_enter:
+                        tprint(
+                            f"Portfolio block: {symbol} {side}/{strategy_id} "
+                            f"reason={info.get('reason') or info}"
+                        )
                         continue
                     size = min(
                         requested_position_usdt,
@@ -1058,6 +1362,193 @@ def run_inference_loop(
     tprint(f"\nInference loop ended. Log file: {logger.get_log_path()}")
 
 
+def _monitor_active_position_price_action(
+    executor: TradeExecutor,
+    *,
+    exchange: Optional[Any] = None,
+    now: Optional[pd.Timestamp] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Monitor active positions and apply 5m trailing/stop policy updates."""
+    statuses: Dict[str, Dict[str, Any]] = {}
+    active_positions = (
+        executor.get_active_positions()
+        if hasattr(executor, "get_active_positions")
+        else {}
+    )
+    if not active_positions:
+        return statuses
+
+    if hasattr(executor, "monitor_orders_once"):
+        try:
+            statuses.update(executor.monitor_orders_once())
+        except Exception as exc:
+            tprint(
+                f"  Error monitoring order statuses: {classify_api_error(exc)}: {exc}"
+            )
+
+    now_ts = pd.Timestamp(now if now is not None else pd.Timestamp.now(tz="UTC"))
+    if now_ts.tzinfo is None:
+        now_ts = now_ts.tz_localize("UTC")
+    else:
+        now_ts = now_ts.tz_convert("UTC")
+
+    cached_5m: Dict[str, pd.DataFrame] = {}
+    if exchange is None and hasattr(executor, "fetch_5m_ohlcv_for_positions"):
+        try:
+            cached_5m = executor.fetch_5m_ohlcv_for_positions()
+        except Exception as exc:
+            tprint(
+                f"  Error reading cached shadow 5m data: "
+                f"{classify_api_error(exc)}: {exc}"
+            )
+
+    tprint(f"Monitoring {len(active_positions)} active positions for price action...")
+    for symbol, position_state in active_positions.items():
+        try:
+            entry_time = position_state.get("entry_time")
+            if entry_time is None:
+                continue
+            start_time = pd.Timestamp(entry_time)
+            if start_time.tzinfo is None:
+                start_time = start_time.tz_localize("UTC")
+            else:
+                start_time = start_time.tz_convert("UTC")
+            last_eval_ts = position_state.get("last_5m_eval_ts")
+            if last_eval_ts is not None:
+                start_time = max(
+                    start_time,
+                    pd.Timestamp(last_eval_ts) - pd.Timedelta(minutes=5),
+                )
+            end_time = min(start_time + pd.Timedelta(hours=8), now_ts)
+            if start_time >= end_time:
+                continue
+
+            ohlcv_5m: Any = None
+            if exchange is not None:
+                ohlcv_5m = hf_data_loader.fetch_ohlcv_5m(
+                    exchange, symbol, start_time, end_time
+                )
+            else:
+                ohlcv_5m = cached_5m.get(symbol)
+
+            if (
+                ohlcv_5m is None
+                or not isinstance(ohlcv_5m, (pd.DataFrame, pd.Series))
+                or (hasattr(ohlcv_5m, "empty") and ohlcv_5m.empty)
+            ):
+                continue
+
+            bars = pd.DataFrame(ohlcv_5m)
+            before_stop = float(position_state.get("stop_price", np.nan))
+            position_state["ohlcv_5m_latest"] = bars
+            _evaluate_oco_policy(symbol, position_state, bars, executor)
+            after_position = (
+                executor.get_position(symbol)
+                if hasattr(executor, "get_position")
+                else None
+            )
+            status = statuses.setdefault(symbol, {})
+            if after_position is None:
+                status["price_action"] = {
+                    "status": "closed",
+                    "bars_evaluated": int(len(bars)),
+                    "stop_price_before": before_stop,
+                }
+                continue
+            after_stop = float(after_position.get("stop_price", np.nan))
+            status["price_action"] = {
+                "status": "updated",
+                "bars_evaluated": int(len(bars)),
+                "stop_price_before": before_stop,
+                "stop_price_after": after_stop,
+                "peak_price": after_position.get("peak_price"),
+                "mfe": after_position.get("mfe"),
+                "last_5m_eval_ts": after_position.get("last_5m_eval_ts"),
+            }
+            if np.isfinite(before_stop) and np.isfinite(after_stop):
+                if abs(after_stop - before_stop) > 1e-12:
+                    tprint(
+                        f"  [STOP_LOSS] {symbol} stop updated "
+                        f"{before_stop:.8f} -> {after_stop:.8f}"
+                    )
+        except Exception as exc:
+            tprint(
+                f"  Error evaluating 5m price action for {symbol}: "
+                f"{classify_api_error(exc)}: {exc}"
+            )
+            statuses.setdefault(symbol, {})["price_action_error"] = str(exc)
+    return statuses
+
+
+def _infer_policy_barrier_frac(
+    *,
+    params: Dict[str, Any],
+    entry_price: float,
+    stop_price: float,
+) -> float:
+    """Infer the policy optimiser barrier fraction from params/active stop."""
+    for key in ("barrier_frac", "barrier_pct", "atr", "tp_base_pct", "tp_abs_pct"):
+        if key not in params:
+            continue
+        value = float(params.get(key, np.nan))
+        if np.isfinite(value) and value > 0.0:
+            return value
+    sl_mult = max(float(params.get("sl_mult", 1.0) or 1.0), 1e-12)
+    if (
+        np.isfinite(entry_price)
+        and entry_price > 0.0
+        and np.isfinite(stop_price)
+        and stop_price > 0.0
+    ):
+        return abs(entry_price - stop_price) / entry_price / sl_mult
+    return 0.01
+
+
+def _policy_optimiser_trailing_stop(
+    *,
+    side: str,
+    entry_price: float,
+    peak_price: float,
+    mfe: float,
+    stop_price: float,
+    params: Dict[str, Any],
+) -> float:
+    """Return the policy-optimiser trailing threshold for the current MFE."""
+    if not bool(params.get("enable_trailing", False)):
+        return float(stop_price)
+    barrier_frac = _infer_policy_barrier_frac(
+        params=params,
+        entry_price=entry_price,
+        stop_price=stop_price,
+    )
+    activation = float(params.get("trailing_override_alpha", 0.0)) * barrier_frac
+    if float(mfe) <= activation:
+        return float(stop_price)
+
+    trailing_power = float(params.get("trailing_power", 1.0))
+    trailing_squash_divisor = max(
+        float(params.get("trailing_squash_divisor", 1.0)), 1e-6
+    )
+    giveback_beta = float(params.get("giveback_beta", 0.5))
+    profit_above_activation = max(float(mfe) - activation, 0.0)
+    trail_dist_ret = (profit_above_activation**trailing_power) / (
+        trailing_squash_divisor
+    )
+    trail_dist_abs = trail_dist_ret * float(entry_price)
+    giveback_dist = giveback_beta * barrier_frac
+
+    if str(side).lower() == "long":
+        power_stop = float(peak_price) - trail_dist_abs
+        giveback_stop = float(peak_price) * (1.0 - giveback_dist)
+        candidate = min(power_stop, giveback_stop)
+        return max(float(stop_price), float(candidate))
+
+    power_stop = float(peak_price) + trail_dist_abs
+    giveback_stop = float(peak_price) * (1.0 + giveback_dist)
+    candidate = max(power_stop, giveback_stop)
+    return min(float(stop_price), float(candidate))
+
+
 def main():
     import argparse
 
@@ -1092,14 +1583,22 @@ def main():
     parser.add_argument(
         "--execution-account",
         choices=["spot", "margin"],
-        default="spot",
-        help="Execution account for live orders (default: spot)",
+        default=DEFAULT_EXECUTION_ACCOUNT,
+        help=f"Execution account for live orders (default: {DEFAULT_EXECUTION_ACCOUNT})",
     )
     parser.add_argument(
         "--margin-mode",
         choices=["cross", "isolated"],
-        default="cross",
+        default=DEFAULT_MARGIN_MODE,
         help="Margin mode when --execution-account margin is used",
+    )
+    parser.add_argument(
+        "--live-quote-currency",
+        default=DEFAULT_LIVE_QUOTE_CURRENCY,
+        help=(
+            "Quote currency to trade/download at inference time "
+            f"(default: {DEFAULT_LIVE_QUOTE_CURRENCY})"
+        ),
     )
     args = parser.parse_args()
 
@@ -1107,18 +1606,28 @@ def main():
     config = load_inference_config()
     config["execution_account"] = args.execution_account
     config["margin_mode"] = args.margin_mode
+    config["live_quote_currency"] = str(args.live_quote_currency or "USDC").upper()
     config["mode"] = "live" if args.live else "shadow"
     exchange = make_exchange()
+    runtime_bucket_params = _attach_runtime_bucket_params(config)
     model_bundle = load_full_state(config["run_id"], config["data_root"])
+    if isinstance(model_bundle, dict):
+        model_bundle["bucket_params"] = runtime_bucket_params
     effective_model_bundle = _effective_runtime_model_bundle(model_bundle, config)
     validate_live_feature_contract(effective_model_bundle, strict=True)
-    required_feature_keys = get_inference_required_feature_keys(effective_model_bundle)
-    calibration_data = load_calibration_curves(config["data_root"], config["run_id"])
-    validate_calibration_artifacts(
-        config["data_root"], config["run_id"], calibration_data, strict=False
-    )
     accepted_strategies = resolve_deployment_strategy_filter(
         config["data_root"], config["run_id"]
+    )
+    required_feature_keys = get_inference_required_feature_keys(
+        effective_model_bundle,
+        accepted_strategies,
+    )
+    calibration_data = load_calibration_curves(config["data_root"], config["run_id"])
+    normalized_thresholds = _load_normalized_threshold_map(
+        config["data_root"], config["run_id"]
+    )
+    validate_calibration_artifacts(
+        config["data_root"], config["run_id"], calibration_data, strict=False
     )
     strategy_asset_exclusions = load_strategy_asset_exclusion_filter(
         config["data_root"], config["run_id"]
@@ -1142,13 +1651,14 @@ def main():
     panel_lookback_hours = max(int(args.lookback_hours), panel_warmup_hours)
 
     # Step 9 universe split:
-    # - download_symbols: full live Binance USDT margin universe, refreshed daily
+    # - download_symbols: full live Binance quote/margin universe, refreshed daily
     # - symbols: tradable subset restricted to the active training universe
     universe_state = resolve_inference_universes(
         exchange,
         data_root=config["data_root"],
         run_id=config["run_id"],
         explicit_symbols=args.symbols,
+        live_quote_currency=config["live_quote_currency"],
     )
     download_symbols = list(universe_state["download_symbols"])
     symbols = list(universe_state["tradable_symbols"])
@@ -1168,7 +1678,7 @@ def main():
     executor = TradeExecutor(
         mode="live" if args.live else "shadow",
         exchange=exchange,
-        bucket_params=_build_executor_bucket_params(config),
+        bucket_params=runtime_bucket_params,
         config=config,
     )
     logger = TradeLogger()
@@ -1180,10 +1690,11 @@ def main():
     )
     portfolio_mgr = PortfolioManager(
         max_positions=4,
-        max_portfolio_pct=0.30,
-        max_position_usdt=5000.0,
+        max_portfolio_pct=None,
+        max_position_usdt=None,
+        max_position_pct=0.15,
         cooldown_hours=24.0,
-        max_same_side_pct=0.75,
+        max_same_side_pct=1.0,
         max_same_strategy_pct=0.50,
     )
 
@@ -1224,6 +1735,7 @@ def main():
                     exchange,
                     data_root=config["data_root"],
                     run_id=config["run_id"],
+                    live_quote_currency=config["live_quote_currency"],
                 )
                 download_symbols[:] = universe_state["download_symbols"]
                 symbols[:] = universe_state["tradable_symbols"]
@@ -1279,9 +1791,12 @@ def main():
                 max_candidates=max(len(long_cands) + len(short_cands), 1),
                 accepted_strategies=accepted_strategies,
                 calibration_data=calibration_data,
+                normalized_thresholds=normalized_thresholds,
                 portfolio_mgr=portfolio_mgr,
                 initial_rank_threshold=0.5,
                 strategy_asset_exclusions=strategy_asset_exclusions,
+                preselected_long_candidates=long_cands,
+                preselected_short_candidates=short_cands,
             )
             tprint(
                 f"Inference batch complete: download_symbols={len(download_symbols)} "
@@ -1470,47 +1985,12 @@ def run_challenger_monitor(
                 if hasattr(executor, "get_active_positions")
                 else {}
             )
-            exchange = executor.exchange
-            if active_positions and exchange is not None:
-                if hasattr(executor, "monitor_orders_once"):
-                    executor.monitor_orders_once()
-                tprint(f"Monitoring {len(active_positions)} active OCO positions...")
-                for symbol, position_state in active_positions.items():
-                    try:
-                        entry_time = position_state.get("entry_time")
-                        if entry_time is None:
-                            continue
-                        start_time = pd.Timestamp(entry_time)
-                        last_eval_ts = position_state.get("last_5m_eval_ts")
-                        if last_eval_ts is not None:
-                            start_time = max(
-                                start_time,
-                                pd.Timestamp(last_eval_ts) - pd.Timedelta(minutes=5),
-                            )
-                        end_time = min(
-                            start_time + pd.Timedelta(hours=8),
-                            pd.Timestamp.now(tz="UTC"),
-                        )
-                        if start_time >= end_time:
-                            continue
-                        ohlcv_5m = hf_data_loader.fetch_ohlcv_5m(
-                            exchange, symbol, start_time, end_time
-                        )
-                        if (
-                            ohlcv_5m is not None
-                            and isinstance(ohlcv_5m, (pd.DataFrame, pd.Series))
-                            and not (hasattr(ohlcv_5m, "empty") and ohlcv_5m.empty)
-                        ):
-                            position_state["ohlcv_5m_latest"] = ohlcv_5m
-                            _evaluate_oco_policy(
-                                symbol, position_state, ohlcv_5m, executor
-                            )
-                    except Exception as e:
-                        tprint(
-                            f"  Error fetching 5m data for {symbol}: "
-                            f"{classify_api_error(e)}: {e}"
-                        )
-                        continue
+            if active_positions:
+                _monitor_active_position_price_action(
+                    executor,
+                    exchange=executor.exchange,
+                    now=current_time,
+                )
 
             time.sleep(interval)
 
@@ -1564,16 +2044,23 @@ def _evaluate_oco_policy(
         stop_price = float(position_state.get("stop_price", np.nan))
         peak_price = float(position_state.get("peak_price", entry_price) or entry_price)
         mfe = float(position_state.get("mfe", 0.0) or 0.0)
+        enable_trailing = bool(params.get("enable_trailing", True))
+        policy_style_trailing = any(
+            key in params
+            for key in (
+                "trailing_power",
+                "trailing_squash_divisor",
+                "trailing_override_alpha",
+                "giveback_beta",
+            )
+        )
         giveback_pct = float(params.get("giveback_pct", 0.005))
         trail_mult = float(params.get("trail_mult", 0.25))
-        profit_lock = float(params.get("profit_lock_amount", 0.003))
-        enable_trailing = bool(params.get("enable_trailing", True))
-        trailing_power = float(params.get("trailing_power", 1.0))
-        trailing_squash_divisor = max(
-            float(params.get("trailing_squash_divisor", 1.0)), 1e-6
+        profit_lock = (
+            float(params["profit_lock_amount"])
+            if "profit_lock_amount" in params
+            else None
         )
-        trailing_override_alpha = float(params.get("trailing_override_alpha", 0.0))
-        giveback_beta = float(params.get("giveback_beta", 1.0))
         last_bar_ts = bars.index[-1]
 
         for bar_ts, row in bars.iterrows():
@@ -1594,23 +2081,24 @@ def _evaluate_oco_policy(
                 peak_price = max(peak_price, bar_high)
                 new_stop = stop_price
                 if enable_trailing and peak_price > entry_price:
-                    giveback_stop = peak_price * (1.0 - giveback_pct)
-                    trailing_stop = entry_price + trail_mult * (
-                        peak_price - entry_price
-                    )
-                    if trailing_override_alpha > 0.0:
-                        activation = trailing_override_alpha * max(giveback_pct, 1e-6)
-                        excess = max(mfe - activation, 0.0)
-                        dynamic_dist = excess**trailing_power / trailing_squash_divisor
-                        if dynamic_dist > 0.0:
-                            trailing_stop = max(
-                                trailing_stop,
-                                peak_price * (1.0 - dynamic_dist * giveback_beta),
-                            )
-                    locked_stop = entry_price * (1.0 + profit_lock)
-                    new_stop = max(
-                        float(stop_price), giveback_stop, trailing_stop, locked_stop
-                    )
+                    if policy_style_trailing:
+                        new_stop = _policy_optimiser_trailing_stop(
+                            side=side,
+                            entry_price=entry_price,
+                            peak_price=peak_price,
+                            mfe=mfe,
+                            stop_price=stop_price,
+                            params=params,
+                        )
+                    else:
+                        giveback_stop = peak_price * (1.0 - giveback_pct)
+                        trailing_stop = entry_price + trail_mult * (
+                            peak_price - entry_price
+                        )
+                        new_stop = max(float(stop_price), giveback_stop, trailing_stop)
+                    if profit_lock is not None:
+                        locked_stop = entry_price * (1.0 + profit_lock)
+                        new_stop = max(float(new_stop), locked_stop)
                 if np.isfinite(new_stop) and new_stop > float(stop_price):
                     stop_price = float(new_stop)
             else:
@@ -1625,23 +2113,24 @@ def _evaluate_oco_policy(
                 peak_price = min(peak_price, bar_low)
                 new_stop = stop_price
                 if enable_trailing and peak_price < entry_price:
-                    giveback_stop = peak_price * (1.0 + giveback_pct)
-                    trailing_stop = entry_price - trail_mult * (
-                        entry_price - peak_price
-                    )
-                    if trailing_override_alpha > 0.0:
-                        activation = trailing_override_alpha * max(giveback_pct, 1e-6)
-                        excess = max(mfe - activation, 0.0)
-                        dynamic_dist = excess**trailing_power / trailing_squash_divisor
-                        if dynamic_dist > 0.0:
-                            trailing_stop = min(
-                                trailing_stop,
-                                peak_price * (1.0 + dynamic_dist * giveback_beta),
-                            )
-                    locked_stop = entry_price * (1.0 - profit_lock)
-                    new_stop = min(
-                        float(stop_price), giveback_stop, trailing_stop, locked_stop
-                    )
+                    if policy_style_trailing:
+                        new_stop = _policy_optimiser_trailing_stop(
+                            side=side,
+                            entry_price=entry_price,
+                            peak_price=peak_price,
+                            mfe=mfe,
+                            stop_price=stop_price,
+                            params=params,
+                        )
+                    else:
+                        giveback_stop = peak_price * (1.0 + giveback_pct)
+                        trailing_stop = entry_price - trail_mult * (
+                            entry_price - peak_price
+                        )
+                        new_stop = min(float(stop_price), giveback_stop, trailing_stop)
+                    if profit_lock is not None:
+                        locked_stop = entry_price * (1.0 - profit_lock)
+                        new_stop = min(float(new_stop), locked_stop)
                 if np.isfinite(new_stop) and new_stop < float(stop_price):
                     stop_price = float(new_stop)
 

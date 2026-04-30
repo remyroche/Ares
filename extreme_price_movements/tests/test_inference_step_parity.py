@@ -1,8 +1,51 @@
+import json
+
 import pandas as pd
 
 from extreme_price_movements.inference import run_inference as ri
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.portfolio_manager import PortfolioManager
+
+
+def test_load_normalized_threshold_map_prefers_policy_deployment_rank(tmp_path):
+    run_id = "run"
+    policy_dir = tmp_path / "artifacts" / run_id / "policy_params"
+    policy_dir.mkdir(parents=True)
+    (policy_dir / "strategy_for_inference.json").write_text(
+        json.dumps(
+            {
+                "strategies": [
+                    {
+                        "strategy_id": "long_mr",
+                        "canonical_strategy_id": "mr",
+                        "strategy_for_inference": "long_mr",
+                        "side": "long",
+                        "selected": True,
+                        "deployment_rank_threshold": 0.73,
+                        "avg_trades_per_day_at_top_1pct": 9.0,
+                        "avg_holding_time_hours": 8.0,
+                    }
+                ]
+            }
+        )
+    )
+
+    thresholds = ri._load_normalized_threshold_map(str(tmp_path), run_id)
+
+    assert thresholds["long_mr"]["threshold_space"] == "rank_percentile"
+    assert thresholds["long_mr"]["normalized_threshold"] == 0.73
+    assert (
+        thresholds["long_mr"]["threshold_scope"] == "per_strategy_prediction_rank_only"
+    )
+    assert thresholds["mr"]["normalized_threshold"] == 0.73
+
+
+def test_strategy_asset_exclusion_matches_across_usdt_usdc_quote():
+    assert ri._is_symbol_blocked_for_strategy(
+        "BTC/USDC",
+        "long_mr",
+        {"long_mr": {"BTC/USDT"}},
+    )
 
 
 class _DummyOrchestrator:
@@ -17,11 +60,25 @@ class _DummyOrchestrator:
         }
 
 
+class _NoEntryOrchestrator:
+    def run_full_chain(self, symbol, side, features, panel=None):
+        return {
+            "symbol": symbol,
+            "side": side,
+            "action": "no_entry",
+            "reason": "entry_policy_rejected",
+            "position_size": 0.3,
+            "meta_pred": 0.9,
+            "strategy_id": f"{side}_mr",
+        }
+
+
 class _DummyExecutor:
     mode = "shadow"
 
     def __init__(self):
         self.calls = []
+        self.config = {}
 
     def get_cooldown_hours(self, bucket_key):
         return 0.0
@@ -149,8 +206,8 @@ def test_run_inference_step_applies_strategy_rank_and_portfolio_caps(monkeypatch
 
     assert len(results["trades"]) == 1
     assert executor.calls, "expected trade execution call"
-    # Must cap to portfolio constraints: <= 30% of 10k and <= 5000, so <= 3000
-    assert executor.calls[0]["size"] <= 3000.0 + 1e-9
+    # Must cap to the live per-position constraint: <= 15% of 10k.
+    assert executor.calls[0]["size"] <= 1500.0 + 1e-9
 
 
 def test_portfolio_manager_hard_gates_require_manual_reset():
@@ -245,6 +302,51 @@ def test_run_inference_step_blocks_non_accepted_strategy(monkeypatch):
     assert results["trades"] == []
 
 
+def test_run_inference_step_can_force_shadow_entry_for_integration(monkeypatch):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    close = pd.DataFrame({"BTC/USDT": [100.0, 100.0, 100.0]}, index=idx)
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    monkeypatch.setattr(ri, "select_candidates", lambda **kwargs: (["BTC/USDT"], []))
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": [1.0] * len(candidates)}, index=candidates
+        ),
+    )
+
+    executor = _DummyExecutor()
+    executor.config["force_shadow_entry_for_integration"] = True
+    logger = _DummyLogger()
+
+    results = ri.run_inference_step(
+        orchestrator=_NoEntryOrchestrator(),
+        panel=panel,
+        feats=feats,
+        thresholds={"metric": "ret12h"},
+        executor=executor,
+        logger=logger,
+        accepted_strategies={"long_mr"},
+        calibration_data={
+            "long_mr": {
+                "p75_threshold": 0.5,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            }
+        },
+    )
+
+    assert len(results["trades"]) == 1
+    assert executor.calls
+
+
 def test_run_inference_step_blocks_policy_excluded_asset(monkeypatch):
     idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
     close = pd.DataFrame({"BTC/USDT": [100.0, 100.0, 100.0]}, index=idx)
@@ -280,6 +382,73 @@ def test_run_inference_step_blocks_policy_excluded_asset(monkeypatch):
 
     assert not executor.calls
     assert results["trades"] == []
+
+
+def test_run_inference_step_ranks_after_policy_asset_exclusions(monkeypatch):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    symbols = ["BLOCKED/USDT", "OK/USDT"]
+    close = pd.DataFrame(
+        {symbol: [100.0, 100.0, 100.0] for symbol in symbols},
+        index=idx,
+    )
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    monkeypatch.setattr(ri, "select_candidates", lambda **kwargs: (symbols, []))
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": list(range(len(candidates)))}, index=candidates
+        ),
+    )
+
+    class _ExclusionAwareOrchestrator:
+        def __init__(self):
+            self.full_chain_symbols = []
+
+        def available_strategies(self, side, accepted=None):
+            return ["long_mr"]
+
+        def predict_alpha(self, features, side, kind):
+            return pd.Series(
+                [0.99 if idx == "BLOCKED/USDT" else 0.5 for idx in features.index],
+                index=features.index,
+            )
+
+        def run_full_chain(self, symbol, side, features, panel=None, kind=None):
+            self.full_chain_symbols.append(symbol)
+            return {
+                "symbol": symbol,
+                "side": side,
+                "action": "enter",
+                "position_size": 100.0,
+                "meta_pred": 0.9,
+                "strategy_id": "long_mr",
+            }
+
+    orchestrator = _ExclusionAwareOrchestrator()
+    executor = _DummyExecutor()
+    results = ri.run_inference_step(
+        orchestrator=orchestrator,
+        panel=panel,
+        feats=feats,
+        thresholds={"metric": "ret12h"},
+        executor=executor,
+        logger=_DummyLogger(),
+        accepted_strategies={"long_mr"},
+        strategy_asset_exclusions={"long_mr": {"BLOCKED/USDT"}},
+    )
+
+    assert orchestrator.full_chain_symbols == ["OK/USDT"]
+    assert [call["symbol"] for call in executor.calls] == ["OK/USDT"]
+    assert results["trades"][0]["symbol"] == "OK/USDT"
 
 
 def test_run_inference_step_gates_meta_to_top_quartile_base_preds(monkeypatch):

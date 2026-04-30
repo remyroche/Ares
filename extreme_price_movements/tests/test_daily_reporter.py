@@ -47,11 +47,12 @@ def test_daily_reporter_sends_balance_report_and_transfers_profit(
         def __init__(self):
             self.transfers = []
 
-        def fetch_balance(self):
+        def fetch_balance(self, params=None):
+            self.balance_params = params
             return {
-                "total": {"USDT": 1100.0},
-                "free": {"USDT": 1000.0},
-                "used": {"USDT": 100.0},
+                "total": {"USDC": 1100.0},
+                "free": {"USDC": 1000.0},
+                "used": {"USDC": 100.0},
             }
 
         def sapiPostAssetTransfer(self, payload):

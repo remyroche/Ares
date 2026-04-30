@@ -254,7 +254,7 @@ def calculate_advanced_metrics(df_sub: pd.DataFrame, raw_gains: np.ndarray, size
 def run_simple_policy_optimisation(
     data_root: str,
     run_id: str,
-    cost_pct: float = 0.003,
+    cost_pct: float = 0.0015,
 ):
     meta_oof_dir = Path(data_root) / "artifacts" / run_id / "meta_oof"
     if not meta_oof_dir.exists():
@@ -316,7 +316,7 @@ def run_simple_policy_optimisation(
 
         def _fetch_paths(df_subset):
             n_events = len(df_subset)
-            path_len = 240
+            path_len = 96 # 24 hours at 15m resolution
             f_op = np.full((n_events, path_len), np.nan, dtype=np.float32)
             f_hi = np.full((n_events, path_len), np.nan, dtype=np.float32)
             f_lo = np.full((n_events, path_len), np.nan, dtype=np.float32)

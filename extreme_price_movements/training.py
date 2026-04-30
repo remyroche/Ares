@@ -3290,9 +3290,9 @@ def _fit_direct_extratrees_base_model(
                             "postprocessor_calibration_method", "identity"
                         )
                     )
-                    race.calibration_state_[
-                        "calibration_input"
-                    ] = f"{winning_candidate}_raw"
+                    race.calibration_state_["calibration_input"] = (
+                        f"{winning_candidate}_raw"
+                    )
                 tprint(
                     f"Model Race [{kind_name}]: using {winning_candidate} as best_model "
                     f"(AUC={cand_auc:.4f}, lift30={cand_metrics.get('lift30', 0):.3f})"
@@ -10249,9 +10249,7 @@ def train_meta_models_from_artifacts(
         }
         failures: list[str] = []
 
-        require_correctness_clf = bool(
-            cfg.get("meta_train_correctness_clf_head", True)
-        )
+        require_correctness_clf = bool(cfg.get("meta_train_correctness_clf_head", True))
         if include_meta_reg and reg_model is None:
             failures.append("missing_reg_head")
         if require_correctness_clf and clf_model is None:
@@ -12937,7 +12935,7 @@ def train_meta_models_from_artifacts(
                 min_pr_auc=float(cfg.get("meta_move_min_pr_auc", 0.0)),
                 min_balanced_accuracy=float(cfg.get("meta_move_min_bal_acc", 0.0)),
                 min_ic=float(cfg.get("meta_move_min_ic", 0.0)),
-                top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
+                top_frac=float(cfg.get("meta_move_top_frac", 0.15)),
                 min_top_n=int(cfg.get("meta_move_min_top_n", 50)),
                 min_lift_vs_baseline=float(
                     cfg.get("meta_move_min_lift_vs_baseline", 0.0)
@@ -13203,7 +13201,7 @@ def train_meta_models_from_artifacts(
                 min_pr_auc=float(cfg.get("meta_move_min_pr_auc", 0.0)),
                 min_balanced_accuracy=float(cfg.get("meta_move_min_bal_acc", 0.0)),
                 min_ic=float(cfg.get("meta_move_min_ic", 0.0)),
-                top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
+                top_frac=float(cfg.get("meta_move_top_frac", 0.15)),
                 min_top_n=int(cfg.get("meta_move_min_top_n", 50)),
                 min_lift_vs_baseline=float(
                     cfg.get("meta_move_min_lift_vs_baseline", 0.0)
@@ -13299,7 +13297,7 @@ def train_meta_models_from_artifacts(
                         min_pr_auc=0.0,
                         min_balanced_accuracy=0.0,
                         min_ic=-1.0,
-                        top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
+                        top_frac=float(cfg.get("meta_move_top_frac", 0.15)),
                         min_top_n=1,
                         min_lift_vs_baseline=-1.0,
                         require_positive_top_lift=False,
@@ -14104,7 +14102,11 @@ def train_meta_models_from_artifacts(
                 f"  Meta {k}: skipping stage1 MDI preselection for EBM-only backend; "
                 f"passing {len(preselected_raw_keys)} raw meta features to EBM selector"
             )
-        if (not _meta_backend_ebm_only) and include_meta_reg and len(X_stage1.columns) > 0:
+        if (
+            (not _meta_backend_ebm_only)
+            and include_meta_reg
+            and len(X_stage1.columns) > 0
+        ):
             _tmp_reg_sel = MetaModel(strategy_name=f"{k}_reg_stage1")
             _tmp_reg_sel.selector_cfg = dict(cfg.get("meta_selector_cfg", {}) or {})
             _tmp_reg_sel.selector_report_dir = _stage1_fs_dir
@@ -14122,7 +14124,11 @@ def train_meta_models_from_artifacts(
                 )
             except Exception as _sel_exc:
                 tprint(f"  Meta {k}: reg stage1 preselection failed ({_sel_exc})")
-        if (not _meta_backend_ebm_only) and include_meta_clf and len(X_stage1.columns) > 0:
+        if (
+            (not _meta_backend_ebm_only)
+            and include_meta_clf
+            and len(X_stage1.columns) > 0
+        ):
             _mid_h_pre = int(_strategy_primary_h)
             _clf_stage1_target = _build_base_correctness_target_for_h(_mid_h_pre)
             _y_residual_stage1 = np.asarray(
@@ -14426,9 +14432,7 @@ def train_meta_models_from_artifacts(
             _asset_col = (
                 "__symbol__"
                 if "__symbol__" in df.columns
-                else "symbol"
-                if "symbol" in df.columns
-                else None
+                else "symbol" if "symbol" in df.columns else None
             )
             _asset_vals = (
                 np.asarray(df[_asset_col].astype(str).values)
@@ -14760,6 +14764,71 @@ def train_meta_models_from_artifacts(
                         _md_local[_cn] = X_meta_models[_cn].values
                 return _md_local
 
+            def _persist_meta_feature_contract(
+                head_key: str,
+                race_obj: Any,
+                *,
+                label: str,
+            ) -> None:
+                """Persist the exact train-time meta feature order for inference."""
+                _feature_columns = [str(c) for c in X_meta_models.columns]
+                _positional_map = {
+                    f"f{i}": col for i, col in enumerate(_feature_columns)
+                }
+                _contract_row = {
+                    "strategy_id": str(k),
+                    "meta_model_key": str(head_key),
+                    "side": str(side),
+                    "head_label": str(label),
+                    "primary_horizon": int(_strategy_primary_h),
+                    "feature_columns": _feature_columns,
+                    "positional_feature_mapping": _positional_map,
+                    "n_features": int(len(_feature_columns)),
+                    "meta_model_cols": [str(c) for c in meta_model_cols],
+                    "tree_uncertainty_cols": [
+                        str(c) for c in retained_tree_uncertainty_cols
+                    ],
+                    "meta_interaction_cols": [str(c) for c in meta_interaction_cols],
+                    "base_probability_column": (
+                        str(_base_prob_col) if _base_prob_col is not None else ""
+                    ),
+                    "rank_mask_kept_rows": int(np.sum(_trade_mask)),
+                    "schema_version": 1,
+                }
+                cfg.setdefault("_meta_feature_contracts", {})[
+                    str(head_key)
+                ] = _contract_row
+                try:
+                    setattr(race_obj, "meta_feature_columns_", _feature_columns)
+                    setattr(
+                        race_obj,
+                        "meta_positional_feature_mapping_",
+                        _positional_map,
+                    )
+                    setattr(race_obj, "meta_feature_contract_", _contract_row)
+                    _best_model = getattr(race_obj, "best_model", None)
+                    if _best_model is not None:
+                        setattr(
+                            _best_model,
+                            "meta_feature_columns_",
+                            _feature_columns,
+                        )
+                        setattr(
+                            _best_model,
+                            "meta_positional_feature_mapping_",
+                            _positional_map,
+                        )
+                        setattr(
+                            _best_model,
+                            "meta_feature_contract_",
+                            _contract_row,
+                        )
+                except Exception as _contract_exc:
+                    tprint(
+                        f"Meta {head_key}: warning failed to attach feature "
+                        f"contract to model object: {_contract_exc}"
+                    )
+
             def _fit_meta_ebm_classifier_head(
                 *,
                 head_key: str,
@@ -14804,6 +14873,7 @@ def train_meta_models_from_artifacts(
                 _race.y_move = np.asarray(y_hard, dtype=np.float32)[_valid]
                 _race.y_move_soft = np.asarray(y_soft, dtype=np.float32)[_valid]
                 _race.move_threshold = np.zeros(int(np.sum(_valid)), dtype=np.float32)
+                _persist_meta_feature_contract(head_key, _race, label=label)
                 meta_models[head_key] = _race
                 _bucket_y_ret[head_key] = np.asarray(y_soft, dtype=np.float32).copy()
                 _bucket_metadata[head_key] = _meta_bucket_metadata()
@@ -15469,7 +15539,7 @@ def train_meta_models_from_artifacts(
                 min_pr_auc=float(cfg.get("meta_move_min_pr_auc", 0.0)),
                 min_balanced_accuracy=float(cfg.get("meta_move_min_bal_acc", 0.0)),
                 min_ic=float(cfg.get("meta_move_min_ic", 0.0)),
-                top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
+                top_frac=float(cfg.get("meta_move_top_frac", 0.15)),
                 min_top_n=int(cfg.get("meta_move_min_top_n", 50)),
                 min_lift_vs_baseline=float(
                     cfg.get("meta_move_min_lift_vs_baseline", 0.0)
@@ -15626,7 +15696,7 @@ def train_meta_models_from_artifacts(
                         min_pr_auc=0.0,
                         min_balanced_accuracy=0.0,
                         min_ic=-1.0,
-                        top_frac=float(cfg.get("meta_move_top_frac", 0.10)),
+                        top_frac=float(cfg.get("meta_move_top_frac", 0.15)),
                         min_top_n=1,
                         min_lift_vs_baseline=-1.0,
                         require_positive_top_lift=False,
@@ -16424,7 +16494,33 @@ def train_meta_models_from_artifacts(
         _idx = np.argsort(_s)[-_k:]
         return float(np.mean(_v[_idx]))
 
-    def _weekly_top30_stability_for_score(y_true, score, timestamps) -> float:
+    def _top_ndcg_at_k(y_true, score, k: int = 10) -> float:
+        _y = np.asarray(y_true, dtype=np.float64)
+        _s = np.asarray(score, dtype=np.float64)
+        _m = np.isfinite(_y) & np.isfinite(_s)
+        if int(np.sum(_m)) == 0:
+            return float("nan")
+        _y = _y[_m]
+        _s = _s[_m]
+        _n = len(_y)
+        if _n <= 1:
+            return 0.0
+        _k = max(1, int(min(k, _n)))
+        order = np.argsort(_s)
+        _top = order[-_k:]
+        _y_top = _y[_top]
+        _y_sorted = np.sort(_y)[::-1]
+        _idcg = float(
+            np.sum((2.0 ** _y_sorted[:_k] - 1.0) / np.log2(np.arange(2, _k + 2)))
+        )
+        if not np.isfinite(_idcg) or _idcg <= 0.0:
+            return 0.0
+        _dcg = float(np.sum((2.0**_y_top - 1.0) / np.log2(np.arange(2, _k + 2))))
+        return float(_dcg / _idcg)
+
+    def _weekly_top_stability_for_score(
+        y_true, score, timestamps, frac: float = 0.15
+    ) -> float:
         if timestamps is None:
             return float("nan")
         _y = np.asarray(y_true, dtype=np.float64)
@@ -16444,31 +16540,62 @@ def train_meta_models_from_artifacts(
             _base = float(np.mean(_y[_wm]))
             if _base <= 1e-12:
                 continue
-            _vals.append(_top_mean_for_score(_y[_wm], _s[_wm], 0.30) / _base)
+            _vals.append(_top_mean_for_score(_y[_wm], _s[_wm], frac) / _base)
         if len(_vals) < 3:
             return float("nan")
         _arr = np.asarray(_vals, dtype=np.float64)
         return float(1.0 / (1.0 + np.std(_arr, ddof=1) / (abs(np.mean(_arr)) + 1e-6)))
 
-    def _combo_objective_for_score(y_true, score, timestamps) -> tuple[float, float, float]:
+    def _combo_objective_for_score(
+        y_true, score, timestamps
+    ) -> tuple[float, float, float, float, float, float]:
         _y = np.asarray(y_true, dtype=np.float64)
         _s = np.asarray(score, dtype=np.float64)
         _m = np.isfinite(_y) & np.isfinite(_s)
         if int(np.sum(_m)) < 30:
-            return float("-inf"), float("nan"), float("nan")
+            return (
+                float("-inf"),
+                float("nan"),
+                float("nan"),
+                float("nan"),
+                float("nan"),
+                float("nan"),
+            )
         _y = _y[_m]
         _s = _s[_m]
         _base_rate = float(np.mean(_y))
-        _hit30 = _top_mean_for_score(_y, _s, 0.30)
-        _lift30 = float(_hit30 / max(_base_rate, 1e-12))
-        _stab30 = _weekly_top30_stability_for_score(
+        _hit15 = _top_mean_for_score(_y, _s, 0.15)
+        _hit01 = _top_mean_for_score(_y, _s, 0.01)
+        _hit005 = _top_mean_for_score(_y, _s, 0.005)
+        _lift15 = float(_hit15 / max(_base_rate, 1e-12))
+        _ndcg10 = _top_ndcg_at_k(_y, _s, k=10)
+        _stab15 = _weekly_top_stability_for_score(
             _y,
             _s,
             np.asarray(timestamps)[_m] if timestamps is not None else None,
+            0.15,
         )
-        if not np.isfinite(_stab30):
-            _stab30 = 0.0
-        return float(0.5 * _lift30 + 0.5 * _stab30), _lift30, float(_stab30)
+        if not np.isfinite(_stab15):
+            _stab15 = 0.0
+        _precision15 = float(_hit15)
+        _precision01 = float(_hit01)
+        _precision005 = float(_hit005)
+        _obj = float(
+            0.25 * _lift15
+            + 0.20 * _precision15
+            + 0.15 * _precision01
+            + 0.15 * _precision005
+            + 0.20 * _ndcg10
+            + 0.10 * _stab15
+        )
+        return (
+            _obj,
+            _lift15,
+            float(_stab15),
+            _precision15,
+            _precision01,
+            _precision005,
+        )
 
     def _optimize_base_meta_combination(
         base_prob, meta_correct_prob, y_true, timestamps=None
@@ -16482,41 +16609,78 @@ def train_meta_models_from_artifacts(
         _y = _y[:_n]
         _ts = np.asarray(timestamps)[:_n] if timestamps is not None else None
         _weights = np.round(np.arange(0.2, 2.01, 0.2), 2).astype(np.float64)
-        _candidates: list[tuple[float, str, float, float, float, float, np.ndarray]] = []
+        _candidates: list[
+            tuple[
+                float,
+                str,
+                float,
+                float,
+                float,
+                float,
+                float,
+                float,
+                float,
+                np.ndarray,
+            ]
+        ] = []
         for _w in _weights:
             _qw = np.clip(0.5 + _w * (_q - 0.5), 1e-6, 1.0 - 1e-6)
-            _score = np.clip(
-                _qw * _b + (1.0 - _qw) * (1.0 - _b), 1e-6, 1.0 - 1e-6
+            _score = np.clip(_qw * _b + (1.0 - _qw) * (1.0 - _b), 1e-6, 1.0 - 1e-6)
+            _obj, _lift, _stab, _p15, _p01, _p005 = _combo_objective_for_score(
+                _y, _score, _ts
             )
-            _obj, _lift, _stab = _combo_objective_for_score(_y, _score, _ts)
             _candidates.append(
-                (_obj, "prob_corrected", float(_w), 1.0, _lift, _stab, _score)
+                (
+                    _obj,
+                    "prob_corrected",
+                    float(_w),
+                    1.0,
+                    _lift,
+                    _stab,
+                    _p15,
+                    _p01,
+                    _p005,
+                    _score,
+                )
             )
         _top_candidates = sorted(_candidates, key=lambda item: item[0], reverse=True)
         _best = _top_candidates[0]
         return {
-            "score": np.asarray(_best[6], dtype=np.float32),
+            "score": np.asarray(_best[9], dtype=np.float32),
             "family": str(_best[1]),
             "meta_weight": float(_best[2]),
             "blend_weight": float(_best[3]),
             "objective": float(_best[0]),
+            "lift15": float(_best[4]),
             "lift30": float(_best[4]),
+            "stability15": float(_best[5]),
             "stability30": float(_best[5]),
+            "precision15": float(_best[6]),
+            "precision01": float(_best[7]),
+            "precision005": float(_best[8]),
             "grid": [
                 {
                     "objective": float(_item[0]),
                     "family": str(_item[1]),
                     "meta_weight": float(_item[2]),
                     "blend_weight": float(_item[3]),
+                    "lift15": float(_item[4]),
                     "lift30": float(_item[4]),
+                    "stability15": float(_item[5]),
                     "stability30": float(_item[5]),
+                    "precision15": float(_item[6]),
+                    "precision01": float(_item[7]),
+                    "precision005": float(_item[8]),
                 }
                 for _item in _top_candidates[:10]
             ],
         }
 
     def record_combined_meta_metrics(df, key):
-        if "oof_base_meta_correctness_prob" not in df.columns or "y_bin" not in df.columns:
+        if (
+            "oof_base_meta_correctness_prob" not in df.columns
+            or "y_bin" not in df.columns
+        ):
             return
         _score = np.asarray(df["oof_base_meta_correctness_prob"], dtype=np.float64)
         _y = np.asarray(df["y_bin"], dtype=np.float64)
@@ -16532,9 +16696,12 @@ def train_meta_models_from_artifacts(
             else np.full(len(df), np.nan, dtype=np.float64)
         )
         _ret_v = _ret[_m]
+        _top15 = _top_mean_for_score(_y_v, _score_v, 0.15)
         _top30 = _top_mean_for_score(_y_v, _score_v, 0.30)
         _top20 = _top_mean_for_score(_y_v, _score_v, 0.20)
         _top10 = _top_mean_for_score(_y_v, _score_v, 0.10)
+        _top01 = _top_mean_for_score(_y_v, _score_v, 0.01)
+        _top005 = _top_mean_for_score(_y_v, _score_v, 0.005)
         _top5 = _top_mean_for_score(_y_v, _score_v, 0.05)
         _report = {
             "n_samples": int(np.sum(_m)),
@@ -16559,10 +16726,19 @@ def train_meta_models_from_artifacts(
                 if "oof_base_meta_combo_objective" in df.columns
                 else float("nan")
             ),
+            "hit_rate15": _top15,
             "hit_rate20": _top20,
             "hit_rate30": _top30,
             "hit_rate10": _top10,
             "hit_rate5": _top5,
+            "precision15": float(_top15),
+            "precision20": float(_top20),
+            "precision30": float(_top30),
+            "precision10": float(_top10),
+            "precision5": float(_top5),
+            "precision01": float(_top01),
+            "precision005": float(_top005),
+            "lift15": float(_top15 / max(_base_rate, 1e-12)),
             "lift30": float(_top30 / max(_base_rate, 1e-12)),
             "lift20": float(_top20 / max(_base_rate, 1e-12)),
             "lift10": float(_top10 / max(_base_rate, 1e-12)),
@@ -16571,11 +16747,27 @@ def train_meta_models_from_artifacts(
             "mean_gross_return30": _top_mean_for_score(_ret_v, _score_v, 0.30),
             "mean_gross_return10": _top_mean_for_score(_ret_v, _score_v, 0.10),
             "mean_gross_return5": _top_mean_for_score(_ret_v, _score_v, 0.05),
-            "stability30": _weekly_top30_stability_for_score(
+            "stability15": _weekly_top_stability_for_score(
                 _y_v,
                 _score_v,
-                np.asarray(df.loc[_m, "timestamp"]) if "timestamp" in df.columns else None,
+                (
+                    np.asarray(df.loc[_m, "timestamp"])
+                    if "timestamp" in df.columns
+                    else None
+                ),
+                0.15,
             ),
+            "stability30": _weekly_top_stability_for_score(
+                _y_v,
+                _score_v,
+                (
+                    np.asarray(df.loc[_m, "timestamp"])
+                    if "timestamp" in df.columns
+                    else None
+                ),
+                0.30,
+            ),
+            "ndcg10": _top_ndcg_at_k(_y_v, _score_v, k=10),
         }
         try:
             from sklearn.metrics import brier_score_loss, roc_auc_score
@@ -16590,6 +16782,11 @@ def train_meta_models_from_artifacts(
             _idx30 = np.argsort(_score_v)[-_k30:]
             _report["ic_top30"] = float(
                 spearmanr(_score_v[_idx30], _y_v[_idx30]).statistic
+            )
+            _k15 = max(1, int(np.ceil(0.15 * len(_score_v))))
+            _idx15 = np.argsort(_score_v)[-_k15:]
+            _report["ic_top15"] = float(
+                spearmanr(_score_v[_idx15], _y_v[_idx15]).statistic
             )
         except Exception:
             pass
@@ -17170,9 +17367,7 @@ def train_meta_models_from_artifacts(
                     (2.0 * _combo_score) - 1.0, _n_meta
                 )
                 oof_df["oof_base_meta_combo_family"] = str(_combo["family"])
-                oof_df["oof_base_meta_combo_meta_weight"] = float(
-                    _combo["meta_weight"]
-                )
+                oof_df["oof_base_meta_combo_meta_weight"] = float(_combo["meta_weight"])
                 oof_df["oof_base_meta_combo_blend_weight"] = float(
                     _combo["blend_weight"]
                 )
@@ -17276,6 +17471,152 @@ def train_meta_models_from_artifacts(
     import json
 
     _meta_head_metrics = {}
+
+    def _augment_meta_head_metrics_from_oof_exports():
+        """Ensure exported meta OOF files are represented in head metrics.
+
+        The in-memory ``meta_models`` registry can contain side aliases that are
+        not one-to-one with the final exported strategy files.  The parquet OOF
+        exports are the source used by downstream sizers/policy selection, so
+        make the metrics manifest complete from those files before writing it.
+        """
+        try:
+            import glob as _glob_local
+
+            from sklearn.metrics import average_precision_score
+            from sklearn.metrics import brier_score_loss
+            from sklearn.metrics import roc_auc_score
+        except Exception as _exc:
+            tprint(f"Warning: cannot augment meta head metrics from OOFs: {_exc}")
+            return
+
+        _paths = sorted(
+            _glob_local.glob(os.path.join(meta_oof_dir, "meta_oof_*_tbm_clf.parquet"))
+        )
+        for _path in _paths:
+            _stem = os.path.basename(_path).replace("meta_oof_", "")
+            _strategy_key = _stem.replace(".parquet", "")
+            _metric_key = (
+                _strategy_key[: -len("_tbm_clf")]
+                if _strategy_key.endswith("_tbm_clf")
+                else _strategy_key
+            )
+            if _metric_key in _meta_head_metrics:
+                continue
+            try:
+                _oof_df = pd.read_parquet(_path)
+            except Exception as _exc:
+                tprint(
+                    f"Warning: cannot read meta OOF for metrics {_strategy_key}: {_exc}"
+                )
+                continue
+            if "oof_p_move" in _oof_df.columns:
+                _score_col = "oof_p_move"
+            elif "oof_pred" in _oof_df.columns:
+                _score_col = "oof_pred"
+            else:
+                continue
+            if "y_move" in _oof_df.columns:
+                _target_col = "y_move"
+            elif "y_bin" in _oof_df.columns:
+                _target_col = "y_bin"
+            else:
+                continue
+
+            _score = np.asarray(_oof_df[_score_col], dtype=np.float64).reshape(-1)
+            _target = np.asarray(_oof_df[_target_col], dtype=np.float64).reshape(-1)
+            _valid = np.isfinite(_score) & np.isfinite(_target)
+            _n_valid = int(_valid.sum())
+            if _n_valid <= 30:
+                continue
+
+            _score_v = _score[_valid]
+            _target_v = _target[_valid]
+            _base_rate = float(np.mean(_target_v))
+            _order = np.argsort(_score_v)
+            _k10 = max(1, int(0.10 * _n_valid))
+            _k01 = max(1, int(0.01 * _n_valid))
+            _top10 = _order[-_k10:]
+            _bot10 = _order[:_k10]
+            _top01 = _order[-_k01:]
+
+            _mr = {
+                "n_samples": _n_valid,
+                "head_type": "MetaClassifierOOFExport",
+                "strategy_id": _metric_key,
+                "source_oof_file": os.path.basename(_path),
+                "oof_mean": float(np.mean(_score_v)),
+                "oof_std": float(np.std(_score_v)),
+                "oof_min": float(np.min(_score_v)),
+                "oof_max": float(np.max(_score_v)),
+                "oof_p25": float(np.percentile(_score_v, 25)),
+                "oof_p50": float(np.percentile(_score_v, 50)),
+                "oof_p75": float(np.percentile(_score_v, 75)),
+                "base_rate": _base_rate,
+                "hit_rate": _base_rate,
+                "precision_10": float(np.mean(_target_v[_top10])),
+                "precision_1": float(np.mean(_target_v[_top01])),
+                "top10_actual_rate": float(np.mean(_target_v[_top10])),
+                "top1_actual_rate": float(np.mean(_target_v[_top01])),
+                "lift_10": float(np.mean(_target_v[_top10]) / max(_base_rate, 1e-12)),
+                "spread_10": float(
+                    np.mean(_target_v[_top10]) - np.mean(_target_v[_bot10])
+                ),
+                "brier": float(brier_score_loss(_target_v, _score_v)),
+            }
+            _mr["oof_iqr"] = _mr["oof_p75"] - _mr["oof_p25"]
+            try:
+                _mr["auc"] = float(roc_auc_score(_target_v, _score_v))
+            except Exception:
+                pass
+            try:
+                _mr["pr_auc"] = float(average_precision_score(_target_v, _score_v))
+            except Exception:
+                pass
+            try:
+                _mr["ic"] = float(spearmanr(_score_v, _target_v).statistic)
+            except Exception:
+                pass
+            if "clf_entropy" in _oof_df.columns:
+                _entropy = np.asarray(
+                    _oof_df.loc[_valid, "clf_entropy"], dtype=np.float64
+                )
+                _entropy = _entropy[np.isfinite(_entropy)]
+                if _entropy.size:
+                    _mr["entropy_mean"] = float(np.mean(_entropy))
+            if "timestamp" in _oof_df.columns:
+                try:
+                    _tmp = pd.DataFrame(
+                        {
+                            "timestamp": pd.to_datetime(
+                                _oof_df.loc[_valid, "timestamp"], errors="coerce"
+                            ),
+                            "score": _score_v,
+                            "target": _target_v,
+                        }
+                    ).dropna()
+                    _monthly_ics = []
+                    for _, _grp in _tmp.groupby(_tmp["timestamp"].dt.to_period("M")):
+                        if len(_grp) <= 30:
+                            continue
+                        if _grp["score"].std() <= 0 or _grp["target"].std() <= 0:
+                            continue
+                        _monthly_ics.append(
+                            float(spearmanr(_grp["score"], _grp["target"]).statistic)
+                        )
+                    if _monthly_ics:
+                        _monthly_arr = np.asarray(_monthly_ics, dtype=np.float64)
+                        _mr["stability_monthly_ic_mean"] = float(
+                            np.nanmean(_monthly_arr)
+                        )
+                        _mr["stability_monthly_ic_std"] = float(np.nanstd(_monthly_arr))
+                        _mr["stability_positive_month_frac"] = float(
+                            np.mean(_monthly_arr > 0.0)
+                        )
+                except Exception:
+                    pass
+            _meta_head_metrics[_metric_key] = _mr
+
     for _mhk, _mhm in meta_models.items():
         if not hasattr(_mhm, "oof_probs") or _mhm.oof_probs is None:
             if _mhk.endswith("_cal_reg") and _mhk in _bucket_y_ret:
@@ -17528,6 +17869,7 @@ def train_meta_models_from_artifacts(
                             spearmanr(_moof[_mvy], _yv[_mvy]).statistic
                         )
         _meta_head_metrics[_mhk] = _mr
+    _augment_meta_head_metrics_from_oof_exports()
     if _meta_head_metrics:
         with open(os.path.join(meta_oof_dir, "meta_head_metrics.json"), "w") as _f:
             json.dump(_meta_head_metrics, _f, indent=2)
@@ -17544,6 +17886,42 @@ def train_meta_models_from_artifacts(
             json.dump(_calib_report, _f, indent=2)
     with open(os.path.join(meta_oof_dir, "meta_scale_contract.json"), "w") as _f:
         json.dump(meta_scale_contract, _f, indent=2)
+    _meta_feature_contracts = cfg.get("_meta_feature_contracts", {}) or {}
+    if _meta_feature_contracts:
+        _missing_contracts = sorted(
+            str(_key)
+            for _key in meta_models.keys()
+            if str(_key).endswith("_tbm_clf")
+            and str(_key) not in _meta_feature_contracts
+        )
+        _meta_feature_contract_payload = {
+            "schema_version": 1,
+            "run_id": str(_run_id),
+            "generated_by": "train_meta",
+            "contract_semantics": (
+                "feature_columns is the exact train-time meta model input order; "
+                "positional_feature_mapping maps persisted EBM f0/f1/... columns "
+                "back to live feature names for OOS/inference reconstruction."
+            ),
+            "meta_models": _meta_feature_contracts,
+            "missing_tbm_clf_contracts": _missing_contracts,
+        }
+        _meta_feature_contract_path = os.path.join(
+            meta_oof_dir,
+            "meta_feature_contract.json",
+        )
+        with open(_meta_feature_contract_path, "w") as _f:
+            json.dump(_meta_feature_contract_payload, _f, indent=2)
+        tprint(
+            "Saved meta feature contracts for "
+            f"{len(_meta_feature_contracts)} heads to "
+            f"{_meta_feature_contract_path}"
+        )
+    else:
+        tprint(
+            "WARNING: no meta feature contracts were generated; inference will "
+            "reject this model bundle until train_meta is rerun with contract export."
+        )
 
     # Train EV-decomposition probabilistic/quantile heads in meta step so they share
     # the same meta feature keys and selector pipeline context.

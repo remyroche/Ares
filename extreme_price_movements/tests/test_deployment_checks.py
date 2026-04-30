@@ -80,10 +80,29 @@ class _FakeSMTP:
 def _write_artifacts(tmp_path: Path, run_id: str) -> None:
     run_dir = tmp_path / "artifacts" / run_id
     (run_dir / "labels").mkdir(parents=True)
+    (run_dir / "meta_oof").mkdir(parents=True)
     (run_dir / "policy_params").mkdir(parents=True)
     (run_dir / "ridge_sizer").mkdir(parents=True)
+    (run_dir / "simple_position_sizer").mkdir(parents=True)
     (run_dir / "base_meta_contract.json").write_text(
         json.dumps({"schema_version": "v1"})
+    )
+    (run_dir / "meta_oof" / "meta_feature_contract.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "meta_models": {
+                    "long_mr": {
+                        "feature_columns": ["ret24h", "base_probability_long_mr"],
+                        "positional_feature_mapping": {
+                            "f0": "ret24h",
+                            "f1": "base_probability_long_mr",
+                        },
+                        "n_features": 2,
+                    }
+                },
+            }
+        )
     )
     (run_dir / "labels" / "labels_manifest.json").write_text(
         json.dumps({"datasets": {"long_mr": {"rows": 10}}})
@@ -116,7 +135,29 @@ def _write_artifacts(tmp_path: Path, run_id: str) -> None:
             }
         )
     )
+    (
+        run_dir / "simple_position_sizer" / "confidence_calibration.contract.json"
+    ).write_text(
+        json.dumps(
+            {
+                "required_strategy_fields": ["p75_threshold", "calibration_curve"],
+                "rank_semantics": "empirical_oof_rank_percentile",
+            }
+        )
+    )
     (run_dir / "ridge_sizer" / "confidence_calibration.json").write_text(
+        json.dumps(
+            {
+                "strategies": {
+                    "long_mr": {
+                        "p75_threshold": 0.75,
+                        "calibration_curve": [[0.0, 0.0], [1.0, 1.0]],
+                    }
+                }
+            }
+        )
+    )
+    (run_dir / "simple_position_sizer" / "confidence_calibration.json").write_text(
         json.dumps(
             {
                 "strategies": {

@@ -65,6 +65,12 @@ def _meta_model_keys(model_bundle: Dict[str, Any]) -> Set[str]:
     )
 
 
+def _meta_models(model_bundle: Dict[str, Any]) -> Dict[str, Any]:
+    bundle = _bundle_payload(model_bundle)
+    meta_models = bundle.get("meta_models", {}) if isinstance(bundle, dict) else {}
+    return meta_models if isinstance(meta_models, dict) else {}
+
+
 def _candidate_meta_keys(strategy_id: str) -> Set[str]:
     sid = str(strategy_id or "")
     core = strategy_core_id(sid)
@@ -80,6 +86,33 @@ def _candidate_meta_keys(strategy_id: str) -> Set[str]:
         for suffix in ("_clf", "_tbm_clf", "_reg", "_early_inval"):
             out.add(f"{base}{suffix}")
     return out
+
+
+def _model_raw_selected_features(model: Any) -> List[str]:
+    vals: List[str] = []
+    for source in (model, getattr(model, "best_model", None)):
+        if source is None:
+            continue
+        for attr in ("raw_selected_features", "selected_features"):
+            raw = getattr(source, attr, None)
+            if raw:
+                vals.extend(str(v) for v in raw if str(v))
+    return vals
+
+
+def _model_meta_feature_columns(model: Any) -> List[str]:
+    vals: List[str] = []
+    for source in (model, getattr(model, "best_model", None)):
+        if source is None:
+            continue
+        raw = getattr(source, "meta_feature_columns_", None)
+        if raw:
+            vals.extend(str(v) for v in raw if str(v))
+    return list(dict.fromkeys(vals))
+
+
+def _looks_positional_feature(feature: str) -> bool:
+    return bool(re.fullmatch(r"f\d+", str(feature or "")))
 
 
 def strategy_core_id(strategy_id: str) -> str:
@@ -468,7 +501,9 @@ def resolve_deployment_strategy_filter(
     if not active_filters:
         return None
 
-    selected = set(active_filters.get("accepted") or next(iter(active_filters.values())))
+    selected = set(
+        active_filters.get("accepted") or next(iter(active_filters.values()))
+    )
     policy_selected = selected
     if policy_ready is not None and len(policy_ready) > 0:
         policy_selected = {
@@ -622,6 +657,136 @@ def validate_calibration_artifacts(
     return True
 
 
+def load_meta_feature_contract(data_root: str, run_id: str) -> Dict[str, Any]:
+    """Load the train_meta positional feature contract required by live meta heads."""
+    path = (
+        Path(data_root)
+        / "artifacts"
+        / str(run_id)
+        / "meta_oof"
+        / "meta_feature_contract.json"
+    )
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text())
+    except Exception as exc:
+        raise ValueError(f"Unable to load meta feature contract {path}: {exc}") from exc
+    return payload if isinstance(payload, dict) else {}
+
+
+def validate_meta_feature_contract_artifact(
+    data_root: str,
+    run_id: str,
+    model_bundle: Dict[str, Any],
+    accepted_strategies: Optional[Set[str]] = None,
+    *,
+    strict: bool = True,
+) -> bool:
+    """Require train_meta's ``fN`` to raw-feature mapping before live inference.
+
+    EBM-on-LGBM meta heads may persist selected features as positional names
+    (``f0``, ``f1``, ...). Without the train-time mapping to raw meta feature
+    columns, OOS/live scoring can silently evaluate a different feature order.
+    """
+    meta_models = _meta_models(model_bundle)
+    if not meta_models:
+        return True
+
+    payload = load_meta_feature_contract(data_root, run_id)
+    contract_models = (
+        payload.get("meta_models", {}) if isinstance(payload, dict) else {}
+    )
+    if not isinstance(contract_models, dict) or not contract_models:
+        message = (
+            "meta_oof/meta_feature_contract.json is missing or empty. "
+            "Rerun train_meta with the current code before inference or OOS "
+            "meta-ranked metrics."
+        )
+        if strict:
+            raise ValueError(message)
+        tprint(f"[MetaFeatureContract] WARNING: {message}")
+        return False
+
+    required_keys: Set[str]
+    if accepted_strategies:
+        required_keys = set()
+        for sid in accepted_strategies:
+            required_keys.update(_candidate_meta_keys(str(sid)) & set(meta_models))
+        if not required_keys:
+            required_keys = {
+                key
+                for key in meta_models
+                if strategy_id_matches(str(key), accepted_strategies)
+            }
+    else:
+        required_keys = set(str(key) for key in meta_models)
+
+    errors: List[str] = []
+    for key in sorted(required_keys):
+        row = contract_models.get(key)
+        if row is None:
+            alias_hits = [
+                candidate
+                for candidate in _candidate_meta_keys(key)
+                if candidate in contract_models
+            ]
+            row = contract_models.get(alias_hits[0]) if alias_hits else None
+        if not isinstance(row, dict):
+            errors.append(f"{key}: missing meta feature contract row")
+            continue
+
+        feature_columns = [str(v) for v in row.get("feature_columns", []) if str(v)]
+        mapping = row.get("positional_feature_mapping", {})
+        mapping = mapping if isinstance(mapping, dict) else {}
+        n_features = int(row.get("n_features", len(feature_columns)) or 0)
+        if not feature_columns:
+            errors.append(f"{key}: feature_columns empty")
+        if not mapping:
+            errors.append(f"{key}: positional_feature_mapping empty")
+        if n_features != len(feature_columns):
+            errors.append(
+                f"{key}: n_features={n_features} differs from "
+                f"len(feature_columns)={len(feature_columns)}"
+            )
+        expected_positional = {f"f{i}" for i in range(len(feature_columns))}
+        missing_mapping = sorted(expected_positional - set(str(k) for k in mapping))
+        if missing_mapping:
+            errors.append(f"{key}: missing positional mappings {missing_mapping[:5]}")
+
+        unavailable = sorted(set(feature_columns) & LIVE_UNAVAILABLE_FEATURES)
+        if unavailable:
+            errors.append(f"{key}: live-unavailable meta features {unavailable}")
+
+        positional_required = [
+            feat
+            for feat in _model_raw_selected_features(meta_models.get(key))
+            if _looks_positional_feature(feat)
+        ]
+        missing_required = sorted(
+            set(positional_required) - set(str(k) for k in mapping)
+        )
+        if missing_required:
+            errors.append(
+                f"{key}: selected positional features lack mapping "
+                f"{missing_required[:5]}"
+            )
+
+        model_contract_cols = _model_meta_feature_columns(meta_models.get(key))
+        if model_contract_cols and model_contract_cols != feature_columns:
+            errors.append(
+                f"{key}: loaded model meta feature columns differ from artifact"
+            )
+
+    if errors:
+        message = "Meta feature contract validation failed: " + "; ".join(errors)
+        if strict:
+            raise ValueError(message)
+        tprint(f"[MetaFeatureContract] WARNING: {message}")
+        return False
+    return True
+
+
 def validate_live_feature_contract(
     model_bundle: Dict[str, Any],
     *,
@@ -669,6 +834,11 @@ def validate_live_feature_contract(
                 active_features.update(
                     str(v) for v in model_info.get("feat_cols", []) or []
                 )
+
+    for meta in _meta_models(model_bundle).values():
+        meta_cols = _model_meta_feature_columns(meta)
+        if meta_cols:
+            active_features.update(meta_cols)
 
     ridge_weights = bundle.get("ridge_weights", {}) if isinstance(bundle, dict) else {}
     if isinstance(ridge_weights, dict):

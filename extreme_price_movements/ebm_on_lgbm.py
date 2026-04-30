@@ -55,12 +55,25 @@ EBM_HPO_MIN_LEAF_PCT_HI = 0.08
 EBM_STAGE_LGBM_PRUNE_FRACTION = 0.35
 EBM_STAGE_HPO_FRACTION = 0.10
 EBM_STAGE_FIT_OOF_FRACTION = 0.55
+EBM_METRIC_TARGET_FRACTION = float(
+    os.environ.get("EPM_EBM_METRIC_TARGET_FRACTION", "0.15")
+)
 
 
 def _candidate_gate_thresholds() -> tuple[float, float]:
-    min_lift30 = float(os.environ.get("EPM_EBM_CANDIDATE_MIN_LIFT30", 1.0))
-    min_stability30 = float(os.environ.get("EPM_EBM_CANDIDATE_MIN_STABILITY30", 0.50))
-    return min_lift30, min_stability30
+    min_lift = float(
+        os.environ.get(
+            "EPM_EBM_CANDIDATE_MIN_LIFT15",
+            os.environ.get("EPM_EBM_CANDIDATE_MIN_LIFT30", 1.0),
+        )
+    )
+    min_stability = float(
+        os.environ.get(
+            "EPM_EBM_CANDIDATE_MIN_STABILITY15",
+            os.environ.get("EPM_EBM_CANDIDATE_MIN_STABILITY30", 0.50),
+        )
+    )
+    return min_lift, min_stability
 
 
 def _quiet_interpret_logging() -> None:
@@ -768,6 +781,40 @@ def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
     return float(val) if val is not None and np.isfinite(val) else 0.0
 
 
+def _target_top_fraction() -> float:
+    return float(np.clip(EBM_METRIC_TARGET_FRACTION, 0.001, 0.5))
+
+
+def _top_idx(order: np.ndarray, frac: float, n: int) -> np.ndarray:
+    if n <= 0:
+        return np.empty(0, dtype=np.int64)
+    k = max(1, int(np.ceil(float(frac) * n)))
+    return np.asarray(order[-k:], dtype=np.int64)
+
+
+def _ndcg_at_k(y_true: np.ndarray, pred: np.ndarray, k: int = 10) -> float:
+    y = np.asarray(y_true, dtype=np.float64)
+    p = np.asarray(pred, dtype=np.float64)
+    mask = np.isfinite(y) & np.isfinite(p)
+    if int(np.sum(mask)) == 0:
+        return 0.0
+    y = y[mask]
+    p = p[mask]
+    n = len(y)
+    if n <= 1:
+        return 0.0
+    k = max(1, int(min(k, n)))
+    order = np.argsort(p)
+    top = order[-k:]
+    y_top = y[top]
+    y_sorted = np.sort(y)[::-1]
+    idcg = np.sum((2.0 ** y_sorted[:k] - 1.0) / np.log2(np.arange(2, k + 2)))
+    if idcg <= 0.0:
+        return 0.0
+    dcg = np.sum((2.0**y_top - 1.0) / np.log2(np.arange(2, k + 2)))
+    return float(dcg / idcg)
+
+
 def _metric_pack(
     y_true: np.ndarray,
     pred: np.ndarray,
@@ -782,21 +829,33 @@ def _metric_pack(
     p = p[m]
     if len(y) < 8:
         return {
+            "lift15": 0.0,
             "lift30": 0.0,
             "lift20": 0.0,
             "lift10": 0.0,
             "lift5": 0.0,
+            "precision15": 0.0,
             "hit_rate10": 0.0,
             "hit_rate5": 0.0,
             "hit_rate20": 0.0,
             "hit_rate30": 0.0,
+            "hit_rate15": 0.0,
             "precision10": 0.0,
             "precision5": 0.0,
             "precision20": 0.0,
             "precision30": 0.0,
+            "precision01": 0.0,
+            "precision005": 0.0,
+            "ndcg_at_10": 0.0,
+            "auc_correct_15": 0.5,
             "auc_correct_30": 0.5,
             "stability30_proxy": 0.0,
             "stability30": 0.0,
+            "stability15_proxy": 0.0,
+            "stability15": 0.0,
+            "stability15_n_groups": 0.0,
+            "stability15_group_mean": 0.0,
+            "stability15_group_std": 0.0,
             "stability30_n_groups": 0.0,
             "stability30_group_mean": 0.0,
             "stability30_group_std": 0.0,
@@ -808,32 +867,40 @@ def _metric_pack(
         }
     order = np.argsort(p)
 
-    def _top_idx(frac: float) -> np.ndarray:
-        k_frac = max(1, int(np.ceil(float(frac) * len(y))))
-        return order[-k_frac:]
+    def _top_idx_frac(frac: float) -> np.ndarray:
+        return _top_idx(order, frac, len(y))
 
-    top = _top_idx(0.30)
-    top20 = _top_idx(0.20)
-    top10 = _top_idx(0.10)
-    top5 = _top_idx(0.05)
+    frac_obj = _target_top_fraction()
+    top15 = _top_idx_frac(frac_obj)
+    top30 = _top_idx_frac(0.30)
+    top20 = _top_idx_frac(0.20)
+    top10 = _top_idx_frac(0.10)
+    top5 = _top_idx_frac(0.05)
+    top1 = _top_idx_frac(0.01)
+    top05 = _top_idx_frac(0.005)
     if classifier:
         yb = (y >= 0.5).astype(np.int8)
         base = float(np.mean(yb))
-        top_rate = float(np.mean(yb[top])) if len(top) else 0.0
+        top_rate15 = float(np.mean(yb[top15])) if len(top15) else 0.0
+        top_rate30 = float(np.mean(yb[top30])) if len(top30) else 0.0
         hit_rate20 = float(np.mean(yb[top20])) if len(top20) else 0.0
         hit_rate10 = float(np.mean(yb[top10])) if len(top10) else 0.0
         hit_rate5 = float(np.mean(yb[top5])) if len(top5) else 0.0
-        hit_rate30 = top_rate
+        hit_rate01 = float(np.mean(yb[top1])) if len(top1) else 0.0
+        hit_rate005 = float(np.mean(yb[top05])) if len(top05) else 0.0
+        hit_rate15 = top_rate15
+        hit_rate30 = top_rate30
         lift20 = hit_rate20 / max(base, 1e-6)
         lift10 = hit_rate10 / max(base, 1e-6)
         lift5 = hit_rate5 / max(base, 1e-6)
-        lift30 = top_rate / max(base, 1e-6)
-        auc30 = 0.5
-        if len(np.unique(yb[top])) > 1:
+        lift15 = hit_rate15 / max(base, 1e-6)
+        lift30 = hit_rate30 / max(base, 1e-6)
+        auc15 = 0.5
+        if len(np.unique(yb[top15])) > 1:
             try:
-                auc30 = float(roc_auc_score(yb[top], p[top]))
+                auc15 = float(roc_auc_score(yb[top15], p[top15]))
             except Exception:
-                auc30 = 0.5
+                auc15 = 0.5
         auc = float(roc_auc_score(yb, p)) if len(np.unique(yb)) > 1 else 0.5
         pr = float(average_precision_score(yb, p)) if len(np.unique(yb)) > 1 else base
         p_clip = np.clip(p, 1e-6, 1.0 - 1e-6)
@@ -844,25 +911,42 @@ def _metric_pack(
         hit_rate5 = float(np.mean(y[top5])) if len(top5) else 0.0
         hit_rate10 = float(np.mean(y[top10])) if len(top10) else 0.0
         hit_rate20 = float(np.mean(y[top20])) if len(top20) else 0.0
-        hit_rate30 = float(np.mean(y[top])) if len(top) else 0.0
+        hit_rate15 = float(np.mean(y[top15])) if len(top15) else 0.0
+        hit_rate30 = float(np.mean(y[top30])) if len(top30) else 0.0
         lift5 = float(hit_rate5 / denom)
         lift10 = float(hit_rate10 / denom)
         lift20 = float(hit_rate20 / denom)
+        lift15 = float(hit_rate15 / denom)
         lift30 = float(hit_rate30 / denom)
-        auc30 = max(0.0, _safe_spearman(p[top], y[top]))
+        auc15 = max(0.0, _safe_spearman(p[top15], y[top15]))
+        hit_rate01 = 0.0
+        hit_rate005 = 0.0
         auc = max(0.0, _safe_spearman(p, y))
         pr = auc
         brier = float(np.mean((p - y) ** 2))
         ece = float("nan")
-    stab_proxy = _top30_stability(y, p)
-    stab_metrics = _grouped_top30_stability(y, p, classifier=classifier, groups=grp)
-    stability30 = (
-        stab_metrics["stability30"]
-        if stab_metrics["stability30_n_groups"] >= 3
-        else stab_proxy
+    stab_proxy = _top_stability(y, p, frac_obj)
+    stab_metrics = _grouped_top_stability(
+        y, p, frac_obj, classifier=classifier, groups=grp
     )
-    ic_metrics = _rank_ic_metrics(y, p)
+    stab_proxy30 = _top_stability(y, p, 0.30)
+    stab_metrics30 = _grouped_top_stability(
+        y, p, 0.30, classifier=classifier, groups=grp
+    )
+    stability30 = (
+        stab_metrics30["stability"]
+        if stab_metrics30["n_groups"] >= 3
+        else stab_proxy30
+    )
+    stability15 = (
+        stab_metrics["stability"] if stab_metrics["n_groups"] >= 3 else stab_proxy
+    )
+    ic_metrics = _rank_ic_metrics(y, p, frac_obj)
+    ic_metrics30 = _rank_ic_metrics(y, p, 0.30)
+    ic15 = float(ic_metrics["ic_top"])
+    ndcg10 = float(_ndcg_at_k(y, p, k=10))
     return {
+        "lift15": float(lift15),
         "lift30": float(lift30),
         "lift20": float(lift20),
         "lift10": float(lift10),
@@ -870,19 +954,42 @@ def _metric_pack(
         "hit_rate5": float(hit_rate5),
         "hit_rate10": float(hit_rate10),
         "hit_rate20": float(hit_rate20),
+        "hit_rate15": float(hit_rate15),
         "hit_rate30": float(hit_rate30),
+        "hit_rate01": float(hit_rate01),
+        "hit_rate005": float(hit_rate005),
         "precision5": float(hit_rate5),
         "precision10": float(hit_rate10),
         "precision20": float(hit_rate20),
         "precision30": float(hit_rate30),
-        "auc_correct_30": float(auc30),
-        "stability30_proxy": float(stab_proxy),
+        "precision15": float(hit_rate15),
+        "precision01": float(hit_rate01),
+        "precision005": float(hit_rate005),
+        "ndcg@10": ndcg10,
+        "ndcg_at_10": ndcg10,
+        "auc_correct_15": float(auc15),
+        "auc_correct_30": (
+            float(
+                max(0.0, _safe_spearman(p[top30], yb[top30]))
+                if classifier
+                else max(0.0, _safe_spearman(p[top30], y[top30]))
+            )
+            if len(top30) > 1
+            else 0.5
+        ),
+        "stability15_proxy": float(stab_proxy),
+        "stability15": float(stability15),
+        "stability15_n_groups": float(stab_metrics["n_groups"]),
+        "stability15_group_mean": float(stab_metrics["group_mean"]),
+        "stability15_group_std": float(stab_metrics["group_std"]),
+        "stability30_proxy": float(stab_proxy30),
         "stability30": float(stability30),
-        "stability30_n_groups": float(stab_metrics["stability30_n_groups"]),
-        "stability30_group_mean": float(stab_metrics["stability30_group_mean"]),
-        "stability30_group_std": float(stab_metrics["stability30_group_std"]),
+        "stability30_n_groups": float(stab_metrics30["n_groups"]),
+        "stability30_group_mean": float(stab_metrics30["group_mean"]),
+        "stability30_group_std": float(stab_metrics30["group_std"]),
         "ic_total": float(ic_metrics["ic_total"]),
-        "ic_top30": float(ic_metrics["ic_top30"]),
+        "ic_top15": float(ic15),
+        "ic_top30": float(ic_metrics30["ic_top30"]),
         "auc": float(auc),
         "pr_auc": float(pr),
         "brier": float(brier),
@@ -892,7 +999,9 @@ def _metric_pack(
 
 
 def _fold_j(m: dict[str, float]) -> float:
-    return 0.6 * m.get("lift30", 0.0) + 0.4 * m.get("auc_correct_30", 0.0)
+    return 0.6 * m.get("lift15", m.get("lift30", 0.0)) + 0.4 * m.get(
+        "auc_correct_15", m.get("auc_correct_30", 0.5)
+    )
 
 
 def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
@@ -903,13 +1012,50 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     lift20 = float(np.mean([m.get("lift20", 0.0) for m in fold_metrics]))
     lift10 = float(np.mean([m.get("lift10", 0.0) for m in fold_metrics]))
     lift5 = float(np.mean([m.get("lift5", 0.0) for m in fold_metrics]))
+    lift15 = float(
+        np.mean(
+            [
+                m.get("lift15", m.get("lift30", m.get("lift20", 0.0)))
+                for m in fold_metrics
+            ]
+        )
+    )
     hit_rate5 = float(np.mean([m.get("hit_rate5", 0.0) for m in fold_metrics]))
     hit_rate10 = float(np.mean([m.get("hit_rate10", 0.0) for m in fold_metrics]))
     hit_rate20 = float(np.mean([m.get("hit_rate20", 0.0) for m in fold_metrics]))
-    hit_rate30 = float(np.mean([m.get("hit_rate30", 0.0) for m in fold_metrics]))
-    auc30 = float(np.mean([m.get("auc_correct_30", 0.0) for m in fold_metrics]))
+    hit_rate15 = float(
+        np.mean([m.get("hit_rate15", m.get("hit_rate30", 0.0)) for m in fold_metrics])
+    )
+    hit_rate30 = float(
+        np.mean(
+            [
+                m.get("hit_rate30", m.get("hit_rate15", m.get("hit_rate20", 0.0)))
+                for m in fold_metrics
+            ]
+        )
+    )
+    precision01 = float(
+        np.mean([m.get("precision01", m.get("hit_rate01", 0.0)) for m in fold_metrics])
+    )
+    precision005 = float(
+        np.mean(
+            [m.get("precision005", m.get("hit_rate005", 0.0)) for m in fold_metrics]
+        )
+    )
+    ndcg_at_10 = float(
+        np.mean([m.get("ndcg_at_10", m.get("ndcg@10", 0.0)) for m in fold_metrics])
+    )
+    auc30 = float(
+        np.mean(
+            [
+                m.get("auc_correct_15", m.get("auc_correct_30", 0.0))
+                for m in fold_metrics
+            ]
+        )
+    )
     stability_vals = np.asarray(
-        [m.get("stability30", 0.0) for m in fold_metrics], dtype=np.float64
+        [m.get("stability15", m.get("stability30", 0.0)) for m in fold_metrics],
+        dtype=np.float64,
     )
     j_mean = float(np.mean(j))
     j_std = float(np.std(j, ddof=1)) if len(j) > 1 else 0.0
@@ -919,26 +1065,44 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     )
     stability30 = float(np.clip(stability30, 0.0, 1.0))
     return {
-        "lift30": lift,
+        "lift15": lift15,
+        "lift30": lift15,
         "lift20": lift20,
         "lift10": lift10,
         "lift5": lift5,
         "hit_rate5": hit_rate5,
         "hit_rate10": hit_rate10,
         "hit_rate20": hit_rate20,
+        "hit_rate15": hit_rate15,
         "hit_rate30": hit_rate30,
         "precision5": hit_rate5,
         "precision10": hit_rate10,
         "precision20": hit_rate20,
+        "precision15": hit_rate15,
         "precision30": hit_rate30,
+        "precision1": precision01,
+        "precision01": precision01,
+        "precision005": precision005,
+        "ndcg@10": ndcg_at_10,
+        "ndcg_at_10": ndcg_at_10,
         "auc_correct_30": auc30,
         "stability30": stability30,
+        "stability15": stability30,
         "stability30_n_groups": float(
             np.sum([m.get("stability30_n_groups", 0.0) for m in fold_metrics])
         ),
+        "stability15_n_groups": float(
+            np.sum([m.get("stability15_n_groups", 0.0) for m in fold_metrics])
+        ),
+        "stability15_group_mean": float(
+            np.mean([m.get("stability15_group_mean", 0.0) for m in fold_metrics])
+        ),
+        "stability15_group_std": float(
+            np.mean([m.get("stability15_group_std", 0.0) for m in fold_metrics])
+        ),
         "J_mean": j_mean,
         "J_std": j_std,
-        "J_final": float(0.4 * lift + 0.2 * auc30 + 0.4 * stability30),
+        "J_final": float(0.4 * lift15 + 0.2 * auc30 + 0.4 * stability30),
     }
 
 
@@ -947,12 +1111,16 @@ def _hpo_objective_from_aggregate(
 ) -> float:
     if str(objective_mode).lower() == "meta":
         return float(
-            0.30 * float(agg.get("hit_rate30", agg.get("precision30", 0.0)))
-            + 0.20 * float(agg.get("hit_rate10", agg.get("precision10", 0.0)))
-            + 0.50 * float(agg.get("stability30", 0.0))
+            0.30 * float(agg.get("precision15", agg.get("hit_rate15", 0.0)))
+            + 0.25 * float(agg.get("lift15", agg.get("lift30", 0.0)))
+            + 0.15 * float(agg.get("precision01", agg.get("precision1", 0.0)))
+            + 0.15 * float(agg.get("precision005", 0.0))
+            + 0.15 * float(agg.get("ndcg_at_10", 0.0))
+            + 0.15 * float(agg.get("stability15", agg.get("stability30", 0.0)))
         )
     return float(
-        0.65 * float(agg.get("lift30", 0.0)) + 0.35 * float(agg.get("stability30", 0.0))
+        0.65 * float(agg.get("lift15", agg.get("lift30", 0.0)))
+        + 0.35 * float(agg.get("stability15", agg.get("stability30", 0.0)))
     )
 
 
@@ -1043,7 +1211,23 @@ def _save_ebm_hpo_warm_start(
         "best_trial_number": int(best_trial_number),
         "metrics": {
             "lift30": float(best_trial_attrs.get("lift30", np.nan)),
+            "lift15": float(
+                best_trial_attrs.get("lift15", best_trial_attrs.get("lift30", np.nan))
+            ),
             "stability30": float(best_trial_attrs.get("stability30", np.nan)),
+            "stability15": float(
+                best_trial_attrs.get(
+                    "stability15", best_trial_attrs.get("stability30", np.nan)
+                )
+            ),
+            "precision15": float(best_trial_attrs.get("precision15", np.nan)),
+            "precision01": float(best_trial_attrs.get("precision01", np.nan)),
+            "precision005": float(best_trial_attrs.get("precision005", np.nan)),
+            "ndcg_at_10": float(
+                best_trial_attrs.get(
+                    "ndcg_at_10", best_trial_attrs.get("ndcg@10", np.nan)
+                )
+            ),
             "hpo_objective": float(best_trial_attrs.get("hpo_objective", best_value)),
         },
     }
@@ -1089,13 +1273,16 @@ def _hpo_leaf_min_pct_formula(
     return float(np.clip(pct, EBM_HPO_MIN_LEAF_PCT_LO, EBM_HPO_MIN_LEAF_PCT_HI))
 
 
-def _top30_stability(y: np.ndarray, pred: np.ndarray) -> float:
+def _top_stability(y: np.ndarray, pred: np.ndarray, frac: float) -> float:
     if len(pred) < 20:
         return 0.0
-    k = max(1, int(0.30 * len(pred)))
+    _frac = float(np.clip(float(frac), 0.001, 1.0))
+    k = max(1, int(np.ceil(_frac * len(pred))))
     idx = np.argsort(pred)[-k:]
     s = np.asarray(pred[idx], dtype=np.float64)
     yy = np.asarray(y[idx], dtype=np.float64)
+    if len(s) == 0:
+        return 0.0
     q = np.quantile(s, np.linspace(0.0, 1.0, 6))
     vals: list[float] = []
     for i in range(5):
@@ -1103,6 +1290,10 @@ def _top30_stability(y: np.ndarray, pred: np.ndarray) -> float:
         if np.any(m):
             vals.append(float(np.mean(yy[m])))
     return float(1.0 / (1.0 + np.std(vals))) if vals else 0.0
+
+
+def _top30_stability(y: np.ndarray, pred: np.ndarray) -> float:
+    return _top_stability(y, pred, 0.30)
 
 
 def _grouped_top30_stability(
@@ -1113,16 +1304,43 @@ def _grouped_top30_stability(
     min_groups: int = 3,
     min_group_n: int = 20,
 ) -> dict[str, float]:
+    out = _grouped_top_stability(
+        y,
+        pred,
+        0.30,
+        classifier=classifier,
+        groups=groups,
+        min_groups=min_groups,
+        min_group_n=min_group_n,
+    )
+    return {
+        "stability30": float(out["stability"]),
+        "stability30_n_groups": float(out["n_groups"]),
+        "stability30_group_mean": float(out["group_mean"]),
+        "stability30_group_std": float(out["group_std"]),
+    }
+
+
+def _grouped_top_stability(
+    y: np.ndarray,
+    pred: np.ndarray,
+    frac: float,
+    classifier: bool,
+    groups: Any = None,
+    min_groups: int = 3,
+    min_group_n: int = 20,
+) -> dict[str, float]:
     if groups is None:
         return {
-            "stability30": 0.0,
-            "stability30_n_groups": 0.0,
-            "stability30_group_mean": 0.0,
-            "stability30_group_std": 0.0,
+            "stability": 0.0,
+            "n_groups": 0.0,
+            "group_mean": 0.0,
+            "group_std": 0.0,
         }
     yy = np.asarray(y, dtype=np.float64)
     pp = np.asarray(pred, dtype=np.float64)
     gg = np.asarray(groups, dtype=object)
+    _frac = float(np.clip(float(frac), 0.001, 1.0))
     n = min(len(yy), len(pp), len(gg))
     yy = yy[:n]
     pp = pp[:n]
@@ -1138,7 +1356,7 @@ def _grouped_top30_stability(
             continue
         yg = yy[gm]
         pg = pp[gm]
-        k = max(3, int(np.ceil(0.30 * len(pg))))
+        k = max(1, int(np.ceil(_frac * len(pg))))
         if k >= len(pg):
             continue
         top = np.argsort(pg)[-k:]
@@ -1153,10 +1371,10 @@ def _grouped_top30_stability(
             vals.append(float(np.mean(yg[top]) / denom))
     if len(vals) < int(min_groups):
         return {
-            "stability30": 0.0,
-            "stability30_n_groups": float(len(vals)),
-            "stability30_group_mean": float(np.mean(vals)) if vals else 0.0,
-            "stability30_group_std": float(np.std(vals)) if vals else 0.0,
+            "stability": 0.0,
+            "n_groups": float(len(vals)),
+            "group_mean": float(np.mean(vals)) if vals else 0.0,
+            "group_std": float(np.std(vals)) if vals else 0.0,
         }
     arr = np.asarray(vals, dtype=np.float64)
     mean_v = float(np.mean(arr))
@@ -1164,10 +1382,10 @@ def _grouped_top30_stability(
     cv_v = float(std_v / (abs(mean_v) + 1e-6))
     stability_v = float(1.0 / (1.0 + cv_v))
     return {
-        "stability30": float(np.clip(stability_v, 0.0, 1.0)),
-        "stability30_n_groups": float(len(arr)),
-        "stability30_group_mean": mean_v,
-        "stability30_group_std": std_v,
+        "stability": float(np.clip(stability_v, 0.0, 1.0)),
+        "n_groups": float(len(arr)),
+        "group_mean": mean_v,
+        "group_std": std_v,
     }
 
 
@@ -1208,19 +1426,24 @@ def _stability_group_labels(
     return week.astype(str)
 
 
-def _rank_ic_metrics(y: np.ndarray, pred: np.ndarray) -> dict[str, float]:
+def _rank_ic_metrics(
+    y: np.ndarray, pred: np.ndarray, frac: float = 0.30
+) -> dict[str, float]:
     yy = np.asarray(y, dtype=np.float64)
     pp = np.asarray(pred, dtype=np.float64)
     m = np.isfinite(yy) & np.isfinite(pp)
     yy = yy[m]
     pp = pp[m]
     if len(yy) < 8:
-        return {"ic_total": 0.0, "ic_top30": 0.0}
+        return {"ic_total": 0.0, "ic_top30": 0.0, "ic_top": 0.0}
     ic_total = _safe_spearman(pp, yy)
-    k = max(1, int(0.30 * len(pp)))
+    k = max(1, int(np.ceil(float(np.clip(float(frac), 0.001, 1.0)) * len(pp))))
     top = np.argsort(pp)[-k:]
-    ic_top30 = _safe_spearman(pp[top], yy[top]) if len(top) >= 8 else 0.0
-    return {"ic_total": float(ic_total), "ic_top30": float(ic_top30)}
+    ic_top = _safe_spearman(pp[top], yy[top]) if len(top) >= 8 else 0.0
+    result = {"ic_total": float(ic_total), "ic_top": float(ic_top), "ic_top30": 0.0}
+    if abs(float(frac) - 0.30) <= 0.001:
+        result["ic_top30"] = float(ic_top)
+    return result
 
 
 def _stratified_subsample_indices(
@@ -2395,23 +2618,33 @@ def _select_smallest_within_one_se(history: list[dict[str, Any]]) -> dict[str, A
 
 
 def _feature_pruning_candidate_gate(rec: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-    min_lift30, min_stability30 = _candidate_gate_thresholds()
+    min_lift15, min_stability15 = _candidate_gate_thresholds()
+    lift15 = float(rec.get("lift15", rec.get("lift30", np.nan)))
+    stability15 = float(rec.get("stability15", rec.get("stability30", np.nan)))
     lift30 = float(rec.get("lift30", np.nan))
     stability30 = float(rec.get("stability30", np.nan))
     j_final = float(rec.get("J_final", np.nan))
     n_features = int(rec.get("n_features_end", rec.get("n_features", 0)))
     checks = {
         "finite_score": bool(np.isfinite(j_final)),
-        "min_lift30": bool(np.isfinite(lift30) and lift30 >= min_lift30),
-        "min_stability30": bool(
-            np.isfinite(stability30) and stability30 >= min_stability30
+        "min_lift15": bool(np.isfinite(lift15) and lift15 >= min_lift15),
+        "min_stability15": bool(
+            np.isfinite(stability15) and stability15 >= min_stability15
         ),
+        "legacy_min_lift30": bool(np.isfinite(lift30)),
+        "legacy_min_stability30": bool(np.isfinite(stability30)),
         "min_features": bool(n_features >= EBM_MIN_FEATURES),
     }
     details: dict[str, Any] = {
         "candidate_gate_passed": bool(all(checks.values())),
-        "candidate_gate_min_lift30": float(min_lift30),
-        "candidate_gate_min_stability30": float(min_stability30),
+        "candidate_gate_min_lift15": float(min_lift15),
+        "candidate_gate_min_stability15": float(min_stability15),
+        "candidate_gate_min_lift30": float(min_lift15),
+        "candidate_gate_min_stability30": float(min_stability15),
+        "candidate_gate_lift15": float(lift15),
+        "candidate_gate_stability15": float(stability15),
+        "candidate_gate_lift30": float(lift30),
+        "candidate_gate_stability30": float(stability30),
     }
     details.update({f"candidate_gate_{k}": bool(v) for k, v in checks.items()})
     return bool(details["candidate_gate_passed"]), details
@@ -3344,8 +3577,22 @@ def _fit_final_model(
 
             agg = _aggregate_j(fold_metrics)
             hpo_objective = _hpo_objective_from_aggregate(agg, hpo_objective_mode)
+            trial.set_user_attr("lift15", float(agg.get("lift15", np.nan)))
             trial.set_user_attr("lift30", float(agg.get("lift30", np.nan)))
+            trial.set_user_attr("stability15", float(agg.get("stability15", np.nan)))
             trial.set_user_attr("stability30", float(agg.get("stability30", np.nan)))
+            trial.set_user_attr(
+                "precision15",
+                float(agg.get("precision15", agg.get("hit_rate15", np.nan))),
+            )
+            trial.set_user_attr(
+                "precision01",
+                float(agg.get("precision01", agg.get("precision1", np.nan))),
+            )
+            trial.set_user_attr("precision005", float(agg.get("precision005", np.nan)))
+            trial.set_user_attr(
+                "ndcg_at_10", float(agg.get("ndcg_at_10", agg.get("ndcg@10", np.nan)))
+            )
             trial.set_user_attr("J_final", float(agg.get("J_final", np.nan)))
             trial.set_user_attr("hpo_objective", float(hpo_objective))
             return float(hpo_objective)

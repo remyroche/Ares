@@ -100,6 +100,7 @@ from extreme_price_movements.inference.parity import (
     validate_calibration_artifacts,
     validate_deployment_model_coverage,
     validate_live_feature_contract,
+    validate_meta_feature_contract_artifact,
     validate_required_feature_frames,
 )
 from extreme_price_movements.inference.symbol_mapping import (
@@ -1617,6 +1618,13 @@ def main():
     validate_live_feature_contract(effective_model_bundle, strict=True)
     accepted_strategies = resolve_deployment_strategy_filter(
         config["data_root"], config["run_id"]
+    )
+    validate_meta_feature_contract_artifact(
+        config["data_root"],
+        config["run_id"],
+        effective_model_bundle,
+        accepted_strategies,
+        strict=True,
     )
     required_feature_keys = get_inference_required_feature_keys(
         effective_model_bundle,

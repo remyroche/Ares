@@ -20,6 +20,7 @@ from extreme_price_movements.inference.parity import (
     validate_calibration_artifacts,
     validate_deployment_model_coverage,
     validate_live_feature_contract,
+    validate_meta_feature_contract_artifact,
     validate_required_feature_frames,
 )
 
@@ -305,6 +306,93 @@ def test_deployment_model_coverage_rejects_missing_meta_model():
         validate_deployment_model_coverage(bundle, {"short_rule"})
 
 
+def test_meta_feature_contract_required_when_meta_models_loaded(tmp_path):
+    run_id = "20260101_000000"
+    (tmp_path / "artifacts" / run_id).mkdir(parents=True)
+    bundle = {"bundle": {"meta_models": {"short_rule": object()}}}
+
+    with pytest.raises(ValueError, match="meta_feature_contract.json"):
+        validate_meta_feature_contract_artifact(
+            str(tmp_path),
+            run_id,
+            bundle,
+            {"short_rule"},
+            strict=True,
+        )
+
+
+def test_meta_feature_contract_validates_positional_mapping(tmp_path):
+    class _Best:
+        raw_selected_features = ["f0", "f1"]
+        meta_feature_columns_ = ["ret24h", "base_probability_short_rule"]
+
+    class _Meta:
+        best_model = _Best()
+        meta_feature_columns_ = ["ret24h", "base_probability_short_rule"]
+
+    run_id = "20260101_000000"
+    meta_dir = tmp_path / "artifacts" / run_id / "meta_oof"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "meta_feature_contract.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "meta_models": {
+                    "short_rule": {
+                        "feature_columns": ["ret24h", "base_probability_short_rule"],
+                        "positional_feature_mapping": {
+                            "f0": "ret24h",
+                            "f1": "base_probability_short_rule",
+                        },
+                        "n_features": 2,
+                    }
+                },
+            }
+        )
+    )
+    bundle = {"bundle": {"meta_models": {"short_rule": _Meta()}}}
+
+    assert validate_meta_feature_contract_artifact(
+        str(tmp_path),
+        run_id,
+        bundle,
+        {"short_rule"},
+        strict=True,
+    )
+
+
+def test_meta_feature_contract_rejects_live_unavailable_features(tmp_path):
+    run_id = "20260101_000000"
+    meta_dir = tmp_path / "artifacts" / run_id / "meta_oof"
+    meta_dir.mkdir(parents=True)
+    (meta_dir / "meta_feature_contract.json").write_text(
+        json.dumps(
+            {
+                "meta_models": {
+                    "long_rule": {
+                        "feature_columns": ["ret24h", "reg_gate_target"],
+                        "positional_feature_mapping": {
+                            "f0": "ret24h",
+                            "f1": "reg_gate_target",
+                        },
+                        "n_features": 2,
+                    }
+                }
+            }
+        )
+    )
+    bundle = {"bundle": {"meta_models": {"long_rule": object()}}}
+
+    with pytest.raises(ValueError, match="live-unavailable"):
+        validate_meta_feature_contract_artifact(
+            str(tmp_path),
+            run_id,
+            bundle,
+            {"long_rule"},
+            strict=True,
+        )
+
+
 def test_required_feature_frames_reject_missing_keys_and_symbols():
     feats = {
         "ret24h": pd.DataFrame(
@@ -352,6 +440,25 @@ def test_required_feature_keys_can_be_limited_to_deployment_strategies():
 
     assert "ret24h" in required
     assert "vov_mad_20_G_VOL_0" not in required
+
+
+def test_required_feature_keys_use_meta_contract_columns_not_positional_names():
+    class _Meta:
+        selected_features = ["f0", "f1"]
+        meta_feature_columns_ = ["ret24h", "base_probability_long_rule"]
+
+    bundle = {
+        "bundle": {
+            "alpha_models": {},
+            "meta_models": {"long_rule": _Meta()},
+        }
+    }
+
+    required = get_inference_required_feature_keys(bundle, {"long_rule"})
+
+    assert "ret24h" in required
+    assert "base_probability_long_rule" in required
+    assert "f0" not in required
 
 
 def test_live_contract_rejects_target_derived_active_alpha_features():

@@ -395,6 +395,17 @@ def _model_key_matches_allowed(
     )
 
 
+def _meta_feature_columns(meta: Any) -> List[str]:
+    out: List[str] = []
+    for source in (meta, getattr(meta, "best_model", None)):
+        if source is None:
+            continue
+        raw = getattr(source, "meta_feature_columns_", None)
+        if raw:
+            out.extend(str(v) for v in raw if str(v))
+    return list(dict.fromkeys(out))
+
+
 def get_inference_required_feature_keys(
     model_bundle: Dict[str, Any],
     accepted_strategies: Optional[Iterable[str]] = None,
@@ -431,9 +442,15 @@ def get_inference_required_feature_keys(
     for key, meta in meta_models.items():
         if not _model_key_matches_allowed(str(key), allowed):
             continue
+        meta_cols = _meta_feature_columns(meta)
+        if meta_cols:
+            required.update(meta_cols)
+            continue
         selected = getattr(meta, "selected_features", None)
         if selected:
-            required.update(selected)
+            required.update(
+                str(v) for v in selected if str(v) and not re.fullmatch(r"f\d+", str(v))
+            )
 
     ridge_sizer = (
         model_bundle.get("ridge_sizer") if isinstance(model_bundle, dict) else None
@@ -471,7 +488,9 @@ def get_inference_required_feature_keys(
                     if isinstance(value, str):
                         required.add(value)
                     elif isinstance(value, dict):
-                        required.update(str(v) for v in value.values() if isinstance(v, str))
+                        required.update(
+                            str(v) for v in value.values() if isinstance(v, str)
+                        )
 
     ridge_weights = bundle.get("ridge_weights", {}) if isinstance(bundle, dict) else {}
     params_per_bucket = (

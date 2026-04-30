@@ -25,6 +25,7 @@ from extreme_price_movements.inference.parity import (
     validate_calibration_artifacts,
     validate_deployment_model_coverage,
     validate_live_feature_contract,
+    validate_meta_feature_contract_artifact,
 )
 from extreme_price_movements.inference.trade_executor import (
     TradeExecutor,
@@ -119,6 +120,7 @@ def _artifact_manifest_verified(ctx: DeploymentCheckContext) -> DeploymentCheckR
     run_dir = _run_dir(ctx)
     labels_manifest = load_artifact_manifest(ctx.data_root, run_id, "labels")
     base_meta_contract = run_dir / "base_meta_contract.json"
+    meta_feature_contract = run_dir / "meta_oof" / "meta_feature_contract.json"
     policy_params_paths = [
         run_dir / "policy_params" / "best_policy_params.json",
         run_dir / "best_policy_params.json",
@@ -139,6 +141,7 @@ def _artifact_manifest_verified(ctx: DeploymentCheckContext) -> DeploymentCheckR
         "run_dir": run_dir.exists(),
         "labels_manifest": isinstance(labels_manifest, dict) and bool(labels_manifest),
         "base_meta_contract": base_meta_contract.exists(),
+        "meta_feature_contract": meta_feature_contract.exists(),
         "policy_params": any(path.exists() for path in policy_params_paths),
         "strategy_for_inference": any(path.exists() for path in strategy_filter_paths),
         "sizer_params": sizer_params.exists(),
@@ -162,16 +165,29 @@ def _feature_parity_verified(ctx: DeploymentCheckContext) -> DeploymentCheckResu
     coverage_ok = validate_deployment_model_coverage(
         bundle, ctx.accepted_strategies, strict=False
     )
-    ok = feature_ok and coverage_ok
+    if ctx.run_id:
+        meta_feature_ok = validate_meta_feature_contract_artifact(
+            ctx.data_root,
+            ctx.run_id,
+            bundle,
+            ctx.accepted_strategies,
+            strict=False,
+        )
+    else:
+        meta_feature_ok = False
+    ok = feature_ok and coverage_ok and meta_feature_ok
     return _result(
         name,
         ok,
         details={
             "model_bundle_keys": sorted(bundle.keys()),
             "feature_contract_ok": feature_ok,
+            "meta_feature_contract_ok": meta_feature_ok,
             "model_coverage_ok": coverage_ok,
         },
-        error="" if ok else "model coverage or live feature contract failed",
+        error=""
+        if ok
+        else "model coverage, meta feature contract, or live feature contract failed",
     )
 
 

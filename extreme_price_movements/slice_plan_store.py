@@ -1,19 +1,19 @@
+import hashlib
 import json
 import os
-import hashlib
-from typing import Any, Optional, Dict
 from dataclasses import asdict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
 
 from extreme_price_movements.periods_symbols_management import (
+    ConsumerSlicePlan,
+    EventSchema,
+    InnerFold,
+    OuterFold,
     SlicePlanner,
     SlicePlannerConfig,
-    EventSchema,
-    OuterFold,
-    InnerFold,
-    ConsumerSlicePlan,
 )
 from extreme_price_movements.utils import tprint
 
@@ -73,8 +73,12 @@ def compute_event_fingerprint(events_df: pd.DataFrame) -> dict:
 
     n_events = len(events_df)
     n_symbols = int(events_df["symbol"].nunique())
-    min_t0 = events_df["t0"].min().isoformat() if not events_df["t0"].isna().all() else None
-    max_t0 = events_df["t0"].max().isoformat() if not events_df["t0"].isna().all() else None
+    min_t0 = (
+        events_df["t0"].min().isoformat() if not events_df["t0"].isna().all() else None
+    )
+    max_t0 = (
+        events_df["t0"].max().isoformat() if not events_df["t0"].isna().all() else None
+    )
 
     # Hash some deterministic rows
     sorted_ev = events_df.sort_values(["t0", "symbol"]).head(1000)
@@ -89,7 +93,12 @@ def compute_event_fingerprint(events_df: pd.DataFrame) -> dict:
     }
 
 
-def slice_plan_is_stale(existing: dict, current_fingerprint: dict, planner_cfg: dict, allocation_targets: dict = None) -> bool:
+def slice_plan_is_stale(
+    existing: dict,
+    current_fingerprint: dict,
+    planner_cfg: dict,
+    allocation_targets: dict = None,
+) -> bool:
     if not existing:
         return True
     if int(existing.get("version", 0) or 0) != 2:
@@ -107,6 +116,7 @@ def slice_plan_is_stale(existing: dict, current_fingerprint: dict, planner_cfg: 
 
     return False
 
+
 def _serialize_consumer_plan(cp: ConsumerSlicePlan) -> dict:
     return {
         "tag": cp.tag,
@@ -122,7 +132,13 @@ def _serialize_consumer_plan(cp: ConsumerSlicePlan) -> dict:
         "metadata": cp.metadata,
     }
 
-def _build_stage_view(stage_name: str, consumer_plans: list[ConsumerSlicePlan], allocation_target: float, source_roles: list[str] = None) -> dict:
+
+def _build_stage_view(
+    stage_name: str,
+    consumer_plans: list[ConsumerSlicePlan],
+    allocation_target: float,
+    source_roles: list[str] = None,
+) -> dict:
     all_symbols = set()
     fit_starts = []
     fit_ends = []
@@ -157,7 +173,7 @@ def _build_stage_view(stage_name: str, consumer_plans: list[ConsumerSlicePlan], 
         "symbols": sorted(list(all_symbols)),
         "allowed_start_ts": overall_start,
         "allowed_end_ts": overall_end,
-        "n_plans": len(consumer_plans)
+        "n_plans": len(consumer_plans),
     }
 
 
@@ -252,13 +268,17 @@ def _assign_interleaved_week_periods(
                 break
         pool_for_stage[stage_name] = pool_key
         if pool_key not in pool_weight:
-            pool_weight[pool_key] = float(allocation_targets.get(stage_name, 0.0) or 0.0)
+            pool_weight[pool_key] = float(
+                allocation_targets.get(stage_name, 0.0) or 0.0
+            )
 
     unique_pools = list(dict.fromkeys(pool_for_stage[s] for s in stage_names))
     pool_weights = [pool_weight[p] for p in unique_pools]
     counts = _largest_remainder_counts(pool_weights, len(week_windows))
     if sum(counts) <= 0:
-        counts = _largest_remainder_counts([1.0 for _ in unique_pools], len(week_windows))
+        counts = _largest_remainder_counts(
+            [1.0 for _ in unique_pools], len(week_windows)
+        )
 
     permuted_week_idxs = sorted(
         range(len(week_windows)),
@@ -284,7 +304,13 @@ def _assign_interleaved_week_periods(
 
     for stage_name in stage_names:
         pool_key = pool_for_stage[stage_name]
-        materialized_views[stage_name]["allowed_periods"] = list(assigned_periods_pool[pool_key])
+        allocated_periods = list(assigned_periods_pool[pool_key])
+        materialized_views[stage_name]["allowed_periods"] = allocated_periods
+        materialized_views[stage_name]["allocated_week_indices"] = [
+            int(i)
+            for i, window in enumerate(week_windows)
+            if window in allocated_periods
+        ]
         materialized_views[stage_name]["week_allocation"] = {
             "mode": "interleaved_weeks",
             "allocated_weeks": len(assigned_periods_pool[pool_key]),
@@ -292,12 +318,37 @@ def _assign_interleaved_week_periods(
         }
 
 
+def _build_slice_allocation_diagnostics(
+    materialized_views: dict, total_symbols: int = 0
+) -> dict:
+    diagnostics: dict = {}
+    for stage_name, stage_view in materialized_views.items():
+        week_indices = sorted(
+            int(i) for i in stage_view.get("allocated_week_indices", [])
+        )
+        n_weeks = len(week_indices)
+        has_gap = any((b - a) > 1 for a, b in zip(week_indices, week_indices[1:]))
+        symbols_allocated = len(stage_view.get("symbols", []))
+        symbol_share = (
+            float(symbols_allocated) / float(total_symbols)
+            if total_symbols > 0
+            else np.nan
+        )
+        diagnostics[stage_name] = {
+            "weeks_allocated": n_weeks,
+            "non_contiguous_weeks": bool(has_gap) if n_weeks >= 2 else False,
+            "symbols_allocated": symbols_allocated,
+            "symbol_share": symbol_share,
+        }
+    return diagnostics
+
+
 def build_slice_plan(
     events_df: pd.DataFrame,
     planner_config: SlicePlannerConfig,
     run_id: str,
     ts_sig: pd.Timestamp,
-    allocation_targets: dict
+    allocation_targets: dict,
 ) -> dict:
     tprint(f"Building new slice plan for {run_id}")
     planner = SlicePlanner(planner_config)
@@ -311,7 +362,7 @@ def build_slice_plan(
         "train_meta": "meta_model_fit",
         "sizer_train": "ridge_sizer_fit",
         "utility_policy_optimisation": "utility_policy_tuning",
-        "holdout_strategy_eval": "backtest_eval" # Or combined with policy_optimiser
+        "holdout_strategy_eval": "backtest_eval",  # Or combined with policy_optimiser
     }
 
     serialized_consumers = {}
@@ -321,9 +372,7 @@ def build_slice_plan(
         plans = consumer_plans_dict.get(role, [])
         serialized_consumers[role] = [_serialize_consumer_plan(cp) for cp in plans]
         materialized_views[stage_name] = _build_stage_view(
-            stage_name,
-            plans,
-            allocation_targets.get(stage_name, 0.0)
+            stage_name, plans, allocation_targets.get(stage_name, 0.0)
         )
 
     # Also serialize any other roles just in case
@@ -334,6 +383,27 @@ def build_slice_plan(
     fingerprint = compute_event_fingerprint(events_df)
 
     _assign_interleaved_week_periods(materialized_views, allocation_targets, run_id)
+
+    total_symbols = (
+        int(events_df["symbol"].nunique()) if "symbol" in events_df.columns else 0
+    )
+    allocation_diagnostics = _build_slice_allocation_diagnostics(
+        materialized_views, total_symbols=total_symbols
+    )
+    for stage_name, diag in allocation_diagnostics.items():
+        if diag.get("weeks_allocated", 0) >= 2 and not diag.get(
+            "non_contiguous_weeks", False
+        ):
+            tprint(
+                f"Slice plan warning: stage {stage_name} has contiguous-only week allocation; "
+                "check planner diversity."
+            )
+        symbol_share = diag.get("symbol_share", np.nan)
+        if np.isfinite(symbol_share) and symbol_share < 0.20:
+            tprint(
+                f"Slice plan warning: stage {stage_name} has low symbol coverage "
+                f"({symbol_share:.1%} of universe)."
+            )
 
     payload = {
         "version": 2,
@@ -346,7 +416,8 @@ def build_slice_plan(
         "allocation_targets": allocation_targets,
         "event_fingerprint": fingerprint,
         "consumer_plans": serialized_consumers,
-        "materialized_views": materialized_views
+        "materialized_views": materialized_views,
+        "allocation_diagnostics": allocation_diagnostics,
     }
 
     return payload
@@ -356,7 +427,7 @@ def load_or_build_slice_plan(
     cfg: dict,
     ts_sig: pd.Timestamp,
     events_df: Optional[pd.DataFrame] = None,
-    force_refresh: bool = False
+    force_refresh: bool = False,
 ) -> dict:
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     path = slice_plan_path(cfg["data_root"], run_id)
@@ -382,29 +453,44 @@ def load_or_build_slice_plan(
             # We need events to check if stale, unless we just trust it.
             # If events_df is none, try to load baseline events
             if events_df is None:
-                events_path = os.path.join(cfg["data_root"], "artifacts", run_id, "baseline_events.parquet")
+                events_path = os.path.join(
+                    cfg["data_root"], "artifacts", run_id, "baseline_events.parquet"
+                )
                 if os.path.exists(events_path):
                     events_df = pd.read_parquet(events_path)
 
-            fingerprint = compute_event_fingerprint(events_df) if events_df is not None else existing.get("event_fingerprint")
+            fingerprint = (
+                compute_event_fingerprint(events_df)
+                if events_df is not None
+                else existing.get("event_fingerprint")
+            )
 
-            if not slice_plan_is_stale(existing, fingerprint, {"preset": preset_name}, allocation_targets):
+            if not slice_plan_is_stale(
+                existing, fingerprint, {"preset": preset_name}, allocation_targets
+            ):
                 tprint(f"Loaded valid slice plan for {run_id}")
                 return existing
             else:
                 tprint(f"Slice plan for {run_id} is stale, rebuilding.")
 
     if events_df is None:
-        events_path = os.path.join(cfg["data_root"], "artifacts", run_id, "baseline_events.parquet")
+        events_path = os.path.join(
+            cfg["data_root"], "artifacts", run_id, "baseline_events.parquet"
+        )
         if os.path.exists(events_path):
             events_df = pd.read_parquet(events_path)
         else:
-            raise ValueError("events_df not provided and baseline_events.parquet not found. Run labels first to generate events.")
+            raise ValueError(
+                "events_df not provided and baseline_events.parquet not found. Run labels first to generate events."
+            )
 
-    plan = build_slice_plan(events_df, planner_config, run_id, ts_sig, allocation_targets)
+    plan = build_slice_plan(
+        events_df, planner_config, run_id, ts_sig, allocation_targets
+    )
     save_slice_plan_atomic(path, plan)
     tprint(f"Saved new slice plan to {path}")
     return plan
+
 
 def restrict_stage_symbols(stage_view: dict, max_assets: Optional[int]) -> dict:
     """Deterministically restrict the number of symbols in a stage view."""
@@ -422,7 +508,9 @@ def restrict_stage_symbols(stage_view: dict, max_assets: Optional[int]) -> dict:
 
     new_view = dict(stage_view)
     new_view["symbols"] = subset
-    tprint(f"[{stage_view.get('stage_name', 'stage')}] Downscaled symbols from {len(symbols)} (planned) to {len(subset)} (effective) based on max_assets={max_assets}")
+    tprint(
+        f"[{stage_view.get('stage_name', 'stage')}] Downscaled symbols from {len(symbols)} (planned) to {len(subset)} (effective) based on max_assets={max_assets}"
+    )
     return new_view
 
 
@@ -445,8 +533,12 @@ def restrict_stage_period(stage_view: dict, max_months: Optional[int]) -> dict:
     new_start_ts = max(start_ts, end_ts - duration)
 
     def _intersect_period(period: dict) -> dict | None:
-        p_start = pd.to_datetime(period.get("start_ts") or period.get("start"), utc=True, errors="coerce")
-        p_end = pd.to_datetime(period.get("end_ts") or period.get("end"), utc=True, errors="coerce")
+        p_start = pd.to_datetime(
+            period.get("start_ts") or period.get("start"), utc=True, errors="coerce"
+        )
+        p_end = pd.to_datetime(
+            period.get("end_ts") or period.get("end"), utc=True, errors="coerce"
+        )
         if pd.isna(p_start) or pd.isna(p_end):
             return None
         p_start = max(p_start, new_start_ts)
@@ -464,23 +556,29 @@ def restrict_stage_period(stage_view: dict, max_months: Optional[int]) -> dict:
                 new_periods.append(clipped)
         new_view["allowed_periods"] = new_periods
     new_view["allowed_start_ts"] = new_start_ts.isoformat()
-    tprint(f"[{stage_view.get('stage_name', 'stage')}] Downscaled period from {start_ts_str} to {new_start_ts.isoformat()} (effective start), end {end_ts_str} based on max_months={max_months}")
+    tprint(
+        f"[{stage_view.get('stage_name', 'stage')}] Downscaled period from {start_ts_str} to {new_start_ts.isoformat()} (effective start), end {end_ts_str} based on max_months={max_months}"
+    )
     return new_view
 
 
-def apply_stage_usage_limits(stage_view: dict, max_assets: Optional[int], max_months: Optional[int]) -> dict:
+def apply_stage_usage_limits(
+    stage_view: dict, max_assets: Optional[int], max_months: Optional[int]
+) -> dict:
     view = restrict_stage_symbols(stage_view, max_assets)
     view = restrict_stage_period(view, max_months)
     return view
 
+
 from extreme_price_movements.data_store import load_features_selected
+
 
 def load_features_for_stage(
     ts_sig: pd.Timestamp,
     root_dir: str,
     stage_view: dict,
     feature_keys: Optional[list] = None,
-    lookback_pad: Optional[pd.Timedelta] = None
+    lookback_pad: Optional[pd.Timedelta] = None,
 ) -> Optional[pd.DataFrame]:
     """Load features restricted to the stage's resolved symbols and time window."""
     symbols = stage_view.get("symbols")
@@ -494,9 +592,11 @@ def load_features_for_stage(
     if start_ts and lookback_pad:
         start_ts = start_ts - lookback_pad
 
-    tprint(f"Loading features for stage {stage_view['stage_name']}: "
-           f"{len(symbols) if symbols else 'ALL'} symbols, "
-           f"from {start_ts} to {end_ts}")
+    tprint(
+        f"Loading features for stage {stage_view['stage_name']}: "
+        f"{len(symbols) if symbols else 'ALL'} symbols, "
+        f"from {start_ts} to {end_ts}"
+    )
 
     return load_features_selected(
         ts=ts_sig,

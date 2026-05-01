@@ -4,16 +4,13 @@ import pickle
 import re
 import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Dict, List, Optional, Tuple
 
-
-import pandas as pd
 import numpy as np
-from numba import njit, prange
-from typing import Dict, List, Tuple
-
-
+import pandas as pd
 import scipy.special
 from joblib import Memory
+from numba import njit, prange
 
 import extreme_price_movements.fast_funcs as ff
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
@@ -542,6 +539,155 @@ def time_sin_cos(index: pd.DatetimeIndex):
     return sin_hod, cos_hod, sin_dow, cos_dow
 
 
+def compute_orderbook_wall_primitives(
+    orderbook_panel: Optional[pd.DataFrame],
+    close_panel: pd.DataFrame,
+    volume_panel: pd.DataFrame,
+    atr_panel: Optional[pd.DataFrame] = None,
+    shift_bars: int = 1,
+) -> dict[str, pd.DataFrame]:
+    """Compute side-agnostic order-book wall primitives and meta features.
+
+    Gracefully returns zero-filled features when depth snapshots are unavailable.
+    """
+    eps = 1e-12
+    idx, cols = close_panel.index, close_panel.columns
+    out: dict[str, pd.DataFrame] = {}
+
+    def z() -> pd.DataFrame:
+        return pd.DataFrame(0.0, index=idx, columns=cols, dtype=np.float32)
+
+    qv = (close_panel * volume_panel).replace([np.inf, -np.inf], np.nan)
+    qv24 = qv.rolling(24, min_periods=1).mean().shift(1).fillna(0.0)
+
+    bands = {"r005": 0.005, "r010": 0.01, "r020": 0.02, "r030": 0.03}
+    for b in ("a05", "a10", "a20", "a30"):
+        bands[b] = np.nan
+
+    for b in bands:
+        out[f"obw_wall_skew_book_{b}"] = z()
+        out[f"obw_wall_skew_vol_{b}"] = z()
+        out[f"obw_wall_pressure_skew_{b}"] = z()
+        out[f"obw_band_depth_skew_vol_{b}"] = z()
+        out[f"_obw_bid_wall_to_vol_{b}"] = z()
+        out[f"_obw_ask_wall_to_vol_{b}"] = z()
+        out[f"_obw_bid_wall_pressure_{b}"] = z()
+        out[f"_obw_ask_wall_pressure_{b}"] = z()
+        out[f"_obw_bid_wall_distance_{b}"] = z()
+        out[f"_obw_ask_wall_distance_{b}"] = z()
+        out[f"_obw_bid_path_depth_to_target_{b}"] = z()
+        out[f"_obw_ask_path_depth_to_target_{b}"] = z()
+        if b.startswith("r"):
+            out[f"obw_wall_concentration_skew_{b}"] = z()
+
+    out["obw_nearest_bid_wall_to_vol"] = z()
+    out["obw_nearest_ask_wall_to_vol"] = z()
+    out["obw_nearest_wall_skew_vol"] = z()
+    out["obw_nearest_wall_distance_skew"] = z()
+
+    # If snapshot panel is not available in the expected wide format, return neutral zeros.
+    if not isinstance(orderbook_panel, pd.DataFrame) or orderbook_panel.empty:
+        return out
+
+    # Minimal fast path using available top-of-book cumulative proxies if present.
+    req = {"cum_bid_qty_l20", "cum_ask_qty_l20", "best_bid", "best_ask"}
+    if not req.issubset(set(orderbook_panel.columns)):
+        return out
+
+    ob = orderbook_panel.copy()
+    ob.index = pd.to_datetime(ob.index, utc=True)
+    ob = ob.reindex(idx).ffill()
+    mid = (
+        pd.to_numeric(ob["best_bid"], errors="coerce")
+        + pd.to_numeric(ob["best_ask"], errors="coerce")
+    ) * 0.5
+    bid_depth = (mid * pd.to_numeric(ob["cum_bid_qty_l20"], errors="coerce")).fillna(
+        0.0
+    )
+    ask_depth = (mid * pd.to_numeric(ob["cum_ask_qty_l20"], errors="coerce")).fillna(
+        0.0
+    )
+    total_book = (bid_depth + ask_depth).replace(0.0, np.nan)
+
+    # Broadcast symbolic single-series proxies across columns for now.
+    def bc(ser: pd.Series) -> pd.DataFrame:
+        arr = np.asarray(ser.fillna(0.0), dtype=np.float32)
+        return pd.DataFrame(
+            np.repeat(arr[:, None], len(cols), axis=1), index=idx, columns=cols
+        )
+
+    for b in bands:
+        bid_w = 0.2 * bid_depth
+        ask_w = 0.2 * ask_depth
+        bid_to_vol = bid_w / (qv24.mean(axis=1) + eps)
+        ask_to_vol = ask_w / (qv24.mean(axis=1) + eps)
+        skew_book = (bid_w / (total_book + eps)) - (ask_w / (total_book + eps))
+        skew_book = (
+            skew_book
+            / ((bid_w / (total_book + eps)) + (ask_w / (total_book + eps)) + eps)
+        ).clip(-1, 1)
+        skew_vol = ((bid_to_vol - ask_to_vol) / (bid_to_vol + ask_to_vol + eps)).clip(
+            -1, 1
+        )
+        depth_skew = ((bid_depth - ask_depth) / (bid_depth + ask_depth + eps)).clip(
+            -1, 1
+        )
+
+        out[f"obw_wall_skew_book_{b}"] = bc(skew_book).shift(shift_bars).fillna(0.0)
+        out[f"obw_wall_skew_vol_{b}"] = bc(skew_vol).shift(shift_bars).fillna(0.0)
+        out[f"obw_wall_pressure_skew_{b}"] = bc(skew_vol).shift(shift_bars).fillna(0.0)
+        out[f"obw_band_depth_skew_vol_{b}"] = (
+            bc(depth_skew).shift(shift_bars).fillna(0.0)
+        )
+        out[f"_obw_bid_wall_to_vol_{b}"] = (
+            bc(np.log1p(bid_to_vol)).shift(shift_bars).fillna(0.0)
+        )
+        out[f"_obw_ask_wall_to_vol_{b}"] = (
+            bc(np.log1p(ask_to_vol)).shift(shift_bars).fillna(0.0)
+        )
+        out[f"_obw_bid_wall_pressure_{b}"] = out[f"_obw_bid_wall_to_vol_{b}"]
+        out[f"_obw_ask_wall_pressure_{b}"] = out[f"_obw_ask_wall_to_vol_{b}"]
+        out[f"_obw_bid_wall_distance_{b}"] = z()
+        out[f"_obw_ask_wall_distance_{b}"] = z()
+        out[f"_obw_bid_path_depth_to_target_{b}"] = (
+            bc(np.log1p(bid_depth / (qv24.mean(axis=1) + eps)))
+            .shift(shift_bars)
+            .fillna(0.0)
+        )
+        out[f"_obw_ask_path_depth_to_target_{b}"] = (
+            bc(np.log1p(ask_depth / (qv24.mean(axis=1) + eps)))
+            .shift(shift_bars)
+            .fillna(0.0)
+        )
+        if b.startswith("r"):
+            out[f"obw_wall_concentration_skew_{b}"] = (
+                bc(
+                    ((bid_w / (bid_depth + eps)) - (ask_w / (ask_depth + eps))).clip(
+                        -1, 1
+                    )
+                )
+                .shift(shift_bars)
+                .fillna(0.0)
+            )
+
+    out["obw_nearest_bid_wall_to_vol"] = out["_obw_bid_wall_to_vol_r030"].copy()
+    out["obw_nearest_ask_wall_to_vol"] = out["_obw_ask_wall_to_vol_r030"].copy()
+    out["obw_nearest_wall_skew_vol"] = (
+        (
+            (out["obw_nearest_bid_wall_to_vol"] - out["obw_nearest_ask_wall_to_vol"])
+            / (
+                out["obw_nearest_bid_wall_to_vol"]
+                + out["obw_nearest_ask_wall_to_vol"]
+                + eps
+            )
+        )
+        .clip(-1, 1)
+        .astype(np.float32)
+    )
+    out["obw_nearest_wall_distance_skew"] = z()
+    return out
+
+
 def compute_market_features(panel, basket_syms, trend_sma_hours=24 * 14):
     tprint("Entering function: compute_market_features in features.py")
     c = panel["close"]
@@ -923,8 +1069,8 @@ def compute_regime_features(
     # 7. Liquidity ratio and low-liquidity hinge
     liq_ratio, liq_low = compute_liquidity_features(v, avg_window=24 * 30)
     feats["liquidity_ratio"] = liq_ratio
-    feats["liq_low"] = liq_low.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(
-        lower=0.0
+    feats["liq_low"] = (
+        liq_low.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0.0)
     )
     # 8. CUSUM normalization and high-regime hinge
     cusum_strength_norm, cusum_high = compute_cusum_regime_features(
@@ -1029,8 +1175,8 @@ def compute_features_hourly(panel, mkt_gates, cfg, requested_feature_keys=None):
     by save_features, and the joblib serialization doubled peak memory.
     """
     if requested_feature_keys is None:
-        import extreme_price_movements.training_utils as tu
         import extreme_price_movements.config as cfg_mod
+        import extreme_price_movements.training_utils as tu
 
         all_keys = set()
 
@@ -2631,6 +2777,481 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             tprint(
                 "Perps mode enabled but funding/open_interest data missing; skipping perp derivatives block."
             )
+
+    # --- Orderbook/Funding/Cross-Asset extensions (graceful with missing panels) ---
+    eps = 1e-12
+    idx = c_log.index
+    cols = c_log.columns
+    close_panel = np.exp(c_log).astype(np.float32)
+
+    def _zero_panel() -> pd.DataFrame:
+        return pd.DataFrame(0.0, index=idx, columns=cols, dtype=np.float32)
+
+    def _broadcast_series(ser: pd.Series) -> pd.DataFrame:
+        arr = np.asarray(
+            pd.to_numeric(ser, errors="coerce").fillna(0.0), dtype=np.float32
+        )
+        return pd.DataFrame(
+            np.repeat(arr[:, None], len(cols), axis=1), index=idx, columns=cols
+        )
+
+    # funding-derived base building blocks
+    fund_aligned = _zero_panel()
+    if isinstance(funding_panel, pd.DataFrame):
+        fund_aligned = (
+            funding_panel.reindex(index=idx, columns=cols)
+            .ffill()
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+
+    feats["fund_rate"] = fund_aligned.clip(lower=-0.01, upper=0.01).astype(np.float32)
+    feats["fund_rate_z_14d"] = _batch_roll_zscore(feats["fund_rate"], 14 * 24).clip(
+        -6, 6
+    )
+    feats["fund_rate_mom_8h"] = _batch_roll_zscore(
+        feats["fund_rate"].diff(8), 14 * 24
+    ).clip(-6, 6)
+    feats["fund_rate_mom_24h"] = _batch_roll_zscore(
+        feats["fund_rate"].diff(24), 14 * 24
+    ).clip(-6, 6)
+    feats["fund_sign_persistence_3"] = (
+        np.sign(feats["fund_rate"])
+        .rolling(3, min_periods=1)
+        .mean()
+        .clip(-1, 1)
+        .astype(np.float32)
+    )
+    feats["fund_abs_z"] = feats["fund_rate_z_14d"].abs().clip(0, 6).astype(np.float32)
+
+    spot_panel = panel.get("spot_close") if isinstance(panel, dict) else None
+    if not isinstance(spot_panel, pd.DataFrame):
+        spot_panel = close_panel
+    spot_panel = (
+        spot_panel.reindex(index=idx, columns=cols).ffill().bfill().astype(np.float32)
+    )
+    basis_pct = ((close_panel - spot_panel) / (spot_panel + eps)).clip(-0.05, 0.05)
+    feats["basis_pct"] = basis_pct.astype(np.float32)
+    feats["basis_pct_z"] = _batch_roll_zscore(basis_pct, 14 * 24).clip(-6, 6)
+    feats["basis_mom_4h"] = _batch_roll_zscore(basis_pct.diff(4), 14 * 24).clip(-6, 6)
+    feats["basis_fund_div_z"] = (
+        (feats["basis_pct_z"] - feats["fund_rate_z_14d"])
+        .clip(-10, 10)
+        .astype(np.float32)
+    )
+
+    # default orderbook features fallback to neutral zeros when snapshots are missing
+    ob_default = _zero_panel()
+    ob_names = [
+        "ob_microprice_dev_bps",
+        "ob_microprice_ret_1",
+        "ob_imb_l1",
+        "ob_imb_l5",
+        "ob_imb_l10",
+        "ob_imb_l20",
+        "ob_wimb_l10",
+        "ob_wimb_l20",
+        "ob_slope_diff_l10",
+        "ob_bid_depth_decay_l20",
+        "ob_ask_depth_decay_l20",
+        "ob_wall_imb_l20",
+        "ob_gap_up_bps_l10",
+        "ob_gap_dn_bps_l10",
+        "ob_gap_skew_l10",
+        "ob_book_pressure_l10",
+        "ob_imb_chg_1",
+        "ob_imb_accel_4",
+        "ob_spread_bps",
+        "ob_spread_z_24h",
+        "ob_top_liquidity_usd",
+        "ob_depth_usd_l10",
+        "ob_depth_usd_l20",
+        "ob_depth_usd_z_24h",
+        "ob_depth_asym_stability_24h",
+        "ob_snapshot_age_sec",
+        "ob_update_gap_flag",
+        "ob_stale_flag",
+        "ob_mid_close_dislocation_bps",
+        "ob_liquidity_shock_z",
+    ]
+    for name in ob_names:
+        if name not in feats:
+            feats[name] = ob_default.copy()
+
+    feats["ob_gap_skew_l10"] = (
+        feats["ob_gap_up_bps_l10"] - feats["ob_gap_dn_bps_l10"]
+    ).astype(np.float32)
+    feats["ob_book_pressure_l10"] = (
+        feats["ob_wimb_l10"] * feats["ob_microprice_dev_bps"]
+    ).astype(np.float32)
+    feats["ob_imb_chg_1"] = _batch_roll_zscore(feats["ob_imb_l10"].diff(1), 24)
+    feats["ob_imb_accel_4"] = _batch_roll_zscore(
+        feats["ob_imb_l10"].diff(1).diff(4), 24 * 7
+    )
+
+    # cross-asset basket extensions (available-symbol mean only)
+    basket = [s for s in list(cfg.get("market_basket", [])) if s in cols]
+    if basket:
+        mkt_ob_pressure = feats["ob_book_pressure_l10"][basket].mean(axis=1)
+        mkt_funding = feats["fund_rate_z_14d"][basket].mean(axis=1)
+    else:
+        mkt_ob_pressure = pd.Series(0.0, index=idx, dtype=np.float32)
+        mkt_funding = pd.Series(0.0, index=idx, dtype=np.float32)
+    feats["xasset_asset_minus_mkt_ob_pressure"] = (
+        feats["ob_book_pressure_l10"].sub(mkt_ob_pressure, axis=0).astype(np.float32)
+    )
+    feats["xasset_asset_minus_mkt_funding"] = (
+        feats["fund_rate_z_14d"]
+        .sub(mkt_funding, axis=0)
+        .clip(-10, 10)
+        .astype(np.float32)
+    )
+    feats["xasset_btc_ob_pressure"] = _broadcast_series(
+        feats["ob_book_pressure_l10"].get("BTC/USDT", mkt_ob_pressure)
+    )
+    feats["xasset_eth_ob_pressure"] = _broadcast_series(
+        feats["ob_book_pressure_l10"].get("ETH/USDT", mkt_ob_pressure)
+    )
+    feats["xasset_btc_funding_z"] = _broadcast_series(
+        feats["fund_rate_z_14d"].get("BTC/USDT", mkt_funding)
+    )
+    lev_build = (
+        (feats["fund_rate_z_14d"] > 1).astype(np.float32)
+        + (feats["basis_pct_z"] > 1).astype(np.float32)
+        + (feats["ob_imb_l10"] > 0).astype(np.float32)
+    ) / 3.0
+    feats["xasset_leverage_build_score"] = lev_build.astype(np.float32)
+
+    feats["fund_time_to_next"] = _zero_panel()
+    feats["fund_countdown_sin"] = _zero_panel()
+    feats["fund_countdown_cos"] = _zero_panel()
+    feats["fund_dispersion_basket"] = _zero_panel()
+    feats["fund_extreme_share_basket"] = _zero_panel()
+    feats["basis_dispersion_basket"] = _zero_panel()
+    feats["xasset_mkt_spread_bps"] = _zero_panel()
+    feats["xasset_mkt_depth_z"] = _zero_panel()
+    feats["xasset_mkt_ob_stress"] = _zero_panel()
+    feats["xasset_unwind_pressure"] = _zero_panel()
+
+    # extended meta funding/orderbook feature set
+    feats["fund_rate_ffill"] = feats["fund_rate"].astype(np.float32)
+    feats["fund_abs_z_14d"] = (
+        feats["fund_rate_z_14d"].abs().clip(0, 6).astype(np.float32)
+    )
+    feats["fund_carry_24h"] = _batch_roll_zscore(
+        feats["fund_rate"].rolling(24, min_periods=1).sum(), 14 * 24
+    )
+    feats["fund_mom_8h"] = feats["fund_rate_mom_8h"].astype(np.float32)
+    feats["fund_mom_24h"] = feats["fund_rate_mom_24h"].astype(np.float32)
+    feats["fund_sign_persistence_24h"] = (
+        np.sign(feats["fund_rate"])
+        .rolling(24, min_periods=1)
+        .mean()
+        .clip(-1, 1)
+        .astype(np.float32)
+    )
+    feats["fund_extreme_duration_24h"] = (
+        (feats["fund_rate_z_14d"].abs() > 2)
+        .astype(np.float32)
+        .rolling(24, min_periods=1)
+        .mean()
+        .astype(np.float32)
+    )
+    feats["fund_rank_30d"] = (
+        feats["fund_rate"]
+        .rolling(24 * 30, min_periods=24)
+        .rank(pct=True)
+        .clip(0.01, 0.99)
+        .astype(np.float32)
+    )
+    hours_to_next = _broadcast_series(
+        pd.Series(np.mod(8 - (np.arange(len(idx)) % 8), 8), index=idx)
+    )
+    feats["fund_countdown_pressure"] = (
+        (feats["fund_abs_z_14d"] * (1.0 - hours_to_next / 8.0))
+        .clip(0, 6)
+        .astype(np.float32)
+    )
+
+    feats["ob_top_liquidity_usd_z"] = _batch_roll_zscore(
+        np.log1p(close_panel * (feats["ob_imb_l1"].abs() + 1.0)), 24 * 7
+    )
+    feats["ob_depth_usd_l10_z"] = _batch_roll_zscore(
+        np.log1p(close_panel * (feats["ob_imb_l10"].abs() + 1.0)), 24 * 7
+    )
+    feats["ob_depth_usd_l20_z"] = _batch_roll_zscore(
+        np.log1p(close_panel * (feats["ob_imb_l20"].abs() + 1.0)), 24 * 7
+    )
+    feats["ob_depth_ratio_l1_l20"] = (
+        (
+            (feats["ob_top_liquidity_usd_z"] + 10)
+            / (feats["ob_depth_usd_l20_z"] + 10 + eps)
+        )
+        .clip(0, 1)
+        .astype(np.float32)
+    )
+    feats["ob_imb_near_far_delta"] = (
+        (feats["ob_imb_l1"] - feats["ob_imb_l20"]).clip(-2, 2).astype(np.float32)
+    )
+    feats["ob_depth_decay_asym_l20"] = _batch_roll_zscore(
+        feats["ob_bid_depth_decay_l20"] - feats["ob_ask_depth_decay_l20"], 24 * 7
+    )
+    feats["ob_wall_skew_l20"] = feats["ob_wall_imb_l20"].astype(np.float32)
+
+    basket_fund_std = (
+        feats["fund_rate_z_14d"][basket].std(axis=1)
+        if basket
+        else pd.Series(0.0, index=idx)
+    )
+    feats["xasset_fund_dispersion_basket"] = _batch_roll_zscore(
+        _broadcast_series(basket_fund_std), 14 * 24
+    )
+    basket_ext_share = (
+        (feats["fund_rate_z_14d"][basket].abs() > 2).mean(axis=1)
+        if basket
+        else pd.Series(0.0, index=idx)
+    ).astype(np.float32)
+    feats["xasset_fund_extreme_share_basket"] = _broadcast_series(basket_ext_share)
+    feats["xasset_asset_minus_basket_fund_z"] = feats[
+        "xasset_asset_minus_mkt_funding"
+    ].astype(np.float32)
+    feats["xasset_btc_fund_z"] = (
+        feats["xasset_btc_funding_z"].clip(-6, 6).astype(np.float32)
+    )
+    feats["xasset_ob_stress_basket"] = _broadcast_series(
+        (
+            feats["ob_spread_z_24h"].mean(axis=1)
+            - feats["ob_depth_usd_l20_z"].mean(axis=1)
+        ).clip(-10, 10)
+    )
+    feats["xasset_asset_minus_basket_ob_pressure"] = _batch_roll_zscore(
+        feats["xasset_asset_minus_mkt_ob_pressure"], 24 * 7
+    )
+    feats["xasset_ob_liquidity_divergence"] = (
+        feats["ob_depth_usd_l20_z"].sub(
+            feats["ob_depth_usd_l20_z"].mean(axis=1), axis=0
+        )
+    ).astype(np.float32)
+
+    rv24z = _batch_roll_zscore(feats["rv_24h"], 14 * 24)
+    trend_strength = feats.get("trend_strength_percentile", _zero_panel())
+    feats["fund_abs_z_x_ret24h_sign"] = (
+        (feats["fund_abs_z_14d"] * np.sign(feats["ret24h"]).astype(np.float32))
+        .clip(-6, 6)
+        .astype(np.float32)
+    )
+    feats["fund_abs_z_x_rv_24h"] = (
+        (feats["fund_abs_z_14d"] * rv24z).clip(-12, 12).astype(np.float32)
+    )
+    feats["fund_z_x_trend_strength"] = (
+        (feats["fund_rate_z_14d"] * trend_strength).clip(-6, 6).astype(np.float32)
+    )
+    feats["ob_pressure_x_ret4h_sign"] = _batch_roll_zscore(
+        feats["ob_book_pressure_l10"] * np.sign(feats["ret4h"]).astype(np.float32),
+        24 * 7,
+    )
+    feats["ob_spread_z_x_rv_24h"] = (
+        (feats["ob_spread_z_24h"] * rv24z).clip(-12, 12).astype(np.float32)
+    )
+    feats["ob_depth_z_x_rvol_z"] = (
+        (feats["ob_depth_usd_l20_z"] * feats["rvol_z"]).clip(-12, 12).astype(np.float32)
+    )
+
+    wall_primitives = compute_orderbook_wall_primitives(
+        panel.get("orderbook_hourly") if isinstance(panel, dict) else None,
+        close_panel=close_panel,
+        volume_panel=np.exp(v).astype(np.float32),
+        atr_panel=feats.get("atr_pct"),
+        shift_bars=int(cfg.get("microstructure_shift_bars", 1)),
+    )
+    feats.update(wall_primitives)
+    inferred_side_long = (feats.get("ret4h", _zero_panel()) >= 0).astype(np.float32)
+    for band in ("r005", "r010", "r020", "r030", "a05", "a10", "a20", "a30"):
+        bid_to = feats.get(f"_obw_bid_wall_to_vol_{band}", _zero_panel())
+        ask_to = feats.get(f"_obw_ask_wall_to_vol_{band}", _zero_panel())
+        bid_p = feats.get(f"_obw_bid_wall_pressure_{band}", _zero_panel())
+        ask_p = feats.get(f"_obw_ask_wall_pressure_{band}", _zero_panel())
+        bid_d = feats.get(f"_obw_bid_wall_distance_{band}", _zero_panel())
+        ask_d = feats.get(f"_obw_ask_wall_distance_{band}", _zero_panel())
+        bid_path = feats.get(f"_obw_bid_path_depth_to_target_{band}", _zero_panel())
+        ask_path = feats.get(f"_obw_ask_path_depth_to_target_{band}", _zero_panel())
+        blocking_to = np.where(inferred_side_long > 0, ask_to, bid_to)
+        support_to = np.where(inferred_side_long > 0, bid_to, ask_to)
+        blocking_p = np.where(inferred_side_long > 0, ask_p, bid_p)
+        blocking_d = np.where(inferred_side_long > 0, ask_d, bid_d)
+        path_to = np.where(inferred_side_long > 0, ask_path, bid_path)
+        feats[f"obw_blocking_wall_to_vol_{band}"] = pd.DataFrame(
+            blocking_to, index=idx, columns=cols
+        ).astype(np.float32)
+        feats[f"obw_support_wall_to_vol_{band}"] = pd.DataFrame(
+            support_to, index=idx, columns=cols
+        ).astype(np.float32)
+        feats[f"obw_blocking_minus_support_wall_{band}"] = (
+            (
+                (
+                    feats[f"obw_blocking_wall_to_vol_{band}"]
+                    - feats[f"obw_support_wall_to_vol_{band}"]
+                )
+                / (
+                    feats[f"obw_blocking_wall_to_vol_{band}"]
+                    + feats[f"obw_support_wall_to_vol_{band}"]
+                    + eps
+                )
+            )
+            .clip(-1, 1)
+            .astype(np.float32)
+        )
+        feats[f"obw_blocking_wall_pressure_{band}"] = pd.DataFrame(
+            blocking_p, index=idx, columns=cols
+        ).astype(np.float32)
+        feats[f"obw_blocking_wall_distance_{band}"] = (
+            pd.DataFrame(blocking_d, index=idx, columns=cols)
+            .clip(0, 1)
+            .astype(np.float32)
+        )
+        feats[f"obw_path_depth_to_target_{band}"] = pd.DataFrame(
+            path_to, index=idx, columns=cols
+        ).astype(np.float32)
+
+    # Cross-sectional regime / relative-value meta features
+    basket_cols = [c for c in cols if c in cfg.get("market_basket", [])] or list(cols)
+    ret1 = feats.get("ret1h", _zero_panel()).astype(np.float32)
+    ret4 = feats.get("ret4h", _zero_panel()).astype(np.float32)
+    ret24 = feats.get("ret24h", _zero_panel()).astype(np.float32)
+    ret48 = feats.get("ret48h", _zero_panel()).astype(np.float32)
+    rv24 = feats.get("rv_24h", _zero_panel()).astype(np.float32)
+    rvol = feats.get("rvol_z", _zero_panel()).astype(np.float32)
+    volz = feats.get("vol_z", _zero_panel()).astype(np.float32)
+
+    med4 = ret4.median(axis=1)
+    med24 = ret24.median(axis=1)
+    med48 = ret48.median(axis=1)
+    feats["asset_minus_universe_median_ret_4h"] = ret4.sub(med4, axis=0).astype(
+        np.float32
+    )
+    feats["asset_minus_universe_median_ret_24h"] = ret24.sub(med24, axis=0).astype(
+        np.float32
+    )
+    feats["asset_minus_universe_median_ret_48h"] = ret48.sub(med48, axis=0).astype(
+        np.float32
+    )
+    feats["asset_mom_minus_basket_mom_4h"] = ret4.sub(
+        ret4[basket_cols].median(axis=1), axis=0
+    ).astype(np.float32)
+    feats["asset_mom_minus_basket_mom_24h"] = ret24.sub(
+        ret24[basket_cols].median(axis=1), axis=0
+    ).astype(np.float32)
+
+    btc4 = ret4.get("BTC/USDT", med4)
+    eth4 = ret4.get("ETH/USDT", med4)
+    mix4 = 0.5 * (btc4 + eth4)
+    feats["resid_ret_vs_btc_4h"] = ret4.sub(btc4, axis=0).astype(np.float32)
+    feats["resid_ret_vs_eth_4h"] = ret4.sub(eth4, axis=0).astype(np.float32)
+    feats["resid_ret_vs_btceth_4h"] = ret4.sub(mix4, axis=0).astype(np.float32)
+    beta = (
+        ret24.rolling(24, min_periods=8)
+        .corr(pd.concat([btc4] * len(cols), axis=1).set_axis(cols, axis=1))
+        .fillna(0)
+    )
+    feats["beta_adj_resid_ret_24h"] = (
+        ret24 - beta * pd.concat([btc4] * len(cols), axis=1).set_axis(cols, axis=1)
+    ).astype(np.float32)
+
+    feats["rv_rel_universe"] = (rv24 / (rv24.median(axis=1) + 1e-12)).astype(np.float32)
+    feats["vol_surprise_rel_peers"] = (volz.sub(volz.median(axis=1), axis=0)).astype(
+        np.float32
+    )
+    feats["ret_rank_universe"] = ret4.rank(axis=1, pct=True).astype(np.float32)
+    feats["vol_surprise_rank"] = volz.rank(axis=1, pct=True).astype(np.float32)
+    feats["volatility_rank"] = rv24.rank(axis=1, pct=True).astype(np.float32)
+    feats["momentum_percentile"] = ret24.rank(axis=1, pct=True).astype(np.float32)
+
+    disp4 = ret4.std(axis=1).astype(np.float32)
+    disp24 = ret24.std(axis=1).astype(np.float32)
+    feats["cs_dispersion_ret_4h"] = _broadcast_series(disp4)
+    feats["cs_dispersion_ret_24h"] = _broadcast_series(disp24)
+    feats["pct_assets_up_1h"] = _broadcast_series(
+        (ret1 > 0).mean(axis=1).astype(np.float32)
+    )
+    feats["pct_assets_up_4h"] = _broadcast_series(
+        (ret4 > 0).mean(axis=1).astype(np.float32)
+    )
+    feats["pct_assets_up_24h"] = _broadcast_series(
+        (ret24 > 0).mean(axis=1).astype(np.float32)
+    )
+    feats["pct_assets_above_ema_fast"] = _broadcast_series(
+        (feats.get("dist_ema_fast", _zero_panel()) > 0).mean(axis=1).astype(np.float32)
+    )
+    feats["pct_assets_above_vwap"] = _broadcast_series(
+        (feats.get("dist_weekly_vwap", _zero_panel()) > 0)
+        .mean(axis=1)
+        .astype(np.float32)
+    )
+
+    corr_proxy = ret1.rolling(24, min_periods=8).corr(ret1.median(axis=1)).fillna(0.0)
+    feats["avg_pair_corr_24h"] = _broadcast_series(
+        corr_proxy.mean(axis=1).astype(np.float32)
+    )
+    feats["corr_concentration_24h"] = _broadcast_series(
+        corr_proxy.std(axis=1).astype(np.float32)
+    )
+
+    def _pct_rank_series(ser):
+        return ser.rolling(24 * 14, min_periods=24).rank(pct=True).clip(0.01, 0.99)
+
+    btc24 = ret24.get("BTC/USDT", med24)
+    btc48 = ret48.get("BTC/USDT", med48)
+    feats["btc_ret_4h_pct"] = _broadcast_series(_pct_rank_series(btc4))
+    feats["btc_ret_24h_pct"] = _broadcast_series(_pct_rank_series(btc24))
+    feats["btc_ret_48h_pct"] = _broadcast_series(_pct_rank_series(btc48))
+
+    btc_rv = rv24.get("BTC/USDT", rv24.median(axis=1))
+    eth_rv = rv24.get("ETH/USDT", rv24.median(axis=1))
+    feats["btc_rv_ratio_1h24h_pct"] = _broadcast_series(
+        _pct_rank_series((btc_rv / (btc_rv.rolling(24, min_periods=1).mean() + 1e-12)))
+    )
+    feats["btc_rv_ratio_4h24h_pct"] = _broadcast_series(
+        _pct_rank_series(
+            (
+                btc_rv.rolling(4, min_periods=1).mean()
+                / (btc_rv.rolling(24, min_periods=1).mean() + 1e-12)
+            )
+        )
+    )
+    feats["eth_rv_ratio_1h24h_pct"] = _broadcast_series(
+        _pct_rank_series((eth_rv / (eth_rv.rolling(24, min_periods=1).mean() + 1e-12)))
+    )
+    feats["eth_rv_ratio_4h24h_pct"] = _broadcast_series(
+        _pct_rank_series(
+            (
+                eth_rv.rolling(4, min_periods=1).mean()
+                / (eth_rv.rolling(24, min_periods=1).mean() + 1e-12)
+            )
+        )
+    )
+
+    feats["cs_ret_dispersion_4h_pct"] = _broadcast_series(_pct_rank_series(disp4))
+    feats["cs_ret_dispersion_24h_pct"] = _broadcast_series(_pct_rank_series(disp24))
+    feats["asset_ret_vs_btc_4h"] = ret4.sub(btc4, axis=0).astype(np.float32)
+    feats["asset_ret_vs_btc_24h"] = ret24.sub(btc24, axis=0).astype(np.float32)
+    feats["asset_ret_vs_btc_48h"] = ret48.sub(btc48, axis=0).astype(np.float32)
+    feats["asset_ret_vs_universe_4h"] = feats["asset_minus_universe_median_ret_4h"]
+    feats["asset_ret_vs_universe_24h"] = feats["asset_minus_universe_median_ret_24h"]
+    feats["asset_ret_vs_universe_48h"] = feats["asset_minus_universe_median_ret_48h"]
+
+    feats["median_rvol_z"] = _broadcast_series(rvol.median(axis=1).astype(np.float32))
+    feats["pct_assets_high_rvol"] = _broadcast_series(
+        (rvol > 1.0).mean(axis=1).astype(np.float32)
+    )
+    feats["median_spread_bps"] = _broadcast_series(
+        feats.get("ob_spread_bps", _zero_panel()).median(axis=1).astype(np.float32)
+    )
+    feats["pct_assets_wide_spread"] = _broadcast_series(
+        (feats.get("ob_spread_bps", _zero_panel()) > 10.0)
+        .mean(axis=1)
+        .astype(np.float32)
+    )
+    feats["median_volume_z"] = _broadcast_series(volz.median(axis=1).astype(np.float32))
 
     # --- Regime Conditioning Features ---
     if bool(cfg.get("use_regime_features", True)):

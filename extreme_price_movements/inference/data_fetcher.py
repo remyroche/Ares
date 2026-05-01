@@ -12,6 +12,7 @@ import random
 import time
 import traceback
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -93,6 +94,10 @@ class DataFetcher:
         self.exchange = exchange if exchange is not None else make_spot_exchange()
         self.data_root = data_root
         self.ohlcv_store = PartitionedOHLCVStore(data_root, timeframe="1h")
+        self.orderbook_dir = Path(data_root) / "orderbook_hourly"
+        self.funding_dir = Path(data_root) / "funding_hourly"
+        self.orderbook_dir.mkdir(parents=True, exist_ok=True)
+        self.funding_dir.mkdir(parents=True, exist_ok=True)
         self.api_error_counts: Dict[str, int] = {}
         self.dead_letter_symbols: Dict[str, str] = {}
 
@@ -566,6 +571,7 @@ class DataFetcher:
                     if isinstance(df, pd.DataFrame) and not df.empty:
                         out[sym] = df
                         last_data_time = time.monotonic()
+                        self.update_microdata_symbol(sym)
                     else:
                         empty += 1
                     if check_recent_gaps_days > 0 and self.has_recent_gap(
@@ -670,6 +676,7 @@ class DataFetcher:
                 sym = futures[fut]
                 try:
                     out[sym] = fut.result()
+                    self.update_microdata_symbol(sym)
                 except Exception as exc:
                     failed += 1
                     self._record_api_error(sym, exc, context="fetch_incremental")
@@ -695,6 +702,121 @@ class DataFetcher:
             f"failed={failed} gap_backfills={gap_backfills} workers={workers} "
             f"dead_letters={len(self.dead_letter_symbols)} errors={self.api_error_counts}"
         )
+        return out
+
+    def _symbol_file_key(self, symbol: str) -> str:
+        return symbol.replace("/", "_").replace(":", "_")
+
+    def update_microdata_symbol(
+        self, symbol: str, backfill_days: int = 30
+    ) -> Dict[str, bool]:
+        """Incrementally refresh orderbook/funding snapshots for one symbol."""
+        now_h = pd.Timestamp.now(tz="UTC").floor("1h")
+        ob_path = self.orderbook_dir / f"{self._symbol_file_key(symbol)}.parquet"
+        fr_path = self.funding_dir / f"{self._symbol_file_key(symbol)}.parquet"
+        out = {"orderbook": False, "funding": False}
+
+        try:
+            ob = self.exchange.fetch_order_book(symbol, limit=20)
+            bids, asks = ob.get("bids") or [], ob.get("asks") or []
+            if bids and asks:
+                rec = pd.DataFrame(
+                    [
+                        {
+                            "ts": now_h,
+                            "symbol": symbol,
+                            "best_bid": float(bids[0][0]),
+                            "best_ask": float(asks[0][0]),
+                            "mid": 0.5 * (float(bids[0][0]) + float(asks[0][0])),
+                            "bid_qty_1": float(bids[0][1]),
+                            "ask_qty_1": float(asks[0][1]),
+                            "cum_bid_qty_l10": float(sum(x[1] for x in bids[:10])),
+                            "cum_ask_qty_l10": float(sum(x[1] for x in asks[:10])),
+                            "cum_bid_qty_l20": float(sum(x[1] for x in bids[:20])),
+                            "cum_ask_qty_l20": float(sum(x[1] for x in asks[:20])),
+                        }
+                    ]
+                ).set_index("ts")
+                if ob_path.exists():
+                    old = pd.read_parquet(ob_path)
+                    rec = pd.concat([old, rec]).sort_index().groupby(level=0).last()
+                rec.to_parquet(ob_path)
+                out["orderbook"] = True
+        except Exception as exc:
+            self._record_api_error(symbol, exc, context="microdata_orderbook")
+
+        try:
+            fr_df = None
+            if hasattr(self.exchange, "fetch_funding_rate_history"):
+                since_ms = int(
+                    (now_h - pd.Timedelta(days=int(backfill_days))).value // 10**6
+                )
+                hist = self.exchange.fetch_funding_rate_history(
+                    symbol, since=since_ms, limit=1000
+                )
+                if hist:
+                    fr_df = pd.DataFrame(hist)
+            if fr_df is None and hasattr(self.exchange, "fetch_funding_rate"):
+                fr_df = pd.DataFrame([self.exchange.fetch_funding_rate(symbol)])
+            if fr_df is not None and not fr_df.empty:
+                ts_col = (
+                    "timestamp" if "timestamp" in fr_df.columns else "fundingTimestamp"
+                )
+                rate_col = (
+                    "fundingRate" if "fundingRate" in fr_df.columns else "funding_rate"
+                )
+                fr_df["ts"] = pd.to_datetime(
+                    fr_df[ts_col], unit="ms", utc=True
+                ).dt.floor("1h")
+                fr_df = (
+                    fr_df[["ts", rate_col]]
+                    .rename(columns={rate_col: "funding_rate"})
+                    .set_index("ts")
+                )
+                fr_df["funding_rate"] = pd.to_numeric(
+                    fr_df["funding_rate"], errors="coerce"
+                ).astype(np.float32)
+                if fr_path.exists():
+                    old = pd.read_parquet(fr_path)
+                    fr_df = pd.concat([old, fr_df]).sort_index().groupby(level=0).last()
+                fr_df.to_parquet(fr_path)
+                out["funding"] = True
+        except Exception as exc:
+            self._record_api_error(symbol, exc, context="microdata_funding")
+        return out
+
+    def _load_microdata_panel(self, symbols: List[str]) -> Dict[str, pd.DataFrame]:
+        idx_union = None
+        orderbook_mid = {}
+        funding_rate = {}
+        for sym in symbols:
+            key = self._symbol_file_key(sym)
+            obp = self.orderbook_dir / f"{key}.parquet"
+            frp = self.funding_dir / f"{key}.parquet"
+            if obp.exists():
+                ob = pd.read_parquet(obp)
+                ob.index = pd.to_datetime(ob.index, utc=True)
+                orderbook_mid[sym] = pd.to_numeric(ob.get("mid"), errors="coerce")
+                idx_union = ob.index if idx_union is None else idx_union.union(ob.index)
+            if frp.exists():
+                fr = pd.read_parquet(frp)
+                fr.index = pd.to_datetime(fr.index, utc=True)
+                funding_rate[sym] = pd.to_numeric(
+                    fr.get("funding_rate"), errors="coerce"
+                )
+                idx_union = fr.index if idx_union is None else idx_union.union(fr.index)
+        if idx_union is None:
+            return {}
+        idx_union = pd.DatetimeIndex(idx_union).sort_values().unique()
+        out = {}
+        if orderbook_mid:
+            out["orderbook_hourly"] = (
+                pd.DataFrame(orderbook_mid).reindex(idx_union).astype(np.float32)
+            )
+        if funding_rate:
+            out["funding_rate"] = (
+                pd.DataFrame(funding_rate).reindex(idx_union).ffill().astype(np.float32)
+            )
         return out
 
     def get_panel(
@@ -735,7 +857,9 @@ class DataFetcher:
                 tprint(f"Warning: Could not load data for {symbol}: {e}")
 
         # Convert to panel format
-        return get_panel_from_dict(ohlcv_data)
+        panel = get_panel_from_dict(ohlcv_data)
+        panel.update(self._load_microdata_panel(symbols))
+        return panel
 
 
 # Backwards compatibility: Keep existing functions for non-class usage

@@ -42,7 +42,7 @@ EBM_PRESCREEN_BASE_FEATURES = 200
 EBM_PRESCREEN_FEATURE_FRACTION = 0.25
 EBM_TREE_FEATURE_CAP = 1200
 EBM_TREE_TARGET_RANK_CAP = 2000
-EBM_TREE_CORR_PRUNE_THRESHOLD = 0.92
+EBM_TREE_CORR_PRUNE_THRESHOLD = 0.95
 EBM_TREE_LGBM_MAX_FIT_ROWS = 30000
 EBM_TREE_LGBM_EARLY_STOPPING_ROUNDS = 25
 EBM_FINAL_MODEL_COUNT = 5
@@ -999,7 +999,7 @@ def _metric_pack(
 
 
 def _fold_j(m: dict[str, float]) -> float:
-    return 0.6 * m.get("lift15", m.get("lift30", 0.0)) + 0.4 * m.get(
+    return 0.6 * m.get("lift20", m.get("lift15", m.get("lift30", 0.0))) + 0.4 * m.get(
         "auc_correct_15", m.get("auc_correct_30", 0.5)
     )
 
@@ -1054,7 +1054,7 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         )
     )
     stability_vals = np.asarray(
-        [m.get("stability15", m.get("stability30", 0.0)) for m in fold_metrics],
+        [m.get("stability20", m.get("stability15", m.get("stability30", 0.0))) for m in fold_metrics],
         dtype=np.float64,
     )
     j_mean = float(np.mean(j))
@@ -1112,15 +1112,15 @@ def _hpo_objective_from_aggregate(
     if str(objective_mode).lower() == "meta":
         return float(
             0.30 * float(agg.get("precision15", agg.get("hit_rate15", 0.0)))
-            + 0.25 * float(agg.get("lift15", agg.get("lift30", 0.0)))
+            + 0.25 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
             + 0.15 * float(agg.get("precision01", agg.get("precision1", 0.0)))
             + 0.15 * float(agg.get("precision005", 0.0))
             + 0.15 * float(agg.get("ndcg_at_10", 0.0))
-            + 0.15 * float(agg.get("stability15", agg.get("stability30", 0.0)))
+            + 0.15 * float(agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0))))
         )
     return float(
-        0.65 * float(agg.get("lift15", agg.get("lift30", 0.0)))
-        + 0.35 * float(agg.get("stability15", agg.get("stability30", 0.0)))
+        0.65 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
+        + 0.35 * float(agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0))))
     )
 
 
@@ -2589,14 +2589,16 @@ def _select_smallest_within_one_se(history: list[dict[str, Any]]) -> dict[str, A
         for h in history
         if "J_final" in h
         and "J_se" in h
-        and h.get("active_indices") is not None
+        and ("active_indices" not in h or h.get("active_indices") is not None)
         and bool(h.get("candidate_gate_passed", True))
     ]
     if not valid:
         valid = [
             h
             for h in history
-            if "J_final" in h and "J_se" in h and h.get("active_indices") is not None
+            if "J_final" in h
+            and "J_se" in h
+            and ("active_indices" not in h or h.get("active_indices") is not None)
         ]
         if valid:
             tprint(

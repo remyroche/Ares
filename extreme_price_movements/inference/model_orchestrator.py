@@ -651,9 +651,9 @@ class ModelOrchestrator:
                             f"Using policy fallback sizing for {bucket_key}: "
                             f"{fallback_size:.6g}"
                         )
-                    return pd.Series(
-                        fallback_size, index=features.index
-                    ), {"confidence": min(1.0, fallback_size)}
+                    return pd.Series(fallback_size, index=features.index), {
+                        "confidence": min(1.0, fallback_size)
+                    }
                 tprint(f"Warning: No flattened ridge weights found for {bucket_key}")
                 return pd.Series(0.0, index=features.index), {"confidence": 0.0}
 
@@ -714,7 +714,9 @@ class ModelOrchestrator:
                         mix_meta["mix_booster_w"] = mix_booster_w
                         mix_meta["mix_conf_mult"] = mix_conf_mult
 
-        strategy_id_for_regime = bucket_key or self._find_strategy_id_for_bucket(bucket_key)
+        strategy_id_for_regime = bucket_key or self._find_strategy_id_for_bucket(
+            bucket_key
+        )
         adaptor = None
         if isinstance(self.regime_adaptors, dict):
             adaptor = self.regime_adaptors.get(strategy_id_for_regime)
@@ -723,19 +725,28 @@ class ModelOrchestrator:
                     if strategy_id_matches(str(sid), {str(strategy_id_for_regime)}):
                         adaptor = candidate
                         break
-        if isinstance(adaptor, dict) and bool(adaptor.get("enable_regime_adaptor", False)):
+        if isinstance(adaptor, dict) and bool(
+            adaptor.get("enable_regime_adaptor", False)
+        ):
             try:
+                if "symbol" in features.columns:
+                    symbols = features["symbol"].astype(str).to_numpy()
+                else:
+                    symbols = features.index.astype(str).to_numpy()
                 applied = apply_regime_adaptor(
                     features,
                     final_preds,
                     adaptor,
                     timestamps=features.index,
-                    symbols=np.repeat("live", len(features)),
+                    symbols=symbols,
                 )
-                final_preds = np.asarray(applied["deployment_score_rank"], dtype=float)
+                regime_weight = np.asarray(applied["regime_weight"], dtype=float)
+                eligible = np.asarray(applied["eligible"], dtype=bool)
+                final_preds = final_preds * np.clip(regime_weight, 0.75, 1.20)
+                final_preds = np.where(eligible, final_preds, 0.0)
                 mix_meta["regime_adaptor_enabled"] = 1.0
-                mix_meta["regime_eligible_share"] = float(np.mean(applied["eligible"]))
-                mix_meta["regime_weight_mean"] = float(np.mean(applied["regime_weight"]))
+                mix_meta["regime_eligible_share"] = float(np.mean(eligible))
+                mix_meta["regime_weight_mean"] = float(np.mean(regime_weight))
             except Exception as exc:
                 tprint(f"Warning: regime adaptor failed for {bucket_key}: {exc}")
 

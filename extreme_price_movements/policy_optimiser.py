@@ -4908,6 +4908,10 @@ def run_policy_optimisation(
                         ]
                     if "giveback_beta" in p:
                         active_params["giveback_beta"] = p["giveback_beta"]
+                    if "capital_protect_mfe_mult" in p:
+                        active_params["cap_mfe_mult"] = p["capital_protect_mfe_mult"]
+                    if "capital_protect_regression_frac" in p:
+                        active_params["cap_reg_frac"] = p["capital_protect_regression_frac"]
                     if "multiplier_band_min" in p:
                         active_params["mult_min"] = p["multiplier_band_min"]
                     if "multiplier_band_max" in p:

@@ -78,6 +78,14 @@ from extreme_price_movements.pipeline_steps import (
     run_training_step,
 )
 from extreme_price_movements.policy_optimiser import run_policy_optimisation
+from extreme_price_movements.simple_position_sizer import (
+    run_simple_position_sizer_from_artifacts,
+    write_holdout_multi_metrics,
+)
+from extreme_price_movements.slice_plan_store import (
+    apply_stage_usage_limits,
+    load_or_build_slice_plan,
+)
 from extreme_price_movements.strategy_registry import (
     get_strategies,
     strategy_runtime_horizons,
@@ -86,17 +94,7 @@ from extreme_price_movements.universe import (
     build_fetch_universe,
     refresh_margin_universe_daily,
 )
-from extreme_price_movements.simple_position_sizer import (
-    run_simple_position_sizer_from_artifacts,
-    write_holdout_multi_metrics,
-)
 from extreme_price_movements.utils import tprint
-
-from extreme_price_movements.slice_plan_store import (
-    load_or_build_slice_plan,
-    apply_stage_usage_limits,
-)
-
 
 # SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
 # Spot trading fees (default)
@@ -225,8 +223,8 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
             )
         cfg["strategies"] = valid_strategies
         from extreme_price_movements.slice_plan_store import (
-            load_or_build_slice_plan,
             apply_stage_usage_limits,
+            load_or_build_slice_plan,
         )
 
         horizons = sorted(
@@ -271,6 +269,23 @@ def _resolve_ts_sig(cfg: dict, ts_override=None) -> pd.Timestamp:
     else:
         ts_sig = _find_latest_feature_ts(cfg.get("data_root", "data"))
     return ts_sig
+
+
+def _choose_policy_stage_view(materialized: dict) -> Optional[dict]:
+    """Prefer ridge_sizer_fit-backed slices, then backtest-eval fallback."""
+    for key in ("sizer_train", "holdout_strategy_eval"):
+        stage_view = materialized.get(key)
+        if not isinstance(stage_view, dict):
+            continue
+        periods = stage_view.get("allowed_periods") or []
+        symbols = stage_view.get("symbols") or []
+        if periods and symbols:
+            tprint(
+                f"Policy optimiser using slice stage '{key}' "
+                f"(periods={len(periods)}, symbols={len(symbols)})"
+            )
+            return stage_view
+    return None
 
 
 def _find_latest_feature_ts(data_root):
@@ -512,6 +527,97 @@ def run_download(cfg):
         except Exception:
             return False, 1e9
 
+    ob_dir = Path(cfg["data_root"]) / "orderbook_hourly"
+    fr_dir = Path(cfg["data_root"]) / "funding_hourly"
+    ob_dir.mkdir(parents=True, exist_ok=True)
+    fr_dir.mkdir(parents=True, exist_ok=True)
+
+    def _safe_symbol_path(sym: str) -> str:
+        return sym.replace("/", "_").replace(":", "_")
+
+    def _update_symbol_microdata(sym: str) -> tuple[bool, bool]:
+        now_h = pd.Timestamp.now(tz="UTC").floor("1h")
+        sym_key = _safe_symbol_path(sym)
+        ob_path = ob_dir / f"{sym_key}.parquet"
+        fr_path = fr_dir / f"{sym_key}.parquet"
+
+        ob_ok, fr_ok = False, False
+        try:
+            ob = ex.fetch_order_book(sym, limit=20)
+            bids = ob.get("bids") or []
+            asks = ob.get("asks") or []
+            if bids and asks:
+                best_bid, best_ask = float(bids[0][0]), float(asks[0][0])
+                bid_qty_1, ask_qty_1 = float(bids[0][1]), float(asks[0][1])
+                mid = 0.5 * (best_bid + best_ask)
+                rec = pd.DataFrame(
+                    [
+                        {
+                            "ts": now_h,
+                            "best_bid": best_bid,
+                            "best_ask": best_ask,
+                            "mid": mid,
+                            "bid_qty_1": bid_qty_1,
+                            "ask_qty_1": ask_qty_1,
+                            "cum_bid_qty_l10": float(sum(x[1] for x in bids[:10])),
+                            "cum_ask_qty_l10": float(sum(x[1] for x in asks[:10])),
+                            "cum_bid_qty_l20": float(sum(x[1] for x in bids[:20])),
+                            "cum_ask_qty_l20": float(sum(x[1] for x in asks[:20])),
+                            "snapshot_ts": pd.to_datetime(
+                                ob.get("timestamp", now_h.value // 10**6),
+                                unit="ms",
+                                utc=True,
+                            ),
+                        }
+                    ]
+                ).set_index("ts")
+                if ob_path.exists():
+                    old = pd.read_parquet(ob_path)
+                    rec = pd.concat([old, rec]).sort_index().groupby(level=0).last()
+                rec.to_parquet(ob_path)
+                ob_ok = True
+        except Exception:
+            ob_ok = False
+
+        try:
+            fr_df = None
+            if hasattr(ex, "fetch_funding_rate_history"):
+                since_ms_local = int((now_h - pd.Timedelta(days=30)).value // 10**6)
+                hist = ex.fetch_funding_rate_history(
+                    sym, since=since_ms_local, limit=500
+                )
+                if hist:
+                    fr_df = pd.DataFrame(hist)
+            if fr_df is None and hasattr(ex, "fetch_funding_rate"):
+                fr = ex.fetch_funding_rate(sym)
+                fr_df = pd.DataFrame([fr])
+            if fr_df is not None and not fr_df.empty:
+                ts_col = (
+                    "timestamp" if "timestamp" in fr_df.columns else "fundingTimestamp"
+                )
+                rate_col = (
+                    "fundingRate" if "fundingRate" in fr_df.columns else "funding_rate"
+                )
+                fr_df["ts"] = pd.to_datetime(
+                    fr_df[ts_col], unit="ms", utc=True
+                ).dt.floor("1h")
+                fr_df = (
+                    fr_df[["ts", rate_col]]
+                    .rename(columns={rate_col: "funding_rate"})
+                    .set_index("ts")
+                )
+                fr_df["funding_rate"] = pd.to_numeric(
+                    fr_df["funding_rate"], errors="coerce"
+                ).astype(np.float32)
+                if fr_path.exists():
+                    old = pd.read_parquet(fr_path)
+                    fr_df = pd.concat([old, fr_df]).sort_index().groupby(level=0).last()
+                fr_df.to_parquet(fr_path)
+                fr_ok = True
+        except Exception:
+            fr_ok = False
+        return ob_ok, fr_ok
+
     success_1h, fail_1h = 0, 0
     success_15m, fail_15m = 0, 0
     skip_1h, skip_15m = 0, 0
@@ -572,6 +678,7 @@ def run_download(cfg):
                 )
         except Exception:
             pass
+        ob_ok, fr_ok = _update_symbol_microdata(sym)
         _time.sleep(0.1)  # gentle rate limit
 
     tprint(
@@ -1421,11 +1528,9 @@ def run_all(cfg, ts_override=None):
                     cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
                 )
                 materialized = slice_plan.get("materialized_views", {})
-                stage_view = None
-                if "holdout_strategy_eval" in materialized:
+                stage_view = _choose_policy_stage_view(materialized)
+                if stage_view is None and "holdout_strategy_eval" in materialized:
                     stage_view = materialized["holdout_strategy_eval"]
-                elif "utility_policy_optimisation" in materialized:
-                    stage_view = materialized["utility_policy_optimisation"]
                 if stage_view is not None:
                     cfg["_active_stage_view"] = apply_stage_usage_limits(
                         stage_view,
@@ -2112,11 +2217,9 @@ def main():
                     cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
                 )
                 materialized = slice_plan.get("materialized_views", {})
-                stage_view = None
-                if "holdout_strategy_eval" in materialized:
+                stage_view = _choose_policy_stage_view(materialized)
+                if stage_view is None and "holdout_strategy_eval" in materialized:
                     stage_view = materialized["holdout_strategy_eval"]
-                elif "utility_policy_optimisation" in materialized:
-                    stage_view = materialized["utility_policy_optimisation"]
                 if stage_view is not None:
                     cfg["_active_stage_view"] = apply_stage_usage_limits(
                         stage_view,

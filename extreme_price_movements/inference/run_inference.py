@@ -1522,6 +1522,22 @@ def _policy_optimiser_trailing_stop(
         entry_price=entry_price,
         stop_price=stop_price,
     )
+    # Capital protection floor (fixed once triggered; applied before trailing)
+    cap_mfe_mult = float(params.get("capital_protect_mfe_mult", 0.0))
+    cap_reg_frac = float(params.get("capital_protect_regression_frac", 0.45))
+    if cap_mfe_mult > 0.0:
+        sl_mult = max(float(params.get("sl_mult", 1.0) or 1.0), 1e-12)
+        sl_dist_ret = sl_mult * barrier_frac
+        x_dist = cap_mfe_mult * barrier_frac
+        lock_dist = x_dist - cap_reg_frac * (x_dist + sl_dist_ret)
+        if float(mfe) >= x_dist:
+            if str(side).lower() == "long":
+                cap_stop = float(entry_price) * (1.0 + lock_dist)
+                stop_price = max(float(stop_price), cap_stop)
+            else:
+                cap_stop = float(entry_price) * (1.0 - lock_dist)
+                stop_price = min(float(stop_price), cap_stop)
+
     activation = float(params.get("trailing_override_alpha", 0.0)) * barrier_frac
     if float(mfe) <= activation:
         return float(stop_price)

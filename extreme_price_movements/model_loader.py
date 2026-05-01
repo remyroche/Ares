@@ -704,6 +704,22 @@ def load_risk_params(trained_state_path: str) -> dict:
         return {}
 
 
+def _sizer_artifact_dirs(data_root: str, run_id: str) -> list[str]:
+    """Return sizer artifact directories in lookup priority order."""
+    root = os.path.join(data_root, "artifacts", run_id)
+    return [
+        os.path.join(root, "simple_position_sizer"),
+        os.path.join(root, "ridge_sizer"),
+    ]
+
+
+def _first_existing_path(paths: list[str]) -> Optional[str]:
+    for path in paths:
+        if os.path.exists(path):
+            return path
+    return None
+
+
 def load_bucket_params(run_id: str, data_root: str) -> dict:
     """Load optimized bucket parameters (TP/SL, exit policy) from optimise step.
 
@@ -720,10 +736,15 @@ def load_bucket_params(run_id: str, data_root: str) -> dict:
             "strategy_id_or_legacy_bucket": {"tp_mult": 3.0, "sl_mult": 1.0, ...},
         }
     """
-    model_dir = os.path.join(data_root, "artifacts", run_id, "ridge_sizer")
-    bucket_params_path = os.path.join(model_dir, "strategy_params.json")
-    if not os.path.exists(bucket_params_path):
-        tprint("WARNING: Policy params file not found: " f"{bucket_params_path}")
+    model_dirs = _sizer_artifact_dirs(data_root, run_id)
+    bucket_params_path = _first_existing_path(
+        [os.path.join(model_dir, "strategy_params.json") for model_dir in model_dirs]
+    )
+    if bucket_params_path is None:
+        tprint(
+            "WARNING: Policy params file not found in any sizer artifact dir: "
+            f"{model_dirs}"
+        )
         return {}
 
     try:
@@ -744,10 +765,11 @@ def load_bucket_params(run_id: str, data_root: str) -> dict:
 
 
 def load_booster_bundles(run_id: str, data_root: str) -> dict:
-    bundle_dir = os.path.join(
-        data_root, "artifacts", run_id, "ridge_sizer", "booster_bundles"
+    model_dirs = _sizer_artifact_dirs(data_root, run_id)
+    bundle_dir = _first_existing_path(
+        [os.path.join(model_dir, "booster_bundles") for model_dir in model_dirs]
     )
-    if not os.path.isdir(bundle_dir):
+    if bundle_dir is None or not os.path.isdir(bundle_dir):
         return {}
     bundles = {}
     for fname in os.listdir(bundle_dir):
@@ -767,10 +789,11 @@ def load_booster_bundles(run_id: str, data_root: str) -> dict:
 
 
 def load_regime_adaptors(run_id: str, data_root: str) -> dict:
-    adaptor_dir = os.path.join(
-        data_root, "artifacts", run_id, "ridge_sizer", "regime_adaptors"
+    model_dirs = _sizer_artifact_dirs(data_root, run_id)
+    adaptor_dir = _first_existing_path(
+        [os.path.join(model_dir, "regime_adaptors") for model_dir in model_dirs]
     )
-    if not os.path.isdir(adaptor_dir):
+    if adaptor_dir is None or not os.path.isdir(adaptor_dir):
         return {}
     adaptors = {}
     for root, _, files in os.walk(adaptor_dir):

@@ -51,7 +51,7 @@ def simulate_and_score(
 ) -> Dict[str, float]:
     """
     Fully self-contained, vectorized, bar-by-bar simulator.
-    Checks TP/SL pessimistically, computes fees properly per trade.
+    Checks TP/SL pessimistically (worst-case ordering if multiple exits can trigger same bar).
     """
     n_trades, max_bars = f_opens.shape
 
@@ -203,7 +203,8 @@ def simulate_and_score(
         exit_rets[end_idx] = v_s * (b_close / v_ent - 1.0)
 
     # 6. Apply fees and compute net
-    fees = sizes * cost_pct + sizes * (1 + exit_rets) * cost_pct
+    # Fee is charged on trade size notionals only (entry+exit notionals approximated as 2x size).
+    fees = 2.0 * sizes * cost_pct
     gross_gain = sizes * exit_rets
     net_gain = gross_gain - fees
 
@@ -360,18 +361,38 @@ def run_simple_policy_optimisation(
     ds = PartitionedOHLCVStore(data_root, timeframe="15m")
 
     results_json = {}
+    strategy_top5_daily_weekly: list[dict[str, Any]] = []
+
+    def _apply_concurrency_limits(df_in: pd.DataFrame) -> pd.DataFrame:
+        if "timestamp" not in df_in.columns or "symbol" not in df_in.columns:
+            return df_in
+        d = df_in.sort_values(["timestamp", "rank_pct"], ascending=[True, False]).copy()
+        d["timestamp"] = pd.to_datetime(d["timestamp"], errors="coerce")
+        d = d.dropna(subset=["timestamp"])
+        d["exit_time_est"] = d["timestamp"] + pd.Timedelta(hours=24)
+        kept_rows = []
+        active: list[tuple[pd.Timestamp, str]] = []
+        for i, row in d.iterrows():
+            ts = row["timestamp"]
+            sym = str(row["symbol"])
+            active = [(et, s) for (et, s) in active if et > ts]
+            if sum(1 for _, s in active if s == sym) >= 1:
+                continue
+            if len(active) >= 3:
+                continue
+            kept_rows.append(i)
+            active.append((row["exit_time_est"], sym))
+        out = d.loc[kept_rows].drop(columns=["exit_time_est"])
+        logger.info(f"Concurrency filter: kept {len(out)}/{len(d)} rows.")
+        return out
 
     for strategy_id, df in meta_oof.items():
         logger.info(f"Optimising strategy: {strategy_id}")
 
-        if "clf" not in df.columns and "oof_p_tp" in df.columns:
-            df["clf"] = df["oof_p_tp"]
-        elif "clf" not in df.columns and "oof_pred" in df.columns:
-            df["clf"] = df["oof_pred"]
-
+        # Strict source contract: only TBM meta-classifier head predictions are allowed.
         if "clf" not in df.columns:
             logger.warning(
-                f"Strategy {strategy_id} has no valid clf or oof_p_tp score. Skipping."
+                f"Strategy {strategy_id} missing TBM meta-clf column 'clf'. Skipping."
             )
             continue
 
@@ -385,6 +406,7 @@ def run_simple_policy_optimisation(
 
         # Only evaluate on top 5% to speed up and focus on high-conviction trades
         df_top = df[df["rank_pct"] >= 0.95].copy()
+        df_top = _apply_concurrency_limits(df_top)
 
         if "timestamp" in df_top.columns:
             df_top = df_top.sort_values("timestamp").reset_index(drop=True)
@@ -613,7 +635,73 @@ def run_simple_policy_optimisation(
                         f"PnL Std (W / M): {adv_metrics['w_std'] * 100:.2f}% / {adv_metrics['m_std'] * 100:.2f}%"
                     )
 
+        # strategy-level series for IC diagnostics (top5 / val set)
+        val_mask_top5 = df_val["rank_pct"] >= 0.95
+        if np.any(val_mask_top5):
+            mask_idx = np.where(val_mask_top5)[0]
+            f_op, f_hi, f_lo, f_cl = val_paths
+            m = simulate_and_score(
+                df_val[val_mask_top5].copy(),
+                f_op[mask_idx],
+                f_hi[mask_idx],
+                f_lo[mask_idx],
+                f_cl[mask_idx],
+                cost_pct=cost_pct,
+                size_power=best_size_power,
+                **best_params,
+            )
+            tdf = pd.DataFrame(
+                {
+                    "timestamp": pd.to_datetime(df_val[val_mask_top5]["timestamp"]),
+                    "net_gain": m.get("net_gains", np.array([], dtype=np.float32)),
+                }
+            ).dropna()
+            if not tdf.empty:
+                daily = tdf.set_index("timestamp")["net_gain"].resample("D").sum().pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+                weekly = tdf.set_index("timestamp")["net_gain"].resample("W").sum().pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+                strategy_top5_daily_weekly.append(
+                    {"strategy_id": strategy_id, "daily": daily, "weekly": weekly}
+                )
+
+        # per-symbol diagnostics table
+        symbol_rows = []
+        for symbol, g in df_val.groupby("symbol"):
+            row = {"symbol": str(symbol), "n_trades": int(len(g))}
+            for label, thr in [("20", 0.80), ("10", 0.90), ("5", 0.95), ("1", 0.99)]:
+                msk_sym = g["rank_pct"] >= thr
+                msk_all = df_val["rank_pct"] >= thr
+                hit_sym = float(np.mean(g.loc[msk_sym, "label"] > 0)) if np.any(msk_sym) and "label" in g.columns else np.nan
+                hit_all = float(np.mean(df_val.loc[msk_all, "label"] > 0)) if np.any(msk_all) and "label" in df_val.columns else np.nan
+                row[f"hit_rate_ratio_{label}"] = float(hit_sym / max(hit_all, 1e-6)) if np.isfinite(hit_sym) and np.isfinite(hit_all) else np.nan
+                # stability ratio versus others (hit-rate stdev proxy)
+                others = df_val[df_val["symbol"] != symbol]
+                hit_oth = float(np.mean(others.loc[others["rank_pct"] >= thr, "label"] > 0)) if len(others) and "label" in others.columns else np.nan
+                row[f"stability_ratio_{label}"] = float(hit_sym / max(hit_oth, 1e-6)) if np.isfinite(hit_sym) and np.isfinite(hit_oth) else np.nan
+                row[f"net_pnl_per_trade_{label}"] = float(np.mean(g.loc[msk_sym, "tbm_ret"])) if np.any(msk_sym) and "tbm_ret" in g.columns else np.nan
+            symbol_rows.append(row)
+        strategy_results["symbol_diagnostics"] = symbol_rows
+
         results_json[strategy_id] = strategy_results
+
+    # Cross-strategy IC diagnostics table
+    ic_rows = []
+    for item in strategy_top5_daily_weekly:
+        d, w = item["daily"], item["weekly"]
+        idx = d.index.intersection(w.index)
+        ic = float(d.loc[idx].corr(w.loc[idx])) if len(idx) >= 3 else np.nan
+        ic_rows.append(
+            {
+                "strategy_id": item["strategy_id"],
+                "daily_weight": 0.3,
+                "weekly_weight": 0.7,
+                "ic_daily_vs_weekly_pct_change_top5": ic,
+                "n_overlap": int(len(idx)),
+            }
+        )
+    results_json["__cross_strategy_diagnostics__"] = {"ic_table": ic_rows}
+    logger.info("Cross-strategy IC table (daily vs weekly pct-change, top5):")
+    if ic_rows:
+        logger.info(pd.DataFrame(ic_rows).to_string(index=False))
 
     output_path = meta_oof_dir.parent / "policy_optimisation.json"
     with open(output_path, "w") as f:

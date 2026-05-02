@@ -5,6 +5,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ from .en_uncertainty_ebm import (
     fit_uncertainty_state,
     uncertainty_weighted_prediction,
 )
+from .feature_selection_extreme_events import linear_prescreen_enet
 from .ridge_on_lgbm import _compute_weight_distillation
 from .utils import tprint
 
@@ -42,7 +44,7 @@ EBM_PRESCREEN_BASE_FEATURES = 200
 EBM_PRESCREEN_FEATURE_FRACTION = 0.25
 EBM_TREE_FEATURE_CAP = 1200
 EBM_TREE_TARGET_RANK_CAP = 2000
-EBM_TREE_CORR_PRUNE_THRESHOLD = 0.95
+EBM_TREE_CORR_PRUNE_THRESHOLD = 0.96
 EBM_TREE_LGBM_MAX_FIT_ROWS = 30000
 EBM_TREE_LGBM_EARLY_STOPPING_ROUNDS = 25
 EBM_FINAL_MODEL_COUNT = 5
@@ -55,6 +57,13 @@ EBM_HPO_MIN_LEAF_PCT_HI = 0.08
 EBM_STAGE_LGBM_PRUNE_FRACTION = 0.35
 EBM_STAGE_HPO_FRACTION = 0.10
 EBM_STAGE_FIT_OOF_FRACTION = 0.55
+TREE_BLOCKS: tuple[tuple[int, int], ...] = (
+    (0, 10),
+    (10, 25),
+    (25, 50),
+    (50, 100),
+    (100, 200),
+)
 EBM_METRIC_TARGET_FRACTION = float(
     os.environ.get("EPM_EBM_METRIC_TARGET_FRACTION", "0.15")
 )
@@ -486,12 +495,71 @@ class EBMOnLGBMModel:
             else raw_pred.copy()
         ).astype(np.float32)
         weighted = uncertainty_weighted_prediction(raw_pred, features, en_pred)
+        self._log_inference_diagnostics(X, X_df, raw_pred, en_pred, weighted)
         return {
             "raw_ebm_pred": raw_pred.astype(np.float32),
             "en_pred": en_pred.astype(np.float32),
             "uncertainty_weighted_pred": weighted.astype(np.float32),
             "features": features,
         }
+
+    def _log_inference_diagnostics(
+        self,
+        X_in: Any,
+        X_frame: pd.DataFrame,
+        base_pred: np.ndarray,
+        meta_pred: np.ndarray,
+        final_pred: np.ndarray,
+    ) -> None:
+        def _stats(name: str, arr: np.ndarray) -> None:
+            a = np.asarray(arr, dtype=np.float32)
+            if len(a) == 0:
+                return
+            q99 = float(np.quantile(a, 0.99))
+            q95 = float(np.quantile(a, 0.95))
+            q90 = float(np.quantile(a, 0.90))
+            tprint(
+                f"EBM inference [{name}] n={len(a)} mean={float(np.mean(a)):.6f} "
+                f"std={float(np.std(a)):.6f} min={float(np.min(a)):.6f} max={float(np.max(a)):.6f} "
+                f"top1={int(np.sum(a >= q99))} top5={int(np.sum(a >= q95))} top10={int(np.sum(a >= q90))}."
+            )
+
+        _stats("base", base_pred)
+        _stats("meta", meta_pred)
+        _stats("final", final_pred)
+        non_finite = int(np.sum(~np.isfinite(np.asarray(final_pred))))
+        if non_finite > 0:
+            tprint(f"EBM inference: non-fatal issue non_finite_preds={non_finite}.")
+        tprint(
+            f"EBM inference: generated_features={X_frame.shape[1]} rows={X_frame.shape[0]} "
+            f"missing_values_after_frame={int(np.sum(~np.isfinite(X_frame.to_numpy(dtype=np.float32))))}."
+        )
+        if isinstance(X_in, pd.DataFrame) and "symbol" in X_in.columns:
+            symbols = X_in["symbol"].astype(str)
+            fin_mask = np.isfinite(np.asarray(final_pred, dtype=np.float32))
+            kept_symbols = sorted(set(symbols[fin_mask]))
+            tprint(
+                f"EBM inference: symbols passing finite-pred mask={len(kept_symbols)} "
+                f"sample={kept_symbols[:10]}."
+            )
+        ts: pd.Series | None = None
+        if isinstance(X_in, pd.DataFrame):
+            if isinstance(X_in.index, pd.DatetimeIndex):
+                ts = pd.Series(X_in.index, index=X_in.index)
+            elif "timestamp" in X_in.columns:
+                ts = pd.to_datetime(X_in["timestamp"], errors="coerce")
+        if ts is not None and len(ts) == len(final_pred):
+            hour = pd.to_datetime(ts, errors="coerce").dt.floor("h")
+            top10_thr = float(np.quantile(final_pred, 0.90))
+            pos = pd.DataFrame({"hour": hour, "flag": np.asarray(final_pred) >= top10_thr})
+            pos = pos.dropna(subset=["hour"])
+            if not pos.empty:
+                per_hour = pos.groupby("hour")["flag"].sum()
+                tprint(
+                    "EBM inference: concurrent top10 positions/hour "
+                    f"mean={float(per_hour.mean()):.2f} std={float(per_hour.std(ddof=0)):.2f} "
+                    f"max={int(per_hour.max())} current={int(per_hour.iloc[-1])}."
+                )
 
 
 def _compute_soft_tree_features_ebm(
@@ -637,6 +705,7 @@ def _fit_lgbm_tree_feature_model(
     y_eval: np.ndarray | None,
     params: dict[str, Any],
     random_state: int,
+    sample_weight: np.ndarray | None = None,
 ) -> Any:
     import lightgbm as lgb
 
@@ -655,7 +724,10 @@ def _fit_lgbm_tree_feature_model(
             np.asarray(y_eval, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
         )
 
-    train_set = lgb.Dataset(x_train, label=y_train, free_raw_data=False)
+    sw = None
+    if sample_weight is not None:
+        sw = np.nan_to_num(np.asarray(sample_weight, dtype=np.float32), nan=1.0, posinf=1.0, neginf=1.0)
+    train_set = lgb.Dataset(x_train, label=y_train, weight=sw, free_raw_data=False)
     train_kwargs: dict[str, Any] = {}
     if x_eval is not None and y_eval is not None and len(y_eval) > 1:
         train_kwargs["valid_sets"] = [
@@ -696,6 +768,38 @@ def _fit_lgbm_tree_feature_model(
         booster_=booster,
         tree_feature_prefix=f"lgbm_depth{depth}_{min_pct_label}",
     )
+
+
+def _leaf_path_features(tree_struct: dict[str, Any], feature_names: list[str] | None = None) -> dict[int, list[dict[str, Any]]]:
+    out: dict[int, list[dict[str, Any]]] = {}
+    names = feature_names or []
+    def walk(node: dict[str, Any], path: list[dict[str, Any]]) -> None:
+        if "leaf_index" in node:
+            out[int(node["leaf_index"])] = list(path)
+            return
+        if "split_feature" not in node:
+            return
+        fidx = int(node.get("split_feature", -1))
+        fname = names[fidx] if 0 <= fidx < len(names) else f"f{fidx}"
+        thr = float(node.get("threshold", 0.0))
+        left = node.get("left_child")
+        right = node.get("right_child")
+        if left is not None:
+            walk(left, path + [{"split_feature_name": fname, "threshold": thr, "direction": "<="}])
+        if right is not None:
+            walk(right, path + [{"split_feature_name": fname, "threshold": thr, "direction": ">"}])
+    walk(tree_struct, [])
+    return out
+
+
+def _family_signature_from_path(path_features: list[dict[str, Any]]) -> str:
+    toks: set[str] = set()
+    for step in path_features:
+        nm = str(step.get("split_feature_name", "")).lower()
+        for tok in ("price", "volume", "cross_asset", "orderbook_wall", "funding"):
+            if tok in nm:
+                toks.add(tok)
+    return "+".join(sorted(toks)) if toks else "unknown"
 
 
 def _subsample_tree_fit_rows(
@@ -1710,7 +1814,8 @@ def _target_aware_tree_feature_cap(
         X_ev = X_ev[:, keep_dup]
         names = [n for n, k in zip(names, keep_dup) if k]
 
-    score = _tree_feature_target_scores(X, y, classifier, random_state)
+    del y, classifier
+    score = _lgbm_leaf_screen_scores(X, names)
 
     if X.shape[1] > EBM_TREE_TARGET_RANK_CAP:
         keep_rank = np.argsort(score)[-EBM_TREE_TARGET_RANK_CAP:]
@@ -1737,6 +1842,7 @@ def _target_aware_tree_feature_cap(
     Xs = X[sub].astype(np.float32, copy=False)
     corr = np.abs(np.corrcoef(Xs.T))
     corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+    leaf_value_strength = np.mean(np.abs(X), axis=0)
     order = np.argsort(score)[::-1]
     keep_mask = np.ones(X.shape[1], dtype=bool)
     for i in order:
@@ -1746,7 +1852,11 @@ def _target_aware_tree_feature_cap(
         for j in dup:
             if j == i:
                 continue
-            keep_mask[j] = False
+            if leaf_value_strength[j] <= leaf_value_strength[i]:
+                keep_mask[j] = False
+            else:
+                keep_mask[i] = False
+                break
     kept = np.where(keep_mask)[0]
     if len(kept) > cap:
         kept = kept[np.argsort(score[kept])[-cap:]]
@@ -1758,6 +1868,108 @@ def _target_aware_tree_feature_cap(
         f"(thr={EBM_TREE_CORR_PRUNE_THRESHOLD:.2f})."
     )
     return X[:, kept], X_ev[:, kept], [names[i] for i in kept]
+
+
+def max_leaves_for_tree(tree_idx: int) -> int:
+    if tree_idx < 10:
+        return 8
+    if tree_idx < 25:
+        return 6
+    if tree_idx < 50:
+        return 4
+    if tree_idx < 100:
+        return 2
+    if tree_idx < 200:
+        return 1
+    return 0
+
+
+def _parse_tree_leaf_name(name: str) -> tuple[int, int] | None:
+    m = re.search(r"_tree(\d+)_leaf(\d+)_soft$", str(name))
+    if m is None:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def _safe_zscore(x: np.ndarray) -> np.ndarray:
+    vals = np.asarray(x, dtype=np.float64)
+    mask = np.isfinite(vals)
+    if int(np.sum(mask)) < 2:
+        return np.zeros(len(vals), dtype=np.float32)
+    mu = float(np.nanmean(vals[mask]))
+    sd = float(np.nanstd(vals[mask]))
+    out = (vals - mu) / (sd + 1e-8)
+    out[~mask] = 0.0
+    return out.astype(np.float32)
+
+
+def _lgbm_leaf_screen_scores(X: np.ndarray, names: list[str]) -> np.ndarray:
+    n, p = X.shape
+    if p == 0:
+        return np.zeros(0, dtype=np.float32)
+    arr = np.nan_to_num(np.asarray(X, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    model_contrib = np.sum(np.abs(arr), axis=1)
+    ranks = pd.Series(model_contrib).rank(pct=True).to_numpy(dtype=np.float32)
+    top15 = ranks >= 0.85
+    eps = 1e-8
+    support_all = np.mean(np.abs(arr), axis=0)
+    support_top15 = np.mean(np.abs(arr[top15]), axis=0) if np.any(top15) else np.zeros(p, dtype=np.float32)
+    contrib_all = np.mean(np.abs(arr), axis=0)
+    contrib_top15 = np.mean(np.abs(arr[top15]), axis=0) if np.any(top15) else np.zeros(p, dtype=np.float32)
+    share_top15_num = np.sum(np.abs(arr[top15]), axis=0) if np.any(top15) else np.zeros(p, dtype=np.float32)
+    share_top15 = share_top15_num / (float(np.sum(share_top15_num)) + eps)
+    a15 = np.log((support_top15 + eps) / (support_all + eps))
+    c15 = np.log((contrib_top15 + eps) / (contrib_all + eps))
+    raw_score = np.zeros(p, dtype=np.float32)
+    tree_idx = np.array([_parse_tree_leaf_name(nm)[0] if _parse_tree_leaf_name(nm) else -1 for nm in names], dtype=np.int32)
+    for lo, hi in TREE_BLOCKS:
+        mask = (tree_idx >= lo) & (tree_idx < hi)
+        if not np.any(mask):
+            continue
+        z1 = _safe_zscore(share_top15[mask])
+        z2 = _safe_zscore(a15[mask])
+        z3 = _safe_zscore(c15[mask])
+        block_score = 0.50 * z1 + 0.30 * z2 + 0.20 * z3
+        raw_score[mask] = block_score
+    keep = np.zeros(p, dtype=bool)
+    per_tree: dict[int, list[int]] = {}
+    for j, nm in enumerate(names):
+        parsed = _parse_tree_leaf_name(nm)
+        if parsed is None:
+            keep[j] = True
+            continue
+        ti, _ = parsed
+        if ti >= 200:
+            continue
+        per_tree.setdefault(ti, []).append(j)
+    for ti, idxs in per_tree.items():
+        k = max_leaves_for_tree(ti)
+        if k <= 0:
+            continue
+        adjusted = [(ix, float(raw_score[ix] + _diversity_bonus_for_leaf_name(names[ix]))) for ix in idxs]
+        order = [ix for ix, _ in sorted(adjusted, key=lambda x: x[1], reverse=True)[:k]]
+        keep[np.asarray(order, dtype=np.int32)] = True
+    out = np.where(keep, raw_score, -np.inf).astype(np.float32)
+    return out
+
+
+def _select_leaf_names_from_score_matrix(
+    X_score: np.ndarray, names: list[str], cap: int = EBM_TREE_FEATURE_CAP
+) -> list[str]:
+    score = _lgbm_leaf_screen_scores(X_score, names)
+    order = np.argsort(score)[::-1]
+    chosen = [names[i] for i in order if np.isfinite(score[i])]
+    if len(chosen) > cap:
+        chosen = chosen[:cap]
+    return chosen
+
+
+def _diversity_bonus_for_leaf_name(name: str) -> float:
+    parsed = _parse_tree_leaf_name(name)
+    if parsed is None:
+        return 0.0
+    toks = re.findall(r"(cross_asset|funding|orderbook_wall|price|volume)", name.lower())
+    return 0.03 * float(len(set(toks)) >= 2)
 
 
 def _target_scores(X: np.ndarray, y: np.ndarray, cols: list[str]) -> np.ndarray:
@@ -1858,6 +2070,23 @@ def _prescreen_features(
 ) -> np.ndarray:
     active = np.arange(len(feature_names), dtype=np.int32)
     tprint(f"EBMOnLGBM prescreen: start with {len(active)} features.")
+    if len(active) > EBM_MIN_FEATURES:
+        try:
+            keep_names = linear_prescreen_enet(
+                pd.DataFrame(X, columns=feature_names),
+                np.asarray(y, dtype=np.float32),
+                n_select=max(EBM_MIN_FEATURES, int(0.60 * len(active))),
+                multiplier=6,
+                max_drop_frac=0.10,
+                random_state=random_state,
+            )
+            keep_set = set(map(str, keep_names))
+            mask = np.asarray([str(nm) in keep_set for nm in feature_names], dtype=bool)
+            if np.any(mask):
+                active = active[mask]
+                tprint(f"EBMOnLGBM prescreen: EN soft-stage -> {len(active)}")
+        except Exception as exc:
+            tprint(f"EBMOnLGBM prescreen: EN soft-stage skipped ({exc})")
     active = _spearman_target_screen(X, y, active, EBM_PRESCREEN_MAX_FEATURES)
     tprint(f"EBMOnLGBM prescreen: Spearman target -> {len(active)}")
     active = _corr_prune(X, y, active, thr=0.98, random_state=random_state)
@@ -2437,7 +2666,12 @@ def _oof_distilled_sample_weights(
             prev_oof if prev_oof is not None else last_oof,
             is_classifier=classifier,
         )
-        current = base * multiplier
+        fp_avoid = _false_positive_avoidance_weight(
+            y,
+            last_oof,
+            classifier=classifier,
+        )
+        current = base * multiplier * fp_avoid
         current = np.nan_to_num(current, nan=1.0, posinf=1.0, neginf=1.0).astype(
             np.float32
         )
@@ -2451,6 +2685,20 @@ def _oof_distilled_sample_weights(
             f"p90={float(np.percentile(current, 90)):.3f})."
         )
     return current.astype(np.float32), last_oof.astype(np.float32)
+
+
+def _false_positive_avoidance_weight(
+    y_true: np.ndarray,
+    pred: np.ndarray,
+    classifier: bool,
+    threshold: float = 0.80,
+    fp_upweight: float = 1.60,
+) -> np.ndarray:
+    if not classifier:
+        return np.ones(len(pred), dtype=np.float32)
+    yb = np.asarray(y_true, dtype=np.float32)
+    pp = np.asarray(pred, dtype=np.float32)
+    return np.where((yb < 0.5) & (pp >= threshold), fp_upweight, 1.0).astype(np.float32)
 
 
 def _apply_shape_smoothing_policy(
@@ -2836,6 +3084,7 @@ def _augment_with_oof_tree_features(
     fold_models_by_fold: list[list[Any]] = []
     fold_tree_names: list[list[str]] = []
     fold_scales: list[np.ndarray] = []
+    leaf_screen_diagnostics: list[dict[str, Any]] = []
 
     for fold_i, (tr, va) in enumerate(
         splitter.split(np.zeros(len(y_split)), y_split), start=1
@@ -2904,30 +3153,66 @@ def _augment_with_oof_tree_features(
                 "EBMOnLGBM tree features: fitting native LGBM bundle "
                 f"{i + 1}/{len(grid)} on OOF fold {fold_i}/{EBM_CV_SPLITS}."
             )
-            models.append(
-                _fit_lgbm_tree_feature_model(
-                    x_fit_tr,
-                    y_fit_tr,
-                    x_fit_va,
-                    y_fit_va,
-                    params,
-                    random_state + fold_i * 1009 + i,
-                )
+            model_seed = random_state + fold_i * 1009 + i
+            model0 = _fit_lgbm_tree_feature_model(
+                x_fit_tr,
+                y_fit_tr,
+                x_fit_va,
+                y_fit_va,
+                params,
+                model_seed,
             )
-        va_arr, tree_names, scales = _compute_soft_tree_features_ebm(models, x_va, None)
+            pred_oof = np.asarray(model0.booster_.predict(x_fit_tr), dtype=np.float32)
+            distill_w = _compute_weight_distillation(
+                np.asarray(y_fit_tr, dtype=np.float32),
+                pred_oof,
+                None,
+                is_classifier=classifier,
+            )
+            rank = pd.Series(pred_oof).rank(pct=True).to_numpy(dtype=np.float32)
+            top20_mask = rank >= 0.80
+            top_boost = np.where(top20_mask, 1.25, 1.0).astype(np.float32)
+            fp_hard_upweight = np.where(
+                (np.asarray(y_fit_tr, dtype=np.float32) < 0.5) & (pred_oof >= 0.8),
+                1.6,
+                1.0,
+            ).astype(np.float32)
+            model = _fit_lgbm_tree_feature_model(
+                x_fit_tr,
+                y_fit_tr,
+                x_fit_va,
+                y_fit_va,
+                params,
+                model_seed + 17,
+                sample_weight=(distill_w * top_boost * fp_hard_upweight).astype(
+                    np.float32
+                ),
+            )
+            models.append(model)
+        fit_arr, fit_names, scales = _compute_soft_tree_features_ebm(models, x_fit_tr, None)
+        va_arr, tree_names, _ = _compute_soft_tree_features_ebm(models, x_va, scales)
         ev_arr, _, _ = _compute_soft_tree_features_ebm(models, x_ev, scales)
-        va_arr, ev_arr, tree_names = _target_aware_tree_feature_cap(
-            va_arr,
-            ev_arr,
-            tree_names,
-            np.asarray(y_select[va]),
-            classifier=classifier,
-            random_state=random_state + fold_i * 5021,
+        kept_tree_names = _select_leaf_names_from_score_matrix(
+            fit_arr,
+            fit_names,
+            cap=EBM_TREE_FEATURE_CAP,
         )
+        keep_cols = [i for i, n in enumerate(tree_names) if n in set(kept_tree_names)]
+        if keep_cols:
+            va_arr = va_arr[:, keep_cols]
+            ev_arr = ev_arr[:, keep_cols]
+            tree_names = [tree_names[i] for i in keep_cols]
         fold_models.extend(models)
         fold_models_by_fold.append(list(models))
         fold_tree_names.append(tree_names)
         fold_scales.append(np.asarray(scales, dtype=np.float32))
+        leaf_screen_diagnostics.append(
+            {
+                "fold": int(fold_i),
+                "total_leaves_generated": int(len([n for n in tree_names if "_leaf" in n])),
+                "total_leaves_retained": int(len([n for n in tree_names if "_leaf" in n])),
+            }
+        )
         va_tree = pd.DataFrame(va_arr, columns=tree_names, dtype=np.float32)
         va_tree.index = X_select_raw.index[va]
         select_parts.append(va_tree)
@@ -2995,6 +3280,7 @@ def _augment_with_oof_tree_features(
             "tree_feature_scales_by_fold": fold_scales,
             "tree_feature_names": list(select_tree.columns),
             "oof_tree_features": True,
+            "leaf_screen_diagnostics": leaf_screen_diagnostics,
         },
     )
 
@@ -4242,6 +4528,11 @@ def train_ebm_on_lgbm_candidate(
         current_weights = sw_select * _compute_weight_distillation(
             y_select, current_oof, current_oof, is_classifier=classifier
         )
+        current_weights = current_weights * _false_positive_avoidance_weight(
+            y_select,
+            current_oof,
+            classifier=classifier,
+        )
         current_weights = current_weights / max(float(np.mean(current_weights)), 1e-6)
         active = next_active
         if best_seen is None or best_j > float(best_seen["J_final"]):
@@ -4278,6 +4569,11 @@ def train_ebm_on_lgbm_candidate(
         np.asarray(best_seen["oof"], dtype=np.float32),
         np.asarray(best_seen["oof"], dtype=np.float32),
         is_classifier=classifier,
+    )
+    final_weights = final_weights * _false_positive_avoidance_weight(
+        y_select,
+        np.asarray(best_seen["oof"], dtype=np.float32),
+        classifier=classifier,
     )
     final_weights = final_weights / max(float(np.mean(final_weights)), 1e-6)
     mode_name = "classifier" if classifier else "regressor"

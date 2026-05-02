@@ -10,8 +10,13 @@ from extreme_price_movements.ebm_on_lgbm import (
     _metric_pack,
     _post_hpo_manage_features,
     _prescreen_features,
+    _lgbm_leaf_screen_scores,
+    _diversity_bonus_for_leaf_name,
+    _family_signature_from_path,
+    _leaf_path_features,
     _select_smallest_within_one_se,
     _stage_partition_indices,
+    max_leaves_for_tree,
     train_ebm_on_lgbm_candidate,
 )
 
@@ -84,9 +89,80 @@ def test_feature_shape_scores_are_finite_non_negative():
 
 
 def test_hpo_objective_uses_lift_and_stability_weights():
-    score = _hpo_objective_from_aggregate({"lift30": 2.0, "stability30": 0.5})
+    score = _hpo_objective_from_aggregate({"lift20": 2.0, "stability20": 0.5})
 
     assert score == 0.65 * 2.0 + 0.35 * 0.5
+
+
+def test_max_leaves_for_tree_quota_schedule():
+    assert max_leaves_for_tree(0) == 8
+    assert max_leaves_for_tree(10) == 6
+    assert max_leaves_for_tree(25) == 4
+    assert max_leaves_for_tree(50) == 2
+    assert max_leaves_for_tree(100) == 1
+    assert max_leaves_for_tree(200) == 0
+
+
+def test_leaf_scoring_independent_of_realized_labels_or_returns():
+    rng = np.random.default_rng(123)
+    x = np.abs(rng.normal(size=(120, 6))).astype(np.float32)
+    names = [f"lgbm_depth3_minpct0200_tree{i}_leaf0_soft" for i in range(6)]
+    s1 = _lgbm_leaf_screen_scores(x, names)
+    s2 = _lgbm_leaf_screen_scores(x, names)
+    assert np.all(np.isfinite(s1))
+    assert np.allclose(s1, s2)
+
+
+def test_leaf_screen_excludes_tree_index_gte_200():
+    rng = np.random.default_rng(7)
+    x = np.abs(rng.normal(size=(80, 3))).astype(np.float32)
+    names = [
+        "lgbm_depth3_minpct0200_tree0_leaf0_soft",
+        "lgbm_depth3_minpct0200_tree199_leaf0_soft",
+        "lgbm_depth3_minpct0200_tree200_leaf0_soft",
+    ]
+    score = _lgbm_leaf_screen_scores(x, names)
+    assert np.isfinite(score[0])
+    assert np.isfinite(score[1])
+    assert np.isneginf(score[2])
+
+
+def test_mixed_family_leaves_receive_diversity_bonus():
+    base = _diversity_bonus_for_leaf_name("lgbm_tree1_leaf1_soft")
+    mixed = _diversity_bonus_for_leaf_name(
+        "lgbm_cross_asset_funding_tree1_leaf1_soft"
+    )
+    assert mixed > base
+
+
+def test_leaf_path_and_family_metadata():
+    tree = {
+        "split_feature": 0,
+        "threshold": 1.0,
+        "left_child": {"leaf_index": 0, "leaf_value": 0.1},
+        "right_child": {
+            "split_feature": 1,
+            "threshold": 2.0,
+            "left_child": {"leaf_index": 1, "leaf_value": 0.2},
+            "right_child": {"leaf_index": 2, "leaf_value": 0.3},
+        },
+    }
+    path = _leaf_path_features(tree, ["price_x", "cross_asset_funding_signal"])
+    assert 0 in path and 1 in path and 2 in path
+    sig = _family_signature_from_path(path[2])
+    assert isinstance(sig, str)
+    assert sig != ""
+
+
+def test_retained_leaf_count_per_tree_respects_quota():
+    rng = np.random.default_rng(9)
+    x = np.abs(rng.normal(size=(200, 20))).astype(np.float32)
+    names = []
+    for leaf in range(20):
+        names.append(f"lgbm_depth3_minpct0200_tree0_leaf{leaf}_soft")
+    score = _lgbm_leaf_screen_scores(x, names)
+    kept = int(np.sum(np.isfinite(score)))
+    assert kept <= max_leaves_for_tree(0)
 
 
 def test_metric_pack_uses_grouped_stability_when_groups_available():

@@ -688,6 +688,152 @@ def compute_orderbook_wall_primitives(
     return out
 
 
+
+
+def compute_orderbook_snapshot_features(orderbook_panel: Optional[pd.DataFrame], close_panel: pd.DataFrame, volume_panel: pd.DataFrame, atr_panel: Optional[pd.DataFrame], cfg: dict, shift_bars: int = 1) -> dict[str, pd.DataFrame]:
+    """Compute causal per-symbol orderbook features from long-format L2 snapshots.
+
+    Supported schema: timestamp, symbol, side, level, price, qty.
+    """
+    idx = pd.to_datetime(close_panel.index, utc=True)
+    close_panel = close_panel.copy()
+    close_panel.index = idx
+    volume_panel = volume_panel.copy()
+    volume_panel.index = pd.to_datetime(volume_panel.index, utc=True)
+    volume_panel = volume_panel.reindex(index=idx, columns=close_panel.columns)
+    if isinstance(atr_panel, pd.DataFrame):
+        atr_panel = atr_panel.copy()
+        atr_panel.index = pd.to_datetime(atr_panel.index, utc=True)
+        atr_panel = atr_panel.reindex(index=idx, columns=close_panel.columns)
+    idx, cols = close_panel.index, close_panel.columns
+    depth_bps = [int(x) for x in cfg.get("orderbook_depth_bps", [5, 10, 25, 50, 100])]
+    stale_hours = float(cfg.get("orderbook_stale_hours", 2))
+    max_levels = int(cfg.get("orderbook_levels", 20))
+    atr_panel = atr_panel if isinstance(atr_panel, pd.DataFrame) else pd.DataFrame(np.nan, index=idx, columns=cols)
+    qv24 = (close_panel * volume_panel).rolling(24, min_periods=1).mean().shift(1)
+    out: dict[str, pd.DataFrame] = {}
+
+    def blank(v: float = 0.0) -> pd.DataFrame:
+        return pd.DataFrame(v, index=idx, columns=cols, dtype=np.float32)
+
+    keys = ["ob_available", "ob_snapshot_age_min", "ob_stale_flag", "ob_spread_bps", "ob_mid_vs_close_bps", "ob_l1_imbalance", "ob_l5_imbalance", "ob_l10_imbalance", "ob_l20_imbalance", "ob_microprice_premium_bps", "ob_bid_slope_20", "ob_ask_slope_20", "ob_bid_wall_found", "ob_ask_wall_found", "ob_nearest_bid_wall_dist_bps", "ob_nearest_ask_wall_dist_bps", "ob_nearest_bid_wall_dist_atr", "ob_nearest_ask_wall_dist_atr", "ob_nearest_bid_wall_to_qv24", "ob_nearest_ask_wall_to_qv24", "ob_liquidity_void_up_bps", "ob_liquidity_void_down_bps", "ob_max_gap_up_bps", "ob_max_gap_down_bps", "ob_imbalance_delta_1h", "ob_spread_delta_1h", "ob_depth_skew_delta_1h"]
+    for bps in depth_bps:
+        keys += [f"ob_bid_depth_{bps}bps", f"ob_ask_depth_{bps}bps", f"ob_depth_skew_{bps}bps"]
+    for k in keys:
+        out[k] = blank(0.0)
+    out["ob_stale_flag"] = blank(1.0)
+    out["ob_snapshot_age_min"] = blank(float(cfg.get("orderbook_missing_age_sentinel_min", np.nan)))
+
+    if not isinstance(orderbook_panel, pd.DataFrame) or orderbook_panel.empty:
+        return out
+    if not {"timestamp", "symbol", "side", "level", "price", "qty"}.issubset(orderbook_panel.columns):
+        raise ValueError("orderbook_hourly must be long format: timestamp,symbol,side,level,price,qty")
+
+    ob = orderbook_panel.copy()
+    ob["timestamp"] = pd.to_datetime(ob["timestamp"], utc=True, errors="coerce")
+    ob["level"] = pd.to_numeric(ob["level"], errors="coerce").astype("Int64")
+    ob["price"] = pd.to_numeric(ob["price"], errors="coerce")
+    ob["qty"] = pd.to_numeric(ob["qty"], errors="coerce")
+    ob["side"] = ob["side"].astype(str).str.lower()
+    ob = ob.dropna(subset=["timestamp", "symbol", "side", "level", "price", "qty"])
+    ob = ob[(ob["level"] > 0) & (ob["level"] <= max_levels)]
+
+    for sym in cols:
+        ss = ob[ob["symbol"] == sym].sort_values(["timestamp", "side", "level"])
+        if ss.empty:
+            continue
+        recs: list[dict[str, float | pd.Timestamp]] = []
+        for ts, g in ss.groupby("timestamp"):
+            bids = g[g["side"].str.startswith("b")].sort_values("price", ascending=False).head(max_levels)
+            asks = g[g["side"].str.startswith("a")].sort_values("price", ascending=True).head(max_levels)
+            if bids.empty or asks.empty:
+                continue
+            bb, ba = float(bids.iloc[0]["price"]), float(asks.iloc[0]["price"])
+            mid = (bb + ba) * 0.5
+            rec: dict[str, float | pd.Timestamp] = {"timestamp": ts, "_snapshot_ts": ts, "bb": bb, "ba": ba, "mid": mid, "bq1": float(bids.iloc[0]["qty"]), "aq1": float(asks.iloc[0]["qty"])}
+            for lvl in (1, 5, 10, 20):
+                rec[f"bi{lvl}"] = float(bids.head(lvl)["qty"].sum())
+                rec[f"ai{lvl}"] = float(asks.head(lvl)["qty"].sum())
+            for bps in depth_bps:
+                bthr = mid * (1.0 - bps / 1e4)
+                athr = mid * (1.0 + bps / 1e4)
+                rec[f"bd{bps}"] = float((bids.loc[bids["price"] >= bthr, "price"] * bids.loc[bids["price"] >= bthr, "qty"]).sum())
+                rec[f"ad{bps}"] = float((asks.loc[asks["price"] <= athr, "price"] * asks.loc[asks["price"] <= athr, "qty"]).sum())
+            wall_qty_mult = float(cfg.get("orderbook_wall_qty_mult", 3.0))
+            bid_thresh = float(bids["qty"].median()) * wall_qty_mult
+            ask_thresh = float(asks["qty"].median()) * wall_qty_mult
+            bid_cands = bids[bids["qty"] >= bid_thresh]
+            ask_cands = asks[asks["qty"] >= ask_thresh]
+            wall_bid_found = float(not bid_cands.empty)
+            wall_ask_found = float(not ask_cands.empty)
+            wall_bid = bid_cands.iloc[0] if wall_bid_found > 0 else bids.iloc[0]
+            wall_ask = ask_cands.iloc[0] if wall_ask_found > 0 else asks.iloc[0]
+            rec["nwb_bps"] = max((mid - float(wall_bid["price"])) / mid * 1e4, 0.0)
+            rec["nwa_bps"] = max((float(wall_ask["price"]) - mid) / mid * 1e4, 0.0)
+            gaps_ask = np.abs(np.diff(np.sort(asks["price"].to_numpy())))
+            gaps_bid = np.abs(np.diff(np.sort(bids["price"].to_numpy())[::-1]))
+            rec["void_up_bps"] = float(np.nanmax(gaps_ask) / mid * 1e4) if len(gaps_ask) else 0.0
+            rec["void_dn_bps"] = float(np.nanmax(gaps_bid) / mid * 1e4) if len(gaps_bid) else 0.0
+            rec["bid_slope"] = float(np.polyfit(np.arange(1, len(bids) + 1), (bids["price"].to_numpy() / (mid + 1e-9)) * 1e4, 1)[0]) if len(bids) > 1 else 0.0
+            rec["ask_slope"] = float(np.polyfit(np.arange(1, len(asks) + 1), (asks["price"].to_numpy() / (mid + 1e-9)) * 1e4, 1)[0]) if len(asks) > 1 else 0.0
+            rec["wall_bid_notional"] = float(wall_bid["price"] * wall_bid["qty"])
+            rec["wall_ask_notional"] = float(wall_ask["price"] * wall_ask["qty"])
+            rec["wall_bid_found"] = wall_bid_found
+            rec["wall_ask_found"] = wall_ask_found
+            recs.append(rec)
+        if not recs:
+            continue
+        sdf = pd.DataFrame(recs).set_index("timestamp").sort_index()
+        mapped = sdf.reindex(idx, method="ffill")
+        snap_ts = pd.to_datetime(mapped["_snapshot_ts"]).shift(shift_bars)
+        age_min = (pd.Series(idx, index=idx) - snap_ts).dt.total_seconds() / 60.0
+        stale = ((age_min > stale_hours * 60) | age_min.isna()).astype(np.float32)
+        avail = ((~stale.astype(bool)) & mapped["bb"].notna() & mapped["ba"].notna()).astype(np.float32)
+        m = mapped.shift(shift_bars)
+        out["ob_available"][sym] = avail.values
+        out["ob_snapshot_age_min"][sym] = age_min.values
+        out["ob_stale_flag"][sym] = stale.values
+        out["ob_spread_bps"][sym] = (((m["ba"] - m["bb"]) / (m["mid"] + 1e-9)) * 1e4).fillna(0).values
+        out["ob_mid_vs_close_bps"][sym] = (((m["mid"] / (close_panel[sym] + 1e-9)) - 1.0) * 1e4).fillna(0).values
+        out["ob_l1_imbalance"][sym] = ((m["bi1"] - m["ai1"]) / (m["bi1"] + m["ai1"] + 1e-9)).fillna(0).values
+        out["ob_l5_imbalance"][sym] = ((m["bi5"] - m["ai5"]) / (m["bi5"] + m["ai5"] + 1e-9)).fillna(0).values
+        out["ob_l10_imbalance"][sym] = ((m["bi10"] - m["ai10"]) / (m["bi10"] + m["ai10"] + 1e-9)).fillna(0).values
+        out["ob_l20_imbalance"][sym] = ((m["bi20"] - m["ai20"]) / (m["bi20"] + m["ai20"] + 1e-9)).fillna(0).values
+        out["ob_microprice_premium_bps"][sym] = ((((m["ba"] * m["bq1"] + m["bb"] * m["aq1"]) / (m["bq1"] + m["aq1"] + 1e-9)) / (m["mid"] + 1e-9) - 1.0) * 1e4).fillna(0).values
+        for bps in depth_bps:
+            out[f"ob_bid_depth_{bps}bps"][sym] = m[f"bd{bps}"].fillna(0).values
+            out[f"ob_ask_depth_{bps}bps"][sym] = m[f"ad{bps}"].fillna(0).values
+            bd = out[f"ob_bid_depth_{bps}bps"][sym]
+            ad = out[f"ob_ask_depth_{bps}bps"][sym]
+            out[f"ob_depth_skew_{bps}bps"][sym] = ((bd - ad) / (bd + ad + 1e-9)).values
+        out["ob_bid_slope_20"][sym] = m["bid_slope"].fillna(0).values
+        out["ob_ask_slope_20"][sym] = m["ask_slope"].fillna(0).values
+        out["ob_bid_wall_found"][sym] = m["wall_bid_found"].fillna(0).values
+        out["ob_ask_wall_found"][sym] = m["wall_ask_found"].fillna(0).values
+        out["ob_nearest_bid_wall_dist_bps"][sym] = m["nwb_bps"].fillna(0).values
+        out["ob_nearest_ask_wall_dist_bps"][sym] = m["nwa_bps"].fillna(0).values
+        # atr_panel is expected to be ATR as fraction-of-price (atr_pct); convert to bps.
+        atr_bps = (atr_panel[sym] * 1e4)
+        out["ob_nearest_bid_wall_dist_atr"][sym] = (m["nwb_bps"] / (atr_bps + 1e-9)).fillna(0).values
+        out["ob_nearest_ask_wall_dist_atr"][sym] = (m["nwa_bps"] / (atr_bps + 1e-9)).fillna(0).values
+        out["ob_nearest_bid_wall_to_qv24"][sym] = (m["wall_bid_notional"] / (qv24[sym] + 1e-9)).fillna(0).values
+        out["ob_nearest_ask_wall_to_qv24"][sym] = (m["wall_ask_notional"] / (qv24[sym] + 1e-9)).fillna(0).values
+        out["ob_liquidity_void_up_bps"][sym] = m["void_up_bps"].fillna(0).values
+        out["ob_liquidity_void_down_bps"][sym] = m["void_dn_bps"].fillna(0).values
+        out["ob_max_gap_up_bps"][sym] = out["ob_liquidity_void_up_bps"][sym].values
+        out["ob_max_gap_down_bps"][sym] = out["ob_liquidity_void_down_bps"][sym].values
+        valid = out["ob_available"][sym].astype(bool)
+        dependent_ob_features = [k for k in out if k not in {"ob_available", "ob_snapshot_age_min", "ob_stale_flag"}]
+        for feat_name in dependent_ob_features:
+            out[feat_name].loc[~valid, sym] = 0.0
+    avail = out["ob_available"].astype(bool)
+    out["ob_imbalance_delta_1h"] = out["ob_l10_imbalance"].diff(1).where(avail & avail.shift(1), 0.0).astype(np.float32)
+    out["ob_spread_delta_1h"] = out["ob_spread_bps"].diff(1).where(avail & avail.shift(1), 0.0).astype(np.float32)
+    ds_key = f"ob_depth_skew_{depth_bps[min(len(depth_bps) - 1, 2)]}bps"
+    out["ob_depth_skew_delta_1h"] = out[ds_key].diff(1).where(avail & avail.shift(1), 0.0).astype(np.float32)
+    return {k: v.astype(np.float32) for k, v in out.items()}
+
+
 def compute_market_features(panel, basket_syms, trend_sma_hours=24 * 14):
     tprint("Entering function: compute_market_features in features.py")
     c = panel["close"]
@@ -3057,14 +3203,36 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         (feats["ob_depth_usd_l20_z"] * feats["rvol_z"]).clip(-12, 12).astype(np.float32)
     )
 
-    wall_primitives = compute_orderbook_wall_primitives(
-        panel.get("orderbook_hourly") if isinstance(panel, dict) else None,
-        close_panel=close_panel,
-        volume_panel=np.exp(v).astype(np.float32),
-        atr_panel=feats.get("atr_pct"),
-        shift_bars=int(cfg.get("microstructure_shift_bars", 1)),
+    orderbook_feature_keys = set(cfg.get("ORDERBOOK_FEATURE_KEYS", []))
+    if not orderbook_feature_keys and requested_feature_set:
+        orderbook_feature_keys = {k for k in requested_feature_set if k.startswith("ob_")}
+    should_compute_orderbook = bool(cfg.get("enable_orderbook_features", False)) and (
+        not requested_feature_set
+        or bool(orderbook_feature_keys.intersection(requested_feature_set))
     )
-    feats.update(wall_primitives)
+    if should_compute_orderbook:
+        ob_snapshot_feats = compute_orderbook_snapshot_features(
+            panel.get("orderbook_hourly") if isinstance(panel, dict) else None,
+            close_panel=close_panel,
+            volume_panel=panel.get("volume", np.exp(v)).astype(np.float32),
+            atr_panel=feats.get("atr_pct"),
+            cfg=cfg,
+            shift_bars=int(cfg.get("microstructure_shift_bars", 1)),
+        )
+        feats.update(ob_snapshot_feats)
+
+    requested_obw = any(k.startswith("obw_") or k.startswith("_obw_") for k in requested_feature_set)
+    if bool(cfg.get("enable_orderbook_wall_features", True)) and (
+        not requested_feature_set or requested_obw
+    ):
+        wall_primitives = compute_orderbook_wall_primitives(
+            panel.get("orderbook_hourly") if isinstance(panel, dict) else None,
+            close_panel=close_panel,
+            volume_panel=np.exp(v).astype(np.float32),
+            atr_panel=feats.get("atr_pct"),
+            shift_bars=int(cfg.get("microstructure_shift_bars", 1)),
+        )
+        feats.update(wall_primitives)
     inferred_side_long = (feats.get("ret4h", _zero_panel()) >= 0).astype(np.float32)
     for band in ("r005", "r010", "r020", "r030", "a05", "a10", "a20", "a30"):
         bid_to = feats.get(f"_obw_bid_wall_to_vol_{band}", _zero_panel())

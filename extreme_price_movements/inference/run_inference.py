@@ -48,7 +48,6 @@ def _configure_numba_threading_layer() -> None:
 import argparse
 import json
 import os
-import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -77,7 +76,6 @@ from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
@@ -85,7 +83,6 @@ from extreme_price_movements.inference.feature_generator import (
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     load_or_compute_features,
 )
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
@@ -110,7 +107,6 @@ from extreme_price_movements.inference.symbol_mapping import (
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.simple_position_sizer import load_calibration_curves
@@ -1567,8 +1563,6 @@ def _policy_optimiser_trailing_stop(
 
 
 def main():
-    import argparse
-
     _configure_numba_threading_layer()
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true", help="Run live trading mode")
@@ -2087,11 +2081,19 @@ def _evaluate_oco_policy(
         )
         last_bar_ts = bars.index[-1]
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        bars_ts = bars.index.to_numpy()
+        bars_open = bars["open"].to_numpy()
+        bars_high = bars["high"].to_numpy()
+        bars_low = bars["low"].to_numpy()
+        bars_close = bars["close"].to_numpy()
+
+        for bar_ts, b_open, b_high, b_low, b_close in zip(
+            bars_ts, bars_open, bars_high, bars_low, bars_close
+        ):
+            bar_open = float(b_open)
+            bar_high = float(b_high)
+            bar_low = float(b_low)
+            bar_close = float(b_close)
 
             if side == "long":
                 mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))

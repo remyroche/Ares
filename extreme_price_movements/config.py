@@ -25,6 +25,24 @@ PERP_FEATURE_KEYS = [
     _PERP_COLLISION_RENAMES.get(k, k) for k in get_perp_feature_names()
 ]
 
+ORDERBOOK_FEATURE_KEYS = [
+    "ob_available","ob_snapshot_age_min","ob_stale_flag","ob_spread_bps","ob_mid_vs_close_bps",
+    "ob_l1_imbalance","ob_l5_imbalance","ob_l10_imbalance","ob_l20_imbalance","ob_microprice_premium_bps",
+    "ob_bid_depth_5bps","ob_ask_depth_5bps","ob_depth_skew_5bps","ob_bid_depth_10bps","ob_ask_depth_10bps","ob_depth_skew_10bps",
+    "ob_bid_depth_25bps","ob_ask_depth_25bps","ob_depth_skew_25bps","ob_bid_depth_50bps","ob_ask_depth_50bps","ob_depth_skew_50bps",
+    "ob_bid_depth_100bps","ob_ask_depth_100bps","ob_depth_skew_100bps","ob_bid_slope_20","ob_ask_slope_20","ob_bid_wall_found","ob_ask_wall_found",
+    "ob_nearest_bid_wall_dist_bps","ob_nearest_ask_wall_dist_bps","ob_nearest_bid_wall_dist_atr","ob_nearest_ask_wall_dist_atr",
+    "ob_nearest_bid_wall_to_qv24","ob_nearest_ask_wall_to_qv24","ob_liquidity_void_up_bps","ob_liquidity_void_down_bps",
+    "ob_max_gap_up_bps","ob_max_gap_down_bps",
+    "ob_imbalance_delta_1h","ob_spread_delta_1h","ob_depth_skew_delta_1h"
+]
+CROSS_ASSET_FEATURE_KEYS=[
+    "mkt_ret_eq_1h","mkt_ret_eq_4h","mkt_ret_eq_24h","btc_ret_1h","btc_ret_4h","btc_ret_24h","eth_ret_1h","eth_ret_4h","eth_ret_24h",
+    "eth_btc_ret_1h","eth_btc_ret_4h","eth_btc_ret_24h","beta_btc_24h","beta_eth_24h","corr_btc_24h","corr_eth_24h",
+    "ret_resid_btc_1h","ret_resid_btc_4h","ret_resid_eth_1h","ret_resid_eth_4h","symbol_minus_mkt_ret_1h","symbol_minus_mkt_ret_4h","symbol_minus_mkt_ret_24h",
+    "cs_rank_ret_1h","cs_rank_ret_4h","cs_rank_ret_24h","cs_rank_volume_24h","market_breadth_1h","market_breadth_4h","market_dispersion_1h","market_dispersion_4h"
+]
+
 
 FEATURE_KEYS_15M_OHLCV = [
     "clv_t",
@@ -663,6 +681,15 @@ CFG = {
     "reports_root": "reports",
     "hf_data_dir": "15m_ohlcv",
     "use_perps": False,
+    "enable_orderbook_features": True,
+    "orderbook_stale_hours": 2,
+    "orderbook_levels": 20,
+    "orderbook_depth_bps": [5,10,25,50,100],
+    "orderbook_wall_qty_mult": 3.0,
+    "orderbook_missing_age_sentinel_min": float("nan"),
+    "enable_orderbook_wall_features": True,
+    "enable_cross_asset_features": True,
+    "cross_asset_reference_symbols": ["BTC/USDT", "ETH/USDT"],
     "timeframe": "1h",
     "fetch_years": 4,
     "fetch_symbols_M": 9999,
@@ -2887,6 +2914,9 @@ CFG["FUNDING_BASE_FEATURE_KEYS"] = [
     "basis_mom_4h",
     "basis_fund_div_z",
 ]
+CFG["ORDERBOOK_FEATURE_KEYS"] = ORDERBOOK_FEATURE_KEYS
+CFG["CROSS_ASSET_FEATURE_KEYS"] = CROSS_ASSET_FEATURE_KEYS
+CFG["PERP_FEATURE_KEYS"] = PERP_FEATURE_KEYS
 CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = [
     "xasset_btc_ob_pressure",
     "xasset_eth_ob_pressure",

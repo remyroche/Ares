@@ -1,0 +1,217 @@
+-def run_train_meta(cfg, ts_override=None):
++def run_train_meta(cfg, ts_override=None, store=None):
+     """Re-run only meta model training, reusing existing base models."""
+     _maintenance_checkpoint("train_meta:start")
+-    if ts_override:
++    cfg.setdefault("meta_train_q20_regression", False)
++    _meta_hpo_trials_env = os.getenv("EPM_META_HPO_TRIALS")
++    if _meta_hpo_trials_env:
+         try:
+-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+-        except ValueError:
+-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+-    else:
+-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+-        if ts_sig is None:
+-            tprint("ERROR: No feature directories found.")
+-            return
++            cfg["meta_hpo_trials"] = int(_meta_hpo_trials_env)
++            tprint(f"Meta override: meta_hpo_trials={cfg['meta_hpo_trials']}")
++        except Exception as e:
++            tprint(
++                f"WARNING: invalid EPM_META_HPO_TRIALS={_meta_hpo_trials_env!r}: {e}"
++            )
++    _meta_max_strats_env = os.getenv("EPM_META_MAX_STRATEGY_IDS")
++    if _meta_max_strats_env:
++        try:
++            cfg["meta_max_strategy_ids"] = int(_meta_max_strats_env)
++            tprint(
++                f"Meta override: meta_max_strategy_ids={cfg['meta_max_strategy_ids']}"
++            )
++        except Exception as e:
++            tprint(
++                f"WARNING: invalid EPM_META_MAX_STRATEGY_IDS={_meta_max_strats_env!r}: {e}"
++            )
++    _meta_clf_enabled_env = os.getenv("EPM_META_CLF_ENABLED")
++    if _meta_clf_enabled_env is not None:
++        _v = str(_meta_clf_enabled_env).strip().lower()
++        if _v in {"1", "true", "yes", "on"}:
++            cfg["meta_clf_enabled"] = True
++        elif _v in {"0", "false", "no", "off"}:
++            cfg["meta_clf_enabled"] = False
++        else:
++            tprint(
++                f"WARNING: invalid EPM_META_CLF_ENABLED={_meta_clf_enabled_env!r}; "
++                "expected one of 1/0/true/false/yes/no/on/off"
++            )
++        tprint(f"Meta override: meta_clf_enabled={bool(cfg.get('meta_clf_enabled'))}")
++    _meta_q20_reg_env = os.getenv("EPM_META_TRAIN_Q20_REGRESSION")
++    if _meta_q20_reg_env is not None:
++        _v = str(_meta_q20_reg_env).strip().lower()
++        if _v in {"1", "true", "yes", "on"}:
++            cfg["meta_train_q20_regression"] = True
++        elif _v in {"0", "false", "no", "off"}:
++            cfg["meta_train_q20_regression"] = False
++        else:
++            tprint(
++                f"WARNING: invalid EPM_META_TRAIN_Q20_REGRESSION={_meta_q20_reg_env!r}; "
++                "expected one of 1/0/true/false/yes/no/on/off"
++            )
++        tprint(
++            "Meta override: "
++            f"meta_train_q20_regression={bool(cfg.get('meta_train_q20_regression'))}"
++        )
++    ts_sig = _resolve_ts_sig(cfg, ts_override)
++    if ts_sig is None:
++        tprint("ERROR: No feature directories found.")
++        return
+
++    # Slice Plan Injection
++    try:
++        slice_plan = load_or_build_slice_plan(
++            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
++        )
++        if "train_meta" in slice_plan.get("materialized_views", {}):
++            stage_view = slice_plan["materialized_views"]["train_meta"]
++            stage_view = apply_stage_usage_limits(
++                stage_view,
++                max_assets=cfg.get("planned_max_assets"),
++                max_months=cfg.get("planned_max_months"),
++            )
++            cfg["_active_stage_view"] = stage_view
++        else:
++            tprint(f"Warning: stage train_meta not found in materialized_views")
++    except Exception as e:
++        tprint(f"Slice plan loading failed: {e}")
++
++    _load_mask_params_by_mode(cfg)
+     from extreme_price_movements.main import train_daily_meta
+-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+-
++
++    if store is None:
++        store = PartitionedOHLCVStore(
++            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
++        )
++
+     # Verify that before training the meta model, we optimise the TP & SL values.
+     tprint("Optimising TP:SL before meta-training...")
+-    run_risk_opt(cfg, parsed_ts_sig=ts_sig, skip_maintenance=True, store=store)
+-
+-    ex = make_perp_exchange() if bool(cfg.get("use_perps", False)) else make_spot_exchange()
+--
+@@ -745,12 +1593,6 @@ def run_train_meta(cfg, ts_override=None):
+         joblib.dump(result, meta_state_path)
+         tprint(f"Meta model state saved to {meta_state_path} using joblib")
+
+-        # Backward compatibility for existing spot-only workflows that expect
+-        # the legacy CWD artifact.
+-        if not bool(cfg.get("use_perps", False)):
+-            joblib.dump(result, "model_state.pkl")
+-            tprint("Meta model state also saved to legacy model_state.pkl using joblib")
+-
+         # Free memory before moving on
+         del result
+         gc.collect()
+@@ -765,30 +1607,69 @@ def run_train_meta(cfg, ts_override=None):
+     _maintenance_checkpoint("train_meta:end")
+
+
+-def run_optimise(cfg, ts_override=None):
++def run_optimise(cfg, ts_override=None, store=None):
+     _maintenance_checkpoint("optimise:start")
+-    if ts_override:
+-        try:
+-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+-        except ValueError:
+-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+-    else:
+-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+-        if ts_sig is None:
+-            tprint("ERROR: No feature directories found.")
+-            return
++    ts_sig = _resolve_ts_sig(cfg, ts_override)
++    _load_mask_params_by_mode(cfg)
++    if ts_sig is None:
++        tprint("ERROR: No feature directories found.")
++        return False
++
++    # Slice Plan Injection
++    try:
++        slice_plan = load_or_build_slice_plan(
++            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
++        )
++        if "utility_policy_optimisation" in slice_plan.get("materialized_views", {}):
++            stage_view = slice_plan["materialized_views"]["utility_policy_optimisation"]
++            stage_view = apply_stage_usage_limits(
++                stage_view,
++                max_assets=cfg.get("planned_max_assets"),
++                max_months=cfg.get("planned_max_months"),
++            )
++            cfg["_active_stage_view"] = stage_view
++        else:
++            tprint(
++                f"Warning: stage utility_policy_optimisation not found in materialized_views"
++            )
++    except Exception as e:
++        tprint(f"Slice plan loading failed: {e}")
+
+     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
++    if bool(cfg.get("optimise_use_ridge_oof", False)):
++        try:
++            run_optimise_from_ridge_oof(
++                run_id=run_id,
++                data_root=cfg["data_root"],
++                fee_roundtrip=float(cfg.get("optimiser_fee_pct", 0.003)),
++                cooldown_hours=float(cfg.get("optimise_ridge_oof_cooldown_hours", 0.0)),
++            )
++        except Exception as exc:
++            tprint(f"ERROR: Ridge OOF optimise failed: {exc}")
++            return False
++        _maintenance_checkpoint("optimise:end")
++        return True
++
+     import os
+-    state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
+-    backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
++
++    state_file = os.path.join(
++        cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl"
++    )
++    backtest_file = os.path.join(
++        cfg["data_root"], "artifacts", run_id, "backtest_results.csv"
++    )
+     if not os.path.exists(backtest_file):
+-        tprint("Backtest results not found. Running backtest to generate trade data for optimiser...")
+-        run_backtest(cfg, ts_override=ts_override)
++        tprint(
++            "Backtest results not found. Running backtest to generate trade data for optimiser..."
++        )
++        bt_cfg = dict(cfg)
++        bt_cfg["offline_backtest_skip_universe_refresh"] = True
++        run_backtest(bt_cfg, ts_override=ts_override, store=store)
+         if not os.path.exists(backtest_file):
+-            tprint(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
+-            return
++            tprint(
++                f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise."
++            )
++            return False
+     trades = pd.read_csv(backtest_file, low_memory=False)
+     trades = _downcast_numeric_frame(trades)
+     trades.attrs["threaded_exit_stream"] = True  # Inject attribute stripped by CSV save
+@@ -804,29 +1685,39 @@ def run_optimise(cfg, ts_override=None):
+     else:
+         atr_15m = pd.Series(0.01, index=trades.index)
+
+-    params_path = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "bucket_params.json")
++    params_path = os.path.join(
++        cfg["data_root"], "artifacts", run_id, "models", "strategy_params.json"
++    )
+     run_optimise_step(
+-        trades=trades, atr_15m=atr_15m, output_path=params_path,
++        trades=trades,
++        atr_15m=atr_15m,
++        output_path=params_path,

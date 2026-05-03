@@ -1,0 +1,96 @@
+ def run_train_meta(cfg, ts_override=None, store=None):
+     """Re-run only meta model training, reusing existing base models."""
+     _maintenance_checkpoint("train_meta:start")
++    cfg.setdefault("meta_train_q20_regression", False)
++    _meta_hpo_trials_env = os.getenv("EPM_META_HPO_TRIALS")
++    if _meta_hpo_trials_env:
++        try:
++            cfg["meta_hpo_trials"] = int(_meta_hpo_trials_env)
++            tprint(f"Meta override: meta_hpo_trials={cfg['meta_hpo_trials']}")
++        except Exception as e:
++            tprint(
++                f"WARNING: invalid EPM_META_HPO_TRIALS={_meta_hpo_trials_env!r}: {e}"
++            )
++    _meta_max_strats_env = os.getenv("EPM_META_MAX_STRATEGY_IDS")
++    if _meta_max_strats_env:
++        try:
++            cfg["meta_max_strategy_ids"] = int(_meta_max_strats_env)
++            tprint(
++                f"Meta override: meta_max_strategy_ids={cfg['meta_max_strategy_ids']}"
++            )
++        except Exception as e:
++            tprint(
++                f"WARNING: invalid EPM_META_MAX_STRATEGY_IDS={_meta_max_strats_env!r}: {e}"
++            )
++    _meta_clf_enabled_env = os.getenv("EPM_META_CLF_ENABLED")
++    if _meta_clf_enabled_env is not None:
++        _v = str(_meta_clf_enabled_env).strip().lower()
++        if _v in {"1", "true", "yes", "on"}:
++            cfg["meta_clf_enabled"] = True
++        elif _v in {"0", "false", "no", "off"}:
++            cfg["meta_clf_enabled"] = False
++        else:
++            tprint(
++                f"WARNING: invalid EPM_META_CLF_ENABLED={_meta_clf_enabled_env!r}; "
++                "expected one of 1/0/true/false/yes/no/on/off"
++            )
++        tprint(f"Meta override: meta_clf_enabled={bool(cfg.get('meta_clf_enabled'))}")
++    _meta_q20_reg_env = os.getenv("EPM_META_TRAIN_Q20_REGRESSION")
++    if _meta_q20_reg_env is not None:
++        _v = str(_meta_q20_reg_env).strip().lower()
++        if _v in {"1", "true", "yes", "on"}:
++            cfg["meta_train_q20_regression"] = True
++        elif _v in {"0", "false", "no", "off"}:
++            cfg["meta_train_q20_regression"] = False
++        else:
++            tprint(
++                f"WARNING: invalid EPM_META_TRAIN_Q20_REGRESSION={_meta_q20_reg_env!r}; "
++                "expected one of 1/0/true/false/yes/no/on/off"
++            )
++        tprint(
++            "Meta override: "
++            f"meta_train_q20_regression={bool(cfg.get('meta_train_q20_regression'))}"
++        )
+     ts_sig = _resolve_ts_sig(cfg, ts_override)
+     if ts_sig is None:
+         tprint("ERROR: No feature directories found.")
+@@ -1878,7 +1993,6 @@ def main():
+     cfg["planned_max_assets"] = args.planned_max_assets
+     cfg["planned_max_months"] = args.planned_max_months
+     cfg["refresh_slice_plan"] = bool(args.refresh_slice_plan)
+-
+     if args.mode == "download":
+         run_download(cfg)
+     elif args.mode == "labels":
+@@ -1917,6 +2031,23 @@ def main():
+         ts_sig = _resolve_ts_sig(cfg, args.ts_override)
+         if ts_sig:
+             run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
++            try:
++                slice_plan = load_or_build_slice_plan(
++                    cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
++                )
++                if "utility_policy_optimisation" in slice_plan.get(
++                    "materialized_views", {}
++                ):
++                    stage_view = slice_plan["materialized_views"][
++                        "utility_policy_optimisation"
++                    ]
++                    cfg["_active_stage_view"] = apply_stage_usage_limits(
++                        stage_view,
++                        max_assets=cfg.get("planned_max_assets"),
++                        max_months=cfg.get("planned_max_months"),
++                    )
++            except Exception as _slice_exc:
++                tprint(f"Policy optimiser slice plan loading failed: {_slice_exc}")
+             tprint("STEP: POLICY OPTIMISER START (policy_optimiser.py)")
+             run_policy_optimisation(
+                 data_root=cfg["data_root"],
+@@ -1926,6 +2057,7 @@ def main():
+                     cfg.get("ridge_cost_pct", cfg.get("fee_bps", 50.0) / 10000.0)
+                 ),
+                 use_offset_optimiser=bool(cfg.get("run_limit_offset_optimiser", False)),
++                stage_view=cfg.get("_active_stage_view"),
+             )
+         else:
+             tprint("ERROR: No feature directories found.")

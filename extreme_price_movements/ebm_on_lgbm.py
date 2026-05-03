@@ -2692,13 +2692,25 @@ def _false_positive_avoidance_weight(
     pred: np.ndarray,
     classifier: bool,
     threshold: float = 0.80,
+    positive_recall_top_frac_multiplier: float = 1.5,
     fp_upweight: float = 1.60,
+    top_positive_upweight: float = 1.25,
 ) -> np.ndarray:
     if not classifier:
         return np.ones(len(pred), dtype=np.float32)
     yb = np.asarray(y_true, dtype=np.float32)
     pp = np.asarray(pred, dtype=np.float32)
-    return np.where((yb < 0.5) & (pp >= threshold), fp_upweight, 1.0).astype(np.float32)
+    w = np.where((yb < 0.5) & (pp >= threshold), fp_upweight, 1.0).astype(np.float32)
+    # Balance false-positive suppression with top-rank positive recall:
+    # if top-x% is penalized for negatives, reinforce positives in top-(1.5*x)%.
+    x = float(np.clip(1.0 - threshold, 1e-3, 0.5))
+    pos_top_frac = float(
+        np.clip(positive_recall_top_frac_multiplier * x, x, 0.95)
+    )
+    pos_cut = float(np.quantile(pp, 1.0 - pos_top_frac))
+    pos_top_mask = (yb >= 0.5) & (pp >= pos_cut)
+    w[pos_top_mask] = np.maximum(w[pos_top_mask], top_positive_upweight)
+    return w.astype(np.float32)
 
 
 def _apply_shape_smoothing_policy(

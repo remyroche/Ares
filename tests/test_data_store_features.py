@@ -3,8 +3,12 @@ import numpy as np
 
 from extreme_price_movements.data_store import (
     _ensure_feature_frame_index,
+    _build_hourly_orderbook_proxy_from_trades,
+    _compute_missing_hourly_ranges,
+    _resolve_perp_symbol,
     _write_feature_metadata,
     append_symbol_features,
+    fetch_hourly_orderbook_proxy,
     load_features_selected,
     PartitionedOHLCVStore,
     save_features,
@@ -27,6 +31,117 @@ from extreme_price_movements.features import (
     compute_market_features,
 )
 from extreme_price_movements.universe import _normalize_symbol
+
+
+def test_resolve_perp_symbol_falls_back_from_spot_usdc_to_usdt_perp():
+    class _Exchange:
+        markets = {"ZK/USDT:USDT": {}}
+        symbols = ["ZK/USDT:USDT"]
+
+    assert _resolve_perp_symbol(_Exchange(), "ZK/USDC") == "ZK/USDT:USDT"
+
+
+def test_compute_missing_hourly_ranges_detects_prefix_suffix_and_internal_gaps():
+    existing = pd.DatetimeIndex(
+        [
+            "2026-01-01 01:00:00+00:00",
+            "2026-01-01 03:00:00+00:00",
+        ]
+    )
+
+    ranges = _compute_missing_hourly_ranges(
+        existing,
+        pd.Timestamp("2026-01-01 00:00:00", tz="UTC"),
+        pd.Timestamp("2026-01-01 04:00:00", tz="UTC"),
+    )
+
+    assert ranges == [
+        (
+            pd.Timestamp("2026-01-01 00:00:00", tz="UTC"),
+            pd.Timestamp("2026-01-01 01:00:00", tz="UTC"),
+        ),
+        (
+            pd.Timestamp("2026-01-01 02:00:00", tz="UTC"),
+            pd.Timestamp("2026-01-01 03:00:00", tz="UTC"),
+        ),
+        (
+            pd.Timestamp("2026-01-01 04:00:00", tz="UTC"),
+            pd.Timestamp("2026-01-01 05:00:00", tz="UTC"),
+        ),
+    ]
+
+
+def test_build_hourly_orderbook_proxy_from_trades_is_causal_to_hour_boundary():
+    idx = pd.to_datetime(
+        [
+            "2026-01-01 01:10:00+00:00",
+            "2026-01-01 01:40:00+00:00",
+            "2026-01-01 02:20:00+00:00",
+            "2026-01-01 02:50:00+00:00",
+        ],
+        utc=True,
+    )
+    trades = pd.DataFrame(
+        {
+            "price": np.array([100.0, 101.0, 102.0, 103.0], dtype=np.float32),
+            "amount": np.array([1.0, 2.0, 3.0, 1.0], dtype=np.float32),
+            "side_sign": np.array([1.0, -1.0, 1.0, 1.0], dtype=np.float32),
+        },
+        index=idx,
+    )
+
+    out = _build_hourly_orderbook_proxy_from_trades(
+        trades,
+        pd.Timestamp("2026-01-01 02:00:00", tz="UTC"),
+        pd.Timestamp("2026-01-01 03:00:00", tz="UTC"),
+    )
+
+    assert list(out.index) == [
+        pd.Timestamp("2026-01-01 02:00:00", tz="UTC"),
+        pd.Timestamp("2026-01-01 03:00:00", tz="UTC"),
+    ]
+    assert np.isclose(out.loc[pd.Timestamp("2026-01-01 02:00:00", tz="UTC"), "mid"], 101.0)
+    assert np.isclose(out.loc[pd.Timestamp("2026-01-01 03:00:00", tz="UTC"), "mid"], 103.0)
+    assert (
+        out.loc[pd.Timestamp("2026-01-01 03:00:00", tz="UTC"), "cum_bid_qty_l20"]
+        > out.loc[pd.Timestamp("2026-01-01 03:00:00", tz="UTC"), "cum_ask_qty_l20"]
+    )
+
+
+def test_fetch_hourly_orderbook_proxy_prefers_public_archive_for_history(monkeypatch):
+    proxy = pd.DataFrame(
+        {
+            "best_bid": np.array([100.0], dtype=np.float32),
+            "best_ask": np.array([100.2], dtype=np.float32),
+            "mid": np.array([101.0], dtype=np.float32),
+        },
+        index=pd.to_datetime(["2026-01-01 01:00:00+00:00"], utc=True),
+    )
+    rest_calls = []
+
+    monkeypatch.setattr(
+        "extreme_price_movements.data_store._fetch_orderbook_proxy_from_public_klines",
+        lambda symbol, since_ms, until_ms: proxy,
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.data_store._fetch_trade_history_paged",
+        lambda exchange, symbol, since_ms, until_ms, limit=1000: rest_calls.append(
+            (since_ms, until_ms)
+        )
+        or pd.DataFrame(),
+    )
+
+    out = fetch_hourly_orderbook_proxy(
+        object(),
+        "A/USDC",
+        int(pd.Timestamp("2026-01-01 01:00:00", tz="UTC").timestamp() * 1000),
+        int(pd.Timestamp("2026-01-01 02:00:00", tz="UTC").timestamp() * 1000),
+    )
+
+    assert not out.empty
+    assert out.index[0] == pd.Timestamp("2026-01-01 01:00:00", tz="UTC")
+    assert np.isclose(out.iloc[0]["mid"], 101.0)
+    assert rest_calls == []
 
 
 def test_ensure_feature_frame_index_restores_ts_column():

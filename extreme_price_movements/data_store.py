@@ -2,6 +2,7 @@ import os
 import time
 import json
 import concurrent.futures
+import tempfile
 import numpy as np
 import pandas as pd
 import ccxt
@@ -9,6 +10,8 @@ import gc as _gc
 import glob
 import shutil
 import fcntl
+import requests
+import zipfile
 from typing import Callable, Union, Optional, Tuple, Dict, List, Set, Any
 from datetime import timezone
 import pyarrow.parquet as pq
@@ -26,6 +29,7 @@ SPOT_QUOTE_SUFFIXES = (
     "BTC",
     "ETH",
 )
+BINANCE_PUBLIC_DATA_BASE = "https://data.binance.vision/data/spot"
 
 
 def _normalize_spot_symbol(symbol: str) -> str:
@@ -329,11 +333,20 @@ def _resolve_perp_symbol(exchange, spot_symbol: str) -> Optional[str]:
     if not spot_symbol or "/" not in spot_symbol:
         return None
     base, quote = spot_symbol.split("/", 1)
-    candidates = [
-        f"{base}/{quote}:{quote}",
-        f"{base}/{quote}",
-        f"{base}{quote}",
-    ]
+    preferred_quotes = [quote, "USDT", "USDC", "BUSD"]
+    seen_quotes = set()
+    candidates = []
+    for perp_quote in preferred_quotes:
+        if not perp_quote or perp_quote in seen_quotes:
+            continue
+        seen_quotes.add(perp_quote)
+        candidates.extend(
+            [
+                f"{base}/{perp_quote}:{perp_quote}",
+                f"{base}/{perp_quote}",
+                f"{base}{perp_quote}",
+            ]
+        )
     for cand in candidates:
         if cand in getattr(exchange, "markets", {}):
             return cand
@@ -444,6 +457,644 @@ def _fetch_ccxt_history_paged(
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True).dt.floor("h")
     out = df.groupby("ts")["value"].last().sort_index().astype(np.float32)
     return out
+
+
+def _coerce_trade_side_sign(item: dict) -> float:
+    info = item.get("info") if isinstance(item, dict) else None
+    if isinstance(info, dict) and "m" in info:
+        maker_flag = str(info.get("m")).strip().lower()
+        if maker_flag in {"true", "1"}:
+            return -1.0
+        if maker_flag in {"false", "0"}:
+            return 1.0
+    side = str(item.get("side", "")).strip().lower() if isinstance(item, dict) else ""
+    if side == "buy":
+        return 1.0
+    if side == "sell":
+        return -1.0
+    return 0.0
+
+
+def _fetch_trade_history_paged(
+    exchange,
+    symbol: str,
+    since_ms: int,
+    until_ms: int,
+    *,
+    limit: int = 1000,
+) -> pd.DataFrame:
+    cursor = int(since_ms)
+    rows: list[tuple[int, float, float, float]] = []
+
+    while cursor < int(until_ms):
+        try:
+            batch = exchange.fetch_trades(symbol, since=cursor, limit=limit)
+        except Exception as exc:
+            tprint(f"WARN trade history fetch failed for {symbol}: {exc}")
+            break
+
+        if not batch:
+            break
+
+        max_seen = cursor
+        for item in batch:
+            ts = _extract_timestamp_ms(item)
+            if ts is None:
+                continue
+            max_seen = max(max_seen, int(ts))
+            if ts < since_ms or ts >= until_ms:
+                continue
+            price = _extract_float(item, ["price", "p"])
+            amount = _extract_float(item, ["amount", "qty", "q"])
+            if price is None or amount is None:
+                continue
+            if not np.isfinite(price) or not np.isfinite(amount) or amount <= 0.0:
+                continue
+            rows.append((int(ts), float(price), float(amount), _coerce_trade_side_sign(item)))
+
+        if max_seen <= cursor:
+            break
+        cursor = max_seen + 1
+        time.sleep(float(getattr(exchange, "rateLimit", 100)) / 1000.0)
+        if len(batch) < limit and cursor >= until_ms:
+            break
+
+    if not rows:
+        return pd.DataFrame(
+            columns=["price", "amount", "side_sign"]
+        ).set_index(pd.DatetimeIndex([], tz="UTC", name="ts"))
+
+    df = pd.DataFrame(rows, columns=["ts", "price", "amount", "side_sign"])
+    df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+    df = df.drop_duplicates(subset=["ts", "price", "amount", "side_sign"])
+    df = df.set_index("ts").sort_index()
+    df["price"] = pd.to_numeric(df["price"], errors="coerce").astype(np.float32)
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce").astype(np.float32)
+    df["side_sign"] = pd.to_numeric(df["side_sign"], errors="coerce").astype(np.float32)
+    return df
+
+
+def _iter_binance_public_aggtrade_archives(
+    symbol: str,
+    start_ts: pd.Timestamp,
+    end_ts: pd.Timestamp,
+) -> list[tuple[str, pd.Timestamp]]:
+    compact = _normalize_spot_symbol(symbol).replace("/", "")
+    start = pd.Timestamp(start_ts)
+    end = pd.Timestamp(end_ts)
+    if start.tzinfo is None:
+        start = start.tz_localize("UTC")
+    else:
+        start = start.tz_convert("UTC")
+    if end.tzinfo is None:
+        end = end.tz_localize("UTC")
+    else:
+        end = end.tz_convert("UTC")
+    start = start.floor("D")
+    end = end.floor("D")
+    current_month = pd.Timestamp.utcnow()
+    if current_month.tzinfo is None:
+        current_month = current_month.tz_localize("UTC")
+    else:
+        current_month = current_month.tz_convert("UTC")
+    current_month = current_month.floor("D").replace(day=1)
+    month_cursor = start.replace(day=1)
+    specs: list[tuple[str, pd.Timestamp]] = []
+    while month_cursor <= end:
+        month_end = (month_cursor + pd.offsets.MonthBegin(1)) - pd.Timedelta(days=1)
+        if month_cursor < current_month and month_end <= end:
+            specs.append(("monthly", month_cursor))
+        else:
+            day_cursor = max(start, month_cursor)
+            day_stop = min(end, month_end)
+            while day_cursor <= day_stop:
+                specs.append(("daily", day_cursor))
+                day_cursor += pd.Timedelta(days=1)
+        month_cursor = (month_cursor + pd.offsets.MonthBegin(1)).normalize()
+    out = []
+    for granularity, stamp in specs:
+        out.append((granularity, pd.Timestamp(stamp), compact))
+    return out
+
+
+def _binance_public_aggtrade_url(
+    compact_symbol: str,
+    granularity: str,
+    stamp: pd.Timestamp,
+) -> str:
+    if granularity == "monthly":
+        suffix = stamp.strftime("%Y-%m")
+        return (
+            f"{BINANCE_PUBLIC_DATA_BASE}/monthly/aggTrades/{compact_symbol}/"
+            f"{compact_symbol}-aggTrades-{suffix}.zip"
+        )
+    suffix = stamp.strftime("%Y-%m-%d")
+    return (
+        f"{BINANCE_PUBLIC_DATA_BASE}/daily/aggTrades/{compact_symbol}/"
+        f"{compact_symbol}-aggTrades-{suffix}.zip"
+    )
+
+
+def _read_binance_public_aggtrades_archive(
+    url: str,
+    start_ms: int,
+    until_ms: int,
+) -> pd.DataFrame:
+    tmp_path = None
+    try:
+        response = requests.get(url, stream=True, timeout=60)
+        if response.status_code == 404:
+            return pd.DataFrame()
+        response.raise_for_status()
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            tmp_path = tmp.name
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    tmp.write(chunk)
+        rows: list[pd.DataFrame] = []
+        with zipfile.ZipFile(tmp_path) as zf:
+            members = [name for name in zf.namelist() if name.endswith(".csv")]
+            if not members:
+                return pd.DataFrame()
+            with zf.open(members[0]) as handle:
+                reader = pd.read_csv(
+                    handle,
+                    header=None,
+                    usecols=[1, 2, 5, 6],
+                    names=["price", "amount", "ts_raw", "buyer_maker"],
+                    chunksize=250_000,
+                )
+                for chunk in reader:
+                    ts_raw = pd.to_numeric(chunk["ts_raw"], errors="coerce")
+                    if ts_raw.isna().all():
+                        continue
+                    time_unit = "us" if float(ts_raw.max()) >= 1e14 else "ms"
+                    ts = pd.to_datetime(ts_raw.astype("int64"), unit=time_unit, utc=True)
+                    ts_ms = (
+                        (ts.astype("int64") // 10**6)
+                        if time_unit == "us"
+                        else ts_raw.astype("int64")
+                    )
+                    mask = (ts_ms >= int(start_ms)) & (ts_ms < int(until_ms))
+                    if not mask.any():
+                        continue
+                    part = pd.DataFrame(
+                        {
+                            "price": pd.to_numeric(
+                                chunk.loc[mask, "price"], errors="coerce"
+                            ).astype(np.float32),
+                            "amount": pd.to_numeric(
+                                chunk.loc[mask, "amount"], errors="coerce"
+                            ).astype(np.float32),
+                            "side_sign": np.where(
+                                chunk.loc[mask, "buyer_maker"]
+                                .astype(str)
+                                .str.lower()
+                                .isin({"true", "1"}),
+                                -1.0,
+                                1.0,
+                            ).astype(np.float32),
+                        },
+                        index=ts[mask],
+                    )
+                    rows.append(part)
+        if not rows:
+            return pd.DataFrame()
+        out = pd.concat(rows).sort_index()
+        out = out[~out.index.duplicated(keep="last")]
+        return out
+    except Exception as exc:
+        tprint(f"WARN public aggTrades archive fetch failed {url}: {exc}")
+        return pd.DataFrame()
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def _fetch_trade_history_public_aggtrades(
+    symbol: str,
+    since_ms: int,
+    until_ms: int,
+) -> pd.DataFrame:
+    if ":" in str(symbol or ""):
+        return pd.DataFrame()
+    start_ts = pd.to_datetime(since_ms, unit="ms", utc=True)
+    end_ts = pd.to_datetime(until_ms - 1, unit="ms", utc=True)
+    parts: list[pd.DataFrame] = []
+    for granularity, stamp, compact in _iter_binance_public_aggtrade_archives(
+        symbol, start_ts, end_ts
+    ):
+        url = _binance_public_aggtrade_url(compact, granularity, stamp)
+        part = _read_binance_public_aggtrades_archive(url, since_ms, until_ms)
+        if part is not None and not part.empty:
+            parts.append(part)
+    if not parts:
+        return pd.DataFrame()
+    out = pd.concat(parts).sort_index()
+    out = out[~out.index.duplicated(keep="last")]
+    return out
+
+
+def _binance_public_kline_url(
+    compact_symbol: str,
+    granularity: str,
+    stamp: pd.Timestamp,
+    interval: str = "1h",
+) -> str:
+    if granularity == "monthly":
+        suffix = stamp.strftime("%Y-%m")
+        return (
+            f"{BINANCE_PUBLIC_DATA_BASE}/monthly/klines/{compact_symbol}/{interval}/"
+            f"{compact_symbol}-{interval}-{suffix}.zip"
+        )
+    suffix = stamp.strftime("%Y-%m-%d")
+    return (
+        f"{BINANCE_PUBLIC_DATA_BASE}/daily/klines/{compact_symbol}/{interval}/"
+        f"{compact_symbol}-{interval}-{suffix}.zip"
+    )
+
+
+def _read_binance_public_kline_archive(
+    url: str,
+    start_ms: int,
+    until_ms: int,
+    interval: str = "1h",
+) -> pd.DataFrame:
+    tmp_path = None
+    try:
+        response = requests.get(url, stream=True, timeout=60)
+        if response.status_code == 404:
+            return pd.DataFrame()
+        response.raise_for_status()
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            tmp_path = tmp.name
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    tmp.write(chunk)
+        with zipfile.ZipFile(tmp_path) as zf:
+            members = [name for name in zf.namelist() if name.endswith(".csv")]
+            if not members:
+                return pd.DataFrame()
+            with zf.open(members[0]) as handle:
+                df = pd.read_csv(
+                    handle,
+                    header=None,
+                    usecols=[0, 1, 2, 3, 4, 5, 7, 8, 9, 10],
+                    names=[
+                        "open_time",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "quote_volume",
+                        "trade_count",
+                        "taker_buy_base",
+                        "taker_buy_quote",
+                    ],
+                )
+        open_time = pd.to_numeric(df["open_time"], errors="coerce")
+        if open_time.isna().all():
+            return pd.DataFrame()
+        time_unit = "us" if float(open_time.max()) >= 1e14 else "ms"
+        ts = pd.to_datetime(open_time.astype("int64"), unit=time_unit, utc=True)
+        ts_ms = (
+            (ts.astype("int64") // 10**6)
+            if time_unit == "us"
+            else open_time.astype("int64")
+        )
+        interval_ms = int(pd.Timedelta(interval).total_seconds() * 1000)
+        snapshot_ms = ts_ms + interval_ms
+        mask = (snapshot_ms >= int(start_ms)) & (snapshot_ms < int(until_ms))
+        if not mask.any():
+            return pd.DataFrame()
+        out = df.loc[mask].copy()
+        out.index = pd.to_datetime(snapshot_ms[mask], unit="ms", utc=True)
+        for col in [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "quote_volume",
+            "trade_count",
+            "taker_buy_base",
+            "taker_buy_quote",
+        ]:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+        return out
+    except Exception as exc:
+        tprint(f"WARN public kline archive fetch failed {url}: {exc}")
+        return pd.DataFrame()
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def _fetch_orderbook_proxy_from_public_klines(
+    symbol: str,
+    since_ms: int,
+    until_ms: int,
+) -> pd.DataFrame:
+    if ":" in str(symbol or ""):
+        return pd.DataFrame()
+    start_ts = pd.to_datetime(since_ms, unit="ms", utc=True)
+    end_ts = pd.to_datetime(until_ms - 1, unit="ms", utc=True)
+    compact = _normalize_spot_symbol(symbol).replace("/", "")
+    parts: list[pd.DataFrame] = []
+    for granularity, stamp, _ in _iter_binance_public_aggtrade_archives(
+        symbol, start_ts, end_ts
+    ):
+        url = _binance_public_kline_url(compact, granularity, stamp, interval="1h")
+        part = _read_binance_public_kline_archive(url, since_ms, until_ms, interval="1h")
+        if part is not None and not part.empty:
+            parts.append(part)
+    if not parts:
+        return pd.DataFrame()
+    bars = pd.concat(parts).sort_index()
+    bars = bars[~bars.index.duplicated(keep="last")]
+    mid = pd.to_numeric(bars["close"], errors="coerce")
+    volume = pd.to_numeric(bars["volume"], errors="coerce").fillna(0.0)
+    quote_volume = pd.to_numeric(bars["quote_volume"], errors="coerce").fillna(0.0)
+    trade_count = pd.to_numeric(bars["trade_count"], errors="coerce").fillna(0.0)
+    buy_qty = pd.to_numeric(bars["taker_buy_base"], errors="coerce").fillna(0.0)
+    buy_notional = pd.to_numeric(bars["taker_buy_quote"], errors="coerce").fillna(0.0)
+    sell_qty = (volume - buy_qty).clip(lower=0.0)
+    sell_notional = (quote_volume - buy_notional).clip(lower=0.0)
+    eps = 1e-9
+    imbalance = ((buy_qty - sell_qty) / (volume + eps)).clip(-1.0, 1.0)
+    mean_trade_qty = (volume / trade_count.replace(0.0, np.nan)).fillna(0.0)
+    hl_spread_bps = (
+        ((pd.to_numeric(bars["high"], errors="coerce") - pd.to_numeric(bars["low"], errors="coerce"))
+        / (mid.abs() + eps))
+        * 1e4
+    ).fillna(0.0)
+    spread_bps = (
+        1.0 + 0.20 * hl_spread_bps + 0.05 * np.sqrt(trade_count.clip(lower=0.0))
+    ).clip(lower=1.0, upper=35.0)
+    half_spread = spread_bps / 2e4
+    base_depth = np.maximum(
+        volume / 6.0,
+        np.maximum(mean_trade_qty * 12.0, trade_count * mean_trade_qty * 0.15),
+    )
+    side_skew = (0.85 * imbalance).clip(-0.9, 0.9)
+    cum_bid_qty_l20 = (base_depth * (1.0 + side_skew)).clip(lower=0.0)
+    cum_ask_qty_l20 = (base_depth * (1.0 - side_skew)).clip(lower=0.0)
+    cum_bid_qty_l10 = (cum_bid_qty_l20 * 0.55).clip(lower=0.0)
+    cum_ask_qty_l10 = (cum_ask_qty_l20 * 0.55).clip(lower=0.0)
+    bid_qty_1 = np.maximum(mean_trade_qty * (1.0 + 0.50 * imbalance), cum_bid_qty_l10 / 10.0)
+    ask_qty_1 = np.maximum(mean_trade_qty * (1.0 - 0.50 * imbalance), cum_ask_qty_l10 / 10.0)
+
+    out = pd.DataFrame(index=bars.index)
+    out["best_bid"] = (mid * (1.0 - half_spread)).astype(np.float32)
+    out["best_ask"] = (mid * (1.0 + half_spread)).astype(np.float32)
+    out["mid"] = mid.astype(np.float32)
+    out["bid_qty_1"] = pd.Series(bid_qty_1, index=bars.index).astype(np.float32)
+    out["ask_qty_1"] = pd.Series(ask_qty_1, index=bars.index).astype(np.float32)
+    out["cum_bid_qty_l10"] = pd.Series(cum_bid_qty_l10, index=bars.index).astype(np.float32)
+    out["cum_ask_qty_l10"] = pd.Series(cum_ask_qty_l10, index=bars.index).astype(np.float32)
+    out["cum_bid_qty_l20"] = pd.Series(cum_bid_qty_l20, index=bars.index).astype(np.float32)
+    out["cum_ask_qty_l20"] = pd.Series(cum_ask_qty_l20, index=bars.index).astype(np.float32)
+    out["snapshot_ts"] = bars.index
+    out["trade_count_1h"] = trade_count.astype(np.int32)
+    out["buy_qty_1h"] = buy_qty.astype(np.float32)
+    out["sell_qty_1h"] = sell_qty.astype(np.float32)
+    out["notional_1h"] = quote_volume.astype(np.float32)
+    out["buy_notional_1h"] = buy_notional.astype(np.float32)
+    out["sell_notional_1h"] = sell_notional.astype(np.float32)
+    out["vwap_1h"] = (
+        quote_volume / volume.replace(0.0, np.nan)
+    ).fillna(mid).astype(np.float32)
+    out["mean_trade_qty_1h"] = mean_trade_qty.astype(np.float32)
+    out["signed_flow_imbalance_1h"] = imbalance.astype(np.float32)
+    return out.replace([np.inf, -np.inf], np.nan)
+
+
+def _compute_missing_hourly_ranges(
+    existing_index,
+    start_ts: pd.Timestamp,
+    end_ts: pd.Timestamp,
+) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    start_hour = pd.Timestamp(start_ts)
+    end_hour = pd.Timestamp(end_ts)
+    if start_hour.tzinfo is None:
+        start_hour = start_hour.tz_localize("UTC")
+    else:
+        start_hour = start_hour.tz_convert("UTC")
+    if end_hour.tzinfo is None:
+        end_hour = end_hour.tz_localize("UTC")
+    else:
+        end_hour = end_hour.tz_convert("UTC")
+    start_hour = start_hour.floor("h")
+    end_hour = end_hour.floor("h")
+    if end_hour < start_hour:
+        return []
+
+    expected = pd.date_range(start=start_hour, end=end_hour, freq="1h", tz="UTC")
+    if len(expected) == 0:
+        return []
+    if existing_index is None:
+        existing = pd.DatetimeIndex([], tz="UTC")
+    else:
+        existing = pd.to_datetime(existing_index, utc=True, errors="coerce")
+        existing = pd.DatetimeIndex(existing[~pd.isna(existing)]).floor("h").unique()
+    missing = expected.difference(existing)
+    if len(missing) == 0:
+        return []
+
+    ranges: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    range_start = missing[0]
+    prev = missing[0]
+    step = pd.Timedelta(hours=1)
+    for ts in missing[1:]:
+        if ts - prev > step:
+            ranges.append((range_start, prev + step))
+            range_start = ts
+        prev = ts
+    ranges.append((range_start, prev + step))
+    return ranges
+
+
+def _build_hourly_orderbook_proxy_from_trades(
+    trades: pd.DataFrame,
+    start_ts: pd.Timestamp,
+    end_ts: pd.Timestamp,
+    *,
+    min_spread_bps: float = 1.0,
+    max_spread_bps: float = 35.0,
+) -> pd.DataFrame:
+    start_hour = pd.Timestamp(start_ts)
+    end_hour = pd.Timestamp(end_ts)
+    if start_hour.tzinfo is None:
+        start_hour = start_hour.tz_localize("UTC")
+    else:
+        start_hour = start_hour.tz_convert("UTC")
+    if end_hour.tzinfo is None:
+        end_hour = end_hour.tz_localize("UTC")
+    else:
+        end_hour = end_hour.tz_convert("UTC")
+    start_hour = start_hour.floor("h")
+    end_hour = end_hour.floor("h")
+    hour_index = pd.date_range(start=start_hour, end=end_hour, freq="1h", tz="UTC")
+    if len(hour_index) == 0:
+        return pd.DataFrame()
+
+    if trades is None or trades.empty:
+        return pd.DataFrame(index=hour_index)
+
+    tr = trades.copy().sort_index()
+    tr.index = pd.to_datetime(tr.index, utc=True, errors="coerce")
+    tr = tr[~tr.index.duplicated(keep="last")]
+    tr["notional"] = (tr["price"] * tr["amount"]).astype(np.float32)
+    tr["buy_qty"] = np.where(tr["side_sign"] > 0, tr["amount"], 0.0).astype(np.float32)
+    tr["sell_qty"] = np.where(tr["side_sign"] < 0, tr["amount"], 0.0).astype(np.float32)
+    tr["buy_notional"] = np.where(tr["side_sign"] > 0, tr["notional"], 0.0).astype(
+        np.float32
+    )
+    tr["sell_notional"] = np.where(tr["side_sign"] < 0, tr["notional"], 0.0).astype(
+        np.float32
+    )
+    tr["trade_count"] = np.float32(1.0)
+
+    agg = (
+        tr.resample("1h", label="right", closed="left")
+        .agg(
+            last_price=("price", "last"),
+            last_trade_ts=("price", lambda s: s.index.max() if len(s) else pd.NaT),
+            mean_price=("price", "mean"),
+            price_std=("price", "std"),
+            amount_sum=("amount", "sum"),
+            notional_sum=("notional", "sum"),
+            buy_qty=("buy_qty", "sum"),
+            sell_qty=("sell_qty", "sum"),
+            buy_notional=("buy_notional", "sum"),
+            sell_notional=("sell_notional", "sum"),
+            trade_count=("trade_count", "sum"),
+        )
+        .reindex(hour_index)
+    )
+    agg["last_price"] = agg["last_price"].ffill()
+    agg["mean_price"] = agg["mean_price"].fillna(agg["last_price"])
+    agg["last_trade_ts"] = pd.to_datetime(agg["last_trade_ts"], utc=True, errors="coerce")
+    agg["price_std"] = pd.to_numeric(agg["price_std"], errors="coerce").fillna(0.0)
+    agg["amount_sum"] = pd.to_numeric(agg["amount_sum"], errors="coerce").fillna(0.0)
+    agg["notional_sum"] = pd.to_numeric(agg["notional_sum"], errors="coerce").fillna(0.0)
+    agg["buy_qty"] = pd.to_numeric(agg["buy_qty"], errors="coerce").fillna(0.0)
+    agg["sell_qty"] = pd.to_numeric(agg["sell_qty"], errors="coerce").fillna(0.0)
+    agg["buy_notional"] = pd.to_numeric(agg["buy_notional"], errors="coerce").fillna(0.0)
+    agg["sell_notional"] = pd.to_numeric(agg["sell_notional"], errors="coerce").fillna(0.0)
+    agg["trade_count"] = pd.to_numeric(agg["trade_count"], errors="coerce").fillna(0.0)
+
+    eps = 1e-9
+    mid = pd.to_numeric(agg["last_price"], errors="coerce")
+    total_qty = agg["buy_qty"] + agg["sell_qty"]
+    imbalance = ((agg["buy_qty"] - agg["sell_qty"]) / (total_qty + eps)).clip(-1.0, 1.0)
+    mean_trade_qty = (total_qty / agg["trade_count"].replace(0.0, np.nan)).fillna(0.0)
+    price_dispersion_bps = (agg["price_std"] / (mid.abs() + eps) * 1e4).fillna(0.0)
+    flow_bps = (
+        ((agg["buy_notional"] - agg["sell_notional"]).abs() / (agg["notional_sum"] + eps))
+        * 8.0
+    ).fillna(0.0)
+    spread_bps = (
+        pd.Series(min_spread_bps, index=agg.index, dtype=np.float32)
+        + 0.50 * price_dispersion_bps
+        + flow_bps
+    ).clip(lower=min_spread_bps, upper=max_spread_bps)
+    half_spread = spread_bps / 2e4
+
+    base_depth = np.maximum(
+        total_qty / 6.0,
+        np.maximum(mean_trade_qty * 12.0, agg["trade_count"] * mean_trade_qty * 0.15),
+    )
+    side_skew = (0.85 * imbalance).clip(-0.9, 0.9)
+    cum_bid_qty_l20 = (base_depth * (1.0 + side_skew)).clip(lower=0.0)
+    cum_ask_qty_l20 = (base_depth * (1.0 - side_skew)).clip(lower=0.0)
+    cum_bid_qty_l10 = (cum_bid_qty_l20 * 0.55).clip(lower=0.0)
+    cum_ask_qty_l10 = (cum_ask_qty_l20 * 0.55).clip(lower=0.0)
+    bid_qty_1 = np.maximum(mean_trade_qty * (1.0 + 0.50 * imbalance), cum_bid_qty_l10 / 10.0)
+    ask_qty_1 = np.maximum(mean_trade_qty * (1.0 - 0.50 * imbalance), cum_ask_qty_l10 / 10.0)
+
+    out = pd.DataFrame(index=hour_index)
+    out["best_bid"] = (mid * (1.0 - half_spread)).astype(np.float32)
+    out["best_ask"] = (mid * (1.0 + half_spread)).astype(np.float32)
+    out["mid"] = mid.astype(np.float32)
+    out["bid_qty_1"] = pd.Series(bid_qty_1, index=hour_index).astype(np.float32)
+    out["ask_qty_1"] = pd.Series(ask_qty_1, index=hour_index).astype(np.float32)
+    out["cum_bid_qty_l10"] = pd.Series(cum_bid_qty_l10, index=hour_index).astype(np.float32)
+    out["cum_ask_qty_l10"] = pd.Series(cum_ask_qty_l10, index=hour_index).astype(np.float32)
+    out["cum_bid_qty_l20"] = pd.Series(cum_bid_qty_l20, index=hour_index).astype(np.float32)
+    out["cum_ask_qty_l20"] = pd.Series(cum_ask_qty_l20, index=hour_index).astype(np.float32)
+    out["snapshot_ts"] = agg["last_trade_ts"]
+    out["trade_count_1h"] = agg["trade_count"].astype(np.int32)
+    out["buy_qty_1h"] = agg["buy_qty"].astype(np.float32)
+    out["sell_qty_1h"] = agg["sell_qty"].astype(np.float32)
+    out["notional_1h"] = agg["notional_sum"].astype(np.float32)
+    out["buy_notional_1h"] = agg["buy_notional"].astype(np.float32)
+    out["sell_notional_1h"] = agg["sell_notional"].astype(np.float32)
+    out["vwap_1h"] = (
+        agg["notional_sum"] / (agg["amount_sum"].replace(0.0, np.nan) + eps)
+    ).fillna(mid).astype(np.float32)
+    out["mean_trade_qty_1h"] = mean_trade_qty.astype(np.float32)
+    out["signed_flow_imbalance_1h"] = imbalance.astype(np.float32)
+    out = out.replace([np.inf, -np.inf], np.nan)
+    out = out.dropna(subset=["mid", "best_bid", "best_ask"], how="all")
+    return out
+
+
+def fetch_hourly_orderbook_proxy(
+    exchange,
+    symbol: str,
+    since_ms: int,
+    until_ms: int,
+    *,
+    limit: int = 1000,
+) -> pd.DataFrame:
+    public_klines = _fetch_orderbook_proxy_from_public_klines(
+        symbol,
+        int(since_ms),
+        int(until_ms),
+    )
+    if public_klines is not None and not public_klines.empty:
+        return public_klines
+
+    lookback_ms = int(pd.Timedelta(hours=1).total_seconds() * 1000)
+    start_ms = max(0, int(since_ms) - lookback_ms)
+    public_trades = _fetch_trade_history_public_aggtrades(symbol, start_ms, int(until_ms))
+    rest_start_ms = start_ms
+    if public_trades is not None and not public_trades.empty:
+        public_last_ms = int(public_trades.index.max().value // 10**6) + 1
+        rest_start_ms = max(rest_start_ms, public_last_ms)
+    recent_floor = pd.Timestamp.utcnow()
+    if recent_floor.tzinfo is None:
+        recent_floor = recent_floor.tz_localize("UTC")
+    else:
+        recent_floor = recent_floor.tz_convert("UTC")
+    recent_floor_ms = int((recent_floor - pd.Timedelta(days=2)).value // 10**6)
+    rest_start_ms = max(rest_start_ms, recent_floor_ms)
+    rest_trades = _fetch_trade_history_paged(
+        exchange, symbol, rest_start_ms, int(until_ms), limit=limit
+    )
+    if public_trades is not None and not public_trades.empty:
+        if rest_trades is not None and not rest_trades.empty:
+            trades = pd.concat([public_trades, rest_trades]).sort_index()
+            trades = trades[~trades.index.duplicated(keep="last")]
+        else:
+            trades = public_trades
+    else:
+        trades = rest_trades
+    start_ts = pd.to_datetime(since_ms, unit="ms", utc=True).floor("h")
+    end_ts = (
+        pd.to_datetime(until_ms, unit="ms", utc=True).floor("h") - pd.Timedelta(hours=1)
+    )
+    if end_ts < start_ts:
+        return pd.DataFrame()
+    return _build_hourly_orderbook_proxy_from_trades(trades, start_ts, end_ts)
 
 
 @retry_with_backoff(retries=3, backoff_in_seconds=2)

@@ -27,6 +27,7 @@ def test_apply_hardcoded_universe_exclusions_filters_aliases_and_unsupported_quo
             "ETHUSDC",
             "ETH_USDC",
             "ETH/USDC",
+            "币安人生/USDC",
             "BTC/USD1",
             "BNBFDUSD",
             "CHESSUSDC",

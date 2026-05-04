@@ -1,6 +1,7 @@
 import glob
 import os
 import random
+import re
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -131,6 +132,11 @@ def _is_supported_training_symbol(symbol: str) -> bool:
     return quote in SUPPORTED_TRAINING_QUOTES
 
 
+def _is_valid_spot_symbol_format(symbol: str) -> bool:
+    norm = _normalize_symbol(symbol)
+    return bool(re.fullmatch(r"[A-Z0-9]+/[A-Z0-9]+", norm or ""))
+
+
 def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
     """Return at most one symbol per base asset for USDT/USDC/BUSD quote variants."""
     original_count = len(symbols)
@@ -178,6 +184,9 @@ def apply_hardcoded_universe_exclusions(symbols: list[str]) -> list[str]:
         norm = _normalize_symbol(sym)
         if norm in HARDCODED_EXCLUDED_SYMBOLS:
             removed += 1
+            continue
+        if not _is_valid_spot_symbol_format(norm):
+            unsupported += 1
             continue
         if not _is_supported_training_symbol(norm):
             unsupported += 1

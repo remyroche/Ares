@@ -8,6 +8,7 @@ Usage:
 import os
 import sys
 import warnings
+from pathlib import Path
 
 # Avoid expensive/warning-prone Matplotlib cache initialization under read-only HOME.
 _mpl_cfg = os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig_epm")
@@ -57,6 +58,10 @@ import extreme_price_movements.mask_optimiser as mask_opt
 from extreme_price_movements.config import CFG, enable_perp_feature_keys
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
+    _compute_missing_hourly_ranges,
+    _fetch_ccxt_history_paged,
+    _resolve_perp_symbol,
+    fetch_hourly_orderbook_proxy,
     make_perp_exchange,
     make_spot_exchange,
 )
@@ -369,6 +374,13 @@ def run_download(cfg):
         tprint("Freshness gate bypassed (download_force=True)")
 
     ex = make_perp_exchange() if use_perps else make_spot_exchange()
+    funding_ex = ex
+    if not use_perps:
+        try:
+            funding_ex = make_perp_exchange()
+        except Exception as exc:
+            funding_ex = None
+            tprint(f"Funding exchange unavailable; skipping funding refresh: {exc}")
 
     mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
     fetch_syms = build_fetch_universe(
@@ -461,6 +473,10 @@ def run_download(cfg):
     now_1h = now_utc.floor("1h")
     since_15m = since.floor("15min")
     now_15m = now_utc.floor("15min")
+    micro_since = max(
+        since_1h,
+        now_1h - pd.Timedelta(days=int(cfg.get("microdata_backfill_days", 180))),
+    )
 
     def _panel_complete(
         df: Optional[pd.DataFrame],
@@ -553,78 +569,128 @@ def run_download(cfg):
 
         ob_ok, fr_ok = False, False
         try:
-            ob = ex.fetch_order_book(sym, limit=20)
-            bids = ob.get("bids") or []
-            asks = ob.get("asks") or []
-            if bids and asks:
-                best_bid, best_ask = float(bids[0][0]), float(asks[0][0])
-                bid_qty_1, ask_qty_1 = float(bids[0][1]), float(asks[0][1])
-                mid = 0.5 * (best_bid + best_ask)
-                rec = pd.DataFrame(
-                    [
-                        {
-                            "ts": now_h,
-                            "best_bid": best_bid,
-                            "best_ask": best_ask,
-                            "mid": mid,
-                            "bid_qty_1": bid_qty_1,
-                            "ask_qty_1": ask_qty_1,
-                            "cum_bid_qty_l10": float(sum(x[1] for x in bids[:10])),
-                            "cum_ask_qty_l10": float(sum(x[1] for x in asks[:10])),
-                            "cum_bid_qty_l20": float(sum(x[1] for x in bids[:20])),
-                            "cum_ask_qty_l20": float(sum(x[1] for x in asks[:20])),
-                            "snapshot_ts": pd.to_datetime(
-                                ob.get("timestamp", now_h.value // 10**6),
-                                unit="ms",
-                                utc=True,
-                            ),
-                        }
-                    ]
-                ).set_index("ts")
-                if ob_path.exists():
-                    old = pd.read_parquet(ob_path)
-                    rec = pd.concat([old, rec]).sort_index().groupby(level=0).last()
+            existing_ob = pd.read_parquet(ob_path) if ob_path.exists() else None
+            existing_idx = (
+                pd.to_datetime(existing_ob.index, utc=True, errors="coerce")
+                if existing_ob is not None and not existing_ob.empty
+                else None
+            )
+            missing_ranges = _compute_missing_hourly_ranges(
+                existing_idx,
+                micro_since,
+                now_h,
+            )
+            ob_frames = []
+            for range_start, range_end in missing_ranges:
+                proxy_df = fetch_hourly_orderbook_proxy(
+                    ex,
+                    sym,
+                    int(range_start.value // 10**6),
+                    int(range_end.value // 10**6),
+                )
+                if proxy_df is not None and not proxy_df.empty:
+                    ob_frames.append(proxy_df)
+            if existing_ob is not None and not existing_ob.empty:
+                ob_frames.insert(0, existing_ob)
+            if ob_frames:
+                rec = (
+                    pd.concat(ob_frames)
+                    .sort_index()
+                    .groupby(level=0)
+                    .last()
+                )
                 rec.to_parquet(ob_path)
                 ob_ok = True
-        except Exception:
+        except Exception as exc:
+            tprint(f"  WARN orderbook microdata {sym}: {exc}")
             ob_ok = False
 
         try:
             fr_df = None
-            if hasattr(ex, "fetch_funding_rate_history"):
-                since_ms_local = int((now_h - pd.Timedelta(days=30)).value // 10**6)
-                hist = ex.fetch_funding_rate_history(
-                    sym, since=since_ms_local, limit=500
+            funding_symbol = sym
+            funding_client = funding_ex
+            existing_funding = None
+            if not use_perps:
+                funding_symbol = (
+                    _resolve_perp_symbol(funding_ex, sym) if funding_ex is not None else None
                 )
-                if hist:
-                    fr_df = pd.DataFrame(hist)
-            if fr_df is None and hasattr(ex, "fetch_funding_rate"):
-                fr = ex.fetch_funding_rate(sym)
+                if funding_symbol is None:
+                    raise ValueError(f"No perp funding symbol found for {sym}")
+            if funding_client is not None and hasattr(
+                funding_client, "fetch_funding_rate_history"
+            ):
+                if fr_path.exists():
+                    existing_funding = pd.read_parquet(fr_path)
+                until_ms_local = int((now_h + pd.Timedelta(hours=1)).value // 10**6)
+                existing_idx = (
+                    pd.to_datetime(existing_funding.index, utc=True, errors="coerce")
+                    if existing_funding is not None and not existing_funding.empty
+                    else None
+                )
+                funding_frames = []
+                for range_start, range_end in _compute_missing_hourly_ranges(
+                    existing_idx,
+                    micro_since,
+                    now_h,
+                ):
+                    hist = _fetch_ccxt_history_paged(
+                        funding_client.fetch_funding_rate_history,
+                        funding_symbol,
+                        int(range_start.value // 10**6),
+                        int(range_end.value // 10**6),
+                        value_keys=["fundingRate", "funding_rate", "rate"],
+                        exchange=funding_client,
+                        limit=1000,
+                    )
+                    if len(hist) > 0:
+                        funding_frames.append(hist.to_frame(name="funding_rate"))
+                if funding_frames:
+                    fr_df = pd.concat(funding_frames).sort_index()
+            if (
+                fr_df is None
+                and funding_client is not None
+                and hasattr(funding_client, "fetch_funding_rate")
+            ):
+                fr = funding_client.fetch_funding_rate(funding_symbol)
                 fr_df = pd.DataFrame([fr])
             if fr_df is not None and not fr_df.empty:
-                ts_col = (
-                    "timestamp" if "timestamp" in fr_df.columns else "fundingTimestamp"
-                )
-                rate_col = (
-                    "fundingRate" if "fundingRate" in fr_df.columns else "funding_rate"
-                )
-                fr_df["ts"] = pd.to_datetime(
-                    fr_df[ts_col], unit="ms", utc=True
-                ).dt.floor("1h")
-                fr_df = (
-                    fr_df[["ts", rate_col]]
-                    .rename(columns={rate_col: "funding_rate"})
-                    .set_index("ts")
-                )
+                if "funding_rate" in fr_df.columns and isinstance(
+                    fr_df.index, pd.DatetimeIndex
+                ):
+                    fr_df = fr_df.copy()
+                    fr_df.index = pd.to_datetime(fr_df.index, utc=True).floor("1h")
+                    fr_df = fr_df[["funding_rate"]]
+                else:
+                    ts_col = (
+                        "timestamp" if "timestamp" in fr_df.columns else "fundingTimestamp"
+                    )
+                    rate_col = (
+                        "fundingRate" if "fundingRate" in fr_df.columns else "funding_rate"
+                    )
+                    fr_df["ts"] = pd.to_datetime(
+                        fr_df[ts_col], unit="ms", utc=True
+                    ).dt.floor("1h")
+                    fr_df = (
+                        fr_df[["ts", rate_col]]
+                        .rename(columns={rate_col: "funding_rate"})
+                        .set_index("ts")
+                    )
                 fr_df["funding_rate"] = pd.to_numeric(
                     fr_df["funding_rate"], errors="coerce"
                 ).astype(np.float32)
-                if fr_path.exists():
-                    old = pd.read_parquet(fr_path)
-                    fr_df = pd.concat([old, fr_df]).sort_index().groupby(level=0).last()
+                if existing_funding is None and fr_path.exists():
+                    existing_funding = pd.read_parquet(fr_path)
+                if existing_funding is not None and not existing_funding.empty:
+                    fr_df = (
+                        pd.concat([existing_funding, fr_df])
+                        .sort_index()
+                        .groupby(level=0)
+                        .last()
+                    )
                 fr_df.to_parquet(fr_path)
                 fr_ok = True
-        except Exception:
+        except Exception as exc:
+            tprint(f"  WARN funding microdata {sym}: {exc}")
             fr_ok = False
         return ob_ok, fr_ok
 

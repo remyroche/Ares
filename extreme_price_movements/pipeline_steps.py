@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+import extreme_price_movements.fast_funcs as ff
+import extreme_price_movements.features as epm_features
 from extreme_price_movements.candidates import select_trade_candidates_vectorized
 from extreme_price_movements.config import (
     CANON_HORIZONS,
@@ -125,6 +127,559 @@ from extreme_price_movements.universe import (
     refresh_margin_universe_daily,
 )
 from extreme_price_movements.utils import Timer, tprint
+
+
+def _safe_symbol_file_key(symbol: str) -> str:
+    return str(symbol).replace("/", "_").replace(":", "_")
+
+
+def _ensure_feature_runtime_support() -> None:
+    if hasattr(epm_features, "_batch_roll_zscore"):
+        return
+
+    def _batch_roll_zscore(df, window):
+        window = int(max(window, 1))
+        if isinstance(df, pd.Series):
+            ser = pd.to_numeric(df, errors="coerce").astype(np.float32)
+            return ff.numba_rolling_zscore_fused(ser, window).astype(np.float32)
+        if isinstance(df, pd.DataFrame):
+            frame = df.apply(pd.to_numeric, errors="coerce").astype(np.float32)
+            return ff.numba_rolling_zscore_fused(frame, window).astype(np.float32)
+        frame = pd.DataFrame(df).apply(pd.to_numeric, errors="coerce").astype(np.float32)
+        return ff.numba_rolling_zscore_fused(frame, window).astype(np.float32)
+
+    epm_features._batch_roll_zscore = _batch_roll_zscore
+
+
+def _load_saved_microdata_for_symbols(
+    data_root: str,
+    symbols: list[str],
+    index: pd.Index,
+) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
+    funding_by_symbol: dict[str, pd.Series] = {}
+    orderbook_by_symbol: dict[str, pd.DataFrame] = {}
+    funding_dir = os.path.join(data_root, "funding_hourly")
+    orderbook_dir = os.path.join(data_root, "orderbook_hourly")
+    target_index = pd.to_datetime(index, utc=True)
+
+    for symbol in symbols:
+        key = _safe_symbol_file_key(symbol)
+        fr_path = os.path.join(funding_dir, f"{key}.parquet")
+        ob_path = os.path.join(orderbook_dir, f"{key}.parquet")
+
+        if os.path.exists(fr_path):
+            try:
+                fr = pd.read_parquet(fr_path)
+                if not fr.empty and "funding_rate" in fr.columns:
+                    fr.index = pd.to_datetime(fr.index, utc=True, errors="coerce")
+                    fr = fr[~fr.index.duplicated(keep="last")].sort_index()
+                    funding_by_symbol[symbol] = pd.to_numeric(
+                        fr["funding_rate"], errors="coerce"
+                    ).astype(np.float32)
+            except Exception as exc:
+                tprint(f"WARN funding panel load failed for {symbol}: {exc}")
+
+        if os.path.exists(ob_path):
+            try:
+                ob = pd.read_parquet(ob_path)
+                if not ob.empty:
+                    ob.index = pd.to_datetime(ob.index, utc=True, errors="coerce")
+                    ob = ob[~ob.index.duplicated(keep="last")].sort_index()
+                    orderbook_by_symbol[symbol] = ob
+            except Exception as exc:
+                tprint(f"WARN orderbook panel load failed for {symbol}: {exc}")
+
+    panel_updates: dict[str, pd.DataFrame] = {}
+    if funding_by_symbol:
+        panel_updates["funding_rate"] = (
+            pd.DataFrame(funding_by_symbol)
+            .reindex(index=target_index, columns=symbols)
+            .ffill()
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+    return panel_updates, orderbook_by_symbol
+
+
+def _requested_orderbook_wall_feature_keys(
+    requested_feature_keys: list[str] | None,
+) -> set[str] | None:
+    if requested_feature_keys is None:
+        return None
+    requested = {
+        str(k)
+        for k in requested_feature_keys
+        if str(k).startswith("obw_") or str(k).startswith("_obw_")
+    }
+    return requested
+
+
+def _inject_orderbook_wall_features(
+    feats: dict[str, pd.DataFrame],
+    panel: dict[str, pd.DataFrame],
+    orderbook_by_symbol: dict[str, pd.DataFrame],
+    cfg: dict,
+    requested_feature_keys: list[str] | None = None,
+) -> dict[str, pd.DataFrame]:
+    close_panel = panel.get("close")
+    volume_panel = panel.get("volume")
+    if not isinstance(close_panel, pd.DataFrame) or not isinstance(volume_panel, pd.DataFrame):
+        return feats
+
+    requested_wall_keys = _requested_orderbook_wall_feature_keys(requested_feature_keys)
+    shift_bars = int(cfg.get("microstructure_shift_bars", 1))
+    atr_panel = feats.get("atr_pct")
+    merged: dict[str, list[pd.DataFrame]] = {}
+
+    for symbol in close_panel.columns:
+        sym_atr = (
+            atr_panel[[symbol]]
+            if isinstance(atr_panel, pd.DataFrame) and symbol in atr_panel.columns
+            else None
+        )
+        sym_feats = epm_features.compute_orderbook_wall_primitives(
+            orderbook_by_symbol.get(symbol),
+            close_panel[[symbol]],
+            volume_panel[[symbol]],
+            atr_panel=sym_atr,
+            shift_bars=shift_bars,
+        )
+        for feat_name, feat_df in sym_feats.items():
+            if requested_wall_keys is not None and feat_name not in requested_wall_keys:
+                continue
+            merged.setdefault(feat_name, []).append(
+                feat_df.reindex(index=close_panel.index, columns=[symbol]).astype(
+                    np.float32
+                )
+            )
+
+    for feat_name, frames in merged.items():
+        feats[feat_name] = (
+            pd.concat(frames, axis=1)
+            .reindex(index=close_panel.index, columns=close_panel.columns)
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+    return feats
+
+
+def _first_available_symbol_frame(
+    feats: dict[str, pd.DataFrame],
+    candidate_names: tuple[str, ...],
+    symbol: str,
+    index: pd.Index,
+) -> pd.Series:
+    for name in candidate_names:
+        df = feats.get(name)
+        if isinstance(df, pd.DataFrame) and symbol in df.columns:
+            return pd.to_numeric(df[symbol], errors="coerce").reindex(index)
+    return pd.Series(0.0, index=index, dtype=np.float32)
+
+
+def _resolve_available_basket_symbols(
+    available_cols: list[str],
+    configured_basket: list[str],
+) -> list[str]:
+    available = list(available_cols)
+    by_base: dict[str, str] = {}
+    for sym in available:
+        if "/" not in str(sym):
+            continue
+        base = str(sym).split("/", 1)[0]
+        by_base.setdefault(base, str(sym))
+    resolved: list[str] = []
+    for raw in configured_basket:
+        if raw in available and raw not in resolved:
+            resolved.append(str(raw))
+            continue
+        base = str(raw).split("/", 1)[0] if "/" in str(raw) else str(raw)
+        mapped = by_base.get(base)
+        if mapped and mapped not in resolved:
+            resolved.append(mapped)
+    return resolved
+
+
+def _inject_orderbook_summary_features(
+    feats: dict[str, pd.DataFrame],
+    panel: dict[str, pd.DataFrame],
+    orderbook_by_symbol: dict[str, pd.DataFrame],
+    cfg: dict,
+) -> dict[str, pd.DataFrame]:
+    close_panel = panel.get("close")
+    volume_panel = panel.get("volume")
+    funding_panel = feats.get("fund_rate_z_14d")
+    basis_panel = feats.get("basis_pct_z")
+    ret4h_panel = feats.get("ret4h")
+    ret24h_panel = feats.get("ret24h")
+    rv24h_panel = feats.get("rv_24h")
+    rvol_panel = feats.get("rvol_z")
+    if not isinstance(close_panel, pd.DataFrame) or not isinstance(volume_panel, pd.DataFrame):
+        return feats
+
+    idx = pd.to_datetime(close_panel.index, utc=True)
+    cols = list(close_panel.columns)
+    eps = 1e-12
+    stale_seconds = float(cfg.get("orderbook_stale_hours", 2.0)) * 3600.0
+
+    feature_store: dict[str, dict[str, pd.Series]] = {}
+
+    def store(feature_name: str, symbol: str, values: pd.Series) -> None:
+        feature_store.setdefault(feature_name, {})[symbol] = (
+            pd.to_numeric(values, errors="coerce").reindex(idx).astype(np.float32)
+        )
+
+    for symbol in cols:
+        ob = orderbook_by_symbol.get(symbol)
+        sym_close = pd.to_numeric(close_panel[symbol], errors="coerce").reindex(idx)
+        sym_volume = pd.to_numeric(volume_panel[symbol], errors="coerce").reindex(idx)
+        if ob is None or ob.empty:
+            zero = pd.Series(0.0, index=idx, dtype=np.float32)
+            one = pd.Series(1.0, index=idx, dtype=np.float32)
+            for name in (
+                "ob_available",
+                "ob_spread_bps",
+                "ob_microprice_premium_bps",
+                "ob_l1_imbalance",
+                "ob_l5_imbalance",
+                "ob_l10_imbalance",
+                "ob_l20_imbalance",
+                "ob_wimb_l10",
+                "ob_wimb_l20",
+                "ob_book_pressure_l10",
+                "ob_top_liquidity_usd",
+                "ob_depth_usd_l10",
+                "ob_depth_usd_l20",
+                "ob_depth_usd_l10_z",
+                "ob_depth_usd_l20_z",
+                "ob_depth_usd_z_24h",
+                "ob_spread_z_24h",
+                "ob_liquidity_shock_z",
+                "ob_mid_close_dislocation_bps",
+                "ob_imb_chg_1",
+                "ob_imb_accel_4",
+                "ob_depth_ratio_l1_l20",
+                "ob_imb_near_far_delta",
+                "ob_depth_decay_asym_l20",
+                "ob_wall_imb_l20",
+                "ob_bid_depth_decay_l20",
+                "ob_ask_depth_decay_l20",
+                "ob_trade_flow_imbalance_1h",
+                "ob_trade_count_z_24h",
+                "ob_notional_z_24h",
+                "ob_vwap_mid_gap_bps",
+                "ob_mean_trade_qty_z_24h",
+                "ob_slope_diff_l10",
+                "ob_gap_up_bps_l10",
+                "ob_gap_dn_bps_l10",
+                "ob_gap_skew_l10",
+                "ob_snapshot_age_sec",
+                "ob_update_gap_flag",
+            ):
+                store(name, symbol, zero)
+            store("ob_stale_flag", symbol, one)
+            continue
+
+        ob = ob.copy()
+        ob.index = pd.to_datetime(ob.index, utc=True, errors="coerce")
+        ob = ob[~ob.index.duplicated(keep="last")].sort_index()
+        mapped = ob.reindex(idx, method="ffill")
+        shifted = mapped.shift(int(cfg.get("microstructure_shift_bars", 1)))
+
+        best_bid = pd.to_numeric(shifted.get("best_bid"), errors="coerce")
+        best_ask = pd.to_numeric(shifted.get("best_ask"), errors="coerce")
+        mid = pd.to_numeric(shifted.get("mid"), errors="coerce")
+        if mid is None or mid.isna().all():
+            mid = (best_bid + best_ask) * 0.5
+        bid_qty_1 = pd.to_numeric(shifted.get("bid_qty_1"), errors="coerce").fillna(0.0)
+        ask_qty_1 = pd.to_numeric(shifted.get("ask_qty_1"), errors="coerce").fillna(0.0)
+        cum_bid_qty_l10 = pd.to_numeric(
+            shifted.get("cum_bid_qty_l10"), errors="coerce"
+        ).fillna(0.0)
+        cum_ask_qty_l10 = pd.to_numeric(
+            shifted.get("cum_ask_qty_l10"), errors="coerce"
+        ).fillna(0.0)
+        cum_bid_qty_l20 = pd.to_numeric(
+            shifted.get("cum_bid_qty_l20"), errors="coerce"
+        ).fillna(0.0)
+        cum_ask_qty_l20 = pd.to_numeric(
+            shifted.get("cum_ask_qty_l20"), errors="coerce"
+        ).fillna(0.0)
+        trade_count_1h = pd.to_numeric(
+            shifted.get("trade_count_1h"), errors="coerce"
+        ).fillna(0.0)
+        signed_flow_imbalance_1h = pd.to_numeric(
+            shifted.get("signed_flow_imbalance_1h"), errors="coerce"
+        ).fillna(0.0)
+        notional_1h = pd.to_numeric(
+            shifted.get("notional_1h"), errors="coerce"
+        ).fillna(0.0)
+        vwap_1h = pd.to_numeric(shifted.get("vwap_1h"), errors="coerce")
+        mean_trade_qty_1h = pd.to_numeric(
+            shifted.get("mean_trade_qty_1h"), errors="coerce"
+        ).fillna(0.0)
+
+        snapshot_ts = pd.to_datetime(shifted.get("snapshot_ts", shifted.index), utc=True, errors="coerce")
+        age_sec = (
+            (pd.Series(idx, index=idx) - snapshot_ts).dt.total_seconds().clip(lower=0.0)
+        )
+        stale_flag = ((age_sec > stale_seconds) | mid.isna()).astype(np.float32)
+        available = ((stale_flag < 0.5) & mid.notna()).astype(np.float32)
+
+        spread_bps = (((best_ask - best_bid) / (mid + eps)) * 1e4).fillna(0.0)
+        microprice = (
+            (best_ask * bid_qty_1 + best_bid * ask_qty_1)
+            / (bid_qty_1 + ask_qty_1 + eps)
+        )
+        microprice_premium_bps = (((microprice / (mid + eps)) - 1.0) * 1e4).fillna(0.0)
+
+        l1_imb = ((bid_qty_1 - ask_qty_1) / (bid_qty_1 + ask_qty_1 + eps)).fillna(0.0)
+        l10_imb = (
+            (cum_bid_qty_l10 - cum_ask_qty_l10)
+            / (cum_bid_qty_l10 + cum_ask_qty_l10 + eps)
+        ).fillna(0.0)
+        l20_imb = (
+            (cum_bid_qty_l20 - cum_ask_qty_l20)
+            / (cum_bid_qty_l20 + cum_ask_qty_l20 + eps)
+        ).fillna(0.0)
+        top_liquidity_usd = (mid * (bid_qty_1 + ask_qty_1)).fillna(0.0)
+        depth_usd_l10 = (mid * (cum_bid_qty_l10 + cum_ask_qty_l10)).fillna(0.0)
+        depth_usd_l20 = (mid * (cum_bid_qty_l20 + cum_ask_qty_l20)).fillna(0.0)
+        bid_depth_decay = (bid_qty_1 / (cum_bid_qty_l20 + eps)).fillna(0.0)
+        ask_depth_decay = (ask_qty_1 / (cum_ask_qty_l20 + eps)).fillna(0.0)
+        depth_ratio_l1_l20 = (
+            top_liquidity_usd / (depth_usd_l20 + eps)
+        ).clip(0.0, 1.0).fillna(0.0)
+        book_pressure = (l10_imb * microprice_premium_bps).fillna(0.0)
+        dislocation_bps = (((mid / (sym_close + eps)) - 1.0) * 1e4).fillna(0.0)
+        qv24 = (sym_close * sym_volume).rolling(24, min_periods=1).mean().shift(1)
+
+        spread_z = ff.numba_rolling_zscore_fused(spread_bps.astype(np.float32), 24 * 7)
+        depth_l10_z = ff.numba_rolling_zscore_fused(
+            np.log1p(depth_usd_l10).astype(np.float32), 24 * 7
+        )
+        depth_l20_z = ff.numba_rolling_zscore_fused(
+            np.log1p(depth_usd_l20).astype(np.float32), 24 * 7
+        )
+        depth_z = ff.numba_rolling_zscore_fused(
+            np.log1p(depth_usd_l20).astype(np.float32), 24 * 7
+        )
+        liquidity_shock_z = ff.numba_rolling_zscore_fused(
+            depth_usd_l20.diff().fillna(0.0).astype(np.float32), 24 * 7
+        )
+        trade_count_z = ff.numba_rolling_zscore_fused(
+            np.log1p(trade_count_1h).astype(np.float32), 24 * 7
+        )
+        notional_z = ff.numba_rolling_zscore_fused(
+            np.log1p(notional_1h).astype(np.float32), 24 * 7
+        )
+        mean_trade_qty_z = ff.numba_rolling_zscore_fused(
+            np.log1p(mean_trade_qty_1h).astype(np.float32), 24 * 7
+        )
+        imb_chg_1 = ff.numba_rolling_zscore_fused(
+            l10_imb.diff().fillna(0.0).astype(np.float32), 24
+        )
+        imb_accel_4 = ff.numba_rolling_zscore_fused(
+            l10_imb.diff().diff(4).fillna(0.0).astype(np.float32), 24 * 7
+        )
+
+        store("ob_available", symbol, available)
+        store("ob_snapshot_age_sec", symbol, age_sec)
+        store("ob_update_gap_flag", symbol, (age_sec > 5400).astype(np.float32))
+        store("ob_stale_flag", symbol, stale_flag)
+        store("ob_spread_bps", symbol, spread_bps)
+        store("ob_microprice_premium_bps", symbol, microprice_premium_bps)
+        store("ob_mid_close_dislocation_bps", symbol, dislocation_bps)
+        store("ob_l1_imbalance", symbol, l1_imb)
+        store("ob_l5_imbalance", symbol, l1_imb)
+        store("ob_l10_imbalance", symbol, l10_imb)
+        store("ob_l20_imbalance", symbol, l20_imb)
+        store("ob_wimb_l10", symbol, l10_imb)
+        store("ob_wimb_l20", symbol, l20_imb)
+        store("ob_book_pressure_l10", symbol, book_pressure)
+        store("ob_top_liquidity_usd", symbol, top_liquidity_usd)
+        store("ob_depth_usd_l10", symbol, depth_usd_l10)
+        store("ob_depth_usd_l20", symbol, depth_usd_l20)
+        store("ob_depth_usd_l10_z", symbol, depth_l10_z)
+        store("ob_depth_usd_l20_z", symbol, depth_l20_z)
+        store("ob_depth_usd_z_24h", symbol, depth_z)
+        store("ob_spread_z_24h", symbol, spread_z)
+        store("ob_liquidity_shock_z", symbol, liquidity_shock_z)
+        store("ob_imb_chg_1", symbol, imb_chg_1)
+        store("ob_imb_accel_4", symbol, imb_accel_4)
+        store("ob_trade_flow_imbalance_1h", symbol, signed_flow_imbalance_1h)
+        store("ob_trade_count_z_24h", symbol, trade_count_z)
+        store("ob_notional_z_24h", symbol, notional_z)
+        store(
+            "ob_vwap_mid_gap_bps",
+            symbol,
+            (((vwap_1h / (mid + eps)) - 1.0) * 1e4).fillna(0.0),
+        )
+        store("ob_mean_trade_qty_z_24h", symbol, mean_trade_qty_z)
+        store("ob_depth_ratio_l1_l20", symbol, depth_ratio_l1_l20)
+        store("ob_imb_near_far_delta", symbol, (l1_imb - l20_imb).clip(-2.0, 2.0))
+        store("ob_depth_decay_asym_l20", symbol, bid_depth_decay - ask_depth_decay)
+        store("ob_wall_imb_l20", symbol, l20_imb)
+        store("ob_bid_depth_decay_l20", symbol, bid_depth_decay)
+        store("ob_ask_depth_decay_l20", symbol, ask_depth_decay)
+        store("ob_slope_diff_l10", symbol, pd.Series(0.0, index=idx))
+        store("ob_gap_up_bps_l10", symbol, pd.Series(0.0, index=idx))
+        store("ob_gap_dn_bps_l10", symbol, pd.Series(0.0, index=idx))
+        store("ob_gap_skew_l10", symbol, pd.Series(0.0, index=idx))
+
+    for feature_name, by_symbol in feature_store.items():
+        feats[feature_name] = (
+            pd.DataFrame(by_symbol)
+            .reindex(index=idx, columns=cols)
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+
+    basket = _resolve_available_basket_symbols(
+        cols,
+        list(cfg.get("market_basket", [])),
+    )
+    if basket:
+        mkt_ob_pressure = feats["ob_book_pressure_l10"][basket].mean(axis=1)
+        mkt_spread_bps = feats["ob_spread_bps"][basket].mean(axis=1)
+        mkt_depth_z = feats["ob_depth_usd_l20_z"][basket].mean(axis=1)
+    else:
+        mkt_ob_pressure = pd.Series(0.0, index=idx, dtype=np.float32)
+        mkt_spread_bps = pd.Series(0.0, index=idx, dtype=np.float32)
+        mkt_depth_z = pd.Series(0.0, index=idx, dtype=np.float32)
+
+    feats["xasset_asset_minus_mkt_ob_pressure"] = (
+        feats["ob_book_pressure_l10"].sub(mkt_ob_pressure, axis=0).astype(np.float32)
+    )
+    btc_pressure = (
+        feats["ob_book_pressure_l10"].get("BTC/USDC")
+        if "BTC/USDC" in feats["ob_book_pressure_l10"].columns
+        else feats["ob_book_pressure_l10"].get("BTC/USDT", mkt_ob_pressure)
+    )
+    eth_pressure = (
+        feats["ob_book_pressure_l10"].get("ETH/USDC")
+        if "ETH/USDC" in feats["ob_book_pressure_l10"].columns
+        else feats["ob_book_pressure_l10"].get("ETH/USDT", mkt_ob_pressure)
+    )
+    feats["xasset_btc_ob_pressure"] = pd.DataFrame(
+        np.repeat(np.asarray(btc_pressure, dtype=np.float32)[:, None], len(cols), axis=1),
+        index=idx,
+        columns=cols,
+    )
+    feats["xasset_eth_ob_pressure"] = pd.DataFrame(
+        np.repeat(np.asarray(eth_pressure, dtype=np.float32)[:, None], len(cols), axis=1),
+        index=idx,
+        columns=cols,
+    )
+    if isinstance(funding_panel, pd.DataFrame) and isinstance(basis_panel, pd.DataFrame):
+        feats["xasset_leverage_build_score"] = (
+            (
+                (funding_panel > 1).astype(np.float32)
+                + (basis_panel > 1).astype(np.float32)
+                + (feats["ob_l10_imbalance"] > 0).astype(np.float32)
+            )
+            / 3.0
+        ).astype(np.float32)
+    feats["xasset_mkt_spread_bps"] = pd.DataFrame(
+        np.repeat(np.asarray(mkt_spread_bps, dtype=np.float32)[:, None], len(cols), axis=1),
+        index=idx,
+        columns=cols,
+    )
+    feats["xasset_mkt_depth_z"] = pd.DataFrame(
+        np.repeat(np.asarray(mkt_depth_z, dtype=np.float32)[:, None], len(cols), axis=1),
+        index=idx,
+        columns=cols,
+    )
+    feats["xasset_mkt_ob_stress"] = (
+        feats["xasset_mkt_spread_bps"] - feats["xasset_mkt_depth_z"]
+    ).astype(np.float32)
+    feats["xasset_ob_stress_basket"] = feats["xasset_mkt_ob_stress"].astype(np.float32)
+    feats["xasset_asset_minus_basket_ob_pressure"] = ff.numba_rolling_zscore_fused(
+        feats["xasset_asset_minus_mkt_ob_pressure"].astype(np.float32), 24 * 7
+    ).astype(np.float32)
+    feats["xasset_ob_liquidity_divergence"] = (
+        feats["ob_depth_usd_l20_z"].sub(
+            feats["ob_depth_usd_l20_z"].mean(axis=1), axis=0
+        )
+    ).astype(np.float32)
+
+    rv24z = (
+        ff.numba_rolling_zscore_fused(rv24h_panel.astype(np.float32), 14 * 24)
+        if isinstance(rv24h_panel, pd.DataFrame)
+        else pd.DataFrame(0.0, index=idx, columns=cols, dtype=np.float32)
+    )
+    feats["ob_pressure_x_ret4h_sign"] = (
+        ff.numba_rolling_zscore_fused(
+            (
+                feats["ob_book_pressure_l10"]
+                * np.sign(ret4h_panel).astype(np.float32)
+            ).astype(np.float32),
+            24 * 7,
+        ).astype(np.float32)
+        if isinstance(ret4h_panel, pd.DataFrame)
+        else feats["ob_book_pressure_l10"].copy()
+    )
+    feats["ob_spread_z_x_rv_24h"] = (
+        (feats["ob_spread_z_24h"] * rv24z).clip(-12, 12).astype(np.float32)
+    )
+    feats["ob_depth_z_x_rvol_z"] = (
+        (
+            feats["ob_depth_usd_l20_z"]
+            * (
+                rvol_panel.astype(np.float32)
+                if isinstance(rvol_panel, pd.DataFrame)
+                else pd.DataFrame(0.0, index=idx, columns=cols, dtype=np.float32)
+            )
+        )
+        .clip(-12, 12)
+        .astype(np.float32)
+    )
+    if isinstance(ret24h_panel, pd.DataFrame):
+        feats["ob_mid_close_dislocation_bps"] = (
+            feats["ob_mid_close_dislocation_bps"] * (ret24h_panel.notna().astype(np.float32))
+        ).astype(np.float32)
+    return feats
+
+
+def _compute_features_hourly_runtime(
+    panel: dict[str, pd.DataFrame],
+    mkt_gates: pd.DataFrame,
+    cfg: dict,
+    orderbook_by_symbol: dict[str, pd.DataFrame],
+    requested_feature_keys: list[str] | None = None,
+):
+    _ensure_feature_runtime_support()
+    runtime_cfg = dict(cfg)
+    runtime_cfg["enable_orderbook_features"] = False
+    runtime_cfg["enable_orderbook_wall_features"] = False
+    feats, feat_index, feat_columns = compute_features_hourly(
+        panel,
+        mkt_gates,
+        runtime_cfg,
+        requested_feature_keys=requested_feature_keys,
+    )
+    feats = _inject_orderbook_summary_features(
+        feats,
+        panel,
+        orderbook_by_symbol,
+        cfg,
+    )
+    if "rv_rel_universe" not in feats and isinstance(feats.get("rv_24h"), pd.DataFrame):
+        rv24 = feats["rv_24h"].astype(np.float32)
+        denom = rv24.median(axis=1).replace(0.0, np.nan)
+        feats["rv_rel_universe"] = (
+            rv24.div(denom, axis=0)
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+    feats = _inject_orderbook_wall_features(
+        feats,
+        panel,
+        orderbook_by_symbol,
+        cfg,
+        requested_feature_keys=requested_feature_keys,
+    )
+    return feats, feat_index, feat_columns
 
 # Priority order for quote-currency deduplication.
 _QUOTE_PRIORITY: list[str] = ["USDT", "USDC", "BUSD", "EUR"]
@@ -5619,6 +6174,21 @@ def run_feature_generation_step(
     tprint(
         f"Universe (Top {cfg['fetch_symbols_M']} Vol + VarianceFilter): {len(train_syms)} symbols"
     )
+    output_syms = list(train_syms)
+    explicit_feature_subset = bool(margin_symbols)
+    feature_context_syms: list[str] = []
+    if explicit_feature_subset:
+        context_candidates = apply_hardcoded_universe_exclusions(
+            list(cfg.get("market_basket", [])) + ["BTC/USDC", "ETH/USDC"]
+        )
+        feature_context_syms = [
+            sym for sym in context_candidates if sym not in set(output_syms)
+        ]
+        if feature_context_syms:
+            tprint(
+                f"Feature subset mode: adding {len(feature_context_syms)} context symbols "
+                "for cross-asset and market-basket features."
+            )
 
     lookback_days = max(180, int(cfg["fetch_years"] * 365))
 
@@ -5727,7 +6297,7 @@ def run_feature_generation_step(
     # 3. Load Data
     dfs = {}
 
-    syms_to_load = list(train_syms)
+    syms_to_load = list(train_syms) + feature_context_syms
     if backfill_keys and not force_full_recompute and stale_symbols_for_backfill:
         # Incremental backfill mode: only load symbols that need backfilling
         required_syms = sorted(
@@ -5800,6 +6370,17 @@ def run_feature_generation_step(
     # 3. Compute Features (Panel)
     tprint("Constructing Panel...")
     panel = to_panel(dfs)
+    microdata_panel, orderbook_by_symbol = _load_saved_microdata_for_symbols(
+        cfg["data_root"],
+        loaded_syms,
+        panel["close"].index,
+    )
+    panel.update(microdata_panel)
+    if microdata_panel:
+        tprint(
+            "Loaded saved microdata panels: "
+            + ", ".join(f"{k}={v.shape}" for k, v in microdata_panel.items())
+        )
     panel_close_ref = panel["close"].copy() if "close" in panel else None
     panel_symbols = (
         list(panel["close"].columns) if "close" in panel else list(loaded_syms)
@@ -5903,11 +6484,17 @@ def run_feature_generation_step(
                 if key_batch is not None:
                     tprint(f"{batch_label} computing requested_keys={len(key_batch)}")
                 panel_chunk = {k: v.copy() for k, v in panel_chunk_source.items()}
+                orderbook_chunk = {
+                    sym: orderbook_by_symbol[sym]
+                    for sym in chunk_syms
+                    if sym in orderbook_by_symbol
+                }
                 compute_t0 = time.perf_counter()
-                feats_chunk, feat_index, feat_columns = compute_features_hourly(
+                feats_chunk, feat_index, feat_columns = _compute_features_hourly_runtime(
                     panel_chunk,
                     mkt_gates.copy(),
                     cfg,
+                    orderbook_chunk,
                     requested_feature_keys=key_batch,
                 )
                 compute_dt = time.perf_counter() - compute_t0
@@ -5994,7 +6581,7 @@ def run_feature_generation_step(
                         f"{batch_label} timings: compute={compute_dt:.1f}s save={save_dt:.1f}s"
                     )
                     total_saved_keys += len(feats_chunk)
-                del panel_chunk, feats_chunk
+                del panel_chunk, feats_chunk, orderbook_chunk
                 gc.collect()
 
             del panel_chunk_source
@@ -6024,14 +6611,27 @@ def run_feature_generation_step(
                 f"Incremental feature compute requested_keys={len(requested_feature_keys)}"
             )
         compute_t0 = time.perf_counter()
-        feats, feat_index, feat_columns = compute_features_hourly(
+        feats, feat_index, feat_columns = _compute_features_hourly_runtime(
             panel,
             mkt_gates,
             cfg,
+            orderbook_by_symbol,
             requested_feature_keys=requested_feature_keys,
         )
         compute_dt = time.perf_counter() - compute_t0
         min_ts_by_symbol = None
+
+        if explicit_feature_subset and output_syms:
+            keep_cols = [sym for sym in output_syms if sym in feat_columns]
+            feats = {
+                k: (
+                    v.reindex(columns=keep_cols).astype(np.float32)
+                    if isinstance(v, pd.DataFrame)
+                    else v
+                )
+                for k, v in feats.items()
+            }
+            feat_columns = keep_cols
 
         full_health_issues = _feature_snapshot_health_issues(feats)
         if full_health_issues:

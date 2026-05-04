@@ -313,3 +313,74 @@ def test_load_microdata_panel_preserves_saved_orderbook_fields(tmp_path):
     assert "orderbook_cum_bid_qty_l20" in panel
     np.testing.assert_allclose(panel["orderbook_hourly"]["A/USDT"], [1.0, 1.1])
     np.testing.assert_allclose(panel["orderbook_best_bid"]["A/USDT"], [0.9, 1.0])
+
+
+def test_update_microdata_symbol_uses_perp_exchange_for_spot_funding(
+    tmp_path, monkeypatch
+):
+    class _SpotExchange:
+        pass
+
+    class _PerpExchange:
+        def fetch_funding_rate_history(self, symbol, since=None, limit=None):
+            assert symbol == "A/USDT:USDT"
+            return [
+                {
+                    "timestamp": int(
+                        pd.Timestamp("2026-01-01 00:00:00", tz="UTC").timestamp() * 1000
+                    ),
+                    "fundingRate": 0.0015,
+                }
+            ]
+
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher.make_perp_exchange",
+        lambda: _PerpExchange(),
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher._resolve_perp_symbol",
+        lambda exchange, symbol: "A/USDT:USDT",
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher._compute_missing_hourly_ranges",
+        lambda existing_idx, start_ts, end_ts: [
+            (
+                pd.Timestamp("2026-01-01 00:00:00", tz="UTC"),
+                pd.Timestamp("2026-01-01 01:00:00", tz="UTC"),
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher.fetch_hourly_orderbook_proxy",
+        lambda exchange, symbol, since_ms, until_ms: pd.DataFrame(
+            {
+                "best_bid": [1.0],
+                "best_ask": [1.2],
+                "mid": [1.1],
+                "bid_qty_1": [10.0],
+                "ask_qty_1": [12.0],
+                "cum_bid_qty_l10": [20.0],
+                "cum_ask_qty_l10": [22.0],
+                "cum_bid_qty_l20": [30.0],
+                "cum_ask_qty_l20": [32.0],
+                "snapshot_ts": [pd.Timestamp("2026-01-01 00:59:00", tz="UTC")],
+            },
+            index=pd.DatetimeIndex(
+                [pd.Timestamp("2026-01-01 00:00:00", tz="UTC")], name="ts"
+            ),
+        ),
+    )
+
+    fetcher = DataFetcher(exchange=_SpotExchange(), data_root=str(tmp_path))
+    out = fetcher.update_microdata_symbol("A/USDT", backfill_days=30)
+
+    assert out["orderbook"] is True
+    assert out["funding"] is True
+
+    orderbook = pd.read_parquet(fetcher.orderbook_dir / "A_USDT.parquet")
+    assert "mid" in orderbook.columns
+    np.testing.assert_allclose(orderbook["mid"].to_numpy(), [1.1], rtol=1e-6)
+
+    funding = pd.read_parquet(fetcher.funding_dir / "A_USDT.parquet")
+    assert "funding_rate" in funding.columns
+    np.testing.assert_allclose(funding["funding_rate"].to_numpy(), [0.0015], rtol=1e-6)

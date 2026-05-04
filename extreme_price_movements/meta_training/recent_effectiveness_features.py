@@ -1,0 +1,405 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+import numpy as np
+import pandas as pd
+
+
+def _spearman_corr(x: np.ndarray, y: np.ndarray) -> float:
+    ok = np.isfinite(x) & np.isfinite(y)
+    x = x[ok]
+    y = y[ok]
+    if x.size < 2 or y.size < 2:
+        return np.nan
+    rx = pd.Series(x).rank(method="average").to_numpy(dtype=np.float32)
+    ry = pd.Series(y).rank(method="average").to_numpy(dtype=np.float32)
+    if np.nanstd(rx) <= 0.0 or np.nanstd(ry) <= 0.0:
+        return np.nan
+    return float(np.corrcoef(rx, ry)[0, 1])
+
+
+def _ece_from_hist(pred: np.ndarray, actual: np.ndarray, n_bins: int = 10) -> float:
+    p = pred.astype(np.float32, copy=False)
+    a = actual.astype(np.float32, copy=False)
+    ok = np.isfinite(p) & np.isfinite(a)
+    if int(ok.sum()) == 0:
+        return np.nan
+    p = p[ok]
+    a = a[ok]
+    edges = np.linspace(0.0, 1.0, n_bins + 1, dtype=np.float32)
+    ece = 0.0
+    n = float(p.size)
+    for i in range(n_bins):
+        lo = edges[i]
+        hi = edges[i + 1]
+        mask = (p >= lo) & (p < hi) if i < n_bins - 1 else (p >= lo) & (p <= hi)
+        n_bin = int(mask.sum())
+        if n_bin > 0:
+            ece += (n_bin / n) * abs(
+                float(np.nanmean(p[mask])) - float(np.nanmean(a[mask]))
+            )
+    return float(ece)
+
+
+def _window_stats(
+    hist: pd.DataFrame,
+    *,
+    score_col: str,
+    prob_col: str,
+    y_col: str,
+    ret_col: str,
+    top_frac: float,
+    min_samples: int,
+    min_top_samples: int,
+) -> dict[str, float]:
+    out = {
+        "n_samples": float(len(hist)),
+        "n_valid": 0.0,
+        "rolling_ic": np.nan,
+        "model_ece": np.nan,
+        "top_hit_rate": np.nan,
+        "top_calibration_error": np.nan,
+        "abs_top_calibration_error": np.nan,
+        "top_ev": np.nan,
+        "n_top": np.nan,
+    }
+    if len(hist) < min_samples:
+        return out
+    s = hist[score_col].to_numpy(dtype=np.float32)
+    r = hist[ret_col].to_numpy(dtype=np.float32)
+    p = hist[prob_col].to_numpy(dtype=np.float32)
+    y = hist[y_col].to_numpy(dtype=np.float32)
+    valid_all = np.isfinite(s) & np.isfinite(r) & np.isfinite(p) & np.isfinite(y)
+    out["n_valid"] = float(int(valid_all.sum()))
+    out["rolling_ic"] = _spearman_corr(s, r)
+    out["model_ece"] = _ece_from_hist(p, y)
+    valid = np.isfinite(s)
+    if int(valid.sum()) < min_top_samples:
+        return out
+    thr = np.nanquantile(s[valid], 1.0 - top_frac)
+    top = valid & (s >= thr)
+    top_ok = top & np.isfinite(p) & np.isfinite(y) & np.isfinite(r)
+    out["n_top"] = float(int(top_ok.sum()))
+    if int(top_ok.sum()) >= min_top_samples:
+        out["top_hit_rate"] = float(np.nanmean(y[top_ok]))
+        out["top_calibration_error"] = float(
+            np.nanmean(p[top_ok]) - np.nanmean(y[top_ok])
+        )
+        out["abs_top_calibration_error"] = abs(out["top_calibration_error"])
+        out["top_ev"] = float(np.nanmean(r[top_ok]))
+    return out
+
+
+def _compute_scope_timeseries(
+    g: pd.DataFrame,
+    *,
+    ts_col: str,
+    label_available_ts_col: str,
+    windows: tuple[str, ...],
+    metric_fn,
+) -> pd.DataFrame:
+    rows: list[dict[str, float | pd.Timestamp]] = []
+    ts_unique = pd.Index(g[ts_col].dropna().unique()).sort_values()
+    for t in ts_unique:
+        rec: dict[str, float | pd.Timestamp] = {ts_col: t}
+        for win in windows:
+            hist = g[
+                (g[label_available_ts_col] < t) & (g[ts_col] >= t - pd.Timedelta(win))
+            ]
+            vals = metric_fn(hist)
+            for k, v in vals.items():
+                rec[f"{k}_{win.lower()}"] = v
+        rows.append(rec)
+    return pd.DataFrame(rows)
+
+
+def _add_scope_features(
+    df: pd.DataFrame,
+    *,
+    scope_name: str,
+    scope_cols: Iterable[str],
+    windows: tuple[str, ...],
+    ts_col: str,
+    label_available_ts_col: str,
+    score_col: str,
+    prob_col: str,
+    y_col: str,
+    ret_col: str,
+    top_frac: float,
+    min_samples: int,
+    min_top_samples: int,
+) -> pd.DataFrame:
+    top_label = f"top{int(round(top_frac * 100))}"
+    metrics = [
+        "rolling_ic",
+        "model_ece",
+        f"{top_label}_hit_rate",
+        f"{top_label}_calibration_error",
+        f"abs_{top_label}_calibration_error",
+        f"{top_label}_ev",
+        "n_samples",
+        f"n_{top_label}",
+        "n_valid",
+    ]
+    for win in windows:
+        sfx = win.lower()
+        for m in metrics:
+            df[f"recent_{scope_name}_{m}_{sfx}"] = np.nan
+        df[f"recent_{scope_name}_available_{sfx}"] = np.int8(0)
+
+    grouped = (
+        df.groupby(list(scope_cols), sort=False, dropna=False)
+        if scope_cols
+        else [(None, df)]
+    )
+    for _, g in grouped:
+        stats_ts = _compute_scope_timeseries(
+            g,
+            ts_col=ts_col,
+            label_available_ts_col=label_available_ts_col,
+            windows=windows,
+            metric_fn=lambda hist: _window_stats(
+                hist,
+                score_col=score_col,
+                prob_col=prob_col,
+                y_col=y_col,
+                ret_col=ret_col,
+                top_frac=top_frac,
+                min_samples=min_samples,
+                min_top_samples=min_top_samples,
+            ),
+        )
+        if stats_ts.empty:
+            continue
+        mapped = pd.merge_asof(
+            g[[ts_col]].sort_values(ts_col),
+            stats_ts.sort_values(ts_col),
+            on=ts_col,
+            direction="backward",
+            allow_exact_matches=True,
+        )
+        mapped.index = g[[ts_col]].sort_values(ts_col).index
+        for idx in g.index:
+            row = mapped.loc[idx]
+            for win in windows:
+                sfx = win.lower()
+                for m in metrics:
+                    key = f"{m}_{sfx}"
+                    df.at[idx, f"recent_{scope_name}_{m}_{sfx}"] = row.get(key, np.nan)
+                df.at[idx, f"recent_{scope_name}_available_{sfx}"] = np.int8(
+                    row.get(f"n_valid_{sfx}", 0.0) >= min_samples
+                    and np.isfinite(row.get(f"model_ece_{sfx}", np.nan))
+                )
+    return df
+
+
+def add_recent_effectiveness_features(
+    df: pd.DataFrame,
+    *,
+    ts_col: str = "timestamp",
+    label_available_ts_col: str = "label_available_ts",
+    score_col: str = "score",
+    prob_col: str = "p_hat",
+    y_col: str = "y_true",
+    ret_col: str = "y_ret_net",
+    group_cols: tuple[str, ...] = ("side", "horizon"),
+    bucket_col: str = "bucket",
+    regime_col: str = "regime",
+    symbol_col: str = "symbol",
+    windows: tuple[str, ...] = ("5D", "15D", "30D"),
+    top_frac: float = 0.10,
+    min_samples: int = 100,
+    min_top_samples: int = 25,
+) -> pd.DataFrame:
+    out = df.sort_values(ts_col).copy()
+    required = [ts_col, label_available_ts_col, score_col, prob_col, y_col, ret_col]
+    missing = [c for c in required if c not in out.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+    out[ts_col] = pd.to_datetime(out[ts_col], errors="coerce")
+    out[label_available_ts_col] = pd.to_datetime(
+        out[label_available_ts_col], errors="coerce"
+    )
+    scopes: dict[str, tuple[str, ...]] = {
+        "global": (),
+        "side_horizon": group_cols,
+        "bucket": (bucket_col,),
+        "bucket_side_horizon": (bucket_col, *group_cols),
+        "regime": (regime_col,),
+        "asset": (symbol_col,),
+        "asset_side_horizon": (symbol_col, *group_cols),
+    }
+    for scope, cols in scopes.items():
+        if all(c in out.columns for c in cols):
+            out = _add_scope_features(
+                out,
+                scope_name=scope,
+                scope_cols=cols,
+                windows=windows,
+                ts_col=ts_col,
+                label_available_ts_col=label_available_ts_col,
+                score_col=score_col,
+                prob_col=prob_col,
+                y_col=y_col,
+                ret_col=ret_col,
+                top_frac=top_frac,
+                min_samples=min_samples,
+                min_top_samples=min_top_samples,
+            )
+    out["recent_effectiveness_available"] = out.get(
+        "recent_global_available_30d",
+        pd.Series(np.zeros(len(out), dtype=np.int8), index=out.index),
+    ).astype(np.int8)
+    return out
+
+
+def add_recent_meta_self_features(
+    df: pd.DataFrame,
+    *,
+    ts_col: str = "timestamp",
+    label_available_ts_col: str = "label_available_ts",
+    meta_score_col: str = "meta_score",
+    meta_prob_col: str = "p_meta",
+    y_success_col: str = "y_true",
+    ret_col: str = "y_ret_net",
+    meta_accept_col: str = "meta_accept",
+    symbol_col: str = "symbol",
+    windows: tuple[str, ...] = ("5D", "10D", "30D"),
+    min_samples: int = 50,
+    min_top_samples: int = 20,
+) -> pd.DataFrame:
+    out = df.sort_values(ts_col).copy()
+    required = [ts_col, label_available_ts_col, meta_prob_col, y_success_col, ret_col]
+    missing = [c for c in required if c not in out.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+    base = out.copy()
+    out[ts_col] = pd.to_datetime(out[ts_col], errors="coerce")
+    base[ts_col] = pd.to_datetime(base[ts_col], errors="coerce")
+    out[label_available_ts_col] = pd.to_datetime(
+        out[label_available_ts_col], errors="coerce"
+    )
+    base[label_available_ts_col] = pd.to_datetime(
+        base[label_available_ts_col], errors="coerce"
+    )
+    scopes = {
+        "global": (),
+        "side_horizon": ("side", "horizon"),
+        "bucket": ("bucket",),
+        "asset": (symbol_col,),
+        "asset_side_horizon": (symbol_col, "side", "horizon"),
+    }
+    for scope, cols in scopes.items():
+        if not all(c in base.columns for c in cols):
+            continue
+        grouped = (
+            base.groupby(list(cols), sort=False, dropna=False)
+            if cols
+            else [(None, base)]
+        )
+        for win in windows:
+            sfx = win.lower()
+            for name in [
+                "rank_ic",
+                "ece",
+                "top10_cal_error",
+                "top10_hit_rate",
+                "top10_ev",
+                "accept_hit_rate",
+                "accept_ev",
+                "false_accept_rate",
+                "false_reject_rate",
+                "reject_opportunity_cost",
+                "n",
+            ]:
+                out[f"recent_meta_{scope}_{name}_{sfx}"] = np.nan
+            out[f"recent_meta_{scope}_available_{sfx}"] = np.int8(0)
+        for _, g in grouped:
+            idx = g.index.to_numpy()
+            ts = g[ts_col]
+            for i, ridx in enumerate(idx):
+                t = ts.iloc[i]
+                for win in windows:
+                    hist = g[
+                        (g[label_available_ts_col] < t)
+                        & (g[ts_col] >= t - pd.Timedelta(win))
+                    ]
+                    sfx = win.lower()
+                    n = len(hist)
+                    out.at[ridx, f"recent_meta_{scope}_n_{sfx}"] = float(n)
+                    if n < min_samples:
+                        continue
+                    p = hist[meta_prob_col].to_numpy(np.float32)
+                    mscore = (
+                        hist[meta_score_col].to_numpy(np.float32)
+                        if meta_score_col in hist.columns
+                        else p
+                    )
+                    y = hist[y_success_col].to_numpy(np.float32)
+                    r = hist[ret_col].to_numpy(np.float32)
+                    a = (
+                        hist[meta_accept_col].to_numpy(np.float32)
+                        if meta_accept_col in hist.columns
+                        else (p >= 0.5).astype(np.float32)
+                    )
+                    out.at[ridx, f"recent_meta_{scope}_rank_ic_{sfx}"] = _spearman_corr(
+                        mscore, y
+                    )
+                    out.at[ridx, f"recent_meta_{scope}_ece_{sfx}"] = _ece_from_hist(
+                        p, y
+                    )
+                    finite_score = np.isfinite(mscore)
+                    top = np.zeros_like(finite_score, dtype=bool)
+                    if int(finite_score.sum()) >= min_top_samples:
+                        thr = np.nanquantile(mscore[finite_score], 0.9)
+                        top = finite_score & (mscore >= thr)
+                    top_ok = top & np.isfinite(p) & np.isfinite(y) & np.isfinite(r)
+                    if int(top_ok.sum()) >= min_top_samples:
+                        out.at[
+                            ridx, f"recent_meta_{scope}_top10_cal_error_{sfx}"
+                        ] = float(np.nanmean(p[top_ok]) - np.nanmean(y[top_ok]))
+                        out.at[
+                            ridx, f"recent_meta_{scope}_top10_hit_rate_{sfx}"
+                        ] = float(np.nanmean(y[top_ok]))
+                        out.at[ridx, f"recent_meta_{scope}_top10_ev_{sfx}"] = float(
+                            np.nanmean(r[top_ok])
+                        )
+                    valid_accept = np.isfinite(a)
+                    accept = valid_accept & (a > 0.0)
+                    accept_ret = accept & np.isfinite(r)
+                    if int(accept_ret.sum()) >= min_top_samples:
+                        out.at[
+                            ridx, f"recent_meta_{scope}_accept_hit_rate_{sfx}"
+                        ] = float(np.nanmean(y[accept_ret]))
+                        out.at[ridx, f"recent_meta_{scope}_accept_ev_{sfx}"] = float(
+                            np.nanmean(r[accept_ret])
+                        )
+                    reject = valid_accept & (a <= 0.0)
+                    reject_ret = reject & np.isfinite(r)
+                    out.at[ridx, f"recent_meta_{scope}_false_accept_rate_{sfx}"] = (
+                        float(np.nanmean((r[accept_ret] <= 0.0).astype(np.float32)))
+                        if int(accept_ret.sum()) > 0
+                        else np.nan
+                    )
+                    out.at[ridx, f"recent_meta_{scope}_false_reject_rate_{sfx}"] = (
+                        float(np.nanmean((r[reject_ret] > 0.0).astype(np.float32)))
+                        if int(reject_ret.sum()) > 0
+                        else np.nan
+                    )
+                    out.at[
+                        ridx, f"recent_meta_{scope}_reject_opportunity_cost_{sfx}"
+                    ] = (
+                        float(np.nanmean(np.maximum(r[reject_ret], 0.0)))
+                        if int(reject_ret.sum()) > 0
+                        else np.nan
+                    )
+                    out.at[ridx, f"recent_meta_{scope}_available_{sfx}"] = np.int8(1)
+    out["recent_meta_ece_30d"] = out.get("recent_meta_global_ece_30d")
+    out["recent_meta_top10_cal_error_30d"] = out.get(
+        "recent_meta_global_top10_cal_error_30d"
+    )
+    out["recent_meta_accept_hit_rate_5d"] = out.get(
+        "recent_meta_global_accept_hit_rate_5d"
+    )
+    return out

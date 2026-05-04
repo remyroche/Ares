@@ -333,7 +333,7 @@ def _parse_market_listed_at(meta: Dict[str, Any]) -> Optional[int]:
 def _load_universe_from_exchange(
     exchange: Any,
     *,
-    min_age_days: int = 180,
+    min_age_days: int = 14,
     quote_currency: str = "USDC",
 ) -> List[str]:
     """Build inference universe from exchange.load_markets() metadata.
@@ -379,7 +379,7 @@ def get_margin_universe(
     exchange=None,
     *,
     force_refresh: bool = False,
-    min_age_days: int = 180,
+    min_age_days: int = 14,
     quote_currency: str = "USDC",
 ) -> List[str]:
     """Get list of margin-enabled symbols from cache.

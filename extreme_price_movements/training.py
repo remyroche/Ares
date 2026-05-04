@@ -16548,13 +16548,15 @@ def train_meta_models_from_artifacts(
 
     def _combo_objective_for_score(
         y_true, score, timestamps
-    ) -> tuple[float, float, float, float, float, float]:
+    ) -> tuple[float, float, float, float, float, float, float, float]:
         _y = np.asarray(y_true, dtype=np.float64)
         _s = np.asarray(score, dtype=np.float64)
         _m = np.isfinite(_y) & np.isfinite(_s)
         if int(np.sum(_m)) < 30:
             return (
                 float("-inf"),
+                float("nan"),
+                float("nan"),
                 float("nan"),
                 float("nan"),
                 float("nan"),
@@ -16569,6 +16571,7 @@ def train_meta_models_from_artifacts(
         _hit005 = _top_mean_for_score(_y, _s, 0.005)
         _lift15 = float(_hit15 / max(_base_rate, 1e-12))
         _ndcg10 = _top_ndcg_at_k(_y, _s, k=10)
+        _ndcg20 = _top_ndcg_at_k(_y, _s, k=20)
         _stab15 = _weekly_top_stability_for_score(
             _y,
             _s,
@@ -16585,7 +16588,8 @@ def train_meta_models_from_artifacts(
             + 0.20 * _precision15
             + 0.15 * _precision01
             + 0.15 * _precision005
-            + 0.20 * _ndcg10
+            + 0.10 * _ndcg10
+            + 0.10 * _ndcg20
             + 0.10 * _stab15
         )
         return (
@@ -16595,6 +16599,8 @@ def train_meta_models_from_artifacts(
             _precision15,
             _precision01,
             _precision005,
+            float(_ndcg10),
+            float(_ndcg20),
         )
 
     def _optimize_base_meta_combination(
@@ -16620,13 +16626,15 @@ def train_meta_models_from_artifacts(
                 float,
                 float,
                 float,
+                float,
+                float,
                 np.ndarray,
             ]
         ] = []
         for _w in _weights:
             _qw = np.clip(0.5 + _w * (_q - 0.5), 1e-6, 1.0 - 1e-6)
             _score = np.clip(_qw * _b + (1.0 - _qw) * (1.0 - _b), 1e-6, 1.0 - 1e-6)
-            _obj, _lift, _stab, _p15, _p01, _p005 = _combo_objective_for_score(
+            _obj, _lift, _stab, _p15, _p01, _p005, _ndcg10, _ndcg20 = _combo_objective_for_score(
                 _y, _score, _ts
             )
             _candidates.append(
@@ -16640,13 +16648,15 @@ def train_meta_models_from_artifacts(
                     _p15,
                     _p01,
                     _p005,
+                    _ndcg10,
+                    _ndcg20,
                     _score,
                 )
             )
         _top_candidates = sorted(_candidates, key=lambda item: item[0], reverse=True)
         _best = _top_candidates[0]
         return {
-            "score": np.asarray(_best[9], dtype=np.float32),
+            "score": np.asarray(_best[11], dtype=np.float32),
             "family": str(_best[1]),
             "meta_weight": float(_best[2]),
             "blend_weight": float(_best[3]),
@@ -16658,6 +16668,8 @@ def train_meta_models_from_artifacts(
             "precision15": float(_best[6]),
             "precision01": float(_best[7]),
             "precision005": float(_best[8]),
+            "ndcg10": float(_best[9]),
+            "ndcg20": float(_best[10]),
             "grid": [
                 {
                     "objective": float(_item[0]),
@@ -16671,6 +16683,8 @@ def train_meta_models_from_artifacts(
                     "precision15": float(_item[6]),
                     "precision01": float(_item[7]),
                     "precision005": float(_item[8]),
+                    "ndcg10": float(_item[9]),
+                    "ndcg20": float(_item[10]),
                 }
                 for _item in _top_candidates[:10]
             ],
@@ -16768,6 +16782,7 @@ def train_meta_models_from_artifacts(
                 0.30,
             ),
             "ndcg10": _top_ndcg_at_k(_y_v, _score_v, k=10),
+            "ndcg20": _top_ndcg_at_k(_y_v, _score_v, k=20),
         }
         try:
             from sklearn.metrics import brier_score_loss, roc_auc_score

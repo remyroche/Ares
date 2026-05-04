@@ -1049,6 +1049,10 @@ def _metric_pack(
     ic_metrics30 = _rank_ic_metrics(y, p, 0.30)
     ic15 = float(ic_metrics["ic_top"])
     ndcg10 = float(_ndcg_at_k(y, p, k=10))
+    ndcg20 = float(_ndcg_at_k(y, p, k=20))
+    # Tradable-calibrated ranking diagnostics over execution-like top slices.
+    ndcg_top20pct = float(_ndcg_at_k(y[top20], p[top20], k=min(20, len(top20)))) if len(top20) else 0.0
+    ndcg_top10pct = float(_ndcg_at_k(y[top10], p[top10], k=min(10, len(top10)))) if len(top10) else 0.0
     return {
         "lift15": float(lift15),
         "lift30": float(lift30),
@@ -1071,6 +1075,10 @@ def _metric_pack(
         "precision005": float(hit_rate005),
         "ndcg@10": ndcg10,
         "ndcg_at_10": ndcg10,
+        "ndcg@20": ndcg20,
+        "ndcg_at_20": ndcg20,
+        "ndcg_tradable_top20pct": ndcg_top20pct,
+        "ndcg_tradable_top10pct": ndcg_top10pct,
         "auc_correct_15": float(auc15),
         "auc_correct_30": (
             float(
@@ -1149,6 +1157,21 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     ndcg_at_10 = float(
         np.mean([m.get("ndcg_at_10", m.get("ndcg@10", 0.0)) for m in fold_metrics])
     )
+    ndcg_at_20 = float(
+        np.mean([m.get("ndcg_at_20", m.get("ndcg@20", 0.0)) for m in fold_metrics])
+    )
+    ndcg_tradable_top20pct = float(
+        np.mean([m.get("ndcg_tradable_top20pct", 0.0) for m in fold_metrics])
+    )
+    ndcg_tradable_top10pct = float(
+        np.mean([m.get("ndcg_tradable_top10pct", 0.0) for m in fold_metrics])
+    )
+    _ndcg20_fold = np.asarray(
+        [m.get("ndcg_at_20", m.get("ndcg@20", 0.0)) for m in fold_metrics],
+        dtype=np.float64,
+    )
+    ndcg20_std = float(np.std(_ndcg20_fold, ddof=1)) if len(_ndcg20_fold) > 1 else 0.0
+    ndcg20_p25 = float(np.percentile(_ndcg20_fold, 25.0)) if len(_ndcg20_fold) > 0 else 0.0
     auc30 = float(
         np.mean(
             [
@@ -1189,6 +1212,12 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         "precision005": precision005,
         "ndcg@10": ndcg_at_10,
         "ndcg_at_10": ndcg_at_10,
+        "ndcg@20": ndcg_at_20,
+        "ndcg_at_20": ndcg_at_20,
+        "ndcg_tradable_top20pct": ndcg_tradable_top20pct,
+        "ndcg_tradable_top10pct": ndcg_tradable_top10pct,
+        "ndcg20_std": ndcg20_std,
+        "ndcg20_p25": ndcg20_p25,
         "auc_correct_30": auc30,
         "stability30": stability30,
         "stability15": stability30,
@@ -1213,18 +1242,39 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
 def _hpo_objective_from_aggregate(
     agg: dict[str, float], objective_mode: str = "base"
 ) -> float:
+    # Pareto-style feasibility constraints for ranking-aware selection.
+    _ndcg20_floor = 0.05
+    _ndcg20_p25_floor = 0.03
+    _precision_floor = float(agg.get("pareto_precision_floor", 0.0))
+    if (
+        float(agg.get("ndcg_at_20", agg.get("ndcg@20", 0.0))) < _ndcg20_floor
+        or float(agg.get("ndcg20_p25", 0.0)) < _ndcg20_p25_floor
+        or float(agg.get("precision15", agg.get("hit_rate15", 0.0))) < _precision_floor
+    ):
+        return float(-1e9)
     if str(objective_mode).lower() == "meta":
+        _tradable_ndcg = float(agg.get("ndcg_tradable_top20pct", agg.get("ndcg_tradable_top10pct", 0.0)))
         return float(
-            0.30 * float(agg.get("precision15", agg.get("hit_rate15", 0.0)))
-            + 0.25 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
-            + 0.15 * float(agg.get("precision01", agg.get("precision1", 0.0)))
-            + 0.15 * float(agg.get("precision005", 0.0))
-            + 0.15 * float(agg.get("ndcg_at_10", 0.0))
-            + 0.15 * float(agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0))))
+            0.24 * float(agg.get("precision15", agg.get("hit_rate15", 0.0)))
+            + 0.22 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
+            + 0.12 * float(agg.get("precision01", agg.get("precision1", 0.0)))
+            + 0.10 * float(agg.get("precision005", 0.0))
+            + 0.12 * float(agg.get("ndcg_at_10", 0.0))
+            + 0.10 * float(agg.get("ndcg_at_20", agg.get("ndcg@20", 0.0)))
+            + 0.05 * _tradable_ndcg
+            + 0.10 * float(agg.get("ndcg20_p25", 0.0))
+            - 0.05 * float(agg.get("ndcg20_std", 0.0))
+            + 0.10 * float(agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0))))
         )
+    _tradable_ndcg = float(agg.get("ndcg_tradable_top10pct", agg.get("ndcg_tradable_top20pct", 0.0)))
     return float(
-        0.65 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
-        + 0.35 * float(agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0))))
+        0.45 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
+        + 0.25 * float(agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0))))
+        + 0.12 * float(agg.get("ndcg_at_10", 0.0))
+        + 0.08 * float(agg.get("ndcg_at_20", agg.get("ndcg@20", 0.0)))
+        + 0.05 * _tradable_ndcg
+        + 0.08 * float(agg.get("ndcg20_p25", 0.0))
+        - 0.03 * float(agg.get("ndcg20_std", 0.0))
     )
 
 
@@ -3858,8 +3908,11 @@ def _fit_final_model(
             "feature_j_scores": {c: 1.0 for c in Xs.columns},
         }
         hpo_runtime_state = {"n_jobs": hpo_n_jobs}
+        best_ndcg20 = float("-inf")
+        best_ndcg20_se = 0.0
 
         def objective(trial):
+            nonlocal best_ndcg20, best_ndcg20_se
             lr = trial.suggest_float("learning_rate", 0.01, 0.05)
             max_bins = trial.suggest_int("max_bins", 16, 48)
             smoothing_rounds = trial.suggest_int("smoothing_rounds", 200, 500)
@@ -3948,6 +4001,9 @@ def _fit_final_model(
                 )
                 fold_metrics.append(metrics)
                 agg = _aggregate_j(fold_metrics)
+                agg["pareto_precision_floor"] = float(
+                    max(0.0, best_ndcg20 - 0.75 * best_ndcg20_se)
+                )
                 score = _hpo_objective_from_aggregate(agg, hpo_objective_mode)
 
                 trial.report(score, step)
@@ -3955,6 +4011,18 @@ def _fit_final_model(
                     raise optuna.TrialPruned()
 
             agg = _aggregate_j(fold_metrics)
+            _ndcg20_curr = float(agg.get("ndcg_at_20", agg.get("ndcg@20", 0.0)))
+            _n_folds_curr = max(1, int(len(fold_metrics)))
+            _se_curr = float(agg.get("ndcg20_std", 0.0)) / float(np.sqrt(_n_folds_curr))
+            if np.isfinite(_ndcg20_curr) and (
+                _ndcg20_curr > best_ndcg20
+                or (np.isclose(_ndcg20_curr, best_ndcg20) and _se_curr < best_ndcg20_se)
+            ):
+                best_ndcg20 = _ndcg20_curr
+                best_ndcg20_se = _se_curr
+            agg["pareto_precision_floor"] = float(
+                max(0.0, best_ndcg20 - 0.75 * best_ndcg20_se)
+            )
             hpo_objective = _hpo_objective_from_aggregate(agg, hpo_objective_mode)
             trial.set_user_attr("lift15", float(agg.get("lift15", np.nan)))
             trial.set_user_attr("lift30", float(agg.get("lift30", np.nan)))
@@ -3971,6 +4039,23 @@ def _fit_final_model(
             trial.set_user_attr("precision005", float(agg.get("precision005", np.nan)))
             trial.set_user_attr(
                 "ndcg_at_10", float(agg.get("ndcg_at_10", agg.get("ndcg@10", np.nan)))
+            )
+            trial.set_user_attr(
+                "ndcg_at_20", float(agg.get("ndcg_at_20", agg.get("ndcg@20", np.nan)))
+            )
+            trial.set_user_attr(
+                "ndcg_tradable_top20pct",
+                float(agg.get("ndcg_tradable_top20pct", np.nan)),
+            )
+            trial.set_user_attr(
+                "ndcg_tradable_top10pct",
+                float(agg.get("ndcg_tradable_top10pct", np.nan)),
+            )
+            trial.set_user_attr("ndcg20_std", float(agg.get("ndcg20_std", np.nan)))
+            trial.set_user_attr("ndcg20_p25", float(agg.get("ndcg20_p25", np.nan)))
+            trial.set_user_attr(
+                "pareto_precision_floor",
+                float(agg.get("pareto_precision_floor", np.nan)),
             )
             trial.set_user_attr("J_final", float(agg.get("J_final", np.nan)))
             trial.set_user_attr("hpo_objective", float(hpo_objective))

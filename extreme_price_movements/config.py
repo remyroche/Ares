@@ -25,17 +25,105 @@ PERP_FEATURE_KEYS = [
     _PERP_COLLISION_RENAMES.get(k, k) for k in get_perp_feature_names()
 ]
 
-ORDERBOOK_FEATURE_KEYS = [
-    "ob_available",
-    "ob_snapshot_age_min",
-    "ob_stale_flag",
-    "ob_spread_bps",
-    "ob_mid_vs_close_bps",
+ORDERBOOK_BASE_FEATURE_KEYS = [
+    # Directional book pressure
+    "ob_microprice_premium_bps",
     "ob_l1_imbalance",
-    "ob_l5_imbalance",
     "ob_l10_imbalance",
     "ob_l20_imbalance",
+    "ob_wimb_l10",
+    "ob_wimb_l20",
+    "ob_book_pressure_l10",
+    # Book dynamics
+    "ob_imb_chg_1",
+    "ob_imb_accel_4",
+    "ob_imb_near_far_delta",
+    "ob_depth_decay_asym_l20",
+    "ob_wall_imb_l20",
+    # Trade flow
+    "ob_trade_flow_imbalance_1h",
+    "ob_vwap_mid_gap_bps",
+    # New flow features
+    "ob_flow_qty_imbalance_1h",
+    "ob_flow_notional_imbalance_1h",
+    "ob_buy_notional_z_24h",
+    "ob_sell_notional_z_24h",
+    "ob_flow_notional_skew_z_24h",
+    # Flow/book disagreement and absorption
+    "ob_flow_vs_book_l10",
+    "ob_flow_vs_book_l20",
+    "ob_book_absorption_score",
+    # Cross-asset directional pressure
+    "xasset_asset_minus_mkt_ob_pressure",
+    "xasset_btc_ob_pressure",
+    "xasset_eth_ob_pressure",
+    "xasset_asset_minus_basket_ob_pressure",
+    # Directional interaction
+    "ob_pressure_x_ret4h_sign",
+]
+ORDERBOOK_META_FEATURE_KEYS = [
+    # Availability / staleness / data trust
+    "ob_available",
+    "ob_snapshot_age_sec",
+    "ob_update_gap_flag",
+    "ob_stale_flag",
+    # Spread / execution friction / dislocation
+    "ob_spread_bps",
+    "ob_spread_z_24h",
     "ob_microprice_premium_bps",
+    "ob_mid_close_dislocation_bps",
+    # Pressure also useful for trust
+    "ob_book_pressure_l10",
+    # Depth / liquidity / stress
+    "ob_top_liquidity_usd",
+    "ob_depth_usd_l10",
+    "ob_depth_usd_l20",
+    "ob_depth_usd_l10_z",
+    "ob_depth_usd_l20_z",
+    "ob_depth_usd_z_24h",
+    "ob_liquidity_shock_z",
+    # Liquidity structure
+    "ob_depth_ratio_l1_l20",
+    "ob_bid_depth_decay_l20",
+    "ob_ask_depth_decay_l20",
+    # Activity regime
+    "ob_trade_count_z_24h",
+    "ob_notional_z_24h",
+    "ob_vwap_mid_gap_bps",
+    "ob_mean_trade_qty_z_24h",
+    # New flow regime / stress
+    "ob_buy_notional_z_24h",
+    "ob_sell_notional_z_24h",
+    "ob_abs_flow_vs_book_l20",
+    "ob_book_absorption_score",
+    # Impact / toxicity
+    "ob_notional_to_depth_l20",
+    "ob_trade_size_to_l1_depth",
+    "ob_kyle_lambda_1h",
+    "ob_flow_toxicity_1h",
+    # Cross-asset trust/regime
+    "xasset_btc_ob_pressure",
+    "xasset_eth_ob_pressure",
+    "xasset_mkt_spread_bps",
+    "xasset_mkt_depth_z",
+    "xasset_mkt_ob_stress",
+    "xasset_ob_stress_basket",
+    "xasset_asset_minus_basket_ob_pressure",
+    "xasset_ob_liquidity_divergence",
+    # Meta interactions
+    "ob_spread_z_x_rv_24h",
+    "ob_depth_z_x_rvol_z",
+]
+ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS = [
+    "ob_slope_diff_l10",
+    "ob_gap_up_bps_l10",
+    "ob_gap_dn_bps_l10",
+    "ob_gap_skew_l10",
+]
+ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS = [
+    "ob_snapshot_age_min",
+    "ob_mid_vs_close_bps",
+    "ob_l5_imbalance",
     "ob_bid_depth_5bps",
     "ob_ask_depth_5bps",
     "ob_depth_skew_5bps",
@@ -65,10 +153,10 @@ ORDERBOOK_FEATURE_KEYS = [
     "ob_liquidity_void_down_bps",
     "ob_max_gap_up_bps",
     "ob_max_gap_down_bps",
-    "ob_imbalance_delta_1h",
-    "ob_spread_delta_1h",
-    "ob_depth_skew_delta_1h",
 ]
+ORDERBOOK_FEATURE_KEYS = sorted(
+    set(ORDERBOOK_BASE_FEATURE_KEYS) | set(ORDERBOOK_META_FEATURE_KEYS)
+)
 CROSS_ASSET_FEATURE_KEYS = [
     "mkt_ret_eq_1h",
     "mkt_ret_eq_4h",
@@ -93,10 +181,6 @@ CROSS_ASSET_FEATURE_KEYS = [
     "symbol_minus_mkt_ret_1h",
     "symbol_minus_mkt_ret_4h",
     "symbol_minus_mkt_ret_24h",
-    "cs_rank_ret_1h",
-    "cs_rank_ret_4h",
-    "cs_rank_ret_24h",
-    "cs_rank_volume_24h",
     "market_breadth_1h",
     "market_breadth_4h",
     "market_dispersion_1h",
@@ -747,9 +831,14 @@ CFG = {
     "orderbook_depth_bps": [5, 10, 25, 50, 100],
     "orderbook_wall_qty_mult": 3.0,
     "orderbook_missing_age_sentinel_min": float("nan"),
-    "enable_orderbook_wall_features": True,
+    # Historical microdata is built from Binance 1h kline summaries, not true L2
+    # depth snapshots. Wall/blocker primitives require real book levels and are
+    # neutralized by the runtime summary injector.
+    "enable_orderbook_wall_features": False,
     "enable_cross_asset_features": True,
+    "enable_cross_sectional_rank_features": False,
     "cross_asset_reference_symbols": ["BTC/USDT", "ETH/USDT"],
+    "feature_refresh_microdata_before_compute": False,
     "timeframe": "1h",
     "fetch_years": 4,
     "fetch_symbols_M": 9999,
@@ -767,6 +856,9 @@ CFG = {
     "download_check_complete": True,
     "download_skip_if_missing_lt_days": 3.0,
     "download_15m_full_backfill": True,
+    # Feature artifacts are keyed by run-id, but feature rows should extend near
+    # the available data frontier rather than stopping at the historical run-id.
+    "feature_generation_end_lag_days": 3,
     "offline_backtest_skip_universe_refresh": True,
     # feature transformation remediation
     "ffd_d_values": [0.4, 0.5, 0.6],
@@ -929,9 +1021,12 @@ CFG = {
     "meta_clf_u_tp": 1.0,
     "meta_clf_u_to": 0.0,
     "meta_clf_u_sl": -2.5,
-    "meta_clf_top_frac": 0.50,
-    "meta_move_top_frac": 0.50,
-    "meta_trade_topx_values": [15],
+    "meta_clf_top_frac": 0.15,
+    "meta_move_top_frac": 0.15,
+    "meta_trade_topx_values": [40],
+    "enable_recent_effectiveness_features": True,
+    "recent_effectiveness_min_samples": 100,
+    "recent_effectiveness_min_top_samples": 25,
     "meta_product_feature_keys": [
         "trend_slope_24h",
         "trend_slope_48h",
@@ -2942,26 +3037,7 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
 }
 
 
-CFG["ORDERBOOK_BASE_FEATURE_KEYS"] = [
-    "ob_microprice_dev_bps",
-    "ob_microprice_ret_1",
-    "ob_imb_l1",
-    "ob_imb_l5",
-    "ob_imb_l10",
-    "ob_imb_l20",
-    "ob_wimb_l10",
-    "ob_wimb_l20",
-    "ob_slope_diff_l10",
-    "ob_bid_depth_decay_l20",
-    "ob_ask_depth_decay_l20",
-    "ob_wall_imb_l20",
-    "ob_gap_up_bps_l10",
-    "ob_gap_dn_bps_l10",
-    "ob_gap_skew_l10",
-    "ob_book_pressure_l10",
-    "ob_imb_chg_1",
-    "ob_imb_accel_4",
-]
+CFG["ORDERBOOK_BASE_FEATURE_KEYS"] = ORDERBOOK_BASE_FEATURE_KEYS
 CFG["FUNDING_BASE_FEATURE_KEYS"] = [
     "fund_rate",
     "fund_rate_z_14d",
@@ -2969,12 +3045,13 @@ CFG["FUNDING_BASE_FEATURE_KEYS"] = [
     "fund_rate_mom_24h",
     "fund_sign_persistence_3",
     "fund_abs_z",
-    "basis_pct",
-    "basis_pct_z",
-    "basis_mom_4h",
-    "basis_fund_div_z",
 ]
 CFG["ORDERBOOK_FEATURE_KEYS"] = ORDERBOOK_FEATURE_KEYS
+CFG["ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS"] = ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS
+CFG["ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS"] = ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS
+CFG["meta_product_feature_keys"] += sorted(
+    set(ORDERBOOK_BASE_FEATURE_KEYS) & set(ORDERBOOK_META_FEATURE_KEYS)
+)
 CFG["CROSS_ASSET_FEATURE_KEYS"] = CROSS_ASSET_FEATURE_KEYS
 CFG["PERP_FEATURE_KEYS"] = PERP_FEATURE_KEYS
 CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = [
@@ -2985,20 +3062,7 @@ CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = [
     "xasset_asset_minus_mkt_funding",
     "xasset_leverage_build_score",
 ]
-CFG["ORDERBOOK_META_FEATURE_KEYS"] = [
-    "ob_spread_bps",
-    "ob_spread_z_24h",
-    "ob_top_liquidity_usd",
-    "ob_depth_usd_l10",
-    "ob_depth_usd_l20",
-    "ob_depth_usd_z_24h",
-    "ob_depth_asym_stability_24h",
-    "ob_snapshot_age_sec",
-    "ob_update_gap_flag",
-    "ob_stale_flag",
-    "ob_mid_close_dislocation_bps",
-    "ob_liquidity_shock_z",
-]
+CFG["ORDERBOOK_META_FEATURE_KEYS"] = ORDERBOOK_META_FEATURE_KEYS
 CFG["FUNDING_META_FEATURE_KEYS"] = [
     "fund_rate_ffill",
     "fund_rate_z_14d",
@@ -3010,13 +3074,6 @@ CFG["FUNDING_META_FEATURE_KEYS"] = [
     "fund_extreme_duration_24h",
     "fund_rank_30d",
     "fund_countdown_pressure",
-]
-CFG["ORDERBOOK_META_FEATURE_KEYS"] += [
-    "ob_depth_ratio_l1_l20",
-    "ob_imb_near_far_delta",
-    "ob_depth_decay_asym_l20",
-    "ob_wall_skew_l20",
-    "ob_gap_skew_l10",
 ]
 CFG["CROSS_ASSET_META_FEATURE_KEYS"] = [
     "xasset_fund_dispersion_basket",
@@ -3159,10 +3216,6 @@ CFG["META_CROSS_SECTIONAL_REGIME_KEYS"] = [
     "beta_adj_resid_ret_24h",
     "rv_rel_universe",
     "vol_surprise_rel_peers",
-    "ret_rank_universe",
-    "vol_surprise_rank",
-    "volatility_rank",
-    "momentum_percentile",
     "cs_dispersion_ret_4h",
     "cs_dispersion_ret_24h",
     "pct_assets_up_1h",
@@ -3199,20 +3252,32 @@ CFG["meta_shared_feature_keys"] += ["META_CROSS_SECTIONAL_REGIME_KEYS"]
 CFG["META_RECENT_EFFECTIVENESS_FEATURE_KEYS"] = [
     "recent_global_rolling_ic_30d",
     "recent_global_model_ece_30d",
-    "recent_global_top10_calibration_error_30d",
-    "recent_global_abs_top10_calibration_error_30d",
-    "recent_global_top10_hit_rate_30d",
+    "recent_global_top15_calibration_error_30d",
+    "recent_global_abs_top15_calibration_error_30d",
+    "recent_global_top15_hit_rate_30d",
     "recent_side_horizon_rolling_ic_30d",
     "recent_side_horizon_model_ece_30d",
-    "recent_side_horizon_top10_hit_rate_30d",
+    "recent_side_horizon_top15_hit_rate_30d",
     "recent_bucket_rolling_ic_30d",
-    "recent_bucket_hit_rate_10_30d",
-    "recent_bucket_n_top10_30d",
+    "recent_bucket_top15_hit_rate_30d",
+    "recent_bucket_n_top15_30d",
     "recent_regime_rolling_ic_30d",
     "recent_regime_model_ece_30d",
-    "recent_regime_top10_hit_rate_30d",
+    "recent_regime_top15_hit_rate_30d",
 ]
 CFG["meta_shared_feature_keys"] += ["META_RECENT_EFFECTIVENESS_FEATURE_KEYS"]
+
+
+CFG["META_BASE_PERFORMANCE_FEATURE_KEYS"] = [
+    "base_model_score",
+    "base_model_score_pct",
+    "base_model_margin",
+    "prob_error",
+    "recent_prob_error_20",
+    "recent_hit_rate_20",
+    "base_model_abs_error_roll20",
+]
+CFG["meta_shared_feature_keys"] += ["META_BASE_PERFORMANCE_FEATURE_KEYS"]
 
 
 CFG["META_SELF_FEATURE_KEYS"] = [
@@ -3222,11 +3287,11 @@ CFG["META_SELF_FEATURE_KEYS"] = [
     "recent_meta_ece_5d",
     "recent_meta_ece_10d",
     "recent_meta_ece_30d",
-    "recent_meta_top10_cal_error_10d",
-    "recent_meta_top10_cal_error_30d",
-    "recent_meta_top10_cal_error_5d",
-    "recent_meta_top5_hit_rate_30d",
-    "recent_meta_top5_hit_rate_10d",
-    "recent_meta_top5_hit_rate_5d",
+    "recent_meta_top15_cal_error_10d",
+    "recent_meta_top15_cal_error_30d",
+    "recent_meta_top15_cal_error_5d",
+    "recent_meta_global_top15_hit_rate_30d",
+    "recent_meta_global_top15_hit_rate_10d",
+    "recent_meta_global_top15_hit_rate_5d",
 ]
 CFG["meta_shared_feature_keys"] += ["META_SELF_FEATURE_KEYS"]

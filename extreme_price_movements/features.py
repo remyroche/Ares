@@ -133,6 +133,22 @@ def _rolling_winsorize_causal(
     return x.clip(lower=lo, upper=hi).astype(np.float32)
 
 
+def _batch_roll_zscore(
+    x: pd.DataFrame | pd.Series | np.ndarray,
+    window: int,
+) -> pd.DataFrame | pd.Series:
+    """Causal rolling z-score wrapper used by late feature-extension blocks."""
+    window = int(max(window, 1))
+    if isinstance(x, pd.Series):
+        ser = pd.to_numeric(x, errors="coerce").astype(np.float32)
+        return ff.numba_rolling_zscore_fused(ser, window).astype(np.float32)
+    if isinstance(x, pd.DataFrame):
+        frame = x.apply(pd.to_numeric, errors="coerce").astype(np.float32)
+        return ff.numba_rolling_zscore_fused(frame, window).astype(np.float32)
+    frame = pd.DataFrame(x).apply(pd.to_numeric, errors="coerce").astype(np.float32)
+    return ff.numba_rolling_zscore_fused(frame, window).astype(np.float32)
+
+
 def zscore_rolling(
     x: pd.DataFrame,
     n: int,
@@ -688,9 +704,14 @@ def compute_orderbook_wall_primitives(
     return out
 
 
-
-
-def compute_orderbook_snapshot_features(orderbook_panel: Optional[pd.DataFrame], close_panel: pd.DataFrame, volume_panel: pd.DataFrame, atr_panel: Optional[pd.DataFrame], cfg: dict, shift_bars: int = 1) -> dict[str, pd.DataFrame]:
+def compute_orderbook_snapshot_features(
+    orderbook_panel: Optional[pd.DataFrame],
+    close_panel: pd.DataFrame,
+    volume_panel: pd.DataFrame,
+    atr_panel: Optional[pd.DataFrame],
+    cfg: dict,
+    shift_bars: int = 1,
+) -> dict[str, pd.DataFrame]:
     """Compute causal per-symbol orderbook features from long-format L2 snapshots.
 
     Supported schema: timestamp, symbol, side, level, price, qty.
@@ -709,25 +730,67 @@ def compute_orderbook_snapshot_features(orderbook_panel: Optional[pd.DataFrame],
     depth_bps = [int(x) for x in cfg.get("orderbook_depth_bps", [5, 10, 25, 50, 100])]
     stale_hours = float(cfg.get("orderbook_stale_hours", 2))
     max_levels = int(cfg.get("orderbook_levels", 20))
-    atr_panel = atr_panel if isinstance(atr_panel, pd.DataFrame) else pd.DataFrame(np.nan, index=idx, columns=cols)
+    atr_panel = (
+        atr_panel
+        if isinstance(atr_panel, pd.DataFrame)
+        else pd.DataFrame(np.nan, index=idx, columns=cols)
+    )
     qv24 = (close_panel * volume_panel).rolling(24, min_periods=1).mean().shift(1)
     out: dict[str, pd.DataFrame] = {}
 
     def blank(v: float = 0.0) -> pd.DataFrame:
         return pd.DataFrame(v, index=idx, columns=cols, dtype=np.float32)
 
-    keys = ["ob_available", "ob_snapshot_age_min", "ob_stale_flag", "ob_spread_bps", "ob_mid_vs_close_bps", "ob_l1_imbalance", "ob_l5_imbalance", "ob_l10_imbalance", "ob_l20_imbalance", "ob_microprice_premium_bps", "ob_bid_slope_20", "ob_ask_slope_20", "ob_bid_wall_found", "ob_ask_wall_found", "ob_nearest_bid_wall_dist_bps", "ob_nearest_ask_wall_dist_bps", "ob_nearest_bid_wall_dist_atr", "ob_nearest_ask_wall_dist_atr", "ob_nearest_bid_wall_to_qv24", "ob_nearest_ask_wall_to_qv24", "ob_liquidity_void_up_bps", "ob_liquidity_void_down_bps", "ob_max_gap_up_bps", "ob_max_gap_down_bps", "ob_imbalance_delta_1h", "ob_spread_delta_1h", "ob_depth_skew_delta_1h"]
+    keys = [
+        "ob_available",
+        "ob_snapshot_age_min",
+        "ob_stale_flag",
+        "ob_spread_bps",
+        "ob_mid_vs_close_bps",
+        "ob_l1_imbalance",
+        "ob_l5_imbalance",
+        "ob_l10_imbalance",
+        "ob_l20_imbalance",
+        "ob_microprice_premium_bps",
+        "ob_bid_slope_20",
+        "ob_ask_slope_20",
+        "ob_bid_wall_found",
+        "ob_ask_wall_found",
+        "ob_nearest_bid_wall_dist_bps",
+        "ob_nearest_ask_wall_dist_bps",
+        "ob_nearest_bid_wall_dist_atr",
+        "ob_nearest_ask_wall_dist_atr",
+        "ob_nearest_bid_wall_to_qv24",
+        "ob_nearest_ask_wall_to_qv24",
+        "ob_liquidity_void_up_bps",
+        "ob_liquidity_void_down_bps",
+        "ob_max_gap_up_bps",
+        "ob_max_gap_down_bps",
+        "ob_imbalance_delta_1h",
+        "ob_spread_delta_1h",
+        "ob_depth_skew_delta_1h",
+    ]
     for bps in depth_bps:
-        keys += [f"ob_bid_depth_{bps}bps", f"ob_ask_depth_{bps}bps", f"ob_depth_skew_{bps}bps"]
+        keys += [
+            f"ob_bid_depth_{bps}bps",
+            f"ob_ask_depth_{bps}bps",
+            f"ob_depth_skew_{bps}bps",
+        ]
     for k in keys:
         out[k] = blank(0.0)
     out["ob_stale_flag"] = blank(1.0)
-    out["ob_snapshot_age_min"] = blank(float(cfg.get("orderbook_missing_age_sentinel_min", np.nan)))
+    out["ob_snapshot_age_min"] = blank(
+        float(cfg.get("orderbook_missing_age_sentinel_min", np.nan))
+    )
 
     if not isinstance(orderbook_panel, pd.DataFrame) or orderbook_panel.empty:
         return out
-    if not {"timestamp", "symbol", "side", "level", "price", "qty"}.issubset(orderbook_panel.columns):
-        raise ValueError("orderbook_hourly must be long format: timestamp,symbol,side,level,price,qty")
+    if not {"timestamp", "symbol", "side", "level", "price", "qty"}.issubset(
+        orderbook_panel.columns
+    ):
+        raise ValueError(
+            "orderbook_hourly must be long format: timestamp,symbol,side,level,price,qty"
+        )
 
     ob = orderbook_panel.copy()
     ob["timestamp"] = pd.to_datetime(ob["timestamp"], utc=True, errors="coerce")
@@ -744,21 +807,47 @@ def compute_orderbook_snapshot_features(orderbook_panel: Optional[pd.DataFrame],
             continue
         recs: list[dict[str, float | pd.Timestamp]] = []
         for ts, g in ss.groupby("timestamp"):
-            bids = g[g["side"].str.startswith("b")].sort_values("price", ascending=False).head(max_levels)
-            asks = g[g["side"].str.startswith("a")].sort_values("price", ascending=True).head(max_levels)
+            bids = (
+                g[g["side"].str.startswith("b")]
+                .sort_values("price", ascending=False)
+                .head(max_levels)
+            )
+            asks = (
+                g[g["side"].str.startswith("a")]
+                .sort_values("price", ascending=True)
+                .head(max_levels)
+            )
             if bids.empty or asks.empty:
                 continue
             bb, ba = float(bids.iloc[0]["price"]), float(asks.iloc[0]["price"])
             mid = (bb + ba) * 0.5
-            rec: dict[str, float | pd.Timestamp] = {"timestamp": ts, "_snapshot_ts": ts, "bb": bb, "ba": ba, "mid": mid, "bq1": float(bids.iloc[0]["qty"]), "aq1": float(asks.iloc[0]["qty"])}
+            rec: dict[str, float | pd.Timestamp] = {
+                "timestamp": ts,
+                "_snapshot_ts": ts,
+                "bb": bb,
+                "ba": ba,
+                "mid": mid,
+                "bq1": float(bids.iloc[0]["qty"]),
+                "aq1": float(asks.iloc[0]["qty"]),
+            }
             for lvl in (1, 5, 10, 20):
                 rec[f"bi{lvl}"] = float(bids.head(lvl)["qty"].sum())
                 rec[f"ai{lvl}"] = float(asks.head(lvl)["qty"].sum())
             for bps in depth_bps:
                 bthr = mid * (1.0 - bps / 1e4)
                 athr = mid * (1.0 + bps / 1e4)
-                rec[f"bd{bps}"] = float((bids.loc[bids["price"] >= bthr, "price"] * bids.loc[bids["price"] >= bthr, "qty"]).sum())
-                rec[f"ad{bps}"] = float((asks.loc[asks["price"] <= athr, "price"] * asks.loc[asks["price"] <= athr, "qty"]).sum())
+                rec[f"bd{bps}"] = float(
+                    (
+                        bids.loc[bids["price"] >= bthr, "price"]
+                        * bids.loc[bids["price"] >= bthr, "qty"]
+                    ).sum()
+                )
+                rec[f"ad{bps}"] = float(
+                    (
+                        asks.loc[asks["price"] <= athr, "price"]
+                        * asks.loc[asks["price"] <= athr, "qty"]
+                    ).sum()
+                )
             wall_qty_mult = float(cfg.get("orderbook_wall_qty_mult", 3.0))
             bid_thresh = float(bids["qty"].median()) * wall_qty_mult
             ask_thresh = float(asks["qty"].median()) * wall_qty_mult
@@ -772,10 +861,34 @@ def compute_orderbook_snapshot_features(orderbook_panel: Optional[pd.DataFrame],
             rec["nwa_bps"] = max((float(wall_ask["price"]) - mid) / mid * 1e4, 0.0)
             gaps_ask = np.abs(np.diff(np.sort(asks["price"].to_numpy())))
             gaps_bid = np.abs(np.diff(np.sort(bids["price"].to_numpy())[::-1]))
-            rec["void_up_bps"] = float(np.nanmax(gaps_ask) / mid * 1e4) if len(gaps_ask) else 0.0
-            rec["void_dn_bps"] = float(np.nanmax(gaps_bid) / mid * 1e4) if len(gaps_bid) else 0.0
-            rec["bid_slope"] = float(np.polyfit(np.arange(1, len(bids) + 1), (bids["price"].to_numpy() / (mid + 1e-9)) * 1e4, 1)[0]) if len(bids) > 1 else 0.0
-            rec["ask_slope"] = float(np.polyfit(np.arange(1, len(asks) + 1), (asks["price"].to_numpy() / (mid + 1e-9)) * 1e4, 1)[0]) if len(asks) > 1 else 0.0
+            rec["void_up_bps"] = (
+                float(np.nanmax(gaps_ask) / mid * 1e4) if len(gaps_ask) else 0.0
+            )
+            rec["void_dn_bps"] = (
+                float(np.nanmax(gaps_bid) / mid * 1e4) if len(gaps_bid) else 0.0
+            )
+            rec["bid_slope"] = (
+                float(
+                    np.polyfit(
+                        np.arange(1, len(bids) + 1),
+                        (bids["price"].to_numpy() / (mid + 1e-9)) * 1e4,
+                        1,
+                    )[0]
+                )
+                if len(bids) > 1
+                else 0.0
+            )
+            rec["ask_slope"] = (
+                float(
+                    np.polyfit(
+                        np.arange(1, len(asks) + 1),
+                        (asks["price"].to_numpy() / (mid + 1e-9)) * 1e4,
+                        1,
+                    )[0]
+                )
+                if len(asks) > 1
+                else 0.0
+            )
             rec["wall_bid_notional"] = float(wall_bid["price"] * wall_bid["qty"])
             rec["wall_ask_notional"] = float(wall_ask["price"] * wall_ask["qty"])
             rec["wall_bid_found"] = wall_bid_found
@@ -788,18 +901,46 @@ def compute_orderbook_snapshot_features(orderbook_panel: Optional[pd.DataFrame],
         snap_ts = pd.to_datetime(mapped["_snapshot_ts"]).shift(shift_bars)
         age_min = (pd.Series(idx, index=idx) - snap_ts).dt.total_seconds() / 60.0
         stale = ((age_min > stale_hours * 60) | age_min.isna()).astype(np.float32)
-        avail = ((~stale.astype(bool)) & mapped["bb"].notna() & mapped["ba"].notna()).astype(np.float32)
+        avail = (
+            (~stale.astype(bool)) & mapped["bb"].notna() & mapped["ba"].notna()
+        ).astype(np.float32)
         m = mapped.shift(shift_bars)
         out["ob_available"][sym] = avail.values
         out["ob_snapshot_age_min"][sym] = age_min.values
         out["ob_stale_flag"][sym] = stale.values
-        out["ob_spread_bps"][sym] = (((m["ba"] - m["bb"]) / (m["mid"] + 1e-9)) * 1e4).fillna(0).values
-        out["ob_mid_vs_close_bps"][sym] = (((m["mid"] / (close_panel[sym] + 1e-9)) - 1.0) * 1e4).fillna(0).values
-        out["ob_l1_imbalance"][sym] = ((m["bi1"] - m["ai1"]) / (m["bi1"] + m["ai1"] + 1e-9)).fillna(0).values
-        out["ob_l5_imbalance"][sym] = ((m["bi5"] - m["ai5"]) / (m["bi5"] + m["ai5"] + 1e-9)).fillna(0).values
-        out["ob_l10_imbalance"][sym] = ((m["bi10"] - m["ai10"]) / (m["bi10"] + m["ai10"] + 1e-9)).fillna(0).values
-        out["ob_l20_imbalance"][sym] = ((m["bi20"] - m["ai20"]) / (m["bi20"] + m["ai20"] + 1e-9)).fillna(0).values
-        out["ob_microprice_premium_bps"][sym] = ((((m["ba"] * m["bq1"] + m["bb"] * m["aq1"]) / (m["bq1"] + m["aq1"] + 1e-9)) / (m["mid"] + 1e-9) - 1.0) * 1e4).fillna(0).values
+        out["ob_spread_bps"][sym] = (
+            (((m["ba"] - m["bb"]) / (m["mid"] + 1e-9)) * 1e4).fillna(0).values
+        )
+        out["ob_mid_vs_close_bps"][sym] = (
+            (((m["mid"] / (close_panel[sym] + 1e-9)) - 1.0) * 1e4).fillna(0).values
+        )
+        out["ob_l1_imbalance"][sym] = (
+            ((m["bi1"] - m["ai1"]) / (m["bi1"] + m["ai1"] + 1e-9)).fillna(0).values
+        )
+        out["ob_l5_imbalance"][sym] = (
+            ((m["bi5"] - m["ai5"]) / (m["bi5"] + m["ai5"] + 1e-9)).fillna(0).values
+        )
+        out["ob_l10_imbalance"][sym] = (
+            ((m["bi10"] - m["ai10"]) / (m["bi10"] + m["ai10"] + 1e-9)).fillna(0).values
+        )
+        out["ob_l20_imbalance"][sym] = (
+            ((m["bi20"] - m["ai20"]) / (m["bi20"] + m["ai20"] + 1e-9)).fillna(0).values
+        )
+        out["ob_microprice_premium_bps"][sym] = (
+            (
+                (
+                    (
+                        (m["ba"] * m["bq1"] + m["bb"] * m["aq1"])
+                        / (m["bq1"] + m["aq1"] + 1e-9)
+                    )
+                    / (m["mid"] + 1e-9)
+                    - 1.0
+                )
+                * 1e4
+            )
+            .fillna(0)
+            .values
+        )
         for bps in depth_bps:
             out[f"ob_bid_depth_{bps}bps"][sym] = m[f"bd{bps}"].fillna(0).values
             out[f"ob_ask_depth_{bps}bps"][sym] = m[f"ad{bps}"].fillna(0).values
@@ -813,24 +954,48 @@ def compute_orderbook_snapshot_features(orderbook_panel: Optional[pd.DataFrame],
         out["ob_nearest_bid_wall_dist_bps"][sym] = m["nwb_bps"].fillna(0).values
         out["ob_nearest_ask_wall_dist_bps"][sym] = m["nwa_bps"].fillna(0).values
         # atr_panel is expected to be ATR as fraction-of-price (atr_pct); convert to bps.
-        atr_bps = (atr_panel[sym] * 1e4)
-        out["ob_nearest_bid_wall_dist_atr"][sym] = (m["nwb_bps"] / (atr_bps + 1e-9)).fillna(0).values
-        out["ob_nearest_ask_wall_dist_atr"][sym] = (m["nwa_bps"] / (atr_bps + 1e-9)).fillna(0).values
-        out["ob_nearest_bid_wall_to_qv24"][sym] = (m["wall_bid_notional"] / (qv24[sym] + 1e-9)).fillna(0).values
-        out["ob_nearest_ask_wall_to_qv24"][sym] = (m["wall_ask_notional"] / (qv24[sym] + 1e-9)).fillna(0).values
+        atr_bps = atr_panel[sym] * 1e4
+        out["ob_nearest_bid_wall_dist_atr"][sym] = (
+            (m["nwb_bps"] / (atr_bps + 1e-9)).fillna(0).values
+        )
+        out["ob_nearest_ask_wall_dist_atr"][sym] = (
+            (m["nwa_bps"] / (atr_bps + 1e-9)).fillna(0).values
+        )
+        out["ob_nearest_bid_wall_to_qv24"][sym] = (
+            (m["wall_bid_notional"] / (qv24[sym] + 1e-9)).fillna(0).values
+        )
+        out["ob_nearest_ask_wall_to_qv24"][sym] = (
+            (m["wall_ask_notional"] / (qv24[sym] + 1e-9)).fillna(0).values
+        )
         out["ob_liquidity_void_up_bps"][sym] = m["void_up_bps"].fillna(0).values
         out["ob_liquidity_void_down_bps"][sym] = m["void_dn_bps"].fillna(0).values
         out["ob_max_gap_up_bps"][sym] = out["ob_liquidity_void_up_bps"][sym].values
         out["ob_max_gap_down_bps"][sym] = out["ob_liquidity_void_down_bps"][sym].values
         valid = out["ob_available"][sym].astype(bool)
-        dependent_ob_features = [k for k in out if k not in {"ob_available", "ob_snapshot_age_min", "ob_stale_flag"}]
+        dependent_ob_features = [
+            k
+            for k in out
+            if k not in {"ob_available", "ob_snapshot_age_min", "ob_stale_flag"}
+        ]
         for feat_name in dependent_ob_features:
             out[feat_name].loc[~valid, sym] = 0.0
     avail = out["ob_available"].astype(bool)
-    out["ob_imbalance_delta_1h"] = out["ob_l10_imbalance"].diff(1).where(avail & avail.shift(1), 0.0).astype(np.float32)
-    out["ob_spread_delta_1h"] = out["ob_spread_bps"].diff(1).where(avail & avail.shift(1), 0.0).astype(np.float32)
+    out["ob_imbalance_delta_1h"] = (
+        out["ob_l10_imbalance"]
+        .diff(1)
+        .where(avail & avail.shift(1), 0.0)
+        .astype(np.float32)
+    )
+    out["ob_spread_delta_1h"] = (
+        out["ob_spread_bps"]
+        .diff(1)
+        .where(avail & avail.shift(1), 0.0)
+        .astype(np.float32)
+    )
     ds_key = f"ob_depth_skew_{depth_bps[min(len(depth_bps) - 1, 2)]}bps"
-    out["ob_depth_skew_delta_1h"] = out[ds_key].diff(1).where(avail & avail.shift(1), 0.0).astype(np.float32)
+    out["ob_depth_skew_delta_1h"] = (
+        out[ds_key].diff(1).where(avail & avail.shift(1), 0.0).astype(np.float32)
+    )
     return {k: v.astype(np.float32) for k, v in out.items()}
 
 
@@ -1338,6 +1503,8 @@ def compute_features_hourly(panel, mkt_gates, cfg, requested_feature_keys=None):
         for group in [
             "RIDGE_FEATURE_COLS",
             "CONTINUOUS_LOCATION_COLS",
+            "CROSS_ASSET_FEATURE_KEYS",
+            "META_CROSS_SECTIONAL_REGIME_KEYS",
             "TEST_FEATURE_KEYS",
             "FEATURE_SELECTION_KEYS",
             "TRAINING_RESIDUALIZATION_FEATURE_KEYS",
@@ -2941,12 +3108,38 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             np.repeat(arr[:, None], len(cols), axis=1), index=idx, columns=cols
         )
 
+    def _resolve_available_symbol(symbol: str) -> str | None:
+        base = str(symbol).split("/", 1)[0].upper()
+        quote_priority = ("USDT", "USDC", "BUSD", "EUR")
+        by_base = {
+            str(col).split("/", 1)[0].upper(): str(col)
+            for col in cols
+            if "/" in str(col)
+        }
+        for quote in quote_priority:
+            candidate = f"{base}/{quote}"
+            if candidate in cols:
+                return candidate
+        return by_base.get(base)
+
+    def _resolve_available_basket_symbols(basket_symbols: list[str]) -> list[str]:
+        resolved: list[str] = []
+        for raw_symbol in basket_symbols:
+            mapped = _resolve_available_symbol(str(raw_symbol))
+            if mapped is not None and mapped not in resolved:
+                resolved.append(mapped)
+        return resolved
+
     # funding-derived base building blocks
     fund_aligned = _zero_panel()
     if isinstance(funding_panel, pd.DataFrame):
+        funding_shift_bars = int(
+            cfg.get("funding_shift_bars", cfg.get("microstructure_shift_bars", 1))
+        )
         fund_aligned = (
             funding_panel.reindex(index=idx, columns=cols)
             .ffill()
+            .shift(max(funding_shift_bars, 0))
             .fillna(0.0)
             .astype(np.float32)
         )
@@ -3036,7 +3229,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     )
 
     # cross-asset basket extensions (available-symbol mean only)
-    basket = [s for s in list(cfg.get("market_basket", [])) if s in cols]
+    basket = _resolve_available_basket_symbols(list(cfg.get("market_basket", [])))
     if basket:
         mkt_ob_pressure = feats["ob_book_pressure_l10"][basket].mean(axis=1)
         mkt_funding = feats["fund_rate_z_14d"][basket].mean(axis=1)
@@ -3053,13 +3246,19 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         .astype(np.float32)
     )
     feats["xasset_btc_ob_pressure"] = _broadcast_series(
-        feats["ob_book_pressure_l10"].get("BTC/USDT", mkt_ob_pressure)
+        feats["ob_book_pressure_l10"].get(
+            _resolve_available_symbol("BTC/USDT") or "", mkt_ob_pressure
+        )
     )
     feats["xasset_eth_ob_pressure"] = _broadcast_series(
-        feats["ob_book_pressure_l10"].get("ETH/USDT", mkt_ob_pressure)
+        feats["ob_book_pressure_l10"].get(
+            _resolve_available_symbol("ETH/USDT") or "", mkt_ob_pressure
+        )
     )
     feats["xasset_btc_funding_z"] = _broadcast_series(
-        feats["fund_rate_z_14d"].get("BTC/USDT", mkt_funding)
+        feats["fund_rate_z_14d"].get(
+            _resolve_available_symbol("BTC/USDT") or "", mkt_funding
+        )
     )
     lev_build = (
         (feats["fund_rate_z_14d"] > 1).astype(np.float32)
@@ -3164,19 +3363,24 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["xasset_btc_fund_z"] = (
         feats["xasset_btc_funding_z"].clip(-6, 6).astype(np.float32)
     )
+    basket_spread_z = (
+        feats["ob_spread_z_24h"][basket].mean(axis=1)
+        if basket
+        else feats["ob_spread_z_24h"].mean(axis=1)
+    )
+    basket_depth_z = (
+        feats["ob_depth_usd_l20_z"][basket].mean(axis=1)
+        if basket
+        else feats["ob_depth_usd_l20_z"].mean(axis=1)
+    )
     feats["xasset_ob_stress_basket"] = _broadcast_series(
-        (
-            feats["ob_spread_z_24h"].mean(axis=1)
-            - feats["ob_depth_usd_l20_z"].mean(axis=1)
-        ).clip(-10, 10)
+        (basket_spread_z - basket_depth_z).clip(-10, 10)
     )
     feats["xasset_asset_minus_basket_ob_pressure"] = _batch_roll_zscore(
         feats["xasset_asset_minus_mkt_ob_pressure"], 24 * 7
     )
     feats["xasset_ob_liquidity_divergence"] = (
-        feats["ob_depth_usd_l20_z"].sub(
-            feats["ob_depth_usd_l20_z"].mean(axis=1), axis=0
-        )
+        feats["ob_depth_usd_l20_z"].sub(basket_depth_z, axis=0)
     ).astype(np.float32)
 
     rv24z = _batch_roll_zscore(feats["rv_24h"], 14 * 24)
@@ -3205,7 +3409,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     orderbook_feature_keys = set(cfg.get("ORDERBOOK_FEATURE_KEYS", []))
     if not orderbook_feature_keys and requested_feature_set:
-        orderbook_feature_keys = {k for k in requested_feature_set if k.startswith("ob_")}
+        orderbook_feature_keys = {
+            k for k in requested_feature_set if k.startswith("ob_")
+        }
     should_compute_orderbook = bool(cfg.get("enable_orderbook_features", False)) and (
         not requested_feature_set
         or bool(orderbook_feature_keys.intersection(requested_feature_set))
@@ -3221,7 +3427,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         )
         feats.update(ob_snapshot_feats)
 
-    requested_obw = any(k.startswith("obw_") or k.startswith("_obw_") for k in requested_feature_set)
+    requested_obw = any(
+        k.startswith("obw_") or k.startswith("_obw_") for k in requested_feature_set
+    )
     if bool(cfg.get("enable_orderbook_wall_features", True)) and (
         not requested_feature_set or requested_obw
     ):
@@ -3282,7 +3490,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         ).astype(np.float32)
 
     # Cross-sectional regime / relative-value meta features
-    basket_cols = [c for c in cols if c in cfg.get("market_basket", [])] or list(cols)
+    basket_cols = _resolve_available_basket_symbols(list(cfg.get("market_basket", [])))
+    basket_cols = basket_cols or list(cols)
     ret1 = feats.get("ret1h", _zero_panel()).astype(np.float32)
     ret4 = feats.get("ret4h", _zero_panel()).astype(np.float32)
     ret24 = feats.get("ret24h", _zero_panel()).astype(np.float32)
@@ -3310,8 +3519,93 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         ret24[basket_cols].median(axis=1), axis=0
     ).astype(np.float32)
 
-    btc4 = ret4.get("BTC/USDT", med4)
-    eth4 = ret4.get("ETH/USDT", med4)
+    btc_symbol = _resolve_available_symbol("BTC/USDT")
+    eth_symbol = _resolve_available_symbol("ETH/USDT")
+    basket_ret1 = ret1[basket_cols].mean(axis=1).astype(np.float32)
+    basket_ret4 = ret4[basket_cols].mean(axis=1).astype(np.float32)
+    basket_ret24 = ret24[basket_cols].mean(axis=1).astype(np.float32)
+    feats["mkt_ret_eq_1h"] = _broadcast_series(basket_ret1)
+    feats["mkt_ret_eq_4h"] = _broadcast_series(basket_ret4)
+    feats["mkt_ret_eq_24h"] = _broadcast_series(basket_ret24)
+
+    btc1 = ret1[btc_symbol] if btc_symbol is not None else basket_ret1
+    btc4 = ret4[btc_symbol] if btc_symbol is not None else med4
+    btc24 = ret24[btc_symbol] if btc_symbol is not None else med24
+    btc48 = ret48[btc_symbol] if btc_symbol is not None else med48
+    eth1 = ret1[eth_symbol] if eth_symbol is not None else basket_ret1
+    eth4 = ret4[eth_symbol] if eth_symbol is not None else med4
+    eth24 = ret24[eth_symbol] if eth_symbol is not None else med24
+
+    feats["btc_ret_1h"] = _broadcast_series(btc1)
+    feats["btc_ret_4h"] = _broadcast_series(btc4)
+    feats["btc_ret_24h"] = _broadcast_series(btc24)
+    feats["eth_ret_1h"] = _broadcast_series(eth1)
+    feats["eth_ret_4h"] = _broadcast_series(eth4)
+    feats["eth_ret_24h"] = _broadcast_series(eth24)
+    feats["eth_btc_ret_1h"] = _broadcast_series((eth1 - btc1).astype(np.float32))
+    feats["eth_btc_ret_4h"] = _broadcast_series((eth4 - btc4).astype(np.float32))
+    feats["eth_btc_ret_24h"] = _broadcast_series((eth24 - btc24).astype(np.float32))
+    feats["symbol_minus_mkt_ret_1h"] = ret1.sub(basket_ret1, axis=0).astype(
+        np.float32
+    )
+    feats["symbol_minus_mkt_ret_4h"] = ret4.sub(basket_ret4, axis=0).astype(
+        np.float32
+    )
+    feats["symbol_minus_mkt_ret_24h"] = ret24.sub(basket_ret24, axis=0).astype(
+        np.float32
+    )
+    feats["ret_resid_btc_1h"] = ret1.sub(btc1, axis=0).astype(np.float32)
+    feats["ret_resid_btc_4h"] = ret4.sub(btc4, axis=0).astype(np.float32)
+    feats["ret_resid_eth_1h"] = ret1.sub(eth1, axis=0).astype(np.float32)
+    feats["ret_resid_eth_4h"] = ret4.sub(eth4, axis=0).astype(np.float32)
+
+    btc1_frame = pd.DataFrame(
+        np.repeat(np.asarray(btc1, dtype=np.float32)[:, None], len(cols), axis=1),
+        index=idx,
+        columns=cols,
+    )
+    eth1_frame = pd.DataFrame(
+        np.repeat(np.asarray(eth1, dtype=np.float32)[:, None], len(cols), axis=1),
+        index=idx,
+        columns=cols,
+    )
+    btc_var = btc1.rolling(24, min_periods=8).var().replace(0.0, np.nan)
+    eth_var = eth1.rolling(24, min_periods=8).var().replace(0.0, np.nan)
+    feats["beta_btc_24h"] = (
+        ret1.rolling(24, min_periods=8)
+        .cov(btc1_frame)
+        .div(btc_var + eps, axis=0)
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .clip(-5.0, 5.0)
+        .astype(np.float32)
+    )
+    feats["beta_eth_24h"] = (
+        ret1.rolling(24, min_periods=8)
+        .cov(eth1_frame)
+        .div(eth_var + eps, axis=0)
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .clip(-5.0, 5.0)
+        .astype(np.float32)
+    )
+    feats["corr_btc_24h"] = (
+        ret1.rolling(24, min_periods=8)
+        .corr(btc1_frame)
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .clip(-1.0, 1.0)
+        .astype(np.float32)
+    )
+    feats["corr_eth_24h"] = (
+        ret1.rolling(24, min_periods=8)
+        .corr(eth1_frame)
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .clip(-1.0, 1.0)
+        .astype(np.float32)
+    )
+
     mix4 = 0.5 * (btc4 + eth4)
     feats["resid_ret_vs_btc_4h"] = ret4.sub(btc4, axis=0).astype(np.float32)
     feats["resid_ret_vs_eth_4h"] = ret4.sub(eth4, axis=0).astype(np.float32)
@@ -3329,10 +3623,19 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["vol_surprise_rel_peers"] = (volz.sub(volz.median(axis=1), axis=0)).astype(
         np.float32
     )
-    feats["ret_rank_universe"] = ret4.rank(axis=1, pct=True).astype(np.float32)
-    feats["vol_surprise_rank"] = volz.rank(axis=1, pct=True).astype(np.float32)
-    feats["volatility_rank"] = rv24.rank(axis=1, pct=True).astype(np.float32)
-    feats["momentum_percentile"] = ret24.rank(axis=1, pct=True).astype(np.float32)
+    if bool(cfg.get("enable_cross_sectional_rank_features", False)):
+        feats["ret_rank_universe"] = ret4.rank(axis=1, pct=True).astype(np.float32)
+        feats["vol_surprise_rank"] = volz.rank(axis=1, pct=True).astype(np.float32)
+        feats["volatility_rank"] = rv24.rank(axis=1, pct=True).astype(np.float32)
+        feats["momentum_percentile"] = ret24.rank(axis=1, pct=True).astype(np.float32)
+    else:
+        # Keep legacy keys neutral if explicitly requested elsewhere. Shared
+        # cross-asset groups avoid cross-sectional normalization so models can
+        # generalize across universe size/composition changes.
+        feats["ret_rank_universe"] = _zero_panel()
+        feats["vol_surprise_rank"] = _zero_panel()
+        feats["volatility_rank"] = _zero_panel()
+        feats["momentum_percentile"] = _zero_panel()
 
     disp4 = ret4.std(axis=1).astype(np.float32)
     disp24 = ret24.std(axis=1).astype(np.float32)
@@ -3341,18 +3644,29 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["pct_assets_up_1h"] = _broadcast_series(
         (ret1 > 0).mean(axis=1).astype(np.float32)
     )
+    feats["market_breadth_1h"] = feats["pct_assets_up_1h"]
     feats["pct_assets_up_4h"] = _broadcast_series(
         (ret4 > 0).mean(axis=1).astype(np.float32)
     )
+    feats["market_breadth_4h"] = feats["pct_assets_up_4h"]
     feats["pct_assets_up_24h"] = _broadcast_series(
         (ret24 > 0).mean(axis=1).astype(np.float32)
     )
+    feats["market_dispersion_1h"] = _broadcast_series(
+        ret1.std(axis=1).fillna(0.0).astype(np.float32)
+    )
+    feats["market_dispersion_4h"] = feats["cs_dispersion_ret_4h"]
     feats["pct_assets_above_ema_fast"] = _broadcast_series(
         (feats.get("dist_ema_fast", _zero_panel()) > 0).mean(axis=1).astype(np.float32)
     )
+    weekly_vwap = (
+        close_panel.mul(v).rolling(24 * 7, min_periods=24).sum()
+        / (v.rolling(24 * 7, min_periods=24).sum() + eps)
+    )
     feats["pct_assets_above_vwap"] = _broadcast_series(
-        (feats.get("dist_weekly_vwap", _zero_panel()) > 0)
+        (close_panel > weekly_vwap)
         .mean(axis=1)
+        .fillna(0.0)
         .astype(np.float32)
     )
 
@@ -3367,14 +3681,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     def _pct_rank_series(ser):
         return ser.rolling(24 * 14, min_periods=24).rank(pct=True).clip(0.01, 0.99)
 
-    btc24 = ret24.get("BTC/USDT", med24)
-    btc48 = ret48.get("BTC/USDT", med48)
     feats["btc_ret_4h_pct"] = _broadcast_series(_pct_rank_series(btc4))
     feats["btc_ret_24h_pct"] = _broadcast_series(_pct_rank_series(btc24))
     feats["btc_ret_48h_pct"] = _broadcast_series(_pct_rank_series(btc48))
 
-    btc_rv = rv24.get("BTC/USDT", rv24.median(axis=1))
-    eth_rv = rv24.get("ETH/USDT", rv24.median(axis=1))
+    btc_rv = rv24[btc_symbol] if btc_symbol is not None else rv24.median(axis=1)
+    eth_rv = rv24[eth_symbol] if eth_symbol is not None else rv24.median(axis=1)
     feats["btc_rv_ratio_1h24h_pct"] = _broadcast_series(
         _pct_rank_series((btc_rv / (btc_rv.rolling(24, min_periods=1).mean() + 1e-12)))
     )

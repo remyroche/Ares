@@ -45,6 +45,10 @@ SPOT_QUOTE_SUFFIXES = (
     "BTC",
     "ETH",
 )
+PERP_INFO_PATH = "/fapi/v1/exchangeInfo"
+PERP_QUOTES = frozenset({"USDT", "USDC"})
+
+_PERP_SYMBOL_CACHE: Optional[set[str]] = None
 
 
 def _request_error_category(exc: Exception) -> str:
@@ -274,6 +278,63 @@ def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDC",)):
     return res
 
 
+def fetch_binance_perp_spot_symbols() -> set[str]:
+    tprint(f"Entering function: fetch_binance_perp_spot_symbols in universe.py")
+    raw = _binance_get_json(PERP_INFO_PATH)
+    spot_symbols = set()
+    for row in raw.get("symbols", []):
+        if not isinstance(row, dict):
+            continue
+        if row.get("contractType") != "PERPETUAL":
+            continue
+        if row.get("status", "").upper() != "TRADING":
+            continue
+        quote = str(row.get("quoteAsset", "")).upper()
+        if quote not in PERP_QUOTES:
+            continue
+        base = str(row.get("baseAsset", "")).upper()
+        if not base:
+            continue
+        spot_symbols.add(f"{base}/{quote}")
+
+    tprint(
+        f"Fetched {len(spot_symbols)} perpetual perp symbols across {sorted(PERP_QUOTES)}."
+    )
+    return spot_symbols
+
+
+def get_available_perp_spot_symbols(force_refresh: bool = False) -> set[str]:
+    global _PERP_SYMBOL_CACHE
+    if force_refresh or _PERP_SYMBOL_CACHE is None:
+        _PERP_SYMBOL_CACHE = fetch_binance_perp_spot_symbols()
+    return set(_PERP_SYMBOL_CACHE)
+
+
+def filter_symbols_without_perp_support(symbols: list[str]) -> list[str]:
+    """Drop symbols without a USDT or USDC perpetual available."""
+    if not symbols:
+        return []
+    try:
+        perp_symbols = get_available_perp_spot_symbols()
+    except Exception as exc:
+        tprint(
+            "Warning: failed to refresh perp universe; skipping perp-based filtering: "
+            f"{_request_error_category(exc)}: {exc}"
+        )
+        return sorted(set(symbols))
+
+    perp_bases = {sym.split("/", 1)[0] for sym in perp_symbols if "/" in sym}
+    out = sorted({sym for sym in symbols if sym.split("/", 1)[0] in perp_bases})
+
+    removed = len(set(symbols)) - len(out)
+    if removed > 0:
+        tprint(
+            "Filtered out symbols without USDT/USDC perps from universe selection: "
+            f"{removed} removed"
+        )
+    return out
+
+
 def fetch_24h_tickers():
     tprint("Entering function: fetch_24h_tickers in universe.py")
     data = _binance_get_json("/api/v3/ticker/24hr")
@@ -298,8 +359,10 @@ def refresh_margin_universe_daily(
 
     tprint("Refreshing margin universe...")
     pairs = fetch_binance_cross_margin_pairs()
-    syms = apply_hardcoded_universe_exclusions(
-        margin_pairs_to_spot_symbols(pairs, quotes=quotes)
+    syms = filter_symbols_without_perp_support(
+        apply_hardcoded_universe_exclusions(
+            margin_pairs_to_spot_symbols(pairs, quotes=quotes)
+        )
     )
     tprint(f"Refreshed margin universe: {len(syms)} symbols.")
     return MarginUniverseCache(symbols=syms, asof_day=today)
@@ -307,60 +370,28 @@ def refresh_margin_universe_daily(
 
 def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M: int):
     """
-    Selects all margin symbols except bottom 30 by 24h volume.
+    Selects all post-exclusion margin symbols.
     Always includes market_basket.
     """
     tprint(f"Entering function: build_fetch_universe in universe.py")
-    margin_symbols = apply_hardcoded_universe_exclusions(list(margin_symbols))
-    market_basket = apply_hardcoded_universe_exclusions(list(market_basket))
-    # Deduplicate quote variants (preferred quote first in DEDUP_QUOTES) before volume ranking
+    margin_symbols = filter_symbols_without_perp_support(
+        apply_hardcoded_universe_exclusions(list(margin_symbols))
+    )
+    market_basket = filter_symbols_without_perp_support(
+        apply_hardcoded_universe_exclusions(list(market_basket))
+    )
+    # Deduplicate quote variants (preferred quote first in DEDUP_QUOTES).
     margin_symbols = deduplicate_symbols_by_base(margin_symbols)
     market_basket = deduplicate_symbols_by_base(market_basket)
     tprint(
-        f"Building universe from {len(margin_symbols)} margin symbols + {len(market_basket)} basket symbols (Remove bottom 30 by volume)."
+        f"Building universe from {len(margin_symbols)} margin symbols + "
+        f"{len(market_basket)} basket symbols (no volume-based filtering)."
     )
-    try:
-        tickers = fetch_24h_tickers()
-        vol_map = {}
-        for t in tickers:
-            s = t["symbol"]
-            v = float(t["quoteVolume"])
-            vol_map[s] = v
-        tprint(f"Volume map built for {len(vol_map)} tickers.")
-
-        scored = []
-        for s in margin_symbols:
-            api_s = s.replace("/", "")
-            vol = vol_map.get(api_s, 0.0)
-            scored.append((vol, s))
-        tprint(f"Scored {len(scored)} margin symbols.")
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-        # Remove bottom 5 by volume
-        bottom_n = 5
-        if len(scored) > bottom_n:
-            top_m = [x[1] for x in scored[:-bottom_n]]
-        else:
-            top_m = [x[1] for x in scored]
-        tprint(f"Selected {len(top_m)} symbols by volume (removed bottom {bottom_n}).")
-
-        final = apply_hardcoded_universe_exclusions(
-            list(set(top_m).union(set(market_basket)))
-        )
-        tprint(
-            f"Universe selected: {len(final)} symbols (All except bottom {bottom_n} by vol + basket)"
-        )
-        return final
-
-    except Exception as e:
-        tprint(
-            "Error fetching tickers for universe selection: "
-            f"{_request_error_category(e)}: {e}. Fallback to alphabet."
-        )
-        return apply_hardcoded_universe_exclusions(
-            list(set(margin_symbols).union(set(market_basket)))
-        )
+    final = apply_hardcoded_universe_exclusions(
+        list(set(margin_symbols).union(set(market_basket)))
+    )
+    tprint(f"Universe selected: {len(final)} symbols (no volume-based filtering)")
+    return final
 
 
 def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
@@ -394,7 +425,9 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
             base_syms = list(cfg.get("market_basket", []))
         # In offline mode, use all available symbols (no volume data to remove bottom 30)
         train_syms = deduplicate_symbols_by_base(list(set(base_syms)))
-        train_syms = apply_hardcoded_universe_exclusions(train_syms)
+        train_syms = filter_symbols_without_perp_support(
+            apply_hardcoded_universe_exclusions(train_syms)
+        )
         M = int(cfg.get("fetch_symbols_M", 9999))
         if len(train_syms) > M:
             tprint(
@@ -439,8 +472,12 @@ def select_live_candidates(
     Price change filtering removed per user request.
     """
     tprint(f"Entering function: select_live_candidates in universe.py")
-    margin_symbols = apply_hardcoded_universe_exclusions(list(margin_symbols))
-    market_basket = apply_hardcoded_universe_exclusions(list(market_basket))
+    margin_symbols = filter_symbols_without_perp_support(
+        apply_hardcoded_universe_exclusions(list(margin_symbols))
+    )
+    market_basket = filter_symbols_without_perp_support(
+        apply_hardcoded_universe_exclusions(list(market_basket))
+    )
     tprint(
         f"Selecting live candidates from {len(margin_symbols)} margin symbols + {len(market_basket)} basket"
     )

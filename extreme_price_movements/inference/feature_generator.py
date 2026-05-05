@@ -50,7 +50,7 @@ DEFAULT_GATE_VOL_LOOKBACK_HOURS = 24 * 7  # 7 days
 DEFAULT_GATE_TREND_THR = 0.0
 DEFAULT_TAIL_WARMUP_BUFFER_HOURS = 72
 MODEL_DERIVED_FEATURE_RE = re.compile(
-    r"^(base_H\d+_|pred_H\d+|pred_.*_H\d+|pred_logit$|oof_ebm_unc_|base_med_|base_prob_|base_model_|prob_error|recent_prob_error_|recent_hit_rate_)"
+    r"^(base_H\d+_|pred_H\d+|pred_.*_H\d+|pred_logit$|oof_ebm_unc_|base_med_|base_prob_|base_model_|prob_error|recent_prob_error_|recent_hit_rate_|recent_global_|recent_side_horizon_|recent_bucket_|recent_regime_|recent_meta_|recent_effectiveness_available$)"
 )
 
 

@@ -101,18 +101,24 @@ def _stratified_subsample_indices(
     return idx
 
 
-def top30_boundary_weight(pred: np.ndarray) -> np.ndarray:
+def topk_boundary_weight(pred: np.ndarray, top_frac: float = 0.15) -> np.ndarray:
     rank_pct = (
         pd.Series(np.asarray(pred, dtype=np.float32))
         .rank(pct=True)
         .to_numpy(dtype=np.float32)
     )
-    center = 0.75
-    sigma = 0.10
+    top_frac = float(np.clip(top_frac, 0.01, 0.50))
+    cutoff = 1.0 - top_frac
+    center = float(np.clip(cutoff + 0.5 * top_frac, 0.50, 0.995))
+    sigma = max(0.03, 0.5 * top_frac)
     boundary = np.exp(-((rank_pct - center) ** 2) / (2 * sigma**2))
-    topness = np.clip((rank_pct - 0.70) / 0.30, 0.0, 1.0)
+    topness = np.clip((rank_pct - cutoff) / max(top_frac, 1e-6), 0.0, 1.0)
     w = 1.0 + 0.5 * boundary + 0.5 * topness
     return np.clip(w, 1.0, 2.0).astype(np.float32)
+
+
+def top30_boundary_weight(pred: np.ndarray) -> np.ndarray:
+    return topk_boundary_weight(pred, top_frac=0.30)
 
 
 def _rank_focus_weight(pred: np.ndarray) -> np.ndarray:
@@ -151,13 +157,49 @@ def _error_weight_regressor(y_true: np.ndarray, pred: np.ndarray) -> np.ndarray:
     return np.minimum(1.6, 1.0 + 0.3 * resid_rank).astype(np.float32)
 
 
+def _false_positive_precision_weight(
+    y_true: np.ndarray,
+    pred: np.ndarray,
+    *,
+    top_frac: float = 0.15,
+    positive_recall_top_frac_multiplier: float = 1.5,
+    fp_upweight: float = 1.8,
+    top_positive_upweight: float = 1.2,
+    max_weight: float = 4.0,
+) -> np.ndarray:
+    y_bin = np.asarray(y_true, dtype=np.float32)
+    pred_arr = np.nan_to_num(np.asarray(pred, dtype=np.float32), nan=-np.inf)
+    if len(pred_arr) == 0:
+        return np.ones(0, dtype=np.float32)
+    top_frac = float(np.clip(top_frac, 0.01, 0.50))
+    pos_top_frac = float(
+        np.clip(positive_recall_top_frac_multiplier * top_frac, top_frac, 0.95)
+    )
+    rank_pct = (
+        pd.Series(pred_arr).rank(method="average", pct=True).to_numpy(dtype=np.float32)
+    )
+    trade_top_mask = rank_pct >= 1.0 - top_frac
+    pos_support_mask = rank_pct >= 1.0 - pos_top_frac
+    w = np.ones(len(pred_arr), dtype=np.float32)
+    fp_mask = (y_bin < 0.5) & trade_top_mask
+    pos_mask = (y_bin >= 0.5) & pos_support_mask
+    w[fp_mask] = float(fp_upweight)
+    w[pos_mask] = np.maximum(w[pos_mask], float(top_positive_upweight))
+    return np.clip(w, 1.0, max_weight).astype(np.float32)
+
+
 def _compute_weight_distillation(
     y_true: np.ndarray,
     pred: np.ndarray,
     prev_en_pred: np.ndarray | None,
     is_classifier: bool = True,
+    *,
+    top_frac: float = 0.15,
+    fp_upweight: float = 1.8,
+    top_positive_upweight: float = 1.2,
+    include_false_positive_focus: bool = True,
 ) -> np.ndarray:
-    w = top30_boundary_weight(pred)
+    w = topk_boundary_weight(pred, top_frac=top_frac)
     if is_classifier:
         ew = _error_weight_classifier(y_true, pred)
     else:
@@ -165,6 +207,14 @@ def _compute_weight_distillation(
     w = w * ew
     rf = _rank_focus_weight(pred)
     w = w * np.sqrt(rf)
+    if is_classifier and include_false_positive_focus:
+        w = w * _false_positive_precision_weight(
+            y_true,
+            pred,
+            top_frac=top_frac,
+            fp_upweight=fp_upweight,
+            top_positive_upweight=top_positive_upweight,
+        )
     return w.astype(np.float32)
 
 
@@ -918,9 +968,11 @@ def _quick_cv_score(
     )
     w = _compute_weight_distillation(
         y_arr,
-        prior_round_pred
-        if prior_round_pred is not None
-        else np.full(n, 0.5, dtype=np.float32),
+        (
+            prior_round_pred
+            if prior_round_pred is not None
+            else np.full(n, 0.5, dtype=np.float32)
+        ),
         prior_round_pred,
         is_classifier=True,
     )

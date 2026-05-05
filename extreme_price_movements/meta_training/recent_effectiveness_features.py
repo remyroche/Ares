@@ -142,11 +142,18 @@ def _add_scope_features(
         f"n_{top_label}",
         "n_valid",
     ]
+    init_cols: dict[str, object] = {}
     for win in windows:
         sfx = win.lower()
         for m in metrics:
-            df[f"recent_{scope_name}_{m}_{sfx}"] = np.nan
-        df[f"recent_{scope_name}_available_{sfx}"] = np.int8(0)
+            init_cols[f"recent_{scope_name}_{m}_{sfx}"] = np.full(
+                len(df), np.nan, dtype=np.float32
+            )
+        init_cols[f"recent_{scope_name}_available_{sfx}"] = np.zeros(
+            len(df), dtype=np.int8
+        )
+    if init_cols:
+        df = pd.concat([df, pd.DataFrame(init_cols, index=df.index)], axis=1)
 
     grouped = (
         df.groupby(list(scope_cols), sort=False, dropna=False)
@@ -154,12 +161,9 @@ def _add_scope_features(
         else [(None, df)]
     )
     for _, g in grouped:
-        stats_ts = _compute_scope_timeseries(
-            g,
-            ts_col=ts_col,
-            label_available_ts_col=label_available_ts_col,
-            windows=windows,
-            metric_fn=lambda hist: _window_stats(
+
+        def _scoped_window_stats(hist: pd.DataFrame) -> dict[str, float]:
+            raw = _window_stats(
                 hist,
                 score_col=score_col,
                 prob_col=prob_col,
@@ -168,7 +172,25 @@ def _add_scope_features(
                 top_frac=top_frac,
                 min_samples=min_samples,
                 min_top_samples=min_top_samples,
-            ),
+            )
+            return {
+                "n_samples": raw["n_samples"],
+                "n_valid": raw["n_valid"],
+                "rolling_ic": raw["rolling_ic"],
+                "model_ece": raw["model_ece"],
+                f"{top_label}_hit_rate": raw["top_hit_rate"],
+                f"{top_label}_calibration_error": raw["top_calibration_error"],
+                f"abs_{top_label}_calibration_error": raw["abs_top_calibration_error"],
+                f"{top_label}_ev": raw["top_ev"],
+                f"n_{top_label}": raw["n_top"],
+            }
+
+        stats_ts = _compute_scope_timeseries(
+            g,
+            ts_col=ts_col,
+            label_available_ts_col=label_available_ts_col,
+            windows=windows,
+            metric_fn=_scoped_window_stats,
         )
         if stats_ts.empty:
             continue
@@ -186,12 +208,56 @@ def _add_scope_features(
                 sfx = win.lower()
                 for m in metrics:
                     key = f"{m}_{sfx}"
-                    df.at[idx, f"recent_{scope_name}_{m}_{sfx}"] = row.get(key, np.nan)
+                    df.at[idx, f"recent_{scope_name}_{m}_{sfx}"] = np.float32(
+                        row.get(key, np.nan)
+                    )
                 df.at[idx, f"recent_{scope_name}_available_{sfx}"] = np.int8(
                     row.get(f"n_valid_{sfx}", 0.0) >= min_samples
                     and np.isfinite(row.get(f"model_ece_{sfx}", np.nan))
                 )
     return df
+
+
+def _causal_standardize_series(values: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(values, errors="coerce").astype(np.float32)
+    hist_mean = numeric.expanding(min_periods=20).mean().shift(1)
+    hist_std = numeric.expanding(min_periods=20).std(ddof=0).shift(1)
+    z = (numeric - hist_mean) / hist_std.replace(0.0, np.nan)
+    return z.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(-6.0, 6.0)
+
+
+def standardize_recent_effectiveness_features(
+    df: pd.DataFrame,
+    *,
+    prefix: str = "recent_",
+) -> pd.DataFrame:
+    """Apply causal scaling to recent-effectiveness metrics.
+
+    The raw rolling metrics are already causal because they only use rows whose
+    labels were available before the prediction timestamp. This second pass
+    keeps availability flags binary and converts counts/rates/errors/EV metrics
+    to bounded, expanding z-scores using only prior generated feature values.
+    """
+    out = df.copy()
+    cols = [c for c in out.columns if str(c).startswith(prefix)]
+    for col in cols:
+        name = str(col)
+        if name.endswith("_available") or "_available_" in name:
+            out[col] = (
+                pd.to_numeric(out[col], errors="coerce").fillna(0).astype(np.int8)
+            )
+            continue
+        raw = pd.to_numeric(out[col], errors="coerce")
+        if "_n_" in name or name.endswith("_n"):
+            raw = np.log1p(raw.clip(lower=0.0))
+        elif "hit_rate" in name or "realized_rate" in name:
+            raw = raw.clip(0.0, 1.0)
+        elif "ece" in name or "calibration_error" in name or "cal_error" in name:
+            raw = raw.clip(-1.0, 1.0)
+        elif "rolling_ic" in name or "rank_ic" in name:
+            raw = raw.clip(-1.0, 1.0)
+        out[col] = _causal_standardize_series(raw).astype(np.float32)
+    return out
 
 
 def add_recent_effectiveness_features(
@@ -208,9 +274,10 @@ def add_recent_effectiveness_features(
     regime_col: str = "regime",
     symbol_col: str = "symbol",
     windows: tuple[str, ...] = ("5D", "15D", "30D"),
-    top_frac: float = 0.10,
+    top_frac: float = 0.15,
     min_samples: int = 100,
     min_top_samples: int = 25,
+    standardize: bool = True,
 ) -> pd.DataFrame:
     out = df.sort_values(ts_col).copy()
     required = [ts_col, label_available_ts_col, score_col, prob_col, y_col, ret_col]
@@ -251,6 +318,8 @@ def add_recent_effectiveness_features(
         "recent_global_available_30d",
         pd.Series(np.zeros(len(out), dtype=np.int8), index=out.index),
     ).astype(np.int8)
+    if standardize:
+        out = standardize_recent_effectiveness_features(out)
     return out
 
 
@@ -266,8 +335,10 @@ def add_recent_meta_self_features(
     meta_accept_col: str = "meta_accept",
     symbol_col: str = "symbol",
     windows: tuple[str, ...] = ("5D", "10D", "30D"),
+    top_frac: float = 0.15,
     min_samples: int = 50,
     min_top_samples: int = 20,
+    standardize: bool = True,
 ) -> pd.DataFrame:
     out = df.sort_values(ts_col).copy()
     required = [ts_col, label_available_ts_col, meta_prob_col, y_success_col, ret_col]
@@ -300,12 +371,13 @@ def add_recent_meta_self_features(
         )
         for win in windows:
             sfx = win.lower()
+            top_label = f"top{int(round(top_frac * 100))}"
             for name in [
                 "rank_ic",
                 "ece",
-                "top10_cal_error",
-                "top10_hit_rate",
-                "top10_ev",
+                f"{top_label}_cal_error",
+                f"{top_label}_hit_rate",
+                f"{top_label}_ev",
                 "accept_hit_rate",
                 "accept_ev",
                 "false_accept_rate",
@@ -352,26 +424,26 @@ def add_recent_meta_self_features(
                     finite_score = np.isfinite(mscore)
                     top = np.zeros_like(finite_score, dtype=bool)
                     if int(finite_score.sum()) >= min_top_samples:
-                        thr = np.nanquantile(mscore[finite_score], 0.9)
+                        thr = np.nanquantile(mscore[finite_score], 1.0 - top_frac)
                         top = finite_score & (mscore >= thr)
                     top_ok = top & np.isfinite(p) & np.isfinite(y) & np.isfinite(r)
                     if int(top_ok.sum()) >= min_top_samples:
                         out.at[
-                            ridx, f"recent_meta_{scope}_top10_cal_error_{sfx}"
+                            ridx, f"recent_meta_{scope}_{top_label}_cal_error_{sfx}"
                         ] = float(np.nanmean(p[top_ok]) - np.nanmean(y[top_ok]))
                         out.at[
-                            ridx, f"recent_meta_{scope}_top10_hit_rate_{sfx}"
+                            ridx, f"recent_meta_{scope}_{top_label}_hit_rate_{sfx}"
                         ] = float(np.nanmean(y[top_ok]))
-                        out.at[ridx, f"recent_meta_{scope}_top10_ev_{sfx}"] = float(
-                            np.nanmean(r[top_ok])
+                        out.at[ridx, f"recent_meta_{scope}_{top_label}_ev_{sfx}"] = (
+                            float(np.nanmean(r[top_ok]))
                         )
                     valid_accept = np.isfinite(a)
                     accept = valid_accept & (a > 0.0)
                     accept_ret = accept & np.isfinite(r)
                     if int(accept_ret.sum()) >= min_top_samples:
-                        out.at[
-                            ridx, f"recent_meta_{scope}_accept_hit_rate_{sfx}"
-                        ] = float(np.nanmean(y[accept_ret]))
+                        out.at[ridx, f"recent_meta_{scope}_accept_hit_rate_{sfx}"] = (
+                            float(np.nanmean(y[accept_ret]))
+                        )
                         out.at[ridx, f"recent_meta_{scope}_accept_ev_{sfx}"] = float(
                             np.nanmean(r[accept_ret])
                         )
@@ -395,11 +467,20 @@ def add_recent_meta_self_features(
                         else np.nan
                     )
                     out.at[ridx, f"recent_meta_{scope}_available_{sfx}"] = np.int8(1)
+    top_label = f"top{int(round(top_frac * 100))}"
     out["recent_meta_ece_30d"] = out.get("recent_meta_global_ece_30d")
-    out["recent_meta_top10_cal_error_30d"] = out.get(
-        "recent_meta_global_top10_cal_error_30d"
+    out[f"recent_meta_{top_label}_cal_error_30d"] = out.get(
+        f"recent_meta_global_{top_label}_cal_error_30d"
+    )
+    out[f"recent_meta_{top_label}_cal_error_10d"] = out.get(
+        f"recent_meta_global_{top_label}_cal_error_10d"
+    )
+    out[f"recent_meta_{top_label}_cal_error_5d"] = out.get(
+        f"recent_meta_global_{top_label}_cal_error_5d"
     )
     out["recent_meta_accept_hit_rate_5d"] = out.get(
         "recent_meta_global_accept_hit_rate_5d"
     )
+    if standardize:
+        out = standardize_recent_effectiveness_features(out, prefix="recent_meta_")
     return out

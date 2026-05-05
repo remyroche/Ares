@@ -551,7 +551,9 @@ class EBMOnLGBMModel:
         if ts is not None and len(ts) == len(final_pred):
             hour = pd.to_datetime(ts, errors="coerce").dt.floor("h")
             top10_thr = float(np.quantile(final_pred, 0.90))
-            pos = pd.DataFrame({"hour": hour, "flag": np.asarray(final_pred) >= top10_thr})
+            pos = pd.DataFrame(
+                {"hour": hour, "flag": np.asarray(final_pred) >= top10_thr}
+            )
             pos = pos.dropna(subset=["hour"])
             if not pos.empty:
                 per_hour = pos.groupby("hour")["flag"].sum()
@@ -726,7 +728,9 @@ def _fit_lgbm_tree_feature_model(
 
     sw = None
     if sample_weight is not None:
-        sw = np.nan_to_num(np.asarray(sample_weight, dtype=np.float32), nan=1.0, posinf=1.0, neginf=1.0)
+        sw = np.nan_to_num(
+            np.asarray(sample_weight, dtype=np.float32), nan=1.0, posinf=1.0, neginf=1.0
+        )
     train_set = lgb.Dataset(x_train, label=y_train, weight=sw, free_raw_data=False)
     train_kwargs: dict[str, Any] = {}
     if x_eval is not None and y_eval is not None and len(y_eval) > 1:
@@ -770,9 +774,12 @@ def _fit_lgbm_tree_feature_model(
     )
 
 
-def _leaf_path_features(tree_struct: dict[str, Any], feature_names: list[str] | None = None) -> dict[int, list[dict[str, Any]]]:
+def _leaf_path_features(
+    tree_struct: dict[str, Any], feature_names: list[str] | None = None
+) -> dict[int, list[dict[str, Any]]]:
     out: dict[int, list[dict[str, Any]]] = {}
     names = feature_names or []
+
     def walk(node: dict[str, Any], path: list[dict[str, Any]]) -> None:
         if "leaf_index" in node:
             out[int(node["leaf_index"])] = list(path)
@@ -785,9 +792,18 @@ def _leaf_path_features(tree_struct: dict[str, Any], feature_names: list[str] | 
         left = node.get("left_child")
         right = node.get("right_child")
         if left is not None:
-            walk(left, path + [{"split_feature_name": fname, "threshold": thr, "direction": "<="}])
+            walk(
+                left,
+                path
+                + [{"split_feature_name": fname, "threshold": thr, "direction": "<="}],
+            )
         if right is not None:
-            walk(right, path + [{"split_feature_name": fname, "threshold": thr, "direction": ">"}])
+            walk(
+                right,
+                path
+                + [{"split_feature_name": fname, "threshold": thr, "direction": ">"}],
+            )
+
     walk(tree_struct, [])
     return out
 
@@ -951,6 +967,9 @@ def _metric_pack(
             "precision01": 0.0,
             "precision005": 0.0,
             "ndcg_at_10": 0.0,
+            "ndcg_at_20": 0.0,
+            "ndcg@10": 0.0,
+            "ndcg@20": 0.0,
             "auc_correct_15": 0.5,
             "auc_correct_30": 0.5,
             "stability30_proxy": 0.0,
@@ -967,6 +986,8 @@ def _metric_pack(
             "pr_auc": 0.0,
             "brier": 1.0,
             "ece": _compute_ece(y, p),
+            "ece_top20": float("nan"),
+            "ece_at_20": float("nan"),
             "oof_std": 0.0,
         }
     order = np.argsort(p)
@@ -1010,6 +1031,9 @@ def _metric_pack(
         p_clip = np.clip(p, 1e-6, 1.0 - 1e-6)
         brier = float(brier_score_loss(yb, p_clip))
         ece = _compute_ece(yb, p_clip)
+        ece_top20 = (
+            _compute_ece(yb[top20], p_clip[top20]) if len(top20) else float("nan")
+        )
     else:
         denom = float(np.mean(np.abs(y)) + 1e-6)
         hit_rate5 = float(np.mean(y[top5])) if len(top5) else 0.0
@@ -1029,6 +1053,7 @@ def _metric_pack(
         pr = auc
         brier = float(np.mean((p - y) ** 2))
         ece = float("nan")
+        ece_top20 = float("nan")
     stab_proxy = _top_stability(y, p, frac_obj)
     stab_metrics = _grouped_top_stability(
         y, p, frac_obj, classifier=classifier, groups=grp
@@ -1038,9 +1063,7 @@ def _metric_pack(
         y, p, 0.30, classifier=classifier, groups=grp
     )
     stability30 = (
-        stab_metrics30["stability"]
-        if stab_metrics30["n_groups"] >= 3
-        else stab_proxy30
+        stab_metrics30["stability"] if stab_metrics30["n_groups"] >= 3 else stab_proxy30
     )
     stability15 = (
         stab_metrics["stability"] if stab_metrics["n_groups"] >= 3 else stab_proxy
@@ -1051,8 +1074,16 @@ def _metric_pack(
     ndcg10 = float(_ndcg_at_k(y, p, k=10))
     ndcg20 = float(_ndcg_at_k(y, p, k=20))
     # Tradable-calibrated ranking diagnostics over execution-like top slices.
-    ndcg_top20pct = float(_ndcg_at_k(y[top20], p[top20], k=min(20, len(top20)))) if len(top20) else 0.0
-    ndcg_top10pct = float(_ndcg_at_k(y[top10], p[top10], k=min(10, len(top10)))) if len(top10) else 0.0
+    ndcg_top20pct = (
+        float(_ndcg_at_k(y[top20], p[top20], k=min(20, len(top20))))
+        if len(top20) > 0
+        else 0.0
+    )
+    ndcg_top10pct = (
+        float(_ndcg_at_k(y[top10], p[top10], k=min(10, len(top10))))
+        if len(top10) > 0
+        else 0.0
+    )
     return {
         "lift15": float(lift15),
         "lift30": float(lift30),
@@ -1106,6 +1137,8 @@ def _metric_pack(
         "pr_auc": float(pr),
         "brier": float(brier),
         "ece": float(ece),
+        "ece_top20": float(ece_top20),
+        "ece_at_20": float(ece_top20),
         "oof_std": float(np.std(p)),
     }
 
@@ -1160,6 +1193,9 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     ndcg_at_20 = float(
         np.mean([m.get("ndcg_at_20", m.get("ndcg@20", 0.0)) for m in fold_metrics])
     )
+    ece_at_20 = float(
+        np.mean([m.get("ece_top20", m.get("ece_at_20", np.nan)) for m in fold_metrics])
+    )
     ndcg_tradable_top20pct = float(
         np.mean([m.get("ndcg_tradable_top20pct", 0.0) for m in fold_metrics])
     )
@@ -1171,7 +1207,9 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         dtype=np.float64,
     )
     ndcg20_std = float(np.std(_ndcg20_fold, ddof=1)) if len(_ndcg20_fold) > 1 else 0.0
-    ndcg20_p25 = float(np.percentile(_ndcg20_fold, 25.0)) if len(_ndcg20_fold) > 0 else 0.0
+    ndcg20_p25 = (
+        float(np.percentile(_ndcg20_fold, 25.0)) if len(_ndcg20_fold) > 0 else 0.0
+    )
     auc30 = float(
         np.mean(
             [
@@ -1181,7 +1219,10 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         )
     )
     stability_vals = np.asarray(
-        [m.get("stability20", m.get("stability15", m.get("stability30", 0.0))) for m in fold_metrics],
+        [
+            m.get("stability20", m.get("stability15", m.get("stability30", 0.0)))
+            for m in fold_metrics
+        ],
         dtype=np.float64,
     )
     j_mean = float(np.mean(j))
@@ -1214,6 +1255,8 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         "ndcg_at_10": ndcg_at_10,
         "ndcg@20": ndcg_at_20,
         "ndcg_at_20": ndcg_at_20,
+        "ece_top20": ece_at_20,
+        "ece_at_20": ece_at_20,
         "ndcg_tradable_top20pct": ndcg_tradable_top20pct,
         "ndcg_tradable_top10pct": ndcg_tradable_top10pct,
         "ndcg20_std": ndcg20_std,
@@ -1246,14 +1289,33 @@ def _hpo_objective_from_aggregate(
     _ndcg20_floor = 0.05
     _ndcg20_p25_floor = 0.03
     _precision_floor = float(agg.get("pareto_precision_floor", 0.0))
+    _ndcg20 = float(agg.get("ndcg_at_20", agg.get("ndcg@20", float("nan"))))
+    _ndcg20_p25 = float(agg.get("ndcg20_p25", float("nan")))
+    _precision15 = float(agg.get("precision15", agg.get("hit_rate15", float("nan"))))
+    _lift20 = float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
+    _stability20 = float(
+        agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0)))
+    )
+    if not (
+        "ndcg_at_20" in agg
+        or "ndcg@20" in agg
+        or "ndcg20_p25" in agg
+        or "ndcg20_std" in agg
+        or "ndcg_at_10" in agg
+        or "ndcg_tradable_top10pct" in agg
+        or "ndcg_tradable_top20pct" in agg
+    ):
+        return float(0.65 * _lift20 + 0.35 * _stability20)
     if (
-        float(agg.get("ndcg_at_20", agg.get("ndcg@20", 0.0))) < _ndcg20_floor
-        or float(agg.get("ndcg20_p25", 0.0)) < _ndcg20_p25_floor
-        or float(agg.get("precision15", agg.get("hit_rate15", 0.0))) < _precision_floor
+        (np.isfinite(_ndcg20) and _ndcg20 < _ndcg20_floor)
+        or (np.isfinite(_ndcg20_p25) and _ndcg20_p25 < _ndcg20_p25_floor)
+        or (np.isfinite(_precision15) and _precision15 < _precision_floor)
     ):
         return float(-1e9)
     if str(objective_mode).lower() == "meta":
-        _tradable_ndcg = float(agg.get("ndcg_tradable_top20pct", agg.get("ndcg_tradable_top10pct", 0.0)))
+        _tradable_ndcg = float(
+            agg.get("ndcg_tradable_top20pct", agg.get("ndcg_tradable_top10pct", 0.0))
+        )
         return float(
             0.24 * float(agg.get("precision15", agg.get("hit_rate15", 0.0)))
             + 0.22 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
@@ -1264,12 +1326,22 @@ def _hpo_objective_from_aggregate(
             + 0.05 * _tradable_ndcg
             + 0.10 * float(agg.get("ndcg20_p25", 0.0))
             - 0.05 * float(agg.get("ndcg20_std", 0.0))
-            + 0.10 * float(agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0))))
+            + 0.10
+            * float(
+                agg.get(
+                    "stability20", agg.get("stability15", agg.get("stability30", 0.0))
+                )
+            )
         )
-    _tradable_ndcg = float(agg.get("ndcg_tradable_top10pct", agg.get("ndcg_tradable_top20pct", 0.0)))
+    _tradable_ndcg = float(
+        agg.get("ndcg_tradable_top10pct", agg.get("ndcg_tradable_top20pct", 0.0))
+    )
     return float(
         0.45 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
-        + 0.25 * float(agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0))))
+        + 0.25
+        * float(
+            agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0)))
+        )
         + 0.12 * float(agg.get("ndcg_at_10", 0.0))
         + 0.08 * float(agg.get("ndcg_at_20", agg.get("ndcg@20", 0.0)))
         + 0.05 * _tradable_ndcg
@@ -1380,6 +1452,16 @@ def _save_ebm_hpo_warm_start(
             "ndcg_at_10": float(
                 best_trial_attrs.get(
                     "ndcg_at_10", best_trial_attrs.get("ndcg@10", np.nan)
+                )
+            ),
+            "ndcg_at_20": float(
+                best_trial_attrs.get(
+                    "ndcg_at_20", best_trial_attrs.get("ndcg@20", np.nan)
+                )
+            ),
+            "ece_top20": float(
+                best_trial_attrs.get(
+                    "ece_top20", best_trial_attrs.get("ece_at_20", np.nan)
                 )
             ),
             "hpo_objective": float(best_trial_attrs.get("hpo_objective", best_value)),
@@ -1957,21 +2039,41 @@ def _lgbm_leaf_screen_scores(X: np.ndarray, names: list[str]) -> np.ndarray:
     n, p = X.shape
     if p == 0:
         return np.zeros(0, dtype=np.float32)
-    arr = np.nan_to_num(np.asarray(X, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    arr = np.nan_to_num(
+        np.asarray(X, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+    )
     model_contrib = np.sum(np.abs(arr), axis=1)
     ranks = pd.Series(model_contrib).rank(pct=True).to_numpy(dtype=np.float32)
     top15 = ranks >= 0.85
     eps = 1e-8
     support_all = np.mean(np.abs(arr), axis=0)
-    support_top15 = np.mean(np.abs(arr[top15]), axis=0) if np.any(top15) else np.zeros(p, dtype=np.float32)
+    support_top15 = (
+        np.mean(np.abs(arr[top15]), axis=0)
+        if np.any(top15)
+        else np.zeros(p, dtype=np.float32)
+    )
     contrib_all = np.mean(np.abs(arr), axis=0)
-    contrib_top15 = np.mean(np.abs(arr[top15]), axis=0) if np.any(top15) else np.zeros(p, dtype=np.float32)
-    share_top15_num = np.sum(np.abs(arr[top15]), axis=0) if np.any(top15) else np.zeros(p, dtype=np.float32)
+    contrib_top15 = (
+        np.mean(np.abs(arr[top15]), axis=0)
+        if np.any(top15)
+        else np.zeros(p, dtype=np.float32)
+    )
+    share_top15_num = (
+        np.sum(np.abs(arr[top15]), axis=0)
+        if np.any(top15)
+        else np.zeros(p, dtype=np.float32)
+    )
     share_top15 = share_top15_num / (float(np.sum(share_top15_num)) + eps)
     a15 = np.log((support_top15 + eps) / (support_all + eps))
     c15 = np.log((contrib_top15 + eps) / (contrib_all + eps))
     raw_score = np.zeros(p, dtype=np.float32)
-    tree_idx = np.array([_parse_tree_leaf_name(nm)[0] if _parse_tree_leaf_name(nm) else -1 for nm in names], dtype=np.int32)
+    tree_idx = np.array(
+        [
+            _parse_tree_leaf_name(nm)[0] if _parse_tree_leaf_name(nm) else -1
+            for nm in names
+        ],
+        dtype=np.int32,
+    )
     for lo, hi in TREE_BLOCKS:
         mask = (tree_idx >= lo) & (tree_idx < hi)
         if not np.any(mask):
@@ -1996,7 +2098,10 @@ def _lgbm_leaf_screen_scores(X: np.ndarray, names: list[str]) -> np.ndarray:
         k = max_leaves_for_tree(ti)
         if k <= 0:
             continue
-        adjusted = [(ix, float(raw_score[ix] + _diversity_bonus_for_leaf_name(names[ix]))) for ix in idxs]
+        adjusted = [
+            (ix, float(raw_score[ix] + _diversity_bonus_for_leaf_name(names[ix])))
+            for ix in idxs
+        ]
         order = [ix for ix, _ in sorted(adjusted, key=lambda x: x[1], reverse=True)[:k]]
         keep[np.asarray(order, dtype=np.int32)] = True
     out = np.where(keep, raw_score, -np.inf).astype(np.float32)
@@ -2018,7 +2123,9 @@ def _diversity_bonus_for_leaf_name(name: str) -> float:
     parsed = _parse_tree_leaf_name(name)
     if parsed is None:
         return 0.0
-    toks = re.findall(r"(cross_asset|funding|orderbook_wall|price|volume)", name.lower())
+    toks = re.findall(
+        r"(cross_asset|funding|orderbook_wall|price|volume)", name.lower()
+    )
     return 0.03 * float(len(set(toks)) >= 2)
 
 
@@ -2715,11 +2822,13 @@ def _oof_distilled_sample_weights(
             last_oof,
             prev_oof if prev_oof is not None else last_oof,
             is_classifier=classifier,
+            include_false_positive_focus=False,
         )
         fp_avoid = _false_positive_avoidance_weight(
             y,
             last_oof,
             classifier=classifier,
+            trade_top_frac=_target_top_fraction(),
         )
         current, ess = _normalize_rank_based_weights(base * multiplier * fp_avoid)
         prev_oof = last_oof.copy()
@@ -2768,7 +2877,7 @@ def _false_positive_avoidance_weight(
     pos_mask = (yb >= 0.5) & pos_support_mask
     w[fp_mask] = fp_upweight
     w[pos_mask] = np.maximum(w[pos_mask], top_positive_upweight)
-    return np.clip(w, 1.0, max_weight).astype(np.float32)
+    return np.clip(w, 0.25, max_weight).astype(np.float32)
 
 
 def _normalize_rank_based_weights(
@@ -3258,7 +3367,9 @@ def _augment_with_oof_tree_features(
                 nested_splits = max(nested_splits, 0)
             else:
                 split_target = np.asarray(y_fit_tr, dtype=np.float32)
-                nested_splits = 3 if len(y_fit_tr) >= 120 else 2 if len(y_fit_tr) >= 40 else 0
+                nested_splits = (
+                    3 if len(y_fit_tr) >= 120 else 2 if len(y_fit_tr) >= 40 else 0
+                )
             if nested_splits >= 2:
                 nested_splitter = (
                     StratifiedKFold(
@@ -3297,11 +3408,13 @@ def _augment_with_oof_tree_features(
                 pred_fit,
                 None,
                 is_classifier=classifier,
+                include_false_positive_focus=False,
             )
             fp_avoid_w = _false_positive_avoidance_weight(
                 np.asarray(y_fit_tr, dtype=np.float32),
                 pred_fit,
                 classifier=classifier,
+                trade_top_frac=_target_top_fraction(),
             )
             fit_sample_weight, fit_ess = _normalize_rank_based_weights(
                 distill_w * fp_avoid_w
@@ -3321,7 +3434,9 @@ def _augment_with_oof_tree_features(
                 f"(ess={fit_ess:.1f})."
             )
             models.append(model)
-        fit_arr, fit_names, scales = _compute_soft_tree_features_ebm(models, x_fit_tr, None)
+        fit_arr, fit_names, scales = _compute_soft_tree_features_ebm(
+            models, x_fit_tr, None
+        )
         va_arr, tree_names, _ = _compute_soft_tree_features_ebm(models, x_va, scales)
         ev_arr, _, _ = _compute_soft_tree_features_ebm(models, x_ev, scales)
         generated_leaf_names = [n for n in tree_names if "_leaf" in n]
@@ -3343,7 +3458,9 @@ def _augment_with_oof_tree_features(
             {
                 "fold": int(fold_i),
                 "total_leaves_generated": int(len(generated_leaf_names)),
-                "total_leaves_retained": int(len([n for n in tree_names if "_leaf" in n])),
+                "total_leaves_retained": int(
+                    len([n for n in tree_names if "_leaf" in n])
+                ),
                 "total_leaf_features_dropped": int(
                     len(generated_leaf_names)
                     - len([n for n in tree_names if "_leaf" in n])
@@ -3701,7 +3818,10 @@ def _fit_round_oof(
         all_shape_models.extend(rec.pop("shape_models", []))
         tprint(
             f"      spec {rec['spec_i']}: J={rec['J_final']:.4f} "
-            f"lift30={rec.get('lift30', 0.0):.3f} se={rec['J_se']:.4f}"
+            f"lift30={rec.get('lift30', 0.0):.3f} "
+            f"ndcg20={rec.get('ndcg_at_20', rec.get('ndcg@20', 0.0)):.4f} "
+            f"ece20={rec.get('ece_top20', rec.get('ece_at_20', np.nan)):.4f} "
+            f"se={rec['J_se']:.4f}"
         )
     if not records:
         return {"ok": False}
@@ -3815,6 +3935,7 @@ def _fit_final_model(
         HAS_OPTUNA = False
 
     final_spec = _ebm_specs(pruning=False, random_state=random_state)[0]
+    final_base_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
     hpo_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
     weight_transfer_metrics: dict[str, float | str] = {}
     try:
@@ -4044,6 +4165,12 @@ def _fit_final_model(
                 "ndcg_at_20", float(agg.get("ndcg_at_20", agg.get("ndcg@20", np.nan)))
             )
             trial.set_user_attr(
+                "ece_top20", float(agg.get("ece_top20", agg.get("ece_at_20", np.nan)))
+            )
+            trial.set_user_attr(
+                "ece_at_20", float(agg.get("ece_at_20", agg.get("ece_top20", np.nan)))
+            )
+            trial.set_user_attr(
                 "ndcg_tradable_top20pct",
                 float(agg.get("ndcg_tradable_top20pct", np.nan)),
             )
@@ -4214,6 +4341,8 @@ def _fit_final_model(
                 f"lift30={float(best_trial.user_attrs.get('lift30', np.nan)):.4f}, "
                 "stability30="
                 f"{float(best_trial.user_attrs.get('stability30', np.nan)):.4f}, "
+                f"ndcg20={float(best_trial.user_attrs.get('ndcg_at_20', np.nan)):.4f}, "
+                f"ece20={float(best_trial.user_attrs.get('ece_top20', np.nan)):.4f}, "
                 f"objective_mode={hpo_objective_mode}, "
                 f"leaf_min_pct={best_leaf_min_pct:.4f}, final params={best_spec}."
             )
@@ -4305,6 +4434,17 @@ def _fit_final_model(
     )
     if model.oof_probs is None or len(model.oof_probs) != len(y):
         model.oof_probs = np.asarray(oof_probs, dtype=np.float32)
+    pre_distill_oof_probs = _final_stage_oof_predictions(
+        cls,
+        Xs[final_active_cols],
+        y,
+        final_base_sample_weight,
+        fit_idx,
+        final_spec,
+        shape_smoothing_policy,
+        mode,
+        random_state=random_state + 11701,
+    )
     try:
         model.uncertainty_state = fit_uncertainty_state(
             Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True),
@@ -4361,14 +4501,39 @@ def _fit_final_model(
         "auc",
         "brier",
         "ece",
+        "ndcg_at_20",
+        "ece_top20",
         "ic_total",
         "ic_top30",
     ):
         if key in metrics:
             model.metrics[f"candidate_prune_{key}"] = metrics[key]
     try:
-        fit_oof_pred = np.asarray(model.oof_probs, dtype=np.float32)[fit_idx]
+        pre_distill_fit_oof_pred = np.asarray(pre_distill_oof_probs, dtype=np.float32)[
+            fit_idx
+        ]
         fit_oof_y = np.asarray(y, dtype=np.float32)[fit_idx]
+        pre_distill_mask = np.isfinite(pre_distill_fit_oof_pred) & np.isfinite(
+            fit_oof_y
+        )
+        if int(np.sum(pre_distill_mask)) >= 8:
+            pre_distill_fit_oof_metrics = _metric_pack(
+                fit_oof_y[pre_distill_mask],
+                pre_distill_fit_oof_pred[pre_distill_mask],
+                classifier=(mode == "classifier"),
+                groups=(
+                    stability_groups[fit_idx][pre_distill_mask]
+                    if stability_groups is not None
+                    else None
+                ),
+            )
+            pre_distill_fit_oof_metrics.update(
+                _aggregate_j([pre_distill_fit_oof_metrics])
+            )
+            for key, value in pre_distill_fit_oof_metrics.items():
+                model.metrics[f"fit_oof_pre_distill_{key}"] = float(value)
+
+        fit_oof_pred = np.asarray(model.oof_probs, dtype=np.float32)[fit_idx]
         fit_oof_mask = np.isfinite(fit_oof_pred) & np.isfinite(fit_oof_y)
         if int(np.sum(fit_oof_mask)) >= 8:
             fit_oof_metrics = _metric_pack(
@@ -4404,6 +4569,8 @@ def _fit_final_model(
         "auc",
         "brier",
         "ece",
+        "ndcg_at_20",
+        "ece_top20",
         "ic_total",
         "ic_top30",
     ):
@@ -4419,16 +4586,130 @@ def _fit_final_model(
         model.metrics[f"metric_stage_prune_{key}"] = before_f
         model.metrics[f"metric_stage_fit_oof_{key}"] = after_f
         model.metrics[f"metric_stage_delta_{key}"] = after_f - before_f
+    for key in (
+        "J_final_oof",
+        "lift30",
+        "stability30",
+        "auc",
+        "brier",
+        "ece",
+        "ndcg_at_20",
+        "ece_top20",
+        "ic_total",
+        "ic_top30",
+    ):
+        before = model.metrics.get(f"fit_oof_pre_distill_{key}")
+        after = model.metrics.get(f"fit_oof_{key}")
+        if before is None or after is None:
+            continue
+        try:
+            before_f = float(before)
+            after_f = float(after)
+        except Exception:
+            continue
+        model.metrics[f"metric_fit_oof_pre_distill_{key}"] = before_f
+        model.metrics[f"metric_fit_oof_after_distill_{key}"] = after_f
+        model.metrics[f"metric_fit_oof_distill_delta_{key}"] = after_f - before_f
     if "metric_stage_prune_lift30" in model.metrics:
-        tprint(
-            "EBMOnLGBM: stage metric comparison "
-            f"lift30 {model.metrics['metric_stage_prune_lift30']:.4f} -> "
-            f"{model.metrics['metric_stage_fit_oof_lift30']:.4f}, "
-            f"stability30 {model.metrics.get('metric_stage_prune_stability30', np.nan):.4f} -> "
-            f"{model.metrics.get('metric_stage_fit_oof_stability30', np.nan):.4f}, "
-            f"auc {model.metrics.get('metric_stage_prune_auc', np.nan):.4f} -> "
-            f"{model.metrics.get('metric_stage_fit_oof_auc', np.nan):.4f}."
+        stage_metrics = (
+            ("lift30", "lift30", "lift30"),
+            ("stability30", "stability30", "stability30"),
+            ("ndcg_at_20", "ndcg@20", "ndcg20"),
+            ("ece_top20", "ece@20", "ece20"),
+            ("auc", "AUC", "auc"),
+            ("brier", "Brier", "brier"),
+            ("ece", "ECE", "ece"),
+            ("J_final_oof", "J_final_oof", "J_final"),
+            ("ic_total", "IC_total", "IC"),
+            ("ic_top30", "IC_top30", "IC_top30"),
+            ("J_Score", "J_Score", "J_Score"),
         )
+        rows: list[tuple[str, float, float, float]] = []
+        for metric_key, label, _ in stage_metrics:
+            before_key = f"metric_stage_prune_{metric_key}"
+            after_key = f"metric_stage_fit_oof_{metric_key}"
+            before = model.metrics.get(before_key)
+            after = model.metrics.get(after_key)
+            if before is None or after is None:
+                continue
+            try:
+                before_v = float(before)
+                after_v = float(after)
+            except Exception:
+                continue
+            rows.append((label, before_v, after_v, after_v - before_v))
+        if rows:
+            metric_name_w = max(len("Metric"), max(len(r[0]) for r in rows))
+            val_w = 14
+            lines = [
+                "EBMOnLGBM stage metric comparison (prune -> fit_oof)",
+                (
+                    f"{'Metric':<{metric_name_w}} | "
+                    f"{'Before':>{val_w}} | "
+                    f"{'After':>{val_w}} | "
+                    f"{'Delta':>{val_w}}"
+                ),
+                "-" * (metric_name_w + val_w * 3 + 9),
+            ]
+            for metric_name, before_v, after_v, delta_v in rows:
+                lines.append(
+                    f"{metric_name:<{metric_name_w}} | "
+                    f"{before_v:>{val_w}.4f} | "
+                    f"{after_v:>{val_w}.4f} | "
+                    f"{delta_v:>{val_w}.4f}"
+                )
+            for line in lines:
+                tprint(line)
+    if "metric_fit_oof_pre_distill_lift30" in model.metrics:
+        distill_metrics = (
+            ("lift30", "lift30", "lift30"),
+            ("stability30", "stability30", "stability30"),
+            ("ndcg_at_20", "ndcg@20", "ndcg20"),
+            ("ece_top20", "ece@20", "ece20"),
+            ("auc", "AUC", "auc"),
+            ("brier", "Brier", "brier"),
+            ("ece", "ECE", "ece"),
+            ("J_final_oof", "J_final_oof", "J_final"),
+            ("ic_total", "IC_total", "IC"),
+            ("ic_top30", "IC_top30", "IC_top30"),
+            ("J_Score", "J_Score", "J_Score"),
+        )
+        distill_rows: list[tuple[str, float, float, float]] = []
+        for metric_key, label, _ in distill_metrics:
+            before_key = f"metric_fit_oof_pre_distill_{metric_key}"
+            after_key = f"metric_fit_oof_after_distill_{metric_key}"
+            before = model.metrics.get(before_key)
+            after = model.metrics.get(after_key)
+            if before is None or after is None:
+                continue
+            try:
+                before_v = float(before)
+                after_v = float(after)
+            except Exception:
+                continue
+            distill_rows.append((label, before_v, after_v, after_v - before_v))
+        if distill_rows:
+            metric_name_w = max(len("Metric"), max(len(r[0]) for r in distill_rows))
+            val_w = 14
+            lines = [
+                "EBMOnLGBM fit_oof metric comparison (before self-distillation -> after self-distillation)",
+                (
+                    f"{'Metric':<{metric_name_w}} | "
+                    f"{'Before':>{val_w}} | "
+                    f"{'After':>{val_w}} | "
+                    f"{'Delta':>{val_w}}"
+                ),
+                "-" * (metric_name_w + val_w * 3 + 9),
+            ]
+            for metric_name, before_v, after_v, delta_v in distill_rows:
+                lines.append(
+                    f"{metric_name:<{metric_name_w}} | "
+                    f"{before_v:>{val_w}.4f} | "
+                    f"{after_v:>{val_w}.4f} | "
+                    f"{delta_v:>{val_w}.4f}"
+                )
+            for line in lines:
+                tprint(line)
     model.metrics["feature_count"] = int(len(final_active_cols))
     model.metrics["n_raw_features_kept"] = int(
         sum(not c.startswith("lgbm_") for c in final_active_cols)
@@ -4702,12 +4983,17 @@ def train_ebm_on_lgbm_candidate(
 
         current_oof = np.asarray(best["oof"], dtype=np.float32)
         current_weights = sw_select * _compute_weight_distillation(
-            y_select, current_oof, current_oof, is_classifier=classifier
+            y_select,
+            current_oof,
+            current_oof,
+            is_classifier=classifier,
+            include_false_positive_focus=False,
         )
         current_weights = current_weights * _false_positive_avoidance_weight(
             y_select,
             current_oof,
             classifier=classifier,
+            trade_top_frac=_target_top_fraction(),
         )
         current_weights, _current_ess = _normalize_rank_based_weights(current_weights)
         active = next_active
@@ -4745,11 +5031,13 @@ def train_ebm_on_lgbm_candidate(
         np.asarray(best_seen["oof"], dtype=np.float32),
         np.asarray(best_seen["oof"], dtype=np.float32),
         is_classifier=classifier,
+        include_false_positive_focus=False,
     )
     final_weights = final_weights * _false_positive_avoidance_weight(
         y_select,
         np.asarray(best_seen["oof"], dtype=np.float32),
         classifier=classifier,
+        trade_top_frac=_target_top_fraction(),
     )
     final_weights, _final_ess = _normalize_rank_based_weights(final_weights)
     mode_name = "classifier" if classifier else "regressor"
@@ -4821,16 +5109,21 @@ def train_ebm_on_lgbm_candidate(
 
     tprint(
         f"EBMOnLGBM: race done J={metrics.get('J_final_oof', 0.0):.4f}, "
-        f"lift30={metrics.get('lift30', 0.0):.3f}, features={len(selected_features)}."
+        f"lift30={metrics.get('lift30', 0.0):.3f}, "
+        f"ndcg20={metrics.get('ndcg_at_20', metrics.get('ndcg@20', np.nan)):.4f}, "
+        f"ece20={metrics.get('ece_top20', metrics.get('ece_at_20', np.nan)):.4f}, "
+        f"features={len(selected_features)}."
     )
     for key in (
         "J_final_oof",
         "lift30",
+        "ndcg_at_20",
         "auc_correct_30",
         "stability30",
         "auc",
         "brier",
         "ece",
+        "ece_top20",
         "top30_correctness_rate",
         "overall_correctness_rate",
         "feature_count",

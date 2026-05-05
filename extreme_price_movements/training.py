@@ -35,6 +35,9 @@ from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 from .gate_metrics import compute_stage_gate_metrics
 from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
 from .meta_model import MetaClassifierModel, MetaModel
+from .meta_training.recent_effectiveness_features import (
+    add_recent_effectiveness_features,
+)
 from .meta_training.trade_filtering import (
     get_or_select_top_rank_mask,
     rolling_asset_percentile,
@@ -10257,7 +10260,8 @@ def train_meta_models_from_artifacts(
             _clf_failure_reason = _meta_clf_failures.get(str(strategy_id))
             if _clf_failure_reason:
                 details["clf_failure_reason"] = _clf_failure_reason
-        if tbm_clf_model is None:
+        require_tbm_clf = bool(cfg.get("meta_train_tbm_clf_head", True))
+        if require_tbm_clf and tbm_clf_model is None:
             failures.append("missing_tbm_clf_head")
         if failures:
             details["failures"] = failures
@@ -14463,24 +14467,29 @@ def train_meta_models_from_artifacts(
                 if "__y_bin__" in df.columns
                 else np.full(len(df), np.nan, dtype=np.float32)
             )
-            X_meta_base["base_model_margin"] = np.abs(
-                _base_prob_vals - np.nan_to_num(_base_outcome, nan=0.5)
-            ).astype(np.float32, copy=False)
+            X_meta_base["base_model_margin"] = np.abs(_base_prob_vals - 0.5).astype(
+                np.float32, copy=False
+            )
             _meta_prob_err = np.full(len(df), np.nan, dtype=np.float32)
             _recent_prob_err_20 = np.full(len(df), np.nan, dtype=np.float32)
             _recent_hit_rate_20 = np.full(len(df), np.nan, dtype=np.float32)
             _prob_pred = (_base_prob_vals >= 0.5).astype(np.int8)
-            _rank_top10 = _base_rank_pct >= 0.90
+            _rank_top_frac = float(
+                np.clip(cfg.get("meta_clf_top_frac", 0.15), 0.01, 0.50)
+            )
+            _rank_top_mask = _base_rank_pct >= (1.0 - _rank_top_frac)
             _work = pd.DataFrame(
                 {
                     "asset": _asset_vals,
+                    "timestamp": _ts_vals,
                     "base_prob": _base_prob_vals,
                     "outcome": _base_outcome,
-                    "rank_top10": _rank_top10,
+                    "rank_top": _rank_top_mask,
                     "pred_label": _prob_pred,
                 }
             )
             for _asset, _grp in _work.groupby("asset", sort=False):
+                _grp = _grp.sort_values("timestamp", kind="mergesort")
                 _idx = _grp.index.to_numpy(dtype=np.int64)
                 _p = _grp["base_prob"].to_numpy(dtype=np.float32)
                 _o = _grp["outcome"].to_numpy(dtype=np.float32)
@@ -14494,24 +14503,17 @@ def train_meta_models_from_artifacts(
                 _hit = (
                     _grp["pred_label"].to_numpy(dtype=np.int8) == (_o >= 0.5)
                 ).astype(np.float32)
-                _hit_top = _hit[_grp["rank_top10"].to_numpy(dtype=bool)]
-                _hit_roll = (
-                    pd.Series(_hit_top).rolling(20, min_periods=5).mean().to_numpy()
-                    if _hit_top.size > 0
-                    else np.array([], dtype=np.float32)
+                _top_hist = np.where(
+                    _grp["rank_top"].to_numpy(dtype=bool), _hit, np.nan
                 )
-                _hit_series = np.full(len(_grp), np.nan, dtype=np.float32)
-                if _hit_roll.size > 0:
-                    _top_idx_local = np.flatnonzero(
-                        _grp["rank_top10"].to_numpy(dtype=bool)
-                    )
-                    _hit_series[_top_idx_local] = _hit_roll.astype(np.float32)
-                    _hit_series = (
-                        pd.Series(_hit_series)
-                        .ffill()
-                        .fillna(method="bfill")
-                        .to_numpy(dtype=np.float32)
-                    )
+                _hit_series = (
+                    pd.Series(_top_hist)
+                    .shift(1)
+                    .rolling(20, min_periods=5)
+                    .mean()
+                    .ffill()
+                    .to_numpy(dtype=np.float32)
+                )
                 _recent_hit_rate_20[_idx] = _hit_series
             X_meta_base["prob_error"] = _meta_prob_err.astype(np.float32, copy=False)
             X_meta_base["recent_prob_error_20"] = _recent_prob_err_20.astype(
@@ -14520,13 +14522,8 @@ def train_meta_models_from_artifacts(
             X_meta_base["recent_hit_rate_20"] = _recent_hit_rate_20.astype(
                 np.float32, copy=False
             )
-            X_meta_base["base_model_abs_error_roll20"] = (
-                pd.Series(
-                    np.abs(_base_prob_vals - np.nan_to_num(_base_outcome, nan=0.5))
-                )
-                .rolling(20, min_periods=5)
-                .mean()
-                .to_numpy(dtype=np.float32)
+            X_meta_base["base_model_abs_error_roll20"] = _recent_prob_err_20.astype(
+                np.float32, copy=False
             )
 
             _native_exc = None
@@ -14621,6 +14618,101 @@ def train_meta_models_from_artifacts(
                     f"{meta_interaction_cols}"
                 )
 
+        recent_effectiveness_cols: list[str] = []
+        if bool(cfg.get("enable_recent_effectiveness_features", True)):
+            _ts_recent = (
+                pd.to_datetime(df["__ts__"], errors="coerce")
+                if "__ts__" in df.columns
+                else (
+                    pd.to_datetime(df["timestamp"], errors="coerce")
+                    if "timestamp" in df.columns
+                    else pd.Series(pd.NaT, index=df.index)
+                )
+            )
+            _sym_recent = (
+                df["__symbol__"].astype(str).values
+                if "__symbol__" in df.columns
+                else (
+                    df["symbol"].astype(str).values
+                    if "symbol" in df.columns
+                    else np.repeat("all", len(df))
+                )
+            )
+            _regime_recent = np.repeat("all", len(df))
+            for _regime_col in [
+                "__regime_vol_12h__",
+                "__regime_trend_12h__",
+                "regime",
+                "vol_regime",
+            ]:
+                if _regime_col in df.columns:
+                    _regime_recent = df[_regime_col].astype(str).values
+                    break
+                if _regime_col in X_meta_base.columns:
+                    _regime_recent = X_meta_base[_regime_col].astype(str).values
+                    break
+            _recent_source = pd.DataFrame(
+                {
+                    "timestamp": _ts_recent,
+                    "label_available_ts": _ts_recent
+                    + pd.to_timedelta(int(_strategy_primary_h), unit="h"),
+                    "score": np.asarray(_base_med_vals, dtype=np.float32),
+                    "p_hat": np.clip(
+                        np.asarray(_base_med_vals, dtype=np.float32),
+                        1e-6,
+                        1.0 - 1e-6,
+                    ),
+                    "y_true": np.asarray(
+                        _y_bin_for_h_aligned(int(_strategy_primary_h)),
+                        dtype=np.float32,
+                    ),
+                    "y_ret_net": np.asarray(
+                        _ret_for_h_aligned(int(_strategy_primary_h)), dtype=np.float32
+                    ),
+                    "side": str(side),
+                    "horizon": int(_strategy_primary_h),
+                    "bucket": str(k),
+                    "regime": _regime_recent,
+                    "symbol": _sym_recent,
+                },
+                index=df.index,
+            )
+            try:
+                _recent_frame = add_recent_effectiveness_features(
+                    _recent_source,
+                    top_frac=float(cfg.get("meta_clf_top_frac", 0.15)),
+                    min_samples=int(cfg.get("recent_effectiveness_min_samples", 100)),
+                    min_top_samples=int(
+                        cfg.get("recent_effectiveness_min_top_samples", 25)
+                    ),
+                    standardize=True,
+                )
+                _recent_cfg_cols = set(
+                    str(c)
+                    for c in cfg.get("META_RECENT_EFFECTIVENESS_FEATURE_KEYS", [])
+                )
+                recent_effectiveness_cols = [
+                    c
+                    for c in _recent_frame.columns
+                    if c in _recent_cfg_cols and c not in X_meta_base.columns
+                ]
+                for _c in recent_effectiveness_cols:
+                    X_meta_base[_c] = (
+                        pd.to_numeric(_recent_frame[_c], errors="coerce")
+                        .fillna(0.0)
+                        .astype(np.float32)
+                    )
+                if recent_effectiveness_cols:
+                    tprint(
+                        f"  Meta {k}: added {len(recent_effectiveness_cols)} "
+                        "causal recent-effectiveness features."
+                    )
+            except Exception as _recent_exc:
+                tprint(
+                    f"  Meta {k}: warning recent-effectiveness feature generation "
+                    f"failed: {_recent_exc}"
+                )
+
         meta_model_cols = []
         meta_model_cols.extend(
             [
@@ -14647,6 +14739,9 @@ def train_meta_models_from_artifacts(
         )
         meta_model_cols.extend(
             [c for c in meta_interaction_cols if c in X_meta_base.columns]
+        )
+        meta_model_cols.extend(
+            [c for c in recent_effectiveness_cols if c in X_meta_base.columns]
         )
         meta_model_cols = list(dict.fromkeys(meta_model_cols))
         _ridge_test_keys = [
@@ -16056,8 +16151,12 @@ def train_meta_models_from_artifacts(
                     "(already trained via aligned meta map)"
                 )
 
-        # --- 3. ALWAYS Train Early Invalidation head for downstream consumers ---
-        if "__early_inval__" in df.columns:
+        # Optional auxiliary head. EBM-only train_meta disables this so exactly
+        # one meta classifier head is trained.
+        if (
+            bool(cfg.get("meta_train_early_invalidation_head", True))
+            and "__early_inval__" in df.columns
+        ):
             try:
                 from sklearn.linear_model import LogisticRegression
 
@@ -16634,8 +16733,8 @@ def train_meta_models_from_artifacts(
         for _w in _weights:
             _qw = np.clip(0.5 + _w * (_q - 0.5), 1e-6, 1.0 - 1e-6)
             _score = np.clip(_qw * _b + (1.0 - _qw) * (1.0 - _b), 1e-6, 1.0 - 1e-6)
-            _obj, _lift, _stab, _p15, _p01, _p005, _ndcg10, _ndcg20 = _combo_objective_for_score(
-                _y, _score, _ts
+            _obj, _lift, _stab, _p15, _p01, _p005, _ndcg10, _ndcg20 = (
+                _combo_objective_for_score(_y, _score, _ts)
             )
             _candidates.append(
                 (
@@ -16661,10 +16760,10 @@ def train_meta_models_from_artifacts(
             "meta_weight": float(_best[2]),
             "blend_weight": float(_best[3]),
             "objective": float(_best[0]),
+            "objective_focus": "top15",
+            "objective_top_frac": 0.15,
             "lift15": float(_best[4]),
-            "lift30": float(_best[4]),
             "stability15": float(_best[5]),
-            "stability30": float(_best[5]),
             "precision15": float(_best[6]),
             "precision01": float(_best[7]),
             "precision005": float(_best[8]),
@@ -16676,10 +16775,10 @@ def train_meta_models_from_artifacts(
                     "family": str(_item[1]),
                     "meta_weight": float(_item[2]),
                     "blend_weight": float(_item[3]),
+                    "objective_focus": "top15",
+                    "objective_top_frac": 0.15,
                     "lift15": float(_item[4]),
-                    "lift30": float(_item[4]),
                     "stability15": float(_item[5]),
-                    "stability30": float(_item[5]),
                     "precision15": float(_item[6]),
                     "precision01": float(_item[7]),
                     "precision005": float(_item[8]),
@@ -16714,6 +16813,7 @@ def train_meta_models_from_artifacts(
         _top30 = _top_mean_for_score(_y_v, _score_v, 0.30)
         _top20 = _top_mean_for_score(_y_v, _score_v, 0.20)
         _top10 = _top_mean_for_score(_y_v, _score_v, 0.10)
+        _top1 = _top_mean_for_score(_y_v, _score_v, 0.01)
         _top01 = _top_mean_for_score(_y_v, _score_v, 0.01)
         _top005 = _top_mean_for_score(_y_v, _score_v, 0.005)
         _top5 = _top_mean_for_score(_y_v, _score_v, 0.05)
@@ -16744,11 +16844,13 @@ def train_meta_models_from_artifacts(
             "hit_rate20": _top20,
             "hit_rate30": _top30,
             "hit_rate10": _top10,
+            "hit_rate1": _top1,
             "hit_rate5": _top5,
             "precision15": float(_top15),
             "precision20": float(_top20),
             "precision30": float(_top30),
             "precision10": float(_top10),
+            "precision1": float(_top1),
             "precision5": float(_top5),
             "precision01": float(_top01),
             "precision005": float(_top005),
@@ -16756,10 +16858,13 @@ def train_meta_models_from_artifacts(
             "lift30": float(_top30 / max(_base_rate, 1e-12)),
             "lift20": float(_top20 / max(_base_rate, 1e-12)),
             "lift10": float(_top10 / max(_base_rate, 1e-12)),
+            "lift1": float(_top1 / max(_base_rate, 1e-12)),
             "lift5": float(_top5 / max(_base_rate, 1e-12)),
+            "mean_gross_return15": _top_mean_for_score(_ret_v, _score_v, 0.15),
             "mean_gross_return20": _top_mean_for_score(_ret_v, _score_v, 0.20),
             "mean_gross_return30": _top_mean_for_score(_ret_v, _score_v, 0.30),
             "mean_gross_return10": _top_mean_for_score(_ret_v, _score_v, 0.10),
+            "mean_gross_return1": _top_mean_for_score(_ret_v, _score_v, 0.01),
             "mean_gross_return5": _top_mean_for_score(_ret_v, _score_v, 0.05),
             "stability15": _weekly_top_stability_for_score(
                 _y_v,
@@ -17392,8 +17497,10 @@ def train_meta_models_from_artifacts(
                     "best_meta_weight": float(_combo["meta_weight"]),
                     "best_blend_weight": float(_combo["blend_weight"]),
                     "best_objective": float(_combo["objective"]),
-                    "best_lift30": float(_combo["lift30"]),
-                    "best_stability30": float(_combo["stability30"]),
+                    "objective_focus": str(_combo.get("objective_focus", "top15")),
+                    "objective_top_frac": float(_combo.get("objective_top_frac", 0.15)),
+                    "best_lift15": float(_combo["lift15"]),
+                    "best_stability15": float(_combo["stability15"]),
                     "top_candidates": _combo["grid"],
                 }
 
@@ -17498,9 +17605,11 @@ def train_meta_models_from_artifacts(
         try:
             import glob as _glob_local
 
-            from sklearn.metrics import average_precision_score
-            from sklearn.metrics import brier_score_loss
-            from sklearn.metrics import roc_auc_score
+            from sklearn.metrics import (
+                average_precision_score,
+                brier_score_loss,
+                roc_auc_score,
+            )
         except Exception as _exc:
             tprint(f"Warning: cannot augment meta head metrics from OOFs: {_exc}")
             return
@@ -17550,8 +17659,12 @@ def train_meta_models_from_artifacts(
             _base_rate = float(np.mean(_target_v))
             _order = np.argsort(_score_v)
             _k10 = max(1, int(0.10 * _n_valid))
+            _k20 = max(1, int(0.20 * _n_valid))
+            _k5 = max(1, int(0.05 * _n_valid))
             _k01 = max(1, int(0.01 * _n_valid))
             _top10 = _order[-_k10:]
+            _top20 = _order[-_k20:]
+            _top5 = _order[-_k5:]
             _bot10 = _order[:_k10]
             _top01 = _order[-_k01:]
 
@@ -17569,11 +17682,18 @@ def train_meta_models_from_artifacts(
                 "oof_p75": float(np.percentile(_score_v, 75)),
                 "base_rate": _base_rate,
                 "hit_rate": _base_rate,
+                "precision_20": float(np.mean(_target_v[_top20])),
                 "precision_10": float(np.mean(_target_v[_top10])),
+                "precision_5": float(np.mean(_target_v[_top5])),
                 "precision_1": float(np.mean(_target_v[_top01])),
+                "top20_actual_rate": float(np.mean(_target_v[_top20])),
                 "top10_actual_rate": float(np.mean(_target_v[_top10])),
+                "top5_actual_rate": float(np.mean(_target_v[_top5])),
                 "top1_actual_rate": float(np.mean(_target_v[_top01])),
+                "lift_20": float(np.mean(_target_v[_top20]) / max(_base_rate, 1e-12)),
                 "lift_10": float(np.mean(_target_v[_top10]) / max(_base_rate, 1e-12)),
+                "lift_5": float(np.mean(_target_v[_top5]) / max(_base_rate, 1e-12)),
+                "lift_1": float(np.mean(_target_v[_top01]) / max(_base_rate, 1e-12)),
                 "spread_10": float(
                     np.mean(_target_v[_top10]) - np.mean(_target_v[_bot10])
                 ),
@@ -17666,13 +17786,32 @@ def train_meta_models_from_artifacts(
                     except Exception:
                         pass
                     _mr["ic"] = float(spearmanr(_moof[_mv], _my_move[_mv]).statistic)
+                    _k1 = max(1, int(0.01 * _mv.sum()))
+                    _k5 = max(1, int(0.05 * _mv.sum()))
                     _k10 = max(1, int(0.1 * _mv.sum()))
-                    _top = np.argsort(_moof[_mv])[-_k10:]
+                    _k20 = max(1, int(0.20 * _mv.sum()))
+                    _order = np.argsort(_moof[_mv])
+                    _top1 = _order[-_k1:]
+                    _top5 = _order[-_k5:]
+                    _top = _order[-_k10:]
+                    _top20 = _order[-_k20:]
                     _mr["lift_10"] = float(
                         np.mean(_my_move[_mv][_top])
                         / max(np.mean(_my_move[_mv]), 1e-12)
                     )
-                    _bot = np.argsort(_moof[_mv])[:_k10]
+                    _mr["lift_1"] = float(
+                        np.mean(_my_move[_mv][_top1])
+                        / max(np.mean(_my_move[_mv]), 1e-12)
+                    )
+                    _mr["lift_5"] = float(
+                        np.mean(_my_move[_mv][_top5])
+                        / max(np.mean(_my_move[_mv]), 1e-12)
+                    )
+                    _mr["lift_20"] = float(
+                        np.mean(_my_move[_mv][_top20])
+                        / max(np.mean(_my_move[_mv]), 1e-12)
+                    )
+                    _bot = _order[:_k10]
                     _mr["spread_10"] = float(
                         np.mean(_my_move[_mv][_top]) - np.mean(_my_move[_mv][_bot])
                     )
@@ -17695,8 +17834,11 @@ def train_meta_models_from_artifacts(
                     except Exception:
                         pass
                     _top_p = _moof[_mv][_top]
+                    _mr["top1_actual_rate"] = float(np.mean(_my_move[_mv][_top1]))
+                    _mr["top5_actual_rate"] = float(np.mean(_my_move[_mv][_top5]))
                     _mr["top10_mean_pred"] = float(np.mean(_top_p))
                     _mr["top10_actual_rate"] = float(np.mean(_my_move[_mv][_top]))
+                    _mr["top20_actual_rate"] = float(np.mean(_my_move[_mv][_top20]))
             if _my_soft is not None:
                 _my_soft = np.asarray(_my_soft, dtype=float).reshape(-1)[:_mn]
                 _mv2 = np.isfinite(_moof) & np.isfinite(_my_soft)
@@ -18794,13 +18936,6 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         )
                         continue
 
-                    _base_cap = int(cfg.get("base_fit_max_samples", 150000))
-                    if _base_cap > 0 and len(df) > _base_cap:
-                        df = subsample_symbol_balanced(df, _base_cap)
-                        tprint(
-                            f"  {key}: symbol-balanced subsample -> {len(df)} rows (cap={_base_cap})"
-                        )
-
                     # Schema assertion: verify dataset has required columns
                     required_cols = {"__y_bin__", "__y_ret__", "__w__"}
                     missing = required_cols - set(df.columns)
@@ -18938,7 +19073,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     base_sel_max = int(cfg.get("base_selector_max_samples", 30000))
                     base_fit_max = int(cfg.get("base_fit_max_samples", 150000))
                     _sel_idx = _subsample_indices_time_balanced(len(X), base_sel_max, y)
-                    _fit_idx = _subsample_indices_time_balanced(len(X), base_fit_max, y)
+                    _fit_idx = _subsample_indices_time_balanced(
+                        len(X),
+                        base_fit_max,
+                        y,
+                    )
+                    if len(_fit_idx) != len(X):
+                        tprint(
+                            f"  {key}: fit rows capped for model training {len(X)} -> {len(_fit_idx)} "
+                            f"(cap={base_fit_max}, training-only subset)"
+                        )
                     cols = list(X.columns)
 
                     # Explicit strategy context for logging:
@@ -19307,11 +19451,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         _y_ret_reg_full[_fit_idx], dtype=np.float32
                     )
                     w_reg_fit = np.asarray(_w_reg_full[_fit_idx], dtype=np.float32)
+                    _train_base_reg_head = bool(cfg.get("base_train_reg_head", False))
                     _base_reg_sel_cfg = dict(cfg.get("base_reg_selector_cfg", {}) or {})
                     if not _base_reg_sel_cfg:
                         _base_reg_sel_cfg = dict(cfg.get("base_selector_cfg", {}) or {})
                     _hpo_payload_reg = None
-                    if cfg.get("base_hpo_out_dir"):
+                    if _train_base_reg_head and cfg.get("base_hpo_out_dir"):
                         _hpo_payload_reg = load_best_base_extratrees_payload(
                             str(cfg.get("base_hpo_out_dir")),
                             scope_key=f"{key}__reg_head",
@@ -19319,7 +19464,13 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     _selected_reg_from_hpo = list(
                         (_hpo_payload_reg or {}).get("selected_features", []) or []
                     )
-                    if _selected_reg_from_hpo:
+                    if not _train_base_reg_head:
+                        tprint(
+                            f"Base reg head [{key}]: skipped; train_base is "
+                            "configured for EBMOnLGBM classifier-only training."
+                        )
+                        selected_feats_reg = []
+                    elif _selected_reg_from_hpo:
                         selected_feats_reg = _cap_selected_features(
                             _selected_reg_from_hpo,
                             list(X.columns),
@@ -19463,7 +19614,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             target_cap=_effective_target_cap,
                             min_features=_effective_min_features,
                         )
-                    if not _feature_guard_ok(
+                    if _train_base_reg_head and not _feature_guard_ok(
                         f"Base reg post-MDI [{key}]", selected_feats_reg
                     ):
                         tprint(
@@ -19487,7 +19638,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                                 race.best_model_name, {}
                             ),
                         )
-                    if reg_head is None:
+                    if _train_base_reg_head and reg_head is None:
                         tprint(
                             f"WARNING: {side} {k} H={H}: reg head skipped; base clf head remains usable."
                         )

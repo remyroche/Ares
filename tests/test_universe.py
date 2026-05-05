@@ -3,6 +3,7 @@ from extreme_price_movements.universe import (
     _is_supported_training_symbol,
     _normalize_symbol,
     apply_hardcoded_universe_exclusions,
+    filter_symbols_without_perp_support,
     margin_pairs_to_spot_symbols,
 )
 
@@ -43,6 +44,22 @@ def test_margin_pairs_to_spot_symbols_defaults_to_usdc():
     out = margin_pairs_to_spot_symbols(pairs)
 
     assert out == ["BTC/USDC", "ETH/USDC"]
+
+
+def test_filter_symbols_without_perp_support_matches_by_base(monkeypatch):
+    import extreme_price_movements.universe as universe
+
+    monkeypatch.setattr(
+        universe,
+        "get_available_perp_spot_symbols",
+        lambda: {"BTC/USDT", "ETH/USDC", "DOGE/USDC"},
+    )
+
+    out = filter_symbols_without_perp_support(
+        ["BTC/USDC", "ETH/USDC", "XRP/USDC", "DOGE/USDT", "USDC/BNB"]
+    )
+
+    assert out == ["BTC/USDC", "DOGE/USDT", "ETH/USDC"]
 
 
 def test_binance_get_json_retries_after_rate_limit(monkeypatch):

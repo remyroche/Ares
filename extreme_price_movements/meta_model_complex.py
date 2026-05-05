@@ -1,34 +1,36 @@
 from __future__ import annotations
 
+import importlib.util
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-import importlib.util
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from numba import njit
 from scipy.special import logit
 from scipy.stats import median_abs_deviation
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.linear_model import Ridge, ElasticNet
-from sklearn.linear_model import QuantileRegressor
+from sklearn.linear_model import ElasticNet, QuantileRegressor, Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler, SplineTransformer
-from joblib import Parallel, delayed
 
 from extreme_price_movements.config import CFG
 from extreme_price_movements.feature_selection_extreme_events import (
     mdi_feature_selection_v3 as mdi_feature_selection_classic,
-    mdi_feature_selection_v4_topk as mdi_feature_selection_v4_topk_classic
 )
-from extreme_price_movements.purged_cv import PurgedKFold
-from extreme_price_movements.quantile_feature_selection_extreme_events import mdi_feature_selection_v3
-from extreme_price_movements.utils import tprint
-from extreme_price_movements.path_utils import resolve_reports_dir
+from extreme_price_movements.feature_selection_extreme_events import (
+    mdi_feature_selection_v4_topk as mdi_feature_selection_v4_topk_classic,
+)
 from extreme_price_movements.huber_nnls import HuberNNLS
-
+from extreme_price_movements.path_utils import resolve_reports_dir
+from extreme_price_movements.purged_cv import PurgedKFold
+from extreme_price_movements.quantile_feature_selection_extreme_events import (
+    mdi_feature_selection_v3,
+)
+from extreme_price_movements.utils import tprint
 
 if importlib.util.find_spec("lightgbm") is not None:
     import lightgbm as lgb
@@ -86,10 +88,16 @@ def _sortino_numba(x: np.ndarray) -> float:
 
 def _pinball(y: np.ndarray, q: np.ndarray, tau: float) -> float:
     # Use float32 by default for memory efficiency
-    return float(_pinball_numba(np.asarray(y, dtype=np.float32), np.asarray(q, dtype=np.float32), float(tau)))
+    return float(
+        _pinball_numba(
+            np.asarray(y, dtype=np.float32), np.asarray(q, dtype=np.float32), float(tau)
+        )
+    )
 
 
-def _topk_stats(y: np.ndarray, s: np.ndarray, frac: float = 0.15, lam: float = 1.0) -> Tuple[float, float, float, float]:
+def _topk_stats(
+    y: np.ndarray, s: np.ndarray, frac: float = 0.15, lam: float = 1.0
+) -> Tuple[float, float, float, float]:
     k = max(1, int(np.ceil(len(y) * frac)))
     idx = np.argpartition(s, -k)[-k:]
     sel = np.asarray(y, dtype=np.float32)[idx]
@@ -107,7 +115,11 @@ class _SplineQuantile:
 
 
 class MetaModel:
-    def __init__(self, strategy_name: Optional[str] = None, reports_dir: Union[str, Path, None] = None):
+    def __init__(
+        self,
+        strategy_name: Optional[str] = None,
+        reports_dir: Union[str, Path, None] = None,
+    ):
         self.strategy_name = strategy_name
         self.model = None
         self._model_type = None
@@ -126,7 +138,9 @@ class MetaModel:
         meta_data[pred_col_name] = np.clip(logit(p), -4.0, 4.0)
         return pd.concat([meta_data, feats_df], axis=1).fillna(0.0)
 
-    def _fit_huberized_quantile_gam(self, x: np.ndarray, y: np.ndarray, tau: float) -> _SplineQuantile:
+    def _fit_huberized_quantile_gam(
+        self, x: np.ndarray, y: np.ndarray, tau: float
+    ) -> _SplineQuantile:
         y = np.asarray(y, dtype=float)
         lo, hi = np.quantile(y, [0.01, 0.99])
         y_clip = np.clip(y, lo, hi)
@@ -139,8 +153,11 @@ class MetaModel:
     def _eval_curve(self, fit: _SplineQuantile, grid: np.ndarray) -> np.ndarray:
         return fit.reg.predict(fit.spline.transform(grid.reshape(-1, 1)))
 
-    def _discover_monotone_constraints(self, X: pd.DataFrame, y: np.ndarray, bootstraps: int = 50) -> Tuple[int, ...]:
+    def _discover_monotone_constraints(
+        self, X: pd.DataFrame, y: np.ndarray, bootstraps: int = 50
+    ) -> Tuple[int, ...]:
         from scipy.stats import spearmanr
+
         rng = np.random.default_rng(42)
         n = len(X)
         cols = list(X.columns)
@@ -167,11 +184,15 @@ class MetaModel:
                 passed.append((col, direction, consistency))
 
         if len(passed) > int(0.6 * len(cols)):
-            passed = sorted(passed, key=lambda t: t[2], reverse=True)[: int(0.6 * len(cols))]
+            passed = sorted(passed, key=lambda t: t[2], reverse=True)[
+                : int(0.6 * len(cols))
+            ]
         sign_map = {c: s for c, s, _ in passed}
         return tuple(sign_map.get(c, 0) for c in cols)
 
-    def _pair_auc_proxy(self, x1: np.ndarray, x2: np.ndarray, z: np.ndarray, bins: int = 12) -> float:
+    def _pair_auc_proxy(
+        self, x1: np.ndarray, x2: np.ndarray, z: np.ndarray, bins: int = 12
+    ) -> float:
         if len(np.unique(z)) < 2:
             return 0.5
         q1 = np.quantile(x1, np.linspace(0, 1, bins + 1))
@@ -192,7 +213,9 @@ class MetaModel:
         neg = rank[z == 0]
         if len(pos) == 0 or len(neg) == 0:
             return 0.5
-        return float((np.mean([np.mean(p > neg) + 0.5 * np.mean(p == neg) for p in pos])))
+        return float(
+            (np.mean([np.mean(p > neg) + 0.5 * np.mean(p == neg) for p in pos]))
+        )
 
     def _bh_fdr(self, pvals: np.ndarray, q: float = 0.05) -> np.ndarray:
         m = len(pvals)
@@ -211,7 +234,9 @@ class MetaModel:
         # residualize with additive GAM
         additive = np.zeros_like(y, dtype=float)
         for col in X.columns:
-            fit = self._fit_huberized_quantile_gam(X[col].to_numpy(dtype=float), y, tau=0.85)
+            fit = self._fit_huberized_quantile_gam(
+                X[col].to_numpy(dtype=float), y, tau=0.85
+            )
             additive += self._eval_curve(fit, X[col].to_numpy(dtype=float))
         residual = y - additive
         z_excess = (residual >= np.quantile(residual, 0.80)).astype(np.int8)
@@ -226,7 +251,11 @@ class MetaModel:
 
         scored = []
         for i, j in pool:
-            s = self._pair_auc_proxy(X.iloc[:, i].to_numpy(dtype=float), X.iloc[:, j].to_numpy(dtype=float), z_excess)
+            s = self._pair_auc_proxy(
+                X.iloc[:, i].to_numpy(dtype=float),
+                X.iloc[:, j].to_numpy(dtype=float),
+                z_excess,
+            )
             scored.append((i, j, s))
         scored.sort(key=lambda t: t[2], reverse=True)
         top = scored[:200]
@@ -245,7 +274,11 @@ class MetaModel:
                 blocks = [idx[k : k + block_len] for k in range(0, len(idx), block_len)]
                 rng.shuffle(blocks)
                 zp = z_excess[np.concatenate(blocks)]
-                s = self._pair_auc_proxy(X.iloc[:, i].to_numpy(dtype=float), X.iloc[:, j].to_numpy(dtype=float), zp)
+                s = self._pair_auc_proxy(
+                    X.iloc[:, i].to_numpy(dtype=float),
+                    X.iloc[:, j].to_numpy(dtype=float),
+                    zp,
+                )
                 null_stats.append(s)
                 stable_hits += int(stat > s)
 
@@ -253,7 +286,11 @@ class MetaModel:
                 tau_cnt = 0
                 for tq in (0.70, 0.80, 0.90):
                     zt = (residual >= np.quantile(residual, tq)).astype(np.int8)
-                    st = self._pair_auc_proxy(X.iloc[:, i].to_numpy(dtype=float), X.iloc[:, j].to_numpy(dtype=float), zt)
+                    st = self._pair_auc_proxy(
+                        X.iloc[:, i].to_numpy(dtype=float),
+                        X.iloc[:, j].to_numpy(dtype=float),
+                        zt,
+                    )
                     tau_cnt += int(st > s)
                 tau_hits += int(tau_cnt >= 2)
             pval = (1.0 + np.sum(np.array(null_stats) >= stat)) / (1.0 + n_perm)
@@ -274,26 +311,34 @@ class MetaModel:
         keep = sorted(keep, key=lambda t: t[2], reverse=True)[:K]
         return [[int(i), int(j)] for i, j, _ in keep]
 
-    def _fit_model(self, kind: str, params: dict, X_tr, y_tr, X_va, y_va, sample_weight=None):
+    def _fit_model(
+        self, kind: str, params: dict, X_tr, y_tr, X_va, y_va, sample_weight=None
+    ):
         if kind == "ridge":
-            model = Pipeline([
-                ("scaler", RobustScaler()),
-                ("ridge", Ridge(**params)),
-            ])
+            model = Pipeline(
+                [
+                    ("scaler", RobustScaler()),
+                    ("ridge", Ridge(**params)),
+                ]
+            )
             model.fit(X_tr, y_tr, ridge__sample_weight=sample_weight)
             return model
         if kind == "elasticnet":
-            model = Pipeline([
-                ("scaler", RobustScaler()),
-                ("enet", ElasticNet(**params)),
-            ])
+            model = Pipeline(
+                [
+                    ("scaler", RobustScaler()),
+                    ("enet", ElasticNet(**params)),
+                ]
+            )
             model.fit(X_tr, y_tr, enet__sample_weight=sample_weight)
             return model
         if kind == "huber_nnls":
-            model = Pipeline([
-                ("scaler", RobustScaler()),
-                ("huber", HuberNNLS(**params)),
-            ])
+            model = Pipeline(
+                [
+                    ("scaler", RobustScaler()),
+                    ("huber", HuberNNLS(**params)),
+                ]
+            )
             model.fit(X_tr, y_tr, huber__sample_weight=sample_weight)
             return model
         if kind == "extratrees":
@@ -344,7 +389,13 @@ class MetaModel:
             )
             return model
 
-    def _calibrate_fold(self, y_cal: np.ndarray, p_cal: np.ndarray, p_eval: np.ndarray, tau: float = 0.85) -> np.ndarray:
+    def _calibrate_fold(
+        self,
+        y_cal: np.ndarray,
+        p_cal: np.ndarray,
+        p_eval: np.ndarray,
+        tau: float = 0.85,
+    ) -> np.ndarray:
         bins = pd.qcut(p_cal, q=min(10, max(2, len(p_cal) // 20)), duplicates="drop")
         bcodes = bins.codes
         delta = {}
@@ -353,15 +404,19 @@ class MetaModel:
                 continue
             m = bcodes == b
             delta[int(b)] = float(np.quantile(y_cal[m] - p_cal[m], tau))
-        eval_bins = np.digitize(p_eval, np.quantile(p_cal, np.linspace(0.0, 1.0, 11))[1:-1], right=False)
+        eval_bins = np.digitize(
+            p_eval, np.quantile(p_cal, np.linspace(0.0, 1.0, 11))[1:-1], right=False
+        )
         return p_eval + np.array([delta.get(int(b), 0.0) for b in eval_bins])
 
     def _coverage(self, y: np.ndarray, q: np.ndarray) -> float:
         return float(np.mean(y <= q))
 
-
-    def _tail_ramp_weights(self, y: np.ndarray, lambda_: float, q0: float = 0.70, q1: float = 1.00) -> np.ndarray:
+    def _tail_ramp_weights(
+        self, y: np.ndarray, lambda_: float, q0: float = 0.70, q1: float = 1.00
+    ) -> np.ndarray:
         from scipy.stats import rankdata
+
         y = np.asarray(y, dtype=float)
         r = rankdata(y, method="average") / max(len(y), 1)
         t = np.clip((r - q0) / max(1e-9, (q1 - q0)), 0.0, 1.0)
@@ -381,11 +436,13 @@ class MetaModel:
         z = np.asarray(z, dtype=float)
         return np.sign(z) * np.expm1(np.abs(z))
 
-    def _select_features_for_candidate(self, X: pd.DataFrame, y: np.ndarray, candidate_name: str, kind: str) -> List[str]:
+    def _select_features_for_candidate(
+        self, X: pd.DataFrame, y: np.ndarray, candidate_name: str, kind: str
+    ) -> List[str]:
         # Independent feature selection per candidate as requested.
-        # Meta model is focused on top30%, so use two-stage selection with decile ranking.
+        # Meta model is focused on top15%, so use two-stage tail-aware selection.
         tailweighted = "tailweighted" in candidate_name
-        
+
         # Scale target to unit variance so tree split gains are meaningful.
         # Meta targets (log-returns) have std ~0.01-0.02 which causes near-zero
         # importances in ExtraTrees/LGBM and triggers the "Eff. Mass 0.000" fallback.
@@ -397,19 +454,27 @@ class MetaModel:
         # Target feature count
         n_target = min(40, max(20, int(np.sqrt(max(25, X.shape[1])) * 4)))
         n_stage1 = min(X.shape[1], n_target * 3)  # 3x target for meta model
-        
+
         if kind in ("xgb", "lgb", "qreg_l1") and not tailweighted:
             # Two-stage: v3 to get 2x, then v4_topk to refine
             try:
-                fs_stage1 = mdi_feature_selection_v3(X, y_scaled, min_features=20, max_features=n_stage1, alpha=0.85)
+                fs_stage1 = mdi_feature_selection_v3(
+                    X, y_scaled, min_features=20, max_features=n_stage1, alpha=0.85
+                )
                 if len(fs_stage1.selected_features) > n_target:
                     X_stage1 = X[list(fs_stage1.selected_features)]
-                    fs = mdi_feature_selection_v4_topk_classic(X_stage1, y_scaled, topk_weight=0.3)
+                    fs = mdi_feature_selection_v4_topk_classic(
+                        X_stage1, y_scaled, topk_weight=0.3
+                    )
                     sel = list(fs.selected_features)[:n_target]
-                    return sel if len(sel) >= 20 else list(fs_stage1.selected_features)[:n_target]
+                    return (
+                        sel
+                        if len(sel) >= 20
+                        else list(fs_stage1.selected_features)[:n_target]
+                    )
                 return list(fs_stage1.selected_features)[:n_target]
             except Exception:
-                return list(X.columns[:min(25, X.shape[1])])
+                return list(X.columns[: min(25, X.shape[1])])
 
         base_model = None
         if tailweighted:
@@ -440,15 +505,23 @@ class MetaModel:
             )
             if len(fs_stage1.selected_features) > n_target:
                 X_stage1 = X[list(fs_stage1.selected_features)]
-                fs = mdi_feature_selection_v4_topk_classic(X_stage1, y_scaled, base_model=base_model, topk_weight=0.3)
+                fs = mdi_feature_selection_v4_topk_classic(
+                    X_stage1, y_scaled, base_model=base_model, topk_weight=0.3
+                )
                 sel = list(fs.selected_features)[:n_target]
-                return sel if len(sel) >= 20 else list(fs_stage1.selected_features)[:n_target]
+                return (
+                    sel
+                    if len(sel) >= 20
+                    else list(fs_stage1.selected_features)[:n_target]
+                )
             return list(fs_stage1.selected_features)[:n_target]
         except Exception:
             # Robust fallback for tiny/unstable smoke scenarios.
             return list(X.columns[: min(25, X.shape[1])])
 
-    def _candidate_target_and_weight(self, y: np.ndarray, base_sw: Optional[np.ndarray], candidate_name: str) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    def _candidate_target_and_weight(
+        self, y: np.ndarray, base_sw: Optional[np.ndarray], candidate_name: str
+    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         y_fit = np.asarray(y, dtype=float)
         sw_fit = None if base_sw is None else np.asarray(base_sw, dtype=float)
 
@@ -484,18 +557,42 @@ class MetaModel:
         # Race config: constraint-free templates.
         # Constraints are discovered per-candidate after MDI feature selection.
         xgb_single = {
-            "objective": "reg:quantileerror", "quantile_alpha": 0.85, "max_depth": 4, "gamma": 0.1,
-            "learning_rate": 0.07, "n_estimators": 600, "subsample": 0.7, "colsample_bytree": 0.7,
-            "reg_alpha": 1.0, "reg_lambda": 20.0,
-            "tree_method": "hist", "random_state": 42, "n_jobs": 3,
-            "verbosity": 0, "_wants_constraints": True,
+            "objective": "reg:quantileerror",
+            "quantile_alpha": 0.85,
+            "max_depth": 4,
+            "gamma": 0.1,
+            "learning_rate": 0.07,
+            "n_estimators": 600,
+            "subsample": 0.7,
+            "colsample_bytree": 0.7,
+            "reg_alpha": 1.0,
+            "reg_lambda": 20.0,
+            "tree_method": "hist",
+            "random_state": 42,
+            "n_jobs": 3,
+            "verbosity": 0,
+            "_wants_constraints": True,
         }
         lgb_q = {
-            "objective": "quantile", "alpha": 0.85, "boosting_type": "gbdt", "num_leaves": 31,
-            "max_depth": 5, "min_data_in_leaf": 40, "min_sum_hessian_in_leaf": 1e-3,
-            "learning_rate": 0.07, "n_estimators": 700, "min_gain_to_split": 0.05,
-            "lambda_l1": 2.0, "lambda_l2": 20.0, "feature_fraction": 0.6, "bagging_fraction": 0.6,
-            "bagging_freq": 1, "max_bin": 127, "random_state": 42, "n_jobs": 3, "verbosity": -1,
+            "objective": "quantile",
+            "alpha": 0.85,
+            "boosting_type": "gbdt",
+            "num_leaves": 31,
+            "max_depth": 5,
+            "min_data_in_leaf": 40,
+            "min_sum_hessian_in_leaf": 1e-3,
+            "learning_rate": 0.07,
+            "n_estimators": 700,
+            "min_gain_to_split": 0.05,
+            "lambda_l1": 2.0,
+            "lambda_l2": 20.0,
+            "feature_fraction": 0.6,
+            "bagging_fraction": 0.6,
+            "bagging_freq": 1,
+            "max_bin": 127,
+            "random_state": 42,
+            "n_jobs": 3,
+            "verbosity": -1,
             "_wants_constraints": True,
         }
         ridge = {"alpha": 1.0, "fit_intercept": True}
@@ -518,8 +615,18 @@ class MetaModel:
         lgb_q_unconstrained.pop("_wants_constraints", None)
 
         out = {
-            "xgb_multi_075_080_085": ("xgb", [0.75, 0.80, 0.85], xgb_single, "quantile"),
-            "xgb_multi_075_080_085_unconstrained": ("xgb", [0.75, 0.80, 0.85], xgb_single_unconstrained, "quantile"),
+            "xgb_multi_075_080_085": (
+                "xgb",
+                [0.75, 0.80, 0.85],
+                xgb_single,
+                "quantile",
+            ),
+            "xgb_multi_075_080_085_unconstrained": (
+                "xgb",
+                [0.75, 0.80, 0.85],
+                xgb_single_unconstrained,
+                "quantile",
+            ),
             "lgbm_085": ("lgb", [0.85], lgb_q, "quantile"),
             "lgbm_085_unconstrained": ("lgb", [0.85], lgb_q_unconstrained, "quantile"),
             "qreg_l1_085": ("qreg_l1", [0.85], qreg_l1, "quantile"),
@@ -542,71 +649,101 @@ class MetaModel:
         xgb_reg.pop("quantile_alpha", None)
 
         for lmb in [0, 1, 2, 4]:
-            out[f"ridge_tailweighted_l{lmb}"] = ("ridge", [0.85], dict(ridge), "non_quantile")
-            out[f"extratrees_tailweighted_l{lmb}"] = ("extratrees", [0.85], dict(et), "non_quantile")
-            out[f"lgbm_tailweighted_l{lmb}"] = ("lgb", [0.85], dict(lgb_reg), "non_quantile")
-            out[f"xgb_tailweighted_l{lmb}"] = ("xgb", [0.85], dict(xgb_reg), "non_quantile")
+            out[f"ridge_tailweighted_l{lmb}"] = (
+                "ridge",
+                [0.85],
+                dict(ridge),
+                "non_quantile",
+            )
+            out[f"extratrees_tailweighted_l{lmb}"] = (
+                "extratrees",
+                [0.85],
+                dict(et),
+                "non_quantile",
+            )
+            out[f"lgbm_tailweighted_l{lmb}"] = (
+                "lgb",
+                [0.85],
+                dict(lgb_reg),
+                "non_quantile",
+            )
+            out[f"xgb_tailweighted_l{lmb}"] = (
+                "xgb",
+                [0.85],
+                dict(xgb_reg),
+                "non_quantile",
+            )
 
         return out
 
-    def _oof_score(self, y: np.ndarray, pred: np.ndarray, baseline: Dict[str, float], quantile_like: bool = True) -> Tuple[float, Dict[str, float], bool]:
+    def _oof_score(
+        self,
+        y: np.ndarray,
+        pred: np.ndarray,
+        baseline: Dict[str, float],
+        quantile_like: bool = True,
+    ) -> Tuple[float, Dict[str, float], bool]:
         pin = _pinball(y, pred, 0.85)
-        util30, mean_top30, iqr_top30, sortino_top30 = _topk_stats(y, pred, frac=0.30)
-        util10, mean_top10, iqr_top10, sortino_top10 = _topk_stats(y, pred, frac=0.10)
+        util15, mean_top15, iqr_top15, sortino_top15 = _topk_stats(y, pred, frac=0.15)
 
-        n10 = max(1, int(0.10 * len(pred)))
-        idx_top10 = np.argpartition(pred, -n10)[-n10:]
-        idx_bot10 = np.argpartition(pred, n10)[:n10]
-        top10_mean = float(np.mean(y[idx_top10]))
-        bot10_mean = float(np.mean(y[idx_bot10]))
-        spread10 = top10_mean - bot10_mean
+        n15 = max(1, int(0.15 * len(pred)))
+        idx_top15 = np.argpartition(pred, -n15)[-n15:]
+        idx_bot15 = np.argpartition(pred, n15)[:n15]
+        top15_mean = float(np.mean(y[idx_top15]))
+        bot15_mean = float(np.mean(y[idx_bot15]))
+        spread15 = top15_mean - bot15_mean
 
-        top10_pred_mean = float(np.mean(pred[idx_top10]))
-        top10_realized_rate = float(np.mean(y[idx_top10] > np.median(y)))
-        gap_top10 = abs(top10_pred_mean - top10_realized_rate)
+        top15_pred_mean = float(np.mean(pred[idx_top15]))
+        top15_realized_rate = float(np.mean(y[idx_top15] > np.median(y)))
+        gap_top15 = abs(top15_pred_mean - top15_realized_rate)
 
-        maxdd = float(_maxdd_numba(y[idx_top10].astype(np.float64)))
-        urisk = sortino_top10 - 2.0 * maxdd
+        maxdd = float(_maxdd_numba(y[idx_top15].astype(np.float64)))
+        urisk = sortino_top15 - 2.0 * maxdd
         coverage = self._coverage(y, pred)
 
-        # Business-metric-heavy score with small pinball contribution.
+        # Business-metric-heavy score focused on the tradable top-15% slice.
         score = (
-            0.28 * mean_top30 +
-            0.28 * mean_top10 +
-            0.24 * spread10 +
-            0.12 * urisk +
-            0.05 * (-pin) +
-            0.03 * (-gap_top10)
+            0.40 * mean_top15
+            + 0.25 * spread15
+            + 0.12 * urisk
+            + 0.13 * (-pin)
+            + 0.10 * (-gap_top15)
         )
 
         if quantile_like:
             guard = (
                 abs(coverage - 0.85) <= 0.08
-                and util10 >= baseline["util"] * 0.90
+                and util15 >= baseline["util"] * 0.90
                 and maxdd <= baseline["maxdd"] * 1.30
             )
         else:
             guard = (
-                util10 >= baseline["util"] * 0.90
-                and maxdd <= baseline["maxdd"] * 1.30
+                util15 >= baseline["util"] * 0.90 and maxdd <= baseline["maxdd"] * 1.30
             )
 
         metrics = {
             "pinball085": pin,
-            "topk_utility": util10,
-            "top30_mean": mean_top30,
-            "top10_mean": mean_top10,
-            "top10_mean_y": top10_mean,
-            "bot10_mean_y": bot10_mean,
-            "spread10": spread10,
-            "top_decile_pred_mean": top10_pred_mean,
-            "top_decile_realized_rate": top10_realized_rate,
-            "top_decile_calibration_gap": gap_top10,
-            "sortino_med": sortino_top10,
+            "topk_utility": util15,
+            "top15_mean": mean_top15,
+            "top15_iqr": iqr_top15,
+            "top15_mean_y": top15_mean,
+            "bot15_mean_y": bot15_mean,
+            "spread15": spread15,
+            "top15_pred_mean": top15_pred_mean,
+            "top15_realized_rate": top15_realized_rate,
+            "top15_calibration_gap": gap_top15,
+            "sortino_med": sortino_top15,
             "maxdd_med": maxdd,
             "coverage_tau085": coverage,
             "score": score,
         }
+        for frac in (0.01, 0.05, 0.10, 0.20, 0.30):
+            tag = int(round(frac * 100))
+            util, mean_top, iqr_top, sortino_top = _topk_stats(y, pred, frac=frac)
+            metrics[f"top{tag}_utility"] = util
+            metrics[f"top{tag}_mean"] = mean_top
+            metrics[f"top{tag}_iqr"] = iqr_top
+            metrics[f"top{tag}_sortino"] = sortino_top
         return score, metrics, guard
 
     def _cv_train_predict(
@@ -640,7 +777,9 @@ class MetaModel:
                     p["alpha"] = q
                     if kind == "qreg_l1":
                         p["quantile"] = q
-                m = self._fit_model(kind, p, X_tr, y_tr, X_va, y_va, sample_weight=sw_tr)
+                m = self._fit_model(
+                    kind, p, X_tr, y_tr, X_va, y_va, sample_weight=sw_tr
+                )
                 fold_preds.append(m.predict(X_va))
             fold_pred = np.median(np.vstack(fold_preds), axis=0)
 
@@ -648,7 +787,9 @@ class MetaModel:
             cal_idx = np.arange(0, split)
             ev_idx = np.arange(split, len(va))
             if len(ev_idx) > 0 and len(cal_idx) > 1:
-                calibrated_ev = self._calibrate_fold(y_va[cal_idx], fold_pred[cal_idx], fold_pred[ev_idx], tau=0.85)
+                calibrated_ev = self._calibrate_fold(
+                    y_va[cal_idx], fold_pred[cal_idx], fold_pred[ev_idx], tau=0.85
+                )
                 fold_pred[ev_idx] = calibrated_ev
             oof[va] = fold_pred
 
@@ -664,7 +805,18 @@ class MetaModel:
         )
         return oof, metrics, guard
 
-    def _optuna_hpo(self, winner_name: str, winner_kind: str, winner_qs: Sequence[float], base_params: dict, X: np.ndarray, y: np.ndarray, sw: Optional[np.ndarray], score_y: Optional[np.ndarray] = None, is_transformed: bool = False) -> dict:
+    def _optuna_hpo(
+        self,
+        winner_name: str,
+        winner_kind: str,
+        winner_qs: Sequence[float],
+        base_params: dict,
+        X: np.ndarray,
+        y: np.ndarray,
+        sw: Optional[np.ndarray],
+        score_y: Optional[np.ndarray] = None,
+        is_transformed: bool = False,
+    ) -> dict:
         if importlib.util.find_spec("optuna") is None:
             return base_params
         import optuna
@@ -672,11 +824,25 @@ class MetaModel:
         def objective(trial: "optuna.trial.Trial"):
             p = dict(base_params)
             if winner_kind == "xgb":
-                p["max_depth"] = trial.suggest_categorical("max_depth", [4, 5, 6] if len(winner_qs) == 1 else [5, 6, 7])
-                p["learning_rate"] = trial.suggest_categorical("learning_rate", [0.03, 0.05, 0.07] if len(winner_qs) == 1 else [0.15, 0.25, 0.35])
-                p["n_estimators"] = trial.suggest_categorical("n_estimators", [800, 1200, 1800] if len(winner_qs) == 1 else [200, 400, 600])
-                p["subsample"] = trial.suggest_categorical("subsample", [0.6, 0.7, 0.8] if len(winner_qs) == 1 else [0.5, 0.6, 0.7])
-                p["colsample_bytree"] = trial.suggest_categorical("colsample_bytree", [0.6, 0.7, 0.8] if len(winner_qs) == 1 else [0.5, 0.6, 0.7])
+                p["max_depth"] = trial.suggest_categorical(
+                    "max_depth", [4, 5, 6] if len(winner_qs) == 1 else [5, 6, 7]
+                )
+                p["learning_rate"] = trial.suggest_categorical(
+                    "learning_rate",
+                    [0.03, 0.05, 0.07] if len(winner_qs) == 1 else [0.15, 0.25, 0.35],
+                )
+                p["n_estimators"] = trial.suggest_categorical(
+                    "n_estimators",
+                    [800, 1200, 1800] if len(winner_qs) == 1 else [200, 400, 600],
+                )
+                p["subsample"] = trial.suggest_categorical(
+                    "subsample",
+                    [0.6, 0.7, 0.8] if len(winner_qs) == 1 else [0.5, 0.6, 0.7],
+                )
+                p["colsample_bytree"] = trial.suggest_categorical(
+                    "colsample_bytree",
+                    [0.6, 0.7, 0.8] if len(winner_qs) == 1 else [0.5, 0.6, 0.7],
+                )
                 p["reg_alpha"] = trial.suggest_float("reg_alpha", 0.0, 20.0)
                 p["reg_lambda"] = trial.suggest_float("reg_lambda", 5.0, 100.0)
                 # num_parallel_tree incompatible with reg:quantileerror
@@ -684,12 +850,24 @@ class MetaModel:
             elif winner_kind == "lgb":
                 p["num_leaves"] = trial.suggest_categorical("num_leaves", [31, 63, 127])
                 p["max_depth"] = trial.suggest_categorical("max_depth", [5, 6, 7])
-                p["min_data_in_leaf"] = trial.suggest_categorical("min_data_in_leaf", [20, 40, 80])
-                p["min_sum_hessian_in_leaf"] = trial.suggest_categorical("min_sum_hessian_in_leaf", [1e-3, 1e-2])
-                p["learning_rate"] = trial.suggest_categorical("learning_rate", [0.03, 0.05, 0.07])
-                p["n_estimators"] = trial.suggest_categorical("n_estimators", [800, 1200, 1800])
-                p["feature_fraction"] = trial.suggest_categorical("feature_fraction", [0.5, 0.6, 0.7])
-                p["bagging_fraction"] = trial.suggest_categorical("bagging_fraction", [0.5, 0.6, 0.7])
+                p["min_data_in_leaf"] = trial.suggest_categorical(
+                    "min_data_in_leaf", [20, 40, 80]
+                )
+                p["min_sum_hessian_in_leaf"] = trial.suggest_categorical(
+                    "min_sum_hessian_in_leaf", [1e-3, 1e-2]
+                )
+                p["learning_rate"] = trial.suggest_categorical(
+                    "learning_rate", [0.03, 0.05, 0.07]
+                )
+                p["n_estimators"] = trial.suggest_categorical(
+                    "n_estimators", [800, 1200, 1800]
+                )
+                p["feature_fraction"] = trial.suggest_categorical(
+                    "feature_fraction", [0.5, 0.6, 0.7]
+                )
+                p["bagging_fraction"] = trial.suggest_categorical(
+                    "bagging_fraction", [0.5, 0.6, 0.7]
+                )
                 p["lambda_l1"] = trial.suggest_float("lambda_l1", 0.0, 20.0)
                 p["lambda_l2"] = trial.suggest_float("lambda_l2", 5.0, 100.0)
             elif winner_kind == "ridge":
@@ -706,7 +884,16 @@ class MetaModel:
                 p["min_samples_leaf"] = trial.suggest_int("min_samples_leaf", 10, 80)
             elif winner_kind == "qreg_l1":
                 p["alpha"] = trial.suggest_float("alpha", 1e-4, 20.0, log=True)
-            oof, _, _ = self._cv_train_predict(winner_kind, winner_qs, p, X, y, sw, score_y=score_y, is_transformed=is_transformed)
+            oof, _, _ = self._cv_train_predict(
+                winner_kind,
+                winner_qs,
+                p,
+                X,
+                y,
+                sw,
+                score_y=score_y,
+                is_transformed=is_transformed,
+            )
             m = np.isfinite(oof)
             # Use original y (score_y) for pinball optimization if transformed
             y_target = score_y if score_y is not None else y
@@ -726,7 +913,9 @@ class MetaModel:
         best.update(study.best_params)
         return best
 
-    def _write_model_reports(self, model_scores: List[dict], oof: np.ndarray, y: np.ndarray):
+    def _write_model_reports(
+        self, model_scores: List[dict], oof: np.ndarray, y: np.ndarray
+    ):
         report_dir = self._reports_dir
         report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -743,7 +932,11 @@ class MetaModel:
             prec = float(np.mean(yk > 0))
             pnl_day = float(np.mean(yk) - cost_per_trade)
             chunk = 14
-            chunk_vals = [np.mean(yk[i : i + chunk]) for i in range(0, len(yk), chunk) if len(yk[i : i + chunk]) > 0]
+            chunk_vals = [
+                np.mean(yk[i : i + chunk])
+                for i in range(0, len(yk), chunk)
+                if len(yk[i : i + chunk]) > 0
+            ]
             pnl_std = float(np.std(chunk_vals)) if chunk_vals else 0.0
             sortino = float(_sortino_numba(yk.astype(np.float64)))
             maxdd = float(_maxdd_numba(yk.astype(np.float64)))
@@ -751,50 +944,81 @@ class MetaModel:
             q_edges[0] -= 1e-12
             q_edges[-1] += 1e-12
             b = np.clip(np.digitize(pred, q_edges[1:-1]), 0, 9)
-            meds = np.array([np.median(y[b == i]) for i in range(10) if np.any(b == i)], dtype=float)
+            meds = np.array(
+                [np.median(y[b == i]) for i in range(10) if np.any(b == i)], dtype=float
+            )
             idxs = np.array([i for i in range(10) if np.any(b == i)], dtype=float)
             if meds.size >= 3:
-                mono_bin = float(pd.Series(idxs).corr(pd.Series(meds), method="spearman"))
+                mono_bin = float(
+                    pd.Series(idxs).corr(pd.Series(meds), method="spearman")
+                )
             else:
                 mono_bin = float("nan")
 
             # Keep old fields as tail-shape diagnostics (non-monotonicity semantics).
-            tail_shape_069 = float(np.mean(np.diff(np.quantile(yk, np.linspace(0.6, 0.9, 4))) >= -1e-12))
-            tail_shape_079 = float(np.mean(np.diff(np.quantile(yk, np.linspace(0.7, 0.9, 3))) >= -1e-12))
-            tail_shape_089 = float(np.mean(np.diff(np.quantile(yk, np.linspace(0.8, 0.9, 3))) >= -1e-12))
+            tail_shape_069 = float(
+                np.mean(np.diff(np.quantile(yk, np.linspace(0.6, 0.9, 4))) >= -1e-12)
+            )
+            tail_shape_079 = float(
+                np.mean(np.diff(np.quantile(yk, np.linspace(0.7, 0.9, 3))) >= -1e-12)
+            )
+            tail_shape_089 = float(
+                np.mean(np.diff(np.quantile(yk, np.linspace(0.8, 0.9, 3))) >= -1e-12)
+            )
 
-            rows.append({
-                "k": k,
-                "precision@topk": prec,
-                "NDCG@k": prec,
-                "PnL/day(%)": pnl_day,
-                "PnL_std_14d": pnl_std,
-                "Sortino": sortino,
-                "MaxDD": maxdd,
-                "Spearman_IC": pd.Series(pred).corr(pd.Series(y), method="spearman"),
-                "Avg_trades_day": top_n / max(1, len(np.unique(np.arange(len(pred)) // 24))),
-                "Gain_to_Pain": float(np.sum(yk[yk > 0]) / max(1e-9, abs(np.sum(yk[yk < 0])))),
-                "cost_per_trade": cost_per_trade,
-                "mean_win": float(np.mean(yk[yk > 0])) if np.any(yk > 0) else 0.0,
-                "mean_loss": float(np.mean(yk[yk <= 0])) if np.any(yk <= 0) else 0.0,
-                "win_loss_ratio": float(np.mean(yk[yk > 0]) / max(1e-9, abs(np.mean(yk[yk <= 0])))) if np.any(yk > 0) and np.any(yk <= 0) else float('nan'),
-                "effective_tp_sl_ratio": float(np.mean(yk[yk > 0]) / max(1e-9, abs(np.mean(yk[yk <= 0])))) if np.any(yk > 0) and np.any(yk <= 0) else float('nan'),
-                "coverage_global_tau085_raw": float(np.mean(y <= pred)),
-                "coverage_topdec_tau085_raw": float(np.mean(yk <= pred[idx])),
-                "coverage_global_tau085_cal": float(np.mean(y <= pred)),
-                "coverage_topdec_tau085_cal": float(np.mean(yk <= pred[idx])),
-                "monotonicity_bin_spearman": mono_bin,
-                "tail_shape_0.6_0.9": tail_shape_069,
-                "tail_shape_0.7_0.9": tail_shape_079,
-                "tail_shape_0.8_0.9": tail_shape_089,
-            })
+            rows.append(
+                {
+                    "k": k,
+                    "precision@topk": prec,
+                    "NDCG@k": prec,
+                    "PnL/day(%)": pnl_day,
+                    "PnL_std_14d": pnl_std,
+                    "Sortino": sortino,
+                    "MaxDD": maxdd,
+                    "Spearman_IC": pd.Series(pred).corr(
+                        pd.Series(y), method="spearman"
+                    ),
+                    "Avg_trades_day": top_n
+                    / max(1, len(np.unique(np.arange(len(pred)) // 24))),
+                    "Gain_to_Pain": float(
+                        np.sum(yk[yk > 0]) / max(1e-9, abs(np.sum(yk[yk < 0])))
+                    ),
+                    "cost_per_trade": cost_per_trade,
+                    "mean_win": float(np.mean(yk[yk > 0])) if np.any(yk > 0) else 0.0,
+                    "mean_loss": (
+                        float(np.mean(yk[yk <= 0])) if np.any(yk <= 0) else 0.0
+                    ),
+                    "win_loss_ratio": (
+                        float(
+                            np.mean(yk[yk > 0]) / max(1e-9, abs(np.mean(yk[yk <= 0])))
+                        )
+                        if np.any(yk > 0) and np.any(yk <= 0)
+                        else float("nan")
+                    ),
+                    "effective_tp_sl_ratio": (
+                        float(
+                            np.mean(yk[yk > 0]) / max(1e-9, abs(np.mean(yk[yk <= 0])))
+                        )
+                        if np.any(yk > 0) and np.any(yk <= 0)
+                        else float("nan")
+                    ),
+                    "coverage_global_tau085_raw": float(np.mean(y <= pred)),
+                    "coverage_topdec_tau085_raw": float(np.mean(yk <= pred[idx])),
+                    "coverage_global_tau085_cal": float(np.mean(y <= pred)),
+                    "coverage_topdec_tau085_cal": float(np.mean(yk <= pred[idx])),
+                    "monotonicity_bin_spearman": mono_bin,
+                    "tail_shape_0.6_0.9": tail_shape_069,
+                    "tail_shape_0.7_0.9": tail_shape_079,
+                    "tail_shape_0.8_0.9": tail_shape_089,
+                }
+            )
         metric_df = pd.DataFrame(rows)
 
-        # TP:SL grid search on top-30% selected trades (not all trades)
-        top30_n = max(1, int(0.30 * len(pred)))
-        idx_top30 = np.argpartition(pred, -top30_n)[-top30_n:]
-        y_top30 = y[idx_top30]
-        y_std_top30 = float(np.std(y_top30)) if len(y_top30) > 1 else 1e-6
+        # TP:SL grid search on top-15% selected trades (not all trades)
+        top15_n = max(1, int(0.15 * len(pred)))
+        idx_top15 = np.argpartition(pred, -top15_n)[-top15_n:]
+        y_top15 = y[idx_top15]
+        y_std_top15 = float(np.std(y_top15)) if len(y_top15) > 1 else 1e-6
 
         tps = [2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0]
         sl_factors = [0.3, 0.5, 0.7]
@@ -805,40 +1029,70 @@ class MetaModel:
         for tp in tps:
             for sf in sl_factors:
                 sl = sf * tp
-                rr = np.clip(y_top30 / max(1e-9, y_std_top30), -sl, tp)
+                rr = np.clip(y_top15 / max(1e-9, y_std_top15), -sl, tp)
                 sortino = float(_sortino_numba(rr.astype(np.float64)))
                 maxdd = float(_maxdd_numba(rr.astype(np.float64)))
                 pnl = float(np.mean(rr))
-                grid_rows.append({"TP": tp, "SL": sl, "TP_SL_ratio": tp / max(sl, 1e-9), "PnL": pnl, "Sortino": sortino, "MaxDD": maxdd})
+                grid_rows.append(
+                    {
+                        "TP": tp,
+                        "SL": sl,
+                        "TP_SL_ratio": tp / max(sl, 1e-9),
+                        "PnL": pnl,
+                        "Sortino": sortino,
+                        "MaxDD": maxdd,
+                    }
+                )
                 trades = len(rr) / max(1, len(np.unique(np.arange(len(rr)) // 24)))
-                if maxdd <= baseline["MaxDD"] * 1.30 and sortino >= baseline["Sortino"] * 0.70 and trades <= baseline["Avg_trades_day"] * 1.30:
+                if (
+                    maxdd <= baseline["MaxDD"] * 1.30
+                    and sortino >= baseline["Sortino"] * 0.70
+                    and trades <= baseline["Avg_trades_day"] * 1.30
+                ):
                     if pnl > best_score:
                         best_score = pnl
-                        best_grid = {"TP": tp, "SL": sl, "TP_SL_ratio": tp / max(sl, 1e-9), "score": pnl}
+                        best_grid = {
+                            "TP": tp,
+                            "SL": sl,
+                            "TP_SL_ratio": tp / max(sl, 1e-9),
+                            "score": pnl,
+                        }
 
         out = pd.DataFrame(model_scores)
         out_file = report_dir / f"meta_model_{self.strategy_name or 'generic'}_race.csv"
         out.to_csv(out_file, index=False)
-        metric_file = report_dir / f"meta_model_{self.strategy_name or 'generic'}_metrics.csv"
+        metric_file = (
+            report_dir / f"meta_model_{self.strategy_name or 'generic'}_metrics.csv"
+        )
         metric_df.to_csv(metric_file, index=False)
         if best_grid is not None:
-            pd.DataFrame([best_grid]).to_csv(report_dir / f"meta_model_{self.strategy_name or 'generic'}_tpsl.csv", index=False)
+            pd.DataFrame([best_grid]).to_csv(
+                report_dir / f"meta_model_{self.strategy_name or 'generic'}_tpsl.csv",
+                index=False,
+            )
 
     def fit(self, X_meta: pd.DataFrame, y, sample_weight=None, groups=None):
         import time as _time
+
         _t0 = _time.monotonic()
-        tprint(f"MetaModel.fit: {self.strategy_name} starting (n={len(y)}, feats={X_meta.shape[1]})")
+        tprint(
+            f"MetaModel.fit: {self.strategy_name} starting (n={len(y)}, feats={X_meta.shape[1]})"
+        )
         y_np = np.asarray(y, dtype=float)
         sw = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
 
         # Discover monotone constraints once on the full feature set, then slice per-candidate.
         # Interaction discovery is skipped (O(n²) on 89 features is too expensive).
         _all_cols = list(X_meta.columns)
-        tprint(f"  Discovering monotone constraints ({X_meta.shape[1]} features, 15 bootstraps)...")
+        tprint(
+            f"  Discovering monotone constraints ({X_meta.shape[1]} features, 15 bootstraps)..."
+        )
         _full_mono = self._discover_monotone_constraints(X_meta, y_np, bootstraps=15)
         _n_constrained = sum(1 for m in _full_mono if m != 0)
         _col_to_mono = dict(zip(_all_cols, _full_mono))
-        tprint(f"  Monotone constraints done: {_n_constrained}/{len(_all_cols)} constrained ({_time.monotonic()-_t0:.1f}s)")
+        tprint(
+            f"  Monotone constraints done: {_n_constrained}/{len(_all_cols)} constrained ({_time.monotonic()-_t0:.1f}s)"
+        )
 
         candidates = self._race_candidates()
         if xgb is None:
@@ -850,7 +1104,8 @@ class MetaModel:
         valid_candidates = {
             name: (kind, qs, params, pool_name)
             for name, (kind, qs, params, pool_name) in candidates.items()
-            if not (kind == "xgb" and xgb is None) and not (kind == "lgb" and lgb is None)
+            if not (kind == "xgb" and xgb is None)
+            and not (kind == "lgb" and lgb is None)
         }
 
         def _eval_one_candidate(name: str, kind: str, qs, params, pool_name: str):
@@ -871,7 +1126,16 @@ class MetaModel:
                     _params["monotone_constraints"] = list(_mono)
             try:
                 is_trans = "tailweighted" in kind or "tailweighted" in name
-                oof, metrics, guard_ok = self._cv_train_predict(kind, qs, _params, Xv, y_fit, sw_fit, score_y=y_np, is_transformed=is_trans)
+                oof, metrics, guard_ok = self._cv_train_predict(
+                    kind,
+                    qs,
+                    _params,
+                    Xv,
+                    y_fit,
+                    sw_fit,
+                    score_y=y_np,
+                    is_transformed=is_trans,
+                )
             except Exception as exc:
                 tprint(f"MetaModel candidate {name} failed: {exc}")
                 return None
@@ -888,7 +1152,9 @@ class MetaModel:
             }
 
         # Parallel candidate evaluation (max 2 workers)
-        tprint(f"  Racing {len(valid_candidates)} candidates ({_time.monotonic()-_t0:.1f}s)...")
+        tprint(
+            f"  Racing {len(valid_candidates)} candidates ({_time.monotonic()-_t0:.1f}s)..."
+        )
         results = Parallel(n_jobs=2, backend="loky")(
             delayed(_eval_one_candidate)(name, kind, qs, params, pool_name)
             for name, (kind, qs, params, pool_name) in valid_candidates.items()
@@ -920,15 +1186,25 @@ class MetaModel:
             }
             records.append(rec)
             if res["metrics"]["score"] > best_any_score:
-                best_any_name, best_any_oof, best_any_score = name, res["oof"], res["metrics"]["score"]
+                best_any_name, best_any_oof, best_any_score = (
+                    name,
+                    res["oof"],
+                    res["metrics"]["score"],
+                )
             if res["guard_ok"] and res["metrics"]["score"] > best_score:
-                best_name, best_oof, best_score = name, res["oof"], res["metrics"]["score"]
+                best_name, best_oof, best_score = (
+                    name,
+                    res["oof"],
+                    res["metrics"]["score"],
+                )
                 best_candidate_info = res
 
         if best_name is None:
             if best_any_name is None:
                 raise RuntimeError("No model candidates completed")
-            tprint("MetaModel: no candidate passed strict guardrails; falling back to highest-score candidate")
+            tprint(
+                "MetaModel: no candidate passed strict guardrails; falling back to highest-score candidate"
+            )
             best_name, best_oof = best_any_name, best_any_oof
             # Find the fallback candidate info
             for res in results:
@@ -941,17 +1217,33 @@ class MetaModel:
         Xv = X_meta[self.selected_features].to_numpy(dtype=float)
         y_fit, sw_fit = self._candidate_target_and_weight(y_np, sw, best_name)
 
-        tprint(f"  Winner: {best_name} (score={best_score:.6f}, pool={best_pool}, feats={len(self.selected_features)}). Starting HPO ({_time.monotonic()-_t0:.1f}s)...")
+        tprint(
+            f"  Winner: {best_name} (score={best_score:.6f}, pool={best_pool}, feats={len(self.selected_features)}). Starting HPO ({_time.monotonic()-_t0:.1f}s)..."
+        )
         is_trans = "tailweighted" in kind or "tailweighted" in best_name
-        tuned_params = self._optuna_hpo(best_name, kind, qs, params, Xv, y_fit, sw_fit, score_y=y_np, is_transformed=is_trans)
+        tuned_params = self._optuna_hpo(
+            best_name,
+            kind,
+            qs,
+            params,
+            Xv,
+            y_fit,
+            sw_fit,
+            score_y=y_np,
+            is_transformed=is_trans,
+        )
         tprint(f"  HPO done ({_time.monotonic()-_t0:.1f}s). Fitting final model...")
 
         # Final mode: increase compute budget for chosen model.
         final_params = dict(tuned_params)
         if kind in ("xgb", "lgb"):
-            final_params["n_estimators"] = int(max(1200, final_params.get("n_estimators", 800)))
+            final_params["n_estimators"] = int(
+                max(1200, final_params.get("n_estimators", 800))
+            )
         if kind == "extratrees":
-            final_params["n_estimators"] = int(max(900, final_params.get("n_estimators", 300)))
+            final_params["n_estimators"] = int(
+                max(900, final_params.get("n_estimators", 300))
+            )
 
         final_models = []
         for q in qs:
@@ -965,12 +1257,20 @@ class MetaModel:
             model = self._fit_model(kind, p, Xv, y_fit, Xv, y_fit, sample_weight=sw_fit)
             final_models.append(model)
 
-        self.model = {"kind": kind, "quantiles": list(qs), "models": final_models, "pool": best_pool, "is_transformed": is_trans}
+        self.model = {
+            "kind": kind,
+            "quantiles": list(qs),
+            "models": final_models,
+            "pool": best_pool,
+            "is_transformed": is_trans,
+        }
         self._model_type = best_name
         self.oof_probs = best_oof
         self.report_rows = records
         self._write_model_reports(records, best_oof, y_np)
-        tprint(f"MetaModel.fit: {self.strategy_name} done ({_time.monotonic()-_t0:.1f}s). Winner={best_name}")
+        tprint(
+            f"MetaModel.fit: {self.strategy_name} done ({_time.monotonic()-_t0:.1f}s). Winner={best_name}"
+        )
         return self
 
     def predict(self, X_meta):

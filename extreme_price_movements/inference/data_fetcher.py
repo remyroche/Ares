@@ -21,12 +21,14 @@ import pandas as pd
 from extreme_price_movements import hf_data_loader
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
+    _compute_missing_funding_ranges,
     _compute_missing_hourly_ranges,
     _fetch_ccxt_history_paged,
     _resolve_perp_symbol,
     fetch_hourly_orderbook_proxy,
     make_perp_exchange,
     make_spot_exchange,
+    normalize_orderbook_proxy_frame,
 )
 from extreme_price_movements.utils import tprint
 
@@ -743,28 +745,52 @@ class DataFetcher:
         return symbol.replace("/", "_").replace(":", "_")
 
     def update_microdata_symbol(
-        self, symbol: str, backfill_days: int = 180
+        self,
+        symbol: str,
+        backfill_days: int = 180,
+        start_ts: pd.Timestamp | None = None,
+        end_ts: pd.Timestamp | None = None,
     ) -> Dict[str, bool]:
         """Incrementally refresh orderbook/funding snapshots for one symbol."""
+        microdata_min_ranges = 10
         now_h = pd.Timestamp.now(tz="UTC").floor("1h")
+        end_h = (
+            pd.Timestamp(end_ts).tz_convert("UTC").floor("1h")
+            if end_ts is not None and pd.Timestamp(end_ts).tzinfo is not None
+            else (
+                pd.Timestamp(end_ts).tz_localize("UTC").floor("1h")
+                if end_ts is not None
+                else now_h
+            )
+        )
+        if start_ts is not None:
+            start_h = (
+                pd.Timestamp(start_ts).tz_convert("UTC").floor("1h")
+                if pd.Timestamp(start_ts).tzinfo is not None
+                else pd.Timestamp(start_ts).tz_localize("UTC").floor("1h")
+            )
+        else:
+            start_h = end_h - pd.Timedelta(days=int(backfill_days))
+        if start_h > end_h:
+            start_h, end_h = end_h, start_h
         ob_path = self.orderbook_dir / f"{self._symbol_file_key(symbol)}.parquet"
         fr_path = self.funding_dir / f"{self._symbol_file_key(symbol)}.parquet"
         out = {"orderbook": False, "funding": False}
 
         try:
             existing_ob = pd.read_parquet(ob_path) if ob_path.exists() else None
-            since_h = now_h - pd.Timedelta(days=int(backfill_days))
             existing_idx = (
                 pd.to_datetime(existing_ob.index, utc=True, errors="coerce")
                 if existing_ob is not None and not existing_ob.empty
                 else None
             )
+            missing_ob_ranges = list(
+                _compute_missing_hourly_ranges(existing_idx, start_h, end_h)
+            )
+            if len(missing_ob_ranges) < microdata_min_ranges:
+                missing_ob_ranges = []
             ob_frames = []
-            for range_start, range_end in _compute_missing_hourly_ranges(
-                existing_idx,
-                since_h,
-                now_h,
-            ):
+            for range_start, range_end in missing_ob_ranges:
                 proxy_df = fetch_hourly_orderbook_proxy(
                     self.exchange,
                     symbol,
@@ -777,6 +803,7 @@ class DataFetcher:
                 ob_frames.insert(0, existing_ob)
             if ob_frames:
                 rec = pd.concat(ob_frames).sort_index().groupby(level=0).last()
+                rec = normalize_orderbook_proxy_frame(rec)
                 rec.to_parquet(ob_path)
                 out["orderbook"] = True
         except Exception as exc:
@@ -793,19 +820,19 @@ class DataFetcher:
             if hasattr(funding_exchange, "fetch_funding_rate_history"):
                 if fr_path.exists():
                     existing_funding = pd.read_parquet(fr_path)
-                until_ms = int((now_h + pd.Timedelta(hours=1)).value // 10**6)
-                since_h = now_h - pd.Timedelta(days=int(backfill_days))
+                until_ms = int((end_h + pd.Timedelta(hours=1)).value // 10**6)
                 existing_idx = (
                     pd.to_datetime(existing_funding.index, utc=True, errors="coerce")
                     if existing_funding is not None and not existing_funding.empty
                     else None
                 )
+                funding_missing_ranges = list(
+                    _compute_missing_funding_ranges(existing_idx, start_h, end_h)
+                )
+                if len(funding_missing_ranges) < microdata_min_ranges:
+                    funding_missing_ranges = []
                 funding_frames = []
-                for range_start, range_end in _compute_missing_hourly_ranges(
-                    existing_idx,
-                    since_h,
-                    now_h,
-                ):
+                for range_start, range_end in funding_missing_ranges:
                     hist = _fetch_ccxt_history_paged(
                         funding_exchange.fetch_funding_rate_history,
                         funding_symbol,

@@ -58,12 +58,14 @@ import extreme_price_movements.mask_optimiser as mask_opt
 from extreme_price_movements.config import CFG, enable_perp_feature_keys
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
+    _compute_missing_funding_ranges,
     _compute_missing_hourly_ranges,
     _fetch_ccxt_history_paged,
     _resolve_perp_symbol,
     fetch_hourly_orderbook_proxy,
     make_perp_exchange,
     make_spot_exchange,
+    normalize_orderbook_proxy_frame,
 )
 from extreme_price_movements.offline_optimisers.params_store import (
     apply_offline_optimizer_best_params,
@@ -382,11 +384,48 @@ def run_download(cfg):
             funding_ex = None
             tprint(f"Funding exchange unavailable; skipping funding refresh: {exc}")
 
-    mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
+    mu = refresh_margin_universe_daily(None, quotes=("USDC",))
     fetch_syms = build_fetch_universe(
         mu.symbols, cfg["market_basket"], cfg["fetch_symbols_M"]
     )
     _base_n = len(fetch_syms)
+    _symbol_allowlist_file = str(
+        os.environ.get("EPM_DOWNLOAD_SYMBOLS_FILE", "")
+    ).strip()
+    _symbol_allowlist_raw = str(os.environ.get("EPM_DOWNLOAD_SYMBOLS", "")).strip()
+    if _symbol_allowlist_file:
+        try:
+            with open(_symbol_allowlist_file, "r", encoding="utf-8") as fp:
+                _file_symbols = [line.strip() for line in fp if line.strip()]
+            _symbol_allowlist_raw = ",".join(
+                [_symbol_allowlist_raw, *_file_symbols]
+                if _symbol_allowlist_raw
+                else _file_symbols
+            )
+        except Exception as exc:
+            tprint(
+                f"WARNING: could not read EPM_DOWNLOAD_SYMBOLS_FILE="
+                f"{_symbol_allowlist_file}: {exc}"
+            )
+    if _symbol_allowlist_raw:
+        _symbol_allowlist = [
+            s.strip() for s in _symbol_allowlist_raw.split(",") if s.strip()
+        ]
+        _symbol_allowset = set(_symbol_allowlist)
+        _before_allowlist = len(fetch_syms)
+        _replace_with_allowlist = str(
+            os.environ.get("EPM_DOWNLOAD_SYMBOLS_REPLACE", "0")
+        ).strip().lower() in {"1", "true", "yes", "y", "on"}
+        if _replace_with_allowlist:
+            fetch_syms = list(dict.fromkeys(_symbol_allowlist))
+            _allow_mode = "replace"
+        else:
+            fetch_syms = [s for s in fetch_syms if s in _symbol_allowset]
+            _allow_mode = "filter"
+        tprint(
+            f"Download symbol allowlist applied ({_allow_mode}): {_before_allowlist} -> "
+            f"{len(fetch_syms)} symbols"
+        )
 
     # Runtime overrides for parallel download orchestrations.
     _order = (
@@ -473,10 +512,7 @@ def run_download(cfg):
     now_1h = now_utc.floor("1h")
     since_15m = since.floor("15min")
     now_15m = now_utc.floor("15min")
-    micro_since = max(
-        since_1h,
-        now_1h - pd.Timedelta(days=int(cfg.get("microdata_backfill_days", 180))),
-    )
+    micro_since = since_1h
 
     def _panel_complete(
         df: Optional[pd.DataFrame],
@@ -495,13 +531,16 @@ def run_download(cfg):
             idx = idx.tz_localize("UTC")
         else:
             idx = idx.tz_convert("UTC")
-        window = idx[(idx >= start_ts) & (idx <= end_ts)]
+        effective_start = max(start_ts, idx.min())
+        window = idx[(idx >= effective_start) & (idx <= end_ts)]
         if len(window) == 0:
             return False
-        expected = len(pd.date_range(start=start_ts, end=end_ts, freq=freq, tz="UTC"))
+        expected = len(
+            pd.date_range(start=effective_start, end=end_ts, freq=freq, tz="UTC")
+        )
         return (
             (len(window) == expected)
-            and (window.min() <= start_ts)
+            and (window.min() <= effective_start)
             and (window.max() >= end_ts)
         )
 
@@ -525,8 +564,12 @@ def run_download(cfg):
             idx = idx.tz_localize("UTC")
         else:
             idx = idx.tz_convert("UTC")
-        window = idx[(idx >= start_ts) & (idx <= end_ts)]
+        effective_start = max(start_ts, idx.min())
+        window = idx[(idx >= effective_start) & (idx <= end_ts)]
         observed = len(pd.DatetimeIndex(window).unique())
+        expected = len(
+            pd.date_range(start=effective_start, end=end_ts, freq=freq, tz="UTC")
+        )
         missing_bars = max(0, expected - observed)
         step = pd.to_timedelta(freq)
         return float((missing_bars * step) / pd.Timedelta(days=1))
@@ -561,13 +604,24 @@ def run_download(cfg):
     def _safe_symbol_path(sym: str) -> str:
         return sym.replace("/", "_").replace(":", "_")
 
-    def _update_symbol_microdata(sym: str) -> tuple[bool, bool]:
+    microdata_min_ranges = int(
+        os.environ.get("EPM_DOWNLOAD_MIN_MICRODATA_RANGES", "10")
+    )
+    microdata_min_ranges = max(10, int(microdata_min_ranges))
+
+    def _update_symbol_microdata(
+        sym: str,
+    ) -> tuple[bool, bool, int, int, str, str]:
         now_h = pd.Timestamp.now(tz="UTC").floor("1h")
         sym_key = _safe_symbol_path(sym)
         ob_path = ob_dir / f"{sym_key}.parquet"
         fr_path = fr_dir / f"{sym_key}.parquet"
 
         ob_ok, fr_ok = False, False
+        missing_ob_ranges = 0
+        missing_fr_ranges = 0
+        ob_io = "skip:no_missing"
+        fr_io = "skip:no_missing"
         try:
             existing_ob = pd.read_parquet(ob_path) if ob_path.exists() else None
             existing_idx = (
@@ -575,35 +629,55 @@ def run_download(cfg):
                 if existing_ob is not None and not existing_ob.empty
                 else None
             )
-            missing_ranges = _compute_missing_hourly_ranges(
-                existing_idx,
-                micro_since,
-                now_h,
-            )
-            ob_frames = []
-            for range_start, range_end in missing_ranges:
-                proxy_df = fetch_hourly_orderbook_proxy(
-                    ex,
-                    sym,
-                    int(range_start.value // 10**6),
-                    int(range_end.value // 10**6),
+            missing_ranges = list(
+                _compute_missing_hourly_ranges(
+                    existing_idx,
+                    micro_since,
+                    now_h,
                 )
-                if proxy_df is not None and not proxy_df.empty:
-                    ob_frames.append(proxy_df)
+            )
+            skip_reason = ""
+            if len(missing_ranges) < microdata_min_ranges:
+                skip_reason = f"skip:insufficient_ranges<{microdata_min_ranges}"
+                missing_ranges = []
+                missing_ob_ranges = 0
+            else:
+                missing_ob_ranges = len(missing_ranges)
+            if not missing_ranges:
+                ob_ok = existing_ob is not None and not existing_ob.empty
+                ob_io = skip_reason or "skip:no_missing"
+            else:
+                tprint(
+                    f"  orderbook microdata {sym}: fetching "
+                    f"{len(missing_ranges)} missing hourly range(s)"
+                )
+                ob_io = "write:attempted"
+            ob_frames = []
+            if missing_ranges:
+                for range_start, range_end in missing_ranges:
+                    proxy_df = fetch_hourly_orderbook_proxy(
+                        ex,
+                        sym,
+                        int(range_start.value // 10**6),
+                        int(range_end.value // 10**6),
+                    )
+                    if proxy_df is not None and not proxy_df.empty:
+                        ob_frames.append(proxy_df)
             if existing_ob is not None and not existing_ob.empty:
                 ob_frames.insert(0, existing_ob)
-            if ob_frames:
-                rec = (
-                    pd.concat(ob_frames)
-                    .sort_index()
-                    .groupby(level=0)
-                    .last()
-                )
+            if missing_ranges and ob_frames:
+                rec = pd.concat(ob_frames).sort_index().groupby(level=0).last()
+                rec = normalize_orderbook_proxy_frame(rec)
                 rec.to_parquet(ob_path)
                 ob_ok = True
+                ob_io = "write:ok"
+            elif missing_ranges:
+                ob_ok = False
+                ob_io = "skip:insufficient_ranges<write_failed"
         except Exception as exc:
             tprint(f"  WARN orderbook microdata {sym}: {exc}")
             ob_ok = False
+            ob_io = "write:fail"
 
         try:
             fr_df = None
@@ -612,7 +686,9 @@ def run_download(cfg):
             existing_funding = None
             if not use_perps:
                 funding_symbol = (
-                    _resolve_perp_symbol(funding_ex, sym) if funding_ex is not None else None
+                    _resolve_perp_symbol(funding_ex, sym)
+                    if funding_ex is not None
+                    else None
                 )
                 if funding_symbol is None:
                     raise ValueError(f"No perp funding symbol found for {sym}")
@@ -627,29 +703,52 @@ def run_download(cfg):
                     if existing_funding is not None and not existing_funding.empty
                     else None
                 )
-                funding_frames = []
-                for range_start, range_end in _compute_missing_hourly_ranges(
-                    existing_idx,
-                    micro_since,
-                    now_h,
-                ):
-                    hist = _fetch_ccxt_history_paged(
-                        funding_client.fetch_funding_rate_history,
-                        funding_symbol,
-                        int(range_start.value // 10**6),
-                        int(range_end.value // 10**6),
-                        value_keys=["fundingRate", "funding_rate", "rate"],
-                        exchange=funding_client,
-                        limit=1000,
+                funding_missing_ranges = list(
+                    _compute_missing_funding_ranges(
+                        existing_idx,
+                        micro_since,
+                        now_h,
                     )
-                    if len(hist) > 0:
-                        funding_frames.append(hist.to_frame(name="funding_rate"))
+                )
+                if len(funding_missing_ranges) < microdata_min_ranges:
+                    funding_missing_ranges = []
+                    missing_fr_ranges = 0
+                else:
+                    missing_fr_ranges = len(funding_missing_ranges)
+                if not funding_missing_ranges:
+                    fr_ok = True
+                    fr_io = "skip:no_missing"
+                elif existing_funding is None:
+                    fr_io = f"skip:insufficient_ranges<{microdata_min_ranges}"
+                else:
+                    tprint(
+                        f"  funding microdata {sym}: fetching "
+                        f"{len(funding_missing_ranges)} missing hourly range(s)"
+                    )
+                    fr_io = "write:attempted"
+                funding_frames = []
+                if funding_missing_ranges:
+                    for range_start, range_end in funding_missing_ranges:
+                        hist = _fetch_ccxt_history_paged(
+                            funding_client.fetch_funding_rate_history,
+                            funding_symbol,
+                            int(range_start.value // 10**6),
+                            int(range_end.value // 10**6),
+                            value_keys=["fundingRate", "funding_rate", "rate"],
+                            exchange=funding_client,
+                            limit=1000,
+                        )
+                        if len(hist) > 0:
+                            funding_frames.append(hist.to_frame(name="funding_rate"))
                 if funding_frames:
                     fr_df = pd.concat(funding_frames).sort_index()
             if (
                 fr_df is None
                 and funding_client is not None
                 and hasattr(funding_client, "fetch_funding_rate")
+                and (
+                    existing_funding is None or getattr(existing_funding, "empty", True)
+                )
             ):
                 fr = funding_client.fetch_funding_rate(funding_symbol)
                 fr_df = pd.DataFrame([fr])
@@ -662,10 +761,14 @@ def run_download(cfg):
                     fr_df = fr_df[["funding_rate"]]
                 else:
                     ts_col = (
-                        "timestamp" if "timestamp" in fr_df.columns else "fundingTimestamp"
+                        "timestamp"
+                        if "timestamp" in fr_df.columns
+                        else "fundingTimestamp"
                     )
                     rate_col = (
-                        "fundingRate" if "fundingRate" in fr_df.columns else "funding_rate"
+                        "fundingRate"
+                        if "fundingRate" in fr_df.columns
+                        else "funding_rate"
                     )
                     fr_df["ts"] = pd.to_datetime(
                         fr_df[ts_col], unit="ms", utc=True
@@ -675,9 +778,9 @@ def run_download(cfg):
                         .rename(columns={rate_col: "funding_rate"})
                         .set_index("ts")
                     )
-                fr_df["funding_rate"] = pd.to_numeric(
-                    fr_df["funding_rate"], errors="coerce"
-                ).astype(np.float32)
+                    fr_df["funding_rate"] = pd.to_numeric(
+                fr_df["funding_rate"], errors="coerce"
+            ).astype(np.float32)
                 if existing_funding is None and fr_path.exists():
                     existing_funding = pd.read_parquet(fr_path)
                 if existing_funding is not None and not existing_funding.empty:
@@ -689,10 +792,12 @@ def run_download(cfg):
                     )
                 fr_df.to_parquet(fr_path)
                 fr_ok = True
+                fr_io = "write:ok"
         except Exception as exc:
             tprint(f"  WARN funding microdata {sym}: {exc}")
             fr_ok = False
-        return ob_ok, fr_ok
+            fr_io = "write:fail"
+        return ob_ok, fr_ok, missing_ob_ranges, missing_fr_ranges, ob_io, fr_io
 
     success_1h, fail_1h = 0, 0
     success_15m, fail_15m = 0, 0
@@ -706,11 +811,14 @@ def run_download(cfg):
             complete_1h, complete_15m = False, False
             missing_1h_days, missing_15m_days = 1e9, 1e9
 
+        symbol_1h_status = "skip:complete" if complete_1h else "pending"
+        symbol_15m_status = "skip:complete" if complete_15m else "pending"
         if complete_1h:
             skip_1h += 1
         elif missing_1h_days < _missing_lt_days:
             skip_1h += 1
             skip_small_1h += 1
+            symbol_1h_status = f"skip:recent_missing<{_missing_lt_days:g}d"
         else:
             try:
                 if use_perps:
@@ -718,8 +826,10 @@ def run_download(cfg):
                 else:
                     store.update_symbol(ex, sym, since_ms)
                 success_1h += 1
+                symbol_1h_status = "write:ok"
             except Exception as e:
                 fail_1h += 1
+                symbol_1h_status = f"fail:{e.__class__.__name__}"
                 tprint(f"  FAIL 1h {sym}: {e}")
 
         if complete_15m:
@@ -727,6 +837,7 @@ def run_download(cfg):
         elif missing_15m_days < _missing_lt_days:
             skip_15m += 1
             skip_small_15m += 1
+            symbol_15m_status = f"skip:recent_missing<{_missing_lt_days:g}d"
         else:
             try:
                 df_15m = sync_15m_ohlcv_range(
@@ -734,27 +845,38 @@ def run_download(cfg):
                     sym,
                     since,
                     pd.Timestamp.now(tz="UTC"),
-                    full_backfill=bool(cfg.get("download_15m_full_backfill", True)),
+                    full_backfill=bool(cfg.get("download_15m_full_backfill", False)),
                 )
                 if df_15m is None or df_15m.empty:
                     fail_15m += 1
+                    symbol_15m_status = "fail:empty"
                     tprint(f"  FAIL 15m {sym}: empty range")
                 else:
                     success_15m += 1
+                    symbol_15m_status = "write:ok"
             except Exception as e:
                 fail_15m += 1
+                symbol_15m_status = f"fail:{e.__class__.__name__}"
                 tprint(f"  FAIL 15m {sym}: {e}")
 
+        ob_ok, fr_ok, missing_ob_ranges, missing_fr_ranges, ob_io, fr_io = (
+            _update_symbol_microdata(sym)
+        )
+        tprint(
+            f"  [{i+1:04d}/{len(fetch_syms):04d}] {sym} "
+            f"1h={symbol_1h_status} "
+            f"15m={symbol_15m_status} "
+            f"ob={ob_io}({missing_ob_ranges}) "
+            f"fr={fr_io}({missing_fr_ranges})"
+        )
         try:
-            if (i + 1) % 10 == 0:
-                tprint(
-                    f"  Download progress: {i+1}/{len(fetch_syms)} "
-                    f"(1h ok={success_1h}, 1h skip={skip_1h} [<{_missing_lt_days:g}d={skip_small_1h}], 1h fail={fail_1h}, "
-                    f"15m ok={success_15m}, 15m skip={skip_15m} [<{_missing_lt_days:g}d={skip_small_15m}], 15m fail={fail_15m})"
-                )
+            tprint(
+                f"  Download progress: {i+1}/{len(fetch_syms)} "
+                f"(1h ok={success_1h}, 1h skip={skip_1h} [<{_missing_lt_days:g}d={skip_small_1h}], 1h fail={fail_1h}, "
+                f"15m ok={success_15m}, 15m skip={skip_15m} [<{_missing_lt_days:g}d={skip_small_15m}], 15m fail={fail_15m})"
+            )
         except Exception:
             pass
-        ob_ok, fr_ok = _update_symbol_microdata(sym)
         _time.sleep(0.1)  # gentle rate limit
 
     tprint(
@@ -914,6 +1036,7 @@ def run_features(
     force_recompute: bool = False,
     store=None,
     max_assets: int | None = None,
+    feature_symbols: list[str] | None = None,
 ):
     _maintenance_checkpoint("features:start")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
@@ -928,14 +1051,27 @@ def run_features(
         cfg["skip_feature_postsave_checks"] = True
         tprint(f"Features mode: limiting universe to {int(max_assets)} assets")
 
+    feature_symbols = [
+        str(s).strip() for s in (feature_symbols or []) if str(s).strip()
+    ]
+    if feature_symbols:
+        cfg["skip_feature_snapshot_validation"] = True
+        cfg["skip_feature_postsave_checks"] = True
+        tprint("Features mode: explicit feature symbols=" + ", ".join(feature_symbols))
+
     if store is None:
         store = PartitionedOHLCVStore(
             root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
         )
 
-    # Pass None for margin_symbols to trigger auto-refresh in universe logic
+    # Pass None for margin_symbols to trigger auto-refresh in universe logic.
+    # Explicit symbols use subset mode, which still loads basket/BTC/ETH context.
     run_feature_generation_step(
-        ts_sig, None, cfg, store, force_full_recompute=bool(force_recompute)
+        ts_sig,
+        feature_symbols or None,
+        cfg,
+        store,
+        force_full_recompute=bool(force_recompute),
     )
 
     tprint("FEATURES PIPELINE COMPLETE")
@@ -1709,11 +1845,12 @@ def run_train_meta(cfg, ts_override=None, store=None):
     cfg["meta_train_aligned_mfe_heads"] = False
     cfg["meta_train_aux_heads"] = False
     cfg["meta_clf_enabled"] = True
-    _meta_top_frac = float(os.getenv("EPM_META_TOP_FRAC", "0.15"))
+    _meta_top_frac = float(os.getenv("EPM_META_TOP_FRAC", "0.40"))
     cfg["meta_clf_top_frac"] = _meta_top_frac
     cfg["meta_move_top_frac"] = _meta_top_frac
     cfg["meta_trade_topx_values"] = [40]
-    cfg["meta_train_tbm_clf_head"] = True
+    cfg["meta_train_tbm_clf_head"] = False
+    cfg["meta_train_early_invalidation_head"] = False
     _correctness_env = (
         str(os.getenv("EPM_META_TRAIN_CORRECTNESS_CLF_HEAD", "1")).strip().lower()
     )
@@ -1727,9 +1864,9 @@ def run_train_meta(cfg, ts_override=None, store=None):
     cfg["meta_training_pipeline_version"] = "legacy"
     cfg["meta_run_pre_risk_optimisation"] = False
     _head_msg = (
-        "correctness + TBM classifier heads"
+        "base-correctness classifier head only"
         if cfg["meta_train_correctness_clf_head"]
-        else "TBM classifier head only"
+        else "no classifier heads"
     )
     tprint(
         "Meta training forced to EBMOnLGBM-only: regression/XGB/Ridge heads disabled; "
@@ -2194,6 +2331,12 @@ def main():
         help="Limit features mode to the first N assets in the training universe",
     )
     parser.add_argument(
+        "--feature-symbols",
+        type=str,
+        default=None,
+        help="Comma-separated explicit symbols for features mode, e.g. BTC/USDT,ETH/USDT",
+    )
+    parser.add_argument(
         "--skip-feature-postsave-checks",
         action="store_true",
         help="Skip post-save feature completeness and health checks",
@@ -2257,11 +2400,18 @@ def main():
     elif args.mode == "labels":
         run_labels(cfg, horizons=args.horizons, ts_override=args.ts_override)
     elif args.mode == "features":
+        _feature_symbols_arg = args.feature_symbols or os.environ.get(
+            "EPM_FEATURE_SYMBOLS", ""
+        )
+        _feature_symbols = [
+            s.strip() for s in str(_feature_symbols_arg).split(",") if s.strip()
+        ]
         run_features(
             cfg,
             ts_override=args.ts_override,
             force_recompute=bool(args.force_feature_recompute),
             max_assets=args.feature_assets,
+            feature_symbols=_feature_symbols,
         )
     elif args.mode == "train":
         run_train(

@@ -19,6 +19,7 @@ from extreme_price_movements.pipeline_steps import (
     _expected_feature_keys_from_cfg,
     _feature_quality_issues_for_keys,
     _feature_snapshot_health_issues,
+    _inject_orderbook_wall_features,
     _missing_requested_feature_keys,
     _scan_feature_cache_light,
     _derive_symbol_backfill_keys,
@@ -141,7 +142,100 @@ def test_fetch_hourly_orderbook_proxy_prefers_public_archive_for_history(monkeyp
     assert not out.empty
     assert out.index[0] == pd.Timestamp("2026-01-01 01:00:00", tz="UTC")
     assert np.isclose(out.iloc[0]["mid"], 101.0)
+    assert out.iloc[0]["source"] == "kline_summary"
     assert rest_calls == []
+
+
+def test_fetch_hourly_orderbook_proxy_does_not_fall_back_to_aggtrades(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        "extreme_price_movements.data_store._fetch_orderbook_proxy_from_public_klines",
+        lambda symbol, since_ms, until_ms: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.data_store._fetch_trade_history_public_aggtrades",
+        lambda symbol, since_ms, until_ms: calls.append("aggtrades") or pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.data_store._fetch_trade_history_paged",
+        lambda exchange, symbol, since_ms, until_ms, limit=1000: calls.append("paged")
+        or pd.DataFrame(),
+    )
+
+    out = fetch_hourly_orderbook_proxy(
+        object(),
+        "A/USDC",
+        int(pd.Timestamp("2026-01-01 01:00:00", tz="UTC").timestamp() * 1000),
+        int(pd.Timestamp("2026-01-01 02:00:00", tz="UTC").timestamp() * 1000),
+    )
+
+    assert out.empty
+    assert calls == []
+
+
+def test_orderbook_wall_features_are_neutral_for_kline_summary_proxy():
+    idx = pd.date_range("2026-01-01", periods=4, freq="h", tz="UTC")
+    cols = ["BTC/USDC"]
+    panel = {
+        "close": pd.DataFrame({"BTC/USDC": [100.0, 101.0, 102.0, 103.0]}, index=idx),
+        "volume": pd.DataFrame({"BTC/USDC": [10.0, 12.0, 11.0, 13.0]}, index=idx),
+    }
+    orderbook_by_symbol = {
+        "BTC/USDC": pd.DataFrame(
+            {
+                "best_bid": [99.9, 100.9, 101.9, 102.9],
+                "best_ask": [100.1, 101.1, 102.1, 103.1],
+                "cum_bid_qty_l20": [20.0, 30.0, 40.0, 50.0],
+                "cum_ask_qty_l20": [10.0, 15.0, 20.0, 25.0],
+                "source": ["kline_summary"] * 4,
+            },
+            index=idx,
+        )
+    }
+    cfg = {
+        "META_ORDERBOOK_WALL_FEATURE_KEYS": ["obw_wall_skew_book_r005"],
+        "META_ORDERBOOK_BLOCKER_FEATURE_KEYS": ["obw_blocking_wall_to_vol_r005"],
+    }
+
+    feats = _inject_orderbook_wall_features(
+        {},
+        panel,
+        orderbook_by_symbol,
+        cfg,
+        requested_feature_keys=[
+            "obw_wall_skew_book_r005",
+            "obw_blocking_wall_to_vol_r005",
+        ],
+    )
+
+    assert set(feats) == {"obw_wall_skew_book_r005", "obw_blocking_wall_to_vol_r005"}
+    for frame in feats.values():
+        assert list(frame.columns) == cols
+        assert np.isfinite(frame.to_numpy()).all()
+        assert np.allclose(frame.to_numpy(), 0.0)
+
+
+def test_shared_cross_asset_groups_avoid_cross_sectional_rank_features():
+    shared_groups = (
+        CFG.get("CROSS_ASSET_FEATURE_KEYS", [])
+        + CFG.get("CROSS_ASSET_BASE_FEATURE_KEYS", [])
+        + CFG.get("CROSS_ASSET_META_FEATURE_KEYS", [])
+        + CFG.get("META_CROSS_SECTIONAL_REGIME_KEYS", [])
+    )
+    forbidden = {
+        "cs_rank_ret_1h",
+        "cs_rank_ret_4h",
+        "cs_rank_ret_24h",
+        "cs_rank_volume_24h",
+        "ret_rank_universe",
+        "vol_surprise_rank",
+        "volatility_rank",
+        "momentum_percentile",
+    }
+
+    assert forbidden.isdisjoint(set(shared_groups))
+    assert CFG.get("enable_cross_sectional_rank_features") is False
 
 
 def test_ensure_feature_frame_index_restores_ts_column():

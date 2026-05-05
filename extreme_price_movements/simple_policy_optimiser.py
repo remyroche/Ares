@@ -3,22 +3,24 @@ simple_policy_optimiser.py
 
 A simple script to optimise Trailing Profit and Position sizing parameters using OOF predictions.
 Requirements:
-1. Use OOF preds / meta clf head from train_meta.
-2. Optimise Trailing Profit (Optuna, 400 trials) and Position Sizing (Grid search).
+1. Use OOS/OFFline predictions from the SlicePlanner policy slice.
+2. Optimise trailing profit and capital protection, then tune position sizing.
 3. Filter by top 15% preds by rank for each strategy_id.
-4. Use unseen samples: divide 2/3 for optimisation, 1/3 for OOS validation, and load models to generate OOS predictions.
+4. Use 3 equal chronological CV folds; validation-fold averages are the source
+   of truth, then fit final deployment params on all policy rows.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
-import pandas as pd
 import optuna
+import pandas as pd
 
 # NO EXTERNAL IMPORTS ALLOWED
 # from extreme_price_movements.policy_optimiser import ...
@@ -29,9 +31,12 @@ logger = logging.getLogger(__name__)
 TOP_POLICY_RANK_THRESHOLD = 0.85
 TOP_POLICY_LABEL = "top_15"
 DEFAULT_FORWARD_BARS = 96
+DEFAULT_CV_FOLDS = 3
+DEFAULT_N_TRIALS = 400
 MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 2
 DEPLOYMENT_RANK_THRESHOLD_FLOOR = 0.95
 DEPLOYMENT_SELECTION_METRIC = "top_5"
+MAX_CONCURRENT_TRADES = 1
 
 
 def compute_position_size(rank_pct: np.ndarray, size_power: float) -> np.ndarray:
@@ -54,7 +59,8 @@ def simulate_and_score(
     giveback_beta: float = 0.5,
     capital_protect_mfe_mult: float = 0.0,
     capital_protect_regression_frac: float = 0.45,
-) -> Dict[str, float]:
+    max_concurrent_trades: int = MAX_CONCURRENT_TRADES,
+) -> Dict[str, Any]:
     """
     Fully self-contained, vectorized, bar-by-bar simulator.
     Checks TP/SL pessimistically, computes fees properly per trade.
@@ -68,6 +74,9 @@ def simulate_and_score(
             "total_trades": 0,
             "raw_gains": np.array([], dtype=np.float32),
             "sizes": np.array([], dtype=np.float32),
+            "selected_mask": np.zeros(0, dtype=bool),
+            "candidate_count": 0,
+            "skipped_concurrency": 0,
         }
 
     # 1. Entry
@@ -89,6 +98,9 @@ def simulate_and_score(
                 "total_trades": 0,
                 "raw_gains": np.array([], dtype=np.float32),
                 "sizes": np.array([], dtype=np.float32),
+                "selected_mask": np.zeros(0, dtype=bool),
+                "candidate_count": 0,
+                "skipped_concurrency": 0,
             }
 
     # 2. Position sizing (dynamically scaled)
@@ -116,6 +128,7 @@ def simulate_and_score(
     active = np.ones(n_trades, dtype=bool)
     protect_active = np.zeros(n_trades, dtype=bool)
     exit_rets = np.zeros(n_trades, dtype=np.float32)
+    exit_bars = np.full(n_trades, max_bars - 1, dtype=np.int16)
     max_favorable = np.zeros(n_trades, dtype=np.float32)
 
     # 4. Bar by Bar Simulation Loop
@@ -140,6 +153,7 @@ def simulate_and_score(
         # Update exits for hits
         hit_indices = active_idx[sl_hit]
         exit_rets[hit_indices] = -(sl_dist[hit_indices] / entry_prices[hit_indices])
+        exit_bars[hit_indices] = j
         active[hit_indices] = False
 
         # Re-filter active
@@ -177,12 +191,14 @@ def simulate_and_score(
                     exit_rets[hit] = (
                         eff_sl_long[cap_hit_long] - protected_entry[cap_hit_long]
                     ) / protected_entry[cap_hit_long]
+                    exit_bars[hit] = j
                     active[hit] = False
                 if np.any(cap_hit_short):
                     hit = protected_idx[cap_hit_short]
                     exit_rets[hit] = (
                         protected_entry[cap_hit_short] - eff_sl_short[cap_hit_short]
                     ) / protected_entry[cap_hit_short]
+                    exit_bars[hit] = j
                     active[hit] = False
 
             active_idx = np.where(active)[0]
@@ -223,6 +239,7 @@ def simulate_and_score(
         exit_rets[active_idx[trail_hit_short]] = (
             entry[trail_hit_short] - trail_level_short[trail_hit_short]
         ) / entry[trail_hit_short]
+        exit_bars[active_idx[trail_hit]] = j
         active[active_idx[trail_hit]] = False
 
         # 4. Update max_favorable
@@ -243,11 +260,39 @@ def simulate_and_score(
         v_ent = entry_prices[end_idx]
         v_s = side[end_idx]
         exit_rets[end_idx] = v_s * (b_close / v_ent - 1.0)
+        exit_bars[end_idx] = last_pos.astype(np.int16, copy=False)
 
     # 6. Apply fees and compute net
     fees = sizes * cost_pct + sizes * (1 + exit_rets) * cost_pct
     gross_gain = sizes * exit_rets
     net_gain = gross_gain - fees
+    candidate_count = int(len(net_gain))
+    selected_mask = np.ones(candidate_count, dtype=bool)
+
+    max_concurrent = max(1, int(max_concurrent_trades))
+    if candidate_count and max_concurrent > 0 and "timestamp" in df_sub.columns:
+        ts = (
+            pd.to_datetime(df_sub["timestamp"], errors="coerce")
+            .astype("int64")
+            .to_numpy()
+        )
+        finite_ts = np.isfinite(ts.astype(np.float64))
+        order = np.argsort(np.where(finite_ts, ts, np.iinfo(np.int64).max))
+        selected_mask = np.zeros(candidate_count, dtype=bool)
+        active_until: List[int] = []
+        bar_ns = int(pd.Timedelta(minutes=15).value)
+        for idx in order:
+            if not finite_ts[idx]:
+                continue
+            cur_ts = int(ts[idx])
+            active_until = [until for until in active_until if until > cur_ts]
+            if len(active_until) >= max_concurrent:
+                continue
+            selected_mask[idx] = True
+            hold_bars = max(1, int(exit_bars[idx]))
+            active_until.append(cur_ts + hold_bars * bar_ns)
+        net_gain = net_gain[selected_mask]
+        sizes = sizes[selected_mask]
 
     return {
         "net_pnl": float(np.sum(net_gain)),
@@ -256,6 +301,9 @@ def simulate_and_score(
         "total_trades": len(net_gain),
         "raw_gains": net_gain,
         "sizes": sizes,
+        "selected_mask": selected_mask,
+        "candidate_count": candidate_count,
+        "skipped_concurrency": int(candidate_count - int(np.sum(selected_mask))),
     }
 
 
@@ -264,6 +312,11 @@ def _build_top5_validation_diagnostic(
     metrics: Dict[str, Any],
 ) -> Optional[pd.DataFrame]:
     raw_gains = np.asarray(metrics.get("raw_gains", np.array([], dtype=np.float32)))
+    selected_mask = metrics.get("selected_mask")
+    if selected_mask is not None:
+        mask = np.asarray(selected_mask, dtype=bool)
+        if len(mask) == len(selected_rows):
+            selected_rows = selected_rows.iloc[np.flatnonzero(mask)].copy()
     if len(raw_gains) != len(selected_rows):
         logger.warning(
             "Skipping top-5 validation diagnostic due to length mismatch: "
@@ -294,7 +347,7 @@ def optimise_position_sizing(
     f_closes: np.ndarray,
     cost_pct: float,
     best_trailing_params: dict,
-) -> Tuple[float, float, Dict[str, float]]:
+) -> Tuple[float, float, Dict[str, Any]]:
     best_size_power = 1.0
     best_pnl = float("-inf")
     best_metrics = {}
@@ -320,9 +373,26 @@ def optimise_position_sizing(
 
 
 def calculate_advanced_metrics(
-    df_sub: pd.DataFrame, raw_gains: np.ndarray, sizes: np.ndarray
+    df_sub: pd.DataFrame,
+    raw_gains: np.ndarray,
+    sizes: np.ndarray,
+    selected_mask: Optional[np.ndarray] = None,
 ) -> dict:
     if len(raw_gains) == 0:
+        return {}
+
+    if selected_mask is not None:
+        mask = np.asarray(selected_mask, dtype=bool)
+        if len(mask) == len(df_sub):
+            df_sub = df_sub.iloc[np.flatnonzero(mask)].copy()
+
+    if len(raw_gains) != len(df_sub) or len(sizes) != len(df_sub):
+        logger.warning(
+            "Skipping advanced metrics due to length mismatch: rows=%s gains=%s sizes=%s",
+            len(df_sub),
+            len(raw_gains),
+            len(sizes),
+        )
         return {}
 
     df_trades = pd.DataFrame(
@@ -421,6 +491,282 @@ def _json_safe(obj: Any) -> Any:
     if isinstance(obj, (pd.Timestamp,)):
         return obj.isoformat()
     return obj
+
+
+def _path_take(
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], idx: np.ndarray
+):
+    idx = np.asarray(idx, dtype=np.int64)
+    return tuple(arr[idx] for arr in paths)
+
+
+def _suggest_policy_params(trial: optuna.Trial) -> Dict[str, Any]:
+    return {
+        "sl_mult": trial.suggest_categorical(
+            "sl_mult", [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+        ),
+        "trailing_activation_mult": trial.suggest_categorical(
+            "trailing_activation_mult", [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5]
+        ),
+        "trailing_power": trial.suggest_categorical(
+            "trailing_power", [1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+        ),
+        "trailing_squash_divisor": trial.suggest_categorical(
+            "trailing_squash_divisor", [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
+        ),
+        "giveback_beta": trial.suggest_categorical(
+            "giveback_beta", [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
+        ),
+        "capital_protect_mfe_mult": trial.suggest_categorical(
+            "capital_protect_mfe_mult", [0.0, 0.75, 1.0, 1.25, 1.5]
+        ),
+        "capital_protect_regression_frac": trial.suggest_categorical(
+            "capital_protect_regression_frac", [0.25, 0.35, 0.45, 0.55, 0.65]
+        ),
+    }
+
+
+def _choose_best_trial(study: optuna.Study) -> Optional[optuna.trial.FrozenTrial]:
+    best_trials = study.best_trials
+    if not best_trials:
+        return None
+    best_trials_sorted_by_pnl = sorted(
+        best_trials, key=lambda t: t.values[0], reverse=True
+    )
+    top_trials = best_trials_sorted_by_pnl[: min(5, len(best_trials_sorted_by_pnl))]
+    pnls = np.array([t.values[0] for t in top_trials], dtype=np.float64)
+    stds = np.array([t.values[1] for t in top_trials], dtype=np.float64)
+    pnl_range = np.ptp(pnls) if np.ptp(pnls) > 0 else 1.0
+    std_range = np.ptp(stds) if np.ptp(stds) > 0 else 1.0
+    scores = 0.5 * ((pnls - np.min(pnls)) / pnl_range) - 0.5 * (
+        (stds - np.min(stds)) / std_range
+    )
+    return top_trials[int(np.argmax(scores))]
+
+
+def _optimise_policy_on_rows(
+    df_train: pd.DataFrame,
+    train_paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    *,
+    cost_pct: float,
+    n_trials: int,
+) -> Tuple[Dict[str, Any], float, Dict[str, Any], Dict[str, Any]]:
+    def objective(trial: optuna.Trial) -> Tuple[float, float]:
+        params = _suggest_policy_params(trial)
+        metrics = simulate_and_score(
+            df_train,
+            *train_paths,
+            cost_pct=cost_pct,
+            size_power=1.0,
+            max_concurrent_trades=MAX_CONCURRENT_TRADES,
+            **params,
+        )
+        adv = calculate_advanced_metrics(
+            df_train,
+            metrics["raw_gains"],
+            metrics["sizes"],
+            metrics.get("selected_mask"),
+        )
+        avg_std = 0.5 * float(adv.get("w_std", 10.0) or 10.0) + 0.5 * float(
+            adv.get("m_std", 10.0) or 10.0
+        )
+        return float(metrics["net_pnl"]), avg_std
+
+    study = optuna.create_study(directions=["maximize", "minimize"])
+    study.optimize(objective, n_trials=int(n_trials), show_progress_bar=False)
+    best_trial = _choose_best_trial(study)
+    if best_trial is None:
+        raise RuntimeError("Optuna returned no best trials")
+
+    best_params = dict(best_trial.params)
+    best_params["max_concurrent_trades"] = MAX_CONCURRENT_TRADES
+    best_size_power, best_pnl, best_metrics = optimise_position_sizing(
+        df_train,
+        *train_paths,
+        cost_pct=cost_pct,
+        best_trailing_params=best_params,
+    )
+    summary = {
+        "trials": int(len(study.trials)),
+        "best_pareto_train_pnl": float(best_trial.values[0]),
+        "best_pareto_train_std": float(best_trial.values[1]),
+        "best_size_train_pnl": float(best_pnl),
+    }
+    return best_params, float(best_size_power), best_metrics, summary
+
+
+def _evaluate_policy_subsets(
+    strategy_id: str,
+    subset_name: str,
+    subset_df: pd.DataFrame,
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    *,
+    cost_pct: float,
+    best_params: Dict[str, Any],
+    best_size_power: float,
+    log_details: bool = True,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for top_pct, rank_thresh in [
+        (TOP_POLICY_LABEL, TOP_POLICY_RANK_THRESHOLD),
+        ("top_10", 0.90),
+        ("top_5", 0.95),
+        ("top_1", 0.99),
+    ]:
+        mask = subset_df["rank_pct"].to_numpy() >= rank_thresh
+        if not mask.any():
+            continue
+
+        sub_filtered = subset_df.iloc[np.flatnonzero(mask)].copy()
+        sub_paths = _path_take(paths, np.flatnonzero(mask))
+        metrics = simulate_and_score(
+            sub_filtered,
+            *sub_paths,
+            cost_pct=cost_pct,
+            size_power=best_size_power,
+            **best_params,
+        )
+        adv_metrics = calculate_advanced_metrics(
+            sub_filtered,
+            metrics.get("raw_gains", np.array([])),
+            metrics.get("sizes", np.array([])),
+            metrics.get("selected_mask"),
+        )
+        if not adv_metrics:
+            continue
+        adv_metrics["candidate_count"] = int(metrics.get("candidate_count", 0))
+        adv_metrics["skipped_concurrency"] = int(metrics.get("skipped_concurrency", 0))
+        out[top_pct] = adv_metrics
+
+        if log_details:
+            logger.info(f"\n--- {strategy_id} | {subset_name} | {top_pct} ---")
+            logger.info(
+                f"Period: {adv_metrics['start_date']} to {adv_metrics['end_date']}"
+            )
+            logger.info(
+                "Trades: %s selected from %s candidates (concurrency skipped=%s)",
+                adv_metrics["n_trades"],
+                adv_metrics["candidate_count"],
+                adv_metrics["skipped_concurrency"],
+            )
+            logger.info(
+                f"Net PnL/Trade (Bankroll): {adv_metrics['avg_pnl_bankroll'] * 100:.2f}%"
+            )
+            logger.info(
+                f"Net PnL/Trade (Sized): {adv_metrics['avg_pnl_sized'] * 100:.2f}%"
+            )
+            logger.info(
+                f"Avg Win: {adv_metrics['avg_win'] * 100:.2f}%, Avg Loss: {adv_metrics['avg_loss'] * 100:.2f}%"
+            )
+            logger.info(f"Hit Rate: {adv_metrics['hit_rate'] * 100:.1f}%")
+            logger.info(
+                f"Sortino (W / M): {adv_metrics['w_sortino']:.2f} / {adv_metrics['m_sortino']:.2f}"
+            )
+            logger.info(f"Max DD: {adv_metrics['max_dd'] * 100:.2f}%")
+            logger.info(f"Time Under Water: {adv_metrics['tuw_days']:.1f} days")
+            logger.info(
+                f"PnL Std (W / M): {adv_metrics['w_std'] * 100:.2f}% / {adv_metrics['m_std'] * 100:.2f}%"
+            )
+    return out
+
+
+def _average_validation_metrics(
+    fold_metrics: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    top_keys = [TOP_POLICY_LABEL, "top_10", "top_5", "top_1"]
+    metric_keys = [
+        "n_trades",
+        "avg_pnl_bankroll",
+        "avg_pnl_sized",
+        "avg_win",
+        "avg_loss",
+        "hit_rate",
+        "w_sortino",
+        "m_sortino",
+        "w_std",
+        "m_std",
+        "max_dd",
+        "tuw_days",
+        "candidate_count",
+        "skipped_concurrency",
+    ]
+    for top_key in top_keys:
+        rows = [fm.get(top_key, {}) for fm in fold_metrics if isinstance(fm, dict)]
+        rows = [row for row in rows if isinstance(row, dict) and row]
+        if not rows:
+            continue
+        avg: Dict[str, Any] = {"folds": len(rows)}
+        for key in metric_keys:
+            vals = [float(row.get(key, np.nan)) for row in rows]
+            vals = [v for v in vals if np.isfinite(v)]
+            if vals:
+                avg[key] = float(np.mean(vals))
+        out[top_key] = avg
+    return out
+
+
+def _build_equal_time_folds(n_rows: int, n_folds: int) -> List[np.ndarray]:
+    return [
+        fold.astype(np.int64, copy=False)
+        for fold in np.array_split(np.arange(n_rows, dtype=np.int64), int(n_folds))
+        if len(fold) > 0
+    ]
+
+
+def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
+    if not slice_plan_path.exists():
+        return {
+            "slice_plan_present": False,
+            "oos_policy_slice_verified": False,
+            "reason": "slice_plan_missing",
+        }
+    try:
+        payload = json.loads(slice_plan_path.read_text())
+    except Exception as exc:
+        return {
+            "slice_plan_present": True,
+            "oos_policy_slice_verified": False,
+            "reason": f"slice_plan_unreadable:{exc}",
+        }
+    views = payload.get("materialized_views", {})
+    views = views if isinstance(views, dict) else {}
+    consumers = payload.get("consumer_plans", {})
+    consumers = consumers if isinstance(consumers, dict) else {}
+
+    def _view_n(stage_name: str) -> int:
+        row = views.get(stage_name, {})
+        if not isinstance(row, dict):
+            return 0
+        try:
+            return int(row.get("n_plans", 0) or 0)
+        except Exception:
+            return 0
+
+    def _consumer_n(role: str) -> int:
+        row = consumers.get(role, [])
+        return int(len(row)) if hasattr(row, "__len__") else 0
+
+    train_base_n = _view_n("train_base") or _consumer_n("base_model_fit")
+    train_meta_n = _view_n("train_meta") or _consumer_n("meta_model_fit")
+    policy_n = _view_n("utility_policy_optimisation") or _consumer_n(
+        "utility_policy_tuning"
+    )
+    verified = policy_n > 0 and (train_base_n > 0 or train_meta_n > 0)
+    return {
+        "slice_plan_present": True,
+        "slice_plan_version": payload.get("version"),
+        "allocation_targets": payload.get("allocation_targets", {}),
+        "train_base_n_plans": int(train_base_n),
+        "train_meta_n_plans": int(train_meta_n),
+        "utility_policy_optimisation_n_plans": int(policy_n),
+        "oos_policy_slice_verified": bool(verified),
+        "reason": (
+            "materialized_policy_and_training_plans_present"
+            if verified
+            else "slice_plan_has_no_materialized_policy_or_training_plans"
+        ),
+    }
 
 
 def _strategy_side(strategy_id: str) -> str:
@@ -572,6 +918,8 @@ def run_simple_policy_optimisation(
     data_root: str,
     run_id: str,
     cost_pct: float = 0.0015,
+    max_strategies: Optional[int] = None,
+    n_trials: Optional[int] = None,
 ):
     artifacts_root = Path(data_root) / "artifacts"
     if run_id is None:
@@ -586,14 +934,40 @@ def run_simple_policy_optimisation(
         logger.error(f"Directory not found: {meta_oof_dir}")
         return
 
-    meta_oof = {}
-    for pq_file in meta_oof_dir.glob("*_tbm_clf.parquet"):
-        strategy_id = pq_file.stem.replace("meta_oof_", "").replace("_tbm_clf", "")
+    meta_oof: Dict[str, pd.DataFrame] = {}
+    meta_oof_sources: Dict[str, str] = {}
+    for pq_file in sorted(meta_oof_dir.glob("meta_oof_*_clf.parquet")):
+        strategy_id = pq_file.stem.replace("meta_oof_", "")
+        if strategy_id.endswith("_tbm_clf"):
+            strategy_id = strategy_id[: -len("_tbm_clf")]
+        elif strategy_id.endswith("_clf"):
+            strategy_id = strategy_id[: -len("_clf")]
+        if strategy_id in meta_oof:
+            continue
         meta_oof[strategy_id] = pd.read_parquet(pq_file)
+        meta_oof_sources[strategy_id] = str(pq_file)
+        if max_strategies is not None and len(meta_oof) >= int(max_strategies):
+            break
 
     if not meta_oof:
-        logger.error(f"No _tbm_clf.parquet files found in {meta_oof_dir}")
+        logger.error(f"No meta_oof_*_clf.parquet files found in {meta_oof_dir}")
         return
+
+    n_trials = int(
+        n_trials
+        if n_trials is not None
+        else os.environ.get("SIMPLE_POLICY_N_TRIALS", DEFAULT_N_TRIALS)
+    )
+    n_trials = max(1, n_trials)
+    slice_plan_path = (
+        Path(data_root) / "artifacts" / run_id / "slices" / "slice_plan.json"
+    )
+    source_validation = _load_slice_plan_source_validation(slice_plan_path)
+    if not bool(source_validation.get("oos_policy_slice_verified", False)):
+        logger.warning(
+            "Policy OOS source is not fully verifiable from slice_plan.json: %s",
+            source_validation,
+        )
 
     from extreme_price_movements.data_store import PartitionedOHLCVStore
 
@@ -607,7 +981,15 @@ def run_simple_policy_optimisation(
         "rank_threshold": TOP_POLICY_RANK_THRESHOLD,
         "rank_slice": TOP_POLICY_LABEL,
         "cost_pct": cost_pct,
-        "split": "chronological_top15_oof_policy_holdout",
+        "split": "chronological_top15_oos_policy_3fold_cv",
+        "cv_folds": DEFAULT_CV_FOLDS,
+        "n_trials_per_fit": n_trials,
+        "prediction_source": {
+            "source": "meta_oof parquet OOS/OOF predictions",
+            "slice_plan_path": str(slice_plan_path),
+            **source_validation,
+            "not_model_refit": True,
+        },
         "strategies": {},
     }
 
@@ -644,14 +1026,6 @@ def run_simple_policy_optimisation(
         n = len(df_top)
         if n < 10:
             continue
-
-        split_idx = int(n * 2 / 3)
-        df_opt = df_top.iloc[:split_idx].copy()
-        df_val = df_top.iloc[split_idx:].copy()
-
-        logger.info(
-            f"Optimisation set size: {len(df_opt)}, Validation set size: {len(df_val)}"
-        )
 
         def _fetch_paths(df_subset):
             n_events = len(df_subset)
@@ -700,188 +1074,156 @@ def run_simple_policy_optimisation(
                                 f_cl[rel_idx, actual_len:] = last_close
             return f_op, f_hi, f_lo, f_cl
 
-        opt_paths = _fetch_paths(df_opt)
-
-        def objective(trial: optuna.Trial) -> Tuple[float, float]:
-            sl_mult = trial.suggest_categorical(
-                "sl_mult", [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+        all_paths = _fetch_paths(df_top)
+        folds = _build_equal_time_folds(n, DEFAULT_CV_FOLDS)
+        if len(folds) != DEFAULT_CV_FOLDS:
+            logger.warning(
+                "[%s] Expected %s CV folds, got %s. Skipping.",
+                strategy_id,
+                DEFAULT_CV_FOLDS,
+                len(folds),
             )
-            trailing_activation_mult = trial.suggest_categorical(
-                "trailing_activation_mult", [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5]
-            )
-            trailing_power = trial.suggest_categorical(
-                "trailing_power", [1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
-            )
-            trailing_squash_divisor = trial.suggest_categorical(
-                "trailing_squash_divisor", [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
-            )
-            giveback_beta = trial.suggest_categorical(
-                "giveback_beta", [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
-            )
-            capital_protect_mfe_mult = trial.suggest_categorical(
-                "capital_protect_mfe_mult", [0.0, 0.75, 1.0, 1.25, 1.5]
-            )
-            capital_protect_regression_frac = trial.suggest_categorical(
-                "capital_protect_regression_frac", [0.25, 0.35, 0.45, 0.55, 0.65]
-            )
-
-            metrics = simulate_and_score(
-                df_opt,
-                *opt_paths,
-                cost_pct=cost_pct,
-                size_power=1.0,
-                sl_mult=sl_mult,
-                trailing_activation_mult=trailing_activation_mult,
-                trailing_power=trailing_power,
-                trailing_squash_divisor=trailing_squash_divisor,
-                giveback_beta=giveback_beta,
-                capital_protect_mfe_mult=capital_protect_mfe_mult,
-                capital_protect_regression_frac=capital_protect_regression_frac,
-            )
-            adv = calculate_advanced_metrics(
-                df_opt, metrics["raw_gains"], metrics["sizes"]
-            )
-            w_std = adv.get("w_std", 10.0)
-            m_std = adv.get("m_std", 10.0)
-            avg_std = 0.5 * w_std + 0.5 * m_std
-
-            return metrics["net_pnl"], avg_std
-
-        study = optuna.create_study(directions=["maximize", "minimize"])
-        study.optimize(objective, n_trials=400, show_progress_bar=False)
-
-        best_trials = study.best_trials
-        if not best_trials:
-            logger.warning(f"Strategy {strategy_id} has no best trials.")
             continue
 
-        # Top 5 by PnL
-        best_trials_sorted_by_pnl = sorted(
-            best_trials, key=lambda t: t.values[0], reverse=True
-        )
-        top_5_trials = best_trials_sorted_by_pnl[
-            : min(5, len(best_trials_sorted_by_pnl))
-        ]
-
-        pnls = np.array([t.values[0] for t in top_5_trials])
-        stds = np.array([t.values[1] for t in top_5_trials])
-
-        pnl_range = np.ptp(pnls) if np.ptp(pnls) > 0 else 1.0
-        std_range = np.ptp(stds) if np.ptp(stds) > 0 else 1.0
-
-        norm_pnls = (pnls - np.min(pnls)) / pnl_range
-        norm_stds = (stds - np.min(stds)) / std_range
-
-        scores = 0.5 * norm_pnls - 0.5 * norm_stds
-        best_idx = np.argmax(scores)
-        best_trial = top_5_trials[best_idx]
-
-        best_params = best_trial.params
         logger.info(
-            f"[{strategy_id}] Best Trailing Params (Pareto chosen): {best_params} with PnL {best_trial.values[0]:.2f} and Std {best_trial.values[1]:.4f}"
+            "[%s] Running %s-fold chronological CV on %s top15 policy rows; fold sizes=%s",
+            strategy_id,
+            DEFAULT_CV_FOLDS,
+            n,
+            [int(len(fold)) for fold in folds],
         )
 
-        # Validation Set Path Fetch & Evaluation
-        val_paths = _fetch_paths(df_val)
-        best_size_power, best_pnl, best_metrics = optimise_position_sizing(
-            df_val, *val_paths, cost_pct=cost_pct, best_trailing_params=best_params
+        fold_results: List[Dict[str, Any]] = []
+        fold_val_metrics: List[Dict[str, Any]] = []
+        all_idx = np.arange(n, dtype=np.int64)
+        for fold_no, val_idx in enumerate(folds, start=1):
+            train_idx = np.setdiff1d(all_idx, val_idx, assume_unique=True)
+            df_train = df_top.iloc[train_idx].copy().reset_index(drop=True)
+            df_val = df_top.iloc[val_idx].copy().reset_index(drop=True)
+            train_paths = _path_take(all_paths, train_idx)
+            val_paths = _path_take(all_paths, val_idx)
+
+            best_params, best_size_power, _, fit_summary = _optimise_policy_on_rows(
+                df_train,
+                train_paths,
+                cost_pct=cost_pct,
+                n_trials=n_trials,
+            )
+            train_metrics = _evaluate_policy_subsets(
+                strategy_id,
+                f"cv_fold_{fold_no}_train",
+                df_train,
+                train_paths,
+                cost_pct=cost_pct,
+                best_params=best_params,
+                best_size_power=best_size_power,
+            )
+            val_metrics = _evaluate_policy_subsets(
+                strategy_id,
+                f"cv_fold_{fold_no}_validation",
+                df_val,
+                val_paths,
+                cost_pct=cost_pct,
+                best_params=best_params,
+                best_size_power=best_size_power,
+            )
+            fold_val_metrics.append(val_metrics)
+            logger.info(
+                "[%s] CV fold %s/%s best_params=%s best_size_power=%.3f "
+                "train_top5_avg=%.6f val_top5_avg=%.6f",
+                strategy_id,
+                fold_no,
+                DEFAULT_CV_FOLDS,
+                best_params,
+                best_size_power,
+                float(train_metrics.get("top_5", {}).get("avg_pnl_bankroll", np.nan)),
+                float(val_metrics.get("top_5", {}).get("avg_pnl_bankroll", np.nan)),
+            )
+            fold_results.append(
+                {
+                    "fold": fold_no,
+                    "train_rows_top15": int(len(df_train)),
+                    "validation_rows_top15": int(len(df_val)),
+                    "best_params": best_params,
+                    "best_size_power": float(best_size_power),
+                    "fit_summary": fit_summary,
+                    "train_metrics": train_metrics,
+                    "validation_metrics": val_metrics,
+                }
+            )
+
+        validation_metrics_average = _average_validation_metrics(fold_val_metrics)
+        logger.info(
+            "[%s] CV validation average top5 avg_pnl_bankroll=%.6f n_trades=%.1f",
+            strategy_id,
+            float(
+                validation_metrics_average.get("top_5", {}).get(
+                    "avg_pnl_bankroll", np.nan
+                )
+            ),
+            float(validation_metrics_average.get("top_5", {}).get("n_trades", np.nan)),
+        )
+
+        final_params, final_size_power, _, final_fit_summary = _optimise_policy_on_rows(
+            df_top,
+            all_paths,
+            cost_pct=cost_pct,
+            n_trials=n_trials,
+        )
+        final_fit_metrics = _evaluate_policy_subsets(
+            strategy_id,
+            "final_fit_all_policy_rows",
+            df_top,
+            all_paths,
+            cost_pct=cost_pct,
+            best_params=final_params,
+            best_size_power=final_size_power,
         )
         logger.info(
-            f"[{strategy_id}] Best Size Power: {best_size_power}, Net PnL OOS: {best_pnl:.4f}"
+            "[%s] Final all-data fit best_params=%s best_size_power=%.3f",
+            strategy_id,
+            final_params,
+            final_size_power,
         )
 
         strategy_results = {
-            "best_params": best_params,
-            "best_size_power": float(best_size_power),
-            "metrics": {},
+            "best_params": final_params,
+            "best_size_power": float(final_size_power),
+            "metrics": {
+                "cv_validation_average": validation_metrics_average,
+                "final_fit_all": final_fit_metrics,
+            },
+            "cv_folds": fold_results,
+            "final_fit_summary": final_fit_summary,
+            "prediction_source": {
+                "parquet": meta_oof_sources.get(strategy_id),
+                "score_column": "clf",
+                "oos_oof_columns_used": [
+                    c
+                    for c in ["oof_meta_clf", "oof_pred", "oof_p_move", "oof_base_clf"]
+                    if c in df.columns
+                ],
+                "slice_plan_path": str(slice_plan_path),
+                **source_validation,
+            },
         }
 
-        # --- Advanced Metrics Generation ---
-        for subset_name, subset_df, paths in [
-            ("train", df_opt, opt_paths),
-            ("val", df_val, val_paths),
-        ]:
-            strategy_results["metrics"][subset_name] = {}
-            for top_pct, rank_thresh in [
-                (TOP_POLICY_LABEL, TOP_POLICY_RANK_THRESHOLD),
-                ("top_10", 0.90),
-                ("top_5", 0.95),
-                ("top_1", 0.99),
-            ]:
-                mask = subset_df["rank_pct"] >= rank_thresh
-                if not mask.any():
-                    continue
-
-                # Filter subset and paths
-                sub_filtered = subset_df[mask].copy()
-                f_op, f_hi, f_lo, f_cl = paths
-                mask_idx = np.where(mask)[0]
-
-                f_op_f = f_op[mask_idx]
-                f_hi_f = f_hi[mask_idx]
-                f_lo_f = f_lo[mask_idx]
-                f_cl_f = f_cl[mask_idx]
-
-                # Re-simulate with best params
-                metrics = simulate_and_score(
-                    sub_filtered,
-                    f_op_f,
-                    f_hi_f,
-                    f_lo_f,
-                    f_cl_f,
-                    cost_pct=cost_pct,
-                    size_power=best_size_power,
-                    **best_params,
-                )
-
-                adv_metrics = calculate_advanced_metrics(
-                    sub_filtered,
-                    metrics.get("raw_gains", np.array([])),
-                    metrics.get("sizes", np.array([])),
-                )
-                if adv_metrics:
-                    strategy_results["metrics"][subset_name][top_pct] = adv_metrics
-
-                    logger.info(f"\n--- {strategy_id} | {subset_name} | {top_pct} ---")
-                    logger.info(
-                        f"Period: {adv_metrics['start_date']} to {adv_metrics['end_date']}"
-                    )
-                    logger.info(f"Trades: {adv_metrics['n_trades']}")
-                    logger.info(
-                        f"Net PnL/Trade (Bankroll): {adv_metrics['avg_pnl_bankroll'] * 100:.2f}%"
-                    )
-                    logger.info(
-                        f"Net PnL/Trade (Sized): {adv_metrics['avg_pnl_sized'] * 100:.2f}%"
-                    )
-                    logger.info(
-                        f"Avg Win: {adv_metrics['avg_win'] * 100:.2f}%, Avg Loss: {adv_metrics['avg_loss'] * 100:.2f}%"
-                    )
-                    logger.info(f"Hit Rate: {adv_metrics['hit_rate'] * 100:.1f}%")
-                    logger.info(
-                        f"Sortino (W / M): {adv_metrics['w_sortino']:.2f} / {adv_metrics['m_sortino']:.2f}"
-                    )
-                    logger.info(f"Max DD: {adv_metrics['max_dd'] * 100:.2f}%")
-                    logger.info(f"Time Under Water: {adv_metrics['tuw_days']:.1f} days")
-                    logger.info(
-                        f"PnL Std (W / M): {adv_metrics['w_std'] * 100:.2f}% / {adv_metrics['m_std'] * 100:.2f}%"
-                    )
-
-        val_mask_top5 = df_val["rank_pct"] >= 0.95
+        val_mask_top5 = df_top["rank_pct"].to_numpy() >= 0.95
         if np.any(val_mask_top5):
             mask_idx = np.where(val_mask_top5)[0]
-            f_op, f_hi, f_lo, f_cl = val_paths
+            f_op, f_hi, f_lo, f_cl = all_paths
             diagnostic_metrics = simulate_and_score(
-                df_val[val_mask_top5].copy(),
+                df_top.iloc[mask_idx].copy(),
                 f_op[mask_idx],
                 f_hi[mask_idx],
                 f_lo[mask_idx],
                 f_cl[mask_idx],
                 cost_pct=cost_pct,
-                size_power=best_size_power,
-                **best_params,
+                size_power=final_size_power,
+                **final_params,
             )
             diagnostic_df = _build_top5_validation_diagnostic(
-                df_val[val_mask_top5].copy(),
+                df_top.iloc[mask_idx].copy(),
                 diagnostic_metrics,
             )
             if diagnostic_df is not None and not diagnostic_df.empty:
@@ -907,11 +1249,19 @@ def run_simple_policy_optimisation(
 
         results_json[strategy_id] = strategy_results
         oos_results_json["strategies"][strategy_id] = {
-            "best_params": best_params,
-            "best_size_power": float(best_size_power),
-            "validation_metrics": strategy_results["metrics"].get("val", {}),
-            "validation_rows_top15": int(len(df_val)),
-            "optimisation_rows_top15": int(len(df_opt)),
+            "best_params": final_params,
+            "best_size_power": float(final_size_power),
+            "validation_metrics": validation_metrics_average,
+            "cv_folds": fold_results,
+            "final_fit_metrics": final_fit_metrics,
+            "final_fit_summary": final_fit_summary,
+            "validation_rows_top15_avg": float(
+                np.mean([len(fold) for fold in folds]) if folds else 0.0
+            ),
+            "optimisation_rows_top15_avg": float(
+                np.mean([n - len(fold) for fold in folds]) if folds else 0.0
+            ),
+            "source_validation": strategy_results["prediction_source"],
         }
 
     ic_rows = []
@@ -966,6 +1316,13 @@ if __name__ == "__main__":
         "--data_root", type=str, default="/Users/remyroche/Documents/Ares/data"
     )
     parser.add_argument("--run_id", type=str, default=None)
+    parser.add_argument("--max-strategies", type=int, default=None)
+    parser.add_argument("--n-trials", type=int, default=None)
     args = parser.parse_args()
 
-    run_simple_policy_optimisation(args.data_root, args.run_id)
+    run_simple_policy_optimisation(
+        args.data_root,
+        args.run_id,
+        max_strategies=args.max_strategies,
+        n_trials=args.n_trials,
+    )

@@ -217,7 +217,7 @@ class SlicePlannerConfig:
                 symbol_policy=SymbolPolicy(
                     mode="subset_symbols",
                     subset_fraction=0.5,
-                    min_symbols_per_split=3,
+                    min_symbols_per_split=2,
                 ),
                 purge_policy=PurgePolicy(
                     embargo_timedelta=pd.Timedelta("1D"),
@@ -227,7 +227,7 @@ class SlicePlannerConfig:
             timezone=timezone,
             strict_validation=False,
             min_rows_per_fold=25,
-            min_symbols_per_fold=3,
+            min_symbols_per_fold=2,
         )
 
 
@@ -734,6 +734,20 @@ def _codes_to_symbols(codes: np.ndarray, labels: np.ndarray) -> tuple[str, ...]:
     return tuple(labels[np.unique(codes)].tolist())
 
 
+def _rotating_symbol_subset(codes: np.ndarray, n_pick: int, offset: int) -> np.ndarray:
+    """Select a deterministic, cyclic subset from sorted codes."""
+    if codes.size == 0 or n_pick <= 0:
+        return np.array([], dtype=np.int32)
+    n_total = int(codes.size)
+    n_pick = min(max(1, int(n_pick)), n_total)
+    codes = np.sort(np.asarray(codes, dtype=np.int32))
+    if n_pick >= n_total:
+        return np.array(codes, copy=False)
+    start = offset % n_total
+    sel = (np.arange(n_pick, dtype=np.int64) + start) % n_total
+    return np.sort(codes[sel])
+
+
 def _resolve_outer_partition(
     state: PlannerState,
     policy: SymbolPolicy,
@@ -757,16 +771,12 @@ def _resolve_outer_partition(
     elif policy.mode == "subset_symbols":
         frac = 1.0 if policy.subset_fraction is None else policy.subset_fraction
         n_pick = int(np.ceil(frac * universe_codes.size))
-        # Ensure we don't try to pick more than available (handles edge cases where min_symbols > total)
+        # Ensure we don't try to pick more than available (handles edge cases where
+        # min_symbols > total) and guarantee each fold starts from a different
+        # subset offset so symbols are spread across folds.
         n_pick = max(policy.min_symbols_per_split, min(n_pick, universe_codes.size))
         n_pick = min(n_pick, universe_codes.size)
-
-        if n_pick >= universe_codes.size:
-            subset = universe_codes
-        else:
-            subset = np.sort(
-                rng.choice(universe_codes, size=n_pick, replace=False)
-            ).astype(np.int32)
+        subset = _rotating_symbol_subset(universe_codes, n_pick, outer_fold_id)
 
         train_codes = subset
         valid_codes = subset
@@ -871,6 +881,7 @@ def apply_sampling_policy(
     state: PlannerState,
     idx: np.ndarray,
     sampling_policy: SamplingPolicy,
+    symbol_policy: Optional[SymbolPolicy],
     fold_context: dict[str, Any],
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Apply deterministic split-aware subsampling while preserving chronology."""
@@ -892,18 +903,31 @@ def apply_sampling_policy(
     if sample_symbols and (
         sampling_policy.symbol_fraction < 1.0 or sampling_policy.max_symbols is not None
     ):
-        rng = np.random.default_rng(
-            _context_seed(
-                sampling_policy.random_state, {**fold_context, "axis": "symbol"}
-            )
-        )
-        sym = np.unique(state.symbol_codes[out])
+        split = str(fold_context.get("split", ""))
+        sym = np.sort(np.unique(state.symbol_codes[out]))
         n_pick = int(np.ceil(sym.size * sampling_policy.symbol_fraction))
         if sampling_policy.max_symbols is not None:
             n_pick = min(n_pick, sampling_policy.max_symbols)
-        n_pick = max(1, min(n_pick, sym.size))
-        keep = rng.choice(sym, size=n_pick, replace=False)
+        min_pick = 1
+        if symbol_policy is not None and split in {"train", "inner_train"}:
+            min_pick = max(1, int(symbol_policy.min_symbols_per_split))
+        n_pick = max(min_pick, min(n_pick, sym.size))
+        if n_pick < sym.size:
+            outer_fold = int(fold_context.get("outer_fold", 0))
+            inner_fold = int(fold_context.get("inner_fold", 0))
+            split_offset = {
+                "train": 0,
+                "inner_train": 1,
+                "valid": 2,
+                "inner_valid": 3,
+                "test": 4,
+            }.get(split, 5)
+            offset = outer_fold * 97 + inner_fold * 127 + split_offset
+            keep = _rotating_symbol_subset(sym, n_pick, offset)
+        else:
+            keep = sym
         out = out[np.isin(state.symbol_codes[out], keep)]
+        # Keep deterministic ordering after symbol filtering.
         meta["symbol_sampling_applied"] = True
 
     if out.size == 0:
@@ -1020,27 +1044,43 @@ def make_outer_walkforward_folds(
         test_idx = apply_symbol_policy(state, test_ref, partition, "test", policy)
 
         train_idx, train_sampling_meta = apply_sampling_policy(
-            state, train_idx, sampling, {"outer_fold": fold_id, "split": "train"}
+            state,
+            train_idx,
+            sampling,
+            policy,
+            {"outer_fold": fold_id, "split": "train"},
         )
         valid_idx, valid_sampling_meta = apply_sampling_policy(
-            state, valid_idx, sampling, {"outer_fold": fold_id, "split": "valid"}
+            state,
+            valid_idx,
+            sampling,
+            None,
+            {"outer_fold": fold_id, "split": "valid"},
         )
         test_idx, test_sampling_meta = apply_sampling_policy(
-            state, test_idx, sampling, {"outer_fold": fold_id, "split": "test"}
+            state,
+            test_idx,
+            sampling,
+            None,
+            {"outer_fold": fold_id, "split": "test"},
         )
 
         train_idx = purge_train_indices(
             state=state,
             train_idx=train_idx,
-            test_idx=np.unique(np.concatenate([valid_idx, test_idx]))
-            if valid_idx.size > 0
-            else test_idx,
-            purge_policy=purge,
-            train_symbol_codes=state.symbol_codes[train_idx],
-            test_symbol_codes=state.symbol_codes[
+            test_idx=(
                 np.unique(np.concatenate([valid_idx, test_idx]))
                 if valid_idx.size > 0
                 else test_idx
+            ),
+            purge_policy=purge,
+            train_symbol_codes=state.symbol_codes[train_idx],
+            test_symbol_codes=state.symbol_codes[
+                (
+                    np.unique(np.concatenate([valid_idx, test_idx]))
+                    if valid_idx.size > 0
+                    else test_idx
+                )
             ],
             train_group_codes=(
                 state.group_codes[purge.purge_group_col][train_idx]
@@ -1050,9 +1090,11 @@ def make_outer_walkforward_folds(
             ),
             test_group_codes=(
                 state.group_codes[purge.purge_group_col][
-                    np.unique(np.concatenate([valid_idx, test_idx]))
-                    if valid_idx.size > 0
-                    else test_idx
+                    (
+                        np.unique(np.concatenate([valid_idx, test_idx]))
+                        if valid_idx.size > 0
+                        else test_idx
+                    )
                 ]
                 if purge.purge_scope == "same_group"
                 and purge.purge_group_col in state.group_codes
@@ -1101,12 +1143,16 @@ def make_outer_walkforward_folds(
             metadata={
                 "train_window_start": _ns_to_timestamp(tr_s, timezone),
                 "train_window_end": _ns_to_timestamp(tr_e, timezone),
-                "valid_window_start": _ns_to_timestamp(va_s, timezone)
-                if outer_cfg.valid_span is not None
-                else None,
-                "valid_window_end": _ns_to_timestamp(va_e, timezone)
-                if outer_cfg.valid_span is not None
-                else None,
+                "valid_window_start": (
+                    _ns_to_timestamp(va_s, timezone)
+                    if outer_cfg.valid_span is not None
+                    else None
+                ),
+                "valid_window_end": (
+                    _ns_to_timestamp(va_e, timezone)
+                    if outer_cfg.valid_span is not None
+                    else None
+                ),
                 "test_window_start": _ns_to_timestamp(te_s, timezone),
                 "test_window_end": _ns_to_timestamp(te_e, timezone),
                 "train_actual_start": _period_from_idx(state, train_idx, timezone)[0],
@@ -1122,9 +1168,9 @@ def make_outer_walkforward_folds(
                 "n_symbols_valid": len(valid_symbols),
                 "n_symbols_test": len(test_symbols),
                 "max_test_t1_tail_days": max_tail_days,
-                "valid_role": "outer_valid_tail"
-                if outer_cfg.valid_span is not None
-                else None,
+                "valid_role": (
+                    "outer_valid_tail" if outer_cfg.valid_span is not None else None
+                ),
                 "train_sampling": train_sampling_meta,
                 "valid_sampling": valid_sampling_meta,
                 "test_sampling": test_sampling_meta,
@@ -1179,6 +1225,7 @@ def make_inner_purged_folds(
             state,
             tr,
             sampling,
+            policy,
             {
                 "outer_fold": outer_fold.outer_fold_id,
                 "inner_fold": inner_id - 1,
@@ -1189,6 +1236,7 @@ def make_inner_purged_folds(
             state,
             va,
             sampling,
+            policy,
             {
                 "outer_fold": outer_fold.outer_fold_id,
                 "inner_fold": inner_id - 1,
@@ -1416,9 +1464,9 @@ def build_consumer_slice_plan(
                     inner_fold_id=inner_id,
                     fit_idx=fit_idx,
                     predict_idx=pred_idx,
-                    oof_target_idx=np.array([], dtype=np.int64)
-                    if fit_only
-                    else pred_idx,
+                    oof_target_idx=(
+                        np.array([], dtype=np.int64) if fit_only else pred_idx
+                    ),
                     tag=tag,
                     symbols_fit=fit_syms,
                     symbols_predict=pred_syms,
@@ -1615,9 +1663,11 @@ def build_consumer_slice_plan(
                 "policy_holdout_tail",
                 of.metadata.get("train_window_start"),
                 of.metadata.get("train_window_end"),
-                of.metadata.get("test_window_end")
-                if pd.notna(of.metadata.get("test_window_end"))
-                else of.metadata.get("test_window_start"),
+                (
+                    of.metadata.get("test_window_end")
+                    if pd.notna(of.metadata.get("test_window_end"))
+                    else of.metadata.get("test_window_start")
+                ),
                 of.metadata.get("test_window_end"),
                 extra={
                     "policy_optimiser_holdout_frac": config.policy_optimiser_holdout_frac

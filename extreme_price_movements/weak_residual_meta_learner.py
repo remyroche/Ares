@@ -17,7 +17,11 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, RobustScaler
 
 from .utils import tprint
-from .ebm_on_lgbm import train_ebm_on_lgbm_candidate, fit_ebm_on_lgbm_full_model
+from .ebm_on_lgbm import (
+    _metric_pack as _ebm_metric_pack,
+    fit_ebm_on_lgbm_full_model,
+    train_ebm_on_lgbm_candidate,
+)
 
 try:
     import lightgbm as lgb
@@ -1010,17 +1014,106 @@ class WeakResidualMetaRegressor:
             "ebm": ebm_score,
         }
         residual_model_name = max(scores, key=scores.get)
+        ebm_residual_weighted_metrics: dict[str, Any] | None = None
+        ebm_residual_uniform_metrics: dict[str, Any] | None = None
 
-        if residual_model_name == "ebm":
+        if residual_model_name == "ebm" and isinstance(ebm_res, dict):
             residual_pred = ebm_oof
+            ebm_features = ebm_res.get(
+                "selected_features_from_cv", np.array([], dtype=np.int32)
+            )
+
+            def _residual_binary_metrics_for_ebm(pred: np.ndarray) -> dict[str, float]:
+                y_pos = (signed_residual >= 0).astype(np.float64)
+                p = np.clip(np.asarray(pred, dtype=np.float64), -20.0, 20.0)
+                p_prob = 1.0 / (1.0 + np.exp(-p))
+                return _ebm_metric_pack(
+                    y_pos,
+                    p_prob,
+                    classifier=True,
+                )
+
             self.ebm_model = fit_ebm_on_lgbm_full_model(
                 X_lgb,
                 signed_residual,
                 sample_weight=sw,
-                selected_features_from_cv=ebm_res.get("selected_features_from_cv"),
+                selected_features_from_cv=ebm_features,
                 random_state=42,
                 mode="regressor",
             )
+            weighted_metrics = None
+            if self.ebm_model is not None:
+                try:
+                    weighted_pred = np.asarray(
+                        self.ebm_model.predict(X_lgb), dtype=np.float32
+                    )
+                    weighted_metrics = _residual_binary_metrics_for_ebm(weighted_pred)
+                except Exception as exc:
+                    _tprint(f"  EBM residual weighted metrics skipped ({exc})")
+            uniform_metrics = None
+            try:
+                uniform_model = fit_ebm_on_lgbm_full_model(
+                    X_lgb,
+                    signed_residual,
+                    sample_weight=np.ones(len(sw), dtype=np.float32),
+                    selected_features_from_cv=ebm_features,
+                    random_state=42,
+                    mode="regressor",
+                )
+                if uniform_model is not None:
+                    uniform_pred = np.asarray(
+                        uniform_model.predict(X_lgb), dtype=np.float32
+                    )
+                    uniform_metrics = _residual_binary_metrics_for_ebm(uniform_pred)
+            except Exception as exc:
+                _tprint(f"  EBM residual uniform-weight fit skipped ({exc})")
+
+            if (
+                weighted_metrics is not None
+                and uniform_metrics is not None
+                and "ndcg_at_20" in weighted_metrics
+                and "ndcg_at_20" in uniform_metrics
+            ):
+                _weighted_lift20 = float(weighted_metrics.get("lift20", np.nan))
+                _uniform_lift20 = float(uniform_metrics.get("lift20", np.nan))
+                _weighted_ndcg20 = float(
+                    weighted_metrics.get(
+                        "ndcg_at_20", weighted_metrics.get("ndcg@20", np.nan)
+                    )
+                )
+                _uniform_ndcg20 = float(
+                    uniform_metrics.get(
+                        "ndcg_at_20", uniform_metrics.get("ndcg@20", np.nan)
+                    )
+                )
+                _weighted_ece20 = float(
+                    weighted_metrics.get(
+                        "ece_top20", weighted_metrics.get("ece_at_20", np.nan)
+                    )
+                )
+                _uniform_ece20 = float(
+                    uniform_metrics.get(
+                        "ece_top20", uniform_metrics.get("ece_at_20", np.nan)
+                    )
+                )
+                _tprint(
+                    "  EBM residual weighted-vs-uniform fit comparison: "
+                    f"weighted(lift20={_weighted_lift20:.4f}, ndcg20={_weighted_ndcg20:.4f}, "
+                    f"ece20={_weighted_ece20:.4f}) "
+                    f"uniform(lift20={_uniform_lift20:.4f}, ndcg20={_uniform_ndcg20:.4f}, "
+                    f"ece20={_uniform_ece20:.4f}) "
+                    f"delta_lift20={(_uniform_lift20 - _weighted_lift20):.4f} "
+                    f"delta_ndcg20={(_uniform_ndcg20 - _weighted_ndcg20):.4f} "
+                    f"delta_ece20={(_uniform_ece20 - _weighted_ece20):.4f}"
+                )
+            if weighted_metrics is not None:
+                ebm_residual_weighted_metrics = dict(weighted_metrics)
+            if uniform_metrics is not None:
+                ebm_residual_uniform_metrics = dict(uniform_metrics)
+        elif residual_model_name == "ebm":
+            residual_model_name = "lgbm"
+            residual_pred = lgb_pred
+            self.ebm_model = None
         elif residual_model_name == "leaf_ridge":
             residual_pred = leaf_ridge_pred
             self.ebm_model = None
@@ -1065,6 +1158,8 @@ class WeakResidualMetaRegressor:
             "meta_reg_support_factor": support_factor.astype(np.float32),
             "meta_reg_uncertainty": unc.astype(np.float32),
             "final": final.astype(np.float32),
+            "ebm_residual_weighted_metrics": ebm_residual_weighted_metrics,
+            "ebm_residual_uniform_metrics": ebm_residual_uniform_metrics,
             "unc_lo": float(self._reg_unc_lo),
             "unc_hi": float(self._reg_unc_hi),
             "unc_a": float(self._reg_unc_a),

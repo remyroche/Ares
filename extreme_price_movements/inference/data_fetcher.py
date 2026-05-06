@@ -111,6 +111,7 @@ class DataFetcher:
         self.api_error_counts: Dict[str, int] = {}
         self.dead_letter_symbols: Dict[str, str] = {}
         self._perp_exchange: Optional[Any] = None
+        self._symbols_without_perp_funding: set[str] = set()
 
     def _record_api_error(self, symbol: str, exc: Exception, *, context: str) -> None:
         category = classify_api_error(exc)
@@ -118,18 +119,25 @@ class DataFetcher:
         self.dead_letter_symbols[symbol] = f"{context}:{category}:{exc}"
         tprint(f"[DataFetcher] {context} failed for {symbol}: {category}: {exc}")
 
-    def _log_microdata_error(self, symbol: str, exc: Exception, *, context: str) -> None:
+    def _log_microdata_error(
+        self, symbol: str, exc: Exception, *, context: str
+    ) -> None:
         category = classify_api_error(exc)
         tprint(f"[DataFetcher] {context} failed for {symbol}: {category}: {exc}")
 
     def _get_funding_exchange_and_symbol(
         self, symbol: str
     ) -> tuple[Optional[Any], Optional[str]]:
+        if symbol in self._symbols_without_perp_funding:
+            return None, None
         if symbol and ":" in symbol:
             return self.exchange, symbol
         if self._perp_exchange is None:
             self._perp_exchange = make_perp_exchange()
         perp_symbol = _resolve_perp_symbol(self._perp_exchange, symbol)
+        if not perp_symbol:
+            self._symbols_without_perp_funding.add(symbol)
+            return None, None
         return self._perp_exchange, perp_symbol
 
     def initialize_with_historical_data(
@@ -537,7 +545,7 @@ class DataFetcher:
         target_hour: Optional[pd.Timestamp] = None,
         check_recent_gaps_days: int = 7,
         backfill_fn: Optional[Any] = None,
-        refresh_microdata: bool = False,
+        refresh_microdata: bool = True,
     ) -> Dict[str, pd.DataFrame]:
         """Fetch one closed 1h candle for the full live universe.
 
@@ -684,7 +692,7 @@ class DataFetcher:
         check_recent_gaps_days: int = 7,
         backfill_fn: Optional[Any] = None,
         use_lightweight_probe: bool = True,
-        refresh_microdata: bool = False,
+        refresh_microdata: bool = True,
     ) -> Dict[str, pd.DataFrame]:
         """Incrementally update a symbol universe using bounded worker fanout."""
         workers = max(1, min(int(max_workers), 32))
@@ -816,7 +824,7 @@ class DataFetcher:
                 symbol
             )
             if not funding_symbol or funding_exchange is None:
-                raise ValueError(f"No perp funding symbol found for {symbol}")
+                return out
             if hasattr(funding_exchange, "fetch_funding_rate_history"):
                 if fr_path.exists():
                     existing_funding = pd.read_parquet(fr_path)
@@ -847,7 +855,9 @@ class DataFetcher:
                 if funding_frames:
                     fr_df = pd.concat(funding_frames).sort_index()
             if fr_df is None and hasattr(funding_exchange, "fetch_funding_rate"):
-                fr_df = pd.DataFrame([funding_exchange.fetch_funding_rate(funding_symbol)])
+                fr_df = pd.DataFrame(
+                    [funding_exchange.fetch_funding_rate(funding_symbol)]
+                )
             if fr_df is not None and not fr_df.empty:
                 if "funding_rate" in fr_df.columns and isinstance(
                     fr_df.index, pd.DatetimeIndex
@@ -857,10 +867,14 @@ class DataFetcher:
                     fr_df = fr_df[["funding_rate"]]
                 else:
                     ts_col = (
-                        "timestamp" if "timestamp" in fr_df.columns else "fundingTimestamp"
+                        "timestamp"
+                        if "timestamp" in fr_df.columns
+                        else "fundingTimestamp"
                     )
                     rate_col = (
-                        "fundingRate" if "fundingRate" in fr_df.columns else "funding_rate"
+                        "fundingRate"
+                        if "fundingRate" in fr_df.columns
+                        else "funding_rate"
                     )
                     fr_df["ts"] = pd.to_datetime(
                         fr_df[ts_col], unit="ms", utc=True

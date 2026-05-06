@@ -1,7 +1,7 @@
 import hashlib
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -14,8 +14,15 @@ from extreme_price_movements.periods_symbols_management import (
     OuterFold,
     SlicePlanner,
     SlicePlannerConfig,
+    SymbolPolicy,
 )
 from extreme_price_movements.utils import tprint
+
+
+def _event_symbol_count(events_df: Optional[pd.DataFrame]) -> int:
+    if events_df is None or events_df.empty or "symbol" not in events_df.columns:
+        return 0
+    return int(events_df["symbol"].nunique())
 
 
 def _default(obj):
@@ -93,6 +100,90 @@ def compute_event_fingerprint(events_df: pd.DataFrame) -> dict:
     }
 
 
+def _load_baseline_events(data_root: str, run_id: str) -> Optional[pd.DataFrame]:
+    events_path = os.path.join(
+        data_root, "artifacts", run_id, "baseline_events.parquet"
+    )
+    if not os.path.exists(events_path):
+        return None
+    return pd.read_parquet(events_path)
+
+
+def _load_label_events_for_slice_plan(
+    data_root: str,
+    run_id: str,
+) -> Optional[pd.DataFrame]:
+    labels_dir = os.path.join(data_root, "artifacts", run_id, "labels")
+    if not os.path.isdir(labels_dir):
+        return None
+
+    frames: list[pd.DataFrame] = []
+    for name in sorted(os.listdir(labels_dir)):
+        if not name.startswith("train_") or not name.endswith(".parquet"):
+            continue
+        path = os.path.join(labels_dir, name)
+        try:
+            df = pd.read_parquet(path, columns=["__ts__", "__symbol__"])
+            ts_col = "__ts__"
+            sym_col = "__symbol__"
+        except Exception:
+            try:
+                df = pd.read_parquet(path, columns=["timestamp", "symbol"])
+                ts_col = "timestamp"
+                sym_col = "symbol"
+            except Exception:
+                continue
+        if df.empty:
+            continue
+        part = pd.DataFrame(
+            {
+                "symbol": df[sym_col].astype(str),
+                "t0": pd.to_datetime(df[ts_col], utc=True, errors="coerce"),
+            }
+        )
+        frames.append(part.dropna(subset=["t0", "symbol"]))
+
+    if not frames:
+        return None
+
+    events = pd.concat(frames, axis=0, ignore_index=True)
+    if events.empty:
+        return None
+    events = (
+        events.drop_duplicates(["symbol", "t0"])
+        .sort_values(["t0", "symbol"])
+        .reset_index(drop=True)
+    )
+    events["event_id"] = np.arange(len(events), dtype=np.int64)
+    events["t1"] = events["t0"]
+    return events[["event_id", "symbol", "t0", "t1"]]
+
+
+def _load_best_slice_plan_events(
+    data_root: str,
+    run_id: str,
+) -> Optional[pd.DataFrame]:
+    baseline = _load_baseline_events(data_root, run_id)
+    label_events = _load_label_events_for_slice_plan(data_root, run_id)
+    baseline_symbols = _event_symbol_count(baseline)
+    label_symbols = _event_symbol_count(label_events)
+
+    if label_events is not None and label_symbols > max(baseline_symbols, 0):
+        tprint(
+            f"Using label-derived slice planning events for {run_id}: "
+            f"symbols={label_symbols} rows={len(label_events)} "
+            f"(baseline_symbols={baseline_symbols})."
+        )
+        return label_events
+
+    if baseline is not None:
+        tprint(
+            f"Using baseline slice planning events for {run_id}: "
+            f"symbols={baseline_symbols} rows={len(baseline)}."
+        )
+    return baseline
+
+
 def slice_plan_is_stale(
     existing: dict,
     current_fingerprint: dict,
@@ -111,10 +202,80 @@ def slice_plan_is_stale(
     if existing_preset != current_preset:
         return True
 
+    existing_symbol_policy = existing.get("planner", {}).get("symbol_policy_mode")
+    current_symbol_policy = planner_cfg.get("symbol_policy_mode")
+    if current_symbol_policy and existing_symbol_policy != current_symbol_policy:
+        return True
+
+    existing_symbol_fraction = existing.get("planner", {}).get("symbol_fraction")
+    current_symbol_fraction = planner_cfg.get("symbol_fraction")
+    if current_symbol_fraction is not None:
+        if existing_symbol_fraction is None:
+            return True
+        if float(existing_symbol_fraction) != float(current_symbol_fraction):
+            return True
+
     if allocation_targets and existing.get("allocation_targets") != allocation_targets:
         return True
 
     return False
+
+
+def _stage_view_has_materialized_scope(stage_view: dict) -> bool:
+    if not isinstance(stage_view, dict):
+        return False
+    if int(stage_view.get("n_plans", 0) or 0) <= 0:
+        return False
+    if not stage_view.get("source_roles"):
+        return False
+    if not (stage_view.get("symbols") or stage_view.get("allowed_symbols")):
+        return False
+    if stage_view.get("allowed_periods"):
+        return True
+    return bool(stage_view.get("allowed_start_ts") and stage_view.get("allowed_end_ts"))
+
+
+def slice_plan_has_required_materialized_views(
+    existing: dict,
+    required_stages: tuple[str, ...] = (
+        "train_base",
+        "train_meta",
+        "utility_policy_optimisation",
+    ),
+) -> bool:
+    materialized = existing.get("materialized_views", {}) if existing else {}
+    if not isinstance(materialized, dict):
+        return False
+    return all(
+        _stage_view_has_materialized_scope(materialized.get(stage_name, {}))
+        for stage_name in required_stages
+    )
+
+
+def _with_all_symbol_planning(config: SlicePlannerConfig) -> SlicePlannerConfig:
+    """Keep the time/event preset, but never subsample the symbol universe."""
+    sampling = replace(
+        config.preset.sampling,
+        symbol_fraction=1.0,
+        max_symbols=None,
+        sample_symbols_on_train=False,
+        sample_symbols_on_inner_train=False,
+        sample_symbols_on_valid=False,
+        sample_symbols_on_inner_valid=False,
+        sample_symbols_on_test=False,
+    )
+    preset = replace(
+        config.preset,
+        sampling=sampling,
+        symbol_policy=SymbolPolicy(
+            mode="all_symbols",
+            min_symbols_per_split=max(
+                1, int(config.preset.symbol_policy.min_symbols_per_split)
+            ),
+            random_state=config.preset.symbol_policy.random_state,
+        ),
+    )
+    return replace(config, preset=preset)
 
 
 def _serialize_consumer_plan(cp: ConsumerSlicePlan) -> dict:
@@ -372,7 +533,10 @@ def build_slice_plan(
         plans = consumer_plans_dict.get(role, [])
         serialized_consumers[role] = [_serialize_consumer_plan(cp) for cp in plans]
         materialized_views[stage_name] = _build_stage_view(
-            stage_name, plans, allocation_targets.get(stage_name, 0.0)
+            stage_name,
+            plans,
+            allocation_targets.get(stage_name, 0.0),
+            source_roles=[role],
         )
 
     # Also serialize any other roles just in case
@@ -411,6 +575,8 @@ def build_slice_plan(
         "ts_sig": ts_sig.isoformat(),
         "planner": {
             "preset": planner_config.preset.preset_name,
+            "symbol_policy_mode": planner_config.preset.symbol_policy.mode,
+            "symbol_fraction": float(planner_config.preset.sampling.symbol_fraction),
             # include other config bits if needed
         },
         "allocation_targets": allocation_targets,
@@ -437,6 +603,7 @@ def load_or_build_slice_plan(
         planner_config = SlicePlannerConfig.robust_defaults(schema=EventSchema())
     else:
         planner_config = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+    planner_config = _with_all_symbol_planning(planner_config)
 
     allocation_targets = {
         "train_base": 0.70,
@@ -453,11 +620,7 @@ def load_or_build_slice_plan(
             # We need events to check if stale, unless we just trust it.
             # If events_df is none, try to load baseline events
             if events_df is None:
-                events_path = os.path.join(
-                    cfg["data_root"], "artifacts", run_id, "baseline_events.parquet"
-                )
-                if os.path.exists(events_path):
-                    events_df = pd.read_parquet(events_path)
+                events_df = _load_best_slice_plan_events(cfg["data_root"], run_id)
 
             fingerprint = (
                 compute_event_fingerprint(events_df)
@@ -465,23 +628,34 @@ def load_or_build_slice_plan(
                 else existing.get("event_fingerprint")
             )
 
-            if not slice_plan_is_stale(
-                existing, fingerprint, {"preset": preset_name}, allocation_targets
-            ):
-                tprint(f"Loaded valid slice plan for {run_id}")
-                return existing
+            is_stale = slice_plan_is_stale(
+                existing,
+                fingerprint,
+                {
+                    "preset": preset_name,
+                    "symbol_policy_mode": planner_config.preset.symbol_policy.mode,
+                    "symbol_fraction": planner_config.preset.sampling.symbol_fraction,
+                },
+                allocation_targets,
+            )
+            if not is_stale:
+                if not slice_plan_has_required_materialized_views(existing):
+                    tprint(
+                        f"Slice plan for {run_id} has empty required materialized "
+                        "training/policy views, rebuilding."
+                    )
+                else:
+                    tprint(f"Loaded valid slice plan for {run_id}")
+                    return existing
             else:
                 tprint(f"Slice plan for {run_id} is stale, rebuilding.")
 
     if events_df is None:
-        events_path = os.path.join(
-            cfg["data_root"], "artifacts", run_id, "baseline_events.parquet"
-        )
-        if os.path.exists(events_path):
-            events_df = pd.read_parquet(events_path)
-        else:
+        events_df = _load_best_slice_plan_events(cfg["data_root"], run_id)
+        if events_df is None:
             raise ValueError(
-                "events_df not provided and baseline_events.parquet not found. Run labels first to generate events."
+                "events_df not provided and no baseline or label events found. "
+                "Run labels first to generate events."
             )
 
     plan = build_slice_plan(

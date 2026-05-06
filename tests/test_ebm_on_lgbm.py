@@ -12,6 +12,7 @@ from extreme_price_movements.ebm_on_lgbm import (
     _post_hpo_manage_features,
     _prescreen_features,
     _lgbm_leaf_screen_scores,
+    _select_leaf_names_from_score_matrix,
     _diversity_bonus_for_leaf_name,
     _family_signature_from_path,
     _leaf_path_features,
@@ -33,7 +34,9 @@ class FakeEBMClassifier:
 
     def fit(self, X, y, sample_weight=None):
         self.__class__.fit_sample_weights.append(
-            None if sample_weight is None else np.asarray(sample_weight, dtype=np.float32)
+            None
+            if sample_weight is None
+            else np.asarray(sample_weight, dtype=np.float32)
         )
         x = np.asarray(X, dtype=np.float32)
         yy = np.asarray(y, dtype=np.float32)
@@ -119,6 +122,24 @@ def test_leaf_scoring_independent_of_realized_labels_or_returns():
     assert np.allclose(s1, s2)
 
 
+def test_tree_feature_screen_applies_per_tree_quota_to_values_and_leaves():
+    rng = np.random.default_rng(321)
+    names = (
+        ["lgbm_depth3_minpct0200_tree0_value"]
+        + [f"lgbm_depth3_minpct0200_tree0_leaf{i}_soft" for i in range(20)]
+        + ["lgbm_depth3_minpct0200_tree100_value"]
+        + [f"lgbm_depth3_minpct0200_tree100_leaf{i}_soft" for i in range(8)]
+    )
+    x = np.abs(rng.normal(size=(160, len(names)))).astype(np.float32)
+
+    chosen = _select_leaf_names_from_score_matrix(x, names, cap=len(names))
+
+    tree0 = [n for n in chosen if "_tree0_" in n]
+    tree100 = [n for n in chosen if "_tree100_" in n]
+    assert len(tree0) <= max_leaves_for_tree(0)
+    assert len(tree100) <= max_leaves_for_tree(100)
+
+
 def test_leaf_screen_excludes_tree_index_gte_200():
     rng = np.random.default_rng(7)
     x = np.abs(rng.normal(size=(80, 3))).astype(np.float32)
@@ -135,9 +156,7 @@ def test_leaf_screen_excludes_tree_index_gte_200():
 
 def test_mixed_family_leaves_receive_diversity_bonus():
     base = _diversity_bonus_for_leaf_name("lgbm_tree1_leaf1_soft")
-    mixed = _diversity_bonus_for_leaf_name(
-        "lgbm_cross_asset_funding_tree1_leaf1_soft"
-    )
+    mixed = _diversity_bonus_for_leaf_name("lgbm_cross_asset_funding_tree1_leaf1_soft")
     assert mixed > base
 
 
@@ -339,7 +358,9 @@ def test_final_fit_keeps_missing_selected_tree_feature_contract(monkeypatch):
 
 def test_false_positive_avoidance_weight_is_rank_based_for_top20pct():
     y = np.array([0, 1, 0, 1, 0, 0, 0, 0, 0], dtype=np.float32)
-    pred = np.array([0.79, 0.78, 0.77, 0.76, 0.10, 0.09, 0.08, 0.07, 0.06], dtype=np.float32)
+    pred = np.array(
+        [0.79, 0.78, 0.77, 0.76, 0.10, 0.09, 0.08, 0.07, 0.06], dtype=np.float32
+    )
 
     w = _false_positive_avoidance_weight(y, pred, classifier=True, threshold=0.80)
 
@@ -349,7 +370,9 @@ def test_false_positive_avoidance_weight_is_rank_based_for_top20pct():
 
 def test_false_positive_avoidance_weight_supports_positives_in_top30pct():
     y = np.array([1, 1, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.float32)
-    pred = np.array([0.60, 0.59, 0.99, 0.98, 0.20, 0.19, 0.18, 0.17, 0.16, 0.15], dtype=np.float32)
+    pred = np.array(
+        [0.60, 0.59, 0.99, 0.98, 0.20, 0.19, 0.18, 0.17, 0.16, 0.15], dtype=np.float32
+    )
 
     w = _false_positive_avoidance_weight(y, pred, classifier=True, threshold=0.80)
 
@@ -396,7 +419,9 @@ def test_leaf_screen_diagnostics_report_generated_and_dropped(monkeypatch):
         "_target_aware_tree_feature_cap",
         lambda sel, ev, names, y, classifier, random_state: (sel, ev, names),
     )
-    monkeypatch.setattr(lor, "_subsample_tree_fit_rows", lambda X, y, random_state: (X, y))
+    monkeypatch.setattr(
+        lor, "_subsample_tree_fit_rows", lambda X, y, random_state: (X, y)
+    )
     monkeypatch.setattr(
         lor,
         "_inner_tree_fit_split",
@@ -432,13 +457,21 @@ def test_final_fit_records_non_uniform_sample_weight(monkeypatch):
         lambda X_train_raw, y_train, X_eval_raw, random_state: (
             X_train_raw.copy(),
             X_eval_raw.copy(),
-            {"models": [], "tree_feature_config": {}, "tree_feature_names": [], "tree_feature_scales": None},
+            {
+                "models": [],
+                "tree_feature_config": {},
+                "tree_feature_names": [],
+                "tree_feature_scales": None,
+            },
         ),
     )
     monkeypatch.setattr(
         lor,
         "_oof_distilled_sample_weights",
-        lambda *args, **kwargs: (sample_weight.copy(), np.full(len(y), 0.5, dtype=np.float32)),
+        lambda *args, **kwargs: (
+            sample_weight.copy(),
+            np.full(len(y), 0.5, dtype=np.float32),
+        ),
     )
     monkeypatch.setattr(
         lor,

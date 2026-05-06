@@ -5,7 +5,9 @@ import pandas as pd
 from extreme_price_movements.simple_policy_optimiser import (
     _build_top5_validation_diagnostic,
     _suggest_policy_params,
+    apply_asset_weights,
     compute_position_size,
+    optimise_deployment_rank_threshold,
     simulate_and_score,
 )
 
@@ -91,3 +93,68 @@ def test_suggested_policy_params_do_not_optimize_max_concurrent_trades():
     )
     params = _suggest_policy_params(trial)
     assert "max_concurrent_trades" not in params
+
+
+def test_deployment_rank_threshold_uses_concurrency_limited_pnl():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-01-01 00:00:00Z",
+                    "2026-01-01 00:00:00Z",
+                    "2026-01-01 00:15:00Z",
+                    "2026-01-01 00:30:00Z",
+                    "2026-01-01 00:45:00Z",
+                    "2026-01-01 01:00:00Z",
+                ]
+            ),
+            "symbol": ["BTC", "ETH", "BTC", "SOL", "ETH", "XRP"],
+            "calibrated_score": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            "rank_pct": [1 / 6, 2 / 6, 3 / 6, 4 / 6, 5 / 6, 1.0],
+            "exit_bars": [4, 4, 4, 1, 1, 1],
+            "net_gain": [-1.0, -1.0, -1.0, -0.2, -0.3, 0.4],
+        }
+    )
+
+    best = optimise_deployment_rank_threshold(
+        rows,
+        max_concurrent_per_asset=1,
+        max_concurrent_per_strategy=3,
+        lo=0.85,
+        hi=0.99,
+        precision=0.01,
+    )
+
+    assert best["deployment_rank_threshold"] >= 0.85
+    assert best["n_trades"] == 1
+    assert best["net_pnl"] == 0.4
+    assert best["threshold_search"]["max_concurrent_per_asset"] == 1
+    assert best["threshold_search"]["max_concurrent_per_strategy"] == 3
+
+
+def test_asset_weights_blacklist_only_reliable_harmful_assets():
+    logs = []
+    metrics = pd.DataFrame(
+        {
+            "strategy_id": ["long_a", "long_a", "long_a"],
+            "symbol": ["BAD", "MID", "GOOD"],
+            "n_trades": [1000, 1000, 1000],
+            "n_candidates": [2000, 2000, 2000],
+            "mean_net_gain": [-0.01, 0.001, 0.002],
+            "sortino": [-5.0, 1.0, 2.0],
+        }
+    )
+
+    out = apply_asset_weights(
+        metrics,
+        policy_col="strategy_id",
+        symbol_col="symbol",
+        tprint_fn=logs.append,
+    )
+
+    by_symbol = out.set_index("symbol")
+    assert by_symbol.loc["BAD", "asset_decision"] == "blacklist"
+    assert by_symbol.loc["BAD", "asset_weight_multiplier"] == 0.0
+    assert by_symbol.loc["GOOD", "asset_decision"] == "keep"
+    assert by_symbol.loc["GOOD", "asset_weight_multiplier"] == 1.0
+    assert any("group=blacklist" in line for line in logs)

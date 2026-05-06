@@ -16,11 +16,19 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import optuna
 import pandas as pd
+
+try:
+    from extreme_price_movements.utils import tprint
+except Exception:  # pragma: no cover
+
+    def tprint(msg: str) -> None:
+        print(msg)
+
 
 # NO EXTERNAL IMPORTS ALLOWED
 # from extreme_price_movements.policy_optimiser import ...
@@ -34,14 +42,35 @@ DEFAULT_FORWARD_BARS = 96
 DEFAULT_CV_FOLDS = 3
 DEFAULT_N_TRIALS = 400
 MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 2
-DEPLOYMENT_RANK_THRESHOLD_FLOOR = 0.95
 DEPLOYMENT_SELECTION_METRIC = "top_5"
 MAX_CONCURRENT_TRADES = 1
+BASE_TO_META_TOP_FRAC = 0.40
+DEPLOYMENT_THRESHOLD_MIN = 0.85
+DEPLOYMENT_THRESHOLD_MAX = 0.99
+DEPLOYMENT_THRESHOLD_PRECISION = 0.01
+DEPLOYMENT_MAX_CONCURRENT_PER_ASSET = 1
+DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY = 3
+ASSET_DECISION_KEEP = "keep"
+ASSET_DECISION_DOWN_WEIGHT = "down_weight"
+ASSET_DECISION_BLACKLIST = "blacklist"
+ASSET_DECISIONS = (
+    ASSET_DECISION_KEEP,
+    ASSET_DECISION_DOWN_WEIGHT,
+    ASSET_DECISION_BLACKLIST,
+)
 
 
 def compute_position_size(rank_pct: np.ndarray, size_power: float) -> np.ndarray:
     """Position size formula: size = 0.05 + (0.15 - 0.05) * rank_pct ** size_power"""
+    rank_pct = np.asarray(rank_pct, dtype=np.float32)
     return 0.05 + 0.10 * (rank_pct**size_power)
+
+
+def _without_concurrency_param(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Return policy params that can be combined with an explicit concurrency."""
+    out = dict(params)
+    out.pop("max_concurrent_trades", None)
+    return out
 
 
 def simulate_and_score(
@@ -256,8 +285,10 @@ def simulate_and_score(
         close_rows = f_closes[end_idx]
         finite_close = np.isfinite(close_rows)
         last_pos = np.maximum(np.sum(finite_close, axis=1) - 1, 0)
-        b_close = close_rows[np.arange(len(end_idx)), last_pos]
-        v_ent = entry_prices[end_idx]
+        b_close = close_rows[np.arange(len(end_idx)), last_pos].astype(
+            np.float64, copy=False
+        )
+        v_ent = entry_prices[end_idx].astype(np.float64, copy=False)
         v_s = side[end_idx]
         exit_rets[end_idx] = v_s * (b_close / v_ent - 1.0)
         exit_bars[end_idx] = last_pos.astype(np.int16, copy=False)
@@ -293,6 +324,7 @@ def simulate_and_score(
             active_until.append(cur_ts + hold_bars * bar_ns)
         net_gain = net_gain[selected_mask]
         sizes = sizes[selected_mask]
+    selected_exit_bars = exit_bars[selected_mask]
 
     return {
         "net_pnl": float(np.sum(net_gain)),
@@ -301,6 +333,7 @@ def simulate_and_score(
         "total_trades": len(net_gain),
         "raw_gains": net_gain,
         "sizes": sizes,
+        "exit_bars": selected_exit_bars,
         "selected_mask": selected_mask,
         "candidate_count": candidate_count,
         "skipped_concurrency": int(candidate_count - int(np.sum(selected_mask))),
@@ -337,6 +370,757 @@ def _build_top5_validation_diagnostic(
     if diagnostic.empty:
         return None
     return diagnostic
+
+
+def apply_deployment_concurrency_constraints(
+    rows: pd.DataFrame,
+    *,
+    timestamp_col: str = "timestamp",
+    symbol_col: str = "symbol",
+    holding_bars_col: str = "exit_bars",
+    bar_minutes: int = 15,
+    max_concurrent_per_asset: int = DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
+    max_concurrent_per_strategy: int = DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY,
+) -> pd.DataFrame:
+    if rows.empty:
+        return rows.copy()
+
+    work = rows.sort_values(timestamp_col).copy()
+    selected: List[Any] = []
+    active_by_symbol: Dict[str, List[pd.Timestamp]] = {}
+    active_strategy_until: List[pd.Timestamp] = []
+
+    for idx, row in work.iterrows():
+        ts = pd.Timestamp(row[timestamp_col])
+        if pd.isna(ts):
+            continue
+        symbol = str(row[symbol_col])
+
+        active_strategy_until = [until for until in active_strategy_until if until > ts]
+        active_by_symbol[symbol] = [
+            until for until in active_by_symbol.get(symbol, []) if until > ts
+        ]
+
+        if len(active_strategy_until) >= int(max_concurrent_per_strategy):
+            continue
+        if len(active_by_symbol[symbol]) >= int(max_concurrent_per_asset):
+            continue
+
+        holding_bars = int(row.get(holding_bars_col, 1) or 1)
+        holding_bars = max(1, holding_bars)
+        until = ts + pd.Timedelta(minutes=int(bar_minutes) * holding_bars)
+
+        selected.append(idx)
+        active_strategy_until.append(until)
+        active_by_symbol.setdefault(symbol, []).append(until)
+
+    return work.loc[selected].copy()
+
+
+def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
+    if rows.empty or "net_gain" not in rows.columns:
+        return {
+            "net_pnl": 0.0,
+            "mean_net_trade": 0.0,
+            "hit_rate": 0.0,
+            "n_trades": 0,
+            "max_drawdown": 0.0,
+            "sortino": 0.0,
+        }
+
+    gains = pd.to_numeric(rows["net_gain"], errors="coerce").dropna()
+    if gains.empty:
+        return {
+            "net_pnl": 0.0,
+            "mean_net_trade": 0.0,
+            "hit_rate": 0.0,
+            "n_trades": 0,
+            "max_drawdown": 0.0,
+            "sortino": 0.0,
+        }
+
+    cum = gains.cumsum()
+    dd = cum - cum.cummax()
+    downside = gains[gains < 0]
+    if len(downside) == 0 or float(downside.std(ddof=0)) == 0.0:
+        sortino = 100.0 if float(gains.mean()) > 0.0 else 0.0
+    else:
+        sortino = float(gains.mean() / np.sqrt(np.mean(downside**2)))
+
+    return {
+        "net_pnl": float(gains.sum()),
+        "mean_net_trade": float(gains.mean()),
+        "hit_rate": float((gains > 0).mean()),
+        "n_trades": int(len(gains)),
+        "max_drawdown": float(dd.min()) if len(dd) else 0.0,
+        "sortino": float(sortino),
+    }
+
+
+def optimise_deployment_rank_threshold(
+    rows: pd.DataFrame,
+    *,
+    score_col: str = "calibrated_score",
+    timestamp_col: str = "timestamp",
+    symbol_col: str = "symbol",
+    max_concurrent_per_asset: int = DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
+    max_concurrent_per_strategy: int = DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY,
+    lo: float = DEPLOYMENT_THRESHOLD_MIN,
+    hi: float = DEPLOYMENT_THRESHOLD_MAX,
+    precision: float = DEPLOYMENT_THRESHOLD_PRECISION,
+) -> Dict[str, Any]:
+    """Optimise the live rank-percentile gate with deployment concurrency limits."""
+    if rows.empty:
+        return {
+            "deployment_rank_threshold": float(hi),
+            "objective": float("-inf"),
+            "reason": "empty_rows",
+        }
+
+    work = rows.copy()
+    work[timestamp_col] = pd.to_datetime(work[timestamp_col], errors="coerce")
+    work[score_col] = pd.to_numeric(work[score_col], errors="coerce")
+    work = work.replace([np.inf, -np.inf], np.nan).dropna(
+        subset=[timestamp_col, score_col]
+    )
+    if work.empty:
+        return {
+            "deployment_rank_threshold": float(hi),
+            "objective": float("-inf"),
+            "reason": "no_valid_rows",
+        }
+
+    if "deployment_rank_pct" in work.columns:
+        work["deployment_rank_pct"] = pd.to_numeric(
+            work["deployment_rank_pct"], errors="coerce"
+        )
+    elif "rank_pct" in work.columns:
+        work["deployment_rank_pct"] = pd.to_numeric(work["rank_pct"], errors="coerce")
+    else:
+        work["deployment_rank_pct"] = work[score_col].rank(method="max", pct=True)
+    work = work.dropna(subset=["deployment_rank_pct"])
+    if work.empty:
+        return {
+            "deployment_rank_threshold": float(hi),
+            "objective": float("-inf"),
+            "reason": "no_valid_rank_rows",
+        }
+    cache: Dict[float, Dict[str, Any]] = {}
+
+    def evaluate(threshold: float) -> Dict[str, Any]:
+        threshold = float(np.round(threshold, 4))
+        if threshold in cache:
+            return cache[threshold]
+
+        candidates = work[work["deployment_rank_pct"] >= threshold].copy()
+        selected = apply_deployment_concurrency_constraints(
+            candidates,
+            timestamp_col=timestamp_col,
+            symbol_col=symbol_col,
+            max_concurrent_per_asset=max_concurrent_per_asset,
+            max_concurrent_per_strategy=max_concurrent_per_strategy,
+        )
+        metrics = score_deployment_threshold_rows(selected)
+        objective = (
+            metrics["net_pnl"]
+            - 0.25 * abs(metrics.get("max_drawdown", 0.0))
+            + 0.10 * metrics.get("sortino", 0.0)
+        )
+        out = {
+            "deployment_rank_threshold": threshold,
+            "objective": float(objective),
+            **metrics,
+        }
+        cache[threshold] = out
+        return out
+
+    left = float(lo)
+    right = float(hi)
+    while (right - left) > float(precision):
+        m1 = left + (right - left) / 3.0
+        m2 = right - (right - left) / 3.0
+        r1 = evaluate(m1)
+        r2 = evaluate(m2)
+        if r1["objective"] < r2["objective"]:
+            left = m1
+        else:
+            right = m2
+
+    final_grid = np.arange(
+        max(lo, left - precision),
+        min(hi, right + precision) + precision / 2.0,
+        precision,
+    )
+    final_grid = np.unique(
+        np.clip(np.concatenate([final_grid, np.array([lo, hi])]), lo, hi)
+    )
+
+    best = max((evaluate(t) for t in final_grid), key=lambda r: r["objective"])
+    best["threshold_search"] = {
+        "method": "ternary_search_with_final_grid",
+        "lo": float(lo),
+        "hi": float(hi),
+        "precision": float(precision),
+        "evaluated_thresholds": sorted(float(k) for k in cache.keys()),
+        "max_concurrent_per_asset": int(max_concurrent_per_asset),
+        "max_concurrent_per_strategy": int(max_concurrent_per_strategy),
+        "score_col": score_col,
+        "threshold_space": "rank_percentile",
+    }
+    return best
+
+
+def _build_deployment_threshold_rows(
+    df_top: pd.DataFrame,
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    *,
+    cost_pct: float,
+    best_params: Dict[str, Any],
+    best_size_power: float,
+    metrics: Optional[Dict[str, Any]] = None,
+) -> pd.DataFrame:
+    if metrics is None:
+        metrics = simulate_and_score(
+            df_top.copy(),
+            paths[0],
+            paths[1],
+            paths[2],
+            paths[3],
+            cost_pct=cost_pct,
+            size_power=best_size_power,
+            max_concurrent_trades=max(1, len(df_top) + 1),
+            **_without_concurrency_param(best_params),
+        )
+    selected_mask = np.asarray(metrics.get("selected_mask"), dtype=bool)
+    rows = df_top.copy()
+    if len(selected_mask) == len(rows):
+        rows = rows.iloc[np.flatnonzero(selected_mask)].copy()
+    raw_gains = np.asarray(metrics.get("raw_gains", []), dtype=np.float32)
+    exit_bars = np.asarray(metrics.get("exit_bars", []), dtype=np.int32)
+    if len(rows) != len(raw_gains) or len(rows) != len(exit_bars):
+        logger.warning(
+            "Skipping deployment threshold optimisation rows due to length mismatch: "
+            "rows=%s gains=%s exit_bars=%s",
+            len(rows),
+            len(raw_gains),
+            len(exit_bars),
+        )
+        return pd.DataFrame()
+    rows["net_gain"] = raw_gains
+    rows["exit_bars"] = exit_bars
+    return rows
+
+
+def _safe_float(x: Any, default: float = 0.0) -> float:
+    try:
+        val = float(x)
+        return val if np.isfinite(val) else default
+    except Exception:
+        return default
+
+
+def _clean_series(s: pd.Series) -> pd.Series:
+    return pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+
+
+def _global_metric_stats(s: pd.Series, *, floor: float) -> Dict[str, float]:
+    """
+    Compute global cross-asset descriptors once for one policy.
+
+    Robust scale uses the max of IQR / 1.349, MAD * 1.4826, std, and floor.
+    """
+    cleaned = _clean_series(s)
+    if len(cleaned) < 2:
+        return {
+            "q25": 0.0,
+            "q75": 0.0,
+            "median": 0.0,
+            "mean": 0.0,
+            "std": float(floor),
+            "mad": float(floor),
+            "scale": float(floor),
+        }
+
+    desc = cleaned.describe(percentiles=[0.25, 0.75])
+    q25 = _safe_float(desc.get("25%", 0.0))
+    q75 = _safe_float(desc.get("75%", 0.0))
+    median = _safe_float(desc.get("50%", cleaned.median()))
+    mean = _safe_float(desc.get("mean", cleaned.mean()))
+    std = _safe_float(desc.get("std", cleaned.std(ddof=0)))
+    mad = _safe_float((cleaned - median).abs().median())
+    iqr = q75 - q25
+    scale = max(
+        iqr / 1.349 if iqr > 0.0 else 0.0,
+        mad * 1.4826 if mad > 0.0 else 0.0,
+        std if std > 0.0 else 0.0,
+        float(floor),
+    )
+    return {
+        "q25": float(q25),
+        "q75": float(q75),
+        "median": float(median),
+        "mean": float(mean),
+        "std": float(std),
+        "mad": float(mad),
+        "scale": float(scale),
+    }
+
+
+def _reliability(n: float, k: float) -> float:
+    n = max(_safe_float(n), 0.0)
+    k = max(_safe_float(k), 1e-12)
+    return n / (n + k)
+
+
+def _stable_sigmoid(x: float) -> float:
+    clipped = np.clip(float(x), -50.0, 50.0)
+    return float(1.0 / (1.0 + np.exp(-clipped)))
+
+
+def _metric_underperformance(value: float, cutoff: float, scale: float) -> float:
+    """Penalise positive-performance metrics only below the bottom quartile."""
+    return max(
+        0.0,
+        (_safe_float(cutoff) - _safe_float(value))
+        / max(abs(_safe_float(scale)), 1e-12),
+    )
+
+
+def build_asset_weight_context(
+    asset_metrics: pd.DataFrame,
+    *,
+    pnl_col: str = "mean_net_gain",
+    sortino_col: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build global reference stats for one policy/strategy asset group."""
+    if sortino_col is None:
+        if "sortino" in asset_metrics.columns:
+            sortino_col = "sortino"
+        elif "m_sortino" in asset_metrics.columns:
+            sortino_col = "m_sortino"
+        else:
+            raise ValueError(
+                "Missing sortino column: expected 'sortino' or 'm_sortino'."
+            )
+
+    pnl_stats = _global_metric_stats(asset_metrics[pnl_col], floor=1e-4)
+    sortino_stats = _global_metric_stats(asset_metrics[sortino_col], floor=1.0)
+    return {
+        "columns": {
+            "pnl": pnl_col,
+            "sortino": sortino_col,
+        },
+        "pnl": {
+            "portfolio_mean": pnl_stats["mean"],
+            "bottom_25_cutoff": pnl_stats["q25"],
+            "scale": pnl_stats["scale"],
+            "median": pnl_stats["median"],
+            "q75": pnl_stats["q75"],
+        },
+        "sortino": {
+            "bottom_25_cutoff": sortino_stats["q25"],
+            "scale": sortino_stats["scale"],
+            "median": sortino_stats["median"],
+            "q75": sortino_stats["q75"],
+        },
+    }
+
+
+def compute_asset_weight(
+    row: pd.Series,
+    context: Dict[str, Any],
+    *,
+    k_trades: float = 50.0,
+    k_candidates: float = 500.0,
+    blacklist_margin: float = -0.00025,
+    blacklist_reliability_midpoint: float = 0.50,
+    blacklist_reliability_width: float = 0.15,
+    pnl_weight: float = 0.75,
+    sortino_weight: float = 0.25,
+    penalty_mode: str = "capped_weighted_average",
+    min_weight: float = 0.25,
+    max_weight: float = 1.00,
+    shrink_to_nonnegative_prior: bool = True,
+) -> Dict[str, Any]:
+    """Compute a smooth per-asset multiplier and hard blacklist decision."""
+    cols = context["columns"]
+    n_trades = max(_safe_float(row.get("n_trades", 0.0)), 0.0)
+    n_candidates = max(_safe_float(row.get("n_candidates", 0.0)), 0.0)
+
+    trade_rel = _reliability(n_trades, k_trades)
+    candidate_rel = _reliability(n_candidates, k_candidates)
+    combined_reliability = float(np.sqrt(trade_rel * candidate_rel))
+
+    asset_pnl = _safe_float(row.get(cols["pnl"], 0.0))
+    portfolio_pnl = _safe_float(context["pnl"]["portfolio_mean"], 0.0)
+    pnl_prior = (
+        max(portfolio_pnl, 0.0) if shrink_to_nonnegative_prior else portfolio_pnl
+    )
+    shrunk_pnl = (
+        combined_reliability * asset_pnl + (1.0 - combined_reliability) * pnl_prior
+    )
+    sortino = _safe_float(row.get(cols["sortino"], 0.0))
+
+    pnl_underperformance = _metric_underperformance(
+        shrunk_pnl,
+        context["pnl"]["bottom_25_cutoff"],
+        context["pnl"]["scale"],
+    )
+    sortino_underperformance = _metric_underperformance(
+        sortino,
+        context["sortino"]["bottom_25_cutoff"],
+        context["sortino"]["scale"],
+    )
+    raw_weighted_penalty = (
+        pnl_weight * pnl_underperformance + sortino_weight * sortino_underperformance
+    )
+
+    if penalty_mode == "max":
+        linear_penalty = max(pnl_underperformance, sortino_underperformance)
+    elif penalty_mode == "capped_weighted_average":
+        linear_penalty = pnl_weight * min(
+            pnl_underperformance, 1.0
+        ) + sortino_weight * min(sortino_underperformance, 1.0)
+    elif penalty_mode == "sqrt_weighted_sum":
+        linear_penalty = float(np.sqrt(max(raw_weighted_penalty, 0.0)))
+    else:
+        raise ValueError(f"Unsupported penalty_mode: {penalty_mode}")
+
+    harmfulness = max(
+        0.0,
+        (blacklist_margin - shrunk_pnl) / max(abs(context["pnl"]["scale"]), 1e-12),
+    )
+    sigmoid_arg = (combined_reliability - blacklist_reliability_midpoint) / max(
+        blacklist_reliability_width,
+        1e-12,
+    )
+    blacklist_reliability_gate = _stable_sigmoid(sigmoid_arg)
+    blacklist_score = harmfulness * blacklist_reliability_gate
+
+    if blacklist_score >= 1.0:
+        decision = ASSET_DECISION_BLACKLIST
+        multiplier = 0.0
+    else:
+        multiplier = float(np.clip(1.0 - linear_penalty, min_weight, max_weight))
+        decision = (
+            ASSET_DECISION_KEEP if multiplier >= 0.95 else ASSET_DECISION_DOWN_WEIGHT
+        )
+
+    return {
+        "asset_decision": decision,
+        "asset_weight_multiplier": float(multiplier),
+        "linear_penalty": float(linear_penalty),
+        "raw_weighted_penalty": float(raw_weighted_penalty),
+        "penalty_mode": penalty_mode,
+        "asset_pnl": float(asset_pnl),
+        "portfolio_pnl": float(portfolio_pnl),
+        "pnl_prior": float(pnl_prior),
+        "shrunk_pnl": float(shrunk_pnl),
+        "trade_reliability": float(trade_rel),
+        "candidate_reliability": float(candidate_rel),
+        "combined_reliability": float(combined_reliability),
+        "pnl_underperformance": float(pnl_underperformance),
+        "sortino_underperformance": float(sortino_underperformance),
+        "blacklist_score": float(blacklist_score),
+        "blacklist_harmfulness": float(harmfulness),
+        "blacklist_reliability_gate": float(blacklist_reliability_gate),
+    }
+
+
+def apply_asset_weights_for_policy(
+    asset_metrics: pd.DataFrame,
+    *,
+    policy_name: str,
+    symbol_col: str = "symbol",
+    pnl_col: str = "mean_net_gain",
+    sortino_col: Optional[str] = None,
+    tprint_fn=tprint,
+    **weight_kwargs: Any,
+) -> pd.DataFrame:
+    """Apply smooth asset weights to one policy's asset metrics dataframe."""
+    if asset_metrics.empty:
+        tprint_fn(f"[asset_weights] policy={policy_name} has no assets.")
+        return asset_metrics.copy()
+    if symbol_col not in asset_metrics.columns:
+        raise ValueError(f"Missing symbol column: {symbol_col}")
+
+    context = build_asset_weight_context(
+        asset_metrics,
+        pnl_col=pnl_col,
+        sortino_col=sortino_col,
+    )
+    tprint_fn(
+        "[asset_weights] "
+        f"policy={policy_name} assets={len(asset_metrics)} "
+        f"pnl_q25={context['pnl']['bottom_25_cutoff']:.6g} "
+        f"pnl_scale={context['pnl']['scale']:.6g} "
+        f"sortino_q25={context['sortino']['bottom_25_cutoff']:.6g} "
+        f"sortino_scale={context['sortino']['scale']:.6g}"
+    )
+
+    weight_rows = asset_metrics.apply(
+        lambda row: compute_asset_weight(row, context, **weight_kwargs),
+        axis=1,
+    )
+    weights_df = pd.DataFrame(weight_rows.tolist(), index=asset_metrics.index)
+    out = asset_metrics.join(weights_df)
+    log_asset_weight_summary(
+        out,
+        policy_name=policy_name,
+        symbol_col=symbol_col,
+        tprint_fn=tprint_fn,
+    )
+    return out
+
+
+def apply_asset_weights(
+    asset_metrics: pd.DataFrame,
+    *,
+    policy_col: str = "strategy_id",
+    symbol_col: str = "symbol",
+    pnl_col: str = "mean_net_gain",
+    sortino_col: Optional[str] = None,
+    tprint_fn=tprint,
+    **weight_kwargs: Any,
+) -> pd.DataFrame:
+    """Apply asset weights per policy/strategy_id."""
+    if asset_metrics.empty:
+        tprint_fn("[asset_weights] no asset metrics to weight.")
+        return asset_metrics.copy()
+    if policy_col not in asset_metrics.columns:
+        tprint_fn(
+            f"[asset_weights] missing policy_col={policy_col}; treating all rows as one policy."
+        )
+        return apply_asset_weights_for_policy(
+            asset_metrics,
+            policy_name="GLOBAL",
+            symbol_col=symbol_col,
+            pnl_col=pnl_col,
+            sortino_col=sortino_col,
+            tprint_fn=tprint_fn,
+            **weight_kwargs,
+        )
+
+    parts = []
+    for policy_name, grp in asset_metrics.groupby(policy_col, sort=False):
+        weighted = apply_asset_weights_for_policy(
+            grp.copy(),
+            policy_name=str(policy_name),
+            symbol_col=symbol_col,
+            pnl_col=pnl_col,
+            sortino_col=sortino_col,
+            tprint_fn=tprint_fn,
+            **weight_kwargs,
+        )
+        parts.append(weighted)
+    return pd.concat(parts, axis=0).sort_index()
+
+
+def log_asset_weight_summary(
+    weighted_assets: pd.DataFrame,
+    *,
+    policy_name: str,
+    symbol_col: str = "symbol",
+    tprint_fn=tprint,
+) -> None:
+    """Log metrics per policy and per asset decision group."""
+    if weighted_assets.empty:
+        tprint_fn(f"[asset_weights] policy={policy_name} empty weighted assets.")
+        return
+
+    required = ["asset_decision", "asset_weight_multiplier"]
+    missing = [c for c in required if c not in weighted_assets.columns]
+    if missing:
+        tprint_fn(
+            f"[asset_weights] policy={policy_name} cannot log summary; missing={missing}"
+        )
+        return
+
+    n_assets = int(len(weighted_assets))
+    n_trades_total = int(weighted_assets.get("n_trades", pd.Series(dtype=float)).sum())
+    n_candidates_total = int(
+        weighted_assets.get("n_candidates", pd.Series(dtype=float)).sum()
+    )
+    tprint_fn(
+        "[asset_weights] "
+        f"policy={policy_name} total_assets={n_assets} "
+        f"total_trades={n_trades_total} total_candidates={n_candidates_total} "
+        f"mean_weight={weighted_assets['asset_weight_multiplier'].mean():.3f}"
+    )
+
+    for decision in ASSET_DECISIONS:
+        grp = weighted_assets[weighted_assets["asset_decision"] == decision]
+        if grp.empty:
+            tprint_fn(f"[asset_weights] policy={policy_name} group={decision} assets=0")
+            continue
+
+        n = int(len(grp))
+        share = n / max(n_assets, 1)
+        n_trades = int(grp.get("n_trades", pd.Series(dtype=float)).sum())
+        n_candidates = int(grp.get("n_candidates", pd.Series(dtype=float)).sum())
+        mean_pnl = _safe_float(grp.get("mean_net_gain", pd.Series(dtype=float)).mean())
+        median_pnl = _safe_float(
+            grp.get("mean_net_gain", pd.Series(dtype=float)).median()
+        )
+        shrunk_pnl = _safe_float(grp.get("shrunk_pnl", pd.Series(dtype=float)).mean())
+        sortino_col = "sortino" if "sortino" in grp.columns else "m_sortino"
+        mean_sortino = _safe_float(grp.get(sortino_col, pd.Series(dtype=float)).mean())
+        mean_weight = _safe_float(grp["asset_weight_multiplier"].mean())
+        min_weight = _safe_float(grp["asset_weight_multiplier"].min())
+        max_weight = _safe_float(grp["asset_weight_multiplier"].max())
+        mean_penalty = _safe_float(
+            grp.get("linear_penalty", pd.Series(dtype=float)).mean()
+        )
+        mean_reliability = _safe_float(
+            grp.get("combined_reliability", pd.Series(dtype=float)).mean()
+        )
+        mean_dd = _safe_float(grp.get("max_drawdown", pd.Series(dtype=float)).mean())
+        median_dd = _safe_float(
+            grp.get("max_drawdown", pd.Series(dtype=float)).median()
+        )
+
+        tprint_fn(
+            "[asset_weights] "
+            f"policy={policy_name} group={decision} "
+            f"assets={n} share={share:.1%} "
+            f"trades={n_trades} candidates={n_candidates} "
+            f"mean_weight={mean_weight:.3f} "
+            f"weight_range=[{min_weight:.3f},{max_weight:.3f}] "
+            f"mean_pnl={mean_pnl:.6g} median_pnl={median_pnl:.6g} "
+            f"mean_shrunk_pnl={shrunk_pnl:.6g} "
+            f"mean_dd={mean_dd:.6g} median_dd={median_dd:.6g} "
+            f"mean_sortino={mean_sortino:.3f} "
+            f"mean_penalty={mean_penalty:.3f} "
+            f"mean_reliability={mean_reliability:.3f}"
+        )
+
+        offender_cols = [
+            symbol_col,
+            "asset_weight_multiplier",
+            "mean_net_gain",
+            "shrunk_pnl",
+            sortino_col,
+            "linear_penalty",
+            "blacklist_score",
+            "combined_reliability",
+            "n_trades",
+            "n_candidates",
+        ]
+        offender_cols = [c for c in offender_cols if c in grp.columns]
+        offenders = grp.sort_values(
+            ["asset_weight_multiplier", "shrunk_pnl"],
+            ascending=[True, True],
+        ).head(5)
+
+        for _, row in offenders[offender_cols].iterrows():
+            tprint_fn(
+                "[asset_weights] "
+                f"policy={policy_name} group={decision} sample_asset="
+                + " ".join(f"{k}={row[k]}" for k in offender_cols)
+            )
+
+
+def build_asset_metrics_from_simulation(
+    selected_rows: pd.DataFrame,
+    metrics: Dict[str, Any],
+    *,
+    symbol_col: str = "symbol",
+    policy_col: str = "strategy_id",
+    candidate_rows: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """
+    Build one row per policy x symbol from simulate_and_score outputs.
+
+    selected_rows are the rows passed to simulate_and_score before concurrency
+    filtering. candidate_rows should be the broader opportunity set when
+    available so n_candidates reflects model selection frequency.
+    """
+    if symbol_col not in selected_rows.columns:
+        raise ValueError(f"Missing symbol_col={symbol_col} in selected_rows.")
+
+    raw_gains = np.asarray(metrics.get("raw_gains", np.array([], dtype=np.float32)))
+    sizes = np.asarray(metrics.get("sizes", np.array([], dtype=np.float32)))
+    selected_mask = metrics.get("selected_mask")
+
+    rows = selected_rows.copy()
+    if selected_mask is not None:
+        mask = np.asarray(selected_mask, dtype=bool)
+        if len(mask) == len(rows):
+            rows = rows.iloc[np.flatnonzero(mask)].copy()
+
+    if len(rows) != len(raw_gains):
+        raise ValueError(
+            "Length mismatch while building asset metrics: "
+            f"rows={len(rows)} raw_gains={len(raw_gains)}"
+        )
+    if len(rows) == 0:
+        return pd.DataFrame()
+
+    rows = rows.copy()
+    rows["_net_gain"] = raw_gains
+    rows["_size"] = sizes if len(sizes) == len(rows) else np.nan
+    rows["_timestamp"] = pd.to_datetime(rows["timestamp"], errors="coerce")
+    if policy_col not in rows.columns:
+        rows[policy_col] = "GLOBAL"
+
+    if candidate_rows is None:
+        candidate_rows = selected_rows
+    cand = candidate_rows.copy()
+    if policy_col not in cand.columns:
+        cand[policy_col] = "GLOBAL"
+    candidate_counts = (
+        cand.groupby([policy_col, symbol_col], observed=False)
+        .size()
+        .rename("n_candidates")
+    )
+
+    out_rows = []
+    for (policy_name, symbol), grp in rows.groupby(
+        [policy_col, symbol_col],
+        observed=False,
+        sort=False,
+    ):
+        g = grp.sort_values("_timestamp").dropna(subset=["_timestamp", "_net_gain"])
+        if g.empty:
+            continue
+
+        pnl = g["_net_gain"].astype(float)
+        cum = pnl.cumsum()
+        drawdown = cum - cum.cummax()
+        downside = pnl[pnl < 0.0]
+        if len(downside) == 0 or downside.std(ddof=0) == 0:
+            sortino = 100.0 if pnl.mean() > 0.0 else 0.0
+        else:
+            sortino = float(pnl.mean() / np.sqrt(np.mean(downside**2)))
+
+        wins = pnl[pnl > 0.0]
+        losses = pnl[pnl < 0.0]
+        gross_win = float(wins.sum()) if len(wins) else 0.0
+        gross_loss = float(abs(losses.sum())) if len(losses) else 0.0
+        profit_factor = gross_win / gross_loss if gross_loss > 0.0 else np.inf
+        key = (policy_name, symbol)
+        n_candidates = int(candidate_counts.get(key, len(grp)))
+
+        out_rows.append(
+            {
+                policy_col: policy_name,
+                symbol_col: symbol,
+                "n_trades": int(len(g)),
+                "n_candidates": n_candidates,
+                "mean_net_gain": float(pnl.mean()),
+                "total_net_pnl": float(pnl.sum()),
+                "hit_rate": float((pnl > 0.0).mean()),
+                "avg_win": float(wins.mean()) if len(wins) else 0.0,
+                "avg_loss": float(losses.mean()) if len(losses) else 0.0,
+                "profit_factor": float(profit_factor),
+                "sortino": float(sortino),
+                "max_drawdown": float(drawdown.min()) if len(drawdown) else 0.0,
+                "start_date": str(g["_timestamp"].min().date()),
+                "end_date": str(g["_timestamp"].max().date()),
+            }
+        )
+
+    return pd.DataFrame(out_rows)
 
 
 def optimise_position_sizing(
@@ -769,6 +1553,342 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
     }
 
 
+def _load_policy_stage_view(slice_plan_path: Path) -> Tuple[Dict[str, Any], str]:
+    """Load the SlicePlanner view reserved for policy optimisation."""
+    if not slice_plan_path.exists():
+        return {}, "missing_slice_plan"
+    try:
+        payload = json.loads(slice_plan_path.read_text())
+    except Exception as exc:
+        return {}, f"unreadable_slice_plan:{exc}"
+
+    views = payload.get("materialized_views", {})
+    views = views if isinstance(views, dict) else {}
+    for stage_name in ("utility_policy_optimisation", "holdout_strategy_eval"):
+        view = views.get(stage_name)
+        if isinstance(view, dict) and view:
+            return view, stage_name
+    return {}, "missing_policy_stage_view"
+
+
+def _stage_view_is_materialized(stage_view: Dict[str, Any]) -> bool:
+    if not isinstance(stage_view, dict) or not stage_view:
+        return False
+    try:
+        if int(stage_view.get("n_plans", 0) or 0) > 0:
+            return True
+    except Exception:
+        pass
+    return bool(
+        stage_view.get("allowed_periods")
+        or stage_view.get("allowed_start_ts")
+        or stage_view.get("allowed_end_ts")
+        or stage_view.get("symbols")
+    )
+
+
+def _timestamp_col(df: pd.DataFrame) -> Optional[str]:
+    for col in ("timestamp", "__ts__", "ts"):
+        if col in df.columns:
+            return col
+    return None
+
+
+def _symbol_col(df: pd.DataFrame) -> Optional[str]:
+    for col in ("symbol", "__symbol__"):
+        if col in df.columns:
+            return col
+    return None
+
+
+def _normalise_policy_input_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize label/meta OOF schemas into optimiser input columns."""
+    out = df.copy()
+    rename_map = {
+        "__ts__": "timestamp",
+        "__symbol__": "symbol",
+        "__barrier_pct__": "barrier_pct",
+        "__mfe_ret__": "mfe_ret",
+        "__mae_ret__": "mae_ret",
+        "__u_policy_net__": "u_policy_net",
+        "__u_policy__": "u_policy",
+        "__bars_to_mfe__": "bars_to_mfe",
+        "__mr_path_penalty__": "mr_path_penalty",
+        "__mr_velocity_penalty__": "mr_velocity_penalty",
+        "__early_inval__": "early_inval",
+        "__y_bin__": "y_bin",
+    }
+    out = out.rename(columns={k: v for k, v in rename_map.items() if k in out.columns})
+    if "timestamp" in out.columns:
+        out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce")
+    if "symbol" in out.columns:
+        out["symbol"] = out["symbol"].astype(str)
+    return out
+
+
+def _filter_rows_to_stage_view(
+    df: pd.DataFrame,
+    stage_view: Dict[str, Any],
+) -> pd.DataFrame:
+    """Apply SlicePlanner policy-stage symbol/time constraints to rows."""
+    if df.empty:
+        return df.copy()
+
+    out = _normalise_policy_input_columns(df)
+    ts_col = _timestamp_col(out)
+    sym_col = _symbol_col(out)
+    mask = pd.Series(True, index=out.index)
+
+    allowed_symbols = stage_view.get("symbols") or stage_view.get("allowed_symbols")
+    if allowed_symbols and sym_col is not None:
+        allowed = {str(sym) for sym in allowed_symbols}
+        mask &= out[sym_col].astype(str).isin(allowed)
+
+    if ts_col is not None:
+        ts = pd.to_datetime(out[ts_col], utc=True, errors="coerce")
+        periods = stage_view.get("allowed_periods")
+        if isinstance(periods, list) and periods:
+            period_mask = pd.Series(False, index=out.index)
+            for period in periods:
+                if not isinstance(period, dict):
+                    continue
+                start = pd.to_datetime(
+                    period.get("start_ts"), utc=True, errors="coerce"
+                )
+                end = pd.to_datetime(period.get("end_ts"), utc=True, errors="coerce")
+                if pd.isna(start) or pd.isna(end):
+                    continue
+                period_mask |= (ts >= start) & (ts < end)
+            mask &= period_mask
+        else:
+            start_raw = stage_view.get("allowed_start_ts")
+            end_raw = stage_view.get("allowed_end_ts")
+            if start_raw:
+                start = pd.to_datetime(start_raw, utc=True, errors="coerce")
+                if not pd.isna(start):
+                    mask &= ts >= start
+            if end_raw:
+                end = pd.to_datetime(end_raw, utc=True, errors="coerce")
+                if not pd.isna(end):
+                    mask &= ts <= end
+
+    return out.loc[mask].copy()
+
+
+def _symbol_file_key(symbol: str) -> str:
+    return str(symbol).replace("/", "_").replace(":", "_")
+
+
+def _load_feature_rows_for_events(
+    events: pd.DataFrame,
+    *,
+    data_root: str,
+    run_id: str,
+) -> pd.DataFrame:
+    """Load feature rows for timestamp x symbol events from feature parquet files."""
+    if events.empty:
+        return pd.DataFrame()
+    if "timestamp" not in events.columns or "symbol" not in events.columns:
+        return pd.DataFrame()
+
+    feature_dir = Path(data_root) / "features" / run_id
+    parts: List[pd.DataFrame] = []
+    for symbol, grp in events.groupby("symbol", sort=False):
+        path = feature_dir / f"symbol={_symbol_file_key(str(symbol))}.parquet"
+        if not path.exists():
+            continue
+        feats = pd.read_parquet(path)
+        if not isinstance(feats.index, pd.DatetimeIndex):
+            continue
+        feats = feats.copy()
+        feats.index = pd.to_datetime(feats.index, utc=True, errors="coerce")
+        grp_ts = pd.to_datetime(grp["timestamp"], utc=True, errors="coerce")
+        wanted = pd.DataFrame({"_row_id": grp.index.to_numpy()}, index=grp_ts)
+        selected = feats.reindex(wanted.index)
+        selected.index = wanted["_row_id"].to_numpy()
+        parts.append(selected)
+    if not parts:
+        return pd.DataFrame()
+    out = pd.concat(parts, axis=0).sort_index()
+    out.index = out.index.astype(np.int64)
+    return out
+
+
+def _load_feature_events_from_stage_view(
+    *,
+    data_root: str,
+    run_id: str,
+    stage_view: Dict[str, Any],
+    symbols: Iterable[str],
+) -> pd.DataFrame:
+    """Build candidate events directly from feature parquet rows in the policy slice."""
+    feature_dir = Path(data_root) / "features" / run_id
+    rows: List[pd.DataFrame] = []
+    allowed_symbols = [str(sym) for sym in symbols]
+    if not allowed_symbols:
+        allowed_symbols = [
+            path.stem.replace("symbol=", "").replace("_", "/")
+            for path in sorted(feature_dir.glob("symbol=*.parquet"))
+        ]
+
+    allowed_from_stage = stage_view.get("symbols") or stage_view.get("allowed_symbols")
+    if allowed_from_stage:
+        allowed_set = {str(sym) for sym in allowed_from_stage}
+        allowed_symbols = [sym for sym in allowed_symbols if sym in allowed_set]
+
+    for symbol in allowed_symbols:
+        path = feature_dir / f"symbol={_symbol_file_key(symbol)}.parquet"
+        if not path.exists():
+            continue
+        try:
+            feats = pd.read_parquet(path, columns=[])
+        except Exception:
+            feats = pd.read_parquet(path)
+        if not isinstance(feats.index, pd.DatetimeIndex):
+            continue
+        part = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(feats.index, utc=True, errors="coerce"),
+                "symbol": symbol,
+            }
+        )
+        rows.append(part)
+    if not rows:
+        return pd.DataFrame()
+    events = pd.concat(rows, axis=0, ignore_index=True)
+    events = events.dropna(subset=["timestamp", "symbol"])
+    return _filter_rows_to_stage_view(events, stage_view).reset_index(drop=True)
+
+
+def _label_file_strategy_id(path: Path) -> Optional[str]:
+    name = path.stem
+    if not name.startswith("train_"):
+        return None
+    body = name[len("train_") :]
+    for suffix in ("_5", "_10"):
+        if body.endswith(suffix):
+            return body[: -len(suffix)]
+    return body
+
+
+def _load_label_events_for_strategy(
+    data_root: str,
+    run_id: str,
+    strategy_id: str,
+) -> pd.DataFrame:
+    labels_dir = Path(data_root) / "artifacts" / run_id / "labels"
+    matches = [
+        path
+        for path in sorted(labels_dir.glob("train_*.parquet"))
+        if _label_file_strategy_id(path) == strategy_id
+    ]
+    if not matches:
+        return pd.DataFrame()
+    # Prefer the shorter horizon used by the current deployed meta model when present.
+    preferred = [p for p in matches if p.stem.endswith("_5")]
+    path = preferred[0] if preferred else matches[0]
+    return _normalise_policy_input_columns(pd.read_parquet(path))
+
+
+def _add_default_policy_outcome_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Provide simulator-required columns when rows came from raw feature events."""
+    out = _normalise_policy_input_columns(df)
+    if "barrier_pct" not in out.columns:
+        out["barrier_pct"] = np.float32(0.02)
+    for col in (
+        "mfe_ret",
+        "mae_ret",
+        "u_policy_net",
+        "u_policy",
+        "bars_to_mfe",
+        "mr_path_penalty",
+        "mr_velocity_penalty",
+        "early_inval",
+        "y_bin",
+    ):
+        if col not in out.columns:
+            out[col] = np.float32(0.0)
+    return out
+
+
+def _generate_policy_predictions_from_models(
+    *,
+    data_root: str,
+    run_id: str,
+    stage_view: Dict[str, Any],
+    max_strategies: Optional[int],
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, str]]:
+    """Generate policy-slice predictions using the inference model bundle."""
+    from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
+    from extreme_price_movements.model_loader import load_full_state
+
+    full_state = load_full_state(run_id, data_root)
+    orchestrator = ModelOrchestrator(full_state, full_state)
+    strategy_ids = sorted(str(sid) for sid in orchestrator.alpha_by_strategy.keys())
+    if max_strategies is not None:
+        strategy_ids = strategy_ids[: int(max_strategies)]
+
+    generated: Dict[str, pd.DataFrame] = {}
+    sources: Dict[str, str] = {}
+    for strategy_id in strategy_ids:
+        events = _load_label_events_for_strategy(data_root, run_id, strategy_id)
+        label_source = "labels"
+        if events.empty:
+            events = _load_feature_events_from_stage_view(
+                data_root=data_root,
+                run_id=run_id,
+                stage_view=stage_view,
+                symbols=[],
+            )
+            label_source = "feature_events_no_labels"
+        events = _filter_rows_to_stage_view(events, stage_view).reset_index(drop=True)
+        if events.empty:
+            continue
+        events = _add_default_policy_outcome_columns(events)
+        features = _load_feature_rows_for_events(
+            events,
+            data_root=data_root,
+            run_id=run_id,
+        )
+        if features.empty:
+            continue
+        events = events.loc[features.index.to_numpy()].copy()
+        side = _strategy_side(strategy_id)
+        alpha_pred = orchestrator.predict_alpha(features, side, strategy_id)
+        if not isinstance(alpha_pred, pd.Series) or alpha_pred.empty:
+            continue
+        alpha_pred = alpha_pred.reindex(features.index).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        alpha_rank = alpha_pred.rank(method="max", pct=True)
+        base_gate_mask = alpha_rank >= (1.0 - BASE_TO_META_TOP_FRAC)
+        if not bool(base_gate_mask.any()):
+            continue
+        features = features.loc[base_gate_mask].copy()
+        events = events.loc[features.index.to_numpy()].copy()
+        alpha_pred = alpha_pred.loc[features.index]
+        alpha_rank = alpha_rank.loc[features.index]
+        meta_base = features.copy()
+        meta_base[strategy_id] = alpha_pred
+        meta_pred = orchestrator.predict_meta(meta_base, side, strategy_id)
+        if not isinstance(meta_pred, pd.Series) or meta_pred.empty:
+            meta_pred = alpha_pred
+
+        meta_pred = meta_pred.reindex(events.index)
+        events["oof_pred"] = meta_pred.to_numpy(dtype=np.float32)
+        events["oof_base_clf"] = alpha_pred.reindex(events.index).to_numpy(
+            dtype=np.float32
+        )
+        events["oof_meta_clf"] = events["oof_pred"].to_numpy(dtype=np.float32)
+        events["base_rank_pct"] = alpha_rank.reindex(events.index).to_numpy(
+            dtype=np.float32
+        )
+        events["base_gate_top_frac"] = float(BASE_TO_META_TOP_FRAC)
+        generated[strategy_id] = events
+        sources[strategy_id] = f"generated_from_inference_models:{label_source}"
+    return generated, sources
+
+
 def _strategy_side(strategy_id: str) -> str:
     sid = str(strategy_id).lower()
     if sid.startswith("short"):
@@ -796,7 +1916,7 @@ def _deployment_rank_threshold(metrics: Dict[str, Any]) -> float:
     avg_top1_trades_per_day = n_top1 / max(top1_days, 1.0)
     avg_holding_hours = DEFAULT_FORWARD_BARS * 15.0 / 60.0
     threshold = (avg_top1_trades_per_day / 24.0) * 2.0 / avg_holding_hours * 0.95
-    return float(np.clip(max(DEPLOYMENT_RANK_THRESHOLD_FLOOR, threshold), 0.0, 1.0))
+    return float(np.clip(max(DEPLOYMENT_THRESHOLD_MIN, threshold), 0.0, 1.0))
 
 
 def _selection_rank(metrics: Dict[str, Any]) -> float:
@@ -837,6 +1957,14 @@ def _build_deployment_payload(
         selection_metrics = metrics.get(DEPLOYMENT_SELECTION_METRIC, {})
         avg_pnl = float(selection_metrics.get("avg_pnl_bankroll", 0.0) or 0.0)
         side = _strategy_side(strategy_id)
+        deployment_threshold_metrics = result.get("deployment_threshold_metrics", {})
+        deployment_rank_threshold = (
+            float(deployment_threshold_metrics.get("deployment_rank_threshold"))
+            if isinstance(deployment_threshold_metrics, dict)
+            and deployment_threshold_metrics.get("deployment_rank_threshold")
+            is not None
+            else _deployment_rank_threshold(metrics)
+        )
         row = {
             "strategy_id": strategy_id,
             "strategy_for_inference": strategy_id,
@@ -845,7 +1973,25 @@ def _build_deployment_payload(
             "selected": False,
             "selection_metric": DEPLOYMENT_SELECTION_METRIC,
             "selection_rank": _selection_rank(metrics),
-            "deployment_rank_threshold": _deployment_rank_threshold(metrics),
+            "deployment_rank_threshold": float(deployment_rank_threshold),
+            "threshold_space": "rank_percentile",
+            "deployment_threshold_source": (
+                "policy_optimiser_pnl_concurrency"
+                if isinstance(deployment_threshold_metrics, dict)
+                and deployment_threshold_metrics
+                else "policy_optimiser_formula_fallback"
+            ),
+            "deployment_threshold_metrics": deployment_threshold_metrics,
+            "excluded_symbols": sorted(
+                {
+                    str(asset.get("symbol"))
+                    for asset in result.get("asset_metrics", [])
+                    if isinstance(asset, dict)
+                    and asset.get("asset_decision") == ASSET_DECISION_BLACKLIST
+                    and asset.get("symbol") is not None
+                }
+            ),
+            "asset_metrics": result.get("asset_metrics", []),
             "avg_net_pnl_per_trade": avg_pnl,
             "avg_holding_time_hours": DEFAULT_FORWARD_BARS * 15.0 / 60.0,
             "avg_trades_per_day_at_top_1pct": float(
@@ -896,12 +2042,18 @@ def _build_deployment_payload(
             "max_strategies_per_side": MAX_DEPLOYMENT_STRATEGIES_PER_SIDE,
             "selection_metric": DEPLOYMENT_SELECTION_METRIC,
             "min_selection_metric_avg_net_pnl_per_trade": 0.0,
-            "runtime_rank_threshold_formula": (
-                "max(0.95, avg_trades_per_day_at_top_1pct / 24 * 2 / "
-                "avg_holding_time_hours * 0.95)"
+            "runtime_rank_threshold_source": "policy_optimiser_pnl_concurrency",
+            "runtime_rank_threshold_scope": (
+                "per_strategy_prediction_rank_with_per_asset_and_cross_asset_limits"
             ),
-            "runtime_rank_threshold_scope": "per_strategy_prediction_rank_only",
-            "ranking_space": "OOF per-strategy rank percentiles",
+            "ranking_space": "calibrated_score per-strategy rank percentiles",
+            "deployment_threshold_bounds": {
+                "lo": DEPLOYMENT_THRESHOLD_MIN,
+                "hi": DEPLOYMENT_THRESHOLD_MAX,
+                "precision": DEPLOYMENT_THRESHOLD_PRECISION,
+            },
+            "max_concurrent_per_asset": DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
+            "max_concurrent_per_strategy": DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY,
         },
         "strategies": selected,
         "rejected_strategies": rejected,
@@ -930,35 +2082,6 @@ def run_simple_policy_optimisation(
         run_id = max(candidates, key=lambda p: p.stat().st_mtime).name
         logger.info(f"No run_id supplied; using latest artifact run {run_id}")
     meta_oof_dir = Path(data_root) / "artifacts" / run_id / "meta_oof"
-    if not meta_oof_dir.exists():
-        logger.error(f"Directory not found: {meta_oof_dir}")
-        return
-
-    meta_oof: Dict[str, pd.DataFrame] = {}
-    meta_oof_sources: Dict[str, str] = {}
-    for pq_file in sorted(meta_oof_dir.glob("meta_oof_*_clf.parquet")):
-        strategy_id = pq_file.stem.replace("meta_oof_", "")
-        if strategy_id.endswith("_tbm_clf"):
-            strategy_id = strategy_id[: -len("_tbm_clf")]
-        elif strategy_id.endswith("_clf"):
-            strategy_id = strategy_id[: -len("_clf")]
-        if strategy_id in meta_oof:
-            continue
-        meta_oof[strategy_id] = pd.read_parquet(pq_file)
-        meta_oof_sources[strategy_id] = str(pq_file)
-        if max_strategies is not None and len(meta_oof) >= int(max_strategies):
-            break
-
-    if not meta_oof:
-        logger.error(f"No meta_oof_*_clf.parquet files found in {meta_oof_dir}")
-        return
-
-    n_trials = int(
-        n_trials
-        if n_trials is not None
-        else os.environ.get("SIMPLE_POLICY_N_TRIALS", DEFAULT_N_TRIALS)
-    )
-    n_trials = max(1, n_trials)
     slice_plan_path = (
         Path(data_root) / "artifacts" / run_id / "slices" / "slice_plan.json"
     )
@@ -968,10 +2091,73 @@ def run_simple_policy_optimisation(
             "Policy OOS source is not fully verifiable from slice_plan.json: %s",
             source_validation,
         )
+    stage_view, stage_name = _load_policy_stage_view(slice_plan_path)
+    if not _stage_view_is_materialized(stage_view):
+        logger.error(
+            "Policy optimiser requires a materialized SlicePlanner policy view. "
+            "stage=%s path=%s view=%s",
+            stage_name,
+            slice_plan_path,
+            stage_view,
+        )
+        return
+
+    meta_oof: Dict[str, pd.DataFrame] = {}
+    meta_oof_sources: Dict[str, str] = {}
+    if meta_oof_dir.exists():
+        for pq_file in sorted(meta_oof_dir.glob("meta_oof_*_clf.parquet")):
+            strategy_id = pq_file.stem.replace("meta_oof_", "")
+            if strategy_id.endswith("_tbm_clf"):
+                strategy_id = strategy_id[: -len("_tbm_clf")]
+            elif strategy_id.endswith("_clf"):
+                strategy_id = strategy_id[: -len("_clf")]
+            if strategy_id in meta_oof:
+                continue
+            df = pd.read_parquet(pq_file)
+            df = _filter_rows_to_stage_view(df, stage_view)
+            if df.empty:
+                logger.info(
+                    "Precomputed meta OOF %s has no rows in policy slice %s.",
+                    pq_file,
+                    stage_name,
+                )
+                continue
+            meta_oof[strategy_id] = df
+            meta_oof_sources[strategy_id] = str(pq_file)
+            if max_strategies is not None and len(meta_oof) >= int(max_strategies):
+                break
+
+    if not meta_oof:
+        logger.warning(
+            "No precomputed meta OOF rows found for policy slice %s. "
+            "Generating predictions from inference models.",
+            stage_name,
+        )
+        meta_oof, meta_oof_sources = _generate_policy_predictions_from_models(
+            data_root=data_root,
+            run_id=run_id,
+            stage_view=stage_view,
+            max_strategies=max_strategies,
+        )
+        if not meta_oof:
+            logger.error(
+                "No policy-slice predictions available after model generation fallback."
+            )
+            return
+
+    n_trials = int(
+        n_trials
+        if n_trials is not None
+        else os.environ.get("SIMPLE_POLICY_N_TRIALS", DEFAULT_N_TRIALS)
+    )
+    n_trials = max(1, n_trials)
 
     from extreme_price_movements.data_store import PartitionedOHLCVStore
+    from extreme_price_movements.inference.parity import calibrated_score_and_threshold
+    from extreme_price_movements.simple_position_sizer import load_calibration_curves
 
     ds = PartitionedOHLCVStore(data_root, timeframe="15m")
+    calibration_data = load_calibration_curves(data_root, run_id)
 
     results_json = {}
     strategy_top5_daily_weekly: list[dict[str, Any]] = []
@@ -1007,7 +2193,19 @@ def run_simple_policy_optimisation(
             )
             continue
 
-        df["rank_pct"] = df["clf"].rank(pct=True)
+        df["raw_meta_prediction"] = pd.to_numeric(df["clf"], errors="coerce")
+        df["calibrated_score"] = df["raw_meta_prediction"].map(
+            lambda raw_score: calibrated_score_and_threshold(
+                raw_score=float(raw_score),
+                strategy_id=strategy_id,
+                calibration_data=calibration_data,
+                default_threshold=1.0,
+            )[0]
+            if pd.notna(raw_score)
+            else np.nan
+        )
+        df["rank_pct"] = df["calibrated_score"].rank(method="max", pct=True)
+        df["strategy_id"] = strategy_id
 
         if "side" not in df.columns:
             if strategy_id.startswith("short"):
@@ -1179,11 +2377,69 @@ def run_simple_policy_optimisation(
             best_params=final_params,
             best_size_power=final_size_power,
         )
+        deployment_sim_metrics = simulate_and_score(
+            df_top.copy(),
+            all_paths[0],
+            all_paths[1],
+            all_paths[2],
+            all_paths[3],
+            cost_pct=cost_pct,
+            size_power=final_size_power,
+            max_concurrent_trades=max(1, len(df_top) + 1),
+            **_without_concurrency_param(final_params),
+        )
+        deployment_threshold_rows = _build_deployment_threshold_rows(
+            df_top,
+            all_paths,
+            cost_pct=cost_pct,
+            best_params=final_params,
+            best_size_power=final_size_power,
+            metrics=deployment_sim_metrics,
+        )
+        deployment_threshold_metrics = optimise_deployment_rank_threshold(
+            deployment_threshold_rows,
+            score_col="calibrated_score",
+            timestamp_col="timestamp",
+            symbol_col="symbol",
+            max_concurrent_per_asset=DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
+            max_concurrent_per_strategy=DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY,
+            lo=DEPLOYMENT_THRESHOLD_MIN,
+            hi=DEPLOYMENT_THRESHOLD_MAX,
+            precision=DEPLOYMENT_THRESHOLD_PRECISION,
+        )
+        asset_metrics = build_asset_metrics_from_simulation(
+            selected_rows=df_top,
+            metrics=deployment_sim_metrics,
+            symbol_col="symbol",
+            policy_col="strategy_id",
+            candidate_rows=df,
+        )
+        weighted_asset_metrics = apply_asset_weights(
+            asset_metrics,
+            policy_col="strategy_id",
+            symbol_col="symbol",
+            pnl_col="mean_net_gain",
+            sortino_col="sortino",
+            tprint_fn=tprint,
+        )
+        if not weighted_asset_metrics.empty:
+            cleaned_asset_metrics = weighted_asset_metrics.replace(
+                [np.inf, -np.inf], np.nan
+            )
+            asset_metric_rows = cleaned_asset_metrics.where(
+                pd.notna(cleaned_asset_metrics), None
+            ).to_dict(orient="records")
+        else:
+            asset_metric_rows = []
         logger.info(
-            "[%s] Final all-data fit best_params=%s best_size_power=%.3f",
+            "[%s] Final all-data fit best_params=%s best_size_power=%.3f "
+            "deployment_rank_threshold=%.4f",
             strategy_id,
             final_params,
             final_size_power,
+            float(
+                deployment_threshold_metrics.get("deployment_rank_threshold", np.nan)
+            ),
         )
 
         strategy_results = {
@@ -1193,11 +2449,15 @@ def run_simple_policy_optimisation(
                 "cv_validation_average": validation_metrics_average,
                 "final_fit_all": final_fit_metrics,
             },
+            "deployment_threshold_metrics": deployment_threshold_metrics,
+            "asset_metrics": asset_metric_rows,
             "cv_folds": fold_results,
             "final_fit_summary": final_fit_summary,
             "prediction_source": {
                 "parquet": meta_oof_sources.get(strategy_id),
                 "score_column": "clf",
+                "score_normalization": "calibrated_score_and_threshold",
+                "deployment_score_column": "calibrated_score",
                 "oos_oof_columns_used": [
                     c
                     for c in ["oof_meta_clf", "oof_pred", "oof_p_move", "oof_base_clf"]
@@ -1255,6 +2515,8 @@ def run_simple_policy_optimisation(
             "cv_folds": fold_results,
             "final_fit_metrics": final_fit_metrics,
             "final_fit_summary": final_fit_summary,
+            "deployment_threshold_metrics": deployment_threshold_metrics,
+            "asset_metrics": asset_metric_rows,
             "validation_rows_top15_avg": float(
                 np.mean([len(fold) for fold in folds]) if folds else 0.0
             ),

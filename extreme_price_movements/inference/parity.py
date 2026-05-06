@@ -194,6 +194,63 @@ def _strategy_ids_from_rows(rows: Any, *, side_aware: bool = False) -> Set[str]:
     return {s for s in out if s}
 
 
+def _avg_pnl_per_trade_from_strategy_row(row: Dict[str, Any]) -> float:
+    candidates = [
+        row.get("avg_net_pnl_per_trade"),
+        row.get("mean_net_trade"),
+        row.get("avg_pnl_bankroll"),
+    ]
+    metrics = row.get("metrics")
+    if isinstance(metrics, dict):
+        for key in ("top_5", "final_fit_all", "cv_validation_average"):
+            sub = metrics.get(key)
+            if isinstance(sub, dict):
+                candidates.extend(
+                    [
+                        sub.get("avg_pnl_bankroll"),
+                        sub.get("mean_net_trade"),
+                        sub.get("avg_net_pnl_per_trade"),
+                    ]
+                )
+    for val in candidates:
+        try:
+            out = float(val)
+        except Exception:
+            continue
+        if pd.notna(out):
+            return out
+    return float("-inf")
+
+
+def _select_top_strategy_rows_by_side(rows: Any) -> List[Dict[str, Any]]:
+    if not isinstance(rows, list):
+        return []
+    best_by_side: Dict[str, tuple[float, Dict[str, Any]]] = {}
+    passthrough: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("selected") is False:
+            continue
+        sid = (
+            row.get("strategy_for_inference")
+            or row.get("strategy_id")
+            or row.get("strategy")
+            or row.get("selected_strategy")
+        )
+        side = str(row.get("side") or strategy_side(str(sid or ""))).lower()
+        if side not in {"long", "short"}:
+            passthrough.append(row)
+            continue
+        score = _avg_pnl_per_trade_from_strategy_row(row)
+        current = best_by_side.get(side)
+        if current is None or score > current[0]:
+            best_by_side[side] = (score, row)
+    selected = [item[1] for _, item in sorted(best_by_side.items())]
+    selected.extend(passthrough)
+    return selected
+
+
 def _strategy_aliases(strategy_id: str) -> Set[str]:
     sid = str(strategy_id or "")
     core = strategy_core_id(sid)
@@ -261,7 +318,8 @@ def load_strategy_for_inference_filter(
                     )
                     if isinstance(rows, str):
                         rows = [{"strategy_id": rows}]
-                    selected = _strategy_ids_from_rows(rows, side_aware=True)
+                    selected_rows = _select_top_strategy_rows_by_side(rows)
+                    selected = _strategy_ids_from_rows(selected_rows, side_aware=True)
                     sid = payload.get("strategy_id") or payload.get("selected_strategy")
                     if sid:
                         selected.add(str(sid))
@@ -269,7 +327,8 @@ def load_strategy_for_inference_filter(
                 else:
                     selected = _strategy_ids_from_rows(payload, side_aware=True)
             tprint(
-                f"[StrategyFilter] Loaded {len(selected)} deployment inference ids from {path}"
+                "[StrategyFilter] Loaded top deployment inference ids from "
+                f"{path}: aliases={len(selected)} ids={sorted(selected)}"
             )
             return selected
         except Exception as exc:
@@ -599,7 +658,7 @@ def calibrated_score_and_threshold(
     raw_score: float,
     strategy_id: str,
     calibration_data: Dict[str, Dict[str, Any]],
-    default_threshold: float = 0.5,
+    default_threshold: float = 1.0,
 ) -> tuple[float, float]:
     """Return calibrated score and p75 threshold for a strategy."""
     if not calibration_data:
@@ -616,7 +675,7 @@ def passes_rank_filter(
     raw_score: float,
     strategy_id: str,
     calibration_data: Dict[str, Dict[str, Any]],
-    default_threshold: float = 0.5,
+    default_threshold: float = 1.0,
 ) -> bool:
     """Check if a score passes strategy-specific confidence rank threshold."""
     calibrated, threshold = calibrated_score_and_threshold(
@@ -632,7 +691,7 @@ def calibration_size_multiplier(
     raw_score: float,
     strategy_id: str,
     calibration_data: Dict[str, Dict[str, Any]],
-    default_threshold: float = 0.5,
+    default_threshold: float = 1.0,
     max_mult: float = 2.0,
 ) -> float:
     """Convert calibrated rank strength into a bounded sizing multiplier."""

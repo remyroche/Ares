@@ -180,6 +180,54 @@ def test_deployment_strategy_filter_uses_policy_when_sizer_allowlist_is_stale(
     assert selected == {"long_rule_a"}
 
 
+def test_deployment_strategy_filter_keeps_top_avg_pnl_per_trade_per_side(tmp_path):
+    run_id = "20260101_000000"
+    art = tmp_path / "artifacts" / run_id
+    (art / "policy_params").mkdir(parents=True)
+
+    (art / "policy_params" / "strategy_for_inference.json").write_text(
+        json.dumps(
+            {
+                "generated_by": "simple_policy_optimiser",
+                "strategies": [
+                    {
+                        "strategy_id": "long_low",
+                        "strategy_for_inference": "long_low",
+                        "side": "long",
+                        "selected": True,
+                        "avg_net_pnl_per_trade": 0.01,
+                    },
+                    {
+                        "strategy_id": "long_high",
+                        "strategy_for_inference": "long_high",
+                        "side": "long",
+                        "selected": True,
+                        "avg_net_pnl_per_trade": 0.03,
+                    },
+                    {
+                        "strategy_id": "short_low",
+                        "strategy_for_inference": "short_low",
+                        "side": "short",
+                        "selected": True,
+                        "avg_net_pnl_per_trade": 0.02,
+                    },
+                    {
+                        "strategy_id": "short_high",
+                        "strategy_for_inference": "short_high",
+                        "side": "short",
+                        "selected": True,
+                        "avg_net_pnl_per_trade": 0.04,
+                    },
+                ],
+            }
+        )
+    )
+
+    selected = resolve_deployment_strategy_filter(str(tmp_path), run_id)
+
+    assert selected == {"long_high", "short_high"}
+
+
 def test_strategy_asset_exclusion_filter_reads_strategy_for_inference(tmp_path):
     run_id = "20260101_000000"
     art = tmp_path / "artifacts" / run_id / "policy_params"

@@ -14,6 +14,7 @@ from extreme_price_movements.utils import tprint
 BINANCE_API = "https://api.binance.com"
 REQUEST_TIMEOUT_SECONDS = 30
 REQUEST_MAX_RETRIES = 3
+MIN_ASSET_EXISTENCE_DAYS = 15
 HARDCODED_EXCLUDED_SYMBOLS = frozenset(
     {
         "CHESS/USDT",
@@ -335,6 +336,40 @@ def filter_symbols_without_perp_support(symbols: list[str]) -> list[str]:
     return out
 
 
+def filter_symbols_with_margin_and_perp_support(
+    symbols: list[str], margin_symbols: list[str]
+) -> list[str]:
+    """Keep symbols whose base exists in both margin universe and perp universe."""
+    if not symbols:
+        return []
+    margin_bases = {
+        _normalize_symbol(sym).split("/", 1)[0]
+        for sym in margin_symbols
+        if "/" in _normalize_symbol(sym)
+    }
+    if not margin_bases:
+        return []
+    perp_bases = {
+        sym.split("/", 1)[0] for sym in get_available_perp_spot_symbols() if "/" in sym
+    }
+    allowed_bases = margin_bases.intersection(perp_bases)
+    out = sorted(
+        {
+            _normalize_symbol(sym)
+            for sym in symbols
+            if "/" in _normalize_symbol(sym)
+            and _normalize_symbol(sym).split("/", 1)[0] in allowed_bases
+        }
+    )
+    removed = len(set(map(_normalize_symbol, symbols))) - len(out)
+    if removed > 0:
+        tprint(
+            "Margin+perp base filter removed symbols lacking dual venue support: "
+            f"{removed} removed"
+        )
+    return out
+
+
 def fetch_24h_tickers():
     tprint("Entering function: fetch_24h_tickers in universe.py")
     data = _binance_get_json("/api/v3/ticker/24hr")
@@ -390,8 +425,69 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
     final = apply_hardcoded_universe_exclusions(
         list(set(margin_symbols).union(set(market_basket)))
     )
+    try:
+        final = filter_symbols_with_margin_and_perp_support(final, margin_symbols)
+    except Exception as exc:
+        tprint(
+            "Warning: margin+perp dual-venue filter failed; keeping prior universe: "
+            f"{exc}"
+        )
     tprint(f"Universe selected: {len(final)} symbols (no volume-based filtering)")
     return final
+
+
+def filter_symbols_by_min_asset_existence_days(
+    symbols: list[str],
+    store,
+    min_days: int = MIN_ASSET_EXISTENCE_DAYS,
+) -> list[str]:
+    """Keep only symbols with at least ``min_days`` between first/last OHLCV timestamps."""
+    if not symbols or min_days <= 0:
+        return sorted(set(symbols))
+
+    ohlcv_dir = getattr(store, "ohlcv_dir", None)
+    if not ohlcv_dir:
+        return sorted(set(symbols))
+
+    kept: list[str] = []
+    removed: list[str] = []
+    min_span = pd.Timedelta(days=min_days)
+
+    for raw_symbol in sorted(set(symbols)):
+        symbol = _normalize_symbol(raw_symbol)
+        meta_path = os.path.join(ohlcv_dir, f"{symbol.replace('/', '_')}.meta.json")
+        if not os.path.exists(meta_path):
+            removed.append(symbol)
+            continue
+
+        try:
+            import json
+
+            with open(meta_path, "r") as f:
+                meta = json.load(f)
+            first_ts = pd.Timestamp(meta.get("first_ts"))
+            last_ts = pd.Timestamp(meta.get("last_ts"))
+            if first_ts.tzinfo is None:
+                first_ts = first_ts.tz_localize("UTC")
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.tz_localize("UTC")
+        except Exception:
+            removed.append(symbol)
+            continue
+
+        if pd.isna(first_ts) or pd.isna(last_ts) or (last_ts - first_ts) < min_span:
+            removed.append(symbol)
+            continue
+
+        kept.append(symbol)
+
+    if removed:
+        tprint(
+            "Asset existence filter removed "
+            f"{len(removed)} symbols with < {min_days} days of history."
+        )
+
+    return kept
 
 
 def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
@@ -428,6 +524,11 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         train_syms = filter_symbols_without_perp_support(
             apply_hardcoded_universe_exclusions(train_syms)
         )
+        train_syms = filter_symbols_by_min_asset_existence_days(
+            train_syms,
+            store,
+            min_days=int(cfg.get("min_asset_existence_days", MIN_ASSET_EXISTENCE_DAYS)),
+        )
         M = int(cfg.get("fetch_symbols_M", 9999))
         if len(train_syms) > M:
             tprint(
@@ -460,6 +561,11 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
     )
     train_syms = deduplicate_symbols_by_base(list(set(syms_all)))
     train_syms = apply_hardcoded_universe_exclusions(train_syms)
+    train_syms = filter_symbols_by_min_asset_existence_days(
+        train_syms,
+        store,
+        min_days=int(cfg.get("min_asset_existence_days", MIN_ASSET_EXISTENCE_DAYS)),
+    )
     return train_syms
 
 

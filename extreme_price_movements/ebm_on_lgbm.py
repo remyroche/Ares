@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,7 +30,6 @@ from .en_uncertainty_ebm import (
     fit_uncertainty_state,
     uncertainty_weighted_prediction,
 )
-from .feature_selection_extreme_events import linear_prescreen_enet
 from .ridge_on_lgbm import _compute_weight_distillation
 from .utils import tprint
 
@@ -38,20 +38,60 @@ EBM_RACE_MAX_ROWS = 60000
 EBM_RACE_EVAL_FRACTION = 1.0 / 3.0
 EBM_FOLD_SUBSAMPLE_ROWS = 5000
 EBM_MIN_FEATURES = 40
-EBM_MAX_ROUNDS = 6
+EBM_MAX_ROUNDS = int(os.environ.get("EPM_EBM_MAX_ROUNDS", "10"))
 EBM_PRESCREEN_MAX_FEATURES: int | None = None
 EBM_PRESCREEN_BASE_FEATURES = 200
 EBM_PRESCREEN_FEATURE_FRACTION = 0.25
 EBM_TREE_FEATURE_CAP = 1200
 EBM_TREE_TARGET_RANK_CAP = 2000
 EBM_TREE_CORR_PRUNE_THRESHOLD = 0.96
+EBM_TREE_CORR_PRUNE_MIN_FEATURES = 1000
 EBM_TREE_LGBM_MAX_FIT_ROWS = 30000
 EBM_TREE_LGBM_EARLY_STOPPING_ROUNDS = 25
 EBM_FINAL_MODEL_COUNT = 5
+EBM_HONEST_EVAL_MIN_MODELS = int(os.environ.get("EPM_EBM_HONEST_EVAL_MIN_MODELS", "3"))
+EBM_HONEST_EVAL_MAX_J_STD = float(
+    os.environ.get("EPM_EBM_HONEST_EVAL_MAX_J_STD", "0.015")
+)
+EBM_HONEST_EVAL_MAX_PRED_DISAGREE = float(
+    os.environ.get("EPM_EBM_HONEST_EVAL_MAX_PRED_DISAGREE", "0.020")
+)
 EBM_SPEC_N_JOBS = 1
 EBM_HPO_TRIALS = 200
 EBM_HPO_EARLY_STOP_PATIENCE = 50
-EBM_HPO_N_JOBS = 3
+EBM_HPO_N_JOBS = 2
+EBM_FIT_N_JOBS = 1
+EBM_FINAL_STAGE_OOF_OUTER_BAGS = int(
+    os.environ.get("EPM_EBM_FINAL_STAGE_OOF_OUTER_BAGS", "1")
+)
+EBM_OOF_DISTILLATION_PASSES = int(
+    os.environ.get("EPM_EBM_OOF_DISTILLATION_PASSES", "1")
+)
+EBM_FOLD_PRESENCE_MIN_START = float(
+    os.environ.get("EPM_EBM_FOLD_PRESENCE_MIN_START", "0.20")
+)
+EBM_FOLD_PRESENCE_MIN_STEP = float(
+    os.environ.get("EPM_EBM_FOLD_PRESENCE_MIN_STEP", "0.05")
+)
+EBM_FOLD_PRESENCE_MIN_CAP = float(
+    os.environ.get("EPM_EBM_FOLD_PRESENCE_MIN_CAP", "0.80")
+)
+EBM_SIGN_CONSISTENCY_MIN_START = float(
+    os.environ.get("EPM_EBM_SIGN_CONSISTENCY_MIN_START", "0.60")
+)
+EBM_SIGN_CONSISTENCY_MIN_STEP = float(
+    os.environ.get("EPM_EBM_SIGN_CONSISTENCY_MIN_STEP", "0.05")
+)
+EBM_SIGN_CONSISTENCY_MIN_CAP = float(
+    os.environ.get("EPM_EBM_SIGN_CONSISTENCY_MIN_CAP", "0.90")
+)
+EBM_TOP_SLICE_TIEBREAKER_WEIGHT = float(
+    os.environ.get("EPM_EBM_TOP_SLICE_TIEBREAKER_WEIGHT", "0.05")
+)
+EBM_STABILITY_TIEBREAKER_WEIGHT = float(
+    os.environ.get("EPM_EBM_STABILITY_TIEBREAKER_WEIGHT", "0.03")
+)
+EBM_PRUNE_FOLD_N_JOBS = int(os.environ.get("EPM_EBM_PRUNE_FOLD_N_JOBS", "2"))
 EBM_HPO_MIN_LEAF_PCT_LO = 0.02
 EBM_HPO_MIN_LEAF_PCT_HI = 0.08
 EBM_STAGE_LGBM_PRUNE_FRACTION = 0.35
@@ -67,6 +107,13 @@ TREE_BLOCKS: tuple[tuple[int, int], ...] = (
 EBM_METRIC_TARGET_FRACTION = float(
     os.environ.get("EPM_EBM_METRIC_TARGET_FRACTION", "0.15")
 )
+EBM_FINAL_FIT_METRIC_MAX_ROWS = int(
+    os.environ.get("EPM_EBM_FINAL_FIT_METRIC_MAX_ROWS", "50000")
+)
+EBM_FINAL_UNCERTAINTY_MAX_ROWS = int(
+    os.environ.get("EPM_EBM_FINAL_UNCERTAINTY_MAX_ROWS", "50000")
+)
+EBM_FINAL_FIT_MAX_ROWS = int(os.environ.get("EPM_EBM_FINAL_FIT_MAX_ROWS", "200000"))
 
 
 def _candidate_gate_thresholds() -> tuple[float, float]:
@@ -944,7 +991,14 @@ def _metric_pack(
     y = np.asarray(y_true, dtype=np.float64)
     p = np.asarray(pred, dtype=np.float64)
     m = np.isfinite(y) & np.isfinite(p)
-    grp = np.asarray(groups, dtype=object)[m] if groups is not None else None
+    if isinstance(groups, dict):
+        grp = {
+            str(k): np.asarray(v, dtype=object)[m]
+            for k, v in groups.items()
+            if len(np.asarray(v)) == len(m)
+        }
+    else:
+        grp = np.asarray(groups, dtype=object)[m] if groups is not None else None
     y = y[m]
     p = p[m]
     if len(y) < 8:
@@ -1055,19 +1109,69 @@ def _metric_pack(
         ece = float("nan")
         ece_top20 = float("nan")
     stab_proxy = _top_stability(y, p, frac_obj)
+    default_groups = grp.get("week") if isinstance(grp, dict) else grp
     stab_metrics = _grouped_top_stability(
-        y, p, frac_obj, classifier=classifier, groups=grp
+        y, p, frac_obj, classifier=classifier, groups=default_groups
     )
     stab_proxy30 = _top_stability(y, p, 0.30)
     stab_metrics30 = _grouped_top_stability(
-        y, p, 0.30, classifier=classifier, groups=grp
+        y, p, 0.30, classifier=classifier, groups=default_groups
     )
-    stability30 = (
-        stab_metrics30["stability"] if stab_metrics30["n_groups"] >= 3 else stab_proxy30
-    )
-    stability15 = (
-        stab_metrics["stability"] if stab_metrics["n_groups"] >= 3 else stab_proxy
-    )
+    stab_week30 = stab_metrics30
+    stab_month30 = None
+    stab_week15 = stab_metrics
+    stab_month15 = None
+    if isinstance(grp, dict):
+        week_groups = grp.get("week")
+        month_groups = grp.get("month")
+        stab_week30 = _grouped_top_stability(
+            y, p, 0.30, classifier=classifier, groups=week_groups
+        )
+        stab_month30 = _grouped_top_stability(
+            y, p, 0.30, classifier=classifier, groups=month_groups
+        )
+        stab_week15 = _grouped_top_stability(
+            y, p, frac_obj, classifier=classifier, groups=week_groups
+        )
+        stab_month15 = _grouped_top_stability(
+            y, p, frac_obj, classifier=classifier, groups=month_groups
+        )
+
+    if stab_month30 is not None and stab_week30["n_groups"] >= 3:
+        weekly_std30 = float(stab_week30["group_std"])
+        monthly_std30 = (
+            float(stab_month30["group_std"])
+            if stab_month30["n_groups"] >= 3
+            else weekly_std30
+        )
+        stability30_std_blend = 0.7 * weekly_std30 + 0.3 * monthly_std30
+        stability30 = float(1.0 / (1.0 + max(stability30_std_blend, 0.0)))
+    else:
+        weekly_std30 = float(stab_metrics30["group_std"])
+        monthly_std30 = float("nan")
+        stability30_std_blend = weekly_std30
+        stability30 = (
+            stab_metrics30["stability"]
+            if stab_metrics30["n_groups"] >= 3
+            else stab_proxy30
+        )
+
+    if stab_month15 is not None and stab_week15["n_groups"] >= 3:
+        weekly_std15 = float(stab_week15["group_std"])
+        monthly_std15 = (
+            float(stab_month15["group_std"])
+            if stab_month15["n_groups"] >= 3
+            else weekly_std15
+        )
+        stability15_std_blend = 0.7 * weekly_std15 + 0.3 * monthly_std15
+        stability15 = float(1.0 / (1.0 + max(stability15_std_blend, 0.0)))
+    else:
+        weekly_std15 = float(stab_metrics["group_std"])
+        monthly_std15 = float("nan")
+        stability15_std_blend = weekly_std15
+        stability15 = (
+            stab_metrics["stability"] if stab_metrics["n_groups"] >= 3 else stab_proxy
+        )
     ic_metrics = _rank_ic_metrics(y, p, frac_obj)
     ic_metrics30 = _rank_ic_metrics(y, p, 0.30)
     ic15 = float(ic_metrics["ic_top"])
@@ -1125,11 +1229,17 @@ def _metric_pack(
         "stability15_n_groups": float(stab_metrics["n_groups"]),
         "stability15_group_mean": float(stab_metrics["group_mean"]),
         "stability15_group_std": float(stab_metrics["group_std"]),
+        "stability15_weekly_std": float(weekly_std15),
+        "stability15_monthly_std": float(monthly_std15),
+        "stability15_std_blend": float(stability15_std_blend),
         "stability30_proxy": float(stab_proxy30),
         "stability30": float(stability30),
         "stability30_n_groups": float(stab_metrics30["n_groups"]),
         "stability30_group_mean": float(stab_metrics30["group_mean"]),
         "stability30_group_std": float(stab_metrics30["group_std"]),
+        "stability30_weekly_std": float(weekly_std30),
+        "stability30_monthly_std": float(monthly_std30),
+        "stability30_std_blend": float(stability30_std_blend),
         "ic_total": float(ic_metrics["ic_total"]),
         "ic_top15": float(ic15),
         "ic_top30": float(ic_metrics30["ic_top30"]),
@@ -1145,7 +1255,7 @@ def _metric_pack(
 
 def _fold_j(m: dict[str, float]) -> float:
     return 0.6 * m.get("lift20", m.get("lift15", m.get("lift30", 0.0))) + 0.4 * m.get(
-        "auc_correct_15", m.get("auc_correct_30", 0.5)
+        "ndcg_at_20", m.get("ndcg@20", 0.0)
     )
 
 
@@ -1278,7 +1388,7 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         ),
         "J_mean": j_mean,
         "J_std": j_std,
-        "J_final": float(0.4 * lift15 + 0.2 * auc30 + 0.4 * stability30),
+        "J_final": float(0.4 * lift15 + 0.2 * ndcg_at_20 + 0.4 * stability30),
     }
 
 
@@ -1662,6 +1772,67 @@ def _stability_group_labels(
     return week.astype(str)
 
 
+def _monthly_stability_group_labels(
+    n: int,
+    timestamps: Any = None,
+    assets: Any = None,
+) -> np.ndarray | None:
+    if n <= 0 or timestamps is None or len(np.asarray(timestamps)) != n:
+        return None
+    ts = pd.to_datetime(np.asarray(timestamps), utc=True, errors="coerce")
+    month = (
+        pd.Series(ts)
+        .dt.tz_localize(None)
+        .dt.to_period("M")
+        .astype(str)
+        .to_numpy(dtype=object)
+    )
+    month = np.where(pd.isna(month), "__unknown_month__", month).astype(object)
+    if assets is None or len(np.asarray(assets)) != n:
+        return month.astype(str)
+    asset_arr = np.asarray(assets).astype(str)
+    counts = pd.Series(asset_arr).value_counts()
+    common = set(counts[counts >= 20].index.astype(str))
+    asset_bucket = np.asarray(
+        [a if a in common else "__rare_asset__" for a in asset_arr], dtype=object
+    )
+    combined = np.asarray(
+        [f"{m}|{a}" for m, a in zip(month.astype(str), asset_bucket.astype(str))],
+        dtype=object,
+    )
+    if pd.Series(combined).value_counts().ge(20).sum() >= 3:
+        return combined.astype(str)
+    return month.astype(str)
+
+
+def _stability_group_bundle(
+    n: int,
+    timestamps: Any = None,
+    assets: Any = None,
+) -> dict[str, np.ndarray] | np.ndarray | None:
+    week = _stability_group_labels(n, timestamps=timestamps, assets=assets)
+    month = _monthly_stability_group_labels(n, timestamps=timestamps, assets=assets)
+    if week is None:
+        return None
+    if month is None:
+        return week
+    return {"week": week, "month": month}
+
+
+def _groups_take(groups: Any, idx: Any) -> Any:
+    if groups is None:
+        return None
+    if isinstance(groups, dict):
+        return {k: np.asarray(v, dtype=object)[idx] for k, v in groups.items()}
+    return np.asarray(groups, dtype=object)[idx]
+
+
+def _groups_primary(groups: Any) -> Any:
+    if isinstance(groups, dict):
+        return groups.get("week")
+    return groups
+
+
 def _rank_ic_metrics(
     y: np.ndarray, pred: np.ndarray, frac: float = 0.30
 ) -> dict[str, float]:
@@ -1957,10 +2128,17 @@ def _target_aware_tree_feature_cap(
         score = score[keep_rank]
         names = [names[i] for i in keep_rank]
 
-    if X.shape[1] <= cap:
+    if X.shape[1] <= 1 or len(X) == 0:
         tprint(
-            "EBMOnLGBM tree cap: hygiene/target-rank kept "
-            f"{X.shape[1]} features without final corr pruning."
+            "EBMOnLGBM tree cap: hygiene/ranking kept "
+            f"{X.shape[1]} features; correlation pruning not applicable."
+        )
+        return X, X_ev, names
+    if X.shape[1] <= EBM_TREE_CORR_PRUNE_MIN_FEATURES:
+        tprint(
+            "EBMOnLGBM tree cap: hygiene/ranking kept "
+            f"{X.shape[1]} features; below corr-prune threshold "
+            f"{EBM_TREE_CORR_PRUNE_MIN_FEATURES}."
         )
         return X, X_ev, names
 
@@ -2016,11 +2194,14 @@ def max_leaves_for_tree(tree_idx: int) -> int:
     return 0
 
 
-def _parse_tree_leaf_name(name: str) -> tuple[int, int] | None:
+def _parse_tree_feature_name(name: str) -> tuple[int, int] | None:
     m = re.search(r"_tree(\d+)_leaf(\d+)_soft$", str(name))
-    if m is None:
-        return None
-    return int(m.group(1)), int(m.group(2))
+    if m is not None:
+        return int(m.group(1)), int(m.group(2))
+    m = re.search(r"_tree(\d+)_value$", str(name))
+    if m is not None:
+        return int(m.group(1)), -1
+    return None
 
 
 def _safe_zscore(x: np.ndarray) -> np.ndarray:
@@ -2069,7 +2250,7 @@ def _lgbm_leaf_screen_scores(X: np.ndarray, names: list[str]) -> np.ndarray:
     raw_score = np.zeros(p, dtype=np.float32)
     tree_idx = np.array(
         [
-            _parse_tree_leaf_name(nm)[0] if _parse_tree_leaf_name(nm) else -1
+            _parse_tree_feature_name(nm)[0] if _parse_tree_feature_name(nm) else -1
             for nm in names
         ],
         dtype=np.int32,
@@ -2086,7 +2267,7 @@ def _lgbm_leaf_screen_scores(X: np.ndarray, names: list[str]) -> np.ndarray:
     keep = np.zeros(p, dtype=bool)
     per_tree: dict[int, list[int]] = {}
     for j, nm in enumerate(names):
-        parsed = _parse_tree_leaf_name(nm)
+        parsed = _parse_tree_feature_name(nm)
         if parsed is None:
             keep[j] = True
             continue
@@ -2120,7 +2301,7 @@ def _select_leaf_names_from_score_matrix(
 
 
 def _diversity_bonus_for_leaf_name(name: str) -> float:
-    parsed = _parse_tree_leaf_name(name)
+    parsed = _parse_tree_feature_name(name)
     if parsed is None:
         return 0.0
     toks = re.findall(
@@ -2227,23 +2408,7 @@ def _prescreen_features(
 ) -> np.ndarray:
     active = np.arange(len(feature_names), dtype=np.int32)
     tprint(f"EBMOnLGBM prescreen: start with {len(active)} features.")
-    if len(active) > EBM_MIN_FEATURES:
-        try:
-            keep_names = linear_prescreen_enet(
-                pd.DataFrame(X, columns=feature_names),
-                np.asarray(y, dtype=np.float32),
-                n_select=max(EBM_MIN_FEATURES, int(0.60 * len(active))),
-                multiplier=6,
-                max_drop_frac=0.10,
-                random_state=random_state,
-            )
-            keep_set = set(map(str, keep_names))
-            mask = np.asarray([str(nm) in keep_set for nm in feature_names], dtype=bool)
-            if np.any(mask):
-                active = active[mask]
-                tprint(f"EBMOnLGBM prescreen: EN soft-stage -> {len(active)}")
-        except Exception as exc:
-            tprint(f"EBMOnLGBM prescreen: EN soft-stage skipped ({exc})")
+    tprint("EBMOnLGBM prescreen: EN soft-stage disabled.")
     active = _spearman_target_screen(X, y, active, EBM_PRESCREEN_MAX_FEATURES)
     tprint(f"EBMOnLGBM prescreen: Spearman target -> {len(active)}")
     active = _corr_prune(X, y, active, thr=0.98, random_state=random_state)
@@ -2286,7 +2451,7 @@ def _ebm_specs(pruning: bool, random_state: int) -> list[dict[str, Any]]:
                 "reg_alpha": float(l1),
                 "smoothing_rounds": smoothing_rounds,
                 "random_state": int(random_state + i * 17),
-                "n_jobs": 2,
+                "n_jobs": 1,
                 "binning": "uniform" if pruning else "quantile",
             }
         )
@@ -2328,8 +2493,6 @@ def _fit_one_ebm(
     params: dict[str, Any],
 ) -> Any:
     p = dict(params)
-    # Interpret's process-backed joblib backend can hit macOS sandbox semaphore
-    # limits. We parallelize across specs externally, so keep each EBM in-process.
     p["n_jobs"] = 1
     X_fit = _coerce_ebm_feature_types(X)
 
@@ -2355,7 +2518,19 @@ def _fit_one_ebm(
     except Exception:
         fit_params["sample_weight"] = sample_weight
     _quiet_interpret_logging()
-    model.fit(X_fit, y, **fit_params)
+    try:
+        model.fit(X_fit, y, **fit_params)
+    except (PermissionError, OSError) as exc:
+        if int(p.get("n_jobs", 1)) <= 1:
+            raise
+        tprint(
+            "EBMOnLGBM: EBM fit with n_jobs="
+            f"{int(p.get('n_jobs', 1))} failed ({type(exc).__name__}: {exc}); "
+            "retrying with n_jobs=1."
+        )
+        p["n_jobs"] = 1
+        model = _make_ebm(cls, p)
+        model.fit(X_fit, y, **fit_params)
     _quiet_interpret_logging()
     return model
 
@@ -2715,6 +2890,7 @@ def _final_stage_oof_predictions(
     shape_smoothing_policy: dict[str, int],
     mode: str,
     random_state: int,
+    use_spec_outer_bags: bool = False,
 ) -> np.ndarray:
     n = len(y)
     out = np.full(n, np.nan, dtype=np.float32)
@@ -2744,7 +2920,13 @@ def _final_stage_oof_predictions(
         tr = fit_idx[tr_local]
         va = fit_idx[va_local]
         fold_spec = dict(spec)
-        fold_spec["outer_bags"] = min(int(fold_spec.get("outer_bags", 1)), 3)
+        if use_spec_outer_bags:
+            fold_spec["outer_bags"] = max(1, int(fold_spec.get("outer_bags", 1)))
+        else:
+            fold_spec["outer_bags"] = min(
+                int(fold_spec.get("outer_bags", 1)),
+                max(1, int(EBM_FINAL_STAGE_OOF_OUTER_BAGS)),
+            )
         t0 = time.perf_counter()
         model = _fit_one_ebm(
             cls,
@@ -3098,7 +3280,205 @@ def _feature_pruning_candidate_gate(rec: dict[str, Any]) -> tuple[bool, dict[str
 
 
 def _round_drop_fraction(round_id: int) -> float:
-    return [0.30, 0.25, 0.20, 0.20, 0.20, 0.20][min(round_id - 1, 5)]
+    schedule = [0.30, 0.20, 0.20, 0.20, 0.20, 0.20]
+    if round_id <= len(schedule):
+        return schedule[round_id - 1]
+    return 0.10
+
+
+def _round_presence_min(round_id: int) -> float:
+    return float(
+        np.clip(
+            EBM_FOLD_PRESENCE_MIN_START
+            + EBM_FOLD_PRESENCE_MIN_STEP * max(0, int(round_id) - 1),
+            0.0,
+            EBM_FOLD_PRESENCE_MIN_CAP,
+        )
+    )
+
+
+def _round_sign_consistency_min(round_id: int) -> float:
+    return float(
+        np.clip(
+            EBM_SIGN_CONSISTENCY_MIN_START
+            + EBM_SIGN_CONSISTENCY_MIN_STEP * max(0, int(round_id) - 1),
+            0.0,
+            EBM_SIGN_CONSISTENCY_MIN_CAP,
+        )
+    )
+
+
+def _term_contrib_matrix(model: Any, X: pd.DataFrame) -> np.ndarray | None:
+    eval_terms = getattr(model, "eval_terms", None)
+    if not callable(eval_terms):
+        return None
+    try:
+        contrib = eval_terms(_coerce_ebm_feature_types(X))
+    except Exception:
+        return None
+    arr = np.asarray(contrib, dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[0] != len(X):
+        return None
+    return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+
+
+def _feature_eval_term_stats(
+    model: Any,
+    X_va: pd.DataFrame,
+    y_va: np.ndarray,
+    pred_va: np.ndarray,
+    feature_names: list[str],
+    classifier: bool,
+) -> dict[str, np.ndarray] | None:
+    contrib = _term_contrib_matrix(model, X_va)
+    if contrib is None:
+        return None
+    term_features = getattr(model, "term_features_", None)
+    if term_features is None:
+        term_features = [(i,) for i in range(min(contrib.shape[1], len(feature_names)))]
+    n_features = len(feature_names)
+    presence = np.zeros(n_features, dtype=np.float32)
+    sign = np.zeros(n_features, dtype=np.float32)
+    top_use = np.zeros(n_features, dtype=np.float32)
+    yy = np.asarray(y_va, dtype=np.float32)
+    pp = np.asarray(pred_va, dtype=np.float32)
+    finite = np.isfinite(yy) & np.isfinite(pp)
+    if int(np.sum(finite)) < 8:
+        return None
+    yy = yy[finite]
+    pp = pp[finite]
+    order = np.argsort(pp)
+    top20 = _top_idx(order, 0.20, len(pp))
+    top30 = _top_idx(order, 0.30, len(pp))
+    if classifier:
+        y_eval = (yy >= 0.5).astype(np.float32)
+    else:
+        y_eval = yy.astype(np.float32)
+    for ti, term in enumerate(term_features):
+        if ti >= contrib.shape[1] or len(term) != 1:
+            continue
+        fi = int(term[0])
+        if fi < 0 or fi >= n_features:
+            continue
+        c = contrib[:, ti][finite].astype(np.float32)
+        c = np.nan_to_num(c, nan=0.0, posinf=0.0, neginf=0.0)
+        amp = float(np.mean(np.abs(c)))
+        spread = float(np.std(c))
+        if amp <= 1e-7 and spread <= 1e-7:
+            continue
+        presence[fi] = 1.0
+        corr_total = _safe_spearman(c, y_eval)
+        if abs(corr_total) <= 1e-12:
+            lift_dir = float(np.mean(y_eval[c >= np.median(c)])) - float(
+                np.mean(y_eval[c < np.median(c)])
+            )
+            corr_total = lift_dir
+        sign[fi] = float(np.sign(corr_total))
+        score20 = (
+            abs(_safe_spearman(c[top20], y_eval[top20])) if len(top20) > 2 else 0.0
+        )
+        score30 = (
+            abs(_safe_spearman(c[top30], y_eval[top30])) if len(top30) > 2 else 0.0
+        )
+        top_use[fi] = float(max(score20, score30))
+    return {
+        "presence": presence,
+        "sign": sign,
+        "top_usefulness": top_use,
+    }
+
+
+def _aggregate_feature_eval_stats(
+    fold_stats: list[dict[str, np.ndarray]],
+    n_features: int,
+) -> dict[str, np.ndarray]:
+    if not fold_stats:
+        zeros = np.zeros(n_features, dtype=np.float32)
+        return {
+            "presence_rate": zeros,
+            "sign_consistency": zeros,
+            "top_usefulness": zeros,
+            "stability_tiebreaker": zeros,
+            "n_eval_folds": zeros,
+        }
+    presence = np.vstack([s["presence"] for s in fold_stats]).astype(np.float32)
+    signs = np.vstack([s["sign"] for s in fold_stats]).astype(np.float32)
+    top_use = np.vstack([s["top_usefulness"] for s in fold_stats]).astype(np.float32)
+    presence_rate = np.mean(presence > 0.0, axis=0).astype(np.float32)
+    pos_rate = np.mean(signs > 0.0, axis=0)
+    neg_rate = np.mean(signs < 0.0, axis=0)
+    sign_consistency = np.maximum(pos_rate, neg_rate).astype(np.float32)
+    sign_consistency[presence_rate <= 0.0] = 0.0
+    mean_top = np.mean(top_use, axis=0)
+    std_top = np.std(top_use, axis=0)
+    top_usefulness = mean_top.astype(np.float32)
+    stability_tiebreaker = (1.0 / (1.0 + std_top)).astype(np.float32)
+    return {
+        "presence_rate": presence_rate,
+        "sign_consistency": sign_consistency,
+        "top_usefulness": top_usefulness,
+        "stability_tiebreaker": stability_tiebreaker,
+        "n_eval_folds": np.full(n_features, len(fold_stats), dtype=np.float32),
+    }
+
+
+def _combine_ebm_feature_scores(
+    base_scores: np.ndarray,
+    eval_stats: dict[str, np.ndarray] | None,
+    round_id: int,
+) -> tuple[np.ndarray, dict[str, float]]:
+    scores = np.nan_to_num(
+        np.asarray(base_scores, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+    )
+    if eval_stats is None:
+        return scores, {
+            "presence_min": float("nan"),
+            "sign_consistency_min": float("nan"),
+            "presence_fail_count": 0.0,
+            "sign_fail_count": 0.0,
+            "top_usefulness_mean": 0.0,
+            "stability_tiebreaker_mean": 0.0,
+        }
+    n_eval_folds = np.asarray(
+        eval_stats.get("n_eval_folds", np.zeros_like(scores)), dtype=np.float32
+    )
+    if n_eval_folds.size == 0 or float(np.max(n_eval_folds)) <= 0.0:
+        return scores, {
+            "presence_min": float("nan"),
+            "sign_consistency_min": float("nan"),
+            "presence_fail_count": 0.0,
+            "sign_fail_count": 0.0,
+            "top_usefulness_mean": 0.0,
+            "stability_tiebreaker_mean": 0.0,
+        }
+    presence = np.asarray(eval_stats["presence_rate"], dtype=np.float32)
+    sign_consistency = np.asarray(eval_stats["sign_consistency"], dtype=np.float32)
+    top_use = np.asarray(eval_stats["top_usefulness"], dtype=np.float32)
+    stability = np.asarray(eval_stats["stability_tiebreaker"], dtype=np.float32)
+    presence_min = _round_presence_min(round_id)
+    sign_min = _round_sign_consistency_min(round_id)
+    presence_fail = presence < presence_min
+    sign_fail = sign_consistency < sign_min
+    gated = scores.copy()
+    gated[presence_fail | sign_fail] = 0.0
+    top_norm = top_use / max(float(np.nanpercentile(top_use, 90.0)), 1e-6)
+    stability_norm = stability / max(float(np.nanpercentile(stability, 90.0)), 1e-6)
+    tie = (
+        EBM_TOP_SLICE_TIEBREAKER_WEIGHT * np.clip(top_norm, 0.0, 3.0)
+        + EBM_STABILITY_TIEBREAKER_WEIGHT * np.clip(stability_norm, 0.0, 3.0)
+    ).astype(np.float32)
+    combined = gated * (1.0 + tie)
+    return (
+        np.nan_to_num(combined, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32),
+        {
+            "presence_min": float(presence_min),
+            "sign_consistency_min": float(sign_min),
+            "presence_fail_count": float(np.sum(presence_fail)),
+            "sign_fail_count": float(np.sum(sign_fail)),
+            "top_usefulness_mean": float(np.mean(top_use)),
+            "stability_tiebreaker_mean": float(np.mean(stability)),
+        },
+    )
 
 
 def _build_tree_features_fold(
@@ -3662,7 +4042,7 @@ def _build_ebm_fold_cache(
                 "y_sub": y[sub],
                 "sw_sub": sample_weight[sub],
                 "y_va": y[va],
-                "groups_va": groups[va] if groups is not None else None,
+                "groups_va": _groups_take(groups, va),
             }
         )
     return fold_cache
@@ -3680,47 +4060,94 @@ def _fit_ebm_spec_on_cache(
     oof = np.zeros(n_rows, dtype=np.float32)
     fold_metrics: list[dict[str, float]] = []
     shape_models: list[Any] = []
+    fold_feature_stats: list[dict[str, np.ndarray]] = []
     mode = "classifier" if classifier else "regressor"
-    for fold in fold_cache:
+
+    def _fit_fold(fold: dict[str, Any]) -> dict[str, Any]:
+        model = _fit_one_ebm(
+            cls,
+            fold["X_sub"],
+            fold["y_sub"],
+            fold["sw_sub"],
+            spec,
+        )
+        raw_tr = _predict_raw_ebm(model, fold["X_sub"], mode)
+        pp = SplinePostProcessor(mode).fit(raw_tr, fold["y_sub"])
+        raw_va = _predict_raw_ebm(model, fold["X_va"], mode)
+        pred_va = pp.predict(raw_va)
+        metrics = _metric_pack(
+            fold["y_va"],
+            pred_va,
+            classifier=classifier,
+            groups=fold.get("groups_va"),
+        )
+        stats = _feature_eval_term_stats(
+            model,
+            fold["X_va"],
+            fold["y_va"],
+            pred_va,
+            list(fold["X_va"].columns),
+            classifier=classifier,
+        )
+        return {
+            "fold_i": int(fold.get("fold_i", -1)),
+            "va": fold["va"],
+            "pred_va": pred_va,
+            "metrics": metrics,
+            "model": model,
+            "stats": stats,
+        }
+
+    fold_jobs = max(1, min(int(EBM_PRUNE_FOLD_N_JOBS), len(fold_cache)))
+    if fold_jobs > 1:
+        tprint(
+            f"      spec {spec_i}: fitting {len(fold_cache)} EBM folds "
+            f"with fold_n_jobs={fold_jobs} (each EBM n_jobs=1)."
+        )
+    if fold_jobs > 1:
         try:
-            model = _fit_one_ebm(
-                cls,
-                fold["X_sub"],
-                fold["y_sub"],
-                fold["sw_sub"],
-                spec,
-            )
-            raw_tr = _predict_raw_ebm(model, fold["X_sub"], mode)
-            pp = SplinePostProcessor(mode).fit(raw_tr, fold["y_sub"])
-            raw_va = _predict_raw_ebm(model, fold["X_va"], mode)
-            pred_va = pp.predict(raw_va)
-            va = fold["va"]
-            oof[va] = pred_va
-            fold_metrics.append(
-                _metric_pack(
-                    fold["y_va"],
-                    pred_va,
-                    classifier=classifier,
-                    groups=fold.get("groups_va"),
-                )
-            )
-            shape_models.append(model)
+            with ThreadPoolExecutor(max_workers=fold_jobs) as pool:
+                futures = {pool.submit(_fit_fold, fold): fold for fold in fold_cache}
+                fold_results = []
+                for fut in as_completed(futures):
+                    fold_results.append(fut.result())
+            fold_results.sort(key=lambda r: int(r.get("fold_i", -1)))
         except Exception as exc:
             tprint(
-                f"      EBM fold failed: round={round_id} spec={spec_i} "
-                f"fold={fold.get('fold_i')} err={exc}"
+                f"      EBM fold parallel fit failed: round={round_id} "
+                f"spec={spec_i} err={exc}; retrying folds sequentially."
             )
+            fold_results = [_fit_fold(fold) for fold in fold_cache]
+    else:
+        try:
+            fold_results = [_fit_fold(fold) for fold in fold_cache]
+        except Exception as exc:
+            tprint(f"      EBM fold failed: round={round_id} spec={spec_i} err={exc}")
             return None
+
+    for res in fold_results:
+        oof[np.asarray(res["va"], dtype=np.int32)] = np.asarray(
+            res["pred_va"], dtype=np.float32
+        )
+        fold_metrics.append(res["metrics"])
+        shape_models.append(res["model"])
+        if res["stats"] is not None:
+            fold_feature_stats.append(res["stats"])
     if not fold_metrics:
         return None
     agg = _aggregate_j(fold_metrics)
     agg["J_se"] = float(agg.get("J_std", 0.0) / max(np.sqrt(len(fold_metrics)), 1.0))
+    feature_eval_stats = _aggregate_feature_eval_stats(
+        fold_feature_stats,
+        len(fold_cache[0]["X_va"].columns) if fold_cache else 0,
+    )
     return {
         "spec": spec,
         "spec_i": int(spec_i),
         "oof": oof,
         "fold_metrics": fold_metrics,
         "shape_models": shape_models,
+        "feature_eval_stats": feature_eval_stats,
         **agg,
     }
 
@@ -3738,6 +4165,7 @@ def _fit_round_oof(
     build_tree_features: bool = False,
     min_samples_leaf_pct: float = 0.02,
     monotone_constraints: list[int] | None = None,
+    one_se_floor: float | None = None,
 ) -> dict[str, Any]:
     splitter = (
         StratifiedKFold(
@@ -3799,6 +4227,13 @@ def _fit_round_oof(
         if rec is None:
             continue
         records.append(rec)
+        if one_se_floor is not None and float(rec["J_final"]) < float(one_se_floor):
+            tprint(
+                f"    EBM round {round_id}: early stop after spec {spec_i}/{len(specs)}; "
+                f"J={float(rec['J_final']):.4f} below prior best-1SE floor "
+                f"{float(one_se_floor):.4f}."
+            )
+            break
         spec_oof = np.asarray(rec["oof"], dtype=np.float32)
         spec_weights = sample_weight * _compute_weight_distillation(
             y, spec_oof, prev_spec_oof, is_classifier=classifier
@@ -3874,7 +4309,25 @@ def _fit_final_model(
         hpo_idx = np.arange(n_all, dtype=np.int32)
     if len(fit_idx) == 0:
         fit_idx = np.arange(n_all, dtype=np.int32)
-    stability_groups = _stability_group_labels(
+    if EBM_FINAL_FIT_MAX_ROWS > 0 and len(fit_idx) > EBM_FINAL_FIT_MAX_ROWS:
+        fit_local = _stratified_subsample_indices(
+            np.asarray(y, dtype=np.float32)[fit_idx],
+            max_n=EBM_FINAL_FIT_MAX_ROWS,
+            random_state=random_state + 40711,
+            classifier=(mode == "classifier"),
+        )
+        fit_idx = np.sort(fit_idx[fit_local].astype(np.int32))
+        tprint(
+            "EBMOnLGBM final fit: stratified capped fit_oof rows "
+            f"to {len(fit_idx)}/{n_all} (cap={EBM_FINAL_FIT_MAX_ROWS})."
+        )
+    else:
+        cap_label = EBM_FINAL_FIT_MAX_ROWS if EBM_FINAL_FIT_MAX_ROWS > 0 else "off"
+        tprint(
+            "EBMOnLGBM final fit: using "
+            f"{len(fit_idx)}/{n_all} fit_oof rows (cap={cap_label})."
+        )
+    stability_groups = _stability_group_bundle(
         n_all, timestamps=timestamps, assets=assets
     )
 
@@ -3935,6 +4388,7 @@ def _fit_final_model(
         HAS_OPTUNA = False
 
     final_spec = _ebm_specs(pruning=False, random_state=random_state)[0]
+    hpo_selected_params: dict[str, Any] = dict(final_spec)
     final_base_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
     hpo_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
     weight_transfer_metrics: dict[str, float | str] = {}
@@ -3952,7 +4406,7 @@ def _fit_final_model(
             {},
             mode,
             random_state=random_state + 22103,
-            passes=2,
+            passes=EBM_OOF_DISTILLATION_PASSES,
             label="pre-HPO",
         )
         weight_transfer_metrics["hpo_weight_source"] = "fit_oof_oof_distilled"
@@ -3981,7 +4435,7 @@ def _fit_final_model(
         hpo_pruner_min_trials = int(os.environ.get("EPM_EBM_HPO_MEDIAN_MIN_TRIALS", 5))
         hpo_trials = max(0, hpo_trials)
         hpo_patience = max(1, hpo_patience)
-        hpo_n_jobs = min(4, max(1, hpo_n_jobs))
+        hpo_n_jobs = min(2, max(1, hpo_n_jobs))
         hpo_folds = min(3, max(2, hpo_folds))
         hpo_pruner_startup = max(0, hpo_pruner_startup)
         hpo_pruner_min_trials = max(1, hpo_pruner_min_trials)
@@ -3989,7 +4443,7 @@ def _fit_final_model(
             "  EBMOnLGBM: running Optuna HPO with Bends Analysis "
             f"(trials={hpo_trials}, early_stop_patience={hpo_patience}, "
             f"subsample=5000, folds={hpo_folds}, outer_bags=1, "
-            f"n_jobs={hpo_n_jobs}, "
+            f"trial_n_jobs={hpo_n_jobs}, fit_n_jobs=1, "
             "pruner=Median"
             f"(startup={hpo_pruner_startup}, min_trials={hpo_pruner_min_trials}))."
         )
@@ -4073,7 +4527,7 @@ def _fit_final_model(
                 "min_samples_leaf": max(1, int(leaf_min_pct * n_sub)),
                 "early_stopping_rounds": 30,
                 "interactions": 0,
-                "n_jobs": int(hpo_runtime_state["n_jobs"]),
+                "n_jobs": 1,
             }
 
             fold_metrics = []
@@ -4114,11 +4568,7 @@ def _fit_final_model(
                     y_sub[va],
                     pred,
                     classifier=(mode == "classifier"),
-                    groups=(
-                        stability_groups[idx_sub][va]
-                        if stability_groups is not None
-                        else None
-                    ),
+                    groups=_groups_take(_groups_take(stability_groups, idx_sub), va),
                 )
                 fold_metrics.append(metrics)
                 agg = _aggregate_j(fold_metrics)
@@ -4288,6 +4738,7 @@ def _fit_final_model(
             study.optimize(
                 objective,
                 n_trials=hpo_trials,
+                n_jobs=hpo_n_jobs,
                 callbacks=[_log_hpo_progress],
             )
 
@@ -4324,8 +4775,9 @@ def _fit_final_model(
             best_spec["outer_bags"] = 10
             best_spec["early_stopping_rounds"] = 30
             best_spec["interactions"] = 0
-            best_spec["n_jobs"] = int(hpo_runtime_state["n_jobs"])
+            best_spec["n_jobs"] = 1
             final_spec = best_spec
+            hpo_selected_params = dict(best_spec)
             _save_ebm_hpo_warm_start(
                 best_params=best_spec,
                 best_value=float(best_trial.value),
@@ -4372,7 +4824,7 @@ def _fit_final_model(
             shape_smoothing_policy,
             mode,
             random_state=random_state + 33107,
-            passes=2,
+            passes=EBM_OOF_DISTILLATION_PASSES,
             label="final",
         )
         weight_transfer_metrics["final_weight_source"] = "fit_oof_oof_distilled"
@@ -4431,6 +4883,7 @@ def _fit_final_model(
         shape_smoothing_policy,
         mode,
         random_state=random_state + 11701,
+        use_spec_outer_bags=True,
     )
     if model.oof_probs is None or len(model.oof_probs) != len(y):
         model.oof_probs = np.asarray(oof_probs, dtype=np.float32)
@@ -4445,52 +4898,74 @@ def _fit_final_model(
         mode,
         random_state=random_state + 11701,
     )
+    uncertainty_metrics: dict[str, float] = {}
     try:
-        model.uncertainty_state = fit_uncertainty_state(
-            Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True),
-            final_active_cols,
-        )
-        unc_features = compute_uncertainty_features(
-            Xs[final_active_cols],
-            model.models,
-            mode,
-            _predict_raw_ebm,
-            state=model.uncertainty_state,
-        )
-        model.oof_uncertainty_features = {
-            c: unc_features[c].to_numpy(dtype=np.float32) for c in unc_features.columns
-        }
         model.oof_probs_raw_ebm = np.asarray(model.oof_probs, dtype=np.float32).copy()
-        if mode == "classifier":
-            model.en_adjuster = fit_en_uncertainty_adjuster(
-                model.oof_probs_raw_ebm,
-                y,
-                unc_features,
-                groups=stability_groups,
-                random_state=random_state + 55021,
-                n_trials=30,
+        if (
+            EBM_FINAL_UNCERTAINTY_MAX_ROWS > 0
+            and len(y) > EBM_FINAL_UNCERTAINTY_MAX_ROWS
+        ):
+            model.oof_probs_en = model.oof_probs_raw_ebm.copy()
+            model.oof_probs_uncertainty_weighted = model.oof_probs_raw_ebm.copy()
+            uncertainty_metrics["uncertainty_oof_skipped_large_n"] = 1.0
+            uncertainty_metrics["uncertainty_oof_n"] = float(len(y))
+            uncertainty_metrics["uncertainty_oof_cap"] = float(
+                EBM_FINAL_UNCERTAINTY_MAX_ROWS
             )
-            if model.en_adjuster is not None:
-                model.oof_probs_en = model.en_adjuster.predict(
-                    model.oof_probs_raw_ebm, unc_features
+            tprint(
+                "EBMOnLGBM: uncertainty OOF feature generation skipped for "
+                f"large final fit n={len(y)} > cap={EBM_FINAL_UNCERTAINTY_MAX_ROWS}; "
+                "using raw EBM OOF probabilities for uncertainty-adjusted outputs."
+            )
+        else:
+            model.uncertainty_state = fit_uncertainty_state(
+                Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True),
+                final_active_cols,
+            )
+            unc_features = compute_uncertainty_features(
+                Xs[final_active_cols],
+                model.models,
+                mode,
+                _predict_raw_ebm,
+                state=model.uncertainty_state,
+            )
+            model.oof_uncertainty_features = {
+                c: unc_features[c].to_numpy(dtype=np.float32)
+                for c in unc_features.columns
+            }
+            if mode == "classifier":
+                model.en_adjuster = fit_en_uncertainty_adjuster(
+                    model.oof_probs_raw_ebm,
+                    y,
+                    unc_features,
+                    groups=_groups_primary(stability_groups),
+                    random_state=random_state + 55021,
+                    n_trials=30,
+                )
+                if model.en_adjuster is not None:
+                    model.oof_probs_en = model.en_adjuster.predict(
+                        model.oof_probs_raw_ebm, unc_features
+                    )
+                else:
+                    model.oof_probs_en = model.oof_probs_raw_ebm.copy()
+                model.oof_probs_uncertainty_weighted = uncertainty_weighted_prediction(
+                    model.oof_probs_raw_ebm,
+                    unc_features,
+                    model.oof_probs_en,
                 )
             else:
                 model.oof_probs_en = model.oof_probs_raw_ebm.copy()
-            model.oof_probs_uncertainty_weighted = uncertainty_weighted_prediction(
-                model.oof_probs_raw_ebm,
-                unc_features,
-                model.oof_probs_en,
+                model.oof_probs_uncertainty_weighted = model.oof_probs_raw_ebm.copy()
+            uncertainty_metrics["uncertainty_oof_skipped_large_n"] = 0.0
+            uncertainty_metrics["uncertainty_oof_n"] = float(len(y))
+            tprint(
+                "EBMOnLGBM: generated uncertainty OOF features "
+                f"({len(model.oof_uncertainty_features)} columns)."
             )
-        else:
-            model.oof_probs_en = model.oof_probs_raw_ebm.copy()
-            model.oof_probs_uncertainty_weighted = model.oof_probs_raw_ebm.copy()
-        tprint(
-            "EBMOnLGBM: generated uncertainty OOF features "
-            f"({len(model.oof_uncertainty_features)} columns)."
-        )
     except Exception as exc:
         tprint(f"EBMOnLGBM: uncertainty feature generation skipped ({exc}).")
     model.metrics = dict(metrics)
+    model.metrics.update(uncertainty_metrics)
     model.metrics.update(post_hpo_shape_metrics)
     model.metrics.update(weight_transfer_metrics)
     for key in (
@@ -4521,10 +4996,8 @@ def _fit_final_model(
                 fit_oof_y[pre_distill_mask],
                 pre_distill_fit_oof_pred[pre_distill_mask],
                 classifier=(mode == "classifier"),
-                groups=(
-                    stability_groups[fit_idx][pre_distill_mask]
-                    if stability_groups is not None
-                    else None
+                groups=_groups_take(
+                    _groups_take(stability_groups, fit_idx), pre_distill_mask
                 ),
             )
             pre_distill_fit_oof_metrics.update(
@@ -4540,10 +5013,8 @@ def _fit_final_model(
                 fit_oof_y[fit_oof_mask],
                 fit_oof_pred[fit_oof_mask],
                 classifier=(mode == "classifier"),
-                groups=(
-                    stability_groups[fit_idx][fit_oof_mask]
-                    if stability_groups is not None
-                    else None
+                groups=_groups_take(
+                    _groups_take(stability_groups, fit_idx), fit_oof_mask
                 ),
             )
             fit_oof_metrics.update(_aggregate_j([fit_oof_metrics]))
@@ -4717,8 +5188,21 @@ def _fit_final_model(
     model.metrics["n_leaf_features_kept"] = int(
         sum(c.startswith("lgbm_") for c in final_active_cols)
     )
+    model.metrics["final_fit_row_cap"] = int(EBM_FINAL_FIT_MAX_ROWS)
+    model.metrics["final_fit_train_rows"] = int(len(fit_idx))
+    model.metrics["final_fit_train_rows_total"] = int(n_all)
     model.metrics["final_outer_bags"] = int(final_spec.get("outer_bags", 0))
     model.metrics["best_params"] = dict(final_spec)
+    model.metrics["final_fit_params"] = dict(final_spec)
+    model.metrics["hpo_selected_params"] = dict(hpo_selected_params)
+    model.metrics["final_fit_used_hpo_params"] = (
+        model.metrics["final_fit_params"] == model.metrics["hpo_selected_params"]
+    )
+    tprint(
+        "EBMOnLGBM final fit: "
+        f"used_hpo_params={model.metrics['final_fit_used_hpo_params']} "
+        f"params={json.dumps(model.metrics['final_fit_params'], sort_keys=True)}"
+    )
     model.metrics["shape_smoothing_policy"] = dict(shape_smoothing_policy)
     model.metrics["postprocessor_calibration_method"] = (
         model.postprocessors[0].calibration_method
@@ -4732,16 +5216,47 @@ def _fit_final_model(
         for key, value in model.en_adjuster.metrics.items():
             model.metrics[f"en_uncertainty_{key}"] = float(value)
     try:
-        final_fit_pred = model.predict(X_raw)
+        final_metric_idx: np.ndarray | slice
+        if len(y) > EBM_FINAL_FIT_METRIC_MAX_ROWS > 0:
+            rng = np.random.default_rng(random_state + 19191)
+            final_metric_idx = np.sort(
+                rng.choice(
+                    len(y),
+                    size=EBM_FINAL_FIT_METRIC_MAX_ROWS,
+                    replace=False,
+                ).astype(np.int32)
+            )
+            tprint(
+                "EBMOnLGBM: final-fit diagnostic metrics using deterministic "
+                f"sample {len(final_metric_idx)}/{len(y)} rows."
+            )
+        else:
+            final_metric_idx = slice(None)
+            tprint(
+                "EBMOnLGBM: final-fit diagnostic metrics using full " f"{len(y)} rows."
+            )
+        if isinstance(final_metric_idx, slice):
+            X_final_metric = X_raw
+            y_final_metric = y
+            groups_final_metric = stability_groups
+        else:
+            X_final_metric = X_raw.iloc[final_metric_idx].reset_index(drop=True)
+            y_final_metric = y[final_metric_idx]
+            groups_final_metric = _groups_take(stability_groups, final_metric_idx)
+        final_fit_pred = model.predict(X_final_metric)
         final_fit_metrics = _metric_pack(
-            y,
+            y_final_metric,
             final_fit_pred,
             classifier=(mode == "classifier"),
-            groups=stability_groups,
+            groups=groups_final_metric,
         )
         final_fit_metrics.update(_aggregate_j([final_fit_metrics]))
         for key, value in final_fit_metrics.items():
             model.metrics[f"final_fit_{key}"] = value
+        model.metrics["final_fit_metric_n"] = int(len(y_final_metric))
+        model.metrics["final_fit_metric_sampled"] = bool(
+            not isinstance(final_metric_idx, slice)
+        )
     except Exception as exc:
         tprint(f"EBMOnLGBM: final-fit metrics skipped ({exc}).")
     model.pruning_history = list(pruning_history)
@@ -4832,7 +5347,7 @@ def train_ebm_on_lgbm_candidate(
     sw_select = sw_race[select_local]
     X_eval = X_race.iloc[eval_local].reset_index(drop=True)
     y_eval = y_race[eval_local]
-    race_groups = _stability_group_labels(
+    race_groups = _stability_group_bundle(
         len(race_idx),
         timestamps=(
             np.asarray(timestamps)[race_idx]
@@ -4845,10 +5360,13 @@ def train_ebm_on_lgbm_candidate(
             else None
         ),
     )
-    select_groups = race_groups[select_local] if race_groups is not None else None
-    eval_groups = race_groups[eval_local] if race_groups is not None else None
+    select_groups = _groups_take(race_groups, select_local)
+    eval_groups = _groups_take(race_groups, eval_local)
 
-    tprint("EBMOnLGBM: augmenting with tree features BEFORE prescreening...")
+    raw_feature_names = list(X_select.columns)
+    tprint(
+        "EBMOnLGBM: augmenting with tree features BEFORE raw-feature prescreening..."
+    )
     X_select, X_eval, tree_feature_bundle = _augment_with_oof_tree_features(
         X_select,
         y_select,
@@ -4868,15 +5386,36 @@ def train_ebm_on_lgbm_candidate(
         f"Each pruning round uses one frozen feature set across {EBM_CV_SPLITS} CV folds."
     )
 
-    active = _prescreen_features(
-        x_select_np,
+    raw_feature_names = [c for c in raw_feature_names if c in X_select.columns]
+    raw_active = _prescreen_features(
+        X_select[raw_feature_names].to_numpy(dtype=np.float32),
         y_select,
-        list(X_select.columns),
+        raw_feature_names,
         classifier=classifier,
         random_state=random_state,
     )
+    full_col_pos = {str(c): i for i, c in enumerate(X_select.columns)}
+    raw_active_full = np.asarray(
+        [full_col_pos[str(raw_feature_names[i])] for i in raw_active],
+        dtype=np.int32,
+    )
+    raw_feature_set = set(map(str, raw_feature_names))
+    tree_active_full = np.asarray(
+        [i for i, c in enumerate(X_select.columns) if str(c) not in raw_feature_set],
+        dtype=np.int32,
+    )
+    active = np.unique(np.concatenate([raw_active_full, tree_active_full])).astype(
+        np.int32
+    )
+    tprint(
+        "EBMOnLGBM prescreen: raw Spearman/correlation/stability kept "
+        f"{len(raw_active_full)}/{len(raw_feature_names)} raw features; "
+        f"adding {len(tree_active_full)} pre-screened LGBM tree features for EBM rounds "
+        f"({len(active)} active total)."
+    )
     history: list[dict[str, Any]] = []
     best_seen: Optional[dict[str, Any]] = None
+    pruning_stop_reason = "max_rounds"
     current_weights = sw_select.copy()
     current_oof = np.full(len(y_select), float(np.mean(y_select)), dtype=np.float32)
 
@@ -4888,6 +5427,7 @@ def train_ebm_on_lgbm_candidate(
             tprint(
                 f"EBMOnLGBM round {round_id}: feature floor reached ({len(active)})."
             )
+            pruning_stop_reason = "feature_floor"
             break
         round_features = [X_select.columns[i] for i in active]
         tprint(
@@ -4907,9 +5447,15 @@ def train_ebm_on_lgbm_candidate(
             build_tree_features=False,
             min_samples_leaf_pct=current_leaf_min_pct,
             monotone_constraints=current_constraints,
+            one_se_floor=(
+                float(best_seen["J_final"]) - float(best_seen["J_se"])
+                if best_seen is not None
+                else None
+            ),
         )
         if not round_res.get("ok"):
             tprint(f"EBMOnLGBM round {round_id}: no valid EBM records, stopping.")
+            pruning_stop_reason = "no_valid_records"
             break
         best = dict(round_res["best"])
         best_j = float(best["J_final"])
@@ -4930,16 +5476,17 @@ def train_ebm_on_lgbm_candidate(
             below_floor = [
                 float(r.get("J_final", -np.inf)) < one_se_floor for r in round_records
             ]
-            if round_records and all(below_floor):
+            if round_records and best_j < one_se_floor:
                 rec["stopped_by_one_se"] = True
                 rec["one_se_floor"] = one_se_floor
                 rec["n_specs_below_one_se_floor"] = int(len(below_floor))
                 history.append(rec)
                 tprint(
-                    f"EBMOnLGBM round {round_id}: stop, all {len(below_floor)} specs "
-                    f"are below best 1SE floor {one_se_floor:.4f} "
+                    f"EBMOnLGBM round {round_id}: stop, best round spec is below "
+                    f"prior best 1SE floor {one_se_floor:.4f} "
                     f"(best round spec J={best_j:.4f})."
                 )
+                pruning_stop_reason = "round_best_below_prior_one_se"
                 break
 
         binary_mask = _binary_feature_mask(X_select[round_features])
@@ -4957,18 +5504,38 @@ def train_ebm_on_lgbm_candidate(
             )
         current_constraints = None
 
+        score_source = "shape"
         if not np.any(shape_scores > 0):
             shape_scores = _target_scores(
                 x_select_np[:, active], y_select, round_features
             )
+            score_source = "target_fallback"
+        shape_scores, eval_score_details = _combine_ebm_feature_scores(
+            shape_scores,
+            best.get("feature_eval_stats"),
+            round_id,
+        )
         drop_frac = _round_drop_fraction(round_id)
         keep_n = max(EBM_MIN_FEATURES, int(np.ceil(len(active) * (1.0 - drop_frac))))
         keep_n = min(keep_n, len(active))
         keep_local = np.argsort(shape_scores)[-keep_n:]
         next_active = active[np.sort(keep_local)]
+        start_features = [str(X_select.columns[i]) for i in active]
+        end_features = [str(X_select.columns[i]) for i in next_active]
+        n_tree_start = int(sum(c.startswith("lgbm_") for c in start_features))
+        n_tree_end = int(sum(c.startswith("lgbm_") for c in end_features))
         rec["n_features_end"] = int(len(next_active))
+        rec["n_raw_start"] = int(len(active) - n_tree_start)
+        rec["n_tree_start"] = n_tree_start
+        rec["n_raw_end"] = int(len(next_active) - n_tree_end)
+        rec["n_tree_end"] = n_tree_end
         rec["drop_fraction"] = float(drop_frac)
+        rec["score_source"] = score_source
+        rec.update(eval_score_details)
         rec["feature_score_mean"] = float(np.mean(shape_scores))
+        rec["feature_score_p10"] = float(np.percentile(shape_scores, 10.0))
+        rec["feature_score_p50"] = float(np.percentile(shape_scores, 50.0))
+        rec["feature_score_p90"] = float(np.percentile(shape_scores, 90.0))
         rec["active_indices"] = next_active.copy()
         gate_passed, gate_details = _feature_pruning_candidate_gate(rec)
         rec.update(gate_details)
@@ -4977,6 +5544,13 @@ def train_ebm_on_lgbm_candidate(
         tprint(
             f"EBMOnLGBM round {round_id}: J={best_j:.4f}, SE={best_se:.4f}, "
             f"pruned {len(active)} -> {len(next_active)}; "
+            f"raw {rec['n_raw_start']} -> {rec['n_raw_end']}, "
+            f"tree-state {rec['n_tree_start']} -> {rec['n_tree_end']}; "
+            f"score_source={score_source}; "
+            f"presence_min={rec['presence_min']:.2f}, "
+            f"sign_min={rec['sign_consistency_min']:.2f}, "
+            f"presence_fail={int(rec['presence_fail_count'])}, "
+            f"sign_fail={int(rec['sign_fail_count'])}; "
             f"candidate gates {gate_msg} "
             f"(lift30={rec['lift30']:.4f}, stability30={rec['stability30']:.4f})."
         )
@@ -5008,6 +5582,11 @@ def train_ebm_on_lgbm_candidate(
         gc.collect()
 
     chosen_round = _select_smallest_within_one_se(history)
+    tprint(
+        "EBMOnLGBM pruning stopped: "
+        f"reason={pruning_stop_reason}, rounds_completed={len(history)}, "
+        f"best_round={int(best_seen.get('round', -1)) if best_seen else -1}."
+    )
     if chosen_round and chosen_round.get("active_indices") is not None:
         selected_active = np.asarray(chosen_round["active_indices"], dtype=np.int32)
         tprint(
@@ -5042,6 +5621,8 @@ def train_ebm_on_lgbm_candidate(
     final_weights, _final_ess = _normalize_rank_based_weights(final_weights)
     mode_name = "classifier" if classifier else "regressor"
     specs = _ebm_specs(pruning=False, random_state=random_state)[:EBM_FINAL_MODEL_COUNT]
+    for spec in specs:
+        spec["outer_bags"] = 1
     selected_features = _contribution_correlation_prune(
         cls,
         X_select,
@@ -5053,7 +5634,13 @@ def train_ebm_on_lgbm_candidate(
         random_state=random_state + 7601,
     )
     _log_selected_features("post-pruning candidate", selected_features)
-    tprint(f"EBMOnLGBM: fitting {len(specs)} honest eval EBMs on selected features.")
+    min_honest_models = max(1, min(len(specs), int(EBM_HONEST_EVAL_MIN_MODELS)))
+    tprint(
+        f"EBMOnLGBM: fitting up to {len(specs)} honest eval EBMs on selected features "
+        f"(adaptive_min={min_honest_models}, "
+        f"max_j_std={EBM_HONEST_EVAL_MAX_J_STD:.4f}, "
+        f"max_pred_disagree={EBM_HONEST_EVAL_MAX_PRED_DISAGREE:.4f})."
+    )
     X_select_final = X_select[selected_features].reset_index(drop=True)
     X_eval_final = X_eval[selected_features].reset_index(drop=True)
     n_tree_selected = int(sum(name.startswith("lgbm_") for name in selected_features))
@@ -5062,6 +5649,8 @@ def train_ebm_on_lgbm_candidate(
         "EBMOnLGBM: honest eval matrix includes "
         f"{n_raw_selected} raw + {n_tree_selected} selected tree-state features."
     )
+    honest_eval_trace: list[dict[str, float]] = []
+    honest_eval_stop_reason = "max_models"
     for i, spec in enumerate(specs, start=1):
         t0_eval_fit = time.perf_counter()
         ebm = _fit_one_ebm(cls, X_select_final, y_select, final_weights, spec)
@@ -5071,10 +5660,52 @@ def train_ebm_on_lgbm_candidate(
         )
         raw_eval = _predict_raw_ebm(ebm, X_eval_final, mode_name)
         eval_preds.append(pp.predict(raw_eval))
+        ensemble_pred_i = np.mean(np.vstack(eval_preds), axis=0).astype(np.float32)
+        metrics_i = _metric_pack(
+            y_eval,
+            ensemble_pred_i,
+            classifier=classifier,
+            groups=eval_groups,
+        )
+        metrics_i.update(_aggregate_j([metrics_i]))
+        pred_disagree = (
+            float(np.mean(np.std(np.vstack(eval_preds), axis=0)))
+            if len(eval_preds) >= 2
+            else float("inf")
+        )
+        j_vals = np.asarray(
+            [row["J_final"] for row in honest_eval_trace] + [metrics_i["J_final"]],
+            dtype=np.float32,
+        )
+        j_std = float(np.std(j_vals, ddof=0)) if len(j_vals) >= 2 else float("inf")
+        honest_eval_trace.append(
+            {
+                "model": float(i),
+                "J_final": float(metrics_i["J_final"]),
+                "lift30": float(metrics_i.get("lift30", np.nan)),
+                "stability30": float(metrics_i.get("stability30", np.nan)),
+                "pred_disagree": float(pred_disagree),
+                "j_std": float(j_std),
+            }
+        )
         tprint(
             f"  Honest eval EBM {i}/{len(specs)} fit in "
-            f"{time.perf_counter() - t0_eval_fit:.1f}s"
+            f"{time.perf_counter() - t0_eval_fit:.1f}s "
+            f"(ensemble_J={float(metrics_i['J_final']):.4f}, "
+            f"j_std={j_std:.4f}, pred_disagree={pred_disagree:.4f})"
         )
+        if (
+            i >= min_honest_models
+            and j_std <= EBM_HONEST_EVAL_MAX_J_STD
+            and pred_disagree <= EBM_HONEST_EVAL_MAX_PRED_DISAGREE
+        ):
+            honest_eval_stop_reason = "stable_adaptive_stop"
+            tprint(
+                "EBMOnLGBM: honest eval adaptive stop after "
+                f"{i}/{len(specs)} models "
+                f"(j_std={j_std:.4f}, pred_disagree={pred_disagree:.4f})."
+            )
+            break
     eval_pred = np.mean(np.vstack(eval_preds), axis=0).astype(np.float32)
     oof_race = np.full(len(y_race), np.nan, dtype=np.float32)
     oof_race[eval_local] = eval_pred
@@ -5088,6 +5719,12 @@ def train_ebm_on_lgbm_candidate(
     metrics["J_final_oof"] = float(metrics.get("J_final", 0.0))
     metrics["J_Score"] = float(metrics["J_final_oof"])
     metrics["feature_count"] = int(len(selected_features))
+    metrics["honest_eval_models_fit"] = int(len(eval_preds))
+    metrics["honest_eval_max_models"] = int(len(specs))
+    metrics["honest_eval_stop_reason"] = honest_eval_stop_reason
+    metrics["honest_eval_trace"] = list(honest_eval_trace)
+    metrics["feature_pruning_stop_reason"] = pruning_stop_reason
+    metrics["feature_pruning_rounds_completed"] = int(len(history))
     metrics["n_raw_features_kept"] = int(
         sum(not str(name).startswith("lgbm_") for name in selected_features)
     )

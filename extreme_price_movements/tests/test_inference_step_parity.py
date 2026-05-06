@@ -49,6 +49,8 @@ def test_strategy_asset_exclusion_matches_across_usdt_usdc_quote():
 
 
 class _DummyOrchestrator:
+    bucket_params = {}
+
     def run_full_chain(self, symbol, side, features, panel=None):
         return {
             "symbol": symbol,
@@ -61,6 +63,8 @@ class _DummyOrchestrator:
 
 
 class _NoEntryOrchestrator:
+    bucket_params = {}
+
     def run_full_chain(self, symbol, side, features, panel=None):
         return {
             "symbol": symbol,
@@ -208,6 +212,73 @@ def test_run_inference_step_applies_strategy_rank_and_portfolio_caps(monkeypatch
     assert executor.calls, "expected trade execution call"
     # Must cap to the live per-position constraint: <= 15% of 10k.
     assert executor.calls[0]["size"] <= 1500.0 + 1e-9
+
+
+def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    close = pd.DataFrame({"BTC/USDT": [100.0, 100.0, 100.0]}, index=idx)
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    monkeypatch.setattr(ri, "select_candidates", lambda **kwargs: (["BTC/USDT"], []))
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": [1.0] * len(candidates)}, index=candidates
+        ),
+    )
+
+    class _PolicySizingOrchestrator(_DummyOrchestrator):
+        bucket_params = {
+            "long_mr": {
+                "best_size_power": 2.0,
+                "asset_metrics": [
+                    {
+                        "symbol": "BTC/USDT",
+                        "asset_decision": "down_weight",
+                        "asset_weight_multiplier": 0.5,
+                    }
+                ],
+            }
+        }
+
+        def run_full_chain(self, symbol, side, features, panel=None, kind=None):
+            out = super().run_full_chain(symbol, side, features, panel=panel)
+            out["position_size"] = 9999.0
+            out["orchestrator_position_size"] = 9999.0
+            return out
+
+    executor = _DummyExecutor()
+    portfolio_mgr = PortfolioManager(portfolio_value=10000.0)
+
+    results = ri.run_inference_step(
+        orchestrator=_PolicySizingOrchestrator(),
+        panel=panel,
+        feats=feats,
+        thresholds={"metric": "ret12h"},
+        executor=executor,
+        logger=_DummyLogger(),
+        accepted_strategies={"long_mr"},
+        calibration_data={
+            "long_mr": {
+                "p75_threshold": 0.5,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            }
+        },
+        portfolio_mgr=portfolio_mgr,
+    )
+
+    assert len(results["trades"]) == 1
+    # calibrated=0.9, threshold=0.5 -> scaled rank=0.8.
+    # size=(0.05 + 0.10 * 0.8**2) * 0.5 = 0.057 of a 10k wallet.
+    assert abs(executor.calls[0]["size"] - 570.0) < 1e-9
 
 
 def test_portfolio_manager_hard_gates_require_manual_reset():

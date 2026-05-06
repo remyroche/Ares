@@ -13667,12 +13667,11 @@ def train_meta_models_from_artifacts(
             tprint(f"Meta {k}: skipped (only {len(df)} union samples)")
             continue
 
-        _meta_cap = int(cfg.get("meta_fit_max_samples", 50000))
+        _meta_cap = int(cfg.get("meta_fit_max_samples", 150000))
         if _meta_cap > 0 and len(df) > _meta_cap:
-            _pre_cap = len(df)
-            df = subsample_symbol_balanced(df, _meta_cap)
             tprint(
-                f"  Meta {k}: symbol-balanced subsample {_pre_cap} -> {len(df)} rows (cap={_meta_cap})"
+                f"  Meta {k}: keeping full union dataset before rank gating "
+                f"({len(df)} rows); post-mask final/meta fit cap={_meta_cap}"
             )
 
         # Build OOF predictions for each horizon, aligned to common samples
@@ -14802,6 +14801,57 @@ def train_meta_models_from_artifacts(
                 )
 
         meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
+        _meta_fit_cap = int(cfg.get("meta_fit_max_samples", 150000))
+
+        def _cap_meta_fit_mask(mask: np.ndarray, label: str) -> np.ndarray:
+            """Apply the train_meta row cap after rank/trade gating."""
+            mask_arr = np.asarray(mask, dtype=bool).copy()
+            n_mask = int(np.sum(mask_arr))
+            if _meta_fit_cap <= 0 or n_mask <= _meta_fit_cap:
+                tprint(
+                    f"  Meta {k}: {label} rows={n_mask} "
+                    f"(cap={_meta_fit_cap if _meta_fit_cap > 0 else 'off'})"
+                )
+                return mask_arr
+            idx = np.flatnonzero(mask_arr).astype(np.int32)
+            sym_col = (
+                "__symbol__"
+                if "__symbol__" in df.columns
+                else "symbol" if "symbol" in df.columns else None
+            )
+            ts_col = (
+                "__ts__"
+                if "__ts__" in df.columns
+                else "timestamp" if "timestamp" in df.columns else None
+            )
+            sample_frame = pd.DataFrame({"_idx": idx})
+            sample_frame["__symbol__"] = (
+                np.asarray(df[sym_col].astype(str).values)[idx]
+                if sym_col is not None
+                else "all"
+            )
+            sample_frame["__ts__"] = (
+                pd.to_datetime(np.asarray(df[ts_col].values)[idx], errors="coerce")
+                if ts_col is not None
+                else np.arange(len(idx), dtype=np.int32)
+            )
+            sampled = subsample_symbol_balanced(
+                sample_frame,
+                _meta_fit_cap,
+                symbol_col="__symbol__",
+                ts_col="__ts__",
+            )
+            capped = np.zeros(len(mask_arr), dtype=bool)
+            capped[np.asarray(sampled["_idx"].values, dtype=np.int32)] = True
+            tprint(
+                f"  Meta {k}: {label} symbol-balanced cap "
+                f"{n_mask} -> {int(np.sum(capped))} rows (cap={_meta_fit_cap})"
+            )
+            return capped
+
+        _fit_mask_capped = _cap_meta_fit_mask(
+            np.asarray(_trade_mask, dtype=bool), "post-rank/trade fit mask"
+        )
 
         _meta_ebm_heads_trained = False
         if include_meta_clf and str(cfg.get("meta_model_backend", "")).lower() in {
@@ -14810,7 +14860,7 @@ def train_meta_models_from_artifacts(
         }:
             _h_main_ebm = int(_strategy_primary_h)
             _ret_ebm = np.asarray(_ret_for_h_aligned(_h_main_ebm), dtype=np.float32)
-            _fit_mask_ebm = np.asarray(_trade_mask, dtype=bool)
+            _fit_mask_ebm = np.asarray(_fit_mask_capped, dtype=bool)
             _fit_mask_ebm &= np.isfinite(_ret_ebm)
             _sym_ebm = (
                 np.asarray(df["__symbol__"].astype(str).values)
@@ -15025,7 +15075,7 @@ def train_meta_models_from_artifacts(
                 df=df,
                 X_meta_base=X_meta_models,
                 meta_groups=meta_groups,
-                trade_mask=_trade_mask,
+                trade_mask=_fit_mask_capped,
                 ret_for_h=_ret_for_h_aligned,
                 bucket_horizons=_available_horizons,
                 primary_h=_strategy_primary_h,
@@ -15122,7 +15172,7 @@ def train_meta_models_from_artifacts(
         w_meta_main = w_meta_main * _sign_consist
 
         # Fit bucket-level regressor only when explicitly enabled (default disabled).
-        _fit_mask_main = np.asarray(_trade_mask, dtype=bool)
+        _fit_mask_main = np.asarray(_fit_mask_capped, dtype=bool)
         if include_meta_reg:
             meta_reg = WeakResidualMetaRegressor(
                 strategy_name=_h_label, reports_dir=reports_dir

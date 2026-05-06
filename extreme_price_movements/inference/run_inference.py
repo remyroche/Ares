@@ -92,7 +92,6 @@ from extreme_price_movements.inference.feature_generator import (
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.inference.parity import (
     calibrated_score_and_threshold,
-    calibration_size_multiplier,
     load_policy_params_by_strategy,
     load_strategy_asset_exclusion_filter,
     resolve_deployment_strategy_filter,
@@ -239,7 +238,11 @@ def _deployment_rank_threshold_from_strategy_row(row: Dict[str, Any]) -> float:
         avg_holding_hours = 1.0
     avg_holding_hours = max(1.0, avg_holding_hours)
     threshold = (avg_top1_trades_per_day / 24.0) * 2.0 / avg_holding_hours * 0.95
-    return float(np.clip(max(0.95, threshold), 0.0, 1.0))
+    floor_cfg = float(
+        get_runtime_cfg().get("inference_deployment_rank_threshold_floor", 0.95)
+    )
+    floor_cfg = float(np.clip(floor_cfg, 0.0, 1.0))
+    return float(np.clip(max(floor_cfg, threshold), 0.0, 1.0))
 
 
 def _attach_rank_percentile_scores(
@@ -628,6 +631,174 @@ def _select_top_base_prediction_symbols(
     }
 
 
+def _log_score_distribution(label: str, values: list[float]) -> None:
+    arr = np.asarray([v for v in values if np.isfinite(v)], dtype=np.float64)
+    if arr.size == 0:
+        tprint(f"{label}: no finite values")
+        return
+    q90 = float(np.quantile(arr, 0.90))
+    q95 = float(np.quantile(arr, 0.95))
+    q99 = float(np.quantile(arr, 0.99))
+    pass_90 = int(np.sum(arr >= q90))
+    pass_95 = int(np.sum(arr >= q95))
+    pass_99 = int(np.sum(arr >= q99))
+    tprint(
+        f"{label}: n={arr.size}, mean={float(np.mean(arr)):.6f}, std={float(np.std(arr)):.6f}, "
+        f"min={float(np.min(arr)):.6f}, max={float(np.max(arr)):.6f}, range={(float(np.max(arr))-float(np.min(arr))):.6f}, "
+        f"top1%={pass_99}, top5%={pass_95}, top10%={pass_90}"
+    )
+
+
+def _log_generated_feature_frames(feats: Dict[str, pd.DataFrame]) -> None:
+    if not isinstance(feats, dict) or not feats:
+        tprint("Inference features generated: none")
+        return
+    n_frames = len(feats)
+    row_counts = []
+    symbol_union = set()
+    empty = []
+    for name, frame in feats.items():
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            empty.append(str(name))
+            continue
+        row_counts.append(int(len(frame)))
+        symbol_union.update(str(c) for c in frame.columns)
+    tprint(
+        "Inference features generated: "
+        f"frames={n_frames}, non_empty={n_frames - len(empty)}, "
+        f"symbols={len(symbol_union)}, "
+        f"row_range=[{min(row_counts) if row_counts else 0},{max(row_counts) if row_counts else 0}]"
+    )
+    if empty:
+        tprint(f"Inference empty feature frames sample: {empty[:12]}")
+
+
+def _log_feature_coverage(candidate_features: pd.DataFrame, side: str) -> None:
+    if candidate_features is None or candidate_features.empty:
+        tprint(f"Inference feature coverage [{side}]: empty")
+        return
+    n_rows = int(len(candidate_features))
+    non_null_frac = candidate_features.notna().mean(axis=0)
+    finite_frac = np.isfinite(
+        candidate_features.select_dtypes(include=[np.number])
+    ).mean(axis=0)
+    low_coverage = [
+        str(col) for col, frac in non_null_frac.items() if float(frac) < 0.80
+    ][:10]
+    low_finite = [str(col) for col, frac in finite_frac.items() if float(frac) < 0.80][
+        :10
+    ]
+    tprint(
+        f"Inference feature coverage [{side}]: rows={n_rows}, cols={candidate_features.shape[1]}, "
+        f"row_nonnull_mean={float(candidate_features.notna().mean(axis=1).mean()):.4f}, "
+        f"col_nonnull_mean={float(non_null_frac.mean()):.4f}, numeric_col_finite_mean={float(finite_frac.mean()) if len(finite_frac) else float('nan'):.4f}"
+    )
+    if low_coverage:
+        tprint(
+            f"Inference feature coverage [{side}] low-nonnull cols(<80%): {low_coverage}"
+        )
+    if low_finite:
+        tprint(
+            f"Inference feature coverage [{side}] low-finite numeric cols(<80%): {low_finite}"
+        )
+
+
+def _policy_params_for_strategy(
+    orchestrator: ModelOrchestrator,
+    strategy_id: str,
+) -> Dict[str, Any]:
+    bucket_params = getattr(orchestrator, "bucket_params", {}) or {}
+    if not isinstance(bucket_params, dict):
+        return {}
+    sid = str(strategy_id or "")
+    core = strategy_core_id(sid)
+    aliases = [sid, core]
+    side = sid.split("_", 1)[0] if "_" in sid else ""
+    if side in {"long", "short"} and core:
+        aliases.append(f"{side}_{core}")
+    for alias in aliases:
+        params = bucket_params.get(alias)
+        if isinstance(params, dict):
+            return params
+    buckets = bucket_params.get("buckets", {})
+    if isinstance(buckets, dict):
+        for alias in aliases:
+            params = buckets.get(alias)
+            if isinstance(params, dict):
+                return params
+    return {}
+
+
+def _asset_policy_row(policy_params: Dict[str, Any], symbol: str) -> Dict[str, Any]:
+    raw_rows = policy_params.get("asset_metrics", [])
+    if not isinstance(raw_rows, list):
+        return {}
+    symbol_norm = normalise_symbol(str(symbol))
+    for row in raw_rows:
+        if not isinstance(row, dict):
+            continue
+        row_symbol = normalise_symbol(str(row.get("symbol", "")))
+        if row_symbol == symbol_norm:
+            return row
+    return {}
+
+
+def _meta_policy_position_size(
+    *,
+    calibrated_score: float,
+    threshold: float,
+    policy_params: Dict[str, Any],
+    symbol: str,
+) -> Dict[str, Any]:
+    size_power = float(policy_params.get("best_size_power", 1.0) or 1.0)
+    min_size = float(policy_params.get("min_position_size", 0.05) or 0.05)
+    max_size = float(policy_params.get("max_position_size", 0.15) or 0.15)
+    threshold = float(np.clip(threshold, 0.0, 0.999999))
+    calibrated_score = float(np.clip(calibrated_score, 0.0, 1.0))
+    scaled_rank = (calibrated_score - threshold) / max(1.0 - threshold, 1e-12)
+    scaled_rank = float(np.clip(scaled_rank, 0.0, 1.0))
+    base_size = min_size + (max_size - min_size) * (scaled_rank**size_power)
+    asset_row = _asset_policy_row(policy_params, symbol)
+    asset_decision = str(asset_row.get("asset_decision", "keep") or "keep")
+    asset_multiplier = float(asset_row.get("asset_weight_multiplier", 1.0) or 1.0)
+    if asset_decision == "blacklist":
+        asset_multiplier = 0.0
+    final_size = float(np.clip(base_size * asset_multiplier, 0.0, max_size))
+    return {
+        "position_size": final_size,
+        "base_position_size": float(base_size),
+        "sizing_source": "meta_calibrated_score_policy_power",
+        "size_power": float(size_power),
+        "sizing_rank_between_threshold_and_one": scaled_rank,
+        "asset_weight_multiplier": float(asset_multiplier),
+        "asset_decision": asset_decision,
+        "min_position_size": float(min_size),
+        "max_position_size": float(max_size),
+    }
+
+
+def _log_concurrent_positions_snapshot(
+    portfolio_mgr: Optional[PortfolioManager],
+    *,
+    label: str,
+) -> None:
+    if portfolio_mgr is None:
+        return
+    try:
+        state = portfolio_mgr.get_portfolio_state()
+        now_hour = pd.Timestamp.now(tz="UTC").floor("h")
+        tprint(
+            "Concurrent positions hourly snapshot "
+            f"[{label}] hour={now_hour.isoformat()} "
+            f"open={state.get('n_positions')} max={state.get('max_positions')} "
+            f"long={state.get('long_count')} short={state.get('short_count')} "
+            f"invested_pct={float(state.get('invested_pct', np.nan)):.4f} "
+            f"strategy_counts={state.get('strategy_counts', {})}"
+        )
+    except Exception as exc:
+        tprint(f"Concurrent positions hourly snapshot [{label}] failed: {exc}")
+
+
 def run_inference_step(
     orchestrator: ModelOrchestrator,
     panel: Dict[str, pd.DataFrame],
@@ -641,10 +812,12 @@ def run_inference_step(
     calibration_data: Optional[Dict[str, Dict[str, Any]]] = None,
     normalized_thresholds: Optional[Dict[str, Dict[str, Any]]] = None,
     portfolio_mgr: Optional[PortfolioManager] = None,
-    initial_rank_threshold: float = 0.5,
+    initial_rank_threshold: float = 1.0,
     strategy_asset_exclusions: Optional[Dict[str, set[str]]] = None,
     preselected_long_candidates: Optional[List[str]] = None,
     preselected_short_candidates: Optional[List[str]] = None,
+    max_entries_per_side: int = 3,
+    max_entries_total: int = 4,
 ) -> Dict[str, Any]:
     """Run a single inference step.
 
@@ -667,8 +840,11 @@ def run_inference_step(
         "trades": [],
     }
     now_utc = pd.Timestamp.now(tz="UTC")
+    total_entries_executed = 0
     calibration_data = calibration_data or {}
     normalized_thresholds = normalized_thresholds or {}
+    _log_generated_feature_frames(feats)
+    _log_concurrent_positions_snapshot(portfolio_mgr, label="start")
 
     # Step 1: Select candidates. When the caller already selected candidates
     # on selector-only features before loading the full model feature set, keep
@@ -691,6 +867,17 @@ def run_inference_step(
     results["short_candidates"] = short_cands
 
     tprint(f"Candidates: {len(long_cands)} long, {len(short_cands)} short")
+    tprint(
+        "Candidate mask output: "
+        f"long={len(long_cands)} sample={long_cands[:8]} "
+        f"short={len(short_cands)} sample={short_cands[:8]}"
+    )
+    tprint(
+        "Order selection policy: "
+        f"top {max(1, int(max_entries_per_side))} per side, "
+        f"global entry cap={max(1, int(max_entries_total))}; "
+        "within each side candidates are sorted by threshold_score then calibrated_score"
+    )
 
     # Step 2: Process long candidates
     for side, candidates in [("long", long_cands), ("short", short_cands)]:
@@ -723,6 +910,23 @@ def run_inference_step(
         if is_empty:
             continue
 
+        _log_feature_coverage(candidate_features, side)
+        side_metrics: Dict[str, Any] = {
+            "input_candidates": int(len(candidates)),
+            "eligible_candidates": 0,
+            "regime_mask_pass": 0,
+            "regime_mask_block": 0,
+            "base_gate_pass": 0,
+            "chain_enter": 0,
+            "threshold_pass": 0,
+            "cooldown_pass": 0,
+            "portfolio_pass": 0,
+            "executed": 0,
+            "non_fatal_issues": 0,
+        }
+        base_preds_all: list[float] = []
+        meta_preds_all: list[float] = []
+
         # Run full inference chain
         try:
             decision_rows: List[Dict[str, Any]] = []
@@ -731,14 +935,22 @@ def run_inference_step(
                 if hasattr(orchestrator, "available_strategies")
                 else [f"{side}_mr"]
             )
+            if not strategy_ids:
+                tprint(
+                    f"No deployable {side} strategies available after deployment "
+                    f"filter; skipping {len(candidates)} candidate(s)."
+                )
             for selected_strategy in strategy_ids:
-                eligible_candidates = [
-                    symbol
-                    for symbol in candidates
-                    if not _is_symbol_blocked_for_strategy(
+                eligible_candidates = []
+                for symbol in candidates:
+                    if _is_symbol_blocked_for_strategy(
                         symbol, str(selected_strategy), strategy_asset_exclusions
-                    )
-                ]
+                    ):
+                        side_metrics["regime_mask_block"] += 1
+                        continue
+                    side_metrics["regime_mask_pass"] += 1
+                    eligible_candidates.append(symbol)
+                side_metrics["eligible_candidates"] += int(len(eligible_candidates))
                 if not eligible_candidates:
                     if candidates:
                         tprint(
@@ -777,6 +989,7 @@ def run_inference_step(
                     side=side,
                     strategy_id=str(selected_strategy),
                 )
+                side_metrics["base_gate_pass"] += int(len(base_gate))
                 for symbol in eligible_candidates:
                     if (
                         symbol not in candidate_features.index
@@ -845,7 +1058,13 @@ def run_inference_step(
                             f"reason={chain_results.get('reason', '')}"
                         )
                         continue
+                    side_metrics["chain_enter"] += 1
+                    base_pred_val = float(chain_results.get("base_pred", np.nan))
+                    if np.isfinite(base_pred_val):
+                        base_preds_all.append(base_pred_val)
                     raw_score = float(chain_results.get("meta_pred", 0.0) or 0.0)
+                    if np.isfinite(raw_score):
+                        meta_preds_all.append(raw_score)
                     calibrated_score, rank_threshold = calibrated_score_and_threshold(
                         raw_score=raw_score,
                         strategy_id=strategy_id,
@@ -878,17 +1097,29 @@ def run_inference_step(
                         )
                         threshold_score = np.nan
                     rank_score = float(calibrated_score)
-                    size = float(chain_results.get("position_size", 0.0) or 0.0)
-                    size *= calibration_size_multiplier(
-                        raw_score=raw_score,
-                        strategy_id=strategy_id,
-                        calibration_data=calibration_data,
-                        default_threshold=initial_rank_threshold,
+                    policy_params = _policy_params_for_strategy(
+                        orchestrator,
+                        strategy_id,
                     )
+                    policy_size = _meta_policy_position_size(
+                        calibrated_score=calibrated_score,
+                        threshold=rank_threshold,
+                        policy_params=policy_params,
+                        symbol=symbol,
+                    )
+                    size = float(policy_size["position_size"])
+                    chain_results[
+                        "legacy_orchestrator_position_size"
+                    ] = chain_results.get(
+                        "orchestrator_position_size"
+                    ) or chain_results.get(
+                        "position_size"
+                    )
+                    chain_results.update(policy_size)
                     if abs(size) < 0.01:
                         tprint(
                             f"Size block: {symbol} {side}/{strategy_id} "
-                            f"size={size:.6f}"
+                            f"size={size:.6f} asset_decision={policy_size.get('asset_decision')}"
                         )
                         continue
                     chain_results["strategy_id"] = strategy_id
@@ -897,6 +1128,7 @@ def run_inference_step(
                     chain_results["normalized_threshold"] = normalized_threshold
                     chain_results["viability_margin"] = viability_margin
                     chain_results["effective_threshold"] = effective_threshold
+                    side_metrics["threshold_pass"] += 1
                     decision_rows.append(
                         {
                             "symbol": symbol,
@@ -911,6 +1143,7 @@ def run_inference_step(
                             "rank_threshold": rank_threshold,
                             "normalized_threshold": normalized_threshold,
                             "effective_threshold": effective_threshold,
+                            "policy_sizing": policy_size,
                             "chain_results": chain_results,
                         }
                     )
@@ -944,7 +1177,18 @@ def run_inference_step(
                 ),
                 reverse=True,
             )
+            decision_rows = decision_rows[: max(1, int(max_entries_per_side))]
+            tprint(
+                f"Top-{max(1, int(max_entries_per_side))} selection [{side}]: "
+                f"selected={len(decision_rows)} from ranked_decisions "
+                f"(global_remaining={max(0, int(max_entries_total) - total_entries_executed)})"
+            )
             for decision in decision_rows:
+                if total_entries_executed >= max(1, int(max_entries_total)):
+                    tprint(
+                        f"Global entry cap reached ({total_entries_executed}/{max_entries_total}); skipping remaining ranked decisions"
+                    )
+                    break
                 symbol = str(decision["symbol"])
                 strategy_id = str(decision["strategy_id"])
                 chain_results = dict(decision["chain_results"])
@@ -965,7 +1209,9 @@ def run_inference_step(
                     tprint(
                         f"Cooldown block: {symbol} skipped for {cooldown_hours:.1f}h window"
                     )
+                    side_metrics["non_fatal_issues"] += 1
                     continue
+                side_metrics["cooldown_pass"] += 1
                 if portfolio_mgr is not None:
                     requested_position_usdt = (
                         abs(float(size))
@@ -992,7 +1238,9 @@ def run_inference_step(
                             f"Portfolio block: {symbol} {side}/{strategy_id} "
                             f"reason={info.get('reason') or info}"
                         )
+                        side_metrics["non_fatal_issues"] += 1
                         continue
+                    side_metrics["portfolio_pass"] += 1
                     size = min(
                         requested_position_usdt,
                         float(info.get("position_size_cap", requested_position_usdt)),
@@ -1010,6 +1258,13 @@ def run_inference_step(
                     )
                 predictions = {
                     "position_size": size,
+                    "base_position_size": chain_results.get("base_position_size", ""),
+                    "sizing_source": chain_results.get("sizing_source", ""),
+                    "size_power": chain_results.get("size_power", ""),
+                    "asset_weight_multiplier": chain_results.get(
+                        "asset_weight_multiplier", ""
+                    ),
+                    "asset_decision": chain_results.get("asset_decision", ""),
                     "meta_pred": chain_results.get("meta_pred", ""),
                     "action": chain_results.get("action", ""),
                     "base_pred": chain_results.get("base_pred", ""),
@@ -1086,6 +1341,8 @@ def run_inference_step(
                     exit_reason=trade_result.get("exit_reason"),
                     net_pnl=trade_result.get("net_pnl"),
                 )
+                side_metrics["executed"] += 1
+                total_entries_executed += 1
                 results["trades"].append(
                     {
                         "symbol": symbol,
@@ -1097,10 +1354,34 @@ def run_inference_step(
                         "calibrated_score": float(decision["calibrated_score"]),
                     }
                 )
+            _log_score_distribution(f"Base predictions [{side}]", base_preds_all)
+            _log_score_distribution(f"Meta predictions [{side}]", meta_preds_all)
+            tprint(
+                f"Inference side metrics [{side}]: input={side_metrics['input_candidates']}, "
+                f"eligible={side_metrics['eligible_candidates']}, "
+                f"regime_mask_pass={side_metrics['regime_mask_pass']}, "
+                f"regime_mask_block={side_metrics['regime_mask_block']}, "
+                f"base_gate_pass={side_metrics['base_gate_pass']}, "
+                f"chain_enter={side_metrics['chain_enter']}, threshold_pass={side_metrics['threshold_pass']}, "
+                f"cooldown_pass={side_metrics['cooldown_pass']}, portfolio_pass={side_metrics['portfolio_pass']}, "
+                f"executed={side_metrics['executed']}, non_fatal_issues={side_metrics['non_fatal_issues']}"
+            )
         except Exception as e:
             tprint(f"Error running inference chain for {side}: {e}")
             continue
 
+    if portfolio_mgr is not None:
+        try:
+            open_df = portfolio_mgr.get_open_positions_summary()
+            concurrent = int(len(open_df)) if isinstance(open_df, pd.DataFrame) else 0
+            max_pos = int(getattr(portfolio_mgr, "max_positions", 0))
+            util = (float(concurrent) / float(max_pos)) if max_pos > 0 else float("nan")
+            tprint(
+                f"Concurrent positions snapshot: open={concurrent}, max={max_pos}, utilization={util:.3f}"
+            )
+            _log_concurrent_positions_snapshot(portfolio_mgr, label="end")
+        except Exception as exc:
+            tprint(f"Concurrent positions snapshot failed: {exc}")
     return results
 
 
@@ -1741,10 +2022,10 @@ def main():
     portfolio_mgr = PortfolioManager(
         max_positions=4,
         max_portfolio_pct=None,
-        max_position_usdt=None,
+        max_position_usdt=10.0,
         max_position_pct=float(args.max_position_pct),
         cooldown_hours=24.0,
-        max_same_side_pct=0.50,
+        max_same_side_pct=0.75,
         max_same_strategy_pct=0.50,
     )
 
@@ -1804,6 +2085,7 @@ def main():
                     current_time,
                     delay_seconds=float(config.get("hourly_ohlcv_delay_seconds", 5.0)),
                 )
+                refresh_microdata = bool(config.get("hourly_refresh_microdata", True))
                 data_fetcher.fetch_hourly_universe_once(
                     download_symbols,
                     max_workers=int(config.get("hourly_ohlcv_workers", 16)),
@@ -1811,6 +2093,12 @@ def main():
                         config.get("hourly_ohlcv_no_progress_timeout_seconds", 60.0)
                     ),
                     check_recent_gaps_days=7,
+                    refresh_microdata=refresh_microdata,
+                )
+                tprint(
+                    "Hourly data refresh complete: "
+                    f"ohlcv_symbols={len(download_symbols)} "
+                    f"microdata_refresh_enabled={refresh_microdata}"
                 )
                 last_hourly_sync = current_hour
 
@@ -1999,7 +2287,7 @@ def run_challenger_monitor(
                         raw_score=raw_score,
                         strategy_id=strategy_id,
                         calibration_data=calibration_data,
-                        default_threshold=0.5,
+                        default_threshold=1.0,
                     )
                     if (
                         candidate_result.get("action") == "enter"

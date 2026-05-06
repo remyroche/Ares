@@ -78,19 +78,5 @@
     "clf_entropy_x_reg_sign_entropy",
     "clf_std_x_reg_std"
   ],
-  "strategies": [
-    {
-      "trade_side": "long",
-      "strategy_id": "dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898",
-      "horizons": [
-        5
-      ],
-      "oof_files": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5.parquet"
-      ],
-      "native_model_dirs": [
-        "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/models/native/long_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5"
-      ]
-    }
-  ]
+  "strategies": []
 }

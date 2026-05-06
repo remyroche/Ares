@@ -1033,10 +1033,13 @@ class ModelOrchestrator:
         results["position_size"] = position_val
         results["ridge_confidence"] = confidence.get("confidence", 1.0)
 
-        # Check minimum position size
+        results["orchestrator_position_size"] = position_val
         if position_val <= 0:
-            results["action"] = "rejected_position_size"
-            return results
+            position_val = 0.05
+            results["position_size"] = position_val
+            results["sizing_source"] = "meta_policy_placeholder"
+        else:
+            results["sizing_source"] = "legacy_orchestrator_diagnostic"
 
         # =====================================================================
         # STEP 6: Entry Policy (Limit Offset Optimizer)

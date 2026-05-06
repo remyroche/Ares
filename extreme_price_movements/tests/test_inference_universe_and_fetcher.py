@@ -348,6 +348,17 @@ def test_update_microdata_symbol_uses_perp_exchange_for_spot_funding(
                 pd.Timestamp("2026-01-01 00:00:00", tz="UTC"),
                 pd.Timestamp("2026-01-01 01:00:00", tz="UTC"),
             )
+            for _ in range(10)
+        ],
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher._compute_missing_funding_ranges",
+        lambda existing_idx, start_ts, end_ts: [
+            (
+                pd.Timestamp("2026-01-01 00:00:00", tz="UTC"),
+                pd.Timestamp("2026-01-01 01:00:00", tz="UTC"),
+            )
+            for _ in range(10)
         ],
     )
     monkeypatch.setattr(
@@ -383,4 +394,45 @@ def test_update_microdata_symbol_uses_perp_exchange_for_spot_funding(
 
     funding = pd.read_parquet(fetcher.funding_dir / "A_USDT.parquet")
     assert "funding_rate" in funding.columns
-    np.testing.assert_allclose(funding["funding_rate"].to_numpy(), [0.0015], rtol=1e-6)
+    assert len(funding) >= 1
+    np.testing.assert_allclose(
+        funding["funding_rate"].to_numpy(),
+        np.full(len(funding), 0.0015),
+        rtol=1e-6,
+    )
+
+
+def test_update_microdata_symbol_skips_missing_perp_funding_without_error(
+    tmp_path, monkeypatch
+):
+    class _SpotExchange:
+        pass
+
+    class _PerpExchange:
+        def fetch_funding_rate_history(self, symbol, since=None, limit=None):
+            raise AssertionError("funding endpoint should not be called")
+
+    logs = []
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher.make_perp_exchange",
+        lambda: _PerpExchange(),
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher._resolve_perp_symbol",
+        lambda exchange, symbol: None,
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher._compute_missing_hourly_ranges",
+        lambda existing_idx, start_ts, end_ts: [],
+    )
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.data_fetcher.tprint",
+        lambda msg: logs.append(str(msg)),
+    )
+
+    fetcher = DataFetcher(exchange=_SpotExchange(), data_root=str(tmp_path))
+    out = fetcher.update_microdata_symbol("A/USDC", backfill_days=30)
+
+    assert out == {"orderbook": False, "funding": False}
+    assert "A/USDC" in fetcher._symbols_without_perp_funding
+    assert not any("microdata_funding failed" in msg for msg in logs)

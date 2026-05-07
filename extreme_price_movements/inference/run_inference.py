@@ -2410,11 +2410,22 @@ def _evaluate_oco_policy(
         )
         last_bar_ts = bars.index[-1]
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        def _get_col_array(df, col_name, default_val=np.nan):
+            if col_name in df.columns:
+                return df[col_name].to_numpy()
+            return np.full(len(df), default_val)
+
+        idx_arr = bars.index.to_numpy()
+        open_arr = _get_col_array(bars, "open")
+        high_arr = _get_col_array(bars, "high")
+        low_arr = _get_col_array(bars, "low")
+        close_arr = _get_col_array(bars, "close")
+
+        for bar_ts, o, h, l, c in zip(idx_arr, open_arr, high_arr, low_arr, close_arr):
+            bar_open = float(o)
+            bar_high = float(h)
+            bar_low = float(l)
+            bar_close = float(c)
 
             if side == "long":
                 mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))
